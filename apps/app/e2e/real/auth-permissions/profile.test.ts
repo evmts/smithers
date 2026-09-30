@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test"
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import type { Cookie } from "@playwright/test"
 import { OwnerSessionCookies, withOwnerAuthRetry, type OwnerSessionScope } from "./owner-session"
-import { parseAuthenticatedUser } from "./profile"
+import { acquireAuthenticatedProfile, isWaitlistedOAuthReturn, parseAuthenticatedUser } from "./profile"
 
 describe("matrix authenticated-user probe", () => {
   test("reads the canonical GET /api/user shape", () => {
@@ -117,4 +120,42 @@ describe("owner authentication Retry-After", () => {
     await withOwnerAuthRetry(async () => ({ status: 429, retryAfter: "40" }), slow)
     expect(slow.waits).toEqual([40_000])
   })
+})
+
+
+test("a deployed waitlist redirect remains an authentication failure on the initiating origin only", () => {
+  expect(isWaitlistedOAuthReturn("https://product.invalid/?waitlist=1&position=7", "https://product.invalid")).toBe(true)
+  expect(isWaitlistedOAuthReturn("https://product.invalid/owner/repo?signed-in=1", "https://product.invalid")).toBe(false)
+  expect(isWaitlistedOAuthReturn("https://github.com/login?waitlist=1", "https://product.invalid")).toBe(false)
+  expect(isWaitlistedOAuthReturn("https://other.invalid/?waitlist=1", "https://product.invalid")).toBe(false)
+})
+
+
+test("an atomic profile lease permits one contender and never removes a replaced ownership record", async () => {
+  const folder = await mkdtemp(join(tmpdir(), "smithers-profile-lease-"))
+  const environment = `SMITHERS_LEASE_TEST_${crypto.randomUUID().replaceAll("-", "_")}`
+  process.env[environment] = folder
+  const lock = `${folder}.smithers-real-e2e.lock`
+  try {
+    const results = await Promise.allSettled([acquireAuthenticatedProfile(environment), acquireAuthenticatedProfile(environment)])
+    expect(results.filter(result => result.status === "fulfilled")).toHaveLength(1)
+    expect(results.filter(result => result.status === "rejected")).toHaveLength(1)
+    const winner = results.find(result => result.status === "fulfilled")!
+    if (winner.status !== "fulfilled") throw new Error("profile lease had no winner")
+    expect((await stat(lock)).isFile()).toBe(true)
+    await winner.value.lease.release()
+    await expect(stat(lock)).rejects.toThrow()
+    const acquired = await acquireAuthenticatedProfile(environment)
+    const replacement = JSON.stringify({ pid: process.pid, nonce: "replacement-owned-by-another-contender" })
+    await writeFile(lock, replacement)
+    await expect(acquired.lease.release()).rejects.toThrow("ownership changed")
+    expect(await readFile(lock, "utf8")).toBe(replacement)
+    await writeFile(lock, "unreadable ownership")
+    await expect(acquireAuthenticatedProfile(environment)).rejects.toThrow("stale or unreadable lock")
+    expect(await readFile(lock, "utf8")).toBe("unreadable ownership")
+  } finally {
+    delete process.env[environment]
+    await rm(lock, { force: true })
+    await rm(folder, { recursive: true, force: true })
+  }
 })
