@@ -6,17 +6,17 @@ The chat timeline interleaves cloud agent and run transcript rows with messages 
 
 The Filter button opens a keyboard menu with Show all, Chat, each lane, Messages, Cards, Subagent rows, and Search. Arrow keys move between menu items, Enter or Space activates one, and Escape closes it. The same actions are available as `/chat.filter`, `/chat.filter.toggle <target>`, `/chat.filter.grep [text]`, and `/chat.filter.reset`, including through the agent door. `session.chatFilter` and `session.chatFilterMenuOpen` persist; every change is an actor-stamped transition.
 
-The same React application runs against two explicit hosts: Smithers Cloud and a
-local Bun origin. Electrobun is an optional native shell around the local
-origin; it is not a separate application or state model.
+The same React application uses the shared Go backend in hosted and owned
+installations. Electrobun adds a native shell and local renderer relay; it is
+not a separate application or state model.
 
 ## Composition roots
 
 | Host | Server | Native privileges | Typical capabilities |
 | --- | --- | --- | --- |
-| Smithers Cloud | `apps/server` Cloudflare Worker | none | agent, identity, Smithers Cloud, checkout when configured |
+| Smithers Cloud edge | `apps/server` proxies the shared Go backend | none | the backend's configured capabilities |
 | Web, hosted or self-hosted | `packages/backend` Go (`host: "cloud"`, `authFlow` `redirect` or `credentials`) | none | identity, cloud, `cloud.terminal`, GitHub when configured |
-| Local browser/headless | `apps/app/src/bun/serve.ts` | none | agent/identity/cloud only in hybrid mode |
+| Local browser/headless | `apps/app/src/bun/serve.ts` starts or selects the shared Go backend | none | the backend's configured capabilities |
 | Desktop shell | `apps/app/src/bun/NativeApp.ts` + Electrobun over the Go backend or Plue | system-browser handoff | the backend's rows plus `native.shell`, the one row native-shell UI reads (never `host`) |
 
 The desktop app offers exactly the web app's feature set. The local backend —
@@ -38,30 +38,20 @@ exist.
 
 ## Local modes
 
-`SMITHERS_LOCAL_MODE=offline` is the headless default and performs no Smithers
-Cloud requests. `hybrid` enables the Smithers Cloud and identity upstreams:
-chat turns go to the shared backend's `POST /api/agent/turn` on
-`SMITHERS_CLOUD_API` as the signed-in Cloud user (`src/bun/CloudAgent.ts`),
-and signed out a turn is refused with `cloud_sign_in_required`.
-`SMITHERS_CHAT_STUB=1` selects the deterministic in-process agent
-(`e2e/support/ChatStub.ts`) in the two hosts that read it — the browser test
-host and the packaged app. `startLocalServer` itself never reads it: an agent
-is injected through its `agent` option or the host has the Smithers Cloud one.
+`SMITHERS_BACKEND_MODE=own` starts the packaged shared backend with local
+PostgreSQL. `plue` selects the configured backend origin. Both modes use the
+same authenticated chat admission and journal protocol. Browser test fixtures
+may inject a deterministic producer, but their recorded chat still uses the
+shared backend; `SMITHERS_CHAT_STUB` never selects a different native host.
 
-The native launcher starts the local origin in its own process, then opens the
-window at it. There is no detached session owner: quitting the app stops the
-server with it, because nothing long-running lives on this machine any more.
-Long-running work lives in a plue workspace, which survives on its own.
+The native launcher owns the local renderer relay and, in owned mode, the
+backend and PostgreSQL supervisor. Quitting waits for their shutdown. Durable
+chat state belongs to PostgreSQL and is available when the backend restarts.
+In Plue mode, closing the shell does not stop the remote backend.
 
-The native launcher defaults to hybrid unless explicitly set to offline. The
-packaged app serves its built SPA from `127.0.0.1` on a port chosen at first
-launch and saved as `local-origin-port` in its application-support directory.
-Later launches reuse that port because OPFS and localStorage belong to the
-complete browser origin. If the saved port is occupied, startup fails rather
-than moving the user's conversation to an empty origin. `SMITHERS_LOCAL_PORT`
-is an explicit development/test override and does not replace the saved port. The
-headless server prints `SMITHERS_LOCAL_ORIGIN=http://127.0.0.1:<port>` when it
-is ready.
+The packaged app serves its built SPA on loopback and relays API requests to
+the selected backend. The headless entrypoint prints
+`SMITHERS_LOCAL_ORIGIN=<backend-origin>` after selecting its backend.
 
 ## Owned backend environment
 
@@ -85,14 +75,15 @@ with names only. An owned target always authenticates by session and ignores
 
 ## Local-origin security
 
-Each launch creates a fresh 256-bit token. The token is placed in the
-served document's `smithers-local-session` meta tag. The client sends it in
-the `x-smithers-local-session` header and in the cloud tunnel's WebSocket
-subprotocol.
+The native renderer relay binds loopback, checks `Host` and `Origin`, and
+keeps backend cookies in a process-owned jar scoped to the selected backend.
+Switching backends closes old tunnels and streams. The shared backend owns
+session, credential and mutation authorization.
 
-The server rejects missing/invalid tokens, cross-origin API requests,
-unexpected `Host`/`Origin` values, non-JSON mutation bodies, oversized HTTP
-bodies and WebSocket frames. It binds loopback only.
+The browser fixture host separately uses a fresh 256-bit local capability in
+the document's `smithers-local-session` meta tag, the corresponding request
+header and WebSocket subprotocol. Its recorded-chat adapter forwards an
+explicitly supplied backend credential, never this local capability.
 
 The native RPC surface has exactly one privileged operation:
 
@@ -101,9 +92,10 @@ The native RPC surface has exactly one privileged operation:
 
 It has no HTTP fallback in the packaged app.
 
-The chat turn journal's SQLite file is owned by one process at a time
-(`TurnJournalLease.ts`): a pid file beside the database, taken over when its
-owner is dead, so a crash never leaves the journal locked.
+Recorded chat admission, replay, cancellation and erasure belong to the shared
+Go backend and PostgreSQL in both owned and hosted modes. The native renderer
+relays authenticated requests; it creates no separate chat journal. Per-device
+presentation and draft collections continue to use SQLite.
 
 The identity proxy re-scopes the seam's session cookie to the local origin
 before the WebView sees it: `Domain` goes because the cookie belongs to this
