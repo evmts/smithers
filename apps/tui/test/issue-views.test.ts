@@ -1,12 +1,14 @@
 import * as CloudSession from "@smthrs/cli/CloudSession"
 import { afterEach, describe, expect, it } from "bun:test"
-import { mkdtempSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync } from "node:fs"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as IssueViews from "../src/issue-views.ts"
+import * as Log from "../src/log.ts"
 import * as Panels from "../src/panels.ts"
+import { TabError } from "../src/tab-error.ts"
 
 const views = [
   { id: "bugs", title: "Open bugs", state: "open", labels: ["bug", "p1"] },
@@ -128,7 +130,10 @@ describe("issue views controller", () => {
     const failed = IssueViews.panel(control.state())
     valid(failed)
     expect(failed.rows[0]!.status).toBe("failed")
-    expect(failed.rows.at(-1)).toMatchObject({ status: "failed", label: "HTTP 404: issue view \"bugs\" not found" })
+    expect(failed.rows.at(-1)).toMatchObject({
+      status: "failed",
+      label: "Issues could not be read. Details: /conversation"
+    })
     fail = false
     await control.select("bugs")
     expect(IssueViews.panel(control.state()).summary).toBe("Open bugs · 1")
@@ -181,7 +186,12 @@ describe("issue views controller", () => {
     await broken.refresh()
     const panel = IssueViews.panel(broken.state())
     valid(panel)
-    expect(panel.rows).toEqual([{ id: "issue-views:failed", label: "Read failed", status: "failed", details: [] }])
+    expect(panel.rows).toEqual([{
+      id: "issue-views:failed",
+      label: "Issue views could not be read. Details: /conversation",
+      status: "failed",
+      details: []
+    }])
     const none = IssueViews.controller(async () => {
       throw new Error("unused")
     }, undefined)
@@ -297,4 +307,196 @@ it("reads views and a view's issues from Cloud as the signed-in person", async (
     "/api/repos/o/r/issues?view=everything&limit=100"
   ])
   expect(received.every((each) => each.auth === "token tok_views")).toBe(true)
+})
+
+// Getter faults exercise values a real HTTP parser cannot produce; the real
+// CloudSession HTTP cases below independently cover transport and recovery.
+for (const boundary of ["refresh", "select"] as const) {
+  for (const kind of ["error", "string", "tagged"] as const) {
+    it(`keeps ${boundary} ${kind} diagnostics out of the panel and recovers`, async () => {
+      const marker = `issue-view-${kind}-${crypto.randomUUID()}`
+      const fault = kind === "error"
+        ? new Error(marker)
+        : kind === "string"
+        ? marker
+        : new TabError("unknown_tab", marker, "missing-view")
+      let fail = true
+      const cloud: IssueViews.Cloud = {
+        get: async (path) => {
+          if (path.endsWith("/issue-views")) {
+            if (boundary === "refresh" && fail) throw fault
+            return views
+          }
+          if (fail) throw fault
+          return [issue(9)]
+        }
+      }
+      const control = IssueViews.controller(async () => cloud, "o/r")
+      if (boundary === "select") await control.refresh()
+      const offset = existsSync(Log.path()) ? readFileSync(Log.path(), "utf8").length : 0
+      if (boundary === "refresh") await control.refresh()
+      else await control.select("bugs")
+      const panel = IssueViews.panel(control.state())
+      valid(panel)
+      expect(panel.rows.at(-1)?.label).toBe(
+        kind === "tagged"
+          ? "No tab missing-view."
+          : `${boundary === "refresh" ? "Issue views" : "Issues"} could not be read. Details: /conversation`
+      )
+      expect(JSON.stringify(panel)).not.toContain(marker)
+      if (kind !== "tagged") {
+        const appended = readFileSync(Log.path(), "utf8").slice(offset)
+        expect(appended).toContain(marker)
+        expect(appended).toContain(`failure.${boundary === "refresh" ? "issue-views" : "issues"}`)
+      }
+      fail = false
+      await control.refresh()
+      await control.select("bugs")
+      expect(IssueViews.panel(control.state()).summary).toBe("Open bugs · 1")
+    })
+  }
+}
+
+for (const boundary of ["refresh", "select"] as const) {
+  it(`does not revoke a ${boundary} session for a nested authentication diagnostic`, async () => {
+    const fault = new Error("Cloud: HTTP 503 upstream unavailable", { cause: new Error("prior probe: HTTP 401") })
+    const cloud: IssueViews.Cloud = {
+      get: async (path) => {
+        if (boundary === "select" && path.endsWith("/issue-views")) return views
+        throw fault
+      }
+    }
+    const control = IssueViews.controller(async () => cloud, "o/r")
+    await control.refresh()
+    if (boundary === "select") await control.select("bugs")
+    expect(control.state().phase).toBe(boundary === "refresh" ? "failed" : "ready")
+    expect(IssueViews.panel(control.state()).rows.at(-1)?.label).toContain("could not be read")
+  })
+}
+
+for (const status of [401, 403, 503]) {
+  for (const boundary of ["refresh", "select"] as const) {
+    it(`recovers a real Cloud ${boundary} HTTP ${status} refusal without showing diagnostics`, async () => {
+      let fail = true
+      const received: Array<{ path: string; auth: string | undefined }> = []
+      const server = createServer((request, response) => {
+        const path = request.url ?? ""
+        received.push({ path, auth: request.headers.authorization })
+        const listing = path.endsWith("/issue-views")
+        const failing = fail && (boundary === "refresh" ? listing : !listing)
+        response.writeHead(failing ? status : 200, { "content-type": "application/json" })
+        response.end(JSON.stringify(failing ? { error: "diagnostic unavailable" } : listing ? views : [issue(5)]))
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      servers.push(() => server.close())
+      const home = mkdtempSync(join(tmpdir(), "tui-views-failure-"))
+      const control = IssueViews.controller(() =>
+        CloudSession.signedIn({
+          HOME: home,
+          XDG_CONFIG_HOME: home,
+          SMITHERS_API_ORIGIN: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+          SMITHERS_TOKEN: "tok_views"
+        }), "o/r")
+      const offset = existsSync(Log.path()) ? readFileSync(Log.path(), "utf8").length : 0
+      await control.refresh()
+      if (boundary === "select") await control.select("bugs")
+      const panel = IssueViews.panel(control.state())
+      valid(panel)
+      if (status === 401 || status === 403) {
+        expect(control.state().phase).toBe("signed-out")
+        expect(panel.summary).toBe("Sign in: smthrs auth login")
+        expect(panel.rows).toEqual([])
+      } else {
+        expect(panel.rows.at(-1)?.label).toBe(
+          `${boundary === "refresh" ? "Issue views" : "Issues"} could not be read. Details: /conversation`
+        )
+        const appended = readFileSync(Log.path(), "utf8").slice(offset)
+        expect(appended).toContain("HTTP 503")
+        expect(appended).toContain(boundary === "refresh" ? "/api/repos/o/r/issue-views" : "view=bugs&limit=100")
+      }
+      expect(JSON.stringify(panel)).not.toContain("HTTP")
+      expect(received.every((request) => request.auth === "token tok_views")).toBe(true)
+      fail = false
+      await control.refresh()
+      await control.select("bugs")
+      expect(IssueViews.panel(control.state()).summary).toBe("Open bugs · 1")
+      expect(received.at(-1)?.path).toBe("/api/repos/o/r/issues?view=bugs&limit=100")
+    })
+  }
+}
+
+it("ignores an older authentication failure after a newer view is already displayed", async () => {
+  const older = deferred<unknown>()
+  let started!: () => void
+  const pending = new Promise<void>((resolve) => {
+    started = resolve
+  })
+  const marker = `stale-issue-read-${crypto.randomUUID()}`
+  const cloud: IssueViews.Cloud = {
+    get: async (path) => {
+      if (path.endsWith("/issue-views")) return views
+      if (path.includes("view=bugs")) {
+        started()
+        return older.promise
+      }
+      return [issue(3, "closed")]
+    }
+  }
+  const control = IssueViews.controller(async () => cloud, "o/r")
+  await control.refresh()
+  const stale = control.select("bugs")
+  await pending
+  await control.select("everything")
+  const before = IssueViews.panel(control.state())
+  const offset = existsSync(Log.path()) ? readFileSync(Log.path(), "utf8").length : 0
+  older.reject(new Error(`HTTP 401 ${marker}`))
+  await stale
+  expect(IssueViews.panel(control.state())).toEqual(before)
+  expect(before.summary).toBe("Everything · 1")
+  expect(control.state().phase).toBe("ready")
+  const appended = existsSync(Log.path()) ? readFileSync(Log.path(), "utf8").slice(offset) : ""
+  expect(appended).not.toContain(marker)
+})
+
+it("cancels a held real Cloud selection while preserving the already displayed view", async () => {
+  let started!: () => void
+  const requested = new Promise<void>((resolve) => {
+    started = resolve
+  })
+  const received: Array<string> = []
+  const server = createServer((request, response) => {
+    const path = request.url ?? ""
+    received.push(path)
+    if (path.includes("view=bugs")) {
+      started()
+      return
+    }
+    response.writeHead(200, { "content-type": "application/json" })
+    response.end(JSON.stringify(path.endsWith("/issue-views") ? views : [issue(3)]))
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  servers.push(() => {
+    server.closeAllConnections()
+    server.close()
+  })
+  const home = mkdtempSync(join(tmpdir(), "tui-views-abort-"))
+  const control = IssueViews.controller(() =>
+    CloudSession.signedIn({
+      HOME: home,
+      XDG_CONFIG_HOME: home,
+      SMITHERS_API_ORIGIN: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+      SMITHERS_TOKEN: "tok_views"
+    }), "o/r")
+  await control.refresh()
+  await control.select("everything")
+  const before = IssueViews.panel(control.state())
+  const abort = new AbortController()
+  const running = control.select("bugs", abort.signal)
+  await requested
+  expect(IssueViews.panel(control.state()).rows[0]?.status).toBe("requested")
+  abort.abort()
+  await running
+  expect(IssueViews.panel(control.state())).toEqual(before)
+  expect(before.summary).toBe("Everything · 1")
+  expect(received).toContain("/api/repos/o/r/issues?view=bugs&limit=100")
 })

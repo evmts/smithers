@@ -8,6 +8,8 @@
  * view rows select with Enter once the host routes `viewOf(row.id)` to
  * `select`.
  */
+import { failureDetail } from "@smthrs/rpc/UserFailure"
+import * as Failures from "./failures.ts"
 import type * as Panels from "./panels.ts"
 
 /** Where a repository lives on Cloud: `owner/name`. */
@@ -112,10 +114,8 @@ export interface Cloud {
   readonly get: (path: string, signal?: AbortSignal) => Promise<unknown>
 }
 
-const detail = (error: unknown): string => error instanceof Error ? error.message : String(error)
-
 /** A 401 or 403: the session is gone or may not read the repository. */
-const refused = (error: unknown): boolean => /HTTP 40[13]\b/.test(String(error))
+const refused = (error: unknown): boolean => /HTTP 40[13]\b/.test(failureDetail(error).split("\n", 1)[0] ?? "")
 
 /** The row id of a view; `viewOf` reads it back. */
 export const rowId = (view: string): string => `issue-view:${view}`
@@ -186,7 +186,7 @@ export const controller = (
     } catch (error) {
       if (!current()) return state
       if (refused(error)) return signOut()
-      return set({ phase: "failed", detail: detail(error) })
+      return set({ phase: "failed", detail: Failures.line("issue-views", error) })
     }
   }
   const select = (id: string, signal?: AbortSignal): Promise<State> => {
@@ -212,7 +212,7 @@ export const controller = (
       } catch (error) {
         if (!current()) return state
         if (refused(error)) return signOut()
-        selection = { id, phase: "failed", detail: detail(error) }
+        selection = { id, phase: "failed", detail: Failures.line("issues", error) }
       }
       if (!current() || state.phase !== "ready") return state
       // A cancelled read leaves what was shown before it.
