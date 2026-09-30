@@ -1,11 +1,59 @@
 import type { StorageApi } from "@tanstack/db"
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 
 import type { AgentPort } from "../../runtime/AgentPort"
-import { createAppController } from "../AppController"
+import { scopedControllers } from "../ControllerTestScope"
 import type { AppServices } from "../AppController"
 import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
+
+const stores = new Set<AppStore>()
+const releases = new Set<() => void>()
+const tasks = new Set<Promise<unknown>>()
+const unexpectedHttp: string[] = []
+const bounded = async <T>(promise: Promise<T>): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([promise, new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error("Notification fixture did not settle")), 2_000)
+    })])
+  } finally { clearTimeout(timer) }
+}
+const track = <T>(promise: Promise<T>): Promise<T> => { tasks.add(promise); return promise }
+const heldResponse = () => {
+  const reply = Promise.withResolvers<Response>()
+  releases.add(() => reply.resolve(new Response(null, { status: 205 })))
+  return reply
+}
+const heldBody = () => {
+  const body = Promise.withResolvers<string>()
+  releases.add(() => body.resolve("Released fixture body"))
+  return body
+}
+// Release before controller fencing; drain before closing the real stores.
+afterEach(() => { for (const release of releases) release(); releases.clear() })
+const createAppController = scopedControllers()
+const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
+afterEach(async () => {
+  const errors: unknown[] = []
+  try {
+    const outcomes = await bounded(Promise.allSettled([...tasks]))
+    for (const outcome of outcomes) if (outcome.status === "rejected") errors.push(outcome.reason)
+  } catch (error) { errors.push(error) }
+  finally {
+    tasks.clear()
+    for (const store of stores) {
+      try {
+        if (typeof store.dispose !== "function") throw new Error("The fixture store has no disposal authority")
+        await store.dispose()
+      } catch (error) { errors.push(error) }
+    }
+    stores.clear()
+  }
+  const unexpected = unexpectedHttp.splice(0)
+  if (unexpected.length) errors.push(new Error(`Unplanned notification HTTP: ${unexpected.join(", ")}`))
+  if (errors.length) throw new AggregateError(errors, "Notification fixture cleanup failed")
+})
 
 /*
  * The notifications seam, driven through the command registry: /notifications.list
@@ -31,18 +79,15 @@ const unavailableAgent: AgentPort = {
   subscribe: () => () => {}
 }
 
-
 const json = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
-
-const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 interface RecordedRequest {
   readonly path: string
   readonly method: string
 }
 
-/** Routes by pathname; everything unstubbed answers 404 (the dead-backend stance). */
+/** Routes by pathname; unplanned HTTP is recorded and refused, including during cleanup. */
 const backend = (
   routes: Record<string, Response | ((request: Request) => Response | Promise<Response>)>,
   recorded: RecordedRequest[] = []
@@ -59,12 +104,14 @@ const backend = (
           : answer.clone()
       }
     }
-    return json(404, { status: "error", message: `no stub for ${path}` })
+    unexpectedHttp.push(path)
+    throw new Error(`No notification HTTP fixture for ${path}`)
   }
 })
 
 const freshController = async (services: AppServices) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  stores.add(store)
   return {
     store,
     controller: createAppController(store, unavailableAgent, services)
@@ -72,7 +119,7 @@ const freshController = async (services: AppServices) => {
 }
 
 const signedIn = async (store: AppStore): Promise<void> => {
-  store.dispatch({
+  await store.dispatch({
     type: "identity.session.loaded",
     actor: "system",
     state: "signed-in",
@@ -80,8 +127,7 @@ const signedIn = async (store: AppStore): Promise<void> => {
     allowlisted: true,
     admin: false,
     scopesPlain: null
-  })
-  await settled()
+  }).isPersisted.promise
 }
 
 /*
@@ -131,7 +177,6 @@ describe("notifications.list", () => {
 
     const outcome = await controller.commands.run("notifications.list")
     expect(outcome.status).toBe("executed")
-    await settled()
 
     const card = notificationsCard(store)
     expect(card).toBeDefined()
@@ -199,7 +244,6 @@ describe("notifications.list", () => {
 
     const outcome = await controller.commands.run("notifications.list")
     expect(outcome.status).toBe("executed")
-    await settled()
 
     const card = notificationsCard(store)
     expect(card?.payload.items).toEqual([
@@ -225,7 +269,6 @@ describe("notifications.list", () => {
     const outcome = await controller.commands.run("notifications.list")
     expect(outcome.status).toBe("failed")
     if (outcome.status === "failed") expect(outcome.error).toContain("2 rows")
-    await settled()
     expect(store.collections.cards.get("notifications")).toMatchObject({ status: "error", loading: false })
   })
 
@@ -235,7 +278,6 @@ describe("notifications.list", () => {
     )
     await signedIn(store)
     expect((await controller.commands.run("notifications.list")).status).toBe("executed")
-    await settled()
     expect(notificationsCard(store)?.payload.items).toEqual([])
   })
 
@@ -292,13 +334,11 @@ describe("notifications.read", () => {
     await signedIn(store)
 
     await controller.commands.run("notifications.list")
-    await settled()
     expect(notificationsCard(store)?.payload.unread).toBe(2)
     const ordinalBefore = notificationsCard(store)?.ordinal ?? -1
 
     const outcome = await controller.commands.run("notifications.read")
     expect(outcome.status).toBe("executed")
-    await settled()
 
     const card = notificationsCard(store)
     expect(card?.payload.unread).toBe(0)
@@ -330,7 +370,6 @@ describe("notifications.read", () => {
     await signedIn(store)
 
     await controller.commands.run("notifications.list")
-    await settled()
 
     const outcome = await controller.commands.run("notifications.read")
     expect(outcome.status).toBe("failed")
@@ -365,24 +404,22 @@ describe("notifications.read", () => {
 })
 
 test("a retired mark-read command cannot open the new account's inbox", async () => {
-  const entered = Promise.withResolvers<void>(), reply = Promise.withResolvers<Response>()
+  const entered = Promise.withResolvers<void>(), reply = heldResponse()
   const recorded: RecordedRequest[] = []
   const { store, controller } = await freshController(backend({
     "/api/notifications/mark-read": () => { entered.resolve(); return reply.promise },
     "/api/notifications/list": json(200, wireInbox)
   }, recorded))
-  try {
-    await signedIn(store)
-    const pending = controller.markNotificationsRead()
-    await entered.promise
-    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "second", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
-    const before = await store.eventHistory()
-    reply.resolve(new Response(null, { status: 205 }))
-    await pending
-    expect(recorded.filter(row => row.path.startsWith("/api/notifications/list"))).toHaveLength(0)
-    expect(store.collections.cards.has("notifications")).toBe(false)
-    expect((await store.eventHistory()).head).toEqual(before.head)
-  } finally { reply.resolve(new Response(null, { status: 205 })); await controller.dispose(); await store.dispose?.() }
+  await signedIn(store)
+  const pending = track(controller.markNotificationsRead())
+  await bounded(entered.promise)
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "second", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+  const before = await store.eventHistory()
+  reply.resolve(new Response(null, { status: 205 }))
+  await pending
+  expect(recorded.filter(row => row.path.startsWith("/api/notifications/list"))).toHaveLength(0)
+  expect(store.collections.cards.has("notifications")).toBe(false)
+  expect((await store.eventHistory()).head).toEqual(before.head)
 })
 
 for (const actor of ["user", "smithers"] as const) {
@@ -390,58 +427,56 @@ for (const actor of ["user", "smithers"] as const) {
     test.each(["account", "provider", "sign-out-return", "cloud", "dispose", "refresh"] as const)(`${actor} mark-read ${outcome} retains its owner through %s`, async change => {
       const { createNotificationsSeam } = await import("./NotificationsSeam")
       const { SIGN_OUT_REFUSAL } = await import("./CloudSignIn")
-      const { store, controller } = await freshController(backend({}))
-      const entered = Promise.withResolvers<void>(), reply = Promise.withResolvers<Response>()
+      const { store } = await freshController(backend({}))
+      const entered = Promise.withResolvers<void>(), reply = heldResponse()
       let writes = 0, reads = 0, disposed = false
       const loaded = (login: string | null, provider: "github" | "local" = "github") => store.dispatch({ type: "identity.session.loaded", actor: "system",
         state: login === null ? "signed-out" : "signed-in", login, provider, allowlisted: login !== null, admin: false, scopesPlain: null }).isPersisted.promise
-      try {
+      await loaded("will")
+      await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "will", expiresAt: null, scopes: null }).isPersisted.promise
+      const seam = createNotificationsSeam({ store, baseUrl: "", actor: () => actor, dispatch: store.dispatch, nextOrdinal: store.nextOrdinal,
+        isDisposed: () => disposed, http: async (_input, init) => {
+          if (init?.method === "PUT") { writes++; entered.resolve(); return reply.promise }
+          reads++; return json(200, wireInbox)
+        }
+      })
+      const pending = track(seam.markNotificationsRead())
+      await bounded(entered.promise)
+      if (change === "account") await loaded("second")
+      if (change === "provider") await loaded("will", "local")
+      if (change === "sign-out-return") { await loaded(null); await loaded("will") }
+      if (change === "cloud") await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "second", expiresAt: null, scopes: null }).isPersisted.promise
+      if (change === "dispose") disposed = true
+      if (change === "refresh") {
         await loaded("will")
-        await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "will", expiresAt: null, scopes: null }).isPersisted.promise
-        const seam = createNotificationsSeam({ store, baseUrl: "", actor: () => actor, dispatch: store.dispatch, nextOrdinal: store.nextOrdinal,
-          isDisposed: () => disposed, http: async (_input, init) => {
-            if (init?.method === "PUT") { writes++; entered.resolve(); return reply.promise }
-            reads++; return json(200, wireInbox)
-          }
-        })
-        const pending = seam.markNotificationsRead()
-        await entered.promise
-        if (change === "account") await loaded("second")
-        if (change === "provider") await loaded("will", "local")
-        if (change === "sign-out-return") { await loaded(null); await loaded("will") }
-        if (change === "cloud") await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "second", expiresAt: null, scopes: null }).isPersisted.promise
-        if (change === "dispose") disposed = true
-        if (change === "refresh") {
-          await loaded("will")
-          await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "will", expiresAt: "2099-01-01T00:00:00Z", scopes: null }).isPersisted.promise
-        }
-        const before = await store.eventHistory()
-        if (outcome === "throw") reply.reject(new TypeError("fetch failed"))
-        else reply.resolve(outcome === "success" ? new Response(null, { status: 205 }) : json(403, { error: "Private account refusal" }))
-        const result = await pending
-        expect(writes).toBe(1)
-        if (change === "refresh") {
-          if (outcome === "success") {
-            expect(reads).toBe(1)
-            expect(notificationsCard(store)?.payload.items).toHaveLength(3)
-          } else {
-            expect(reads).toBe(0)
-            expect(result).toBe(outcome === "failure" ? "Private account refusal" : "Your notifications couldn't be marked read — the platform didn't answer.")
-          }
+        await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "will", expiresAt: "2099-01-01T00:00:00Z", scopes: null }).isPersisted.promise
+      }
+      const before = await store.eventHistory()
+      if (outcome === "throw") reply.reject(new TypeError("fetch failed"))
+      else reply.resolve(outcome === "success" ? new Response(null, { status: 205 }) : json(403, { error: "Private account refusal" }))
+      const result = await pending
+      expect(writes).toBe(1)
+      if (change === "refresh") {
+        if (outcome === "success") {
+          expect(reads).toBe(1)
+          expect(notificationsCard(store)?.payload.items).toHaveLength(3)
         } else {
-          expect(result).toBe(SIGN_OUT_REFUSAL)
           expect(reads).toBe(0)
-          expect((await store.eventHistory()).head).toEqual(before.head)
-          if (change === "dispose") {
-            expect(await seam.markNotificationsRead()).toBe(SIGN_OUT_REFUSAL)
-            expect(writes).toBe(1)
-          } else {
-            await seam.listNotifications()
-            expect(reads).toBe(1)
-            expect(notificationsCard(store)?.payload.items).toHaveLength(3)
-          }
+          expect(result).toBe(outcome === "failure" ? "Private account refusal" : "Your notifications couldn't be marked read — the platform didn't answer.")
         }
-      } finally { reply.resolve(new Response(null, { status: 205 })); await controller.dispose(); await store.dispose?.() }
+      } else {
+        expect(result).toBe(SIGN_OUT_REFUSAL)
+        expect(reads).toBe(0)
+        expect((await store.eventHistory()).head).toEqual(before.head)
+        if (change === "dispose") {
+          expect(await seam.markNotificationsRead()).toBe(SIGN_OUT_REFUSAL)
+          expect(writes).toBe(1)
+        } else {
+          await seam.listNotifications()
+          expect(reads).toBe(1)
+          expect(notificationsCard(store)?.payload.items).toHaveLength(3)
+        }
+      }
     })
   }
 }
@@ -449,20 +484,18 @@ for (const actor of ["user", "smithers"] as const) {
 test("an account change while reading a mark-read refusal hides that account's message", async () => {
   const { createNotificationsSeam } = await import("./NotificationsSeam")
   const { SIGN_OUT_REFUSAL } = await import("./CloudSignIn")
-  const { store, controller } = await freshController(backend({}))
-  const entered = Promise.withResolvers<void>(), body = Promise.withResolvers<string>()
+  const { store } = await freshController(backend({}))
+  const entered = Promise.withResolvers<void>(), body = heldBody()
   const response = new Response(null, { status: 403 })
   response.json = async () => { entered.resolve(); return { error: await body.promise } }
   const seam = createNotificationsSeam({ store, baseUrl: "", actor: () => "user", dispatch: store.dispatch, nextOrdinal: store.nextOrdinal, http: async () => response })
-  try {
-    await signedIn(store)
-    const pending = seam.markNotificationsRead()
-    await entered.promise
-    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "second", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
-    body.resolve("Private account refusal")
-    expect(await pending).toBe(SIGN_OUT_REFUSAL)
-    expect(store.collections.cards.has("notifications")).toBe(false)
-  } finally { body.resolve("Private account refusal"); await controller.dispose(); await store.dispose?.() }
+  await signedIn(store)
+  const pending = track(seam.markNotificationsRead())
+  await bounded(entered.promise)
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "second", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+  body.resolve("Private account refusal")
+  expect(await pending).toBe(SIGN_OUT_REFUSAL)
+  expect(store.collections.cards.has("notifications")).toBe(false)
 })
 
 describe("malformed notification lists", () => {
@@ -479,17 +512,15 @@ describe("malformed notification lists", () => {
     for (const [label, answer] of malformed) {
       test(`${actor} receives a failure for ${label}, never an empty inbox`, async () => {
         const { store, controller } = await freshController(backend({ "/api/notifications/list": answer }))
-        try {
-          await signedIn(store)
-          const outcome = await (actor === "user" ? controller.commands.run("notifications.list") : controller.commands.runForAgent("notifications.list"))
-          expect(outcome.status).toBe("failed")
-          if (outcome.status === "failed") expect(outcome.error).toBe("Your notifications couldn't be loaded right now.")
-          const card = store.collections.cards.get("notifications")
-          expect(card?.status).toBe("error")
-          expect(card?.loading).toBe(false)
-          expect(card?.body).toBe("Your notifications couldn't be loaded right now.")
-          expect(notificationsCard(store)).toBeUndefined()
-        } finally { await controller.dispose(); await store.dispose?.() }
+        await signedIn(store)
+        const outcome = await (actor === "user" ? controller.commands.run("notifications.list") : controller.commands.runForAgent("notifications.list"))
+        expect(outcome.status).toBe("failed")
+        if (outcome.status === "failed") expect(outcome.error).toBe("Your notifications couldn't be loaded right now.")
+        const card = store.collections.cards.get("notifications")
+        expect(card?.status).toBe("error")
+        expect(card?.loading).toBe(false)
+        expect(card?.body).toBe("Your notifications couldn't be loaded right now.")
+        expect(notificationsCard(store)).toBeUndefined()
       })
     }
   }
@@ -498,17 +529,15 @@ describe("malformed notification lists", () => {
     test(`a valid retry after malformed JSON restores ${rows.length === 0 ? "an empty" : "a populated"} inbox`, async () => {
       let valid = false
       const { store, controller } = await freshController(backend({ "/api/notifications/list": () => valid ? json(200, rows) : json(200, {}) }))
-      try {
-        await signedIn(store)
-        expect((await controller.commands.run("notifications.list")).status).toBe("failed")
-        valid = true
-        expect((await controller.commands.run("notifications.list")).status).toBe("executed")
-        const card = notificationsCard(store)
-        expect(card?.status).toBe("active")
-        expect(card?.body == null).toBe(true)
-        expect(card?.payload.items).toHaveLength(rows.length === 0 ? 0 : 3)
-        expect(card?.payload.unread).toBe(rows.length === 0 ? 0 : 2)
-      } finally { await controller.dispose(); await store.dispose?.() }
+      await signedIn(store)
+      expect((await controller.commands.run("notifications.list")).status).toBe("failed")
+      valid = true
+      expect((await controller.commands.run("notifications.list")).status).toBe("executed")
+      const card = notificationsCard(store)
+      expect(card?.status).toBe("active")
+      expect(card?.body == null).toBe(true)
+      expect(card?.payload.items).toHaveLength(rows.length === 0 ? 0 : 3)
+      expect(card?.payload.unread).toBe(rows.length === 0 ? 0 : 2)
     })
   }
 
@@ -518,14 +547,72 @@ describe("malformed notification lists", () => {
       "/api/notifications/list": () => json(200, marked ? {} : wireInbox),
       "/api/notifications/mark-read": () => { marked = true; return new Response(null, { status: 205 }) }
     }))
-    try {
-      await signedIn(store)
-      await controller.commands.run("notifications.list")
-      expect((await controller.commands.run("notifications.read")).status).toBe("failed")
-      const card = notificationsCard(store)
-      expect(card?.status).toBe("error")
-      expect(card?.payload.items).toHaveLength(3)
-      expect(card?.payload.unread).toBe(2)
-    } finally { await controller.dispose(); await store.dispose?.() }
+    await signedIn(store)
+    await controller.commands.run("notifications.list")
+    expect((await controller.commands.run("notifications.read")).status).toBe("failed")
+    const card = notificationsCard(store)
+    expect(card?.status).toBe("error")
+    expect(card?.payload.items).toHaveLength(3)
+    expect(card?.payload.unread).toBe(2)
   })
+})
+
+test("one unreadable row is an exact failure rather than a successful empty inbox", async () => {
+  const recorded: RecordedRequest[] = []
+  const { store, controller } = await freshController(backend({ "/api/notifications/list": json(200, [{ id: "missing-subject" }]) }, recorded))
+  await signedIn(store)
+  expect(await controller.commands.run("notifications.list")).toEqual({ status: "failed", error: "Your notifications came back in a shape Smithers couldn't read (1 row)." })
+  expect(store.collections.cards.get("notifications")?.body).toBe("Your notifications came back in a shape Smithers couldn't read (1 row).")
+  expect(notificationsCard(store)).toBeUndefined()
+  expect(recorded).toEqual([{ path: "/api/notifications/list?limit=20&all=true", method: "GET" }])
+})
+
+for (const status of [200, 205]) {
+  test.each(["http", "network"])(`mark-read ${status} waits for its actual refresh and reports %s failure`, async failure => {
+    let reads = 0
+    const recorded: RecordedRequest[] = []
+    const { store, controller } = await freshController(backend({
+      "/api/notifications/list": () => {
+        if (++reads === 1) return json(200, wireInbox)
+        if (failure === "network") throw new TypeError("private transport detail")
+        return json(503, { message: "Inbox refresh unavailable" })
+      },
+      "/api/notifications/mark-read": () => new Response(null, { status })
+    }, recorded))
+    await signedIn(store)
+    await controller.commands.run("notifications.list")
+    const original = structuredClone(notificationsCard(store)?.payload)
+    const message = failure === "http" ? "Inbox refresh unavailable" : "Your notifications couldn't be loaded — the platform didn't answer."
+    expect(await controller.commands.run("notifications.read")).toEqual({ status: "failed", error: message })
+    const card = notificationsCard(store)
+    expect(card?.status).toBe("error")
+    expect(card?.body).toBe(message)
+    expect(card?.payload).toEqual(original)
+    expect(card?.payload.unread).toBe(2)
+    expect(recorded).toEqual([
+      { path: "/api/notifications/list?limit=20&all=true", method: "GET" },
+      { path: "/api/notifications/mark-read", method: "PUT" },
+      { path: "/api/notifications/list?limit=20&all=true", method: "GET" }
+    ])
+  })
+}
+
+const repositoryWireCases = [
+  { label: "string repository takes precedence", wire: { repository: "owner/source", repo: "owner/fallback" }, expected: "owner/source" },
+  { label: "missing repository uses repo", wire: { repo: "owner/fallback" }, expected: "owner/fallback" },
+  { label: "null repository uses repo", wire: { repository: null, repo: "owner/fallback" }, expected: "owner/fallback" },
+  { label: "blank repository uses repo", wire: { repository: "  ", repo: "owner/fallback" }, expected: "owner/fallback" }
+] as const
+for (const row of repositoryWireCases) test(`notification wire ${row.label}`, async () => {
+  const recorded: RecordedRequest[] = []
+  const wire = { id: 7, subject: "An owning repository", status: "unread", ...row.wire }
+  const before = structuredClone(wire)
+  const { store, controller } = await freshController(backend({ "/api/notifications/list": json(200, [wire]) }, recorded))
+  await signedIn(store)
+  expect((await controller.commands.run("notifications.list")).status).toBe("executed")
+  expect(notificationsCard(store)?.payload).toEqual({
+    items: [{ id: "7", title: "An owning repository", repo: row.expected, reason: null, createdAt: null, read: false }], unread: 1
+  })
+  expect(recorded).toEqual([{ method: "GET", path: "/api/notifications/list?limit=20&all=true" }])
+  expect(wire).toEqual(before)
 })

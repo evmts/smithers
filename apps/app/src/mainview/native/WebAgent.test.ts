@@ -1,9 +1,12 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import type { Card } from "@smthrs/rpc/Cards"
 import type { AgentTurnFrame, StartAgentTurnRequest, StartAgentTurnResult } from "@smthrs/rpc/NativeAgent"
-import { createWebAgent } from "./WebAgent"
+import { createWebAgent as makeWebAgent } from "./WebAgent"
 import { refusalOf } from "@smthrs/rpc/Refusal"
 import { refusalLead } from "@smthrs/rpc/RefusalCopy"
+
+const agents = new Set<ReturnType<typeof makeWebAgent>>()
+const createWebAgent: typeof makeWebAgent = options => { const agent = makeWebAgent(options); agents.add(agent); return agent }
 
 const request: StartAgentTurnRequest = {
   runId: "run-1",
@@ -23,12 +26,110 @@ const ndjsonResponse = (lines: ReadonlyArray<unknown>, init?: ResponseInit): Res
     { status: 200, headers: { "content-type": "application/x-ndjson" }, ...init }
   )
 
-const collect = (): { frames: AgentTurnFrame[]; push: (frame: AgentTurnFrame) => void } => {
+const releases = new Set<() => void>()
+const idleStream = (signal?: AbortSignal | null): ReadableStream<Uint8Array> => new ReadableStream({
+  start(controller) {
+    const finish = () => { try { controller.error(new DOMException("Aborted", "AbortError")) } catch {} }
+    releases.add(finish)
+    if (signal?.aborted) finish()
+    else signal?.addEventListener("abort", finish, { once: true })
+  }
+})
+afterEach(async () => {
+  for (const agent of agents) agent.journal?.disconnect(request.runId)
+  for (const release of releases) release()
+  releases.clear()
+  await checkpoint()
+  agents.clear()
+})
+const checkpoint = () => new Promise<void>(resolve => setImmediate(resolve))
+const flush = () => new Promise((resolve) => setTimeout(resolve, 10))
+const collect = () => {
   const frames: AgentTurnFrame[] = []
-  return { frames, push: (frame) => frames.push(frame) }
+  let finish!: () => void
+  const terminal = new Promise<void>(resolve => { finish = resolve })
+  return { frames, terminal, push: (frame: AgentTurnFrame) => { frames.push(frame); if (frame.type === "done") finish() } }
 }
 
-const flush = () => new Promise((resolve) => setTimeout(resolve, 10))
+test("omitted options delegate all default routes to the scoped global fetch", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "fetch")!
+  const calls: Array<{ url: string; method: string | undefined; headers: [string, string][]; body: unknown }> = []
+  const delegated = spyOn(globalThis, "fetch").mockImplementation(Object.assign(async function(this: unknown, input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) {
+    expect(this).toBe(globalThis)
+    calls.push({ url: String(input), method: init?.method, headers: [...new Headers(init?.headers)], body: JSON.parse(String(init?.body)) })
+    if (String(input) === "/api/agent/turn") return ndjsonResponse([{ runId: "run-1", type: "done" }])
+    if (String(input) === "/api/agent/turn/replay") return Response.json({ status: "error", code: "not-found" }, { status: 404 })
+    if (String(input) === "/api/agent/turn/retire") return Response.json({ status: "retired" })
+    return Response.json({})
+  }, { preconnect: () => { throw new Error("Unexpected preconnect.") } }))
+  let agent: ReturnType<typeof createWebAgent> | undefined
+  let remove: (() => void) | undefined
+  const access = { runId: "run-1", journal: { version: 1 as const, legId: "leg-1", token: "a".repeat(64) } }
+  try {
+    agent = createWebAgent()
+    const { frames, push, terminal } = collect()
+    remove = agent.subscribe(push)
+    expect(agent.available).toBe(true)
+    expect(await agent.startTurn(request)).toEqual({ status: "started" })
+    await terminal
+    await agent.cancelTurn(request.runId)
+    expect(await agent.journal!.read(access)).toEqual({ status: "error", code: "not-found" })
+    await expect(agent.journal!.retire(access)).resolves.toBeUndefined()
+    expect(calls).toEqual([
+      { url: "/api/agent/turn", method: "POST", headers: [["content-type", "application/json"]], body: request },
+      { url: "/api/agent/turn/cancel", method: "POST", headers: [["content-type", "application/json"]], body: { runId: "run-1" } },
+      { url: "/api/agent/turn/replay", method: "POST", headers: [["content-type", "application/json"]], body: access },
+      { url: "/api/agent/turn/retire", method: "POST", headers: [["content-type", "application/json"]], body: access }
+    ])
+    expect(frames).toEqual([{ runId: "run-1", type: "done" }])
+    expect(delegated).toHaveBeenCalledTimes(4)
+  } finally {
+    try {
+      remove?.()
+      agent?.journal?.disconnect(request.runId)
+      await checkpoint()
+    } finally {
+      delegated.mockRestore()
+      Object.defineProperty(globalThis, "fetch", descriptor)
+      expect(Object.getOwnPropertyDescriptor(globalThis, "fetch")).toEqual(descriptor)
+    }
+  }
+})
+
+test.each(["Error", "non-Error"] as const)("legacy reader %s cancellation rejection preserves the terminal and successor handle", async kind => {
+  const entered = Promise.withResolvers<void>(), cleanup = Promise.withResolvers<void>()
+  let posts = 0, successorSignal: AbortSignal | null | undefined
+  const agent = createWebAgent({ fetchImpl: async (url, init) => {
+    if (String(url).endsWith("/cancel")) return Response.json({})
+    if (++posts > 1) { successorSignal = init?.signal; return new Response(idleStream(init?.signal)) }
+    return new Response(new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(new TextEncoder().encode('{"runId":"run-1","type":"done"}\n')) },
+      cancel() { entered.resolve(); return cleanup.promise }
+    }))
+  } })
+  const { frames, push, terminal } = collect()
+  const remove = agent.subscribe(push)
+  try {
+    expect(await agent.startTurn(request)).toEqual({ status: "started" })
+    await terminal
+    await entered.promise
+    expect(await agent.startTurn(request)).toEqual({ status: "started" })
+    cleanup.reject(kind === "Error" ? new Error("owned cancel rejected") : "owned cancel rejected")
+    await checkpoint()
+    expect(frames).toEqual([{ runId: "run-1", type: "done" }])
+    expect(await agent.startTurn(request)).toEqual({ status: "error", message: "That Smithers turn is already running." })
+    expect(posts).toBe(2)
+    expect(successorSignal?.aborted).toBe(false)
+    await agent.cancelTurn(request.runId)
+    expect(successorSignal?.aborted).toBe(true)
+  } finally {
+    cleanup.resolve()
+    await cleanup.promise.catch(() => {})
+    remove()
+    agent.journal!.disconnect(request.runId)
+    await checkpoint()
+  }
+})
 
 describe("createWebAgent", () => {
   test("posts the turn to the same-origin boundary and streams frames to subscribers", async () => {
@@ -43,12 +144,12 @@ describe("createWebAgent", () => {
         ])
       }
     })
-    const { frames, push } = collect()
+    const { frames, push, terminal } = collect()
     agent.subscribe(push)
 
     const result = await agent.startTurn(request)
     expect(result).toEqual({ status: "started" })
-    await flush()
+    await terminal
 
     expect(calls[0]?.url).toBe("/api/agent/turn")
     expect(calls[0]?.body).toEqual(request)
@@ -86,18 +187,18 @@ describe("createWebAgent", () => {
   test("drops frames for other runs and malformed lines without failing the turn", async () => {
     const agent = createWebAgent({
       fetchImpl: async () =>
-        ndjsonResponse([
-          "not-json",
+        new Response("not-json\n" + [
+          "valid JSON but not a frame",
           { runId: "other-run", type: "delta", kind: "text", text: "stray" },
           { runId: "run-1", type: "delta", kind: "text", text: "kept" },
           { runId: "run-1", type: "done" }
-        ])
+        ].map(value => JSON.stringify(value)).join("\n"))
     })
-    const { frames, push } = collect()
+    const { frames, push, terminal } = collect()
     agent.subscribe(push)
 
     expect(await agent.startTurn(request)).toEqual({ status: "started" })
-    await flush()
+    await terminal
     expect(frames).toEqual([
       { runId: "run-1", type: "delta", kind: "text", text: "kept" },
       { runId: "run-1", type: "done" }
@@ -108,11 +209,11 @@ describe("createWebAgent", () => {
     const agent = createWebAgent({
       fetchImpl: async () => ndjsonResponse([{ runId: "run-1", type: "delta", kind: "text", text: "partial" }])
     })
-    const { frames, push } = collect()
+    const { frames, push, terminal } = collect()
     agent.subscribe(push)
 
     expect(await agent.startTurn(request)).toEqual({ status: "started" })
-    await flush()
+    await terminal
     expect(frames[frames.length - 1]).toEqual({
       runId: "run-1",
       type: "done",
@@ -170,11 +271,11 @@ describe("createWebAgent", () => {
   test("cancelTurn aborts the local stream and notifies the server boundary", async () => {
     const calls: string[] = []
     const agent = createWebAgent({
-      fetchImpl: async (input) => {
+      fetchImpl: async (input, init) => {
         const url = String(input)
         calls.push(url)
         if (url.endsWith("/cancel")) return new Response("{}", { status: 200 })
-        return new Response(new ReadableStream<Uint8Array>({ start: () => {} }), {
+        return new Response(idleStream(init?.signal), {
           status: 200
         })
       }
@@ -349,7 +450,7 @@ describe("createWebAgent", () => {
 
   test("rejects a duplicate runId while a turn is active", async () => {
     const agent = createWebAgent({
-      fetchImpl: async () => new Response(new ReadableStream<Uint8Array>({ start: () => {} }), { status: 200 })
+      fetchImpl: async (input, init) => String(input).endsWith("/cancel") ? new Response("{}") : new Response(idleStream(init?.signal), { status: 200 })
     })
     expect(await agent.startTurn(request)).toEqual({ status: "started" })
     const duplicate = await agent.startTurn(request)
@@ -374,11 +475,11 @@ describe("createWebAgent", () => {
           { runId: "run-1", type: "done" }
         ])
     })
-    const { frames, push } = collect()
+    const { frames, push, terminal } = collect()
     agent.subscribe(push)
 
     expect(await agent.startTurn(request)).toEqual({ status: "started" })
-    await flush()
+    await terminal
     expect(frames).toEqual([
       { runId: "run-1", type: "card", card: statusCard },
       { runId: "run-1", type: "done" }
@@ -399,17 +500,20 @@ describe("createWebAgent", () => {
         turns += 1
         if (turns === 1) return ndjsonResponse([{ runId: "run-1", type: "done" }])
         continuationSignal = init?.signal
-        return new Response(new ReadableStream<Uint8Array>({ start: () => {} }), { status: 200 })
+        return new Response(idleStream(init?.signal), { status: 200 })
       }
     })
+    let admitted!: () => void
+    const continuationAdmission = new Promise<void>(resolve => { admitted = resolve })
     let continuation: Promise<StartAgentTurnResult> | undefined
     agent.subscribe((frame) => {
       if (frame.type !== "done" || continuation !== undefined) return
       continuation = agent.startTurn(request)
+      admitted()
     })
 
     expect(await agent.startTurn(request)).toEqual({ status: "started" })
-    await flush()
+    await continuationAdmission
     expect(await continuation).toEqual({ status: "started" })
 
     await agent.cancelTurn("run-1")
@@ -422,6 +526,9 @@ describe("createWebAgent", () => {
       releaseTeardown = () => resolve()
     })
     const signals: Array<AbortSignal> = []
+    let cancelling!: () => void
+    const cancellationEntered = new Promise<void>(resolve => { cancelling = resolve })
+    releases.add(releaseTeardown)
     let turns = 0
     const agent = createWebAgent({
       fetchImpl: async (input, init) => {
@@ -429,6 +536,7 @@ describe("createWebAgent", () => {
         if (init?.signal != null) signals.push(init.signal)
         turns += 1
         const first = turns === 1
+        if (!first) return new Response(idleStream(init?.signal))
         return new Response(
           new ReadableStream<Uint8Array>({
             start(controller) {
@@ -436,7 +544,7 @@ describe("createWebAgent", () => {
               controller.enqueue(new TextEncoder().encode(`${JSON.stringify({ runId: "run-1", type: "done" })}\n`))
             },
             // The first leg's reader.cancel() stays pending until the test releases it.
-            cancel: () => (first ? teardown : undefined)
+            cancel: () => { cancelling(); return teardown }
           }),
           { status: 200 }
         )
@@ -444,14 +552,277 @@ describe("createWebAgent", () => {
     })
 
     expect(await agent.startTurn(request)).toEqual({ status: "started" })
-    await flush()
+    await cancellationEntered
     expect(await agent.startTurn(request)).toEqual({ status: "started" })
 
     releaseTeardown()
-    await flush()
+    await teardown
+    await checkpoint()
     // The old leg's teardown settled, but the replacement still owns run-1.
     expect((await agent.startTurn(request)).status).toBe("error")
     await agent.cancelTurn("run-1")
     expect(signals[1]?.aborted).toBe(true)
   })
+})
+
+
+test.each(["whole", "byte-split"] as const)("UTF8 %s frames preserve Unicode, CRLF and the final frame without LF", async mode => {
+  const bytes = new TextEncoder().encode('\r\n' + JSON.stringify({ runId: "run-1", type: "delta", kind: "text", text: "Hi 😀 é 世界" }) + '\r\n' + JSON.stringify({ runId: "run-1", type: "done" }))
+  const agent = createWebAgent({ fetchImpl: async () => new Response(new ReadableStream<Uint8Array>({ start(controller) {
+    if (mode === "whole") controller.enqueue(bytes)
+    else for (const byte of bytes) controller.enqueue(Uint8Array.of(byte))
+    controller.close()
+  } })) })
+  const { frames, push, terminal } = collect()
+  agent.subscribe(push)
+  expect(await agent.startTurn(request)).toEqual({ status: "started" })
+  await terminal
+  expect(frames).toEqual([{ runId: "run-1", type: "delta", kind: "text", text: "Hi 😀 é 世界" }, { runId: "run-1", type: "done" }])
+})
+
+test("unsubscribe is idempotent and preserves registration order for remaining subscribers", async () => {
+  let controller!: ReadableStreamDefaultController<Uint8Array>
+  let firstSeen!: () => void
+  const first = new Promise<void>(resolve => { firstSeen = resolve })
+  const observations: string[] = []
+  const agent = createWebAgent({ fetchImpl: async () => new Response(new ReadableStream<Uint8Array>({ start(value) {
+    controller = value
+    releases.add(() => { try { controller.close() } catch {} })
+  } })) })
+  const removeA = agent.subscribe(frame => { observations.push(`A:${frame.type}`); firstSeen() })
+  agent.subscribe(frame => { observations.push(`B:${frame.type}`) })
+  const { terminal, push } = collect()
+  agent.subscribe(push)
+  expect(await agent.startTurn(request)).toEqual({ status: "started" })
+  controller.enqueue(new TextEncoder().encode(JSON.stringify({ runId: "run-1", type: "delta", kind: "text", text: "one" }) + "\n"))
+  await first
+  removeA()
+  removeA()
+  controller.enqueue(new TextEncoder().encode(JSON.stringify({ runId: "run-1", type: "done" }) + "\n"))
+  await terminal
+  expect(observations).toEqual(["A:delta", "B:delta", "B:done"])
+})
+
+test.each(["whole", "separate"] as const)("the terminal frame ends legacy delivery and cancels its %s chunk reader", async mode => {
+  let cancelled!: () => void
+  const cancellation = new Promise<void>(resolve => { cancelled = resolve })
+  const wire = [
+    { runId: "run-1", type: "delta", kind: "text", text: "before" },
+    { runId: "run-1", type: "done" },
+    { runId: "run-1", type: "delta", kind: "text", text: "after terminal" },
+    { runId: "run-1", type: "done" }
+  ].map(frame => JSON.stringify(frame) + "\n")
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      releases.add(() => { try { controller.close() } catch {} })
+      if (mode === "whole") controller.enqueue(new TextEncoder().encode(wire.join("")))
+      else for (const line of wire) controller.enqueue(new TextEncoder().encode(line))
+    },
+    cancel() { cancelled() }
+  })
+  const agent = createWebAgent({ fetchImpl: async () => new Response(body) })
+  const { frames, push, terminal } = collect()
+  agent.subscribe(push)
+  expect(await agent.startTurn(request)).toEqual({ status: "started" })
+  await terminal
+  await cancellation
+  await checkpoint()
+  expect(frames).toEqual([{ runId: "run-1", type: "delta", kind: "text", text: "before" }, { runId: "run-1", type: "done" }])
+})
+
+const failedTerminalCases = [
+  { cause: "done", terminal: { runId: "run-1", type: "done" } },
+  { cause: "EOF", terminal: { runId: "run-1", type: "done", error: "The response stream ended before Smithers finished the turn." } },
+  { cause: "Error", terminal: { runId: "run-1", type: "done", error: "owned reader failed" } },
+  { cause: "non-Error", terminal: { runId: "run-1", type: "done", error: "The Smithers web agent stream failed." } }
+] as const
+
+test.each([...failedTerminalCases])("$cause terminal permits immediate retry and old teardown preserves the successor cancel handle", async ({ cause, terminal: expectedTerminal }) => {
+  let controller!: ReadableStreamDefaultController<Uint8Array>
+  let entered!: () => void
+  const firstDelta = new Promise<void>(resolve => { entered = resolve })
+  let notified!: () => void
+  const terminal = new Promise<void>(resolve => { notified = resolve })
+  let continuation: Promise<StartAgentTurnResult> | undefined
+  let successorSignal: AbortSignal | null | undefined
+  const seen: string[] = [], frames: AgentTurnFrame[] = []
+  let turns = 0
+  const agent = createWebAgent({ fetchImpl: async (url, init) => {
+    seen.push(String(url))
+    if (String(url).endsWith("/cancel")) return Response.json({})
+    if (++turns > 1) { successorSignal = init?.signal; return new Response(idleStream(init?.signal)) }
+    return new Response(new ReadableStream<Uint8Array>({ start(value) {
+      controller = value
+      releases.add(() => { try { controller.close() } catch {} })
+      controller.enqueue(new TextEncoder().encode(JSON.stringify({ runId: "run-1", type: "delta", kind: "text", text: "read began" }) + "\n"))
+    } }))
+  } })
+  agent.subscribe(frame => {
+    frames.push(frame)
+    if (frame.type === "delta") entered()
+    if (frame.type === "done" && continuation === undefined) { continuation = agent.startTurn(request); notified() }
+  })
+  expect(await agent.startTurn(request)).toEqual({ status: "started" })
+  await firstDelta
+  if (cause === "done") controller.enqueue(new TextEncoder().encode(JSON.stringify({ runId: "run-1", type: "done" }) + "\n"))
+  else if (cause === "EOF") controller.close()
+  else controller.error(cause === "Error" ? new Error("owned reader failed") : "transport failed without Error")
+  await terminal
+  expect(await continuation).toEqual({ status: "started" })
+  await checkpoint()
+  expect(frames).toEqual([{ runId: "run-1", type: "delta", kind: "text", text: "read began" }, expectedTerminal])
+  expect(await agent.startTurn(request)).toEqual({ status: "error", message: "That Smithers turn is already running." })
+  expect(turns).toBe(2)
+  expect(successorSignal?.aborted).toBe(false)
+  await agent.cancelTurn(request.runId)
+  expect(successorSignal?.aborted).toBe(true)
+  expect(seen).toEqual(["/api/agent/turn", "/api/agent/turn", "/api/agent/turn/cancel"])
+})
+
+test("journal disconnect aborts only the owned local turn, never POSTs cancel, and permits a fresh admission", async () => {
+  const calls: string[] = [], signals: AbortSignal[] = [], frames: AgentTurnFrame[] = []
+  const agent = createWebAgent({ fetchImpl: async (url, init) => {
+    calls.push(String(url))
+    if (init?.signal == null) throw new Error("Expected owned turn signal")
+    signals.push(init.signal)
+    return new Response(idleStream(init.signal))
+  } })
+  agent.subscribe(frame => { frames.push(frame) })
+  expect(await agent.startTurn(request)).toEqual({ status: "started" })
+  agent.journal!.disconnect("another-run")
+  expect(signals[0]?.aborted).toBe(false)
+  agent.journal!.disconnect(request.runId)
+  agent.journal!.disconnect(request.runId)
+  expect(signals[0]?.aborted).toBe(true)
+  await checkpoint()
+  expect(frames).toEqual([])
+  expect(await agent.startTurn(request)).toEqual({ status: "started" })
+  expect(signals[1]?.aborted).toBe(false)
+  expect(calls).toEqual(["/api/agent/turn", "/api/agent/turn"])
+})
+
+test.each(["Error", "non-Error"] as const)("failed %s cancel transport still aborts locally and preserves a fresh custom-route admission", async cause => {
+  const calls: Array<{ url: string; method: string | undefined; headers: Array<[string, string]>; body: unknown }> = []
+  const signals: AbortSignal[] = [], frames: AgentTurnFrame[] = []
+  const agent = createWebAgent({ baseUrl: "https://boundary.test", turnPath: "/custom/turn", cancelPath: "/custom/cancel", fetchImpl: async (url, init) => {
+    calls.push({ url: String(url), method: init?.method, headers: [...new Headers(init?.headers).entries()], body: JSON.parse(String(init?.body)) })
+    if (String(url) === "https://boundary.test/custom/cancel") throw cause === "Error" ? new Error("cancel transport failed") : "cancel transport failed without Error"
+    if (init?.signal == null) throw new Error("Expected local turn signal")
+    signals.push(init.signal)
+    return new Response(idleStream(init.signal))
+  } })
+  agent.subscribe(frame => { frames.push(frame) })
+  expect(await agent.startTurn(request)).toEqual({ status: "started" })
+  await agent.cancelTurn(request.runId)
+  expect(signals[0]?.aborted).toBe(true)
+  await checkpoint()
+  expect(frames).toEqual([])
+  expect(await agent.startTurn(request)).toEqual({ status: "started" })
+  expect(signals[1]?.aborted).toBe(false)
+  expect(await agent.startTurn(request)).toEqual({ status: "error", message: "That Smithers turn is already running." })
+  expect(calls).toEqual([
+    { url: "https://boundary.test/custom/turn", method: "POST", headers: [["content-type", "application/json"]], body: request },
+    { url: "https://boundary.test/custom/cancel", method: "POST", headers: [["content-type", "application/json"]], body: { runId: "run-1" } },
+    { url: "https://boundary.test/custom/turn", method: "POST", headers: [["content-type", "application/json"]], body: request }
+  ])
+})
+
+test.each([
+  { cause: "Error", message: "Could not reach the Smithers web agent: connection refused" },
+  { cause: "non-Error", message: "Could not reach the Smithers web agent." }
+] as const)("a failed $cause connect releases the run for immediate successful retry", async ({ cause, message }) => {
+  let posts = 0
+  const agent = createWebAgent({ fetchImpl: async () => {
+    if (++posts === 1) throw cause === "Error" ? new Error("connection refused") : "opaque transport rejection"
+    return ndjsonResponse([{ runId: "run-1", type: "done" }])
+  } })
+  const { frames, push, terminal } = collect()
+  agent.subscribe(push)
+  expect(await agent.startTurn(request)).toEqual({ status: "error", message })
+  expect(await agent.startTurn(request)).toEqual({ status: "started" })
+  await terminal
+  expect(frames).toEqual([{ runId: "run-1", type: "done" }])
+  expect(posts).toBe(2)
+})
+
+test("an aborted pending connect settling late cannot remove the replacement turn handle", async () => {
+  let entered!: () => void
+  const admission = new Promise<void>(resolve => { entered = resolve })
+  let releaseOld!: () => void
+  const oldSettlement = new Promise<void>(resolve => { releaseOld = resolve })
+  releases.add(releaseOld)
+  let oldSignal: AbortSignal | null | undefined
+  let newSignal: AbortSignal | null | undefined
+  let turns = 0
+  const urls: string[] = []
+  const agent = createWebAgent({ fetchImpl: async (url, init) => {
+    urls.push(String(url))
+    if (String(url).endsWith("/cancel")) return Response.json({})
+    if (++turns === 1) {
+      oldSignal = init?.signal
+      entered()
+      await oldSettlement
+      throw new DOMException("The old connect was aborted", "AbortError")
+    }
+    newSignal = init?.signal
+    return new Response(idleStream(init?.signal))
+  } })
+  const first = agent.startTurn(request)
+  await admission
+  agent.journal!.disconnect(request.runId)
+  expect(oldSignal?.aborted).toBe(true)
+  expect(await agent.startTurn(request)).toEqual({ status: "started" })
+  releaseOld()
+  expect(await first).toEqual({ status: "started" })
+  await checkpoint()
+  expect(await agent.startTurn(request)).toEqual({ status: "error", message: "That Smithers turn is already running." })
+  expect(newSignal?.aborted).toBe(false)
+  await agent.cancelTurn(request.runId)
+  expect(newSignal?.aborted).toBe(true)
+  expect(urls).toEqual(["/api/agent/turn", "/api/agent/turn", "/api/agent/turn/cancel"])
+})
+
+const classifiedStatuses = [
+  { status: 401, message: "That turn wasn't authorized — sign in again and retry. (HTTP 401)" },
+  { status: 403, message: "That turn wasn't authorized — sign in again and retry. (HTTP 403)" },
+  { status: 402, message: "That turn wasn't run because the account has no balance left. (HTTP 402)" },
+  { status: 408, message: "That turn timed out before the model answered. (HTTP 408)" },
+  { status: 504, message: "That turn timed out before the model answered. (HTTP 504)" },
+  { status: 502, message: "Smithers Cloud is unreachable right now. Try again in a moment. (HTTP 502)" },
+  { status: 503, message: "Smithers Cloud is unreachable right now. Try again in a moment. (HTTP 503)" },
+  { status: 500, message: "Smithers Cloud hit an error on that turn. (HTTP 500)" },
+  { status: 429, message: "The model provider is rate-limiting this account. Try again in a minute. (HTTP 429)" },
+  { status: 418, message: "Smithers web agent failed (HTTP 418)." }
+] as const
+
+for (const shape of ["wire-json", "html"] as const) test.each([...classifiedStatuses])(`HTTP $status ${shape} receives its literal classification without leaking transport details`, async ({ status, message }) => {
+  const body = shape === "wire-json" ? JSON.stringify({ type: "error", error: { message: "private transport details" } }) : "<html><body>private transport details</body></html>"
+  const agent = createWebAgent({ fetchImpl: async () => new Response(body, { status, headers: { "content-type": shape === "wire-json" ? "application/json" : "text/html" } }) })
+  expect(await agent.startTurn(request)).toEqual({ status: "error", message })
+})
+
+test("a successful empty response refuses honestly and releases the same run for retry", async () => {
+  let calls = 0
+  const agent = createWebAgent({ fetchImpl: async () => ++calls === 1 ? new Response(null) : ndjsonResponse([{ runId: "run-1", type: "done" }]) })
+  const { frames, push, terminal } = collect()
+  agent.subscribe(push)
+  expect(await agent.startTurn(request)).toEqual({ status: "error", message: "The Smithers web agent returned no response stream." })
+  expect(await agent.startTurn(request)).toEqual({ status: "started" })
+  await terminal
+  expect(frames).toEqual([{ runId: "run-1", type: "done" }])
+  expect(calls).toBe(2)
+})
+
+test("a failed error-body read uses the safe status fallback and permits retry", async () => {
+  let calls = 0
+  const agent = createWebAgent({ fetchImpl: async () => ++calls === 1
+    ? new Response(new ReadableStream<Uint8Array>({ start(controller) { controller.error(new Error("private body IO failure")) } }), { status: 502 })
+    : ndjsonResponse([{ runId: "run-1", type: "done" }]) })
+  const { frames, push, terminal } = collect()
+  agent.subscribe(push)
+  expect(await agent.startTurn(request)).toEqual({ status: "error", message: "Smithers Cloud is unreachable right now. Try again in a moment. (HTTP 502)" })
+  expect(await agent.startTurn(request)).toEqual({ status: "started" })
+  await terminal
+  expect(frames).toEqual([{ runId: "run-1", type: "done" }])
+  expect(calls).toBe(2)
 })

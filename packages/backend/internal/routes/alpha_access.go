@@ -171,7 +171,7 @@ func (h *AlphaAccessHandler) GetAdminWaitlist(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	cursor, limit, parseErr := parsePaginationWithLimits(r, 50, 100, "invalid limit value", false)
+	cursor, limit, parseErr := parseOffsetPaginationWithLimits(r, 50, 100, "invalid limit value", false)
 	if parseErr != nil {
 		errors.WriteError(w, parseErr.(*errors.APIError))
 		return

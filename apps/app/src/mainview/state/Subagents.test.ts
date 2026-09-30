@@ -1,13 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import type { Card } from "./AppState"
-import { agentSubagent, childRuns, childSubagent, footerOf, parentRunOf, runStatus, runSubagent, toastOf } from "./Subagents"
+import { agentSubagent, childCardOf, childRuns, childSubagent, footerOf, parentRunOf, runStatus, runSubagent, subagentOf, toastOf } from "./Subagents"
 
 type AgentCard = Extract<Card, { kind: "agent" }>
 type RunCard = Extract<Card, { kind: "run-trace" }>
+type LocalPayload = Extract<AgentCard["payload"], { harnessId: string }>
 
-const local = (phase: "running" | "exited", exitCode: number | null, extra: Partial<AgentCard["payload"]> = {}): AgentCard => ({
+const local = (phase: "running" | "exited", exitCode: number | null, extra: Partial<LocalPayload> = {}): AgentCard => ({
   id: "agent-a", kind: "agent", title: "Engineer", status: "active", createdAt: 1_000, ordinal: 1,
-  payload: { harnessId: "claude", displayName: "Engineer", tabId: "tab-a", sessionId: "tab-a", cwd: "/repo", phase, exitCode, ...extra } as AgentCard["payload"]
+  payload: { harnessId: "claude", displayName: "Engineer", tabId: "tab-a", sessionId: "tab-a", cwd: "/repo", phase, exitCode, ...extra }
 })
 const run = (payload: Partial<RunCard["payload"]>, id = "flow-run-run-1"): RunCard => ({
   id, kind: "run-trace", title: "review — owner/repo", status: "active", createdAt: 2_000, ordinal: 2,
@@ -19,6 +20,43 @@ const spawn = (child: string, flow: string, at: number) => [
 ]
 
 describe("subagents from worker cards", () => {
+  for (const [phase, expected] of [["completed", "done"], ["failed", "failed"], ["cancelled", "cancelled"]] as const) {
+    for (const waiting of [undefined, "approval", "timer"] as const) {
+      test(`${phase} remains ${expected} with stale waiting=${waiting ?? "none"}`, () => {
+        expect(runStatus(run({ phase, ...(waiting === undefined ? {} : { waiting }) }))).toBe(expected)
+      })
+    }
+  }
+
+  test("settled runs freeze at their last dated activity while live runs have no invented end", () => {
+    const rows = [{ sequence: 2, at: 41_000, kind: "answer", text: "second" }, { sequence: 1, at: 42_000, kind: "answer", text: "first" }]
+    const before = structuredClone(rows)
+    expect(runSubagent(run({ phase: "completed", transcriptRows: rows }))).toEqual({ title: "review — owner/repo", status: "done", startedAt: 2_000, endedAt: 42_000,
+      entries: [{ kind: "text", text: "first" }, { kind: "text", text: "second" }] })
+    expect(runSubagent(run({ phase: "running", transcriptRows: rows })).endedAt).toBeUndefined()
+    expect(rows).toEqual(before)
+    const unnamed = local("running", null, { displayName: "", task: "Review code" })
+    expect(subagentOf(unnamed)?.title).toBe("Review code")
+    expect(subagentOf(undefined)).toBeUndefined()
+    const status: Extract<Card, { kind: "status" }> = { id: "status", kind: "status", status: "active", title: "Status", createdAt: 1, ordinal: 1, payload: {} }
+    expect(subagentOf(status)).toBeUndefined()
+  })
+
+  test("child and parent lookup keep repository/workspace ownership, independent of scrub cursor", () => {
+    const workspace = "83e75ae5-0920-4000-8000-000000000001"
+    const parent = run({ workspaceId: workspace, cursorSeq: 0, events: [...spawn("run-child", "lint", 1)] })
+    const child = run({ workspaceId: workspace, runId: "run-child", workflow: "lint", phase: "completed" }, "child")
+    const wrongRepo = run({ ...child.payload, repo: "other/repo" }, "wrong-repo")
+    const wrongWorkspace = run({ ...child.payload, workspaceId: "83e75ae5-0920-4000-8000-000000000002" }, "wrong-workspace")
+    expect(childCardOf([wrongRepo, wrongWorkspace], parent, "run-child")).toBeUndefined()
+    expect(childCardOf([wrongRepo, wrongWorkspace, child], parent, "run-child")).toBe(child)
+    expect(childRuns(parent)).toEqual([])
+    expect(childRuns(parent, true).map(each => [each.runId, each.title])).toEqual([["run-child", "lint"]])
+    expect(parentRunOf([wrongRepo, wrongWorkspace, parent, child], child)).toMatchObject({ parent: { id: "flow-run-run-1" }, index: 0, child: { runId: "run-child", title: "lint" } })
+    expect(parentRunOf([parent], wrongRepo)).toBeUndefined()
+    expect(parentRunOf([parent], wrongWorkspace)).toBeUndefined()
+  })
+
   test("a local agent follows its process; an unknown exit is Stopped with no clock", () => {
     expect(agentSubagent(local("running", null))).toEqual({ title: "Engineer", status: "running", startedAt: 1_000, entries: [] })
     expect(agentSubagent(local("exited", 0)).status).toBe("done")

@@ -249,7 +249,11 @@ export const invoke = async (
     // canonical verb that starts a run reaches it through exactly this call
     // (`flow start` is `up`, `approvals approve` is `approve`), so the verb
     // catalog stays the one authority on the question.
-    Effect.provide(NodeControl.layer({ ...config, startsRuns: Verb.startsRuns(Argv.words(args)) })),
+    Effect.provide(NodeControl.layer({
+      ...config,
+      startsRuns: Verb.startsRuns(Argv.words(args)),
+      plansFlows: Argv.words(args)[0] === "plan"
+    })),
     Effect.provide(NodeServices.layer),
     Effect.provideService(Console.Console, outputConsole),
     Effect.provideService(CommandStatus.CommandStatus, (code) => runtime.exit?.(code))
@@ -284,6 +288,30 @@ export const query = async <A, E>(
       operation.pipe(
         Effect.provide(NodeControl.layer({ ...configuration(options, runtime), startsRuns: false }))
       ),
+      options,
+      runtime
+    ),
+    runtime
+  )
+
+/**
+ * Runs a read-only verb over the project's existing stores.
+ *
+ * Nothing is created, migrated, recovered or reaped, and the reads answer
+ * while another process holds the writer. Only a verb that changes nothing
+ * belongs here; one that cancels, signals or decides goes through
+ * {@link query} or {@link invoke}.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const read = async <A, E>(
+  operation: Effect.Effect<A, E, Control.Control | Ui.Ui>,
+  options: ConnectionOptions,
+  runtime: Runtime = {}
+): Promise<A> =>
+  settle(
+    provideServices(
+      operation.pipe(Effect.provide(NodeControl.layerObserve(configuration(options, runtime)))),
       options,
       runtime
     ),
@@ -339,7 +367,7 @@ export const local = <A, E>(
 /**
  * A scoped stream closes its transports when the consumer stops following.
  *
- * Reading events drives nothing, so this host needs no completion judge either.
+ * Reading events changes nothing, so it observes the stores as {@link read} does.
  * @category constructors
  * @since 1.0.0
  */
@@ -355,7 +383,7 @@ export const events = (
       runId,
       follow,
       ...(afterSequence === undefined ? {} : { afterSequence })
-    }))).pipe(Stream.provide(NodeControl.layer({ ...configuration(options, runtime), startsRuns: false })))
+    }))).pipe(Stream.provide(NodeControl.layerObserve(configuration(options, runtime))))
   const signal = runtime.signal
   if (signal === undefined) return Stream.toAsyncIterable(stream)
   const interrupted = Effect.callback<void>((resume) => {

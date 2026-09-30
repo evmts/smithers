@@ -1,18 +1,19 @@
 import type { StorageApi } from "@tanstack/db"
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 
 import type { AgentPort } from "../../runtime/AgentPort"
-import { createAppController } from "../AppController"
+import { scopedControllers } from "../ControllerTestScope"
 import type { AppServices } from "../AppController"
+import { fetchIssuePayload, readIssueOptions } from "./IssuesSeam"
+import type { SeamContext } from "./SeamContext"
 import type { Card } from "../AppState"
-import { createAppStore } from "../AppStore"
+import { createAppStore as openAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
 import { processRepositoryEvents } from "../RepositoryNotifications"
 import { invalidatePreparedViews } from "../PreparedView"
-import { initialSetup } from "@smthrs/rpc/RepositorySetup"
+import { initialSetup, setupCandidate } from "@smthrs/rpc/RepositorySetup"
 import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
 import { applicationIdentityFromFetch } from "../TestFixtures"
-import { readIssueOptions } from "./IssuesSeam"
 
 /*
  * The issues seam, driven through the one command run path: issues.list /
@@ -22,6 +23,120 @@ import { readIssueOptions } from "./IssuesSeam"
  * throws. One loaded repository ("will/flows") stands in for the repo
  * resolution, matching the RepoContext single-repository rule.
  */
+
+// One fixture lifetime owns transport, body readers and controller disposal.
+const bareStores = new Set<AppStore>()
+const retireOwners = new Set<() => void>()
+const releases = new Set<() => void>()
+const work = new Set<Promise<unknown>>()
+const unexpectedHttp: string[] = []
+const cleanupErrors: unknown[] = []
+let collectingDisposalFailures = false
+const settleStore = async (store: AppStore): Promise<void> => {
+  if (store.settled === undefined) throw new Error("Issues fixture requires persistence settlement")
+  await store.settled()
+}
+const closeBareStore = async (store: AppStore): Promise<void> => {
+  if (store.dispose === undefined) throw new Error("Issues fixture requires store disposal")
+  await store.dispose()
+}
+const checkpoint = (): Promise<void> => new Promise(resolve => setImmediate(resolve))
+const bounded = async <A>(promise: Promise<A>): Promise<A> => {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([promise, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("Issues fixture work did not settle")), 5_000)
+    })])
+  } finally { if (timer !== undefined) clearTimeout(timer) }
+}
+const observe = <A>(promise: Promise<A>): Promise<A> => {
+  work.add(promise)
+  const complete = () => { work.delete(promise) }
+  void promise.then(complete, complete)
+  return promise
+}
+const drain = async (): Promise<void> => {
+  do {
+    await Promise.allSettled([...work])
+    await checkpoint()
+  } while (work.size !== 0)
+}
+const flushStore = async (store: AppStore): Promise<void> => {
+  await bounded(drain())
+  await settleStore(store)
+  await checkpoint()
+}
+const waitUntil = async (condition: () => boolean): Promise<void> => {
+  let stopped = false
+  try {
+    await bounded((async () => { while (!stopped && !condition()) await checkpoint() })())
+  } finally { stopped = true }
+}
+const trackResponse = (response: Response): Response => {
+  const json = response.json.bind(response), text = response.text.bind(response), clone = response.clone.bind(response)
+  response.json = () => observe(json())
+  response.text = () => observe(text())
+  response.clone = () => trackResponse(clone())
+  return response
+}
+const createAppStore: typeof openAppStore = async (...args) => {
+  const store = await openAppStore(...args)
+  bareStores.add(store)
+  return store
+}
+// Abort the public page lifetime before releasing IO; stale work must not publish
+// while cleanup drains. The controller remains the sole normal store-close owner.
+afterEach(async () => {
+  collectingDisposalFailures = true
+  const errors: unknown[] = []
+  for (const retire of retireOwners) { try { retire() } catch (error) { errors.push(error) } }
+  retireOwners.clear()
+  for (const release of releases) { try { release() } catch (error) { errors.push(error) } }
+  releases.clear()
+  try { await bounded(drain()) } catch (error) { errors.push(error) }
+  for (const store of bareStores) {
+    try { await settleStore(store) } catch (error) { errors.push(error) }
+    try { await closeBareStore(store) } catch (error) { errors.push(error) }
+  }
+  bareStores.clear()
+  cleanupErrors.push(...errors)
+  // Bun stops later afterEach hooks when one rejects. Delay reporting these
+  // failures until scopedControllers has attempted every controller finalizer.
+})
+const scopedController = scopedControllers()
+const controllerLifetimes = new WeakMap<ReturnType<typeof scopedController>, AbortController>()
+const createAppController: typeof scopedController = (store, agent, services) => {
+  const lifetime = new AbortController()
+  retireOwners.add(() => lifetime.abort())
+  const controller = scopedController(store, agent, { ...services, pageLifetime: lifetime.signal })
+  bareStores.delete(store)
+  controllerLifetimes.set(controller, lifetime)
+  const dispose = controller.dispose
+  Object.defineProperty(controller, "dispose", { value: async () => {
+    try { await dispose() }
+    catch (error) {
+      // Preserve explicit test-time rejection. During teardown, postpone it
+      // until scopedControllers has attempted every registered controller.
+      if (!collectingDisposalFailures) throw error
+      cleanupErrors.push(error)
+    }
+  } })
+  return controller
+}
+const disposeFixture = async (controller: ReturnType<typeof scopedController>, store: AppStore): Promise<void> => {
+  controllerLifetimes.get(controller)?.abort()
+  const errors: unknown[] = []
+  try { await flushStore(store) } catch (error) { errors.push(error) }
+  try { await controller.dispose() } catch (error) { errors.push(error) }
+  if (errors.length) throw new AggregateError(errors, "Issues fixture disposal failed")
+}
+afterEach(async () => {
+  const errors = cleanupErrors.splice(0)
+  const unexpected = unexpectedHttp.splice(0)
+  collectingDisposalFailures = false
+  if (unexpected.length) errors.push(new Error(`Unplanned issue HTTP: ${unexpected.join(", ")}`))
+  if (errors.length) throw new AggregateError(errors, "Issues store cleanup failed")
+})
 
 const memoryStorage = (): StorageApi => {
   const data = new Map<string, string>()
@@ -47,10 +162,26 @@ type RouteAnswer = Response | ((request: Request) => Response | Promise<Response
 
 /**
  * Route stub keyed "METHOD /path" (pathname only — the query is recorded in
- * `calls` so tests can assert it). Unstubbed routes answer 404 honestly.
+ * `calls` so tests can assert it). Unplanned routes are retained as fixture failures even if the product catches them.
  */
+// Explicit absent optional/startup resources for these repositories. No other
+// request is silently converted to a valid fixture refusal.
+const absentRoutes = new Set([
+  "GET /api/repository-setup/state",
+  "GET /api/repos/will/flows/contents/.smithers/factory.json",
+  "GET /api/repos/will/flows/home",
+  "GET /api/repos/smithersai/smithers/contents/.smithers/factory.json",
+  "GET /api/repos/smithersai/smithers/home",
+  "GET /api/user/github-repos/will/flows/issues",
+  "GET /api/repos/will/flows/issues/8/sync",
+  "GET /api/repos/will/flows/issues/10/sync",
+  "GET /api/repos/will/flows/issues/8/comments/31/reactions",
+  "GET /api/repos/will/flows/issues/8/comments/32/reactions",
+  "GET /api/repos/will/flows/issues/8/comments/41/reactions",
+  "GET /api/repos/will/flows/issues/8/comments/42/reactions"
+])
 const backend = (routes: Record<string, RouteAnswer>, calls: string[] = []): AppServices => ({
-  fetchImpl: async (input, init) => {
+  fetchImpl: (input, init) => observe((async () => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
     const absolute = new URL(url, "https://app.test")
     const method = (init?.method ?? "GET").toUpperCase()
@@ -60,12 +191,13 @@ const backend = (routes: Record<string, RouteAnswer>, calls: string[] = []): App
       const routeMethod = route.slice(0, spaceIndex)
       const routePath = route.slice(spaceIndex + 1)
       if (routeMethod !== method || absolute.pathname !== routePath) continue
-      return typeof answer === "function"
-        ? answer(new Request(absolute.toString(), init))
-        : answer.clone()
+      return trackResponse(typeof answer === "function"
+        ? await answer(new Request(absolute.toString(), init))
+        : answer.clone())
     }
-    return json(404, { status: "error", message: `no stub for ${method} ${absolute.pathname}` })
-  }
+    if (!absentRoutes.has(`${method} ${absolute.pathname}`)) unexpectedHttp.push(`${method} ${absolute.pathname}`)
+    return trackResponse(json(404, { status: "error", message: `no stub for ${method} ${absolute.pathname}` }))
+  })())
 })
 
 const selectedUserBackend = (routes: Record<string, RouteAnswer>, calls: string[] = []): AppServices => {
@@ -81,7 +213,7 @@ const selectedUserBackend = (routes: Record<string, RouteAnswer>, calls: string[
 const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 const signedIn = async (store: AppStore, login = "will"): Promise<void> => {
-  store.dispatch({
+  await store.dispatch({
     type: "identity.session.loaded",
     actor: "system",
     state: "signed-in",
@@ -89,18 +221,16 @@ const signedIn = async (store: AppStore, login = "will"): Promise<void> => {
     allowlisted: true,
     admin: false,
     scopesPlain: null
-  })
-  await settled()
+  }).isPersisted.promise
 }
 
 /** ONE loaded repo, so repo resolution answers "will/flows" without an argument. */
 const reposChosen = async (store: AppStore): Promise<void> => {
-  store.dispatch({
+  await store.dispatch({
     type: "repositories.loaded",
     actor: "system",
     repositories: [{ id: "will/flows", org: "will", ownerKind: "user", name: "flows", head: null }]
-  })
-  await settled()
+  }).isPersisted.promise
 }
 
 const issuesController = async (services: AppServices) => {
@@ -133,9 +263,15 @@ const wireIssue = (number: number, overrides: Record<string, unknown> = {}) => (
 test.each([
   { name: "unconfigured", enabled: false, owner: "will", tips: 1 },
   { name: "enabled CI", enabled: true, owner: "will", tips: 0 },
-  { name: "another account's CI", enabled: true, owner: "someone-else", tips: 1 }
+  { name: "another account's CI is not an authoritative answer", enabled: true, owner: "someone-else", tips: 0 }
 ])("issue creation suggests optional CI once for $name", async scenario => {
   const { store, controller } = await issuesController(backend({
+    "GET /api/repository-setup/state": request => {
+      const job = new URL(request.url).searchParams.get("job")
+      const setup = initialSetup("will/flows", "ci", scenario.owner)
+      return json(200, { owner: scenario.owner, repo: "will/flows", job, setup: { state: "none" }, registration: { state: "known",
+        ...(job === "ci" && scenario.enabled ? { active: { revision: 1, digest: setupCandidate(setup), registrationId: "ci", sourceRevision: "source", enabled: true, owned: true, workspaceId: "de29f26b-e593-4ec2-99fc-583d4711f20a", draft: setup.draft } } : {}) } })
+    },
     "POST /api/repos/will/flows/issues": json(201, wireIssue(8)),
     "GET /api/repos/will/flows/issues/8": json(200, wireIssue(8)),
     "GET /api/repos/will/flows/issues/8/comments": json(200, [])
@@ -148,11 +284,11 @@ test.each([
     } }).isPersisted.promise
     await controller.commands.run("issues.create", "Improve logging")
     await controller.commands.run("issues.create", "Improve tests")
-    await store.settled?.()
+    await settleStore(store)
     const tips = [...store.collections.toasts.values()].filter(toast => toast.action?.flow === "ci.setup")
     expect(tips).toHaveLength(scenario.tips)
     if (scenario.tips) expect(tips[0]).toMatchObject({ status: "ok", action: { label: "Set up CI", args: "will/flows" } })
-  } finally { await controller.dispose(); await store.dispose?.() }
+  } finally { await disposeFixture(controller, store) }
 })
 
 /* GitHub's issue wire shape off the source read (multi src/smithersCloud/githubIssues.ts). */
@@ -229,9 +365,9 @@ describe("issues seam — the list", () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const controller = createAppController(store, unavailableAgent,
       backend({ "GET /api/repos/smithersai/smithers/issues": json(401, { status: "error", message: "sign in first" }) }))
-    store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null })
-    store.dispatch({ type: "repositories.loaded", actor: "system",
-      repositories: [{ id: "smithersai/smithers", org: "smithersai", ownerKind: "org", name: "smithers", head: null, catalog: true }] })
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
+    await store.dispatch({ type: "repositories.loaded", actor: "system",
+      repositories: [{ id: "smithersai/smithers", org: "smithersai", ownerKind: "org", name: "smithers", head: null, catalog: true }] }).isPersisted.promise
     await settled()
     await controller.commands.run("issues.list", "open smithersai/smithers")
     await settled()
@@ -614,15 +750,11 @@ describe("issues seam — honest failures, never throws", () => {
   })
 
   test("a network throw answers an honest string and keeps the failed view visible", async () => {
-    // Only the issues routes throw; everything else 404s so startup seams stay honest.
-    const throwingBackend: AppServices = {
-      fetchImpl: async (input) => {
-        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
-        const path = new URL(url, "https://app.test").pathname
-        if (path.startsWith("/api/repos/")) throw new TypeError("socket hangup")
-        return json(404, { status: "error", message: `no stub for ${path}` })
-      }
-    }
+    // Fail only the issue read; optional startup responses retain the same
+    // explicit authority and unexpected-request accounting as every fixture.
+    const throwingBackend = backend({
+      "GET /api/repos/will/flows/issues/7": () => { throw new TypeError("socket hangup") }
+    })
     const { store, controller } = await issuesController(throwingBackend)
     const outcome = await controller.commands.run("issues.view", "7")
     expect(outcome.status).toBe("failed")
@@ -637,14 +769,14 @@ describe("issues seam — honest failures, never throws", () => {
 
   test("with several loaded repositories and no argument, the answer is the missing-repository form", async () => {
     const { store, controller } = await issuesController(backend({}))
-    store.dispatch({
+    await store.dispatch({
       type: "repositories.loaded",
       actor: "system",
       repositories: [
         { id: "will/flows", org: "will", ownerKind: "user", name: "flows", head: null },
         { id: "will/smithers", org: "will", ownerKind: "user", name: "smithers", head: null }
       ]
-    })
+    }).isPersisted.promise
     await settled()
     /* THE FORM LAW: the missing repository is asked for, never guessed (tutorial stage 3). */
     const outcome = await controller.commands.run("issues.list")
@@ -942,9 +1074,8 @@ describe("source-qualified issue identity", () => {
     ])
     const history = store.collections.cardHistories.get(list.id)!
     expect(history.entries.filter(entry => entry.kind === "issue").map(entry => entry.payload.title)).toEqual(["Native issue", "GitHub issue"])
-    await controller.dispose()
-    await store.settled?.()
-    await store.dispose?.()
+    await settleStore(store)
+    await disposeFixture(controller, store)
     const restored = await createAppStore({ kind: "localStorage", storage })
     expect(cardOfKind(restored, list.id, "issue").payload.source).toBe("github")
     await restored.dispatch({ type: "card.history.moved", actor: "user", id: list.id, delta: -1 }).isPersisted.promise
@@ -1029,7 +1160,7 @@ test.each(["smithers-cloud", "github"] as const)("%s issue reads retain forge as
     expect(detail.assignees).toEqual(row.assignees)
     expect(detail.createdAt).toBe(wire.created_at)
     expect(detail.authorAvatar).toBe("https://avatars.githubusercontent.com/u/3")
-  } finally { await controller.dispose(); await store.dispose?.() }
+  } finally { await disposeFixture(controller, store) }
 })
 
 test("private chat creation, persona comments, edits and deletes use the existing issue paths", async () => {
@@ -1053,7 +1184,7 @@ test("private chat creation, persona comments, edits and deletes use the existin
     expect(writes[1]).toEqual({ body: "edited" })
     expect(await controller.deleteIssueComment(8, 31, "will/flows")).toBeUndefined()
     expect((store.collections.cards.get(card.id) as typeof card).payload.comments).toEqual([])
-  } finally { await controller.dispose(); await store.dispose?.() }
+  } finally { await disposeFixture(controller, store) }
 })
 
 test("comment pagination uses scoped opaque cursors and projects each message once", async () => {
@@ -1072,7 +1203,7 @@ test("comment pagination uses scoped opaque cursors and projects each message on
     if (card.kind !== "issue") throw Error("Wrong card")
     expect(card.payload.comments.map(row => row.id)).toEqual([31, 32])
     expect(calls).toContain("GET /api/repos/will/flows/issues/8/comments?cursor=MzE")
-  } finally { await controller.dispose(); await store.dispose?.() }
+  } finally { await disposeFixture(controller, store) }
 })
 
 test("a restored chat card refreshes remote edits and deletes without a second transcript store", async () => {
@@ -1101,7 +1232,7 @@ test("a restored chat card refreshes remote edits and deletes without a second t
     expect((store.collections.cards.get(card.id) as typeof card).payload.comments).toEqual([])
     expect([...store.collections.cards.values()].filter(row => row.kind === "issue")).toHaveLength(1)
     expect([...store.collections.messages.values()].filter(row => row.issueCardId === card.id)).toEqual([])
-  } finally { await controller.dispose(); await store.dispose?.() }
+  } finally { await disposeFixture(controller, store) }
 }, 10_000)
 
 test.each(["slack", "telegram"] as const)("%s mapping uses generic settings and projects delivery state", async provider => {
@@ -1119,11 +1250,13 @@ test.each(["slack", "telegram"] as const)("%s mapping uses generic settings and 
     expect(requests).toEqual([{ provider, connection_id: "connection", scope_id: "scope", conversation_id: "conversation", thread_id: "thread", external_user_id: "user" }])
     const card = [...store.collections.cards.values()].find(row => row.kind === "issue")!
     expect(card.kind === "issue" && card.payload.sync).toEqual({ provider, connectionId: "connection", scopeId: "scope", conversationId: "conversation", threadId: "thread", state: "pending", error: null })
-  } finally { await controller.dispose(); await store.dispose?.() }
+  } finally { await disposeFixture(controller, store) }
 })
 
 test("chat sends persist and acknowledge before an unresolved POST, dedupe repeated input, and settle the shared toast from completion", async () => {
-  let finish!: () => void
+  const posting = Promise.withResolvers<void>()
+  const finish = () => posting.resolve()
+  releases.add(finish)
   let posted = false
   const requests: Array<{ body: string; idempotency_key: string }> = []
   const { store, controller } = await issuesController(backend({
@@ -1131,7 +1264,7 @@ test("chat sends persist and acknowledge before an unresolved POST, dedupe repea
     "GET /api/repos/will/flows/issues/8/comments": () => json(200, posted ? [wireComment(31, "hello")] : []),
     "POST /api/repos/will/flows/issues/8/comments": async request => {
       requests.push(await request.json() as { body: string; idempotency_key: string })
-      await new Promise<void>(resolve => { finish = resolve })
+      await posting.promise
       posted = true
       return json(201, wireComment(31, "hello"))
     }
@@ -1143,6 +1276,7 @@ test("chat sends persist and acknowledge before an unresolved POST, dedupe repea
     await controller.draftIssueComment(card.id, "hello")
     expect(await controller.commentOnIssue(8, "hello", "will/flows")).toEqual({ value: "Requested" })
     expect(await controller.commentOnIssue(8, "hello", "will/flows")).toEqual({ value: "Requested" })
+    await waitUntil(() => requests.length === 1)
     await new Promise(resolve => setTimeout(resolve, 350))
     expect(posted).toBe(false)
     expect(requests).toHaveLength(1)
@@ -1153,13 +1287,13 @@ test("chat sends persist and acknowledge before an unresolved POST, dedupe repea
     const toast = [...store.collections.toasts.values()].find(row => row.key === `issue.message:${requests[0]!.idempotency_key}`)!
     expect(toast.status).toBe("running")
     finish()
-    for (let i = 0; i < 50 && (store.collections.cards.get(card.id) as typeof card).payload.pendingComments?.length; i++) await new Promise(resolve => setTimeout(resolve, 10))
-    await new Promise(resolve => setTimeout(resolve, 20))
+    await waitUntil(() => (store.collections.cards.get(card.id) as typeof card).payload.pendingComments?.length === 0)
+    await flushStore(store)
     const saved = (store.collections.cards.get(card.id) as typeof card).payload
     expect(saved.pendingComments).toEqual([])
     expect(saved.comments.map(row => row.commentBody)).toEqual(["hello"])
     expect(store.collections.toasts.get(toast.id)?.status).toBe("ok")
-  } finally { finish?.(); await controller.dispose(); await store.dispose?.() }
+  } finally { finish?.(); await disposeFixture(controller, store) }
 })
 
 test("a Smithers reply with trailing whitespace posts once and never PATCHes the stored, trimmed comment", async () => {
@@ -1194,14 +1328,16 @@ test("a Smithers reply with trailing whitespace posts once and never PATCHes the
     await store.dispatch({ type: "message.submitted", actor: "user", turnId: "t1", text: "hello" }).isPersisted.promise
     await store.dispatch({ type: "message.response.delta", actor: "smithers", turnId: "t1", channel: "text", delta: "On it.\n" }).isPersisted.promise
     await store.dispatch({ type: "message.response.completed", actor: "smithers", turnId: "t1" }).isPersisted.promise
-    for (let i = 0; i < 50 && posts.length === 0; i++) await new Promise(resolve => setTimeout(resolve, 10))
+    await waitUntil(() => posts.length > 0)
+    await flushStore(store)
+    // Retain the forwarding/debounce observation window after causal completion.
     await new Promise(resolve => setTimeout(resolve, 400))
     expect(posts).toEqual(["On it."])
     expect(patches).toEqual([])
     const saved = (store.collections.cards.get(card.id) as typeof card).payload
     expect(saved.pendingComments).toEqual([])
     expect(saved.comments.map(row => row.commentBody)).toEqual(["hello", "On it."])
-  } finally { await controller.dispose(); await store.dispose?.() }
+  } finally { await disposeFixture(controller, store) }
 })
 
 test("failed chat messages remain retryable with the same durable idempotency key", async () => {
@@ -1219,15 +1355,15 @@ test("failed chat messages remain retryable with the same durable idempotency ke
     const card = [...store.collections.cards.values()].find(row => row.kind === "issue")!
     if (card.kind !== "issue") throw Error("Wrong card")
     await controller.commentOnIssue(8, "retry me", "will/flows")
-    await new Promise(resolve => setTimeout(resolve, 50))
+    await flushStore(store)
     const pending = (store.collections.cards.get(card.id) as typeof card).payload.pendingComments![0]!
     expect(pending).toMatchObject({ status: "failed", error: "Posting the message failed (503). Something on Smithers' side failed. Not your fault, and nothing your request could have changed." })
     expect(pending.error).not.toContain("Try again")
     await controller.retryIssueComment(card.id, pending.id)
-    await new Promise(resolve => setTimeout(resolve, 50))
+    await flushStore(store)
     expect(requests).toEqual([pending.id, pending.id])
     expect((store.collections.cards.get(card.id) as typeof card).payload.pendingComments).toEqual([])
-  } finally { await controller.dispose(); await store.dispose?.() }
+  } finally { await disposeFixture(controller, store) }
 })
 
 test("restored requested messages replay once through their persisted backend idempotency key", async () => {
@@ -1240,7 +1376,8 @@ test("restored requested messages replay once through their persisted backend id
     commentDraft: "next draft", pendingComments: [{ id: "stable-request", text: "after restart", actor: "user", status: "requested" }]
   } }
   await store.dispatch({ type: "card.upsert", actor: "user", card }).isPersisted.promise
-  await store.dispose?.()
+  await closeBareStore(store)
+  bareStores.delete(store)
   store = await createAppStore({ kind: "localStorage", storage })
   const requests: unknown[] = []
   const controller = createAppController(store, unavailableAgent, backend({
@@ -1250,11 +1387,11 @@ test("restored requested messages replay once through their persisted backend id
   }))
   try {
     await signedIn(store)
-    await new Promise(resolve => setTimeout(resolve, 100))
+    await flushStore(store)
     expect(requests).toEqual([{ body: "after restart", idempotency_key: "stable-request" }])
     const restored = store.collections.cards.get(card.id)
     expect(restored?.kind === "issue" && restored.payload).toMatchObject({ commentDraft: "next draft", pendingComments: [], comments: [{ commentBody: "after restart" }] })
-  } finally { await controller.dispose(); await store.dispose?.() }
+  } finally { await disposeFixture(controller, store) }
 })
 
 test.each(["slack", "telegram"] as const)("%s delivery remains running through dispatch and exposes an unknown outcome without reposting", async provider => {
@@ -1272,13 +1409,13 @@ test.each(["slack", "telegram"] as const)("%s delivery remains running through d
     const toast = [...store.collections.toasts.values()].find(row => row.key.startsWith("issue.delivery:"))!
     expect(toast.status).toBe("running")
     await signedIn(store)
-    await new Promise(resolve => setTimeout(resolve, 20))
+    await flushStore(store)
     expect(store.collections.toasts.get(toast.id)?.status).toBe("running")
     state = "outcome_unknown"
     await new Promise(resolve => setTimeout(resolve, 2_000))
     expect(store.collections.toasts.get(toast.id)).toMatchObject({ status: "failed", detail: "Delivery unconfirmed. Resolve to continue." })
     expect(posts).toBe(0)
-  } finally { await controller.dispose(); await store.dispose?.() }
+  } finally { await disposeFixture(controller, store) }
 }, 5_000)
 
 test("an account switch retires a delayed chat creation receipt and never sends the previous owner's pending text", async () => {
@@ -1286,6 +1423,7 @@ test("an account switch retires a delayed chat creation receipt and never sends 
   let reading!: () => void
   const started = new Promise<void>(resolve => { reading = resolve })
   const body = new Promise<void>(resolve => { release = resolve })
+  releases.add(release)
   let creates = 0, posts = 0
   const { store, controller } = await issuesController(backend({
     "GET /api/repos/will/flows/issues/8": () => json(200, wireIssue(8, { kind: "chat", visibility: "private" })),
@@ -1306,20 +1444,20 @@ test("an account switch retires a delayed chat creation receipt and never sends 
       conversation: { branchId: store.session().activeBranchId!, owner: "will", creationKey: "private-create" },
       pendingComments: [{ id: "owner-bound-request", text: "private text", owner: "will", actor: "user", status: "requested" }]
     } } }).isPersisted.promise
-    await started
+    await bounded(started)
     await signedIn(store, "another-owner")
     release()
-    await new Promise(resolve => setTimeout(resolve, 50))
+    await flushStore(store)
     expect(creates).toBe(1)
     expect(posts).toBe(0)
     expect(store.collections.cards.get(card.id)).toBeUndefined()
     await store.dispatch({ type: "card.upsert", actor: "system", card: { ...card, payload: { ...card.payload,
       pendingComments: [{ id: "restored-other-owner", owner: "will", text: "private text", actor: "user", status: "requested" }]
     } } }).isPersisted.promise
-    await new Promise(resolve => setTimeout(resolve, 30))
+    await flushStore(store)
     expect(posts).toBe(0)
     expect((store.collections.cards.get(card.id) as typeof card).payload.pendingComments?.[0]?.status).toBe("requested")
-  } finally { release?.(); await controller.dispose(); await store.dispose?.() }
+  } finally { release?.(); await disposeFixture(controller, store) }
 })
 
 test("a delayed poll cannot replace a newer mutation receipt and does not overlap itself", async () => {
@@ -1327,6 +1465,7 @@ test("a delayed poll cannot replace a newer mutation receipt and does not overla
   let reading!: () => void
   const started = new Promise<void>(resolve => { reading = resolve })
   const body = new Promise<void>(resolve => { release = resolve })
+  releases.add(release)
   let reads = 0, text = "original"
   const { store, controller } = await issuesController(backend({
     "GET /api/repos/will/flows/issues/8": () => json(200, wireIssue(8, { kind: "chat", visibility: "private" })),
@@ -1343,20 +1482,21 @@ test("a delayed poll cannot replace a newer mutation receipt and does not overla
     await controller.commands.run("issues.view", "8 will/flows")
     const card = [...store.collections.cards.values()].find(row => row.kind === "issue")!
     if (card.kind !== "issue") throw Error("Wrong card")
-    await started
+    await bounded(started)
     await new Promise(resolve => setTimeout(resolve, 2_100))
     expect(reads).toBe(2)
     await controller.editIssueComment(8, 31, "edited", "will/flows")
     expect((store.collections.cards.get(card.id) as typeof card).payload.comments[0]?.commentBody).toBe("edited")
     release()
-    await new Promise(resolve => setTimeout(resolve, 40))
+    await flushStore(store)
     expect((store.collections.cards.get(card.id) as typeof card).payload.comments[0]?.commentBody).toBe("edited")
-  } finally { release?.(); await controller.dispose(); await store.dispose?.() }
+  } finally { release?.(); await disposeFixture(controller, store) }
 }, 10_000)
 
 test("owner resolution persists and returns before the receipt, deduplicates and exposes failure", async () => {
   let release!: () => void
   const held = new Promise<void>(resolve => { release = resolve })
+  releases.add(release)
   const receipts: unknown[] = []
   const { store, controller } = await issuesController(backend({
     "GET /api/repos/will/flows/issues/8": () => json(200, wireIssue(8, { kind: "chat", visibility: "private" })),
@@ -1370,6 +1510,7 @@ test("owner resolution persists and returns before the receipt, deduplicates and
     const card = [...store.collections.cards.values()].find(row => row.kind === "issue")!
     expect(await controller.resolveIssueSync(card.id, 41, "retry", "Accept duplicate risk", "")).toBe("Resolution requested.")
     expect(await controller.resolveIssueSync(card.id, 41, "retry", "Accept duplicate risk", "")).toBe("Resolution requested.")
+    await waitUntil(() => receipts.length === 1)
     await new Promise(resolve => setTimeout(resolve, 350))
     expect(receipts).toEqual([{ resolution: "retry", expected_token: "claim", state: "pending", error: "Accept duplicate risk", message_id: "" }])
     const persisted = store.collections.cards.get(card.id)!
@@ -1377,9 +1518,218 @@ test("owner resolution persists and returns before the receipt, deduplicates and
     const toast = [...store.collections.toasts.values()].find(row => row.key === `issue.resolve:${card.id}`)!
     expect(toast.status).toBe("running")
     release()
-    await new Promise(resolve => setTimeout(resolve, 100))
+    await flushStore(store)
     const failed = store.collections.cards.get(card.id)!
     expect(failed.kind === "issue" && failed.payload.sync?.resolution?.status).toBe("failed")
     expect(store.collections.toasts.get(toast.id)?.status).toBe("failed")
-  } finally { release(); await controller.dispose(); await store.dispose?.() }
+  } finally { release(); await disposeFixture(controller, store) }
+})
+
+// Public helper units use exactly their declared HTTP/base URL authority, not a
+// fabricated controller context or partial AppStore.
+const issueReadContext = (routes: Record<string, RouteAnswer>, calls: string[]) => {
+  const services = backend(routes, calls)
+  if (services.fetchImpl === undefined) throw new Error("Fixture requires its owned HTTP boundary")
+  return { baseUrl: "https://app.test", http: services.fetchImpl } satisfies Pick<SeamContext, "http" | "baseUrl">
+}
+
+describe("issue picker options through the public read boundary", () => {
+  test("native issue options retain source order and lenient rows, omit conversations, and encode repository segments", async () => {
+    const calls: string[] = []
+    const ctx = issueReadContext({
+      "GET /api/repos/team%20space/project%20%E2%98%83/issues": json(200, [
+        wireIssue(7, { title: "Repair the native flake" }), wireIssue(8, { kind: "chat" }), null, "not a row", { number: "9" }, { number: 10 }
+      ])
+    }, calls)
+    expect(await readIssueOptions(ctx, "team space/project ☃")).toEqual({ options: [
+      { value: "7", label: "#7 Repair the native flake" }, { value: "10", label: "#10 " }
+    ] })
+    expect(calls).toEqual(["GET /api/repos/team%20space/project%20%E2%98%83/issues?state=open"])
+  })
+
+  test("native 404 reads GitHub options once and omits every pull-request discriminator", async () => {
+    const calls: string[] = []
+    const ctx = issueReadContext({
+      "GET /api/repos/will/flows/issues": json(404, { message: "repository not imported" }),
+      "GET /api/user/github-repos/will/flows/issues": json(200, [wireGithubIssue(12, { title: "Source bug" }),
+        wireGithubIssue(13, { pull_request: null }), wireGithubIssue(14, { pull_request: {} }), null, { number: "15" }])
+    }, calls)
+    expect(await readIssueOptions(ctx, "will/flows")).toEqual({ options: [{ value: "12", label: "#12 Source bug" }] })
+    expect(calls).toEqual(["GET /api/repos/will/flows/issues?state=open", "GET /api/user/github-repos/will/flows/issues?state=open"])
+  })
+
+  test("native 403 returns its refusal without changing trackers, then the same read recovers", async () => {
+    let refused = true
+    const calls: string[] = []
+    const ctx = issueReadContext({ "GET /api/repos/will/flows/issues": () => refused
+      ? json(403, { message: "Issue access denied" }) : json(200, [wireIssue(7, { title: "Accessible again" })]) }, calls)
+    expect(await readIssueOptions(ctx, "will/flows")).toEqual({ options: [], error: "Issue access denied" })
+    expect(calls).toEqual(["GET /api/repos/will/flows/issues?state=open"])
+    refused = false
+    expect(await readIssueOptions(ctx, "will/flows")).toEqual({ options: [{ value: "7", label: "#7 Accessible again" }] })
+    expect(calls).toEqual(["GET /api/repos/will/flows/issues?state=open", "GET /api/repos/will/flows/issues?state=open"])
+  })
+
+  test.each(["syntax", "null"] as const)("native %s payload is unreadable, not empty options or a fallback", async malformed => {
+    let bad = true
+    const calls: string[] = []
+    const ctx = issueReadContext({ "GET /api/repos/will/flows/issues": () => bad
+      ? malformed === "syntax" ? new Response("{not-json", { headers: { "content-type": "application/json" } }) : json(200, null)
+      : json(200, []) }, calls)
+    expect(await readIssueOptions(ctx, "will/flows")).toEqual({ options: [], error: "The backend answered issues for will/flows with an unreadable payload" })
+    expect(calls).toEqual(["GET /api/repos/will/flows/issues?state=open"])
+    bad = false
+    expect(await readIssueOptions(ctx, "will/flows")).toEqual({ options: [] })
+    expect(calls).toEqual(["GET /api/repos/will/flows/issues?state=open", "GET /api/repos/will/flows/issues?state=open"])
+  })
+
+  test("GitHub malformed list after native 404 stays unreadable and later real rows recover", async () => {
+    let bad = true
+    const calls: string[] = []
+    const ctx = issueReadContext({
+      "GET /api/repos/will/flows/issues": json(404, { message: "not imported" }),
+      "GET /api/user/github-repos/will/flows/issues": () => json(200, bad ? { issues: [] } : [wireGithubIssue(12, { title: "Recovered source" })])
+    }, calls)
+    expect(await readIssueOptions(ctx, "will/flows")).toEqual({ options: [], error: "The backend answered issues for will/flows with an unreadable payload" })
+    bad = false
+    expect(await readIssueOptions(ctx, "will/flows")).toEqual({ options: [{ value: "12", label: "#12 Recovered source" }] })
+    expect(calls).toEqual(["GET /api/repos/will/flows/issues?state=open", "GET /api/user/github-repos/will/flows/issues?state=open",
+      "GET /api/repos/will/flows/issues?state=open", "GET /api/user/github-repos/will/flows/issues?state=open"])
+  })
+
+  test("a rejected native options transport reports the connection and retries only that read", async () => {
+    let disconnected = true
+    const calls: string[] = []
+    const ctx = issueReadContext({ "GET /api/repos/will/flows/issues": () => {
+      if (disconnected) throw new TypeError("disconnected")
+      return json(200, [])
+    } }, calls)
+    expect(await readIssueOptions(ctx, "will/flows")).toEqual({ options: [], error:
+      "Could not reach the backend to list issues for will/flows: disconnected. Nothing answered at all — that's the connection, not something you did. Try it again." })
+    disconnected = false
+    expect(await readIssueOptions(ctx, "will/flows")).toEqual({ options: [] })
+    expect(calls).toEqual(["GET /api/repos/will/flows/issues?state=open", "GET /api/repos/will/flows/issues?state=open"])
+  })
+})
+
+describe("coding-flow issue payload public read", () => {
+  test("returns literal forge and task facts without fetching comments or publishing a card", async () => {
+    const calls: string[] = []
+    const ctx = issueReadContext({ "GET /api/repos/will/flows/issues/7": json(200, wireIssue(7, {
+      title: "Fix with tests", body: "Keep the guard.", state: "fixed", visibility: "public",
+      author: { login: "ana", avatar_url: "https://avatars.test/ana" },
+      assignees: [{ login: "engineer", avatar_url: "https://avatars.test/engineer" }, null],
+      labels: [{ name: "bug", color: "ff0000" }, null], fixed_by: { username: "engineer" }, verified_by: "reviewer"
+    })) }, calls)
+    expect(await fetchIssuePayload(ctx, "will/flows", 7)).toEqual({
+      repo: "will/flows", number: 7, title: "Fix with tests", state: "fixed", author: "ana", createdAt: "2026-08-10T09:00:00Z",
+      assignees: [{ login: "engineer", avatar: "https://avatars.test/engineer" }], labelColors: { bug: "ff0000" }, authorAvatar: "https://avatars.test/ana",
+      visibility: "public", issueBody: "Keep the guard.", labels: ["bug"], comments: [],
+      task: { fixedBy: { id: "engineer", name: "engineer" }, verifiedBy: { id: "reviewer", name: "reviewer" } }
+    })
+    expect(calls).toEqual(["GET /api/repos/will/flows/issues/7"])
+  })
+
+  test("404 names the explicit GitHub read door without silently reading another tracker", async () => {
+    const calls: string[] = []
+    const ctx = issueReadContext({ "GET /api/repos/will/flows/issues/7": json(404, { message: "not found" }) }, calls)
+    expect(await fetchIssuePayload(ctx, "will/flows", 7)).toBe("Issue #7 in will/flows answered 404. For a GitHub issue, use /issues.view 7 will/flows --source github.")
+    expect(calls).toEqual(["GET /api/repos/will/flows/issues/7"])
+  })
+
+  test("503 keeps the server sentence and a subsequent payload read recovers", async () => {
+    let unavailable = true
+    const calls: string[] = []
+    const ctx = issueReadContext({ "GET /api/repos/will/flows/issues/7": () => unavailable
+      ? json(503, { message: "Tracker is restarting" }) : json(200, { number: 7, title: "Back online" }) }, calls)
+    expect(await fetchIssuePayload(ctx, "will/flows", 7)).toBe("Tracker is restarting")
+    unavailable = false
+    expect(await fetchIssuePayload(ctx, "will/flows", 7)).toEqual({ repo: "will/flows", number: 7, title: "Back online", state: "open",
+      author: null, issueBody: "", labels: [], comments: [] })
+    expect(calls).toEqual(["GET /api/repos/will/flows/issues/7", "GET /api/repos/will/flows/issues/7"])
+  })
+
+  test.each(["syntax", "null"] as const)("%s detail refuses unreadable payload rather than inventing an empty issue", async malformed => {
+    let bad = true
+    const calls: string[] = []
+    const ctx = issueReadContext({ "GET /api/repos/will/flows/issues/7": () => bad
+      ? malformed === "syntax" ? new Response("{not-json", { headers: { "content-type": "application/json" } }) : json(200, null)
+      : json(200, { title: "Valid minimal record" }) }, calls)
+    expect(await fetchIssuePayload(ctx, "will/flows", 7)).toBe("The backend answered issue #7 in will/flows with an unreadable payload")
+    bad = false
+    expect(await fetchIssuePayload(ctx, "will/flows", 7)).toEqual({ repo: "will/flows", number: 7, title: "Valid minimal record", state: "open",
+      author: null, issueBody: "", labels: [], comments: [] })
+    expect(calls).toEqual(["GET /api/repos/will/flows/issues/7", "GET /api/repos/will/flows/issues/7"])
+  })
+
+  test("transport rejection has a literal connection refusal and supports a fresh read", async () => {
+    let disconnected = true
+    const calls: string[] = []
+    const ctx = issueReadContext({ "GET /api/repos/will/flows/issues/7": () => {
+      if (disconnected) throw new TypeError("disconnected")
+      return json(200, { number: 7 })
+    } }, calls)
+    expect(await fetchIssuePayload(ctx, "will/flows", 7)).toBe("Could not reach the backend to load issue #7 in will/flows: disconnected. Nothing answered at all — that's the connection, not something you did. Try it again.")
+    disconnected = false
+    expect(await fetchIssuePayload(ctx, "will/flows", 7)).toEqual({ repo: "will/flows", number: 7, title: "", state: "open", author: null, issueBody: "", labels: [], comments: [] })
+    expect(calls).toEqual(["GET /api/repos/will/flows/issues/7", "GET /api/repos/will/flows/issues/7"])
+  })
+})
+
+describe("comment pagination failures preserve honest view state", () => {
+  test("a repeated opaque cursor refuses partial success, keeps requests scoped, and a fresh full read recovers", async () => {
+    let repeated = true
+    const calls: string[] = []
+    const { store, controller } = await issuesController(backend({
+      "GET /api/repos/will/flows/issues/7": json(200, wireIssue(7)),
+      "GET /api/repos/will/flows/issues/7/comments": request => repeated
+        ? new Response(JSON.stringify([wireComment(new URL(request.url).searchParams.has("cursor") ? 32 : 31, "partial")]), {
+          headers: { "content-type": "application/json", link: '<https://untrusted.invalid/wrong?cursor=opaque%2F%2B%20%E2%98%83>; rel="next"' }
+        }) : json(200, [wireComment(41, "Complete conversation")])
+    }, calls))
+    calls.length = 0
+    const refused = await controller.commands.run("issues.view", "7 will/flows")
+    expect(refused.status).toBe("failed")
+    if (refused.status !== "failed") throw new Error("Repeated cursor must refuse")
+    expect(refused.error).toBe("Comments for #7 did not finish loading.")
+    const failed = cardOfKind(store, "issue-will/flows-7", "status")
+    expect(failed).toMatchObject({ status: "error", loading: false, body: "Comments for #7 did not finish loading." })
+    expect([...store.collections.cards.values()].filter(card => card.kind === "issue")).toHaveLength(0)
+    expect(calls).toEqual(["GET /api/repos/will/flows/issues/7", "GET /api/repos/will/flows/issues/7/comments",
+      "GET /api/repos/will/flows/issues/7/comments?cursor=opaque%2F%2B%20%E2%98%83"])
+    repeated = false
+    expect((await controller.commands.run("issues.view", "7 will/flows")).status).toBe("executed")
+    await settleStore(store)
+    const recovered = cardOfKind(store, failed.id, "issue")
+    expect(recovered).toMatchObject({ status: "active", loading: false })
+    expect(recovered.payload.comments).toEqual([{ id: 41, author: "bob", commentBody: "Complete conversation", createdAt: "2026-08-11T10:00:00Z" }])
+    expect(calls).toEqual(["GET /api/repos/will/flows/issues/7", "GET /api/repos/will/flows/issues/7/comments",
+      "GET /api/repos/will/flows/issues/7/comments?cursor=opaque%2F%2B%20%E2%98%83", "GET /api/repos/will/flows/issues/7", "GET /api/repos/will/flows/issues/7/comments"])
+  })
+
+  test("malformed comments after valid detail cannot publish an issue with invented empty comments and retry recovers", async () => {
+    let malformed = true
+    const calls: string[] = []
+    const { store, controller } = await issuesController(backend({
+      "GET /api/repos/will/flows/issues/7": json(200, wireIssue(7, { title: "Read the complete discussion" })),
+      "GET /api/repos/will/flows/issues/7/comments": () => json(200, malformed ? { comments: [] } : [wireComment(31, "Recovered discussion")])
+    }, calls))
+    calls.length = 0
+    const refused = await controller.commands.run("issues.view", "7 will/flows")
+    expect(refused.status).toBe("failed")
+    if (refused.status !== "failed") throw new Error("Malformed comments must refuse")
+    expect(refused.error).toBe("The backend answered comments for #7 with an unreadable payload")
+    const failed = cardOfKind(store, "issue-will/flows-7", "status")
+    expect(failed).toMatchObject({ status: "error", loading: false, body: "The backend answered comments for #7 with an unreadable payload" })
+    expect([...store.collections.cards.values()].filter(card => card.kind === "issue")).toHaveLength(0)
+    expect(calls).toEqual(["GET /api/repos/will/flows/issues/7", "GET /api/repos/will/flows/issues/7/comments"])
+    malformed = false
+    expect((await controller.commands.run("issues.view", "7 will/flows")).status).toBe("executed")
+    await settleStore(store)
+    const recovered = cardOfKind(store, failed.id, "issue")
+    expect(recovered).toMatchObject({ status: "active", loading: false, payload: { title: "Read the complete discussion" } })
+    expect(recovered.payload.comments).toEqual([{ id: 31, author: "bob", commentBody: "Recovered discussion", createdAt: "2026-08-11T10:00:00Z" }])
+    expect(calls).toEqual(["GET /api/repos/will/flows/issues/7", "GET /api/repos/will/flows/issues/7/comments",
+      "GET /api/repos/will/flows/issues/7", "GET /api/repos/will/flows/issues/7/comments"])
+  })
 })

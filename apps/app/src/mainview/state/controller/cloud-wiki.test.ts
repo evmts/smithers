@@ -7,16 +7,76 @@ import type { StorageApi } from "@tanstack/db"
 import { afterEach, describe, expect, test } from "bun:test"
 import * as Y from "yjs"
 import { decodeWikiState, editWikiState, encodeWikiState, wikiDocumentId } from "../../wiki/CloudWiki"
-import { createAppStore } from "../AppStore"
+import { createAppStore as openAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
 import { createCloudWikiController } from "./cloud-wiki"
 import { createControllerContext } from "./context"
 import { createFramesController } from "./frames"
 
+const stores = new Set<AppStore>()
+const contexts = new Set<ReturnType<typeof createControllerContext>>()
+const documents = new Set<Y.Doc>()
+const releases = new Set<() => void>()
+const tasks = new Set<Promise<unknown>>()
+const checkpoint = () => new Promise<void>(resolve => setImmediate(resolve))
+const ownedFetch = (fetch: NonNullable<AppServices["fetchImpl"]>): NonNullable<AppServices["fetchImpl"]> =>
+  (input, init) => track(Promise.resolve(fetch(input, init)))
+const bounded = async <T>(promise: Promise<T>): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([promise, new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error("Wiki fixture did not settle")), 3_000)
+    })])
+  } finally { clearTimeout(timer) }
+}
+const track = <T>(promise: Promise<T>): Promise<T> => { tasks.add(promise); return promise }
+const heldVoid = () => {
+  const held = Promise.withResolvers<void>()
+  releases.add(held.resolve)
+  track(held.promise)
+  return held
+}
+const createAppStore: typeof openAppStore = async (...args) => {
+  const store = await openAppStore(...args)
+  stores.add(store)
+  return store
+}
+const settle = async (store: AppStore) => {
+  if (typeof store.settled !== "function") throw new Error("Wiki fixture store has no persistence settlement authority")
+  await store.settled()
+}
+const closeContext = async (ctx: ReturnType<typeof createControllerContext>) => {
+  if (!contexts.has(ctx)) return
+  await ctx.dispose()
+  contexts.delete(ctx)
+}
+// Release held admission/transport work before either controller authority closes.
+afterEach(() => { for (const release of releases) release(); releases.clear() })
 const createAppController = scopedControllers()
-const cleanup: Array<() => void> = []
-afterEach(() => {
-  cleanup.splice(0).forEach((close) => close())
+afterEach(async () => {
+  const errors: unknown[] = []
+  for (const ctx of [...contexts]) { try { await closeContext(ctx) } catch (error) { errors.push(error) } }
+  try {
+    let previous = -1
+    while (previous !== tasks.size) {
+      previous = tasks.size
+      await bounded(Promise.allSettled([...tasks]))
+      await checkpoint()
+    }
+  } catch (error) { errors.push(error) }
+  finally {
+    tasks.clear()
+    for (const store of [...stores]) {
+      try {
+        if (typeof store.dispose !== "function") throw new Error("Wiki fixture store has no disposal authority")
+        await store.dispose()
+        stores.delete(store)
+      } catch (error) { errors.push(error) }
+    }
+    for (const doc of documents) { try { doc.destroy() } catch (error) { errors.push(error) } }
+    documents.clear()
+  }
+  if (errors.length) throw new AggregateError(errors, "Wiki fixture cleanup failed")
 })
 const repo = "owner/repo"
 const id = wikiDocumentId(repo, 42)
@@ -54,6 +114,7 @@ const fixture = async (storage = memory()) => {
   const store = await createAppStore({ kind: "localStorage", storage })
   await signIn(store)
   const doc = new Y.Doc()
+  documents.add(doc)
   doc.getText("markdown").insert(0, "# Page\n\nStart")
   let revision = 1
   let slug = "home"
@@ -81,20 +142,23 @@ const fixture = async (storage = memory()) => {
   })
   const connect = (store: AppStore) => {
     const services: AppServices = {
-      fetchImpl: async (input, init) => {
+      fetchImpl: ownedFetch(async (input, init) => {
         const url = String(input)
         // Every wiki request carries its space (#1922); the fixture answers by route, not by the query.
         if (!/[?&]visibility=(public|private)(&|$)/.test(url)) throw new Error(`Wiki request without a space: ${url}`)
         const path = url.split("?")[0]!
         if (url.includes("/stream?")) {
+          let ownedStream: ReadableStreamDefaultController<Uint8Array>
           return new Response(
             new ReadableStream({
               start(controller) {
+                ownedStream = controller
                 streams.add(controller)
                 controller.enqueue(new TextEncoder().encode(": connected\n\n"))
               },
               cancel() {
                 streamsClosed++
+                streams.delete(ownedStream)
               }
             }),
             { headers: { "content-type": "text/event-stream" } }
@@ -127,21 +191,18 @@ const fixture = async (storage = memory()) => {
           })
         }
         throw new Error(`Unexpected Wiki request ${url}`)
-      }
+      })
     }
     const ctx = createControllerContext(store, silentAgent, services)
+    contexts.add(ctx)
     // Forking announces itself through the toast law; a bare context has no failure controller.
     ctx.resolveToast = (key, outcome) => {
       store.dispatch({ type: "toast.resolved", actor: "system", key, ...outcome })
     }
     const wiki = createCloudWikiController(ctx, () => 1)
-    cleanup.push(() => {
-      ctx.dispose()
-    })
     return { ctx, wiki, services }
   }
   const { ctx, wiki, services } = connect(store)
-  cleanup.push(() => doc.destroy())
   const emit = (event: string, data: unknown, seq?: number) => {
     for (const stream of streams) {
       stream.enqueue(
@@ -169,7 +230,7 @@ const fixture = async (storage = memory()) => {
     emit,
     doc,
     reopen: async () => {
-      ctx.dispose()
+      await closeContext(ctx)
       const reopened = await createAppStore({ kind: "localStorage", storage })
       return { store: reopened, ...connect(reopened) }
     },
@@ -194,7 +255,7 @@ const commandsFor = (f: Awaited<ReturnType<typeof fixture>>) => {
   const controller = createAppController({ ...f.store, dispatch: transition => {
     const receipt = f.store.dispatch(transition)
     if (transition.type !== "command.intent.accepted" || transition.name !== "wiki.edit") return receipt
-    const held = Promise.withResolvers<void>()
+    const held = heldVoid()
     admissions.push(held)
     return new Proxy(receipt, { get: (target, key, receiver) => key === "isPersisted"
     ? { ...target.isPersisted, promise: target.isPersisted.promise.then(() => held.promise) }
@@ -209,7 +270,7 @@ describe("cloud Wiki controller", () => {
     await f.wiki.openCloudWiki(repo, "home")
     const prepared = f.wiki.prepareCloudWiki(id, "# Private draft")!
     try {
-      await f.store.settled?.()
+      await settle(f.store)
       const before = f.storage.getItem(ENVELOPE_STORAGE_KEY)
       expect(f.store.committedWorldDocument(id)?.cloud?.pending[0]?.admitted).toBe(false)
       expect(() => enforceSchemaVersion(f.storage, { version: 14 })).toThrow("cannot be opened")
@@ -230,11 +291,11 @@ describe("cloud Wiki controller", () => {
     })
     const firstBody = "# Page\n\nStart C", latestBody = "# Page\n\nStart Collaboration"
     text = firstBody
-    const first = controller.commands.run("wiki.edit", `${id} ${JSON.stringify(text)}`)
+    const first = track(controller.commands.run("wiki.edit", `${id} ${JSON.stringify(text)}`))
     text = latestBody
-    const latest = controller.commands.run("wiki.edit", `${id} ${JSON.stringify(text)}`)
+    const latest = track(controller.commands.run("wiki.edit", `${id} ${JSON.stringify(text)}`))
     try {
-      await f.store.settled?.()
+      await settle(f.store)
       expect(f.posts).toHaveLength(0)
       admissions[0]!.resolve()
       expect((await first).status).toBe("executed")
@@ -255,8 +316,8 @@ describe("cloud Wiki controller", () => {
     const f = await fixture()
     const { controller, admissions } = commandsFor(f)
     await controller.openCloudWiki(repo, "home")
-    const first = controller.commands.run("wiki.edit", `${id} ${JSON.stringify("# Page\n\nC")}`)
-    const latest = controller.commands.run("wiki.edit", `${id} ${JSON.stringify("# Page\n\nCollaboration")}`)
+    const first = track(controller.commands.run("wiki.edit", `${id} ${JSON.stringify("# Page\n\nC")}`))
+    const latest = track(controller.commands.run("wiki.edit", `${id} ${JSON.stringify("# Page\n\nCollaboration")}`))
     try {
       admissions[1]!.resolve()
       expect((await latest).status).toBe("executed")
@@ -276,12 +337,12 @@ describe("cloud Wiki controller", () => {
     const f = await fixture()
     const { controller, admissions } = commandsFor(f)
     await controller.openCloudWiki(repo, "home")
-    const ack = Promise.withResolvers<void>()
+    const ack = heldVoid()
     f.pause(ack.promise)
-    const first = controller.commands.run("wiki.edit", `${id} ${JSON.stringify("# Page\n\nStart C")}`)
+    const first = track(controller.commands.run("wiki.edit", `${id} ${JSON.stringify("# Page\n\nStart C")}`))
     admissions[0]!.resolve()
     await until(() => f.posts.length === 1)
-    const latest = controller.commands.run("wiki.edit", `${id} ${JSON.stringify("# Page\n\nStart Collaboration")}`)
+    const latest = track(controller.commands.run("wiki.edit", `${id} ${JSON.stringify("# Page\n\nStart Collaboration")}`))
     try {
       f.remote("# Peer\n\n# Page\n\nStart C")
       await until(() => f.store.collections.worldDocuments.get(id)?.body.includes("Peer") === true)
@@ -306,7 +367,7 @@ describe("cloud Wiki controller", () => {
     const f = await fixture()
     const { controller, admissions } = commandsFor(f)
     await controller.openCloudWiki(repo, "home")
-    const pending = controller.commands.run("wiki.edit", `${id} ${JSON.stringify("# Saved private draft")}`)
+    const pending = track(controller.commands.run("wiki.edit", `${id} ${JSON.stringify("# Saved private draft")}`))
     try {
       await controller.retryCloudWiki(id)
       expect(f.posts).toHaveLength(0)
@@ -328,11 +389,11 @@ describe("cloud Wiki controller", () => {
     const { controller, admissions } = commandsFor(f)
     await controller.openCloudWiki(repo, "home")
     const args = `${id} ${JSON.stringify("# Same saved draft")}`
-    const first = controller.commands.run("wiki.edit", args)
+    const first = track(controller.commands.run("wiki.edit", args))
     admissions[0]!.reject(new Error("admission failed"))
     expect((await first).status).toBe("failed")
     const update = f.store.collections.worldDocuments.get(id)!.cloud!.pending[0]!
-    const second = controller.commands.run("wiki.edit", args)
+    const second = track(controller.commands.run("wiki.edit", args))
     try {
       expect(f.store.collections.worldDocuments.get(id)?.cloud?.pending).toHaveLength(1)
       expect(f.posts).toHaveLength(0)
@@ -351,7 +412,7 @@ describe("cloud Wiki controller", () => {
     const f = await fixture()
     await f.wiki.openCloudWiki(repo, "home")
     const prepared = f.wiki.prepareCloudWiki(id, "# Recovered draft")!
-    await f.store.settled?.()
+    await settle(f.store)
     prepared.release()
     const reopened = await f.reopen()
     expect(reopened.store.collections.worldDocuments.get(id)?.body).toBe("# Recovered draft")
@@ -367,7 +428,7 @@ describe("cloud Wiki controller", () => {
     const f = await fixture()
     const { controller, admissions } = commandsFor(f)
     await controller.openCloudWiki(repo, "home")
-    const pending = controller.commands.run("wiki.edit", `${id} ${JSON.stringify("# Private draft")}`)
+    const pending = track(controller.commands.run("wiki.edit", `${id} ${JSON.stringify("# Private draft")}`))
     try {
       await f.store.dispatch({ type: "identity.session.cleared", actor: "user" }).isPersisted.promise
       admissions[0]!.resolve()
@@ -385,9 +446,9 @@ describe("cloud Wiki controller", () => {
     const { controller, admissions } = commandsFor(f)
     await controller.openCloudWiki(repo, "home")
     const before = f.store.collections.worldDocuments.get(id)!.body
-    const pending = controller.commands.runForAgent("wiki.edit", `${id} ${JSON.stringify("# Agent edit")}`)
+    const pending = track(controller.commands.runForAgent("wiki.edit", `${id} ${JSON.stringify("# Agent edit")}`))
     try {
-      await f.store.settled?.()
+      await settle(f.store)
       expect(f.store.collections.worldDocuments.get(id)?.body).toBe(before)
       expect(f.posts).toHaveLength(0)
       admissions[0]!.resolve()
@@ -406,8 +467,8 @@ describe("cloud Wiki controller", () => {
     await f.store.dispatch({ type: "world.document.upserted", actor: "user", select: false,
       document: { id: "local-note", path: "Note.md", title: "Note", body: "# Note", tags: [], links: [], sources: [], confidence: 1 }
     }).isPersisted.promise
-    const first = controller.commands.run("wiki.edit", `local-note ${JSON.stringify("# Note\n\nC")}`)
-    const latest = controller.commands.run("wiki.edit", `local-note ${JSON.stringify("# Note\n\nCollaboration")}`)
+    const first = track(controller.commands.run("wiki.edit", `local-note ${JSON.stringify("# Note\n\nC")}`))
+    const latest = track(controller.commands.run("wiki.edit", `local-note ${JSON.stringify("# Note\n\nCollaboration")}`))
     try {
       expect(f.store.collections.worldDocuments.get("local-note")?.body).toBe("# Note\n\nCollaboration")
       admissions[0]!.resolve()
@@ -495,11 +556,12 @@ describe("cloud Wiki controller", () => {
     f.pause(
       new Promise<void>((resolve) => {
         release = resolve
+        releases.add(resolve)
       })
     )
-    const first = f.wiki.editCloudWiki(id, "# Page\n\nFirst")
+    const first = track(f.wiki.editCloudWiki(id, "# Page\n\nFirst"))
     await until(() => f.posts.length === 1)
-    const second = f.wiki.editCloudWiki(id, "# Page\n\nFirst and second")
+    const second = track(f.wiki.editCloudWiki(id, "# Page\n\nFirst and second"))
     expect(f.store.collections.worldDocuments.get(id)!.cloud!.pending).toHaveLength(2)
     release()
     await Promise.all([first, second])
@@ -515,9 +577,10 @@ describe("cloud Wiki controller", () => {
     f.pause(
       new Promise<void>((resolve) => {
         release = resolve
+        releases.add(resolve)
       })
     )
-    const editing = f.wiki.editCloudWiki(id, "# Page\n\nPrivate")
+    const editing = track(f.wiki.editCloudWiki(id, "# Page\n\nPrivate"))
     await until(() => f.posts.length === 1)
     await f.store.dispatch({ type: "identity.session.cleared", actor: "user" }).isPersisted.promise
     release()
@@ -597,9 +660,10 @@ describe("wiki spaces", () => {
         { id: 3, slug: "logo", title: "logo.png", path: "assets/logo.png", revision: 1, updated_at: "2026-09-26T00:00:00Z", author: { id: 1, login: "will" }, created_at: "2026-09-26T00:00:00Z", visibility: "public", content_digest: "c".repeat(64), attachment: { digest: "c".repeat(64), media_type: "image/png", size: 3 }, metadata: { frontmatter: null, aliases: [], tags: [], headings: [], links: [] }, backlinks: [] }],
       private: [{ id: 9, slug: "home", title: "Home", path: "Home.md", revision: 1, updated_at: "2026-09-26T00:00:00Z", author: { id: 1, login: "will" }, created_at: "2026-09-26T00:00:00Z", visibility: "private", content_digest: "d".repeat(64), metadata: { frontmatter: null, aliases: [], tags: ["secret"], headings: ["Home"], links: [] }, backlinks: [] }]
     }
+    const uploadedBytes: number[][] = []
     let renameStatus = 200
     const services: AppServices = {
-      fetchImpl: async (input, init) => {
+      fetchImpl: ownedFetch(async (input, init) => {
         const url = String(input)
         const match = /[?&]visibility=(public|private)(&|$)/.exec(url)
         if (match === null) throw new Error(`Wiki request without a space: ${url}`)
@@ -621,23 +685,28 @@ describe("wiki spaces", () => {
           ? Response.json({ id: 1, slug: "home", title: "Home", path: JSON.parse(String(init.body)).path, revision: 4, updated_at: "2026-09-26T00:00:00Z", created_at: "2026-09-26T00:00:00Z", author: { id: 1, login: "will" }, visibility: at, content_digest: "a".repeat(64) })
           : Response.json({ message: "revision 3 is not current" }, { status: 409 })
         if (init?.method === "DELETE") return new Response(null, { status: 204 })
-        if (init?.method === "PUT") return Response.json({ id: 30, slug: "home-diagram-png", title: "diagram.png", path: "assets/diagram.png", revision: 1, updated_at: "2026-09-26T00:00:00Z", created_at: "2026-09-26T00:00:00Z", author: { id: 1, login: "will" }, visibility: at, content_digest: "9".repeat(64), attachment: { digest: "9".repeat(64), media_type: "image/png", size: 3 } })
+        if (init?.method === "PUT") {
+          uploadedBytes.push([...new Uint8Array(await new Response(init.body).arrayBuffer())])
+          return Response.json({ id: 30, slug: "home-diagram-png", title: "diagram.png", path: "assets/diagram.png", revision: 1, updated_at: "2026-09-26T00:00:00Z", created_at: "2026-09-26T00:00:00Z", author: { id: 1, login: "will" }, visibility: at, content_digest: "9".repeat(64), attachment: { digest: "9".repeat(64), media_type: "image/png", size: 3 } })
+        }
         if (path.endsWith("/document")) {
           const page = pages[at].find((row) => String(path).endsWith(`/wiki/${row.slug}/document`)) ?? pages[at][0]!
           const doc = new Y.Doc(); doc.getText("markdown").insert(0, page.slug === "notes" ? "# Notes\n\n" : at === "public" ? "# Home\n\n[[Guides/Start]]" : "# Home\n\nPrivate")
-          return Response.json({ page: { ...page, body: doc.getText("markdown").toString() }, state: encodeWikiState(Y.encodeStateAsUpdate(doc)), state_vector: encodeWikiState(Y.encodeStateVector(doc)) })
+          try {
+            return Response.json({ page: { ...page, body: doc.getText("markdown").toString() }, state: encodeWikiState(Y.encodeStateAsUpdate(doc)), state_vector: encodeWikiState(Y.encodeStateVector(doc)) })
+          } finally { doc.destroy() }
         }
         if (url.includes("/stream?")) return new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode(": connected\n\n")) } }), { headers: { "content-type": "text/event-stream" } })
         throw new Error(`Unexpected Wiki request ${url}`)
-      }
+      })
     }
     const ctx = createControllerContext(store, silentAgent, services)
+    contexts.add(ctx)
     const toasts: Array<{ key: string; title: string; done: string; outcome: unknown }> = []
     ctx.withToast = async (key, title, done, work) => { const outcome = await work(); toasts.push({ key, title, done, outcome }); return outcome }
     ctx.resolveToast = () => {}
     const wiki = createCloudWikiController(ctx, () => 1)
-    cleanup.push(() => ctx.dispose())
-    return { store, ctx, wiki, requests, toasts, refuseRename: () => { renameStatus = 409 } }
+    return { store, ctx, wiki, requests, uploadedBytes, toasts, refuseRename: () => { renameStatus = 409 } }
   }
 
   test("the index of each space lands in its own row, and switching the space re-reads it", async () => {
@@ -721,6 +790,82 @@ describe("wiki spaces", () => {
     expect(await f.wiki.attachCloudWiki("home", "", repo)).toBe("Choose a file to attach.")
     expect(await f.wiki.attachCloudWiki("home", "Notes.md", repo, { name: "wiki.attach", takeFile: () => file, release: () => {} })).toBe("An attachment path is a relative file path, not a Markdown page.")
   })
+
+  for (const retirement of ["none", "account", "sign-out", "round-trip", "conversation", "dispose"] as const) test(`attachment bytes read ${retirement === "none" ? "publish once for that same account" : `cannot publish after ${retirement}`}`, async () => {
+    const f = await space()
+    if (retirement === "conversation") await f.wiki.openCloudWiki(repo, "home")
+    const reading = heldVoid()
+    const releaseBytes = heldVoid()
+    const readCompleted = Promise.withResolvers<void>()
+    track(readCompleted.promise)
+    class SelectedFile extends File {
+      override async arrayBuffer(): Promise<ArrayBuffer> {
+        reading.resolve()
+        try {
+          await releaseBytes.promise
+          return await super.arrayBuffer()
+        } finally { readCompleted.resolve() }
+      }
+    }
+    const file = new SelectedFile([new Uint8Array([1, 2, 3])], "diagram.png", { type: "image/png" })
+    const uploading = track(f.wiki.attachCloudWiki("home-diagram-png", "assets/diagram.png", repo, { name: "wiki.attach", takeFile: () => file, release: () => {} }))
+    await bounded(reading.promise)
+    expect(f.requests.filter(request => request.method === "PUT")).toEqual([])
+    if (retirement === "account" || retirement === "round-trip") await signIn(f.store, "ada")
+    if (retirement === "round-trip") await signIn(f.store, "will")
+    if (retirement === "sign-out") await f.store.dispatch({ type: "identity.session.cleared", actor: "user" }).isPersisted.promise
+    if (retirement === "conversation") {
+      const priorBranch = f.store.session().activeBranchId
+      const frames = createFramesController(f.ctx, undefined)
+      frames.maximizeCard(`wiki-open-${wikiDocumentId(repo, 1)}`)
+      await frames.forkFrame()
+      await until(() => f.store.session().activeBranchId !== priorBranch)
+    }
+    if (retirement === "dispose") await closeContext(f.ctx)
+    releaseBytes.resolve()
+    const outcome = await bounded(uploading)
+    // Cancellation may settle the command before File finishes; inspect effects only after both.
+    await bounded(readCompleted.promise)
+    await checkpoint()
+    if (retirement !== "none") {
+      expect(f.requests.filter(request => request.method === "PUT" || request.url.includes("/navigation/index"))).toEqual([])
+      expect(outcome).toBe("The Wiki request failed.")
+      expect(f.wiki.wikiIndexes.get(repo, "public")).toBeUndefined()
+      expect(f.uploadedBytes).toEqual([])
+    } else {
+      expect(f.requests.filter(request => request.method === "PUT")).toEqual([{ method: "PUT", url: "/api/repos/owner/repo/wiki/attachments/home-diagram-png?path=assets%2Fdiagram.png&expected_revision=0&visibility=public", body: "<bytes>", type: "image/png" }])
+      expect(outcome).toEqual({ value: "Attached assets/diagram.png (image/png, revision 1) to the public Wiki of owner/repo." })
+      expect(f.uploadedBytes).toEqual([[1, 2, 3]])
+    }
+  })
+
+
+  test("a selected file read rejection refuses without upload and a new gesture can retry", async () => {
+    const f = await space()
+    const reading = heldVoid()
+    const bytes = heldVoid()
+    class UnreadableFile extends File {
+      override async arrayBuffer(): Promise<ArrayBuffer> {
+        reading.resolve()
+        await bytes.promise
+        return super.arrayBuffer()
+      }
+    }
+    const first = new UnreadableFile([new Uint8Array([1, 2, 3])], "diagram.png", { type: "image/png" })
+    const uploading = track(f.wiki.attachCloudWiki("home-diagram-png", "assets/diagram.png", repo, { name: "wiki.attach", takeFile: () => first, release: () => {} }))
+    await bounded(reading.promise)
+    bytes.reject(new Error("Selected file is no longer readable"))
+    const refusal = await bounded(uploading)
+    expect(refusal).toBe("The selected file could not be read.")
+    expect(f.requests).toEqual([])
+    expect(f.uploadedBytes).toEqual([])
+    const retry = new File([new Uint8Array([1, 2, 3])], "diagram.png", { type: "image/png" })
+    expect(await f.wiki.attachCloudWiki("home-diagram-png", "assets/diagram.png", repo, { name: "wiki.attach", takeFile: () => retry, release: () => {} }))
+      .toEqual({ value: "Attached assets/diagram.png (image/png, revision 1) to the public Wiki of owner/repo." })
+    expect(f.requests.filter(request => request.method === "PUT")).toEqual([{ method: "PUT", url: "/api/repos/owner/repo/wiki/attachments/home-diagram-png?path=assets%2Fdiagram.png&expected_revision=0&visibility=public", body: "<bytes>", type: "image/png" }])
+    expect(f.uploadedBytes).toEqual([[1, 2, 3]])
+  })
+
 })
 
 describe("attachment bytes read under one account", () => {
@@ -749,7 +894,7 @@ describe("attachment bytes read under one account", () => {
     const requests: Array<{ method: string; url: string; body: Uint8Array | undefined }> = []
     const doc = new Y.Doc()
     doc.getText("markdown").insert(0, "# Page")
-    cleanup.push(() => doc.destroy())
+    documents.add(doc)
     const services: AppServices = {
       fetchImpl: async (input, init) => {
         const url = String(input)
@@ -766,7 +911,7 @@ describe("attachment bytes read under one account", () => {
     ctx.withToast = async (_key, _title, _done, work) => work()
     ctx.resolveToast = () => {}
     const wiki = createCloudWikiController(ctx, () => 1)
-    cleanup.push(() => ctx.dispose())
+    contexts.add(ctx)
     const file = () => new DeferredFile([bytes], "diagram.png", { type: "image/png" })
     const attach = (chosen: File) => wiki.attachCloudWiki("diagram", "assets/diagram.png", repo, { name: "wiki.attach", takeFile: () => chosen, release: () => {} })
     const uploads = () => requests.filter((request) => request.method === "PUT")
