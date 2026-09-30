@@ -16,6 +16,7 @@ import type { ModelErrorCode } from "@smthrs/model/ModelError"
 
 const HARNESS_COPY = {
   assembly_failed: "This run couldn't be assembled, so no turn ever opened. Not your fault — that's a defect here.",
+  approval_unavailable: "This run needs an answer, but approvals are unavailable. Not your fault.",
   incompatible_journal: "This run's record was written by a different version of Smithers and can't be read back. Not your fault — start a new run.",
   render_failed: "Smithers couldn't build the next turn to send. Not your fault, and not your request's — that's a defect here.",
   model_failed: "A turn opened and the model never answered, so the run stopped with no result. Not your fault — the turns it finished stand, and it's worth asking again.",
