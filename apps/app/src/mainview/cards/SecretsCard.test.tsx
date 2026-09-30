@@ -43,10 +43,10 @@ test("no secrets shows only the add button", () => {
 })
 
 const httpFetch = globalThis.fetch
-const HttpAbortController = globalThis.AbortController
+const nativeHttp = { fetch: globalThis.fetch, Request: globalThis.Request, Response: globalThis.Response, Headers: globalThis.Headers, AbortController: globalThis.AbortController, AbortSignal: globalThis.AbortSignal }
 GlobalRegistrator.register()
 // The real HTTP client uses native signals; Happy DOM supplies only the button DOM.
-globalThis.AbortController = HttpAbortController
+Object.assign(globalThis, nativeHttp)
 afterAll(async () => {
   await new Promise(resolve => setTimeout(resolve, 0))
   await GlobalRegistrator.unregister()
@@ -111,7 +111,7 @@ test("Bind opens the shared form without mutation and submits to the card reposi
     expect(requests).toEqual([{ path: "/api/repos/ada/repo/secrets/OPEN", body: { hosts: ["api.example.com", "registry.example.com"], match_headers: ["authorization", "x-api-key"] } }])
   } finally {
     flushSync(() => { mounted.unmount() })
-    controller.dispose()
+    await controller.dispose()
     await store.dispose?.()
     await server.stop(true)
   }
