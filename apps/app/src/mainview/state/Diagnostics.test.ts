@@ -1,3 +1,4 @@
+import { signupProfileFetch } from "./TestFixtures"
 import { afterEach, describe, expect, test } from "bun:test"
 import { inspect } from "node:util"
 import { createAppStore as openAppStore } from "./AppStore"
@@ -37,10 +38,11 @@ const createAppStore: typeof openAppStore = async (...args) => {
 const createAppController: typeof openAppController = (store, agent, services) => {
   return openAppController(store, agent, {
     ...services,
-    fetchImpl: services?.fetchImpl ?? (async input => {
+    fetchImpl: services?.fetchImpl ?? (signupProfileFetch(async (input, init) => {
+
       unexpectedRequests.push(String(input))
       throw new Error("Unexpected diagnostic fixture request")
-    })
+    }).fetchImpl)
   })
 }
 afterEach(async () => {
@@ -134,10 +136,11 @@ describe("app diagnostics without a repository", () => {
   test("reads network and application failures without exposing request data or successful tool content", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const controller = createAppController(store, silentAgent, {
-      fetchImpl: async input => {
+      fetchImpl: signupProfileFetch(async (input, init) => {
+
         if (String(input).includes("offline")) throw new Error("offline")
         return new Response("private response body", { status: String(input).includes("healthy") ? 200 : 503 })
-      }
+      }).fetchImpl
     })
     await controller.tappedFetch("https://user:private-password@app.test/failing?token=private-token#private-fragment")
     await controller.tappedFetch("/healthy")
@@ -161,11 +164,12 @@ describe("app diagnostics without a repository", () => {
     const entered = Promise.withResolvers<void>()
     releaseRequests.push(() => late.resolve(new Response("", { status: 500 })))
     const controller = createAppController(store, silentAgent, {
-      fetchImpl: async input => {
+      fetchImpl: signupProfileFetch(async (input, init) => {
+
         if (!String(input).includes("late")) return new Response("", { status: 500 })
         entered.resolve()
         return late.promise
-      }
+      }).fetchImpl
     })
     await toast(store, "Alice's failure")
     await controller.tappedFetch("/alice/private")

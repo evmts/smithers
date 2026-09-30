@@ -1,3 +1,4 @@
+import { signupProfileFetch } from "../TestFixtures"
 import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 
@@ -47,7 +48,8 @@ const backend = (
   routes: Record<string, Response | ((request: Request) => Response | Promise<Response>)>,
   recorded: RecordedRequest[] = []
 ): AppServices => ({
-  fetchImpl: async (input, init) => {
+  fetchImpl: signupProfileFetch(async (input, init) => {
+
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
     const absolute = new URL(url, "https://app.test")
     const path = absolute.pathname + absolute.search
@@ -60,7 +62,7 @@ const backend = (
       }
     }
     return json(404, { status: "error", message: `no stub for ${path}` })
-  }
+  }).fetchImpl
 })
 
 const freshController = async (services: AppServices) => {
