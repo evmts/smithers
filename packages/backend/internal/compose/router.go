@@ -1253,6 +1253,7 @@ func buildRouter(
 					r.With(writeRepo...).Post("/mythical/backfill", extras.Mythical.Backfill)
 					r.With(adminRepo...).Put("/mythical/config", extras.Mythical.Config)
 					r.With(writeRepo...).Post("/mythical/items/{id}/retry", extras.Mythical.Retry)
+					r.With(writeRepo...).Post("/mythical/todos", extras.Mythical.Todos)
 					r.With(writeRepo...).Put("/mythical/lanes", extras.Mythical.Lanes)
 					r.With(writeRepo...).Post("/mythical/wiki", extras.Mythical.Wiki)
 				}
@@ -1568,6 +1569,7 @@ func buildRouter(
 					r.With(writeWorkspace...).Post("/workspaces/{id}/services/{name}/{action}", workspaceHandler.ManageWorkspaceService)
 					r.With(writeWorkspace...).Delete("/workspaces/{id}", workspaceHandler.DeleteWorkspace)
 					r.With(writeWorkspace...).Post("/workspaces/{id}/suspend", workspaceHandler.SuspendWorkspace)
+					r.With(writeWorkspace...).Post("/workspaces/{id}/lease", workspaceHandler.RenewWorkspaceLease)
 					if extras.UserRefs != nil {
 						r.With(writeWorkspace...).Post("/workspaces/{id}/user-source", extras.UserRefs.StartFrom)
 					}

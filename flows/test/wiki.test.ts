@@ -447,7 +447,9 @@ test("real AgentAction review and flow replay use the existing engine", { timeou
     stream: (request) =>
       Stream.suspend(() => {
         calls++
-        requests.push(request.system.map((part) => part.text).join("\n"))
+        // A schema correction returns to the same session as a message, so
+        // capture the conversation as well as the system prompt.
+        requests.push([...request.system.map((part) => part.text), JSON.stringify(request.messages)].join("\n"))
         const review = {
           sections: supported(evidence).sections.map((section) => ({
             ...section,

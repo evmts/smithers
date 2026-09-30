@@ -65,6 +65,8 @@ type fakeMythicalGitHub struct {
 	// fails every Comment.
 	ci         map[string]string
 	commentErr error
+	// accounts are the GitHub accounts Account answers, by numeric id.
+	accounts map[int64]gitHubActor
 }
 
 // Merge squash-merges like GitHub: only while the pull request is open and
@@ -309,9 +311,14 @@ type fakeMythicalLanes struct {
 	// provision observes a bound lane where the real lanes start its box.
 	provision func(id string)
 	narrowed  []string
+	// offer is the lane machine Offer answers (a 2 vCPU, 4096 MiB container
+	// machine when unset), and placements the placement of every lane created.
+	offer      *mythicalMachineOffer
+	offerErr   error
+	placements []MythicalPlacement
 }
 
-func (l *fakeMythicalLanes) Create(_ context.Context, _ db.Repository, _ string, _ int64, name string, bind func(string) error) (string, error) {
+func (l *fakeMythicalLanes) Create(_ context.Context, _ db.Repository, _ string, _ int64, name string, placement MythicalPlacement, bind func(string) error) (string, error) {
 	id := uuid.NewString()
 	if err := bind(id); err != nil {
 		return "", err
@@ -322,7 +329,20 @@ func (l *fakeMythicalLanes) Create(_ context.Context, _ db.Repository, _ string,
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.created = append(l.created, id)
+	l.placements = append(l.placements, placement)
 	return id, nil
+}
+
+func (l *fakeMythicalLanes) Offer(context.Context, int64) (mythicalMachineOffer, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.offerErr != nil {
+		return mythicalMachineOffer{}, l.offerErr
+	}
+	if l.offer != nil {
+		return *l.offer, nil
+	}
+	return mythicalMachineOffer{VCPUs: 2, MemoryMiB: 4096}, nil
 }
 
 func (l *fakeMythicalLanes) NarrowOutsiderEgress(_ context.Context, id string) error {

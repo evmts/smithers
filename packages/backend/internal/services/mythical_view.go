@@ -86,6 +86,9 @@ type MythicalItemView struct {
 	Todo *MythicalTodoView `json:"todo,omitempty"`
 	// Route is how Jev routed a TODO, and how its outcome went once settled.
 	Route *MythicalRouteView `json:"route,omitempty"`
+	// Placement is the machine the item's latest lane was placed on, or the
+	// typed refusal it stopped at.
+	Placement *MythicalPlacement `json:"placement,omitempty"`
 	// HumanEdited is whether a person took over one of the item's runs.
 	HumanEdited bool `json:"humanEdited,omitempty"`
 	// ReviewHeld is whether a proposed TODO waits on a review of its current
@@ -401,6 +404,7 @@ func mythicalItemView(item db.MythicalItem) MythicalItemView {
 	row := MythicalItemView{ID: uuidString(item.ID), State: item.State, Reason: item.Reason, Attempt: item.Attempt,
 		Runs: MythicalRunsView{Request: item.RequestRunID, Vibe: item.VibeRunID, Verify: item.VerifyRunID},
 		Plan: item.Plan, Integration: item.Integration, Checks: mythicalChecksView(item), Todo: mythicalTodoView(item), Route: mythicalRouteView(item),
+		Placement:   mythicalChecksOf(item).Placement,
 		HumanEdited: len(mythicalDrivers(item.Checks)) > 0, ReviewHeld: item.Source == "issue" && mythicalReviewHeld(item), DependsOn: []string{}}
 	if item.IssueNumber.Valid {
 		row.Issue = &MythicalIssueView{Number: item.IssueNumber.Int64, Title: item.IssueTitle, URL: item.IssueURL}

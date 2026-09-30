@@ -3595,6 +3595,7 @@ export const make = (
       Effect.gen(function*() {
         if (options.canExecute !== undefined && !(yield* options.canExecute(runId))) return "unknown" as const
         const parked = yield* parkedHere(runId, 500)
+        console.log("DBG parked", parked)
         if (!parked) return "unknown" as const
         // A saved clock, deferred, parent, or approval request is background
         // intent. It can predate a later corruption park, so it cannot stand
@@ -3609,6 +3610,7 @@ export const make = (
           if (!eligible) return "unknown" as const
         }
         const hosted = yield* hostsPark(runId, uptake)
+        console.log("DBG hosted", hosted)
         if (!hosted) return "unknown" as const
         const claimed = yield* claimForResume(runId).pipe(
           Effect.as(true),

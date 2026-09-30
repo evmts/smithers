@@ -171,6 +171,26 @@ describe("the mythical stack contract", () => {
     expect(MythicalItemSchema.safeParse({ ...snapshot.items[2], todo: { replans: -1 } }).success).toBe(false)
   })
 
+  test("a candidate's check receipts decode as the stack service writes them, and an unknown one is refused", () => {
+    // The shape of mythical_receipts_test.go's stack view of a failed verification.
+    const commit = "d".repeat(40)
+    const checks = {
+      state: "failed",
+      failed: ["affected-test"],
+      receipts: [
+        { check: "affected-lint", tier: "fast", status: "passed", commit },
+        { check: "affected-test", tier: "slow", status: "failed", fault: "infra", commit }
+      ]
+    }
+    const item = { ...snapshot.items[0], checks }
+    expect(MythicalItemSchema.parse(item).checks).toEqual(checks)
+    const receipt = checks.receipts[0]!
+    for (const bad of [{ status: "superseded" }, { tier: "nightly" }, { fault: "user" }, { commit: undefined }]) {
+      const refused = { ...item, checks: { ...checks, receipts: [{ ...receipt, ...bad }] } }
+      expect(MythicalItemSchema.safeParse(refused).success).toBe(false)
+    }
+  })
+
   test("a TODO's metrics decode: its route, a person's take-over and its cost", () => {
     const measured = {
       ...snapshot.items[2],
@@ -240,6 +260,7 @@ describe("the mythical stack contract", () => {
     }
     expect(MythicalWikiSchema.parse({ state: "future_state", pages: 0, edited: 0, attempt: 0 }).state).toBe("unknown")
     expect(mythicalRoute("wiki", "o", "r")).toBe("/api/repos/o/r/mythical/wiki")
+    expect(mythicalRoute("todos", "o", "r")).toBe("/api/repos/o/r/mythical/todos")
   })
 
   test("routes fill owner, repository and item", () => {

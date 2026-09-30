@@ -537,6 +537,7 @@ export interface AppController extends IssueFlowsController, RepositorySetupCont
   readonly commentOnIssue: IssuesSeam["commentOnIssue"]
   readonly setIssueTask: IssuesSeam["setIssueTask"]
   readonly listIntegrations: IntegrationsSeam["listIntegrations"]
+  readonly admitSlackChannel: IntegrationsSeam["admitSlackChannel"]
   readonly listLandings: LandingsSeam["listLandings"]
   readonly viewLanding: LandingsSeam["viewLanding"]
   readonly setLandingTab: LandingsSeam["setTab"]
@@ -567,6 +568,7 @@ export interface AppController extends IssueFlowsController, RepositorySetupCont
   readonly backfillStack: StackSeam["backfillStack"]
   readonly setStackParallel: StackSeam["setStackParallel"]
   readonly retryStackItem: StackSeam["retryStackItem"]
+  readonly fileTodo: StackSeam["fileTodo"]
   readonly refreshWiki: StackSeam["refreshWiki"]
   readonly stackSnapshots: StackSeam["snapshots"]
   readonly importRepository: RepoImportSeam["importRepository"]
@@ -1858,6 +1860,7 @@ export const createAppController = (
     deleteIssueComment: issuesSeam.deleteIssueComment,
     setIssueTask: issuesSeam.setIssueTask,
     listIntegrations: integrationsSeam.listIntegrations,
+    admitSlackChannel: integrationsSeam.admitSlackChannel,
     listLandings: landingsSeam.listLandings,
     viewLanding: landingsSeam.viewLanding,
     setLandingTab: landingsSeam.setTab,
@@ -1888,6 +1891,7 @@ export const createAppController = (
     backfillStack: stackSeam.backfillStack,
     setStackParallel: stackSeam.setStackParallel,
     retryStackItem: stackSeam.retryStackItem,
+    fileTodo: stackSeam.fileTodo,
     refreshWiki: stackSeam.refreshWiki,
     registerTrigger,
     importRepository: repoImportSeam.importRepository,
