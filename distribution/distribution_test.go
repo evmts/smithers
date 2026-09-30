@@ -276,14 +276,7 @@ func TestFailedUpgradeLeavesManifest(t *testing.T) {
 }
 
 func TestRealBackupRestorePostgreSQL(t *testing.T) {
-	bin := os.Getenv("SMITHERS_POSTGRES_TEST_BIN")
-	if bin == "" {
-		t.Skip("SMITHERS_POSTGRES_TEST_BIN is required")
-	}
-	major, err := strconv.Atoi(os.Getenv("SMITHERS_POSTGRES_TEST_MAJOR"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	bin, major := testdb.Tools(t)
 	root := t.TempDir()
 	start := func(name string) *postgres.Instance {
 		p, err := postgres.Start(context.Background(), postgres.Config{BinDir: bin, StateDir: filepath.Join(root, name), Major: major, StartupTimeout: 20 * time.Second})

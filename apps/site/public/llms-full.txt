@@ -1442,7 +1442,7 @@ Fix the failing search tests. Keep changes inside src/search.ts and its tests.
 
 **Available now.** Ask in chat. Smithers starts a worker in its own tab and returns to chat. Up to six run at once (`SMITHERS_TUI_WORKERS`); more wait in order.
 
-Use `/claude <prompt>` or `/codex <prompt>` to run a signed-in CLI as a worker.
+Use Ctrl+K **Run Claude Code…** or **Run Codex…** to run a signed-in CLI as a worker.
 
 ![A worker runs in its own TUI tab while chat stays available.](/images/learn/tui-background-worker.gif)
 
@@ -1481,7 +1481,7 @@ Ctrl+S shows every subagent as a tree beside the chat; press it again to close.
 
 **TUI**
 
-**Available now.** Open a worker with `/tabs` or Ctrl+]. In its tab: `s` steers a Smithers worker, `x` stops, and `r` resumes with its earlier steps. `t` takes over any running worker: a Smithers worker pauses at each step until Enter, and Ctrl+Y releases it; a `/claude` or `/codex` worker opens its CLI on the same session, and quitting that CLI hands it back. Failed workers also offer `m` to pick another model and `w` to wait for the provider's reset. Ctrl+Y returns to the parent worker or Chat; Ctrl+\ returns directly to Chat. Only actions available for the current state are shown. `/stop <id>` and `/retry <id>` work from anywhere.
+**Available now.** Open a worker with Ctrl+]. In its tab: `s` steers a Smithers worker, `x` stops, and `r` resumes with its earlier steps. `t` takes over any running worker: a Smithers worker pauses at each step until Enter, and Ctrl+Y releases it; a Claude Code or Codex worker opens its CLI on the same session, and quitting that CLI hands it back. Failed workers also offer `m` to pick another model and `w` to wait for the provider's reset. Ctrl+Y returns to the parent worker or Chat; Ctrl+\ returns directly to Chat. Only actions available for the current state are shown. Ctrl+K lists the same actions, with their keys, from anywhere.
 
 ![Stopping and retrying a worker from its TUI tab.](/images/learn/tui-worker-controls.gif)
 
@@ -1670,7 +1670,7 @@ Keep the existing public API. Fix the parser and add a regression test.
 
 **TUI**
 
-**Available now.** In a running flow's tab, `x` stops it. A failed, cancelled, interrupted, or parked run offers `r` to resume. `/stop <id>` and `/retry <id>` do the same by ID. Completed runs show neither control.
+**Available now.** In a running flow's tab, `x` stops it. A failed, cancelled, interrupted, or parked run offers `r` to resume. Ctrl+K lists the same actions from anywhere. Completed runs show neither control.
 
 **CLI**
 
@@ -1768,6 +1768,34 @@ smthrs approvals deny @approval.json
 **API**
 
 **Available now.** `Approval.Submit { target, scope, idempotencyKey, decision: "approve" | "deny" }` over the API. See [HTTP and RPC endpoints](/docs/reference/http-api/).
+
+## Approve a build target
+
+A target that declares `approval: "required"`, such as `S.Docker.Push`, runs only after its current revision is approved. Any change to the target or its inputs needs a new approval.
+
+**GUI**
+
+**Available now.** Open **Inbox**: each waiting target shows its label and revision with **Approve** and **Deny**.
+
+**TUI**
+
+**Planned** ([#3152](https://github.com/smithersai/smithers/issues/3152)).
+
+**CLI**
+
+**Available now.**
+
+```sh
+smthrs approvals list --targets
+smthrs approvals grant //images:push
+smthrs target //images:push
+```
+
+`grant` also works against a remote host with `--remote`.
+
+**API**
+
+**Available now.** `Plan { flowId: "system/target", input: { label, digest }, idempotencyKey: "target:<label>:<digest>" }`, then `Approval.Submit` with the returned plan and `decision: "approve"`. `digest` is the target's `approval` in `smthrs target <label> --plan --json`. `List { _tag: "plans", filters: { flowId: "system/target", decision: "pending" } }` returns the revisions waiting; pass an item's `card.approval` to `Approval.Submit`.
 
 ## Correct it instead
 
@@ -2077,12 +2105,12 @@ The argument is the page id from `wiki index`. Attaching a file is available in 
 ```sh
 curl "$SMITHERS_API/api/repos/acme/app/wiki/history/7?visibility=private" \
   -H "Authorization: Bearer $SMITHERS_TOKEN"
-curl -X PUT "$SMITHERS_API/api/repos/acme/app/wiki/attachments/logo?path=assets/logo.png&expected_revision=0&visibility=private" \
+curl -X PUT "$SMITHERS_API/api/repos/acme/app/wiki/attachments/assets-logo-png-$(shasum -a 256 logo.png | cut -c1-12)?path=assets/logo.png&expected_revision=0&visibility=private" \
   -H "Authorization: Bearer $SMITHERS_TOKEN" \
   -H "Content-Type: image/png" --data-binary @logo.png
 ```
 
-`GET /wiki/history/{pageID}/{revision}/content` returns a revision's exact content, even after a delete. Attachments are up to 16 MiB.
+`GET /wiki/history/{pageID}/{revision}/content` returns a revision's exact content, even after a delete. Attachments are up to 16 MiB. A new attachment's slug is its path's slug, `-`, and the first 12 hex digits of the file's SHA-256.
 
 ## Generate pages from the code
 
@@ -2663,25 +2691,19 @@ Type `/` to browse commands. Up/Down choose, Tab completes, Enter runs, Esc clos
 | `/name <name>` | Name this conversation. | [Guide](/docs/learn/chat/) |
 | `/copy` | Copy the last answer. | [Guide](/docs/learn/chat/) |
 | `/summary` | Review this conversation. | [Guide](/docs/learn/review-a-change/) |
-| `/tabs` | Review background work. | [Guide](/docs/learn/background-work/) |
 | `/chat` | Return to chat. | [Guide](/docs/tui/views/) |
 | `/filter` | Show or hide kinds of rows. | [Guide](/docs/tui/views/) |
 | `/grep [text]` | Show only rows containing text. | [Guide](/docs/tui/views/) |
-| `/ui [id]` | Open a custom view. | [Guide](/docs/tui/extend/) |
 | `/smithers` | Flows and runs. | [Guide](/docs/learn/run-a-flow/) |
+| `/todo <title>` | File a TODO for the factory. | [Guide](/docs/learn/issue-to-main/#file-a-todo) |
 | `/devtools [id] [node]` | Inspect a run's nodes. | [Guide](/docs/learn/devtools/) |
 | `/flows` | Run a flow. | [Guide](/docs/learn/run-a-flow/) |
 | `/flow <name> [json\|key=value]` | Run a flow. | [Guide](/docs/learn/run-a-flow/) |
 | `/agent [name] [prompt]` | Run a custom agent. | [Guide](/docs/how-it-works/agents/) |
-| `/claude <prompt>` | Run Claude Code as a worker. | [Guide](/docs/learn/background-work/) |
-| `/codex <prompt>` | Run Codex as a worker. | [Guide](/docs/learn/background-work/) |
-| `/retry <id>` | Retry a stopped worker or flow. | [Guide](/docs/learn/background-work/) |
-| `/stop <id>` | Stop a worker or flow. | [Guide](/docs/learn/background-work/) |
-| `/hotkeys` | Show the keys. | [Guide](/docs/tui/keys/) |
 | `/quit` | Quit. | [Guide](/docs/tui/cli/) |
 | `/exit` | Alias for `/quit`. | [Guide](/docs/tui/cli/) |
 
-Repository flows also appear in the menu. `/model`, `/thinking`, `/flow`, and `/agent` complete their arguments. Start a line with `!` to run a shell command and add its output to the conversation, or `!!` to keep it out.
+Repository flows also appear in the menu. `/model`, `/thinking`, `/flow`, and `/agent` complete their arguments. An unknown command stays in the editor and names the nearest one. Stop, resume, steer, undo, custom views, and Claude Code or Codex workers are in Ctrl+K search. Start a line with `!` to run a shell command and add its output to the conversation, or `!!` to keep it out.
 
 ---
 
@@ -2767,7 +2789,7 @@ Press **?** with an empty editor to see the keys for where you are. **Esc** or *
 
 | Key | Action |
 | --- | --- |
-| `esc` | Close. |
+| `esc` | Back. |
 | `up` / `down` / `ctrl+p` / `ctrl+n` | Move. |
 | `pageup` / `pagedown` | Page. |
 | `enter` | Choose. |
@@ -3020,7 +3042,7 @@ await ctx.call("ui.publish", {
 })
 ```
 
-`/ui id` opens a view; `/ui` opens the newest. Blocks are `text`, `code`, `table`, or `diff`. Wrap a panel as `{ kind: "panel", placement: "card", panel }` to show it as a card in chat.
+Ctrl+K lists each view by title. Blocks are `text`, `code`, `table`, or `diff`. Wrap a panel as `{ kind: "panel", placement: "card", panel }` to show it as a card in chat.
 
 ![A published Checks view in the TUI.](/images/learn/tui-custom-view.gif)
 
@@ -9525,9 +9547,15 @@ Current-state commands accept the connection options `--root` and `--remote`, an
 
 `--lineage` selects a lineage explicitly. `--limit` bounds journal entries read, defaulting to 10,000 for these CLI history commands.
 
+## Verify against current code
+
+`runs verify <run>` reports what `runs resume` would do under the flow code now on disk, before anything runs. It resumes a copy of the project's stores with an engine that executes no action code, and lists the recorded steps that `replayed`, the first step that would execute again (`executes`), and the recorded steps nothing asked for (`notReplayed`). It exits `0` when every recorded step replays and `1` with `run_divergent` when a recorded step would be dropped or re-keyed. The project's own stores are only read. It needs the local SQLite stores.
+
 ## Fork or rewind
 
 `runs fork <run> --at <sequence>` creates an isolated child from an eligible parked or terminal agent run. It requires an approved plan and `jj`. The child workspace is retained under `.flows/forks/`; use `runs resume` with the returned child ID to continue it.
+
+Add `--step <digest> --result <json>` to fork with one recorded step result edited. The child replays every step up to the frame, serves that step with the edited value, and runs the steps after the frame again. `runs verify` lists each recorded step's digest. `--result` takes inline JSON or `@file`. The frame must be at or after the step's completion; the parent keeps its own result.
 
 Rewind archives a history suffix and restores the run and workspace to an earlier frame. It requires an exact sequence and either `--preview` or `--yes`:
 
@@ -9587,6 +9615,8 @@ When the journal has no question, `question` uses the declared human-task
 prompt. An optional `waits` array carries each holding execution's `runId` and
 optional `flowId`, `name`, `attempt`, and `request`.
 
+`smthrs approvals list --targets` lists build target revisions waiting for approval instead. Each row carries `target`, `revision`, and the `approval` payload `approve` and `deny` take.
+
 Answer a `HumanTask` with a signal to the listed root, using the wait's name
 and an answer matching its request:
 
@@ -9636,7 +9666,20 @@ A plan-level approval records a decision without launching work. Execute the app
 
 `smthrs approvals deny <approval>` refuses the exact request. The argument can be serialized JSON or `@file`, just as for `approve`.
 
-All three commands accept `--root` and `--remote` to select the host, and read the bearer from `SMITHERS_TOKEN`. The saved `smithers auth login` session is shared with repository commands; `SMITHERS_TOKEN` is the non-interactive override. Use `--format json` for a structured decision receipt.
+## grant
+
+`smthrs approvals grant <target>` approves the current revision of a build target that declares `approval: "required"`, such as `S.Docker.Push`:
+
+```bash
+smthrs approvals grant //images:push
+smthrs target //images:push
+```
+
+The approval covers that revision only: the declaration, its inputs, its tools, its dependencies and the `--input` values, which `grant` takes the same way. Any change needs a new grant. `--plan` shows the revision as `approval`.
+
+With `--remote` or `SMITHERS_REMOTE`, `grant` approves the revision the host's build left pending, without a local workspace. When a target has several pending revisions, pass `--revision` with one from `list --targets`; `--revision` also works locally.
+
+`list`, `approve`, `deny` and `grant` accept `--root` and `--remote` to select the host, and read the bearer from `SMITHERS_TOKEN`. The saved `smithers auth login` session is shared with repository commands; `SMITHERS_TOKEN` is the non-interactive override. Use `--format json` for a structured decision receipt.
 
 For a parked execution, [Waiting for approval](/docs/troubleshooting/waiting-approval/) explains how to locate its request and resume after a decision.
 
@@ -13726,7 +13769,7 @@ The `DiffAttrs` schema declares eleven fields:
 | `gates`     | `Array<Target.Target>`                          | `required`                          | Targets that must be green against each candidate tree. An outward or Run rule as a gate refuses the invocation.                               |
 | `secrets`   | `Array<Secret.HttpCredential>`                  | `optional`                          | Destination-bound credentials declared with `Smithers.HttpSecret`. The declaration records the variable name and audience, never a value.      |
 | `sandbox`   | `"none" \| { network?: boolean \| "loopback" }` | `optional`                          | The confinement policy for the node. Omitted, the node keeps the workspace default confinement.                                                |
-| `approval`  | `"required"`                                    | `optional`                          | Declaring it refuses the invocation before any effect, because the build system has no durable approval store.                                 |
+| `approval`  | `"required"`                                    | `optional`                          | Declaring it refuses the invocation before any effect until the current revision is approved with `smthrs approvals grant`.                    |
 | `maxRounds` | `integer`                                       | `required`                          | Candidate and gate rounds, a whole number at least 1 and at most `maximumRounds`, which is 16.                                                 |
 
 The declaration passes no `Target.guard`, so no attr combination is refused at construction. Three preconditions settle at plan time instead: a payload input that is missing or undeclared refuses with the field to pass as `--input`, `approval: "required"` refuses, and a gate that is an outward or Run rule refuses its consumer.
@@ -20842,8 +20885,12 @@ run the control plane launched records its launcher; one the engine created
 reader that `ControlRpcs.RunVisibility` does not make an operator to the runs
 its own principal launched: `List` sets `ListInput.reader` and `Watch` sets
 `WatchInput.reader`, neither of which is on the wire. Such a reader lists and
-watches only those runs, sees only the fires that started them, receives
-nothing from a plan partition, and gets `RunNotFound` for any other run.
+watches only those runs, sees only the fires that started them and no
+triggers, receives nothing from a plan partition, and gets `RunNotFound` for
+any other run. A lost-tail watch failure reaches it without partition names.
+`steer`, `signal`, `cancel` and `resume` take the same `reader`: over RPC the
+server sets it, and such a reader mutates only those runs and gets
+`RunNotFound` for any other.
 
 The `triggers` and `fires` variants are answered through the `DispatchReader`
 port. A host without one refuses both with `InvalidInput` whose issue is
@@ -23117,7 +23164,8 @@ with no platform layer.
 - An input whose buffer cannot be copied fails with a `badArgument` described
   as `syncCrypto could not snapshot SHA-256 input`, with the original
   `TypeError` as `cause`.
-- `randomBytes` throws
+- `randomBytes` throws a `PlatformError.badArgument` with
+  `module: "@smthrs/crypto"` and `method: "randomBytes"`, described as
   `@smthrs/crypto syncCrypto provides SHA-256 only; supply a platform Crypto layer for randomness`.
   Because `Crypto.make` derives random numbers, UUIDs, and shuffling from
   `randomBytes`, every random operation fails the same way.
@@ -23725,7 +23773,10 @@ interface NodeDatabaseOptions {
 const UnsupportedDatabaseCode: Schema.Literals<[
   "unsupported_runtime",
   "unsupported_database_file",
-  "database_locked"
+  "database_locked",
+  "postgres_url_missing",
+  "postgres_url_invalid",
+  "postgres_schema_invalid"
 ]>
 type UnsupportedDatabaseCode = typeof UnsupportedDatabaseCode.Type
 ```
@@ -23742,11 +23793,14 @@ class UnsupportedDatabase extends Schema.TaggedError<UnsupportedDatabase>()(
 A refusal to open a durable database in 1.0.0-rc.0, raised as a defect rather
 than a typed failure because neither refusal is recoverable at run time.
 
-| Code                        | Refused when                                                    | Message                                                                                  |
-| --------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `unsupported_runtime`       | `process.versions.bun` is set                                   | `Use @smthrs/database/bun/BunDatabase under Bun; NodeDatabase requires Node.js >=26.4.0` |
-| `unsupported_database_file` | the file has at least one table and no `flows_migrations` table | `<path> is not a Smithers 1.0 database (1.0.0-rc.0 does not load a 0.x smithers.db)`     |
-| `database_locked`           | a peer held the file for the whole open ladder                  | `<path> could not be inspected because another process holds it`                         |
+| Code                        | Refused when                                                       | Message                                                                                                        |
+| --------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `unsupported_runtime`       | `process.versions.bun` is set                                      | `Use @smthrs/database/bun/BunDatabase under Bun; NodeDatabase requires Node.js >=26.4.0`                       |
+| `unsupported_database_file` | the file has at least one table and no `flows_migrations` table    | `<path> is not a Smithers 1.0 database (1.0.0-rc.0 does not load a 0.x smithers.db)`                           |
+| `database_locked`           | a peer held the file for the whole open ladder                     | `<path> could not be inspected because another process holds it`                                               |
+| `postgres_url_missing`      | `SMITHERS_BACKEND=postgres` with no PostgreSQL URL set             | `PostgreSQL requires SMITHERS_POSTGRES_URL or DATABASE_URL`                                                    |
+| `postgres_url_invalid`      | the selected URL is not a parseable `postgres://` URL              | `PostgreSQL configuration requires a postgres:// or postgresql:// URL`, or `Invalid PostgreSQL connection URL` |
+| `postgres_schema_invalid`   | `PostgresDatabase.layer` gets an empty, NUL or over-63-byte schema | `PostgreSQL schema must contain 1 to 63 UTF-8 bytes and no NUL`                                                |
 
 ### isUnsupportedDatabase
 
@@ -36261,7 +36315,7 @@ Replay-safe policy for native deferred provider tool loading.
 | --------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `ProtocolId`                            | type      | `"anthropic-messages" \| "openai-responses" \| "openai-responses-chatgpt"`.                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `Resolution`                            | interface | `{ immediate, deferred, activatedNames }`: the tool partition derived from a sealed request.                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `supportsDeferred(protocolId, modelId)` | predicate | Answers from explicit per-protocol allowlists, matched case-insensitively. GPT-6 Sol, GPT-6.1 Sol, and Luna answer `true` on both OpenAI protocols, from OpenAI's tool search guide and a live probe recorded 2026-09-24 in `test/fixtures/gpt6-deferred-probe.json`. An unlisted model, including a family released after this code, answers `false` and receives every tool through the portable lowering, because native deferral changes the wire body and an unverified body must not ship without a release. |
+| `supportsDeferred(protocolId, modelId)` | predicate | Answers from explicit per-protocol allowlists, matched case-insensitively. GPT-6 Sol, GPT-6 Astra, and GPT-6 Luna answer `true` on both OpenAI protocols, from OpenAI's tool search guide and a live probe recorded 2026-09-24 in `test/fixtures/gpt6-deferred-probe.json`. GPT-6.1 Sol answers `true` on the API-key protocol only, from the guide; it has not been probed on the ChatGPT backend. An unlisted model, including a family released after this code, answers `false` and receives every tool through the portable lowering, because native deferral changes the wire body and an unverified body must not ship without a release. |
 | `resolve(request, native)`              | operation | Derives the partition from declared `deferred` annotations and the chronological transcript only: tool calls made, and `addedToolNames` activations. No process-local state is consulted, so replay produces the identical partition.                                                                                                                                                                                                                                                                              |
 
 Without native support, deferred tools arrive as ordinary definitions once
@@ -49850,6 +49904,7 @@ Variables an operator exports to steer the CLI.
 | `SMITHERS_TEST_CONTAINER` | operator | The container the `test` flow runs in. | none |
 | `SMITHERS_TEST_CWD` | operator | The repository's path inside that container. | none |
 | `SMITHERS_TEST_TIMEOUT_MS` | operator | Wall-clock budget for one `test` invocation. | none |
+| `SMITHERS_SANDBOX_IMAGE` | operator | The image a flow's `sandbox: {provider: container}` runs in, through `docker`, with the flow's network and limits. Unset refuses such flows; they never run on the host. | none |
 | `SMITHERS_BASH_CONTAINER` | operator | The one container `bash` may reach. Any other `bash` call, including one naming no container, fails with `outside_container`, and the host filesystem flows are not offered. | none |
 
 ## HTTP proxies
@@ -49921,13 +49976,16 @@ Exported 0.x settings (`SMITHERS_TEST_PG_URL`, and every `SMITHERS_POSTGRES_*` n
 
 ### `@smthrs/database`
 
-Raised as defects by `NodeDatabase.layer` before a connection is created; match them with `isUnsupportedDatabase`.
+Raised as defects by the database layers before a connection is created; match them with `isUnsupportedDatabase`.
 
 | Code | Where raised | Cause | Fix |
 | --- | --- | --- | --- |
 | `unsupported_runtime` | `NodeDatabase.layer` | The durable engine was opened under Bun (`process.versions.bun` is set) | Run the durable engine on Node.js 26.4.0 or later |
 | `unsupported_database_file` | `NodeDatabase.layer` | The file has at least one table and no `flows_migrations` table | The file is a 0.x `smithers.db`, which 1.0 does not load; open a 1.0 database |
 | `database_locked` | `NodeDatabase.layer` | A peer held the file for the whole open ladder, so it was never inspected | Stop the process holding the file and open it again |
+| `postgres_url_missing` | `NodeDatabase.layer`, `BunDatabase.layer` | `SMITHERS_BACKEND=postgres` is set with no `SMITHERS_POSTGRES_URL` or `DATABASE_URL` | Set `SMITHERS_POSTGRES_URL` |
+| `postgres_url_invalid` | `NodeDatabase.layer`, `BunDatabase.layer` | The selected PostgreSQL URL is not a parseable `postgres://` or `postgresql://` URL | Correct the connection URL |
+| `postgres_schema_invalid` | `PostgresDatabase.layer` | The schema is empty, contains NUL, or is over 63 UTF-8 bytes | Choose a schema name of 1 to 63 bytes |
 
 ### `@smthrs/flow`
 
@@ -50429,7 +50487,7 @@ A Smithers workspace holds target declarations and flow sources. Runtime state l
 
 `.smithers/WORKSPACE.ts` declares workspace-wide runtime, package-manager, and cache settings. A root `WORKSPACE.ts` is also supported. A `PACKAGE.ts` declares targets for its directory; exported target keys become labels such as `//apps/site:build`.
 
-`.smithers/FACTORY.ts` declares the factory beside the workspace: `export const factory = Smithers.Factory({ summary, flows, on, github })` names the flows the repository features (`Smithers.Flow` declarations under `flows`), the Dispatcher table (`on`, event key to the flow or flows it starts), and the GitHub policy (`Smithers.Github.Policy({ mirror, issues, changes, protectedPaths, reviewerAgents, agentIssueSources, maintainers, todoSince, dailyTokens })`, where `protectedPaths` adds to the configuration paths, the root install files, and the code main's workflows run with secrets or write permissions (with the workspace packages that code depends on), that work started from a non-maintainer's issue never changes; `reviewerAgents` names the agent accounts whose LGTM counts toward a protected bookmark's required agent LGTM; and `agentIssueSources` (`run`, `linear`, `trial`) lets issues those agents file start work without a maintainer's `smithers` label; `maintainers` names the GitHub logins whose `todo` and `automerge` labels count, and whose own issues written from `todoSince` on become TODOs without the label; `dailyTokens` bounds what the factory spends per day), and optionally `machine: { vcpus, memoryMiB, tools }`, the machine the factory's TODOs need: a TODO runs only on a lane booted from exactly the image the repository registered from its current `.smithers/environment.nix` when that file exists, with at least the declared vCPUs and memory, and with every `tools` entry on the booted machine's PATH before its run starts (`tools` requires that environment); when no lane machine matches, the TODO stops with the reason and the item records the machine it was placed on or the refusal; `export const home = Smithers.Factory.Home({ blocks })` is the home pane. The file may import `WORKSPACE.ts` and never imports a `PACKAGE.ts`: a target it needs is named by label, `Smithers.label("//:ci")`. A repository without the file declares no factory.
+`.smithers/FACTORY.ts` declares the factory beside the workspace: `export const factory = Smithers.Factory({ summary, flows, on, github })` names the flows the repository features (`Smithers.Flow` declarations under `flows`), the Dispatcher table (`on`, event key to the flow or flows it starts), and the GitHub policy (`Smithers.Github.Policy({ mirror, issues, changes, protectedPaths, reviewerAgents, agentIssueSources, maintainers, todoSince, dailyTokens })`, where `protectedPaths` adds to the configuration paths, the root install files, and the code main's workflows run with secrets or write permissions (with the workspace packages that code depends on), that work started from a non-maintainer's issue never changes; `reviewerAgents` names the agent accounts whose LGTM counts toward a protected bookmark's required agent LGTM; and `agentIssueSources` (`run`, `linear`, `trial`) lets issues those agents file start work without a maintainer's `smithers` label; `maintainers` names the GitHub logins whose `todo` and `automerge` labels count, and whose own issues written from `todoSince` on become TODOs without the label; `dailyTokens` bounds what the factory spends per day), and optionally `machine: { vcpus, memoryMiB, tools }`, the machine the factory's TODOs need: a TODO runs only on a lane booted from exactly the image the repository registered from its current `.smithers/environment.nix` when that file exists, with at least the declared vCPUs and memory, and with every `tools` entry on the booted machine's PATH before its run starts (`tools` requires that environment); when no lane machine matches, the TODO stops with the reason and the item records the machine it was placed on or the refusal; and optionally `issueViews: [{ id, title, state, labels }]`, saved issue views (`state` is `open`, `closed`, `fixed`, `verified` or `all`; `labels` keeps issues carrying every named label) that the app's issue list, `smthrs issue views` and `smthrs issue list --view <id>`, and `GET /api/repos/{owner}/{repo}/issue-views` read from `main`; `export const home = Smithers.Factory.Home({ blocks })` is the home pane. The file may import `WORKSPACE.ts` and never imports a `PACKAGE.ts`: a target it needs is named by label, `Smithers.label("//:ci")`. A repository without the file declares no factory.
 
 These are source files to commit. Their presence does not make `.flows/` state part of the source tree. The [CLI reference](/docs/reference/cli/) distinguishes target execution from durable flow commands.
 
@@ -50442,7 +50500,7 @@ One directory per flow; discovery reads these rules.
 - An entry file directly under `flows/` is refused: path-named sources cannot contain a root-level entry.
 - `smthrs init <name>` scaffolds `flows/<name>/flow.mdx`; the name is one path segment of letters, digits, `-`, and `_`.
 - Ids that start with `system/` are reserved for the control plane: `smthrs flow plan` and `smthrs flow start` refuse them, and `smthrs flow list` does not list them.
-- `.smithers/factory.json` is generated, not authored. A root `PACKAGE.ts` that declares `Smithers.FactoryProjection()` renders it from `.smithers/FACTORY.ts`: `summary`; `flows`, one row per discovered flow with its id, description, path, kind, capabilities, and model, plus the `summary` and `featured` flag the factory declares, featured rows first; `on`, the Dispatcher table flattened to rows of `event`, `flow`, and the `description` the card shows; `github`, the policy; and `machine` when declared. `smithers-build target //:factoryProjection --write` regenerates it and `ci` fails on drift. See [Featured flows](/docs/reference/flow-mdx/#featured-flows).
+- `.smithers/factory.json` is generated, not authored. A root `PACKAGE.ts` that declares `Smithers.FactoryProjection()` renders it from `.smithers/FACTORY.ts`: `summary`; `flows`, one row per discovered flow with its id, description, path, kind, capabilities, and model, plus the `summary` and `featured` flag the factory declares, featured rows first; `on`, the Dispatcher table flattened to rows of `event`, `flow`, and the `description` the card shows; `github`, the policy; `machine` when declared; and `issueViews` when any are declared. `smithers-build target //:factoryProjection --write` regenerates it and `ci` fails on drift. See [Featured flows](/docs/reference/flow-mdx/#featured-flows).
 - `.smithers/home.json` is generated by the same target from `export const home = Smithers.Factory.Home({ blocks })` in `.smithers/FACTORY.ts`. Its typed blocks are `Smithers.Home.Prompt({ title, placeholder })` (the heading and the composer), `Smithers.Home.App({ flow, title, picture })` (an app: a featured flow shown as a picture tile; opening it gives one input, one button, then the run card), `Smithers.Home.Flows()` (featured rows from `factory.json`), `Smithers.Home.Markdown({ path: "README.md" })`, `Smithers.Home.Text({ text })`, `Smithers.Home.Links({ links })`, and `Smithers.Home.Stack()` (the repository's live mythical stack). The server resolves Markdown files from the repository at `main`. When no homepage is declared, the workspace chat shows `README.md` if present. A string carrying raw HTML in a plain text block fails the declaration; the chat strips raw HTML from Markdown.
 
 ## .flows/
@@ -55891,6 +55949,7 @@ Commands:
   list     List issues
   reopen   Reopen an issue
   view     View an issue
+  views    List the repository's saved issue views
 
 Custom Global Options:
   --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)
@@ -56051,6 +56110,7 @@ Options:
   --limit <number>                           (default: 30)
   --repo, -R <string>
   --state <open|closed|fixed|verified|all>   (default: open)
+  --view <string>
 
 Custom Global Options:
   --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)
@@ -56108,6 +56168,33 @@ Usage: smthrs issue view <number> [options]
 
 Arguments:
   number  Issue number
+
+Options:
+  --repo, -R <string>
+
+Custom Global Options:
+  --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)
+  --silent                       Suppress progress; retain the result and actionable failures
+  --ui <auto|tty|stream|plain>   Terminal renderer: tty draws in place, stream colours without cursor motion, plain prints bare lines; auto shows live human progress; agent, --silent, pipe and dumb-terminal policies take precedence (default: auto)
+
+Global Options:
+  --filter-output <keys>              Filter output by key paths (e.g. foo,bar.baz,a[0,3])
+  --format <toon|json|yaml|md|jsonl>  Output format
+  --full-output                       Show full output envelope
+  --help                              Show help
+  --llms, --llms-full                 Print LLM-readable manifest
+  --schema                            Show JSON Schema for command
+  --token-count                       Print token count of output (instead of output)
+  --token-limit <n>                   Limit output to n tokens
+  --token-offset <n>                  Skip first n tokens of output
+```
+
+## issue views
+
+```text
+smthrs issue views — List the repository's saved issue views
+
+Usage: smthrs issue views [options]
 
 Options:
   --repo, -R <string>
@@ -60657,15 +60744,16 @@ Options:
   --disk <number>
   --idle-timeout <number>
   --image <string>
+  --kind <container|vm|desktop>
   --memory <number>
-  --name <string>           (default: )
+  --name <string>                 (default: )
   --network <string>
   --ref <string>
   --repo, -R <string>
   --service <array>
   --snapshot <string>
   --wait
-  --wait-timeout <number>   (default: 600)
+  --wait-timeout <number>         (default: 600)
 
 Custom Global Options:
   --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)

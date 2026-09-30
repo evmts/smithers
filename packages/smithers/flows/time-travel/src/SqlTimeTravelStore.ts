@@ -485,6 +485,49 @@ export const make: Effect.Effect<
                 AND ${Dialect.jsonText(sql, sql`event.payload_json`, "$.clockName")} = flows_clock_deadlines.clock_name
             )
         `
+        // A completion or consumption recorded in the suffix is undone on the
+        // row that survives it, so the rows keep matching the journal the
+        // deferred/clock fold rebuilds them from (issue #2054). A clock whose
+        // completion is archived is pending again and fires, which is what a
+        // clock whose deferred completion was archived already had to do.
+        yield* sql`
+          UPDATE flows_clock_deadlines
+          SET completed_at_ms = NULL
+          WHERE execution_id = ${runId}
+            AND completed_at_ms IS NOT NULL
+            AND EXISTS (
+              SELECT 1 FROM flows_journal_events AS event
+              WHERE event.run_id = ${runId}
+                AND event.seq > ${afterSeq}
+                AND event.event_type = ${EventTypes.clockCompleted}
+                AND ${Dialect.jsonText(sql, sql`event.payload_json`, "$.flowName")} = flows_clock_deadlines.flow_name
+                AND ${
+          Dialect.jsonText(sql, sql`event.payload_json`, "$.executionId")
+        } = flows_clock_deadlines.execution_id
+                AND ${Dialect.jsonText(sql, sql`event.payload_json`, "$.clockName")} = flows_clock_deadlines.clock_name
+            )
+        `
+        yield* sql`
+          UPDATE flows_deferred_completions
+          SET consumed_at_ms = NULL
+          WHERE execution_id = ${runId}
+            AND consumed_at_ms IS NOT NULL
+            AND EXISTS (
+              SELECT 1 FROM flows_journal_events AS event
+              WHERE event.run_id = ${runId}
+                AND event.seq > ${afterSeq}
+                AND event.event_type = ${EventTypes.deferredConsumed}
+                AND ${
+          Dialect.jsonText(sql, sql`event.payload_json`, "$.flowName")
+        } = flows_deferred_completions.flow_name
+                AND ${
+          Dialect.jsonText(sql, sql`event.payload_json`, "$.executionId")
+        } = flows_deferred_completions.execution_id
+                AND ${
+          Dialect.jsonText(sql, sql`event.payload_json`, "$.deferredName")
+        } = flows_deferred_completions.deferred_name
+            )
+        `
       }).pipe(Effect.mapError(mapError))
 
     /**
