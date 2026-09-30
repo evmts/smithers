@@ -49,8 +49,11 @@ backend and PostgreSQL supervisor. Quitting waits for their shutdown. Durable
 chat state belongs to PostgreSQL and is available when the backend restarts.
 In Plue mode, closing the shell does not stop the remote backend.
 
-The packaged app serves its built SPA on loopback and relays API requests to
-the selected backend. The headless entrypoint prints
+The packaged app serves its built SPA on a saved loopback origin and relays API
+requests to the selected backend. Relaunch reuses that origin so the WebView
+opens the same per-device SQLite collections. If the saved port is occupied,
+startup refuses rather than moving the presentation state to another origin.
+The headless entrypoint prints
 `SMITHERS_LOCAL_ORIGIN=<backend-origin>` after selecting its backend.
 
 ## Owned backend environment
@@ -75,29 +78,38 @@ with names only. An owned target always authenticates by session and ignores
 
 ## Local-origin security
 
-The native renderer relay binds loopback, checks `Host` and `Origin`, and
-keeps backend cookies in a process-owned jar scoped to the selected backend.
-Switching backends closes old tunnels and streams. The shared backend owns
-session, credential and mutation authorization.
+The native renderer relay binds loopback and checks `Host` and `Origin`.
+`renderer/state.json` under the native state directory records the port and
+unexpired persistent cookies in a private, owner-only file. Atomic commits
+complete before a changed session is returned to the renderer; failed writes
+refuse success. Session-only cookies stay in memory. The host scopes jars to
+the backend origin and configured credential; backend cookies never enter the
+renderer cookie jar or presentation database. Switching backends or stopping
+the relay closes old tunnels and streams. The shared backend continues to
+enforce session expiry, revocation and mutation authorization.
 
 The browser fixture host separately uses a fresh 256-bit local capability in
 the document's `smithers-local-session` meta tag, the corresponding request
 header and WebSocket subprotocol. Its recorded-chat adapter forwards an
 explicitly supplied backend credential, never this local capability.
 
-The native RPC surface has exactly one privileged operation:
-
-- `openExternal({ url })`, which accepts only HTTP(S) URLs and opens the
-  system browser.
-
-It has no HTTP fallback in the packaged app.
+The native RPC surface supplies the selected backend handoff and the
+system-browser door, `openExternal({ url })`, which accepts only HTTP(S) URLs.
+Changing the selected backend requires the native confirmation dialog. These
+doors have no HTTP fallback in the packaged app.
 
 Recorded chat admission, replay, cancellation and erasure belong to the shared
 Go backend and PostgreSQL in both owned and hosted modes. The native renderer
 relays authenticated requests; it creates no separate chat journal. Per-device
 presentation and draft collections continue to use SQLite.
 
-The identity proxy re-scopes the seam's session cookie to the local origin
+### Standalone transport host
+
+The following proxy contracts belong to `server.ts`, used by explicit browser
+and transport fixtures. The packaged native app uses the canonical backend
+relay above, not these sign-in or cloud-token managers.
+
+The standalone identity proxy re-scopes the seam's session cookie to the local origin
 before the WebView sees it: `Domain` goes because the cookie belongs to this
 origin now, and `Secure` goes because WebKit refuses a `Secure` cookie set over
 `http://127.0.0.1` (Chromium accepts one, so only the native renderer showed
@@ -141,6 +153,10 @@ harness tabs, the `+` menu and the PTY seams retired with the local backend
 
 ## HTTP and WebSocket surface
 
+This section describes the standalone `server.ts` transport fixture. Packaged
+native requests use the selected shared backend's public API and refusal
+envelopes through `NativeRendererServer.ts`.
+
 All mutations require `Content-Type: application/json`; failures use
 `{ error: { code, message } }` locally. A path whose percent-encoding is not
 valid UTF-8 answers `400 invalid_path` in that envelope, static or routed, and
@@ -158,12 +174,11 @@ route names are also plue's spellings and one is the Worker's, and they do not
 all mean the same thing. The status comes from the registry, so a route and its
 code cannot disagree about one.
 
-The routes this host shares with the Cloudflare Worker (`/api/cloud/*`,
-`/api/auth/*`, `/api/identity/*`, `/api/tools/browser-fetch`) refuse in the
-WORKER's vocabulary instead (`@smthrs/rpc/WorkerFailureCodes`), still with
-`origin: "local"`. An upstream those proxies forward to gets 20 s to send
-headers, which is the Worker's own default and the host's `upstreamTimeoutMs`
-option, and then answers `504 upstream_timeout`. The deadline covers headers
+The standalone proxy routes (`/api/cloud/*`, `/api/auth/*`, `/api/identity/*`,
+`/api/tools/browser-fetch`) retain the `@smthrs/rpc/WorkerFailureCodes` wire
+vocabulary, with `origin: "local"`. An upstream those proxies forward to gets
+20 s to send headers by default, configurable through `upstreamTimeoutMs`,
+and then answers `504 upstream_timeout`. The deadline covers headers
 only, so a streaming answer is never cut off. A body an upstream refuses with
 is restated in this host's envelope, keeping the upstream's status, `code`,
 `retry_after` and `Retry-After`, so a router's plain 404 or an HTML error page
