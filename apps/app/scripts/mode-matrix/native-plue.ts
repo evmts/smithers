@@ -43,7 +43,6 @@ export const startNativePlue = async (
       executable: packagePath,
       stateDirectory: home,
       artifactsDirectory: join(outputDir, "native-plue-diagnostics"),
-      runtime: "product",
       startupTimeoutMs: 180_000,
       env: {
         SMITHERS_BACKEND_MODE: "plue", SMITHERS_API_ORIGIN: origin.origin,
