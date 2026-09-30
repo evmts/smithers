@@ -57,6 +57,8 @@ export type Act =
   | "flow"
   | "fork"
   | "harness"
+  | "issue-views"
+  | "issues"
   | "land"
   | "memory"
   | "monitor"
@@ -83,6 +85,8 @@ const unknownSentence: Readonly<Record<Act, string>> = {
   flow: "The flow could not start.",
   fork: "This conversation could not be forked.",
   harness: "The workspace could not be reached.",
+  "issue-views": "Issue views could not be read.",
+  issues: "Issues could not be read.",
   land: "The landing could not start.",
   memory: "Memory could not be recalled.",
   monitor: "The monitor stopped.",
