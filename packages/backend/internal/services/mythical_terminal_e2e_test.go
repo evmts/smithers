@@ -31,6 +31,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -254,6 +255,15 @@ func checkout(t *testing.T) (string, string) {
 	return node, cli
 }
 
+// One-shot mutations use the public structured output; watches retain live human lines.
+func assertTerminalItem(t *testing.T, out string, issue int, title, state string, stored map[string]any) {
+	t.Helper()
+	require.Regexp(t, `(?m)^issue:\n  number: `+fmt.Sprint(issue)+`\n  title: `+regexp.QuoteMeta(title)+`\n`, out)
+	require.Regexp(t, `(?m)^state: `+regexp.QuoteMeta(state)+`$`, out)
+	require.Regexp(t, `(?m)^id: `+regexp.QuoteMeta(fmt.Sprint(stored["id"]))+`$`, out)
+	assert.Equal(t, state, stored["state"])
+}
+
 func TestTerminalFactoryLoop(t *testing.T) {
 	node, cli := checkout(t)
 	factory := services.NewTerminalFactory(t)
@@ -271,15 +281,14 @@ func TestTerminalFactoryLoop(t *testing.T) {
 	// 1. File a TODO. The App opens the GitHub issue and the stack queues it.
 	out, code := term.run("history", "todo", "Add the footer link", "--body", "Make it findable.")
 	require.Equal(t, 0, code, out)
-	assert.Contains(t, out, "#700 Add the footer link · queued")
-	assert.Equal(t, "queued", term.item(700, "filed")["state"])
+	assertTerminalItem(t, out, 700, "Add the footer link", "queued", term.item(700, "filed"))
 
 	// 2. Watch the factory pick it up, implement it and open its pull request.
 	watch := term.start("history", "watch", "700")
 	watch.until(t, "#700 Add the footer link · queued")
 	term.note("factory: a lane picks #700 up and launches coding/request")
 	factory.Wake()
-	watch.until(t, "#700 Add the footer link · running")
+	watch.until(t, "#700 Add the footer link · implementing\n  lane 1")
 	term.note("factory: the lane's coding/request validates the change; affected-lint and affected-test pass on the candidate")
 	candidate := factory.Implement(700, "docs/footer.md")
 	factory.Wake()
@@ -316,28 +325,29 @@ func TestTerminalFactoryLoop(t *testing.T) {
 	watch = term.start("history", "watch", "701")
 	watch.until(t, "#701 Add the header link · queued")
 	factory.Wake()
-	watch.until(t, "#701 Add the header link · running")
+	watch.until(t, "#701 Add the header link · implementing\n  lane 1")
 	term.note("factory: #701's coding/request fails: the model provider refused the lane's credentials (user fault)")
 	factory.Stop(701, "user", "flows/model/ModelError/authentication")
 	factory.Wake()
 	code = watch.exit(t)
 	term.record(watch, []string{"history", "watch", "701"}, code)
 	assert.Equal(t, 1, code, "a stopped TODO ends the watch with exit 1:\n%s", watch.output())
-	assert.Contains(t, watch.output(), "#701 Add the header link · blocked · stopped: user: flows/model/ModelError/authentication")
+	assert.Contains(t, watch.output(), "#701 Add the header link · blocked · The run was stopped")
 	blocked := term.item(701, "blocked")
 	assert.Equal(t, "blocked", blocked["state"])
-	assert.Equal(t, "stopped: user: flows/model/ModelError/authentication", blocked["reason"])
+	assert.Equal(t, "The run was stopped", blocked["reason"])
+	assert.Equal(t, map[string]any{"kind": "stopped", "fault": "user"}, blocked["failure"])
+	assert.Equal(t, map[string]any{"class": "user", "tag": "flows/model/ModelError/authentication"}, blocked["todo"].(map[string]any)["fault"])
 
 	// 5. Retry: the person resumes it and it reaches its pull request.
 	out, code = term.run("history", "retry", "701")
 	require.Equal(t, 0, code, out)
-	assert.Contains(t, out, "#701 Add the header link · queued")
-	assert.Equal(t, "queued", term.item(701, "retried")["state"])
+	assertTerminalItem(t, out, 701, "Add the header link", "queued", term.item(701, "retried"))
 	watch = term.start("history", "watch", "701")
 	watch.until(t, "#701 Add the header link · queued")
 	term.note("factory: a lane picks #701 up again")
 	factory.Wake()
-	watch.until(t, "#701 Add the header link · running")
+	watch.until(t, "#701 Add the header link · implementing\n  lane 1")
 	term.note("factory: this time coding/request validates the change")
 	candidate = factory.Implement(701, "docs/header.md")
 	factory.Wake()
@@ -353,8 +363,15 @@ func TestTerminalFactoryLoop(t *testing.T) {
 	// The history as the terminal shows it at the end.
 	out, code = term.run("history", "show")
 	require.Equal(t, 0, code, out)
-	assert.Contains(t, out, "#700 Add the footer link")
-	assert.Contains(t, out, "#701 Add the header link")
+	for _, row := range []struct {
+		number       int64
+		title, state string
+	}{
+		{700, "Add the footer link", "landed"}, {701, "Add the header link", "proposed"},
+	} {
+		stored := term.item(row.number, "final-"+fmt.Sprint(row.number))
+		require.Regexp(t, `(?m)^  - id: `+regexp.QuoteMeta(fmt.Sprint(stored["id"]))+`\n    issue:\n      number: `+fmt.Sprint(row.number)+`\n      title: `+regexp.QuoteMeta(row.title)+`\n      url: [^\n]+\n    state: `+row.state+`$`, out)
+	}
 
 	if term.receipts != "" {
 		require.NoError(t, os.WriteFile(filepath.Join(term.receipts, "transcript.txt"), []byte(term.transcript.String()), 0o644))
