@@ -20,11 +20,15 @@
  * the UI lanes build only on what passes here.
  */
 import { Control } from "@smthrs/control/Control"
+import { ControlRuntime } from "@smthrs/control/ControlRuntime"
 import type { ApprovalPayload, ControlEvent, PlanCard, RunSummary } from "@smthrs/control/ControlSchema"
 import type * as GatewayProjection from "@smthrs/gateway/GatewayProjection"
 import { Projections } from "@smthrs/gateway/Projections"
 import * as PlanDiff from "@smthrs/plan/PlanDiff"
-import { Effect, type Scope } from "effect"
+import { Deferred, Effect, type Scope } from "effect"
+import { mkdtempSync, readdirSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import {
   bridgeSettledKind,
@@ -178,6 +182,74 @@ const settledByAction = (runId: string) =>
     ))
 
 describe("a live plan graph over a bridged real engine", () => {
+  it("delivers an admitted answer after the real engine creates its wait", { timeout: 30_000 }, async () => {
+    const release = await Effect.runPromise(Deferred.make<void>())
+    await runOn(
+      stackWith({ beforeEngineStart: Deferred.await(release) }),
+      Effect.gen(function*() {
+        const control = yield* Control
+        const runtime = yield* ControlRuntime
+        const engine = yield* Engine
+        const { runId } = yield* launch("early-answer")
+        const receipt = yield* control.signal({
+          runId,
+          signal: { name: "graph-gate", payload: "merged" },
+          idempotencyKey: `early:${runId}`
+        })
+        expect(receipt._tag).toBe("Accepted")
+        expect(yield* engine.state.waitingTree(runId)).toEqual([])
+        const pending = yield* runtime.pendingSignals
+        expect(pending).toHaveLength(1)
+        expect(pending[0]).toMatchObject({ runId, state: "pending", token: null })
+        yield* Deferred.succeed(release, undefined)
+        expect(yield* engine.settled(runId).pipe(Effect.timeout("5 seconds"))).toBe("completed")
+        const delivered = yield* runtime.signalCommand(pending[0]!.commandId)
+        expect(delivered).toMatchObject({ runId, state: "delivered" })
+        expect(delivered?.token?.length).toBeGreaterThan(0)
+        expect(yield* runtime.pendingSignals).toEqual([])
+        expect(engine.dispatches.counts.get("steady")).toBe(1)
+      })
+    )
+  })
+
+  it("closing an owned stack cancels its held launch and removes both databases", { timeout: 30_000 }, async () => {
+    const directory = mkdtempSync(join(tmpdir(), "smithers-held-approval-"))
+    const previous = process.env.TMPDIR
+    const release = await Effect.runPromise(Deferred.make<void>())
+    try {
+      process.env.TMPDIR = directory
+      const dispatches = await runOn(
+        stackWith({ beforeEngineStart: Deferred.await(release) }),
+        Effect.gen(function*() {
+          const control = yield* Control
+          const runtime = yield* ControlRuntime
+          const engine = yield* Engine
+          const { runId } = yield* launch("close-with-pending-answer")
+          expect(
+            (yield* control.signal({
+              runId,
+              signal: { name: "graph-gate", payload: "merged" },
+              idempotencyKey: `closing:${runId}`
+            }))._tag
+          ).toBe("Accepted")
+          expect(yield* runtime.pendingSignals).toHaveLength(1)
+          expect(yield* engine.state.waitingTree(runId)).toEqual([])
+          const owned = readdirSync(directory)
+          expect(owned).toHaveLength(1)
+          expect(readdirSync(join(directory, owned[0]!))).toEqual(expect.arrayContaining(["control.db", "engine.db"]))
+          return engine.dispatches
+        })
+      )
+      // The barrier is deliberately never released: scope shutdown must cancel it.
+      expect(dispatches.counts.size).toBe(0)
+      expect(readdirSync(directory)).toEqual([])
+    } finally {
+      if (previous === undefined) delete process.env.TMPDIR
+      else process.env.TMPDIR = previous
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
   scenario(
     "plans a non-empty graph whose node ids are stable across two plans of the same input",
     () =>
