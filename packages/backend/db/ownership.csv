@@ -1,7 +1,7 @@
 table,target_owner,status
 users,product,product baseline
-alpha_whitelist_entries,product,product baseline
-alpha_waitlist_entries,product,product baseline
+alpha_whitelist_entries,retired,product baseline; dropped by product migration 0098 (#2145)
+alpha_waitlist_entries,retired,product baseline; dropped by product migration 0098 (#2145)
 organizations,product,product baseline
 owner_namespaces,product,product baseline
 auth_sessions,product,product baseline

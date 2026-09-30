@@ -23,6 +23,7 @@ type WikiEvent struct {
 	Title         string            `json:"title"`
 	ContentDigest string            `json:"content_digest"`
 	Attachment    *WikiAttachment   `json:"attachment,omitempty"`
+	SourceCommit  string            `json:"source_commit,omitempty"`
 	Deleted       bool              `json:"deleted"`
 	Author        WikiAuthorSummary `json:"author"`
 	At            time.Time         `json:"at"`
@@ -57,7 +58,7 @@ func FoldWikiEvents(state WikiProjection, events []WikiEvent) (WikiProjection, e
 	return next, nil
 }
 func wikiEvent(row db.WikiPageRevision) WikiEvent {
-	return WikiEvent{Version: 1, Sequence: row.Sequence, PageID: row.PageID, Revision: row.Revision, Visibility: row.Visibility, Slug: row.Slug, Path: row.Path, Title: row.Title, TitleSource: row.TitleSource, ContentDigest: row.ContentDigest, Attachment: wikiAttachment(row.Attachment), Deleted: row.Deleted, Author: WikiAuthorSummary{ID: row.AuthorID.Int64, Login: row.AuthorUsername}, At: row.CreatedAt.UTC()}
+	return WikiEvent{Version: 1, Sequence: row.Sequence, PageID: row.PageID, Revision: row.Revision, Visibility: row.Visibility, Slug: row.Slug, Path: row.Path, Title: row.Title, TitleSource: row.TitleSource, ContentDigest: row.ContentDigest, Attachment: wikiAttachment(row.Attachment), SourceCommit: row.SourceCommit, Deleted: row.Deleted, Author: WikiAuthorSummary{ID: row.AuthorID.Int64, Login: row.AuthorUsername}, At: row.CreatedAt.UTC()}
 }
 
 type wikiEventStore interface {
@@ -131,7 +132,7 @@ func (s *WikiService) wikiHistory(ctx context.Context, repoID, pageID int64, pag
 	}
 	revisions := make([]WikiRevisionResponse, 0, len(rows))
 	for _, row := range rows {
-		revisions = append(revisions, WikiRevisionResponse{ID: row.ID, PageID: row.PageID, Revision: row.Revision, Visibility: row.Visibility, Path: row.Path, ContentDigest: row.ContentDigest, Attachment: wikiAttachment(row.Attachment), Slug: row.Slug, Title: row.Title, Body: row.Body, Deleted: row.Deleted, HistoryCommitID: row.HistoryCommitID, Author: WikiAuthorSummary{ID: row.AuthorID.Int64, Login: row.AuthorUsername}, UpdatedAt: row.CreatedAt})
+		revisions = append(revisions, WikiRevisionResponse{ID: row.ID, PageID: row.PageID, Revision: row.Revision, Visibility: row.Visibility, Path: row.Path, ContentDigest: row.ContentDigest, Attachment: wikiAttachment(row.Attachment), Slug: row.Slug, Title: row.Title, Body: row.Body, Deleted: row.Deleted, HistoryCommitID: row.HistoryCommitID, SourceCommit: row.SourceCommit, Author: WikiAuthorSummary{ID: row.AuthorID.Int64, Login: row.AuthorUsername}, UpdatedAt: row.CreatedAt})
 	}
 	return revisions, total, nil
 }

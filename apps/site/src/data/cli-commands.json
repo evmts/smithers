@@ -9375,6 +9375,52 @@
       }
     },
     {
+      "name": "runs verify",
+      "description": "Report which recorded steps the current flow code would replay and which it would execute again",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "run": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Durable run ID"
+            }
+          },
+          "required": [
+            "run"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "root": {
+              "description": "Project directory; defaults to the nearest Smithers project",
+              "type": "string"
+            },
+            "remote": {
+              "description": "Remote control plane URL; defaults to SMITHERS_REMOTE",
+              "type": "string"
+            },
+            "mcpConfig": {
+              "description": "Path to the configured MCP servers",
+              "type": "string"
+            },
+            "quiet": {
+              "default": false,
+              "description": "Suppress progress messages",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "quiet"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
       "name": "runs wait",
       "description": "Wait for a durable run to settle",
       "schema": {
@@ -11668,6 +11714,109 @@
       }
     },
     {
+      "name": "workspace children list",
+      "description": "List a workspace's children",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "repo": {
+              "type": "string",
+              "description": "Repository (OWNER/REPO)"
+            },
+            "workspace": {
+              "type": "string",
+              "description": "Parent workspace ID (this workspace when run inside one)"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "workspace children spawn",
+      "description": "Spawn children of a running workspace",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "count": {
+              "default": 1,
+              "type": "number",
+              "description": "How many children"
+            },
+            "profile": {
+              "type": "string",
+              "enum": [
+                "small",
+                "build"
+              ],
+              "description": "small (1 vCPU, 2 GB) or build (2 vCPU, 8 GB)"
+            },
+            "repo": {
+              "type": "string",
+              "description": "Repository (OWNER/REPO)"
+            },
+            "ttl": {
+              "type": "number",
+              "description": "Seconds the children may live (plan default when omitted)"
+            },
+            "workspace": {
+              "type": "string",
+              "description": "Parent workspace ID (this workspace when run inside one)"
+            }
+          },
+          "required": [
+            "count"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "workspace children stop",
+      "description": "Stop a workspace's child",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "child": {
+              "type": "string",
+              "description": "Child workspace ID"
+            }
+          },
+          "required": [
+            "child"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "repo": {
+              "type": "string",
+              "description": "Repository (OWNER/REPO)"
+            },
+            "workspace": {
+              "type": "string",
+              "description": "Parent workspace ID (this workspace when run inside one)"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    {
       "name": "workspace cp",
       "description": "Copy files or directories between the local machine and a workspace",
       "schema": {
@@ -11750,6 +11899,15 @@
             "image": {
               "type": "string",
               "description": "OCI image to boot instead of the default workspace image (e.g. docker.io/library/python:3.13-slim)"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "container",
+                "vm",
+                "desktop"
+              ],
+              "description": "Workspace kind: container (default), vm (the repository's Nix environment) or desktop"
             },
             "memory": {
               "type": "number",

@@ -132,6 +132,7 @@ var migrationRegistry = []migrationSpec{
 	{94, "migrations/0094_wiki_title_source.sql"},
 	{95, "migrations/0095_workspace_source_commit.sql"},
 	{96, "migrations/0096_repository_registration_reports.sql"},
+	{97, "migrations/0097_wiki_revision_source_commit.sql"},
 }
 
 type migration struct {

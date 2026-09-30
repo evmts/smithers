@@ -333,7 +333,7 @@ func TestMythicalTodoStopsAtItsLaunchBound(t *testing.T) {
 	launched := len(o.launcher.requests)
 	o.wake()
 	assert.Len(t, o.launcher.requests, launched, "nothing more launches")
-	assert.Equal(t, []string{"#90 Smithers stopped this TODO. It reached its run limit."}, o.github.comments)
+	assert.Equal(t, []string{"#90 Smithers stopped this TODO. It reached its run limit.\nRun: run-11"}, o.github.comments)
 	assert.NotContains(t, o.github.comments[0], "SMITHERS_", "the issue names no operator setting")
 
 	// A run cannot lift the bound; a person can, and a maintainer's todo can.
@@ -815,7 +815,7 @@ func TestMythicalAutomergeRereadsEverythingItRestsOn(t *testing.T) {
 	assert.False(t, mythicalChecksOf(item).Automerge)
 	assert.Empty(t, o.github.merges)
 	o.wake()
-	assert.Equal(t, []string{"#76 Smithers is holding this TODO: a maintainer's automerge label is no longer on the issue."}, o.github.comments)
+	assert.Equal(t, []string{"#76 Smithers is holding this TODO: a maintainer's automerge label is no longer on the issue.\nRun: run-76"}, o.github.comments)
 	o.wake()
 	assert.Len(t, o.github.comments, 1, "said once")
 
@@ -846,7 +846,7 @@ func TestMythicalAutomergeRereadsEverythingItRestsOn(t *testing.T) {
 	o.github.commentErr = nil
 	o.github.mu.Unlock()
 	o.wake()
-	assert.Contains(t, o.github.comments, "#78 Smithers is holding this TODO: CI failed on the approved head.")
+	assert.Contains(t, o.github.comments, "#78 Smithers is holding this TODO: CI failed on the approved head.\nRun: run-78")
 	assert.Nil(t, mythicalChecksOf(o.item(78)).Notice)
 }
 
@@ -902,7 +902,7 @@ func TestMythicalDeclineSaysWhyAndDeferredWaits(t *testing.T) {
 	o.wake()
 	o.wake()
 	assert.Equal(t, "declined", o.item(87).State)
-	assert.Equal(t, []string{"#87 Smithers did not plan this TODO: Already done: README.md has it."}, o.github.comments)
+	assert.Equal(t, []string{"#87 Smithers did not plan this TODO: Already done: README.md has it.\nRun: run-87"}, o.github.comments)
 	o.wake()
 	assert.Len(t, o.github.comments, 1)
 

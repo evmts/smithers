@@ -3,9 +3,7 @@ import type { ProjectionCursor } from "@smthrs/gateway/GatewaySchema"
 import type { Card } from "../AppState"
 import type { ControllerContext } from "./context"
 import type { ApprovalRow, RunStatus, RunSummaryRow } from "./gateway"
-import { Schema } from "effect"
-import { ControlFacts } from "@smthrs/control"
-import { questionOf } from "../../cards/ApprovalQuestion"
+import { guardIncidentOf, questionOf } from "../../cards/ApprovalQuestion"
 import { engineProjectionPending } from "../../cards/EngineTrace"
 import { reconcileRunApprovals } from "./approval-reconciliation"
 import { runFailureOf, stampOf } from "../RunFailure"
@@ -38,7 +36,6 @@ const PHASE_OF_STATUS: Readonly<Record<RunStatus, Extract<Card, { kind: "run-tra
 }
 
 const TERMINAL_PHASES: ReadonlySet<string> = new Set(["completed", "failed", "cancelled"])
-const isGuardIncident = Schema.is(ControlFacts.GuardIncident)
 
 /**
  * How many journal pages one pump cycle reads.
@@ -577,7 +574,7 @@ export const createWorkflowPumpController = (
   const guardGate = async (repo: string, runId: string, binding: { readonly workspaceId: string }): Promise<ApprovalRow | undefined> => {
     const gates = await gateway.approvals(repo, runId, binding)
     return gates.status === "ok"
-      ? [...gates.value].reverse().find(row => row.status === "pending" && isGuardIncident((row.request as { readonly incident?: unknown } | null)?.incident))
+      ? [...gates.value].reverse().find(row => row.status === "pending" && guardIncidentOf(row) !== undefined)
       : undefined
   }
 

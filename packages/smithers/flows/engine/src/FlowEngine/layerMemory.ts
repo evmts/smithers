@@ -586,7 +586,14 @@ export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(Fl
         }, { concurrency: "unbounded", discard: true })
       }),
       resume(flow, executionId) {
-        return Effect.andThen(authorize(flow, executionId), resume(executionId))
+        // Only an execution of this declaration that the caller's authority
+        // covers is driven; an unknown or foreign id drives nothing.
+        return Effect.suspend(() => {
+          const state = executions.get(executionId)
+          return state === undefined || state.instance.flow._tag !== flow._tag
+            ? Effect.void
+            : Effect.andThen(authorize(flow, executionId), resume(executionId))
+        })
       },
       resumeSignal: (_flow, executionId) =>
         Effect.suspend(() => {

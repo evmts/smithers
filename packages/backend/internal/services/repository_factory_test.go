@@ -89,10 +89,12 @@ func TestLocalFactoryRemovalAndMalformedProjection(t *testing.T) {
 		return nil
 	}}
 	absent := f.commit("empty main", map[string]string{"README.md": "hello"})
-	require.NoError(t, service.reconcileLocalFactory(ctx, &mythicalRun{g: f.git, mainTip: absent}))
+	_, err := service.reconcileLocalFactory(ctx, &mythicalRun{g: f.git, mainTip: absent})
+	require.NoError(t, err)
 	require.Equal(t, 1, calls, "removing factory rules must retire their registrations")
 	malformed := f.commit("invalid factory", map[string]string{gitHubMainPullFactoryPath: "not JSON"})
-	require.ErrorContains(t, service.reconcileLocalFactory(ctx, &mythicalRun{g: f.git, mainTip: malformed}), "invalid factory projection")
+	_, err = service.reconcileLocalFactory(ctx, &mythicalRun{g: f.git, mainTip: malformed})
+	require.ErrorContains(t, err, "invalid factory projection")
 	require.Equal(t, 1, calls, "a broken projection cannot silently retire registrations")
 }
 
@@ -493,4 +495,157 @@ func TestCheckedInFactoryDeclaresNoUndiscoveredIssueRule(t *testing.T) {
 	source, err := os.ReadFile("../../../../.smithers/FACTORY.ts")
 	require.NoError(t, err)
 	require.NotContains(t, string(source), `"issue.opened":`, "the declaration and its projection agree")
+}
+
+func TestFactoryWarnsForEveryRuleItDoesNotRegister(t *testing.T) {
+	var projection FactoryProjection
+	require.NoError(t, json.Unmarshal([]byte(`{"flows":[
+		{"id":"prompt","kind":"mdx","capabilities":[],"flows":[],"budget":{"tokens":1,"milliseconds":1}},
+		{"id":"coding","kind":"ts","capabilities":["*"],"flows":[]},
+		{"id":"bare","kind":"mdx"}],
+	"on":[{"event":"issue.labeled:todo","flow":"coding"},
+		{"event":"issue.labeled:todo","flow":"bare"},
+		{"event":"issue.opened","flow":"gone"},
+		{"event":"deploy.created","flow":"prompt"},
+		{"event":"issue.opened","flow":"prompt"}]}`), &projection))
+
+	require.Equal(t, []FactoryWarning{
+		{"issue.labeled:todo", "coding", "a ts flow has no declarative envelope"},
+		{"issue.labeled:todo", "bare", "the flow declares no budget, capabilities or child flows"},
+		{"issue.opened", "gone", "the flow is not declared"},
+		{"deploy.created", "prompt", "the event is not a repository trigger"},
+	}, factoryWarnings(projection), "only the registered rule is not warned about")
+	require.Equal(t, "unregistered issue.labeled:todo -> coding: a ts flow has no declarative envelope; "+
+		"unregistered issue.labeled:todo -> bare: the flow declares no budget, capabilities or child flows; "+
+		"unregistered issue.opened -> gone: the flow is not declared; "+
+		"unregistered deploy.created -> prompt: the event is not a repository trigger", factoryWarningsMessage(factoryWarnings(projection)))
+
+	registered := FactoryProjection{Flows: projection.Flows[:1], On: projection.On[4:]}
+	require.Empty(t, factoryWarnings(registered))
+	require.Empty(t, factoryWarningsMessage(factoryWarnings(registered)))
+}
+
+func TestLocalFactoryOutcomeReportsUnregisteredRules(t *testing.T) {
+	f := newMythicalFixture(t)
+	ctx := context.Background()
+	service := &MythicalService{reconcileFactory: func(context.Context, int64, string, FactoryProjection) error { return nil }}
+	warned := f.commit("unregistered rule", map[string]string{gitHubMainPullFactoryPath: `{"flows":[{"id":"coding","kind":"ts","capabilities":["*"],"flows":[]}],"on":[{"event":"issue.labeled:todo","flow":"coding"}]}`})
+	state, message := service.localFactoryOutcome(ctx, &mythicalRun{g: f.git, mainTip: warned})
+	require.Equal(t, "reconciled", state)
+	require.Equal(t, "unregistered issue.labeled:todo -> coding: a ts flow has no declarative envelope", message)
+	clean := f.commit("registered rule", map[string]string{gitHubMainPullFactoryPath: `{"flows":[{"id":"assistant","kind":"mdx","capabilities":[],"flows":[],"budget":{"tokens":1,"milliseconds":1}}],"on":[{"event":"issue.opened","flow":"assistant"}]}`})
+	state, message = service.localFactoryOutcome(ctx, &mythicalRun{g: f.git, mainTip: clean})
+	require.Equal(t, "reconciled", state)
+	require.Empty(t, message)
+}
+
+func factoryPayloadProjection(t *testing.T, rules string) FactoryProjection {
+	t.Helper()
+	var projection FactoryProjection
+	require.NoError(t, json.Unmarshal([]byte(`{"flows":[{"id":"assistant","kind":"mdx","capabilities":["memory:read:global-team"],"flows":[],"budget":{"tokens":2400000,"milliseconds":21600000}}],"on":[`+rules+`]}`), &projection))
+	return projection
+}
+
+func TestFactorySchedulePayloadRegistration(t *testing.T) {
+	revision := strings.Repeat("a", 40)
+	with, err := factoryRegistrations(factoryPayloadProjection(t, `{"event":"schedule:0 6 * * *","flow":"assistant","payload":{ "args": "the last day",  "n": [1, 2] }}`), revision)
+	require.NoError(t, err)
+	require.Len(t, with, 1)
+	require.Equal(t, "0 6 * * *", with[0].input.Schedule)
+	require.JSONEq(t, `{"args":"the last day","n":[1,2]}`, string(with[0].input.SchedulePayload))
+	require.Equal(t, `{"args":"the last day","n":[1,2]}`, string(with[0].input.SchedulePayload), "the stored payload is compact so its digest is stable")
+
+	// The payload is part of the registration's identity: changing it re-registers.
+	changed, err := factoryRegistrations(factoryPayloadProjection(t, `{"event":"schedule:0 6 * * *","flow":"assistant","payload":{"args":"another"}}`), revision)
+	require.NoError(t, err)
+	require.Equal(t, with[0].job, changed[0].job)
+	require.NotEqual(t, with[0].input.Digest, changed[0].input.Digest)
+	same, err := factoryRegistrations(factoryPayloadProjection(t, `{"event":"schedule:0 6 * * *","flow":"assistant","payload":{"args":"the last day","n":[1,2]}}`), revision)
+	require.NoError(t, err)
+	require.Equal(t, with[0].input.Digest, same[0].input.Digest)
+
+	// An empty object is a payload; a rule without one keeps the schedule's own event.
+	empty, err := factoryRegistrations(factoryPayloadProjection(t, `{"event":"schedule:0 6 * * *","flow":"assistant","payload":{}}`), revision)
+	require.NoError(t, err)
+	require.JSONEq(t, `{}`, string(empty[0].input.SchedulePayload))
+	none, err := factoryRegistrations(factoryPayloadProjection(t, `{"event":"schedule:0 6 * * *","flow":"assistant"}`), revision)
+	require.NoError(t, err)
+	require.Empty(t, none[0].input.SchedulePayload)
+
+	for name, rule := range map[string]string{
+		"an event rule":  `{"event":"issue.opened","flow":"assistant","payload":{"a":1}}`,
+		"a string":       `{"event":"schedule:0 6 * * *","flow":"assistant","payload":"x"}`,
+		"an array":       `{"event":"schedule:0 6 * * *","flow":"assistant","payload":[1]}`,
+		"a number":       `{"event":"schedule:0 6 * * *","flow":"assistant","payload":3}`,
+		"null":           `{"event":"schedule:0 6 * * *","flow":"assistant","payload":null}`,
+		"an event named": `{"event":"manual","flow":"assistant","payload":{}}`,
+	} {
+		_, err := factoryRegistrations(factoryPayloadProjection(t, rule), revision)
+		require.Error(t, err, name)
+		require.ErrorContains(t, err, "payload", name)
+	}
+}
+
+func TestRepositoryJobLaunchPayloadCarriesTheSchedulePayload(t *testing.T) {
+	registration := db.RepositoryJobRegistration{ID: "reg", Job: "flow:factory-abc", Revision: 3, Digest: strings.Repeat("d", 64)}
+	scheduled := db.RepositoryJobDispatch{ID: "dispatch", Source: "schedule", EventType: "schedule", Payload: json.RawMessage(`{"scheduledAt":"2026-09-30T06:00:00Z"}`)}
+	config := RegisterRepositoryJobInput{FactoryRevision: strings.Repeat("a", 40), FlowID: "notes/traction", Input: json.RawMessage(`{}`)}
+
+	// Without a declared payload the run starts with the schedule's own event.
+	launch, err := repositoryJobLaunchPayload(registration, scheduled, config, "owner/repo")
+	require.NoError(t, err)
+	var legacy struct {
+		Args  string
+		Event struct{ Type string }
+	}
+	require.NoError(t, json.Unmarshal(launch, &legacy))
+	require.JSONEq(t, string(scheduled.Payload), legacy.Args)
+	require.Equal(t, "schedule", legacy.Event.Type)
+
+	// With one, the flow's payload is exactly that object: nothing wrapped, nothing added.
+	config.SchedulePayload = json.RawMessage(`{"note":"Traction.md","npmPackage":"@smthrs/cli"}`)
+	launch, err = repositoryJobLaunchPayload(registration, scheduled, config, "owner/repo")
+	require.NoError(t, err)
+	require.JSONEq(t, `{"note":"Traction.md","npmPackage":"@smthrs/cli"}`, string(launch))
+
+	// Only a schedule dispatch takes it: an event that reaches the same registration keeps its event.
+	event := db.RepositoryJobDispatch{ID: "other", Source: "github", EventType: "issues", EventAction: "opened", Payload: json.RawMessage(`{}`)}
+	launch, err = repositoryJobLaunchPayload(registration, event, config, "owner/repo")
+	require.NoError(t, err)
+	require.Contains(t, string(launch), `"event"`)
+}
+
+func TestFactorySchedulePayloadArrivesAtTheFlowPostgres(t *testing.T) {
+	pool, q, service, gateway, _ := repositoryJobFixture(t)
+	ctx := context.Background()
+	repo := gateway.target.RepositoryID
+	revision := strings.Repeat("a", 40)
+	payload := `{"args":"summarize the last day"}`
+	projection := factoryPayloadProjection(t, `{"event":"schedule:0 6 * * *","flow":"assistant","payload":`+payload+`}`)
+	require.NoError(t, service.ReconcileFactoryRules(ctx, repo, revision, projection))
+	registrations, err := q.ListRepositoryJobRegistrations(ctx, repo)
+	require.NoError(t, err)
+	require.Len(t, registrations, 1)
+	_, err = pool.Exec(ctx, `UPDATE repository_job_registrations SET next_fire_at=$2 WHERE id=$1`, registrations[0].ID, time.Date(2020, 1, 1, 6, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+
+	// The schedule fires and the flow is admitted with the declared payload as its input.
+	require.NoError(t, service.enqueueSchedules(ctx))
+	repositoryJobPoll(t, service, gateway)
+	require.Len(t, gateway.inputs, 1)
+	require.JSONEq(t, payload, string(gateway.inputs[0]))
+	dispatches, err := q.ListRepositoryJobDispatches(ctx, db.ListRepositoryJobDispatchesParams{RepositoryID: repo, Job: registrations[0].Job})
+	require.NoError(t, err)
+	require.Len(t, dispatches, 1)
+	require.Equal(t, "schedule", dispatches[0].Source)
+
+	// Editing the payload on main re-registers the rule, and the next firing carries the new one.
+	next := factoryPayloadProjection(t, `{"event":"schedule:0 6 * * *","flow":"assistant","payload":{"args":"the last week"}}`)
+	require.NoError(t, service.ReconcileFactoryRules(ctx, repo, strings.Repeat("b", 40), next))
+	_, err = pool.Exec(ctx, `UPDATE repository_job_registrations SET next_fire_at=$2 WHERE id=$1`, registrations[0].ID, time.Date(2020, 1, 2, 6, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+	require.NoError(t, service.enqueueSchedules(ctx))
+	repositoryJobPoll(t, service, gateway)
+	require.Len(t, gateway.inputs, 2)
+	require.JSONEq(t, `{"args":"the last week"}`, string(gateway.inputs[1]))
 }
