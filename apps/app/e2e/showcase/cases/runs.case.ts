@@ -155,8 +155,16 @@ export default showcase({
       await expect(opening).toHaveCount(1)
       refuseOpen = true
     } finally { holdOpen = false; openReceipt.resolve() }
-    const refusal = page.locator('.toast[data-toast-status="failed"]').filter({ hasText: "Run summary unavailable" })
+    const refusal = page.locator('.toast[data-toast-status="failed"]').filter({ hasText: "The workspace refused the call." })
     await expect(refusal).toHaveCount(1)
+    const detail = refusal.locator("details")
+    await expect(detail).not.toHaveAttribute("open", "")
+    await expect(detail.locator("pre")).toHaveText("The workspace refused the call.")
+    await expect(refusal).not.toContainText("Run summary unavailable")
+    await expect(detail.locator("pre")).toBeHidden()
+    await detail.getByText("Details", { exact: true }).focus()
+    await page.keyboard.press("Enter")
+    await expect(detail.locator("pre")).toBeVisible()
     await page.reload()
     await expect(refusal).toHaveCount(1)
     refuseOpen = false
