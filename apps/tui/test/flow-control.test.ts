@@ -325,6 +325,14 @@ for (const mode of ["ask", "deny", "all"] as const) {
   }
 }
 
+it("refuses invalid payloads before approval or durable run admission", async () => {
+  const before = await port.runs!()
+  const refusal = await port.plan("echo", { text: 3 }).catch((error: unknown) => error)
+  expect(refusal).toBeInstanceOf(FlowError)
+  expect(refusal).toMatchObject({ code: "invalid_input" })
+  expect(await port.runs!()).toEqual(before)
+}, 60_000)
+
 it("rejects invalid payload plans and lets the person correct a requested run", async () => {
   const error = await port.plan("echo", { text: 3 }).catch((error: unknown) => error)
   expect(error).toBeInstanceOf(FlowError)
