@@ -1,24 +1,7 @@
 import * as AgentApiRoutes from "@smthrs/rpc/AgentApiRoutes"
-/*
- * The host parity matrix (docs/web-mode/PLAN.md §6).
- *
- * Two registries are built from the SAME two functions the servers call —
- * `cloudCapabilities` for the Worker, `localCapabilities` for the Bun server —
- * so what this file proves about the web and native catalogs cannot drift from
- * what production emits. Per flow:
- *
- *  (a) a native-only flow (registry.ts `nativeOnly`) is absent from the cloud
- *      registry, its slash tree, the model's catalog and the recommendations;
- *  (b) every cloud-present flow whose seam calls `/api/*` or `/api/cloud/*`
- *      reaches a path the Worker's `PLATFORM_PROXY_RULES` allowlists, with
- *      the method the seam uses, and (b\u2032) every allowlisted family is one
- *      some seam builds;
- *  (c) `box.terminal` is present exactly when `cloud.terminal` is.
- *
- * Drift fails loudly: a capability the schema does not know, a capability no
- * host emits, a new `local.*` flow leaking onto the web — none needs a test
- * edit to be caught.
- */
+/* Host parity: registries use the production capability tables, and every
+ * extracted seam API path/method passes through the surviving transparent edge
+ * to backend authority. The edge has no second product allowlist. */
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import type { StorageApi } from "@tanstack/db"
 import { afterAll, describe, expect, test } from "bun:test"
@@ -27,8 +10,7 @@ import { fileURLToPath } from "node:url"
 import { createElement } from "react"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
-import { PLATFORM_PROXY_RULES, platformProxyRuleCovers } from "smithers-server/index"
-import { INSTALLATIONS_PATH } from "smithers-server/githubAppInstall"
+import edge from "smithers-server/edge"
 import { RuntimeCapabilitySchema } from "@smthrs/rpc/AppBootstrap"
 import type { AppBootstrap, RuntimeCapability } from "@smthrs/rpc/AppBootstrap"
 import { cloudCapabilities, localCapabilities } from "@smthrs/rpc/HostCapabilities"
@@ -44,7 +26,11 @@ import type { CommandState, FlowEntry } from "./registry"
 import { nameOf, nativeOnly, recommendedNames } from "./registry"
 
 /* (a″) mounts the shell; the same register/unregister the component tests use. */
+const nativeHttp = { fetch: globalThis.fetch, AbortController: globalThis.AbortController, AbortSignal: globalThis.AbortSignal,
+  Request: globalThis.Request, Response: globalThis.Response, Headers: globalThis.Headers }
 GlobalRegistrator.register()
+// DOM controls use Happy DOM; edge integration uses the native HTTP implementation.
+Object.assign(globalThis, nativeHttp)
 
 /**
  * Nets capture-phase `keydown` registrations against removals on the shared
@@ -154,7 +140,7 @@ const localBootstrap = (capabilities: ReadonlyArray<RuntimeCapability>): AppBoot
   sandbox: { platform: "darwin", mode: "enforced" }
 })
 
-/** The Worker with every supported capability, including the W4 terminal relay. */
+/** The web host with every supported capability, including the terminal relay. */
 const WEB = cloudBootstrap(cloudCapabilities({ identity: true, cloud: true, agent: true, balance: true, overview: true, plans: true, portal: true, checkout: true, terminal: true, browser: true }))
 /** The Bun server under the desktop shell, with a cloud upstream, the agent, identity and manual paths. */
 const NATIVE = localBootstrap(localCapabilities({ agent: true, identity: true, cloud: true, balance: true, overview: true, plans: true, browser: true, nativeShell: true }))
@@ -234,7 +220,7 @@ const API_HEADS = "repos|user|orgs|notifications|github|admin|billing|cloud-auth
 
 /**
  * The static prefixes of every upstream path a seam file builds, normalized to
- * the Worker's view: `cloud("/user/repos")` and `${ctx.baseUrl}/api/user/repos`
+ * the shared API path: `cloud("/user/repos")` and `${ctx.baseUrl}/api/user/repos`
  * both read `/api/user/repos`. A template's dynamic tail is cut at `${`.
  */
 const upstreamPaths = (seamFile: string): ReadonlySet<string> => {
@@ -252,7 +238,7 @@ const upstreamPaths = (seamFile: string): ReadonlySet<string> => {
   return paths
 }
 
-/** One path literal normalized to the Worker's view, or undefined when it is not an upstream API path. */
+/** One path literal normalized to the shared API path, or undefined when it is not an upstream API path. */
 const upstreamHead = new RegExp("^(?:\\$\\{ctx\\.baseUrl\\})?(?:/api)?/((?:" + API_HEADS + ")(?:/[a-z0-9-]+)*/?)")
 const upstreamPathOf = (literal: string): string | undefined => {
   const match = upstreamHead.exec(literal)
@@ -265,8 +251,8 @@ const upstreamPathOf = (literal: string): string | undefined => {
  * `ctx.http(cloud("/github/import"), { method: "POST" })` call — as
  * `METHOD /api/path` pairs. A write whose path is built by a helper
  * (`repoPath(...)`) carries no literal and is not seen here; the path-only
- * extraction above still covers its family. The allowlist names methods per
- * row, so a prefix match alone would pass a DELETE the Worker refuses.
+ * extraction above still covers its family. The actual edge invocation checks
+ * each extracted method, so a GET-only forwarding defect cannot hide a DELETE.
  */
 const upstreamWrites = (seamFile: string): ReadonlySet<string> => {
   const source = uncommented(read(`../state/seams/${seamFile}.ts`))
@@ -286,29 +272,29 @@ const upstreamWrites = (seamFile: string): ReadonlySet<string> => {
   return writes
 }
 
-/** Every seam file, for the reverse direction: an allowlisted family no seam builds is a door nothing needs. */
+/** Every seam file contributes its current API families to the forwarding sweep. */
 const SEAM_FILES: ReadonlyArray<string> = readdirSync(fileURLToPath(new URL("../state/seams/", import.meta.url)))
   .filter((file) => file.endsWith("Seam.ts"))
   .map((file) => file.slice(0, -".ts".length))
 
-const proxied = (path: string, method?: string): boolean =>
-  ((method === undefined || method === "GET") && (path === INSTALLATIONS_PATH || path.startsWith(`${INSTALLATIONS_PATH}/`))) ||
-  PLATFORM_PROXY_RULES.some((rule) =>
-    (method === undefined || rule.methods.includes(method)) && platformProxyRuleCovers(rule, path)
-  )
+/** Real edge routing; the controlled upstream owns its verdict, not an edge allowlist. */
+const proxied = async (path: string, method = "GET"): Promise<boolean> => {
+  let received = false
+  const backend = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: request => {
+    expect(new URL(request.url).pathname).toBe(path)
+    expect(request.method).toBe(method)
+    received = true
+    return new Response(null, { status: 418 })
+  } })
+  try {
+    const response = await edge.fetch(new Request(`https://app.test${path}`, { method }), {
+      ASSETS: { fetch: async () => { throw new Error("API routed to assets") } }, SMITHERS_BACKEND_ORIGIN: backend.url.origin
+    })
+    return received && response.status === 418
+  } finally { await backend.stop(true) }
+}
 
-/*
- * Paths a cloud-present flow reaches that the Worker does NOT allowlist today.
- * Attribution is per SEAM FILE (the extraction does not follow a seam's
- * internal call graph), so every flow that reaches the seam is listed even
- * when one method pays. Exact: a fix must remove its row here, and a new gap
- * fails with no row to hide behind.
- *
- * Empty since lane L6: the one row was `/api/admin/github-app/reconcile`,
- * which `GitHubSeam.reconcile` no longer calls — plue#490 gave every
- * repository WRITER `POST /api/repos/{o}/{r}/github/reconcile`, a path the
- * Worker already proxies, so `/github.reconcile` works on the web.
- */
+/** No edge routing gaps are accepted; upstream authorization remains backend-owned. */
 const KNOWN_UNPROXIED: ReadonlyArray<{ readonly path: string; readonly flows: ReadonlyArray<string>; readonly why: string }> = []
 
 describe("host parity — the web and native catalogs against the servers' own capability tables", () => {
@@ -396,7 +382,7 @@ describe("host parity — the web and native catalogs against the servers' own c
     }
   })
 
-  test("(b) every cloud-present flow's seam reaches only paths the Worker allowlists", async () => {
+  test("(b) every cloud-present flow's seam reaches only paths the edge forwards to the backend", async () => {
     const { web } = await registries
     const flowSeams = seamsByFlow()
     /*
@@ -434,7 +420,7 @@ describe("host parity — the web and native catalogs against the servers' own c
         pathCache.set(seam, paths)
         for (const path of paths) {
           checked += 1
-          if (proxied(path)) continue
+          if (await proxied(path)) continue
           const flows = gaps.get(path) ?? new Set<string>()
           flows.add(item.name)
           gaps.set(path, flows)
@@ -445,7 +431,7 @@ describe("host parity — the web and native catalogs against the servers' own c
         for (const write of writes) {
           const [method, path] = write.split(" ") as [string, string]
           checked += 1
-          if (proxied(path, method)) continue
+          if (await proxied(path, method)) continue
           const flows = gaps.get(path) ?? new Set<string>()
           flows.add(item.name)
           gaps.set(path, flows)
@@ -467,22 +453,14 @@ describe("host parity — the web and native catalogs against the servers' own c
     )
   })
 
-  /*
-   * The reverse of (b): the allowlist is a capability grant (the bridge hands
-   * the page whatever the platform answers, a minted PAT included), so every
-   * family it opens must be one a seam builds a path under today. A lane adds
-   * its row in the same commit as the seam that calls it, never ahead of it.
-   */
-  test("(b\u2032) every allowlisted family is a path some seam builds", () => {
-    const built = new Set(SEAM_FILES.flatMap((seam) => [...upstreamPaths(seam)]))
+  test("the edge delegates API families and unknown methods to the canonical backend", async () => {
+    const built = new Set(SEAM_FILES.flatMap(seam => [...upstreamPaths(seam)]))
     expect(SEAM_FILES.length).toBeGreaterThan(10)
-    const unreached = PLATFORM_PROXY_RULES.filter((rule) =>
-      ![...built].some((path) => platformProxyRuleCovers(rule, path))
-    ).map((rule) => `${rule.methods.join("|")} ${rule.exact ?? rule.prefix}`)
-    expect(unreached).toEqual([])
-    // The two rows the W0 hunk opened for lanes that had not landed are gone.
-    expect(proxied("/api/user/tokens")).toBe(false)
-    expect(proxied("/api/user/provider-connections")).toBe(true)
+    for (const path of built) expect(await proxied(path)).toBe(true)
+    // Authentication and token authority belong to the backend, not a second edge policy.
+    for (const path of ["/api/user/tokens", "/api/user/provider-connections", "/api/not-a-route"]) {
+      for (const method of ["GET", "POST", "DELETE"]) expect(await proxied(path, method)).toBe(true)
+    }
   })
 
   test("(c) box.terminal is present exactly when cloud.terminal is", async () => {
@@ -537,7 +515,7 @@ describe("host parity — the web and native catalogs against the servers' own c
     expect(orphans).toEqual([])
   })
 
-  test("the Worker never claims a native door", () => {
+  test("the web host never claims a native door", () => {
     for (const identity of [true, false]) {
       for (const cloud of [true, false]) {
         const emitted = cloudCapabilities({ identity, cloud, agent: true, checkout: true, terminal: true })
@@ -547,7 +525,7 @@ describe("host parity — the web and native catalogs against the servers' own c
   })
 
   /*
-   * The rendered surface half of (a): the shell mounted under the Worker's
+   * The rendered surface half of (a): the shell mounted under the web host’s
    * bootstrap, as a signed-out visitor sees it (the opening message's CTA and
    * the download button are in the DOM), names no flow the web registry
    * lacks — in its `data-flow` controls or in the `data-flows` manifest on
