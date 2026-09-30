@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs"
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs"
 import { dirname, extname, join, relative, resolve } from "node:path"
 import * as ts from "typescript"
 import { CRITICAL_PATHS, DOORS, REAL_HOSTS } from "./types"
@@ -457,6 +457,36 @@ const walkHelpers = (dir: string): string[] => readdirSync(dir, { withFileTypes:
   return SOURCE.test(entry.name) && !/\.test\.[cm]?[jt]sx?$/.test(entry.name) ? [path] : []
 })
 
+/** Read ownership only from the named exported ledger array, never unrelated literals. */
+const deferralOwners = (sources: Readonly<Record<string, string>>): Map<string, readonly string[]> => {
+  const owners = new Map<string, string[]>()
+  for (const [family, file] of Object.entries(sources)) {
+    if (!existsSync(file) || !statSync(file).isFile()) continue
+    const source = sourceFile(file)
+    for (const statement of source.statements) {
+      if (!ts.isVariableStatement(statement) ||
+        !statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)) continue
+      for (const declaration of statement.declarationList.declarations) {
+        if (!ts.isIdentifier(declaration.name) || declaration.name.text !== family) continue
+        let initializer = declaration.initializer
+        if (initializer && ts.isAsExpression(initializer)) initializer = initializer.expression
+        if (!initializer || !ts.isArrayLiteralExpression(initializer)) continue
+        for (const element of initializer.elements) {
+          if (!ts.isStringLiteralLike(element)) continue
+          const end = source.text.indexOf("\n", element.end)
+          const suffix = source.text.slice(element.end, end === -1 ? undefined : end).replace(/\r$/, "")
+          const match = /^\s*,?\s*\/\/ owner:\s*#([1-9]\d*)\s*$/.exec(suffix)
+          const owner = match && Number.isSafeInteger(Number(match[1])) ? `#${match[1]}` : ""
+          const entries = owners.get(element.text) ?? []
+          entries.push(owner)
+          owners.set(element.text, entries)
+        }
+      }
+    }
+  }
+  return owners
+}
+
 export interface GateOptions {
   readonly realDir: string
   readonly flowNameFile: string
@@ -467,11 +497,13 @@ export interface GateOptions {
   readonly expectedHost?: RealHost
   /** The reviewed ledger of actions with no real scenario (deferrals.ts). */
   readonly deferred?: Readonly<Partial<Record<Deferral, readonly string[]>>>
+  /** Exported family name to its canonical ledger source; owed literals carry // owner: #N. */
+  readonly deferredSources?: Readonly<Record<string, string>>
   /** Actions only a real scenario can account for. */
   readonly releaseCritical?: readonly string[]
 }
 
-export const checkRealE2E = ({ realDir, flowNameFile, resultsFile, now, requireComplete = false, expectedRevision, expectedHost, deferred: ledger = {}, releaseCritical = [] }: GateOptions): GateReport => {
+export const checkRealE2E = ({ realDir, flowNameFile, resultsFile, now, requireComplete = false, expectedRevision, expectedHost, deferred: ledger = {}, deferredSources = {}, releaseCritical = [] }: GateOptions): GateReport => {
   const specs = walkSpecs(realDir).filter((file) => !file.includes(`${join("coverage", "fixtures")}`))
   const actions = declaredFlowNames(flowNameFile)
   const scenarios = scenarioDeclarations(specs)
@@ -531,8 +563,15 @@ export const checkRealE2E = ({ realDir, flowNameFile, resultsFile, now, requireC
   const gaps: CoverageGap[] = []
   const coveredActions = new Set(scenarios.flatMap((scenario) => scenario.actions))
   const deferrals = new Map<string, Deferral>()
+  const owners = ledger.owed?.length ? deferralOwners(deferredSources) : new Map<string, readonly string[]>()
   const ledgerFinding = (code: string, message: string): void => { findings.push({ severity: "error", code, file: flowNameFile, line: 1, message }) }
   for (const [reason, entries] of Object.entries(ledger) as [Deferral, readonly string[]][]) for (const action of entries) {
+    if (reason === "owed") {
+      const ownership = owners.get(action)
+      if (!ownership || ownership.length !== 1 || ownership[0] === "") {
+        ledgerFinding("unowned-deferral", `${action} needs exactly one valid // owner: #<positive issue number> on its exported ledger entry`)
+      }
+    }
     if (deferrals.has(action)) ledgerFinding("duplicate-deferral", `${action} is deferred more than once`)
     else deferrals.set(action, reason)
   }

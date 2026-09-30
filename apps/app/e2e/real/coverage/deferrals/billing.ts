@@ -1,3 +1,5 @@
 export const billing = [
-  "billing.plans", "billing.portal", "billing.upgrade",
+  "billing.plans", // owner: #1879
+  "billing.portal", // owner: #1879
+  "billing.upgrade", // owner: #1879
 ] as const

@@ -19,6 +19,11 @@ const bootstrap = async (page: Page, signedIn: boolean) => {
   await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: repo }] } }))
   await page.route("**/api/user/repos", route => route.fulfill({ json: [{ owner: "smithersai", name: "smithers", full_name: repo, owner_type: "Organization", default_bookmark: "main" }] }))
   await page.route(`**/api/repos/${repo}/contents`, route => route.fulfill({ json: [] }))
+  await page.route(url => url.pathname === `/api/repos/${repo}/home`, route => route.fulfill({ json: { kind: "blocks", blocks: [] } }))
+  await page.route(url => url.pathname === `/api/repos/${repo}/repository-jobs`, route => {
+    expect(route.request().method()).toBe("GET")
+    return route.fulfill({ json: [] })
+  })
   await page.route(url => url.pathname === "/api/repository-setup/state", route => route.fulfill({ json: {
     owner: SCOPED_TEST_USER.login, repo, job: new URL(route.request().url()).searchParams.get("job"),
     registration: { state: "known" }, setup: { state: "none" }
@@ -168,7 +173,7 @@ test("held setup admission leaves Chat usable; only observed runs expose access"
   })
   try {
     await open(page, true)
-    await keyboardClick(page, "Handle issues")
+    await keyboardClick(page, "Handle issues · Off")
     const setup = page.getByTestId("setup-issues")
     await expect(setup.locator("footer")).toContainText("Requested")
     await expect.poll(() => submitted !== undefined).toBe(true)
@@ -203,7 +208,7 @@ test("activation needs current evidence; a paused configuration can resume but e
   await page.keyboard.press("Control+k")
   await page.getByTestId("composer-input").fill("A draft I am still writing")
   await page.getByTestId("composer-input").press("Escape")
-  await keyboardClick(page, "Handle issues")
+  await keyboardClick(page, "Handle issues · Off")
   const setup = page.getByTestId("setup-issues")
   await expect(setup.getByRole("button", { name: "Inspect repository" })).toBeEnabled()
   const enable = setup.getByRole("button", { name: "Enable issue handling", exact: true })
@@ -259,7 +264,7 @@ for (const [job, title, trial] of [["ci", "Set up CI", "Test CI checks"], ["revi
     await page.keyboard.press("Control+k")
     await page.getByTestId("composer-input").fill("A draft I am still writing")
     await page.getByTestId("composer-input").press("Escape")
-    await keyboardClick(page, title)
+    await keyboardClick(page, `${title} · Off`)
     const setup = page.getByTestId(`setup-${job}`)
     await expect(setup.getByRole("button", { name: "Inspect repository" })).toBeEnabled()
     await keyboardClick(page, "Test")

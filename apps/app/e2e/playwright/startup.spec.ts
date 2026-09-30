@@ -17,7 +17,8 @@ test("a late boot recovers after the startup watchdog without losing React's mou
     await page.goto("/", { waitUntil: "domcontentloaded" })
     await requested
     await expect(page.locator(".session-shell > .session-navigation > .guide-wordmark")).toHaveCount(1)
-    const shell = await page.locator("#root .session-shell").elementHandle()
+    // React owns #root; the startup skeleton is replaced by the app shell.
+    const mount = await page.locator("#root").elementHandle()
     const entrance = page.locator(".session-shell > .session-navigation > .guide-wordmark")
     await expect(page.locator("body")).not.toContainText("Smithers is starting your session.")
     // Only settle the wordmark: the boot skeleton intentionally pulses forever.
@@ -40,7 +41,7 @@ test("a late boot recovers after the startup watchdog without losing React's mou
     release()
     await page.clock.resume()
     await expect(page.locator(".app-shell")).toBeVisible({ timeout: 20_000 })
-    expect(await shell!.evaluate(node => node.isConnected)).toBe(true)
+    expect(await mount!.evaluate(node => node.isConnected && node === document.getElementById("root"))).toBe(true)
     await expect(page.locator(".guide-wordmark")).toHaveCount(1)
     expect((await entrance.boundingBox())!.x).toBeCloseTo(corner!.x, 0)
     await expect(page.locator("[data-startup-failure]")).toHaveCount(0)

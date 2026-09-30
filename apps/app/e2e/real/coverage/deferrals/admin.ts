@@ -1,3 +1,3 @@
 export const admin = [
-  "admin.grant.confirm",
+  "admin.grant.confirm", // owner: #1879
 ] as const
