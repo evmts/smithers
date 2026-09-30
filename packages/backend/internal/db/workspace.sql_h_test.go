@@ -549,3 +549,65 @@ func (r *workspaceSQLHRows) RawValues() [][]byte {
 func (r *workspaceSQLHRows) Conn() *pgx.Conn {
 	return nil
 }
+
+// Resource sizing is nullable in storage; every generated scan must retain both
+// unspecified defaults and an explicitly provisioned size.
+func TestWorkspaceResourceSizingReadback(t *testing.T) {
+	ctx := context.Background()
+	q, tx := newQueries(t)
+	ownerID, repoID := mustCreateUserAndRepo(t, tx, uniqueTestUsername(t), uniqueTestRepoName(t))
+	parent := workspaceSQLHCreateWorkspace(t, q, repoID, ownerID, "resource-parent", "running", false)
+	check := func(row Workspace, expected map[string]any) {
+		t.Helper()
+		encoded, err := json.Marshal(row)
+		require.NoError(t, err)
+		var fields map[string]any
+		require.NoError(t, json.Unmarshal(encoded, &fields))
+		for _, key := range []string{"vcpu_count", "memory_mb", "disk_mb"} {
+			value, present := fields[key]
+			require.True(t, present, "generated workspace must expose %s", key)
+			if expected == nil {
+				require.Nil(t, value, key)
+			} else {
+				require.Equal(t, expected[key], value, key)
+			}
+		}
+	}
+	check(parent, nil)
+	_, err := tx.Exec(ctx, `UPDATE workspaces SET vcpu_count=3, memory_mb=4096, disk_mb=24576 WHERE id=$1`, parent.ID)
+	require.NoError(t, err)
+	var cpu, memory, disk int32
+	require.NoError(t, tx.QueryRow(ctx, `SELECT vcpu_count,memory_mb,disk_mb FROM workspaces WHERE id=$1`, parent.ID).Scan(&cpu, &memory, &disk))
+	require.Equal(t, int32(3), cpu)
+	require.Equal(t, int32(4096), memory)
+	require.Equal(t, int32(24576), disk)
+	expected := map[string]any{"vcpu_count": float64(cpu), "memory_mb": float64(memory), "disk_mb": float64(disk)}
+	loaded, err := q.GetWorkspace(ctx, parent.ID)
+	require.NoError(t, err)
+	check(loaded, expected)
+	rows, err := q.AdminListWorkspaces(ctx, AdminListWorkspacesParams{RowLimit: 100})
+	require.NoError(t, err)
+	found := false
+	for _, row := range rows {
+		if row.Workspace.ID == parent.ID {
+			check(row.Workspace, expected)
+			found = true
+		}
+	}
+	require.True(t, found, "admin listing must include the provisioned workspace")
+	var parentID pgtype.UUID
+	require.NoError(t, parentID.Scan(parent.ID))
+	locked, err := q.GetWorkspaceChildParentForUpdate(ctx, parent.ID)
+	require.NoError(t, err)
+	check(locked, expected)
+	batch, err := q.CreateWorkspaceChildBatch(ctx, CreateWorkspaceChildBatchParams{ParentWorkspaceID: parentID, UserID: ownerID, Profile: "small", Requested: 1, ExpiresAt: time.Now().Add(time.Hour)})
+	require.NoError(t, err)
+	require.NoError(t, q.ReserveWorkspaceChildren(ctx, batch.ID))
+	children, err := q.CreateWorkspaceChildRows(ctx, batch.ID)
+	require.NoError(t, err)
+	require.Len(t, children, 1)
+	check(children[0], nil)
+	child, err := q.GetWorkspace(ctx, children[0].ID)
+	require.NoError(t, err)
+	check(child, nil)
+}
