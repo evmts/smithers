@@ -98,7 +98,8 @@ mock.module('../../../src/bun/NativeBackendProcess', () => ({
   }
 }))
 mock.module('../../../src/bun/NativeState', () => ({ nativeStateDirectory: () => '/state' }))
-mock.module('../../../src/bun/server', () => ({ defaultDistDir: () => '/web', startLocalServer: () => { throw new Error('unexpected test host') } }))
+mock.module('../../../src/bun/NativePaths', () => ({ defaultDistDir: () => '/web' }))
+mock.module('../../../src/bun/server', () => ({ startLocalServer: () => { throw new Error('unexpected test host') } }))
 mock.module('../../../src/bun/NativeRendererServer', () => ({
   startNativeRendererServer: () => {
     if (scenario === 'renderer-start-error' || scenario === 'pending-renderer-start-error') throw new Error('renderer acquisition failed')
