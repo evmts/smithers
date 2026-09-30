@@ -372,3 +372,13 @@ test("a run-open retry round-trips its durable request and rejects duplicate or 
   expect(payloadFor("runs.open", "requestId= run-1")).toHaveProperty("error")
   expect(payloadFor("runs.open", "requestId=a requestId=b run-1")).toHaveProperty("error")
 })
+
+test("secret scope and binding inputs round-trip through the canonical grammar", () => {
+  for (const scope of ["main-only", "all"] as const) {
+    roundTrip("secrets.scope", { name: "DEPLOY", scope, repo: "ada/other" }, `DEPLOY ${scope} ada/other`, { name: "DEPLOY", scope, repo: "ada/other" })
+  }
+  roundTrip("secrets.bind", { name: "DEPLOY", repo: "ada/other" }, '{"name":"DEPLOY","repo":"ada/other"}', { name: "DEPLOY", repo: "ada/other" })
+  roundTrip("secrets.bind", { name: "DEPLOY", hosts: "api.example.com, registry.example.com", headers: "authorization, x-api-key", repo: "ada/other" },
+    '{"name":"DEPLOY","hosts":"api.example.com, registry.example.com","headers":"authorization, x-api-key","repo":"ada/other"}',
+    { name: "DEPLOY", hosts: "api.example.com, registry.example.com", headers: "authorization, x-api-key", repo: "ada/other" })
+})
