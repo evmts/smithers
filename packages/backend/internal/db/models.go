@@ -2793,16 +2793,17 @@ type WorkflowRunCodingHost struct {
 }
 
 type WorkflowRunFlowInvocation struct {
-	WorkflowRunID  int64       `json:"workflow_run_id"`
-	UserID         int64       `json:"user_id"`
-	FlowID         string      `json:"flow_id"`
-	OperationID    string      `json:"operation_id"`
-	WorkspaceID    pgtype.UUID `json:"workspace_id"`
-	CreatedAt      time.Time   `json:"created_at"`
-	WorkflowStepID pgtype.Int8 `json:"workflow_step_id"`
-	LogCursor      string      `json:"log_cursor"`
-	TriggerCommit  string      `json:"trigger_commit"`
-	SourceRevision string      `json:"source_revision"`
+	WorkflowRunID   int64       `json:"workflow_run_id"`
+	UserID          int64       `json:"user_id"`
+	FlowID          string      `json:"flow_id"`
+	OperationID     string      `json:"operation_id"`
+	WorkspaceID     pgtype.UUID `json:"workspace_id"`
+	CreatedAt       time.Time   `json:"created_at"`
+	WorkflowStepID  pgtype.Int8 `json:"workflow_step_id"`
+	LogCursor       string      `json:"log_cursor"`
+	TriggerCommit   string      `json:"trigger_commit"`
+	SourceRevision  string      `json:"source_revision"`
+	LaunchRedaction string      `json:"launch_redaction"`
 }
 
 type WorkflowRunLog struct {
@@ -2928,6 +2929,9 @@ type Workspace struct {
 	ClientLeaseSecs         pgtype.Int4        `json:"client_lease_secs"`
 	ClientLeaseExpiresAt    pgtype.Timestamptz `json:"client_lease_expires_at"`
 	SourceCommit            string             `json:"source_commit"`
+	VcpuCount               pgtype.Int4        `json:"vcpu_count"`
+	MemoryMb                pgtype.Int4        `json:"memory_mb"`
+	DiskMb                  pgtype.Int4        `json:"disk_mb"`
 }
 
 type WorkspaceChild struct {
