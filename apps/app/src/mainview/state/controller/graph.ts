@@ -22,6 +22,7 @@ import type { ControllerContext } from "./context"
 import { actorSharedState } from "../ActorBindings"
 import { runCardOf } from "../RepoContext"
 import { TOAST_SUPERSEDED } from "./failures"
+import { readEnvironment } from "../seams/EnvironmentSeam"
 
 type RunTraceCard = Extract<Card, { kind: "run-trace" }>
 type FlowPlanCard = Extract<Card, { kind: "flow-plan" }>
@@ -43,6 +44,8 @@ export const isGraphDrawerTab = (value: string): value is GraphDrawerTab =>
   (GRAPH_DRAWER_TABS as ReadonlyArray<string>).includes(value)
 
 export interface GraphController {
+  /** Reconnect admitted agent-binding reads after the account has been restored. */
+  readonly resumeGraphInputs: () => void
   /** `runs.graph.select <runId> [nodeId]`: open a run graph node's drawer, or close it. */
   readonly selectGraphNode: (runId: string, nodeId?: string, sourceCard?: string) => Promise<CommandResult>
   /** `runs.graph.tab <runId> <tab>`: which tab of the open node the run's graph shows. */
@@ -73,6 +76,94 @@ export const createGraphController = (
 ): GraphController => {
   const { store } = ctx
   const reads = actorSharedState(ctx, "graph-declarations", () => new Map<string, { key: string; epoch: number }>())
+  const bindingReads = actorSharedState(ctx, "graph-agent-bindings", () => {
+    const active = new Map<string, { id: string; abort: AbortController }>()
+    const cancel = () => { for (const read of active.values()) read.abort.abort(); active.clear() }
+    ctx.onDispose(cancel)
+    ctx.onDispose(ctx.onAccountChange(cancel))
+    return active
+  })
+  const bindingAdmissions = actorSharedState(ctx, "graph-agent-binding-admissions", () => new Map<string, Promise<unknown>>())
+  type Bindings = NonNullable<RunTraceCard["payload"]["agentSecretBindings"]>
+  const readBindings = (cardId: string, request: Bindings): void => {
+    const epoch = ctx.accountEpoch
+    const currentCard = () => {
+      if (ctx.disposed || ctx.accountEpoch !== epoch || ctx.accountOwner() !== request.owner) return
+      const card = store.collections.cards.get(cardId)
+      if (card?.kind === "run-trace" && card.payload.repo === request.repo && card.payload.workspaceId === request.workspaceId &&
+        card.payload.agentSecretBindings?.id === request.id) return card
+    }
+    if (request.state !== "pending" || bindingAdmissions.has(cardId) || currentCard() === undefined || bindingReads.get(cardId)?.id === request.id) return
+    bindingReads.get(cardId)?.abort.abort()
+    const read = { id: request.id, abort: new AbortController() }
+    bindingReads.set(cardId, read)
+    const current = () => !read.abort.signal.aborted && bindingReads.get(cardId) === read && currentCard() !== undefined
+    const save = async (bindings: Bindings) => {
+      const card = currentCard()
+      if (!current() || card === undefined) return
+      await store.dispatch({ type: "card.updated", actor: ctx.commandActor, id: cardId,
+        patch: { payload: { ...card.payload, agentSecretBindings: bindings } }
+      }).isPersisted.promise
+    }
+    void ctx.withToast(`run-inputs:${cardId}`, "Reading agent bindings", "Read agent bindings", async () => {
+      try {
+        const config = await readEnvironment({ baseUrl: ctx.baseUrl,
+          http: (url, init) => ctx.http(url, { ...init, signal: read.abort.signal })
+        }, request.repo)
+        if (!current()) return TOAST_SUPERSEDED
+        if (typeof config === "string") {
+          await save({ ...request, state: "failed", secrets: [], error: config })
+          return current() ? config : TOAST_SUPERSEDED
+        }
+        // Setup-only and refused secrets do not reach the agent's egress proxy.
+        // Retain only public binding metadata, never environment variables or values.
+        const secrets = config.secrets.filter(secret => !secret.reconnect && secret.hosts.length > 0 && secret.matchHeaders.length > 0)
+          .map(secret => ({ name: secret.name, hosts: [...secret.hosts] }))
+        await save({ ...request, state: "complete", secrets })
+        return current() ? true : TOAST_SUPERSEDED
+      } catch (error) {
+        if (!current()) return TOAST_SUPERSEDED
+        ctx.failures.report("toast.work", error, cardId)
+        const message = "Agent bindings could not be read. Try again."
+        await save({ ...request, state: "failed", secrets: [], error: message })
+        return current() ? message : TOAST_SUPERSEDED
+      }
+    }, false, current).finally(() => {
+      if (bindingReads.get(cardId) === read) bindingReads.delete(cardId)
+    }).catch(() => { /* The shared toast reports persistence failures. */ })
+  }
+  const requestBindings = async (cardId: string): Promise<void> => {
+    const epoch = ctx.accountEpoch
+    const owner = ctx.accountOwner()
+    for (let pending = bindingAdmissions.get(cardId); pending !== undefined; pending = bindingAdmissions.get(cardId)) {
+      try { await pending } catch { /* The admitting command reports its persistence failure. */ }
+    }
+    if (ctx.accountEpoch !== epoch || ctx.accountOwner() !== owner) return
+    const card = store.collections.cards.get(cardId)
+    if (ctx.disposed || typeof owner !== "string" || card?.kind !== "run-trace" || card.payload.workspaceId === undefined ||
+      card.payload.graph?.node === undefined || (card.payload.graph.tab !== undefined && card.payload.graph.tab !== "in")) return
+    const held = card.payload.agentSecretBindings
+    if (held?.state === "pending" && held.owner === owner && held.repo === card.payload.repo && held.workspaceId === card.payload.workspaceId) {
+      readBindings(cardId, held)
+      return
+    }
+    const request: Bindings = { id: crypto.randomUUID(), owner, repo: card.payload.repo, workspaceId: card.payload.workspaceId, state: "pending", secrets: [] }
+    const admission = store.dispatch({ type: "card.updated", actor: ctx.commandActor, id: cardId,
+      patch: { payload: { ...card.payload, agentSecretBindings: request } }
+    }).isPersisted.promise
+    bindingAdmissions.set(cardId, admission)
+    try { await admission } finally { if (bindingAdmissions.get(cardId) === admission) bindingAdmissions.delete(cardId) }
+    if (ctx.accountEpoch !== epoch || ctx.accountOwner() !== owner) return
+    readBindings(cardId, request)
+  }
+  const resumeGraphInputs = (): void => {
+    for (const card of store.collections.cards.values()) {
+      if (card.kind === "run-trace" && card.payload.agentSecretBindings?.state === "pending") readBindings(card.id, card.payload.agentSecretBindings)
+      else if (card.kind === "run-trace" && card.payload.agentSecretBindings === undefined) {
+        void requestBindings(card.id).catch(error => ctx.failures.report("toast.work", error, card.id))
+      }
+    }
+  }
   /** Writes, or clears, the refusal a Code tab is showing on whichever card it is. */
   const stateCodeError = async (
     cardId: string,
@@ -241,6 +332,7 @@ export const createGraphController = (
       card: { ...card, payload: Object.keys(graph).length === 0 ? payload : { ...payload, graph } }
     }).isPersisted.promise
     if (!ctx.disposed && ctx.accountEpoch === epoch && nodeId !== undefined && _tab === "code") readDeclaration(card.id, card.payload.repo, nodeId, runSite(card, nodeId))
+    if (!ctx.disposed && ctx.accountEpoch === epoch && nodeId !== undefined) await requestBindings(card.id)
     return { value: `graph-select run=${runId} node=${nodeId ?? "none"}` }
   }
 
@@ -259,6 +351,7 @@ export const createGraphController = (
     }).isPersisted.promise
     /* The Code tab is a viewer, so opening it reads what it shows. */
     if (!ctx.disposed && ctx.accountEpoch === epoch && tab === "code") readDeclaration(card.id, card.payload.repo, graph.node, runSite(card, graph.node))
+    if (!ctx.disposed && ctx.accountEpoch === epoch && tab === "in") await requestBindings(card.id)
     return { value: `graph-tab run=${runId} tab=${tab}` }
   }
 
@@ -332,7 +425,7 @@ export const createGraphController = (
     return { value: `plan-tab card=${cardId} tab=${tab}` }
   }
 
-  return { selectGraphNode, graphNodeTab, selectPlanNode, planNodeTab }
+  return { selectGraphNode, graphNodeTab, selectPlanNode, planNodeTab, resumeGraphInputs }
 }
 
 /** The refusal the slash boundary and the agent both read for an unknown tab word. */
