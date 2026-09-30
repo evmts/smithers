@@ -17,6 +17,8 @@ import {
 } from "@smthrs/rpc/Mythical"
 import * as StackIssues from "@smthrs/rpc/StackIssues"
 import { itemReason, itemStateLabel, itemTitle, retryable } from "@smthrs/rpc/StackView"
+import { failureDetail } from "@smthrs/rpc/UserFailure"
+import * as Failures from "./failures.ts"
 import type * as Panels from "./panels.ts"
 
 /** Where a repository lives on Cloud: `owner/name`. */
@@ -48,7 +50,15 @@ export const load = async (
 /** What filing a TODO came to: the queued item, or why not and whether the refusal is final. */
 export type Filing =
   | { readonly ok: true; readonly item: MythicalItem }
-  | { readonly ok: false; readonly detail: string; readonly settled: boolean }
+  | { readonly ok: false; readonly error: unknown; readonly settled: boolean }
+
+/** A retry refused by the observed stack, presented by code rather than transport text. */
+export type Refusal =
+  & { readonly _tag: "FactoryRefused"; readonly issue: number }
+  & (
+    | { readonly code: "missing" }
+    | { readonly code: "not_retryable"; readonly state: string }
+  )
 
 /**
  * Files TODOs with `POST …/mythical/todos`, each under one request id: the
@@ -70,17 +80,19 @@ export const filer = (
     const request = requests.get(key) ?? newId()
     requests.set(key, request)
     const [owner, name] = repo.split("/") as [string, string]
-    const run = post(mythicalRoute("todos", owner, name), { title, request }, signal).then(
-      (body): Filing => {
+    const run = (async (): Promise<Filing> => {
+      try {
+        const item = MythicalItemSchema.parse(
+          await post(mythicalRoute("todos", owner, name), { title, request }, signal)
+        )
         requests.delete(key)
-        return { ok: true, item: MythicalItemSchema.parse(body) }
-      },
-      (error): Filing => {
+        return { ok: true, item }
+      } catch (error) {
         const refused = failed(error)
         if (refused.settled) requests.delete(key)
         return refused
       }
-    ).finally(() => flying.delete(key))
+    })().finally(() => flying.delete(key))
     flying.set(key, run)
     return run
   }
@@ -89,8 +101,10 @@ export const filer = (
 /** A request that failed: a refusal (HTTP 4xx) is final; anything else may not have reached Cloud. */
 const failed = (error: unknown): Filing & { readonly ok: false } => ({
   ok: false,
-  detail: error instanceof Error ? error.message : String(error),
-  settled: /HTTP 4\d\d\b/.test(String(error))
+  error,
+  // CloudSession carries status on the first diagnostic line. A nested cause
+  // or stack frame must not turn an uncertain request into a final refusal.
+  settled: /HTTP 4\d\d\b/.test(failureDetail(error).split("\n", 1)[0] ?? "")
 })
 
 /** `12` or `#12`: the issue a factory command names. */
@@ -120,8 +134,16 @@ export const retry = async (
     return failed(error)
   }
   const item = stack.items.find((candidate) => candidate.issue?.number === issue)
-  if (item === undefined) return { ok: false, detail: `#${issue} is not in the factory`, settled: true }
-  if (!retryable(item)) return { ok: false, detail: `#${issue} is ${itemStateLabel(item)}`, settled: true }
+  if (item === undefined) {
+    return { ok: false, error: { _tag: "FactoryRefused", code: "missing", issue } satisfies Refusal, settled: true }
+  }
+  if (!retryable(item)) {
+    return {
+      ok: false,
+      error: { _tag: "FactoryRefused", code: "not_retryable", issue, state: itemStateLabel(item) } satisfies Refusal,
+      settled: true
+    }
+  }
   try {
     return {
       ok: true,
@@ -157,9 +179,9 @@ export const retryCommand = (
       const answer = await retry(cloud, repo, issue)
       return answer.ok
         ? { text: `#${issue} ${itemStateLabel(answer.item)}` }
-        : { text: `#${issue} not retried: ${answer.detail}`, tone: "warning" }
+        : { text: `#${issue} not retried: ${Failures.line("retry", answer.error)}`, tone: "warning" }
     } catch (error) {
-      return { text: `#${issue} not retried: ${failed(error).detail}`, tone: "warning" }
+      return { text: `#${issue} not retried: ${Failures.line("retry", error)}`, tone: "warning" }
     }
   })()
   return { now: { text: `Retry #${issue} requested` }, settled }
