@@ -22,8 +22,8 @@ const createNote = async (page: Page) => {
   return { card: page.getByTestId(`card-${cardId}`), cardId, documentId: cardId.replace(/^wiki-open-/, ""), title }
 }
 const edit = async (page: Page, card: Locator, markdown: string) => {
-  const editor = card.locator('.ProseMirror[contenteditable="true"]'); await expect(editor).toBeVisible(); await editor.click()
-  await page.keyboard.press("ControlOrMeta+a"); await page.keyboard.insertText(markdown); await expect(editor).toContainText(markdown.split("\n").at(-1) ?? markdown)
+  const editor = card.locator('.ProseMirror[contenteditable="true"]'); await expect(editor).toBeVisible(); await editor.click(); await expect(editor).toBeFocused()
+  await page.keyboard.press("ControlOrMeta+a"); await expect(editor).toBeFocused(); await page.keyboard.insertText(markdown); await expect(editor).toContainText(markdown.split("\n").at(-1) ?? markdown)
 }
 test("a Wiki note is created and edited through its embedded document card", scenario("local-wiki-card-edit", { capabilities: [], coverage: ["action:wiki.new-note", "action:wiki.card.view", "action:wiki.edit", "host:local", "path:success", "door:slash", "door:button", "dimension:markdown-editor-outline", "evidence:wiki-card-readback"] }), async ({ page }) => {
   await boot(page); const note = await createNote(page)
@@ -37,8 +37,32 @@ test("a Wiki note is created and edited through its embedded document card", sce
 })
 
 test("Wiki backlinks and graph derive from two edited notes", scenario("local-wiki-links-graph", { capabilities: [], coverage: ["action:wiki.new-note", "action:wiki.card.view", "action:wiki.backlinks", "action:wiki.graph", "action:wiki.open", "host:local", "path:success", "door:slash", "door:button", "dimension:links-backlinks-graph", "evidence:wiki-card-readback"] }), async ({ page }) => {
-  await boot(page); const first = await createNote(page); const second = await createNote(page)
-  await edit(page, first.card, `# ${first.title}\n\nLinks to [[${second.title}]].`); await edit(page, second.card, `# ${second.title}\n\nBack to [[${first.title}]].`)
+  await boot(page)
+  await page.evaluate(() => {
+    const events: Array<Record<string, unknown>> = []
+    ;(globalThis as typeof globalThis & { wikiEditorEvents?: typeof events }).wikiEditorEvents = events
+    for (const type of ["focusin", "focusout", "keydown", "beforeinput", "input"]) document.addEventListener(type, event => {
+      const target = event.target instanceof Element ? event.target.closest(".ProseMirror") : null
+      if (target === null) return
+      events.push({ type, card: target.closest("[data-testid]")?.getAttribute("data-testid"),
+        key: (event as KeyboardEvent).key, inputType: (event as InputEvent).inputType,
+        focused: document.activeElement === target, text: target.textContent })
+    }, true)
+  })
+  const first = await createNote(page); const second = await createNote(page)
+  try {
+    await edit(page, first.card, `# ${first.title}\n\nLinks to [[${second.title}]].`)
+    await edit(page, second.card, `# ${second.title}\n\nBack to [[${first.title}]].`)
+  } finally {
+    await test.info().attach("wiki-editor-input", { contentType: "application/json", body: JSON.stringify(await page.evaluate(() => ({
+      events: (globalThis as typeof globalThis & { wikiEditorEvents?: Array<Record<string, unknown>> }).wikiEditorEvents,
+      activeTag: document.activeElement?.tagName,
+      activeCard: document.activeElement?.closest("[data-testid]")?.getAttribute("data-testid"),
+      editors: [...document.querySelectorAll(".ProseMirror")].map(editor => ({
+        card: editor.closest("[data-testid]")?.getAttribute("data-testid"), text: editor.textContent
+      }))
+    })), null, 2) })
+  }
   await command(page, `/wiki.backlinks ${first.title}`); await closeComposer(page)
   const links = page.locator('.smithers-card[data-kind="wiki-links"]').last()
   await expect(links).toContainText(second.title)
@@ -54,7 +78,18 @@ test("Wiki delete cancel preserves a note and confirm removes it", scenario("loc
   await command(page, `/wiki.delete ${note.documentId}`); await closeComposer(page); const confirmation = page.getByRole("dialog", { name: `Delete ${note.title}?`, exact: true }); await expect(confirmation).toBeVisible(); await confirmation.getByRole("button", { name: "Cancel", exact: true }).click(); await expect(confirmation).toBeHidden(); await command(page, `/wiki.open ${note.title}`); await closeComposer(page)
   await expect(page.locator('.smithers-card[data-kind="world"]').last()).toContainText(note.title)
   await command(page, `/wiki.delete ${note.documentId}`); await closeComposer(page); await expect(confirmation).toBeVisible(); await confirmation.getByRole("button", { name: "Delete", exact: true }).click(); await expect(confirmation).toBeHidden(); await command(page, `/wiki.open ${note.title}`); await closeComposer(page)
-  await expect(page.getByText(/There is no Wiki note at/).last()).toBeVisible()
+  const missing = `There is no Wiki note at ${note.title}. Create one with wiki.new-note.`
+  const detail = page.locator("details").filter({ has: page.locator("pre", { hasText: missing }) }).last()
+  await expect(detail).toBeVisible()
+  await expect(detail).not.toHaveAttribute("open", "")
+  await expect(detail.locator("pre")).toHaveText(missing)
+  await expect(detail.locator("pre")).toBeHidden()
+  await detail.locator("summary").focus(); await page.keyboard.press("Enter")
+  await expect(detail.locator("pre")).toBeVisible()
+  await expect(detail.locator("pre")).toHaveText(missing)
+  await page.keyboard.press("Enter"); await expect(detail.locator("pre")).toBeHidden()
+  await reloadApp(page)
+  await expect(page.getByTestId(`card-${note.cardId}`)).toContainText("This note is no longer available in Wiki.")
 })
 
 test("Wiki card edit survives immediate reload", scenario("local-wiki-immediate-reload", { capabilities: [], coverage: ["action:wiki.new-note", "action:wiki.card.view", "host:local", "path:persistence", "door:slash", "door:button", "dimension:immediate-reload", "evidence:wiki-card-readback"] }), async ({ page }) => {
