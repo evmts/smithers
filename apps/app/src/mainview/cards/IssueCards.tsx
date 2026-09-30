@@ -144,7 +144,7 @@ export const IssueListCardBody = ({
   card,
   onRunCommand
 }: { readonly card: Extract<Card, { kind: "issue-list" }> } & IssueCardActions) => {
-  const { repo, filter, issues, github } = card.payload
+  const { repo, filter, issues, github, view, views } = card.payload
   const kind = card.payload.kind ?? "all"
   const open = issues.filter((issue) => issue.state !== "closed").length
   const noun = kind === "conversation" ? "conversations" : "issues"
@@ -164,6 +164,15 @@ export const IssueListCardBody = ({
             <button key={id} type="button" className="run-trace-filter" data-on={kind === id} aria-pressed={kind === id} {...flowAction(onRunCommand, "issues.list", kindArgs(id))}>{label}</button>
           ))}
         </span>
+        {views === undefined || views.length === 0 ? null : (
+          /* Saved views the factory declares (#2269): pressing one lists through it; pressing the selected one leaves it. */
+          <span className="ghc-toolbar-kinds" role="group" aria-label="Views" data-testid="issue-list-views">
+            {views.map(({ id, title }) => (
+              <button key={id} type="button" className="run-trace-filter" data-on={view === id} aria-pressed={view === id}
+                {...flowAction(onRunCommand, "issues.list", flowArgs("issues.list", view === id ? { repo } : { filter: "all", repo, view: id }))}>{title}</button>
+            ))}
+          </span>
+        )}
         <span className="ghc-toolbar-repo">{repoLabel(repo)}</span>
       </div>
       {github !== undefined && github.refusal === null && (github.stale || github.syncError !== null && github.syncedAt !== null) ?
@@ -179,7 +188,7 @@ export const IssueListCardBody = ({
         const failure = issueGithubFailure(github)
         return failure === null ? null : (
           <FailureNotice className="ghc-note" data-testid="issue-list-github-failure" role="status" failure={failure}
-            actions={{ retry: flowAction(onRunCommand, "issues.list", flowArgs("issues.list", { filter, repo, kind })) }} />
+            actions={{ retry: flowAction(onRunCommand, "issues.list", flowArgs("issues.list", { filter, repo, kind, ...(view === undefined ? {} : { view }) })) }} />
         )
       })()}
       {issues.length === 0 ?

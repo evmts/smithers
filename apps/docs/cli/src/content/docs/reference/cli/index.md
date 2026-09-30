@@ -343,6 +343,9 @@ the hidden-alias table.
 
 ### Workspace commands
 
+`smthrs workspace create --ref NAME` checks out one of your pushed refs
+(`smthrs repo push --name NAME`) in a new workspace without starting a run.
+
 `smthrs workspace exec BOX --repo OWNER/REPO --command 'pnpm test' --exec-id tests-1`
 admits a command and polls its durable receipt. Reuse the same ID and inputs to
 reattach after a disconnect. Reusing the ID with different inputs fails.

@@ -560,6 +560,7 @@ export interface AppController extends IssueFlowsController, RepositorySetupCont
   readonly moveCodingProvider: SecretsSeam["moveCodingProvider"]
   readonly listSecrets: SecretsSeam["listSecrets"]
   readonly scopeSecret: SecretsSeam["scopeSecret"]
+  readonly bindSecret: SecretsSeam["bindSecret"]
   readonly setSecret: SecretsSeam["setSecret"]
   readonly deleteSecret: SecretsSeam["deleteSecret"]
   /* The mythical stack (#1745), the repository history (D-20): the History card, its admin writes, and the live snapshots its views read. */
@@ -569,6 +570,7 @@ export interface AppController extends IssueFlowsController, RepositorySetupCont
   readonly backfillStack: StackSeam["backfillStack"]
   readonly setStackParallel: StackSeam["setStackParallel"]
   readonly retryStackItem: StackSeam["retryStackItem"]
+  readonly landStackItem: StackSeam["landStackItem"]
   readonly fileTodo: StackSeam["fileTodo"]
   readonly refreshWiki: StackSeam["refreshWiki"]
   readonly stackSnapshots: StackSeam["snapshots"]
@@ -1891,6 +1893,7 @@ export const createAppController = (
     moveCodingProvider: secretsSeam.moveCodingProvider,
     listSecrets: secretsSeam.listSecrets,
     scopeSecret: secretsSeam.scopeSecret,
+    bindSecret: secretsSeam.bindSecret,
     setSecret: secretsSeam.setSecret,
     deleteSecret: secretsSeam.deleteSecret,
     showStack: stackSeam.showStack,
@@ -1899,6 +1902,7 @@ export const createAppController = (
     backfillStack: stackSeam.backfillStack,
     setStackParallel: stackSeam.setStackParallel,
     retryStackItem: stackSeam.retryStackItem,
+    landStackItem: stackSeam.landStackItem,
     fileTodo: stackSeam.fileTodo,
     refreshWiki: stackSeam.refreshWiki,
     registerTrigger,

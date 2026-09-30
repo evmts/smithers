@@ -1019,13 +1019,28 @@ export const layer: Layer.Layer<
      * launched for the reader's own principal. A plan partition, an
      * engine-created run, and a run that does not exist are all invisible.
      */
-    const readerSees = (reader: Principal, runId: string): Effect.Effect<boolean, ControlError> =>
+    const readerSees = (reader: Principal, runId: string): Effect.Effect<boolean, PersistenceError> =>
       runId.startsWith("plan:")
         ? Effect.succeed(false)
         : runtime.getRun(runId).pipe(
           Effect.map((run) => launchedByMatches(run, reader)),
           Effect.catchTag("/control/RunNotFound", () => Effect.succeed(false))
         )
+
+    /**
+     * Confines a mutation to a run its reader may see, with the rule `List`
+     * and `Watch` use: another principal's run answers `RunNotFound` exactly
+     * as a missing one, before any idempotency replay can describe it.
+     */
+    const confined = <A, E, R>(
+      submitted: { readonly reader?: Principal | undefined; readonly runId: string },
+      mutation: Effect.Effect<A, E, R>
+    ): Effect.Effect<A, E | RunNotFound | PersistenceError, R> =>
+      submitted.reader === undefined ? mutation : Effect.flatMap(
+        readerSees(submitted.reader, submitted.runId),
+        (visible): Effect.Effect<A, E | RunNotFound, R> =>
+          visible ? mutation : Effect.fail(new RunNotFound({ runId: submitted.runId }))
+      )
 
     const list = (request: ListInput): Effect.Effect<ListResponse, ControlError> =>
       Effect.gen(function*() {
@@ -1692,7 +1707,7 @@ export const layer: Layer.Layer<
       approve: Effect.fn("Control.approve")((input) => decide("approved", input)),
       deny: Effect.fn("Control.deny")((input) => decide("denied", input)),
       steer: Effect.fn("Control.steer")((submitted: SteerInput) =>
-        Effect.flatMap(snapshotSteer(submitted), (input) =>
+        confined(submitted, Effect.flatMap(snapshotSteer(submitted), (input) =>
           mutate(
             "steer",
             input.idempotencyKey,
@@ -1762,10 +1777,10 @@ export const layer: Layer.Layer<
               yield* wake(run, input.message.messageId)
               return accepted(input.idempotencyKey, input.runId)
             })
-          ))
+          )))
       ),
       signal: Effect.fn("Control.signal")((submitted: SignalInput) =>
-        Effect.flatMap(snapshotSignal(submitted), (input) =>
+        confined(submitted, Effect.flatMap(snapshotSignal(submitted), (input) =>
           Effect.gen(function*() {
             const principal = yield* runtime.stampPrincipal(input.principal)
             const key = fingerprint("signal", principal, input)
@@ -1819,10 +1834,10 @@ export const layer: Layer.Layer<
               yield* runtime.settleSignal(durableKey, "delivered")
             }
             return receipt
-          }))
+          })))
       ),
       cancel: Effect.fn("Control.cancel")((submitted) =>
-        Effect.flatMap(
+        confined(submitted, Effect.flatMap(
           snapshotReasonedMutation("cancel", submitted),
           (input) =>
             Effect.flatMap(runtime.stampPrincipal(input.principal), (principal) =>
@@ -1964,9 +1979,9 @@ export const layer: Layer.Layer<
                   })
                 )
               ))
-        )
+        ))
       ),
-      resume: Effect.fn("Control.resume")((input) => runMutation(input)),
+      resume: Effect.fn("Control.resume")((input) => confined(input, runMutation(input))),
       list,
       watch
     }

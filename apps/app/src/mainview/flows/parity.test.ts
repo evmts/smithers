@@ -432,7 +432,7 @@ describe("launch-law parity: every affordance is a command", () => {
       "../cards/SearchResultsCard.tsx": 2,
       "../cards/SecretsCard.tsx": 9,
       /* Includes TODO filing, check-receipt run opening, and the failure/Wiki Retry actions. */
-      "../cards/StackCard.tsx": 9,
+      "../cards/StackCard.tsx": 10, // + Land (history.land).
       /* Local Open tab, cloud session Stop, and inventory Open/Stop. */
       "../cards/AgentCards.tsx": 5, // + each profile row's Runs door (runs.list flow=<profile>).
       "../cards/AnonymousCeilingCard.tsx": 1,

@@ -967,6 +967,7 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     return ok(repo === undefined ? { name, scope } : { name, scope, repo })
   },
   "secrets.list": (args) => repoOnly("secrets.list", args),
+  "secrets.bind": (args, known) => structuredFields("secrets.bind", args, ["name", "hosts", "headers", "repo"]) ?? secretName("secrets.bind", args, known, false),
   /* The value is never on a line: it arrives only through the form's write-only field. */
   "secrets.set": (args, known) => structuredFields("secrets.set", args, ["name", "hosts", "headers", "repo"]) ?? secretName("secrets.set", args, known, false),
   "secrets.delete": (args, known) => secretName("secrets.delete", args, known, true),
@@ -1031,6 +1032,12 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     const { rest, repo } = splitTrailingRepo(args)
     if (!/^[\w-]{1,64}$/.test(rest)) return no("history.retry takes an item id")
     return ok(repo === undefined ? { id: rest } : { id: rest, repo })
+  },
+  "history.land": (args) => {
+    const { rest, repo } = splitTrailingRepo(args)
+    const [id = "", head = "", ...extra] = rest.split(/\s+/)
+    if (!/^[\w-]{1,64}$/.test(id) || !/^[\w-]{1,64}$/.test(head) || extra.length > 0) return no("history.land takes an item id and its pull request head")
+    return ok(repo === undefined ? { id, head } : { id, head, repo })
   },
   /* `<title> [owner/repo]`, or the form's `{ title, body, repo }`. */
   "history.todo": (args, known) => {

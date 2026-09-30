@@ -894,22 +894,6 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
   }),
   z.object({
     ...cardBaseShape,
-    kind: z.literal("request-queue"),
-    payload: z.object({
-      requests: z.array(
-        z.object({
-          login: z.string(),
-          note: z.string().nullable(),
-          createdAt: z.string()
-        })
-      ),
-      /** The login an allowlist-add is in flight for (one at a time). */
-      approving: z.string().nullable(),
-      error: z.string().optional()
-    })
-  }),
-  z.object({
-    ...cardBaseShape,
     kind: z.literal("admin-health"),
     payload: z.object({
       services: z.array(
@@ -919,7 +903,6 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
           detail: z.string()
         })
       ),
-      queueDepth: z.number().int().nonnegative().nullable(),
       charges: z
         .object({
           chargeCount: z.number().int().nonnegative(),
@@ -1486,6 +1469,10 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       filter: z.enum(["open", "closed", "all"]),
       /** Which rows the list shows: every issue, only conversations, or only issues (issues.list --kind). */
       kind: z.enum(["all", "conversation", "issue"]).optional(),
+      /** The saved issue view the list applies (issues.list --view), when one is selected. */
+      view: z.string().optional(),
+      /** The saved issue views the repository's factory declares, in declaration order; absent when none. */
+      views: z.array(z.object({ id: z.string(), title: z.string() })).optional(),
       issues: z.array(
         z.object({
           number: z.number().int(),
@@ -1849,7 +1836,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
    * The account card (factory mock 21, design session §6c): who is signed in
    * and what the identity seam knows about them. Every row is a seam fact:
    * the GitHub login, the scopes the identity worker states (GET
-   * /api/auth/scopes), the allowlist answer, and the boxes the workspaces
+   * /api/auth/scopes) and the boxes the workspaces
    * seam has listed across repositories. Billing and usage rows live on the
    * balance card, which the billing seam answers; seat rows stay absent
    * because no seam holds them — a row with no seam is absent, never
@@ -1870,8 +1857,6 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
         z.object({ id: z.string(), state: z.literal("complete") }),
         z.object({ id: z.string(), state: z.literal("failed"), error: z.string() })
       ]).optional(),
-      allowlisted: z.boolean(),
-      accessRequested: z.boolean(),
       /** The cloudWorkspaces rows at render time: the person's boxes across every repository this app has listed. */
       boxes: z.array(z.object({ id: z.string(), repoId: z.string(), name: z.string(), status: z.string() }))
     })

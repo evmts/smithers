@@ -1325,6 +1325,21 @@ export interface PostApiIntegrationsLinearIdSyncInput {
 export const postApiIntegrationsLinearIdSync = (transport: Transport, input: PostApiIntegrationsLinearIdSyncInput): Promise<PostApiIntegrationsLinearIdSyncResponse> =>
   transport.request("POST", `/api/integrations/linear/${segment(input.path.id)}/sync`) as Promise<PostApiIntegrationsLinearIdSyncResponse>
 
+export type GetApiReposOwnerRepoIssueViewsResponse = Array<{
+  id: string
+  title: string
+  state?: "open" | "closed" | "fixed" | "verified" | "all"
+  labels?: Array<string>
+}>
+
+export interface GetApiReposOwnerRepoIssueViewsInput {
+  readonly path: { readonly owner: string; readonly repo: string }
+}
+
+/** GET /api/repos/{owner}/{repo}/issue-views */
+export const getApiReposOwnerRepoIssueViews = (transport: Transport, input: GetApiReposOwnerRepoIssueViewsInput): Promise<GetApiReposOwnerRepoIssueViewsResponse> =>
+  transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/issue-views`) as Promise<GetApiReposOwnerRepoIssueViewsResponse>
+
 export type GetApiLinearIdOpsResponse = LinearSyncOps
 
 export interface GetApiLinearIdOpsInput {
@@ -5063,6 +5078,21 @@ export interface GetApiReposOwnerRepoMythicalItemsRefInput {
 export const getApiReposOwnerRepoMythicalItemsRef = (transport: Transport, input: GetApiReposOwnerRepoMythicalItemsRefInput): Promise<GetApiReposOwnerRepoMythicalItemsRefResponse> =>
   transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/mythical/items/${segment(input.path.ref)}`) as Promise<GetApiReposOwnerRepoMythicalItemsRefResponse>
 
+export type PostApiReposOwnerRepoMythicalItemsIdLandBody = {
+  head: string
+}
+
+export type PostApiReposOwnerRepoMythicalItemsIdLandResponse = AnyJSON
+
+export interface PostApiReposOwnerRepoMythicalItemsIdLandInput {
+  readonly path: { readonly owner: string; readonly repo: string; readonly id: string }
+  readonly body: PostApiReposOwnerRepoMythicalItemsIdLandBody
+}
+
+/** POST /api/repos/{owner}/{repo}/mythical/items/{id}/land */
+export const postApiReposOwnerRepoMythicalItemsIdLand = (transport: Transport, input: PostApiReposOwnerRepoMythicalItemsIdLandInput): Promise<PostApiReposOwnerRepoMythicalItemsIdLandResponse> =>
+  transport.request("POST", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/mythical/items/${segment(input.path.id)}/land`, input.body) as Promise<PostApiReposOwnerRepoMythicalItemsIdLandResponse>
+
 export type PostApiReposOwnerRepoMythicalItemsIdRetryBody = AnyJSON
 
 export type PostApiReposOwnerRepoMythicalItemsIdRetryResponse = AnyJSON
@@ -5234,6 +5264,88 @@ export interface PutApiReposOwnerRepoWikiAttachmentsSlugInput {
 /** PUT /api/repos/{owner}/{repo}/wiki/attachments/{slug} */
 export const putApiReposOwnerRepoWikiAttachmentsSlug = (transport: Transport, input: PutApiReposOwnerRepoWikiAttachmentsSlugInput): Promise<PutApiReposOwnerRepoWikiAttachmentsSlugResponse> =>
   transport.request("PUT", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/wiki/attachments/${segment(input.path.slug)}`, input.body) as Promise<PutApiReposOwnerRepoWikiAttachmentsSlugResponse>
+
+export type GetApiReposOwnerRepoWorkspacesIdChildrenResponse = Array<{
+  workspace_id: string
+  batch_id: string
+  ordinal: number
+  profile: "small" | "build"
+  status: string
+  vm_id?: string
+  snapshot_id?: string
+  started_at?: string
+  stopped_at?: string
+  stop_reason?: "requested" | "parent_stopped" | "expired" | "idle" | "failed" | "abandoned"
+  failure_message?: string
+  expires_at: string
+}>
+
+export interface GetApiReposOwnerRepoWorkspacesIdChildrenInput {
+  readonly path: { readonly owner: string; readonly repo: string; readonly id: string }
+}
+
+/** GET /api/repos/{owner}/{repo}/workspaces/{id}/children: List a workspace's children */
+export const getApiReposOwnerRepoWorkspacesIdChildren = (transport: Transport, input: GetApiReposOwnerRepoWorkspacesIdChildrenInput): Promise<GetApiReposOwnerRepoWorkspacesIdChildrenResponse> =>
+  transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/workspaces/${segment(input.path.id)}/children`) as Promise<GetApiReposOwnerRepoWorkspacesIdChildrenResponse>
+
+export type PostApiReposOwnerRepoWorkspacesIdChildrenBody = {
+  count: number
+  profile?: "small" | "build"
+  ttl_secs?: number
+}
+
+export type PostApiReposOwnerRepoWorkspacesIdChildrenResponse = {
+  id: string
+  parent_workspace_id: string
+  profile: "small" | "build"
+  expires_at: string
+  children: Array<{
+    workspace_id: string
+    batch_id: string
+    ordinal: number
+    profile: "small" | "build"
+    status: string
+    vm_id?: string
+    snapshot_id?: string
+    started_at?: string
+    stopped_at?: string
+    stop_reason?: "requested" | "parent_stopped" | "expired" | "idle" | "failed" | "abandoned"
+    failure_message?: string
+    expires_at: string
+  }>
+}
+
+export interface PostApiReposOwnerRepoWorkspacesIdChildrenInput {
+  readonly path: { readonly owner: string; readonly repo: string; readonly id: string }
+  readonly body: PostApiReposOwnerRepoWorkspacesIdChildrenBody
+}
+
+/** POST /api/repos/{owner}/{repo}/workspaces/{id}/children: Spawn children of a workspace */
+export const postApiReposOwnerRepoWorkspacesIdChildren = (transport: Transport, input: PostApiReposOwnerRepoWorkspacesIdChildrenInput): Promise<PostApiReposOwnerRepoWorkspacesIdChildrenResponse> =>
+  transport.request("POST", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/workspaces/${segment(input.path.id)}/children`, input.body) as Promise<PostApiReposOwnerRepoWorkspacesIdChildrenResponse>
+
+export type PostApiReposOwnerRepoWorkspacesIdChildrenChildIdStopResponse = {
+  workspace_id: string
+  batch_id: string
+  ordinal: number
+  profile: "small" | "build"
+  status: string
+  vm_id?: string
+  snapshot_id?: string
+  started_at?: string
+  stopped_at?: string
+  stop_reason?: "requested" | "parent_stopped" | "expired" | "idle" | "failed" | "abandoned"
+  failure_message?: string
+  expires_at: string
+}
+
+export interface PostApiReposOwnerRepoWorkspacesIdChildrenChildIdStopInput {
+  readonly path: { readonly owner: string; readonly repo: string; readonly id: string; readonly child_id: string }
+}
+
+/** POST /api/repos/{owner}/{repo}/workspaces/{id}/children/{child_id}/stop: Stop a workspace's child */
+export const postApiReposOwnerRepoWorkspacesIdChildrenChildIdStop = (transport: Transport, input: PostApiReposOwnerRepoWorkspacesIdChildrenChildIdStopInput): Promise<PostApiReposOwnerRepoWorkspacesIdChildrenChildIdStopResponse> =>
+  transport.request("POST", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/workspaces/${segment(input.path.id)}/children/${segment(input.path.child_id)}/stop`) as Promise<PostApiReposOwnerRepoWorkspacesIdChildrenChildIdStopResponse>
 
 export type GetApiRepoConnectionResponse = AnyJSON
 

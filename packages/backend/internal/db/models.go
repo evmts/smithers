@@ -2302,6 +2302,15 @@ type RepositoryJobTrial struct {
 	CreatedAt    time.Time   `json:"created_at"`
 }
 
+type RepositoryRegistrationReport struct {
+	Host       string          `json:"host"`
+	Owner      string          `json:"owner"`
+	Name       string          `json:"name"`
+	CommitSha  string          `json:"commit_sha"`
+	Report     json.RawMessage `json:"report"`
+	RecordedAt time.Time       `json:"recorded_at"`
+}
+
 type RepositorySecret struct {
 	ID                         int64              `json:"id"`
 	RepositoryID               int64              `json:"repository_id"`
@@ -2922,6 +2931,7 @@ type Workspace struct {
 	RebuildRequiredAt       pgtype.Timestamptz `json:"rebuild_required_at"`
 	ClientLeaseSecs         pgtype.Int4        `json:"client_lease_secs"`
 	ClientLeaseExpiresAt    pgtype.Timestamptz `json:"client_lease_expires_at"`
+	SourceCommit            string             `json:"source_commit"`
 }
 
 type WorkspaceChild struct {

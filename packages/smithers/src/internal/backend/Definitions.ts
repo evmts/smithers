@@ -1078,6 +1078,15 @@ export const definitions = {
       "page": z.coerce.number().describe("Page number").default(1)
     })
   },
+  "secret bind": {
+    description: "Set the hosts and headers a secret may be sent to; none unbinds it",
+    args: z.object({ "name": z.string().describe("Secret name") }),
+    options: z.object({
+      "header": z.array(z.string()).describe("Request header the value goes in (repeatable)").default([]),
+      "host": z.array(z.string()).describe("Host the secret may be sent to (repeatable)").default([]),
+      "repo": z.string().describe("Repository (OWNER/REPO)").optional()
+    })
+  },
   "secret delete": {
     description: "Delete a secret",
     args: z.object({ "name": z.string().describe("Secret name") }),
@@ -1093,6 +1102,8 @@ export const definitions = {
     args: z.object({ "name": z.string().describe("Secret name") }),
     options: z.object({
       "body-stdin": z.boolean().describe("Read the secret value from stdin").default(false),
+      "header": z.array(z.string()).describe("Request header the value goes in (repeatable, with --host)").default([]),
+      "host": z.array(z.string()).describe("Host the secret may be sent to (repeatable, with --header)").default([]),
       "main-only": z.boolean().describe("Only trusted runs on the default bookmark receive it").default(false),
       "repo": z.string().describe("Repository (OWNER/REPO)").optional()
     })
@@ -1349,6 +1360,33 @@ export const definitions = {
     args: z.object({ "id": z.coerce.number().describe("Run ID") }),
     options: z.object({ "repo": z.string().describe("Repository (OWNER/REPO)").optional() })
   },
+  "workspace children list": {
+    description: "List a workspace's children",
+    args: z.object({}),
+    options: z.object({
+      "repo": z.string().describe("Repository (OWNER/REPO)").optional(),
+      "workspace": z.string().describe("Parent workspace ID (this workspace when run inside one)").optional()
+    })
+  },
+  "workspace children spawn": {
+    description: "Spawn children of a running workspace",
+    args: z.object({}),
+    options: z.object({
+      "count": z.coerce.number().describe("How many children").default(1),
+      "profile": z.enum(["small", "build"]).describe("small (1 vCPU, 2 GB) or build (2 vCPU, 8 GB)").optional(),
+      "repo": z.string().describe("Repository (OWNER/REPO)").optional(),
+      "ttl": z.coerce.number().describe("Seconds the children may live (plan default when omitted)").optional(),
+      "workspace": z.string().describe("Parent workspace ID (this workspace when run inside one)").optional()
+    })
+  },
+  "workspace children stop": {
+    description: "Stop a workspace's child",
+    args: z.object({ "child": z.string().describe("Child workspace ID") }),
+    options: z.object({
+      "repo": z.string().describe("Repository (OWNER/REPO)").optional(),
+      "workspace": z.string().describe("Parent workspace ID (this workspace when run inside one)").optional()
+    })
+  },
   "workspace cp": {
     description: "Copy files or directories between the local machine and a workspace",
     args: z.object({
@@ -1381,6 +1419,8 @@ export const definitions = {
       "memory": z.coerce.number().describe("Memory in MiB").optional(),
       "name": z.string().describe("Workspace name").default(""),
       "network": z.string().describe("Egress mode: proxy (default), allowlist, none").optional(),
+      "ref": z.string().describe("Check out one of your pushed refs (smthrs repo push --name) instead of the bookmark")
+        .optional(),
       "repo": z.string().describe("Repository (OWNER/REPO)").optional(),
       "service": z.array(z.string()).describe("Network service NAME=COMMAND started inside the workspace (repeatable)")
         .default([]),
