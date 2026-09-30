@@ -11,12 +11,12 @@
  *   live   the entry module of the single 100% version (content/v2 CF-Entrypoint),
  *          cross-checked against that version's own annotations.
  *
- * | local \ live | legacy     | edge   | cutover admission / fence / maintenance export |
- * |--------------|------------|--------|------------------------------------------------|
- * | legacy       | normal     | refuse | refuse                                         |
- * | edge         | activation | normal | refuse                                         |
+ * | local \ live | legacy     | edge   | maintenance export |
+ * |--------------|------------|--------|--------------------|
+ * | legacy       | normal     | refuse | refuse             |
+ * | edge         | activation | normal | refuse             |
  *
- * Normal CI can therefore never undo a live installer version and never bring
+ * Normal CI can therefore never undo a live sealed-inventory export version and never bring
  * the legacy writer back over the edge. The edge replaces the live legacy
  * Worker as a direct switch whenever legacy is live and the committed owner record
  * (cutover/activation.json, ACTIVATION_RECORD_PATH) validates: the owner's
@@ -35,7 +35,7 @@ import { fileURLToPath } from "node:url"
 import { accountURL, api } from "./cutover/cloudflare"
 
 export type LocalIdentity = "legacy" | "edge"
-export type LiveIdentity = "legacy" | "edge" | "cutover-admission" | "cutover-fence" | "maintenance-export"
+export type LiveIdentity = "legacy" | "edge" | "maintenance-export"
 /** The deploy interlock refused; `code` is the stable DEPLOY_GUARD_* id the operator log prints. */
 export class DeployGuardRefusal extends Data.TaggedError("DeployGuardRefusal")<{ readonly code: string; readonly detail: string }> {
   override get message(): string {
@@ -58,28 +58,19 @@ export interface LiveFacts {
   readonly modules: ReadonlyArray<string>
   readonly annotations: Readonly<Record<string, string>>
 }
-const CUTOVER_MESSAGE = /^smithers-cutover ([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}) (admission|fence)$/
 /** The live version's identity. Entry module decides; annotations must not contradict it. */
 export const classifyLive = (facts: LiveFacts): LiveIdentity => {
-  const message = facts.annotations["workers/message"] ?? ""
-  const cutover = CUTOVER_MESSAGE.exec(message)
+  const exporting = facts.annotations["workers/tag"] === "sealed-state-inventory"
   const only = (...names: string[]) => facts.modules.every(m => names.includes(m) || names.some(n => m === `${n}.map`))
   const contradict = () => refuse("DEPLOY_GUARD_LIVE_AMBIGUOUS", `live version ${facts.versionId} entry ${facts.entry} contradicts its annotation`)
   switch (facts.entry) {
-    case "cutover-admission-entry.js":
-    case "cutover-fence-entry.js": {
-      const action = facts.entry === "cutover-fence-entry.js" ? "fence" : "admission"
-      if (!cutover || cutover[2] !== action) return contradict()
-      return action === "fence" ? "cutover-fence" : "cutover-admission"
-    }
     case "sealed-export-entry.js":
-      if (cutover) return contradict()
       return "maintenance-export"
     case "index.js":
-      if (cutover || facts.annotations["workers/tag"] === "sealed-state-inventory" || !only("index.js")) return contradict()
+      if (exporting || !only("index.js")) return contradict()
       return "legacy"
     case "edge.js":
-      if (cutover || !only("edge.js")) return contradict()
+      if (exporting || !only("edge.js")) return contradict()
       return "edge"
     default:
       return refuse("DEPLOY_GUARD_LIVE_UNKNOWN", `live version ${facts.versionId} runs unrecognized entry ${facts.entry}`)
@@ -144,8 +135,8 @@ export type GuardDecision =
 export const decideDeploy = (local: LocalIdentity, live: LiveFacts, activationRecord: () => ActivationRecord = readActivationRecord): GuardDecision => {
   const identity = classifyLive(live)
   if (local === identity) return { mode: "normal", local, live: identity, liveVersion: live.versionId }
-  if (identity === "cutover-admission" || identity === "cutover-fence" || identity === "maintenance-export")
-    return refuse("DEPLOY_GUARD_LIVE_CUTOVER", `live ${identity} version ${live.versionId} belongs to the cutover installer; only its own restore may replace it`)
+  if (identity === "maintenance-export")
+    return refuse("DEPLOY_GUARD_LIVE_CUTOVER", `live ${identity} version ${live.versionId} belongs to the sealed-inventory export; only its own restore may replace it`)
   if (local === "legacy") return refuse("DEPLOY_GUARD_LEGACY_OVER_EDGE", "the shared edge is live; the legacy writer must never return over it through CI")
   return { mode: "activation", local, live: "legacy", liveVersion: live.versionId, record: activationRecord() }
 }

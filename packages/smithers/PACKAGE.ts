@@ -33,8 +33,24 @@ const historyPostgresDatabase = Smithers.Docker.Service({
   stop: { signal: "SIGTERM", grace: "10s" }
 })
 
+/** Options both halves of the `test` target share. */
+const vitest =
+  "pnpm exec vitest run --config vitest.config.ts --environment node --reporter=github-actions --reporter=dot"
+
 const test = Smithers.Shell.Test({
-  shell: "cd packages/smithers && pnpm exec vitest run --config vitest.config.ts --environment node",
+  // `Bin.test.ts` drives the real executable, which v8 attributes to the child
+  // processes, so it adds nothing to this package's coverage. It took 973 s of
+  // a 2309 s run on ubuntu CI, one file after another, against a 40-minute cap.
+  // It runs beside the covered suite, without coverage, and the target fails
+  // if either half fails. The runner shows a target's first 200 live lines:
+  // `github-actions` prints one line per failed case first, so a red names
+  // every failing file before `dot` prints details that may pass the limit.
+  shell: [
+    "cd packages/smithers && (",
+    `${vitest} --coverage.enabled=false test/Bin.test.ts & bin=$!;`,
+    `${vitest} --exclude test/Bin.test.ts; rest=$?;`,
+    "wait $bin; exit $(( rest || $? )))"
+  ].join(" "),
   data: [
     lib,
     Smithers.glob("src/**/*.ts"),

@@ -1083,6 +1083,14 @@ type GetAPIStatusResponseComponentsCanary struct {
 	Detail string `json:"detail"`
 }
 
+// GetAPIReposOwnerRepoIssueViewsResponseItem is generated from docs/api/openapi.yaml.
+type GetAPIReposOwnerRepoIssueViewsResponseItem struct {
+	ID     string   `json:"id"`
+	Title  string   `json:"title"`
+	State  *string  `json:"state,omitempty"`
+	Labels []string `json:"labels,omitempty"`
+}
+
 // GetAPILinearIDOpsParams is the query of GET /api/linear/{id}/ops.
 type GetAPILinearIDOpsParams struct {
 	Status *string
@@ -1168,6 +1176,70 @@ type PostAPIReposOwnerRepoMythicalItemsIDLandBody struct {
 type PostAPIReposOwnerRepoMythicalTodosBody struct {
 	Title string  `json:"title"`
 	Body  *string `json:"body,omitempty"`
+}
+
+// GetAPIReposOwnerRepoWorkspacesIDChildrenResponseItem is generated from docs/api/openapi.yaml.
+type GetAPIReposOwnerRepoWorkspacesIDChildrenResponseItem struct {
+	WorkspaceID    string     `json:"workspace_id"`
+	BatchID        string     `json:"batch_id"`
+	Ordinal        int64      `json:"ordinal"`
+	Profile        string     `json:"profile"`
+	Status         string     `json:"status"`
+	VMID           *string    `json:"vm_id,omitempty"`
+	SnapshotID     *string    `json:"snapshot_id,omitempty"`
+	StartedAt      *time.Time `json:"started_at,omitempty"`
+	StoppedAt      *time.Time `json:"stopped_at,omitempty"`
+	StopReason     *string    `json:"stop_reason,omitempty"`
+	FailureMessage *string    `json:"failure_message,omitempty"`
+	ExpiresAt      time.Time  `json:"expires_at"`
+}
+
+// PostAPIReposOwnerRepoWorkspacesIDChildrenBody is generated from docs/api/openapi.yaml.
+type PostAPIReposOwnerRepoWorkspacesIDChildrenBody struct {
+	Count   int64   `json:"count"`
+	Profile *string `json:"profile,omitempty"`
+	TTLSecs *int64  `json:"ttl_secs,omitempty"`
+}
+
+// PostAPIReposOwnerRepoWorkspacesIDChildrenResponse is generated from docs/api/openapi.yaml.
+type PostAPIReposOwnerRepoWorkspacesIDChildrenResponse struct {
+	ID                string                                                          `json:"id"`
+	ParentWorkspaceID string                                                          `json:"parent_workspace_id"`
+	Profile           string                                                          `json:"profile"`
+	ExpiresAt         time.Time                                                       `json:"expires_at"`
+	Children          []PostAPIReposOwnerRepoWorkspacesIDChildrenResponseChildrenItem `json:"children"`
+}
+
+// PostAPIReposOwnerRepoWorkspacesIDChildrenResponseChildrenItem is generated from docs/api/openapi.yaml.
+type PostAPIReposOwnerRepoWorkspacesIDChildrenResponseChildrenItem struct {
+	WorkspaceID    string     `json:"workspace_id"`
+	BatchID        string     `json:"batch_id"`
+	Ordinal        int64      `json:"ordinal"`
+	Profile        string     `json:"profile"`
+	Status         string     `json:"status"`
+	VMID           *string    `json:"vm_id,omitempty"`
+	SnapshotID     *string    `json:"snapshot_id,omitempty"`
+	StartedAt      *time.Time `json:"started_at,omitempty"`
+	StoppedAt      *time.Time `json:"stopped_at,omitempty"`
+	StopReason     *string    `json:"stop_reason,omitempty"`
+	FailureMessage *string    `json:"failure_message,omitempty"`
+	ExpiresAt      time.Time  `json:"expires_at"`
+}
+
+// PostAPIReposOwnerRepoWorkspacesIDChildrenChildIDStopResponse is generated from docs/api/openapi.yaml.
+type PostAPIReposOwnerRepoWorkspacesIDChildrenChildIDStopResponse struct {
+	WorkspaceID    string     `json:"workspace_id"`
+	BatchID        string     `json:"batch_id"`
+	Ordinal        int64      `json:"ordinal"`
+	Profile        string     `json:"profile"`
+	Status         string     `json:"status"`
+	VMID           *string    `json:"vm_id,omitempty"`
+	SnapshotID     *string    `json:"snapshot_id,omitempty"`
+	StartedAt      *time.Time `json:"started_at,omitempty"`
+	StoppedAt      *time.Time `json:"stopped_at,omitempty"`
+	StopReason     *string    `json:"stop_reason,omitempty"`
+	FailureMessage *string    `json:"failure_message,omitempty"`
+	ExpiresAt      time.Time  `json:"expires_at"`
 }
 
 // GetAPIUserGithubAppInstallationsResponse is generated from docs/api/openapi.yaml.
@@ -1918,6 +1990,13 @@ func (c *Client) GetAPIIntegrationsSkills(ctx context.Context) (AnyJSON, error) 
 func (c *Client) PostAPIIntegrationsLinearIDSync(ctx context.Context, id string) (AnyJSON, error) {
 	var out AnyJSON
 	err := c.do(ctx, "POST", "/api/integrations/linear/"+url.PathEscape(id)+"/sync", nil, nil, &out)
+	return out, err
+}
+
+// GetAPIReposOwnerRepoIssueViews calls GET /api/repos/{owner}/{repo}/issue-views.
+func (c *Client) GetAPIReposOwnerRepoIssueViews(ctx context.Context, owner string, repo string) ([]GetAPIReposOwnerRepoIssueViewsResponseItem, error) {
+	var out []GetAPIReposOwnerRepoIssueViewsResponseItem
+	err := c.do(ctx, "GET", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/issue-views", nil, nil, &out)
 	return out, err
 }
 
@@ -4676,6 +4755,27 @@ func (c *Client) PutAPIReposOwnerRepoMythicalLanes(ctx context.Context, owner st
 func (c *Client) PutAPIReposOwnerRepoWikiAttachmentsSlug(ctx context.Context, owner string, repo string, slug string, body any) (AnyJSON, error) {
 	var out AnyJSON
 	err := c.do(ctx, "PUT", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/wiki/attachments/"+url.PathEscape(slug), nil, body, &out)
+	return out, err
+}
+
+// GetAPIReposOwnerRepoWorkspacesIDChildren calls GET /api/repos/{owner}/{repo}/workspaces/{id}/children.
+func (c *Client) GetAPIReposOwnerRepoWorkspacesIDChildren(ctx context.Context, owner string, repo string, id string) ([]GetAPIReposOwnerRepoWorkspacesIDChildrenResponseItem, error) {
+	var out []GetAPIReposOwnerRepoWorkspacesIDChildrenResponseItem
+	err := c.do(ctx, "GET", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/workspaces/"+url.PathEscape(id)+"/children", nil, nil, &out)
+	return out, err
+}
+
+// PostAPIReposOwnerRepoWorkspacesIDChildren calls POST /api/repos/{owner}/{repo}/workspaces/{id}/children.
+func (c *Client) PostAPIReposOwnerRepoWorkspacesIDChildren(ctx context.Context, owner string, repo string, id string, body PostAPIReposOwnerRepoWorkspacesIDChildrenBody) (PostAPIReposOwnerRepoWorkspacesIDChildrenResponse, error) {
+	var out PostAPIReposOwnerRepoWorkspacesIDChildrenResponse
+	err := c.do(ctx, "POST", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/workspaces/"+url.PathEscape(id)+"/children", nil, body, &out)
+	return out, err
+}
+
+// PostAPIReposOwnerRepoWorkspacesIDChildrenChildIDStop calls POST /api/repos/{owner}/{repo}/workspaces/{id}/children/{child_id}/stop.
+func (c *Client) PostAPIReposOwnerRepoWorkspacesIDChildrenChildIDStop(ctx context.Context, owner string, repo string, id string, childID string) (PostAPIReposOwnerRepoWorkspacesIDChildrenChildIDStopResponse, error) {
+	var out PostAPIReposOwnerRepoWorkspacesIDChildrenChildIDStopResponse
+	err := c.do(ctx, "POST", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/workspaces/"+url.PathEscape(id)+"/children/"+url.PathEscape(childID)+"/stop", nil, nil, &out)
 	return out, err
 }
 

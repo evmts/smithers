@@ -53,7 +53,7 @@ export interface ParkedIncident {
 }
 
 export interface RunStatus {
-  /** The guard's park: `facts.classification` is the status word, Continue approves `requestId`, Stop cancels. */
+  /** The guard's park: `facts.classification` is the status word, Continue approves `requestId`, Stop denies it. */
   readonly incident?: ParkedIncident
   readonly verdict?: string
   readonly activity?: string

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { ACTIVATION_RECORD_PATH, artifactDigest, classifyLive, classifyLocal, decideDeploy, parseActivationRecord, preflightDeploy, readActivationRecord, readLiveFacts, verifyActivated, type LiveFacts } from "./deployGuard"
 import { WORKER_IDENTITY } from "../src/workerIdentity"
-import { FakeCloudflare } from "./cutover/install-fake"
+import { FakeCloudflare } from "./fakeCloudflare"
 import { applyPhase, prepareInstall, restoreAll } from "./cutover/install"
 
 setDefaultTimeout(60_000)

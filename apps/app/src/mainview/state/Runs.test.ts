@@ -262,7 +262,6 @@ const signIn = async (store: Awaited<ReturnType<typeof webStore>>, loaded: Array
     actor: "system",
     state: "signed-in",
     login: "codeplanesmithers",
-    allowlisted: true,
     admin: false,
     scopesPlain: null
   })
@@ -616,6 +615,39 @@ describe("runs.open / resume / signal / steer — the run's acts", () => {
     expect(double.state.submitted).toEqual([])
   })
 
+  describe("flow.run.stop on a run a guard parked", () => {
+    const incident = { classification: "Runaway", source: "usd", message: "The run would spend past its $1.00 budget", used: 0.9, max: 1, next: 0.25, allowance: 2 }
+    const guardGate = { ...approvalRow("run-2", "budget/run-2/usd", "Raise the USD budget?"), request: { question: "Raise the USD budget?", incident } }
+    const stopCard = async (options: Parameters<typeof relay>[0]) => {
+      const store = await webStore()
+      const double = relay({ runs: [{ runId: "run-2", flowId: "review-pr", status: "parked", waitingReason: "budget" }], ...options })
+      const controller = createAppController(store, silentAgent, double.services)
+      await signIn(store)
+      await openMonitor(controller, store, "run-2")
+      expect((await controller.commands.run("flow.run.stop", boxRunCard("run-2"))).status).toBe("executed")
+      return double
+    }
+
+    test("denies the guard's own request unchanged instead of cancelling", async () => {
+      const double = await stopCard({ approvals: [approvalRow("run-2", "push", "Push?"), guardGate] })
+      await waitFor(() => double.state.submitted.length === 1)
+      expect(double.state.submitted).toEqual([{ approval: guardGate.payload, decision: "deny" }])
+      expect(double.state.cancelled).toEqual([])
+      expect(double.state.resumed).toEqual([])
+    })
+
+    test.each([
+      ["an ordinary approval", { approvals: [approvalRow("run-2", "push", "Push?")] }],
+      ["a guard request already decided", { approvals: [{ ...guardGate, status: "denied" }] }],
+      ["unreadable approvals", { approvals: [guardGate], projectionRefusals: { approvals: { message: "Approvals unavailable", code: "unavailable" } } }]
+    ])("cancels a run held by %s, and decides nothing", async (_name, options) => {
+      const double = await stopCard(options as Parameters<typeof relay>[0])
+      await waitFor(() => double.state.cancelled.length === 1)
+      expect(double.state.cancelled[0]?.runId).toBe("run-2")
+      expect(double.state.submitted).toEqual([])
+    })
+  })
+
   test("a resume refusal crosses as the flow's error", async () => {
     const store = await webStore()
     const double = relay({
@@ -823,7 +855,7 @@ describe("source-bound durable reruns", () => {
       await fixture.store.dispose?.()
       restored = await createAppStore({ kind: "localStorage", storage: fixture.storage })
       reopened = createAppController(restored, silentAgent, services)
-      await reopened.adoptSession({ state: "signed-in", login: "codeplanesmithers", allowlisted: true, admin: false })
+      await reopened.adoptSession({ state: "signed-in", login: "codeplanesmithers", admin: false })
       await waitFor(() => provisions === 2)
       expect(requests(restored)[0]?.id).toBe(id)
       expect(requests(restored)[0]?.rerunOf).toBe("original")
@@ -847,7 +879,7 @@ describe("source-bound durable reruns", () => {
       try {
         await fixture.controller.commands.run("runs.rerun", "sourceCard=b original")
         await waitFor(() => entered)
-        if (change === "account") await fixture.controller.adoptSession({ state: "signed-in", login: "another-owner", allowlisted: true, admin: false })
+        if (change === "account") await fixture.controller.adoptSession({ state: "signed-in", login: "another-owner", admin: false })
         else await fixture.store.dispatch({ type: "card.upsert", actor: "system", card: source("b", { args: "changed later" }) }).isPersisted.promise
         gate.resolve()
         await waitFor(() => returned)
@@ -1512,7 +1544,7 @@ describe("the approvals inbox — list, open, and the row decision", () => {
       await waitFor(() => requests === 1)
       const second = controller.commands.runForAgent("approvals.list")
       await settle(3)
-      await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "someone-else", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+      await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "someone-else", admin: false, scopesPlain: null }).isPersisted.promise
       release()
       await Promise.all([first, second])
       await settle(6)
@@ -1747,7 +1779,7 @@ describe("the approvals inbox — list, open, and the row decision", () => {
     await waitFor(() => started.read === 1)
     await waitFor(() => store.collections.toasts.get(inboxToastId)?.status === "running")
 
-    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "someone-else", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "someone-else", admin: false, scopesPlain: null }).isPersisted.promise
     expect(inboxRequests(store)).toEqual([])
     releaseRead()
     await settle(10)
@@ -2677,7 +2709,7 @@ describe("durable run facet requests", () => {
         await fixture.store.dispose?.()
         restored = await createAppStore({ kind: "localStorage", storage: fixture.storage })
         reopened = createAppController(restored, silentAgent, fixture.services)
-        await reopened.adoptSession({ state: "signed-in", login: "codeplanesmithers", allowlisted: true, admin: false })
+        await reopened.adoptSession({ state: "signed-in", login: "codeplanesmithers", admin: false })
         await waitFor(() => fixture.reads() === 2)
         expect(current(restored)?.payload.facetRequest?.id).toBe(id)
         gate.resolve()
@@ -2771,7 +2803,7 @@ describe("durable run facet requests", () => {
         try {
           await fixture.controller.commands.run(flow, "sourceCard=b run-facet")
           await waitFor(() => fixture.reads() === 1)
-          if (change === "account") await fixture.controller.adoptSession({ state: "signed-in", login: "another-owner", allowlisted: true, admin: false })
+          if (change === "account") await fixture.controller.adoptSession({ state: "signed-in", login: "another-owner", admin: false })
           const replacement = card("b")
           await fixture.store.dispatch({ type: "card.upsert", actor: "system", card: { ...replacement, payload: { ...replacement.payload, runId: "replacement" } } }).isPersisted.promise
           gate.resolve()
@@ -2852,7 +2884,7 @@ describe("durable run-list reads", () => {
     const first = fixture.controller.commands.run("runs.list")
     try {
       await waitFor(() => fixture.reads() === 1)
-      await fixture.controller.adoptSession({ state: "signed-in", login: "another-owner", allowlisted: true, admin: false })
+      await fixture.controller.adoptSession({ state: "signed-in", login: "another-owner", admin: false })
       gate.resolve()
       await first
       await waitFor(() => fixture.returned() === 1)
@@ -2915,7 +2947,7 @@ describe("durable run-list reads", () => {
       await fixture.store.dispose?.()
       restored = await createAppStore({ kind: "localStorage", storage: fixture.storage })
       reopened = createAppController(restored, silentAgent, fixture.services)
-      await reopened.adoptSession({ state: "signed-in", login: "codeplanesmithers", allowlisted: true, admin: false })
+      await reopened.adoptSession({ state: "signed-in", login: "codeplanesmithers", admin: false })
       await waitFor(() => fixture.reads() === 2)
       expect(runListCard(restored)?.payload.listRequest?.id).toBe(id)
       gate.resolve()
@@ -3058,7 +3090,7 @@ describe("durable run opens", () => {
       await fixture.store.dispose?.()
       restored = await createAppStore({ kind: "localStorage", storage: fixture.storage })
       reopened = createAppController(restored, silentAgent, fixture.services)
-      await reopened.adoptSession({ state: "signed-in", login: "codeplanesmithers", allowlisted: true, admin: false })
+      await reopened.adoptSession({ state: "signed-in", login: "codeplanesmithers", admin: false })
       await waitFor(() => fixture.reads() === 2)
       expect(restored.session().runOpenRequests![0]).toEqual(request)
       gate.resolve()
@@ -3073,7 +3105,7 @@ describe("durable run opens", () => {
     try {
       await fixture.controller.commands.run("runs.open", "opened")
       await waitFor(() => fixture.reads() === 1)
-      await fixture.controller.adoptSession({ state: "signed-in", login: "another-owner", allowlisted: true, admin: false })
+      await fixture.controller.adoptSession({ state: "signed-in", login: "another-owner", admin: false })
       gate.resolve()
       await settle(30)
       expect([...fixture.store.collections.cards.values()].filter(card => card.kind === "run-trace")).toHaveLength(0)
@@ -3282,7 +3314,7 @@ test("admin inbox reads another account in the background and answers its existi
     return originalFetch(input, init)
   } })
   await signIn(store)
-  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "codeplanesmithers", allowlisted: true, admin: true, scopesPlain: null }).isPersisted.promise
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "codeplanesmithers", admin: true, scopesPlain: null }).isPersisted.promise
   try {
     expect(said(await controller.commands.run("approvals.list"))).toBe("Approvals requested.")
     await started.promise
@@ -3327,7 +3359,7 @@ test("an admin inbox with an unread registration box keeps the readable reviews 
     return originalFetch(input, init)
   } })
   await signIn(store)
-  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "codeplanesmithers", allowlisted: true, admin: true, scopesPlain: null }).isPersisted.promise
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "codeplanesmithers", admin: true, scopesPlain: null }).isPersisted.promise
   expect(said(await controller.commands.run("approvals.list"))).toBe("Approvals requested.")
   await waitFor(() => [...store.collections.toasts.values()].some(toast => toast.key.startsWith("approvals.list.") && toast.status === "running"))
   held.resolve()
@@ -3363,7 +3395,7 @@ test("an admin inbox preserves a previous review when its registration box becom
     return originalFetch(input, init)
   } })
   await signIn(store)
-  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "codeplanesmithers", allowlisted: true, admin: true, scopesPlain: null }).isPersisted.promise
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "codeplanesmithers", admin: true, scopesPlain: null }).isPersisted.promise
   try {
     await listInbox(controller, store)
     const previous = [...store.collections.cards.values()].find(card => card.kind === "approvals-inbox" && card.payload.workspaceId === foreignBox)!
@@ -3402,7 +3434,7 @@ test.each([1, 2])("an admin inbox with only %i unread registration boxes reports
     return originalFetch(input, init)
   } })
   await signIn(store)
-  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "codeplanesmithers", allowlisted: true, admin: true, scopesPlain: null }).isPersisted.promise
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "codeplanesmithers", admin: true, scopesPlain: null }).isPersisted.promise
   try {
     expect(said(await controller.commands.run("approvals.list"))).toBe("Approvals requested.")
     await waitFor(() => [...store.collections.toasts.values()].some(toast => toast.key.startsWith("approvals.list.") && toast.status === "running"))

@@ -4,7 +4,7 @@
  * version of smithers-mvp-web live, chosen by DEPLOY_INTERLOCK_LIVE. Never
  * imported by the deploy path.
  */
-import { FakeCloudflare } from "./cutover/install-fake"
+import { FakeCloudflare } from "./fakeCloudflare"
 const live = process.env.DEPLOY_INTERLOCK_LIVE
 const fake = new FakeCloudflare().install()
 const uuid = "2b1f6a1e-7d3c-4e4a-9b9e-0c1d2e3f4a5b"

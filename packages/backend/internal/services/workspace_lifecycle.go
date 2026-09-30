@@ -45,15 +45,16 @@ func (s *WorkspaceService) ResumeWorkspace(ctx context.Context, workspaceID stri
 		return WorkspaceResponse{}, pkgerrors.Internal("workspace store unavailable")
 	}
 
-	workspace, err := s.loadOwnedWorkspace(ctx, workspaceID, repositoryID, userID)
+	var resumed db.Workspace
+	err := s.withWorkspaceMutation(ctx, workspaceID, repositoryID, userID, func(ctx context.Context, workspace db.Workspace) error {
+		var err error
+		resumed, err = s.ensureExistingWorkspaceRunningFor(ctx, workspace, userID)
+		return err
+	})
 	if err != nil {
 		return WorkspaceResponse{}, err
 	}
-	workspace, err = s.ensureExistingWorkspaceRunning(ctx, workspace)
-	if err != nil {
-		return WorkspaceResponse{}, err
-	}
-	return s.toWorkspaceResponse(workspace), nil
+	return s.toWorkspaceResponse(resumed), nil
 }
 
 // DeleteWorkspace stops and deletes a workspace execution environment.
@@ -306,6 +307,7 @@ func (s *WorkspaceService) CleanupIdleWorkspaces(ctx context.Context) error {
 
 // CleanupOverQuotaWorkspaces suspends running workspaces after their owner has
 // exhausted today's sandbox hours, regardless of workspace or session activity.
+// A child workspace cannot resume: its parent's suspension stops it.
 func (s *WorkspaceService) CleanupOverQuotaWorkspaces(ctx context.Context) error {
 	if s.q == nil || s.billing == nil {
 		return nil
@@ -339,6 +341,12 @@ func (s *WorkspaceService) CleanupOverQuotaWorkspaces(ctx context.Context) error
 			limits[workspace.UserID] = limit
 		}
 		if limit == nil {
+			continue
+		}
+		if child, err := s.overQuotaWorkspaceChild(ctx, workspace); child || err != nil {
+			if err != nil {
+				errs = append(errs, fmt.Errorf("check over-quota workspace %s: %w", workspace.ID, err))
+			}
 			continue
 		}
 		if err := s.suspendWorkspace(ctx, workspace); err != nil {
@@ -449,7 +457,24 @@ func (s *WorkspaceService) CleanupStalePendingWorkspaces(ctx context.Context) er
 	return nil
 }
 
+// ensureExistingWorkspaceRunning starts a workspace on its owner's behalf.
 func (s *WorkspaceService) ensureExistingWorkspaceRunning(ctx context.Context, workspace db.Workspace) (db.Workspace, error) {
+	return s.ensureExistingWorkspaceRunningFor(ctx, workspace, workspace.UserID)
+}
+
+// ensureExistingWorkspaceRunningFor starts a workspace for a requester with
+// write authority over it, held for the whole transition (#3212).
+func (s *WorkspaceService) ensureExistingWorkspaceRunningFor(ctx context.Context, workspace db.Workspace, requesterID int64) (db.Workspace, error) {
+	result := workspace
+	err := s.withWorkspaceMutationAuthority(ctx, workspace, requesterID, func(ctx context.Context) error {
+		var err error
+		result, err = s.ensureExistingWorkspaceRunningAuthorized(ctx, workspace, requesterID)
+		return err
+	})
+	return result, err
+}
+
+func (s *WorkspaceService) ensureExistingWorkspaceRunningAuthorized(ctx context.Context, workspace db.Workspace, requesterID int64) (db.Workspace, error) {
 	if err := s.refuseRebuildRequired(workspace); err != nil {
 		return workspace, err
 	}
@@ -457,7 +482,7 @@ func (s *WorkspaceService) ensureExistingWorkspaceRunning(ctx context.Context, w
 		return workspace, err
 	}
 	if s.runtime != nil {
-		return s.ensureRuntimeWorkspaceRunning(ctx, workspace, workspace.UserID)
+		return s.ensureRuntimeWorkspaceRunning(ctx, workspace, requesterID)
 	}
 	if s.sandbox == nil {
 		return workspace, pkgerrors.Internal("sandbox provider unavailable")

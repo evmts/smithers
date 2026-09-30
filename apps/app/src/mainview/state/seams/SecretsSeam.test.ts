@@ -91,7 +91,6 @@ const signedIn = async (store: AppStore): Promise<void> => {
     actor: "system",
     state: "signed-in",
     login: "will",
-    allowlisted: true,
     admin: false,
     scopesPlain: null
   })
@@ -104,7 +103,6 @@ const signedOut = async (store: AppStore): Promise<void> => {
     actor: "system",
     state: "signed-out",
     login: null,
-    allowlisted: false,
     admin: false,
     scopesPlain: null
   })
@@ -306,6 +304,42 @@ describe("secrets seam — secrets.scope", () => {
   })
 })
 
+describe("secrets seam — secrets.bind", () => {
+  test("binds a repository secret to hosts and headers, unbinds it, and refuses a one-sided binding", async () => {
+    const requests: Array<{ readonly method: string; readonly url: string; readonly body: unknown }> = []
+    const services: AppServices = {
+      fetchImpl: async (input, init) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+        if (!url.includes("/secrets/")) return json(404, { message: `no stub for ${url}` })
+        const body = JSON.parse(String(init?.body)) as { hosts: string[]; match_headers: string[] }
+        requests.push({ method: init?.method ?? "GET", url, body })
+        if (url.endsWith("/MISSING")) return json(404, { message: "secret not found" })
+        return json(200, { name: "NPM_TOKEN", main_only: false, hosts: body.hosts, match_headers: body.match_headers })
+      }
+    }
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const controller = createAppController(store, unavailableAgent, services)
+    await ready(store)
+    const bind = (payload: Record<string, string>) => controller.commands.run("secrets.bind", JSON.stringify(payload))
+    expect(await bind({ name: "NPM_TOKEN", hosts: "registry.npmjs.org, npm.example.com", headers: "authorization" }))
+      .toMatchObject({ status: "executed", value: "NPM_TOKEN: registry.npmjs.org, npm.example.com" })
+    expect(requests[0]).toMatchObject({ method: "PATCH", body: { hosts: ["registry.npmjs.org", "npm.example.com"], match_headers: ["authorization"] } })
+    expect(requests[0]!.url).toEndWith("/api/repos/will/flows/secrets/NPM_TOKEN")
+    expect(await bind({ name: "NPM_TOKEN" })).toMatchObject({ status: "executed", value: "NPM_TOKEN: unbound" })
+    expect(requests[1]).toMatchObject({ body: { hosts: [], match_headers: [] } })
+    expect(JSON.stringify(await bind({ name: "NPM_TOKEN", hosts: "registry.npmjs.org" }))).toContain("both hosts and headers")
+    expect(JSON.stringify(await bind({ name: "bad name", hosts: "a.example.com", headers: "authorization" }))).toContain("letters, digits")
+    expect(requests).toHaveLength(2)
+    expect(JSON.stringify(await bind({ name: "MISSING", hosts: "a.example.com", headers: "authorization" }))).toContain("secret not found")
+    // A binding chooses where a value may go: the agent only asks, a human confirms.
+    const before = requests.length
+    expect(await controller.commands.runForAgent("secrets.bind", JSON.stringify({ name: "NPM_TOKEN", hosts: "evil.example.com", headers: "authorization" })))
+      .toMatchObject({ status: "executed" })
+    expect(requests.length).toBe(before)
+    expect([...store.collections.messages.values()].some(message => message.action?.flow === "secrets.bind")).toBe(true)
+  })
+})
+
 const held = new Set<() => void>()
 const pending = new Set<Promise<unknown>>()
 const checkpoint = () => new Promise<void>(resolve => setImmediate(resolve))
@@ -363,7 +397,7 @@ for (const retirement of ["account", "sign-out", "dispose"] as const) for (const
     const reading = track(controller.commands.run("secrets.list"))
     await bounded(entered.promise)
     controller.changeDraft("Keep my current chat")
-    if (retirement === "account") await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ada", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+    if (retirement === "account") await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ada", admin: false, scopesPlain: null }).isPersisted.promise
     else if (retirement === "sign-out") await signedOut(store)
     else await controller.dispose()
     if (answer === "success") reply.resolve(json(200, metadataAnswer("RETIRED_SECRET")))
