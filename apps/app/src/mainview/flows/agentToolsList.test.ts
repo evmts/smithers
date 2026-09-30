@@ -1,3 +1,4 @@
+import { emptySignupProfileRead } from "../state/TestFixtures"
 /*
  * The list action is the model's only discovery channel once the prompt
  * degrades to stage 3 (namespaces and counts only). Both tool loops bound every
@@ -92,7 +93,9 @@ const harness = async (bootstrap: AppBootstrap = bootstraps[0]!) => {
   try {
     controller = createAppController(store, agent, {
       bootstrap,
-      fetchImpl: async input => {
+      fetchImpl: async (input, init) => {
+        const profile = emptySignupProfileRead(input, init)
+        if (profile) return profile
         requests.push(String(input))
         throw new Error(`Unexpected HTTP request during discovery: ${String(input)}`)
       }

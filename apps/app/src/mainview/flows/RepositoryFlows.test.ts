@@ -1,3 +1,4 @@
+import { emptySignupProfileRead } from "../state/TestFixtures"
 /*
  * The repository's own flows as slash leaves (Factory design session
  * 2026-09-07 §4; owner rule: flows are slash commands, and the featured ones
@@ -55,6 +56,8 @@ interface Seen {
 
 const backend = (routes: Record<string, Response>, seen: Array<Seen> = []): AppServices => ({
   fetchImpl: async (input, init) => {
+    const profile = emptySignupProfileRead(input, init)
+    if (profile) return profile
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
     const absolute = new URL(url, "https://app.test")
     const path = absolute.pathname + absolute.search
