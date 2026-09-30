@@ -942,15 +942,30 @@ describe("turns", () => {
     await tui.press(key.enter)
     await tui.until((screen) => screen.includes("esc Interrupt"), 10_000, "running turn")
     const folder = sessionFolder(sessions)
-    chmodSync(join(folder, readdirSync(folder).find((name) => name.endsWith(".jsonl"))!), 0o444)
-    await tui.until((screen) => screen.includes(unsavedSentence), 10_000, "unsaved record")
-    // The screen says our sentence; the refused write's own error goes to the log.
-    expect(readFileSync(join(sessions, "tui.log"), "utf8")).toContain("EACCES")
+    const file = join(folder, readdirSync(folder).find((name) => name.endsWith(".jsonl"))!)
+    chmodSync(file, 0o444)
+    const saved = readFileSync(file, "utf8")
+    await tui.until(
+      (screen) => screen.includes(unsavedSentence),
+      10_000,
+      "unsaved record"
+    )
+    const diagnostics = readFileSync(join(sessions, "tui.log"), "utf8").trim().split("\n").map((line) =>
+      JSON.parse(line)
+    )
+    expect(diagnostics).toContainEqual(expect.objectContaining({
+      tag: "failure.session",
+      detail: expect.stringContaining("SessionWriteFailed")
+    }))
+    const failure = diagnostics.find((record) => record.tag === "failure.session")
+    expect(failure.detail).toContain("EACCES")
+    expect(failure.detail).toContain(file)
     // This case deliberately refuses every later journal write, so require the
     // real completed UI state and changed file instead of a persisted outcome.
     await tui.until((screen) => idle(screen) && /●\s+Done/.test(screen), 90_000, "completed unsaved turn")
     expect(readFileSync(join(cwd, "math.js"), "utf8")).toContain("a + b")
     expect(spawnSync("node", ["check.mjs"], { cwd }).status).toBe(0)
+    expect(readFileSync(file, "utf8")).toBe(saved)
     await tui.type("second prompt after the failed write")
     await tui.press(key.enter)
     await tui.until(
@@ -2583,7 +2598,9 @@ describe("approvals", () => {
     expect(screen).not.toMatch(/┃[ \t]+n[ \t]*$/m)
     expect(readFileSync(join(cwd, "math.js"), "utf8")).toBe("export const add = (a, b) => a - b\n")
     await tui.press(key.ctrlO)
-    await tui.until((screen) => screen.includes("Denied"), 10_000, "denied call")
+    await tui.until((screen) => screen.includes("Not approved."), 10_000, "denied call")
+    expect(Session.load(file).filter((record) => record.type === "outcome" && record.outcome._tag === "cancelled"))
+      .toHaveLength(1)
   }, 90_000)
 
   it("never eats typing, and answers once the editor is empty", async () => {
