@@ -1,3 +1,4 @@
+import { emptySignupProfileRead } from "../TestFixtures"
 import type { StorageApi } from "@tanstack/db"
 import { afterEach, describe, expect, test } from "bun:test"
 import type { AgentPort } from "../../runtime/AgentPort"
@@ -153,6 +154,8 @@ const absentRoutes = new Set([
 ])
 const backend = (routes: Record<string, RouteAnswer>, calls: Array<{ line: string; body?: unknown }> = []): AppServices => ({
   fetchImpl: (input, init) => observe((async () => {
+    const profile = emptySignupProfileRead(input, init)
+    if (profile) return profile
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
     const absolute = new URL(url, "https://app.test")
     const method = (init?.method ?? "GET").toUpperCase()

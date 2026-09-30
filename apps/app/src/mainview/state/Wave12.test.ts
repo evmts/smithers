@@ -1,3 +1,4 @@
+import { emptySignupProfileRead } from "./TestFixtures"
 /*
  * Wave 12 — result claims are deterministic, and the last first-run polish.
  *
@@ -132,6 +133,8 @@ const relay = (options: {
     toastDebounceMs: 0,
     toastAutoDismissMs: 10_000,
     fetchImpl: async (input, init) => {
+      const profile = emptySignupProfileRead(input, init)
+      if (profile) return profile
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
       const absolute = new URL(url, "https://app.test")
       const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined

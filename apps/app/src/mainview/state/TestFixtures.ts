@@ -189,3 +189,13 @@ export const loadBox = (
   store.dispatch({ type: "workspace.updated", actor: "system", workspace: {
     id, repoId: repo, name: "Box", targetBookmark: "main", status, provisioningStage: null, suspendedAt: null, createdAt: null
   } }).isPersisted.promise
+
+/** Explicit auxiliary route for controller fixtures whose signed-in owner has no saved signup profile. */
+export const emptySignupProfileRead = (input: Parameters<FetchLike>[0], init?: RequestInit): Response | undefined => {
+  const raw = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+  if (new URL(raw, "https://app.test").pathname !== "/api/user/settings/signup") return undefined
+  if ((init?.method ?? "GET") !== "GET" || init?.credentials !== "include") {
+    throw new Error("Signup fixture only admits a credentialed profile read")
+  }
+  return Response.json({ profile: null })
+}

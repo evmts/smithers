@@ -1,3 +1,4 @@
+import { emptySignupProfileRead } from "../TestFixtures"
 import type { StorageApi } from "@tanstack/db"
 import { afterEach, describe, expect, test } from "bun:test"
 
@@ -45,6 +46,8 @@ const backend = (failure?: Failure) => {
   const requests: Array<{ readonly method: string; readonly url: string }> = []
   const services: AppServices = {
     fetchImpl: async (input, init) => {
+      const profile = emptySignupProfileRead(input, init)
+      if (profile) return profile
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
       const method = init?.method ?? "GET"
       if (!url.endsWith("/secrets")) {
@@ -267,6 +270,8 @@ describe("secrets seam — secrets.scope", () => {
     const requests: Array<{ readonly method: string; readonly url: string; readonly body: unknown }> = []
     const services: AppServices = {
       fetchImpl: async (input, init) => {
+        const profile = emptySignupProfileRead(input, init)
+        if (profile) return profile
         const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
         if (!url.includes("/secrets/")) return json(404, { message: `no stub for ${url}` })
         const body = JSON.parse(String(init?.body)) as { main_only: boolean }
@@ -300,6 +305,8 @@ describe("secrets seam — secrets.bind", () => {
     const requests: Array<{ readonly method: string; readonly url: string; readonly body: unknown }> = []
     const services: AppServices = {
       fetchImpl: async (input, init) => {
+        const profile = emptySignupProfileRead(input, init)
+        if (profile) return profile
         const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
         if (!url.includes("/secrets/")) return json(404, { message: `no stub for ${url}` })
         const body = JSON.parse(String(init?.body)) as { hosts: string[]; match_headers: string[] }
@@ -370,6 +377,8 @@ const heldController = async (services: AppServices) => {
   const routed: AppServices = {
     ...services,
     fetchImpl: (input, init) => {
+      const profile = emptySignupProfileRead(input, init)
+      if (profile) return Promise.resolve(profile)
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
       if (discoveryRoutes.has(url)) return Promise.resolve(json(404, {}))
       return track(Promise.resolve(services.fetchImpl!(input, init)))
@@ -385,7 +394,9 @@ for (const retirement of ["account", "sign-out", "dispose"] as const) for (const
     const reply = heldResponse()
     const entered = Promise.withResolvers<void>()
     const hits: string[] = []
-    const { store, controller } = await heldController({ fetchImpl: async input => {
+    const { store, controller } = await heldController({ fetchImpl: async (input, init) => {
+      const profile = emptySignupProfileRead(input, init)
+      if (profile) return profile
       hits.push(String(input)); entered.resolve(); return reply.promise
     } })
     await ready(store)
