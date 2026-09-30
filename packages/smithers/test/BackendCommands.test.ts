@@ -312,7 +312,7 @@ describe("repository selection and transfer", () => {
       })
       expect(await repositories["repo clone"]!(c, { repo }, { directory: "copy", "clone-arg": ["--depth=1"] }))
         .toMatchObject({ directory: "copy", tool: "git" })
-      expect(exec).toHaveBeenLastCalledWith("git", ["clone", repo, "copy", "--depth=1"])
+      expect(exec).toHaveBeenLastCalledWith("git", ["clone", repo, "copy", "--depth=1"], {})
       expect(request).not.toHaveBeenCalled()
     }
   )
@@ -324,7 +324,14 @@ describe("repository selection and transfer", () => {
       "clone",
       protocol === "ssh" ? "git@ssh.example.test:owner/repo.git" : "https://example.test/owner/repo.git",
       "repo"
-    ])
+    ], protocol === "ssh" ? {} : {
+      GIT_TERMINAL_PROMPT: "0",
+      GIT_CONFIG_COUNT: "2",
+      GIT_CONFIG_KEY_0: "http.https://example.test/owner/repo.git/.extraHeader",
+      GIT_CONFIG_VALUE_0: "Authorization: Bearer session-secret",
+      GIT_CONFIG_KEY_1: "http.followRedirects",
+      GIT_CONFIG_VALUE_1: "false"
+    })
   })
   it.each(["../bad", ".hidden", "a.lock", "a..b", "bad name"])(
     "rejects unsafe ref %s before launching git",
@@ -512,7 +519,7 @@ describe("configuration and agent conversations", () => {
     expect(await misc["config list"]!(c, {}, {})).toMatchObject({ git_protocol: "ssh" })
     const shown = await misc["config show"]!(c, {}, {})
     expect(JSON.stringify(shown)).not.toContain("session-secret")
-    expect(object(shown).env_overrides).toMatchObject({ SMITHERS_TOKEN: "(set)" })
+    expect(object(shown).env_overrides).toMatchObject({ token_set: true })
     await expect(misc["config set"]!(c, { key: "token", value: "secret" }, {})).rejects.toThrow("Unknown")
   })
   it.each(["run", "chat"])("sends %s to the existing conversation API", async (action) => {

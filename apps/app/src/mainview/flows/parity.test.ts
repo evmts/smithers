@@ -424,7 +424,7 @@ describe("launch-law parity: every affordance is a command", () => {
       "../cards/SearchResultsCard.tsx": 2,
       "../cards/SecretsCard.tsx": 9,
       /* 7 = the Stack card's Backfill, fewer/more lanes, a row's Retry, Bootstrap, the Wiki row's pages (wiki.cloud), and the Issues/Metrics switch (history.view; card only, not the homepage). A failure's Retry and the Wiki row's Retry (wiki.create) are FailureNotice actions. */
-      "../cards/StackCard.tsx": 7,
+      "../cards/StackCard.tsx": 8,
       /* Local Open tab, cloud session Stop, and inventory Open/Stop. */
       "../cards/AgentCards.tsx": 5, // + each profile row's Runs door (runs.list flow=<profile>).
       "../cards/AnonymousCeilingCard.tsx": 1,
@@ -490,7 +490,7 @@ describe("launch-law parity: every affordance is a command", () => {
        * pager's onSelect, the view-mode pickers (wiki.card.view), cloud
        * Open page, and Refresh (wiki.sync) — all through onRunCommand.
        */
-      "../cards/ConversationCards.tsx": 13, // The empty Wiki offers wiki.create; a cloud page offers History (wiki.history); the index card's fallback tree.
+      "../cards/ConversationCards.tsx": 14, // The empty Wiki offers wiki.create; a cloud page offers History (wiki.history); the index card's fallback tree; the Slack row's Connect (integrations.admit).
       /* The factory card: one Open per present infra file, one shared handler through onRunCommand (files.read). */
       /*
        * The dispatcher card's Register door, the button door of

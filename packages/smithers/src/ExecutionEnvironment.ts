@@ -333,7 +333,20 @@ export const run = async (
     }
     child.once("error", (error) => {
       cleanup()
-      reject(error)
+      const code = (error as NodeJS.ErrnoException).code
+      reject(code === "ENOENT" || code === "ENOTDIR"
+        ? new CliError.Refused({
+          fault: "user",
+          code: "environment_command_not_found",
+          message: `Could not start ${target.command}: executable or execution directory not found (${target.cwd ?? process.cwd()})`
+        })
+        : code === "EACCES"
+        ? new CliError.Refused({
+          fault: "user",
+          code: "environment_command_permission_denied",
+          message: `Permission denied starting ${target.command} in ${target.cwd ?? process.cwd()}`
+        })
+        : error)
     })
     child.once("exit", (code, signal) => {
       // A resistant descendant can outlive its parent. Kill the group before
