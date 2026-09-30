@@ -68,7 +68,7 @@ test("a hybrid host's chat is a backend turn as the signed-in Cloud user, and re
   const text = await answer.text()
   expect(text).toContain('"text":"from the backend"'); expect(text).toContain('"type":"done"')
   expect(seen.filter((one) => one.path === "/api/agent/turn")).toEqual([{ path: "/api/agent/turn", authorization: "Bearer backend-test-token" }])
-  // The relayed leg is erased once it finished; the host's own journal is the record.
+  // The unrecorded adapter erases its transient upstream leg after completion.
   for (let attempt = 0; attempt < 100 && !seen.some((one) => one.path === "/api/agent/turn/erase"); attempt++) await Bun.sleep(10)
   expect(seen.filter((one) => one.path.startsWith("/api/agent/turn/")).map((one) => one.path)).toEqual(["/api/agent/turn/erase"])
 
@@ -77,11 +77,11 @@ test("a hybrid host's chat is a backend turn as the signed-in Cloud user, and re
   cleanup.push(() => signedOut.stop())
   const turns = seen.length
   const recorded = JSON.stringify({ ...JSON.parse(body), journal: { version: 1, legId: "signed-out-leg", token: "signed_out_private_capability_1234567890" } })
-  // Recorded or not, the refusal keeps its code: no leg is admitted to stream it as an error.
-  for (const turn of [body, recorded]) {
+  // Unrecorded turns require sign-in; recorded turns require canonical storage first.
+  for (const [turn, status, refusal] of [[body, 401, { error: { code: "cloud_sign_in_required" } }], [recorded, 503, { status: "error", code: "storage_failed" }]] as const) {
     const refused = await fetch(`${signedOut.origin}/api/agent/turn`, { method: "POST", headers: { [LOCAL_SESSION_HEADER]: signedOut.sessionToken, "content-type": "application/json" }, body: turn })
-    expect(refused.status).toBe(401)
-    expect(await refused.json()).toMatchObject({ error: { code: "cloud_sign_in_required" } })
+    expect(refused.status).toBe(status)
+    expect(await refused.json()).toMatchObject(refusal)
   }
   expect(seen.length).toBe(turns)
 

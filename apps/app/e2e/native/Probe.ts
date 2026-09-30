@@ -42,7 +42,7 @@ export interface NativeProbeReport {
   readonly requestNames: ReadonlyArray<string>
   readonly messageNames: ReadonlyArray<string>
   readonly openedExternally: ReadonlyArray<string>
-  /** The origin the entrypoint printed, and what its /api/health answered. */
+  /** The persisted renderer origin and its actual canonical bootstrap response. */
   readonly origin: string | null
   readonly health: unknown
   readonly results: Readonly<Record<string, unknown>>
