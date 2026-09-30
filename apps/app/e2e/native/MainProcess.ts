@@ -20,7 +20,8 @@
 import { mock } from "bun:test"
 import { CString, JSCallback, type Pointer } from "bun:ffi"
 import * as os from "node:os"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, readFile } from "node:fs/promises"
+import { rmSync } from "node:fs"
 import { join } from "node:path"
 import { fakeNativeWrapper } from "./FakeNativeWrapper.ts"
 import { PROBE_MARKER } from "./Probe.ts"
@@ -152,9 +153,11 @@ for (const exercise of scenario.exercises ?? []) {
   results[exercise.label] = await (handler as (params: unknown) => unknown)(exercise.params)
 }
 
-const originLine = logs.find((line) => line.startsWith("SMITHERS_LOCAL_ORIGIN="))
-const origin = originLine === undefined ? null : originLine.slice("SMITHERS_LOCAL_ORIGIN=".length)
-const health = origin === null ? null : await fetch(`${origin}/api/health`).then((response) => response.json()).catch(() => null)
+const { nativeStateDirectory } = await import("../../src/bun/NativeState")
+const state = JSON.parse(await readFile(join(nativeStateDirectory(), "renderer", "state.json"), "utf8")) as { port: number }
+if (!Number.isInteger(state.port) || state.port < 1 || state.port > 65535) throw new Error("Native renderer did not persist its origin")
+const origin = `http://127.0.0.1:${state.port}`
+const health = origin === null ? null : await fetch(`${origin}/api/bootstrap`).then(async response => ({ status: response.status, ...await response.json() })).catch(() => null)
 
 console.log = originalLog
 
@@ -170,5 +173,5 @@ const report: NativeProbeReport = {
 }
 await Bun.write(Bun.stdout, `${PROBE_MARKER}${JSON.stringify(report)}\n`)
 
-if (givenHome === undefined) await rm(probeHome, { recursive: true, force: true })
-process.exit(0)
+if (givenHome === undefined) process.once("exit", () => rmSync(probeHome, { recursive: true, force: true }))
+process.emit("SIGTERM")

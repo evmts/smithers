@@ -76,11 +76,11 @@ test("a hybrid host's chat is a backend turn as the signed-in Cloud user, and re
   cleanup.push(() => signedOut.stop())
   const turns = seen.length
   const recorded = JSON.stringify({ ...JSON.parse(body), journal: { version: 1, legId: "signed-out-leg", token: "signed_out_private_capability_1234567890" } })
-  // Recorded or not, the refusal keeps its code: no leg is admitted to stream it as an error.
-  for (const turn of [body, recorded]) {
+  // Unrecorded turns require sign-in; recorded turns require canonical storage first.
+  for (const [turn, status, refusal] of [[body, 401, { error: { code: "cloud_sign_in_required" } }], [recorded, 503, { status: "error", code: "storage_failed" }]] as const) {
     const refused = await fetch(`${signedOut.origin}/api/agent/turn`, { method: "POST", headers: { [LOCAL_SESSION_HEADER]: signedOut.sessionToken, "content-type": "application/json" }, body: turn })
-    expect(refused.status).toBe(401)
-    expect(await refused.json()).toMatchObject({ error: { code: "cloud_sign_in_required" } })
+    expect(refused.status).toBe(status)
+    expect(await refused.json()).toMatchObject(refusal)
   }
   expect(seen.length).toBe(turns)
 
