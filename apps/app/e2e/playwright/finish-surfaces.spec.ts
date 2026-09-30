@@ -188,12 +188,24 @@ test("a run's Steps view leads with its recorded triggers: the schedule that fir
   ]
   await boot(page)
   /* A schedule is the repository job `flow:<slug>` (state/seams/TriggersSeam.ts `jobPath`). */
-  await page.route((url) => url.pathname === `/api/repos/${repo}/repository-jobs`, (route) => route.fulfill(json([
-    { id: "reg-1", job: "flow:nightly", flow_id: "coding/check", schedule: "0 2 * * *", enabled: true, next_fire_at: "2026-09-28T02:00:00Z" }
-  ])))
+  const events: string[] = []
+  const launches: Array<{ repo: string; workspaceId: string; procedure: string; payload: Record<string, unknown> }> = []
+  const jobsPath = `/api/repos/${repo}/repository-jobs`
+  await page.route((url) => url.pathname === jobsPath, (route) => {
+    expect(route.request().method()).toBe("GET")
+    events.push(jobsPath)
+    return route.fulfill(json([
+      { id: "reg-1", job: "flow:nightly", flow_id: "coding/check", schedule: "0 2 * * *", enabled: true, next_fire_at: "2026-09-28T02:00:00Z" }
+    ]))
+  })
   await page.route("**/api/workflow/provision", (route) => route.fulfill({ json: { status: "ready", repo, gatewayId: "nightly" } }))
   await page.route("**/api/workflow/rpc", (route) => {
-    const call = route.request().postDataJSON() as { procedure: string; payload: { selector?: { _tag?: string }; after?: { value: number } } }
+    const call = route.request().postDataJSON() as { repo: string; workspaceId: string; procedure: string; payload: Record<string, unknown> & { selector?: { _tag?: string }; after?: { value: number } } }
+    if (call.procedure === "Plan" || call.procedure === "Run") {
+      expect(route.request().method()).toBe("POST")
+      launches.push(call)
+      events.push(call.procedure)
+    }
     let payload: unknown = {}
     if (call.procedure === "Plan") payload = { planId: "plan-nightly", digest: "digest", envelope: { capabilities: [], flows: [], budget: {} } }
     else if (call.procedure === "Run") payload = { runId }
@@ -211,6 +223,17 @@ test("a run's Steps view leads with its recorded triggers: the schedule that fir
   const card = page.locator('[data-kind="run-trace"]').last()
   await expect(card).toBeVisible()
   await expect(card.getByTestId(`run-trace-${runId}`)).toBeVisible({ timeout: 20_000 })
+  expect(launches.map(call => call.procedure)).toEqual(["Plan", "Run"])
+  const [plan, run] = launches
+  expect(plan).toMatchObject({ repo, workspaceId: runningBox(repo).workspace_id, payload: {
+    flowId: "repository/trigger", input: { operation: "fire", repo, slug: "nightly", flow: "coding/check", schedule: "0 2 * * *", input: {} }
+  } })
+  expect((plan!.payload.input as Record<string, unknown>).requestId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+  expect(events).toContain(jobsPath)
+  expect(events.indexOf(jobsPath)).toBeLessThan(events.indexOf("Plan"))
+  // Run uses this Plan's returned receipt on the same repository and box.
+  expect(run).toMatchObject({ repo: plan!.repo, workspaceId: plan!.workspaceId,
+    payload: { _tag: "Plan", planId: "plan-nightly", digest: "digest", envelope: { capabilities: [], flows: [], budget: {} } } })
   await card.getByRole("button", { name: "Steps", exact: true }).click()
   const schedule = card.getByTestId(`run-trigger-${runId}-schedule`)
   await expect(schedule).toHaveText(/trigger.*schedule nightly · 0 2 \* \* \*/)
