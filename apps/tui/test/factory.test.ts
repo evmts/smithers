@@ -1,12 +1,15 @@
 import * as CloudSession from "@smthrs/cli/CloudSession"
 import type { MythicalStack } from "@smthrs/rpc/Mythical"
 import { afterEach, expect, it } from "bun:test"
-import { mkdtempSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync } from "node:fs"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Factory from "../src/factory.ts"
+import * as Failures from "../src/failures.ts"
+import * as Log from "../src/log.ts"
+import { TabError } from "../src/tab-error.ts"
 
 const now = Date.parse("2026-09-28T20:00:00Z")
 const item = (id: string, state: string, extra: Record<string, unknown> = {}) => ({
@@ -216,7 +219,11 @@ it("files a TODO under one request id, resent after an unanswered filing and dro
   const queued = item("40", "queued")
   // A dropped network keeps the id: the same TODO again resends it and files once.
   answers.push(() => Promise.reject(new Error("fetch failed")), () => Promise.resolve(queued))
-  expect(await file("o/r", "Add dark mode")).toEqual({ ok: false, detail: "fetch failed", settled: false })
+  expect(await file("o/r", "Add dark mode")).toEqual({
+    ok: false,
+    error: expect.objectContaining({ message: "fetch failed" }),
+    settled: false
+  })
   const filed = await file("o/r", "Add dark mode")
   expect(filed.ok && filed.item.issue?.number).toBe(40)
   expect(sent.map((each) => [each.path, each.body.request])).toEqual([
@@ -319,13 +326,13 @@ it("shows a refused retry as a typed failure, and never posts for an issue that 
   )
   const refused = await Factory.retryCommand("2431", "o/r", signIn(origin)).settled
   expect(refused).toEqual({
-    text: "#2431 not retried: /api/repos/o/r/mythical/items/2431/retry: HTTP 409",
+    text: "#2431 not retried: The retry could not start. Details: /conversation",
     tone: "warning"
   })
   const cloud = (await signIn(origin)())!
   expect(await Factory.retry(cloud, "o/r", 2431)).toEqual({
     ok: false,
-    detail: "/api/repos/o/r/mythical/items/2431/retry: HTTP 409",
+    error: expect.objectContaining({ message: "/api/repos/o/r/mythical/items/2431/retry: HTTP 409" }),
     settled: true
   })
   // A running issue and an issue the stack does not hold are refused here, before any POST.
@@ -422,7 +429,7 @@ it("settles an unreachable Cloud as a failure that may not have been sent", asyn
   const failing = await cloudAt(() => ({ status: 503, body: {} }))
   expect(await Factory.retry((await signIn(failing)())!, "o/r", 2431)).toEqual({
     ok: false,
-    detail: `${stackRoute}: HTTP 503`,
+    error: expect.objectContaining({ message: `${stackRoute}: HTTP 503` }),
     settled: false
   })
 })
@@ -441,7 +448,7 @@ it("answers a /retry it cannot send at once: no issue, no repository, signed out
     tone: "warning"
   })
   expect(await Factory.retryCommand("12", "o/r", () => Promise.reject(new Error("keyring locked"))).settled).toEqual({
-    text: "#12 not retried: keyring locked",
+    text: "#12 not retried: The retry could not start. Details: /conversation",
     tone: "warning"
   })
 })
@@ -491,4 +498,150 @@ it("lands a proposed TODO at the head the stack served, and never posts for one 
   })
   expect(Factory.landCommand("x", "o/r", signIn(origin)).now).toEqual({ text: "Usage: /land <issue>", tone: "warning" })
   expect(received.filter((each) => each.method === "POST")).toHaveLength(1)
+})
+
+// HTTP cannot reproduce a synchronous throw at the post function boundary.
+// These unit faults complement the real local-HTTP integration cases above.
+for (const failure of ["throw", "reject", "malformed"] as const) {
+  it(`retains a TODO request after ${failure} until a validated answer without exposing the error`, async () => {
+    const raw = new Error(`factory-regression-transport-${failure}-${crypto.randomUUID()}`)
+    const sent: string[] = []
+    let attempt = 0
+    const file = Factory.filer((_path, body) => {
+      sent.push((body as { request: string }).request)
+      if (++attempt === 1) {
+        if (failure === "throw") throw raw
+        if (failure === "reject") return Promise.reject(raw)
+        return Promise.resolve({ unexpected: true })
+      }
+      return Promise.resolve(item("41", "queued"))
+    }, () => `request-${sent.length}`)
+    const failed = await file("o/r", "Preserve this request")
+    expect(failed).toMatchObject({ ok: false, settled: false })
+    if (failed.ok) throw new Error("Expected refusal")
+    if (failure !== "malformed") expect(failed.error).toBe(raw)
+    const beforePresentation = existsSync(Log.path()) ? readFileSync(Log.path(), "utf8").length : 0
+    expect(Failures.line("todo", failed.error)).toBe("TODO not filed. Details: /conversation")
+    const appended = readFileSync(Log.path(), "utf8").slice(beforePresentation)
+    const records = appended.trim().split("\n").map((line) => JSON.parse(line) as { tag: string; detail: string })
+    expect(records).toContainEqual(expect.objectContaining({ tag: "failure.todo", detail: expect.any(String) }))
+    const diagnostic = records.find((record) => record.tag === "failure.todo")!.detail
+    expect(diagnostic.trim().length).toBeGreaterThan(0)
+    if (failure !== "malformed") expect(diagnostic).toContain(raw.message)
+    else {
+      expect(failed.error).toBeInstanceOf(Error)
+      expect((failed.error as Error).name).toBe("ZodError")
+      expect(diagnostic).toContain("ZodError")
+    }
+    expect(await file("o/r", "Preserve this request")).toMatchObject({ ok: true })
+    expect(sent).toEqual(["request-0", "request-0"])
+    expect(await file("o/r", "Preserve this request")).toMatchObject({ ok: true })
+    expect(sent[2]).toBe("request-2")
+  })
+}
+
+it("keeps a held retry pending and settles identity rejection without exposing diagnostics", async () => {
+  const identity = Promise.withResolvers<undefined>()
+  const command = Factory.retryCommand("12", "o/r", () => identity.promise)
+  expect(command.now).toEqual({ text: "Retry #12 requested" })
+  let completed = false
+  const answer = command.settled!.then((value) => {
+    completed = true
+    return value
+  })
+  await Promise.resolve()
+  expect(completed).toBe(false)
+  identity.reject(new Error("factory-regression-identity-marker"))
+  expect(await answer).toEqual({
+    text: "#12 not retried: The retry could not start. Details: /conversation",
+    tone: "warning"
+  })
+})
+
+it("presents registered refusals through their actionable copy instead of raw diagnostics", async () => {
+  const refused = new TabError("unknown_tab", "factory-regression-tagged-marker", "missing-worker")
+  const result = await Factory.retryCommand("12", "o/r", () => {
+    throw refused
+  }).settled
+  expect(result).toEqual({ text: "#12 not retried: No tab missing-worker.", tone: "warning" })
+  expect(result?.text).not.toContain(refused.message)
+  expect(result?.text).not.toContain("Details:")
+})
+
+it("replays a top-level HTTP 503 TODO failure despite a nested HTTP 403 diagnostic", async () => {
+  const marker = `factory-nested-status-${crypto.randomUUID()}`
+  const error = new Error(`/api/repos/o/r/mythical/todos: HTTP 503 ${marker}`, {
+    cause: new Error("An earlier credential probe: HTTP 403")
+  })
+  const sent: string[] = []
+  let ids = 0
+  const file = Factory.filer((_path, body) => {
+    sent.push((body as { request: string }).request)
+    return sent.length === 1 ? Promise.reject(error) : Promise.resolve(item("42", "queued"))
+  }, () => `nested-status-${++ids}`)
+  const failed = await file("o/r", "Recover after upstream unavailability")
+  expect(failed).toMatchObject({ ok: false, settled: false })
+  if (failed.ok) throw new Error("Expected upstream failure")
+  expect(failed.error).toBe(error)
+  expect(Failures.line("todo", failed.error)).toBe("TODO not filed. Details: /conversation")
+  // The unique marker proves this presentation wrote today's diagnostic rather
+  // than passing against an older process log with a reused failure message.
+  const diagnostic = readFileSync(Log.path(), "utf8").split("\n").find((line) => line.includes(marker))
+  expect(diagnostic).toContain("HTTP 503")
+  expect(diagnostic).toContain("HTTP 403")
+  expect(await file("o/r", "Recover after upstream unavailability")).toMatchObject({ ok: true })
+  expect(sent).toEqual(["nested-status-1", "nested-status-1"])
+})
+
+for (const boundary of ["GET", "POST"] as const) {
+  it(`presents a land ${boundary} failure without posting a retry or exposing diagnostics`, async () => {
+    const marker = `land-${boundary}-${crypto.randomUUID()}`
+    const head = "f".repeat(40)
+    const candidate = item("2450", "proposed", {
+      todo: { replans: 0 },
+      pullRequest: { number: 50, url: "https://github.com/o/r/pull/50", state: "open", head }
+    })
+    const received: Array<Received> = []
+    const origin = await cloudAt((method, path) => {
+      if (method === boundary) return { status: 503, body: { error: marker } }
+      if (method === "GET" && path === stackRoute) return { status: 200, body: { ...served, items: [candidate] } }
+      return { status: 404, body: {} }
+    }, received)
+    const beforePresentation = existsSync(Log.path()) ? readFileSync(Log.path(), "utf8").length : 0
+    const result = await Factory.landCommand("2450", "o/r", signIn(origin)).settled
+    expect(result).toEqual({
+      text: "#2450 not landed: The landing could not start. Details: /conversation",
+      tone: "warning"
+    })
+    expect(result?.text).not.toContain(marker)
+    expect(result?.text).not.toContain("retry")
+    const posts = received.filter((request) => request.method === "POST")
+    expect(posts.map((request) => request.path)).toEqual(
+      boundary === "GET" ? [] : ["/api/repos/o/r/mythical/items/2450/land"]
+    )
+    if (boundary === "POST") expect(JSON.parse(posts[0]!.body)).toEqual({ head })
+    const appended = readFileSync(Log.path(), "utf8").slice(beforePresentation)
+    const records = appended.trim().split("\n").map((line) => JSON.parse(line) as { tag: string; detail: string })
+    expect(records).toContainEqual(expect.objectContaining({
+      tag: "failure.land",
+      detail: expect.stringContaining(
+        `${boundary === "GET" ? stackRoute : "/api/repos/o/r/mythical/items/2450/land"}: HTTP 503`
+      )
+    }))
+  })
+}
+
+it("acknowledges landing before sign-in settles and retains landing refusal words", async () => {
+  const identity = Promise.withResolvers<undefined>()
+  const command = Factory.landCommand("2450", "o/r", () => identity.promise)
+  expect(command.now).toEqual({ text: "Land #2450 requested" })
+  let completed = false
+  const answer = command.settled!.then((line) => {
+    completed = true
+    return line
+  })
+  await Promise.resolve()
+  expect(completed).toBe(false)
+  identity.resolve(undefined)
+  expect(await answer).toEqual({ text: "Sign in to land: smthrs auth login", tone: "warning" })
 })
