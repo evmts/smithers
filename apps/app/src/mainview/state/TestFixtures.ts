@@ -132,6 +132,8 @@ export const signupProfileFetch = (
       if (url.origin !== origin || url.pathname !== SIGNUP_PROFILE_PATH || url.search !== "" || url.hash !== "" || method !== "GET") {
         return unexpected(input, init)
       }
+      const credentials = init?.credentials ?? (input instanceof Request ? input.credentials : undefined)
+      if (credentials !== "include") throw new Error("Signup fixture only admits a credentialed profile read")
       reads.push(url.pathname)
       return json(200, { profile: saved })
     }

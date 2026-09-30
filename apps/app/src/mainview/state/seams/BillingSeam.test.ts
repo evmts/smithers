@@ -1,3 +1,4 @@
+import { signupProfileFetch } from "../TestFixtures"
 import { Window } from "happy-dom"
 import type { StorageApi } from "@tanstack/db"
 import { afterEach, describe, expect, test } from "bun:test"
@@ -140,7 +141,8 @@ const billingBackend = (
   routes: Partial<Record<"/api/billing/checkout" | "/api/billing/portal", () => Response>>,
   calls: BillingCall[] = []
 ): AppServices => ({
-  fetchImpl: async (input, init) => {
+  fetchImpl: signupProfileFetch(async (input, init) => {
+
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
     const route = url === "/api/billing/checkout" ? routes["/api/billing/checkout"] : url === "/api/billing/portal" ? routes["/api/billing/portal"] : undefined
     if (route === undefined || (init?.method ?? "GET") !== "POST") {
@@ -149,7 +151,7 @@ const billingBackend = (
     }
     calls.push({ url, method: init?.method ?? "GET", body: typeof init?.body === "string" ? init.body : "" })
     return track(Promise.resolve().then(() => trackResponse(route())))
-  }
+  }).fetchImpl
 })
 
 const freshController = async (services: AppServices) => {
