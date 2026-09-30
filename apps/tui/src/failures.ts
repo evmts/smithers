@@ -22,6 +22,7 @@ import {
 } from "@smthrs/rpc/UserFailure"
 import type { AgentError } from "./agents.ts"
 import type { Refusal } from "./contributions.ts"
+import type { Refusal as FactoryRefusal } from "./factory.ts"
 import type { FlowDiscoveryFailed, FlowError } from "./flows.ts"
 import * as Log from "./log.ts"
 import type { Failure as MonitorFailure } from "./monitors.ts"
@@ -35,6 +36,7 @@ export type Known =
   | AgentError
   | AgentDepthExceeded
   | Refusal
+  | FactoryRefusal
   | FlowError
   | FlowDiscoveryFailed
   | TabError
@@ -55,6 +57,7 @@ export type Act =
   | "flow"
   | "fork"
   | "harness"
+  | "land"
   | "memory"
   | "monitor"
   | "resume"
@@ -65,6 +68,7 @@ export type Act =
   | "shell"
   | "startup"
   | "stop"
+  | "todo"
   | "undo"
   | "wait"
   | "worker"
@@ -79,6 +83,7 @@ const unknownSentence: Readonly<Record<Act, string>> = {
   flow: "The flow could not start.",
   fork: "This conversation could not be forked.",
   harness: "The workspace could not be reached.",
+  land: "The landing could not start.",
   memory: "Memory could not be recalled.",
   monitor: "The monitor stopped.",
   resume: "That conversation could not be opened.",
@@ -89,6 +94,7 @@ const unknownSentence: Readonly<Record<Act, string>> = {
   shell: "The command could not start.",
   startup: "The terminal could not start.",
   stop: "The stop was not sent; press x again.",
+  todo: "TODO not filed.",
   undo: "Undo was not recorded.",
   wait: "The wait could not start.",
   worker: "The worker could not start."
@@ -201,6 +207,13 @@ export const registry: UserFailureRegistry<Known> = {
         : "A plugin sent something invalid."
     ),
   FlowError: flow,
+  FactoryRefused: (failure) =>
+    copy(
+      "user",
+      failure.code === "missing"
+        ? `#${failure.issue} is not in the factory`
+        : `#${failure.issue} is ${failure.state}`
+    ),
   FlowDiscoveryFailed: copy("infra", "Flows could not be listed; the last list stays."),
   TabError: tab,
   SessionCorrupt: (failure) => copy("infra", `That conversation is damaged at line ${failure.line}.`),

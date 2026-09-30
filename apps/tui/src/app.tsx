@@ -1414,11 +1414,13 @@ export function App(props: AppProps) {
             if (filed.ok) {
               setStatus(`TODO ${filed.item.issue === undefined ? "" : `#${filed.item.issue.number} `}queued`)
             } else {
-              setStatus(`TODO not filed: ${filed.detail}${filed.settled ? "" : " · /todo again retries it"}`, "warning")
+              setStatus(
+                Failures.line("todo", filed.error, `${filed.settled ? "" : "/todo retries. "}${Failures.inTerminal}`),
+                "warning"
+              )
             }
           } catch (error) {
-            Log.write("factory.todo", error)
-            setStatus(Failures.line("flow", error), "warning")
+            setStatus(Failures.line("todo", error), "warning")
           }
         })()
         return true
