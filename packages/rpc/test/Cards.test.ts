@@ -1099,6 +1099,14 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       workspaceId: gatewayWorkspaceId,
       gatewayBindingVersion: 1,
       runId: "run-1",
+      agentSecretBindings: {
+        id: "bindings-1",
+        owner: "will",
+        repo: "smithersai/smithers",
+        workspaceId: gatewayWorkspaceId,
+        state: "complete",
+        secrets: [{ name: "AGENT_TOKEN", hosts: ["api.agent.test"] }]
+      },
       workflow: "review",
       phase: "quiet",
       steps: ["read the diff"],
@@ -3263,4 +3271,64 @@ test("a saved local repository receipt drops its retired path", () => {
   }))
   if (parsed.kind !== "repository-choice") throw new Error("expected repository choice")
   expect(parsed.payload.created).toEqual({ fullName: "smithers-playground" })
+})
+
+describe("run agent binding metadata excludes secret values", () => {
+  test("round-trips only names and hosts, discarding remote values and environment content", () => {
+    const metadata = {
+      id: "read-1",
+      owner: "will",
+      repo: "smithersai/smithers",
+      workspaceId: gatewayWorkspaceId,
+      state: "complete",
+      secrets: [{
+        name: "AGENT_TOKEN",
+        hosts: ["api.agent.test"],
+        value: "PRIVATE_SECRET_BYTES",
+        match_headers: ["authorization"]
+      }],
+      env: [{ name: "PRIVATE_VAR", value: "PRIVATE_ENV_BYTES" }],
+      setup_script: "PRIVATE_SETUP_BYTES"
+    }
+    const parsed = CardSchema.parse(
+      card("run-trace", {
+        ...FIXTURES["run-trace"].minimal,
+        workspaceId: gatewayWorkspaceId,
+        agentSecretBindings: metadata
+      })
+    )
+    if (parsed.kind !== "run-trace") throw new Error("Wrong card kind")
+    expect(parsed.payload.agentSecretBindings).toEqual({
+      id: "read-1",
+      owner: "will",
+      repo: "smithersai/smithers",
+      workspaceId: gatewayWorkspaceId,
+      state: "complete",
+      secrets: [{ name: "AGENT_TOKEN", hosts: ["api.agent.test"] }]
+    })
+    expect(JSON.stringify(parsed)).not.toMatch(
+      /PRIVATE_SECRET_BYTES|PRIVATE_ENV_BYTES|PRIVATE_SETUP_BYTES|match_headers/
+    )
+  })
+  for (
+    const invalid of [{ owner: null }, { workspaceId: null }, { state: "unknown" }, {
+      secrets: [{ name: "AGENT_TOKEN", hosts: [7] }]
+    }]
+  ) {
+    test(`refuses invalid binding identity, lifecycle or hosts: ${JSON.stringify(invalid)}`, () => {
+      const held = {
+        id: "read-1",
+        owner: "will",
+        repo: "smithersai/smithers",
+        workspaceId: gatewayWorkspaceId,
+        state: "complete",
+        secrets: [{ name: "AGENT_TOKEN", hosts: ["api.agent.test"] }]
+      }
+      expect(
+        CardSchema.safeParse(
+          card("run-trace", { ...FIXTURES["run-trace"].minimal, agentSecretBindings: { ...held, ...invalid } })
+        ).success
+      ).toBe(false)
+    })
+  }
 })

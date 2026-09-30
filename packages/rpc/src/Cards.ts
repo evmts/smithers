@@ -1035,6 +1035,16 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       /** Version 1 records an explicit legacy route when workspaceId is absent. */
       gatewayBindingVersion: z.literal(1).optional(),
       runId: z.string(),
+      /** Current agent-environment bindings, never CI secrets or secret values. */
+      agentSecretBindings: z.object({
+        id: z.string(),
+        owner: z.string(),
+        repo: z.string(),
+        workspaceId: z.string(),
+        state: z.enum(["pending", "complete", "failed"]),
+        secrets: z.array(z.object({ name: z.string(), hosts: z.array(z.string()) })),
+        error: z.string().optional()
+      }).optional(),
       workflow: z.string(),
       phase: z.enum([
         "launching",
