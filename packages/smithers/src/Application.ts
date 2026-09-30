@@ -14,12 +14,26 @@ import type * as McpClient from "@smthrs/mcp/McpClient"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import type { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
+import type * as Descriptor from "@smthrs/registry/Descriptor"
+import type { Sandbox } from "@smthrs/sandbox"
 import { Layer } from "effect"
 import type { HttpClient } from "effect/unstable/http/HttpClient"
+import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import type { RpcSerialization } from "effect/unstable/rpc/RpcSerialization"
 import type { Socket } from "effect/unstable/socket/Socket"
 import * as ExecutorOwnership from "./ExecutorOwnership.ts"
 import * as LocalControl from "./internal/LocalControl.ts"
+
+/**
+ * The two database files a local composition opens.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export interface Databases {
+  readonly control: string
+  readonly engine: string
+}
 
 /**
  * Everything the durable layers need to know before any flag is parsed.
@@ -76,6 +90,14 @@ export interface Config {
    */
   readonly stateRoot?: string | undefined
   /**
+   * The control and engine database files, when they are not
+   * `.flows/control.db` and `.flows/engine.db` under {@link Config.stateRoot}.
+   * The engine's artifacts follow the engine file's directory. `smthrs runs
+   * verify` points them at its copy of the stores, named apart from the
+   * originals so an environment-selected PostgreSQL schema is a new one too.
+   */
+  readonly databases?: Databases | undefined
+  /**
    * Composes the local engine replay-only: a recorded step replays, and a step
    * the current code would execute stops the run instead. `smthrs runs verify`
    * sets it over a copy of the stores.
@@ -114,6 +136,17 @@ export interface Config {
    */
   readonly mcpServers?: ReadonlyArray<McpClient.ConnectOptions> | undefined
   /**
+   * The machines a flow's `sandbox:` frontmatter may select, by provider name.
+   *
+   * A run of a prompt flow that selects one executes its file and shell tools
+   * on a machine acquired from that provider for the run, kept across its parks
+   * and ended when it settles. A name this host does not configure, a provider
+   * that refuses the selection's network or limits, and a module flow are all
+   * refused at launch; nothing falls back to this host. Defaults to the
+   * environment's (`SMITHERS_SANDBOX_IMAGE` configures `container`).
+   */
+  readonly sandboxProviders?: SandboxProviders | undefined
+  /**
    * The project root every durable layer is built over: the `.flows/`
    * directory, the `flows/` registry sources, and the detached run logs all
    * hang off it. Resolved from `--root` or the nearest ancestor holding
@@ -129,6 +162,33 @@ export interface Config {
    * project targeted the ancestor.
    */
   readonly migrationRoot?: string | undefined
+}
+
+/**
+ * What a host hands a sandbox provider it builds: its contained spawner, for
+ * providers that reach their machines through a local CLI.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface SandboxHost {
+  readonly spawner: ChildProcessSpawner["Service"]
+}
+
+/**
+ * A provider for each sandbox a flow may name, built from the flow's
+ * selection. The image, credentials and anything else the flow does not say
+ * are the host's; a provider that cannot honor the selection's network or
+ * limits throws, and the launch is refused with its message.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type SandboxProviders = {
+  readonly [P in Descriptor.SandboxProvider]?: (
+    selection: Descriptor.SandboxSelection,
+    host: SandboxHost
+  ) => Sandbox.Provider
 }
 
 /**

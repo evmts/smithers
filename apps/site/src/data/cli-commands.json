@@ -3575,6 +3575,85 @@
       }
     },
     {
+      "name": "egress allow",
+      "description": "Let the repository's sandboxes reach a host",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "host": {
+              "type": "string",
+              "description": "Host name or *.domain"
+            }
+          },
+          "required": [
+            "host"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "repo": {
+              "type": "string",
+              "description": "Repository (OWNER/REPO)"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "egress deny",
+      "description": "Take a host off the repository's egress allowlist",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "host": {
+              "type": "string",
+              "description": "Host name or *.domain"
+            }
+          },
+          "required": [
+            "host"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "repo": {
+              "type": "string",
+              "description": "Repository (OWNER/REPO)"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "egress list",
+      "description": "List the hosts the repository's sandboxes may reach",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "repo": {
+              "type": "string",
+              "description": "Repository (OWNER/REPO)"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    {
       "name": "environment add",
       "description": "Save an execution location",
       "schema": {
@@ -4454,6 +4533,10 @@
                 "park"
               ]
             },
+            "deadline": {
+              "description": "Wall-clock time the run may take from its first start, as a duration (30 minutes) or milliseconds",
+              "type": "string"
+            },
             "cloud": {
               "default": false,
               "description": "Use repository flows and runs on the backend",
@@ -4746,6 +4829,35 @@
         "args": {
           "type": "object",
           "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "repo": {
+              "type": "string",
+              "description": "Repository (OWNER/REPO)"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "history land",
+      "description": "Land a proposed TODO's pull request once its review approves and CI is green",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "issue": {
+              "type": "string",
+              "description": "Issue number (12 or #12) or item id"
+            }
+          },
+          "required": [
+            "issue"
+          ],
           "additionalProperties": false
         },
         "options": {
@@ -8075,6 +8187,38 @@
       }
     },
     {
+      "name": "repo report",
+      "description": "Read the registration report another account recorded for a public repository at its current commit, without analysing it again; prints cached: false when there is none",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "repo": {
+              "type": "string",
+              "description": "Public GitHub repository in OWNER/REPO format"
+            }
+          },
+          "required": [
+            "repo"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "workspace": {
+              "type": "string",
+              "description": "ID of one of your workspaces that answers the lookup"
+            }
+          },
+          "required": [
+            "workspace"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
       "name": "repo status",
       "description": "Show local repository connection status",
       "schema": {
@@ -9399,14 +9543,11 @@
           "type": "object",
           "properties": {
             "run": {
+              "description": "Durable run ID; omitted, every run the store holds",
               "type": "string",
-              "minLength": 1,
-              "description": "Durable run ID"
+              "minLength": 1
             }
           },
-          "required": [
-            "run"
-          ],
           "additionalProperties": false
         },
         "options": {
@@ -9428,6 +9569,11 @@
               "default": false,
               "description": "Suppress progress messages",
               "type": "boolean"
+            },
+            "against": {
+              "description": "Engine store to verify, with the control.db beside it; defaults to the project's .flows/engine.db",
+              "type": "string",
+              "minLength": 1
             }
           },
           "required": [
@@ -11724,6 +11870,109 @@
                 "private"
               ],
               "description": "Wiki space: public (default) or private"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "workspace children list",
+      "description": "List a workspace's children",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "repo": {
+              "type": "string",
+              "description": "Repository (OWNER/REPO)"
+            },
+            "workspace": {
+              "type": "string",
+              "description": "Parent workspace ID (this workspace when run inside one)"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "workspace children spawn",
+      "description": "Spawn children of a running workspace",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "count": {
+              "default": 1,
+              "type": "number",
+              "description": "How many children"
+            },
+            "profile": {
+              "type": "string",
+              "enum": [
+                "small",
+                "build"
+              ],
+              "description": "small (1 vCPU, 2 GB) or build (2 vCPU, 8 GB)"
+            },
+            "repo": {
+              "type": "string",
+              "description": "Repository (OWNER/REPO)"
+            },
+            "ttl": {
+              "type": "number",
+              "description": "Seconds the children may live (plan default when omitted)"
+            },
+            "workspace": {
+              "type": "string",
+              "description": "Parent workspace ID (this workspace when run inside one)"
+            }
+          },
+          "required": [
+            "count"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "workspace children stop",
+      "description": "Stop a workspace's child",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {
+            "child": {
+              "type": "string",
+              "description": "Child workspace ID"
+            }
+          },
+          "required": [
+            "child"
+          ],
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "repo": {
+              "type": "string",
+              "description": "Repository (OWNER/REPO)"
+            },
+            "workspace": {
+              "type": "string",
+              "description": "Parent workspace ID (this workspace when run inside one)"
             }
           },
           "additionalProperties": false

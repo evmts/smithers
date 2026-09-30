@@ -274,7 +274,9 @@ describe("time travel over an engine-written journal", () => {
       planRecorded: "flows.engine.plan-recorded",
       subgraphAppended: "flows.engine.subgraph-appended",
       deferredCompleted: "flows.engine.deferred-completed",
+      deferredConsumed: "flows.engine.deferred-consumed",
       clockScheduled: "flows.engine.clock-scheduled",
+      clockCompleted: "flows.engine.clock-completed",
       childSpawnKind: "flows/engine-store/child-spawn"
     })
   })

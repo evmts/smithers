@@ -2,7 +2,8 @@
  * A join answers the result the admitted authority produced, so the in-memory
  * engine admits a join only when the caller's ceiling covers the one the
  * execution was admitted with (#2852). The durable driver applies the same
- * `FlowEngine.joinable` rule; its cases live in `@smthrs/engine-store`.
+ * `FlowEngine.joinable` rule; its cases live in `@smthrs/engine-store`. The
+ * ceiling the engine itself was built under bounds every one of them (#3233).
  */
 import { describe, expect, it } from "@effect/vitest"
 import { Capability, CapabilityPattern } from "@smthrs/capability/Capability"
@@ -137,6 +138,27 @@ describe("joining an execution under a capability ceiling", () => {
         expect(runs()).toBe(1)
       }).pipe(Effect.provide(layer))
     })))
+
+  it.effect("admits, joins, polls, and resumes under the ceiling the engine was built under", () =>
+    withCrypto(
+      Effect.gen(function*() {
+        const { flow, layer, runs } = setup()
+        // Built under a narrower host, then called from an unrestricted caller.
+        const context = yield* under(readSource)(Layer.build(layer))
+        yield* Effect.gen(function*() {
+          expect(yield* flow.execute({ id: "a" }, { executionId: "hosted" })).toBe("denied")
+          expect(yield* flow.execute({ id: "a" }, { executionId: "hosted" })).toBe("denied")
+          expect(Option.isSome(yield* flow.poll("hosted"))).toBe(true)
+          const runtime = yield* FlowRuntime.FlowRuntime
+          yield* runtime.resume(flow, "hosted")
+          // The host bounds the caller too: a caller narrower than the host
+          // still may not read what the host admitted.
+          const narrower = yield* Effect.exit(under(readSecret)(flow.execute({ id: "a" }, { executionId: "hosted" })))
+          expect(conflictOf(narrower)).toMatchObject({ field: "capabilities", executionId: "hosted" })
+          expect(runs()).toBe(1)
+        }).pipe(Effect.provide(context))
+      }).pipe(Effect.scoped)
+    ))
 
   it("joinable compares the admitted authority as recorded", () => {
     const narrow = CapabilitySet.fromPatterns(readSource).groups

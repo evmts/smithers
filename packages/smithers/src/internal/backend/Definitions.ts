@@ -548,6 +548,21 @@ export const definitions = {
     args: z.object({}),
     options: z.object({})
   },
+  "egress allow": {
+    description: "Let the repository's sandboxes reach a host",
+    args: z.object({ "host": z.string().describe("Host name or *.domain") }),
+    options: z.object({ "repo": z.string().describe("Repository (OWNER/REPO)").optional() })
+  },
+  "egress deny": {
+    description: "Take a host off the repository's egress allowlist",
+    args: z.object({ "host": z.string().describe("Host name or *.domain") }),
+    options: z.object({ "repo": z.string().describe("Repository (OWNER/REPO)").optional() })
+  },
+  "egress list": {
+    description: "List the hosts the repository's sandboxes may reach",
+    args: z.object({}),
+    options: z.object({ "repo": z.string().describe("Repository (OWNER/REPO)").optional() })
+  },
   "extension linear install": {
     description: "Configure a Linear team for a Smithers repository",
     args: z.object({}),
@@ -587,6 +602,11 @@ export const definitions = {
   "history parallel": {
     description: "Set how many lanes work at once",
     args: z.object({ "lanes": z.coerce.number().describe("Lanes, 1 to 8") }),
+    options: z.object({ "repo": z.string().describe("Repository (OWNER/REPO)").optional() })
+  },
+  "history land": {
+    description: "Land a proposed TODO's pull request once its review approves and CI is green",
+    args: z.object({ "issue": z.string().describe("Issue number (12 or #12) or item id") }),
     options: z.object({ "repo": z.string().describe("Repository (OWNER/REPO)").optional() })
   },
   "history retry": {
@@ -1002,6 +1022,14 @@ export const definitions = {
     })
   },
   "repo status": { description: "Show local repository connection status", args: z.object({}), options: z.object({}) },
+  "repo report": {
+    description:
+      "Read the registration report another account recorded for a public repository at its current commit, without analysing it again; prints cached: false when there is none",
+    args: z.object({ "repo": z.string().describe("Public GitHub repository in OWNER/REPO format") }),
+    options: z.object({
+      "workspace": z.string().describe("ID of one of your workspaces that answers the lookup")
+    })
+  },
   "repo transfer": {
     description: "Transfer repository ownership",
     args: z.object({ "repo": z.string().describe("Repository in OWNER/REPO format") }),
@@ -1360,6 +1388,33 @@ export const definitions = {
     description: "Watch a workflow run in real-time",
     args: z.object({ "id": z.coerce.number().describe("Run ID") }),
     options: z.object({ "repo": z.string().describe("Repository (OWNER/REPO)").optional() })
+  },
+  "workspace children list": {
+    description: "List a workspace's children",
+    args: z.object({}),
+    options: z.object({
+      "repo": z.string().describe("Repository (OWNER/REPO)").optional(),
+      "workspace": z.string().describe("Parent workspace ID (this workspace when run inside one)").optional()
+    })
+  },
+  "workspace children spawn": {
+    description: "Spawn children of a running workspace",
+    args: z.object({}),
+    options: z.object({
+      "count": z.coerce.number().describe("How many children").default(1),
+      "profile": z.enum(["small", "build"]).describe("small (1 vCPU, 2 GB) or build (2 vCPU, 8 GB)").optional(),
+      "repo": z.string().describe("Repository (OWNER/REPO)").optional(),
+      "ttl": z.coerce.number().describe("Seconds the children may live (plan default when omitted)").optional(),
+      "workspace": z.string().describe("Parent workspace ID (this workspace when run inside one)").optional()
+    })
+  },
+  "workspace children stop": {
+    description: "Stop a workspace's child",
+    args: z.object({ "child": z.string().describe("Child workspace ID") }),
+    options: z.object({
+      "repo": z.string().describe("Repository (OWNER/REPO)").optional(),
+      "workspace": z.string().describe("Parent workspace ID (this workspace when run inside one)").optional()
+    })
   },
   "workspace cp": {
     description: "Copy files or directories between the local machine and a workspace",

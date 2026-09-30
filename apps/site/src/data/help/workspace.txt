@@ -3,6 +3,7 @@ smthrs workspace — workspace
 Usage: smthrs workspace <command>
 
 Commands:
+  children   children
   cp         Copy files or directories between the local machine and a workspace
   create     Create a workspace
   delete     Delete a workspace
