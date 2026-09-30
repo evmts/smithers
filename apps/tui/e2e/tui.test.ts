@@ -342,9 +342,9 @@ describe("composer mode", () => {
 
   it("keeps short-terminal input, queue controls, and status visible", async () => {
     const { tui } = await start({ cols: 40, rows: 12, holdMs: 60_000 })
-    await tui.press(key.ctrlO)
+    await tui.press("?")
     await tui.until((screen) => /Keys\s+esc/.test(screen), 5_000, "home help")
-    await tui.press(key.ctrlO)
+    await tui.press(key.escape)
     await tui.until((screen) => !/Keys\s+esc/.test(screen), 5_000, "home help closed")
     await tui.press("\x1b[200~one\ntwo\nthree\nfour\nfive\nsix\x1b[201~")
     await tui.until((screen) => screen.includes("six") && drawn(screen), 5_000, "bounded multiline input")
@@ -2412,7 +2412,7 @@ describe("custom agents", () => {
     await tui.press(key.escape)
     await tui.press(key.enter)
     await tui.until(
-      (screen) => screen.includes("Agents") && /review\s+GPT-6 Sol\s+Reviews the uncommitted/.test(screen),
+      (screen) => screen.includes("Agents") && /review\s+GPT-6.1 Sol\s+Reviews the uncommitted/.test(screen),
       20_000,
       "agents dialog"
     )
