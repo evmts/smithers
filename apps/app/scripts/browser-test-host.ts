@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { MODEL_CREDENTIAL_ENV_PREFIX } from "@smthrs/rpc/ConfiguredModel"
+import { startFixtureChatBackend } from "../e2e/fixtures/chat-backend"
 import { createChatStub } from "../e2e/support/ChatStub"
 import { startLocalServer } from "../src/bun/server"
 import type { LocalServerOptions } from "../src/bun/server"
@@ -46,10 +47,21 @@ export const startBrowserTestHost = async (
   const root = await mkdtemp(join(tmpdir(), "smithers-browser-test-"))
   // Retain the owned fixture if startup fails: a partial server startup has
   // not yet handed us its shutdown handle, so deleting underneath it is unsafe.
-  const server = await startLocalServer(browserTestOptions(root, distDir, env))
+  if (env.SMITHERS_CHAT_STUB === "0") throw new Error("Real-model browser chat requires an explicitly composed canonical backend")
+  const backend = await startFixtureChatBackend({ mode: "browser" })
+  let server: Awaited<ReturnType<typeof startLocalServer>>
+  try {
+    server = await startLocalServer({ ...browserTestOptions(root, distDir, env), chatBackend: { origin: backend.origin, token: backend.token } })
+  } catch (error) {
+    await backend.stop()
+    throw error
+  }
   let stopping: Promise<void> | undefined
   return {
     ...server,
-    stop: (): Promise<void> => stopping ??= server.stop().then(() => rm(root, { recursive: true, force: true }))
+    stop: (): Promise<void> => stopping ??= (async () => {
+      try { await server.stop() }
+      finally { try { await backend.stop() } finally { await rm(root, { recursive: true, force: true }) } }
+    })()
   }
 }

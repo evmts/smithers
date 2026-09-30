@@ -60,8 +60,8 @@ mock.module('../../../src/bun/NativeRendererServer', () => ({ startNativeRendere
   setTarget: () => {}
 }) }))
 mock.module('../../../src/bun/NativeState', () => ({ nativeStateDirectory: () => '/state' }))
+mock.module('../../../src/bun/NativePaths', () => ({ defaultDistDir: () => '/web' }))
 mock.module('../../../src/bun/server', () => ({
-  defaultDistDir: () => '/web',
   startLocalServer: () => { throw new Error('stub server must not start') }
 }))
 mock.module('../../../src/bun/PackagedE2EBridge', () => ({
