@@ -1752,6 +1752,9 @@ importers:
       '@smthrs/ui':
         specifier: workspace:*
         version: link:../../packages/smithers/ui
+      chokidar:
+        specifier: 5.0.0
+        version: 5.0.0
       diff:
         specifier: 9.0.0
         version: 9.0.0
@@ -2488,6 +2491,9 @@ importers:
       '@types/ws':
         specifier: 8.18.1
         version: 8.18.1
+      chokidar:
+        specifier: 5.0.0
+        version: 5.0.0
       diff:
         specifier: 9.0.0
         version: 9.0.0
