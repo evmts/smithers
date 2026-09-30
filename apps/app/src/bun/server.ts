@@ -1,9 +1,9 @@
 /*
- * The local origin (LOCAL-APP.md, "Runtime topology"): one Bun.serve on
- * 127.0.0.1 that serves the built SPA, the chat boundary, the cloud
- * WebSocket tunnels, and the handful of HTTP routes this host still owns.
- * It imports nothing from Electrobun, so `serve.ts` can run it without a
- * window and Playwright can drive it in plain Chromium.
+ * The browser fixture origin: one loopback Bun.serve for the SPA, injected
+ * model fixtures and HTTP/WebSocket transport checks. Recorded chat uses
+ * the authenticated shared Go backend; this host owns no chat journal.
+ * Production native and headless entrypoints use NativeBackendProcess and
+ * NativeRendererServer directly.
  */
 import type { Server, ServerWebSocket } from "bun"
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto"
@@ -56,7 +56,7 @@ import {
 } from "@smthrs/rpc/LocalSession"
 import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import { AgentTurnJournalRequestSchema } from "@smthrs/rpc/AgentTurnJournal"
-import { createNativeTurnJournal } from "./NativeTurnJournal"
+import { parseNativeApiOrigin } from "./NativeApiOrigin"
 import { handleBrowserFetch } from "./BrowserFetch"
 import { CLOUD_CHAT_SIGN_IN, createCloudAgent } from "./CloudAgent"
 import type { CloudAgent } from "./CloudAgent"
@@ -128,12 +128,13 @@ export interface LocalServerOptions {
   readonly distDir: string
   /**
    * The agent behind the chat boundary, built with the frame publisher this
-   * host owns. Injected, never selected here: hybrid with none gets the
-   * Smithers Cloud agent (the backend's `/api/agent/turn`, as the signed-in
-   * Cloud user), and a test tier passes its own double
-   * (e2e/support/ChatStub.ts). Offline with none is a host with no agent.
+   * host owns, for explicit unrecorded transport tests. Recorded turns use
+   * chatBackend and never enter this producer. Offline with none is a host
+   * with no unrecorded agent.
    */
   readonly agent?: (publish: (frame: AgentTurnFrame) => void) => CloudAgent
+  /** Canonical authenticated Go backend used by the browser fixture's recorded chat. */
+  readonly chatBackend?: { readonly origin: string; readonly token: string }
   /** Offline has no network egress; hybrid explicitly enables Smithers Cloud. */
   readonly cloudMode?: "offline" | "hybrid"
   /**
@@ -168,9 +169,8 @@ export interface LocalServerOptions {
    */
   readonly nativeShell?: boolean
   /**
-   * Where the host remembers state across launches (the turn journal). The
-   * native launcher passes the platform's application-support directory; a
-   * test passes a temp dir or nothing.
+   * The fixture's model credential scope. Recorded chat belongs to the
+   * configured Go backend and its PostgreSQL storage.
    */
   readonly modelKeychain?: CloudKeychain
   readonly stateDir?: string
@@ -345,21 +345,6 @@ export interface LocalServer {
   readonly websocketProtocol: string
   readonly server: Server<WsSocketData>
   readonly stop: () => Promise<void>
-}
-
-/**
- * The SPA directory for a caller in `fromDir`. SMITHERS_DIST_DIR wins; a
- * packaged app finds the copied views next to its main bundle; a source
- * checkout falls back to apps/app/dist.
- */
-export const defaultDistDir = (fromDir: string, env: Readonly<Record<string, string | undefined>> = Bun.env): string => {
-  const explicit = env.SMITHERS_DIST_DIR?.trim()
-  if (explicit !== undefined && explicit !== "") return resolve(explicit)
-  const candidates = [
-    resolve(fromDir, "..", "views", "mainview"),
-    resolve(fromDir, "..", "..", "dist")
-  ]
-  return candidates.find((dir) => existsSync(join(dir, "index.html"))) ?? candidates[candidates.length - 1]!
 }
 
 const isStartTurnRequest = (value: unknown): value is StartAgentTurnRequest =>
@@ -541,7 +526,8 @@ const proxyIdentity = async (
   url: URL,
   upstream: string,
   timeoutMs: number,
-  log?: (line: string) => void
+  log?: (line: string) => void,
+  preserveFailure = false
 ): Promise<Response> => {
   const target = new URL(url.pathname + url.search, upstream)
   const headers = new Headers(request.headers)
@@ -579,7 +565,7 @@ const proxyIdentity = async (
   }
   // A refusal is restated in this host's envelope; only a page a person
   // navigated to keeps the upstream's own body (wantsPage).
-  if (response.status >= 400 && !wantsPage(request)) {
+  if (response.status >= 400 && !preserveFailure && !wantsPage(request)) {
     return restateUpstreamFailure(IDENTITY_SEAM, response, cookies)
   }
   return new Response(response.body, { status: response.status, headers: out })
@@ -651,6 +637,11 @@ const proxyCloud = async (
 }
 
 export const startLocalServer = async (options: LocalServerOptions): Promise<LocalServer> => {
+  const chatBackend = options.chatBackend === undefined ? undefined : {
+    origin: parseNativeApiOrigin(options.chatBackend.origin).origin,
+    token: options.chatBackend.token.trim()
+  }
+  if (chatBackend?.token === "") throw new Error("Recorded chat requires a backend credential.")
   const log = options.log ?? ((line: string) => console.log(line))
   const distDir = resolve(options.distDir)
   const version = options.version ?? APP_VERSION
@@ -685,9 +676,22 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
   const websocketProtocol = localSessionProtocol(sessionToken)
 
   const writers = new Map<string, TurnWriter>()
-  const turnJournal = createNativeTurnJournal(options.stateDir)
+  const recordedUnavailable = (): Response => json({ status: "error", code: "storage_failed" }, 503)
+  const recordedChat = async (request: Request, path: string): Promise<Response> => {
+    if (chatBackend === undefined) return recordedUnavailable()
+    const parsed = await readJson(request, MAX_BODY_BYTES)
+    if ("error" in parsed) return parsed.error
+    const headers = new Headers(request.headers)
+    headers.delete("cookie")
+    headers.set("authorization", `token ${chatBackend.token}`)
+    const forwarded = new Request(request, { headers, body: JSON.stringify(parsed.body) })
+    // Journal replies are strict protocol envelopes, including refusals.
+    return proxyIdentity(forwarded, new URL(path, request.url), chatBackend.origin, upstreamTimeoutMs, log, true)
+  }
   const publishFrame = (frame: AgentTurnFrame): void => writers.get(frame.runId)?.write(frame)
-  const agent: CloudAgent | undefined = options.agent !== undefined
+  const agent: CloudAgent | undefined = chatBackend !== undefined
+    ? undefined
+    : options.agent !== undefined
     ? options.agent(publishFrame)
     : cloudUpstream !== null && cloudAuth !== undefined
     ? createCloudAgent(publishFrame, { api: cloudUpstream, token: cloudAuth.token })
@@ -713,7 +717,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       // The shared table the Worker and the parity matrix read; both cloud
       // doors (`cloud.terminal`, `cloud.pat`) ride the Smithers Cloud upstream.
       capabilities: localCapabilities({
-        agent: agent !== undefined,
+        agent: chatBackend !== undefined || agent !== undefined,
         identity: identityUpstream !== null,
         balance: identityUpstream !== null,
         overview: identityUpstream !== null,
@@ -861,6 +865,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
     return respond()
   }
   const handleChatTurn: RouteHandler = async ({ request }) => {
+    if (chatBackend !== undefined) return recordedChat(request, TURN_PATH)
     // Bound actual bytes; a chunked request carries no Content-Length.
     const parsed = await readJson(request, MAX_BODY_BYTES)
     if ("error" in parsed) return parsed.error
@@ -868,23 +873,26 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       return jsonError("invalid_request", "Body must be { runId, messages, instructions } with optional tools and context.")
     }
     const body = parsed.body
+    if (body.journal !== undefined) {
+      const journal = AgentTurnJournalRequestSchema.safeParse(body.journal)
+      if (!journal.success) return jsonError("invalid_request", "The recorded turn identity is invalid.")
+      return recordedUnavailable()
+    }
     if ("model" in body) await modelCredentials.refresh()
-    // Refused by code before a recorded leg is admitted: the Cloud agent sends every turn as the signed-in user.
+    // Unrecorded Cloud turns still require the selected user's credential.
     else if (options.agent === undefined && agent !== undefined && cloudAuth?.token() === undefined) {
       return jsonError("cloud_sign_in_required", CLOUD_CHAT_SIGN_IN)
     }
-    if (body.journal === undefined) return startChatTurn(body)
-    const journal = AgentTurnJournalRequestSchema.safeParse(body.journal)
-    if (!journal.success) return jsonError("invalid_request", "The recorded turn identity is invalid.")
-    return turnJournal.start(request, { ...body, journal: journal.data }, () => startChatTurn(body))
+    return startChatTurn(body)
   }
   router.add("POST", TURN_PATH, handleChatTurn)
   router.add("POST", CHAT_TURN_PATH, handleChatTurn)
-  router.add("POST", TURN_REPLAY_PATH, ({ request }) => turnJournal.access(request, false))
-  router.add("POST", TURN_RETIRE_PATH, ({ request }) => turnJournal.access(request, true))
-  router.add("POST", TURN_ERASE_PATH, ({ request }) => turnJournal.access(request, true, true))
+  router.add("POST", TURN_REPLAY_PATH, ({ request }) => recordedChat(request, TURN_REPLAY_PATH))
+  router.add("POST", TURN_RETIRE_PATH, ({ request }) => recordedChat(request, TURN_RETIRE_PATH))
+  router.add("POST", TURN_ERASE_PATH, ({ request }) => recordedChat(request, TURN_ERASE_PATH))
 
   const handleChatCancel: RouteHandler = async ({ request }) => {
+    if (chatBackend !== undefined) return recordedChat(request, CANCEL_PATH)
     // A configured-model turn is this host's own fiber and needs no agent; every other turn is the agent's.
     if (agent === undefined && sealedTurns.size === 0) {
       return jsonError("agent_unavailable", "No agent provider is configured in local-only mode.")
@@ -1303,9 +1311,6 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
         () => server.stop(true),
         () => cloudAuth?.stop()
       ].map(async (cleanup) => cleanup()))
-      // Producer cancellation runs before the journal closes. Await stream
-      // finalizers so their terminal observations survive this host restart.
-      results.push(...await Promise.allSettled([turnJournal.close()]))
       const errors = results.flatMap((result) => result.status === "rejected" ? [result.reason] : [])
       if (errors.length > 0) throw new AggregateError(errors, "Local server shutdown failed.")
     }

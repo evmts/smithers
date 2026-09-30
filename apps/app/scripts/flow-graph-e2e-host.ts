@@ -29,7 +29,7 @@ import { WritableStream } from "node:stream/web"
 import { tmpdir } from "node:os"
 import { fileURLToPath } from "node:url"
 import { join } from "node:path"
-import { createLocalCommandChat } from "../e2e/graph/LocalCommandChat"
+import { startFixtureChatBackend } from "../e2e/fixtures/chat-backend"
 import { startLocalServer } from "../src/bun/server"
 import { GRAPH_FLOW_SOURCE } from "../e2e/graph/workspace"
 import { relayFetch } from "../e2e/graph/RelayFetch"
@@ -52,13 +52,17 @@ interface GatewayAddress {
 const children = new Set<{ stop: () => Promise<void> }>()
 let root: string | undefined
 let server: Awaited<ReturnType<typeof startLocalServer>> | undefined
+let chatBackend: Awaited<ReturnType<typeof startFixtureChatBackend>> | undefined
 let stopping: Promise<void> | undefined
 const stop = (): Promise<void> => stopping ??= (async () => {
   try {
     await Promise.all([...children].map((child) => child.stop()))
   } finally {
     try { await server?.stop() }
-    finally { if (root !== undefined) await rm(root, { recursive: true, force: true }) }
+    finally {
+      try { await chatBackend?.stop() }
+      finally { if (root !== undefined) await rm(root, { recursive: true, force: true }) }
+    }
   }
 })()
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
@@ -147,10 +151,11 @@ try {
   globalThis.fetch = relayFetch(gateway.address.relayUrl, globalThis.fetch)
   await buildSpa()
   root = await mkdtemp(join(tmpdir(), "smithers-flow-graph-host-"))
+  chatBackend = await startFixtureChatBackend({ mode: "graph" })
   server = await startLocalServer({
     port: PORT,
     distDir: join(APP_DIR, "dist"),
-    agent: createLocalCommandChat,
+    chatBackend: { origin: chatBackend.origin, token: chatBackend.token },
     cloudMode: "hybrid",
     identityUpstream: gateway.address.relayUrl,
     cloudApi: gateway.address.relayUrl,
