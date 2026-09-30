@@ -1,3 +1,4 @@
+import { signupProfileFetch } from "./TestFixtures"
 /*
  * Wave 11 — "make me a workflow" becomes true, proven at the controller.
  *
@@ -170,7 +171,8 @@ const relay = (options: {
     workflowPollMs: 1,
     toastDebounceMs: 0,
     toastAutoDismissMs: 10_000,
-    fetchImpl: async (input, init) => {
+    fetchImpl: signupProfileFetch(async (input, init) => {
+
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
       const absolute = new URL(url, "https://app.test")
       const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
@@ -189,7 +191,7 @@ const relay = (options: {
         return procedure(String(body.procedure), (body.payload ?? {}) as Record<string, unknown>)
       }
       return json(404, { status: "error", message: `no stub for ${absolute.pathname}` })
-    }
+    }).fetchImpl
   }
 
   const gate = (requestId: string): Record<string, unknown> => ({
@@ -816,7 +818,8 @@ describe("wave 11 — workflows are presented", () => {
     const double = relay({ flows: [{ flowId: "create-flow" }] })
     const controller = createAppController(store, silentAgent, {
       ...double.services,
-      fetchImpl: async (input, init) => {
+      fetchImpl: signupProfileFetch(async (input, init) => {
+
         const absolute = new URL(
           typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url,
           "https://app.test"
@@ -830,7 +833,7 @@ describe("wave 11 — workflows are presented", () => {
           })
         }
         return double.services.fetchImpl?.(input, init) ?? json(404, {})
-      }
+      }).fetchImpl
     })
     await signIn(store)
 
