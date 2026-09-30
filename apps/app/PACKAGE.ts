@@ -266,10 +266,11 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "A proxied request whose target URL can leave the selected upstream origin (dot segments, encoded slashes, absolute paths).",
         "An Authorization, Cookie or x-csrf-token header forwarded without being rebuilt for the current target.",
-        "A cookie jar, bearer or in-flight stream that survives setTarget or a backend generation change.",
+        "An old target's cookie, bearer or in-flight stream forwarded after setTarget or a backend generation change.",
+        "A persistent cookie restored outside its backend and credential scope, after expiry, or without a private atomic commit.",
         "A redirect followed by fetch that resends the bearer to another origin."
       ],
-      paths: ["src/bun/NativeRendererServer.ts", "src/bun/server.ts"]
+      paths: ["src/bun/NativeRendererServer.ts", "src/bun/NativeRendererState.ts", "src/bun/server.ts"]
     },
     {
       id: "native-rpc-authority",
@@ -370,7 +371,7 @@ const securityReview = Smithers.SecurityReview({
         "A log line or journal record that writes a request header, env value or error text without the redactor.",
         "Journal files created without owner-only permissions."
       ],
-      paths: ["src/bun/server.ts", "src/bun/NativeRendererServer.ts", "src/bun/NativeBackendProcess.ts"]
+      paths: ["src/bun/server.ts", "src/bun/NativeRendererServer.ts", "src/bun/NativeRendererState.ts", "src/bun/NativeBackendProcess.ts"]
     }
   ]
 })
