@@ -36,10 +36,23 @@ export default showcase({
     await backend.cloud()
     await backend.json("/api/public/repos", { repos: [{ name: REPO }] })
     await backend.json(`/api/repos/${REPO}/contents`, [])
-    await backend.route(url => url.pathname === "/api/repository-setup/state", route => route.fulfill({ json: {
+    await backend.json(`/api/repos/${REPO}/home`, { kind: "blocks", blocks: [] })
+    let setupReads = 0
+    await backend.route(url => url.pathname === `/api/repos/${REPO}/repository-jobs`, route => {
+      expect(route.request().method()).toBe("GET")
+      return route.fulfill({ json: [] })
+    })
+    await backend.route(url => url.pathname === "/api/repository-setup/state", route => {
+      expect(route.request().method()).toBe("GET")
+      const query = new URL(route.request().url()).searchParams
+      expect(query.get("repo")).toBe(REPO)
+      expect(["issues", "review", "ci", "feature", "chores"]).toContain(query.get("job"))
+      setupReads += 1
+      return route.fulfill({ json: {
       owner: SCOPED_TEST_USER.login, repo: REPO, job: new URL(route.request().url()).searchParams.get("job"),
       registration: { state: "known" }, setup: { state: "none" }
-    } }))
+    } })
+    })
     await backend.route(url => url.pathname.startsWith("/api/repository-setup/") && url.pathname !== "/api/repository-setup/state", route => {
       const body = route.request().postDataJSON() as Start
       const operation = new URL(route.request().url()).pathname.split("/").at(-1)! as SetupHostInput["operation"]
@@ -47,7 +60,8 @@ export default showcase({
     })
 
     await app.open("/")
-    await app.click(page.getByRole("button", { name: "Handle issues", exact: true }))
+    await app.click(page.getByRole("button", { name: "Handle issues · Off", exact: true }))
+    expect(setupReads).toBeGreaterThan(0)
     const setup = page.getByTestId("setup-issues")
     await expect(setup.getByRole("button", { name: "Inspect repository" })).toBeEnabled()
     await app.show(setup)
