@@ -153,6 +153,25 @@ const click = (element: Element | null): void => {
 }
 
 describe("the run card as a trace", () => {
+  test("an unavailable approval renders dependency copy with its cause behind Details", () => {
+    const raw = "approval_unavailable: private approval transport session-run-3195"
+    const { host } = renderRun({
+      phase: "failed", error: raw,
+      failure: { class: "dependency", tag: "/harness/HarnessError/approval_unavailable" }
+    })
+    const alert = host.querySelector('.run-failure[role="alert"]')!
+    expect(faultOf(host)).toBe("dependency")
+    expect(refusal(host).textContent).toBe("This run needs an answer, but approvals are unavailable. Not your fault.")
+    expect(refusal(host).textContent).not.toContain(raw)
+    expect(refusal(host).textContent).not.toContain("approval_unavailable")
+    const detail = alert.querySelector("details")!
+    expect(detail.open).toBe(false)
+    expect(detail.querySelector("summary")?.textContent).toBe("Details")
+    expect(technical(host)).toBe(raw)
+    click(detail.querySelector("summary"))
+    expect(detail.open).toBe(true)
+    expect(technical(host)).toBe(raw)
+  })
   test("a failed run uses typed infra copy and keeps raw errors inside a closed disclosure", () => {
     const raw = "failed — Error: Error: git exited 1"
     const { host } = renderRun({ phase: "failed", error: raw })
