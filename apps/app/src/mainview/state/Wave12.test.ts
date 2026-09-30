@@ -1,3 +1,4 @@
+import { signupProfileFetch } from "./TestFixtures"
 /*
  * Wave 12 — result claims are deterministic, and the last first-run polish.
  *
@@ -131,7 +132,8 @@ const relay = (options: {
     workflowPollMs: 1,
     toastDebounceMs: 0,
     toastAutoDismissMs: 10_000,
-    fetchImpl: async (input, init) => {
+    fetchImpl: signupProfileFetch(async (input, init) => {
+
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
       const absolute = new URL(url, "https://app.test")
       const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
@@ -143,7 +145,7 @@ const relay = (options: {
         return procedure(String(body.repo), String(body.procedure), (body.payload ?? {}) as Record<string, unknown>)
       }
       return json(404, { status: "error", message: `no stub for ${absolute.pathname}` })
-    }
+    }).fetchImpl
   }
 
   return {
