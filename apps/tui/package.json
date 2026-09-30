@@ -35,6 +35,7 @@
     "@smthrs/rpc": "workspace:*",
     "@smthrs/sandbox": "workspace:*",
     "@smthrs/std": "workspace:*",
+    "chokidar": "5.0.0",
     "diff": "9.0.0",
     "effect": "4.0.0-rc.115",
     "react": "19.2.8",
