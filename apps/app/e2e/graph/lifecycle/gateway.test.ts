@@ -84,13 +84,21 @@ test("the gateway answers a malformed relay call and removes its SQLite director
     expect((await boxes.json() as { workspaces: ReadonlyArray<{ workspace_id: string; state: string }> }).workspaces)
       .toEqual([expect.objectContaining({ workspace_id: GRAPH_BOX, state: "running" })])
     const listed = await request(
-      `${address.relayUrl}/api/workflow/trigger-registrations?repo=${encodeURIComponent(address.repo)}`
+      `${address.relayUrl}/api/repos/${address.repo}/repository-jobs`
     )
     expect(listed.status).toBe(200)
-    const registered = await listed.json() as { rows: ReadonlyArray<{ registrationId: string; flowId: string; schedule: string }> }
-    expect(registered.rows.map((row) => row.registrationId)).toEqual(["graph-fixture-nightly"])
-    expect(registered.rows[0]?.flowId).toBe("gateway/GraphFixture")
-    expect(registered.rows[0]?.schedule).toBe("0 3 * * *")
+    const registered = await listed.json() as ReadonlyArray<{ id: string; job: string; flow_id: string; schedule: string; enabled: boolean; next_fire_at: string }>
+    expect(registered).toEqual([{
+      id: "graph-fixture-nightly", job: "flow:graph-fixture-nightly", flow_id: "gateway/GraphFixture",
+      schedule: "0 3 * * *", enabled: true, next_fire_at: expect.any(String)
+    }])
+    expect(Date.parse(registered[0]!.next_fire_at)).toBeGreaterThan(Date.now())
+    const other = await request(`${address.relayUrl}/api/repos/not-owned/not-this-repo/repository-jobs`)
+    expect(other.status).toBe(200)
+    expect(await other.json()).toEqual([])
+    const write = await request(`${address.relayUrl}/api/repos/${address.repo}/repository-jobs`, { method: "POST", body: "{}" })
+    expect(write.status).toBe(405)
+    expect(await write.json()).toEqual({ error: "method_not_allowed" })
 
     // The contents route, answered from the checkout this stack runs out of.
     // The fixture flow is a real file, and a node record names the line its

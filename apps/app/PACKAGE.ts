@@ -370,7 +370,7 @@ const securityReview = Smithers.SecurityReview({
         "A log line or journal record that writes a request header, env value or error text without the redactor.",
         "Journal files created without owner-only permissions."
       ],
-      paths: ["src/bun/NativeTurnJournal.ts", "src/bun/TurnJournalLease.ts", "src/bun/server.ts", "src/bun/NativeBackendProcess.ts"]
+      paths: ["src/bun/server.ts", "src/bun/NativeRendererServer.ts", "src/bun/NativeBackendProcess.ts"]
     }
   ]
 })
