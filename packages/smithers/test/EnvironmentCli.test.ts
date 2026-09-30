@@ -25,6 +25,22 @@ const fixture = async () => {
 }
 
 describe("environment CLI process boundary", () => {
+  it("reports missing commands and execution directories as actionable launch failures", async () => {
+    const { root, cli } = await fixture()
+    expect(cli(["environment", "add", "local", "--local", "--directory", root]).status).toBe(0)
+    const missing = cli(["environment", "exec", "local", "--", "absent-smithers-release-audit-command"])
+    expect(missing.status).toBe(1)
+    expect(missing.stdout).toContain("environment_command_not_found")
+    expect(missing.stdout).toContain("absent-smithers-release-audit-command")
+    expect(missing.stdout).toContain(root)
+    const absent = join(root, "absent-directory")
+    expect(cli(["environment", "add", "missing", "--local", "--directory", absent]).status).toBe(0)
+    const missingDirectory = cli(["environment", "exec", "missing", "--", process.execPath, "--version"])
+    expect(missingDirectory.status).toBe(1)
+    expect(missingDirectory.stdout).toContain("environment_command_not_found")
+    expect(missingDirectory.stdout).toContain(absent)
+  })
+
   it("adds, views, lists and removes a local environment across processes", async () => {
     const { root, cli } = await fixture()
     const added = cli(["environment", "add", "dev", "--local", "--directory", root])

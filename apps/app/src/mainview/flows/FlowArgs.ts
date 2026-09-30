@@ -68,6 +68,7 @@ export interface FlowInput {
   readonly "secrets.delete": { readonly name: string; readonly repo: string }
   readonly "history.parallel": { readonly value: number; readonly repo: string }
   readonly "history.retry": { readonly id: string; readonly repo: string }
+  readonly "history.todo": { readonly title?: string; readonly body?: string; readonly repo: string }
   readonly "history.view": { readonly view: "issues" | "metrics"; readonly repo: string }
   readonly "issues.close": { readonly number: number; readonly repo: string }
   readonly "issues.fix": { readonly number: number; readonly repo: string }
@@ -78,6 +79,7 @@ export interface FlowInput {
   readonly "issues.sync.resolve": { readonly cardId: string; readonly deliveryId: number }
   readonly "issues.comment.retry": { readonly cardId: string; readonly requestId: string }
   readonly "issues.set": { readonly number: number; readonly repo: string; readonly field: "owner" | "due" | "priority" | "parent"; readonly value: string }
+  readonly "integrations.admit": { readonly connection_id?: string; readonly scope_id?: string; readonly conversation_id?: string; readonly external_user_id?: string; readonly repo: string }
   readonly "integrations.list": { readonly repo: string }
   readonly "issues.reopen": { readonly number: number; readonly repo: string }
   readonly "findings.please-fix": { readonly changeId: string; readonly findingId: number }
@@ -249,6 +251,7 @@ const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } 
   "flow.run.stop-all": payload => line(keyed(payload, "sourceCard"), token(payload, "repo")),
   "history.parallel": payload => line(token(payload, "value"), token(payload, "repo")),
   "history.retry": payload => line(token(payload, "id"), token(payload, "repo")),
+  "history.todo": payload => JSON.stringify(payload),
   "history.view": payload => line(token(payload, "view"), token(payload, "repo")),
   "commits.list": payload => line(token(payload, "branch"), token(payload, "repo")),
   "box.facet": payload => line(token(payload, "workspaceId"), token(payload, "facet")),
@@ -265,6 +268,7 @@ const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } 
   "issues.sync.resolve": payload => JSON.stringify(payload),
   "issues.comment.retry": payload => JSON.stringify(payload),
   "issues.set": payload => JSON.stringify(payload),
+  "integrations.admit": payload => JSON.stringify(payload),
   "integrations.list": payload => line(token(payload, "repo")),
   "issues.reopen": payload => line(token(payload, "number"), token(payload, "repo")),
   "findings.please-fix": payload => line(token(payload, "changeId"), token(payload, "findingId")),
