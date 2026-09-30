@@ -1,3 +1,4 @@
 export const notifications = [
-  "notifications.read-update", "notifications.tag",
+  "notifications.read-update", // owner: #1879
+  "notifications.tag", // owner: #1879
 ] as const

@@ -1,3 +1,1 @@
-export const connect = [
-  "connect",
-] as const
+export const connect = [] as const
