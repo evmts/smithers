@@ -108,6 +108,26 @@ const issueSweepVm = Smithers.NodeTest({
   deps: [],
   cwd
 })
+// Real pinned public repositories are read statically; no fetched code runs.
+const calibrationReal = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//flows/test/registration-calibration-real.test.ts")]),
+  srcs: [
+    Smithers.file("//flows/register-repository/calibration/manifest.json"),
+    Smithers.file("//flows/register-repository/calibration/real-corpus.json"),
+    Smithers.file("//flows/register-repository/calibration/real-fit.json"),
+    Smithers.file("//flows/register-repository/calibration/record.ts"),
+    Smithers.file("//flows/register-repository/calibration/fit.ts"),
+    Smithers.file("//flows/register-repository/tree.ts"),
+    Smithers.file("//flows/register-repository/history.ts"),
+    Smithers.file("//flows/register-repository/cleanup.ts"),
+    Smithers.file("//flows/register-repository/judged.ts"),
+    Smithers.file("//flows/register-repository/jev.ts"),
+    Smithers.file("//flows/register-repository/schema.ts")
+  ],
+  deps: [],
+  cwd,
+  timeout: "20m"
+})
 const provider = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//flows/test/provider-runtime.test.ts")]),
   srcs: [sources],
@@ -689,6 +709,7 @@ export const Package = Smithers.Package({
     recording,
     issueSweep,
     issueSweepVm,
+    calibrationReal,
     provider,
     wiki,
     ...securityReview
