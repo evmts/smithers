@@ -1,12 +1,16 @@
 import { describe, expect, it } from "@effect/vitest"
 import { isJjError, Jj } from "@smthrs/jj"
 import * as HttpClient from "@smthrs/kernel/HttpClient"
-import * as ProcessConfinement from "@smthrs/kernel/ProcessConfinement"
 import * as BrowserFileSystem from "@smthrs/platform-browser/BrowserFileSystem"
 import { Clock, Effect, FileSystem, Random, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import * as ChildProcess from "effect/unstable/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { spawnSync } from "node:child_process"
+import { existsSync, mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import * as TestHost from "../../src/TestHost.ts"
 
 const decoder = new TextDecoder()
@@ -319,20 +323,93 @@ describe("TestHost scripted interpreter latency", () => {
   })
 })
 
-it.effect("deterministic host explicitly opts out of operating-system confinement", () =>
-  Effect.scoped(
-    Effect.gen(function*() {
-      const confinement = yield* ProcessConfinement.ProcessConfinement
-      const command = ChildProcess.make("scripted")
-      expect(confinement).toBe(ProcessConfinement.makeNoop)
-      expect(
-        yield* confinement.confine(command, {
-          workspaceRoot: "/workspace",
-          reads: [],
-          writes: [],
-          readOnly: [],
-          network: "none"
-        })
-      ).toBe(command)
-    }).pipe(Effect.provide(TestHost.layer()))
-  ))
+it.effect("scripted commands and filesystem writes stay in their deterministic host", () =>
+  Effect.gen(function*() {
+    const file = "/scripted-host/receipt.txt"
+    const program = Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const spawner = yield* ChildProcessSpawner
+      const initial = yield* fs.readFileString(file)
+      yield* fs.writeFileString(file, "updated only in memory")
+      return {
+        initial,
+        updated: yield* fs.readFileString(file),
+        stdout: yield* spawner.string(ChildProcess.make("scripted-host-only")),
+        exit: yield* spawner.exitCode(ChildProcess.make("scripted-host-only"))
+      }
+    })
+    const host = TestHost.layer({
+      files: { [file]: "seeded only in memory" },
+      commands: { "scripted-host-only": { stdout: "declared result", exitCode: 23 } }
+    })
+    expect(yield* Effect.provide(program, host)).toEqual({
+      initial: "seeded only in memory",
+      updated: "updated only in memory",
+      stdout: "declared result",
+      exit: 23
+    })
+    const fresh = yield* Effect.provide(
+      Effect.gen(function*() {
+        const fs = yield* FileSystem.FileSystem
+        const spawner = yield* ChildProcessSpawner
+        return {
+          missing: yield* Effect.flip(fs.readFileString(file)),
+          exit: yield* spawner.exitCode(ChildProcess.make("scripted-host-only"))
+        }
+      }),
+      TestHost.layer()
+    )
+    expect(fresh.missing.reason._tag).toBe("NotFound")
+    expect(fresh.exit).toBe(127)
+  }))
+
+it("imports the public TestHost subpath in plain Node and keeps commands off the operating system", () => {
+  const root = mkdtempSync(join(tmpdir(), "public-testhost-"))
+  const virtualFile = join(root, "virtual-only.txt")
+  const physicalMarker = join(root, "must-not-exist.txt")
+  try {
+    // A fresh Node loader exercises package exports without Vitest aliases.
+    // Scripted execution is this public testing host's deliberate contract.
+    const script = `
+      import * as TestHost from "@smthrs/testing/TestHost";
+      import {Effect,FileSystem} from "effect";
+      import {ChildProcessSpawner} from "effect/unstable/process/ChildProcessSpawner";
+      import * as ChildProcess from "effect/unstable/process/ChildProcess";
+      import {existsSync} from "node:fs";
+      const virtual=${JSON.stringify(virtualFile)};
+      const marker=${JSON.stringify(physicalMarker)};
+      const command=ChildProcess.make("scripted-host-only");
+      const unlisted=ChildProcess.make(process.execPath,["-e",${
+      JSON.stringify(`require("node:fs").writeFileSync(${JSON.stringify(physicalMarker)},"must not execute")`)
+    }]);
+      const program=Effect.gen(function*(){
+        const fs=yield* FileSystem.FileSystem;
+        const spawner=yield* ChildProcessSpawner;
+        const initial=yield* fs.readFileString(virtual);
+        yield* fs.writeFileString(virtual,"changed in memory");
+        return {initial,updated:yield* fs.readFileString(virtual),stdout:yield* spawner.string(command),exit:yield* spawner.exitCode(command),unlistedExit:yield* spawner.exitCode(unlisted)};
+      });
+      const result=await Effect.runPromise(Effect.provide(program,TestHost.layer({files:{[virtual]:"seeded in memory"},commands:{"scripted-host-only":{stdout:"scripted result",exitCode:23}}})));
+      console.log(JSON.stringify({...result,physicalMarker:existsSync(marker),physicalVirtual:existsSync(virtual)}));
+    `
+    const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+      cwd: fileURLToPath(new URL("../../", import.meta.url)),
+      encoding: "utf8",
+      timeout: 15_000
+    })
+    expect(result.status, result.stderr).toBe(0)
+    expect(JSON.parse(result.stdout)).toEqual({
+      initial: "seeded in memory",
+      updated: "changed in memory",
+      stdout: "scripted result",
+      exit: 23,
+      unlistedExit: 127,
+      physicalMarker: false,
+      physicalVirtual: false
+    })
+    expect(existsSync(physicalMarker)).toBe(false)
+    expect(existsSync(virtualFile)).toBe(false)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
