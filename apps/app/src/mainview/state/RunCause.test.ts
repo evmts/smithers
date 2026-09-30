@@ -54,3 +54,17 @@ test("a sentence agrees with its registered class: the person's names an act, ev
     else expect(runCause(tag)).toContain("Not your")
   }
 })
+
+test("an unavailable approval channel keeps dependency blame and hides its cause", () => {
+  const raw = "private approval transport session-run-3195: failed to deliver answer"
+  const error = new HarnessError({ code: "approval_unavailable", message: raw })
+  const fault = Fault.of(error)
+  expect(fault).toEqual({ class: "dependency", tag: "/harness/HarnessError/approval_unavailable" })
+  const sentence = runCause(fault.tag)
+  expect(sentence).toBe("This run needs an answer, but approvals are unavailable. Not your fault.")
+  expect(sentence).not.toContain(raw)
+  expect(sentence).not.toContain(error.code)
+  expect(runCause("flows/model/ModelError/approval_unavailable")).toBeUndefined()
+  expect(runCause("coding/Error/approval_unavailable")).toBeUndefined()
+  expect(runCause("/harness/HarnessError/approval_unavailable_extra")).toBeUndefined()
+})
