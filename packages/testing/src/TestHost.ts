@@ -4,7 +4,7 @@
  * It lives beside the contract suite because the two are one pair: the bundle
  * every Smithers test runs against, and the suite that proves it satisfies the
  * same closed Host list a real platform bundle does. Its scripted interpreter
- * has no operating-system authority, so confinement is explicitly unconfined.
+ * has no operating-system authority.
  *
  * **Node-only.** `effect/testing`'s `TestClock` reaches for `node:assert`, so
  * `scripts/browser-check.mjs` documents this module as a Node-only entry point
@@ -16,7 +16,6 @@
 import type { Jj } from "@smthrs/jj"
 import * as BrowserJj from "@smthrs/jj/browser/BrowserJj"
 import * as HttpClient from "@smthrs/kernel/HttpClient"
-import * as ProcessConfinement from "@smthrs/kernel/ProcessConfinement"
 import * as BrowserChildProcessSpawner from "@smthrs/platform-browser/BrowserChildProcessSpawner"
 import * as BrowserFileSystem from "@smthrs/platform-browser/BrowserFileSystem"
 import { Effect, type FileSystem, Layer, Path, Random } from "effect"
@@ -261,7 +260,6 @@ export type TestHost =
   | ChildProcessSpawner
   | Jj
   | EffectHttpClient
-  | ProcessConfinement.ProcessConfinement
 
 /**
  * The deterministic Host bundle.
@@ -304,8 +302,6 @@ export const layer = (options?: {
     Path.layer
   )
   return Layer.mergeAll(
-    // Scripted commands have no operating-system authority.
-    ProcessConfinement.layerNoop,
     platform,
     Layer.provide(BrowserChildProcessSpawner.layer(makeStubBash(options?.commands)), platform),
     HttpClient.layerNoop(),
