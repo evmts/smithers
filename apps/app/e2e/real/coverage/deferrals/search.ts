@@ -1,7 +1,6 @@
 export const search = [
   "search.boxes", // owner: #1876
   "search.changes", // owner: #1876
-  "search.files", // owner: #1876
   "search.history", // owner: #1876
   "search.issues", // owner: #1876
   "search.runs", // owner: #1876
