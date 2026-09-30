@@ -1752,6 +1752,9 @@ importers:
       '@smthrs/ui':
         specifier: workspace:*
         version: link:../../packages/smithers/ui
+      chokidar:
+        specifier: 5.0.0
+        version: 5.0.0
       diff:
         specifier: 9.0.0
         version: 9.0.0
@@ -2494,6 +2497,9 @@ importers:
       '@smthrs/triggers':
         specifier: 1.0.0-rc.1
         version: link:agent/triggers
+      chokidar:
+        specifier: 5.0.0
+        version: 5.0.0
       diff:
         specifier: 9.0.0
         version: 9.0.0

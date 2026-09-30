@@ -814,6 +814,7 @@
     "@smthrs/targets": "1.0.0-rc.1",
     "@smthrs/time-travel": "1.0.0-rc.1",
     "@smthrs/triggers": "1.0.0-rc.1",
+    "chokidar": "5.0.0",
     "diff": "9.0.0",
     "effect": "4.0.0-rc.115",
     "incur": "0.5.1",
