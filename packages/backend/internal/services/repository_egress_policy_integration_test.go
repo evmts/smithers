@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -234,4 +235,65 @@ func (r *egressReloadRecorder) last(sandboxID string) []string {
 		return nil
 	}
 	return calls[len(calls)-1]
+}
+
+// The generated public query must retain its atomic contract independently of
+// the service's normalization and reload orchestration.
+func TestRepositoryEgressPolicyQueryDeduplicatesAndRefusesWithoutMutationPostgres(t *testing.T) {
+	pool, _ := postgresfixture.NewProductDatabase(t)
+	ctx := context.Background()
+	q := db.New(pool)
+	owner, err := q.CreateUser(ctx, db.CreateUserParams{Username: "query-owner", LowerUsername: "query-owner", DisplayName: "Owner"})
+	require.NoError(t, err)
+	repository := func(name string) db.Repository {
+		t.Helper()
+		repo, err := q.CreateRepo(ctx, db.CreateRepoParams{UserID: pgtype.Int8{Int64: owner.ID, Valid: true}, Name: name, LowerName: name, DefaultBookmark: "main"})
+		require.NoError(t, err)
+		return repo
+	}
+	repo := repository("query-policy")
+	patch := db.PatchRepositoryEgressPolicyParams{
+		RepositoryID: repo.ID, UpdatedBy: pgtype.Int8{Int64: owner.ID, Valid: true},
+		AddDomains:    []string{"z.example", "b.example", "a.example", "b.example"},
+		RemoveDomains: []string{"z.example", "z.example"}, MaxDomains: 2,
+	}
+	first, err := q.PatchRepositoryEgressPolicy(ctx, patch)
+	require.NoError(t, err)
+	require.Equal(t, []string{"a.example", "b.example"}, first.AllowDomains)
+	require.Equal(t, patch.UpdatedBy, first.UpdatedBy)
+	stored, err := q.GetRepositoryEgressPolicy(ctx, repo.ID)
+	require.NoError(t, err)
+	require.Equal(t, first, stored)
+
+	// Conflict updates deduplicate both the old row and the new arguments,
+	// and removal wins even when the same domain is also added.
+	patch.UpdatedBy = pgtype.Int8{}
+	patch.AddDomains = []string{"c.example", "b.example", "c.example", "a.example"}
+	patch.RemoveDomains = []string{"a.example"}
+	second, err := q.PatchRepositoryEgressPolicy(ctx, patch)
+	require.NoError(t, err)
+	require.Equal(t, []string{"b.example", "c.example"}, second.AllowDomains)
+	require.False(t, second.UpdatedBy.Valid)
+	stored, err = q.GetRepositoryEgressPolicy(ctx, repo.ID)
+	require.NoError(t, err)
+	require.Equal(t, second, stored)
+
+	// A refused conflict changes neither values nor author/timestamps.
+	patch.UpdatedBy = pgtype.Int8{Int64: owner.ID, Valid: true}
+	patch.AddDomains = []string{"d.example"}
+	patch.RemoveDomains = nil
+	_, err = q.PatchRepositoryEgressPolicy(ctx, patch)
+	require.ErrorIs(t, err, pgx.ErrNoRows)
+	stored, err = q.GetRepositoryEgressPolicy(ctx, repo.ID)
+	require.NoError(t, err)
+	require.Equal(t, second, stored)
+
+	// The fresh-row cardinality guard must refuse without creating a row.
+	fresh := repository("refused-policy")
+	patch.RepositoryID = fresh.ID
+	patch.AddDomains = []string{"c.example", "b.example", "a.example"}
+	_, err = q.PatchRepositoryEgressPolicy(ctx, patch)
+	require.ErrorIs(t, err, pgx.ErrNoRows)
+	_, err = q.GetRepositoryEgressPolicy(ctx, fresh.ID)
+	require.ErrorIs(t, err, pgx.ErrNoRows)
 }
