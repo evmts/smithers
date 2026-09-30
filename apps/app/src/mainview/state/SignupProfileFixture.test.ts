@@ -27,14 +27,24 @@ test("the signup fixture serves only exact selected-host GETs and gives each cal
       new Request(`https://app.test${SIGNUP_PROFILE_PATH}`)
     ]
   ) {
-    const response = await fixture.fetchImpl(input)
+    const response = await fixture.fetchImpl(input, { credentials: "include" })
     expect(response.status).toBe(200)
     expect(response.headers.get("content-type")).toBe("application/json")
     expect(await response.json()).toEqual({ profile: savedProfile() })
   }
   expect(fixture.reads).toEqual([SIGNUP_PROFILE_PATH, SIGNUP_PROFILE_PATH, SIGNUP_PROFILE_PATH])
-  expect(await (await signupProfileFetch(unexpected).fetchImpl(SIGNUP_PROFILE_PATH)).json()).toEqual({ profile: null })
+  expect(await (await signupProfileFetch(unexpected).fetchImpl(SIGNUP_PROFILE_PATH, { credentials: "include" })).json()).toEqual({ profile: null })
   expect(() => signupProfileFetch(unexpected, { ...savedProfile(), name: "" })).toThrow()
+})
+
+test("signup reads require explicit session credentials and reject missing or omitted credentials", async () => {
+  const fixture = signupProfileFetch(async () => { throw new Error("Unexpected request") })
+  for (const credentials of [undefined, "omit", "same-origin"] as const) {
+    await expect(fixture.fetchImpl(SIGNUP_PROFILE_PATH, { credentials })).rejects.toThrow("credentialed profile read")
+  }
+  const request = new Request(`https://app.test${SIGNUP_PROFILE_PATH}`, { credentials: "include" })
+  expect((await fixture.fetchImpl(request)).status).toBe(200)
+  expect(fixture.reads).toEqual([SIGNUP_PROFILE_PATH])
 })
 
 test("unrelated origins, paths, queries and methods reach the original refusing transport unchanged", async () => {
