@@ -33,6 +33,20 @@ const spawnerView = (session: Session): RemoteProvider => ({
 })
 
 /**
+ * POSIX paths resolved against the guest workdir rather than this process's
+ * directory, so a relative path means the same file to `Path` that it means
+ * to the session's filesystem and processes.
+ */
+const guestPath = (base: Path.Path, workdir: string): Path.Path => {
+  const resolve = (...segments: ReadonlyArray<string>) => base.resolve(workdir, ...segments)
+  return {
+    ...base,
+    resolve,
+    relative: (from, to) => base.relative(resolve(from), resolve(to))
+  }
+}
+
+/**
  * Names the layer's session.
  *
  * @category models
@@ -62,6 +76,9 @@ export interface LayerHostOptions {
  * ambient host access here, which is why the sandbox-backed services are
  * served bare rather than kernel-decorated.
  *
+ * `Path` resolves a relative path under the session's workdir, the directory
+ * its commands start in and its filesystem roots relative paths at.
+ *
  * `SandboxHealth` is served alongside them, probing the machine this layer
  * holds, so a caller can ask whether it is still there. What this layer
  * deliberately does NOT do is what `SandboxSupervision` does for the spawn-only
@@ -88,8 +105,10 @@ export const layerHost = (
       const session = yield* provider.acquire(options.session)
       const view = spawnerView(session)
       const spawner = yield* make(view)
+      const path = yield* Path.Path
       return Context.make(ChildProcessSpawner, spawner).pipe(
         Context.add(FileSystem.FileSystem, fileSystem(session)),
+        Context.add(Path.Path, guestPath(path, session.workdir)),
         // A session with no `ping` yields the noop probe, which always answers
         // healthy. That is not a claim the machine is alive; it says nothing is
         // watching it, and `SandboxHealth.make` documents the distinction.
@@ -100,4 +119,4 @@ export const layerHost = (
       )
     })
     // Guest paths, not host paths: sessions speak POSIX and `rootedAt` normalizes to "/".
-  ).pipe(Layer.merge(Path.layer))
+  ).pipe(Layer.provide(Path.layer))

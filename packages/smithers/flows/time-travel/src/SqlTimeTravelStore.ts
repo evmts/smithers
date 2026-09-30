@@ -100,11 +100,20 @@ const auditFromRow = (row: AuditRow) =>
 const attemptRefsJson = (refs: ReadonlyArray<TimeTravelStore.AttemptRef>): string =>
   JSON.stringify(refs.map((ref) => [ref.stepKeyDigest, ref.attempt]))
 
-const restartableStateJson = (stateJson: string, forkKeyRunIds: ReadonlyArray<string>) =>
+const restartableStateJson = (
+  stateJson: string,
+  forkKeyRunIds: ReadonlyArray<string>,
+  rebound: { readonly payload?: unknown; readonly parentExecutionId?: string } = {}
+) =>
   Schema.decodeUnknownEffect(RunStateJson)(stateJson).pipe(
     Effect.flatMap((state) => {
       const { cancellation: _, result: __, ...restartable } = state
-      return Schema.encodeEffect(RunStateJson)({ ...restartable, forkKeyRunIds })
+      return Schema.encodeEffect(RunStateJson)({
+        ...restartable,
+        ...("payload" in rebound ? { payload: rebound.payload } : {}),
+        ...(rebound.parentExecutionId === undefined ? {} : { parentExecutionId: rebound.parentExecutionId }),
+        forkKeyRunIds
+      })
     }),
     Effect.mapError((cause) => error("unknown", "could not materialize executable fork state", cause))
   )
@@ -485,6 +494,49 @@ export const make: Effect.Effect<
                 AND ${Dialect.jsonText(sql, sql`event.payload_json`, "$.clockName")} = flows_clock_deadlines.clock_name
             )
         `
+        // A completion or consumption recorded in the suffix is undone on the
+        // row that survives it, so the rows keep matching the journal the
+        // deferred/clock fold rebuilds them from (issue #2054). A clock whose
+        // completion is archived is pending again and fires, which is what a
+        // clock whose deferred completion was archived already had to do.
+        yield* sql`
+          UPDATE flows_clock_deadlines
+          SET completed_at_ms = NULL
+          WHERE execution_id = ${runId}
+            AND completed_at_ms IS NOT NULL
+            AND EXISTS (
+              SELECT 1 FROM flows_journal_events AS event
+              WHERE event.run_id = ${runId}
+                AND event.seq > ${afterSeq}
+                AND event.event_type = ${EventTypes.clockCompleted}
+                AND ${Dialect.jsonText(sql, sql`event.payload_json`, "$.flowName")} = flows_clock_deadlines.flow_name
+                AND ${
+          Dialect.jsonText(sql, sql`event.payload_json`, "$.executionId")
+        } = flows_clock_deadlines.execution_id
+                AND ${Dialect.jsonText(sql, sql`event.payload_json`, "$.clockName")} = flows_clock_deadlines.clock_name
+            )
+        `
+        yield* sql`
+          UPDATE flows_deferred_completions
+          SET consumed_at_ms = NULL
+          WHERE execution_id = ${runId}
+            AND consumed_at_ms IS NOT NULL
+            AND EXISTS (
+              SELECT 1 FROM flows_journal_events AS event
+              WHERE event.run_id = ${runId}
+                AND event.seq > ${afterSeq}
+                AND event.event_type = ${EventTypes.deferredConsumed}
+                AND ${
+          Dialect.jsonText(sql, sql`event.payload_json`, "$.flowName")
+        } = flows_deferred_completions.flow_name
+                AND ${
+          Dialect.jsonText(sql, sql`event.payload_json`, "$.executionId")
+        } = flows_deferred_completions.execution_id
+                AND ${
+          Dialect.jsonText(sql, sql`event.payload_json`, "$.deferredName")
+        } = flows_deferred_completions.deferred_name
+            )
+        `
       }).pipe(Effect.mapError(mapError))
 
     /**
@@ -586,6 +638,137 @@ export const make: Effect.Effect<
           }
         }
       })
+
+    /**
+     * Copies the spawned children a fork names under the ids its forked
+     * parent will open them with, inside the fork's transaction.
+     *
+     * A child and its parent keep separate journals, so the parent's frame
+     * does not address a child record. The cut is the parent's frame record's
+     * emission time: the child keeps the longest prefix of its own journal
+     * written no later than that, and the attempts that prefix finished, keyed
+     * by the child's own step keys (`forkKeyRunIds` names it as their
+     * origin). A child spawned after the frame is not carried. The copy is a
+     * restartable child of the fork, `pending` with no result, so the forked
+     * parent drives it again and every carried step replays.
+     *
+     * The copied spawn record in the fork's journal is rewritten to name the
+     * carried child, so the fork's lineage names its own child and never the
+     * parent's.
+     */
+    const carryChildren = (
+      parentRunId: string,
+      frame: TimeTravelStore.Snapshot["frame"],
+      forkRunId: string,
+      children: ReadonlyArray<TimeTravelStore.CarriedChild>,
+      nowMs: number
+    ): Effect.Effect<ReadonlyArray<string>, TimeTravelError> =>
+      Effect.gen(function*() {
+        if (children.length === 0) return []
+        const walkRunParents = yield* hasRunParents
+        const cut = yield* sql<{ readonly emitted_at_ms: number }>`
+          SELECT emitted_at_ms FROM flows_journal_events
+          WHERE run_id = ${parentRunId} AND seq <= ${frame.seq}
+          ORDER BY seq DESC LIMIT 1
+        `
+        const cutMs = cut[0] === undefined ? -1 : Number(cut[0].emitted_at_ms)
+        const carried: Array<string> = []
+        for (const child of children) {
+          const rows = yield* sql<{ readonly state_json: string; readonly parent_run_id: string | null }>`
+            SELECT state_json, parent_run_id FROM flows_runs WHERE run_id = ${child.from}
+          `
+          const row = rows[0]
+          const state = row === undefined ? undefined : yield* Schema.decodeUnknownEffect(RunStateJson)(
+            row.state_json
+          ).pipe(Effect.mapError((cause) => error("invalid", `child ${child.from} has an unreadable state`, cause)))
+          const edge = walkRunParents
+            ? yield* sql<{ readonly seq: number }>`
+              SELECT seq FROM flows_run_parents WHERE child_id = ${child.from} AND parent_id = ${parentRunId}
+            `
+            : []
+          if (
+            row === undefined || state === undefined ||
+            (state.parentExecutionId !== parentRunId && row.parent_run_id !== parentRunId && edge.length === 0)
+          ) {
+            return yield* Effect.fail(error("invalid", `run ${child.from} is not a child ${parentRunId} spawned`))
+          }
+          const spawn = yield* sql<{ readonly seq: number }>`
+            SELECT seq FROM flows_journal_events
+            WHERE run_id = ${parentRunId} AND seq <= ${frame.seq}
+              AND event_type = ${EffectBoundary.eventType}
+              AND ${Dialect.jsonText(sql, sql`payload_json`, "$.effect.id")} = ${`${parentRunId}:spawn:${child.from}`}
+          `
+          if (spawn.length === 0) continue
+          const events = yield* sql<{ readonly seq: number; readonly emitted_at_ms: number }>`
+            SELECT seq, emitted_at_ms FROM flows_journal_events WHERE run_id = ${child.from} ORDER BY seq
+          `
+          let through = -1
+          for (const event of events) {
+            if (Number(event.emitted_at_ms) > cutMs) break
+            through = Number(event.seq)
+          }
+          const stateJson = yield* restartableStateJson(
+            row.state_json,
+            [child.from, ...(state.forkKeyRunIds ?? [])],
+            {
+              parentExecutionId: forkRunId,
+              ...(child.payload === undefined ? {} : { payload: child.payload })
+            }
+          )
+          yield* sql`
+            INSERT INTO flows_runs (run_id, status, created_at_ms, parent_run_id, state_json, lineage_id, round_ordinal)
+            VALUES (${child.to}, 'pending', ${nowMs}, NULL, ${stateJson}, ${child.to}, 0)
+          `
+          if (walkRunParents) {
+            yield* sql`
+              INSERT INTO flows_run_parents (child_id, parent_id, seq)
+              SELECT ${child.to}, ${forkRunId}, COALESCE(MAX(seq), 0) + 1 FROM flows_run_parents WHERE TRUE
+            `
+          }
+          yield* sql`
+            INSERT INTO flows_journal_events
+              (run_id, seq, event_id, source_id, source_seq, emitted_at_ms,
+               event_type, payload_json, meta_json)
+            SELECT ${child.to}, seq, ${`fork:${child.to}:`} || event_id,
+                   source_id, source_seq, emitted_at_ms,
+                   event_type, payload_json, meta_json
+            FROM flows_journal_events
+            WHERE run_id = ${child.from} AND seq <= ${through}
+          `
+          const attempts = yield* attemptsAtFrame(
+            child.from,
+            // Every carried record, whatever lineage it names: the child's own.
+            { lineageId: child.from, seq: through },
+            EventTypes.attemptFinished,
+            true
+          )
+          yield* sql`
+            INSERT INTO flows_attempts (
+              run_id, step_key_digest, attempt, state, started_at_ms, finished_at_ms,
+              heartbeat_at_ms, checkpoint_json, error_json, outcome_json, meta_json
+            )
+            SELECT
+              ${child.to}, step_key_digest, attempt, state, started_at_ms, finished_at_ms,
+              heartbeat_at_ms, checkpoint_json, error_json, outcome_json, meta_json
+            FROM flows_attempts
+            WHERE run_id = ${child.from}
+              AND (step_key_digest, attempt) IN (${attemptRefsSelect(attempts)})
+          `
+          yield* sql`
+            INSERT INTO flows_time_travel_snapshots (run_id, lineage_id, seq, change_id, operation_id, plan_digest)
+            SELECT ${child.to}, lineage_id, seq, change_id, operation_id, plan_digest
+            FROM flows_time_travel_snapshots
+            WHERE run_id = ${child.from} AND seq <= ${through}
+          `
+          yield* sql`
+            UPDATE flows_journal_events
+            SET payload_json = REPLACE(payload_json, ${child.from}, ${child.to})
+            WHERE run_id = ${forkRunId} AND seq = ${spawn[0]!.seq}
+          `
+          carried.push(child.to)
+        }
+        return carried
+      }).pipe(Effect.mapError(mapError))
 
     const upsertSnapshot = (snapshot: TimeTravelStore.Snapshot) =>
       sql`
@@ -964,7 +1147,7 @@ export const make: Effect.Effect<
           ).pipe(Effect.mapError(mapError))
         ))
       ),
-      createFork: Effect.fn("TimeTravelStore.createFork")((parentRunId, frame, childRunId, override) =>
+      createFork: Effect.fn("TimeTravelStore.createFork")((parentRunId, frame, childRunId, override, rebinding) =>
         Effect.annotateCurrentSpan({ parentRunId, lineageId: frame.lineageId, seq: frame.seq }).pipe(Effect.andThen(
           writer.write(
             Effect.gen(function*() {
@@ -1051,7 +1234,8 @@ export const make: Effect.Effect<
               )
               const stateJson = yield* restartableStateJson(
                 derived ?? parentState[0]!.state_json,
-                [parentRunId, ...(parent.forkKeyRunIds ?? [])]
+                [parentRunId, ...(parent.forkKeyRunIds ?? [])],
+                rebinding?.payload === undefined ? {} : { payload: rebinding.payload }
               )
               yield* sql`
             INSERT INTO flows_runs (
@@ -1114,10 +1298,12 @@ export const make: Effect.Effect<
                * whole edit: the parent keeps its own row, and every step past
                * the frame runs again on the child against the edited value.
                */
+              const carried = yield* carryChildren(parentRunId, frame, runId, rebinding?.children ?? [], nowMs)
               if (override !== undefined) {
                 const edited = yield* sql<{ readonly attempt: number }>`
                   UPDATE flows_attempts SET outcome_json = ${JSON.stringify(override.result)}
-                  WHERE run_id = ${runId} AND step_key_digest = ${override.stepKeyDigest} AND state = 'succeeded'
+                  WHERE ${sql.in("run_id", [runId, ...carried])}
+                    AND step_key_digest = ${override.stepKeyDigest} AND state = 'succeeded'
                   RETURNING attempt
                 `
                 if (edited.length === 0) {

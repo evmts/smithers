@@ -16,11 +16,17 @@ import { refuseCloudSignIn } from "./CloudSignIn"
  *
  * A secret VALUE is never on the wire and never rendered: the audit names
  * which binding was substituted, which is the whole point of the boundary.
+ *
+ * A blocked call's host can be allowed (#2653): the repository owner's
+ * `GET/PUT /api/repos/{o}/{r}/egress-policy` allowlist, which every running
+ * sandbox of the repository reloads without a restart.
  */
 import { createCloudClient } from "./CloudClient"
 import type { SandboxEgressRow } from "../AppState"
+import type { FailureController } from "../controller/failures"
 import { resolveTargetRepo } from "../RepoContext"
 import type { SeamContext } from "./SeamContext"
+import { captureCloudOwner } from "./SeamContext"
 
 export const DEGRADED_EGRESS_REFUSAL =
   "This Smithers Cloud sign-in can't read the egress audit — sign in again to enable it."
@@ -145,6 +151,24 @@ export const agentSessionEgressPath = (repoId: string, sessionId: string): strin
   }/egress`
 }
 
+/** The seam path of a repository's egress allowlist. */
+export const egressPolicyPath = (repoId: string): string => {
+  const [owner = "", name = ""] = repoId.split("/")
+  return `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/egress-policy`
+}
+
+/** A host as plue stores it: trimmed, lower-case, without a trailing dot. */
+export const egressHost = (value: string): string => value.trim().toLowerCase().replace(/\.$/, "")
+
+/** The allowlist off the wire, or null when the answer is not one. */
+export const parseAllowDomains = (body: unknown): ReadonlyArray<string> | null => {
+  if (!isRecord(body) || !Array.isArray(body.allow_domains)) return null
+  const domains = body.allow_domains
+  return domains.every((domain): domain is string => typeof domain === "string") ? domains : null
+}
+
+export const UNREADABLE_ALLOWLIST = "Smithers Cloud answered an egress allowlist in a shape Smithers can't read."
+
 /** One audit row as a transcript line: the call, and the secret names, never a value. */
 export const egressLine = (row: SandboxEgressRow): string =>
   `${row.occurredAt} · ${row.method} ${row.host}${row.path} · ${row.status} · ${row.allowed ? "allowed" : "blocked"}${
@@ -163,9 +187,15 @@ export interface EgressSeam {
     repo?: string,
     cursor?: string
   ) => Promise<string | void | { readonly value: string }>
+  /**
+   * `egress.allow <host> [owner/repo]`: add a host to the repository's egress
+   * allowlist. Acknowledged at once; the write runs in the background under
+   * the shared toast, which settles with the write.
+   */
+  readonly allowEgressHost: (host: string, repo?: string) => Promise<string | { readonly value: string }>
 }
 
-export const createEgressSeam = (ctx: SeamContext): EgressSeam => {
+export const createEgressSeam = (ctx: SeamContext, withToast: FailureController["withToast"]): EgressSeam => {
   const gate = (): string | void => {
     const session = ctx.store.collections.cloudSessions.get("cloud")
     if (session?.state !== "signed-in") return refuseCloudSignIn(ctx)
@@ -191,5 +221,40 @@ export const createEgressSeam = (ctx: SeamContext): EgressSeam => {
     return { value: listing }
   }
 
-  return { listSessionEgress }
+  /* One write per host at a time, and one repository's writes in order: each reads the list the last one wrote. */
+  const allowing = new Set<string>()
+  const queues = new Map<string, Promise<unknown>>()
+
+  const allow = async (repo: string, host: string): Promise<true | string> => {
+    const client = createCloudClient(ctx)
+    const path = egressPolicyPath(repo)
+    const read = await client.get(path, "the egress allowlist")
+    if ("error" in read) return read.error
+    const domains = parseAllowDomains(read.body)
+    if (domains === null) return UNREADABLE_ALLOWLIST
+    if (domains.includes(host)) return true
+    const write = await client.send("PUT", path, { allow_domains: [...domains, host] }, "the egress allowlist")
+    return "error" in write ? write.error : true
+  }
+
+  const allowEgressHost: EgressSeam["allowEgressHost"] = async (raw, repo) => {
+    const refusal = gate()
+    if (refusal !== undefined) return refusal
+    const target = resolveTargetRepo(ctx.store, repo)
+    if ("error" in target) return target.error
+    const host = egressHost(raw)
+    if (host === "") return "Name a host to allow."
+    const key = `egress-allow:${target.repo}:${host}`
+    const acknowledged = { value: `Allowing ${host} for ${target.repo}.` }
+    if (allowing.has(key)) return acknowledged
+    allowing.add(key)
+    const current = captureCloudOwner(ctx)
+    const queued = (queues.get(target.repo) ?? Promise.resolve())
+      .then(() => withToast(key, `Allowing ${host}…`, `${host} allowed`, () => allow(target.repo, host), false, current))
+      .finally(() => allowing.delete(key))
+    queues.set(target.repo, queued.catch(() => undefined))
+    return acknowledged
+  }
+
+  return { listSessionEgress, allowEgressHost }
 }

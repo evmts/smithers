@@ -102,6 +102,7 @@
     "./history/History": "./src/history/History.ts",
     "./history/ExecutionTarget": "./src/history/ExecutionTarget.ts",
     "./history/Workspace": "./src/history/Workspace.ts",
+    "./history/GatewayHistory": "./src/history/GatewayHistory.ts",
     "./index": "./src/index.ts",
     "./operator/Credentials": "./src/operator/Credentials.ts",
     "./operator/Integrations": "./src/operator/Integrations.ts",
@@ -622,6 +623,16 @@
         "require": {
           "types": "./dist/cjs/history/Workspace.d.ts",
           "default": "./dist/cjs/history/Workspace.js"
+        }
+      },
+      "./history/GatewayHistory": {
+        "import": {
+          "types": "./dist/esm/history/GatewayHistory.d.ts",
+          "default": "./dist/esm/history/GatewayHistory.js"
+        },
+        "require": {
+          "types": "./dist/cjs/history/GatewayHistory.d.ts",
+          "default": "./dist/cjs/history/GatewayHistory.js"
         }
       },
       "./index": {

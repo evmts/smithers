@@ -21,7 +21,7 @@ import type * as Scope from "effect/Scope"
 import * as EffectBoundary from "../EffectBoundary.ts"
 import type { Frame } from "../Frame.ts"
 import { error, type TimeTravelError } from "../TimeTravelError.ts"
-import { type Fork as ForkRecord, type StepOverride, TimeTravelStore } from "../TimeTravelStore.ts"
+import { type Fork as ForkRecord, type Rebinding, type StepOverride, TimeTravelStore } from "../TimeTravelStore.ts"
 import * as Compensation from "./Compensation.ts"
 import type { EffectHandlerRegistry } from "./EffectHandlerRegistry.ts"
 import * as HistoryLimit from "./HistoryLimit.ts"
@@ -58,6 +58,13 @@ export interface ForkOptions {
    * is minted or a workspace provisioned.
    */
   readonly override?: StepOverride | undefined
+  /**
+   * What the child rebinds, derived from its minted id: its recorded payload
+   * and the spawned children it carries (`TimeTravelStore.Rebinding`). A
+   * function because a carried child's new id, and a payload that names the
+   * run, are functions of the child id the fork mints.
+   */
+  readonly rebind?: ((childRunId: string) => Rebinding) | undefined
   /** Journal page size for the suffix scan; defaults to the store's own. */
   readonly pageSize?: number | undefined
   /**
@@ -242,18 +249,25 @@ const normalize = (
  * Refuses a step override the child could not honor, before anything durable.
  *
  * The step must have been admitted at the frame, or the child has no attempt
- * of it to edit. A step the shared step cache holds is refused too: a cache
- * hit is served ahead of the attempt row, so the child would replay the cached
- * value and silently ignore the edit.
+ * of it to edit. When the fork carries spawned children, a step one of them
+ * recorded is admitted too; the store decides inside its transaction whether
+ * that child's attempt finished by the frame. A step the shared step cache
+ * holds is refused either way: a cache hit is served ahead of the attempt row,
+ * so the child would replay the cached value and silently ignore the edit.
  */
 const admitOverride = (
   store: TimeTravelStore["Service"],
   parentRunId: string,
   frame: Frame,
-  override: StepOverride
+  override: StepOverride,
+  carries: ReadonlyArray<string>
 ): Effect.Effect<void, TimeTravelError, CacheStore.CacheStore> =>
   Effect.gen(function*() {
-    const admitted = yield* store.attemptsAt(parentRunId, frame)
+    const admitted = [
+      ...(yield* store.attemptsAt(parentRunId, frame)),
+      ...(yield* Effect.forEach(carries, (runId) => store.attemptsAt(runId, { lineageId: runId, seq: maxSeq })))
+        .flat()
+    ]
     if (!admitted.some((attempt) => attempt.stepKeyDigest === override.stepKeyDigest)) {
       return yield* Effect.fail(error(
         "not_found",
@@ -375,7 +389,9 @@ export const fork = (
         options.maxEntries ?? HistoryLimit.defaultMaxHistoryEntries
       )
       if (options.override !== undefined) {
-        yield* admitOverride(store, options.parentRunId, options.frame, options.override)
+        // The children a rebinding names do not depend on the id minted below.
+        const carries = (options.rebind?.("")?.children ?? []).map((child) => child.from)
+        yield* admitOverride(store, options.parentRunId, options.frame, options.override, carries)
       }
       const effects = yield* EffectBoundary.fromEntries(suffix)
       const plan = yield* Compensation.assess(effects, snapshot?.changeId)
@@ -427,7 +443,15 @@ export const fork = (
        */
       const result = yield* Effect.uninterruptibleMask((restore) =>
         restore(StepHook.run("fork", options.hooks?.beforeStep, "commit-fork")).pipe(
-          Effect.andThen(store.createFork(options.parentRunId, options.frame, childRunId, options.override)),
+          Effect.andThen(
+            store.createFork(
+              options.parentRunId,
+              options.frame,
+              childRunId,
+              options.override,
+              options.rebind?.(childRunId)
+            )
+          ),
           Effect.onError(() => forgetLane(jj, workspaceName, "after a refused commit")),
           Effect.tap(() =>
             options.retainWorkspace === true

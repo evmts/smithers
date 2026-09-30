@@ -14,6 +14,22 @@ export const namespace: Namespace = { id: "egress", label: "Egress", summary: "W
 /** The `egress` flows registered as one aggregator block. */
 export const egressFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
   flow({
+    /*
+     * The owner's allowlist (#2653): every running sandbox of the repository
+     * reloads it. It widens what the repository's sandboxes may reach, so the
+     * model may ask for it and the person confirms.
+     */
+    name: "egress.allow",
+    summary: "Let a repository's sandboxes reach a host",
+    runtime: ["cloud"],
+    confirm: (payload) =>
+      `let ${typeof payload["repo"] === "string" ? payload["repo"] : "the repository"}'s sandboxes reach ${String(payload["host"])}`,
+    args: "<host> [owner/repo]",
+    requires: ["signed-in"],
+    input: Schema.Struct({ host: Schema.String, repo: Schema.optional(Schema.String) }),
+    handler: ({ host, repo }) => actions.allowEgressHost(host, repo)
+  }),
+  flow({
     /* The same audit for an agent session's sandbox; the app has no agent-session card to face it. */
     name: "egress.session",
     summary: "List what an agent session called out to, and which secret names were swapped in",
