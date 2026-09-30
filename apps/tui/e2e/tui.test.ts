@@ -342,9 +342,9 @@ describe("composer mode", () => {
 
   it("keeps short-terminal input, queue controls, and status visible", async () => {
     const { tui } = await start({ cols: 40, rows: 12, holdMs: 60_000 })
-    await tui.press(key.ctrlO)
+    await tui.press("?")
     await tui.until((screen) => /Keys\s+esc/.test(screen), 5_000, "home help")
-    await tui.press(key.ctrlO)
+    await tui.press(key.escape)
     await tui.until((screen) => !/Keys\s+esc/.test(screen), 5_000, "home help closed")
     await tui.press("\x1b[200~one\ntwo\nthree\nfour\nfive\nsix\x1b[201~")
     await tui.until((screen) => screen.includes("six") && drawn(screen), 5_000, "bounded multiline input")
