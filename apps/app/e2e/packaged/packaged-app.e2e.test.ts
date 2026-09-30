@@ -291,6 +291,34 @@ describe.skipIf(!enabled)("the packaged production Electrobun app", () => {
       expect(relaunchedState.app.origin).toBe(firstState.app.origin)
       expect(await app.waitFor<boolean>(transcriptContains(`stub: ${message}`), (value) => value, 30_000)).toBe(true)
       expect(provider.requests).toEqual([{ path: "/v1/chat/completions", model: "packaged-fixture", text: message }])
+      const settled = await app.eval<{ userStatus: number; message: boolean; reply: boolean }>(`(async () => ({
+        userStatus: (await fetch('/api/user')).status,
+        message: ${transcriptContains(message)}, reply: ${transcriptContains(`stub: ${message}`)}
+      }))()`)
+      expect(settled).toEqual({ userStatus: 200, message: true, reply: true })
+      const logout = await app.eval<{
+        refused: number; code: string; signedInAfterRefusal: number; csrfPresent: boolean; accepted: number
+      }>(`(async () => {
+        const refused = await fetch('/api/auth/logout', { method: 'POST' })
+        const body = await refused.json()
+        const signedInAfterRefusal = (await fetch('/api/user')).status
+        const csrf = document.cookie.split(';').map(value => value.trim()).find(value => value.startsWith('__csrf='))?.slice(7)
+        const accepted = await fetch('/api/auth/logout', {
+          method: 'POST', headers: { 'x-csrf-token': csrf ? decodeURIComponent(csrf) : '' }
+        })
+        return { refused: refused.status, code: body.code, signedInAfterRefusal, csrfPresent: Boolean(csrf), accepted: accepted.status }
+      })()`)
+      expect(logout).toEqual({ refused: 403, code: "forbidden", signedInAfterRefusal: 200, csrfPresent: true, accepted: 204 })
+      await app.relaunch()
+      const signedOutState = await app.state()
+      expect(signedOutState.app.pid).not.toBe(relaunchedState.app.pid)
+      expect(signedOutState.app.origin).toBe(firstState.app.origin)
+      const signedOutStatus = await app.eval<number>("fetch('/api/user').then(response => response.status)")
+      expect(signedOutStatus).toBe(401)
+      expect(provider.requests).toEqual([{ path: "/v1/chat/completions", model: "packaged-fixture", text: message }])
+      await writeFile(join(app.artifactsDirectory, "chat-relaunch-settled-readback.json"), JSON.stringify({
+        origin: signedOutState.app.origin, restored: settled, logout, signedOutStatus, providerCalls: provider.requests.length
+      }, null, 2))
     })
   })
 
