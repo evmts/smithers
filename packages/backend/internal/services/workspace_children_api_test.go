@@ -6,9 +6,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
@@ -253,6 +255,72 @@ func TestWorkspaceChildrenFromInsideASharedWorkspaceAreRefused(t *testing.T) {
 	f.inject("HasWritableWorkspaceShares")
 	_, err = f.svc.SpawnWorkspaceChildren(ctx, SpawnWorkspaceChildrenInput{RepositoryID: f.repo, UserID: f.user, ParentWorkspaceID: f.parent.ID, Count: 1, ViaWorkspaceCredential: true})
 	requireChildFault(t, err)
+}
+
+// Record the transport boundary while delegating every operation to the existing provider.
+// A final parent cascade can otherwise conceal an earlier, forbidden child suspend.
+type childHoursSuspendRecorder struct {
+	SandboxVMClient
+	mu    sync.Mutex
+	calls []string
+}
+
+func (p *childHoursSuspendRecorder) SuspendSandbox(ctx context.Context, id string) (sandbox.SuspendResult, error) {
+	p.mu.Lock()
+	p.calls = append(p.calls, id)
+	p.mu.Unlock()
+	return p.SandboxVMClient.SuspendSandbox(ctx, id)
+}
+
+func (p *childHoursSuspendRecorder) suspensions() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]string(nil), p.calls...)
+}
+
+func TestWorkspaceChildrenHoursNeverDirectlySuspendChild(t *testing.T) {
+	ctx := context.Background()
+	for _, injected := range []bool{false, true} {
+		t.Run(strconv.FormatBool(injected), func(t *testing.T) {
+			f := newChildFixture(t, nil)
+			_, err := f.spawn(t, 1, "")
+			require.NoError(t, err)
+			child := f.receipts(t)[0]
+			provider := &childHoursSuspendRecorder{SandboxVMClient: f.provider}
+			f.svc.sandbox = provider
+			f.svc.billing = sandboxPolicyStub{entitlement: SandboxEntitlement{
+				PlanKey: BillingPlanPro, HoursPerDay: 2, SecondsUsedToday: 7200, DayResetsAt: time.Now().Add(time.Hour),
+			}}
+			// Isolate a running child without an eligible parent: no later cascade can mask a direct suspend.
+			f.exec(t, `UPDATE workspaces SET status = 'suspended' WHERE id = $1`, f.parent.ID)
+			if injected {
+				fault := f.inject("IsWorkspaceChild")
+				require.ErrorIs(t, f.svc.CleanupOverQuotaWorkspaces(ctx), errChildFault)
+				require.Empty(t, provider.suspensions(), "a failed authority read must not suspend any machine")
+				current, err := f.queries.GetWorkspace(ctx, child.WorkspaceID)
+				require.NoError(t, err)
+				require.Equal(t, "running", current.Status)
+				fault.name.Store("")
+			}
+			require.NoError(t, f.svc.CleanupOverQuotaWorkspaces(ctx))
+			require.NoError(t, f.svc.WaitForProvisioning(ctx))
+			require.Empty(t, provider.suspensions(), "a child is left to its parent, never directly suspended")
+			current, err := f.queries.GetWorkspace(ctx, child.WorkspaceID)
+			require.NoError(t, err)
+			require.Equal(t, "running", current.Status)
+			// Recovery of the parent's eligibility performs precisely one parent suspend and cascades a stop.
+			f.exec(t, `UPDATE workspaces SET status = 'running' WHERE id = $1`, f.parent.ID)
+			require.NoError(t, f.svc.CleanupOverQuotaWorkspaces(ctx))
+			require.NoError(t, f.svc.WaitForProvisioning(ctx))
+			require.Equal(t, []string{f.parent.VmID}, provider.suspensions())
+			_, err = f.queries.GetWorkspace(ctx, child.WorkspaceID)
+			require.ErrorIs(t, err, pgx.ErrNoRows, "the stopped child machine is deleted")
+			receipts := f.receipts(t)
+			require.Equal(t, "stopped", receipts[0].Status)
+			require.Equal(t, "parent_stopped", receipts[0].StopReason)
+			require.Equal(t, []string{f.parent.VmID}, f.provider.Live())
+		})
+	}
 }
 
 func TestWorkspaceChildrenSpendSandboxHours(t *testing.T) {
