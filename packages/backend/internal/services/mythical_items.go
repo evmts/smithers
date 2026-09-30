@@ -2461,9 +2461,16 @@ func (st *mythicalItemStep) merge(ctx context.Context, item db.MythicalItem) *db
 		}
 	}
 	if !authorized {
+		// The App's label is a maintainer's Land through Smithers (LandTodo)
+		// only for the head it names, by a person who still maintains.
+		if authorized, err = st.landedByMaintainer(ctx, item, applier, policy); err != nil {
+			return mythicalLater(item, "GitHub did not answer for the maintainer who landed it; retrying", st.now)
+		}
+	}
+	if !authorized {
 		next := item
 		checks := mythicalChecksOf(next)
-		checks.Automerge = false
+		checks.Automerge, checks.Land = false, nil
 		next.Checks = checks.encode()
 		return mythicalHold(next, "automerge:"+item.PRHead, "a maintainer's automerge label is no longer on the issue", nil, st.now)
 	}
@@ -3293,10 +3300,13 @@ type mythicalChecks struct {
 	// AutoTodo is why the factory made the issue a TODO without the label;
 	// OptedOut records a maintainer taking todo off such an issue, after
 	// which the factory never makes it one again on its own.
-	AutoTodo  string          `json:"autoTodo,omitempty"`
-	OptedOut  bool            `json:"optedOut,omitempty"`
-	Automerge bool            `json:"automerge,omitempty"`
-	Review    *mythicalReview `json:"review,omitempty"`
+	AutoTodo  string `json:"autoTodo,omitempty"`
+	OptedOut  bool   `json:"optedOut,omitempty"`
+	Automerge bool   `json:"automerge,omitempty"`
+	// Land is a maintainer's Land through Smithers: the head their automerge,
+	// applied by the App for them, covers (LandTodo).
+	Land   *mythicalLand   `json:"land,omitempty"`
+	Review *mythicalReview `json:"review,omitempty"`
 	// ForeignHead is the pull request head someone other than Smithers
 	// pushed; the stack neither reviews nor merges it.
 	ForeignHead string `json:"foreignHead,omitempty"`

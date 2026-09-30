@@ -3202,6 +3202,73 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '500':
           $ref: '#/components/responses/InternalError'
+  /api/repos/{owner}/{repo}/issue-views:
+    get:
+      summary: GET /api/repos/{owner}/{repo}/issue-views
+      description: The saved issue views the repository's factory declares on its default bookmark (`S.Factory({ issueViews })` in `.smithers/FACTORY.ts`), in declaration order. `GET /api/repos/{owner}/{repo}/issues?view=<id>` lists issues through one. None declared is an empty list; an unreadable projection is an error.
+      operationId: get_api_repos_owner_repo_issue_views
+      tags:
+        - Issue Views
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required:
+                    - id
+                    - title
+                  properties:
+                    id:
+                      type: string
+                      pattern: ^[a-z0-9][a-z0-9-]{0,63}$
+                    title:
+                      type: string
+                    state:
+                      type: string
+                      enum:
+                        - open
+                        - closed
+                        - fixed
+                        - verified
+                        - all
+                    labels:
+                      type: array
+                      items:
+                        type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /api/linear/{id}/ops:
     get:
       summary: GET /api/linear/{id}/ops
@@ -5412,6 +5479,7 @@ paths:
           $ref: '#/components/responses/InternalError'
     post:
       summary: POST /api/orgs/{org}/secrets
+      description: 'Sets an organization secret (`name`, `value`). Optional `hosts` with `match_headers`: the hosts and request headers the secret may be sent to, both or neither; omitted, a replaced secret keeps its binding. Organization owners only.'
       operationId: post_api_orgs_org_secrets
       tags:
         - Organizations
@@ -8569,7 +8637,7 @@ paths:
           $ref: '#/components/responses/InternalError'
     patch:
       summary: PATCH /api/repos/{owner}/{repo}/secrets/{name}
-      description: 'Marks a repository secret main-only (`{"main_only": true}`) or clears the mark, without its value. A main-only secret reaches only a trusted run on the default bookmark: a person''s push to it, a schedule, or a person''s dispatch. Admin only.'
+      description: 'Marks a repository secret main-only (`{"main_only": true}`) or clears the mark, and sets its host binding (`{"hosts": ["api.example.com"], "match_headers": ["authorization"]}`; empty lists unbind it), without its value. A main-only secret reaches only a trusted run on the default bookmark: a person''s push to it, a schedule, or a person''s dispatch. A bound secret reaches a CI job only as a placeholder its egress proxy replaces in those headers on requests to those hosts, and never an agent''s environment; CI refuses a job with an unbound secret. Admin only.'
       operationId: patch_api_repos_owner_repo_secrets_name
       tags:
         - Repositories
@@ -13436,6 +13504,7 @@ paths:
           $ref: '#/components/responses/InternalError'
     post:
       summary: POST /api/repos/{owner}/{repo}/secrets
+      description: 'Sets a repository secret (`name`, `value`). Optional `main_only`, and `hosts` with `match_headers`: the hosts and request headers the secret may be sent to, both or neither. Omitted, a replaced secret keeps its scope and binding. Admin only.'
       operationId: post_api_repos_owner_repo_secrets
       tags:
         - Repositories
@@ -19944,6 +20013,70 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '500':
           $ref: '#/components/responses/InternalError'
+  /api/repos/{owner}/{repo}/mythical/items/{id}/land:
+    post:
+      summary: POST /api/repos/{owner}/{repo}/mythical/items/{id}/land
+      description: A maintainer person asks the stack to merge a proposed TODO's pull request. The stack applies the automerge label for them and merges as for a maintainer's own label, at the reviewed head once GitHub CI is green; nothing merges here. Answers the item.
+      operationId: post_api_repos_owner_repo_mythical_items_id_land
+      tags:
+        - Repositories
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - head
+              properties:
+                head:
+                  type: string
+                  description: The pull request head the person saw; a head that moved since is refused.
+                  pattern: '^[0-9a-f]{40}$'
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '202':
+          description: The item, automerge on
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /api/repos/{owner}/{repo}/mythical/items/{id}/retry:
     post:
       summary: POST /api/repos/{owner}/{repo}/mythical/items/{id}/retry
@@ -20614,6 +20747,295 @@ paths:
           $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/repos/{owner}/{repo}/workspaces/{id}/children:
+    get:
+      summary: List a workspace's children
+      description: Every child the workspace spawned, oldest batch first. The workspace's own children credential may call it.
+      operationId: get_api_repos_owner_repo_workspaces_id_children
+      tags:
+        - Repositories
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          description: The parent workspace.
+          schema:
+            type: string
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: The children.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                    type: object
+                    required: [workspace_id, batch_id, ordinal, profile, status, expires_at]
+                    properties:
+                      workspace_id:
+                        type: string
+                      batch_id:
+                        type: string
+                      ordinal:
+                        type: integer
+                      profile:
+                        type: string
+                        enum: [small, build]
+                      status:
+                        type: string
+                      vm_id:
+                        type: string
+                      snapshot_id:
+                        type: string
+                      started_at:
+                        type: string
+                        format: date-time
+                      stopped_at:
+                        type: string
+                        format: date-time
+                      stop_reason:
+                        type: string
+                        enum: [requested, parent_stopped, expired, idle, failed, abandoned]
+                      failure_message:
+                        type: string
+                      expires_at:
+                        type: string
+                        format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Spawn children of a workspace
+      description: Admits a batch of short-lived children that boot from one snapshot of the running workspace, then boots them in the background. Children start signed out, carry no repository secret, count against the plan's child limit and its sandbox hours, and stop with their parent. The workspace's own children credential may call it, unless another person can write into the workspace.
+      operationId: post_api_repos_owner_repo_workspaces_id_children
+      tags:
+        - Repositories
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          description: The parent workspace.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [count]
+              properties:
+                count:
+                  type: integer
+                  minimum: 1
+                  maximum: 128
+                profile:
+                  type: string
+                  enum: [small, build]
+                  description: small (1 vCPU, 2 GB) by default; build is 2 vCPU, 8 GB.
+                ttl_secs:
+                  type: integer
+                  minimum: 0
+                  description: How long the batch may live; zero takes the default, capped by the plan.
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '202':
+          description: The admitted batch; each child is starting.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, parent_workspace_id, profile, expires_at, children]
+                properties:
+                  id:
+                    type: string
+                  parent_workspace_id:
+                    type: string
+                  profile:
+                    type: string
+                    enum: [small, build]
+                  expires_at:
+                    type: string
+                    format: date-time
+                  children:
+                    type: array
+                    items:
+                      type: object
+                      required: [workspace_id, batch_id, ordinal, profile, status, expires_at]
+                      properties:
+                        workspace_id:
+                          type: string
+                        batch_id:
+                          type: string
+                        ordinal:
+                          type: integer
+                        profile:
+                          type: string
+                          enum: [small, build]
+                        status:
+                          type: string
+                        vm_id:
+                          type: string
+                        snapshot_id:
+                          type: string
+                        started_at:
+                          type: string
+                          format: date-time
+                        stopped_at:
+                          type: string
+                          format: date-time
+                        stop_reason:
+                          type: string
+                          enum: [requested, parent_stopped, expired, idle, failed, abandoned]
+                        failure_message:
+                          type: string
+                        expires_at:
+                          type: string
+                          format: date-time
+        '402':
+          description: Today's sandbox hours are spent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/repos/{owner}/{repo}/workspaces/{id}/children/{child_id}/stop:
+    post:
+      summary: Stop a workspace's child
+      description: Stops one child and deletes its machine. Stopping a stopped child answers its receipt again.
+      operationId: post_api_repos_owner_repo_workspaces_id_children_child_id_stop
+      tags:
+        - Repositories
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          description: The parent workspace.
+          schema:
+            type: string
+        - name: child_id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: The stopped child.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [workspace_id, batch_id, ordinal, profile, status, expires_at]
+                properties:
+                  workspace_id:
+                    type: string
+                  batch_id:
+                    type: string
+                  ordinal:
+                    type: integer
+                  profile:
+                    type: string
+                    enum: [small, build]
+                  status:
+                    type: string
+                  vm_id:
+                    type: string
+                  snapshot_id:
+                    type: string
+                  started_at:
+                    type: string
+                    format: date-time
+                  stopped_at:
+                    type: string
+                    format: date-time
+                  stop_reason:
+                    type: string
+                    enum: [requested, parent_stopped, expired, idle, failed, abandoned]
+                  failure_message:
+                    type: string
+                  expires_at:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '429':
           $ref: '#/components/responses/RateLimited'
         '500':

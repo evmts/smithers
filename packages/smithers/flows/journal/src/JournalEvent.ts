@@ -4,6 +4,7 @@
  * @since 0.1.0
  */
 
+import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 
 /**
@@ -260,6 +261,47 @@ export class Entry extends Schema.Class<Entry>("@smthrs/journal/JournalEvent/Ent
  */
 export const makeEventId = (runId: RunId, sourceId: SourceId, sourceSeq: SourceSeq): string =>
   `flows:event:${runId.length}:${runId}${sourceId.length}:${sourceId}${sourceSeq}`
+
+/**
+ * The reserved prefix of every companion stream id.
+ *
+ * A run id that begins with it names a companion stream, never a run: stores
+ * that admit run ids (`@smthrs/run-store`'s `RunStore.create`) refuse it.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const companionPrefix = "flows.companion/"
+
+const hex = (bytes: ArrayBuffer): string =>
+  Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("")
+
+/**
+ * The id of the companion stream that carries one store's facts about a run.
+ *
+ * A companion stream is an ordinary journal stream with its own sequence
+ * clock, kept beside the run's own stream rather than inside it. A consumer
+ * that reads the run's stream by position never sees a companion fact, and a
+ * rewind or compaction of the run's stream never truncates one. The id is
+ * `flows.companion/<stream>/<sha-256 of the run id>`, so it stays within
+ * {@link maxIdentifierLength} for every run id; each fact carries its run id
+ * in its payload.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const companionRunId = (stream: string, runId: string): Effect.Effect<RunId> =>
+  Effect.promise(() => crypto.subtle.digest("SHA-256", new TextEncoder().encode(runId))).pipe(
+    Effect.map((digest) => `${companionPrefix}${stream}/${hex(digest)}` as RunId)
+  )
+
+/**
+ * Whether a run id names a companion stream.
+ *
+ * @category predicates
+ * @since 1.0.0
+ */
+export const isCompanionRunId = (runId: string): boolean => runId.startsWith(companionPrefix)
 
 /**
  * Bounded durable text shared by namespace contracts.
