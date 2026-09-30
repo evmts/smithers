@@ -130,3 +130,43 @@ it("lists at most a group's worth of issues, then how many more", () => {
   expect(shown).toHaveLength(Factory.perGroup + 2)
   expect(shown.at(-1)).toMatchObject({ id: "more:working", label: "… 5 more" })
 })
+
+it("files a TODO under one request id, resent after an unanswered filing and dropped after a refusal", async () => {
+  const sent: Array<{ path: string; body: { title: string; request: string } }> = []
+  const answers: Array<() => Promise<unknown>> = []
+  let ids = 0
+  const file = Factory.filer(
+    (path, body) => {
+      sent.push({ path, body: body as { title: string; request: string } })
+      return answers.shift()!()
+    },
+    () => `id-${++ids}`
+  )
+  const queued = item("40", "queued")
+  // A dropped network keeps the id: the same TODO again resends it and files once.
+  answers.push(() => Promise.reject(new Error("fetch failed")), () => Promise.resolve(queued))
+  expect(await file("o/r", "Add dark mode")).toEqual({ ok: false, detail: "fetch failed", settled: false })
+  const filed = await file("o/r", "Add dark mode")
+  expect(filed.ok && filed.item.issue?.number).toBe(40)
+  expect(sent.map((each) => [each.path, each.body.request])).toEqual([
+    ["/api/repos/o/r/mythical/todos", "id-1"],
+    ["/api/repos/o/r/mythical/todos", "id-1"]
+  ])
+  // An answered filing frees its id: the next filing of the text is a new TODO.
+  answers.push(() => Promise.reject(new Error("/api/repos/o/r/mythical/todos: HTTP 403")), () => Promise.resolve(queued))
+  expect(await file("o/r", "Add dark mode")).toMatchObject({ ok: false, settled: true })
+  await file("o/r", "Add dark mode")
+  expect(sent.map((each) => each.body.request)).toEqual(["id-1", "id-1", "id-2", "id-3"])
+})
+
+it("joins a TODO filed while the same one is in flight", async () => {
+  const releases: Array<(value: unknown) => void> = []
+  const file = Factory.filer(() => new Promise((resolve) => releases.push(resolve)))
+  const first = file("o/r", "Same")
+  const second = file("o/r", "Same")
+  const other = file("o/x", "Same")
+  expect(releases).toHaveLength(2)
+  for (const release of releases) release(item("41", "queued"))
+  expect(await first).toBe(await second)
+  expect((await other).ok).toBe(true)
+})
