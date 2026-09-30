@@ -2,6 +2,7 @@ import type { APIRequestContext, BrowserContext, Locator, Page, TestInfo } from 
 import { expect, realApi } from "../support/test"
 import { fixtureAttachmentName, fixtureRepositoryName } from "../support/values"
 import { scenarioOutcome, TEARDOWN_ANNOTATION, TeardownProblem } from "../support/teardown"
+import { githubSourceOwner } from "../repositories-github/source-owner"
 import { runSlash } from "./local"
 import {
   attachProductionJson,
@@ -164,7 +165,7 @@ export const withOwnedImportedRepository = async (
   body: (fixture: ImportedIssueFixture) => Promise<void>
 ): Promise<void> => {
   const name = uniqueRepositoryName()
-  const sourceRepo = `codeplanesmithers/${name}`
+  const sourceRepo = `${githubSourceOwner()}/${name}`
   let repo = sourceRepo
   const sourceVisibility = process.env.SMITHERS_REAL_AUTH_KIND === "application-token" ? "public" : "private"
   const trackedIssues = new Set<number>()
@@ -180,7 +181,7 @@ export const withOwnedImportedRepository = async (
 
   await attachProductionJson(testInfo, "owned-repository-intent", {
     repo: sourceRepo,
-    owner: "codeplanesmithers",
+    owner: githubSourceOwner(),
     visibility: sourceVisibility,
     initializedWithReadme: true,
     cleanup: ["close tracked issues", "delete cloud mirror and verify 404", "delete GitHub source and verify 404"]

@@ -204,3 +204,29 @@ makes identity answer `true` for every login (Factory spec 01 §3); the
 privilege is the `admin` claim and the seeded roster, never that flag. A spec
 that genuinely needs a maintainer or an admin says so in the spec, with the
 reason, rather than raising the constant for every other spec.
+
+### Authenticated hosted qualification
+
+Manual persistent-context launches honor `SMITHERS_E2E_BROWSER_EXECUTABLE`.
+When supplied, it must be an absolute path to a real executable regular file;
+valid symlinks resolve to that file. Without it Playwright uses its bundled
+Chromium. Every profile launch and missing-profile diagnostic launch uses the
+same validated selection. On macOS, an explicitly selected browser retains
+its normal keychain by omitting Playwright's `--use-mock-keychain` and
+`--password-store=basic` defaults; bundled Chromium keeps its defaults.
+`SMITHERS_REAL_HEADED=1` selects headed execution.
+
+Set `SMITHERS_E2E_PROFILE` to the sanctioned automation profile,
+`SMITHERS_E2E_EXPECTED_LOGIN` to its expected GitHub login, and
+`SMITHERS_REAL_APP_PATH` to its owned repository's absolute path. The atomic
+profile lease prevents concurrent access and is released after context cleanup.
+OAuth uses the observed same-page Cloud redirect and verifies the session and
+return path; auth scenarios disable traces and videos and never retain cookie
+values or OAuth query strings.
+
+Ordinary denial uses an explicitly supplied `SMITHERS_E2E_ORDINARY_PROFILE`.
+Admin success and the second identity in cross-user isolation require a
+separate `SMITHERS_E2E_ADMIN_PROFILE` whose server session carries `is_admin`.
+`SMITHERS_E2E_EXPECTED_ADMIN_LOGIN` optionally pins that administrator's login.
+Missing identities remain unexecuted obligations; a normal account cannot
+qualify administrator success or cross-user isolation.
