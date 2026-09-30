@@ -1,31 +1,25 @@
 import { expect,test,type Page } from "./browserTest"
-import { identityRoute } from "./identity"
+import { installCloudFixture } from "./cloudFixture"
+import { fillComposer } from "./composer"
 
-/** Exercise the real failed-storage toast using only this browser profile. */
+/** Exercise a current background command failure against a real saved store. */
 const boot = async (page: Page) => {
-  await page.addInitScript(() => {
-    localStorage.setItem("smithers-mvp.persistenceBackend", "opfs")
-    window.Worker = class extends Worker {
-      constructor(url: string | URL, options?: WorkerOptions) {
-        super(url, options)
-        this.terminate()
-        throw new DOMException("Storage unavailable for notification layout test", "NotAllowedError")
-      }
-    }
+  await installCloudFixture(page)
+  const session = "0c3d0c6e-2f6a-4b6e-9c2a-1c0a2b0e5f6a"
+  let stopRequests = 0
+  await page.route(url => url.pathname === `/api/repos/smithersai/smithers/agent/sessions/${session}`, route => {
+    expect(route.request().method()).toBe("DELETE")
+    stopRequests++
+    return route.fulfill({ status: 503, json: { message: "notification-layout-regression" } })
   })
-  await page.route("**/api/**", route => route.fulfill({ status: 404, json: { error: "Not part of the notification fixture" } }))
-  await page.route("**/api/bootstrap", route => route.fulfill({ json: {
-    apiVersion: 1, host: "cloud", version: "test", buildSha: "test",
-    capabilities: ["identity", "cloud", "agent"], authFlow: "redirect", sandbox: null,
-  } }))
-  await page.route("**/api/user", identityRoute(null))
-  await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "smithersai/smithers" }] } }))
-  await page.route("**/api/repos/smithersai/smithers", route => route.fulfill({ json: { default_bookmark: "main" } }))
-  await page.route("**/api/repos/smithersai/smithers/contents/README.md", route => route.fulfill({ json: {
-    content: JSON.stringify({ blocks: [{ type: "text", text: "Repository home" }] }),
-  } }))
   await page.goto("/")
-  await expect(page.locator('.toast-stack .toast[data-toast-status="failed"]')).toContainText("This session will not be saved")
+  await fillComposer(page, `/agent.session.stop ${session} smithersai/smithers`)
+  await page.getByTestId("composer-send").click()
+  await page.keyboard.press("Escape")
+  const failure = page.locator('.toast-stack .toast[data-toast-status="failed"]')
+  await expect(failure).toContainText("Stop a cloud agent session")
+  await expect(failure).not.toContainText("notification-layout-regression")
+  expect(stopRequests).toBe(1)
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
 }
 
@@ -141,7 +135,7 @@ test("the same stack follows any modal, including dialogs opened out of DOM orde
   await page.evaluate(() => document.querySelector<HTMLDialogElement>("#first-modal")!.close())
   await expect(page.locator("#second-modal .toast-stack")).toHaveCount(1)
   expect(await original!.evaluate(node => node === document.querySelector(".toast-stack"))).toBe(true)
-  await stack.getByRole("button", { name: "Dismiss: This session will not be saved", exact: true }).click()
+  await stack.getByRole("button", { name: /^Dismiss: Stop a cloud agent session/ }).click()
   await expect(stack).toHaveCount(0)
   await page.evaluate(() => document.querySelector<HTMLDialogElement>("#second-modal")!.close())
 })

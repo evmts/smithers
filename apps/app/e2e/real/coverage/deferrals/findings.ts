@@ -1,3 +1,4 @@
 export const findings = [
-  "findings.not-useful", "findings.please-fix",
+  "findings.not-useful", // owner: #1874
+  "findings.please-fix", // owner: #1874
 ] as const

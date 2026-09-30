@@ -76,6 +76,24 @@ that declare that host. Run the aggregate gate without `--expected-host` to
 require evidence for every declared host. Both modes keep global action,
 critical-path, and door inventory gaps visible. Evidence for an unknown
 scenario or a host absent from its declaration is rejected.
+
+Each owed action has one literal entry in its family's canonical exported
+array under `coverage/deferrals/`, with its owner on the same line:
+
+```ts
+export const wiki = [
+  "wiki.history", // owner: #2458
+] as const
+```
+
+The gate reads the named exported array only. Every literal needs exactly one
+`// owner: #N` comment; `N` is a positive safe integer without leading zeros.
+Missing, duplicate, conflicting, or misplaced owners fail as
+`unowned-deferral`. Missing or directory source paths cannot own an action.
+This check runs offline and validates ownership syntax; maintainers check the
+issue's actual open state separately. A deferral tracks work still owed and
+never counts as declared or executed coverage.
+
 Both modes fail a built-in action that has no scenario and no entry in
 `deferrals.ts`, the reviewed ledger of unscenarioed actions. The ledger rejects
 an entry for an action that has a scenario or left `FLOW_NAMES`, and any entry

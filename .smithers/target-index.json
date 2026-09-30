@@ -24121,6 +24121,14 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/ui/src/app-operations/index.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/src/app-operations/wiki.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/ui/src/approvals/ApprovalCard.tsx"
       },
       {
