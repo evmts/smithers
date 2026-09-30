@@ -2120,6 +2120,7 @@ export const createAppController = (
     runs.resumeRunFacetRequests()
     runs.resumeRunListRequests()
     runs.resumeRunOpenRequests()
+    queueMicrotask(() => { if (!ctx.disposed) graph.resumeGraphInputs() })
   })
   ctx.onDispose(() => setupIdentitySubscription.unsubscribe())
   const importCloudSubscription = store.collections.cloudSessions.subscribeChanges(() => {
