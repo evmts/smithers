@@ -64,15 +64,31 @@ export default showcase({
       return checkReads === 1 ? route.fulfill({ status: 404, json: { message: "Missing current declaration" } })
         : route.fulfill({ json: { type: "file", encoding: "utf-8", content: "export const check = true" } })
     })
-    await backend.json("/api/workflow/trigger-approval", { status: "ok", approvedAt: "2026-09-26T08:00:00Z", approvedBy: 1 })
-    await backend.json("/api/workflow/trigger-registrations", () => ({ status: "ok", rows: [
-      { registrationId: "reg-nightly", slug: "nightly-review", flowId: FLOW, schedule: "0 3 * * *", enabled: !paused, ...(paused ? {} : { nextFireAt: "2026-09-26T03:00:00Z" }) }
-    ] }))
-    await backend.route(url => url.pathname === "/api/workflow/trigger-pause", async route => {
+    const jobsPath = `/api/repos/${REPO}/repository-jobs`
+    let jobReads = 0
+    let approvalCalls = 0
+    await backend.route(url => url.pathname === `${jobsPath}/flow:review-schedule/approvals`, route => {
+      expect(route.request().method()).toBe("POST")
+      const body = route.request().postDataJSON()
+      expect(body).toEqual({ flow_id: FLOW, plan_id: `${FLOW}-plan`, plan_digest: DIGEST,
+        envelope: { ...ENVELOPE, budget: { tokens: 150000, milliseconds: 1200000 } } })
+      approvalCalls += 1
+      return route.fulfill({ json: { approved_at: "2026-09-26T08:00:00Z", approved_by: 1 } })
+    })
+    await backend.route(url => url.pathname === jobsPath, route => {
+      expect(route.request().method()).toBe("GET")
+      jobReads += 1
+      return route.fulfill({ json: [
+        { id: "reg-nightly", job: "flow:nightly-review", flow_id: FLOW, schedule: "0 3 * * *", enabled: !paused,
+          ...(paused ? {} : { next_fire_at: "2026-09-26T03:00:00Z" }) }
+      ] })
+    })
+    await backend.route(url => url.pathname === `${jobsPath}/flow:nightly-review/pause`, async route => {
+      expect(route.request().method()).toBe("POST")
       pauseCalls += 1
       await pauseReceipt.promise
       paused = true
-      return route.fulfill({ json: { status: "ok", paused: 1 } })
+      return route.fulfill({ json: [{ id: "reg-nightly" }] })
     })
     await backend.route(url => url.pathname === "/api/workflow/rpc", async route => {
       const call = route.request().postDataJSON() as { procedure: string; payload: { idempotencyKey?: string; flowId?: string; input?: { operation?: string }; selector?: { _tag?: string; runId?: string; flowId?: string } } }
@@ -252,13 +268,14 @@ export default showcase({
     await app.slash(`/triggers.list ${REPO}`)
     const dispatcher = page.locator('[data-kind="trigger-list"]').last()
     await expect(dispatcher.getByTestId("trigger-live")).toBeVisible()
+    expect(jobReads).toBeGreaterThan(0)
     await expect(dispatcher).toContainText("runs review-pr")
     await app.closeComposer()
     await app.show(dispatcher)
     await app.beat(500)
     const lookup = Promise.withResolvers<void>()
     let reading = false
-    await page.route("**/api/workflow/trigger-registrations?*", async route => {
+    await page.route(url => url.pathname === jobsPath, async route => {
       reading = true
       await lookup.promise
       await route.fallback()
@@ -372,5 +389,6 @@ export default showcase({
     await expect(registrationToast).toHaveCount(0)
     expect(registrationRuns).toBe(1)
     expect(triggerOperations).toEqual(["fire", "resume", "register"])
+    expect(approvalCalls).toBe(1)
   }
 })
