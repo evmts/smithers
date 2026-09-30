@@ -560,6 +560,7 @@ const InputsPanel = ({ inputs }: { readonly inputs: RunInputs }) => (
       </>
     )}
     {inputs.runsOn === undefined ? null : <p className="flow-graph-inputs-head" data-testid="run-inputs-where">runs on {inputs.runsOn}</p>}
+    {inputs.secretsError === undefined ? null : <p role="alert">{inputs.secretsError}</p>}
     {inputs.secrets.length === 0 ? null : (
       <ul className="flow-graph-inputs-list" aria-label="Secrets">
         {inputs.secrets.map((secret) => (

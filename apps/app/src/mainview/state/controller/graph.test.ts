@@ -11,10 +11,16 @@
  * node id a select names is one a real engine wrote.
  */
 import { describe, expect, test } from "bun:test"
-import { readFileSync } from "node:fs"
+import { readFileSync, mkdtempSync, rmSync } from "node:fs"
+import { Database } from "bun:sqlite"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { openSqliteRowStorage } from "../../chain/SqliteRowStorage"
+import { APP_SCHEMA_VERSION } from "../../chain/SchemaVersion"
 import type { Card } from "@smthrs/rpc/Cards"
 import type { AppServices } from "../AppController"
-import { createAppStore } from "../AppStore"
+import { createAppStore, PERSISTED_COLLECTION_SPECS } from "../AppStore"
+import { runInputsOf } from "../../cards/RunInputs"
 import { scopedControllers } from "../ControllerTestScope"
 import { payloadFor } from "../../flows/SlashPayload"
 import { flowArgs } from "../../flows/FlowArgs"
@@ -24,6 +30,7 @@ import { triggerNodeId } from "../../cards/FlowGraphTriggerNode"
 import { createControllerContext } from "./context"
 import { createFailureController } from "./failures"
 import { createGraphController } from "./graph"
+import { observeBackgroundWork } from "./backgroundWork"
 
 const createAppController = scopedControllers()
 const webStore = () => createAppStore({ kind: "localStorage", storage: memoryStorage() })
@@ -1017,3 +1024,262 @@ for (const kind of ["plan", "run"] as const) {
     } finally { held.release(); held.restore() }
   })
 }
+
+
+// This boundary uses a real loopback HTTP transport; only the remote response
+// timing is controlled. A CI list is deliberately present but is not authority.
+const bindingCard = (): Extract<Card, { kind: "run-trace" }> => ({
+  id: "binding-run", kind: "run-trace", title: "Review", status: "acted", createdAt: 1, ordinal: 1,
+  payload: { repo: REPO, workspaceId: TEST_BOX, runId: RUN, workflow: FLOW, phase: "completed",
+    steps: [], result: null, lastSeq: 0, graph: { node: "gate", tab: "in" },
+    plan: { planId: "plan", digest: "d".repeat(64), nodes: [{ id: "gate", kind: "step", key: "key1_" + "0".repeat(64), dependsOn: [], tier: "sealed", status: "run" }], graph: { edges: [] } } }
+})
+const agentBindingsWire = (name = "AGENT_TOKEN") => ({
+  setup_script: "PRIVATE_SETUP_BYTES", env: [{ name: "PRIVATE_VAR", value: "PRIVATE_ENV_BYTES" }],
+  secrets: [
+    { name, hosts: ["api.agent.test"], match_headers: ["authorization"], value: "PRIVATE_SECRET_BYTES" },
+    { name: "SETUP_ONLY", hosts: [], match_headers: [] },
+    { name: "UNBOUND", hosts: ["api.agent.test"], match_headers: [] },
+    { name: "RECONNECT", hosts: ["api.agent.test"], match_headers: ["authorization"], reconnect_required: true }
+  ]
+})
+const bindingHttp = () => {
+  const replies: Array<ReturnType<typeof Promise.withResolvers<Response>>> = []
+  const requests: Array<{ path: string; method: string }> = []
+  const unexpected: string[] = []
+  const completions: Array<ReturnType<typeof Promise.withResolvers<void>>> = []
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: request => {
+    const path = new URL(request.url).pathname
+    if (path === "/api/user/settings/signup" && request.method === "GET") return Response.json({ profile: null })
+    if (request.method === "GET" && ["/api/user/repos", "/api/user/orgs", "/api/user/workspaces"].includes(path)) return Response.json([])
+    if (request.method === "GET" && path === "/api/billing/balance") return Response.json({ message: "Billing unavailable in this fixture" }, { status: 503 })
+    if (path === `/api/repos/${REPO}/agent-environment` && request.method === "GET") {
+      requests.push({ path, method: request.method })
+      const reply = Promise.withResolvers<Response>(); replies.push(reply); return reply.promise
+    }
+    unexpected.push(`${request.method} ${path}`)
+    return Response.json({ message: "Undeclared fixture route" }, { status: 404 })
+  } })
+  const services: AppServices = { baseUrl: server.url.origin, fetchImpl: async (input, init) => {
+    const path = new URL(String(input), server.url).pathname
+    if (!path.endsWith("/agent-environment")) return fetch(input, init)
+    const completed = Promise.withResolvers<void>(); completions.push(completed)
+    try {
+      const response = await fetch(input, init), readJson = response.json.bind(response)
+      response.json = async () => { try { return await readJson() } finally { completed.resolve() } }
+      return response
+    } catch (error) { completed.resolve(); throw error }
+  }, toastDebounceMs: 300 }
+  const close = async () => {
+    for (const reply of replies) reply.resolve(Response.json({}, { status: 503 }))
+    await server.stop(true)
+    expect(unexpected).toEqual([])
+  }
+  return { services, replies, requests, completions, close }
+}
+const seedBindingStore = async (storage = memoryStorage(), signedIn = true) => {
+  const store = await createAppStore({ kind: "localStorage", storage })
+  if (signedIn) await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "codeplanesmithers", admin: false, scopesPlain: null }).isPersisted.promise
+  if (!store.collections.cards.has("binding-run")) await store.dispatch({ type: "card.upsert", actor: "system", card: bindingCard() }).isPersisted.promise
+  await store.dispatch({ type: "card.upsert", actor: "system", card: {
+    id: "ci-secrets", kind: "secrets", title: "CI", status: "active", createdAt: 1, ordinal: 2,
+    payload: { repo: REPO, scope: "repository", secrets: [{ name: "CI_TOKEN", mainOnly: true, hosts: ["127.0.0.1"], matchHeaders: ["authorization"], updatedAt: null }] }
+  } }).isPersisted.promise
+  return store
+}
+const currentBindings = (store: Awaited<ReturnType<typeof webStore>>) => {
+  const card = store.collections.cards.get("binding-run")
+  return card?.kind === "run-trace" ? card.payload.agentSecretBindings : undefined
+}
+const openBindings = (controller: ReturnType<typeof createAppController>) => controller.commands.run("runs.graph.tab", `sourceCard=binding-run ${RUN} in`)
+
+test("the In drawer returns during real HTTP, joins repeated reads, and persists only usable agent metadata", async () => {
+  const http = bindingHttp(), backing = memoryStorage(), writes: string[] = []
+  const storage = { ...backing, setItem: (key: string, value: string) => { writes.push(value); backing.setItem(key, value) } }
+  const store = await seedBindingStore(storage), controller = createAppController(store, silentAgent, http.services)
+  try {
+    expect((await openBindings(controller)).status).toBe("executed")
+    await waitFor(() => http.replies.length === 1)
+    expect(currentBindings(store)?.state).toBe("pending")
+    const requestId = currentBindings(store)?.id
+    expect((await openBindings(controller)).status).toBe("executed")
+    expect(http.requests).toHaveLength(1)
+    expect(currentBindings(store)?.id).toBe(requestId)
+    await store.dispatch({ type: "composer.changed", actor: "user", draft: "Chat while metadata is read" }).isPersisted.promise
+    await waitFor(() => [...store.collections.toasts.values()].some(toast => toast.status === "running"))
+    expect(currentBindings(store)?.state).toBe("pending")
+    http.replies[0]!.resolve(Response.json(agentBindingsWire()))
+    await waitFor(() => currentBindings(store)?.state === "complete")
+    expect(currentBindings(store)?.secrets).toEqual([{ name: "AGENT_TOKEN", hosts: ["api.agent.test"] }])
+    expect(http.requests).toEqual([{ path: `/api/repos/${REPO}/agent-environment`, method: "GET" }])
+    expect(writes.join("\n")).not.toMatch(/PRIVATE_SETUP_BYTES|PRIVATE_ENV_BYTES|PRIVATE_SECRET_BYTES|SETUP_ONLY|UNBOUND|RECONNECT/)
+    await controller.dispose()
+    const reopened = await createAppStore({ kind: "localStorage", storage })
+    try {
+      expect(currentBindings(reopened)?.state).toBe("complete")
+      const card = reopened.collections.cards.get("binding-run")!
+      if (card.kind !== "run-trace") throw new Error("Missing run")
+      expect(runInputsOf(card, [...reopened.collections.cards.values()]).secrets).toEqual([{ name: "AGENT_TOKEN", hosts: ["api.agent.test"] }])
+      expect(reopened.session().draft).toBe("Chat while metadata is read")
+    } finally { await reopened.dispose?.() }
+  } finally { await controller.dispose(); await http.close() }
+})
+
+for (const failure of ["http", "malformed"] as const) test(`a ${failure} agent read never falls back to CI and a user retry recovers`, async () => {
+  const http = bindingHttp(), store = await seedBindingStore(), controller = createAppController(store, silentAgent, http.services)
+  try {
+    await openBindings(controller); await waitFor(() => http.replies.length === 1)
+    const refused = currentBindings(store)?.id
+    http.replies[0]!.resolve(failure === "http" ? Response.json({ message: "Binding service unavailable" }, { status: 503 }) : Response.json({ setup_script: 7, env: [], secrets: [] }))
+    await waitFor(() => currentBindings(store)?.state === "failed")
+    expect(currentBindings(store)?.secrets).toEqual([])
+    expect(currentBindings(store)?.error).toBeTruthy()
+    const card = store.collections.cards.get("binding-run")!
+    if (card.kind !== "run-trace") throw new Error("Missing run")
+    expect(runInputsOf(card, [...store.collections.cards.values()])).toMatchObject({ secrets: [], secretsError: currentBindings(store)?.error })
+    await openBindings(controller); await waitFor(() => http.replies.length === 2)
+    expect(currentBindings(store)?.id).not.toBe(refused)
+    expect(currentBindings(store)?.state).toBe("pending")
+    http.replies[1]!.resolve(Response.json(agentBindingsWire("RECOVERED_TOKEN")))
+    await waitFor(() => currentBindings(store)?.state === "complete")
+    expect(currentBindings(store)?.secrets.map(secret => secret.name)).toEqual(["RECOVERED_TOKEN"])
+  } finally { await controller.dispose(); await http.close() }
+})
+
+for (const changed of ["account", "repository", "workspace", "request"] as const) test(`a held prior ${changed} read cannot publish into the current drawer`, async () => {
+  const http = bindingHttp(), store = await seedBindingStore(), controller = createAppController(store, silentAgent, http.services)
+  try {
+    await openBindings(controller); await waitFor(() => http.replies.length === 1)
+    const previous = store.collections.cards.get("binding-run")!
+    if (previous.kind !== "run-trace") throw new Error("Missing run")
+    const retainedId = previous.payload.agentSecretBindings!.id
+    if (changed === "account") await controller.adoptSession({ state: "signed-in", login: "another-owner", admin: false })
+    const payload = { ...previous.payload, ...(changed === "repository" ? { repo: "different/repository" } : changed === "workspace" ? { workspaceId: "22222222-2222-2222-2222-222222222222" } : {}),
+      agentSecretBindings: { id: changed === "request" ? "current-read" : retainedId, owner: changed === "account" ? "another-owner" : "codeplanesmithers", repo: changed === "repository" ? "different/repository" : REPO,
+        workspaceId: changed === "workspace" ? "22222222-2222-2222-2222-222222222222" : TEST_BOX, state: "complete" as const, secrets: [{ name: "CURRENT_TOKEN", hosts: ["current.example.test"] }] } }
+    await store.dispatch({ type: "card.upsert", actor: "system", card: { ...previous, payload } }).isPersisted.promise
+    http.replies[0]!.resolve(Response.json(agentBindingsWire("OLD_TOKEN")))
+    // Draining the actual fetch response makes the ordering receipt observable,
+    // not a sleep chosen to let an old answer disappear.
+    await http.completions[0]!.promise
+    await new Promise<void>(resolve => setImmediate(resolve))
+    await store.settled?.()
+    expect(currentBindings(store)?.id).toBe(changed === "request" ? "current-read" : retainedId)
+    expect(currentBindings(store)?.secrets.map(secret => secret.name)).toEqual(["CURRENT_TOKEN"])
+  } finally { await controller.dispose(); await http.close() }
+})
+
+test("a pending agent read reconnects after controller disposal and rejects the old response", async () => {
+  const http = bindingHttp(), storage = memoryStorage(), store = await seedBindingStore(storage)
+  const first = createAppController(store, silentAgent, http.services)
+  let second: ReturnType<typeof createAppController> | undefined
+  try {
+    await openBindings(first); await waitFor(() => http.replies.length === 1)
+    const requestId = currentBindings(store)?.id
+    await first.dispose()
+    const reopened = await createAppStore({ kind: "localStorage", storage })
+    second = createAppController(reopened, silentAgent, http.services)
+    await second.adoptSession({ state: "signed-in", login: "codeplanesmithers", admin: false })
+    await waitFor(() => http.replies.length === 2)
+    expect(currentBindings(reopened)?.id).toBe(requestId)
+    http.replies[1]!.resolve(Response.json(agentBindingsWire("REOPENED_TOKEN")))
+    await waitFor(() => currentBindings(reopened)?.state === "complete")
+    http.replies[0]!.resolve(Response.json(agentBindingsWire("OLD_TOKEN")))
+    await http.completions[0]!.promise
+    await new Promise<void>(resolve => setImmediate(resolve))
+    await reopened.settled?.()
+    expect(currentBindings(reopened)?.secrets.map(secret => secret.name)).toEqual(["REOPENED_TOKEN"])
+  } finally { await second?.dispose(); await first.dispose(); await http.close() }
+})
+
+
+test("an open In drawer waits for identity and starts its first read when the owner restores", async () => {
+  const http = bindingHttp(), store = await seedBindingStore(memoryStorage(), false)
+  const controller = createAppController(store, silentAgent, http.services)
+  try {
+    await openBindings(controller)
+    expect(http.requests).toEqual([])
+    expect(currentBindings(store)).toBeUndefined()
+    await controller.adoptSession({ state: "signed-in", login: "codeplanesmithers", admin: false })
+    await waitFor(() => http.replies.length === 1)
+    http.replies[0]!.resolve(Response.json(agentBindingsWire()))
+    await waitFor(() => currentBindings(store)?.state === "complete")
+    expect(currentBindings(store)?.owner).toBe("codeplanesmithers")
+  } finally { await controller.dispose(); await http.close() }
+})
+
+test("a duplicate resume cannot start agent HTTP before its actual SQLite COMMIT", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "smithers-bindings-receipt-")), http = bindingHttp()
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
+  let hold = false
+  let store: Awaited<ReturnType<typeof webStore>> | undefined
+  const database = new Database(join(directory, "app.sqlite"))
+  const adapter = await openSqliteRowStorage({
+    execute: async <Row,>(sql: string, parameters: ReadonlyArray<unknown> = []) => {
+      if (/^\s*COMMIT\b/i.test(sql) && hold && store && currentBindings(store)?.state === "pending") {
+        hold = false; entered.resolve(); await release.promise
+      }
+      const statement = database.query(sql)
+      if (/^\s*(SELECT|PRAGMA)/i.test(sql)) return statement.all(...parameters as []) as ReadonlyArray<Row>
+      statement.run(...parameters as []); return []
+    }, close: () => database.close()
+  }, { collections: PERSISTED_COLLECTION_SPECS, schemaVersion: APP_SCHEMA_VERSION })
+  store = await createAppStore({ kind: "opfs", ...adapter, storageEventApi: { addEventListener: () => {}, removeEventListener: () => {} } })
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "codeplanesmithers", admin: false, scopesPlain: null }).isPersisted.promise
+  await store.dispatch({ type: "card.upsert", actor: "system", card: bindingCard() }).isPersisted.promise
+  const context = createControllerContext(store, silentAgent, http.services)
+  Object.assign(context, createFailureController(context))
+  const graph = createGraphController(context, async () => undefined)
+  try {
+    hold = true
+    let acknowledged = false
+    const acknowledgment = graph.graphNodeTab(RUN, "in", "binding-run").then(result => { acknowledged = true; return result })
+    await entered.promise
+    expect(currentBindings(store)?.state).toBe("pending")
+    graph.resumeGraphInputs()
+    // Let the resumed public controller's synchronous/microtask work run;
+    // the real COMMIT remains deliberately unresolved.
+    await new Promise<void>(resolve => setImmediate(resolve))
+    expect(acknowledged).toBe(false)
+    expect(http.completions).toHaveLength(0)
+    expect(http.requests).toEqual([])
+    release.resolve()
+    expect(await acknowledgment).toMatchObject({ value: expect.stringContaining("graph-tab") })
+    await waitFor(() => http.replies.length === 1)
+    expect(currentBindings(store)?.state).toBe("pending")
+    http.replies[0]!.resolve(Response.json(agentBindingsWire()))
+    await waitFor(() => currentBindings(store)?.state === "complete")
+    expect(http.requests).toHaveLength(1)
+  } finally {
+    hold = false; release.resolve(); await context.dispose(); await store.dispose?.(); await http.close()
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+
+test("an In read does not claim or settle the run's independently running worker toast", async () => {
+  const http = bindingHttp(), store = await seedBindingStore()
+  const original = bindingCard()
+  await store.dispatch({ type: "card.upsert", actor: "system", card: { ...original, payload: { ...original.payload, phase: "running" } } }).isPersisted.promise
+  const context = createControllerContext(store, silentAgent, http.services)
+  Object.assign(context, createFailureController(context))
+  observeBackgroundWork(context)
+  const graph = createGraphController(context, async () => undefined)
+  const workerId = "toast-worker.binding-run"
+  try {
+    await waitFor(() => store.collections.toasts.get(workerId)?.status === "running")
+    await graph.graphNodeTab(RUN, "in", "binding-run")
+    await waitFor(() => http.replies.length === 1)
+    expect(store.collections.toasts.get(workerId)?.status).toBe("running")
+    http.replies[0]!.resolve(Response.json(agentBindingsWire()))
+    await waitFor(() => currentBindings(store)?.state === "complete")
+    await http.completions[0]!.promise
+    await new Promise<void>(resolve => setImmediate(resolve))
+    await store.settled?.()
+    expect(store.collections.toasts.get(workerId)?.status).toBe("running")
+    const current = store.collections.cards.get("binding-run")!
+    if (current.kind !== "run-trace") throw new Error("Missing run")
+    await store.dispatch({ type: "card.upsert", actor: "system", card: { ...current, payload: { ...current.payload, phase: "completed" } } }).isPersisted.promise
+    await waitFor(() => store.collections.toasts.get(workerId)?.status === "ok")
+  } finally { await context.dispose(); await store.dispose?.(); await http.close() }
+})
