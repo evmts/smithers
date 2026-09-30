@@ -65,10 +65,18 @@ repositories["repo clone"] = async (c, a, o) => {
   const rest = list(a.rest).map(str)
   const directory = str(o.directory) || (rest[0] && !rest[0].startsWith("-") ? rest.shift() : "") || name
   let url = input
+  let env: NodeJS.ProcessEnv = {}
   if (isSlug) {
-    const host = c.session.target().host
-    url = protocol === "https" ? `https://${host}/${slug}.git` : `git@ssh.${host}:${slug}.git`
-    if (await c.session.resolve()) {
+    const target = c.session.target()
+    const cloneOrigin = new URL(target.api_url)
+    cloneOrigin.hostname = target.host
+    url = protocol === "https" ? `${cloneOrigin.origin}/${slug}.git` : `git@ssh.${target.host}:${slug}.git`
+    const auth = await c.session.resolve()
+    if (auth) {
+      if (protocol === "https") {
+        c.protect(auth.token)
+        env = gitAuth(url, auth.token)
+      }
       try {
         await c.request("GET", `/api/repos/${slug}`)
       } catch (error) {
@@ -79,10 +87,10 @@ repositories["repo clone"] = async (c, a, o) => {
   const extra = [...list(o["clone-arg"]).map(str), ...rest]
   let backend = "jj"
   try {
-    await c.exec("jj", ["git", "clone", url, directory, ...extra])
+    await c.exec("jj", ["git", "clone", url, directory, ...extra], env)
   } catch {
     backend = "git"
-    await c.exec("git", ["clone", url, directory, ...extra])
+    await c.exec("git", ["clone", url, directory, ...extra], env)
   }
   return { cloned: isSlug ? slug : directory, directory, protocol, tool: backend }
 }
