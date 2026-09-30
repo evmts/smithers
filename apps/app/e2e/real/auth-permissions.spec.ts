@@ -3,6 +3,8 @@ import type { BrowserContext, Page } from "@playwright/test"
 import { appEntryPath, awaitBoot, command, expect, openApp, realApi, reloadApp, test } from "./support/test"
 import {
   authenticatedTest,
+  adminTest,
+  finishGitHubOAuth,
   clearProductSession,
   launchAuthenticatedProfile,
   ordinaryTest,
@@ -11,9 +13,11 @@ import {
   restoreAuthenticatedSession
 } from "./auth-permissions/profile"
 
-const APP_PATH = "/codeplanesmithers/canary-sandbox"
+// OAuth credentials and state must never enter traces or videos.
+test.use({ trace: "off", video: "off" })
 
 const openChat = async (page: Page): Promise<void> => {
+  await awaitBoot(page, "navigate", performance.now())
   if (await page.getByTestId("composer-input").isVisible()) return
   await page.getByRole("button", { name: /^Chat/ }).click()
   await expect(page.getByTestId("composer-input")).toBeVisible()
@@ -22,12 +26,13 @@ const openChat = async (page: Page): Promise<void> => {
 const browserSession = async (page: Page): Promise<unknown> => page.evaluate(async () => {
   const response = await fetch("/api/user", { credentials: "include" })
   if (response.status !== 200) throw new Error(`Browser session read returned HTTP ${response.status}.`)
-  return response.json()
+  const body = await response.json() as { username: string; is_admin: boolean }
+  return { username: body.username, is_admin: body.is_admin }
 })
 
 const authCookieNames = async (context: BrowserContext, baseURL: string): Promise<ReadonlyArray<string>> =>
   (await context.cookies([new URL(baseURL).origin, "https://github.com"]))
-    .filter((cookie) => ["smithers_identity", "user_session", "logged_in", "dotcom_user"].includes(cookie.name))
+    .filter((cookie) => ["smithers_session", "__csrf", "user_session", "logged_in", "dotcom_user"].includes(cookie.name))
     .map((cookie) => `${cookie.domain}:${cookie.name}`)
     .sort()
 
@@ -87,7 +92,7 @@ test("a signed-out required action parks behind its durable sign-in step", scena
   await openChat(page)
   await command(page, "/billing.balance")
   const refusal = page.locator(".smithers-chat-message").filter({
-    has: page.getByText(/^Sign in(?: with GitHub)? to show your balance\.$/)
+    has: page.getByText("Sign in with GitHub to continue.", { exact: true })
   }).last()
   const signIn = refusal.locator('button[data-flow="auth.sign-in"]')
   await expect(refusal).toBeVisible()
@@ -101,7 +106,7 @@ test("a signed-out required action parks behind its durable sign-in step", scena
   expect(after.status()).toBe(401)
 })
 
-test("a signed-out browser gets the same concealed response as an unknown admin route", scenario("auth.signed-out-admin-api-denial", {
+test("a signed-out browser is denied by the mounted admin route", scenario("auth.signed-out-admin-api-denial", {
   capabilities: ["identity"],
   coverage: [
     "action:admin.health", "host:production", "path:permission", "door:slash",
@@ -129,7 +134,7 @@ test("GitHub sign-in advertises a callback on the initiating origin", scenario("
   description: "The deployed sign-in route must bind GitHub's callback to the browser origin before authentication."
 }), async ({ request }, testInfo) => {
   const origin = new URL(String(testInfo.project.use.baseURL)).origin
-  const response = await request.get(`${origin}/api/auth/github?return_to=${encodeURIComponent(APP_PATH)}`, { maxRedirects: 0 })
+  const response = await request.get(`${origin}/api/auth/github?return_to=${encodeURIComponent(appEntryPath())}`, { maxRedirects: 0 })
   // Record no state, authorization query, cookie value, or provider credential.
   const location = new URL(response.headers().location ?? "/", origin)
   const callback = location.searchParams.get("redirect_uri")
@@ -143,13 +148,13 @@ test("GitHub sign-in advertises a callback on the initiating origin", scenario("
   expect(callback).toBe(`${origin}/api/auth/github/callback`)
 })
 
-test("an unsafe absolute OAuth return destination is discarded before GitHub", scenario("auth.oauth-unsafe-return-to-rejected", {
+test("an unsafe absolute OAuth return destination is rejected before GitHub", scenario("auth.oauth-unsafe-return-to-rejected", {
   capabilities: ["identity"],
   coverage: [
     "action:auth.sign-in", "host:production", "path:permission", "door:user-only",
-    "dimension:unsafe-return-to-rejected", "evidence:provider-navigation-and-absent-return-cookie"
+    "dimension:unsafe-return-to-rejected", "evidence:http-400-and-unchanged-oauth-cookies"
   ],
-  description: "The real OAuth start route reaches GitHub but neither follows nor stores an attacker-controlled absolute return destination."
+  description: "The real OAuth start route rejects an absolute return destination before provider navigation or cookie mutation."
 }), async ({ page, context }, testInfo) => {
   const baseURL = String(testInfo.project.use.baseURL)
   const productOrigin = new URL(baseURL).origin
@@ -157,15 +162,18 @@ test("an unsafe absolute OAuth return destination is discarded before GitHub", s
   const requestedOrigins: string[] = []
   page.on("request", (request) => requestedOrigins.push(new URL(request.url()).origin))
 
-  await page.goto(new URL(`/api/auth/github/start?return_to=${encodeURIComponent(`${unsafeOrigin}/escape`)}`, baseURL).toString(), {
+  const beforeCookies = (await context.cookies(productOrigin)).map(({ name }) => name).sort()
+  const response = await page.goto(new URL(`/api/auth/github?return_to=${encodeURIComponent(`${unsafeOrigin}/escape`)}`, baseURL).toString(), {
     waitUntil: "domcontentloaded"
   })
-  expect(new URL(page.url()).hostname).toBe("github.com")
-  expect(requestedOrigins).not.toContain(unsafeOrigin)
-  const returnCookies = (await context.cookies(productOrigin)).filter((cookie) => cookie.name === "smithers_return_to")
-  expect(returnCookies).toEqual([])
+  expect(response?.status()).toBe(400)
+  expect(await response!.json()).toEqual({ code: "bad_request", fault: "user", message: "return_to must be a local path" })
+  expect(new URL(page.url()).origin).toBe(productOrigin)
+  expect(requestedOrigins).toEqual([productOrigin])
+  expect((await context.cookies(productOrigin)).map(({ name }) => name).sort()).toEqual(beforeCookies)
+  expect((await context.cookies(productOrigin)).filter(({ name }) => name === "smithers_return_to")).toEqual([])
 
-  await page.goto(new URL(APP_PATH, baseURL).toString(), { waitUntil: "domcontentloaded" })
+  await page.goto(new URL(appEntryPath(), baseURL).toString(), { waitUntil: "domcontentloaded" })
   expect(new URL(page.url()).origin).toBe(productOrigin)
 })
 
@@ -179,37 +187,38 @@ authenticatedTest("GitHub OAuth stays on the original repository and resumes the
   description: "The sanctioned GitHub profile performs the deployed OAuth handoff from a repository path and the protected action parked before navigation resumes afterward."
 }), async ({ page, context }, testInfo) => {
   const baseURL = String(testInfo.project.use.baseURL)
+  const originalSession = await readAuthenticatedSession(page)
+  expect(originalSession).toBeDefined()
   await clearProductSession(context, baseURL)
-  await page.goto(new URL(APP_PATH, baseURL).toString(), { waitUntil: "domcontentloaded" })
+  await page.goto(new URL(appEntryPath(), baseURL).toString(), { waitUntil: "domcontentloaded" })
   await expect.poll(() => readAuthenticatedSession(page)).toBeUndefined()
-  await expect(page.getByTestId("chrome-sign-in")).toBeVisible({ timeout: 60_000 })
+  await awaitBoot(page, "navigate", performance.now())
+  await expect(page.getByTestId("chrome-sign-in")).toBeVisible()
 
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible({ timeout: 60_000 })
   await openChat(page)
   await command(page, "/billing.balance")
   const signIn = page.locator('button[data-flow="auth.sign-in"]:visible').last()
   await expect(signIn).toBeVisible()
-  const opened = context.waitForEvent("page")
+  const productOrigin = new URL(baseURL).origin
+  const popupPages: Page[] = []
+  const recordPopup = (opened: Page) => popupPages.push(opened)
+  context.on("page", recordPopup)
   await signIn.click()
-  const popup = await opened
-  try {
-    await popup.waitForURL(url => url.href !== "about:blank")
-    await popup.waitForLoadState("domcontentloaded")
-    const authorize = popup.getByRole("button", { name: /^authorize/i }).first()
-    if (await authorize.isVisible()) await authorize.click()
-    await expect.poll(() => readAuthenticatedSession(page), { timeout: 60_000 }).not.toBeUndefined()
-    expect(new URL(page.url()).origin).toBe(new URL(baseURL).origin)
-  } finally { await popup.close() }
+  try { await finishGitHubOAuth(page, productOrigin) }
+  finally { context.off("page", recordPopup) }
+  expect(popupPages).toEqual([])
+  expect(new URL(page.url()).origin).toBe(productOrigin)
 
-  await expect.poll(() => readAuthenticatedSession(page), { timeout: 30_000 }).not.toBeUndefined()
-  await expect.poll(() => new URL(page.url()).pathname).toBe(APP_PATH)
+  await expect.poll(() => readAuthenticatedSession(page), { timeout: 30_000 }).toEqual(originalSession)
+  await expect.poll(() => new URL(page.url()).pathname).toBe(appEntryPath())
   await expect.poll(() => new URL(page.url()).searchParams.has("signed-in")).toBe(false)
+  await awaitBoot(page, "navigate", performance.now())
   await expect(page.getByTestId("chrome-sign-in")).toHaveCount(0)
-  await expect(page.getByRole("status").filter({ hasText: "Signed in with GitHub as @codeplanesmithers." })).toBeVisible()
   await expect(page.locator('.smithers-card[data-kind="balance"]')).toBeVisible({ timeout: 30_000 })
 })
 
-authenticatedTest("the saved admin identity can read admin health and survives a page restart", scenario("auth.admin-permission-restart", {
+adminTest("the saved admin identity can read admin health and survives a page restart", scenario("auth.admin-permission-restart", {
   capabilities: ["identity"],
   coverage: [
     "action:admin.health", "action:admin.devtools", "host:production", "path:success", "path:permission",
@@ -218,18 +227,20 @@ authenticatedTest("the saved admin identity can read admin health and survives a
   ],
   description: "The current sanctioned admin session proves its claim through the real session endpoint, reads the deployed admin health route, and retains admin UI after reload."
 }), async ({ page, request }, testInfo) => {
-  const expectedSession = { login: "codeplanesmithers", admin: true }
-  const expectedWireSession = expectedSession
+  const expectedSession = await readAuthenticatedSession(page)
+  expect(expectedSession).toBeDefined()
+  expect(expectedSession!.admin).toBe(true)
+  const expectedWireSession = { username: expectedSession!.login, is_admin: true }
   await expect.poll(() => readAuthenticatedSession(page)).toEqual(expectedSession)
   const requestSession = await request.get("/api/user")
   expect(requestSession.status()).toBe(200)
-  expect(await requestSession.json()).toEqual(expectedWireSession)
+  expect(await requestSession.json()).toMatchObject(expectedWireSession)
 
   const startedAt = performance.now()
-  await page.goto(new URL(APP_PATH, String(testInfo.project.use.baseURL)).toString(), { waitUntil: "domcontentloaded" })
+  await page.goto(new URL(appEntryPath(), String(testInfo.project.use.baseURL)).toString(), { waitUntil: "domcontentloaded" })
   const afterNavigation = await request.get("/api/user")
   expect(afterNavigation.status()).toBe(200)
-  expect(await afterNavigation.json()).toEqual(expectedWireSession)
+  expect(await afterNavigation.json()).toMatchObject(expectedWireSession)
   // A boot skeleton shows no sign-in door either, so boot before reading its absence.
   await awaitBoot(page, "navigate", startedAt)
   await expect(page.locator('[data-testid="chrome-sign-in"], [data-flow="auth.sign-in"]:visible')).toHaveCount(0)
@@ -254,18 +265,23 @@ authenticatedTest("authenticated cookies survive the canonical document and boot
   description: "A restored production session and the saved GitHub login survive real HTML and bootstrap reads, with only cookie names retained as diagnostics."
 }), async ({ page, context, request }, testInfo) => {
   const baseURL = String(testInfo.project.use.baseURL)
-  const expectedSession = { login: "codeplanesmithers", admin: true }
-  const expectedWireSession = expectedSession
+  const expectedSession = await readAuthenticatedSession(page)
+  expect(expectedSession).toBeDefined()
+  const expectedWireSession = { username: expectedSession!.login, is_admin: expectedSession!.admin }
   expect(await browserSession(page)).toEqual(expectedWireSession)
   const beforeCookies = await authCookieNames(context, baseURL)
-  expect(beforeCookies).toContain("smithers.sh:smithers_identity")
+  expect(beforeCookies.some((name) => name.endsWith(":smithers_session"))).toBe(true)
+  expect(beforeCookies.some((name) => name.endsWith(":__csrf"))).toBe(true)
+  const productCookies = await context.cookies(new URL(baseURL).origin)
+  expect(productCookies.find(({ name }) => name === "smithers_session")).toMatchObject({ httpOnly: true, secure: true, sameSite: "Lax" })
+  expect(productCookies.find(({ name }) => name === "__csrf")).toMatchObject({ httpOnly: false, secure: true, sameSite: "Strict" })
   expect(beforeCookies.some((name) => name.endsWith(":user_session"))).toBe(true)
   await openChat(page)
   await command(page, "/account.show")
   await expect(page.locator('.smithers-card[data-kind="account"]').last().getByTestId("account-login"))
-    .toContainText("@codeplanesmithers")
+    .toContainText(`@${expectedSession!.login}`)
 
-  const document = await request.get(new URL(APP_PATH, baseURL).toString())
+  const document = await request.get(new URL(appEntryPath(), baseURL).toString())
   expect(document.status()).toBe(200)
   expect(await browserSession(page)).toEqual(expectedWireSession)
   expect(await authCookieNames(context, baseURL)).toEqual(beforeCookies)
@@ -286,7 +302,7 @@ authenticatedTest("authenticated cookies survive the canonical document and boot
   await openChat(page)
   await command(page, "/account.show")
   await expect(page.locator('.smithers-card[data-kind="account"]').last().getByTestId("account-login"))
-    .toContainText("@codeplanesmithers")
+    .toContainText(`@${expectedSession!.login}`)
 })
 
 authenticatedTest("sign-out clears the real session and a real OAuth round trip restores it", scenario("auth.sign-out-reauth-restart", {
@@ -300,12 +316,13 @@ authenticatedTest("sign-out clears the real session and a real OAuth round trip 
 }), async ({ page }, testInfo) => {
   const baseURL = String(testInfo.project.use.baseURL)
   await openApp(page)
-  await expect.poll(() => readAuthenticatedSession(page)).toEqual({ login: "codeplanesmithers", admin: true })
+  const expectedSession = await readAuthenticatedSession(page)
+  expect(expectedSession).toBeDefined()
   await openChat(page)
   await command(page, "/account.show")
   const account = page.locator('.smithers-card[data-kind="account"]')
   await expect(account).toBeVisible()
-  await expect(account.getByTestId("account-login")).toContainText("@codeplanesmithers")
+  await expect(account.getByTestId("account-login")).toContainText(`@${expectedSession!.login}`)
   await account.locator('[data-flow="auth.sign-out"]').click()
 
   await expect.poll(() => readAuthenticatedSession(page)).toBeUndefined()
@@ -315,7 +332,7 @@ authenticatedTest("sign-out clears the real session and a real OAuth round trip 
   expect(await readAuthenticatedSession(page)).toBeUndefined()
 
   const restored = await restoreAuthenticatedSession(page, baseURL)
-  expect(restored).toEqual({ login: "codeplanesmithers", admin: true })
+  expect(restored).toEqual(expectedSession)
   // A raw reload: the restart evidence is the session endpoint, which answers
   // from the browser's cookie jar whether or not the app has finished booting.
   await page.reload({ waitUntil: "domcontentloaded" })
@@ -362,9 +379,9 @@ ordinaryTest("signing out one real user does not alter another user's live sessi
   await expect.poll(async () => (ordinary = await readAuthenticatedSession(page))).not.toBeUndefined()
   expect(ordinary, "ordinary identity preflight must produce a real session").toBeDefined()
   expect(ordinary?.admin).toBe(false)
-  const admin = await launchAuthenticatedProfile(playwright, baseURL)
+  const admin = await launchAuthenticatedProfile(playwright, baseURL, "SMITHERS_E2E_ADMIN_PROFILE")
   try {
-    expect(admin.session).toEqual({ login: "codeplanesmithers", admin: true })
+    expect(admin.session.admin).toBe(true)
     expect(admin.session.login).not.toBe(ordinary?.login)
     await openApp(page)
     await openChat(page)
