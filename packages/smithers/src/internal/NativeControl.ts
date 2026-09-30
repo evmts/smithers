@@ -65,6 +65,7 @@ import * as Discovery from "@smthrs/registry/Discovery"
 import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
 import { type AttemptStore, Ownership, RunStore } from "@smthrs/run-store"
+import { Sandbox as Machine } from "@smthrs/sandbox"
 import * as Checkpoints from "@smthrs/std/Checkpoints"
 import * as Container from "@smthrs/std/Container"
 import * as NativeSearch from "@smthrs/std/NativeSearch"
@@ -88,7 +89,7 @@ import {
 import type { Crypto, Path } from "effect"
 import * as Deferred from "effect/Deferred"
 import { SqlClient } from "effect/unstable/sql/SqlClient"
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
 import { homedir, hostname } from "node:os"
 import { dirname, join, resolve } from "node:path"
@@ -116,6 +117,7 @@ import {
   layerSeatCatalog,
   layerSeatEvaluator,
   layerSeatResolver,
+  sandboxProvidersFrom,
   sealedContainer,
   testFlows,
   testRunner,
@@ -285,6 +287,8 @@ export interface ExecutorOptions {
   readonly executionRoot?: string | undefined
   /** Where `engine.db` lives, when that is not the project root. */
   readonly stateRoot?: string | undefined
+  /** The database files, when they are not under `stateRoot`; see `Application.Config.databases`. */
+  readonly databases?: Application.Databases | undefined
   /** Replays recorded steps and executes none; see `Application.Config.replayOnly`. */
   readonly replayOnly?: Layer.Layer<ReplayOnly.ReplayOnly> | undefined
   /**
@@ -309,6 +313,8 @@ export interface ExecutorOptions {
    * what turning it on means.
    */
   readonly rebuildAuthoredFlows?: boolean | undefined
+  /** The machines a flow's `sandbox:` may select; see `Application.Config.sandboxProviders`. */
+  readonly sandboxProviders?: Application.SandboxProviders | undefined
 }
 
 /** Existing service implementations selected by the executable boundary.
@@ -752,6 +758,9 @@ export const make = (
     // that has since built its catalog offers the hook, and one that never
     // builds a catalog keeps planning exactly as it did, with no nodes.
     const executable = host.catalog?.executables.find((entry) => entry.descriptor.name === descriptor.name)
+    // A module whose delegate this host never registered is driven by the host
+    // program that registers it: it plans with no nodes and is accepted pending,
+    // where every other refusal (an unreadable body) is refused before admission.
     const refusal = host.catalog?.refused.find((entry) => entry.flow === descriptor.name)
     const refusedMessage = (refusal?.cause instanceof PlatformError.PlatformError
       ? refusal.cause.reason.description ?? refusal.message
@@ -781,7 +790,7 @@ export const make = (
           })
       }),
       ...(executable === undefined
-        ? descriptor.body._tag === "Module" && host.catalog !== undefined
+        ? descriptor.body._tag === "Module" && host.catalog !== undefined && refusal?.code !== "missing_delegate"
           ? {
             plan: () =>
               Effect.fail(
@@ -827,12 +836,15 @@ export const make = (
   const engineDurable = (
     root: string,
     registry?: Layer.Layer<Registry.Registry> | undefined,
-    authority: Pick<Application.Config, "approvalAuthority" | "principal" | "credential" | "stateRoot"> = {}
+    authority: Pick<
+      Application.Config,
+      "approvalAuthority" | "principal" | "credential" | "stateRoot" | "databases"
+    > = {}
   ): EngineDurable => {
     // `root` names the project; `stateRoot` names where its databases live. A
     // host served over a live working copy separates the two so the control
     // plane's own writes are not edits to the code a run is reading.
-    const file = databasePath(authority.stateRoot ?? root)
+    const file = authority.databases?.control ?? databasePath(authority.stateRoot ?? root)
     const host = emptyHost()
     const authorization = {
       principal: authority.principal,
@@ -1046,7 +1058,8 @@ export const make = (
       mcpServers = [],
       modules: suppliedModules,
       quotaPolicy = QuotaPolicy.layerDefault(),
-      requestExecutor = native.requestExecutor
+      requestExecutor = native.requestExecutor,
+      sandboxProviders = sandboxProvidersFrom(environment)
     } = options
     // Observing commands keep discovery metadata-only. A run-capable local
     // host registers file modules after its engine and agent services exist.
@@ -1056,6 +1069,7 @@ export const make = (
     // Same separation `engineDurable` makes for `control.db`: `engine.db` and
     // its WAL follow the state root, never the served checkout.
     const stateRoot = resolve(options.stateRoot ?? root)
+    const engineFile = options.databases?.engine ?? executionDatabasePath(stateRoot)
     // Every capability this executor equips a run with belongs to the checkout
     // the run executes in, which is the fork's worktree once history resumed one
     // and the project root otherwise. `root` still names the project: its
@@ -1443,7 +1457,42 @@ export const make = (
           // with it. The catalog keeps the refusal, so `ls` still names it.
           ...(catalogRefresh === undefined ? {} : { onSourceApplied: AuthoredRebuild.rebuild(catalogRefresh) })
         })
+        // A sandboxed run's tools act on its machine and nowhere else: no host
+        // search, language server, workspace memory source, test runner or MCP
+        // server, each of which reaches this host. Memory and the judge are the
+        // operator's stores, not the workspace.
+        // Run ids restart at `run-1` in every project, and one container
+        // engine serves them all: a machine's key is the run's within this
+        // project's state, which is stable across parks and restarts.
+        const sandboxNamespace = createHash("sha256").update(stateRoot).digest("hex").slice(0, 16)
+        const sandbox = (selection: Descriptor.SandboxSelection) => {
+          const make = sandboxProviders[selection.provider]
+          if (make === undefined) return undefined
+          return Effect.try({
+            try: () => make(selection, { spawner: toolSpawner! }),
+            catch: (cause) =>
+              new AgentSession.SandboxRefused({
+                provider: selection.provider,
+                reason: "options",
+                message: cause instanceof Error ? cause.message : String(cause)
+              })
+          }).pipe(
+            Effect.map((provider): AgentSession.SandboxOpener => (session) =>
+              Effect.map(Layer.build(Machine.layerHost(provider, { session: `${sandboxNamespace}:${session}` })), (machine) => ({
+                flows: [
+                  StandardFlows.filesystem(Context.pick(FileSystem.FileSystem, KernelPath.Path)(machine)),
+                  StandardFlows.shell(
+                    Context.pick(KernelChildProcessSpawner.ChildProcessSpawner, KernelPath.Path)(machine)
+                  ),
+                  StandardFlows.memory(memoryServices, judge, StandardFlows.hostWide),
+                  StandardFlows.jev(judge)
+                ]
+              }))
+            )
+          )
+        }
         const session = AgentSession.make({
+          sandbox,
           requestNativeCancel,
           canExecute,
           authorizeReleasedChildren: releasedChildResume.authorize,
@@ -1503,7 +1552,7 @@ export const make = (
     )
     const nativeRuntime = native.runtime(
       {
-        filename: executionDatabasePath(stateRoot),
+        filename: engineFile,
         workspaceRoot,
         // The machine's own name, for the same reason `engineDurable` stamps
         // it: `sameHostPidProbe` compares `hostId` before it trusts a pid, and
@@ -1538,7 +1587,7 @@ export const make = (
       Layer.provide([platform, native.crypto, engineJj]),
       // Resolved by the engine at composition, like its sandboxes.
       (runtime) => options.replayOnly === undefined ? runtime : Layer.provide(runtime, options.replayOnly),
-      Layer.tap(() => secureSqliteFiles(executionDatabasePath(stateRoot)).pipe(Effect.provide(native.host))),
+      Layer.tap(() => secureSqliteFiles(engineFile).pipe(Effect.provide(native.host))),
       // Failure to open or migrate the local execution engine is a startup
       // defect, just like the control database above: no command can execute
       // honestly without this composition.
@@ -1602,8 +1651,10 @@ export const make = (
         mcpServers: config.mcpServers ?? [],
         executionRoot: config.executionRoot ?? root,
         ...(config.stateRoot === undefined ? {} : { stateRoot: config.stateRoot }),
+        ...(config.databases === undefined ? {} : { databases: config.databases }),
         ...(config.replayOnly === undefined ? {} : { replayOnly: config.replayOnly }),
         ...(config.rebuildAuthoredFlows === undefined ? {} : { rebuildAuthoredFlows: config.rebuildAuthoredFlows }),
+        ...(config.sandboxProviders === undefined ? {} : { sandboxProviders: config.sandboxProviders }),
         modules
       }),
       decorateNotifications,
@@ -1715,13 +1766,13 @@ export const make = (
   const layerObserve = (config: Application.Config, registry: Layer.Layer<Registry.Registry>) => {
     const stateRoot = config.stateRoot ?? config.root ?? process.cwd()
     const stores = Layer.mergeAll(SqlJournal.layer({ capacity: 1024, overflow: "reject" }), Layer.fresh(RunStore.layer))
-      .pipe(Layer.provideMerge(native.observe(databasePath(stateRoot))), Layer.orDie)
+      .pipe(Layer.provideMerge(native.observe(config.databases?.control ?? databasePath(stateRoot))), Layer.orDie)
     const runtime = SqlControlRuntime.layer({
       approvalAuthority: config.approvalAuthority ?? ApprovalAuthority.local,
       principal: config.principal,
       engineVersion: packageVersion
     }).pipe(Layer.provide([stores, native.crypto]), Layer.orDie)
-    const engineFile = executionDatabasePath(stateRoot)
+    const engineFile = config.databases?.engine ?? executionDatabasePath(stateRoot)
     const executor = Layer.effect(ControlExecutor.ControlExecutor)(Effect.gen(function*() {
       const engine = DatabaseLocation.exists(engineFile)
         ? yield* Layer.build(
