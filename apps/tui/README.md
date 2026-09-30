@@ -317,8 +317,8 @@ where a worker settled. `/filter` shows or hides each kind of row;
 `/grep <text>` keeps rows containing the text and `/grep` alone clears it. Chat receives every unsettled worker and the newest
 five settled answers (1,500 characters each) as context, and remains usable
 while workers run. Progress uses the shared toast stack,
-with a 300 ms delay and real completion/failure as its end. A `tree:<rootId>`
-tab appears when a worker gains children; its rows update from tab state.
+with a 300 ms delay and real completion/failure as its end. Ctrl+S shows
+every worker's tree.
 
 Each worker's tab, and its row in the list beside the chat at 100 columns or
 wider, shows the status glyph subagent cards share (`@smthrs/rpc/SubagentCard`):
