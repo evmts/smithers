@@ -1,3 +1,4 @@
+import { emptySignupProfileRead } from "./TestFixtures"
 import { afterEach, describe, expect, test } from "bun:test"
 import { inspect } from "node:util"
 import { createAppStore as openAppStore } from "./AppStore"
@@ -37,7 +38,9 @@ const createAppStore: typeof openAppStore = async (...args) => {
 const createAppController: typeof openAppController = (store, agent, services) => {
   return openAppController(store, agent, {
     ...services,
-    fetchImpl: services?.fetchImpl ?? (async input => {
+    fetchImpl: services?.fetchImpl ?? (async (input, init) => {
+      const profile = emptySignupProfileRead(input, init)
+      if (profile) return profile
       unexpectedRequests.push(String(input))
       throw new Error("Unexpected diagnostic fixture request")
     })
@@ -134,7 +137,9 @@ describe("app diagnostics without a repository", () => {
   test("reads network and application failures without exposing request data or successful tool content", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const controller = createAppController(store, silentAgent, {
-      fetchImpl: async input => {
+      fetchImpl: async (input, init) => {
+        const profile = emptySignupProfileRead(input, init)
+        if (profile) return profile
         if (String(input).includes("offline")) throw new Error("offline")
         return new Response("private response body", { status: String(input).includes("healthy") ? 200 : 503 })
       }
@@ -161,7 +166,9 @@ describe("app diagnostics without a repository", () => {
     const entered = Promise.withResolvers<void>()
     releaseRequests.push(() => late.resolve(new Response("", { status: 500 })))
     const controller = createAppController(store, silentAgent, {
-      fetchImpl: async input => {
+      fetchImpl: async (input, init) => {
+        const profile = emptySignupProfileRead(input, init)
+        if (profile) return profile
         if (!String(input).includes("late")) return new Response("", { status: 500 })
         entered.resolve()
         return late.promise

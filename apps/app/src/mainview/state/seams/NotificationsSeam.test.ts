@@ -1,3 +1,4 @@
+import { emptySignupProfileRead } from "../TestFixtures"
 import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 
@@ -48,6 +49,8 @@ const backend = (
   recorded: RecordedRequest[] = []
 ): AppServices => ({
   fetchImpl: async (input, init) => {
+    const profile = emptySignupProfileRead(input, init)
+    if (profile) return profile
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
     const absolute = new URL(url, "https://app.test")
     const path = absolute.pathname + absolute.search

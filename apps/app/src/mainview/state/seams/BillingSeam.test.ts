@@ -1,3 +1,4 @@
+import { emptySignupProfileRead } from "../TestFixtures"
 import { Window } from "happy-dom"
 import type { StorageApi } from "@tanstack/db"
 import { afterEach, describe, expect, test } from "bun:test"
@@ -141,6 +142,8 @@ const billingBackend = (
   calls: BillingCall[] = []
 ): AppServices => ({
   fetchImpl: async (input, init) => {
+    const profile = emptySignupProfileRead(input, init)
+    if (profile) return profile
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
     const route = url === "/api/billing/checkout" ? routes["/api/billing/checkout"] : url === "/api/billing/portal" ? routes["/api/billing/portal"] : undefined
     if (route === undefined || (init?.method ?? "GET") !== "POST") {
