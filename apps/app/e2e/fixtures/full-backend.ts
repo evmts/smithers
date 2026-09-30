@@ -39,15 +39,24 @@ export async function startFullBackend() {
   }
   let child: ReturnType<typeof Bun.spawn> | undefined
   const stop = async () => {
-    if (child && child.exitCode === null) {
-      child.kill("SIGTERM")
-      await Promise.race([
-        child.exited,
-        Bun.sleep(15000).then(() => {
-          if (child?.exitCode === null) child.kill("SIGKILL")
-        })
-      ])
-      await child.exited
+    const owned = child
+    if (owned && owned.exitCode === null) {
+      owned.kill("SIGTERM")
+      let timer: ReturnType<typeof setTimeout> | undefined
+      try {
+        await Promise.race([
+          owned.exited,
+          new Promise<void>((resolveStop) => {
+            timer = setTimeout(() => {
+              if (owned.exitCode === null) owned.kill("SIGKILL")
+              resolveStop()
+            }, 15000)
+          })
+        ])
+      } finally {
+        if (timer !== undefined) clearTimeout(timer)
+      }
+      await owned.exited
     }
     await rm(root, { recursive: true, force: true })
   }
