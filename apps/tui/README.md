@@ -412,8 +412,8 @@ metadata:
 ```
 
 Where `metadata` must map strings to strings (`SKILL.md`), `tui` may be the
-same mapping as a JSON string. Any change under `flows/` re-lists the registry
-within 300 ms and replaces every repository contribution at once.
+same mapping as a JSON string. Changes reported under `flows/` re-list the registry
+after a 300 ms debounce and replace every repository contribution at once.
 
 Built-in keys always win. A contributed key that collides with one, or with a
 key another owner holds, is refused: a cell gets the one-line reason, and a
@@ -456,8 +456,11 @@ flow's steps (each action or flow call it made, from the engine's
 `node-scheduled` and `node-settled` records) with their results, then the
 result; Summary's `g` draws them as the run's children.
 
-Listing reads `flows/` without importing anything and refreshes within 300 ms
-of any change there. After first draw, projects with `flows/` warm the host
+Listing reads `flows/` without importing anything, reconciles once filesystem
+watch setup finishes, and refreshes after a 300 ms debounce of reported changes.
+One polling watcher checks filesystem metadata every 100 ms, follows supported
+symlinks, and retains parent subscriptions while a linked target is missing.
+After first draw, projects with `flows/` warm the host
 in the background, importing modules and opening `<cwd>/.flows` (the store
 `smthrs runs` reads). A module flow added after that lists as
 `Restart to load`, and `/flow` on it says `Restart to load <name>.`; an edited
