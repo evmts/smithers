@@ -1,10 +1,11 @@
+import type { FetchLike } from "@smthrs/rpc/NativeAgent"
 import { expect, test } from "bun:test"
 import ready from "../../cards/fixtures/register-repository-ready.json"
 import review from "../../cards/fixtures/register-repository-review.json"
 import { createAppStore, type AppStore } from "../AppStore"
 import type { Card } from "../AppState"
 import { createActorBindings } from "../ActorBindings"
-import { memoryStorage, settle, unavailableAgent, waitFor } from "../TestFixtures"
+import { loadBox, memoryStorage, settle, unavailableAgent, waitFor } from "../TestFixtures"
 import { createControllerContext } from "./context"
 import { createFailureController } from "./failures"
 import { createRegistrationController, registrationId } from "./registration"
@@ -15,7 +16,7 @@ const fixture = async (options: {
   wrapStore?: (store: AppStore) => AppStore
   importRepository?: (repo: string) => Promise<unknown>
   startRegistration?: (cloudRepo: string, link: string, box: string | null) => Promise<{ value: string } | string>
-  fetchImpl?: (url: string, init?: RequestInit) => Promise<Response>
+  fetchImpl?: FetchLike
 } = {}) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "owner", provider: "github", admin: false, scopesPlain: null }).isPersisted.promise
@@ -25,7 +26,7 @@ const fixture = async (options: {
   const launches: Array<{ cloudRepo: string; link: string; box?: string | null }> = []
   /** The launch never answers unless a test settles it. */
   const pending = Promise.withResolvers<{ value: string } | string>()
-  const importCard = (repo: string, phase: Phase, error?: string, workspaceId?: string) =>
+  const importCard = (repo: string, phase: Phase, error?: string, workspaceId?: string | null) =>
     store.dispatch({ type: "card.upsert", actor: "system", card: {
       id: `repo-import-${repo}`, kind: "repo-import", title: `Import · ${repo}`, status: "active", createdAt: Date.now(), ordinal: store.nextOrdinal(),
       payload: { repo, jobId: "job-1", phase, detail: null, error: error ?? null, repository: { owner: repo.split("/")[0]!, name: repo.split("/")[1]! },
@@ -398,7 +399,7 @@ const BOX = "0b6f3c1e-5d2a-4f8e-9c47-2a1d6e8b3f90"
 /** A relay answering Registration.Report with `answer`; `gate` holds the answer until released. */
 const reportRelay = (answer: () => unknown, gate?: Promise<void>) => {
   const asked: Array<{ procedure: string; repo: string; workspaceId: string; payload: unknown }> = []
-  const fetchImpl = async (_url: string, init?: RequestInit) => {
+  const fetchImpl: FetchLike = async (_url, init) => {
     const body = JSON.parse(String(init?.body)) as { procedure: string; repo: string; workspaceId: string; payload: unknown }
     asked.push(body)
     await gate
@@ -471,6 +472,49 @@ test("a report that arrives after the registration was restarted is ignored", as
     await waitFor(() => t.card("acme/widgets")?.payload.phase === "cached")
     expect(t.card("acme/widgets")?.payload.cached?.commit).toBe(COMMIT)
     expect(relay.asked).toHaveLength(2)
+    expect(t.launches).toEqual([])
+  } finally { await t.dispose() }
+})
+
+for (const importedBox of [undefined, null]) {
+  for (const selection of ["default", "selected", "none", "ambiguous"] as const) {
+    test(`a ${String(importedBox)} import binding defers report lookup to the ${selection} repository binding`, async () => {
+      const relay = reportRelay(() => ({ repo: "acme/widgets", commit: COMMIT, report: recordedReport(), recordedAt: "2026-09-30T00:00:00Z" }))
+      const t = await fixture({ fetchImpl: relay.fetchImpl })
+      const other = "0b0c0d0e-0000-4000-8000-000000000002"
+      try {
+        if (selection !== "none") await loadBox(t.store, "acme/widgets", BOX)
+        if (selection === "selected" || selection === "ambiguous") await loadBox(t.store, "acme/widgets", other)
+        if (selection === "selected") await t.store.dispatch({ type: "repo.selected", actor: "user", id: `acme/widgets#workspace:${other}` }).isPersisted.promise
+        await t.registration.registerRepository("acme/widgets")
+        await t.importCard("acme/widgets", "done", undefined, importedBox)
+        if (selection === "none" || selection === "ambiguous") {
+          await waitFor(() => t.launches.length === 1)
+          expect(relay.asked).toEqual([])
+          expect(t.card("acme/widgets")?.payload.cached).toBeUndefined()
+        } else {
+          await waitFor(() => t.card("acme/widgets")?.payload.phase === "cached")
+          expect(relay.asked).toEqual([{ repo: "acme/widgets", procedure: "Registration.Report", workspaceId: selection === "selected" ? other : BOX, payload: { repo: "acme/widgets" } }])
+          expect(t.card("acme/widgets")?.payload.cached?.commit).toBe(COMMIT)
+          expect(t.launches).toEqual([])
+        }
+      } finally { await t.dispose() }
+    })
+  }
+}
+
+test("an explicit imported box takes precedence over a different selected box", async () => {
+  const relay = reportRelay(() => ({ repo: "acme/widgets", commit: COMMIT, report: recordedReport(), recordedAt: "2026-09-30T00:00:00Z" }))
+  const t = await fixture({ fetchImpl: relay.fetchImpl })
+  const selected = "0b0c0d0e-0000-4000-8000-000000000002"
+  try {
+    await loadBox(t.store, "acme/widgets", selected)
+    await t.store.dispatch({ type: "repo.selected", actor: "user", id: `acme/widgets#workspace:${selected}` }).isPersisted.promise
+    await t.registration.registerRepository("acme/widgets")
+    await t.importCard("acme/widgets", "done", undefined, BOX)
+    await waitFor(() => t.card("acme/widgets")?.payload.phase === "cached")
+    expect(relay.asked).toHaveLength(1)
+    expect(relay.asked[0]?.workspaceId).toBe(BOX)
     expect(t.launches).toEqual([])
   } finally { await t.dispose() }
 })
