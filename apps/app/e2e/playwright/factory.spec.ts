@@ -492,12 +492,25 @@ test("the drawer's In tab: memory in and withheld, the box it runs on, and the s
     setup_script: "", env: [],
     secrets: [{ name: "NPM_TOKEN", hosts: ["registry.npmjs.org"], match_headers: ["authorization"], updated_at: "2026-08-01T00:00:00Z" }]
   } }))
+  const repositoryReads: Array<{ method: string; path: string }> = []
+  await page.route((url) => url.pathname === `/api/repos/${REPO}/secrets`, (route) => {
+    repositoryReads.push({ method: route.request().method(), path: new URL(route.request().url()).pathname })
+    return route.fulfill({ json: [{ name: "CI_TOKEN", main_only: true, hosts: ["ci.example.test"],
+      match_headers: ["authorization"], updated_at: "2026-08-01T00:00:00Z" }] })
+  })
   await boot(page)
-  // The box's card names it; the secrets card lists the names its sessions may use (never values).
+  // CI secrets and the box's agent environment are separate metadata stores.
   await command(page, `/box.view ${FIXTURE_BOX}`)
   await expect(page.getByTestId(`card-workspace-${FIXTURE_BOX}`)).toContainText(BOX_NAME, { timeout: 15_000 })
   await command(page, `/secrets.list ${REPO}`)
-  await expect(page.locator('[data-kind="secrets"]')).toContainText("NPM_TOKEN", { timeout: 15_000 })
+  const secrets = page.locator('[data-kind="secrets"]')
+  await expect(secrets).toContainText("CI_TOKEN", { timeout: 15_000 })
+  await expect(secrets).toContainText(REPO)
+  await expect(secrets).not.toContainText("NPM_TOKEN")
+  await expect(secrets.getByTestId("secret-CI_TOKEN").getByRole("cell")).toHaveText(["CI_TOKEN", "yes", "1", "Every runBindRotateDelete"])
+  for (const name of ["Give to every run CI_TOKEN", "Bind CI_TOKEN", "Rotate CI_TOKEN", "Delete CI_TOKEN"])
+    await expect(secrets.getByRole("button", { name, exact: true })).toBeVisible()
+  expect(repositoryReads).toEqual([{ method: "GET", path: `/api/repos/${REPO}/secrets` }])
 
   await command(page, `/runs.open ${RUN_ID} ${REPO}`)
   const card = page.getByTestId(`card-${boxRunCardId(REPO, RUN_ID)}`)
@@ -539,6 +552,7 @@ test("the drawer's In tab: memory in and withheld, the box it runs on, and the s
   expect(await memory.evaluateAll((rows) => rows.map((row) => row.getAttribute("data-kept")))).toEqual(["true", "true", "true", "false", "false"])
   await expect(drawer.getByTestId("run-inputs-where")).toHaveText(`runs on ${BOX_NAME}`)
   await expect(drawer.getByRole("list", { name: "Secrets" }).locator("li")).toHaveText(["⚷ NPM_TOKEN registry.npmjs.org"])
+  await expect(drawer.getByRole("list", { name: "Secrets" })).not.toContainText("CI_TOKEN")
   await shot(page, drawer, "11-in-tab.png")
   await toggleTheme(page, "dark")
   await shot(page, drawer, "11-in-tab-dark.png")
