@@ -2696,7 +2696,6 @@ type WikiPageRevision struct {
 	CrdtState       []byte      `json:"crdt_state"`
 	CrdtVector      []byte      `json:"crdt_vector"`
 	TitleSource     string      `json:"title_source"`
-	SourceCommit    string      `json:"source_commit"`
 }
 
 type WikiSpace struct {
@@ -2939,6 +2938,9 @@ type Workspace struct {
 	ClientLeaseSecs         pgtype.Int4        `json:"client_lease_secs"`
 	ClientLeaseExpiresAt    pgtype.Timestamptz `json:"client_lease_expires_at"`
 	SourceCommit            string             `json:"source_commit"`
+	VcpuCount               pgtype.Int4        `json:"vcpu_count"`
+	MemoryMb                pgtype.Int4        `json:"memory_mb"`
+	DiskMb                  pgtype.Int4        `json:"disk_mb"`
 }
 
 type WorkspaceChild struct {
