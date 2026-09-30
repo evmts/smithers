@@ -1,3 +1,4 @@
+import { signupProfileFetch } from "../state/TestFixtures"
 /*
  * The repository's own flows as slash leaves (Factory design session
  * 2026-09-07 §4; owner rule: flows are slash commands, and the featured ones
@@ -54,14 +55,15 @@ interface Seen {
 }
 
 const backend = (routes: Record<string, Response>, seen: Array<Seen> = []): AppServices => ({
-  fetchImpl: async (input, init) => {
+  fetchImpl: signupProfileFetch(async (input, init) => {
+
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
     const absolute = new URL(url, "https://app.test")
     const path = absolute.pathname + absolute.search
     seen.push({ path, method: init?.method ?? "GET", body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined })
     const answer = routes[path]
     return answer === undefined ? json(404, { status: "error", message: `no stub for ${path}` }) : answer.clone()
-  }
+  }).fetchImpl
 })
 
 const settled = async (ticks = 3): Promise<void> => {

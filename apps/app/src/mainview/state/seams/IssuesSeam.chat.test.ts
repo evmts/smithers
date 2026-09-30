@@ -1,3 +1,4 @@
+import { signupProfileFetch } from "../TestFixtures"
 import type { StorageApi } from "@tanstack/db"
 import { afterEach, describe, expect, test } from "bun:test"
 import type { AgentPort } from "../../runtime/AgentPort"
@@ -152,7 +153,8 @@ const absentRoutes = new Set([
   "GET /api/repos/will/flows/issues/8/comments/42/reactions"
 ])
 const backend = (routes: Record<string, RouteAnswer>, calls: Array<{ line: string; body?: unknown }> = []): AppServices => ({
-  fetchImpl: (input, init) => observe((async () => {
+  fetchImpl: signupProfileFetch((input, init) => observe((async () => {
+
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
     const absolute = new URL(url, "https://app.test")
     const method = (init?.method ?? "GET").toUpperCase()
@@ -165,7 +167,7 @@ const backend = (routes: Record<string, RouteAnswer>, calls: Array<{ line: strin
     }
     if (!absentRoutes.has(`${method} ${absolute.pathname}`)) unexpectedHttp.push(`${method} ${absolute.pathname}`)
     return trackResponse(json(404, { status: "error", message: `no stub for ${method} ${absolute.pathname}` }))
-  })())
+  })())).fetchImpl
 })
 const settled = checkpoint
 const signedIn = async (store: AppStore): Promise<void> => {
