@@ -1,3 +1,4 @@
 export const egress = [
-  "egress.session",
+  "egress.allow", // owner: #1879
+  "egress.session", // owner: #1879
 ] as const
