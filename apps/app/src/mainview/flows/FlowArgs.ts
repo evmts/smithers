@@ -67,6 +67,8 @@ export interface FlowInput {
   readonly "secrets.move": { readonly id: string; readonly direction: "up" | "down" }
   /** Carried as JSON: the form opens with these and asks for the value. */
   readonly "secrets.set": { readonly name?: string; readonly repo: string }
+  readonly "secrets.scope": { readonly name: string; readonly scope: "main-only" | "all"; readonly repo: string }
+  readonly "secrets.bind": { readonly name: string; readonly hosts?: string; readonly headers?: string; readonly repo: string }
   readonly "secrets.delete": { readonly name: string; readonly repo: string }
   readonly "history.parallel": { readonly value: number; readonly repo: string }
   readonly "history.retry": { readonly id: string; readonly repo: string }
@@ -263,6 +265,8 @@ const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } 
   "box.facet": payload => line(token(payload, "workspaceId"), token(payload, "facet")),
   "secrets.move": payload => line(token(payload, "id"), token(payload, "direction")),
   "secrets.set": payload => JSON.stringify(payload),
+  "secrets.scope": payload => line(token(payload, "name"), token(payload, "scope"), token(payload, "repo")),
+  "secrets.bind": payload => JSON.stringify(payload),
   "secrets.delete": payload => line(token(payload, "name"), token(payload, "repo")),
   "issues.close": payload => line(token(payload, "number"), token(payload, "repo")),
   "issues.fix": payload => line(token(payload, "number"), token(payload, "repo")),
