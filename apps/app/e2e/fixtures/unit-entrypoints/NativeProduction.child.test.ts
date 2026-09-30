@@ -102,7 +102,8 @@ mock.module('../../../src/bun/NativeBackendProcess', () => ({
   }
 }))
 mock.module('../../../src/bun/NativeRendererServer', () => ({
-  startNativeRendererServer: (_dist: string, apiOrigin: string, token: string) => {
+  startNativeRendererServer: (_dist: string, apiOrigin: string, token: string, stateDirectory: string) => {
+    expect(stateDirectory).toBe('/state')
     calls.push(`renderer:start:${apiOrigin}:${token}`)
     if (scenario === 'renderer-error' || scenario === 'startup-backend-stop-error') {
       throw rendererFault
