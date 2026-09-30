@@ -77,11 +77,6 @@ interface Excuse {
  */
 const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
   {
-    literal: "libc.so.6",
-    file: "e2e/native/MainProcess.ts",
-    reason: "The Linux C library the native probe calls through FFI to deliver cold-launch links from native code; named by the OS, not the app."
-  },
-  {
     literal: "user.name",
     file: "scripts/build-native.ts",
     reason: "Git configuration key for the packaged repository fixture; declared by Git, not the app flow registry."
@@ -130,11 +125,6 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
     literal: "flows.harness.call-fact.v1",
     file: "e2e/real/coverage/timeline-semantic.test.ts",
     reason: "Native gateway call facts exercise the harness wire format outside the app vocabulary, including cursor positions before duplicate telemetry."
-  },
-  {
-    literal: "registry.npmjs.org",
-    file: "e2e/playwright/factory.spec.ts",
-    reason: "the npm registry host a fixture secret is scoped to, served by the stubbed agent-environment route and echoed in the drawer; a network host, not a flow name"
   },
   {
     literal: "smthrs-flow-graph-",
