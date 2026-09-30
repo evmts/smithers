@@ -1,3 +1,3 @@
 export const workspace = [
-  "workspace.rename",
+  "workspace.rename", // owner: #1879
 ] as const
