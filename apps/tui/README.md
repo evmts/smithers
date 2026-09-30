@@ -379,8 +379,8 @@ metadata:
 ```
 
 Where `metadata` must map strings to strings (`SKILL.md`), `tui` may be the
-same mapping as a JSON string. Any change under `flows/` re-lists the registry
-within 300 ms and replaces every repository contribution at once.
+same mapping as a JSON string. Changes reported under `flows/` re-list the registry
+after a 300 ms debounce and replace every repository contribution at once.
 
 Built-in keys always win. A contributed key that collides with one, or with a
 key another owner holds, is refused: a cell gets the one-line reason, and a
@@ -405,8 +405,11 @@ Esc, Ctrl+K, Ctrl+S and the tab keys close it and leave the run parked. A
 parked run never blocks `/new`, `/resume`, `/fork` or undo. Flows whose envelope grants every capability (`*`) use the same y/n/a approval row. Its status settles
 only from the control plane's watch; **x** asks the control plane to cancel.
 
-Listing reads `flows/` without importing anything and refreshes within 300 ms
-of any change there. After first draw, projects with `flows/` warm the host
+Listing reads `flows/` without importing anything, reconciles once filesystem
+watch setup finishes, and refreshes after a 300 ms debounce of reported changes.
+One polling watcher checks filesystem metadata every 100 ms, follows supported
+symlinks, and retains parent subscriptions while a linked target is missing.
+After first draw, projects with `flows/` warm the host
 in the background, importing modules and opening `<cwd>/.flows` (the store `smthrs runs` reads), so an edited `flow.ts` needs a
 restart to run. A markdown flow is a custom agent (below); choosing one in
 `/flows` starts `/agent <name>`. Do not run `smthrs` executors in the same
