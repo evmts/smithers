@@ -50,9 +50,11 @@ graph controllers, the target, graph, CI, affected, run-history and
 run-timeline cards, the flows that were their only door, and the tests and
 Playwright specs of all of it.
 
-The daemon's one surviving job is single ownership of the chat turn journal's
-SQLite file. `TurnJournalLease.ts` keeps exactly that: a pid file beside the
-database, taken over when its owner is dead.
+Chat journal ownership also moved to the shared Go backend and PostgreSQL.
+The native host no longer emulates Durable Objects or leases a chat SQLite
+file. Owned installations run the same backend with local PostgreSQL; hosted
+installations connect to that backend through Plue. Device presentation and
+draft collections retain their SQLite store.
 
 ## One correction to the plan
 
@@ -112,20 +114,16 @@ no longer reads `SMITHERS_CHAT_STUB` or imports a stub: it takes
 `src/bun/CloudWsTunnel.test.ts`). `serve.ts`, the real headless host, no longer
 has a stub at all.
 
-Two files still ship test scaffolding inside the bundle, and the evidence says
-they have to:
+`src/bun/PackagedE2EBridge.ts` remains the loopback bridge through which the
+packaged tier drives the **built binary** (`e2e/packaged/PackagedApp.ts`
+spawns `.app` with `SMITHERS_E2E_BRIDGE=1`). It stays inert without that
+environment variable and its token.
 
-- `src/bun/PackagedE2EBridge.ts` is the loopback bridge the packaged tier
-  drives the **built binary** through (`e2e/packaged/PackagedApp.ts` spawns
-  `.app` with `SMITHERS_E2E_BRIDGE=1`). Nothing can be injected into a process
-  that is spawned, so the bridge has to be in the bundle. It stays inert
-  without the env var and its token.
-- The same is true of the stub: `e2e/packaged/packaged-app.e2e.test.ts`
-  asserts `stub: <message>` in the packaged app's transcript, with
-  `SMITHERS_CHAT_STUB=1` and `SMITHERS_LOCAL_MODE=offline`. `NativeApp.ts`
-  therefore imports `e2e/support/ChatStub.ts` dynamically, behind that env
-  var — the code lives with the tier that owns it even though the bundler
-  follows it in.
+The native bundle no longer imports `e2e/support/ChatStub.ts` or selects a
+different host through `SMITHERS_CHAT_STUB`. Native and headless launches
+always select the canonical backend through `NativeBackendProcess`.
+Deterministic recorded-chat fixtures compose the same Go/PostgreSQL journal
+with a scoped TypeScript model producer outside the application bundle.
 
 One behaviour changed with the injection: `chatStub: true` also nulled the
 identity upstream. Every host that used it is `SMITHERS_LOCAL_MODE=offline`,

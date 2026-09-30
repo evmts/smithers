@@ -439,8 +439,8 @@ test.each([
   expect(calls).toBe(2)
 })
 
-// DurableTurn.accessDurableTurn emits non-error receipts only with HTTP200;
-// NativeTurnJournal also conditions completed retirement on response.ok.
+// The canonical backend emits non-error receipts only with HTTP200;
+// the native relay preserves that status for completed retirement.
 test.each([
   { status: 200, outcome: "completed" },
   { status: 401, outcome: "failed" },

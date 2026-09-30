@@ -1,174 +1,193 @@
-import { describe, expect, test } from "bun:test"
-import { Database } from "bun:sqlite"
+import { expect, test } from "bun:test"
 import { createHash } from "node:crypto"
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { TURN_PATH, TURN_REPLAY_PATH, TURN_RETIRE_PATH, TURN_ERASE_PATH } from "@smthrs/rpc/AgentApiRoutes"
-import { AgentTurnJournalDeliverySchema, agentTurnJournalDigestInput } from "@smthrs/rpc/AgentTurnJournal"
-import type { AgentTurnCursor } from "@smthrs/rpc/AgentTurnJournal"
+import { TURN_PATH, CANCEL_PATH, TURN_REPLAY_PATH, TURN_RETIRE_PATH, TURN_ERASE_PATH } from "@smthrs/rpc/AgentApiRoutes"
+import { AgentTurnJournalDeliverySchema, AgentTurnJournalReplySchema, agentTurnJournalDigestInput } from "@smthrs/rpc/AgentTurnJournal"
 import { LOCAL_SESSION_HEADER } from "@smthrs/rpc/LocalSession"
-import { fakeBackend, signedInKeychain } from "./fixtures/FakeBackendTurns"
+import { startFixtureChatBackend } from "../../e2e/fixtures/chat-backend"
 import { startLocalServer } from "./server"
 import type { LocalServer } from "./server"
+import { createCloudAuth } from "./CloudAuth"
 
 const journal = { version: 1 as const, legId: "native-leg", token: "native_private_capability_12345678901234567890" }
-const turn = { runId: "native-turn", instructions: "Briefly.", messages: [{ role: "user", content: "hello" }], journal }
-const access = { runId: turn.runId, journal }
+const turn = (content = "hello") => ({ runId: "native-turn", instructions: "Briefly.", messages: [{ role: "user", content }], journal })
+const access = { runId: "native-turn", journal }
 const post = (host: LocalServer, path: string, body: unknown, token = host.sessionToken) => fetch(`${host.origin}${path}`, {
-  method: "POST", headers: { "content-type": "application/json", [LOCAL_SESSION_HEADER]: token }, body: JSON.stringify(body)
+  method: "POST", headers: { "content-type": "application/json", [LOCAL_SESSION_HEADER]: token, authorization: "Bearer untrusted-renderer", cookie: "smithers_session=untrusted" }, body: JSON.stringify(body)
 })
-const fixture = async (upstream: () => Response) => {
+const fixture = async () => {
+  const backend = await startFixtureChatBackend()
   const root = await mkdtemp(join(tmpdir(), "smithers-native-journal-"))
   await writeFile(join(root, "index.html"), "<!doctype html><title>Test</title>")
-  let calls = 0
-  const model = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: fakeBackend(() => { calls++; return upstream() }) })
   const hosts: LocalServer[] = []
-  const boot = async (persist = true) => {
-    const host = await startLocalServer({
-      port: 0, distDir: root, home: root, ...(persist ? { stateDir: join(root, "state") } : {}),
-      cloudMode: "hybrid", cloudApi: `http://127.0.0.1:${model.port}`, cloudKeychain: signedInKeychain(), identityUpstream: null,
-      log: () => {}
-    })
+  let factories = 0
+  const boot = async (configured = true) => {
+    const host = await startLocalServer({ port: 0, distDir: root, home: root, stateDir: join(root, "drafts"), cloudMode: "offline",
+      ...(configured ? { chatBackend: { origin: backend.origin, token: backend.token } } : {}),
+      agent: () => { factories++; throw new Error("Alternate local producer must not be constructed") }, log: () => {} })
     hosts.push(host)
     return host
   }
-  return { root, boot, calls: () => calls, close: async () => {
+  return { backend, boot, factories: () => factories, close: async () => {
     await Promise.all(hosts.map(host => host.stop()))
-    await model.stop(true)
-    await rm(root, { force: true, recursive: true })
+    await backend.stop()
+    await rm(root, { recursive: true, force: true })
   } }
 }
 const readOutput = async (response: Response) => {
   expect(response.status).toBe(200)
-  const lines = (await response.text()).trim().split("\n").map(line => AgentTurnJournalDeliverySchema.parse(JSON.parse(line)))
-  return lines.flatMap(line => line.type === "batch" ? line.batch.frames : [])
+  return (await response.text()).trim().split("\n").map(line => AgentTurnJournalDeliverySchema.parse(JSON.parse(line)))
+    .flatMap(delivery => delivery.type === "batch" ? delivery.batch.frames : [])
 }
 
-describe("native durable chat over the actual authenticated local router", () => {
-  test("a pinned SQLite reader keeps erasure pending until retained WAL bytes are removed", async () => {
-    const privateMarker = "private-native-wal-retirement-fixture"
-    const f = await fixture(() => new Response([
-      { type: "delta", kind: "text", text: privateMarker }, { type: "done", reason: "stop" }
-    ].map(frame => JSON.stringify(frame)).join("\n")))
-    let observer: Database | undefined
-    try {
-      const host = await f.boot()
-      await readOutput(await post(host, TURN_PATH, turn))
-      const path = join(f.root, "state/chat-journal/turns.sqlite")
-      observer = new Database(path, { readonly: true })
-      observer.exec("BEGIN")
-      observer.query("SELECT * FROM turn_storage").all()
-      const retirementProof = createHash("sha256").update(agentTurnJournalDigestInput("access", journal.token)).digest("hex")
-      const erasure = { runId: turn.runId, legId: journal.legId, retirementProof }
-      const pending = await post(host, TURN_ERASE_PATH, erasure)
-      expect(pending.status).toBe(503)
-      expect(await pending.json()).toMatchObject({ status: "error", code: "storage_failed" })
-      expect((await readFile(`${path}-wal`)).includes(Buffer.from(privateMarker))).toBe(true)
-      expect((await post(host, TURN_REPLAY_PATH, access)).status).toBe(410)
-      observer.exec("ROLLBACK")
-      observer.close()
-      observer = undefined
-      const complete = await post(host, TURN_ERASE_PATH, erasure)
-      expect(complete.status).toBe(200)
-      expect(await complete.json()).toEqual({ status: "retired" })
-      expect((await readFile(`${path}-wal`)).byteLength).toBe(0)
-      expect((await readFile(path)).includes(Buffer.from(privateMarker))).toBe(false)
-      expect((await post(host, TURN_PATH, turn)).status).toBe(410)
-      expect(f.calls()).toBe(1)
-    } finally {
-      observer?.exec("ROLLBACK")
-      observer?.close()
-      await f.close()
+test("canonical durable chat survives renderer and backend restart, replays more than 1000 frames and never repeats inference", async () => {
+  const f = await fixture()
+  try {
+    const first = await f.boot()
+    const live = await readOutput(await post(first, TURN_PATH, turn("__many__")))
+    expect(live.length).toBe(1006)
+    expect(await f.backend.calls()).toBe(1)
+    expect(f.factories()).toBe(0)
+    await first.stop()
+    await f.backend.restart()
+    const second = await f.boot()
+    expect((await post(second, TURN_REPLAY_PATH, access, first.sessionToken)).status).toBe(401)
+    expect((await post(second, TURN_REPLAY_PATH, { ...access, journal: { ...journal, token: "wrong_private_capability_12345678901234567890" } })).status).toBe(403)
+    const frames: unknown[] = []
+    let after: import("@smthrs/rpc/AgentTurnJournal").AgentTurnCursor | null = null
+    let more = true
+    while (more) {
+      const response = await post(second, TURN_REPLAY_PATH, { ...access, after })
+      expect(response.status).toBe(200)
+      const page = AgentTurnJournalReplySchema.parse(await response.json())
+      expect(page.status).toBe("ok")
+      if (page.status !== "ok") throw new Error("Canonical replay refused")
+      frames.push(...page.batches.flatMap(batch => batch.frames))
+      after = page.next
+      more = page.more
     }
-  })
-  test("delete-only erasure before acceptance survives restart and cannot be undone by a delayed request", async () => {
-    const f = await fixture(() => new Response('"unused"'))
-    try {
-      const first = await f.boot()
-      const retirementProof = createHash("sha256").update(agentTurnJournalDigestInput("access", journal.token)).digest("hex")
-      expect((await post(first, TURN_ERASE_PATH, { runId: turn.runId, legId: journal.legId, retirementProof })).status).toBe(200)
-      await first.stop()
-      const second = await f.boot()
-      expect((await post(second, TURN_PATH, turn)).status).toBe(410)
-      expect(f.calls()).toBe(0)
-    } finally { await f.close() }
-  })
-  test("file SQLite survives host restart and replays >1000 frames without inference; erasure prevents reuse", async () => {
-    const wire = [...Array.from({ length: 1005 }, (_, index) => ({ type: "delta", kind: "text", text: `private-native-${index}` })), { type: "done", reason: "stop" }]
-    const f = await fixture(() => new Response(wire.map(frame => JSON.stringify(frame)).join("\n")))
-    try {
-      const first = await f.boot()
-      const live = await readOutput(await post(first, TURN_PATH, turn))
-      expect(live.length).toBe(1006)
-      expect(f.calls()).toBe(1)
-      const competing = await f.boot()
-      expect((await post(competing, TURN_REPLAY_PATH, access)).status).toBe(503)
-      await competing.stop()
-      await first.stop()
-      const second = await f.boot()
-      const staleSession = await post(second, TURN_REPLAY_PATH, access, first.sessionToken)
-      expect(staleSession.status).toBe(401)
-      expect((await post(second, TURN_REPLAY_PATH, { ...access, journal: { ...journal, token: "wrong_private_capability_12345678901234567890" } })).status).toBe(403)
-      const replay: unknown[] = []
-      let after: AgentTurnCursor | null = null
-      let more = true
-      while (more) {
-        const response = await post(second, TURN_REPLAY_PATH, { ...access, after })
-        expect(response.status).toBe(200)
-        const page = await response.json() as any
-        replay.push(...page.batches.flatMap((batch: any) => batch.frames))
-        after = page.next
-        more = page.more
-      }
-      expect(replay).toEqual(live)
-      expect(await (await post(second, TURN_PATH, turn)).json()).toMatchObject({ status: "existing", terminal: true })
-      expect(f.calls()).toBe(1)
-      expect((await post(second, TURN_RETIRE_PATH, access)).status).toBe(200)
-      expect((await post(second, TURN_REPLAY_PATH, access)).status).toBe(410)
-      await second.stop()
-      const third = await f.boot()
-      expect((await post(third, TURN_PATH, turn)).status).toBe(410)
-      expect(f.calls()).toBe(1)
-      await third.stop()
-      const db = new Database(join(f.root, "state/chat-journal/turns.sqlite"), { readonly: true })
-      try {
-        const rows = db.query<{ value: string }, []>("SELECT value FROM turn_storage").all()
-        expect(rows).toHaveLength(1)
-        expect(rows[0]!.value).not.toContain("private-native")
-        expect(rows[0]!.value).toContain('"retired":true')
-      } finally { db.close() }
-    } finally { await f.close() }
-  }, 20_000)
+    expect(frames).toEqual(live)
+    expect(await (await post(second, TURN_PATH, turn("__many__"))).json()).toMatchObject({ status: "existing", terminal: true })
+    expect(await f.backend.calls()).toBe(1)
+    expect((await post(second, TURN_RETIRE_PATH, access)).status).toBe(200)
+    expect((await post(second, TURN_REPLAY_PATH, access)).status).toBe(410)
+    await second.stop()
+    await f.backend.restart()
+    const third = await f.boot()
+    expect((await post(third, TURN_PATH, turn("__many__"))).status).toBe(410)
+    expect(await f.backend.calls()).toBe(1)
+  } finally { await f.close() }
+}, 60_000)
 
-  test("shutdown records interruption before closing storage and restart never takes over the producer", async () => {
-    const f = await fixture(() => new Response(new ReadableStream<Uint8Array>({ start(controller) {
-      for (let index = 0; index < 64; index++) controller.enqueue(new TextEncoder().encode(`${JSON.stringify({ type: "delta", kind: "text", text: `partial-${index}` })}\n`))
-    } })))
-    try {
-      const first = await f.boot()
-      const response = await post(first, TURN_PATH, turn)
-      const reader = response.body!.getReader()
-      // Drain through the committed partial batch before closing the host.
-      let text = ""
-      while (!text.includes('"type":"batch"')) text += new TextDecoder().decode((await reader.read()).value)
-      await first.stop()
-      await reader.cancel().catch(() => {})
-      const second = await f.boot()
-      const page = await (await post(second, TURN_REPLAY_PATH, access)).json() as any
-      expect(page.terminal).toBe(true)
-      expect(page.batches.flatMap((batch: any) => batch.frames).at(-1)).toMatchObject({ type: "done", error: expect.stringContaining("ended before") })
-      expect(await (await post(second, TURN_PATH, turn)).json()).toMatchObject({ status: "existing", terminal: true })
-      expect(f.calls()).toBe(1)
-    } finally { await f.close() }
-  }, 20_000)
+test("proof-only erasure before admission survives restart and cannot be undone by a delayed request", async () => {
+  const f = await fixture()
+  try {
+    const retirementProof = createHash("sha256").update(agentTurnJournalDigestInput("access", journal.token)).digest("hex")
+    const erased = await fetch(`${f.backend.origin}${TURN_ERASE_PATH}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ runId: access.runId, legId: journal.legId, retirementProof }) })
+    expect(erased.status).toBe(200)
+    expect(await erased.json()).toEqual({ status: "retired" })
+    await f.backend.restart()
+    const host = await f.boot()
+    expect((await post(host, TURN_PATH, turn())).status).toBe(410)
+    expect(await f.backend.calls()).toBe(0)
+  } finally { await f.close() }
+}, 60_000)
 
-  test("missing persistent storage refuses before invoking the model", async () => {
-    const f = await fixture(() => new Response('"unused"'))
-    try {
-      const host = await f.boot(false)
-      expect((await post(host, TURN_PATH, turn)).status).toBe(503)
-      expect(f.calls()).toBe(0)
-    } finally { await f.close() }
-  })
+test("cancelling through the native adapter closes durable output and restart cannot launch it again", async () => {
+  const f = await fixture()
+  try {
+    const host = await f.boot()
+    const response = await post(host, TURN_PATH, turn("__block__"))
+    expect(response.status).toBe(200)
+    const reader = response.body!.getReader()
+    const accepted = await reader.read()
+    expect(new TextDecoder().decode(accepted.value)).toContain('"type":"accepted"')
+    const startedBy = Date.now() + 10_000
+    while (await f.backend.calls() === 0 && Date.now() < startedBy) { /* actual provider-start readback */ }
+    expect(await f.backend.calls()).toBe(1)
+    const cancelled = await post(host, CANCEL_PATH, { runId: access.runId })
+    expect(cancelled.status).toBe(200)
+    let output = ""
+    for (;;) { const part = await reader.read(); if (part.done) break; output += new TextDecoder().decode(part.value) }
+    expect(output).toContain('"type":"done"')
+    const calls = await f.backend.calls()
+    expect(calls).toBe(1)
+    await host.stop()
+    await f.backend.restart()
+    const second = await f.boot()
+    const replay = await (await post(second, TURN_REPLAY_PATH, access)).json()
+    expect(replay).toMatchObject({ status: "ok", terminal: true })
+    expect(await (await post(second, TURN_PATH, turn("__block__"))).json()).toMatchObject({ status: "existing", terminal: true })
+    expect(await f.backend.calls()).toBe(calls)
+  } finally { await f.close() }
+}, 60_000)
+
+test("canonical erasure deletes retained private output and fences reuse after restart", async () => {
+  const f = await fixture()
+  try {
+    const host = await f.boot()
+    const privateTurn = turn("private-native-input-marker")
+    const frames = await readOutput(await post(host, TURN_PATH, privateTurn))
+    expect(JSON.stringify(frames)).toContain("private-native-fixture-output")
+    expect(await f.backend.storedPrivateOutput()).toBe(true)
+    expect(await f.backend.storedPrivateOutput("prompt")).toBe(true)
+    const retirementProof = createHash("sha256").update(agentTurnJournalDigestInput("access", journal.token)).digest("hex")
+    const erased = await post(host, TURN_ERASE_PATH, { runId: access.runId, legId: journal.legId, retirementProof })
+    expect(erased.status).toBe(200)
+    expect(await erased.json()).toEqual({ status: "retired" })
+    expect(await f.backend.storedPrivateOutput()).toBe(false)
+    expect(await f.backend.storedPrivateOutput("prompt")).toBe(false)
+    expect((await post(host, TURN_REPLAY_PATH, access)).status).toBe(410)
+    await host.stop()
+    await f.backend.restart()
+    const second = await f.boot()
+    expect((await post(second, TURN_PATH, privateTurn)).status).toBe(410)
+    expect(await f.backend.storedPrivateOutput()).toBe(false)
+    expect(await f.backend.storedPrivateOutput("prompt")).toBe(false)
+    expect(await f.backend.calls()).toBe(1)
+  } finally { await f.close() }
+}, 60_000)
+
+test("missing canonical storage refuses a recorded turn before any model request", async () => {
+  const root = await mkdtemp(join(tmpdir(), "smithers-native-no-backend-"))
+  await writeFile(join(root, "index.html"), "<!doctype html><title>Test</title>")
+  const calls: Array<{ authorization: string | null }> = []
+  const model = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (request) => {
+    if (new URL(request.url).pathname === TURN_PATH) {
+      calls.push({ authorization: request.headers.get("authorization") })
+      // Transport refusal is a positive routing control, never a simulated completed turn.
+      return new Response("synthetic unavailable", { status: 503 })
+    }
+    return Response.json([])
+  } })
+  const cloudAuth = await createCloudAuth({ api: model.url.origin, envToken: "explicit-no-storage-token",
+    keychain: { read: async () => null, write: async () => {}, remove: async () => {} }, log: () => {} })
+  const host = await startLocalServer({ port: 0, distDir: root, home: root, stateDir: join(root, "drafts"),
+    cloudMode: "hybrid", cloudApi: model.url.origin, cloudAuth, identityUpstream: null, log: () => {} })
+  try {
+    const response = await post(host, TURN_PATH, turn())
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({ status: "error", code: "storage_failed" })
+    expect(calls).toEqual([])
+    const unrecorded = await post(host, TURN_PATH, { runId: "positive-control", instructions: "Fixture only.", messages: turn().messages })
+    expect(await unrecorded.text()).toContain("HTTP 503")
+    expect(calls).toEqual([{ authorization: "Bearer explicit-no-storage-token" }])
+  } finally { await host.stop(); await model.stop(true); await rm(root, { recursive: true, force: true }) }
 })
+
+test("the configured backend's authentication refusal cannot select an alternate local producer", async () => {
+  const f = await fixture()
+  const root = await mkdtemp(join(tmpdir(), "smithers-native-refused-backend-"))
+  await writeFile(join(root, "index.html"), "<!doctype html><title>Test</title>")
+  let factories = 0
+  const host = await startLocalServer({ port: 0, distDir: root, home: root, cloudMode: "offline", chatBackend: { origin: f.backend.origin, token: `smithers_${"0".repeat(40)}` }, agent: () => { factories++; throw new Error("Alternate producer selected") }, log: () => {} })
+  try {
+    const response = await post(host, TURN_PATH, turn())
+    expect(response.status).toBe(401)
+    expect(await response.json()).toEqual({ code: "unauthorized", fault: "user", message: "invalid or expired token" })
+    expect(factories).toBe(0)
+    expect(await f.backend.calls()).toBe(0)
+  } finally { await host.stop(); await f.close(); await rm(root, { recursive: true, force: true }) }
+}, 60_000)

@@ -22,11 +22,10 @@ export const CLOUD_CHAT_SIGN_IN = "Sign in to Smithers Cloud to chat — /cloud.
  * into the model's instructions, so the turn rides the wire as the renderer
  * sent it.
  *
- * The leg is a relay, not a second record: this host's own journal
- * (NativeTurnJournal.ts) keeps what the renderer was sent, and the user's
- * retire and erase act on that. Once a leg ends, however it ends, the agent
- * cancels it if it never reached its terminal frame and erases the backend's
- * copy with the leg's own deletion proof.
+ * This adapter serves unrecorded transport calls. Recorded native and browser
+ * turns use the backend journal directly, retaining their replay and deletion
+ * proofs. Once an unrecorded leg ends, this adapter cancels it if unfinished
+ * and erases it with the leg's own deletion proof.
  */
 export interface CloudAgentConfig {
   /** The Smithers Cloud API origin (the shared backend). */

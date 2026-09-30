@@ -17,7 +17,7 @@ import { retainNativeUrlOpens } from "./NativeUrlOpen"
 import { nativeUrlOpenHost } from "./NativeWrapper"
 import { nativeStateDirectory } from "./NativeState"
 import { encodeRgbaPng, startPackagedE2EBridge } from "./PackagedE2EBridge"
-import { defaultDistDir, startLocalServer } from "./server"
+import { defaultDistDir } from "./NativePaths"
 
 /*
  * `smithers://open/<owner>/<repo>` (DeepLink.ts). A cold launch by URL
@@ -55,7 +55,6 @@ if (launchLink) receiveDeepLink(launchLink)
 
 const headless = Bun.env.SMITHERS_LOCAL_HEADLESS === "1"
 const hiddenE2EWindow = Bun.env.SMITHERS_E2E_BRIDGE === "1" && Bun.env.SMITHERS_NATIVE_E2E_VISIBLE !== "1"
-const port = Bun.env.SMITHERS_LOCAL_PORT === undefined ? undefined : Number(Bun.env.SMITHERS_LOCAL_PORT)
 
 /** http(s) only: the page must not launch arbitrary local schemes through the privileged side. */
 const openExternal = async (url: string): Promise<boolean> => {
@@ -77,20 +76,8 @@ const stopResources = async (...stops: ReadonlyArray<() => unknown>): Promise<Ar
 /** Application state that outlives a launch: macOS Application Support, else XDG data. */
 const stateDir = nativeStateDirectory()
 
-/*
- * The packaged E2E tier (e2e/packaged/PackagedApp.ts) spawns the BUILT app
- * and asserts `stub: <message>` in its transcript, so the deterministic agent
- * has to be inside this bundle; there is no seam to inject one through once
- * the binary is spawned. It is reached only behind SMITHERS_CHAT_STUB, and
- * it lives in the test tree with the tier that owns it.
- */
-const stubAgent = Bun.env.SMITHERS_CHAT_STUB === "1"
-  ? (await import("../../e2e/support/ChatStub")).createChatStub
-  : undefined
-
 let backendProcess: Awaited<ReturnType<typeof startNativeBackend>> | undefined
 let rendererServer: ReturnType<typeof startNativeRendererServer> | undefined
-let testServer: Awaited<ReturnType<typeof startLocalServer>> | undefined
 let mainWindow: NativeBrowserWindow | undefined
 let bridge: ReturnType<typeof startPackagedE2EBridge> | undefined
 let rollback: "inactive" | "cleaning" | "finished" = "inactive"
@@ -104,7 +91,6 @@ const shutdown = createNativeShutdown({
     const failures = await stopResources(
       () => bridge?.stop(),
       () => rendererServer?.stop(),
-      () => testServer?.stop(),
       () => backendProcess?.stop()
     )
     if (backendFailure !== undefined) failures.push(backendFailure)
@@ -126,54 +112,23 @@ process.on("SIGINT", () => void shutdown())
 process.on("SIGTERM", () => void shutdown())
 
 try {
-  backendProcess = stubAgent === undefined
-    ? await startNativeBackend({ stateDir, webRoot: defaultDistDir(import.meta.dir) })
-    : undefined
-
-  // The retired Bun product host survives only as the deterministic packaged
-  // test fixture. Production receives the actual shared Go backend origin from
-  // the issue12 supervisor, or connects directly to Plue.
-  rendererServer = backendProcess !== undefined
-    ? startNativeRendererServer(
-      defaultDistDir(import.meta.dir),
-      backendProcess.mode === "own"
-        ? backendProcess.origin ?? "" :
-        Bun.env.SMITHERS_API_ORIGIN ?? "",
-      Bun.env.SMITHERS_API_TOKEN ?? ""
-    )
-    : undefined
-  testServer = stubAgent === undefined ? undefined : await startLocalServer({
-    ...(port === undefined ? {} : { port }),
-    distDir: defaultDistDir(import.meta.dir),
-    stateDir,
-    agent: stubAgent,
-    cloudMode: "offline",
-    // This process is the desktop shell, so its renderer origin says so (`native.shell`).
-    nativeShell: true
-  })
-  const backend = testServer === undefined
-    ? nativeBackendConfig(
-      rendererServer === undefined ? Bun.env : {
-        SMITHERS_API_ORIGIN: rendererServer.origin,
-        SMITHERS_RENDERER_ORIGIN: rendererServer.origin,
-        SMITHERS_API_TOKEN: Bun.env.SMITHERS_API_TOKEN
-      },
-      backendProcess!,
-      rendererServer?.origin
-    )
-    : {
-      rendererOrigin: testServer.origin,
-      target: {
-        apiVersion: 1,
-        mode: "native-own",
-        apiOrigin: testServer.origin,
-        auth: { kind: "session" },
-        cors: "same-origin",
-        developerExternal: false
-      } as const,
-      token: null,
-      bootstrapToken: null
-    }
+  backendProcess = await startNativeBackend({ stateDir, webRoot: defaultDistDir(import.meta.dir) })
+  rendererServer = startNativeRendererServer(
+    defaultDistDir(import.meta.dir),
+    backendProcess.mode === "own"
+      ? backendProcess.origin ?? ""
+      : Bun.env.SMITHERS_API_ORIGIN ?? "",
+    Bun.env.SMITHERS_API_TOKEN ?? ""
+  )
+  const backend = nativeBackendConfig(
+    {
+      SMITHERS_API_ORIGIN: rendererServer.origin,
+      SMITHERS_RENDERER_ORIGIN: rendererServer.origin,
+      SMITHERS_API_TOKEN: Bun.env.SMITHERS_API_TOKEN
+    },
+    backendProcess,
+    rendererServer.origin
+  )
   let selectedBackend = backend
 
   void backendProcess?.failure?.then((failure) => {
@@ -350,7 +305,6 @@ ${script}
     () => bridge?.stop(),
     () => mainWindow?.close(),
     () => rendererServer?.stop(),
-    () => testServer?.stop(),
     () => backendProcess?.stop()
   )
   const failure = failures.length > 0
