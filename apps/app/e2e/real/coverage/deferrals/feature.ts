@@ -1,3 +1,3 @@
 export const feature = [
-  "feature.prototype",
+  "feature.prototype", // owner: #1878
 ] as const
