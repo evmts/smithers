@@ -2913,11 +2913,12 @@ type WorkspaceChild struct {
 	StopReason     pgtype.Text        `json:"stop_reason"`
 	FailureMessage pgtype.Text        `json:"failure_message"`
 	CreatedAt      time.Time          `json:"created_at"`
+	VmReleasedAt   pgtype.Timestamptz `json:"vm_released_at"`
 }
 
 type WorkspaceChildBatch struct {
 	ID                string             `json:"id"`
-	ParentWorkspaceID string             `json:"parent_workspace_id"`
+	ParentWorkspaceID pgtype.UUID        `json:"parent_workspace_id"`
 	UserID            int64              `json:"user_id"`
 	Profile           string             `json:"profile"`
 	Requested         int32              `json:"requested"`
