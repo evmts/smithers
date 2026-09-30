@@ -495,7 +495,7 @@ test("the drawer's In tab: memory in and withheld, the box it runs on, and the s
   const repositoryReads: Array<{ method: string; path: string }> = []
   await page.route((url) => url.pathname === `/api/repos/${REPO}/secrets`, (route) => {
     repositoryReads.push({ method: route.request().method(), path: new URL(route.request().url()).pathname })
-    return route.fulfill({ json: [{ name: "CI_TOKEN", main_only: true, hosts: ["ci.example.test"],
+    return route.fulfill({ json: [{ name: "CI_TOKEN", main_only: true, hosts: [new URL(page.url()).hostname],
       match_headers: ["authorization"], updated_at: "2026-08-01T00:00:00Z" }] })
   })
   await boot(page)
