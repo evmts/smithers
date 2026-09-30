@@ -1,3 +1,5 @@
 export const repo = [
-  "repo.choose", "repo.tree", "repo.update",
+  "repo.choose", // owner: #1876
+  "repo.tree", // owner: #1876
+  "repo.update", // owner: #1876
 ] as const
