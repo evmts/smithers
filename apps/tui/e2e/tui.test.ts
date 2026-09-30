@@ -2397,7 +2397,7 @@ describe("custom agents", () => {
     await tui.press(key.escape)
     await tui.press(key.enter)
     await tui.until(
-      (screen) => screen.includes("Agents") && /review\s+GPT-6 Sol\s+Reviews the uncommitted/.test(screen),
+      (screen) => screen.includes("Agents") && /review\s+GPT-6.1 Sol\s+Reviews the uncommitted/.test(screen),
       20_000,
       "agents dialog"
     )

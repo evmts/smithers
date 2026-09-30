@@ -294,12 +294,12 @@ for (const mode of ["ask", "deny", "all"] as const) {
   }
 }
 
-it("settles a run whose input the payload schema rejects as failed", async () => {
-  // Planning accepts it (the body cannot be walked); the run itself fails, and the watch says so.
-  const runId = await port.start(await port.plan("echo", { text: 3 }))
-  const settled = await port.watch(runId, () => {}).done
-  // The cause's first line only, never its stack.
-  expect(settled).toEqual({ kind: "failed", message: "Schema validation failed" })
+it("refuses invalid payloads before approval or durable run admission", async () => {
+  const before = await port.runs!()
+  const refusal = await port.plan("echo", { text: 3 }).catch((error: unknown) => error)
+  expect(refusal).toBeInstanceOf(FlowError)
+  expect(refusal).toMatchObject({ code: "invalid_input" })
+  expect(await port.runs!()).toEqual(before)
 }, 60_000)
 
 it("stops a running run through the control plane", async () => {
