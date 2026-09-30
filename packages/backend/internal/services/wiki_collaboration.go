@@ -170,6 +170,11 @@ func (s *WikiService) ApplyWikiUpdate(ctx context.Context, actor *db.User, owner
 			if receipt.RepositoryID != repository.ID || !receipt.AuthorID.Valid || receipt.AuthorID.Int64 != actor.ID || !bytes.Equal(receipt.UpdateBytes, update) {
 				return WikiUpdateResponse{}, pkgerrors.Conflict("update_id already belongs to a different edit")
 			}
+			// The receipt may have committed after this document was read.
+			// Read again rather than acknowledging an edit with an older state.
+			if row.Revision < receipt.Revision {
+				continue
+			}
 			return WikiUpdateResponse{Document: documentResponse(row), UpdateID: id.String(), AcceptedRevision: receipt.Revision}, nil
 		}
 		if !errors.Is(err, pgx.ErrNoRows) {
