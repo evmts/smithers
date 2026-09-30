@@ -5,6 +5,7 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import type { BrowserContext, BrowserType, Page } from "@playwright/test"
 import { OwnerSessionCookies, withOwnerAuthRetry, type OwnerSessionScope } from "./owner-session"
+import { authenticatedBrowserOptions } from "./browser-options"
 import { nativeTarget } from "../native-target"
 import { expect, test as realTest } from "../support/test"
 import { appEntryPath, awaitBoot } from "../support"
@@ -219,8 +220,27 @@ const safeLocation = (page: Page): string => {
   return `${url.origin}${url.pathname}`
 }
 
+export const isWaitlistedOAuthReturn = (location: string, productOrigin: string): boolean => {
+  const url = new URL(location)
+  return url.origin === productOrigin && url.searchParams.has("waitlist")
+}
+
+const requireAdmittedOAuthReturn = (page: Page, productOrigin: string): void => {
+  if (isWaitlistedOAuthReturn(page.url(), productOrigin)) {
+    throw new Error("The selected account was placed on the deployed waitlist; no authenticated product session was issued.")
+  }
+}
+
 export const finishGitHubOAuth = async (page: Page, productOrigin: string): Promise<void> => {
   await page.waitForLoadState("domcontentloaded")
+  // Clicking the redirect door settles durable state before navigation. Observe
+  // either the hop or a verified completed session instead of racing the click.
+  await expect.poll(async () => {
+    if (isWaitlistedOAuthReturn(page.url(), productOrigin)) return "waitlisted"
+    if (new URL(page.url()).origin !== productOrigin) return "redirected"
+    return await readSessionAtOrigin(page.context(), productOrigin) === undefined ? "pending" : "authenticated"
+  }, { timeout: 60_000 }).not.toBe("pending")
+  requireAdmittedOAuthReturn(page, productOrigin)
   if (new URL(page.url()).origin === productOrigin) return
   if (new URL(page.url()).hostname !== "github.com") {
     throw new Error(`OAuth left the product for an unexpected origin at ${safeLocation(page)}.`)
@@ -232,6 +252,7 @@ export const finishGitHubOAuth = async (page: Page, productOrigin: string): Prom
   const authorize = page.getByRole("button", { name: /^authorize/i }).first()
   if (await authorize.isVisible().catch(() => false)) await authorize.click()
   await page.waitForURL((url) => url.origin === productOrigin, { timeout: 60_000 })
+  requireAdmittedOAuthReturn(page, productOrigin)
   await page.waitForLoadState("domcontentloaded")
 }
 
@@ -285,14 +306,11 @@ export const launchAuthenticatedProfile = async (
   readonly session: AuthenticatedSession
   readonly close: () => Promise<void>
 }> => {
+  const options = await authenticatedBrowserOptions(baseURL)
   const { path, lease } = await acquireAuthenticatedProfile(requiredEnvironment)
   let context: BrowserContext | undefined
   try {
-    const opened = await playwright.chromium.launchPersistentContext(path, {
-      baseURL,
-      headless: process.env.SMITHERS_REAL_HEADED !== "1",
-      viewport: { width: 1280, height: 900 }
-    })
+    const opened = await playwright.chromium.launchPersistentContext(path, options.persistent)
     context = opened
     const page = opened.pages()[0] ?? await opened.newPage()
     await page.goto(new URL(appEntryPath(), baseURL).toString(), { waitUntil: "domcontentloaded" })
@@ -344,6 +362,7 @@ export const authenticatedTest = realTest.extend<AuthenticatedProfileOptions & A
       await use(target.context)
       return
     }
+    const options = await authenticatedBrowserOptions(baseURL)
     if (realAuthKind() === "application-token") {
       const environment = process.env.SMITHERS_REAL_AUTH_ENVIRONMENT?.trim()
       const token = environment ? process.env[environment]?.trim() : undefined
@@ -353,9 +372,7 @@ export const authenticatedTest = realTest.extend<AuthenticatedProfileOptions & A
       let context: BrowserContext | undefined
       try {
         context = profile
-          ? await playwright.chromium.launchPersistentContext(profile.path, {
-              baseURL, headless: process.env.SMITHERS_REAL_HEADED !== "1", viewport: { width: 1280, height: 900 }
-            })
+          ? await playwright.chromium.launchPersistentContext(profile.path, options.persistent)
           : inheritedContext
         const origin = new URL(baseURL).origin
         await context.addInitScript(({ origin, token }) => {
@@ -377,9 +394,7 @@ export const authenticatedTest = realTest.extend<AuthenticatedProfileOptions & A
     if (realAuthKind() === "owner-session") {
       const ownerProfile = process.env.SMITHERS_REAL_OWNER_PROFILE_DIR?.trim()
       if (ownerProfile) {
-        const context = await playwright.chromium.launchPersistentContext(ownerProfile, {
-          baseURL, headless: process.env.SMITHERS_REAL_HEADED !== "1", viewport: { width: 1280, height: 900 }
-        })
+        const context = await playwright.chromium.launchPersistentContext(ownerProfile, options.persistent)
         const cookieCache = join(ownerProfile, "owner-session-cookies.json")
         try {
           try {
@@ -410,11 +425,11 @@ export const authenticatedTest = realTest.extend<AuthenticatedProfileOptions & A
     if (requiredEnvironment !== undefined && !process.env[requiredEnvironment]?.trim()) {
       // Still run the canonical production/build/capability preflight before
       // reporting the missing identity from _authenticatedReady.
-      const browser = await playwright.chromium.launch({ headless: process.env.SMITHERS_REAL_HEADED !== "1" })
+      const browser = await playwright.chromium.launch(options.launch)
       let context: BrowserContext | undefined
       const failures: unknown[] = []
       try {
-        context = await browser.newContext({ baseURL, viewport: { width: 1280, height: 900 } })
+        context = await browser.newContext(options.context)
         await use(context)
       } catch (error) { failures.push(error) }
       try { await context?.close() } catch (error) { failures.push(error) }
@@ -425,11 +440,7 @@ export const authenticatedTest = realTest.extend<AuthenticatedProfileOptions & A
     const { path, lease } = await acquireAuthenticatedProfile(requiredEnvironment)
     let context: BrowserContext | undefined
     try {
-      context = await playwright.chromium.launchPersistentContext(path, {
-        baseURL,
-        headless: process.env.SMITHERS_REAL_HEADED !== "1",
-        viewport: { width: 1280, height: 900 }
-      })
+      context = await playwright.chromium.launchPersistentContext(path, options.persistent)
       await use(context)
     } finally {
       if (context === undefined) await lease.release()
@@ -491,7 +502,11 @@ export const authenticatedTest = realTest.extend<AuthenticatedProfileOptions & A
     const profileAvailable = profileEnvironment === undefined || Boolean(process.env[profileEnvironment]?.trim())
     if (!profileAvailable) throw new Error(`${profileEnvironment} is required for this real identity scenario.`)
     if (profileAvailable) {
-      await restoreAuthenticatedSession(page, baseURL)
+      const session = await restoreAuthenticatedSession(page, baseURL)
+      const expectedLogin = profileEnvironment === "SMITHERS_E2E_ADMIN_PROFILE"
+        ? process.env.SMITHERS_E2E_EXPECTED_ADMIN_LOGIN?.trim()
+        : process.env.SMITHERS_E2E_EXPECTED_LOGIN?.trim()
+      if (expectedLogin && session.login !== expectedLogin) throw new Error("The sanctioned profile authenticated an unexpected account.")
       testInfo.annotations.push({ type: "real-authenticated-profile", description: "restored-after-lifecycle" })
     }
     try {
@@ -514,3 +529,6 @@ export const authenticatedTest = realTest.extend<AuthenticatedProfileOptions & A
 export const ordinaryTest = authenticatedTest.extend({ profileEnvironment: "SMITHERS_E2E_ORDINARY_PROFILE" })
 
 export const maintainerTest = authenticatedTest.extend({ profileEnvironment: "SMITHERS_E2E_MAINTAINER_PROFILE" })
+
+/** Admin evidence requires its own explicitly supplied profile. */
+export const adminTest = authenticatedTest.extend({ profileEnvironment: "SMITHERS_E2E_ADMIN_PROFILE" })
