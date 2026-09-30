@@ -71,6 +71,56 @@ export const positive = (value: unknown, label = "id"): number => {
   return n
 }
 /**
+ * Reads cursor metadata without trusting a backend-provided destination.
+ * @private
+ * @since 1.0.0
+ */
+export const paginationCursor = (headers: Headers, current: URL): string => {
+  const invalid = () => new Refused({ fault: "infra", code: "backend_protocol", message: "API returned invalid pagination" })
+  const link = headers.get("link") || ""
+  const entries: Array<string> = []
+  let start = 0, quoted = false, angle = false, escaped = false
+  for (let index = 0; index < link.length; index++) {
+    const char = link[index]
+    if (escaped) escaped = false
+    else if (quoted && char === "\\") escaped = true
+    else if (!angle && char === '"') quoted = !quoted
+    else if (!quoted && char === "<") angle = true
+    else if (!quoted && char === ">") angle = false
+    else if (!quoted && !angle && char === ",") {
+      entries.push(link.slice(start, index))
+      start = index + 1
+    }
+  }
+  if (quoted || angle || escaped) throw invalid()
+  if (link) entries.push(link.slice(start))
+  let next: string | undefined
+  for (const entry of entries) {
+    const parsed = /^\s*<([^<>]+)>\s*(.*)$/.exec(entry)
+    if (!parsed) throw invalid()
+    const rel = /(?:^|;)\s*rel\s*=\s*(?:"([^"]*)"|([^;\s]+))/i.exec(parsed[2]!)
+    if (!(rel?.[1] ?? rel?.[2] ?? "").split(/\s+/).includes("next")) continue
+    if (next !== undefined) throw invalid()
+    let url: URL
+    try {
+      url = new URL(parsed[1]!, current)
+    } catch {
+      throw invalid()
+    }
+    if (
+      url.origin !== current.origin || url.pathname !== current.pathname || url.username || url.password || url.hash ||
+      url.searchParams.getAll("cursor").length !== 1
+    ) throw invalid()
+    next = url.searchParams.get("cursor")!
+    if (!next) throw invalid()
+  }
+  const legacy = headers.get("x-next-cursor")
+  if (next !== undefined && legacy !== null && legacy !== next) throw invalid()
+  const cursor = next ?? legacy ?? ""
+  if (cursor.length > 4096 || /\s|[\u0000-\u001f\u007f]/.test(cursor)) throw invalid()
+  return cursor
+}
+/**
  * @private
  * @since 1.0.0
  */
@@ -355,6 +405,14 @@ export class Client {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       ...(signal ? { signal } : {}),
       redirect: "error"
+    }).catch((error: unknown) => {
+      if (requestSignal?.aborted) {
+        throw withCause(new Refused({ fault: "user", code: "cancelled", message: "API request cancelled" }), error)
+      }
+      if (signal?.aborted || error instanceof Error && error.name === "TimeoutError") {
+        throw withCause(new Refused({ fault: "infra", code: "backend_timed_out", message: "Smithers API timed out. Check api_origin and your connection" }), error)
+      }
+      throw withCause(new Refused({ fault: "infra", code: "backend_unavailable", message: "Cannot reach Smithers API. Check api_origin and your connection" }), error)
     })
     if (!response.ok) {
       let detail: Values = {}
@@ -391,16 +449,24 @@ export class Client {
   }
   async pages(path: (cursor: string) => string, cursor = "", all = false, key = "items"): Promise<unknown> {
     const items: Array<unknown> = [], seen = new Set<string>()
+    const origin = this.session.target().api_url
     do {
       if (seen.has(cursor)) {
         throw new Refused({ fault: "infra", code: "backend_protocol", message: "API repeated a pagination cursor" })
       }
       seen.add(cursor)
-      const response = await this.response("GET", path(cursor))
+      const requestPath = path(cursor)
+      const response = await this.response("GET", requestPath, undefined, { origin })
       const data: unknown = JSON.parse(await this.text(response))
-      cursor = response.headers.get("x-next-cursor") ?? ""
+      cursor = paginationCursor(response.headers, new URL(requestPath, origin))
+      if (cursor && seen.has(cursor)) {
+        throw new Refused({ fault: "infra", code: "backend_protocol", message: "API repeated a pagination cursor" })
+      }
       if (!all) return cursor ? { [key]: data, next_cursor: cursor } : data
-      items.push(...list(data))
+      if (!Array.isArray(data)) {
+        throw new Refused({ fault: "infra", code: "backend_protocol", message: "API returned an invalid page" })
+      }
+      items.push(...data)
     } while (cursor)
     return items
   }

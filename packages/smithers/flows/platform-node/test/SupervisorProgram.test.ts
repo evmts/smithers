@@ -247,6 +247,57 @@ describe("supervisor stop policy", () => {
   })
 })
 
+describe("supervisor vacant-group settlement", () => {
+  it("finishes an explicit stop at once when the exited target left no live group member", () => {
+    const helper = program("SIGKILL", false)
+    helper.send({ type: "stop", explicit: true, killSignal: "SIGTERM", graceMs: 5000 })
+    expect(helper.timers.map((timer) => timer.millis)).toEqual([5000])
+    helper.proc.set("4102", `4102 (node worker) Z 4101 4101 ${Array(16).fill(0).join(" ")} 7000 0 0\n`)
+    helper.target.emit("exit", null, "SIGTERM")
+    // Cleanup is reported and the owner's group ends without the grace timer.
+    expect(helper.statusFrames).toContainEqual({ type: "cleanup" })
+    expect(helper.signals).toEqual([[-4101, "SIGTERM"], [-4101, "SIGKILL"]])
+    expect(helper.timers.map((timer) => timer.millis)).toEqual([5000, 100])
+  })
+
+  it("finishes a natural grouped exit at once when the group is empty", () => {
+    const helper = program("SIGTERM", false)
+    helper.proc.delete("4102")
+    helper.target.emit("exit", 0, null)
+    expect(helper.signals).toEqual([[-4101, "SIGTERM"], [-4101, "SIGKILL"]])
+    expect(helper.statusFrames).toContainEqual({ type: "cleanup" })
+  })
+
+  it("keeps the grace window while another group member is alive", () => {
+    const helper = program("SIGKILL", false)
+    helper.send({ type: "stop", explicit: true, killSignal: "SIGTERM", graceMs: 5000 })
+    helper.proc.delete("4102")
+    helper.proc.set("4104", `4104 (node worker) S 4102 4101 ${Array(16).fill(0).join(" ")} 7000 0 0\n`)
+    helper.target.emit("exit", null, "SIGTERM")
+    expect(helper.statusFrames).not.toContainEqual({ type: "cleanup" })
+    expect(helper.timers.map((timer) => timer.millis)).toEqual([5000])
+  })
+
+  it("keeps the grace window for a captured escaped descendant", () => {
+    const helper = program("SIGKILL", true)
+    helper.send({ type: "stop", explicit: true, killSignal: "SIGTERM", graceMs: 5000 })
+    helper.proc.delete("4102")
+    helper.target.emit("exit", null, "SIGTERM")
+    expect(helper.statusFrames).not.toContainEqual({ type: "cleanup" })
+    expect(helper.timers.map((timer) => timer.millis)).toEqual([5000])
+  })
+
+  it("keeps the grace window when the process table cannot be read", () => {
+    const helper = program("SIGKILL", false)
+    helper.send({ type: "stop", explicit: true, killSignal: "SIGTERM", graceMs: 5000 })
+    helper.proc.delete("4102")
+    helper.listing.error = new Error("EACCES")
+    helper.target.emit("exit", null, "SIGTERM")
+    expect(helper.statusFrames).not.toContainEqual({ type: "cleanup" })
+    expect(helper.timers.map((timer) => timer.millis)).toEqual([5000])
+  })
+})
+
 describe("supervisor descendant observation", () => {
   const stat = (pid: number, comm: string, state: string, parent: number, group: number, start: number) =>
     `${pid} (${comm}) ${state} ${parent} ${group} ${Array(16).fill(0).join(" ")} ${start} 0 0\n`

@@ -477,46 +477,70 @@ const settledEngineRow = async (root: string, runId: string): Promise<EngineRow 
 describe("an agent execution quarantined by the durable engine", () => {
   it("fences a delegated resume when a peer quarantines after its wait precheck", async () => {
     const root = makeRoot()
-    const runId = await Effect.runPromise(Effect.gen(function*() {
+    const resumed = Deferred.makeUnsafe<void>()
+    // The peer's quarantine lands inside the window this issue is about:
+    // after the executor read the park as a timer and before the engine
+    // re-drives it. The control claim is the last step in between.
+    let quarantineOnClaim = false
+    let quarantines = 0
+    const operatorWakes = (runId: string): number => {
+      const database = new DatabaseSync(join(root, "engine.db"), { readOnly: true })
+      try {
+        const row = database.prepare(`SELECT COUNT(*) AS n FROM flows_journal_events
+          WHERE run_id = ? AND event_type = 'flows.engine.run-decision'
+          AND json_extract(payload_json, '$.decision') = 'wake-scheduled'
+          AND json_extract(payload_json, '$.reason') = 'operator'`).get(runId) as { readonly n: number }
+        return row.n
+      } finally {
+        database.close()
+      }
+    }
+    const outcome = await Effect.runPromise(Effect.gen(function*() {
       const id = yield* launch
       const runtime = yield* ControlRuntime.ControlRuntime
       yield* awaitStatus(runtime, id, "parked")
-      return id
-    }).pipe(Effect.provide(host(root, hostOwner)), Effect.scoped, Effect.orDie))
-    expect(readEngineRun(root, runId)?.waiting_reason).toBe("timer")
-    const resumed = Deferred.makeUnsafe<void>()
-    let quarantines = 0
-    await Effect.runPromise(Effect.gen(function*() {
+      expect(readEngineRun(root, id)?.waiting_reason).toBe("timer")
+      const wakesBefore = operatorWakes(id)
+      quarantineOnClaim = true
       const executor = yield* ControlExecutor.ControlExecutor
-      expect(yield* executor.resumeRun({ runId })).toBe("resuming")
+      const uptake = yield* executor.resumeRun({ runId: id })
       yield* Deferred.await(resumed)
-    }).pipe(Effect.provide(host(root, secondOwner, "quarantine-race", {
-      resumed,
-      beforeResume: (id) => Effect.sync(() => {
-        quarantines++
-        const database = new DatabaseSync(join(root, "engine.db"))
-        try {
-          database.prepare("UPDATE flows_runs SET waiting_reason = 'quarantine', waiting_token = 'peer-corruption' WHERE run_id = ?").run(id)
-        } finally {
-          database.close()
-        }
-      })
-    })), Effect.scoped, Effect.orDie))
+      // The refused delegation hands its control claim back to the park.
+      yield* awaitStatus(runtime, id, "parked")
+      return { id, uptake, wakesBefore, parkedBy: (yield* runtime.getRun(id)).parkedBy }
+    }).pipe(
+      Effect.provide(host(root, hostOwner, "quarantine-race", {
+        resumed,
+        beforeResume: (id) =>
+          Effect.sync(() => {
+            if (!quarantineOnClaim) return
+            quarantineOnClaim = false
+            quarantines++
+            const database = new DatabaseSync(join(root, "engine.db"))
+            try {
+              database.prepare(
+                "UPDATE flows_runs SET waiting_reason = 'quarantine', waiting_token = 'peer-corruption' WHERE run_id = ?"
+              ).run(id)
+            } finally {
+              database.close()
+            }
+          })
+      })),
+      Effect.scoped,
+      Effect.orDie
+    ))
+    const { id: runId } = outcome
     expect(quarantines).toBe(1)
-    expect(readEngineRun(root, runId)?.status).toBe("suspended")
-    expect(readEngineRun(root, runId)?.waiting_reason).toBe("quarantine")
-    expect(readEngineRun(root, runId)?.waiting_token).toBe("peer-corruption")
+    // The precheck saw a timer, so the executor claimed and handed the run on.
+    expect(outcome.uptake).toBe("resuming")
+    expect(outcome.parkedBy).toBeDefined()
+    const row = readEngineRun(root, runId)
+    expect(row?.status).toBe("suspended")
+    expect(row?.waiting_reason).toBe("quarantine")
+    expect(row?.waiting_token).toBe("peer-corruption")
     expect(notes).toEqual([])
-    const database = new DatabaseSync(join(root, "engine.db"), { readOnly: true })
-    try {
-      const consent = database.prepare(`SELECT COUNT(*) AS count FROM flows_journal
-        WHERE run_id = ? AND event_type = 'flows.engine.run-decision'
-        AND json_extract(payload_json, '$.decision') = 'wake-scheduled'
-        AND json_extract(payload_json, '$.reason') = 'operator'`).get(runId)
-      expect(consent).toEqual({ count: 0 })
-    } finally {
-      database.close()
-    }
+    // No recovery consent was recorded for the background delegation.
+    expect(operatorWakes(runId)).toBe(outcome.wakesBefore)
   }, 120_000)
 
   it("replays a corrupted succeeded attempt, parks both records, then recovers its saved outcome", async () => {

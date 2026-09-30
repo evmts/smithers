@@ -451,6 +451,19 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "issues.sync.resolve": jsonObject("issues.sync.resolve"),
   "issues.comment.retry": jsonObject("issues.comment.retry"),
   "issues.set": jsonObject("issues.set"),
+  /* `<connection_id> <scope_id> <conversation_id> [external_user_id] [owner/repo]`, or the form's `{ connection_id, scope_id, conversation_id, external_user_id, repo }`. */
+  "integrations.admit": (args, known) => {
+    const structured = structuredFields("integrations.admit", args, ["connection_id", "scope_id", "conversation_id", "external_user_id", "repo"])
+    if (structured !== undefined) return structured
+    const { rest, repo } = splitTrailingRepo(args, known)
+    const [connection_id, scope_id, conversation_id, external_user_id, extra] = tokensOf(rest)
+    if (extra !== undefined) return no("integrations.admit takes a connection id, workspace id, channel id, an optional user id and optionally an owner/repo")
+    return ok({
+      ...(connection_id === undefined ? {} : { connection_id }), ...(scope_id === undefined ? {} : { scope_id }),
+      ...(conversation_id === undefined ? {} : { conversation_id }), ...(external_user_id === undefined ? {} : { external_user_id }),
+      ...(repo === undefined ? {} : { repo })
+    })
+  },
   "integrations.list": args => repoOnly("integrations.list", args),
   "issues.setup": args => repoOnly("issues.setup", args),
   "review.setup": args => repoOnly("review.setup", args),
@@ -1012,6 +1025,13 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     const { rest, repo } = splitTrailingRepo(args)
     if (!/^[\w-]{1,64}$/.test(rest)) return no("history.retry takes an item id")
     return ok(repo === undefined ? { id: rest } : { id: rest, repo })
+  },
+  /* `<title> [owner/repo]`, or the form's `{ title, body, repo }`. */
+  "history.todo": (args, known) => {
+    const structured = structuredFields("history.todo", args, ["title", "body", "repo"])
+    if (structured !== undefined) return structured
+    const { rest, repo } = splitTrailingRepo(args, known)
+    return ok({ ...(rest === "" ? {} : { title: rest }), ...(repo === undefined ? {} : { repo }) })
   },
   "history.view": (args) => {
     const { rest, repo } = splitTrailingRepo(args)
