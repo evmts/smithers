@@ -4,8 +4,8 @@ import { preparedView, type ViewAction } from "../PreparedView"
  * The agent-environment seam: GET/PUT /api/repos/{owner}/{repo}/
  * agent-environment. Environment VARS and the setup script read and write
  * here; SECRETS are write-only upstream and only their metadata (name, egress
- * binding, updated time) is parsed, for the secrets card (SecretsSeam.ts).
- * Reference: multi src/smithersCloud/agentEnvironment.ts.
+ * binding, updated time) is parsed for agent inputs. The CI secrets card
+ * uses the distinct repository-secrets store (RepositorySecrets.ts).
  */
 import type { Card } from "../AppState"
 import { resolveTargetRepo } from "../RepoContext"
@@ -70,7 +70,7 @@ const parseStrings = (value: unknown): ReadonlyArray<string> | null => {
  * plue's AgentEnvironmentResponse: snake_case fields, env rows {name, value},
  * secret rows {name, hosts, match_headers, updated_at} with no value. Off-shape
  * answers null out rather than throwing; the seam's channel is the honest
- * error string. Exported for the secrets seam, which reads the same document.
+ * error string. Run inputs reuse this parser without retaining variables.
  */
 export const parseEnvironment = (wire: unknown): EnvironmentConfig | null => {
   if (typeof wire !== "object" || wire === null) return null
@@ -105,13 +105,13 @@ export const parseEnvironment = (wire: unknown): EnvironmentConfig | null => {
 }
 
 /** The one agent-environment document URL for a repository. */
-export const environmentUrl = (ctx: SeamContext, repo: string): string => {
+export const environmentUrl = (ctx: Pick<SeamContext, "baseUrl">, repo: string): string => {
   const [owner = "", name = ""] = repo.split("/")
   return `${ctx.baseUrl}/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/agent-environment`
 }
 
 /** GET the environment; an honest string on any failure, the config otherwise. */
-export const readEnvironment = async (ctx: SeamContext, repo: string): Promise<EnvironmentConfig | string> => {
+export const readEnvironment = async (ctx: Pick<SeamContext, "baseUrl" | "http">, repo: string): Promise<EnvironmentConfig | string> => {
   let response: Response
   try {
     response = await ctx.http(environmentUrl(ctx, repo))
@@ -176,7 +176,7 @@ export const createEnvironmentSeam = (ctx: SeamContext): EnvironmentSeam => {
 
   /**
    * The one env card per repo, re-surfaced at the transcript's end on every
-   * read. Secrets are not this card's: /secrets.list renders their metadata.
+   * read. This card renders variables; run inputs read agent bindings separately.
    */
   const environmentCard = (repo: string, config: EnvironmentConfig): Card => {
     const card: Card = {
