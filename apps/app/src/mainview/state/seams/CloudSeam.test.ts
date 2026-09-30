@@ -228,7 +228,7 @@ for (const state of ["signed-in", "signed-out", "degraded"] as const) {
       expect(upstream.every(request => request.authorization === null)).toBe(true)
     } finally {
       workspace.dispose()
-      controller.dispose()
+      await controller.dispose()
       await backend.stop(true)
     }
   })

@@ -670,7 +670,7 @@ test("registration inbox pages retain the registrant's workspace and canonical a
 describe("run history", () => {
   const report = {
     runId: "run-1",
-    verdict: "divergent",
+    verdict: "divergent" as const,
     replayed: [{ stepKeyDigest: "a", action: "verify/first" }],
     executes: { stepKeyDigest: "c" },
     notReplayed: [{ stepKeyDigest: "b" }]
@@ -683,7 +683,7 @@ describe("run history", () => {
   })
 
   test("Run.Fork sends the frame and the one edited step and answers the parked child", async () => {
-    const child = { runId: "run-1-fork", parentRunId: "run-1", status: "parked" }
+    const child = { runId: "run-1-fork", parentRunId: "run-1", status: "parked" as const }
     const { seam, calls } = relay({ "Run.Fork": { ok: true, payload: child } })
     expect(await seam.fork("o/r", "run-1", 4)).toEqual({ status: "ok", value: child })
     const step = { stepKeyDigest: "b", result: { text: "edited" } }
