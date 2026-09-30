@@ -1,3 +1,3 @@
 export const desktop = [
-  "desktop",
+  "desktop", // owner: #1879
 ] as const

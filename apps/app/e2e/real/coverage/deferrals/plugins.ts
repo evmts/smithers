@@ -1,3 +1,6 @@
 export const plugins = [
-  "plugins", "plugins.install", "plugins.list", "plugins.remove",
+  "plugins", // owner: #1879
+  "plugins.install", // owner: #1879
+  "plugins.list", // owner: #1879
+  "plugins.remove", // owner: #1879
 ] as const

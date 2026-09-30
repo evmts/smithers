@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import { checkRealE2E, declaredFlowNames, executableImportClosure, formatGateReport } from "./gate"
-import { RELEASE_CRITICAL_ACTIONS, UNSCENARIOED_ACTIONS } from "./deferrals"
+import { checkRealE2E as checkGate, type GateOptions, declaredFlowNames, executableImportClosure, formatGateReport } from "./gate"
+import { OWED_DEFERRAL_SOURCES, RELEASE_CRITICAL_ACTIONS, UNSCENARIOED_ACTIONS } from "./deferrals"
 
 const roots: string[] = []
 const fixture = (): { root: string; real: string; flows: string } => {
@@ -13,8 +13,18 @@ const fixture = (): { root: string; real: string; flows: string } => {
   mkdirSync(real, { recursive: true })
   const flows = join(root, "FlowName.ts")
   writeFileSync(flows, `export const FLOW_NAMES = ["repo.open", "chat.send"] as const\n`)
+  writeFileSync(join(root, "ledger.ts"), `export const owed = [
+  "chat.send", // owner: #2290
+  "repo.open", // owner: #2290
+  "retired.action", // owner: #2290
+] as const\n`)
   return { root, real, flows }
 }
+
+const checkRealE2E = (options: GateOptions) => checkGate({
+  ...options,
+  deferredSources: options.deferredSources ?? { owed: join(options.flowNameFile, "../ledger.ts") }
+})
 
 afterEach(() => { while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true }) })
 
@@ -373,6 +383,98 @@ export const searchFlows = (actions) => [
     expect(report.gaps).toContainEqual({ kind: "action", value: "chat.send" })
   })
 
+  test("fails an owed deferral without an owner issue", () => {
+    const { real, flows } = fixture()
+    writeFileSync(join(real, "repo.spec.ts"), valid)
+    const report = checkRealE2E({ realDir: real, flowNameFile: flows, deferred, deferredSources: {} })
+    expect(report.ok).toBe(false)
+    expect(report.findings).toContainEqual(expect.objectContaining({
+      code: "unowned-deferral", severity: "error", message: expect.stringContaining("chat.send")
+    }))
+  })
+
+  test.each([
+    ["missing comment", 'export const owed = ["chat.send"] as const'],
+    ["zero", 'export const owed = [\n"chat.send", // owner: #0\n] as const'],
+    ["negative", 'export const owed = [\n"chat.send", // owner: #-1\n] as const'],
+    ["leading zero", 'export const owed = [\n"chat.send", // owner: #01\n] as const'],
+    ["unsafe number", 'export const owed = [\n"chat.send", // owner: #9007199254740992\n] as const'],
+    ["noninteger", 'export const owed = [\n"chat.send", // owner: #1.5\n] as const'],
+    ["missing hash", 'export const owed = [\n"chat.send", // owner: 2290\n] as const'],
+    ["two owners", 'export const owed = [\n"chat.send", // owner: #2290 owner: #2458\n] as const'],
+    ["owner on next line", 'export const owed = [\n"chat.send",\n// owner: #2290\n] as const'],
+    ["owner on previous line", 'export const owed = [\n// owner: #2290\n"chat.send",\n] as const'],
+    ["owner in block comment", 'export const owed = [\n"chat.send", /* owner: #2290 */\n] as const'],
+    ["another exported array", 'export const decoy = [\n"chat.send", // owner: #2290\n] as const'],
+    ["unexported array", 'const owed = [\n"chat.send", // owner: #2290\n] as const'],
+    ["nested exported array", 'function decoy() { const owed = [\n"chat.send", // owner: #2290\n] as const }'],
+    ["nested array in actual ledger", 'export const owed = [[\n"chat.send", // owner: #2290\n]] as const'],
+    ["stale action owns nothing", 'export const owed = [\n"retired.action", // owner: #2290\n] as const'],
+    ["same line sibling", 'export const owed = [\n"chat.send", "repo.open", // owner: #2290\n] as const'],
+    ["repeated same owner", 'export const owed = [\n"chat.send", // owner: #2290\n"chat.send", // owner: #2290\n] as const'],
+    ["conflicting owners", 'export const owed = [\n"chat.send", // owner: #2290\n"chat.send", // owner: #2458\n] as const'],
+    ["decoy before unowned actual array", 'export const decoy = [\n"chat.send", // owner: #2290\n] as const; export const owed = ["chat.send"] as const'],
+    ["string pretending to be an entry", 'export const text = `export const owed = [\n"chat.send", // owner: #2290\n] as const`'],
+  ])("rejects %s ownership without letting a source decoy account for the action", (_label, source) => {
+    const { root, real, flows } = fixture()
+    writeFileSync(join(root, "ledger.ts"), source)
+    writeFileSync(join(real, "repo.spec.ts"), valid)
+    const report = checkRealE2E({ realDir: real, flowNameFile: flows, deferred })
+    expect(report.ok).toBe(false)
+    expect(report.findings.filter((finding) => finding.code === "unowned-deferral")).toEqual([
+      expect.objectContaining({ severity: "error", message: expect.stringContaining("chat.send") })
+    ])
+  })
+
+  test.each(["1", "2290", "9007199254740991"])("accepts one positive issue number #%s on the actual exported entry", (issue) => {
+    const { root, real, flows } = fixture()
+    writeFileSync(join(root, "ledger.ts"), `export const owed = [\r\n  "chat.send", // owner: #${issue}\r\n] as const\r\n`)
+    writeFileSync(join(real, "repo.spec.ts"), valid)
+    expect(checkRealE2E({ realDir: real, flowNameFile: flows, deferred }).ok).toBe(true)
+  })
+
+  test("missing source cannot own an owed entry but browser and diagnostics need no issue source", () => {
+    const { root, real, flows } = fixture()
+    writeFileSync(join(real, "repo.spec.ts"), valid)
+    const deferredSources = { owed: join(root, "missing.ts") }
+    const owed = checkRealE2E({ realDir: real, flowNameFile: flows, deferred, deferredSources })
+    expect(owed.ok).toBe(false)
+    expect(owed.findings.map((finding) => finding.code)).toContain("unowned-deferral")
+    for (const reason of ["browser", "diagnostics"] as const) {
+      const report = checkRealE2E({ realDir: real, flowNameFile: flows, deferred: { [reason]: ["chat.send"] }, deferredSources: { irrelevant: root } })
+      expect(report.ok).toBe(true)
+      expect(report.deferred).toEqual([{ action: "chat.send", reason }])
+    }
+  })
+
+  test("ownership in multiple ledger sources is ambiguous even when both issue numbers agree", () => {
+    const { root, real, flows } = fixture()
+    writeFileSync(join(real, "repo.spec.ts"), valid)
+    const other = join(root, "other.ts")
+    writeFileSync(other, 'export const other = [\n"chat.send", // owner: #2290\n] as const')
+    const report = checkRealE2E({ realDir: real, flowNameFile: flows, deferred,
+      deferredSources: { owed: join(root, "ledger.ts"), other } })
+    expect(report.ok).toBe(false)
+    expect(report.findings.map((finding) => finding.code)).toContain("unowned-deferral")
+  })
+
+  test("a directory ledger source reports an unowned deferral without reading its child owner file", () => {
+    const { root, real, flows } = fixture()
+    writeFileSync(join(real, "repo.spec.ts"), valid)
+    // fixture() put a valid exported owner in root/ledger.ts. A directory is
+    // not that canonical source and must neither throw nor search its children.
+    const report = checkRealE2E({ realDir: real, flowNameFile: flows, deferred, deferredSources: { owed: root } })
+    expect(report.ok).toBe(false)
+    expect(report.findings).toEqual([
+      expect.objectContaining({ code: "unowned-deferral", severity: "error", message: expect.stringContaining("chat.send") })
+    ])
+    expect(report.deferred).toEqual([{ action: "chat.send", reason: "owed" }])
+    expect(report.scenarios.flatMap(scenario => scenario.actions)).not.toContain("chat.send")
+    // Only optional owner sources admit this refusal; a broken authoritative
+    // FLOW_NAMES source must continue to fail at its actual read boundary.
+    expect(() => checkRealE2E({ realDir: real, flowNameFile: root, deferred })).toThrow()
+  })
+
   test("rejects deferrals for covered, removed, duplicated, or release-critical actions", () => {
     const { real, flows } = fixture()
     writeFileSync(join(real, "repo.spec.ts"), valid)
@@ -391,10 +493,12 @@ export const searchFlows = (actions) => [
     const app = join(import.meta.dir, "../../..")
     const report = checkRealE2E({
       realDir: join(app, "e2e/real"), flowNameFile: join(app, "src/mainview/flows/FlowName.ts"),
-      deferred: UNSCENARIOED_ACTIONS, releaseCritical: RELEASE_CRITICAL_ACTIONS
+      deferred: UNSCENARIOED_ACTIONS, deferredSources: OWED_DEFERRAL_SOURCES, releaseCritical: RELEASE_CRITICAL_ACTIONS
     })
     const codes = new Set(report.findings.filter((finding) => finding.severity === "error").map((finding) => finding.code))
     expect([...codes].filter((code) => code !== "unscenarioed-action")).toEqual([])
+    expect(UNSCENARIOED_ACTIONS.owed).toContain("subagents")
+    expect(UNSCENARIOED_ACTIONS.owed).toContain("runs.continue")
     const unscenarioed = report.gaps.filter((gap) => gap.kind === "action").map((gap) => gap.value)
     expect(unscenarioed.filter((action) => !RELEASE_CRITICAL_ACTIONS.includes(action))).toEqual([])
   }, 60_000)
