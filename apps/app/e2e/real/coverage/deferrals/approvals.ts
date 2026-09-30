@@ -1,3 +1,3 @@
 export const approvals = [
-  "approvals.open",
+  "approvals.open", // owner: #1874
 ] as const
