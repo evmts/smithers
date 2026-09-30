@@ -478,16 +478,18 @@ func TestRuntimeWorkspaceKeepsRepositoryCredentialWhileRunning(t *testing.T) {
 func TestWorkspaceHeadReporterBesideAnotherExitsAndKeepsTheOwnersCredential(t *testing.T) {
 	requireExecutable(t, "bash")
 	dir := t.TempDir()
-	cache := filepath.Join(dir, "credential")
+	realGit, err := exec.LookPath("git")
+	require.NoError(t, err)
+	audit := filepath.Join(dir, "credential-actions")
+	// Audit only action/owner IDs, delegating the actual credential transport to Git.
 	fakeGit := `#!/usr/bin/env bash
-case "${!#}" in
-  store) cat > "$TEST_CACHE" ;;
-  exit) rm -f "$TEST_CACHE" ;;
-esac
+printf '%s %s\n' "$SMITHERS_WORKSPACE_TOKEN_ID" "${!#}" >> "$TEST_AUDIT"
+exec "$TEST_GIT" "$@"
 `
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "git"), []byte(fakeGit), 0o755))
 	socket := filepath.Join(dir, "cache", "socket")
 	pidfile := filepath.Join(dir, "cache", "reporter.pid")
+	t.Cleanup(func() { _ = exec.Command(realGit, "credential-cache", "--socket", socket, "exit").Run() })
 	start := func(token string, id int) *exec.Cmd {
 		cmd := exec.Command("bash", "-c", workspaceHeadReporterScript)
 		cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"),
@@ -495,7 +497,7 @@ esac
 			"SMITHERS_WORKSPACE_ID=test", "SMITHERS_API_BASE_URL=https://example.invalid/api",
 			"SMITHERS_WORKSPACE_REPO=test/repo", "SMITHERS_WORKSPACE_GIT_URL=https://example.invalid/test/repo.git",
 			"SMITHERS_WORKSPACE_GIT_CREDENTIAL_SOCKET="+socket, "SMITHERS_WORKSPACE_HEAD_POLL_SECONDS=0.1",
-			"SMITHERS_WORKSPACE_TOKEN="+token, fmt.Sprintf("SMITHERS_WORKSPACE_TOKEN_ID=%d", id), "TEST_CACHE="+cache)
+			"SMITHERS_WORKSPACE_TOKEN="+token, fmt.Sprintf("SMITHERS_WORKSPACE_TOKEN_ID=%d", id), "TEST_GIT="+realGit, "TEST_AUDIT="+audit)
 		require.NoError(t, cmd.Start())
 		t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
 		return cmd
@@ -505,7 +507,10 @@ esac
 		return strings.SplitN(string(contents), " ", 2)[0]
 	}
 	cached := func() string {
-		contents, _ := os.ReadFile(cache)
+		cmd := exec.Command(realGit, "credential-cache", "--socket", socket, "get")
+		cmd.Stdin = strings.NewReader("url=https://example.invalid/test/repo.git\nusername=smithers\n\n")
+		contents, err := cmd.CombinedOutput()
+		require.NoError(t, err, string(contents))
 		return string(contents)
 	}
 
@@ -527,7 +532,18 @@ esac
 		t.Fatal("the publisher beside the owner kept running")
 	}
 	require.Eventually(t, func() bool { return strings.Contains(cached(), "password=token-second") }, 5*time.Second, 20*time.Millisecond)
-	time.Sleep(500 * time.Millisecond)
+	before, err := os.ReadFile(audit)
+	require.NoError(t, err)
+	var later string
+	require.Eventually(t, func() bool {
+		contents, err := os.ReadFile(audit)
+		if err != nil {
+			return false
+		}
+		later = string(contents[len(before):])
+		return strings.Count(later, "2 store\n") >= 2
+	}, 5*time.Second, 20*time.Millisecond, "the surviving owner continues refreshing the actual cache")
+	require.NotContains(t, later, "1 ", "the retired publisher never writes or clears the owner's cache")
 	require.Contains(t, cached(), "password=token-second", "the exited publisher never clears or overwrites the owner's credential")
 	require.True(t, processAlive(second.Process.Pid))
 }
