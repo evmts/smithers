@@ -1,10 +1,15 @@
-import { expect, test } from 'bun:test'
+import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PROBE_MARKER } from '../../e2e/native/Probe'
 import type { NativeProbeReport, ProbeScenario } from '../../e2e/native/Probe'
+
+import { prepareNativeProbeAssets } from "../../e2e/fixtures/native-assets"
+let assets: Awaited<ReturnType<typeof prepareNativeProbeAssets>>
+beforeAll(async () => { assets = await prepareNativeProbeAssets() }, 120_000)
+afterAll(async () => { await assets?.stop() })
 
 const appDir = fileURLToPath(new URL('../..', import.meta.url))
 const driver = fileURLToPath(new URL('../../e2e/native/MainProcess.ts', import.meta.url))
@@ -15,12 +20,10 @@ const probe = async (scenario: ProbeScenario, env: Record<string, string> = {}):
     cwd: appDir,
     env: {
       PATH: process.env.PATH ?? '',
-      HOME: process.env.HOME ?? '',
+      HOME: home,
       SMITHERS_NATIVE_PROBE: JSON.stringify(scenario),
       SMITHERS_NATIVE_PROBE_HOME: home,
-      SMITHERS_LOCAL_PORT: '0',
-      SMITHERS_CHAT_STUB: '1',
-      SMITHERS_LOCAL_MODE: 'offline',
+      ...await assets.environment(),
       ...env
     },
     stdout: 'pipe',
@@ -64,5 +67,5 @@ test('an invalid launch URL leaves the home page usable for a later valid link',
   expect(report.windows).toHaveLength(1)
   expect(report.windows[0]?.url).toBe(`${report.origin}/`)
   expect(report.windows[0]?.loaded).toEqual([`${report.origin}/owner/repo`])
-  expect(report.health).toMatchObject({ ok: true })
+  expect(report.health).toMatchObject({ status: 200, capabilities: expect.arrayContaining(["native.shell"]) })
 }, 60_000)
