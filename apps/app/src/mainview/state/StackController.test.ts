@@ -1,3 +1,4 @@
+import { signupProfileFetch } from "./TestFixtures"
 import { expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
 import type { MythicalItem, MythicalStack, MythicalWiki } from "@smthrs/rpc/Mythical"
@@ -37,7 +38,8 @@ const cloud = () => {
   const streams = new Set<ReadableStreamDefaultController<Uint8Array>>()
   const handlers = new Map<string, (body: string) => Promise<Response>>()
   let reads = 0
-  const fetchImpl = async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+  const fetchImpl = signupProfileFetch(async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+
     const path = new URL(String(url), "https://test.invalid").pathname
     const method = init?.method ?? "GET"
     if (path === `${BASE}/events`) {
@@ -53,7 +55,7 @@ const cloud = () => {
       return Response.json(current, { status: 202 })
     }
     return Response.json([])
-  }
+  }).fetchImpl
   return {
     fetchImpl,
     writes,

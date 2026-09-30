@@ -1,3 +1,4 @@
+import { signupProfileFetch } from "../TestFixtures"
 import type { StorageApi } from "@tanstack/db"
 import { afterEach, describe, expect, test } from "bun:test"
 
@@ -44,7 +45,8 @@ type Failure = "empty" | "get-500" | "get-403" | "get-throw" | "malformed"
 const backend = (failure?: Failure) => {
   const requests: Array<{ readonly method: string; readonly url: string }> = []
   const services: AppServices = {
-    fetchImpl: async (input, init) => {
+    fetchImpl: signupProfileFetch(async (input, init) => {
+
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
       const method = init?.method ?? "GET"
       if (!url.endsWith("/secrets")) {
@@ -66,7 +68,7 @@ const backend = (failure?: Failure) => {
         },
         { name: "SETUP_ONLY", main_only: false, hosts: [], match_headers: [], updated_at: "2026-08-02T00:00:00.000Z" }
       ])
-    }
+    }).fetchImpl
   }
   return { services, requests }
 }
@@ -266,14 +268,15 @@ describe("secrets seam — secrets.scope", () => {
   test("marks a repository secret main-only and names the stored scope", async () => {
     const requests: Array<{ readonly method: string; readonly url: string; readonly body: unknown }> = []
     const services: AppServices = {
-      fetchImpl: async (input, init) => {
+      fetchImpl: signupProfileFetch(async (input, init) => {
+
         const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
         if (!url.includes("/secrets/")) return json(404, { message: `no stub for ${url}` })
         const body = JSON.parse(String(init?.body)) as { main_only: boolean }
         requests.push({ method: init?.method ?? "GET", url, body })
         if (url.endsWith("/MISSING")) return json(404, { message: "secret not found" })
         return json(200, { name: "DEPLOY", main_only: body.main_only })
-      }
+      }).fetchImpl
     }
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const controller = createAppController(store, unavailableAgent, services)
@@ -299,14 +302,15 @@ describe("secrets seam — secrets.bind", () => {
   test("binds a repository secret to hosts and headers and never sends an omitted binding", async () => {
     const requests: Array<{ readonly method: string; readonly url: string; readonly body: unknown }> = []
     const services: AppServices = {
-      fetchImpl: async (input, init) => {
+      fetchImpl: signupProfileFetch(async (input, init) => {
+
         const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
         if (!url.includes("/secrets/")) return json(404, { message: `no stub for ${url}` })
         const body = JSON.parse(String(init?.body)) as { hosts: string[]; match_headers: string[] }
         requests.push({ method: init?.method ?? "GET", url, body })
         if (url.endsWith("/MISSING")) return json(404, { message: "secret not found" })
         return json(200, { name: "NPM_TOKEN", main_only: false, hosts: body.hosts, match_headers: body.match_headers })
-      }
+      }).fetchImpl
     }
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const controller = createAppController(store, unavailableAgent, services)
@@ -369,11 +373,12 @@ const heldController = async (services: AppServices) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const routed: AppServices = {
     ...services,
-    fetchImpl: (input, init) => {
+    fetchImpl: signupProfileFetch((input, init) => {
+
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
       if (discoveryRoutes.has(url)) return Promise.resolve(json(404, {}))
       return track(Promise.resolve(services.fetchImpl!(input, init)))
-    }
+    }).fetchImpl
   }
   return { store, controller: createAppController(store, unavailableAgent, routed) }
 }
@@ -385,9 +390,10 @@ for (const retirement of ["account", "sign-out", "dispose"] as const) for (const
     const reply = heldResponse()
     const entered = Promise.withResolvers<void>()
     const hits: string[] = []
-    const { store, controller } = await heldController({ fetchImpl: async input => {
+    const { store, controller } = await heldController({ fetchImpl: signupProfileFetch(async (input, init) => {
+
       hits.push(String(input)); entered.resolve(); return reply.promise
-    } })
+    }).fetchImpl })
     await ready(store)
     const reading = track(controller.commands.run("secrets.list"))
     await bounded(entered.promise)
