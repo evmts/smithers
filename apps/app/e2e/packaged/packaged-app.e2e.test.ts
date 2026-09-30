@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import { stat } from "node:fs/promises"
+import { randomBytes } from "node:crypto"
+import { join } from "node:path"
+import { stat, writeFile } from "node:fs/promises"
 import { PackagedFixtureRun } from "./FixtureRun"
 import type { PackagedTestFixture } from "./FixtureRun"
 import { launchApp } from "./PackagedApp"
@@ -28,9 +30,58 @@ const renderedShell = `
   })
 `
 
+/** A controlled provider transport; durable admission, auth and inference run in the packaged backend. */
+const providerFixture = () => {
+  const key = randomBytes(32).toString("hex")
+  const requests: Array<{ path: string; model: string; text: string }> = []
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: async request => {
+    const path = new URL(request.url).pathname
+    if (request.method !== "POST" || path !== "/v1/chat/completions") return new Response(null, { status: 404 })
+    if (request.headers.get("authorization") !== `Bearer ${key}`) return new Response(null, { status: 401 })
+    const body = await request.json() as { model: string; messages: Array<{ role: string; content: string }> }
+    const text = body.messages.filter(message => message.role === "user").at(-1)?.content ?? ""
+    requests.push({ path, model: body.model, text })
+    const frame = { id: "packaged-provider", choices: [{ index: 0, delta: { role: "assistant", content: `stub: ${text}` }, finish_reason: null }] }
+    const done = { id: "packaged-provider", choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }
+    return new Response(`data: ${JSON.stringify(frame)}\n\ndata: ${JSON.stringify(done)}\n\ndata: [DONE]\n\n`,
+      { headers: { "content-type": "text/event-stream" } })
+  } })
+  return { origin: server.url.origin, key, requests, stop: () => server.stop(true) }
+}
+
+const initializeOwner = async (app: PackagedApp, provider: ReturnType<typeof providerFixture>): Promise<void> => {
+  await clickSelector(app, 'button[data-flow="auth.sign-in"]')
+  await app.waitFor<boolean>(`document.querySelector('.local-auth-dialog input[name="username"]') !== null`)
+  await app.eval<boolean>(`(() => {
+    for (const [name, value] of ${JSON.stringify([["username", "packagedowner"], ["password", "Packaged fixture owner Aa1!"]])}) {
+      const input = document.querySelector('.local-auth-dialog input[name="' + name + '"]')
+      if (!(input instanceof HTMLInputElement)) throw new Error('Missing owner input')
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    document.querySelector('.local-auth-dialog button[type="submit"]').click()
+    return true
+  })()`)
+  await app.waitFor<boolean>(`document.querySelector('.local-auth-dialog') === null`)
+  expect(await app.eval<string>(`fetch('/api/user').then(async response => {
+    if (!response.ok) throw new Error('Owner readback failed: ' + response.status)
+    return (await response.json()).username
+  })`)).toBe("packagedowner")
+  expect(await app.eval<boolean>(`(async () => {
+    const csrf = document.cookie.split('; ').find(value => value.startsWith('__csrf='))?.slice(7)
+    if (!csrf) throw new Error('Owner CSRF receipt missing')
+    const headers = { 'content-type': 'application/json', 'x-csrf-token': decodeURIComponent(csrf) }
+    const credential = await fetch('/api/model/credential', { method: 'POST', headers, body: JSON.stringify(${JSON.stringify({ action: "enroll", requestId: crypto.randomUUID(), name: "PACKAGED_PROVIDER", origin: provider.origin, value: provider.key })}) })
+    if (!credential.ok) throw new Error('Owner credential enrollment failed: ' + credential.status)
+    const selected = await fetch('/api/model/default', { method: 'PUT', headers, body: JSON.stringify(${JSON.stringify({ model: { protocol: "openai-chat", modelId: "packaged-fixture", credential: "PACKAGED_PROVIDER", baseUrl: provider.origin } })}) })
+    if (!selected.ok) throw new Error('Owner model selection failed: ' + selected.status)
+    return true
+  })()`)).toBe(true)
+}
+
 const withApp = async (
   label: string,
-  run: (app: PackagedApp, fixture: PackagedTestFixture) => Promise<void>
+  run: (app: PackagedApp, fixture: PackagedTestFixture, provider: ReturnType<typeof providerFixture>) => Promise<void>
 ): Promise<void> => {
   if (executable === undefined || artifactsDirectory === undefined || fixtureRun === undefined) {
     throw new Error(
@@ -39,13 +90,15 @@ const withApp = async (
   }
   const fixture = await fixtureRun.beginTest(label)
   const stateDirectory = await fixture.makeDirectory("application-state")
+  const provider = providerFixture()
   let app: PackagedApp | undefined
   let failure: unknown
   try {
-    app = await launchApp({ executable, artifactsDirectory, stateDirectory })
+    app = await launchApp({ executable, artifactsDirectory, stateDirectory, env: { SMITHERS_BACKEND_MODE: "own" } })
     await app.ready()
     await app.waitFor<RenderedShell>(renderedShell, (value) => value.composer && value.transcript)
-    await run(app, fixture)
+    await initializeOwner(app, provider)
+    await run(app, fixture, provider)
   } catch (error) {
     failure = error
     if (app !== undefined) {
@@ -65,6 +118,7 @@ const withApp = async (
       cleanupFailures.push(error)
     }
   }
+  try { await provider.stop() } catch (error) { cleanupFailures.push(error) }
   // Do not erase fixture state while a packaged process may still own it.
   // The marker then blocks the next test and afterAll reports the leak.
   if (cleanupFailures.length === 0) {
@@ -183,6 +237,7 @@ describe.skipIf(!enabled)("the packaged production Electrobun app", () => {
         true
       )
       await clickTestId(app, "card-maximize-theme-picker")
+      await app.waitFor<boolean>(`document.querySelector('[data-testid="card-theme-picker"]')?.getAttribute('data-maximized') === 'true'`)
       await clickTestId(app, "card-open-in-tab-theme-picker")
       expect(
         await app.waitFor<boolean>(
@@ -203,27 +258,39 @@ describe.skipIf(!enabled)("the packaged production Electrobun app", () => {
   })
 
   test("round-trips chat, recovers from a rejected mutation, and persists through relaunch", async () => {
-    await withApp("chat-persistence", async (app) => {
+    await withApp("chat-persistence", async (app, _fixture, provider) => {
       const firstState = await app.state()
-      const unauthorizedMutation = await app.eval<number>(`
+      const csrfRefusal = await app.eval<{ status: number; body: { code: string; message: string } }>(`
         fetch(${JSON.stringify(`${firstState.app.origin}/api/chat/cancel`)}, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ runId: 'unauthorized-e2e-probe' })
-        }).then((response) => response.status)
+        }).then(async response => ({ status: response.status, body: await response.json() }))
       `)
-      expect(unauthorizedMutation).toBe(401)
+      expect(csrfRefusal).toMatchObject({ status: 403, body: { code: "forbidden", message: "csrf token missing" } })
+      expect(provider.requests).toEqual([])
 
       const message = `packaged app e2e ${crypto.randomUUID()}`
       await sendMessage(app, message)
       expect(await app.waitFor<boolean>(transcriptContains(message))).toBe(true)
       expect(await app.waitFor<boolean>(transcriptContains(`stub: ${message}`), (value) => value, 30_000)).toBe(true)
+      expect(provider.requests).toEqual([{ path: "/v1/chat/completions", model: "packaged-fixture", text: message }])
       await app.relaunch()
       const relaunchedState = await app.state()
-      expect(relaunchedState.app.origin).toBe(firstState.app.origin)
+      const restored = await app.eval<{ userStatus: number; message: boolean; reply: boolean }>(`(async () => ({
+        userStatus: (await fetch('/api/user')).status,
+        message: ${transcriptContains(message)}, reply: ${transcriptContains(`stub: ${message}`)}
+      }))()`)
+      await writeFile(join(app.artifactsDirectory, "chat-relaunch-readback.json"), JSON.stringify({
+        before: firstState.app.origin,
+        after: relaunchedState.app.origin, changedPid: relaunchedState.app.pid !== firstState.app.pid, restored
+      }, null, 2))
       expect(relaunchedState.app.pid).not.toBe(firstState.app.pid)
+      expect(restored.userStatus).toBe(200)
       expect(await app.waitFor<boolean>(transcriptContains(message), (value) => value, 30_000)).toBe(true)
+      expect(relaunchedState.app.origin).toBe(firstState.app.origin)
       expect(await app.waitFor<boolean>(transcriptContains(`stub: ${message}`), (value) => value, 30_000)).toBe(true)
+      expect(provider.requests).toEqual([{ path: "/v1/chat/completions", model: "packaged-fixture", text: message }])
     })
   })
 

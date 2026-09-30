@@ -13,14 +13,27 @@ const EVAL_RETRY_TIMEOUT_MS = 30_000
 const EXIT_TIMEOUT_MS = 8_000
 const MAX_LOG_CHARACTERS = 512_000
 
+export function packagedChildEnvironment(
+  parent: NodeJS.ProcessEnv,
+  explicit: NodeJS.ProcessEnv,
+  protectedEnv: NodeJS.ProcessEnv
+): NodeJS.ProcessEnv {
+  const runtime: NodeJS.ProcessEnv = {}
+  for (const name of [
+    "PATH", "SystemRoot", "WINDIR", "ComSpec", "PATHEXT", "LANG", "LC_ALL", "LC_CTYPE",
+    "USER", "LOGNAME", "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "_CF_USER_TEXT_ENCODING"
+  ]) {
+    if (parent[name] !== undefined) runtime[name] = parent[name]
+  }
+  return { ...runtime, ...explicit, ...protectedEnv }
+}
+
 export interface LaunchAppOptions {
   readonly executable: string
   readonly stateDirectory?: string
   readonly artifactsDirectory?: string
   readonly env?: Readonly<Record<string, string>>
   readonly startupTimeoutMs?: number
-  /** Deterministic legacy fixture, or the real selected backend used by the mode matrix. */
-  readonly runtime?: "fixture" | "product"
 }
 
 export interface PackagedAppState {
@@ -99,7 +112,6 @@ export class PackagedApp {
   private readonly temporaryRoot: string
   private readonly processEnv: Readonly<Record<string, string>>
   private readonly startupTimeoutMs: number
-  private readonly runtime: "fixture" | "product"
   private child: ChildProcess | undefined
   private exit: Promise<ProcessExit> | undefined
   private processGroup: number | undefined
@@ -122,7 +134,6 @@ export class PackagedApp {
     this.artifactsDirectory = artifactsDirectory
     this.processEnv = options.env ?? {}
     this.startupTimeoutMs = options.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS
-    this.runtime = options.runtime ?? "fixture"
   }
 
   static async launch(options: LaunchAppOptions): Promise<PackagedApp> {
@@ -191,12 +202,6 @@ export class PackagedApp {
     this.appendLog("runner", `launch ${this.launchNumber}: ${this.executable}\n`)
 
     const tmpDirectory = join(this.temporaryRoot, "tmp")
-    const fixtureEnv: NodeJS.ProcessEnv = this.runtime === "fixture" ? {
-      SMITHERS_LOCAL_MODE: "offline",
-      SMITHERS_CHAT_STUB: "1"
-    } : {
-      SMITHERS_CHAT_STUB: "0"
-    }
     const protectedEnv: NodeJS.ProcessEnv = {
       HOME: this.stateDirectory,
       CFFIXED_USER_HOME: this.stateDirectory,
@@ -209,14 +214,13 @@ export class PackagedApp {
       SMITHERS_E2E_BRIDGE_TOKEN: this.bridgeToken,
       SMITHERS_LOCAL_PORT: undefined,
       SMITHERS_LOCAL_HEADLESS: "0",
-      ...fixtureEnv,
       ELECTROBUN_CONSOLE: "1",
       NO_COLOR: "1"
     }
     const child = spawn(this.executable, [], {
       cwd: dirname(this.executable),
       detached: process.platform !== "win32",
-      env: { ...process.env, ...this.processEnv, ...protectedEnv },
+      env: packagedChildEnvironment(process.env, this.processEnv, protectedEnv),
       stdio: ["ignore", "pipe", "pipe"]
     })
     this.child = child

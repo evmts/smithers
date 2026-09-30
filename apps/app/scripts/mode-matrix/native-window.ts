@@ -112,8 +112,7 @@ export const launchNativeWindowDriver = async (options: {
   const app = await PackagedApp.launch({
     executable: options.envelope.executable,
     artifactsDirectory: options.artifactsDirectory,
-    env: options.envelope.environment,
-    runtime: "product"
+    env: options.envelope.environment
   })
   let browser: Browser | undefined
   try {
