@@ -1,10 +1,12 @@
 import type { APIRequestContext, BrowserContext, Locator, Page, TestInfo } from "@playwright/test"
-import { command, expect, realApi } from "../support/test"
+import { appEntryPath, awaitBoot, command, expect, realApi } from "../support/test"
 import { deletionOutcome, githubCreationBar, TeardownRefusal } from "../support/teardown"
 import { readAuthenticatedSession } from "../auth-permissions/profile"
 import { finishFirstVisit } from "../support/first-visit"
 
-export const PRODUCTION_REPO = "codeplanesmithers/canary-sandbox"
+import { assertOwnedGitHubSource, githubSourceOwner } from "./source-owner"
+
+export const PRODUCTION_REPO = appEntryPath("production").replace(/^\/|\/$/g, "")
 
 export const cloudRepoPath = (repo: string, suffix = ""): string => {
   const [owner = "", name = ""] = repo.split("/")
@@ -17,22 +19,29 @@ export const repositoryApiPath = (repo: string, suffix = ""): string => {
   return `/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}${suffix}`
 }
 
-export const bootProductionRepository = async (page: Page, repo = PRODUCTION_REPO): Promise<void> => {
+export const bootProductionRepository = async (page: Page, repo = PRODUCTION_REPO, role: "ordinary" | "admin" = "ordinary"): Promise<void> => {
+  const startedAt = performance.now()
   // The authenticated fixture already opens appEntryPath. Preserve that page
   // and its freshly verified cookie instead of issuing a redundant navigation.
   if (new URL(page.url()).pathname.replace(/\/$/, "") !== `/${repo}`) {
     await page.goto(`/${repo}`, { waitUntil: "domcontentloaded" })
   }
+  await awaitBoot(page, "navigate", startedAt)
   await finishFirstVisit(page)
   await expect(page).toHaveURL(new RegExp(`/${repo.replace("/", "\\/")}$`))
   await expect(page.getByTestId("transcript")).toBeVisible({ timeout: 60_000 })
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
   const session = await readAuthenticatedSession(page)
-  if (process.env.SMITHERS_REAL_AUTH_KIND === "application-token") {
+  if (role === "admin") {
+    expect(session).toBeDefined()
+    expect(session!.admin).toBe(true)
+    const expectedAdmin = process.env.SMITHERS_E2E_EXPECTED_ADMIN_LOGIN?.trim()
+    if (expectedAdmin) expect(session!.login).toBe(expectedAdmin)
+  } else if (process.env.SMITHERS_REAL_AUTH_KIND === "application-token") {
     expect(session?.login).toEqual(expect.any(String))
   } else {
     // The scoped-down account (e2e/README.md): a suite that passes as an admin hides permission bugs.
-    expect(session).toEqual({ login: "codeplanesmithers", admin: false })
+    expect(session).toEqual({ login: githubSourceOwner(), admin: false })
   }
 }
 
@@ -87,7 +96,9 @@ export const createOwnedGitHubRepository = async (
   const barred = githubCreationBar.reason()
   if (barred !== undefined) throw new TeardownRefusal("github-sudo-mode", barred)
   const github = await context.newPage()
-  const fullName = `codeplanesmithers/${name}`
+  const owner = githubSourceOwner()
+  const fullName = `${owner}/${name}`
+  assertOwnedGitHubSource(fullName)
   const url = `https://github.com/${fullName}`
   const owned = { fullName, name, url, page: github }
   let submitted = false
@@ -97,7 +108,7 @@ export const createOwnedGitHubRepository = async (
       throw new Error("The sanctioned GitHub session cannot reach the repository creation UI.")
     }
     await expect(github.locator("body")).toContainText("Create a new repository")
-    await expect(github.getByRole("button", { name: "codeplanesmithers, Owner (Required)", exact: true })).toBeVisible()
+    await expect(github.getByRole("button", { name: `${owner}, Owner (Required)`, exact: true })).toBeVisible()
 
     const nameInput = github.getByLabel(/Repository name/i)
       .or(github.getByRole("textbox", { name: /Repository name/i }))
@@ -162,7 +173,7 @@ export const createOwnedGitHubRepository = async (
       create.press("Enter")
     ])
     expect(creationResponse.status(), "GitHub must accept the real repository creation request").toBeLessThan(400)
-    await expect(github.locator(`a[href="/codeplanesmithers"]:visible`).first()).toBeVisible()
+    await expect(github.locator(`a[href="/${owner}"]:visible`).first()).toBeVisible()
     await expect(github.getByText(visibility === "private" ? "Private" : "Public", { exact: true }).first()).toBeVisible()
     await expect(github.getByRole("link", { name: /^README\.md(?:, \(File\))?$/ }).first()).toBeVisible()
     return owned
@@ -200,9 +211,7 @@ export const createOwnedGitHubRepository = async (
 
 /** Delete only the exact owned source and verify GitHub now returns 404 for it. */
 export const deleteOwnedGitHubRepository = async (owned: OwnedGitHubRepository): Promise<void> => {
-  if (!owned.fullName.startsWith("codeplanesmithers/smithers-e2e-import-")) {
-    throw new Error(`Refusing to delete a GitHub repository outside the owned E2E namespace: ${owned.fullName}`)
-  }
+  assertOwnedGitHubSource(owned.fullName)
   const github = owned.page
   await github.goto(`${owned.url}/settings`, { waitUntil: "domcontentloaded" })
   const deleteDoor = github.getByRole("button", { name: /^Delete this repository$/ }).last()

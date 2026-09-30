@@ -1,10 +1,10 @@
 import { scenario } from "./coverage/types"
-import { authenticatedTest } from "./auth-permissions/profile"
+import { adminTest } from "./auth-permissions/profile"
 import { command, expect, closeComposer } from "./support"
 
 import { bootProductionRepository } from "./repositories-github/production"
 
-authenticatedTest("admin reset asks for confirmation and cancel preserves the live transcript", scenario("admin.reset-confirm-cancel", {
+adminTest("admin reset asks for confirmation and cancel preserves the live transcript", scenario("admin.reset-confirm-cancel", {
   capabilities: ["identity"],
   coverage: [
     "action:admin.reset.ask", "action:admin.reset.cancel", "action:admin.devtools", "host:production",
@@ -13,7 +13,7 @@ authenticatedTest("admin reset asks for confirmation and cancel preserves the li
   ],
   description: "An authenticated admin reaches the real destructive reset dialog, verifies its exact warning, cancels by keyboard, and proves the current transcript and session remain present."
 }), async ({ page }) => {
-  await bootProductionRepository(page)
+  await bootProductionRepository(page, undefined, "admin")
   if (!await page.locator(".devtools-panel").isVisible()) await command(page, "/admin.devtools")
   await closeComposer(page)
   await expect(page.locator(".devtools-panel")).toBeVisible()
@@ -35,7 +35,7 @@ authenticatedTest("admin reset asks for confirmation and cancel preserves the li
   await expect(page.locator(".devtools-panel")).toBeVisible()
 })
 
-authenticatedTest("admin grant cancellation never posts a billing mutation", scenario("admin.grant-cancel-no-write", {
+adminTest("admin grant cancellation never posts a billing mutation", scenario("admin.grant-cancel-no-write", {
   capabilities: ["identity"],
   coverage: [
     "action:admin.grant", "action:admin.grant.cancel", "host:production", "path:permission", "path:persistence",
@@ -44,7 +44,7 @@ authenticatedTest("admin grant cancellation never posts a billing mutation", sce
   ],
   description: "The real admin grant flow creates a confirmation card but canceling it removes the card without sending a billing grant request."
 }), async ({ page }) => {
-  await bootProductionRepository(page)
+  await bootProductionRepository(page, undefined, "admin")
   const requests: Array<{ method: string; path: string }> = []
   page.on("request", request => {
     const url = new URL(request.url())
@@ -63,7 +63,7 @@ authenticatedTest("admin grant cancellation never posts a billing mutation", sce
   expect(requests).toEqual([])
 })
 
-authenticatedTest("admin grant rejects zero amount before any billing mutation", scenario("admin.grant-invalid-amount-refusal", {
+adminTest("admin grant rejects zero amount before any billing mutation", scenario("admin.grant-invalid-amount-refusal", {
   capabilities: ["identity"],
   coverage: [
     "action:admin.grant", "host:production", "path:error", "path:keyboard",
@@ -72,7 +72,7 @@ authenticatedTest("admin grant rejects zero amount before any billing mutation",
   ],
   description: "A zero-dollar grant remains in the validation form; submitting it still produces no billing request or grant confirmation."
 }), async ({ page }) => {
-  await bootProductionRepository(page)
+  await bootProductionRepository(page, undefined, "admin")
   const requests: string[] = []
   page.on("request", request => {
     const path = new URL(request.url()).pathname
