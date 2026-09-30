@@ -11,7 +11,7 @@
  * headless machine lacks (the window and the system browser); the local
  * server the entrypoint starts is the real one.
  */
-import { afterAll, describe, expect, test } from "bun:test"
+import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { mkdtempSync, realpathSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -27,6 +27,11 @@ interface ProbeOptions {
   readonly env?: Readonly<Record<string, string>>
   readonly scenario?: ProbeScenario
 }
+
+import { prepareNativeProbeAssets } from "../../e2e/fixtures/native-assets"
+let assets: Awaited<ReturnType<typeof prepareNativeProbeAssets>>
+beforeAll(async () => { assets = await prepareNativeProbeAssets() }, 120_000)
+afterAll(async () => { await assets?.stop() })
 
 const cache = new Map<string, Promise<NativeProbeReport>>()
 /* Each scenario gets its own faked home, removed once its subprocess exits. */
@@ -52,12 +57,10 @@ const spawnProbe = async (options: ProbeOptions, home: string): Promise<NativePr
     cwd: UI_DIR,
     env: {
       PATH: process.env.PATH ?? "",
-      HOME: process.env.HOME ?? "",
+      HOME: home,
       SMITHERS_NATIVE_PROBE: JSON.stringify(options.scenario ?? {}),
       SMITHERS_NATIVE_PROBE_HOME: home,
-      SMITHERS_LOCAL_PORT: "0",
-      SMITHERS_CHAT_STUB: "1",
-      SMITHERS_LOCAL_MODE: "offline",
+      ...await assets.environment(),
       ...options.env
     },
     stdout: "pipe",
@@ -103,13 +106,12 @@ afterAll(async () => {
 })
 
 describe("the native main process starts the local origin", () => {
-  test("prints SMITHERS_LOCAL_ORIGIN on 127.0.0.1 and the origin answers /api/health", async () => {
+  test("persists a loopback renderer identity and serves the canonical bootstrap", async () => {
     const report = await probe({})
     expect(report.origin).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
     expect(report.health).toMatchObject({
-      ok: true,
-      pid: expect.any(Number),
-      home: expect.stringContaining("smithers-native-probe-home-")
+      status: 200,
+      capabilities: expect.arrayContaining(["agent", "native.shell"])
     })
     expect(report.logs).toContain("Smithers app started!")
   }, PROBE_BUDGET_MS)
@@ -129,7 +131,7 @@ describe("the native main process starts the local origin", () => {
     const report = await probe({ env: { SMITHERS_LOCAL_HEADLESS: "1" } })
     expect(report.windows).toEqual([])
     expect(report.origin).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
-    expect(report.health).toMatchObject({ ok: true })
+    expect(report.health).toMatchObject({ status: 200, capabilities: expect.arrayContaining(["native.shell"]) })
     expect(report.logs).toContain("SMITHERS_LOCAL_HEADLESS=1: serving without a window")
   }, PROBE_BUDGET_MS)
 
@@ -175,7 +177,9 @@ describe("the native RPC surface", () => {
       }
     })
     expect(report.results.token).toEqual({ token: null })
-    expect(report.results["bootstrap-token"]).toEqual({ token: null })
+    expect(report.results["bootstrap-token"]).toEqual({ token: expect.any(String) })
+    expect((report.results["bootstrap-token"] as { token: string }).token.length).toBeGreaterThan(0)
+    expect(JSON.stringify(report.health)).not.toContain((report.results["bootstrap-token"] as { token: string }).token)
   }, PROBE_BUDGET_MS)
 
   // smithers:// is inbound only (the "open-url" tests below): the page may
