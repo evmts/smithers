@@ -1,36 +1,16 @@
 import { TURN_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import { AgentTurnJournalDeliverySchema } from "@smthrs/rpc/AgentTurnJournal"
-import type { StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
-import { LOCAL_SESSION_HEADER } from "@smthrs/rpc/LocalSession"
-import { createNativeTurnJournal } from "../NativeTurnJournal"
 import { startLocalServer } from "../server"
-import { signedInKeychain } from "./FakeBackendTurns"
 
 // An owned test process only. The gate withholds committed HTTP output before
 // it can reach the consumer; SIGKILL bypasses every graceful shutdown hook.
-const [root, backendUrl, boundary] = process.argv.slice(2)
-if (!root || !backendUrl || (boundary !== "acceptance" && boundary !== "batch" && boundary !== "before-inference")) throw new Error("Invalid crash fixture")
-if (boundary === "before-inference") {
-  const journal = createNativeTurnJournal(`${root}/state`)
-  const token = crypto.randomUUID()
-  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, idleTimeout: 0, async fetch(request) {
-    if (new URL(request.url).pathname !== TURN_PATH || request.headers.get(LOCAL_SESSION_HEADER) !== token) return new Response(null, { status: 401 })
-    const body = await request.json() as StartAgentTurnRequest & { journal: { version: 1; legId: string; token: string } }
-    return journal.start(request, body, () => {
-      // Acceptance has committed to SQLite before this synchronous callback runs.
-      // Block the only JS thread so no producer output or HTTP receipt can escape.
-      console.log(JSON.stringify({ type: "boundary" }))
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)
-      throw new Error("The killed producer resumed unexpectedly")
-    })
-  } })
-  console.log(JSON.stringify({ type: "ready", origin: `http://127.0.0.1:${server.port}`, token }))
-} else {
-  const host = await startLocalServer({
-    port: 0, distDir: root, home: root, stateDir: `${root}/state`,
-    cloudMode: "hybrid", cloudApi: backendUrl, cloudKeychain: signedInKeychain(), identityUpstream: null,
-    log: () => {}
-  })
+const [root, backendOrigin, boundary] = process.argv.slice(2)
+if (!root || !backendOrigin || (boundary !== "acceptance" && boundary !== "batch")) throw new Error("Invalid crash fixture")
+const host = await startLocalServer({
+  port: 0, distDir: root, home: root, stateDir: `${root}/drafts`, cloudMode: "offline",
+  chatBackend: { origin: backendOrigin, token: process.env.SMITHERS_CHAT_FIXTURE_OWNER_TOKEN ?? "" }, log: () => {}
+})
+{
   const never = new Promise<never>(() => {})
   const gate = Bun.serve({ hostname: "127.0.0.1", port: 0, idleTimeout: 0, async fetch(request) {
     const url = new URL(request.url)
