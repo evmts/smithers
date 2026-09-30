@@ -1,7 +1,7 @@
 import { join, resolve } from "node:path"
 import { startNativeBackend } from "./NativeBackendProcess"
 import { nativeStateDirectory } from "./NativeState"
-import { defaultDistDir } from "./server"
+import { defaultDistDir } from "./NativePaths"
 
 const stateDir = Bun.env.SMITHERS_LOCAL_STATE_DIR?.trim()
   ? resolve(Bun.env.SMITHERS_LOCAL_STATE_DIR)

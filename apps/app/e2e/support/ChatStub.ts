@@ -8,12 +8,9 @@ import type { CloudAgent } from "../../src/bun/CloudAgent"
  * `stub: <last user message>`, then done; `stub-tool <flow> [args]` instead
  * calls that flow through the app's `commands` tool.
  *
- * Test scaffolding, so it lives in the test tree: every host that wants it
- * INJECTS it as `startLocalServer({ agent: createChatStub })`. The one host
- * that cannot be injected into is the packaged Electrobun app — the packaged
- * tier spawns a built binary (e2e/packaged/PackagedApp.ts) and asserts
- * `stub: <message>` in its transcript — so src/bun/NativeApp.ts imports this
- * behind SMITHERS_CHAT_STUB, the same way it imports PackagedE2EBridge.
+ * Test-only unrecorded transport fixture. Canonical browser chat uses the
+ * scoped model host and real Go/PostgreSQL authority. Packaged deterministic
+ * tests may explicitly inject this producer through SMITHERS_CHAT_STUB.
  */
 
 const lastUserMessage = (request: StartAgentTurnRequest): string => {

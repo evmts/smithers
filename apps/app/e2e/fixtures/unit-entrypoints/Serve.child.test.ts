@@ -35,7 +35,7 @@ mock.module('../../../src/bun/NativeBackendProcess', () => ({
   }
 }))
 mock.module('../../../src/bun/NativeState', () => ({ nativeStateDirectory: () => '/state' }))
-mock.module('../../../src/bun/server', () => ({ defaultDistDir: () => '/web' }))
+mock.module('../../../src/bun/NativePaths', () => ({ defaultDistDir: () => '/web' }))
 
 const within = async <T>(promise: Promise<T>): Promise<T> => {
   let timer: ReturnType<typeof setTimeout> | undefined

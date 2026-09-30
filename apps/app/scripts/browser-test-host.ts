@@ -2,9 +2,11 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { MODEL_CREDENTIAL_ENV_PREFIX } from "@smthrs/rpc/ConfiguredModel"
-import { createChatJournalFixture } from "../e2e/support/ChatJournalFixture"
+import { startFixtureChatBackend } from "../e2e/fixtures/chat-backend"
 import { createChatStub } from "../e2e/support/ChatStub"
 import { DEFAULT_CLOUD_API, startLocalServer } from "../src/bun/server"
+import { createCloudAuth } from "../src/bun/CloudAuth"
+import { parseNativeApiOrigin } from "../src/bun/NativeApiOrigin"
 import type { LocalServerOptions } from "../src/bun/server"
 
 /** Test-only composition. A stubbed model is not permission to inspect host credentials. */
@@ -16,6 +18,9 @@ export const browserTestOptions = (
   const port = Number(env.SMITHERS_LOCAL_PORT ?? "0")
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("Invalid browser-test server port")
   const realChat = env.SMITHERS_CHAT_STUB === "0"
+  const realToken = realChat ? env.SMITHERS_CLOUD_TOKEN?.trim() : undefined
+  if (realChat && !realToken) throw new Error("Real browser chat requires an explicitly supplied SMITHERS_CLOUD_TOKEN")
+  const realOrigin = realChat ? parseNativeApiOrigin(env.SMITHERS_CLOUD_API ?? DEFAULT_CLOUD_API).origin : undefined
   const modelVault = new Map<string, string>()
   // The real-model tier explicitly passes named fixture providers. Neither
   // ordinary browser tests nor that tier inherit unrelated host model keys.
@@ -25,11 +30,12 @@ export const browserTestOptions = (
   return {
     port,
     distDir,
-    ...(realChat ? {} : { agent: createChatStub, fixtureJournal: createChatJournalFixture() }),
+    ...(realChat ? {} : { agent: createChatStub }),
+    ...(realChat ? { chatBackend: { origin: realOrigin!, token: realToken! } } : {}),
     cloudMode: realChat ? "hybrid" : "offline",
     // Real chat is a backend turn (`/api/agent/turn`) as the Cloud user that
     // SMITHERS_CLOUD_TOKEN names; the empty keychain never reads a stored login.
-    cloudApi: realChat ? env.SMITHERS_CLOUD_API ?? DEFAULT_CLOUD_API : null,
+    cloudApi: realOrigin ?? null,
     cloudKeychain: {
       read: async () => null,
       write: async () => {},
@@ -51,13 +57,41 @@ export const startBrowserTestHost = async (
   distDir: string,
   env: Readonly<Record<string, string | undefined>> = process.env
 ) => {
+  const selection = browserTestOptions("", distDir, env)
   const root = await mkdtemp(join(tmpdir(), "smithers-browser-test-"))
   // Retain the owned fixture if startup fails: a partial server startup has
   // not yet handed us its shutdown handle, so deleting underneath it is unsafe.
-  const server = await startLocalServer(browserTestOptions(root, distDir, env))
+  let backend: Awaited<ReturnType<typeof startFixtureChatBackend>> | undefined
+  let cloudAuth: Awaited<ReturnType<typeof createCloudAuth>> | undefined
+  let server: Awaited<ReturnType<typeof startLocalServer>>
+  try {
+    backend = selection.chatBackend === undefined ? await startFixtureChatBackend({ mode: "browser" }) : undefined
+    const options = browserTestOptions(root, distDir, env)
+    cloudAuth = selection.chatBackend === undefined ? undefined : await createCloudAuth({
+      api: selection.chatBackend.origin, envToken: selection.chatBackend.token, keychain: options.cloudKeychain
+    })
+    const chatBackend = selection.chatBackend ?? (backend === undefined ? undefined : { origin: backend.origin, token: backend.token })
+    if (chatBackend === undefined) throw new Error("Owned chat backend did not start")
+    server = await startLocalServer({ ...options,
+      ...(cloudAuth === undefined ? {} : { cloudAuth }), chatBackend
+    })
+  } catch (error) {
+    // A partially started renderer has not supplied its stop handle; retain its
+    // directory, but release every separately owned authority independently.
+    const cleanup = await Promise.allSettled([
+      Promise.resolve().then(() => cloudAuth?.stop()),
+      Promise.resolve().then(() => backend?.stop())
+    ])
+    const failures = cleanup.flatMap(result => result.status === "rejected" ? [result.reason] : [])
+    if (failures.length > 0) throw new AggregateError([error, ...failures], "Browser fixture startup and cleanup failed")
+    throw error
+  }
   let stopping: Promise<void> | undefined
   return {
     ...server,
-    stop: (): Promise<void> => stopping ??= server.stop().then(() => rm(root, { recursive: true, force: true }))
+    stop: (): Promise<void> => stopping ??= (async () => {
+      try { await server.stop() }
+      finally { try { await backend?.stop() } finally { await rm(root, { recursive: true, force: true }) } }
+    })()
   }
 }

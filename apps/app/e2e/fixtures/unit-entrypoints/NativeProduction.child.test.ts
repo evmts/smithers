@@ -6,7 +6,6 @@ const events = new Map<string, Array<(event: { response?: { allow: boolean } }) 
 const failure = Promise.withResolvers<Error | undefined>()
 const releaseStop = Promise.withResolvers<void>()
 const backendStopStarted = Promise.withResolvers<void>()
-const testStopStarted = Promise.withResolvers<void>()
 const exited = Promise.withResolvers<number>()
 const calls: string[] = []
 const errors: string[] = []
@@ -95,7 +94,7 @@ mock.module('../../../src/bun/NativeBackendProcess', () => ({
       stop: () => {
         calls.push('backend:stop')
         backendStopStarted.resolve()
-        return scenario === 'duplicate-shutdown' || scenario === 'shutdown-renderer-stop-error' || scenario === 'bridge-rollback-backend-failure' ? releaseStop.promise
+        return scenario === 'duplicate-shutdown' || scenario === 'shutdown-renderer-stop-error' || scenario === 'shutdown-bridge-stop-error-stub' || scenario === 'bridge-rollback-backend-failure' ? releaseStop.promise
           : scenario === 'startup-backend-stop-error' ? Promise.reject(cleanupFault)
             : Promise.resolve()
       }
@@ -119,19 +118,7 @@ mock.module('../../../src/bun/NativeRendererServer', () => ({
   }
 }))
 mock.module('../../../src/bun/NativeState', () => ({ nativeStateDirectory: () => '/state' }))
-mock.module('../../../src/bun/server', () => ({
-  defaultDistDir: () => '/web',
-  startLocalServer: () => {
-    if (scenario !== 'shutdown-bridge-stop-error-stub') throw new Error('stub server must not start in production path')
-    calls.push('test-server:start')
-    return { origin: 'http://127.0.0.1:4920', stop: () => {
-      calls.push('test-server:stop')
-      testStopStarted.resolve()
-      return releaseStop.promise
-    } }
-  }
-}))
-mock.module('../../support/ChatStub', () => ({ createChatStub: () => {} }))
+mock.module('../../../src/bun/NativePaths', () => ({ defaultDistDir: () => '/web' }))
 if (scenario !== 'bridge-start-error' && scenario !== 'bridge-window-close-error' && scenario !== 'bridge-rollback-backend-failure') mock.module('../../../src/bun/PackagedE2EBridge', () => ({
   encodeRgbaPng: () => new Uint8Array(),
   startPackagedE2EBridge: () => ({ stop: () => {
@@ -238,20 +225,17 @@ const exercise = async () => {
       for (const handler of events.get('before-quit') ?? []) handler(quitEvent)
       process.emit('SIGINT')
       process.emit('SIGTERM')
-      const cleanupStarted = scenario === 'shutdown-renderer-stop-error' ? backendStopStarted.promise : testStopStarted.promise
+      expect(calls).toContain('backend:start')
+      expect(calls).not.toContain('test-server:start')
+      const cleanupStarted = backendStopStarted.promise
       expect(await within(Promise.race([
         cleanupStarted.then(() => 'resource-stopping'), exited.promise.then(() => 'exited')
       ]))).toBe('resource-stopping')
       expect(quitEvent.response).toEqual({ allow: false })
       expect(calls.filter((call) => call.startsWith('exit:'))).toEqual([])
       expect(calls.filter((call) => call === 'bridge:stop')).toHaveLength(1)
-      if (scenario === 'shutdown-renderer-stop-error') {
-        expect(calls.filter((call) => call === 'renderer:stop')).toHaveLength(1)
-        expect(calls.filter((call) => call === 'backend:stop')).toHaveLength(1)
-      } else {
-        expect(calls.filter((call) => call === 'test-server:stop')).toHaveLength(1)
-        expect(calls).not.toContain('backend:start')
-      }
+      expect(calls.filter((call) => call === 'renderer:stop')).toHaveLength(1)
+      expect(calls.filter((call) => call === 'backend:stop')).toHaveLength(1)
       releaseStop.resolve()
       expect(await within(exited.promise)).toBe(1)
       expect(errors).toEqual(['Shutdown failed: Native runtime shutdown failed.'])

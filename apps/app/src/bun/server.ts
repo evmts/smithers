@@ -56,6 +56,7 @@ import {
 } from "@smthrs/rpc/LocalSession"
 import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import { AgentTurnJournalRequestSchema } from "@smthrs/rpc/AgentTurnJournal"
+import { parseNativeApiOrigin } from "./NativeApiOrigin"
 import { handleBrowserFetch } from "./BrowserFetch"
 import { CLOUD_CHAT_SIGN_IN } from "./CloudAgent"
 import type { CloudAgent } from "./CloudAgent"
@@ -133,6 +134,8 @@ export interface LocalServerOptions {
    * (e2e/support/ChatStub.ts). Offline with none is a host with no agent.
    */
   readonly agent?: (publish: (frame: AgentTurnFrame) => void) => CloudAgent
+  /** Explicit owned fixture authority; uses the same backend relay as production. */
+  readonly chatBackend?: { readonly origin: string; readonly token: string }
   /** Test-only journal transport, injected by the deterministic host. */
   readonly fixtureJournal?: {
     start: (body: StartAgentTurnRequest, start: () => Response) => Promise<Response>
@@ -351,20 +354,7 @@ export interface LocalServer {
   readonly stop: () => Promise<void>
 }
 
-/**
- * The SPA directory for a caller in `fromDir`. SMITHERS_DIST_DIR wins; a
- * packaged app finds the copied views next to its main bundle; a source
- * checkout falls back to apps/app/dist.
- */
-export const defaultDistDir = (fromDir: string, env: Readonly<Record<string, string | undefined>> = Bun.env): string => {
-  const explicit = env.SMITHERS_DIST_DIR?.trim()
-  if (explicit !== undefined && explicit !== "") return resolve(explicit)
-  const candidates = [
-    resolve(fromDir, "..", "views", "mainview"),
-    resolve(fromDir, "..", "..", "dist")
-  ]
-  return candidates.find((dir) => existsSync(join(dir, "index.html"))) ?? candidates[candidates.length - 1]!
-}
+export { defaultDistDir } from "./NativePaths"
 
 const isStartTurnRequest = (value: unknown): value is StartAgentTurnRequest =>
   typeof value === "object" &&
@@ -657,6 +647,10 @@ const proxyCloud = async (
 }
 
 export const startLocalServer = async (options: LocalServerOptions): Promise<LocalServer> => {
+  const fixtureBackend = options.chatBackend === undefined ? undefined : {
+    origin: parseNativeApiOrigin(options.chatBackend.origin).origin, token: options.chatBackend.token.trim()
+  }
+  if (fixtureBackend?.token === "") throw new Error("Recorded chat requires a backend credential.")
   const log = options.log ?? ((line: string) => console.log(line))
   const distDir = resolve(options.distDir)
   const version = options.version ?? APP_VERSION
@@ -692,7 +686,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
 
   const writers = new Map<string, TurnWriter>()
   const publishFrame = (frame: AgentTurnFrame): void => writers.get(frame.runId)?.write(frame)
-  const agent = options.agent?.(publishFrame)
+  const agent = fixtureBackend === undefined ? options.agent?.(publishFrame) : undefined
   const finish = (runId: string, writer: TurnWriter): void => {
     if (writers.get(runId) === writer) writers.delete(runId)
     writer.end()
@@ -714,7 +708,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       // The shared table the Worker and the parity matrix read; both cloud
       // doors (`cloud.terminal`, `cloud.pat`) ride the Smithers Cloud upstream.
       capabilities: localCapabilities({
-        agent: agent !== undefined || cloudUpstream !== null,
+        agent: fixtureBackend !== undefined || agent !== undefined || cloudUpstream !== null,
         identity: identityUpstream !== null,
         balance: identityUpstream !== null,
         overview: identityUpstream !== null,
@@ -864,12 +858,13 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
   // The backend owns admission, delivery and retirement. Keep the renderer
   // identity and sealed bytes intact; a disconnect ends delivery only.
   const relayTurn = async (request: Request, path: string, body: unknown): Promise<Response> => {
-    if (cloudUpstream === null || cloudAuth === undefined) return jsonError("agent_unavailable", "No agent provider is configured in local-only mode.")
-    const bearer = cloudAuth.token()
+    const origin = fixtureBackend?.origin ?? cloudUpstream
+    if (origin === null || (fixtureBackend === undefined && cloudAuth === undefined)) return jsonError("agent_unavailable", "No agent provider is configured in local-only mode.")
+    const bearer = fixtureBackend?.token ?? cloudAuth?.token()
     if (bearer === undefined && path !== TURN_ERASE_PATH) return jsonError("cloud_sign_in_required", CLOUD_CHAT_SIGN_IN)
-    const answer = await fetchWithDeadline(new URL(path, new URL(cloudUpstream).origin), {
+    const answer = await fetchWithDeadline(new URL(path, origin), {
       method: "POST", redirect: "manual",
-      headers: { "content-type": "application/json", ...(bearer === undefined ? {} : { authorization: `Bearer ${bearer}` }) },
+      headers: { "content-type": "application/json", ...(bearer === undefined ? {} : { authorization: fixtureBackend === undefined ? `Bearer ${bearer}` : `token ${bearer}` }) },
       body: JSON.stringify(body)
     }, upstreamTimeoutMs, request.signal)
     if ("failure" in answer) return upstreamRefusal(CLOUD_SEAM, answer, upstreamTimeoutMs, log)
@@ -893,6 +888,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
     if (body.journal !== undefined && !AgentTurnJournalRequestSchema.safeParse(body.journal).success) {
       return jsonError("invalid_request", "The recorded turn identity is invalid.")
     }
+    if (fixtureBackend !== undefined) return relayTurn(request, TURN_PATH, body)
     if (options.agent === undefined && !("model" in body)) return relayTurn(request, TURN_PATH, body)
     if (body.journal !== undefined) {
       if (options.fixtureJournal !== undefined) return options.fixtureJournal.start(body, () => startChatTurn(body))
@@ -904,14 +900,14 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
   router.add("POST", CHAT_TURN_PATH, handleChatTurn)
   for (const path of [TURN_REPLAY_PATH, TURN_RETIRE_PATH, TURN_ERASE_PATH]) {
     router.add("POST", path, async ({ request }) => {
-      if (options.fixtureJournal !== undefined) return options.fixtureJournal.access(request)
+      if (fixtureBackend === undefined && options.fixtureJournal !== undefined) return options.fixtureJournal.access(request)
       const parsed = await readJson(request, MAX_BODY_BYTES)
       return "error" in parsed ? parsed.error : relayTurn(request, path, parsed.body)
     })
   }
 
   const handleChatCancel: RouteHandler = async ({ request }) => {
-    if (options.agent === undefined && cloudUpstream !== null && sealedTurns.size === 0) {
+    if (fixtureBackend !== undefined || (options.agent === undefined && cloudUpstream !== null && sealedTurns.size === 0)) {
       const parsed = await readJson(request)
       return "error" in parsed ? parsed.error : relayTurn(request, CANCEL_PATH, parsed.body)
     }

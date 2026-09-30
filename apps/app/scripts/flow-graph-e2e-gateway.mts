@@ -256,9 +256,10 @@ const startRelay = (gatewayUrl: string): Promise<{ url: string; close: () => Pro
               return json(response, 200, { status: "ready", repo: REPO })
             }
             if (url.pathname === BILLING_BALANCE_PATH) return json(response, 200, BALANCE)
-            // The current backend schedule listing consumed by TriggersSeam.
+            // The owned fixture schedule, in Cloud's canonical repository-job listing.
             const jobs = /^\/api\/repos\/([^/]+)\/([^/]+)\/repository-jobs$/.exec(url.pathname)
             if (jobs !== null) {
+              if (request.method !== "GET") return json(response, 405, { error: "method_not_allowed" })
               const repo = `${decodeURIComponent(jobs[1]!)}/${decodeURIComponent(jobs[2]!)}`
               const next = new Date()
               next.setUTCHours(3, 0, 0, 0)

@@ -314,3 +314,20 @@ test("writeResponse rejects a failed response read without forwarding private by
     expect(await response.text()).toBe("")
   } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())) }
 })
+
+test("a gateway connection cut after headers returns a safe incomplete-answer refusal", async () => {
+  const server = createServer((_request, outgoing) => {
+    outgoing.writeHead(200, { "content-type": "application/x-ndjson" })
+    outgoing.write('not a complete gateway frame\n')
+    // Inject failure after flushed headers; this is transport fault timing, not a readiness wait.
+    setTimeout(() => outgoing.destroy(), 20)
+  })
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve))
+  try {
+    const address = server.address()
+    if (address === null || typeof address === "string") throw new Error("Missing owned gateway address")
+    const response = await relayRpc(request(valid), `http://127.0.0.1:${address.port}`, "fixture-credential")
+    expect(response.status).toBe(502)
+    expect(await response.json()).toEqual({ status: "error", code: "upstream_unreachable", message: "The workspace answer broke off before it ended." })
+  } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())) }
+})
