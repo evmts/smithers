@@ -255,7 +255,7 @@ for (const state of ["signed-in", "signed-out", "degraded"] as const) {
       } finally { workspace.dispose() }
     } finally {
       await host.stop()
-      backend.stop(true)
+      await backend.stop(true)
       await rm(directory, { recursive: true, force: true })
     }
   })
