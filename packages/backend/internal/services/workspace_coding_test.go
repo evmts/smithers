@@ -315,8 +315,17 @@ func TestWorkspaceCoding_NativePostgresProjection(t *testing.T) {
 		Operations []WorkspaceCodingProjection `json:"coding_operations"`
 	}
 	require.NoError(t, json.Unmarshal(projectionBytes, &projection))
-	require.Len(t, projection.Operations, 1)
-	require.Equal(t, local.OperationID, projection.Operations[0].OperationID)
+	require.Len(t, projection.Operations, 2, "the empty cursor includes both distinct native acceptances; replay adds no operation")
+	require.Equal(t, result.OperationID, projection.Operations[0].OperationID)
+	require.Equal(t, local.OperationID, projection.Operations[1].OperationID)
+	require.NotEqual(t, result.OperationID, local.OperationID)
+	pageBytes, err := exec.Command(helper, "--projections", repo, ownerID, result.OperationID).CombinedOutput()
+	require.NoError(t, err, string(pageBytes))
+	var page struct {
+		Operations []WorkspaceCodingProjection `json:"coding_operations"`
+	}
+	require.NoError(t, json.Unmarshal(pageBytes, &page))
+	require.Equal(t, []WorkspaceCodingProjection{projection.Operations[1]}, page.Operations, "the first acceptance cursor returns only the subsequent local acceptance")
 	headInput := ReportWorkspaceHeadInput{WorkspaceID: workspace.ID, RepositoryID: repoID,
 		TokenWorkspaceID: workspace.ID, ChangeID: local.Head.ChangeID, CommitID: local.Head.CommitID,
 		CodingOperations: projection.Operations}
