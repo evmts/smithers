@@ -40,7 +40,8 @@ import { workspace } from "./deferrals/workspace"
  * The real E2E gate fails an action with neither a scenario nor an entry here,
  * an entry whose action gained a scenario or left FLOW_NAMES, and an entry for
  * a release-critical action. Delete an entry in the change that adds its
- * scenario.
+ * scenario. Every owed literal carries its owning open issue as a trailing
+ * // owner: #N comment in the exported family array.
  */
 
 /** Journeys the release depends on. Only a real scenario can account for them. */
@@ -89,6 +90,11 @@ export const OWED_ACTIONS_BY_FAMILY = {
   wiki,
   workspace,
 } as const
+
+/** Ownership is read from these same family declarations, without a second action list. */
+export const OWED_DEFERRAL_SOURCES: Readonly<Record<string, string>> = Object.fromEntries(
+  Object.keys(OWED_ACTIONS_BY_FAMILY).map((family) => [family, `${import.meta.dir}/deferrals/${family}.ts`])
+)
 
 export const UNSCENARIOED_ACTIONS: Readonly<Record<Deferral, readonly string[]>> = {
   /** Acts only on this browser's UI or storage; no host contract to break. */

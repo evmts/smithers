@@ -1,4 +1,8 @@
 export const issues = [
-  "issues.comment.react", "issues.comment.retry", "issues.fix", "issues.set", "issues.verify",
-  "issues",
+  "issues.comment.react", // owner: #2458
+  "issues.comment.retry", // owner: #2458
+  "issues.fix", // owner: #2458
+  "issues.set", // owner: #2458
+  "issues.verify", // owner: #2458
+  "issues", // owner: #1876
 ] as const

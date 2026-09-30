@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "./browserTest"
 import * as Y from "yjs"
 import { installCloudFixture } from "./cloudFixture"
+import type { Locator } from "@playwright/test"
 
 /*
  * The wiki spaces (#1922) in the Wiki pane, against a fake Smithers Cloud
@@ -176,7 +177,20 @@ const wikiFixture = async (page: Page) => {
   }
   await page.route(`**/api/repos/${repo}/wiki/**`, wikiRoute)
   await page.route(`**/api/repos/${repo}/wiki?*`, wikiRoute)
-  return { pages, bodies, requests, docOf, holdRename: () => { let release!: () => void; const gate = new Promise<void>((resolve) => { release = resolve }); renameHold = () => gate; return release } }
+  return { pages, bodies, requests, png, docOf, holdRename: () => { let release!: () => void; const gate = new Promise<void>((resolve) => { release = resolve }); renameHold = () => gate; return release } }
+}
+
+/** Protected attachments are fetched by their scoped transport, then rendered from owned blob bytes. */
+const assertAttachmentImage = async (image: Locator, fixture: Awaited<ReturnType<typeof wikiFixture>>, contentPath: string) => {
+  await expect(image).toHaveAttribute("src", /^blob:/)
+  await expect.poll(() => image.evaluate(node => (node as HTMLImageElement).complete && (node as HTMLImageElement).naturalWidth > 0)).toBe(true)
+  const bytes = await image.evaluate(async node => {
+    const response = await fetch((node as HTMLImageElement).src)
+    return { type: response.headers.get("content-type"), bytes: [...new Uint8Array(await response.arrayBuffer())] }
+  })
+  expect(bytes.type).toBe("image/png")
+  expect(bytes.bytes).toEqual([...fixture.png])
+  expect(fixture.requests).toContainEqual({ method: "GET", url: contentPath })
 }
 
 test.use({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 })
@@ -240,9 +254,7 @@ test("the Wiki pane: spaces, tree, page, backlinks, edit, history, attachment, r
   // The page reads rendered: the wikilink with its alias, the embedded image from its scoped route, the unresolved target marked, no raw markup, no chat card behind it.
   const view = pane.getByTestId("wiki-page")
   await expect(view.getByRole("link", { name: "start", exact: true })).toHaveAttribute("href", "#note/Guides%2FStart.md?h=Install")
-  // The image is fetched with the signed-in identity from its scoped route and shown from that blob.
-  await expect(view.getByTestId("wiki-embed").locator("img")).toHaveAttribute("src", /^blob:/)
-  expect(fixture.requests.some((request) => request.url === `/api/repos/${repo}/wiki/history/3/1/content?visibility=public`)).toBe(true)
+  await assertAttachmentImage(view.getByTestId("wiki-embed").locator("img"), fixture, `/api/repos/${repo}/wiki/history/3/1/content?visibility=public`)
   await expect(view.locator('a[href^="#unresolved/"]')).toHaveText("Nowhere")
   // A link borrows no color: it is the text, underlined, heavier under the pointer; an unresolved one is muted and dashed.
   const styles = await view.evaluate((node) => {
@@ -287,7 +299,7 @@ test("the Wiki pane: spaces, tree, page, backlinks, edit, history, attachment, r
   await expect(pane.getByTestId("wiki-page-freshness")).toHaveCount(0)
   expect(fixture.requests.some((request) => request.url === `/api/repos/${repo}/wiki/home/document?visibility=private`)).toBe(true)
   await expect(pane.getByTestId("wiki-page").getByRole("link", { name: "the roadmap", exact: true })).toBeVisible()
-  await expect(pane.getByTestId("wiki-page").getByTestId("wiki-embed").locator("img")).toBeVisible()
+  await assertAttachmentImage(pane.getByTestId("wiki-page").getByTestId("wiki-embed").locator("img"), fixture, `/api/repos/${repo}/wiki/history/11/1/content?visibility=private`)
   await expect(rail).toContainText("Plans/Roadmap.md")
   if (process.env.SMITHERS_WIKI_CAPTURE) {
     await page.evaluate(() => document.fonts.ready)
@@ -318,7 +330,7 @@ test("the Wiki pane: spaces, tree, page, backlinks, edit, history, attachment, r
   await expect(tree.locator('[data-slot="file-tree-file"]')).toHaveCount(1)
   // The attachment: shown from its scoped content route.
   await tree.getByRole("button", { name: "logo.png", exact: true }).click()
-  await expect(pane.getByTestId("wiki-attachment").locator("img")).toHaveAttribute("src", /^blob:/)
+  await assertAttachmentImage(pane.getByTestId("wiki-attachment").locator("img"), fixture, `/api/repos/${repo}/wiki/history/3/1/content?visibility=public`)
   await tree.getByRole("searchbox", { name: "Search pages" }).fill("")
   // History: the card in the chat, one download per revision, renames included.
   await tree.getByRole("button", { name: "Home", exact: true }).click()
