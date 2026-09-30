@@ -33,18 +33,35 @@ describe("run inputs", () => {
     expect(memoryWords({ kept: memory.kept, withheld: [] })).toBe("memory · 3 in")
   })
 
-  test("the box by name when its card is open, the secret names its repository can reach, never a refused one", () => {
-    const box = { id: "w", kind: "workspace", title: "", status: "active", createdAt: 0, ordinal: 0,
-      payload: { workspaceId: "ws-1", repo: "smithersai/smithers", name: "box-2", targetBookmark: null, status: "running", provisioningStage: null } } as unknown as Card
-    const secrets = { id: "s", kind: "secrets", title: "", status: "active", createdAt: 0, ordinal: 0,
+  test("the box by name and current agent bindings, never the CI secrets card", () => {
+    const box: Card = { id: "w", kind: "workspace", title: "", status: "active", createdAt: 0, ordinal: 0,
+      payload: { workspaceId: "ws-1", repo: "smithersai/smithers", name: "box-2", targetBookmark: null, status: "running", provisioningStage: null, bookmarkHead: null, sessions: [] } }
+    const secrets: Card = { id: "s", kind: "secrets", title: "", status: "active", createdAt: 0, ordinal: 0,
       payload: { repo: "smithersai/smithers", scope: "repository", secrets: [
-        { name: "DEPLOY_TOKEN", hosts: ["api.vercel.com"], matchHeaders: [], updatedAt: null },
-        { name: "OLD_CLAUDE", hosts: [], matchHeaders: [], updatedAt: null, reconnect: true }
-      ] } } as unknown as Card
-    const other = { ...secrets, id: "s2", payload: { ...(secrets as { payload: object }).payload, repo: "else/where" } } as unknown as Card
-    expect(runInputsOf(run({ workspaceId: "ws-1" } as Partial<RunCard["payload"]>), [other, box, secrets])).toEqual({
-      runsOn: "box-2", secrets: [{ name: "DEPLOY_TOKEN", hosts: ["api.vercel.com"] }]
+        { name: "DEPLOY_TOKEN", mainOnly: true, hosts: ["api.vercel.com"], matchHeaders: [], updatedAt: null },
+        { name: "OLD_CLAUDE", mainOnly: false, hosts: [], matchHeaders: [], updatedAt: null, reconnect: true }
+      ] } }
+    const other: Card = { ...secrets, id: "s2", payload: { ...secrets.payload, repo: "else/where" } }
+    expect(runInputsOf(run({ workspaceId: "ws-1", agentSecretBindings: { id: "read-1", owner: "ada", repo: "smithersai/smithers", workspaceId: "ws-1", state: "complete", secrets: [{ name: "AGENT_TOKEN", hosts: ["api.agent.test"] }] } }), [other, box, secrets])).toEqual({
+      runsOn: "box-2", secrets: [{ name: "AGENT_TOKEN", hosts: ["api.agent.test"] }]
     })
-    expect(runInputsOf(run({ workspaceId: "ws-9" } as Partial<RunCard["payload"]>), []).runsOn).toBe("ws-9")
+    expect(runInputsOf(run({ workspaceId: "ws-1" }), [box, secrets])).toEqual({ runsOn: "box-2", secrets: [] })
+    expect(runInputsOf(run({ workspaceId: "ws-9" }), []).runsOn).toBe("ws-9")
   })
 })
+
+for (const state of ["pending", "failed", "complete"] as const) {
+  test(`${state} binding metadata only belongs to its exact repository and box`, () => {
+    const held = { id: "read", owner: "ada", repo: "smithersai/smithers", workspaceId: "ws-1", state,
+      secrets: [{ name: "AGENT_TOKEN", hosts: ["api.agent.test"] }], error: "Agent bindings could not be read. Try again." }
+    const current = runInputsOf(run({ workspaceId: "ws-1", agentSecretBindings: held }), [])
+    expect(current).toEqual({ runsOn: "ws-1", secrets: state === "complete" ? held.secrets : [],
+      ...(state === "failed" ? { secretsError: held.error } : {}) })
+    for (const patch of [{ repo: "another/repository" }, { workspaceId: "ws-2" }, { workspaceId: undefined }]) {
+      const card = run({ workspaceId: "ws-1", ...patch, agentSecretBindings: held })
+      const projected = runInputsOf(card, [])
+      expect(projected.secrets).toEqual([])
+      expect(projected.secretsError).toBeUndefined()
+    }
+  })
+}
