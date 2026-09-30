@@ -26,7 +26,7 @@ func TestSignupProfileServicePersistsInOnboardingAnswers(t *testing.T) {
 	require.Nil(t, empty.UpdatedAt)
 
 	profile := SignupProfile{Name: "Ada Park", Account: "adapark", Stage: "poll", Question: 5, Repo: "new", Answers: map[string]SignupAnswer{
-		"size": {One: "2–10"}, "models": {Many: []string{"Codex", "Claude"}, many: true}, "none": {many: true},
+		"size": {One: "2–10"}, "models": {Many: []string{"Codex", "Claude"}, many: true}, "none": {Many: []string{}, many: true},
 	}}
 	saved, err := service.Put(ctx, ada, profile)
 	require.NoError(t, err)
