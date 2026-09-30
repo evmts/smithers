@@ -1,0 +1,701 @@
+package flowdispatch
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/smithersai/smithers/packages/backend/flowruntime"
+	"github.com/smithersai/smithers/packages/backend/jobs"
+)
+
+type safeFailure struct {
+	code      string
+	retryable bool
+}
+
+func (failure safeFailure) Error() string { return "flow dispatch: " + failure.code }
+
+func (service *Service) Handle(ctx context.Context, lease *jobs.Lease) error {
+	if lease == nil {
+		return errors.New("flow dispatch: lease is required")
+	}
+	switch lease.Claim().Operation {
+	case OperationLaunch:
+		return service.handleLaunch(ctx, lease)
+	case OperationApprove:
+		return service.handleApproval(ctx, lease)
+	case OperationSignal:
+		return service.handleSignal(ctx, lease)
+	default:
+		return errors.New("flow dispatch: unsupported product operation")
+	}
+}
+
+func (service *Service) handleLaunch(ctx context.Context, lease *jobs.Lease) error {
+	claim := lease.Claim()
+	var payload launchPayload
+	if err := json.Unmarshal(claim.Payload, &payload); err != nil {
+		return service.fail(lease, "invalid_product_request", RuntimeCheckpoint{})
+	}
+	checkpoint, err := decodeCheckpoint(claim.ExternalReceipt)
+	if err != nil {
+		return service.fail(lease, "invalid_checkpoint", RuntimeCheckpoint{Projection: payload.Projection})
+	}
+	if checkpoint.Version == 0 {
+		checkpoint = RuntimeCheckpoint{
+			Version: 1, Target: payload.Target, FlowID: payload.FlowID, Projection: payload.Projection,
+		}
+	}
+	if checkpoint.FlowID != payload.FlowID || checkpoint.Target != payload.Target {
+		return service.fail(lease, "checkpoint_request_mismatch", checkpoint)
+	}
+	// No external checkpoint means Control has never seen this launch. A
+	// cancellation already present on the claim can therefore settle locally;
+	// it must not wait for (or accidentally start) an unavailable host.
+	if claim.CancellationRequested && len(claim.ExternalReceipt) == 0 {
+		return service.settleBeforeLaunchCancellation(ctx, lease, checkpoint)
+	}
+	runtime, identity, err := service.resolve(ctx, checkpoint.Target, checkpoint.Identity)
+	if err != nil {
+		return service.runtimeError(lease, err, checkpoint)
+	}
+	checkpoint.Identity = identity
+	marker, err := json.Marshal(checkpoint)
+	if err != nil {
+		return err
+	}
+	if err := lease.StartExternal(ctx, marker); err != nil {
+		if errors.Is(err, jobs.ErrCancellationRequested) {
+			return service.settleBeforeLaunchCancellation(ctx, lease, checkpoint)
+		}
+		return err
+	}
+
+	// A durable run id means launch acceptance already happened. Reconnect only
+	// through Observe; never infer progress from product rows or host readiness.
+	if checkpoint.RunID != "" {
+		if claim.CancellationRequested {
+			if err := service.cancelRun(ctx, runtime, lease, &checkpoint); err != nil {
+				return err
+			}
+		}
+		return service.observe(ctx, runtime, lease, checkpoint)
+	}
+
+	result, err := service.launch(ctx, runtime, identity, claim.OperationID, int64(lease.DeliveryAttempt()), payload)
+	if err != nil {
+		if claim.CancellationRequested && runtimeCode(err) == "plan_denied" {
+			return service.settleDenied(ctx, lease, checkpoint, "plan_denied")
+		}
+		return service.runtimeError(lease, err, checkpoint)
+	}
+	if !validLaunchResult(result, identity, claim.OperationID) {
+		return service.fail(lease, "runtime_launch_identity_mismatch", checkpoint)
+	}
+	checkpoint.PlanID = result.PlanID
+	checkpoint.PlanDigest = result.PlanDigest
+	checkpoint.ExecutionDigest = result.ExecutionDigest
+	checkpoint.Envelope = result.Envelope
+	checkpoint.Approval = result.Approval
+	checkpoint.Receipt = &result.Receipt
+	checkpoint.RunID = result.Receipt.RunID
+
+	switch result.Receipt.Tag {
+	case "Parked":
+		if checkpoint.PlanID == "" || len(checkpoint.Approval) == 0 {
+			return service.fail(lease, "invalid_parked_receipt", checkpoint)
+		}
+		if err := service.checkpoint(ctx, lease, checkpoint, jobs.StateWaiting); err != nil {
+			return err
+		}
+		if claim.CancellationRequested {
+			return service.denyPlan(ctx, runtime, lease, checkpoint)
+		}
+		if payload.ApprovalPolicy == ApprovalAuto {
+			decision, err := service.admitApproval(
+				context.WithoutCancel(ctx), claim.Scope, claim.OperationID,
+				claim.OperationID+":auto-approve", claim.AuthorizationContext, checkpoint,
+			)
+			if err != nil {
+				return safeFailure{code: "approval_admission_unavailable", retryable: true}
+			}
+			checkpoint.ApprovalOperationID = decision.OperationID
+			if err := service.checkpoint(ctx, lease, checkpoint, jobs.StateWaiting); err != nil {
+				return err
+			}
+		}
+		// Launch is the only way to learn that a parked plan was approved, so
+		// the launch keeps polling with backoff. An admitted approval wakes it.
+		delay := service.nextObservation(&checkpoint, false)
+		return lease.Defer(ctx, mustJSON(checkpoint), delay)
+	case "Accepted", "AlreadyApplied":
+		if checkpoint.RunID == "" {
+			return service.fail(lease, "runtime_receipt_missing_run", checkpoint)
+		}
+		if err := service.checkpoint(ctx, lease, checkpoint, jobs.StateWaiting); err != nil {
+			return err
+		}
+		if claim.CancellationRequested {
+			if err := service.cancelRun(ctx, runtime, lease, &checkpoint); err != nil {
+				return err
+			}
+		}
+		return service.observe(ctx, runtime, lease, checkpoint)
+	case "Terminal":
+		if !terminalStatus(result.Receipt.Status) || result.Receipt.RunID == "" {
+			return service.fail(lease, "invalid_terminal_receipt", checkpoint)
+		}
+		checkpoint.Run = &flowruntime.FlowRuntimeRun{
+			RunID: result.Receipt.RunID, FlowID: payload.FlowID, Status: result.Receipt.Status, PlanID: result.PlanID,
+		}
+		return service.settle(ctx, lease, checkpoint)
+	case "Conflict":
+		return service.fail(lease, "runtime_conflict", checkpoint)
+	default:
+		return service.fail(lease, "invalid_runtime_receipt", checkpoint)
+	}
+}
+
+func (service *Service) settleBeforeLaunchCancellation(
+	ctx context.Context,
+	lease *jobs.Lease,
+	checkpoint RuntimeCheckpoint,
+) error {
+	if err := service.project(context.WithoutCancel(ctx), lease, jobs.StateCancelled, checkpoint); err != nil {
+		return err
+	}
+	return lease.Cancelled(ctx, mustJSON(terminalReceipt{
+		Kind:       "cancelled-before-runtime-launch",
+		Runtime:    checkpoint.Identity,
+		Projection: checkpoint.Projection,
+	}))
+}
+
+func (service *Service) launch(
+	ctx context.Context,
+	runtime flowruntime.FlowRuntime,
+	identity flowruntime.FlowRuntimeIdentity,
+	operationID string,
+	attempt int64,
+	payload launchPayload,
+) (flowruntime.FlowRuntimeLaunchResult, error) {
+	callContext, cancel := context.WithTimeout(ctx, service.runtimeCallTimeout)
+	defer cancel()
+	return runtime.Launch(callContext, flowruntime.FlowRuntimeLaunch{
+		ApplicationRequestID: operationID, Attempt: attempt, OwnerGeneration: identity.OwnerGeneration,
+		RuntimeArtifactDigest: identity.RuntimeArtifactDigest, SourceRevision: identity.SourceRevision,
+		FlowID: payload.FlowID, Payload: payload.Payload,
+	})
+}
+
+func (service *Service) handleApproval(ctx context.Context, lease *jobs.Lease) error {
+	claim := lease.Claim()
+	var payload approvalPayload
+	if err := json.Unmarshal(claim.Payload, &payload); err != nil || len(payload.Approval) == 0 {
+		return service.fail(lease, "invalid_approval_request", RuntimeCheckpoint{})
+	}
+	origin, err := service.store.Get(ctx, claim.Scope, payload.LaunchOperationID)
+	if err != nil {
+		return safeFailure{code: "launch_projection_unavailable", retryable: true}
+	}
+	// Once a delivery may have reached Control, replay its durable receipt even
+	// if the launch settled meanwhile. Product state only gates a first call.
+	if origin.Operation != OperationLaunch || (len(claim.ExternalReceipt) == 0 && (origin.State.Terminal() || origin.CancellationRequested)) {
+		return service.fail(lease, "approval_no_longer_available", RuntimeCheckpoint{})
+	}
+	runtime, identity, err := service.resolve(ctx, payload.Target, payload.Identity)
+	if err != nil {
+		return service.runtimeError(lease, err, RuntimeCheckpoint{Identity: payload.Identity})
+	}
+	checkpoint := RuntimeCheckpoint{
+		Version: 1, Target: payload.Target, Identity: identity, Approval: payload.Approval,
+	}
+	if err := lease.StartExternal(ctx, mustJSON(checkpoint)); err != nil {
+		return err
+	}
+	callContext, cancel := context.WithTimeout(ctx, service.runtimeCallTimeout)
+	result, err := runtime.Approve(callContext, flowruntime.FlowRuntimeDecision{
+		ApplicationRequestID: claim.OperationID, OwnerGeneration: identity.OwnerGeneration, Approval: payload.Approval,
+	})
+	cancel()
+	if err != nil {
+		return service.runtimeError(lease, err, checkpoint)
+	}
+	if !validMutationResult(result, "approve", claim.OperationID) {
+		return service.fail(lease, "invalid_approval_receipt", checkpoint)
+	}
+	checkpoint.MutationReceipt = &result.Receipt
+	receipt := terminalReceipt{
+		Kind: "runtime-approval", Runtime: identity, Receipt: &result.Receipt, Projection: json.RawMessage(`{}`),
+	}
+	if err := lease.Complete(ctx, mustJSON(receipt)); err != nil {
+		return err
+	}
+	// The parked launch learns about the decision on its next poll; make that
+	// poll happen now. A missed wake only delays it to its backoff.
+	if err := service.store.Wake(context.WithoutCancel(ctx), claim.Scope, payload.LaunchOperationID); err != nil {
+		slog.WarnContext(ctx, "flow dispatch could not wake the approved launch",
+			"operation_id", payload.LaunchOperationID, "error", err)
+	}
+	return nil
+}
+
+func (service *Service) handleSignal(ctx context.Context, lease *jobs.Lease) error {
+	claim := lease.Claim()
+	var payload signalPayload
+	if err := json.Unmarshal(claim.Payload, &payload); err != nil || payload.RunID == "" || payload.Name == "" {
+		return service.fail(lease, "invalid_signal_request", RuntimeCheckpoint{})
+	}
+	checkpoint, err := decodeCheckpoint(claim.ExternalReceipt)
+	if err != nil {
+		return service.fail(lease, "invalid_checkpoint", RuntimeCheckpoint{Projection: payload.Projection})
+	}
+	if checkpoint.Version == 0 {
+		checkpoint = RuntimeCheckpoint{
+			Version: 1, Target: payload.Target, FlowID: payload.FlowID,
+			RunID: payload.RunID, Projection: payload.Projection,
+		}
+	}
+	if checkpoint.Target != payload.Target || checkpoint.FlowID != payload.FlowID || checkpoint.RunID != payload.RunID {
+		return service.fail(lease, "checkpoint_request_mismatch", checkpoint)
+	}
+	runtime, identity, err := service.resolve(ctx, checkpoint.Target, checkpoint.Identity)
+	if err != nil {
+		return service.runtimeError(lease, err, checkpoint)
+	}
+	checkpoint.Identity = identity
+	if err := lease.StartExternal(ctx, mustJSON(checkpoint)); err != nil {
+		return err
+	}
+
+	// Observation verifies the requested run's Flow identity. Its terminal
+	// state cannot distinguish a lost acknowledgment for a delivered signal
+	// from a run that never took it; only Control's mutation receipt can.
+	callContext, cancel := context.WithTimeout(ctx, service.runtimeCallTimeout)
+	observation, err := runtime.Observe(callContext, checkpoint.RunID, "", 1)
+	cancel()
+	if err != nil {
+		return service.runtimeError(lease, err, checkpoint)
+	}
+	if observation.Run.RunID != checkpoint.RunID || observation.Run.FlowID != checkpoint.FlowID ||
+		observation.Terminal != terminalStatus(observation.Run.Status) || !validObservationPage("", observation) {
+		return service.fail(lease, "invalid_runtime_observation", checkpoint)
+	}
+	checkpoint.Run = &observation.Run
+
+	callContext, cancel = context.WithTimeout(ctx, service.runtimeCallTimeout)
+	result, err := runtime.Signal(callContext, flowruntime.FlowRuntimeSignal{
+		ApplicationRequestID: claim.OperationID,
+		OwnerGeneration:      identity.OwnerGeneration,
+		RunID:                checkpoint.RunID,
+		Name:                 payload.Name,
+		Payload:              payload.Payload,
+	})
+	cancel()
+	if err != nil {
+		return service.runtimeError(lease, err, checkpoint)
+	}
+	if !validMutationResult(result, "signal", claim.OperationID) {
+		return service.fail(lease, "invalid_signal_receipt", checkpoint)
+	}
+	checkpoint.MutationReceipt = &result.Receipt
+	if result.Receipt.Tag == "Terminal" {
+		if result.Receipt.RunID != checkpoint.RunID || !terminalStatus(result.Receipt.Status) {
+			return service.fail(lease, "invalid_signal_receipt", checkpoint)
+		}
+		checkpoint.Run = &flowruntime.FlowRuntimeRun{
+			RunID: checkpoint.RunID, FlowID: checkpoint.FlowID, Status: result.Receipt.Status,
+		}
+		return service.fail(lease, "runtime_run_terminal", checkpoint)
+	}
+	if err := service.project(context.WithoutCancel(ctx), lease, jobs.StateCompleted, checkpoint); err != nil {
+		return err
+	}
+	return lease.Complete(ctx, mustJSON(terminalReceipt{
+		Kind: "runtime-signal", Runtime: identity, Receipt: &result.Receipt,
+		Run: checkpoint.Run, Projection: checkpoint.Projection,
+	}))
+}
+
+func (service *Service) resolve(
+	ctx context.Context,
+	target flowruntime.FlowRuntimeTarget,
+	pinned flowruntime.FlowRuntimeIdentity,
+) (flowruntime.FlowRuntime, flowruntime.FlowRuntimeIdentity, error) {
+	callContext, cancel := context.WithTimeout(ctx, service.runtimeCallTimeout)
+	defer cancel()
+	runtime, err := service.resolver.ResolveFlowRuntime(callContext, target)
+	if err != nil {
+		return nil, flowruntime.FlowRuntimeIdentity{}, err
+	}
+	if runtime == nil {
+		return nil, flowruntime.FlowRuntimeIdentity{}, safeFailure{code: "runtime_unavailable", retryable: true}
+	}
+	identity, err := runtime.Identity(callContext)
+	if err != nil {
+		return nil, flowruntime.FlowRuntimeIdentity{}, err
+	}
+	if !validIdentity(identity) {
+		return nil, flowruntime.FlowRuntimeIdentity{}, safeFailure{code: "invalid_runtime_identity"}
+	}
+	if pinned.Protocol != "" && (pinned.Protocol != identity.Protocol ||
+		pinned.RuntimeArtifactDigest != identity.RuntimeArtifactDigest || pinned.SourceRevision != identity.SourceRevision) {
+		return nil, flowruntime.FlowRuntimeIdentity{}, safeFailure{code: "runtime_identity_changed"}
+	}
+	return runtime, identity, nil
+}
+
+func (service *Service) observe(
+	ctx context.Context,
+	runtime flowruntime.FlowRuntime,
+	lease *jobs.Lease,
+	checkpoint RuntimeCheckpoint,
+) error {
+	progressed := false
+	for page := 0; page < service.observationPages; page++ {
+		callContext, cancel := context.WithTimeout(ctx, service.runtimeCallTimeout)
+		observation, err := runtime.Observe(callContext, checkpoint.RunID, checkpoint.Cursor, service.observationLimit)
+		cancel()
+		if err != nil {
+			return service.runtimeError(lease, err, checkpoint)
+		}
+		if observation.Run.RunID != checkpoint.RunID || observation.Run.FlowID != checkpoint.FlowID ||
+			observation.Terminal != terminalStatus(observation.Run.Status) ||
+			!validObservationPage(checkpoint.Cursor, observation) {
+			return service.fail(lease, "invalid_runtime_observation", checkpoint)
+		}
+		if observation.NextCursor != checkpoint.Cursor || checkpoint.Run == nil || checkpoint.Run.Status != observation.Run.Status {
+			progressed = true
+		}
+		after := checkpoint.Cursor
+		checkpoint.Cursor = observation.NextCursor
+		checkpoint.Run = &observation.Run
+		// The page reaches the projection before its cursor is saved, so a
+		// failure between them re-observes the page rather than losing it.
+		if len(observation.Events) > 0 && service.projector != nil {
+			if err := service.projector.ProjectFlowRuntime(context.WithoutCancel(ctx), ProjectionUpdate{
+				OperationID: lease.Claim().OperationID, Scope: lease.Claim().Scope, State: jobs.StateWaiting,
+				Checkpoint: checkpoint, Events: observation.Events, EventsAfter: after,
+			}); err != nil {
+				return safeFailure{code: "product_projection_unavailable", retryable: true}
+			}
+		}
+		if err := service.checkpoint(ctx, lease, checkpoint, jobs.StateWaiting); err != nil {
+			return err
+		}
+		if observation.Terminal {
+			return service.settle(ctx, lease, checkpoint)
+		}
+		if !observation.HasMore {
+			break
+		}
+	}
+	delay := service.nextObservation(&checkpoint, progressed)
+	return lease.Defer(ctx, mustJSON(checkpoint), delay)
+}
+
+// nextObservation returns the wait before the next poll and records it in the
+// checkpoint. Progress resets the backoff; an idle poll doubles it until the
+// limit, after which the checkpoint stops changing.
+func (service *Service) nextObservation(checkpoint *RuntimeCheckpoint, progressed bool) time.Duration {
+	if progressed {
+		checkpoint.IdlePolls = 0
+	} else if service.observationBackoff(checkpoint.IdlePolls) < service.maxObservationDelay {
+		checkpoint.IdlePolls++
+	}
+	return service.observationBackoff(checkpoint.IdlePolls)
+}
+
+func (service *Service) observationBackoff(idlePolls int) time.Duration {
+	delay := service.observationDelay
+	for range idlePolls {
+		// Compare before doubling so even the largest admitted durations saturate safely.
+		if delay >= service.maxObservationDelay-delay {
+			return service.maxObservationDelay
+		}
+		delay *= 2
+	}
+	return min(delay, service.maxObservationDelay)
+}
+
+func (service *Service) cancelRun(
+	ctx context.Context,
+	runtime flowruntime.FlowRuntime,
+	lease *jobs.Lease,
+	checkpoint *RuntimeCheckpoint,
+) error {
+	callContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), service.runtimeCallTimeout)
+	result, err := runtime.Cancel(callContext, flowruntime.FlowRuntimeLifecycle{
+		ApplicationRequestID: lease.Claim().OperationID + ":cancel",
+		OwnerGeneration:      checkpoint.Identity.OwnerGeneration,
+		RunID:                checkpoint.RunID,
+		Reason:               "product cancellation requested",
+	})
+	cancel()
+	if err != nil {
+		return service.runtimeError(lease, err, *checkpoint)
+	}
+	if !validMutationResult(result, "cancel", lease.Claim().OperationID+":cancel") {
+		return service.fail(lease, "invalid_cancellation_receipt", *checkpoint)
+	}
+	checkpoint.MutationReceipt = &result.Receipt
+	return service.checkpoint(context.WithoutCancel(ctx), lease, *checkpoint, jobs.StateWaiting)
+}
+
+func (service *Service) denyPlan(
+	ctx context.Context,
+	runtime flowruntime.FlowRuntime,
+	lease *jobs.Lease,
+	checkpoint RuntimeCheckpoint,
+) error {
+	callContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), service.runtimeCallTimeout)
+	result, err := runtime.Deny(callContext, flowruntime.FlowRuntimeDecision{
+		ApplicationRequestID: lease.Claim().OperationID + ":deny",
+		OwnerGeneration:      checkpoint.Identity.OwnerGeneration,
+		Approval:             checkpoint.Approval,
+	})
+	cancel()
+	if err != nil {
+		return service.runtimeError(lease, err, checkpoint)
+	}
+	if !validMutationResult(result, "deny", lease.Claim().OperationID+":deny") {
+		return service.fail(lease, "invalid_denial_receipt", checkpoint)
+	}
+	checkpoint.MutationReceipt = &result.Receipt
+	return service.settleDenied(ctx, lease, checkpoint, "runtime-plan-denied")
+}
+
+func (service *Service) settleDenied(
+	ctx context.Context,
+	lease *jobs.Lease,
+	checkpoint RuntimeCheckpoint,
+	kind string,
+) error {
+	if err := service.project(context.WithoutCancel(ctx), lease, jobs.StateCancelled, checkpoint); err != nil {
+		return err
+	}
+	receipt := terminalReceipt{
+		Kind: kind, Runtime: checkpoint.Identity, Receipt: checkpoint.MutationReceipt,
+		Projection: checkpoint.Projection,
+	}
+	return lease.Cancelled(ctx, mustJSON(receipt))
+}
+
+func (service *Service) settle(ctx context.Context, lease *jobs.Lease, checkpoint RuntimeCheckpoint) error {
+	if checkpoint.Run == nil || !terminalStatus(checkpoint.Run.Status) {
+		return service.fail(lease, "runtime_not_terminal", checkpoint)
+	}
+	state := jobs.StateFailed
+	switch checkpoint.Run.Status {
+	case "completed":
+		state = jobs.StateCompleted
+	case "cancelled":
+		state = jobs.StateCancelled
+	}
+	if err := service.project(context.WithoutCancel(ctx), lease, state, checkpoint); err != nil {
+		return err
+	}
+	receipt := mustJSON(terminalReceipt{
+		Kind: "runtime-terminal", Runtime: checkpoint.Identity, Receipt: checkpoint.Receipt,
+		Run: checkpoint.Run, Cursor: checkpoint.Cursor, Projection: checkpoint.Projection,
+	})
+	switch state {
+	case jobs.StateCompleted:
+		return lease.Complete(ctx, receipt)
+	case jobs.StateCancelled:
+		if lease.Claim().CancellationRequested {
+			return lease.Cancelled(ctx, receipt)
+		}
+		return lease.ExternalCancelled(ctx, receipt)
+	default:
+		return lease.Fail(ctx, receipt)
+	}
+}
+
+func (service *Service) checkpoint(
+	ctx context.Context,
+	lease *jobs.Lease,
+	checkpoint RuntimeCheckpoint,
+	state jobs.State,
+) error {
+	if err := lease.Waiting(context.WithoutCancel(ctx), mustJSON(checkpoint)); err != nil {
+		return err
+	}
+	return service.project(context.WithoutCancel(ctx), lease, state, checkpoint)
+}
+
+func (service *Service) project(ctx context.Context, lease *jobs.Lease, state jobs.State, checkpoint RuntimeCheckpoint) error {
+	if service.projector == nil {
+		return nil
+	}
+	if err := service.projector.ProjectFlowRuntime(ctx, ProjectionUpdate{
+		OperationID: lease.Claim().OperationID, Scope: lease.Claim().Scope, State: state, Checkpoint: checkpoint,
+	}); err != nil {
+		return safeFailure{code: "product_projection_unavailable", retryable: true}
+	}
+	return nil
+}
+
+func (service *Service) fail(lease *jobs.Lease, code string, checkpoint RuntimeCheckpoint) error {
+	checkpoint.FailureCode = code
+	if len(checkpoint.Projection) > 0 {
+		projectionContext, cancel := context.WithTimeout(context.Background(), service.runtimeCallTimeout)
+		err := service.project(projectionContext, lease, jobs.StateFailed, checkpoint)
+		cancel()
+		if err != nil {
+			return err
+		}
+	}
+	receipt := terminalReceipt{
+		Kind: "bridge-refused", Runtime: checkpoint.Identity, Receipt: checkpoint.Receipt,
+		Run: checkpoint.Run, Cursor: checkpoint.Cursor, ErrorCode: code, Projection: checkpoint.Projection,
+	}
+	settleContext, cancel := context.WithTimeout(context.Background(), service.runtimeCallTimeout)
+	defer cancel()
+	return lease.Fail(settleContext, mustJSON(receipt))
+}
+
+func (service *Service) runtimeError(lease *jobs.Lease, err error, checkpoint RuntimeCheckpoint) error {
+	code, retryable := runtimeFailure(err)
+	if retryable {
+		return safeFailure{code: code, retryable: true}
+	}
+	return service.fail(lease, code, checkpoint)
+}
+
+func runtimeFailure(err error) (string, bool) {
+	var bridgeFailure flowruntime.FlowRuntimeFailure
+	if errors.As(err, &bridgeFailure) {
+		code := strings.TrimSpace(bridgeFailure.FlowRuntimeCode())
+		if code == "" {
+			code = "runtime_refused"
+		}
+		return code, bridgeFailure.FlowRuntimeRetryable()
+	}
+	var local safeFailure
+	if errors.As(err, &local) {
+		return local.code, local.retryable
+	}
+	return "runtime_unavailable", true
+}
+
+func runtimeCode(err error) string {
+	code, _ := runtimeFailure(err)
+	return code
+}
+
+func terminalStatus(status string) bool {
+	return status == "completed" || status == "failed" || status == "cancelled"
+}
+
+func validLaunchResult(result flowruntime.FlowRuntimeLaunchResult, identity flowruntime.FlowRuntimeIdentity, operationID string) bool {
+	return result.ApplicationRequestID == operationID && result.OwnerGeneration == identity.OwnerGeneration &&
+		result.RuntimeArtifactDigest == identity.RuntimeArtifactDigest && result.SourceRevision == identity.SourceRevision
+}
+
+func validMutationResult(result flowruntime.FlowRuntimeMutationResult, operation, requestID string) bool {
+	if result.Operation != operation || result.ApplicationRequestID != requestID {
+		return false
+	}
+	switch result.Receipt.Tag {
+	case "Accepted", "AlreadyApplied", "Terminal":
+		return true
+	default:
+		return false
+	}
+}
+
+func validObservationPage(previous string, observation flowruntime.FlowRuntimeObservation) bool {
+	before, ok := parseObservationCursor(previous)
+	if !ok {
+		return false
+	}
+	next, ok := parseObservationCursor(observation.NextCursor)
+	if !ok || compareObservationCursor(next, before) < 0 || (observation.HasMore && compareObservationCursor(next, before) == 0) {
+		return false
+	}
+	last := before
+	for _, event := range observation.Events {
+		cursor := flowruntime.EventCursor{Sequence: event.Sequence}
+		if event.Cursor != nil {
+			cursor = *event.Cursor
+		}
+		if !validJournalInteger(cursor.Sequence) || (cursor.Offset != nil && !validJournalInteger(*cursor.Offset)) ||
+			compareObservationCursor(cursor, last) <= 0 {
+			return false
+		}
+		last = cursor
+	}
+	// Never commit progress beyond the events actually returned, particularly
+	// a complete sequence marker when its last observed member was partial.
+	return compareObservationCursor(last, next) == 0
+}
+
+func parseObservationCursor(value string) (flowruntime.EventCursor, bool) {
+	// The empty seed precedes sequence zero; legacy decimals consume the whole
+	// source entry. v1 preserves Control's offset within an expanded entry.
+	if value == "" {
+		return flowruntime.EventCursor{Sequence: -1}, true
+	}
+	parts := strings.Split(value, ":")
+	if len(parts) == 3 && parts[0] == "v1" {
+		sequence, sequenceOK := parseJournalInteger(parts[1])
+		offset, offsetOK := parseJournalInteger(parts[2])
+		return flowruntime.EventCursor{Sequence: sequence, Offset: &offset}, sequenceOK && offsetOK
+	}
+	sequence, ok := parseJournalInteger(value)
+	return flowruntime.EventCursor{Sequence: sequence}, ok
+}
+
+func parseJournalInteger(value string) (int64, bool) {
+	if value == "" || (len(value) > 1 && value[0] == '0') {
+		return 0, false
+	}
+	for _, digit := range value {
+		if digit < '0' || digit > '9' {
+			return 0, false
+		}
+	}
+	number, err := strconv.ParseInt(value, 10, 64)
+	return number, err == nil && validJournalInteger(number)
+}
+
+func validJournalInteger(value int64) bool {
+	// Match the canonical Control WatchCursor's exclusive safe-integer bound.
+	return value >= 0 && value < 9007199254740991
+}
+
+func compareObservationCursor(left, right flowruntime.EventCursor) int {
+	switch {
+	case left.Sequence < right.Sequence:
+		return -1
+	case left.Sequence > right.Sequence:
+		return 1
+	case left.Offset == nil && right.Offset == nil:
+		return 0
+	case left.Offset == nil:
+		return 1
+	case right.Offset == nil:
+		return -1
+	case *left.Offset < *right.Offset:
+		return -1
+	case *left.Offset > *right.Offset:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func mustJSON(value any) json.RawMessage {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		panic(fmt.Sprintf("flow dispatch: encode internal receipt: %v", err))
+	}
+	return encoded
+}

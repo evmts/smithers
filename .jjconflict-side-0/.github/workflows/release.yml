@@ -1,0 +1,1094 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  # Rehearsal path. A dispatched run executes every gate, packs the release set,
+  # smoke-tests the tarballs, and skips publication while dryRun is true. npm
+  # versions are immutable, so this is the only way to exercise the workflow
+  # end to end without spending the version under test.
+  workflow_dispatch:
+    inputs:
+      releaseTag:
+        description: "Tag to validate, for example v1.0.0-rc.0; with sourceRef, the intended version label. Defaults to the dispatched ref."
+        type: string
+        required: false
+        default: ""
+      sourceRef:
+        description: "Optional full commit SHA on main for a fresh dry run. Requires dryRun=true and no archived candidate IDs."
+        type: string
+        required: false
+        default: ""
+      dryRun:
+        description: "Run every gate and skip the npm publish step."
+        type: boolean
+        required: false
+        default: true
+      candidateRunId:
+        description: "Restore a tested candidate from this completed Release run; set candidateArtifactId too."
+        type: string
+        required: false
+        default: ""
+      candidateArtifactId:
+        description: "Immutable release-candidate artifact ID from candidateRunId; empty builds a new candidate."
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.releaseTag != '' && inputs.releaseTag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  native-helper:
+    name: native helper (${{ matrix.platform }})
+    strategy:
+      matrix:
+        include:
+          - runner: macos-15
+            platform: darwin-arm64
+          - runner: macos-15-intel
+            platform: darwin-x64
+          - runner: ubuntu-24.04-arm
+            platform: linux-arm64
+          - runner: windows-latest
+            platform: win32-x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.sourceRef != '' && inputs.sourceRef || inputs.releaseTag != '' && inputs.releaseTag || github.ref }}
+      - name: Build helper
+        run: |
+          rustup toolchain install '1.98.0' --profile minimal
+          cargo +1.98.0 build --locked --release -p smithers-ffi --bin smithers-jj-export
+          mkdir -p "$RUNNER_TEMP/native-helper"
+          binary=smithers-jj-export
+          if [ "$RUNNER_OS" = Windows ]; then binary="$binary.exe"; fi
+          install -m 0755 "target/release/$binary" "$RUNNER_TEMP/native-helper/$binary"
+        shell: bash
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-helper-${{ matrix.platform }}
+          path: ${{ runner.temp }}/native-helper/*
+  native-mode-matrix:
+    name: packaged native topology and persistence
+    needs: native-helper
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - name: Require Plue matrix target
+        env:
+          SMITHERS_MODE_MATRIX_PLUE_URL: ${{ vars.SMITHERS_MODE_MATRIX_PLUE_URL }}
+          SMITHERS_MODE_MATRIX_PLUE_TOKEN: ${{ secrets.SMITHERS_MODE_MATRIX_PLUE_TOKEN }}
+        run: |
+          test -n "$SMITHERS_MODE_MATRIX_PLUE_URL" || { echo 'SMITHERS_MODE_MATRIX_PLUE_URL is required for release' >&2; exit 1; }
+          test -n "$SMITHERS_MODE_MATRIX_PLUE_TOKEN" || { echo 'SMITHERS_MODE_MATRIX_PLUE_TOKEN is required for release' >&2; exit 1; }
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.sourceRef != '' && inputs.sourceRef || inputs.releaseTag != '' && inputs.releaseTag || github.ref }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: native-helper-linux-arm64
+          path: ${{ runner.temp }}/linux-arm64-helper
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: 1.26.8
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 26.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.1
+      - run: pnpm install --frozen-lockfile
+      - run: rustup toolchain install
+      - run: brew install postgresql@18
+      - run: pnpm --filter smithers-app exec playwright install chromium
+      - name: Build packaged native app
+        env:
+          SMITHERS_NATIVE_E2E_CEF: "1"
+          SMITHERS_NATIVE_E2E_CDP_PORT: "9444"
+          SMITHERS_LINUX_ARM64_JJ_EXPORT_BINARY: ${{ runner.temp }}/linux-arm64-helper/smithers-jj-export
+        run: SMITHERS_BUILD_SHA="$(git rev-parse HEAD)" SMITHERS_POSTGRES_BUNDLE_DIR="$(brew --prefix postgresql@18)" bun apps/app/scripts/build-native.ts
+      - name: Prove native owned and Plue process topology
+        env:
+          SMITHERS_MODE_MATRIX_PLUE_URL: ${{ vars.SMITHERS_MODE_MATRIX_PLUE_URL }}
+          SMITHERS_MODE_MATRIX_PLUE_TOKEN: ${{ secrets.SMITHERS_MODE_MATRIX_PLUE_TOKEN }}
+        run: |
+          executable=$(find apps/app -path '*/Smithers.app/Contents/MacOS/launcher' -type f -print -quit)
+          test -n "$executable"
+          SMITHERS_BUILD_SHA="$(git rev-parse HEAD)" bun apps/app/scripts/test-native-owned.ts "$executable"
+      - name: Prove native matrix launcher and capabilities
+        env:
+          SMITHERS_MODE_MATRIX_NATIVE_CDP_ENDPOINT: http://127.0.0.1:9444
+          SMITHERS_MODE_MATRIX_PLUE_URL: ${{ vars.SMITHERS_MODE_MATRIX_PLUE_URL }}
+          SMITHERS_MODE_MATRIX_PLUE_TOKEN: ${{ secrets.SMITHERS_MODE_MATRIX_PLUE_TOKEN }}
+        run: |
+          executable=$(find apps/app -path '*/Smithers.app/Contents/MacOS/launcher' -type f -print -quit)
+          test -n "$executable"
+          SMITHERS_BUILD_SHA="$(git rev-parse HEAD)" bun apps/app/scripts/test-native-mode-matrix.ts "$executable"
+      - name: Product native modes
+        env:
+          SMITHERS_MODE_MATRIX_NATIVE_CDP_ENDPOINT: http://127.0.0.1:9444
+          SMITHERS_MODE_MATRIX_PLUE_URL: ${{ vars.SMITHERS_MODE_MATRIX_PLUE_URL }}
+          SMITHERS_MODE_MATRIX_PLUE_TOKEN: ${{ secrets.SMITHERS_MODE_MATRIX_PLUE_TOKEN }}
+          SMITHERS_MODE_MATRIX_OUTPUT_DIR: ${{ runner.temp }}/smithers-native-matrix
+        run: |
+          executable=$(find apps/app -path '*/Smithers.app/Contents/MacOS/launcher' -type f -print -quit)
+          test -n "$executable"
+          SMITHERS_BUILD_SHA="$(git rev-parse HEAD)" bun apps/app/scripts/run-packaged-native-mode-matrix.ts "$executable"
+      - name: Upload native mode receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: product-native-mode-matrix
+          path: ${{ runner.temp }}/smithers-native-matrix
+  publish:
+    name: validate, build, and publish
+    runs-on: ubuntu-latest
+    needs: native-helper
+    # npm libraries have their own source, package, and installed-consumer gates.
+    # Keep the private app's native matrix visible without blocking that train.
+    timeout-minutes: 180
+    environment: npm-publish
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      # A tag push releases the tag it pushed. A dispatched run releases the tag
+      # it was given, because github.ref_name is a branch name on that path.
+      # With sourceRef, this is only the intended version label for a dry run.
+      RELEASE_TAG: ${{ inputs.releaseTag != '' && inputs.releaseTag || github.ref_name }}
+      # Publication is skipped only on a dispatched dry run. A tag push always
+      # publishes: `inputs.dryRun` is absent there, so this resolves to false.
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dryRun }}
+      SOURCE_REF: ${{ inputs.sourceRef }}
+      CANDIDATE_RUN_ID: ${{ inputs.candidateRunId }}
+      CANDIDATE_ARTIFACT_ID: ${{ inputs.candidateArtifactId }}
+    steps:
+      # A re-run replays every gate, rebuilds and repacks a candidate, and then
+      # fails at the archive step: actions/upload-artifact refuses a second
+      # `release-candidate-<run-id>` inside one run. The retry that works is a
+      # new dispatch that restores the archived candidate (scripts/release-resume.md),
+      # so a re-run attempt is refused before the first gate spends an hour.
+      - name: Refuse a re-run attempt
+        if: github.run_attempt != '1'
+        run: |
+          echo "Run attempt $GITHUB_RUN_ATTEMPT would rebuild the candidate and then collide with this run's release-candidate-$GITHUB_RUN_ID artifact." >&2
+          echo "Dispatch Release again with releaseTag=$RELEASE_TAG instead. To resume the archived candidate, pass candidateRunId=$GITHUB_RUN_ID and candidateArtifactId=<the release-candidate-$GITHUB_RUN_ID artifact ID> (scripts/release-resume.md)." >&2
+          exit 1
+      - name: Require Plue matrix target
+        env:
+          SMITHERS_MODE_MATRIX_PLUE_WEB_URL: ${{ vars.SMITHERS_MODE_MATRIX_PLUE_WEB_URL }}
+          SMITHERS_MODE_MATRIX_PLUE_URL: ${{ vars.SMITHERS_MODE_MATRIX_PLUE_URL }}
+          SMITHERS_MODE_MATRIX_PLUE_TOKEN: ${{ secrets.SMITHERS_MODE_MATRIX_PLUE_TOKEN }}
+        run: |
+          test -n "$SMITHERS_MODE_MATRIX_PLUE_WEB_URL" || { echo 'SMITHERS_MODE_MATRIX_PLUE_WEB_URL is required for release' >&2; exit 1; }
+          test -n "$SMITHERS_MODE_MATRIX_PLUE_URL" || { echo 'SMITHERS_MODE_MATRIX_PLUE_URL is required for release' >&2; exit 1; }
+          test -n "$SMITHERS_MODE_MATRIX_PLUE_TOKEN" || { echo 'SMITHERS_MODE_MATRIX_PLUE_TOKEN is required for release' >&2; exit 1; }
+      # This guard is inline so the workflow can validate an older source SHA
+      # that does not contain a newly added release helper.
+      - name: Validate explicit dry-run source
+        run: |
+          if [ -z "$SOURCE_REF" ]; then exit 0; fi
+          if [ "$GITHUB_EVENT_NAME" != workflow_dispatch ] || [ "$DRY_RUN" != true ] \
+            || [ -n "$CANDIDATE_RUN_ID" ] || [ -n "$CANDIDATE_ARTIFACT_ID" ]; then
+            echo "sourceRef is allowed only for a fresh workflow_dispatch dry run without archived candidate IDs." >&2
+            exit 1
+          fi
+          if ! [[ "$SOURCE_REF" =~ ^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$ ]]; then
+            echo "sourceRef must be a full 40- or 64-character hexadecimal commit SHA." >&2
+            exit 1
+          fi
+          case "$RELEASE_TAG" in
+            v[0-9]*) ;;
+            *) echo "An explicit sourceRef requires releaseTag in v<version> format as the intended version label." >&2; exit 1 ;;
+          esac
+        shell: bash
+      # Full history and tags. The changelog gate below reads the commit range
+      # from the previous v* tag to the tag being released, and the default
+      # shallow checkout carries neither the tags nor the commits.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.sourceRef != '' && inputs.sourceRef || inputs.releaseTag != '' && inputs.releaseTag || github.ref }}
+      - name: Verify explicit dry-run source
+        run: |
+          if [ -z "$SOURCE_REF" ]; then exit 0; fi
+          actual_source="$(git rev-parse --verify HEAD)"
+          requested_source="$(printf '%s' "$SOURCE_REF" | tr 'A-F' 'a-f')"
+          if [ "$actual_source" != "$requested_source" ]; then
+            echo "The checked-out source does not match sourceRef." >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$actual_source" refs/remotes/origin/main; then
+            echo "sourceRef must be reachable from origin/main." >&2
+            exit 1
+          fi
+        shell: bash
+      # actionlint models GitHub's per-key expression-context rules, including
+      # the fact that `runner` is available to steps but not a job-level env.
+      - name: Validate GitHub Actions workflows
+        uses: docker://rhysd/actionlint@sha256:6f03470d0152251d7f07f7c4dc019dbe7024c72cd952f839544c7798843efa8f
+        with:
+          args: ".github/workflows/ci.yml .github/workflows/release.yml .github/workflows/release-auth.yml .github/workflows/apps-deploy.yml .github/workflows/distribution.yml .github/workflows/canary.yml .github/workflows/pr-review.yml .github/workflows/review.yml .github/workflows/reliability.yml .github/workflows/native-windows.yml .github/workflows/mirror-sync.yml .github/workflows/drift.yml"
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install
+      - name: Install Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: 1.26.8
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09
+        with:
+          version: v1.8.1
+      - name: Enable the containerd image store
+        run: |
+          if command -v docker >/dev/null 2>&1 && [ "$(uname -s)" = Linux ] \
+            && [ "$(docker info --format '{{.Driver}}' 2>/dev/null)" != overlayfs ]; then
+            if [ -f /etc/docker/daemon.json ]; then
+              merged="$(jq '.features["containerd-snapshotter"] = true' /etc/docker/daemon.json)"
+            else
+              merged='{ "features": { "containerd-snapshotter": true } }'
+            fi
+            printf '%s\n' "$merged" | sudo tee /etc/docker/daemon.json >/dev/null
+            sudo systemctl restart docker
+            docker info --format 'docker storage driver: {{.Driver}}'
+          fi
+        shell: bash
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 26.4.0
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - name: Install certified npm
+        run: |
+          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = '11.16.0'
+        shell: bash
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.1
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      - name: Install native smithers-jj-export
+        run: |
+          case "$(uname -s)" in Linux|Darwin|MINGW*|MSYS*)
+            native_suffix=''
+            case "$(uname -s)" in MINGW*|MSYS*) native_suffix='.exe';; esac
+            rustup toolchain install '1.98.0' --profile minimal
+            cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+            mkdir -p "$RUNNER_TEMP/smithers-native"
+            native_path="$RUNNER_TEMP/smithers-native/smithers-jj-export$native_suffix"
+            install -m 755 "target/debug/smithers-jj-export$native_suffix" "$native_path"
+            if [ "$native_suffix" = '.exe' ]; then native_path="$(cygpath -w "$native_path")"; fi
+            printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$native_path" >> "$GITHUB_ENV"
+          esac
+        shell: bash
+      - name: Validate archived candidate selection
+        run: node scripts/restore-release.mjs --check-inputs
+      - name: Validate release tag
+        run: |
+          case "$RELEASE_TAG" in
+            v[0-9]*) ;;
+            *) echo "Release tags must use the v<version> format." >&2; exit 1 ;;
+          esac
+          RELEASE_VERSION="${RELEASE_TAG#v}"
+          # Smithers 1.0 gives every public first-party package one
+          # synchronized version, so the engine and agent groups release
+          # together. Tooling is private and never packed. A private manifest
+          # is still group-checked, so a package cannot leave the train by
+          # dropping its group.
+          # The member list comes from `pnpm-workspace.yaml` through the one
+          # reader every gate shares, never from a shell glob. Packages nest —
+          # a granular package lives inside the product package it belongs to,
+          # three directory levels deep — and a glob deep enough to reach one
+          # also matches the generated `dist/cjs/package.json` a built package
+          # ships, which carries no group and would fail this loop on a build
+          # artifact. No package is named here: the published set is the pack
+          # manifest, and this loop only checks what the workspace declares.
+          for directory in $(node scripts/workspace-packages.mjs --library-dirs); do
+            manifest="$directory/package.json"
+            package_group="$(node -p "require('./' + process.argv[1]).smthrs?.group ?? ''" "$manifest")"
+            case "$package_group" in
+              engine|agent) ;;
+              tooling) continue ;;
+              *) echo "$manifest has missing or unknown smthrs.group '$package_group'." >&2; exit 1 ;;
+            esac
+            package_private="$(node -p "String(require('./' + process.argv[1]).private === true)" "$manifest")"
+            if [ "$package_private" = "true" ]; then continue; fi
+            package_version="$(node -p "require('./' + process.argv[1]).version" "$manifest")"
+            if [ "$package_version" != "$RELEASE_VERSION" ]; then
+              echo "$manifest has version $package_version; expected $RELEASE_VERSION." >&2
+              exit 1
+            fi
+          done
+          # Tooling is private and never packed, but it pins the same version
+          # and the workspace: ranges the packed manifests resolve through, so
+          # the checker covers every versioned manifest and source, not only
+          # the two published groups the loop above reads.
+          node scripts/set-release-version.mjs --check "$RELEASE_VERSION"
+          echo "RELEASE_VERSION=$RELEASE_VERSION" >> "$GITHUB_ENV"
+      # The changelog is generated from the commit range, so a release whose
+      # section is missing or stale is a release nobody wrote up. Failing here
+      # costs a re-tag; failing after the publish step costs an immutable npm
+      # version whose changelog says nothing about it.
+      - name: Release changelog section
+        run: node scripts/generate-changelog.mjs --check --version "$RELEASE_VERSION"
+      - name: Install jj
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b
+        with:
+          tool: jj-cli@0.39.0
+      - name: Initialize colocated jj repository
+        run: jj git init --colocate
+      - name: Install ripgrep
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b
+        with:
+          tool: ripgrep@14.1.1
+      - name: Install filesystem helper for sandboxed package tests
+        run: sudo install -m 0755 "$RUNNER_TEMP/smithers-native/smithers-jj-export" /usr/local/bin/smithers-jj-export
+        shell: bash
+      - name: Install system packages
+        run: |
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+              sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
+          fi
+        shell: bash
+      - name: Install PostgreSQL
+        id: setup
+        run: |
+          case "$(uname -s)" in
+            Linux)
+              sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends postgresql-common
+              sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+              echo 'create_main_cluster = false' | sudo tee -a /etc/postgresql-common/createcluster.conf >/dev/null
+              sudo apt-get install -y -qq --no-install-recommends 'postgresql-18'
+              pg_bin=/usr/lib/postgresql/18/bin path_entry="$pg_bin" floor=18
+              ;;
+            Darwin)
+              HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install --quiet 'postgresql@18'
+              pg_bin="$(brew --prefix 'postgresql@18')/bin" path_entry="$pg_bin" floor=18
+              ;;
+            MINGW*|MSYS*)
+              pg_bin="$(cygpath -u "${PGBIN:?the runner image names no PostgreSQL in PGBIN}")" path_entry="$PGBIN" floor=17
+              ;;
+            *) echo "no PostgreSQL install for $(uname -s)" >&2; exit 1 ;;
+          esac
+          version="$("$pg_bin/initdb" --version)"
+          major="${version#*) }"
+          major="${major%%[!0-9]*}"
+          if [ -z "$major" ] || [ "$major" -lt "$floor" ]; then
+            echo "$version is not PostgreSQL $floor or later" >&2
+            exit 1
+          fi
+          echo "$version"
+          printf '%s\n' "$path_entry" >> "$GITHUB_PATH"
+        shell: bash
+      # The gate roster below is the required CI `test` job, copied verbatim
+      # from the generated .github/workflows/ci.yml, plus the fault matrix the
+      # required `e2e-faults` job runs. A release that drove the recursive
+      # per-package scripts instead proved a different thing than CI proves,
+      # and drifted: those runners need none of the toolchain above, so the
+      # 1.0.0-rc.0 dry run reached the std package's ripgrep conformance suite
+      # on a runner with no rg binary and failed 25 cases. pack-release.test.mjs
+      # compares these blocks against ci.yml, so the copy cannot go stale in
+      # silence, and the toolchain block above is a one-line copy per bump.
+      - name: Examples
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs ci '//examples/...' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Workspace targets
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Script gates
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs test '//scripts/...' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Repository flows
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs test '//flows:pack' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Judge egress
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs test '//flows:egress' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Repository flow fixtures
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs test '//flows:repository' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Wiki and release fixtures
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs test '//flows:fixtures' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Repository flows lint
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs lint '//flows/...' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Public export JSDoc
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs lint '//:jsdocTree' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Script lint
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs lint '//scripts:lint' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: JSDoc rule harness
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs test '//:jsdocRules' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Factory harness
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs test '//:factoryHarness' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Agent eval suite (offline, baseline-gated)"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs test '//evals/agent:test' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Agent eval typecheck
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs build '//evals/agent:check' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Authoring eval dataset (offline)"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs test '//evals/authoring:test' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Authoring eval typecheck
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs build '//evals/authoring:check' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: SWE-bench offline fixtures
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs test '//evals/swebench:offline' --jobs 1 --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: SWE-bench rig typecheck
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs build '//evals/swebench:check' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: SWE-bench rig lint
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs lint '//evals/swebench/...' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: UI typecheck
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs build '//apps/app:check' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: UI unit tests
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs test '//apps/app:unitTests' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: UI conformance lint
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs test '//apps/app:conformance' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: TUI typecheck, lint and tests
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs ci '//apps/tui/...' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Install Playwright Chromium
+        run: pnpm --filter smithers-app exec playwright install --with-deps chromium
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+      - name: Install PostgreSQL 18 for the owned local mode
+        run: bash .github/scripts/install-postgres-18.sh
+      - name: Real PostgreSQL backup and restore
+        run: go test -p 1 ./distribution -run TestRealBackupRestorePostgreSQL -count=1 -v
+        env:
+          SMITHERS_POSTGRES_TEST_BIN: /usr/lib/postgresql/18/bin
+          SMITHERS_POSTGRES_TEST_MAJOR: "18"
+      - name: Distribution release contracts
+        run: node --test scripts/repo-contract/distribution-image-tag.test.mjs distribution/fake-coding-provider.test.mjs distribution/publish-image.test.mjs
+      - name: Build distribution image
+        run: docker build --build-arg "BUILD_SHA=$(git rev-parse HEAD)" --build-arg "SMITHERS_DISTRIBUTION_VERSION=${RELEASE_TAG#v}" -f distribution/Dockerfile -t smithers-distribution:release .
+      - name: Test distribution image
+        run: SMITHERS_BUILD_SHA="$(git rev-parse HEAD)" SMITHERS_DOCKER_SKIP_BUILD=1 bash distribution/test-image.sh smithers-distribution:release
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 26.4.0
+      # The macOS job gates the native pair. This job gates the web and local
+      # pairs with fresh PostgreSQL and the distribution image.
+      - name: Product deployment mode matrix
+        run: bun apps/app/scripts/run-packaged-mode-matrix.ts run --modes web-selfhost,web-plue,local-own,local-plue --output-dir "$RUNNER_TEMP/smithers-mode-matrix"
+        env:
+          SMITHERS_POSTGRES_TEST_BIN: /usr/lib/postgresql/18/bin
+          SMITHERS_MODE_MATRIX_IMAGE: smithers-distribution:release
+          SMITHERS_MODE_MATRIX_PLUE_WEB_URL: ${{ vars.SMITHERS_MODE_MATRIX_PLUE_WEB_URL }}
+          SMITHERS_MODE_MATRIX_PLUE_URL: ${{ vars.SMITHERS_MODE_MATRIX_PLUE_URL }}
+          SMITHERS_MODE_MATRIX_PLUE_TOKEN: ${{ secrets.SMITHERS_MODE_MATRIX_PLUE_TOKEN }}
+      - name: Upload product deployment mode matrix receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: product-deployment-mode-matrix
+          path: "${{ runner.temp }}/smithers-mode-matrix"
+          if-no-files-found: error
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .node-version
+      - name: Server typecheck and tests
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs ci '//apps/server/...' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Review app and workers
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs ci '//apps/review/...' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Bug worker
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs ci '//apps/bug-worker/...' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Project copy drift
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs lint '//:projectCopy' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Site
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs ci '//apps/site/...' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Package docs sites
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs ci '//apps/docs/...' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Review eval suite (offline, baseline-gated)"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs test '//evals/review-seeded-bugs/...' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Review eval typecheck
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs build '//evals/review-seeded-bugs:check' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Recommend eval suite (offline, baseline-gated)"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs test '//evals/recommend/...' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Recommend eval typecheck
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs build '//evals/recommend:check' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Generated workflow drift
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs lint '//:ci' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Factory projection drift
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs lint '//:factoryProjection' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Target index drift
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs lint '//:targetIndex' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Native FFI clippy and tests
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs build '//:nativeFfi' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      # Ordinary workspace CI omits this exclusive tier; the explicit label opts in.
+      - name: Exclusive fault matrix
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs test '//packages/...:faults' --jobs 1 --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      # Release-only gates. Neither is in the required CI roster: the
+      # disaster-recovery suite is a pinned target rather than part of its
+      # package's `ci`, and the version-coherence suite is named here so a
+      # rehearsal can run it alone.
+      - name: Disaster-recovery script test
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs test '//packages/smithers/flows/engine-store:disasterRecovery' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Release version coherence
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs test '//scripts:releaseVersion' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Build-script unit tests
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs test '//crates/flows-jj:buildScript' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Rebuild and byte-compare flows_jj.wasm
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs test '//crates/flows-jj:wasmReproducibility' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Build and test shared backend
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: pnpm exec smthrs test '//:backendGo' --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Build all workspaces from clean artifacts
+        if: env.CANDIDATE_RUN_ID == ''
+        run: node scripts/build-release.mjs
+      - name: Review declaration API drift
+        if: env.CANDIDATE_RUN_ID == ''
+        run: node scripts/check-api-baseline.mjs
+      - name: Retrieve native helpers for npm
+        if: env.CANDIDATE_RUN_ID == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/smithers-native/linux-x64"
+          install -m 0755 "$RUNNER_TEMP/smithers-native/smithers-jj-export" "$RUNNER_TEMP/smithers-native/linux-x64/smithers-jj-export"
+          for platform in darwin-arm64 darwin-x64 linux-arm64 win32-x64; do
+            mkdir -p "$RUNNER_TEMP/smithers-native/$platform"
+            gh run download "$GITHUB_RUN_ID" --name "native-helper-$platform" --dir "$RUNNER_TEMP/smithers-native/$platform"
+            binary=smithers-jj-export
+            case "$platform" in win32-*) binary="$binary.exe";; esac
+            chmod 0755 "$RUNNER_TEMP/smithers-native/$platform/$binary"
+          done
+        shell: bash
+      # Pack from staging manifests whose exports point at built artifacts.
+      # Repository manifests retain Effect's source-first export shape.
+      # Pack and smoke on the supported Node floor. The server step above
+      # selects the repository's pinned release, so reinstall the floor and its
+      # certified npm here rather than trust whichever Node ran last.
+      - name: Install the supported Node floor
+        if: env.CANDIDATE_RUN_ID == ''
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 26.4.0
+          registry-url: https://registry.npmjs.org
+      - name: Install certified npm for the Node floor
+        if: env.CANDIDATE_RUN_ID == ''
+        run: |
+          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = '11.16.0'
+        shell: bash
+      - name: Pack and smoke-test release artifacts
+        if: env.CANDIDATE_RUN_ID == ''
+        env:
+          PACK_DIR: ${{ runner.temp }}/release-packs
+          SMOKE_EVIDENCE_DIR: ${{ runner.temp }}/release-smoke-evidence
+          SMITHERS_NATIVE_HELPERS_DIR: ${{ runner.temp }}/smithers-native
+        run: |
+          test "$(node --version)" = 'v26.4.0'
+          test "$(npm --version)" = '11.16.0'
+          mkdir -p "$SMOKE_EVIDENCE_DIR"
+          node scripts/pack-release.mjs "$PACK_DIR"
+          node scripts/smoke-release.mjs "$PACK_DIR"
+          cp "$PACK_DIR/smoke-evidence.json" "$SMOKE_EVIDENCE_DIR/node26.json"
+      - name: Restore and verify archived release candidate
+        if: env.CANDIDATE_RUN_ID != ''
+        env:
+          PACK_DIR: ${{ runner.temp }}/release-packs
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/restore-release.mjs "$PACK_DIR"
+      # The package set and its order come from scripts/pack-release.mjs, which
+      # derives membership from the `engine` and `agent` smthrs.group values
+      # and order from the workspace dependency edges. Reading manifest.json
+      # publishes exactly what the pack step produced, in the packed order, so
+      # the lists cannot drift or accidentally include a private package.
+      #
+      # The plan is computed on both paths, so a dry run reports the exact set,
+      # order, version, and dist-tag a real run would publish.
+      - name: Archive tested release artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-candidate-${{ github.run_id }}
+          path: ${{ runner.temp }}/release-packs
+          if-no-files-found: error
+          retention-days: 30
+      - name: Collect ci-test-tier-evidence
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/ci-test-tier-evidence"
+          for f in '/tmp/smithers-ci-inventory-'*'.json'; do if [ -e "$f" ]; then cp -R -- "$f" "$RUNNER_TEMP/ci-test-tier-evidence"; fi; done
+          for f in '/tmp/smithers-mutations-'*''; do if [ -e "$f" ]; then cp -R -- "$f" "$RUNNER_TEMP/ci-test-tier-evidence"; fi; done
+          for f in '/tmp/smithers-benchmark-'*''; do if [ -e "$f" ]; then cp -R -- "$f" "$RUNNER_TEMP/ci-test-tier-evidence"; fi; done
+          for f in '/tmp/smithers-runner-'*'.log'; do if [ -e "$f" ]; then cp -R -- "$f" "$RUNNER_TEMP/ci-test-tier-evidence"; fi; done
+          for f in '/tmp/smithers-runner-'*'.json'; do if [ -e "$f" ]; then cp -R -- "$f" "$RUNNER_TEMP/ci-test-tier-evidence"; fi; done
+      - name: Upload ci-test-tier-evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ci-test-tier-evidence
+          path: "${{ runner.temp }}/ci-test-tier-evidence"
+          if-no-files-found: ignore
+      - name: Upload release runtime smoke evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-smoke-evidence-${{ github.run_id }}
+          path: ${{ runner.temp }}/release-smoke-evidence
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Compute the publish plan
+        env:
+          PACK_DIR: ${{ runner.temp }}/release-packs
+          PUBLISH_ORDER: ${{ runner.temp }}/publish-order.txt
+        run: |
+          release_version="${RELEASE_TAG#v}"
+          # A prerelease never takes `latest`: `npm install smthrs` and every
+          # range that tracks the tag must keep resolving 0.35.0 until 1.0.0 is
+          # final. Prereleases publish under `next`, which is also pinned in each
+          # manifest's publishConfig.tag (the release runbook in Smithers-Ops).
+          publish_tag="latest"
+          case "$release_version" in *-*) publish_tag="next" ;; esac
+          node -e '
+            const { readFileSync } = require("node:fs")
+            const packed = JSON.parse(readFileSync(process.env.PACK_DIR + "/manifest.json", "utf8"))
+            for (const entry of packed) console.log(entry.name + " " + entry.filename)
+          ' > "$PUBLISH_ORDER"
+          echo "PUBLISH_VERSION=$release_version" >> "$GITHUB_ENV"
+          echo "PUBLISH_DIST_TAG=$publish_tag" >> "$GITHUB_ENV"
+          echo "Publish plan for $release_version on the $publish_tag dist-tag:"
+          cat "$PUBLISH_ORDER"
+      - name: Publish packages in dependency order
+        if: env.DRY_RUN != 'true' && !inputs.sourceRef
+        env:
+          PACK_DIR: ${{ runner.temp }}/release-packs
+          PUBLISH_ORDER: ${{ runner.temp }}/publish-order.txt
+          # Trusted publishing (id-token: write) is the primary credential and
+          # needs nothing here. First publication of a new package name needs
+          # the repository token because npm cannot preconfigure trusted
+          # publishing for a name that does not exist yet. The token remains a
+          # fallback for existing names, and provenance stays enabled below.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"
+        run: node scripts/publish-release.mjs "$PACK_DIR"
+      # publish-release.mjs rewrites publish-receipt.json after every package
+      # it publishes. The candidate archive above predates publication, so a
+      # train that stops halfway would otherwise leave the only record of
+      # which names landed on the runner's disk.
+      - name: Upload the publish receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-publish-receipt-${{ github.run_id }}
+          path: ${{ runner.temp }}/release-packs/publish-receipt.json
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Report the skipped publication
+        if: env.DRY_RUN == 'true'
+        env:
+          PUBLISH_ORDER: ${{ runner.temp }}/publish-order.txt
+        run: |
+          echo "Dry run: every current gate ran; candidate build/smoke or archived-candidate verification passed. Nothing was published."
+          echo "A real run would publish these at $PUBLISH_VERSION on the $PUBLISH_DIST_TAG dist-tag:"
+          cat "$PUBLISH_ORDER"
+  distribution-publish:
+    name: publish public multi-architecture image
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: write
+      packages: write
+    env:
+      RELEASE_TAG: ${{ inputs.releaseTag != '' && inputs.releaseTag || github.ref_name }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dryRun }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.sourceRef != '' && inputs.sourceRef || inputs.releaseTag != '' && inputs.releaseTag || github.ref }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 26.4.0
+      - name: Enable image architecture emulation
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130
+      - name: Set up multi-architecture image builder
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - name: Verify distribution version
+        run: node --test scripts/repo-contract/distribution-image-tag.test.mjs
+      - name: Rehearse both image architectures
+        if: env.DRY_RUN == 'true'
+        run: bash distribution/publish-image.sh "${RELEASE_TAG#v}" "$(git rev-parse HEAD)" --dry-run
+      - name: Publish and anonymously verify distribution image
+        if: env.DRY_RUN != 'true' && !inputs.sourceRef
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash distribution/publish-image.sh "${RELEASE_TAG#v}" "$(git rev-parse HEAD)"
+  # The docs sites serve the release that just published. A dispatched run is a
+  # rehearsal and deploys nothing. Alchemy reads the shared alchemy-state-store,
+  # so this job plans against the same record as an operator's shell.
+  docs-deploy:
+    name: deploy package docs sites
+    runs-on: ubuntu-latest
+    needs: publish
+    if: github.event_name == 'push'
+    timeout-minutes: 60
+    env:
+      CI: "true"
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      ALCHEMY_PASSWORD: ${{ secrets.ALCHEMY_PASSWORD }}
+    steps:
+      - name: Require deploy credentials
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "Repository secret CLOUDFLARE_API_TOKEN is not set." >&2; exit 1; }
+          test -n "$ALCHEMY_PASSWORD" || { echo "Repository secret ALCHEMY_PASSWORD is not set." >&2; exit 1; }
+        shell: bash
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.ref }}
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 26.4.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      # Flags go straight after the script name: pnpm forwards a literal `--`,
+      # and Alchemy reads anything after it as the main file.
+      - name: Deploy every docs site
+        run: pnpm docs:deploy --yes
+
+  installer-archive:
+    name: installed npm CLI (${{ matrix.platform }})
+    needs: publish
+    # A sourceRef rehearsal has no release tag and cannot earn a tag receipt.
+    if: inputs.sourceRef == ''
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux-amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux-arm64
+          - runner: macos-15-intel
+            platform: darwin-amd64
+          - runner: macos-15
+            platform: darwin-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      RELEASE_TAG: ${{ inputs.releaseTag != '' && inputs.releaseTag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.releaseTag != '' && inputs.releaseTag || github.ref }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 26.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: release-candidate-${{ github.run_id }}
+          path: ${{ runner.temp }}/release-packs
+      - name: Install CLI consumer tools
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b
+        with:
+          tool: jj-cli@0.39.0,ripgrep@14.1.1
+      - name: Build and execute relocated installer
+        env:
+          PACK_DIR: ${{ runner.temp }}/release-packs
+          INSTALLER_DIR: ${{ runner.temp }}/installer
+        run: |
+          test "$(node -p 'JSON.parse(require("node:fs").readFileSync(process.env.PACK_DIR + "/release-manifest.json")).source.sha')" = "$(git rev-parse HEAD)"
+          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
+          node scripts/installer-release.mjs pack "$PACK_DIR" "$RELEASE_TAG" "$INSTALLER_DIR"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: installer-${{ matrix.platform }}
+          path: ${{ runner.temp }}/installer
+          if-no-files-found: error
+          retention-days: 30
+  installer-publish:
+    name: sign and publish installer archives
+    needs: installer-archive
+    if: github.event_name != 'workflow_dispatch' || !inputs.dryRun
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: installer-publish
+    concurrency:
+      group: installer-publication
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ inputs.releaseTag != '' && inputs.releaseTag || github.ref_name }}
+    steps:
+      - name: Require the exact tag-bound signing identity
+        run: |
+          test "$GITHUB_REPOSITORY" = smithersai/smithers
+          test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"
+          test "$GITHUB_WORKFLOW_REF" = "smithersai/smithers/.github/workflows/release.yml@refs/tags/$RELEASE_TAG"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.ref }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 26.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: installer-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/installer
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: release-candidate-${{ github.run_id }}
+          path: ${{ runner.temp }}/release-packs
+      - name: Install trusted Cosign v3
+        uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0, embedded checksums
+        with:
+          cosign-release: v3.0.2
+      - name: Sign and self-verify the complete archive set
+        env:
+          INSTALLER_DIR: ${{ runner.temp }}/installer
+          PACK_DIR: ${{ runner.temp }}/release-packs
+        run: |
+          INSTALLER_CANDIDATE_INTEGRITY="$(node --input-type=module -e '
+            import { readFile } from "node:fs/promises";
+            import { candidateIntegrity, verifyLocalCandidate } from "./scripts/publish-release.mjs";
+            const candidate = JSON.parse(await readFile(process.env.PACK_DIR + "/release-manifest.json", "utf8"));
+            await verifyLocalCandidate(process.env.PACK_DIR, candidate);
+            console.log(candidateIntegrity(candidate));
+          ')"
+          export INSTALLER_CANDIDATE_INTEGRITY
+          INSTALLER_SOURCE_SHA="$(git rev-parse HEAD)"
+          export INSTALLER_SOURCE_SHA
+          node scripts/installer-release.mjs sign "$INSTALLER_DIR" "$RELEASE_TAG"
+      - name: Retain signed installer evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: signed-installer-${{ github.run_id }}
+          path: ${{ runner.temp }}/installer
+          if-no-files-found: error
+          retention-days: 90
+      - name: Publish verified archives and update latest last
+        env:
+          INSTALLER_DIR: ${{ runner.temp }}/installer
+          # Configure only after Plue #702 supports atomic directory installs.
+          INSTALLER_FORMAT: ${{ vars.SMITHERS_INSTALLER_FORMAT }}
+          INSTALLER_BUCKET: ${{ vars.SMITHERS_INSTALLER_BUCKET }}
+          INSTALLER_S3_ENDPOINT: ${{ vars.SMITHERS_INSTALLER_S3_ENDPOINT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.SMITHERS_INSTALLER_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SMITHERS_INSTALLER_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          test "$INSTALLER_FORMAT" = npm-directory-v1
+          test -n "$AWS_ACCESS_KEY_ID"
+          test -n "$AWS_SECRET_ACCESS_KEY"
+          node scripts/installer-release.mjs publish "$INSTALLER_DIR" "$RELEASE_TAG"

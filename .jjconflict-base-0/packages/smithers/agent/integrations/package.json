@@ -1,0 +1,994 @@
+{
+  "name": "@smthrs/integrations",
+  "type": "module",
+  "version": "1.0.0-rc.1",
+  "license": "MIT",
+  "smthrs": {
+    "group": "agent"
+  },
+  "description": "GitHub, Linear, Telegram, Slack, Google Calendar, Gmail, and X adapters over the Smithers control plane",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/agent/integrations"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "github",
+    "linear",
+    "telegram",
+    "webhooks",
+    "slack",
+    "google-calendar",
+    "gmail",
+    "x"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "github",
+    "linear",
+    "telegram",
+    "webhooks",
+    "slack",
+    "google-calendar",
+    "gmail",
+    "x"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./Environment": "./src/Environment.ts",
+    "./core": "./src/core.ts",
+    "./core/AccessToken": "./src/core/AccessToken.ts",
+    "./core/ActionFailure": "./src/core/ActionFailure.ts",
+    "./core/AuthorizationUrl": "./src/core/AuthorizationUrl.ts",
+    "./core/Channel": "./src/core/Channel.ts",
+    "./core/Connection": "./src/core/Connection.ts",
+    "./core/CursorStore": "./src/core/CursorStore.ts",
+    "./core/ExternalEvent": "./src/core/ExternalEvent.ts",
+    "./core/IntegrationError": "./src/core/IntegrationError.ts",
+    "./core/JsonPath": "./src/core/JsonPath.ts",
+    "./core/OAuthToken": "./src/core/OAuthToken.ts",
+    "./core/Pkce": "./src/core/Pkce.ts",
+    "./core/SignalName": "./src/core/SignalName.ts",
+    "./core/Signature": "./src/core/Signature.ts",
+    "./core/Source": "./src/core/Source.ts",
+    "./core/SourceRecord": "./src/core/SourceRecord.ts",
+    "./core/SourceStore": "./src/core/SourceStore.ts",
+    "./core/Sync": "./src/core/Sync.ts",
+    "./github": "./src/github.ts",
+    "./github/Actions": "./src/github/Actions.ts",
+    "./github/Config": "./src/github/Config.ts",
+    "./github/GitHubClient": "./src/github/GitHubClient.ts",
+    "./github/Payload": "./src/github/Payload.ts",
+    "./github/Repository": "./src/github/Repository.ts",
+    "./github/Sync": "./src/github/Sync.ts",
+    "./gmail": "./src/gmail.ts",
+    "./gmail/Actions": "./src/gmail/Actions.ts",
+    "./gmail/Capabilities": "./src/gmail/Capabilities.ts",
+    "./gmail/Config": "./src/gmail/Config.ts",
+    "./gmail/GmailClient": "./src/gmail/GmailClient.ts",
+    "./gmail/Mime": "./src/gmail/Mime.ts",
+    "./gmail/Reconcile": "./src/gmail/Reconcile.ts",
+    "./gmail/Records": "./src/gmail/Records.ts",
+    "./gmail/Sync": "./src/gmail/Sync.ts",
+    "./googlecalendar": "./src/googlecalendar.ts",
+    "./googlecalendar/Actions": "./src/googlecalendar/Actions.ts",
+    "./googlecalendar/CalendarClient": "./src/googlecalendar/CalendarClient.ts",
+    "./googlecalendar/Config": "./src/googlecalendar/Config.ts",
+    "./googlecalendar/Event": "./src/googlecalendar/Event.ts",
+    "./googlecalendar/EventId": "./src/googlecalendar/EventId.ts",
+    "./googlecalendar/Sync": "./src/googlecalendar/Sync.ts",
+    "./index": "./src/index.ts",
+    "./linear": "./src/linear.ts",
+    "./linear/Actions": "./src/linear/Actions.ts",
+    "./linear/Config": "./src/linear/Config.ts",
+    "./linear/LinearClient": "./src/linear/LinearClient.ts",
+    "./linear/Payload": "./src/linear/Payload.ts",
+    "./linear/Webhook": "./src/linear/Webhook.ts",
+    "./slack": "./src/slack.ts",
+    "./slack/Actions": "./src/slack/Actions.ts",
+    "./slack/Approval": "./src/slack/Approval.ts",
+    "./slack/Config": "./src/slack/Config.ts",
+    "./slack/Connections": "./src/slack/Connections.ts",
+    "./slack/Payload": "./src/slack/Payload.ts",
+    "./slack/SlackClient": "./src/slack/SlackClient.ts",
+    "./slack/SocketSource": "./src/slack/SocketSource.ts",
+    "./slack/Sync": "./src/slack/Sync.ts",
+    "./slack/Webhook": "./src/slack/Webhook.ts",
+    "./telegram": "./src/telegram.ts",
+    "./telegram/Actions": "./src/telegram/Actions.ts",
+    "./telegram/Approval": "./src/telegram/Approval.ts",
+    "./telegram/Chunk": "./src/telegram/Chunk.ts",
+    "./telegram/Config": "./src/telegram/Config.ts",
+    "./telegram/InitData": "./src/telegram/InitData.ts",
+    "./telegram/Markdown": "./src/telegram/Markdown.ts",
+    "./telegram/Payload": "./src/telegram/Payload.ts",
+    "./telegram/Source": "./src/telegram/Source.ts",
+    "./telegram/TelegramClient": "./src/telegram/TelegramClient.ts",
+    "./x": "./src/x.ts",
+    "./x/Capabilities": "./src/x/Capabilities.ts",
+    "./x/Config": "./src/x/Config.ts",
+    "./x/Records": "./src/x/Records.ts",
+    "./x/Sync": "./src/x/Sync.ts",
+    "./x/XClient": "./src/x/XClient.ts",
+    "./core/migrations/0001_integration_cursors": null,
+    "./github/Webhook": null,
+    "./github/ListenerRegistry": null,
+    "./slack/IssueSync": "./src/slack/IssueSync.ts",
+    "./core/IssueSync": "./src/core/IssueSync.ts",
+    "./telegram/IssueSync": "./src/telegram/IssueSync.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./internal/*": null,
+      "./*/index": null,
+      "./Environment": {
+        "import": {
+          "types": "./dist/esm/Environment.d.ts",
+          "default": "./dist/esm/Environment.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Environment.d.ts",
+          "default": "./dist/cjs/Environment.js"
+        }
+      },
+      "./core": {
+        "import": {
+          "types": "./dist/esm/core.d.ts",
+          "default": "./dist/esm/core.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core.d.ts",
+          "default": "./dist/cjs/core.js"
+        }
+      },
+      "./core/AccessToken": {
+        "import": {
+          "types": "./dist/esm/core/AccessToken.d.ts",
+          "default": "./dist/esm/core/AccessToken.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/AccessToken.d.ts",
+          "default": "./dist/cjs/core/AccessToken.js"
+        }
+      },
+      "./core/ActionFailure": {
+        "import": {
+          "types": "./dist/esm/core/ActionFailure.d.ts",
+          "default": "./dist/esm/core/ActionFailure.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/ActionFailure.d.ts",
+          "default": "./dist/cjs/core/ActionFailure.js"
+        }
+      },
+      "./core/AuthorizationUrl": {
+        "import": {
+          "types": "./dist/esm/core/AuthorizationUrl.d.ts",
+          "default": "./dist/esm/core/AuthorizationUrl.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/AuthorizationUrl.d.ts",
+          "default": "./dist/cjs/core/AuthorizationUrl.js"
+        }
+      },
+      "./core/Channel": {
+        "import": {
+          "types": "./dist/esm/core/Channel.d.ts",
+          "default": "./dist/esm/core/Channel.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/Channel.d.ts",
+          "default": "./dist/cjs/core/Channel.js"
+        }
+      },
+      "./core/Connection": {
+        "import": {
+          "types": "./dist/esm/core/Connection.d.ts",
+          "default": "./dist/esm/core/Connection.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/Connection.d.ts",
+          "default": "./dist/cjs/core/Connection.js"
+        }
+      },
+      "./core/CursorStore": {
+        "import": {
+          "types": "./dist/esm/core/CursorStore.d.ts",
+          "default": "./dist/esm/core/CursorStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/CursorStore.d.ts",
+          "default": "./dist/cjs/core/CursorStore.js"
+        }
+      },
+      "./core/ExternalEvent": {
+        "import": {
+          "types": "./dist/esm/core/ExternalEvent.d.ts",
+          "default": "./dist/esm/core/ExternalEvent.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/ExternalEvent.d.ts",
+          "default": "./dist/cjs/core/ExternalEvent.js"
+        }
+      },
+      "./core/IntegrationError": {
+        "import": {
+          "types": "./dist/esm/core/IntegrationError.d.ts",
+          "default": "./dist/esm/core/IntegrationError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/IntegrationError.d.ts",
+          "default": "./dist/cjs/core/IntegrationError.js"
+        }
+      },
+      "./core/JsonPath": {
+        "import": {
+          "types": "./dist/esm/core/JsonPath.d.ts",
+          "default": "./dist/esm/core/JsonPath.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/JsonPath.d.ts",
+          "default": "./dist/cjs/core/JsonPath.js"
+        }
+      },
+      "./core/OAuthToken": {
+        "import": {
+          "types": "./dist/esm/core/OAuthToken.d.ts",
+          "default": "./dist/esm/core/OAuthToken.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/OAuthToken.d.ts",
+          "default": "./dist/cjs/core/OAuthToken.js"
+        }
+      },
+      "./core/Pkce": {
+        "import": {
+          "types": "./dist/esm/core/Pkce.d.ts",
+          "default": "./dist/esm/core/Pkce.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/Pkce.d.ts",
+          "default": "./dist/cjs/core/Pkce.js"
+        }
+      },
+      "./core/SignalName": {
+        "import": {
+          "types": "./dist/esm/core/SignalName.d.ts",
+          "default": "./dist/esm/core/SignalName.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/SignalName.d.ts",
+          "default": "./dist/cjs/core/SignalName.js"
+        }
+      },
+      "./core/Signature": {
+        "import": {
+          "types": "./dist/esm/core/Signature.d.ts",
+          "default": "./dist/esm/core/Signature.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/Signature.d.ts",
+          "default": "./dist/cjs/core/Signature.js"
+        }
+      },
+      "./core/Source": {
+        "import": {
+          "types": "./dist/esm/core/Source.d.ts",
+          "default": "./dist/esm/core/Source.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/Source.d.ts",
+          "default": "./dist/cjs/core/Source.js"
+        }
+      },
+      "./core/SourceRecord": {
+        "import": {
+          "types": "./dist/esm/core/SourceRecord.d.ts",
+          "default": "./dist/esm/core/SourceRecord.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/SourceRecord.d.ts",
+          "default": "./dist/cjs/core/SourceRecord.js"
+        }
+      },
+      "./core/SourceStore": {
+        "import": {
+          "types": "./dist/esm/core/SourceStore.d.ts",
+          "default": "./dist/esm/core/SourceStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/SourceStore.d.ts",
+          "default": "./dist/cjs/core/SourceStore.js"
+        }
+      },
+      "./core/Sync": {
+        "import": {
+          "types": "./dist/esm/core/Sync.d.ts",
+          "default": "./dist/esm/core/Sync.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/Sync.d.ts",
+          "default": "./dist/cjs/core/Sync.js"
+        }
+      },
+      "./github": {
+        "import": {
+          "types": "./dist/esm/github.d.ts",
+          "default": "./dist/esm/github.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github.d.ts",
+          "default": "./dist/cjs/github.js"
+        }
+      },
+      "./github/Actions": {
+        "import": {
+          "types": "./dist/esm/github/Actions.d.ts",
+          "default": "./dist/esm/github/Actions.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/Actions.d.ts",
+          "default": "./dist/cjs/github/Actions.js"
+        }
+      },
+      "./github/Config": {
+        "import": {
+          "types": "./dist/esm/github/Config.d.ts",
+          "default": "./dist/esm/github/Config.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/Config.d.ts",
+          "default": "./dist/cjs/github/Config.js"
+        }
+      },
+      "./github/GitHubClient": {
+        "import": {
+          "types": "./dist/esm/github/GitHubClient.d.ts",
+          "default": "./dist/esm/github/GitHubClient.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/GitHubClient.d.ts",
+          "default": "./dist/cjs/github/GitHubClient.js"
+        }
+      },
+      "./github/Payload": {
+        "import": {
+          "types": "./dist/esm/github/Payload.d.ts",
+          "default": "./dist/esm/github/Payload.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/Payload.d.ts",
+          "default": "./dist/cjs/github/Payload.js"
+        }
+      },
+      "./github/Repository": {
+        "import": {
+          "types": "./dist/esm/github/Repository.d.ts",
+          "default": "./dist/esm/github/Repository.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/Repository.d.ts",
+          "default": "./dist/cjs/github/Repository.js"
+        }
+      },
+      "./github/Sync": {
+        "import": {
+          "types": "./dist/esm/github/Sync.d.ts",
+          "default": "./dist/esm/github/Sync.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/Sync.d.ts",
+          "default": "./dist/cjs/github/Sync.js"
+        }
+      },
+      "./gmail": {
+        "import": {
+          "types": "./dist/esm/gmail.d.ts",
+          "default": "./dist/esm/gmail.js"
+        },
+        "require": {
+          "types": "./dist/cjs/gmail.d.ts",
+          "default": "./dist/cjs/gmail.js"
+        }
+      },
+      "./gmail/Actions": {
+        "import": {
+          "types": "./dist/esm/gmail/Actions.d.ts",
+          "default": "./dist/esm/gmail/Actions.js"
+        },
+        "require": {
+          "types": "./dist/cjs/gmail/Actions.d.ts",
+          "default": "./dist/cjs/gmail/Actions.js"
+        }
+      },
+      "./gmail/Capabilities": {
+        "import": {
+          "types": "./dist/esm/gmail/Capabilities.d.ts",
+          "default": "./dist/esm/gmail/Capabilities.js"
+        },
+        "require": {
+          "types": "./dist/cjs/gmail/Capabilities.d.ts",
+          "default": "./dist/cjs/gmail/Capabilities.js"
+        }
+      },
+      "./gmail/Config": {
+        "import": {
+          "types": "./dist/esm/gmail/Config.d.ts",
+          "default": "./dist/esm/gmail/Config.js"
+        },
+        "require": {
+          "types": "./dist/cjs/gmail/Config.d.ts",
+          "default": "./dist/cjs/gmail/Config.js"
+        }
+      },
+      "./gmail/GmailClient": {
+        "import": {
+          "types": "./dist/esm/gmail/GmailClient.d.ts",
+          "default": "./dist/esm/gmail/GmailClient.js"
+        },
+        "require": {
+          "types": "./dist/cjs/gmail/GmailClient.d.ts",
+          "default": "./dist/cjs/gmail/GmailClient.js"
+        }
+      },
+      "./gmail/Mime": {
+        "import": {
+          "types": "./dist/esm/gmail/Mime.d.ts",
+          "default": "./dist/esm/gmail/Mime.js"
+        },
+        "require": {
+          "types": "./dist/cjs/gmail/Mime.d.ts",
+          "default": "./dist/cjs/gmail/Mime.js"
+        }
+      },
+      "./gmail/Reconcile": {
+        "import": {
+          "types": "./dist/esm/gmail/Reconcile.d.ts",
+          "default": "./dist/esm/gmail/Reconcile.js"
+        },
+        "require": {
+          "types": "./dist/cjs/gmail/Reconcile.d.ts",
+          "default": "./dist/cjs/gmail/Reconcile.js"
+        }
+      },
+      "./gmail/Records": {
+        "import": {
+          "types": "./dist/esm/gmail/Records.d.ts",
+          "default": "./dist/esm/gmail/Records.js"
+        },
+        "require": {
+          "types": "./dist/cjs/gmail/Records.d.ts",
+          "default": "./dist/cjs/gmail/Records.js"
+        }
+      },
+      "./gmail/Sync": {
+        "import": {
+          "types": "./dist/esm/gmail/Sync.d.ts",
+          "default": "./dist/esm/gmail/Sync.js"
+        },
+        "require": {
+          "types": "./dist/cjs/gmail/Sync.d.ts",
+          "default": "./dist/cjs/gmail/Sync.js"
+        }
+      },
+      "./googlecalendar": {
+        "import": {
+          "types": "./dist/esm/googlecalendar.d.ts",
+          "default": "./dist/esm/googlecalendar.js"
+        },
+        "require": {
+          "types": "./dist/cjs/googlecalendar.d.ts",
+          "default": "./dist/cjs/googlecalendar.js"
+        }
+      },
+      "./googlecalendar/Actions": {
+        "import": {
+          "types": "./dist/esm/googlecalendar/Actions.d.ts",
+          "default": "./dist/esm/googlecalendar/Actions.js"
+        },
+        "require": {
+          "types": "./dist/cjs/googlecalendar/Actions.d.ts",
+          "default": "./dist/cjs/googlecalendar/Actions.js"
+        }
+      },
+      "./googlecalendar/CalendarClient": {
+        "import": {
+          "types": "./dist/esm/googlecalendar/CalendarClient.d.ts",
+          "default": "./dist/esm/googlecalendar/CalendarClient.js"
+        },
+        "require": {
+          "types": "./dist/cjs/googlecalendar/CalendarClient.d.ts",
+          "default": "./dist/cjs/googlecalendar/CalendarClient.js"
+        }
+      },
+      "./googlecalendar/Config": {
+        "import": {
+          "types": "./dist/esm/googlecalendar/Config.d.ts",
+          "default": "./dist/esm/googlecalendar/Config.js"
+        },
+        "require": {
+          "types": "./dist/cjs/googlecalendar/Config.d.ts",
+          "default": "./dist/cjs/googlecalendar/Config.js"
+        }
+      },
+      "./googlecalendar/Event": {
+        "import": {
+          "types": "./dist/esm/googlecalendar/Event.d.ts",
+          "default": "./dist/esm/googlecalendar/Event.js"
+        },
+        "require": {
+          "types": "./dist/cjs/googlecalendar/Event.d.ts",
+          "default": "./dist/cjs/googlecalendar/Event.js"
+        }
+      },
+      "./googlecalendar/EventId": {
+        "import": {
+          "types": "./dist/esm/googlecalendar/EventId.d.ts",
+          "default": "./dist/esm/googlecalendar/EventId.js"
+        },
+        "require": {
+          "types": "./dist/cjs/googlecalendar/EventId.d.ts",
+          "default": "./dist/cjs/googlecalendar/EventId.js"
+        }
+      },
+      "./googlecalendar/Sync": {
+        "import": {
+          "types": "./dist/esm/googlecalendar/Sync.d.ts",
+          "default": "./dist/esm/googlecalendar/Sync.js"
+        },
+        "require": {
+          "types": "./dist/cjs/googlecalendar/Sync.d.ts",
+          "default": "./dist/cjs/googlecalendar/Sync.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./linear": {
+        "import": {
+          "types": "./dist/esm/linear.d.ts",
+          "default": "./dist/esm/linear.js"
+        },
+        "require": {
+          "types": "./dist/cjs/linear.d.ts",
+          "default": "./dist/cjs/linear.js"
+        }
+      },
+      "./linear/Actions": {
+        "import": {
+          "types": "./dist/esm/linear/Actions.d.ts",
+          "default": "./dist/esm/linear/Actions.js"
+        },
+        "require": {
+          "types": "./dist/cjs/linear/Actions.d.ts",
+          "default": "./dist/cjs/linear/Actions.js"
+        }
+      },
+      "./linear/Config": {
+        "import": {
+          "types": "./dist/esm/linear/Config.d.ts",
+          "default": "./dist/esm/linear/Config.js"
+        },
+        "require": {
+          "types": "./dist/cjs/linear/Config.d.ts",
+          "default": "./dist/cjs/linear/Config.js"
+        }
+      },
+      "./linear/LinearClient": {
+        "import": {
+          "types": "./dist/esm/linear/LinearClient.d.ts",
+          "default": "./dist/esm/linear/LinearClient.js"
+        },
+        "require": {
+          "types": "./dist/cjs/linear/LinearClient.d.ts",
+          "default": "./dist/cjs/linear/LinearClient.js"
+        }
+      },
+      "./linear/Payload": {
+        "import": {
+          "types": "./dist/esm/linear/Payload.d.ts",
+          "default": "./dist/esm/linear/Payload.js"
+        },
+        "require": {
+          "types": "./dist/cjs/linear/Payload.d.ts",
+          "default": "./dist/cjs/linear/Payload.js"
+        }
+      },
+      "./linear/Webhook": {
+        "import": {
+          "types": "./dist/esm/linear/Webhook.d.ts",
+          "default": "./dist/esm/linear/Webhook.js"
+        },
+        "require": {
+          "types": "./dist/cjs/linear/Webhook.d.ts",
+          "default": "./dist/cjs/linear/Webhook.js"
+        }
+      },
+      "./slack": {
+        "import": {
+          "types": "./dist/esm/slack.d.ts",
+          "default": "./dist/esm/slack.js"
+        },
+        "require": {
+          "types": "./dist/cjs/slack.d.ts",
+          "default": "./dist/cjs/slack.js"
+        }
+      },
+      "./slack/Actions": {
+        "import": {
+          "types": "./dist/esm/slack/Actions.d.ts",
+          "default": "./dist/esm/slack/Actions.js"
+        },
+        "require": {
+          "types": "./dist/cjs/slack/Actions.d.ts",
+          "default": "./dist/cjs/slack/Actions.js"
+        }
+      },
+      "./slack/Approval": {
+        "import": {
+          "types": "./dist/esm/slack/Approval.d.ts",
+          "default": "./dist/esm/slack/Approval.js"
+        },
+        "require": {
+          "types": "./dist/cjs/slack/Approval.d.ts",
+          "default": "./dist/cjs/slack/Approval.js"
+        }
+      },
+      "./slack/Config": {
+        "import": {
+          "types": "./dist/esm/slack/Config.d.ts",
+          "default": "./dist/esm/slack/Config.js"
+        },
+        "require": {
+          "types": "./dist/cjs/slack/Config.d.ts",
+          "default": "./dist/cjs/slack/Config.js"
+        }
+      },
+      "./slack/Connections": {
+        "import": {
+          "types": "./dist/esm/slack/Connections.d.ts",
+          "default": "./dist/esm/slack/Connections.js"
+        },
+        "require": {
+          "types": "./dist/cjs/slack/Connections.d.ts",
+          "default": "./dist/cjs/slack/Connections.js"
+        }
+      },
+      "./slack/Payload": {
+        "import": {
+          "types": "./dist/esm/slack/Payload.d.ts",
+          "default": "./dist/esm/slack/Payload.js"
+        },
+        "require": {
+          "types": "./dist/cjs/slack/Payload.d.ts",
+          "default": "./dist/cjs/slack/Payload.js"
+        }
+      },
+      "./slack/SlackClient": {
+        "import": {
+          "types": "./dist/esm/slack/SlackClient.d.ts",
+          "default": "./dist/esm/slack/SlackClient.js"
+        },
+        "require": {
+          "types": "./dist/cjs/slack/SlackClient.d.ts",
+          "default": "./dist/cjs/slack/SlackClient.js"
+        }
+      },
+      "./slack/SocketSource": {
+        "import": {
+          "types": "./dist/esm/slack/SocketSource.d.ts",
+          "default": "./dist/esm/slack/SocketSource.js"
+        },
+        "require": {
+          "types": "./dist/cjs/slack/SocketSource.d.ts",
+          "default": "./dist/cjs/slack/SocketSource.js"
+        }
+      },
+      "./slack/Sync": {
+        "import": {
+          "types": "./dist/esm/slack/Sync.d.ts",
+          "default": "./dist/esm/slack/Sync.js"
+        },
+        "require": {
+          "types": "./dist/cjs/slack/Sync.d.ts",
+          "default": "./dist/cjs/slack/Sync.js"
+        }
+      },
+      "./slack/Webhook": {
+        "import": {
+          "types": "./dist/esm/slack/Webhook.d.ts",
+          "default": "./dist/esm/slack/Webhook.js"
+        },
+        "require": {
+          "types": "./dist/cjs/slack/Webhook.d.ts",
+          "default": "./dist/cjs/slack/Webhook.js"
+        }
+      },
+      "./telegram": {
+        "import": {
+          "types": "./dist/esm/telegram.d.ts",
+          "default": "./dist/esm/telegram.js"
+        },
+        "require": {
+          "types": "./dist/cjs/telegram.d.ts",
+          "default": "./dist/cjs/telegram.js"
+        }
+      },
+      "./telegram/Actions": {
+        "import": {
+          "types": "./dist/esm/telegram/Actions.d.ts",
+          "default": "./dist/esm/telegram/Actions.js"
+        },
+        "require": {
+          "types": "./dist/cjs/telegram/Actions.d.ts",
+          "default": "./dist/cjs/telegram/Actions.js"
+        }
+      },
+      "./telegram/Approval": {
+        "import": {
+          "types": "./dist/esm/telegram/Approval.d.ts",
+          "default": "./dist/esm/telegram/Approval.js"
+        },
+        "require": {
+          "types": "./dist/cjs/telegram/Approval.d.ts",
+          "default": "./dist/cjs/telegram/Approval.js"
+        }
+      },
+      "./telegram/Chunk": {
+        "import": {
+          "types": "./dist/esm/telegram/Chunk.d.ts",
+          "default": "./dist/esm/telegram/Chunk.js"
+        },
+        "require": {
+          "types": "./dist/cjs/telegram/Chunk.d.ts",
+          "default": "./dist/cjs/telegram/Chunk.js"
+        }
+      },
+      "./telegram/Config": {
+        "import": {
+          "types": "./dist/esm/telegram/Config.d.ts",
+          "default": "./dist/esm/telegram/Config.js"
+        },
+        "require": {
+          "types": "./dist/cjs/telegram/Config.d.ts",
+          "default": "./dist/cjs/telegram/Config.js"
+        }
+      },
+      "./telegram/InitData": {
+        "import": {
+          "types": "./dist/esm/telegram/InitData.d.ts",
+          "default": "./dist/esm/telegram/InitData.js"
+        },
+        "require": {
+          "types": "./dist/cjs/telegram/InitData.d.ts",
+          "default": "./dist/cjs/telegram/InitData.js"
+        }
+      },
+      "./telegram/Markdown": {
+        "import": {
+          "types": "./dist/esm/telegram/Markdown.d.ts",
+          "default": "./dist/esm/telegram/Markdown.js"
+        },
+        "require": {
+          "types": "./dist/cjs/telegram/Markdown.d.ts",
+          "default": "./dist/cjs/telegram/Markdown.js"
+        }
+      },
+      "./telegram/Payload": {
+        "import": {
+          "types": "./dist/esm/telegram/Payload.d.ts",
+          "default": "./dist/esm/telegram/Payload.js"
+        },
+        "require": {
+          "types": "./dist/cjs/telegram/Payload.d.ts",
+          "default": "./dist/cjs/telegram/Payload.js"
+        }
+      },
+      "./telegram/Source": {
+        "import": {
+          "types": "./dist/esm/telegram/Source.d.ts",
+          "default": "./dist/esm/telegram/Source.js"
+        },
+        "require": {
+          "types": "./dist/cjs/telegram/Source.d.ts",
+          "default": "./dist/cjs/telegram/Source.js"
+        }
+      },
+      "./telegram/TelegramClient": {
+        "import": {
+          "types": "./dist/esm/telegram/TelegramClient.d.ts",
+          "default": "./dist/esm/telegram/TelegramClient.js"
+        },
+        "require": {
+          "types": "./dist/cjs/telegram/TelegramClient.d.ts",
+          "default": "./dist/cjs/telegram/TelegramClient.js"
+        }
+      },
+      "./x": {
+        "import": {
+          "types": "./dist/esm/x.d.ts",
+          "default": "./dist/esm/x.js"
+        },
+        "require": {
+          "types": "./dist/cjs/x.d.ts",
+          "default": "./dist/cjs/x.js"
+        }
+      },
+      "./x/Capabilities": {
+        "import": {
+          "types": "./dist/esm/x/Capabilities.d.ts",
+          "default": "./dist/esm/x/Capabilities.js"
+        },
+        "require": {
+          "types": "./dist/cjs/x/Capabilities.d.ts",
+          "default": "./dist/cjs/x/Capabilities.js"
+        }
+      },
+      "./x/Config": {
+        "import": {
+          "types": "./dist/esm/x/Config.d.ts",
+          "default": "./dist/esm/x/Config.js"
+        },
+        "require": {
+          "types": "./dist/cjs/x/Config.d.ts",
+          "default": "./dist/cjs/x/Config.js"
+        }
+      },
+      "./x/Records": {
+        "import": {
+          "types": "./dist/esm/x/Records.d.ts",
+          "default": "./dist/esm/x/Records.js"
+        },
+        "require": {
+          "types": "./dist/cjs/x/Records.d.ts",
+          "default": "./dist/cjs/x/Records.js"
+        }
+      },
+      "./x/Sync": {
+        "import": {
+          "types": "./dist/esm/x/Sync.d.ts",
+          "default": "./dist/esm/x/Sync.js"
+        },
+        "require": {
+          "types": "./dist/cjs/x/Sync.d.ts",
+          "default": "./dist/cjs/x/Sync.js"
+        }
+      },
+      "./x/XClient": {
+        "import": {
+          "types": "./dist/esm/x/XClient.d.ts",
+          "default": "./dist/esm/x/XClient.js"
+        },
+        "require": {
+          "types": "./dist/cjs/x/XClient.d.ts",
+          "default": "./dist/cjs/x/XClient.js"
+        }
+      },
+      "./core/migrations/0001_integration_cursors": null,
+      "./github/Webhook": null,
+      "./github/ListenerRegistry": null,
+      "./slack/IssueSync": {
+        "import": {
+          "types": "./dist/esm/slack/IssueSync.d.ts",
+          "default": "./dist/esm/slack/IssueSync.js"
+        },
+        "require": {
+          "types": "./dist/cjs/slack/IssueSync.d.ts",
+          "default": "./dist/cjs/slack/IssueSync.js"
+        }
+      },
+      "./core/IssueSync": {
+        "import": {
+          "types": "./dist/esm/core/IssueSync.d.ts",
+          "default": "./dist/esm/core/IssueSync.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/IssueSync.d.ts",
+          "default": "./dist/cjs/core/IssueSync.js"
+        }
+      },
+      "./telegram/IssueSync": {
+        "import": {
+          "types": "./dist/esm/telegram/IssueSync.d.ts",
+          "default": "./dist/esm/telegram/IssueSync.js"
+        },
+        "require": {
+          "types": "./dist/cjs/telegram/IssueSync.d.ts",
+          "default": "./dist/cjs/telegram/IssueSync.js"
+        }
+      }
+    }
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "node ../../flows/database/scripts/test-matrix.mjs",
+    "test:matrix": "node ../../flows/database/scripts/test-matrix.mjs"
+  },
+  "dependencies": {
+    "@smthrs/control": "1.0.0-rc.1",
+    "@smthrs/database": "1.0.0-rc.1",
+    "@smthrs/errors": "1.0.0-rc.1",
+    "@smthrs/flow": "1.0.0-rc.1",
+    "@smthrs/notifications": "1.0.0-rc.1",
+    "@smthrs/canonical": "1.0.0-rc.1",
+    "@smthrs/plan": "1.0.0-rc.1"
+  },
+  "peerDependencies": {
+    "effect": "4.0.0-rc.115"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/vitest": "4.0.0-rc.115",
+    "@eslint/js": "9.39.5",
+    "@smthrs/engine": "1.0.0-rc.1",
+    "@smthrs/flows": "1.0.0-rc.1",
+    "@smthrs/platform-bun": "1.0.0-rc.1",
+    "@smthrs/platform-node": "1.0.0-rc.1",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.0-rc.115",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0"
+  }
+}

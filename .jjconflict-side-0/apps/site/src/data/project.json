@@ -1,0 +1,19 @@
+{
+  "description": "Smithers maintains your codebase. It turns issues into reviewed, tested changes and, when enabled, keeps the project wiki current. Flows beside your code define how.",
+  "support": {
+    "summary": "The release candidate's required platform is Linux with Node 26.4.0."
+  },
+  "tagline": "The codebase maintainer agent",
+  "animation": {
+    "dark": "/images/build-graph.gif",
+    "light": "/images/build-graph-light.gif",
+    "alt": "Build targets form a dependency graph, and an edit re-runs only the steps it makes stale while the rest comes from cache."
+  },
+  "install": {
+    "cli": "git clone https://github.com/smithersai/smithers.git\ncd smithers\npnpm install\ncargo build --locked --release -p smithers-ffi --bin smithers-jj-export\nexport PATH=\"$PWD/node_modules/.bin:$PATH\"",
+    "getStarted": [
+      "smthrs init change",
+      "smthrs flow start change"
+    ]
+  }
+}

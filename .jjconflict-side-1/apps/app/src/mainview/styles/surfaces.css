@@ -1,0 +1,60 @@
+/* Surfaces: shared surface chrome (SurfaceHeader), connectors polish,
+   confirmation dialog. Tokens from tokens.css. */
+
+/*
+ * The right padding used to reserve room for the viewport-fixed corner chrome
+ * that sat on top of this header. The corner chrome now belongs to the chat
+ * column, so a pane's header owns its full width again.
+ */
+.surface-header {
+	display: flex;
+	min-height: calc(var(--sp-8) * 2);
+	padding: var(--sp-2) var(--sp-4);
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--sp-4);
+	border-bottom: 1px solid var(--border);
+	background: var(--surface-glass-strong);
+}
+
+.surface-header-title,
+.surface-header-actions {
+	display: flex;
+	align-items: center;
+}
+
+.surface-header-title {
+	min-width: 0;
+	gap: var(--sp-2);
+}
+
+.surface-header-title h1,
+.surface-header-title p {
+	margin: 0;
+}
+
+.surface-header-title h1 {
+	font-size: var(--fs-body);
+	line-height: var(--lh-tight);
+}
+
+.surface-header-title p {
+	color: var(--text-muted);
+	font-size: var(--fs-caption);
+}
+
+.surface-header-icon {
+	display: flex;
+	width: var(--ctl-h-sm);
+	height: var(--ctl-h-sm);
+	align-items: center;
+	justify-content: center;
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--surface-2);
+	color: var(--brand);
+}
+
+.surface-header-actions {
+	gap: var(--sp-1);
+}

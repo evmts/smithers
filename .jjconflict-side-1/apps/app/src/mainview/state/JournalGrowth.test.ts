@@ -1,0 +1,1005 @@
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
+import { Database } from "bun:sqlite"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import type { ControlEvent } from "@smthrs/control/ControlSchema"
+import type { ApprovalRow, RunSummaryRow, TranscriptRow } from "@smthrs/gateway/GatewayProjection"
+import { createAppStore, PERSISTED_COLLECTION_SPECS, type AppStore } from "./AppStore"
+import type { Card } from "./AppState"
+import { APP_SCHEMA_VERSION } from "../chain/SchemaVersion"
+import { openSqliteRowStorage, ROW_TABLE_NAME } from "../chain/SqliteRowStorage"
+import { decodeEventValue } from "./EventValue"
+import { runtimeRunKey, type RuntimeRunObservation } from "./RuntimeProjection"
+import { createControllerContext, type ControllerContext } from "./controller/context"
+import { createWorkflowPumpController } from "./controller/workflow-pump"
+import { reconcileRunApprovals } from "./controller/approval-reconciliation"
+import { unavailableAgent } from "./TestFixtures"
+import * as Y from "yjs"
+import { encodeWikiState, wikiDocumentId } from "../wiki/CloudWiki"
+import { createCloudWikiController } from "./controller/cloud-wiki"
+import { refusalOf } from "@smthrs/rpc/Refusal"
+import { refusalLead } from "@smthrs/rpc/RefusalCopy"
+
+// Accepted commands remain immutable facts. Idle transport reads must never
+// manufacture those facts; diagnostic truncation cannot bound the event stream.
+const stores: AppStore[] = [], contexts: ControllerContext[] = []
+const directories: string[] = []
+afterEach(async () => {
+  for (const context of contexts.splice(0)) await context.dispose()
+  for (const store of stores.splice(0)) await store.dispose?.()
+  for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
+})
+const open = async (path?: string) => {
+  if (path === undefined) {
+    const directory = mkdtempSync(join(tmpdir(), "smithers-journal-growth-"))
+    directories.push(directory)
+    path = join(directory, "state.sqlite")
+  }
+  const db = new Database(path)
+  let writes = 0
+  let held: { enter(): void; wait: Promise<void> } | undefined
+  const pauseNextWrite = () => {
+    let enter!: () => void, release!: () => void, fail!: (error: Error) => void
+    const entered = new Promise<void>(resolve => { enter = resolve })
+    const wait = new Promise<void>((resolve, reject) => { release = resolve; fail = reject })
+    held = { enter, wait }
+    return { entered, release, fail }
+  }
+  const adapter = await openSqliteRowStorage({
+    execute: async <Row>(sql: string, params: ReadonlyArray<unknown> = []) => {
+      if (held !== undefined && /^\s*INSERT INTO/i.test(sql) && sql.includes(ROW_TABLE_NAME)) {
+        const pause = held; held = undefined; pause.enter(); await pause.wait
+      }
+      const statement = db.query(sql)
+      if (/^\s*(SELECT|PRAGMA)/i.test(sql)) return statement.all(...params as []) as ReadonlyArray<Row>
+      statement.run(...params as [])
+      if (/^\s*(INSERT|UPDATE|DELETE|REPLACE)/i.test(sql)) writes++
+      return []
+    }, close: () => db.close()
+  }, { collections: PERSISTED_COLLECTION_SPECS, schemaVersion: APP_SCHEMA_VERSION })
+  const store = await createAppStore({ kind: "opfs", ...adapter,
+    storageEventApi: { addEventListener: () => {}, removeEventListener: () => {} }
+  })
+  stores.push(store)
+  const footprint = () => ({
+    rowBytes: (db.query(`SELECT SUM(LENGTH(CAST(value AS BLOB))) AS bytes FROM ${ROW_TABLE_NAME}`).get() as { bytes: number }).bytes,
+    pages: (db.query("PRAGMA page_count").get() as { page_count: number }).page_count,
+    freePages: (db.query("PRAGMA freelist_count").get() as { freelist_count: number }).freelist_count,
+    pageSize: (db.query("PRAGMA page_size").get() as { page_size: number }).page_size,
+    writes
+  })
+  return { store, db, path, footprint, pauseNextWrite }
+}
+const scope = { repo: "owner/repo", workspaceId: "83e75ae5-0920-4000-8000-000000000001", runId: "run-growth" }
+const card: Extract<Card, { kind: "run-trace" }> = {
+  id: "growth-run-card", kind: "run-trace", title: "Coding", status: "active", ordinal: 1, createdAt: 1,
+  payload: { ...scope, gatewayBindingVersion: 1, workflow: "coding", phase: "launching", steps: [], result: null, lastSeq: 0, follow: true }
+}
+const summary: RunSummaryRow = { runId: scope.runId, flowId: "coding", status: "running", createdAt: 1, updatedAt: 2,
+  turns: 1, calls: 1, callsFailed: 0, editsAttempted: 0, editsSucceeded: 0, inputTokens: 0, outputTokens: 0,
+  verdict: "running", diagnosis: "moving" }
+const event = (sequence: number): ControlEvent => ({ sequence, kind: "control.signal.delivered", runId: scope.runId,
+  occurredAt: sequence, payload: { text: "t".repeat(400) } })
+const line = (sequence: number): TranscriptRow => ({ sequence, runId: scope.runId, turn: 1, at: sequence, kind: "model", text: "x".repeat(400) })
+const gate = (status: ApprovalRow["status"] = "pending"): ApprovalRow => ({ runId: scope.runId, requestId: "gate", requestedAt: 1,
+  title: "Deploy?", request: {}, status, payload: { target: { _tag: "Node", runId: scope.runId, requestId: "gate", digest: "reviewed",
+    envelope: { capabilities: [], flows: [], budget: {} } }, scope: "once", idempotencyKey: "gate" } })
+type Snapshot = { events: ReadonlyArray<ControlEvent>; transcript: ReadonlyArray<TranscriptRow>; summary?: RunSummaryRow; approvals?: ReadonlyArray<ApprovalRow> }
+const poll = async (store: AppStore, snapshots: ReadonlyArray<Snapshot>, afterCycle: () => void, journalAfter: unknown[] = [], beforeJournal?: (cycle: number) => Promise<void>) => {
+  let cycle = -1, transcriptReads = 0, approvalReads = 0
+  const base = createControllerContext(store, unavailableAgent, {
+    baseUrl: "https://gateway.test", workflowPollMs: 1, workflowQuietMs: 60_000,
+    fetchImpl: async (_url, init) => {
+      const request = JSON.parse(String(init?.body)) as { payload: { selector: { _tag: string }; after?: { value: number; offset: number } } }
+      const projection = request.payload.selector._tag
+      if (projection === "run-summary") cycle++
+      const snapshot = snapshots[cycle]!
+      let rows: ReadonlyArray<unknown> = [snapshot.summary ?? summary]
+      if (projection === "transcript") { transcriptReads++; rows = snapshot.transcript }
+      if (projection === "approvals") { approvalReads++; rows = snapshot.approvals ?? [] }
+      if (projection === "run-events") {
+        journalAfter.push(request.payload.after)
+        rows = snapshot.events.filter(row => request.payload.after === undefined || row.sequence > request.payload.after.value)
+        await beforeJournal?.(cycle)
+      }
+      // No revision hint: idle cycles exercise full transcript reads through
+      // the real gateway decoder, plus suffix requests for the event journal.
+      return Response.json({ ok: true, payload: { rows } })
+    }
+  })
+  const context: ControllerContext = { ...base, get disposed() { return base.disposed }, unref: timer => {
+    clearTimeout(timer)
+    queueMicrotask(() => {
+      afterCycle()
+      if (cycle === snapshots.length - 1) for (const active of context.runPumps.values()) active.stopped = true
+      context.pumpPokes.get(card.id)?.()
+    })
+  } }
+  const pump = createWorkflowPumpController(context, () => 2)
+  base.onDispose(() => { pump.stopWorkflowPumps() })
+  // Match the AppController lifetime: a poisoned SQLite writer stops the
+  // observer instead of claiming it can persist a retry through that writer.
+  base.onDispose(store.onStorageFailure(() => { void base.dispose().catch(() => {}) }))
+  contexts.push(base)
+  await pump.pumpWorkflowRun(card.id)
+  return { journalAfter, transcriptReads, approvalReads }
+}
+
+describe("normalized run polling has no idle SQLite growth", () => {
+  test.each([
+    { name: "identical pending evidence", append: false, fail: false },
+    { name: "a suffix beyond pending evidence", append: true, fail: false },
+    { name: "a rejected pending observation", append: false, fail: true }
+  ])("committed cursor and receipt survive $name", async scenario => {
+    const fixture = await open()
+    await fixture.store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
+    const first: Snapshot = { events: [event(0)], transcript: [line(0)] }
+    const second: Snapshot = { events: [...first.events, event(1)], transcript: [...first.transcript, line(1)] }
+    const response: Snapshot = scenario.append ? { events: [...second.events, event(2)], transcript: [...second.transcript, line(2)] } : second
+    await fixture.store.dispatch({ type: "gateway.run.observed", actor: "system", observation: {
+      scope, summary, transcript: [...first.transcript], journal: { mode: "full", events: [...first.events] }
+    } }).isPersisted.promise
+    const before = await fixture.store.eventHistory()
+    const failures: Error[] = []
+    fixture.store.onStorageFailure(error => { failures.push(error) })
+    const pause = fixture.pauseNextWrite()
+    const owner = fixture.store.dispatch({ type: "gateway.run.observed", actor: "system", observation: {
+      scope, summary, transcript: [...second.transcript], journal: { mode: "full", events: [...second.events] }
+    } }).isPersisted.promise.then(() => true, () => false)
+    await pause.entered
+    expect(fixture.store.collections.runtimeRuns.get(runtimeRunKey(scope))?.events).toHaveLength(2)
+    expect(fixture.store.committedRuntimeRun(runtimeRunKey(scope))?.events).toHaveLength(1)
+    const queried: unknown[] = []
+    let finished = false
+    const watching = poll(fixture.store, [response], () => {}, queried).then(() => { finished = true; return true }, () => { finished = true; return false })
+    for (let turn = 0; queried.length === 0 && turn < 100; turn++) await new Promise(resolve => setTimeout(resolve, 1))
+    expect(queried[0]).toMatchObject({ value: 0, offset: 0 })
+    await new Promise(resolve => setTimeout(resolve, 5))
+    expect(finished).toBe(false)
+    expect(fixture.store.committedRuntimeRun(runtimeRunKey(scope))?.events).toHaveLength(1)
+    if (scenario.fail) pause.fail(new Error("held observation failed"))
+    else pause.release()
+    expect(await owner).toBe(!scenario.fail)
+    // The observer shuts down without rejecting into its unawaited caller.
+    expect(await watching).toBe(true)
+    if (scenario.fail) {
+      expect(failures).toMatchObject([{ message: "Changes could not be saved." }])
+      expect(queried).toHaveLength(1)
+      expect(fixture.store.committedRuntimeRun(runtimeRunKey(scope))?.events).toEqual([...first.events])
+    }
+    if (!scenario.fail) {
+      expect(fixture.store.committedRuntimeRun(runtimeRunKey(scope))?.events).toEqual([...response.events])
+      expect((await fixture.store.eventHistory()).head.sequence).toBe(before.head.sequence + 2)
+    }
+    if (scenario.fail) await expect(Promise.resolve(fixture.store.dispose?.())).rejects.toThrow("held observation failed")
+    else await fixture.store.dispose?.()
+    stores.splice(stores.indexOf(fixture.store), 1)
+    const reopened = await open(fixture.path)
+    expect(reopened.store.committedRuntimeRun(runtimeRunKey(scope))?.events).toEqual([...(scenario.fail ? first.events : response.events)])
+    if (scenario.fail) expect((await reopened.store.eventHistory()).head).toEqual(before.head)
+    expect((await reopened.store.verifyState()).valid).toBe(true)
+  }, 120_000)
+
+  test("a terminal observation racing a journal read retries from committed evidence", async () => {
+    const fixture = await open()
+    await fixture.store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
+    const first: Snapshot = { events: [event(0)], transcript: [line(0)] }
+    const terminal: RunSummaryRow = { ...summary, status: "completed", updatedAt: 3, verdict: "done" }
+    const final: Snapshot = { events: [...first.events, event(1)], transcript: [...first.transcript, line(1)], summary: terminal }
+    await fixture.store.dispatch({ type: "gateway.run.observed", actor: "system", observation: {
+      scope, summary, transcript: [...first.transcript], journal: { mode: "full", events: [...first.events] }
+    } }).isPersisted.promise
+    const reads = await poll(fixture.store, [first, final], () => {}, [], async cycle => {
+      if (cycle !== 0) return
+      await fixture.store.dispatch({ type: "gateway.run.observed", actor: "system", observation: {
+        scope, summary: terminal
+      } }).isPersisted.promise
+      expect(fixture.store.collections.cards.get(card.id)).toMatchObject({ payload: { phase: "completed" } })
+    })
+    expect(reads.journalAfter).toHaveLength(2)
+    for (const after of reads.journalAfter) expect(after).toMatchObject({ value: 0, offset: 0 })
+    expect(reads.transcriptReads).toBe(2)
+    expect(fixture.store.committedRuntimeRun(runtimeRunKey(scope))).toMatchObject({
+      summary: terminal, events: final.events, transcript: final.transcript
+    })
+    expect((await fixture.store.verifyState()).valid).toBe(true)
+    await fixture.store.dispose?.()
+    const reopened = await open(fixture.path)
+    expect(reopened.store.committedRuntimeRun(runtimeRunKey(scope))).toMatchObject({
+      summary: terminal, events: final.events, transcript: final.transcript
+    })
+    expect((await reopened.store.verifyState()).valid).toBe(true)
+  }, 120_000)
+
+  test("full idle reads write nothing; real appends store suffixes and reopen identically", async () => {
+    const first = await open()
+    await first.store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
+    const initial: Snapshot = { events: Array.from({ length: 600 }, (_, index) => event(index)), transcript: Array.from({ length: 600 }, (_, index) => line(index)) }
+    const appended: Snapshot = { events: [...initial.events, event(600)], transcript: [...initial.transcript, line(600)] }
+    expect(JSON.stringify(initial).length).toBeGreaterThan(500_000)
+    const snapshots = [...Array.from({ length: 20 }, () => initial), ...Array.from({ length: 20 }, () => appended)]
+    const measured: ReturnType<typeof first.footprint>[] = []
+    const reads = await poll(first.store, snapshots, () => measured.push(first.footprint()))
+    expect(measured).toHaveLength(40)
+    for (const size of measured.slice(1, 20)) expect(size).toEqual(measured[0]!)
+    for (const size of measured.slice(21)) expect(size).toEqual(measured[20]!)
+    expect(reads.transcriptReads).toBe(40)
+    expect(reads.journalAfter[0]).toBeUndefined()
+    expect(reads.journalAfter[1]).toMatchObject({ value: 599, offset: 0 })
+    // The first full-looking page needs one extra empty read to close it;
+    // subsequent cycles continue from persisted cursors without idle writes.
+    expect(reads.journalAfter).toHaveLength(41)
+    for (const after of reads.journalAfter.slice(1, 22)) expect(after).toMatchObject({ value: 599, offset: 0 })
+    for (const after of reads.journalAfter.slice(22)) expect(after).toMatchObject({ value: 600, offset: 0 })
+    const history = await first.store.eventHistory()
+    const observations = history.events.map(row => decodeEventValue(row.input))
+      .filter((value): value is { type: "gateway.run.observed"; observation: RuntimeRunObservation } =>
+        typeof value === "object" && value !== null && "type" in value && value.type === "gateway.run.observed")
+    expect(observations).toHaveLength(2)
+    expect(observations[0]!.observation.journal?.events).toHaveLength(600)
+    expect(observations[0]!.observation.transcript).toHaveLength(600)
+    expect(observations[1]!.observation.journal).toMatchObject({ mode: "suffix", after: { value: 599, offset: 0 }, events: [event(600)] })
+    expect(observations[1]!.observation.transcriptAfter).toMatchObject({ length: 600 })
+    expect(observations[1]!.observation.transcript).toEqual([line(600)])
+    expect(JSON.stringify(observations[1]).length).toBeLessThan(4_000)
+    const retained = await first.store.verifyState()
+    expect(retained.valid).toBe(true)
+    await first.store.dispose?.()
+    const reopened = await open(first.path)
+    expect(reopened.store.collections.runtimeRuns.get(runtimeRunKey(scope))).toMatchObject({ events: appended.events, transcript: appended.transcript, summary })
+    expect((await reopened.store.eventHistory()).head).toEqual(history.head)
+    const restored = await reopened.store.verifyState()
+    expect(restored.valid).toBe(true)
+    expect(restored.actualHash).toBe(retained.actualHash)
+    const resumed: ReturnType<typeof reopened.footprint>[] = []
+    const again = await poll(reopened.store, Array.from({ length: 5 }, () => appended), () => resumed.push(reopened.footprint()))
+    expect(again.journalAfter[0]).toMatchObject({ value: 600, offset: 0 })
+    for (const size of resumed.slice(1)) expect(size).toEqual(resumed[0]!)
+    expect((await reopened.store.eventHistory()).head).toEqual(history.head)
+  }, 120_000)
+
+  test("waiting approval polls write nothing; learned decisions and conflicting batches remain meaningful", async () => {
+    const fixture = await open()
+    await fixture.store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
+    const waiting: Snapshot = { events: [event(1)], transcript: [], approvals: [gate()], summary: { ...summary, status: "waiting-approval", waitingReason: "approval" } }
+    const measured: ReturnType<typeof fixture.footprint>[] = []
+    const result = await poll(fixture.store, Array.from({ length: 12 }, () => waiting), () => measured.push(fixture.footprint()))
+    expect(result.approvalReads).toBe(12)
+    for (const size of measured.slice(1)) expect(size).toEqual(measured[0]!)
+    const before = await fixture.store.eventHistory()
+    await reconcileRunApprovals(fixture.store, scope, [gate("approved")])
+    const accepted = await fixture.store.eventHistory()
+    expect(accepted.head.sequence).toBe(before.head.sequence + 1)
+    await reconcileRunApprovals(fixture.store, scope, [gate("approved"), gate()])
+    expect((await fixture.store.eventHistory()).head).toEqual(accepted.head)
+    await expect(reconcileRunApprovals(fixture.store, scope, [gate(), gate("denied")])).rejects.toThrow("conflict")
+    expect((await fixture.store.eventHistory()).head).toEqual(accepted.head)
+    expect((await fixture.store.verifyState()).valid).toBe(true)
+  }, 120_000)
+
+  test("explicit repeated commands remain complete accepted facts", async () => {
+    const { store } = await open()
+    const before = await store.eventHistory()
+    for (let index = 0; index < 2; index++) await store.dispatch({ type: "theme.changed", actor: "user", theme: "dark" }).isPersisted.promise
+    const after = await store.eventHistory()
+    expect(after.head.sequence).toBe(before.head.sequence + 2)
+    expect(after.events.slice(-2).map(row => decodeEventValue(row.input))).toEqual([
+      { type: "theme.changed", actor: "user", theme: "dark" }, { type: "theme.changed", actor: "user", theme: "dark" }
+    ])
+    expect((await store.verifyState()).valid).toBe(true)
+  })
+})
+
+test("identical repository-import polls do not grow the committed journal or SQLite rows", async () => {
+  const { createRepoImportSeam, repoImportPolling } = await import("./seams/RepoImportSeam")
+  const fixture = await open()
+  const store = fixture.store
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "owner", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+  const previousDelay = repoImportPolling.delayMs
+  repoImportPolling.delayMs = 1
+  let disposed = false
+  const reads: Array<ReturnType<typeof Promise.withResolvers<Response>>> = []
+  const waitFor = async (predicate: () => boolean) => {
+    const deadline = Date.now() + 2_000
+    while (!predicate()) {
+      if (Date.now() >= deadline) throw new Error("Import observation did not settle")
+      await new Promise(resolve => setTimeout(resolve, 1))
+    }
+  }
+  const answer = (stage = "cloning_github", status = "cloning") => Response.json({
+    importJobId: "import-growth", repoOwner: "owner", repoName: "repo", status, stage,
+    target_bookmark: "main", created_at: "2026-09-26T00:00:00Z", updated_at: "2026-09-26T00:00:00Z"
+  })
+  const seam = createRepoImportSeam({ store, dispatch: store.dispatch, baseUrl: "", actor: () => "user", nextOrdinal: () => 1,
+    isDisposed: () => disposed, http: async (_input, init) => {
+      if (init?.method === "POST") return answer()
+      const read = Promise.withResolvers<Response>(); reads.push(read); return read.promise
+    }
+  })
+  try {
+    await seam.importRepository("owner/repo")
+    await waitFor(() => reads.length === 1)
+    reads[0]!.resolve(answer())
+    await waitFor(() => reads.length === 2)
+    const before = await store.eventHistory(), physical = fixture.footprint()
+    for (let index = 1; index <= 10; index++) {
+      reads[index]!.resolve(answer())
+      await waitFor(() => reads.length === index + 2)
+    }
+    expect((await store.eventHistory()).head).toEqual(before.head)
+    expect(fixture.footprint()).toEqual(physical)
+    const held = fixture.pauseNextWrite()
+    reads[11]!.resolve(answer("pushing_mirror"))
+    await held.entered
+    expect(store.committedCard("repo-import-owner/repo")).toMatchObject({ payload: { stage: "cloning_github" } })
+    expect(reads).toHaveLength(12)
+    held.release()
+    await waitFor(() => reads.length === 13)
+    expect((await store.eventHistory()).head.sequence).toBe(before.head.sequence + 1)
+    reads[12]!.resolve(answer("provisioning_workspace", "ready"))
+    await waitFor(() => {
+      const card = store.collections.cards.get("repo-import-owner/repo")
+      return card?.kind === "repo-import" && card.payload.phase === "done"
+    })
+    await store.settled?.()
+    expect((await store.eventHistory()).head.sequence).toBe(before.head.sequence + 2)
+    const reopened = await open(fixture.path)
+    expect(reopened.store.collections.cards.get("repo-import-owner/repo")).toMatchObject({ payload: { phase: "done", stage: "provisioning_workspace" } })
+    expect((await reopened.store.verifyState()).valid).toBe(true)
+  } finally {
+    disposed = true
+    for (const read of reads) read.resolve(answer())
+    repoImportPolling.delayMs = previousDelay
+  }
+})
+
+for (const action of ["message", "status", "repair"] as const) test(`replayed agent-session ${action} observations do not grow SQLite`, async () => {
+  const { createAgentSessionSeam } = await import("./seams/AgentSessionSeam")
+  const { AGENT_SESSION_WIRE: wire, sseFrame } = await import("./seams/fixtures/AgentSessionWire")
+  const fixture = await open(), store = fixture.store
+  await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "owner", expiresAt: null, scopes: null }).isPersisted.promise
+  const session = wire.session({ message_count: 1 }), message = wire.message()
+  let channel!: ReadableStreamDefaultController<Uint8Array>, pulls = 0, repairReads = 0
+  const body = new ReadableStream<Uint8Array>({ start(controller) { channel = controller }, pull() { pulls++ } }, { highWaterMark: 0 })
+  const seam = createAgentSessionSeam({ store, dispatch: store.dispatch, baseUrl: "", actor: () => "user", nextOrdinal: () => 1,
+    stream: async () => new Response(body, { headers: { "content-type": "text/event-stream" } }),
+    http: async input => {
+      if (!input.includes("/messages") && !input.split("?")[0]!.endsWith("/sessions")) repairReads++
+      return Response.json(input.includes("/messages") ? [message] : input.split("?")[0]!.endsWith("/sessions") ? [session] : session)
+    }
+  }, { repairIntervalMs: action === "repair" ? 2 : 60_000 })
+  const waitFor = async (predicate: () => boolean) => {
+    const deadline = Date.now() + 2_000
+    while (!predicate()) {
+      if (Date.now() >= deadline) throw new Error("Agent stream did not request its next frame")
+      await new Promise(resolve => setTimeout(resolve, 1))
+    }
+  }
+  const send = async (data: unknown, id?: number) => {
+    const next = pulls + 1
+    channel.enqueue(new TextEncoder().encode(sseFrame(data, id === undefined ? {} : { id })))
+    // With no stream buffer, the next read follows the prior save receipt.
+    await waitFor(() => pulls === next)
+  }
+  try {
+    await seam.listSessions("owner/repo")
+    expect(store.committedCard("agent-sessions-owner/repo")).toMatchObject({ kind: "agents" })
+    await seam.viewSession(session.id, "owner/repo")
+    await waitFor(() => pulls === 1)
+    const before = await store.eventHistory(), physical = fixture.footprint()
+    if (action === "repair") {
+      const observed = repairReads
+      await waitFor(() => repairReads >= observed + 10)
+    } else for (let index = 0; index < 10; index++) {
+      if (action === "message") await send(wire.messageEvent(message), message.id)
+      else await send(wire.statusEvent("active"))
+    }
+    expect((await store.eventHistory()).head).toEqual(before.head)
+    expect(fixture.footprint()).toEqual(physical)
+    const changed = wire.message({ id: 42, sequence: 2, role: "assistant", parts: [{ part_index: 0, type: "text", content: { value: "A new observation" } }] })
+    await send(wire.messageEvent(changed), 42)
+    expect((await store.eventHistory()).head.sequence).toBe(before.head.sequence + 1)
+    channel.enqueue(new TextEncoder().encode(sseFrame(wire.statusEvent("completed"))))
+    await waitFor(() => {
+      const card = store.committedCard(`agent-session-${session.id}`)
+      return card?.kind === "agent" && "cloud" in card.payload && card.payload.state === "completed"
+    })
+    await store.settled?.()
+    const reopened = await open(fixture.path)
+    expect(reopened.store.committedCard(`agent-session-${session.id}`)).toMatchObject({ payload: { state: "completed", transcript: [{ id: 41 }, { id: 42 }] } })
+    expect(reopened.store.committedCard("agent-sessions-owner/repo")).toMatchObject({ payload: { sessions: [{ status: "completed" }] } })
+    expect((await reopened.store.verifyState()).valid).toBe(true)
+  } finally { seam.dispose() }
+})
+
+test.each(["eof", "unavailable"] as const)("Wiki reconnects after %s retain their failure without growing SQLite", async (failure) => {
+  const fixture = await open(), { store } = fixture
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", allowlisted: true, admin: false, scopesPlain: null })
+  const doc = new Y.Doc(), id = wikiDocumentId("owner/repo", 42)
+  doc.getText("markdown").insert(0, "# Page")
+  let revision = 1
+  const streams: ReturnType<typeof Promise.withResolvers<Response>>[] = []
+  const ctx = createControllerContext(store, unavailableAgent, { fetchImpl: async (input) => {
+    if (String(input).includes("/stream?")) {
+      const stream = Promise.withResolvers<Response>(); streams.push(stream); return stream.promise
+    }
+    return Response.json({ page: { id: 42, slug: "home", title: "Page", body: doc.getText("markdown").toString(), revision,
+      author: { id: 1, login: "will" }, created_at: "2026-09-08T00:00:00Z", updated_at: "2026-09-08T00:00:00Z" },
+      state: encodeWikiState(Y.encodeStateAsUpdate(doc)), state_vector: encodeWikiState(Y.encodeStateVector(doc)) })
+  } })
+  contexts.push(ctx)
+  const until = async (condition: () => boolean) => {
+    const deadline = Date.now() + 4_000
+    while (!condition()) {
+      if (Date.now() > deadline) throw new Error("Wiki reconnect did not settle")
+      await new Promise(resolve => setTimeout(resolve, 5))
+    }
+  }
+  const failed = () => failure === "eof"
+    ? new Response("", { headers: { "content-type": "text/event-stream" } })
+    : Response.json({ message: "Wiki maintenance" }, { status: 503 })
+  try {
+    const wiki = createCloudWikiController(ctx, () => 1)
+    await wiki.openCloudWiki("owner/repo", "home")
+    await until(() => streams.length === 1)
+    streams[0]!.resolve(failed())
+    await until(() => streams.length === 2)
+    const before = await store.eventHistory(), physical = fixture.footprint()
+    for (let index = 1; index <= 2; index++) {
+      streams[index]!.resolve(failed())
+      await until(() => streams.length === index + 2)
+    }
+    expect((await store.eventHistory()).head).toEqual(before.head)
+    expect(fixture.footprint()).toEqual(physical)
+    expect(store.collections.worldDocuments.get(id)?.cloud).toMatchObject({ phase: "offline",
+      error: failure === "eof" ? "Reconnecting to Wiki revisions…"
+        : `Reading or saving this Wiki page failed (503). ${refusalLead(refusalOf({ body: { message: "Wiki maintenance" }, status: 503, message: "" }))}` })
+    expect(store.collections.worldDocuments.get(id)?.cloud?.error).not.toContain("Wiki maintenance")
+    let channel!: ReadableStreamDefaultController<Uint8Array>
+    streams[3]!.resolve(new Response(new ReadableStream({ start(value) { channel = value } }), { headers: { "content-type": "text/event-stream" } }))
+    doc.getText("markdown").insert(6, "\n\nRecovered")
+    revision = 2
+    channel.enqueue(new TextEncoder().encode(`event: wiki.update\nid: 2\ndata: ${JSON.stringify({ id: 2, page_id: 42, revision: 2, deleted: false, slug: "home" })}\n\n`))
+    await until(() => store.collections.worldDocuments.get(id)?.cloud?.remoteRevision === 2)
+    await store.settled?.()
+    expect((await store.eventHistory()).head.sequence).toBe(before.head.sequence + 1)
+    const reopened = await open(fixture.path)
+    expect(reopened.store.collections.worldDocuments.get(id)).toMatchObject({ body: "# Page\n\nRecovered", cloud: { remoteRevision: 2, phase: "live", error: null } })
+    expect((await reopened.store.verifyState()).valid).toBe(true)
+  } finally {
+    await ctx.dispose()
+    for (const stream of streams) stream.resolve(failed())
+    doc.destroy()
+  }
+}, 15_000)
+
+test("unchanged workspace provisioning polls do not grow SQLite and await changed receipts", async () => {
+  const { createWorkspaceSeam } = await import("./seams/WorkspaceSeam")
+  const fixture = await open(), { store } = fixture
+  await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "owner", expiresAt: null, scopes: null }).isPersisted.promise
+  const reads: Array<ReturnType<typeof Promise.withResolvers<Response>>> = []
+  const waitFor = async (predicate: () => boolean) => {
+    const deadline = Date.now() + 2_000
+    while (!predicate()) {
+      if (Date.now() >= deadline) throw new Error("Workspace observation did not settle")
+      await new Promise(resolve => setTimeout(resolve, 1))
+    }
+  }
+  const answer = (stage = "boot", status = "starting") => Response.json({
+    id: "ws-growth", repo_full_name: "owner/repo", name: "Provisioning", target_bookmark: null,
+    kind: "container", status, provisioning_stage: stage, suspended_at: null, created_at: "2026-09-26T00:00:00Z"
+  })
+  const seam = createWorkspaceSeam({ store, dispatch: store.dispatch, baseUrl: "", actor: () => "user", nextOrdinal: () => 1,
+    http: async (input, init) => {
+      if (init?.method === "POST") return answer()
+      if (input.endsWith("/workspaces/ws-growth")) {
+        const read = Promise.withResolvers<Response>(); reads.push(read); return read.promise
+      }
+      return Response.json([])
+    }
+  }, { pollMs: 1 })
+  try {
+    await seam.openWorkspace(undefined, "owner/repo", "container")
+    await waitFor(() => reads.length === 1)
+    await store.settled?.()
+    reads[0]!.resolve(answer())
+    await waitFor(() => reads.length === 2)
+    const before = await store.eventHistory(), physical = fixture.footprint()
+    for (let index = 1; index <= 10; index++) {
+      reads[index]!.resolve(answer())
+      await waitFor(() => reads.length === index + 2)
+    }
+    expect((await store.eventHistory()).head).toEqual(before.head)
+    expect(fixture.footprint()).toEqual(physical)
+    const held = fixture.pauseNextWrite()
+    reads[11]!.resolve(answer("starting_services"))
+    await held.entered
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(reads).toHaveLength(12)
+    held.release()
+    await waitFor(() => reads.length === 13)
+    expect((await store.eventHistory()).head.sequence).toBe(before.head.sequence + 1)
+    reads[12]!.resolve(answer("ready", "running"))
+    await waitFor(() => store.collections.cloudWorkspaces.get("ws-growth")?.status === "running")
+    await store.settled?.()
+    expect((await store.eventHistory()).head.sequence).toBe(before.head.sequence + 2)
+    const reopened = await open(fixture.path)
+    expect(reopened.store.collections.cloudWorkspaces.get("ws-growth")).toMatchObject({ status: "running", provisioningStage: "ready" })
+    expect((await reopened.store.verifyState()).valid).toBe(true)
+  } finally {
+    seam.dispose()
+    for (const read of reads) read.resolve(answer("ready", "running"))
+  }
+})
+
+test.each(["commit", "reject"] as const)("desktop progress deduplicates committed and pending writes: %s", async outcome => {
+  const { createWorkspaceSeam } = await import("./seams/WorkspaceSeam")
+  const fixture = await open(), { store } = fixture
+  let now = 0
+  const clock = spyOn(performance, "now").mockImplementation(() => now)
+  await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "owner", expiresAt: null, scopes: null }).isPersisted.promise
+  const reads: Array<ReturnType<typeof Promise.withResolvers<Response>>> = []
+  const dispatched: string[] = []
+  const waitFor = async (predicate: () => boolean) => {
+    const deadline = Date.now() + 3_000
+    while (!predicate()) {
+      if (Date.now() >= deadline) throw new Error("Desktop observation did not settle")
+      await new Promise(resolve => setTimeout(resolve, 1))
+    }
+  }
+  const answer = (status = "starting") => Response.json({ id: "desktop-growth", repo_full_name: "owner/repo", name: "Desktop",
+    target_bookmark: null, kind: "desktop", status, provisioning_stage: "boot", created_at: "2026-09-26T00:00:00Z" })
+  const seam = createWorkspaceSeam({ store, dispatch: transition => { dispatched.push(transition.type); return store.dispatch(transition) }, baseUrl: "", actor: () => "user", nextOrdinal: () => 1,
+    http: async (input, init) => {
+      if (init?.method === "POST") return answer()
+      if (input.endsWith("/workspaces/desktop-growth")) {
+        const read = Promise.withResolvers<Response>(); reads.push(read); return read.promise
+      }
+      return Response.json([])
+    }
+  }, { desktopWaitMs: 1 })
+  const failures: Error[] = []
+  store.onStorageFailure(error => { failures.push(error); seam.dispose() })
+  const pending = seam.openDesktopBox(undefined, "owner/repo")
+  void pending.catch(() => {})
+  let held: ReturnType<typeof fixture.pauseNextWrite> | undefined
+  try {
+    await waitFor(() => reads.length === 1)
+    const before = await store.eventHistory(), physical = fixture.footprint()
+    for (let index = 0; index < 5; index++) {
+      reads[index]!.resolve(answer())
+      await waitFor(() => reads.length === index + 2)
+    }
+    expect((await store.eventHistory()).head).toEqual(before.head)
+    expect(fixture.footprint()).toEqual(physical)
+    now = 2_000
+    // The real heartbeat advances elapsed progress while the backend read stays held.
+    await waitFor(() => store.collections.toasts.get("toast-box.desktop.open:desktop-growth")?.detail.includes("2s elapsed") === true)
+    const advanced = await store.eventHistory()
+    expect(advanced.head.sequence).toBe(before.head.sequence + 2)
+    expect(structuredClone(store.committedCard("workspace-desktop-growth"))).toMatchObject({ payload: { desktopStage: "starting", desktopProgress: expect.stringContaining("2s elapsed") } })
+    held = fixture.pauseNextWrite()
+    now = 4_000
+    reads[5]!.resolve(answer())
+    await held.entered
+    await waitFor(() => reads.length === 7)
+    const accepted = dispatched.length
+    for (let index = 6; index < 9; index++) {
+      reads[index]!.resolve(answer())
+      await waitFor(() => reads.length === index + 2)
+    }
+    expect(dispatched).toHaveLength(accepted)
+    expect(structuredClone(store.committedCard("workspace-desktop-growth"))).toMatchObject({ payload: { desktopProgress: expect.stringContaining("2s elapsed") } })
+    if (outcome === "reject") {
+      held.fail(new Error("Progress write refused"))
+      await waitFor(() => failures.length === 1)
+      for (const read of reads) read.resolve(answer("failed"))
+      await pending
+      expect(failures).toMatchObject([{ message: "Changes could not be saved." }])
+      expect(store.committedToast("toast-box.desktop.open:desktop-growth")?.detail).toContain("2s elapsed")
+      await expect(Promise.resolve(store.dispose?.())).rejects.toThrow("Progress write refused")
+      stores.splice(stores.indexOf(store), 1)
+      const reopened = await open(fixture.path)
+      expect(structuredClone(reopened.store.committedCard("workspace-desktop-growth"))).toMatchObject({ payload: { desktopProgress: expect.stringContaining("2s elapsed") } })
+      expect((await reopened.store.verifyState()).valid).toBe(true)
+      return
+    }
+    // A different queued observation must not be hidden by our matching pending receipt.
+    store.dispatch({ type: "toast.progressed", actor: "system", key: "box.desktop.open:desktop-growth", detail: "Other progress" })
+    const current = store.collections.cards.get("workspace-desktop-growth")
+    if (current?.kind !== "workspace") throw new Error("Workspace card is absent")
+    store.dispatch({ type: "card.upsert", actor: "system", card: { ...current, payload: { ...current.payload, desktopProgress: "Other progress" } } })
+    reads[9]!.resolve(answer())
+    await waitFor(() => reads.length === 11)
+    expect(dispatched).toHaveLength(accepted + 2)
+    held.release()
+    expect((await store.eventHistory()).head.sequence).toBe(advanced.head.sequence + 6)
+    expect(structuredClone(store.committedCard("workspace-desktop-growth"))).toMatchObject({ payload: { desktopProgress: expect.stringContaining("4s elapsed") } })
+    reads[10]!.resolve(answer("failed"))
+    await pending
+    await store.settled?.()
+    expect(store.committedWorkspace("desktop-growth")?.status).toBe("failed")
+    expect(store.collections.toasts.get("toast-box.desktop.open:desktop-growth")?.status).toBe("failed")
+    const reopened = await open(fixture.path)
+    expect(reopened.store.committedWorkspace("desktop-growth")?.status).toBe("failed")
+    expect(reopened.store.committedCard("workspace-desktop-growth")).not.toHaveProperty("payload.desktopStage")
+    expect((await reopened.store.verifyState()).valid).toBe(true)
+  } finally {
+    held?.release()
+    seam.dispose()
+    for (const read of reads) read.resolve(answer("failed"))
+    await pending.catch(() => {})
+    clock.mockRestore()
+  }
+})
+
+
+test.each(["commit", "reject"] as const)("unchanged mirror polls do not grow SQLite and await changed receipts: %s", async outcome => {
+  const { createGitHubSeam, mirrorSyncPolling } = await import("./seams/GitHubSeam")
+  const previous = { ...mirrorSyncPolling }
+  mirrorSyncPolling.delayMs = 1
+  const fixture = await open(), { store } = fixture
+  await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "owner", expiresAt: null, scopes: null }).isPersisted.promise
+  const reads: Array<ReturnType<typeof Promise.withResolvers<Response>>> = []
+  const waitFor = async (predicate: () => boolean) => {
+    const deadline = Date.now() + 2_000
+    while (!predicate()) {
+      if (Date.now() >= deadline) throw new Error("Mirror observation did not settle")
+      await new Promise(resolve => setTimeout(resolve, 1))
+    }
+  }
+  let terminal = false, launches = 0
+  const answer = (state = "running", status = "pending") => Response.json({ state,
+    refs: [{ name: "refs/heads/main", from: "aa", to: "bb", status, error: status === "failed" ? "Push refused" : null }]
+  })
+  const seam = createGitHubSeam({ store, dispatch: store.dispatch, baseUrl: "", actor: () => "user", nextOrdinal: () => 1,
+    http: async (input, init) => {
+      if (init?.method === "POST") { launches++; return Response.json({ run_id: 91 }) }
+      if (input.endsWith("/mirror-sync/91")) {
+        const read = Promise.withResolvers<Response>(); reads.push(read); return read.promise
+      }
+      return Response.json({ mirror_status: terminal ? "failed" : "behind", behind_refs: 1, failed_refs: terminal ? 1 : 0 })
+    }
+  })
+  const failures: Error[] = []
+  store.onStorageFailure(error => { failures.push(error) })
+  const id = "sync-ops-mirror-owner/repo"
+  const payload = () => { const card = store.committedCard(id); return card?.kind === "sync-ops" ? card.payload : undefined }
+  try {
+    await seam.mirrorSync("owner/repo")
+    await waitFor(() => reads.length === 1)
+    reads[0]!.resolve(answer())
+    await waitFor(() => reads.length === 2)
+    const before = await store.eventHistory(), physical = fixture.footprint()
+    for (let index = 1; index <= 10; index++) {
+      reads[index]!.resolve(answer())
+      await waitFor(() => reads.length === index + 2)
+    }
+    expect((await store.eventHistory()).head).toEqual(before.head)
+    expect(fixture.footprint()).toEqual(physical)
+    const held = fixture.pauseNextWrite()
+    reads[11]!.resolve(answer("running", "succeeded"))
+    await held.entered
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(reads).toHaveLength(12)
+    if (outcome === "reject") {
+      held.fail(new Error("Mirror write refused"))
+      await waitFor(() => failures.length === 1)
+      await new Promise(resolve => setTimeout(resolve, 20))
+      expect(reads).toHaveLength(12)
+      expect(launches).toBe(1)
+      expect(failures).toMatchObject([{ message: "Changes could not be saved." }])
+      await expect(Promise.resolve(store.dispose?.())).rejects.toThrow("Mirror write refused")
+      stores.splice(stores.indexOf(store), 1)
+      const reopened = await open(fixture.path)
+      expect(reopened.store.committedCard(id)).toMatchObject({ payload: { runState: "running", ops: [{ status: "pending" }] } })
+      expect((await reopened.store.verifyState()).valid).toBe(true)
+      return
+    }
+    held.release()
+    await waitFor(() => reads.length === 13)
+    expect((await store.eventHistory()).head.sequence).toBe(before.head.sequence + 1)
+    terminal = true
+    reads[12]!.resolve(answer("failed", "failed"))
+    await waitFor(() => payload()?.mirrorStatus === "failed")
+    await store.settled?.()
+    expect((await store.eventHistory()).head.sequence).toBe(before.head.sequence + 3)
+    expect(launches).toBe(1)
+    const reopened = await open(fixture.path)
+    expect(reopened.store.committedCard(id)).toMatchObject({ payload: { runState: "failed", mirrorStatus: "failed", ops: [{ status: "failed", error: "Push refused" }] } })
+    expect((await reopened.store.verifyState()).valid).toBe(true)
+  } finally {
+    // Terminal replies retire outstanding test polls even when a regression fails.
+    for (const read of reads) read.resolve(answer("failed", "failed"))
+    await new Promise(resolve => setTimeout(resolve, 20))
+    Object.assign(mirrorSyncPolling, previous)
+  }
+})
+
+
+test.each(["adopt", "notice", "open"] as const)("GitHub installation %s stops across a held write and account replacement", async phase => {
+  const { createGitHubSeam } = await import("./seams/GitHubSeam")
+  const fixture = await open(), { store } = fixture
+  const identity = (login: string) => ({ type: "identity.session.loaded" as const, actor: "system" as const, state: "signed-in" as const,
+    login, allowlisted: true, admin: false, scopesPlain: null })
+  await store.dispatch(identity("owner")).isPersisted.promise
+  const dispatched: string[] = [], opened: string[] = []
+  const seam = createGitHubSeam({ store, baseUrl: "", actor: () => "user", nextOrdinal: () => 1,
+    dispatch: input => { dispatched.push(input.type); return store.dispatch(input) },
+    http: async () => phase === "notice" ? Response.json({ message: "Private install refusal" }, { status: 403 }) :
+      Response.json({ repos: phase === "open" ? [] : [{ fullName: "owner/private", installationId: 1 }] })
+  }, { openExternal: async url => { opened.push(url); return true } })
+  const held = fixture.pauseNextWrite()
+  const pending = phase === "open" ? seam.openInstall() : seam.chooseInstallation("1")
+  await held.entered
+  const replacement = store.dispatch(identity("other"))
+  held.release()
+  await replacement.isPersisted.promise
+  await pending
+  await store.settled?.()
+  expect(dispatched).not.toContain("repo.selected")
+  expect(dispatched).not.toContain("toast.resolved")
+  expect(opened).toEqual([])
+  const reopened = await open(fixture.path)
+  expect(reopened.store.collections.repositories.has("owner/private")).toBe(false)
+  expect(reopened.store.collections.githubAppStatuses.has("owner/private")).toBe(false)
+  expect(reopened.store.session().activeRepoKey).not.toBe("owner/private")
+  expect((await reopened.store.verifyState()).valid).toBe(true)
+})
+
+
+for (const kind of ["diagnostics", "waiting", "closed"] as const) {
+  test.each(["commit", "reject"] as const)(`unchanged language-server ${kind} observations keep SQLite flat: %s`, async outcome => {
+    const { createCodeIntelSeam } = await import("./seams/CodeIntelSeam")
+    const fixture = await open(), { store } = fixture
+    const id = "file-owner/repo-index.ts", content = "const value = 1"
+    await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "owner", expiresAt: null, scopes: null }).isPersisted.promise
+    await store.dispatch({ type: "workspace.updated", actor: "system", workspace: { id: "ws-lsp", repoId: "owner/repo", name: "LSP", status: "running", targetBookmark: null, provisioningStage: null, suspendedAt: null, createdAt: null } }).isPersisted.promise
+    await store.dispatch({ type: "card.upsert", actor: "system", card: { id, kind: "file", title: "File", status: "active", ordinal: 1, createdAt: 1, payload: { repo: "owner/repo", path: "index.ts", content, truncated: false } } }).isPersisted.promise
+    type Event = import("./CloudLspClient").CloudLspEvent
+    let publish: ((event: Event) => void) | undefined
+    let accepted = 0
+    const seam = createCodeIntelSeam({ store, baseUrl: "", actor: () => "user", nextOrdinal: () => 1,
+      http: async () => { throw new Error("Unexpected HTTP") }, dispatch: input => { accepted++; return store.dispatch(input) }
+    }, { readFile: async () => { throw new Error("The file already exists") }, createCloudLsp: () => ({
+      hover: async () => ({ ok: { hover: null } }), definition: async () => ({ ok: { locations: [], total: 0, omitted: 0 } }),
+      diagnostics: async () => ({ ok: { items: null, total: null } }), dispose: () => {},
+      subscribe: listener => { publish = listener; return () => { publish = undefined } }
+    }) })
+    const failures: Error[] = []
+    store.onStorageFailure(error => { failures.push(error); seam.dispose() })
+    const event = (message: string): Event => {
+      const scope = { repo: "owner/repo", workspaceId: "ws-lsp", language: "typescript" as const }
+      if (kind === "waiting") return { ...scope, type: kind, paths: ["index.ts"], note: message }
+      if (kind === "closed") return { ...scope, type: kind, paths: ["index.ts"], code: 1008, reason: message }
+      return { ...scope, type: kind, path: "index.ts", content, total: message === "" ? 0 : 5,
+        items: message === "" ? [] : [{ line: 1, character: 1, endLine: 1, endCharacter: 2, severity: "error", message }] }
+    }
+    try {
+      await seam.hover("index.ts", 1, 1, "owner/repo")
+      publish!(event("original")); await store.settled?.()
+      const before = await store.eventHistory(), physical = fixture.footprint(), initial = accepted
+      for (let index = 0; index < 20; index++) publish!(event("original"))
+      await store.settled?.()
+      expect((await store.eventHistory()).head).toEqual(before.head)
+      expect(accepted).toBe(initial)
+      expect(fixture.footprint()).toEqual(physical)
+      const held = fixture.pauseNextWrite()
+      publish!(event("changed"))
+      await held.entered
+      for (let index = 0; index < 20; index++) publish!(event("changed"))
+      expect(accepted).toBe(initial + 1)
+      if (outcome === "reject") {
+        held.fail(new Error("LSP observation refused"))
+        await new Promise(resolve => setTimeout(resolve, 20))
+        expect(failures).toMatchObject([{ message: "Changes could not be saved." }])
+        expect(publish).toBeUndefined()
+        await expect(Promise.resolve(store.dispose?.())).rejects.toThrow("LSP observation refused")
+        stores.splice(stores.indexOf(store), 1)
+        const reopened = await open(fixture.path)
+        const card = reopened.store.committedCard(id)
+        expect(card?.kind).toBe("file")
+        if (card?.kind === "file") expect(JSON.stringify(card.payload)).toContain("original")
+        expect((await reopened.store.verifyState()).valid).toBe(true)
+        return
+      }
+      // A queued edit must not be hidden by our matching pending observation.
+      const current = store.collections.cards.get(id)!
+      if (current.kind !== "file") throw new Error("Missing file")
+      const fields = kind === "diagnostics" ? { diagnostics: [], diagnosticsTotal: undefined } : { intel: { state: "ready" as const } }
+      store.dispatch({ type: "card.updated", actor: "user", id, patch: { payload: { ...current.payload, ...fields } } })
+      publish!(event("changed"))
+      expect(accepted).toBe(initial + 2)
+      held.release(); await store.settled?.()
+      expect((await store.eventHistory()).head.sequence).toBe(before.head.sequence + 3)
+      publish!(event("")); await store.settled?.()
+      const settled = await store.eventHistory()
+      publish!(event("")); await store.settled?.()
+      expect((await store.eventHistory()).head).toEqual(settled.head)
+      const reopened = await open(fixture.path)
+      const card = reopened.store.committedCard(id)
+      if (card?.kind !== "file") throw new Error("Missing persisted file")
+      if (kind === "diagnostics") { expect(card.payload.diagnostics).toEqual([]); expect(card.payload.diagnosticsTotal).toBeUndefined() }
+      else expect(card.payload.intel?.state).toBe("unavailable")
+      expect((await reopened.store.verifyState()).valid).toBe(true)
+      // Explicit repeated commands remain accepted acts, even when their answer is identical.
+      const commands = (await store.eventHistory()).head.sequence
+      await seam.hover("index.ts", 1, 1, "owner/repo")
+      await seam.hover("index.ts", 1, 1, "owner/repo")
+      expect((await store.eventHistory()).head.sequence).toBe(commands + 2)
+    } finally { seam.dispose() }
+  })
+}
+
+test.each(["commit", "reject"] as const)("identical quiet issue-poll failures do not grow the committed journal or SQLite: %s", async outcome => {
+  const { createIssuesSeam } = await import("./seams/IssuesSeam")
+  const { createFailureController } = await import("./controller/failures")
+  const fixture = await open(), { store } = fixture
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+  const issue: Extract<Card, { kind: "issue" }> = { id: "issue-growth", kind: "issue", title: "Growth", status: "active", createdAt: 1, ordinal: 1, payload: {
+    repo: "will/flows", number: 8, kind: "chat", visibility: "private", title: "Growth", state: "open", author: "will", issueBody: "", labels: [], comments: []
+  } }
+  await store.dispatch({ type: "card.upsert", actor: "user", card: issue }).isPersisted.promise
+  // The seam reschedules its read every two seconds; the test drives each read.
+  const polls: Array<() => void> = []
+  const realSetTimeout = globalThis.setTimeout
+  const timers = spyOn(globalThis, "setTimeout").mockImplementation(((work: () => void, delay?: number, ...rest: unknown[]) => {
+    if (delay === 2_000) { polls.push(work); return 0 as unknown as ReturnType<typeof setTimeout> }
+    return realSetTimeout(work, delay, ...rest)
+  }) as typeof setTimeout)
+  const ctx = createControllerContext(store, unavailableAgent, {})
+  contexts.push(ctx)
+  const failures = createFailureController(ctx)
+  // A 5xx body never reaches the toast, so the status is what distinguishes one failure from the next.
+  let status = 503, reads = 0
+  const releases: Array<() => void> = []
+  const seam = createIssuesSeam({ store, dispatch: store.dispatch, baseUrl: "", actor: () => "user", nextOrdinal: () => 2,
+    withToast: failures.withToast, isDisposed: () => ctx.disposed,
+    http: async () => { reads++; return Response.json({ message: "Issues unavailable" }, { status }) } })
+  const waitFor = async (predicate: () => boolean) => {
+    const deadline = Date.now() + 2_000
+    while (!predicate()) {
+      if (Date.now() >= deadline) throw new Error("Issue poll did not settle")
+      await new Promise(resolve => realSetTimeout(resolve, 1))
+    }
+  }
+  const poll = async () => {
+    const count = reads, work = polls.shift()!
+    work()
+    await waitFor(() => reads === count + 1 && polls.length === 1)
+  }
+  const toastId = "toast-issue.sync:issue-growth"
+  const storageFailures: Error[] = []
+  store.onStorageFailure(error => { storageFailures.push(error) })
+  try {
+    seam.subscribe(release => { releases.push(release) })
+    await waitFor(() => polls.length === 1)
+    await poll()
+    await store.settled?.()
+    const first = store.committedToast(toastId)
+    expect(first).toMatchObject({ status: "failed", title: "Syncing messages" })
+    expect(first?.detail).toContain("failed (503)")
+    expect(first?.detail).not.toContain("Issues unavailable")
+    const before = await store.eventHistory(), physical = fixture.footprint()
+    for (let index = 0; index < 10; index++) await poll()
+    await store.settled?.()
+    expect((await store.eventHistory()).head).toEqual(before.head)
+    expect(fixture.footprint()).toEqual(physical)
+    // A changed failure is a new fact; identical reads during its held write add nothing.
+    status = 502
+    const held = fixture.pauseNextWrite()
+    await poll()
+    await held.entered
+    for (let index = 0; index < 3; index++) await poll()
+    expect(store.committedToast(toastId)?.detail).toContain("failed (503)")
+    expect(store.collections.toasts.get(toastId)?.detail).toContain("failed (502)")
+    if (outcome === "reject") {
+      held.fail(new Error("Toast write refused"))
+      await waitFor(() => storageFailures.length === 1)
+      await expect(Promise.resolve(store.dispose?.())).rejects.toThrow("Toast write refused")
+      stores.splice(stores.indexOf(store), 1)
+      // Toasts never survive a restart; the journal up to the refused write does.
+      const reopened = await open(fixture.path)
+      expect(reopened.store.committedToast(toastId)).toBeUndefined()
+      expect((await reopened.store.eventHistory()).head.sequence).toBeGreaterThanOrEqual(before.head.sequence)
+      expect((await reopened.store.verifyState()).valid).toBe(true)
+      return
+    }
+    held.release()
+    await store.settled?.()
+    const changed = await store.eventHistory()
+    expect(changed.head.sequence).toBe(before.head.sequence + 2)
+    for (let index = 0; index < 3; index++) await poll()
+    await store.settled?.()
+    expect((await store.eventHistory()).head).toEqual(changed.head)
+    // A dismissed failure is shown again by the next failed read.
+    failures.dismissToast(toastId)
+    await poll()
+    await store.settled?.()
+    expect(store.committedToast(toastId)).toMatchObject({ status: "failed" })
+    expect(store.committedToast(toastId)?.detail).toContain("failed (502)")
+    expect((await store.eventHistory()).head.sequence).toBe(changed.head.sequence + 3)
+    const reopened = await open(fixture.path)
+    expect((await reopened.store.verifyState()).valid).toBe(true)
+  } finally {
+    for (const release of releases) release()
+    timers.mockRestore()
+  }
+})
+
+test("identical running repository-setup receipts do not grow SQLite", async () => {
+  const { createRepositorySetupController } = await import("./controller/repositorySetup")
+  const { createFailureController } = await import("./controller/failures")
+  const { initialSetup } = await import("@smthrs/rpc/RepositorySetup")
+  const { createOperationalFailureReporter } = await import("./OperationalFailures")
+  const fixture = await open(), { store } = fixture
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "maintainer", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+  await store.dispatch({ type: "card.upsert", actor: "user", card: {
+    id: "setup", kind: "repository-setup", title: "Handle issues", status: "active", createdAt: 1, ordinal: store.nextOrdinal(),
+    payload: { ...initialSetup("example/repo", "issues", "maintainer"), inspectedAt: 1 }
+  } }).isPersisted.promise
+  const workspaceId = "de29f26b-e593-4ec2-99fc-583d4711f20a"
+  type Body = { requestId: string; revision: number; digest: string }
+  let body!: Body
+  const answer = (phase: string, updatedAt = 1) => Response.json({ requestId: body.requestId, revision: body.revision, digest: body.digest, workspaceId,
+    receipt: { requestId: body.requestId, runId: "run-1", revision: body.revision, digest: body.digest,
+      operation: "evaluate", phase, updatedAt, results: [], evidence: ["run:run-1"] } })
+  const reads: Array<ReturnType<typeof Promise.withResolvers<Response>>> = []
+  const disposers: Array<() => void> = [], background: Promise<unknown>[] = []
+  const ctx = { failures: createOperationalFailureReporter(), store, commandActor: "user", baseUrl: "", workflowPollMs: 1, toastRuns: new Map(),
+    commands: { runAsAgent: async (name: string) => ({ status: "form" as const, flow: name, cardId: `form-${name}`, fields: ["choice"] }) },
+    toastDebounceMs: 1, toastAutoDismissMs: 10_000, accountEpoch: 0, disposed: false, unref: () => {},
+    onDispose: (close: () => void) => { disposers.push(close) },
+    errorMessageOf: async () => "The host refused the request.",
+    boundedFetch: async (url: string, init?: RequestInit) => {
+      if (url.includes("/state?")) return Response.json({ owner: "maintainer", repo: "example/repo", job: "issues", registration: { state: "known" }, setup: { state: "none" } })
+      if (init?.method === "POST") { body = JSON.parse(String(init.body)) as Body; return answer("running") }
+      const read = Promise.withResolvers<Response>(); reads.push(read); return read.promise
+    }
+  } as unknown as ControllerContext
+  const failures = createFailureController(ctx)
+  ctx.withToast = ((...args: Parameters<typeof failures.withToast>) => {
+    const work = failures.withToast(...args); background.push(work); return work
+  }) as typeof ctx.withToast
+  const setup = createRepositorySetupController(ctx)
+  const waitFor = async (predicate: () => boolean) => {
+    const deadline = Date.now() + 2_000
+    while (!predicate()) {
+      if (Date.now() >= deadline) throw new Error("Setup observation did not settle")
+      await new Promise(resolve => setTimeout(resolve, 1))
+    }
+  }
+  try {
+    await setup.runRepositorySetup("setup", "evaluate")
+    await waitFor(() => reads.length === 1)
+    reads[0]!.resolve(answer("running"))
+    await waitFor(() => reads.length === 2)
+    await store.settled?.()
+    const before = await store.eventHistory(), physical = fixture.footprint()
+    for (let index = 1; index <= 10; index++) {
+      reads[index]!.resolve(answer("running"))
+      await waitFor(() => reads.length === index + 2)
+    }
+    await store.settled?.()
+    expect((await store.eventHistory()).head).toEqual(before.head)
+    expect(fixture.footprint()).toEqual(physical)
+    reads[11]!.resolve(answer("running", 2))
+    await waitFor(() => reads.length === 13)
+    await store.settled?.()
+    expect((await store.eventHistory()).head.sequence).toBe(before.head.sequence + 1)
+    const progressed = store.committedCard("setup")
+    expect(progressed?.kind === "repository-setup" && progressed.payload.evaluation).toMatchObject({ phase: "running", updatedAt: 2 })
+    reads[12]!.resolve(answer("completed", 3))
+    await Promise.all(background)
+    await store.settled?.()
+    const committed = store.committedCard("setup")
+    expect(committed?.kind === "repository-setup" && committed.payload).toMatchObject({ request: { state: "completed" }, evaluation: { phase: "completed" } })
+    const reopened = await open(fixture.path)
+    expect(reopened.store.collections.cards.get("setup")).toMatchObject({ payload: { request: { state: "completed" } } })
+    expect((await reopened.store.verifyState()).valid).toBe(true)
+  } finally {
+    for (const read of reads) read.resolve(answer("completed"))
+    disposers.forEach(dispose => dispose())
+  }
+})

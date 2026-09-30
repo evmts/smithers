@@ -1,0 +1,180 @@
+/*
+ * Session bodies and the left chrome rail: the bodies stay mounted while
+ * hidden, and the dock (left side, always on screen) carries the chrome
+ * actions as icons — no sidebar, no drawer, no toggle.
+ */
+
+/* The whole session area: the chat and every other tab body. */
+.app-main {
+	display: flex;
+	min-width: 0;
+	min-height: 0;
+	flex: 1;
+	flex-direction: column;
+}
+
+/* Every tab body stays mounted; an inactive one is hidden, never unmounted. */
+.tab-body {
+	display: flex;
+	min-width: 0;
+	min-height: 0;
+	flex: 1;
+	flex-direction: column;
+}
+
+.tab-body[hidden] {
+	display: none;
+}
+
+.tab-terminal {
+	flex: 1;
+	min-height: 0;
+	border: 0;
+	border-radius: 0;
+}
+
+.card-tab {
+	flex: 1;
+	min-height: 0;
+	padding: 16px;
+	overflow: auto;
+}
+
+.card-tab-gone {
+	margin: 16px;
+	color: var(--bubble-meta, var(--text));
+}
+
+/*
+ * The dock: a vertical icon rail on the left edge, centered in the viewport
+ * and visible on every surface — no sidebar, no drawer, no toggle. A
+ * hairline and the recessed rail fill keep it quiet over whatever body is
+ * beneath it.
+ */
+.chrome-dock {
+	position: absolute;
+	top: 50%;
+	left: var(--sp-3);
+	z-index: 55;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--sp-1);
+	padding: 2px;
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	background: var(--surface-2);
+	transform: translateY(-50%);
+	/* Row fills derive from the ink, not the palette's --hover: in most dark
+	   palettes --hover IS --surface-2 verbatim, so a var(--hover) row fill
+	   vanished on the rail. An 8% ink tint steps from the rail everywhere. */
+	--rail-fill: color-mix(in srgb, var(--text) 8%, transparent);
+	--rail-fill-strong: color-mix(in srgb, var(--text) 14%, transparent);
+}
+
+/* Reserve the dock's 36px width and its 12px gutters for every app surface. */
+.session-shell:has(> .chrome-dock) {
+	--chrome-rail-space: calc(36px + var(--sp-3) * 2);
+}
+.session-shell:has(> .chrome-dock) > .app-shell {
+	margin-inline-start: var(--chrome-rail-space);
+}
+
+/* One row recipe: 32px, 8px inline padding, 8px radius. */
+.chrome-action {
+	display: flex;
+	min-height: 32px;
+	align-items: center;
+	gap: var(--sp-2);
+	padding: 0 var(--sp-2);
+	border-radius: var(--r-sm);
+	text-align: left;
+	font-size: var(--fs-small);
+}
+
+.chrome-action:hover,
+.chrome-action:focus-visible {
+	background: var(--rail-fill, color-mix(in srgb, var(--text) 8%, transparent));
+}
+
+/* Sign-in shares the card action's readable foreground. */
+.chrome-action[data-flow="auth.sign-in"] {
+	background: color-mix(in srgb, var(--brand) 10%, var(--surface));
+	color: var(--action-primary);
+	font-weight: 500;
+}
+
+.chrome-action[data-flow="auth.sign-in"]:hover,
+.chrome-action[data-flow="auth.sign-in"]:focus-visible {
+	background: color-mix(in srgb, var(--brand) 16%, var(--surface));
+	color: var(--action-primary);
+}
+
+/* Dock utilities stay quiet: no glass chips on the recessed rail. */
+.chrome-icon-action {
+	display: inline-flex;
+	width: 30px;
+	height: 30px;
+	align-items: center;
+	justify-content: center;
+	border: 0;
+	border-radius: var(--r-sm);
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-muted);
+}
+
+.chrome-icon-action:hover,
+.chrome-icon-action:focus-visible {
+	background: var(--rail-fill-strong, color-mix(in srgb, var(--text) 14%, transparent));
+	color: var(--text);
+}
+
+.app-chat-controls { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-4); min-height: 52px; padding: var(--sp-2) var(--sp-5); }
+/* The home alone carries no strip; a chosen Vim mode keeps only its indicator (App.tsx homeOnly). */
+.app-chat-controls[hidden] { display: none; }
+.app-chat-controls .chat-filter-control { order: -1; }
+/* The conversation's context and cache meter (ChatMeter.tsx): quiet until a level warns. */
+.app-chat-controls .chat-meter { font-size: var(--fs-small); color: var(--text-muted); white-space: nowrap; }
+/* Signup buttons stay uncovered by Chat guidance on a phone. */
+@media (max-width: 600px) {
+	.app-shell:has(.signup) .app-chat-controls .help-bubble { display: none; }
+	/* Beside the rail a phone leaves ~330px: tighten the bar so each control keeps one line. */
+	.app-chat-controls { flex-wrap: wrap; gap: var(--sp-2); padding-inline: var(--sp-3); }
+}
+/*
+ * The bottom bar is GuideButton chrome OUTSIDE the guide shell, where the
+ * --g-* tokens do not exist: keep the polish session's quiet text-button
+ * look, but make it deliberate — app tokens, a real hover, and the same
+ * keycap recipe as the guide (bordered chip, keycap lip, 20px geometry).
+ */
+.app-chat-controls .guide-button {
+	min-height: var(--ctl-h-sm);
+	padding: var(--sp-1) var(--sp-2);
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-muted);
+	font-size: var(--fs-small);
+	border-radius: var(--r-sm);
+	white-space: nowrap;
+}
+.app-chat-controls .guide-button:hover:not(:disabled) {
+	background: var(--hover-subtle);
+	color: var(--text);
+}
+.app-chat-controls .guide-button .guide-button-key {
+	min-width: 20px;
+	min-height: 20px;
+	padding: 0 var(--sp-2);
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	background: var(--surface);
+	box-shadow: 0 1px 0 color-mix(in srgb, var(--text) 12%, transparent);
+	color: var(--text-muted);
+	font-size: var(--fs-caption);
+}
+.app-chat-controls .guide-button:focus-visible {
+	outline: 2px solid var(--brand);
+	outline-offset: 2px;
+}

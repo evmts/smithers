@@ -1,0 +1,178 @@
+import { spawn } from "node:child_process"
+import { createHmac, randomBytes } from "node:crypto"
+import { existsSync } from "node:fs"
+import { mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises"
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path"
+import { StringDecoder } from "node:string_decoder"
+import { ReleaseError } from "./schema.ts"
+
+export interface CommandOptions {
+  readonly env?: Readonly<Record<string, string>>
+  readonly signal?: AbortSignal
+}
+export type RunCommand = (command: string, args: ReadonlyArray<string>, options?: CommandOptions) => Promise<string>
+
+/** Argument arrays only; subprocess interruption belongs to the action's scope. */
+export const commandRunner = (root: string): RunCommand => async (command, args, options = {}) =>
+  new Promise((accept, reject) => {
+    const child = spawn(command, [...args], {
+      cwd: root,
+      env: { ...process.env, ...options.env },
+      stdio: ["ignore", "pipe", "pipe"],
+      signal: options.signal,
+      detached: process.platform !== "win32"
+    })
+    let killTimer: ReturnType<typeof setTimeout> | undefined
+    const stop = () => {
+      if (!child.pid) return
+      const kill = (signal: NodeJS.Signals) => {
+        try {
+          if (process.platform === "win32") child.kill(signal)
+          else process.kill(-child.pid!, signal)
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ESRCH") child.kill(signal)
+        }
+      }
+      kill("SIGTERM")
+      killTimer ??= setTimeout(() => kill("SIGKILL"), 1000)
+    }
+    options.signal?.addEventListener("abort", stop, { once: true })
+    let stdout = ""
+    let stderr = ""
+    // Pipe chunks can split a multi-byte UTF-8 character; decode incrementally.
+    const stdoutDecoder = new StringDecoder("utf8")
+    const stderrDecoder = new StringDecoder("utf8")
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout += stdoutDecoder.write(chunk)
+      if (stdout.length > 16_000_000) stop()
+    })
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr = (stderr + stderrDecoder.write(chunk)).slice(-32_000)
+    })
+    child.once("error", reject)
+    child.once("close", (code) => {
+      stdout += stdoutDecoder.end()
+      stderr = (stderr + stderrDecoder.end()).slice(-32_000)
+      options.signal?.removeEventListener("abort", stop)
+      if (!options.signal?.aborted && killTimer) clearTimeout(killTimer)
+      if (code === 0 && stdout.length <= 16_000_000) accept(stdout)
+      else {
+        // pnpm can report registry failures on stdout. Preserve both streams
+        // so a confirmed 404 remains distinguishable from an auth/network error.
+        // Redact whole streams before the tail cut so a secret split at the
+        // cut edge cannot survive in part.
+        const secrets = secretValues(options.env)
+        const out = redact(stdout, secrets).slice(-6000)
+        const err = redact(stderr, secrets).slice(-6000)
+        reject(new ReleaseError({ step: command, message: `${command} exited ${code}: ${out}\n${err}` }))
+      }
+    })
+  })
+
+const secretName = /token|secret|passw(or)?d|passphrase|api.?key|credential|cookie|(^|_)pat(_|$)|(^|_)auth$/i
+// Broad words that also name benign runner state (XDG_SESSION_CLASS=user,
+// SSH_AUTH_SOCK=/run/...). Their values redact only when they look like a
+// credential: at least 8 characters and not an existing absolute path. This
+// deliberately over-redacts some benign values (GIT_AUTHOR_NAME,
+// GIT_AUTHOR_EMAIL, DBUS_SESSION_BUS_ADDRESS) so that AUTHORIZATION-style and
+// *_SESSION_* credentials never print.
+const weakSecretName = /auth|session|private/i
+
+const looksSecret = (key: string, value: string): boolean =>
+  secretName.test(key) ||
+  (weakSecretName.test(key) && value.length >= 8 && !(value.startsWith("/") && existsSync(value)))
+
+/**
+ * Values a failed command's diagnostic must not show: every inherited env value
+ * whose name looks like a credential, plus every value of 16 or more characters
+ * the step passes explicitly. Longest first so an enclosing secret redacts whole.
+ */
+const secretValues = (explicit: Readonly<Record<string, string>> = {}): ReadonlyArray<string> => {
+  const values = new Set<string>()
+  for (const [key, value] of Object.entries({ ...process.env, ...explicit })) {
+    if (value && value.length >= 4 && looksSecret(key, value)) values.add(value)
+  }
+  for (const value of Object.values(explicit)) if (value.length >= 16) values.add(value)
+  return [...values].sort((a, b) => b.length - a.length)
+}
+
+const redact = (text: string, secrets: ReadonlyArray<string>): string =>
+  secrets.reduce((current, value) => current.split(value).join("<redacted>"), text)
+
+/** Reject traversal and symlink escapes for existing files and new descendants. */
+export const inside = async (root: string, path: string): Promise<string> => {
+  if (isAbsolute(path) || path.includes("\\") || path.split("/").some((part) => part === "..")) {
+    throw new Error(`Unsafe relative path: ${path}`)
+  }
+  const base = await realpath(root)
+  const target = resolve(base, path)
+  if (target === base || !target.startsWith(base + sep)) throw new Error(`Path escapes workspace: ${path}`)
+  let existing = target
+  for (;;) {
+    try {
+      const actual = await realpath(existing)
+      if (actual !== base && !actual.startsWith(base + sep)) throw new Error(`Symlink escapes workspace: ${path}`)
+      return target
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+      existing = dirname(existing)
+    }
+  }
+}
+
+export const atomicWrite = async (root: string, path: string, contents: string | Uint8Array): Promise<void> => {
+  const destination = await inside(root, path)
+  await mkdir(dirname(destination), { recursive: true })
+  const temporary = `${destination}.${randomBytes(8).toString("hex")}.tmp`
+  await writeFile(temporary, contents, { flag: "wx" })
+  await rename(temporary, destination)
+}
+
+export const maybeRead = async (path: string): Promise<string | undefined> => {
+  try {
+    return await readFile(path, "utf8")
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined
+    throw error
+  }
+}
+
+export const json = <A>(text: string): A => JSON.parse(text) as A
+export const relativePath = (root: string, path: string) => relative(root, path).split(sep).join("/")
+
+/** OAuth 1.0 signing for the old workflow's optional X publisher. */
+export const postTweet = async (text: string, replyTo: string | undefined, signal?: AbortSignal): Promise<string> => {
+  const required = ["X_API_KEY", "X_API_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_SECRET"] as const
+  for (const name of required) if (!process.env[name]) throw new Error(`Missing ${name}`)
+  const escape = (value: string) =>
+    encodeURIComponent(value).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)
+  const url = "https://api.x.com/2/tweets"
+  const oauth: Record<string, string> = {
+    oauth_consumer_key: process.env.X_API_KEY!,
+    oauth_nonce: randomBytes(24).toString("hex"),
+    oauth_signature_method: "HMAC-SHA1",
+    oauth_timestamp: String(Math.floor(Date.now() / 1000)),
+    oauth_token: process.env.X_ACCESS_TOKEN!,
+    oauth_version: "1.0"
+  }
+  const parameters = Object.keys(oauth).sort().map((key) => `${escape(key)}=${escape(oauth[key]!)}`).join("&")
+  const key = `${escape(process.env.X_API_SECRET!)}&${escape(process.env.X_ACCESS_SECRET!)}`
+  oauth.oauth_signature = createHmac("sha1", key).update(`POST&${escape(url)}&${escape(parameters)}`).digest("base64")
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      authorization: `OAuth ${
+        Object.keys(oauth).sort().map((name) => `${escape(name)}="${escape(oauth[name]!)}"`).join(", ")
+      }`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({ text, ...(replyTo === undefined ? {} : { reply: { in_reply_to_tweet_id: replyTo } }) }),
+    signal: signal ?? AbortSignal.timeout(30_000)
+  })
+  if (!response.ok) throw new Error(`X rejected the tweet with HTTP ${response.status}`)
+  const body = await response.json() as { data?: { id?: string } }
+  if (!body.data?.id || !/^\d+$/.test(body.data.id)) {
+    throw new Error("X returned no tweet ID; reconcile the pending post before resuming")
+  }
+  return body.data.id
+}

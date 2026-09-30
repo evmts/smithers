@@ -1,0 +1,255 @@
+/**
+ * The app's own panels below and over the transcript: a flow run's input
+ * form, the completion menu, the dialog, and the status line. They draw
+ * what they are given; state and keys stay with the app.
+ */
+import { basename } from "node:path"
+import type { ReactNode } from "react"
+import type * as Complete from "./complete.ts"
+import * as Editor from "./editor.ts"
+import type * as Extension from "./extension.ts"
+import * as Inbox from "./inbox.ts"
+import type { FlowForm } from "./key-dispatch.ts"
+import type * as Keys from "./keys.ts"
+import type * as Models from "./models.ts"
+import * as Tabs from "./tabs.ts"
+import { color } from "./theme.ts"
+import type * as Transcript from "./transcript.ts"
+import * as View from "./view.tsx"
+import type { Tab } from "./workspace.ts"
+
+/** The model that receives the composer's input. */
+export function ComposerModel(props: {
+  readonly seat: string
+  readonly models: ReadonlyArray<Models.Model>
+  readonly worker?: Pick<Tab, "seat" | "activeSeat" | "harness">
+}) {
+  if (props.worker !== undefined) return <span fg={color.text}>{Tabs.seatName(props.worker, props.models)}</span>
+  const model = props.models.find((each) => each.seat === props.seat)
+  const label = model?.label ?? (props.seat.startsWith("replay:") ? `replay ${basename(props.seat)}` : props.seat)
+  return (
+    <>
+      <span fg={color.text}>{label}</span>
+      {model === undefined ? null : <span fg={color.faint}>{" "}{model.provider}</span>}
+    </>
+  )
+}
+
+/** Completion rows shown at once. */
+const menuRows = 8
+
+/** A flow run's missing input; the focused text or number field takes the typing. */
+export function FlowFormView(props: {
+  readonly form: FlowForm
+  readonly height: number
+  readonly compact: boolean
+  readonly onField: (name: string, text: string) => void
+}) {
+  const { form } = props
+  const rows = Math.max(1, props.height - (props.compact ? 1 : 4) - (form.error === undefined ? 0 : 1))
+  const start = Math.min(Math.max(0, form.focus - Math.floor(rows / 2)), Math.max(0, form.fields.length - rows))
+  return (
+    <box
+      style={{ border: ["left"], marginTop: props.compact ? 0 : 1, flexShrink: 0 }}
+      borderColor={color.brand}
+      customBorderChars={View.bar}
+    >
+      <box
+        style={{
+          paddingLeft: 2,
+          paddingRight: 2,
+          paddingTop: props.compact ? 0 : 1,
+          paddingBottom: props.compact ? 0 : 1
+        }}
+        backgroundColor={color.element}
+      >
+        <text fg={color.text} wrapMode="none">
+          {form.flow}
+          {form.fields.length > rows ? `  ${form.focus + 1}/${form.fields.length}` : ""}
+        </text>
+        {form.fields.slice(start, start + rows).map((field, offset) => {
+          const index = start + offset
+          const value = form.draft[field.name]
+          const focused = index === form.focus
+          return (
+            <box key={field.name} style={{ flexDirection: "row" }}>
+              <text fg={focused ? color.brand : color.muted} wrapMode="none" style={{ width: 16, flexShrink: 0 }}>
+                {field.label}
+              </text>
+              {focused && (field.kind === "text" || field.kind === "number")
+                ? (
+                  <input
+                    selectionOccupancy="boundary"
+                    focused
+                    value={value === undefined ? "" : String(value)}
+                    textColor={color.text}
+                    backgroundColor={color.surface}
+                    focusedBackgroundColor={color.surface}
+                    cursorColor={color.brand}
+                    style={{ flexGrow: 1 }}
+                    onInput={(text: string) => props.onField(field.name, text)}
+                  />
+                )
+                : (
+                  <text fg={color.text} wrapMode="none">
+                    {field.kind === "boolean" ? (value === true ? "✓" : "✗") : value === undefined ? "" : String(value)}
+                  </text>
+                )}
+            </box>
+          )
+        })}
+        {form.error === undefined ? null : <text fg={color.danger} wrapMode="none">{form.error}</text>}
+      </box>
+    </box>
+  )
+}
+
+/** The composer's completion menu; an argument row marks the current model or thinking level. */
+export function CompletionMenu(props: {
+  readonly menu: Complete.Completion
+  readonly selected: number
+  readonly seat: string
+  readonly thinking: Editor.Thinking
+  readonly rows?: number
+}) {
+  const { menu, seat, thinking } = props
+  return (
+    <box
+      style={{ border: ["left"], marginTop: 1, flexShrink: 0 }}
+      borderColor={color.element}
+      customBorderChars={View.bar}
+    >
+      <box style={{ paddingTop: 0 }} backgroundColor={color.element}>
+        <View.List
+          rows={menu.items.map((item, index) => ({
+            key: `${index}:${item.label}`,
+            label: item.label,
+            ...(item.hint === undefined ? {} : { hint: item.hint }),
+            ...(item.detail === undefined ? {} : { detail: item.detail }),
+            ...(menu.kind === "argument" &&
+                (item.insert === `/model ${seat}` || item.insert === `/thinking ${thinking ?? "default"}`)
+              ? { current: true }
+              : {})
+          }))}
+          selected={props.selected}
+          height={Math.min(props.rows ?? menuRows, Math.max(1, menu.items.length))}
+          background={color.element}
+          empty={menu.kind === "command" ? "No matching commands" : "No matches"}
+        />
+      </box>
+    </box>
+  )
+}
+
+/** A dialog over the screen: a filter input unless it only confirms, then its rows. */
+export function PickerDialog(props: {
+  readonly title: string
+  /** Undefined for a confirm dialog, which has no filter. */
+  readonly query: string | undefined
+  readonly onQuery: (query: string) => void
+  readonly rows: ReadonlyArray<View.Row>
+  readonly selected: number
+  readonly empty: string
+  readonly width: number
+  readonly height: number
+}) {
+  const { rows, height } = props
+  const compact = height < 20
+  const visible = compact ? Math.max(1, height - 6) : Math.max(3, Math.floor(height / 2) - 6)
+  return (
+    <View.Dialog title={props.title} width={props.width} height={height}>
+      {props.query === undefined ?
+        null :
+        (
+          <box style={{ paddingLeft: 3, paddingRight: 3, marginBottom: compact ? 0 : 1 }}>
+            <input
+              selectionOccupancy="boundary"
+              focused
+              value={props.query}
+              placeholder="Search"
+              placeholderColor={color.faint}
+              textColor={color.text}
+              backgroundColor={color.surface}
+              focusedBackgroundColor={color.surface}
+              cursorColor={color.brand}
+              onInput={props.onQuery}
+            />
+          </box>
+        )}
+      <box style={{ paddingLeft: 2, paddingRight: 2 }}>
+        <View.List
+          rows={rows}
+          selected={props.selected}
+          height={Math.min(rows.length, visible)}
+          background={color.surface}
+          empty={props.empty}
+        />
+      </box>
+    </View.Dialog>
+  )
+}
+
+/** The status line's right end: a stale-context warning, token usage, and the context window used. */
+export const meter = (transcript: Transcript.Transcript, window: number) => {
+  const usage = transcript.usage
+  const percent = window > 0 ? (usage.context / window) * 100 : 0
+  const { cache } = Inbox.usage(usage, window)
+  return {
+    percent,
+    context: transcript.contextAssessment?.outdated || transcript.contextAssessment?.irrelevant
+      ? `context: ${
+        [
+          transcript.contextAssessment.outdated ? "outdated" : "",
+          transcript.contextAssessment.irrelevant ? "irrelevant" : ""
+        ].filter(Boolean).join(" + ")
+      } · compact?  `
+      : "",
+    usage: `↑${Editor.tokens(usage.input)} ↓${Editor.tokens(usage.output)}${
+      usage.cached === 0 ? "" : ` R${Editor.tokens(usage.cached)}`
+    }`,
+    window: `${
+      window > 0
+        ? `  ${percent.toFixed(1)}%/${Editor.tokens(window)}`
+        : ""
+    }${cache === undefined ? "" : ` cache ${cache}%`}`
+  }
+}
+
+/** The line under the composer: where or how long, the key hints, status items and the meter. */
+export function StatusLine(props: {
+  /** The running turn's clock, or the path, branch and session name. */
+  readonly lead: ReactNode
+  readonly hints: ReadonlyArray<Keys.Binding>
+  readonly items: ReadonlyArray<Extension.Status>
+  readonly onItem: (item: Extension.Status) => void
+  readonly meter: ReturnType<typeof meter>
+}) {
+  const { meter } = props
+  return (
+    <box
+      style={{ flexDirection: "row", justifyContent: "space-between", height: 1, paddingLeft: 1, flexShrink: 0 }}
+    >
+      <box style={{ flexDirection: "row", flexShrink: 1, marginRight: 2 }}>
+        {/* The path gives way before the hints do. */}
+        <text wrapMode="none" style={{ flexShrink: 100, marginRight: 2 }}>
+          {props.lead}
+        </text>
+        <View.KeyHints bindings={props.hints} />
+      </box>
+      <box style={{ flexDirection: "row", flexShrink: 0 }}>
+        <View.StatusItems items={props.items} onSelect={props.onItem} />
+        <text wrapMode="none" style={{ flexShrink: 0 }}>
+          {meter.context === "" ? null : <span fg={color.warning}>{meter.context}</span>}
+          <span fg={color.faint}>{meter.usage}</span>
+          {meter.window === "" ?
+            null :
+            (
+              <span fg={meter.percent > 90 ? color.danger : meter.percent > 70 ? color.warning : color.faint}>
+                {meter.window}
+              </span>
+            )}
+        </text>
+      </box>
+    </box>
+  )
+}

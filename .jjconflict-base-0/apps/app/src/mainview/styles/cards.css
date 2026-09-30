@@ -1,0 +1,2817 @@
+/* Cards: full-width rich payloads rendered between chat bubbles.
+   PlanCard, ApprovalCard, StatusCard + slash-command menu + message chrome
+   (avatar, hover actions). Tokens from tokens.css. */
+
+.smithers-card {
+	width: 100%;
+	padding: var(--sp-2) var(--sp-3) var(--sp-3);
+	align-self: stretch;
+	border: 1px solid var(--border);
+	border-radius: var(--r-3);
+	background: var(--surface-glass-strong);
+	box-shadow: var(--shadow-1);
+	color: var(--text);
+	font-size: var(--fs-body);
+	line-height: var(--lh-body);
+	transition: opacity var(--dur) var(--ease-current);
+}
+
+.smithers-card[data-status="acted"] {
+	opacity: 0.66;
+}
+
+/* A completed import still contains the enabled next action. */
+.smithers-card[data-kind="repo-import"][data-status="acted"] {
+	opacity: 1;
+}
+
+.smithers-card[data-status="error"] {
+	border-color: var(--danger-border);
+	background: color-mix(in srgb, var(--danger-soft) 55%, var(--surface));
+}
+
+.smithers-card-header {
+	display: flex;
+	/* A flex item's min-width:auto let the header's nowrap title and meta size
+	   the header past the card at phone width; the shrink rules further down
+	   (§7.3) only work if the header itself may shrink. */
+	min-width: 0;
+	margin-bottom: 6px;
+	align-items: center;
+	gap: 8px;
+}
+
+.smithers-card-title {
+	font-size: var(--fs-body);
+	font-weight: 600;
+}
+
+/* Cards retain their reading alignment inside centered onboarding screens. */
+.smithers-card-body,
+.smithers-card-details {
+	text-align: left;
+}
+
+.smithers-card-details {
+	margin-top: var(--sp-2);
+	color: var(--text-muted);
+	font-size: var(--fs-small);
+}
+.smithers-card-details > summary {
+	cursor: pointer;
+	width: fit-content;
+	border-radius: 3px;
+}
+.smithers-card-details > summary:focus-visible {
+	outline: 2px solid var(--brand);
+	outline-offset: 4px;
+}
+.smithers-card-details dl {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 4px 8px;
+	margin: 8px 0 0;
+}
+.smithers-card-details dd {
+	margin: 0;
+	font-variant-numeric: tabular-nums;
+}
+
+.smithers-card-body .sui-plan {
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+}
+
+.smithers-card-body .sui-plan-content {
+	padding: 0;
+}
+
+.smithers-card-body .sui-plan-step-row {
+	min-height: 26px;
+}
+
+.smithers-card-body .sui-plan-step-label {
+	font-size: var(--fs-body);
+}
+
+.smithers-card-body .sui-confirm,
+.smithers-card-body .sui-confirm[data-state="requested"],
+.smithers-card-body .sui-confirm[data-state="failed-submission"] {
+	padding: 0;
+	border: 0;
+	background: transparent;
+}
+
+.smithers-card-body .sui-approval-summary {
+	font-size: var(--fs-small);
+}
+
+.smithers-card-body .sui-confirm-accepted,
+.smithers-card-body .sui-confirm-rejected {
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+	font-weight: 500;
+}
+
+.smithers-card-markdown {
+	margin-bottom: 6px;
+	color: var(--text);
+	font-size: var(--fs-body);
+}
+
+.smithers-card-markdown .sui-md-p {
+	margin: 2px 0;
+}
+
+.smithers-card-progress {
+	margin: 4px 0;
+}
+
+.smithers-card-note {
+	margin: 6px 0 0;
+	color: var(--text-muted);
+	font-size: var(--fs-small);
+}
+
+/*
+ * Slash command menu: anchored directly above the composer. One surface in
+ * three zones (the palette art Linear and Raycast made standard): a context
+ * head that only appears with real context, the scrolling rows, and the key
+ * legend as a pinned footer. The zones share the card; hairlines divide them.
+ */
+
+.slash-menu {
+	display: flex;
+	margin-bottom: 6px;
+	padding: 0;
+	flex-direction: column;
+	border: 1px solid var(--border-strong);
+	border-radius: var(--r-3);
+	background: var(--surface);
+	box-shadow: var(--shadow-2);
+	overflow: hidden;
+}
+
+.slash-menu-body {
+	display: flex;
+	min-height: 0;
+	padding: var(--sp-1) var(--sp-2);
+	flex: 1;
+	flex-direction: column;
+	gap: 1px;
+	overflow-y: auto;
+}
+
+.slash-menu-item {
+	display: flex;
+	flex-shrink: 0;
+	padding: var(--sp-2) var(--sp-3);
+	align-items: baseline;
+	gap: 10px;
+	border: 0;
+	border-radius: var(--r-sm);
+	background: transparent;
+	color: var(--text);
+	cursor: pointer;
+	font-family: var(--font-ui);
+	font-size: var(--fs-small);
+	text-align: left;
+}
+
+.slash-menu-item[data-highlighted="true"] {
+	background: var(--brand-soft);
+}
+
+.slash-menu-item:focus-visible {
+	outline: none;
+	box-shadow: 0 0 0 3px var(--ring);
+}
+
+.slash-menu-name {
+	/* Never shrink: a dotted name (/box.desktop.open) has no break
+	 * opportunities, so a shrunk box paints its text over the description. */
+	flex-shrink: 0;
+	min-width: 64px;
+	color: var(--brand);
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+	font-weight: 600;
+}
+
+.slash-menu-description {
+	color: var(--text-muted);
+}
+
+/* A namespace row: the branch the user opens (Enter / ArrowRight → `/ns.`). */
+.slash-menu-namespace .slash-menu-name {
+	color: var(--text);
+}
+
+.slash-menu-count {
+	margin-left: auto;
+	color: var(--text-muted);
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+}
+
+/*
+ * The search palette (Search and Command Palette Spec 2026-09-07 §3, §9):
+ * the same overlay as the slash menu, anchored above the composer at its
+ * width. The head prints only real context — the actions panel's item or the
+ * mode a prefix chose — as a soft pill; a bare ⌘K has no head at all, and
+ * the key legend lives in the footer, under the rows, as kbd chips.
+ */
+.palette-head {
+	display: flex;
+	padding: 8px 12px;
+	flex-shrink: 0;
+	align-items: baseline;
+	gap: 10px;
+	border-bottom: 1px solid var(--border);
+	color: var(--text-muted);
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+}
+
+.palette-chip {
+	padding: 1px var(--sp-2);
+	border-radius: var(--r-full);
+	background: var(--brand-soft);
+	color: var(--brand);
+	font-weight: 600;
+}
+
+.palette-query {
+	color: var(--text);
+	font-weight: 600;
+}
+
+.palette-foot {
+	display: flex;
+	padding: var(--sp-2) var(--sp-3);
+	flex-shrink: 0;
+	align-items: center;
+	gap: 14px;
+	border-top: 1px solid var(--border);
+	color: var(--text-faint);
+	font-size: var(--fs-caption);
+}
+
+.palette-foot kbd {
+	display: inline-flex;
+	min-height: 20px;
+	align-items: center;
+	justify-content: center;
+	padding: 0 var(--sp-2);
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	color: var(--text-muted);
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+	line-height: 1;
+}
+
+.palette-hint {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	white-space: nowrap;
+}
+
+.palette-hint-end {
+	margin-left: auto;
+}
+
+@media (max-width: 600px) {
+	.palette-foot { flex-wrap: wrap; }
+	.palette-hint-end { margin-left: 0; }}
+
+.palette-group {
+	padding: var(--sp-2) var(--sp-3) var(--sp-1);
+	color: var(--text-faint);
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
+
+/* "Ask Smithers": the AI row (Notion/Linear art) — a sparkle and a title, not a command name. */
+.palette-ask-row {
+	align-items: center;
+}
+
+.palette-ask-icon {
+	display: inline-flex;
+	color: var(--brand);
+}
+
+.palette-ask-title {
+	color: var(--text);
+	font-weight: 600;
+}
+
+.slash-menu-item[data-gold="true"] .slash-menu-name {
+	color: var(--warning);
+}
+
+.slash-menu-item[data-role="primary"] .slash-menu-name {
+	color: var(--text);
+}
+
+.palette-refusal,
+.palette-help-row {
+	padding: var(--sp-2) var(--sp-3);
+	color: var(--text-muted);
+	font-size: var(--fs-small);
+}
+
+.palette-help-row {
+	display: flex;
+	gap: 10px;
+}
+
+.palette-help-row .slash-menu-name {
+	min-width: 64px;
+}
+
+/* The search-results card: groups by kind, one row per item, its actions under it. */
+.search-results-group-label {
+	margin: 8px 0 2px;
+	color: var(--text-muted);
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.search-results-items {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.search-results-item {
+	display: flex;
+	padding: 4px 0;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.search-results-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+}
+
+/* Message chrome: Smithers avatar + per-row hover actions. */
+
+.message-avatar {
+	display: inline-flex;
+	width: 14px;
+	height: 14px;
+	align-items: center;
+	justify-content: center;
+	border-radius: 50%;
+	background: var(--brand);
+	color: var(--paper-0);
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+	font-weight: 600;
+	line-height: 1;
+}
+
+.message-actions {
+	position: absolute;
+	z-index: 5;
+	top: -9px;
+	right: 8px;
+	display: inline-flex;
+	padding: 1px;
+	align-items: center;
+	gap: 2px;
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--surface-glass-strong);
+	box-shadow: var(--shadow-1);
+	/*
+	 * opacity: 0 alone leaves the buttons hit-testable: on a touch screen a
+	 * tap in the corner landed on an invisible control. pointer-events follows
+	 * the opacity, and hover:none devices (no hover to reveal them) get the
+	 * actions as a deliberate, visible affordance instead of a hidden trap.
+	 */
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity var(--dur) var(--ease-current);
+}
+
+.smithers-chat-message:hover .message-actions,
+.message-actions:focus-within {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+@media (hover: none) {
+	.message-actions {
+		opacity: 1;
+		pointer-events: auto;
+	}}
+
+.message-actions .message-action {
+	width: 22px;
+	height: 22px;
+	min-height: 22px;
+	color: var(--text-faint);
+}
+
+.message-action:hover {
+	color: var(--text);
+}
+
+.message-action-copied {
+	padding: 0 2px;
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.smithers-card,
+	.message-actions {
+		transition: none;
+	}}
+
+.smithers-balance-intro {
+	margin: 0 0 6px;
+	font-size: var(--fs-small);
+	color: var(--text);
+}
+
+.smithers-balance-total {
+	margin: 0 0 4px;
+	font-family: var(--font-mono);
+	font-size: var(--fs-small);
+	color: var(--text);
+}
+
+.sui-approval-pending {
+	margin: 8px 0 0;
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+	color: var(--text-muted);
+}
+
+.sui-approval-error {
+	margin: 8px 0 0;
+	font-size: var(--fs-caption);
+	color: var(--danger);
+}
+
+/*
+ * The question gate's answer form: the prompt is the headline of the block,
+ * the box fills the card, and send rides as the solid primary. These hooks
+ * shipped with no rules — the prompt inherited plain paragraph styling and
+ * the textarea its intrinsic 20ch width (review still SMI-A1-S019).
+ */
+.sui-approval-answer {
+	display: grid;
+	gap: var(--sp-2);
+	margin-top: var(--sp-1);
+}
+.sui-approval-question {
+	margin: 0;
+	font-weight: 600;
+}
+.sui-approval-answer .sui-textarea {
+	width: 100%;
+}
+.sui-approval-answer .smithers-card-note {
+	margin: 0;
+}
+
+/* A gate's provenance (which run, when) — a caption line, never a bullet. */
+.sui-approval-meta {
+	margin: 0;
+	color: var(--text-muted);
+	font-size: var(--fs-small);
+}
+.sui-approval-meta code {
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+}
+
+/* Wave 10 — the maximize transition (§2d′): the SAME card element becomes
+ * fixed-position with a visible morph; reduced-motion gets the fade-only
+ * fallback; the chat stays mounted beneath the backdrop. */
+.card-maximize-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 65;
+	/* The palette's own scrim: --shadow-rgb tracks each theme's ink, so the
+	   dim is neutral everywhere — the old rgb(20 17 12 / 45%) was a warm
+	   brown fog over every dark palette. */
+	background: rgb(var(--shadow-rgb) / 45%);
+	backdrop-filter: blur(4px);
+}
+.smithers-card[data-maximized="true"] {
+	position: fixed;
+	/* Fixed cards share the space reserved for the persistent header and rail. */
+	inset: calc(var(--session-strip, 0px) + 1.5rem) 1.5rem 8.5rem;
+	inset-inline-start: calc(var(--chrome-rail-space, 0px) + 1.5rem);
+	z-index: 70;
+	overflow: auto;
+	margin: 0;
+	/* A completed card remains readable while it is the active review surface. */
+	opacity: 1;
+	background: var(--card);
+	/* The one full-screen surface: it floats over a scrim, so it wears the
+	   top elevation, not the inline-card shadow-1. */
+	box-shadow: var(--shadow-3);
+}
+/*
+ * Ask 8: the maximized card scrolls, and Restore lives in its header — so the
+ * header rides along instead of scrolling out of reach.
+ */
+.smithers-card[data-maximized="true"] .smithers-card-header {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	margin: calc(-1 * var(--sp-2)) calc(-1 * var(--sp-3)) var(--sp-2);
+	padding: var(--sp-2) var(--sp-3) var(--sp-2);
+	background: var(--card);
+}
+
+/* A frame may expand, but the conversation remains the app: its composer is
+ * visible and interactive throughout the explicit maximize transition. */
+.app-shell[data-frame-maximized="true"] .composer-wrap {
+	position: relative;
+	z-index: 75;
+}
+
+/* Maximizing expands the frame without taking over the app. Keep the shared
+ * navigation rail and Chat door above the presentation backdrop so they stay
+ * visible and keep their real pointer and keyboard targets. */
+.session-shell:has(.app-shell[data-frame-maximized="true"]) .session-navigation,
+.session-shell:has(.app-shell[data-frame-maximized="true"]) .chrome-dock {
+	z-index: 75;
+}
+
+.app-shell[data-frame-maximized="true"] .app-chat-controls {
+	position: relative;
+	z-index: 75;
+}
+@media (prefers-reduced-motion: no-preference) {
+	.smithers-card[data-maximized="true"] {
+		animation: card-maximize-in var(--dur) var(--ease-current);
+	}
+	.card-maximize-backdrop {
+		animation: card-backdrop-in var(--dur) var(--ease-current);
+	}
+	@keyframes card-maximize-in {
+		from { transform: scale(0.96) translateY(6px); opacity: 0.4; }
+		to { transform: none; opacity: 1; }
+	}
+	@keyframes card-backdrop-in {
+		from { opacity: 0; }
+		to { opacity: 1; }
+	}}
+@media (prefers-reduced-motion: reduce) {
+	.smithers-card[data-maximized="true"] {
+		animation: card-maximize-fade 120ms linear;
+	}
+	@keyframes card-maximize-fade {
+		from { opacity: 0; }
+		to { opacity: 1; }
+	}}
+.card-maximize-btn {
+	margin-left: auto;
+}
+
+/*
+ * Control focus ("spotlight"): while the human drives one surface, ONE dim
+ * layer darkens and blurs everything else a touch, modal-style, and the
+ * surface "expands just a tad" — a ring painted in the card colour plus
+ * elevation, never a transform (a scale() blurs text, shifts xterm's mouse
+ * coordinates, and refits the PTY on every focus change). The dim is
+ * pointer-events:none so hover and wheel reach the dimmed content. All
+ * tuning is the four tokens.
+ *
+ * The layer is a child of the BODY with a HOLE cut where the surface shows
+ * (state/controller/controlFocus.ts sets the clip-path). It used to be a
+ * ladder — one dim inside every ancestor that capped z-index, plus one in
+ * the app shell — and those layers composited over each other: measured
+ * −21% against a −12% token, in three banded strips, because an outer dim
+ * still shows through an inner container's transparent background however
+ * the two are stacked, and because the shell's own layer sat inside the
+ * tutorial's `opacity: 0` mount and painted nothing at all. A hole needs no
+ * stacking argument: nothing is dimmed twice and the surface is not dimmed.
+ *
+ * The z sits above the app's own chrome (session navigation 60, dock 55)
+ * — undimmed chrome was the third band — and below the maximize backdrop
+ * (65) and the maximized card (70). A popover the controlled surface opens
+ * lands over the surface, which is the hole, so it is not dimmed either.
+ *
+ * Every selector here is namespaced `data-control-focus*`. The bare
+ * `data-controlled` is the onboarding shell's own flag on every guide bubble
+ * (guide.css `.smithers-control[data-controlled="true"]`), and React
+ * stringifies its boolean, so a bare `[data-controlled]` rule matched
+ * "false" too and lifted every bubble above the pinned navigation.
+ */
+:root {
+	--control-focus-outset: 4px;
+	--control-focus-dim: 12%;
+	--control-focus-blur: 1.5px;
+	--control-focus-ms: 160ms;
+	--control-focus-z: 61;
+}
+
+.control-focus-dim {
+	position: fixed;
+	inset: 0;
+	z-index: var(--control-focus-z);
+	pointer-events: none;
+	background: rgb(20 17 12 / var(--control-focus-dim));
+	backdrop-filter: blur(var(--control-focus-blur));
+}
+
+/*
+ * The marker rides the BOX — the card, or the tab body for a terminal — not
+ * the editor, iframe or xterm root focus landed on, so the outset ring reads
+ * as that whole container lifting, which is what the 4px `var(--card)` outset
+ * was drawn for (state/controller/controlFocus.ts picks the container).
+ */
+[data-control-focus="inline"] {
+	position: relative;
+}
+[data-control-focus="human"] {
+	position: relative;
+	z-index: calc(var(--control-focus-z) + 1);
+	box-shadow: 0 0 0 var(--control-focus-outset) var(--card), 0 8px 24px rgb(0 0 0 / 18%);
+}
+
+/* A completed (acted) card stays readable while it is the controlled surface, exactly as maximize does. */
+.smithers-card[data-control-focus] {
+	opacity: 1;
+}
+
+/*
+ * The way out that needs no pointer. A focused cross-origin frame eats every
+ * key and xterm swallows Tab, so the release chord cannot reach the document
+ * from inside those surfaces; the ring carries its own button instead
+ * (state/controller/controlFocus.ts mounts it and pins it to the surface's
+ * VISIBLE corner, which is not the box's corner once a scroller clips it).
+ *
+ * The recipe is its own, not `.sui-button-ghost` + `.sui-button-sm`: those
+ * are defined after this rule at equal specificity and won every declaration
+ * they shared, and the tutorial's `.guide-shell button { font: inherit }`
+ * (0,1,1) outranks a bare class outright. The affordance shipped computing
+ * 16px on a transparent background with a transparent border — a label, not
+ * a control, and unreadable over a terminal. Pairing the class with the
+ * marker attribute the module already writes takes it to (0,2,0), which
+ * outranks both without an `!important` and without load-order luck.
+ */
+.control-focus-release[data-control-focus-release] {
+	position: absolute;
+	/* Inside the box, never over its header: a terminal clips its own overflow. */
+	right: 6px;
+	bottom: 6px;
+	z-index: 2;
+	display: inline-flex;
+	align-items: center;
+	min-height: 22px;
+	margin: 0;
+	padding: 0 8px;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: var(--card);
+	box-shadow: 0 1px 3px rgb(0 0 0 / 16%);
+	color: var(--text);
+	font-family: inherit;
+	font-size: 11px;
+	font-weight: 500;
+	line-height: 1;
+	white-space: nowrap;
+	cursor: pointer;
+	opacity: 0.82;
+}
+.control-focus-release[data-control-focus-release]:hover,
+.control-focus-release[data-control-focus-release]:focus-visible {
+	opacity: 1;
+}
+.control-focus-release[data-control-focus-release]:focus-visible {
+	outline: 2px solid var(--action-primary);
+	outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	/*
+	 * The dim mounts and unmounts with the state, so a transition on opacity
+	 * would never run; it fades in the way the maximize backdrop does.
+	 */
+	.control-focus-dim {
+		animation: control-focus-dim-in var(--control-focus-ms) ease-out;
+	}
+	[data-control-focus] {
+		transition: box-shadow var(--control-focus-ms) ease-out;
+	}
+	@keyframes control-focus-dim-in {
+		from { opacity: 0; }
+		to { opacity: 1; }
+	}}
+
+/* Wave 10 — the connect store rows (§2e), shared by the pane and the embedded card. */
+.connect-store-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.connect-store-row {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0.5rem 0.5rem;
+	border-radius: 10px;
+}
+.connect-store-icon {
+	display: inline-flex;
+	width: 1.75rem;
+	justify-content: center;
+	color: var(--muted-foreground);
+}
+.connect-store-text {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	flex: 1;
+}
+.connect-store-text > span {
+	color: var(--muted-foreground);
+	font-size: var(--fs-small);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* Wave 10 — the embedded world answer card (§2c″). */
+.world-card-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+}
+.world-card-row {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+.world-card-path {
+	color: var(--muted-foreground);
+	font-size: var(--fs-small);
+}
+.world-card-empty {
+	color: var(--muted-foreground);
+}
+
+.world-card-workspace {
+	display: grid;
+	grid-template-columns: 180px minmax(0, 1fr);
+	min-width: 0;
+	max-height: 420px;
+	overflow: hidden;
+	border: 1px solid var(--border);
+	border-radius: 0.5rem;
+}
+.world-card-sidebar {
+	min-width: 0;
+	padding: 0.5rem 0.25rem;
+	overflow: auto;
+	border-right: 1px solid var(--border);
+	background: var(--surface-2, transparent);
+}
+.world-card-doc {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	min-height: 0;
+}
+.world-card-meta {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+	padding: 0.375rem 0.75rem;
+	border-bottom: 1px solid var(--border);
+}
+.wiki-card-views {
+	display: flex;
+	gap: 0.25rem;
+}
+.wiki-card-source {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.375rem 0.75rem;
+	padding: 0.375rem 0.75rem;
+	font-size: var(--fs-small);
+	color: var(--muted-foreground);
+}
+.wiki-card-source p {
+	flex-basis: 100%;
+	margin: 0;
+}
+.wiki-card-outline {
+	padding: 0.5rem 1rem 1rem;
+	overflow: auto;
+	font-size: var(--fs-body);
+}
+.wiki-card-outline h3 { margin: 0.5rem 0; }
+.wiki-card-outline ol { padding-left: 1rem; }
+.wiki-card-outline li { margin: 0.35rem 0; overflow-wrap: anywhere; }
+.wiki-card-outline [data-depth="2"] { margin-left: 0.75rem; }
+.wiki-card-outline [data-depth="3"] { margin-left: 1.5rem; }
+.wiki-card-outline details { margin-top: 1rem; color: var(--muted-foreground); }
+.world-card-doc > .world-card-empty {
+	margin: 0;
+	padding: 0.75rem;
+}
+.world-card-doc .sui-markdown-editor {
+	flex: 1;
+	min-height: 0;
+	overflow: auto;
+}
+.world-card-doc .sui-markdown-editor .milkdown .ProseMirror {
+	padding: 16px 20px 48px;
+}
+[data-maximized="true"] .world-card-workspace {
+	max-height: none;
+	flex: 1;
+}
+
+/* Wave 10 — the browser surface (§2d′). */
+.browser-card {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+}
+.browser-card-url {
+	display: flex;
+	align-items: center;
+	gap: 0.375rem;
+	margin: 0;
+	font-size: var(--fs-small);
+	color: var(--muted-foreground);
+	word-break: break-all;
+}
+.browser-card-frame {
+	width: 100%;
+	height: 22rem;
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	background: #fff;
+}
+/*
+ * Lane L3b — the Desktop facet: plue's NixOS VM streamed over VNC, embedded in
+ * the card (THE EMBED LAW). It follows the browser and html panels' shape, so
+ * maximizing the card — the user's own act, through the card header — gives
+ * the frame the card's full height instead of a second full-screen surface.
+ */
+.workspace-desktop {
+	display: flex;
+	flex-direction: column;
+	gap: 0.375rem;
+}
+.workspace-desktop-frame {
+	width: 100%;
+	height: 22rem;
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	background: #000;
+}
+.smithers-card[data-maximized="true"] .workspace-desktop-frame {
+	flex: 1;
+	height: 100%;
+	min-height: 0;
+}
+.smithers-card[data-maximized="true"] .workspace-desktop {
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+}
+.smithers-card[data-maximized="true"] .browser-card-frame {
+	flex: 1;
+	height: auto;
+	min-height: 0;
+}
+.smithers-card[data-maximized="true"] .smithers-card-body,
+.smithers-card[data-maximized="true"] .browser-card {
+	height: calc(100% - 2.5rem);
+	display: flex;
+	flex-direction: column;
+}
+/* Carry the available height through the workspace wrapper to the stream.
+ * Percentage heights stopped at .world-card-list and left the VM tiny. */
+.smithers-card[data-maximized="true"]:has(.workspace-desktop) {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	overscroll-behavior: contain;
+}
+.smithers-card[data-maximized="true"]:has(.workspace-desktop) .smithers-card-header {
+	flex-shrink: 0;
+}
+.smithers-card[data-maximized="true"]:has(.workspace-desktop) .smithers-card-body,
+.smithers-card[data-maximized="true"]:has(.workspace-desktop) .smithers-card-body > .world-card-list {
+	flex: 1;
+	min-height: 0;
+	height: auto;
+}
+.smithers-card[data-maximized="true"]:has(.workspace-desktop) .world-card-list > :not(.workspace-desktop),
+.smithers-card[data-maximized="true"] .workspace-desktop > .world-card-row {
+	flex-shrink: 0;
+}
+.smithers-card[data-maximized="true"] .workspace-desktop-frame {
+	height: auto;
+}
+.browser-card-blocked {
+	padding: 1rem;
+	border: 1px dashed var(--border);
+	border-radius: 10px;
+}
+.browser-card-open {
+	font-weight: 600;
+}
+
+/* Wave 11 — the embedded run card + the workspace workflow list. */
+.flow-run-card {
+	display: flex;
+	flex-direction: column;
+	gap: 0.375rem;
+}
+.flow-run-steps {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.125rem;
+	color: var(--muted-foreground);
+	font-size: var(--fs-small);
+}
+.workflow-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.375rem;
+}
+.workflow-list-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+}
+.workflow-list-text {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+.workflow-list-text > span {
+	color: var(--muted-foreground);
+	font-size: var(--fs-small);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+	.workflow-list-text > span {
+		white-space: normal;
+		text-overflow: clip;
+		overflow-wrap: anywhere;
+	}}
+
+/* Wave 12 — the quiet run's two acts, and the which-watched-repo question. */
+.flow-run-actions {
+	display: flex;
+	/* The buttons are nowrap pills; in a phone-width card body a single row
+	   ran past the card's right edge, so the row wraps instead. */
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	margin-top: 0.125rem;
+}
+
+/* The steer row: the house control look, filling the card — the raw
+   browser-default input and select had shipped under hook-only classes. */
+.flow-run-steer {
+	display: grid;
+	gap: 0.5rem;
+	margin-top: 0.5rem;
+}
+.flow-run-steer .flow-run-actions {
+	margin-top: 0;
+}
+.flow-run-steer-input {
+	flex: 1;
+	min-width: 0;
+}
+.flow-run-steer-select {
+	flex: none;
+}
+.workflow-repo-chooser {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+}
+.workflow-repo-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.workflow-repo-list:focus-visible {
+	outline: 2px solid var(--ring);
+	outline-offset: 2px;
+	border-radius: 8px;
+}
+.workflow-repo-row {
+	display: flex;
+	align-items: center;
+	width: 100%;
+	padding: 0.4375rem 0.5rem;
+	border: none;
+	border-radius: 8px;
+	background: transparent;
+	font: inherit;
+	font-weight: 600;
+	text-align: left;
+	cursor: pointer;
+}
+.workflow-repo-row[data-highlighted="true"] {
+	background: var(--hover);
+}
+
+/* The admin request-access queue (§28.6): three inline elements with nothing
+   between them rendered as one run-on token — "codeplanesmithers2026-08-19
+   Approve". Each row is a line: the login, then its note, then the date, then
+   the act at the far end. */
+.queue-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.375rem;
+}
+.queue-row {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	min-width: 0;
+}
+.queue-login {
+	font-weight: 600;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.queue-note {
+	flex: 1 1 auto;
+	min-width: 0;
+	color: var(--muted-foreground);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+/* The date sits against the act, so the row reads login … date [Approve]. */
+.queue-at {
+	margin-left: auto;
+	color: var(--muted-foreground);
+	font-size: var(--fs-small);
+	white-space: nowrap;
+}
+
+/* Service health: status rows, not a bulleted list. */
+.admin-health-services {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: grid;
+	gap: var(--sp-1);
+}
+.admin-health-services > li {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-2);
+}
+
+/* The card header at narrow widths (§7.3). The status pill is the most
+   glanceable claim a card makes, so it renders in full at every width; the
+   title is the element that can give way, because truncating it loses nothing
+   the pill carries. Before this the header was one non-shrinking row and the
+   pill absorbed the whole shortfall — a 64px "Done" rendered in a 20px box. */
+.smithers-card-title {
+	flex: 0 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.smithers-card-header > .sui-badge,
+.smithers-card-header > .card-maximize-btn {
+	flex: 0 0 auto;
+}
+
+/* A maximized card fits the viewport (§7.2). `.smithers-card` sets
+   `width: 100%`, which on a fixed-position element resolves against the
+   viewport and overrode the right inset — the card was laid out full viewport
+   width starting 24px in, so its own minimize button and any right-aligned
+   action hung off the edge with no way to scroll to them. */
+.smithers-card[data-maximized="true"] {
+	width: auto;
+	height: auto;
+}
+
+/* Long card content scrolls INSIDE the card (§7.8). A file body laid out one
+   base64 line 42626px wide inside a 686px box: everything past the card's own
+   border painted across the page background and was clipped, unreachable, at
+   the viewport edge. */
+.smithers-card-body {
+	max-width: 100%;
+	min-width: 0;
+}
+.smithers-card-body pre {
+	max-width: 100%;
+	max-height: 24rem;
+	overflow: auto;
+	margin: 0;
+}
+/* Maximized, the body is already the scroller — the content takes the room. */
+.smithers-card[data-maximized="true"] .smithers-card-body pre {
+	max-height: none;
+}
+/*
+ * Code intelligence L5 (docs/code-intel/PLAN.md §7): the diff card's hunks
+ * render through the pierre view instead of a bare <pre>, so the view takes
+ * the pre's cap. The view is its own scroller — pierre virtualizes against its
+ * container element — and maximized it takes the room as the pre does.
+ */
+.smithers-card-body .sui-pierre-diff {
+	max-height: 24rem;
+	overflow: auto;
+}
+.smithers-card[data-maximized="true"] .smithers-card-body .sui-pierre-diff {
+	max-height: none;
+}
+
+/*
+ * Ask 6 (will, 2026-09-02): "when we show a file it should be shown in a panel
+ * with a reasonable max height that we can scroll within". The file card and
+ * the directory listing are that panel: they cap at 60vh and scroll inside,
+ * so one long file never becomes the whole transcript. The panel is the ONE
+ * scroller — a fenced body inside it drops its own 24rem cap rather than
+ * nesting a second scrollbar. Maximized, the card IS the viewport, so the cap
+ * lifts exactly as the other maximized rules do.
+ */
+.world-card-panel {
+	max-height: 60vh;
+	overflow: auto;
+}
+.world-card-panel pre {
+	max-height: none;
+}
+.smithers-card[data-maximized="true"] .world-card-panel {
+	max-height: none;
+	overflow: visible;
+}
+
+/* Lane L1 — the change card: the revision pickers read in mono; a finding with recorded feedback dims and reads the word. */
+.change-pins select {
+	font-family: var(--font-mono);
+	font-size: var(--fs-small);
+}
+.change-finding--dimmed {
+	opacity: 0.55;
+}
+
+/* THE FORM LAW (docs/workbench-lanes/flow-forms.md): the generic flow form's rows; a required row marks itself. */
+.flow-form {
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-2);
+}
+.flow-form-row {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-2);
+}
+.flow-form-row > span:first-child {
+	flex: 0 0 6rem;
+	color: var(--muted-foreground);
+	font-size: var(--fs-small);
+}
+.flow-form-row[data-required="true"] > span:first-child::after {
+	content: " *";
+}
+.flow-form-row > input:not([type="checkbox"]),
+.flow-form-row > textarea,
+.flow-form-row > select {
+	flex: 1;
+	min-width: 0;
+	padding: var(--sp-2) var(--sp-3);
+	border: 1px solid var(--border-strong);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+	color: var(--text);
+	font: inherit;
+	font-size: var(--fs-small);
+}
+.flow-form-row > :is(input:not([type="checkbox"]), textarea, select):focus-visible {
+	outline: 2px solid var(--ring);
+	outline-offset: 2px;
+	border-color: var(--ring-border);
+}
+.flow-form-row > :is(input, textarea)::placeholder {
+	color: var(--text-placeholder);
+}
+.flow-form-row > textarea {
+	resize: vertical;
+}
+.flow-form-row > select {
+	font-family: var(--font-mono);
+	font-size: var(--fs-small);
+}
+
+/*
+ * Code intelligence in the file card (docs/code-intel/PLAN.md §5): the
+ * language word at the end of the address line, the diagnostics count under
+ * it, the server-state note, and the rows pierre slots under a line — a
+ * diagnostic coloured by severity, the hover answer in a box. The rows are
+ * light-DOM children of the code view, so these rules reach them.
+ */
+.world-card-path-trailing {
+	float: right;
+	margin-left: 0.75rem;
+}
+.code-diagnostics-count,
+.code-intel-note {
+	margin: 0;
+	color: var(--muted-foreground);
+	font-size: var(--fs-small);
+}
+.code-diagnostics-count[data-errors]:not([data-errors="0"]) {
+	color: var(--danger);
+}
+.code-intel-note code {
+	font-family: var(--font-mono);
+	font-size: var(--fs-small);
+}
+.code-surface {
+	min-width: 0;
+}
+.code-surface [data-slot="code-view"][data-interactive] [data-char] {
+	cursor: default;
+}
+.code-diagnostic {
+	display: flex;
+	gap: 0.375rem;
+	margin: 0;
+	padding: 0.125rem 0.75rem 0.25rem 0;
+	font-family: var(--font-mono);
+	font-size: var(--fs-small);
+	line-height: 1.4;
+	white-space: normal;
+}
+.code-diagnostic[data-severity="error"] {
+	color: var(--danger);
+}
+.code-diagnostic[data-severity="warning"] {
+	color: var(--warning);
+}
+.code-diagnostic[data-severity="information"],
+.code-diagnostic[data-severity="hint"] {
+	color: var(--muted-foreground);
+}
+.code-diagnostic-origin {
+	color: var(--muted-foreground);
+}
+.code-hover {
+	margin: 0.25rem 0.75rem 0.375rem 0;
+	padding: 0.375rem 0.625rem;
+	border: 1px solid var(--border);
+	border-radius: 0.375rem;
+	background: var(--surface);
+	color: var(--text, inherit);
+	font-size: var(--fs-small);
+	white-space: normal;
+}
+.code-hover pre,
+.code-hover .sui-md-inline-code {
+	font-size: var(--fs-small);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+.code-hover-hint {
+	display: block;
+	margin-top: 0.25rem;
+	color: var(--muted-foreground);
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+}
+
+/* The secrets card (Secrets L1): the scope line and the metadata table; values never exist on the wire. */
+.secrets-scope {
+	margin: 0;
+	font-size: var(--fs-small);
+	color: var(--muted-foreground);
+}
+.secrets-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: var(--fs-small);
+}
+.secrets-table th {
+	text-align: left;
+	font-size: var(--fs-small);
+	color: var(--muted-foreground);
+	font-weight: 600;
+	padding: 0.25rem 0.5rem 0.25rem 0;
+}
+.secrets-table td {
+	padding: 0.25rem 0.5rem 0.25rem 0;
+	border-top: 1px solid var(--border);
+	vertical-align: top;
+}
+.billing-plans :is(th, td) { padding: 0.375rem 0.75rem; }
+.billing-plans :is(th, td):first-child { padding-left: 0; }
+.billing-plans th[scope="col"] { vertical-align: bottom; min-width: 7rem; }
+
+/* The Accounts card: provider groups of rows, header adds, and a pending Codex code. */
+.provider-accounts-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+}
+.provider-accounts-pending {
+	margin: 0;
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+[data-kind="provider-accounts"] .world-card-row {
+	flex-wrap: wrap;
+}
+[data-kind="provider-accounts"] .world-card-row > .world-card-path {
+	margin-right: auto;
+}
+
+/* The Stack card and homepage block: counts, lanes, then the ordered stack; rows wrap on a narrow screen. */
+.stack-lanes,
+.stack-rows {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+}
+.stack-counts,
+.stack-admin,
+.stack-wiki,
+.stack-lanes > .world-card-row,
+.stack-rows > .world-card-row,
+.stack-failure {
+	flex-wrap: wrap;
+	margin: 0;
+}
+.stack-state {
+	font-size: var(--fs-small);
+	font-weight: 600;
+}
+.stack-state[data-state="unknown"] {
+	color: var(--text-faint);
+}
+.stack-state[data-state="blocked"],
+.stack-state[data-state="rejected"],
+.stack-wiki > .stack-state[data-state="failed"] {
+	color: var(--danger);
+}
+.stack-reason {
+	flex-basis: 100%;
+}
+/* The issue groups (purple: a person acts now; blue: the factory holds it; green landed, grey otherwise) and the metrics line. */
+.stack-metrics {
+	flex-wrap: nowrap;
+	margin: 0;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	overflow-x: auto;
+}
+.stack-views {
+	display: inline-flex;
+	gap: 0.25rem;
+	margin-left: auto;
+}
+.stack-group {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+}
+.stack-group-head {
+	display: flex;
+	gap: 0.5rem;
+	align-items: baseline;
+	margin: 0;
+	font-size: var(--fs-small);
+	font-weight: 600;
+}
+.stack-glyph[data-group="needs-you"] {
+	color: var(--brand);
+}
+.stack-glyph[data-group="working"] {
+	color: var(--info);
+}
+.stack-glyph[data-state="unknown"] {
+	color: var(--text-faint);
+}
+.stack-glyph[data-group="done"] {
+	color: var(--text-faint);
+}
+.stack-glyph[data-group="done"][data-state="landed"],
+.stack-group-head > .stack-glyph[data-group="done"] {
+	color: var(--success);
+}
+
+/* The models card: a row is its name, a test dot and its acts; maximized it is the list beside the facts and the seats. */
+.models-row {
+	flex-wrap: wrap;
+	border-radius: var(--r-sm);
+}
+.models-row[data-selected="true"] {
+	background: var(--hover-subtle);
+}
+.models-row-select {
+	all: unset;
+	display: flex;
+	flex: 1;
+	min-width: 0;
+	cursor: pointer;
+	border-radius: var(--r-sm);
+}
+.models-row-select:focus-visible {
+	outline: 2px solid var(--ring);
+}
+.models-test {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.375rem;
+	margin-left: auto;
+	font-size: var(--fs-small);
+	color: var(--muted-foreground);
+	white-space: nowrap;
+}
+.models-dot {
+	flex: none;
+	width: 0.5rem;
+	height: 0.5rem;
+	border-radius: var(--r-full);
+	background: var(--border-strong);
+}
+.models-row[data-test-state="passed"] .models-dot {
+	background: var(--success);
+}
+.models-row[data-test-state="failed"] .models-dot {
+	background: var(--danger);
+}
+.models-row[data-test-state="failed"] .models-test {
+	color: var(--danger);
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+.models-row[data-test-state="running"] .models-dot {
+	background: var(--run);
+	animation: run-outcome-pulse 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+	.models-dot { animation: none; }
+}
+.models-seats select {
+	padding: var(--sp-1) var(--sp-2);
+	border: 1px solid var(--border-strong);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+	color: var(--text);
+	font-family: var(--font-mono);
+	font-size: var(--fs-small);
+}
+.models-seats select:focus-visible {
+	outline: 2px solid var(--ring);
+	outline-offset: 2px;
+	border-color: var(--ring-border);
+}
+.models-seats tr[data-resolvable="false"] select {
+	border-color: var(--danger);
+}
+.models-pane {
+	display: grid;
+	grid-template-columns: minmax(16rem, 26rem) 1fr;
+	gap: 1rem;
+}
+.models-pane-list,
+.models-pane-main {
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+	min-width: 0;
+}
+/* A pane row is one line: the name gives way with an ellipsis, the acts never wrap under it. */
+.models-pane .models-row {
+	flex-wrap: nowrap;
+}
+.models-pane .workflow-list-text > strong {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+@media (max-width: 600px) {
+	.models-pane { grid-template-columns: 1fr; }
+}
+
+/*
+ * The model-call card: the request is controls, the answer is read-only text
+ * beside the question it answered. Every control is the flow form's control
+ * (same border, same focus ring); a long value reads in mono. An answer that
+ * no longer matches the request is struck and dimmed, never removed.
+ */
+.model-call {
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-3);
+}
+.model-call :is(input:not([type="checkbox"]), textarea, select) {
+	min-width: 0;
+	padding: var(--sp-1) var(--sp-2);
+	border: 1px solid var(--border-strong);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+	color: var(--text);
+	font: inherit;
+	font-size: var(--fs-small);
+}
+.model-call :is(input:not([type="checkbox"]), textarea, select):focus-visible {
+	outline: 2px solid var(--ring);
+	outline-offset: 2px;
+	border-color: var(--ring-border);
+}
+.model-call textarea {
+	resize: vertical;
+	width: 100%;
+}
+.model-call select,
+.model-call .model-call-key,
+.model-call .model-call-mono {
+	font-family: var(--font-mono);
+}
+.model-call-state,
+.model-call-questions {
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-2);
+}
+.model-call-field {
+	display: grid;
+	grid-template-columns: minmax(6rem, 10rem) auto minmax(0, 1fr) auto;
+	gap: var(--sp-2);
+	align-items: start;
+}
+.model-call-field > input[type="checkbox"] {
+	align-self: center;
+}
+.model-call-question {
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-2);
+	padding: var(--sp-2);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+}
+.model-call-question-head {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-2);
+}
+.model-call-question-head > .model-call-key {
+	font-size: var(--fs-small);
+}
+.model-call-answer {
+	margin-left: auto;
+	font-family: var(--font-mono);
+	font-size: var(--fs-small);
+	color: var(--success);
+}
+.model-call[data-stale="true"] .model-call-answer,
+.model-call[data-stale="true"] .model-call-text,
+.model-call[data-stale="true"] .model-call-result {
+	opacity: 0.45;
+	text-decoration: line-through;
+}
+.model-call-criteria {
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-1);
+}
+.model-call-question[data-question-type="boolean"] .model-call-criteria {
+	flex-direction: row;
+}
+.model-call-question[data-question-type="boolean"] .model-call-criteria > input {
+	flex: 1;
+}
+.model-call-option {
+	display: grid;
+	grid-template-columns: minmax(6rem, 10rem) minmax(0, 1fr) auto;
+	gap: var(--sp-2);
+	align-items: center;
+}
+.model-call-question[data-question-type="score"] .model-call-option {
+	grid-template-columns: minmax(6rem, 10rem) auto;
+}
+.model-call-row {
+	display: flex;
+	align-items: start;
+	gap: var(--sp-2);
+}
+.model-call-row > span:first-child {
+	flex: 0 0 6rem;
+	padding-top: var(--sp-1);
+	color: var(--muted-foreground);
+	font-size: var(--fs-small);
+}
+.model-call-knobs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--sp-3);
+}
+.model-call-knobs input {
+	width: 6rem;
+}
+.model-call-text {
+	margin: 0;
+	padding: var(--sp-2);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	font-size: var(--fs-small);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+.model-call-foot {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-3);
+}
+.model-call-result {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.375rem;
+	margin-left: auto;
+	font-size: var(--fs-small);
+	color: var(--muted-foreground);
+}
+.model-call-result[data-ok="true"] .models-dot {
+	background: var(--success);
+}
+.model-call-result[data-ok="false"] {
+	color: var(--danger);
+}
+.model-call-result[data-ok="false"] .models-dot {
+	background: var(--danger);
+}
+.model-call-fixture {
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-1);
+	align-items: start;
+}
+@media (max-width: 600px) {
+	.model-call-field,
+	.model-call-option { grid-template-columns: 1fr; }
+}
+
+/*
+ * The run trace (Factory design session 2026-09-07 §6b, redrawn 2026-09-12):
+ * the outcome line, the folded plan and progress, the turn list that expands
+ * in place, and the timeline (call tree, waterfall, span pane). Body copy is
+ * the card's own size (--fs-body); facts and metadata step down one size.
+ */
+.run-trace {
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-3);
+	container-type: inline-size;
+}
+
+/* 1. The outcome: the phase in words, then the recorded facts. */
+.run-outcome {
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 0 var(--sp-2);
+	margin: 0;
+	font-size: var(--fs-body);
+}
+.run-outcome-words { font-weight: 600; overflow-wrap: anywhere; min-width: 0; }
+.run-outcome-facts {
+	color: var(--text-muted);
+	font-size: var(--fs-small);
+	font-variant-numeric: tabular-nums;
+}
+.run-outcome-dot,
+.run-trace-dot,
+.run-needs-help-dot {
+	display: inline-block;
+	width: 0.5rem;
+	height: 0.5rem;
+	flex: none;
+	border-radius: var(--r-full);
+	background: var(--success);
+	align-self: center;
+}
+.run-needs-help-dot { background: var(--warning); }
+.run-outcome-dot[data-status="running"],
+.run-outcome-dot[data-status="launching"],
+.run-outcome-dot[data-status="reconnecting"],
+.run-trace-dot[data-status="running"],
+.run-trace-dot[data-status="launching"],
+.run-trace-dot[data-status="reconnecting"] {
+	background: var(--brand);
+	animation: run-outcome-pulse 1.6s ease-in-out infinite;
+}
+.run-outcome-dot[data-status="waiting-approval"],
+.run-outcome-dot[data-status="quiet"],
+.run-trace-dot[data-status="waiting"],
+.run-trace-dot[data-status="waiting-approval"],
+.run-trace-dot[data-status="quiet"] {
+	background: var(--warning);
+}
+.run-outcome-dot[data-status="failed"],
+.run-outcome-dot[data-status="no-capacity"],
+.run-trace-dot[data-status="failed"],
+.run-trace-dot[data-status="denied"],
+.run-trace-dot[data-status="no-capacity"] {
+	background: var(--danger);
+}
+.run-outcome-dot[data-status="cancelled"],
+.run-outcome-dot[data-status="stopped"],
+.run-trace-dot[data-status="cancelled"],
+.run-trace-dot[data-status="stopped"] {
+	background: var(--text-faint);
+}
+@keyframes run-outcome-pulse {
+	50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+	.run-outcome-dot, .run-trace-dot { animation: none; }}
+.run-result { margin: 0; }
+.run-result > :first-child { margin-top: 0; }
+.run-result > :last-child { margin-bottom: 0; }
+
+/* The settled run's progress. */
+.run-progress-fold {
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+}
+.run-progress-fold > summary {
+	display: flex;
+	align-items: baseline;
+	gap: var(--sp-2);
+	padding: var(--sp-2) var(--sp-3);
+	cursor: pointer;
+	list-style: none;
+}
+.run-progress-fold > summary::-webkit-details-marker { display: none; }
+.run-progress-fold > summary::before {
+	content: "";
+	width: 0.375rem;
+	height: 0.375rem;
+	flex: none;
+	align-self: center;
+	border-right: 1.5px solid var(--text-muted);
+	border-bottom: 1.5px solid var(--text-muted);
+	transform: rotate(-45deg);
+	transition: transform var(--dur) var(--ease-current);
+}
+.run-progress-fold[open] > summary::before { transform: rotate(45deg); }
+.run-progress-fold > summary:focus-visible { outline: 2px solid var(--ring-border); outline-offset: -2px; border-radius: var(--r-sm); }
+.run-fold-title { font-weight: 600; }
+.run-fold-meta { color: var(--text-muted); font-size: var(--fs-small); }
+.run-progress-fold > .run-progress { padding: 0 var(--sp-3) var(--sp-3); }
+.run-progress {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.125rem;
+	font-size: var(--fs-small);
+	color: var(--text-muted);
+}
+.run-progress > li:last-child { color: var(--text); }
+.run-progress-fold > .run-progress > li:last-child { color: var(--text-muted); }
+
+/* 4. The turns: one row each; the open row grows its recorded detail. */
+.run-trace-bar {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--sp-2);
+	min-height: 1.75rem;
+}
+.run-trace-bar-title { font-weight: 600; }
+.run-trace-scrub { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.run-trace-bar[data-view="turns"] .run-trace-view { margin-left: auto; }
+.run-trace-filter {
+	padding: 0.0625rem var(--sp-2);
+	border: 1px solid var(--border-strong);
+	border-radius: var(--r-full);
+	background: transparent;
+	color: var(--text-muted);
+	font: inherit;
+	font-size: var(--fs-small);
+	line-height: 1.5;
+	cursor: pointer;
+}
+.run-trace-filter:hover { color: var(--text); background: var(--hover-subtle); }
+.run-trace-filter[data-on="true"],
+.run-trace-filter[aria-pressed="true"] {
+	border-color: var(--brand);
+	color: var(--brand);
+}
+.run-trace-filter:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }
+.run-trace-clock,
+.run-trace-cursor {
+	font-family: var(--font-mono);
+	font-size: var(--fs-small);
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+}
+.run-trace-clock { margin-left: auto; }
+.run-turns {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+	overflow: hidden;
+}
+.run-turns > li + li { border-top: 1px solid var(--border); }
+.run-turns > li[data-turn-open="true"] { background: var(--surface-2); }
+.run-turn {
+	display: grid;
+	grid-template-columns: 2rem minmax(0, 1fr) auto;
+	gap: var(--sp-2);
+	align-items: start;
+	width: 100%;
+	padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-2);
+	border: 0;
+	background: transparent;
+	color: var(--text);
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+.run-turn:hover { background: var(--hover-subtle); }
+.run-turn:focus-visible { outline: 2px solid var(--ring-border); outline-offset: -2px; }
+.run-turn-number {
+	color: var(--text-muted);
+	font-family: var(--font-mono);
+	font-size: var(--fs-small);
+	text-align: right;
+	line-height: 1.5;
+	display: flex;
+	justify-content: flex-end;
+	align-items: center;
+	min-height: 1.5rem;
+}
+.run-turn-body { display: flex; flex-direction: column; gap: 0.125rem; min-width: 0; }
+.run-turn-text { overflow-wrap: anywhere; }
+.run-turn .run-trace-duration { line-height: 1.5; }
+.run-trace-duration {
+	font-family: var(--font-mono);
+	font-size: var(--fs-small);
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+.run-turn-detail {
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-2);
+	padding: 0 var(--sp-3) var(--sp-3) 2.5rem;
+}
+.run-trace-path {
+	margin: 0;
+	overflow-wrap: anywhere;
+	color: var(--text-muted);
+	font-size: var(--fs-small);
+}
+.run-trace-path button { padding: 0.125rem 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.run-trace-path button:hover { color: var(--text); }
+.run-trace-path [aria-current="location"] { color: var(--text); font-weight: 600; }
+.run-trace-path button:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; border-radius: 2px; }
+.run-trace-empty { margin: 0; color: var(--text-muted); font-size: var(--fs-small); }
+.run-turn-source { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+/* The call tree: one button per span, indented by depth. */
+.run-trace-tree {
+	list-style: none;
+	margin: 0;
+	padding: 0.25rem 0;
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+	max-height: 18rem;
+	overflow: auto;
+}
+.run-trace-node {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto auto;
+	align-items: center;
+	gap: var(--sp-2);
+	width: 100%;
+	padding: 0.25rem var(--sp-2);
+	border: 0;
+	background: transparent;
+	color: var(--text);
+	font: inherit;
+	font-size: var(--fs-small);
+	text-align: left;
+	cursor: pointer;
+}
+.run-trace-node:hover { background: var(--hover-subtle); }
+.run-trace-node[aria-pressed="true"] { background: var(--brand-soft); }
+.run-trace-node:focus-visible { outline: 2px solid var(--ring-border); outline-offset: -2px; }
+.run-trace-node[data-kind="run"] .run-trace-label,
+.run-trace-node[data-kind="frame"] .run-trace-label,
+.run-trace-node[data-kind="execution"] .run-trace-label { font-weight: 600; }
+.run-trace-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); }
+.run-trace-status { color: var(--text-muted); }
+.run-trace-node[data-status="failed"] .run-trace-status,
+.run-trace-node[data-status="denied"] .run-trace-status { color: var(--danger); }
+
+/* The optional debugger shares the reading column. */
+.run-trace-body {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: var(--sp-2);
+}
+@container (max-width: 40rem) {
+	.run-trace-body { grid-template-columns: minmax(0, 1fr); }
+	.run-trace-tree { max-height: 12rem; }
+	.run-turn-detail { padding-left: var(--sp-3); }}
+.run-trace-detail { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.run-trace-waterfall {
+	list-style: none;
+	margin: 0;
+	padding: var(--sp-2);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+	max-height: 14rem;
+	overflow: auto;
+}
+.run-trace-water-row { display: grid; grid-template-columns: minmax(6rem, 10rem) minmax(0, 1fr); align-items: center; gap: var(--sp-2); }
+.run-trace-water-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: var(--fs-small); color: var(--text-muted); }
+.run-trace-track { position: relative; display: block; height: 0.75rem; border-radius: 2px; background: var(--surface-2); }
+.run-trace-water-bar {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	min-width: 2px;
+	padding: 0;
+	border: 0;
+	border-radius: 2px;
+	background: var(--success);
+	cursor: pointer;
+}
+.run-trace-water-bar[aria-pressed="true"] { outline: 2px solid var(--text); outline-offset: 1px; }
+.run-trace-water-bar:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }
+.run-trace-water-row[data-status="running"] .run-trace-water-bar,
+.run-trace-water-row[data-status="waiting"] .run-trace-water-bar { background: var(--brand); }
+.run-trace-water-row[data-status="failed"] .run-trace-water-bar,
+.run-trace-water-row[data-status="denied"] .run-trace-water-bar { background: var(--danger); }
+.run-trace-water-bar[data-instant="true"] { width: 2px !important; border-radius: 1px; }
+
+/* The span pane: what the journal recorded for the selection, nothing more. */
+.run-trace-pane {
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-2);
+	padding: var(--sp-3);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+}
+.run-trace-pane-title,
+.run-trace-block h5 {
+	margin: 0;
+	font-size: var(--fs-small);
+	font-weight: 600;
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 0.375rem;
+}
+.run-trace-pane-kind { color: var(--text-muted); font-weight: 500; }
+.run-trace-kv {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: 0.125rem var(--sp-3);
+	margin: 0;
+	font-size: var(--fs-small);
+}
+.run-trace-kv dt { color: var(--text-muted); }
+.run-trace-kv dd { margin: 0; font-family: var(--font-mono); overflow-wrap: anywhere; }
+.run-trace-block { display: flex; flex-direction: column; gap: 0.25rem; }
+.run-trace-code,
+.run-trace-failure pre {
+	margin: 0;
+	max-height: 10rem;
+	overflow: auto;
+	padding: var(--sp-2) var(--sp-3);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: var(--code-bg);
+	color: var(--code-text);
+	font-family: var(--font-mono);
+	font-size: var(--fs-small);
+	line-height: 1.5;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+.run-trace-code[role="alert"] { border-color: var(--danger-border); background: var(--danger-soft); }
+.run-trace-code:focus-visible,
+.run-trace-failure pre:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }
+.run-trace-banner {
+	margin: 0;
+	padding: var(--sp-2) var(--sp-3);
+	border: 1px solid var(--warning-border);
+	border-radius: var(--r-sm);
+	background: var(--warning-soft);
+	color: var(--text);
+	font-size: var(--fs-small);
+}
+.run-trace-kind { font-family: var(--font-mono); font-weight: 600; margin-right: 0.375rem; }
+
+/*
+ * The timeline's phase band, its milestone pins, and what each frame did.
+ *
+ * Fills mix against --bg, never --surface: the `*-soft` tokens already carry
+ * --surface, so on a card they land within a shade of the paper they sit on.
+ * A 22% tint keeps --text above the small-text floor in both modes.
+ */
+.run-phases { position: relative; }
+/* Label dimensions come from the browser, and resize with the font and card. */
+.run-phase-pins { position: relative; min-height: 3.5rem; }
+.run-phase-pin {
+	position: absolute;
+	top: var(--pin-top, calc(var(--pin-row, 0) * 1.5rem));
+	display: block;
+	transform: translateX(var(--pin-shift, -50%));
+	width: max-content;
+	max-width: min(10rem, 100%);
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: var(--text-muted);
+	font: inherit;
+	font-size: var(--fs-small);
+	line-height: 1.4;
+	white-space: nowrap;
+	cursor: pointer;
+}
+.run-phase-pin:hover { color: var(--text); }
+.run-phase-pin[aria-current="location"] { color: var(--text); }
+.run-phase-pin:focus-visible,
+.run-phase-cluster summary:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; border-radius: 2px; }
+.run-phase-pin-label { display: block; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.run-phase-pin-tick {
+	position: absolute;
+	pointer-events: none;
+	left: var(--pin-anchor, 50%);
+	top: var(--pin-label-height, 1.25rem);
+	width: 1px;
+	background: var(--border-strong);
+	height: max(0px, calc(var(--pin-height, 3.5rem) - var(--pin-top, 0px) - var(--pin-label-height, 1.25rem)));
+}
+.run-phase-cluster summary { list-style: none; }
+.run-phase-cluster summary::-webkit-details-marker { display: none; }
+.run-phase-cluster[open] { z-index: 3; }
+.run-phase-members {
+	position: absolute;
+	top: 100%;
+	left: var(--pin-menu-shift, 0px);
+	width: var(--pin-width, 16rem);
+	max-height: 12rem;
+	overflow: auto;
+	list-style: none;
+	margin: 0.25rem 0 0;
+	padding: var(--sp-1);
+	border: 1px solid var(--border-strong);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+}
+.run-phase-members button {
+	display: flex;
+	justify-content: space-between;
+	gap: var(--sp-3);
+	width: 100%;
+	padding: var(--sp-2);
+	text-align: left;
+}
+.run-phase-members button span:first-child { white-space: normal; overflow-wrap: anywhere; }
+.run-phase-members button:hover,
+.run-phase-members button[aria-current="location"] { background: var(--hover-subtle); }
+.run-phase-members button:focus-visible { outline: 2px solid var(--ring-border); outline-offset: -2px; }
+.run-phase-pin[data-tone="warn"] .run-phase-pin-tick { background: var(--warning); }
+.run-phase-pin[data-tone="bad"] .run-phase-pin-tick { background: var(--danger); }
+.run-phase-pin[data-tone="good"] .run-phase-pin-tick { background: var(--success); }
+.run-phase-pin[data-tone="brand"] .run-phase-pin-tick { background: var(--brand); }
+.run-phase-track {
+	position: relative;
+	touch-action: none;
+	user-select: none;
+	cursor: ew-resize;
+	height: 1.25rem;
+	border-radius: 2px;
+	background: var(--surface-2);
+	overflow: hidden;
+}
+.run-phase-band {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	--band-tint: 22%;
+	min-width: 2px;
+	display: flex;
+	align-items: center;
+	padding: 0 0.25rem;
+	border: 0;
+	border-left: 1px solid var(--bg);
+	background: var(--surface-2);
+	color: var(--text);
+	font: inherit;
+	font-size: var(--fs-small);
+	line-height: 1;
+	cursor: pointer;
+	overflow: hidden;
+}
+.run-phase-band[data-phase-band="researching"] { background: color-mix(in srgb, var(--info) var(--band-tint), var(--bg)); }
+.run-phase-band[data-phase-band="implementing"] { background: color-mix(in srgb, var(--brand) var(--band-tint), var(--bg)); }
+.run-phase-band[data-phase-band="testing"] { background: color-mix(in srgb, var(--success) var(--band-tint), var(--bg)); }
+.run-phase-band[data-phase-band="stuck"] { background: color-mix(in srgb, var(--warning) var(--band-tint), var(--bg)); }
+.run-phase-band[data-phase-band="blocked"] { background: color-mix(in srgb, var(--danger) var(--band-tint), var(--bg)); }
+/*
+ * The journal past the cursor: it happened, the reader has not scrubbed there.
+ * It keeps its shape and its press at a weaker tint rather than disappearing,
+ * which is the difference between a scrubber and a one-way trip.
+ */
+.run-phase-band[data-reached="false"] { --band-tint: 8%; color: var(--text-muted); }
+.run-phase-pin[data-reached="false"] { color: var(--text-faint); }
+.run-phase-pin[data-reached="false"]:hover { color: var(--text); }
+.run-phase-pin[data-reached="false"] .run-phase-pin-tick { background: var(--border); }
+.run-phase-band[aria-current="location"] { outline: 2px solid var(--text); outline-offset: -2px; }
+.run-phase-band:focus-visible { outline: 2px solid var(--ring-border); outline-offset: -2px; }
+.run-phase-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.run-phase-position { position: absolute; inset: 0; pointer-events: none; }
+.run-phase-position:focus-visible { outline: 2px solid var(--ring-border); outline-offset: -2px; }
+.run-phase-cursor {
+	position: absolute;
+	left: clamp(1px, var(--scrub-preview, var(--scrub-position, 100%)), calc(100% - 1px));
+	top: 0;
+	bottom: 0;
+	width: 2px;
+	transform: translateX(-50%);
+	background: var(--text);
+}
+
+/* One row per recorded frame; its discipline events sit under it. */
+.run-lines {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+	overflow: hidden;
+}
+.run-lines > li + li { border-top: 1px solid var(--border); }
+.run-line {
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 0 var(--sp-2);
+	width: 100%;
+	padding: var(--sp-2) var(--sp-3);
+	border: 0;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	font-size: var(--fs-body);
+	text-align: left;
+	cursor: pointer;
+}
+.run-line:hover { background: var(--hover-subtle); }
+.run-line[aria-pressed="true"] { background: var(--brand-soft); }
+.run-line:focus-visible { outline: 2px solid var(--ring-border); outline-offset: -2px; }
+.run-line-number {
+	flex: none;
+	min-width: 1.25rem;
+	color: var(--text-muted);
+	font-size: var(--fs-small);
+	font-variant-numeric: tabular-nums;
+}
+.run-line-body { flex: 1 1 12rem; min-width: 0; overflow-wrap: anywhere; }
+.run-line-verb { font-weight: 600; }
+.run-line-subject { font-family: var(--font-mono); }
+.run-line-result { color: var(--text-muted); font-size: var(--fs-small); }
+.run-line[data-failed="true"] .run-line-result { color: var(--danger); }
+.run-line-repeat {
+	flex: none;
+	padding: 0 var(--sp-2);
+	border-radius: var(--r-full);
+	font-size: var(--fs-small);
+}
+.run-line-repeat { background: color-mix(in srgb, var(--warning) 16%, var(--bg)); color: var(--text); }
+.run-note {
+	display: flex;
+	flex-direction: column;
+	gap: 0.125rem;
+	margin: 0 var(--sp-3) var(--sp-2) calc(var(--sp-3) + 1.25rem);
+	padding: var(--sp-2) var(--sp-3);
+	border-left: 2px solid var(--border-strong);
+	border-radius: 0 var(--r-sm) var(--r-sm) 0;
+	background: var(--surface-2);
+	font-size: var(--fs-small);
+}
+.run-note[data-tone="warn"] { border-left-color: var(--warning); background: color-mix(in srgb, var(--warning) 10%, var(--bg)); }
+.run-note[data-tone="bad"] { border-left-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, var(--bg)); }
+.run-note[data-tone="good"] { border-left-color: var(--success); background: color-mix(in srgb, var(--success) 10%, var(--bg)); }
+.run-note-title { font-weight: 600; }
+.run-note-body { color: var(--text-muted); overflow-wrap: anywhere; }
+.run-note-evidence {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.125rem;
+	color: var(--text-muted);
+	font-family: var(--font-mono);
+	overflow-wrap: anywhere;
+}
+
+.smithers-card[data-maximized="true"] .run-trace-tree,
+.smithers-card[data-maximized="true"] .run-trace-waterfall,
+.smithers-card[data-maximized="true"] .run-trace-code { max-height: none; }
+
+/* The run card's footer: facets left, lifecycle right; the transcript facet's rows. */
+.flow-run-footer { justify-content: space-between; align-items: center; }
+.flow-run-tabs, .flow-run-lifecycle { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.flow-run-transcript {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+	font-size: var(--fs-small);
+}
+.flow-run-transcript > li { display: grid; grid-template-columns: minmax(8rem, max-content) minmax(0, 1fr); gap: var(--sp-3); }
+.flow-run-transcript-meta { color: var(--text-muted); font-family: var(--font-mono); white-space: nowrap; }
+.flow-run-transcript-text { overflow-wrap: anywhere; white-space: pre-wrap; }
+.flow-run-events code { font-size: var(--fs-caption); overflow-wrap: anywhere; }
+@container (max-width: 40rem) {
+	.flow-run-transcript > li { grid-template-columns: minmax(0, 1fr); gap: 0; }}
+
+/* Librarian L5: the Wiki's link rail and graph as cards. */
+.wiki-links-group {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+}
+.wiki-graph-canvas {
+	min-height: 320px;
+	border: 1px solid var(--border);
+	border-radius: 0.5rem;
+	overflow: hidden;
+}
+
+/* The coding plan inside a run card: the planned commits, the checks, the one door. */
+.coding-plan { display: flex; flex-direction: column; gap: var(--sp-2); }
+.coding-plan h4, .coding-plan h5 { margin: 0; font: inherit; font-weight: 600; }
+.coding-plan-title { font-size: var(--fs-md); }
+.coding-plan-intent { margin: 0; }
+.coding-plan-notice { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); }
+.coding-plan-notice p { margin: 0; }
+.coding-plan-notice button { align-self: flex-start; }
+.coding-plan-commits { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.coding-plan-commits > li { display: grid; grid-template-columns: 2rem minmax(0, 1fr); gap: var(--sp-2); padding: var(--sp-2) 0; border-top: 1px solid var(--border); }
+.coding-plan-commits > li:first-child { border-top: 0; }
+.coding-plan-commit { overflow-wrap: anywhere; }
+.coding-plan-sha { font-family: var(--font-mono); overflow-wrap: anywhere; }
+.coding-plan-door { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2); }
+.coding-plan-door .sui-approval-error { margin: 0; }
+.coding-plan-start {
+	padding: 0.375rem var(--sp-4);
+	border: 1px solid var(--action-primary);
+	border-radius: var(--r-full);
+	background: var(--action-primary);
+	color: var(--on-action-primary);
+	font: inherit;
+	font-weight: 600;
+	cursor: pointer;
+}
+.coding-plan-start:hover { background: color-mix(in srgb, var(--action-primary) 88%, var(--text)); }
+.coding-plan-start:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }
+.coding-plan-started { display: flex; align-items: center; gap: var(--sp-2); margin: 0; }
+.coding-plan-started code { font-family: var(--font-mono); font-size: var(--fs-small); }
+.coding-plan summary:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }
+.coding-plan-number, .coding-plan-meta { color: var(--text-muted); }
+.coding-plan-number { font-family: var(--font-mono); font-size: var(--fs-small); text-align: right; }
+.coding-plan-meta { font-size: var(--fs-small); margin: 0; }
+.coding-plan-detail { padding: 0.75rem; overflow-wrap: anywhere; }
+.coding-plan-detail p { margin: 0.25rem 0 0.5rem; }
+.coding-plan-atoms { padding-left: 1.25rem; }
+.coding-plan-atoms > li { margin-bottom: 0.875rem; }
+.coding-plan-paths { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.coding-plan-paths ul, .coding-plan-checks { list-style: none; padding: 0; }
+.coding-plan-checks li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.25rem 1rem; }
+@media (max-width: 640px) { .coding-plan-paths { grid-template-columns: minmax(0, 1fr); }}
+
+.coding-poc { overflow-wrap: anywhere; }
+.coding-poc .run-trace-code { max-height: 10rem; }
+.coding-poc .run-trace-code:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* The commits list (commit-list) and one commit (commit): GitHub's Commits page
+   in the app's tokens, so every palette and dark mode follow. */
+.commit-list-head { margin: 0 0 0.5rem; color: var(--text-muted); font-size: var(--fs-small); }
+.commit-day + .commit-day { margin-top: 0.75rem; }
+.commit-day-label {
+	margin: 0 0 0.375rem;
+	font-size: var(--fs-small);
+	font-weight: 600;
+	color: var(--text-muted);
+}
+.commit-rows {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	border: 1px solid var(--border-strong);
+	border-radius: var(--r-sm);
+	overflow: hidden;
+	background: var(--surface);
+}
+.commit-row {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0.5rem 0.75rem;
+	min-width: 0;
+}
+
+/* The change stack wears the commit-list shell above; only its extras are spelled out here. */
+.change-stack-stat {
+	flex: none;
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+	font-variant-numeric: tabular-nums;
+	color: var(--text-muted);
+}
+
+.change-stack-header {
+	margin: 0 0 0.5rem;
+	color: var(--text-muted);
+	font-size: var(--fs-small);
+}
+.change-stack-message {
+	flex: 1;
+	min-width: 0;
+	overflow-wrap: anywhere;
+	font-weight: 600;
+}
+.change-stack-rebased {
+	flex: none;
+	font-size: var(--fs-caption);
+	color: var(--text-muted);
+}
+.change-stack-target {
+	margin: 0.5rem 0 0;
+	color: var(--text-muted);
+	font-size: var(--fs-small);
+}
+
+.commit-row + .commit-row { border-top: 1px solid var(--border-strong); }
+.commit-row:hover, .commit-row:focus-within { background: var(--hover-subtle); }
+.commit-row-main { display: flex; flex-direction: column; gap: 0.125rem; min-width: 0; flex: 1; }
+.commit-row-open {
+	all: unset;
+	cursor: pointer;
+	font-weight: 600;
+	color: var(--text);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	border-radius: 4px;
+}
+.commit-row-open:hover { color: var(--brand); text-decoration: underline; }
+.commit-row-open:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }
+.commit-row-meta {
+	display: flex;
+	align-items: center;
+	gap: 0.375rem;
+	font-size: var(--fs-small);
+	color: var(--text-muted);
+	min-width: 0;
+	flex-wrap: wrap;
+}
+.commit-row-author { font-weight: 600; color: var(--text); }
+.commit-row-side { display: inline-flex; align-items: center; gap: 0.5rem; flex: none; }
+.commit-sha {
+	all: unset;
+	cursor: pointer;
+	font-family: var(--font-mono);
+	font-size: var(--fs-small);
+	color: var(--text-muted);
+	padding: 0.0625rem 0.375rem;
+	border: 1px solid var(--border-strong);
+	border-radius: 6px;
+	background: var(--inline-code-bg);
+}
+.commit-sha:hover { color: var(--brand); border-color: var(--brand-border); }
+.commit-sha:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 1px; }
+.commit-sha code { background: none; padding: 0; font-size: inherit; color: inherit; }
+.commit-status { font-size: var(--fs-small); font-weight: 700; line-height: 1; }
+.commit-status[data-status="success"] { color: var(--success); }
+.commit-status[data-status="failure"] { color: var(--danger); }
+.commit-status[data-status="pending"] { color: var(--warning); }
+.commit-verified {
+	font-size: var(--fs-caption);
+	font-weight: 600;
+	color: var(--success);
+	border: 1px solid var(--success-border);
+	border-radius: var(--r-full);
+	padding: 0 0.375rem;
+}
+.commit-detail { display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
+.commit-email { color: var(--text-muted); font-size: var(--fs-small); overflow-wrap: anywhere; }
+.commit-parents { display: inline-flex; align-items: center; gap: 0.375rem; flex-wrap: wrap; }
+.commit-diff { border: 1px solid var(--border-strong); border-radius: var(--r-sm); overflow: hidden; min-width: 0; }
+.commit-diff-path {
+	margin: 0;
+	padding: 0.375rem 0.75rem;
+	font-size: var(--fs-small);
+	font-weight: 600;
+	background: var(--hover-subtle);
+	border-bottom: 1px solid var(--border-strong);
+	overflow-wrap: anywhere;
+}
+.commit-diff-stat { color: var(--text-muted); font-weight: 400; }
+.commit-diff > :not(.commit-diff-path) { overflow-x: auto; }
+.branches-row-open {
+	all: unset;
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	flex: 1;
+	min-width: 0;
+	padding: 0.25rem 0.375rem;
+	border-radius: 6px;
+}
+.branches-row-open:hover { background: var(--hover-subtle); }
+.branches-row-open:hover .world-card-title { color: var(--brand); text-decoration: underline; }
+.branches-row-open:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 1px; }
+@media (max-width: 480px) {
+	.commit-row { flex-wrap: wrap; gap: 0.375rem; }
+	.commit-row-side { width: 100%; justify-content: flex-end; }}
+
+.card-local-history { display: flex; gap: 4px; flex-shrink: 0; }
+.card-local-history button { display: grid; place-items: center; min-width: 32px; min-height: 32px; border-radius: 6px; }
+.card-local-history button:disabled { opacity: .35; cursor: default; }
+.card-local-history button:not(:disabled):hover { background: var(--hover); }
+
+/* Repository update: a ghc-box digest, left-aligned even inside the centered tutorial lesson. */
+.repo-update { text-align: left; overflow: hidden; }
+.repo-update-toolbar .ghc-count { color: var(--text); }
+.repo-update-summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; color: var(--text); }
+.repo-update-problem { display: flex; align-items: center; gap: 6px; color: var(--warning); }
+.repo-update-static { cursor: default; }
+.repo-update-static:hover { background: transparent; }
+.repo-update-static:hover .ghc-row-title-text { color: var(--text); }
+.repo-update-item[data-read="true"] .ghc-row-title-text { font-weight: 400; color: var(--text-muted); }
+.repo-update-unread { display: block; width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 18%, transparent); }
+.repo-update-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: var(--sp-2) var(--sp-4); border-top: 1px solid var(--border-strong); background: var(--ghc-head-bg); border-radius: 0 0 var(--r-sm) var(--r-sm); }
+.smithers-card[data-kind="repo-update"] .smithers-card-title { margin-right: auto; }
+.repo-update-item[data-read="false"] .ghc-row-btn { background: color-mix(in srgb, var(--brand) 5%, transparent); }
+.repo-update-item[data-read="false"] .ghc-row-title-text { font-weight: 650; }
+.repo-update-details { margin-right: auto; color: var(--text-muted); font-size: var(--fs-small); }
+.repo-update-details > summary { cursor: pointer; width: fit-content; border-radius: 3px; }
+.repo-update-details > summary:focus-visible { outline: 2px solid var(--brand); outline-offset: 4px; }
+.repo-update-details dl { display: flex; flex-wrap: wrap; gap: 4px 8px; margin: 8px 0 0; }
+.repo-update-details dd { margin: 0; font-variant-numeric: tabular-nums; }
+.repo-update-actions svg { margin-right: 4px; }
+.repo-update-items > li:last-child > .ghc-row-btn { border-radius: 0; }
+
+
+@media (pointer: coarse) {
+	.palette-foot { display: none; }}
+
+.view-skeleton { display: grid; gap: 14px; padding: 12px 0; min-height: 140px; }
+.view-skeleton > span { display: block; height: 14px; border-radius: 4px; background: var(--paper-300); animation: view-loading 1.2s ease-in-out infinite alternate; }
+.view-skeleton > span:first-child { width: 60%; height: 20px; }
+.view-skeleton > span:last-child { width: 80%; }
+@keyframes view-loading { to { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .view-skeleton > span { animation: none; }}
+
+/* Independent account tables use the same label column. */
+.smithers-card[data-kind="account"] .secrets-table { table-layout: fixed; }
+.smithers-card[data-kind="account"] .secrets-table th { width: 35%; overflow-wrap: anywhere; }
+.smithers-card[data-kind="account"] .secrets-table td { overflow-wrap: anywhere; }
+/* Current status and recorded goals use the card's reading column. */
+.run-outcome-condition { color: var(--warning); font-size: var(--fs-small); }
+.run-goals { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.run-goal { display: flex; align-items: baseline; gap: var(--sp-2); width: 100%; border: 0; background: transparent; padding: var(--sp-2) 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.run-goal:hover { background: var(--hover-subtle); }
+.run-goal:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }
+.run-goal-title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.run-goal-state { color: var(--text-muted); font-size: var(--fs-small); }
+.run-goals [data-state="passed"] .run-goal-state { color: var(--success); }
+.run-goals [data-state="failed"] .run-goal-state { color: var(--danger); }
+.run-row-evidence { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.run-line-result { min-width: 0; overflow-wrap: anywhere; }
+
+@media (max-width: 640px) {
+  }
+
+/* ── Run steps: `time · type · description · duration · tokens` ──────── */
+.run-steps {
+	display: flex;
+	flex-direction: column;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+	overflow: hidden;
+}
+.run-steps[data-dense] { border: 0; border-radius: 0; background: transparent; }
+.run-steps > li + li { border-top: 1px solid var(--border); }
+.run-steps > li[data-step-open="true"] { background: var(--surface-2); }
+.run-step {
+	display: grid;
+	/* The time takes what it needs: a run older than today carries its date. */
+	grid-template-columns: max-content 4rem minmax(0, 1fr) 4rem 4rem;
+	align-items: baseline;
+	gap: var(--sp-2);
+	width: 100%;
+	padding: 0.3rem var(--sp-3);
+	border: 0;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+.run-step:hover { background: var(--hover-subtle); }
+.run-step[aria-expanded="true"] { background: var(--brand-soft); }
+.run-step:focus-visible { outline: 2px solid var(--ring-border); outline-offset: -2px; }
+.run-step-time,
+.run-step-type,
+.run-step-duration,
+.run-step-tokens {
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+	color: var(--text-muted);
+	white-space: nowrap;
+}
+.run-step-duration,
+.run-step-tokens { text-align: right; }
+.run-step-type { text-transform: lowercase; }
+.run-step-type[data-type="model"] { color: var(--brand); }
+.run-step-type[data-type="write"] { color: var(--warning); }
+.run-step-type[data-type="check"],
+.run-step-type[data-type="test"] { color: var(--success); }
+.run-step-type[data-type="approval"] { color: var(--warning); }
+.run-step-text { display: inline-flex; align-items: baseline; gap: 0.4rem; min-width: 0; overflow-wrap: anywhere; }
+.run-step-text .run-trace-dot { flex: none; transform: translateY(-1px); }
+.run-steps > li[data-status="failed"] .run-step-text,
+.run-steps > li[data-status="denied"] .run-step-text { color: var(--danger); }
+@media (max-width: 640px) {
+	.run-step { grid-template-columns: 4rem 3.5rem minmax(0, 1fr); row-gap: 0.1rem; }
+	.run-step-text { grid-column: 1 / -1; }
+	.run-step-duration,
+	.run-step-tokens { text-align: left; }
+}
+.run-trigger {
+	display: grid;
+	grid-template-columns: 1.25rem max-content 4rem minmax(0, 1fr);
+	align-items: baseline;
+	gap: var(--sp-2);
+	padding: 0.3rem var(--sp-3);
+	border: 1px solid var(--warning-border);
+	border-radius: var(--r-sm);
+	background: var(--warning-soft);
+}
+.agent-trigger-glyph { color: var(--warning); font-weight: 700; text-align: center; }
+.run-trigger-text { font-size: var(--fs-small); overflow-wrap: anywhere; }
+.connect-store-detail { display: block; color: var(--text-muted); font-size: var(--fs-small); }
+.connect-store-detail code { font-family: var(--font-mono); font-size: var(--fs-caption); }
+.connect-store-error { display: block; color: var(--danger); font-size: var(--fs-small); }
+.ghc-toolbar-kinds { display: inline-flex; gap: 0.25rem; margin-left: var(--sp-2); }
+
+/* ── Register a repository (cards/RegistrationCard.tsx; target images/app/register.png) ── */
+.registration {
+	--registration-slice-0: var(--registration-brand, var(--confluence));
+	--registration-slice-1: var(--ai);
+	--registration-slice-2: var(--success);
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+.registration-link {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 8px 10px 8px 14px;
+	border: 1px solid var(--border);
+	border-radius: 12px;
+}
+.registration-input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--text); font: inherit; outline: none; }
+.registration-mono { font-family: var(--font-mono, ui-monospace, monospace); font-size: 13px; color: var(--text-muted); margin-right: 8px; }
+.registration-link .registration-mono { color: var(--text); }
+.registration-go { border-radius: 8px; padding: 4px 12px; background: var(--text); color: var(--surface); font-size: 13px; font-weight: 600; }
+.registration-error { color: var(--danger, var(--text)); }
+.registration-body { display: flex; flex-direction: column; gap: 10px; }
+.registration-questions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.registration-question, .registration-tile { border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; }
+.registration-label { margin-bottom: 6px; color: var(--text-muted); font-size: 13px; }
+.registration-options { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.registration-option {
+	min-width: 44px;
+	min-height: 28px;
+	border: 1px solid var(--border);
+	border-radius: 999px;
+	padding: 4px 11px;
+	font-size: 13px;
+}
+/* Pending: the options shimmer while the workflow decides. */
+.registration-shimmer {
+	border-color: var(--ai-ring);
+	background: linear-gradient(90deg, var(--surface-2) 0%, var(--ai-wash) 50%, var(--surface-2) 100%);
+	background-size: 200% 100%;
+	animation: registration-shimmer 1.4s linear infinite;
+}
+/* Chosen: every option settles, then Smithers' choice locks in with its ring. */
+.registration-dim { opacity: 0; animation: registration-settle 360ms ease-out forwards; }
+.registration-ai {
+	border-color: var(--ai-border);
+	background: var(--ai-wash);
+	color: var(--ai-text);
+	font-weight: 600;
+	box-shadow: 0 0 0 3px var(--ai-ring);
+	opacity: 0;
+	animation: registration-lock 520ms cubic-bezier(0.2, 0.9, 0.3, 1.3) forwards;
+}
+.registration-mark { color: var(--ai); font-size: 11px; font-weight: 600; opacity: 0; animation: registration-rise 360ms 200ms ease-out forwards; }
+.registration-tiles { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 760px) { .registration-questions, .registration-tiles { grid-template-columns: minmax(0, 1fr); } }
+.registration-tile { display: flex; flex-direction: column; opacity: 0; animation: registration-rise 420ms ease-out forwards; }
+.registration-tile-head { display: flex; justify-content: space-between; }
+.registration-big { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; }
+.registration-sub { color: var(--text-muted); font-size: 12.5px; }
+.registration-row { display: flex; align-items: center; gap: 14px; }
+.registration-donut { position: relative; flex: none; width: 64px; height: 64px; border-radius: 50%; }
+.registration-donut::after { content: ""; position: absolute; inset: 15px; border-radius: 50%; background: var(--surface); }
+.registration-bars { display: flex; align-items: flex-end; gap: 4px; height: 64px; }
+.registration-bars i { position: relative; display: block; flex: 1; border-radius: 3px 3px 0 0; background: var(--border); }
+.registration-bars b { position: absolute; right: 0; bottom: 0; left: 0; border-radius: 3px 3px 0 0; background: var(--ai-border); }
+.registration-legend { display: flex; gap: 12px; margin-top: 6px; color: var(--text-muted); font-size: 12px; }
+.registration-legend span::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 5px; border-radius: 2px; background: var(--border); }
+.registration-legend .registration-legend-ai::before { background: var(--ai-border); }
+.registration-meter { overflow: hidden; height: 8px; margin: 6px 0; border-radius: 4px; background: var(--surface-2); }
+.registration-meter i { display: block; height: 100%; background: var(--success); }
+.registration-ci { display: flex; align-items: baseline; gap: 8px; }
+.registration-ci s { color: var(--text-muted); font-size: 18px; }
+.registration-fixes { margin: 0 0 8px; padding: 0; list-style: none; color: var(--text-muted); font-size: 12.5px; line-height: 1.5; }
+.registration-fixes li { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.registration-fixes.registration-mono li { display: block; text-overflow: ellipsis; white-space: nowrap; }
+.registration-fixes.registration-mono { margin-right: 0; font-size: 12px; }
+.registration-fix { align-self: flex-start; margin-top: auto; }
+.registration-list { display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
+.registration-status-chip {
+	border-radius: 999px;
+	padding: 2px 9px;
+	background: var(--confluence-wash);
+	color: var(--confluence-text);
+	font-size: 12px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+.registration-status[data-status="Ready"] .registration-status-chip { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
+.registration-status[data-status="Declined"] .registration-status-chip { background: var(--surface-2); color: var(--text-muted); }
+/* The quiet status row sits in the session strip, where signed-out visitors see Sign in. */
+.registration-status {
+	position: absolute;
+	top: 50%;
+	right: 12px;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	max-width: min(22rem, 45vw);
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	padding: 5px 10px;
+	background: var(--surface);
+	color: var(--text);
+	font: inherit;
+	font-size: 12.5px;
+	text-align: left;
+	transform: translateY(-50%);
+}
+button.registration-status { cursor: pointer; }
+.registration-status-name { overflow: hidden; flex: 1; text-overflow: ellipsis; white-space: nowrap; }
+.registration-status-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--confluence); box-shadow: 0 0 0 3px var(--confluence-wash); }
+@keyframes registration-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@keyframes registration-rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes registration-settle { from { opacity: 0; } to { opacity: 0.45; } }
+@keyframes registration-lock {
+	0% { opacity: 0; transform: scale(0.92); box-shadow: 0 0 0 0 var(--ai-ring); }
+	60% { opacity: 1; transform: scale(1.06); box-shadow: 0 0 0 6px var(--ai-ring); }
+	100% { opacity: 1; transform: none; box-shadow: 0 0 0 3px var(--ai-ring); }
+}
+@media (prefers-reduced-motion: reduce) {
+	.registration *, .registration *::before, .registration *::after { animation-delay: 0s !important; }
+	.registration-shimmer { animation: none; }
+}
+
+/* The wiki spaces (#1922) in the card: the space chip on the index and the history rows. */
+.wiki-space-chip { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; font-size: var(--fs-caption); font-weight: 600; background: var(--info-soft); color: var(--info); }
+.wiki-space-chip[data-space="private"] { background: var(--brand-soft); color: var(--brand); }
+.wiki-history .world-card-title { font-family: var(--font-mono); font-weight: 600; }
+.wiki-history [data-deleted] .world-card-path:first-of-type { color: var(--danger); }
+
+/* The context and cache meter on a run's header (cards/RunMeter.ts): a full window is danger, a cold cache a warning. */
+.run-meter {
+	font-family: var(--font-mono);
+}
+
+.run-meter [data-level="danger"] {
+	color: var(--danger);
+}
+
+.run-meter [data-level="warning"] {
+	color: var(--warning);
+}
+
+/* The run inbox's groups and state glyphs (cards/RunsInbox.ts): purple = the person acts now. */
+.runs-inbox-group {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+}
+.runs-inbox-heading {
+	margin: 0.25rem 0 0;
+	font-size: var(--fs-small);
+	font-weight: 600;
+}
+.runs-inbox-count {
+	color: var(--muted-foreground);
+	font-variant-numeric: tabular-nums;
+}
+.runs-inbox-glyph { color: var(--text-faint); }
+.runs-inbox-heading[data-group="needs-you"] .runs-inbox-glyph,
+.runs-inbox-glyph[data-tone="needs-you"] { color: var(--brand); }
+.runs-inbox-heading[data-group="working"] .runs-inbox-glyph,
+.runs-inbox-glyph[data-tone="working"] { color: var(--info); }
+.runs-inbox-glyph[data-tone="parked"] { color: var(--warning); }
+.runs-inbox-heading[data-group="done"] .runs-inbox-glyph,
+.runs-inbox-glyph[data-tone="completed"] { color: var(--success); }
+.runs-inbox-glyph[data-tone="failed"] { color: var(--danger); }
+.runs-inbox-glyph[data-tone="cancelled"] { color: var(--text-faint); }

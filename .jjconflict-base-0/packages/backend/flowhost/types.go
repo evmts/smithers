@@ -1,0 +1,239 @@
+// Package flowhost resolves product-owned bindings to authenticated instances
+// of the canonical TypeScript Flow host. It owns host identity and lifecycle
+// coordination only; graph, journal, scheduling, and execution stay in Flow
+// and Control.
+package flowhost
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"time"
+
+	"github.com/smithersai/smithers/packages/backend/flowruntime"
+	"github.com/smithersai/smithers/packages/backend/modelproxy"
+)
+
+// CatalogCoding is the one packaged host family: the box's coding host.
+const CatalogCoding = "coding"
+
+var ErrHostNotRunning = errors.New("flow host is not running")
+
+// ErrHostBusy answers a read while another caller holds the host's owner
+// lock, as it does for the whole of a host start.
+var ErrHostBusy = errors.New("flow host is starting")
+
+// ErrHostIdentityConflict answers an inspection whose expected service
+// identity does not name the live process.
+var ErrHostIdentityConflict = errors.New("flow host service identity conflict")
+
+// ErrSourceRevisionRequired asks the resolver to capture a workspace snapshot
+// only when there is no durable binding to reconnect to.
+var ErrSourceRevisionRequired = errors.New("flow host creation requires a workspace source revision")
+
+// SecretCodec protects the host bearer at rest. The existing application
+// secret codec satisfies this interface; a plaintext fallback is deliberately
+// not provided.
+type SecretCodec interface {
+	EncryptString(string) (string, error)
+	DecryptString(string) (string, error)
+}
+
+// Catalog is immutable operator configuration for one packaged host family.
+// Executable is supplied locally by the distribution; resolving a catalog
+// never downloads an artifact.
+type Catalog struct {
+	Key                 string
+	Family              string
+	Executable          string
+	ArtifactDigest      string
+	ServiceName         string
+	ReadyTimeout        time.Duration
+	Environment         map[string]string
+	ImplementationModel string
+	// ModelProxyURL is the metered platform-model proxy reachable from the
+	// host; ModelSeats are the platform seats it serves. Each seat's key is
+	// the binding's model credential (ModelCredential), never a provider key.
+	ModelProxyURL string
+	ModelSeats    []modelproxy.Seat
+	// AccountPoolURL is the provider account pool ({base}/provider-pool)
+	// reachable from the host, set when the deployment allows subscription
+	// connections. The host's key is the binding's model credential; the
+	// pool serves the binding user's connected accounts on its repository,
+	// and the host asks the pool which providers have any.
+	AccountPoolURL string
+}
+
+// The account pool's guest environment (NativeEquipment): its origin, the
+// routes a host may take to it, and the host's pool key.
+const (
+	AccountPoolURLEnv       = "SMITHERS_ACCOUNT_POOL_URL"
+	AccountPoolProvidersEnv = "SMITHERS_ACCOUNT_POOL_PROVIDERS"
+	AccountPoolKeyEnv       = "SMITHERS_ACCOUNT_POOL_KEY"
+	// AccountPoolRoutes are every route a pool serves.
+	AccountPoolRoutes = "chatgpt"
+)
+
+type WorkspacePaths struct {
+	Root     string
+	StateDir string
+	// Host is allocated by the workspace adapter; empty retains IPv4 loopback.
+	Host string
+}
+
+// ProcessSpec is the identical canonical-host argv/environment contract used
+// by trusted-process and isolated adapters after the adapter selects a port.
+type ProcessSpec struct {
+	Name         string
+	Identity     string
+	Args         []string
+	Environment  map[string]string
+	ReadyAddress string
+	ReadyTimeout time.Duration
+}
+
+// Authority is the server-resolved product binding. None of these values may
+// come from a jobs payload beyond the Target fields that are revalidated here.
+type Authority struct {
+	Target       flowruntime.Target
+	RepositoryID int64
+	UserID       int64
+	WorkspaceID  string
+	CatalogKey   string
+	Repository   string
+	// SourceRevision names the actual workspace snapshot read by the host.
+	// It may be empty when reconnecting to an existing, pinned binding.
+	SourceRevision string
+}
+
+// TargetResolver maps a durable product target to its current authorized
+// repository/workspace binding. Implementations conceal cross-scope targets.
+type TargetResolver interface {
+	ResolveFlowHostTarget(context.Context, flowruntime.Target) (Authority, error)
+}
+
+type TargetResolverFunc func(context.Context, flowruntime.Target) (Authority, error)
+
+func (resolve TargetResolverFunc) ResolveFlowHostTarget(ctx context.Context, target flowruntime.Target) (Authority, error) {
+	return resolve(ctx, target)
+}
+
+// Binding is the durable host authority. Credential material is intentionally
+// absent; it is exposed only by the short-lived locked lease passed internally
+// to Resolver.
+type Binding struct {
+	ID                    string
+	TenantID              string
+	PrincipalID           string
+	BindingKind           string
+	BindingID             string
+	RepositoryID          int64
+	UserID                int64
+	WorkspaceID           string
+	CatalogKey            string
+	ServiceName           string
+	RuntimeArtifactDigest string
+	SourceRevision        string
+	OwnerGeneration       int64
+	State                 string
+	// ServiceIdentity is the configuration fingerprint of the host last
+	// verified running for this owner. A deferred upgrade reaches the host
+	// by it once the catalog that started the host is gone.
+	ServiceIdentity string
+}
+
+// HostLaunch contains the exact, server-held inputs required to start one
+// canonical host. Adapters allocate/route the port in their own namespace and
+// return the resulting private connection; callers never provide an endpoint
+// or bearer in Flow payloads.
+type HostLaunch struct {
+	Binding    Binding
+	Authority  Authority
+	Catalog    Catalog
+	Credential string
+	// Environment is the per-start environment a launcher decorator adds
+	// (the box's landing credential). It is minted for each start, so it is
+	// not part of the host's service identity, and it never replaces a
+	// reserved name.
+	Environment map[string]string
+	// Superseded asks only to inspect a live host the catalog has replaced,
+	// by Binding.ServiceIdentity, while a run still depends on it. Such a
+	// host is never started.
+	Superseded bool
+}
+
+// Connection is a private bridge transport. Isolated adapters use HTTPClient
+// to dial the placement-fenced WorkspacePortDialer while retaining a loopback
+// URL; trusted-process adapters return their loopback endpoint directly.
+type Connection struct {
+	Endpoint   string
+	HTTPClient *http.Client
+}
+
+// Launcher is the deployment adapter facet owned by the workspace runtime.
+// Inspect must return ErrHostNotRunning when no live process owns the binding;
+// it must not claim readiness from a stale product row or a bare TCP listener.
+type Launcher interface {
+	InspectFlowHost(context.Context, HostLaunch) (Connection, error)
+	StartFlowHost(context.Context, HostLaunch) (Connection, error)
+}
+
+// SourceResolver is an optional launcher facet. It captures the authorized
+// workspace's immutable source snapshot; artifact build provenance is unrelated.
+// A missing/dirty/unreadable snapshot must fail, never manufacture a revision.
+type SourceResolver interface {
+	ResolveFlowHostSource(context.Context, Authority) (string, error)
+}
+
+// BindingLease holds the cross-replica ensure lock. Resolver deliberately
+// keeps it through process inspection/start and the authenticated identity
+// probe, preventing two API/worker replicas from creating competing owners.
+type BindingLease interface {
+	Binding() Binding
+	Credential() string
+	// Supersedes reports a durable owner whose artifact digest, service name,
+	// or source revision no longer matches the catalog/authority. Acquire
+	// succeeds for such a row; once no run depends on that owner, the
+	// resolver stops it and calls Rebind.
+	Supersedes() (Binding, bool)
+	// Rebind installs the current identity on the same row with a new owner
+	// generation, fencing any late host of the superseded identity.
+	Rebind(context.Context) (Binding, error)
+	PrepareStart(context.Context, bool) (Binding, error)
+	// MarkRunning records the verified host and its service identity.
+	MarkRunning(ctx context.Context, serviceIdentity string) error
+	// MarkFailed records a failed start so the next start fences a new owner.
+	MarkFailed(ctx context.Context, code string) error
+	Close() error
+}
+
+type BindingStore interface {
+	Acquire(context.Context, Authority, Catalog) (BindingLease, error)
+}
+
+type ExistingBindingStore interface {
+	AcquireExisting(context.Context, Authority, Catalog) (BindingLease, error)
+}
+
+// ActiveRuns reports whether durable work still depends on a host: an
+// accepted run or an approval-parked plan pinned to its artifact and source.
+// An over-approximation only delays an upgrade; a miss stops a live run.
+type ActiveRuns interface {
+	ActiveFlowRuns(context.Context, Binding) (bool, error)
+}
+
+type ActiveRunsFunc func(context.Context, Binding) (bool, error)
+
+func (active ActiveRunsFunc) ActiveFlowRuns(ctx context.Context, host Binding) (bool, error) {
+	return active(ctx, host)
+}
+
+type Config struct {
+	Store    BindingStore
+	Targets  TargetResolver
+	Launcher Launcher
+	Catalogs []Catalog
+	// ActiveRuns defers a host upgrade while work depends on the superseded
+	// host. Without it, an upgrade replaces the host at once.
+	ActiveRuns ActiveRuns
+}
