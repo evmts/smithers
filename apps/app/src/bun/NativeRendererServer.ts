@@ -1,7 +1,9 @@
 import type { ServerWebSocket } from "bun"
+import { createHash } from "node:crypto"
 import { existsSync, statSync } from "node:fs"
 import { join, normalize, resolve } from "node:path"
 import { parseNativeApiOrigin } from "./NativeApiOrigin"
+import { openNativeRendererState, type NativeRendererSessions } from "./NativeRendererState"
 
 type Tunnel = {
   target: string
@@ -88,7 +90,7 @@ const withNativeShell = (body: unknown): unknown => {
 }
 
 /** The packaged native UI always serves locally and relays only API paths. */
-export const startNativeRendererServer = (distDirectory: string, apiOrigin: string, apiToken = ""): {
+export const startNativeRendererServer = (distDirectory: string, apiOrigin: string, apiToken = "", stateDirectory?: string): {
   readonly origin: string
   readonly stop: () => void
   readonly setTarget: (apiOrigin: string, apiToken?: string) => void
@@ -99,11 +101,29 @@ export const startNativeRendererServer = (distDirectory: string, apiOrigin: stri
   let remote = parseNativeApiOrigin(apiOrigin)
   let credential = apiToken.trim()
   let generation = 0
+  let stopped = false
   let origin = ""
   let host = ""
-  // A target's cookies live only in this process and never enter the shared renderer jar.
+  const persistence = stateDirectory === undefined ? undefined : openNativeRendererState(stateDirectory)
+  // Backend cookies never enter the renderer's shared cookie jar or presentation database.
   const jars = new Map<string, Map<string, StoredCookie>>()
-  const identity = (target: URL, token: string): string => `${target.origin}\0${token}`
+  for (const [key, cookies] of Object.entries(persistence?.sessions ?? {})) {
+    jars.set(key, new Map(cookies.filter(cookie => cookie.expiresAt > Date.now())
+      .map(cookie => [`${cookie.name}\0${cookie.path}`, cookie])))
+  }
+  const identity = (target: URL, token: string): string => createHash("sha256").update(`${target.origin}\0${token}`).digest("hex")
+  const save = (port: number, changed?: { key: string; jar: Map<string, StoredCookie> }): void => {
+    if (persistence === undefined) return
+    const sessions: NativeRendererSessions = {}
+    const current = new Map(jars)
+    if (changed !== undefined) current.set(changed.key, changed.jar)
+    for (const [key, jar] of current) {
+      const cookies = [...jar.values()].flatMap(cookie => cookie.expiresAt !== undefined && cookie.expiresAt > Date.now()
+        ? [{ ...cookie, expiresAt: cookie.expiresAt }] : [])
+      if (cookies.length > 0) sessions[key] = cookies
+    }
+    persistence.save(port, sessions)
+  }
   const jarFor = (target: URL, token: string): Map<string, StoredCookie> => {
     const key = identity(target, token)
     let jar = jars.get(key)
@@ -120,7 +140,7 @@ export const startNativeRendererServer = (distDirectory: string, apiOrigin: stri
   const activeBodies = new Set<() => void>()
   const server = Bun.serve<Tunnel>({
     hostname: "127.0.0.1",
-    port: 0,
+    port: persistence?.port ?? 0,
     fetch: async (request, server) => {
       // DNS rebinding: a web page that re-points its own hostname at this port must not become same-origin.
       if (request.headers.get("host") !== host) return new Response("Invalid host", { status: 421 })
@@ -178,7 +198,17 @@ export const startNativeRendererServer = (distDirectory: string, apiOrigin: stri
           return new Response("Backend changed", { status: 409 })
         }
         inFlight.delete(controller)
-        storeCookies(jar, response)
+        if (response.headers.getSetCookie().length > 0) {
+          const next = new Map(jar)
+          storeCookies(next, response)
+          try { save(Number(new URL(origin).port), { key: identity(selected, selectedToken), jar: next }) }
+          catch {
+            await response.body?.cancel()
+            return Response.json({ code: "session_storage_unavailable", fault: "dependency", message: "Session could not be saved." }, { status: 503 })
+          }
+          jar.clear()
+          for (const [key, cookie] of next) jar.set(key, cookie)
+        }
         // fetch has already decoded the body; the original encoding and
         // length would make the renderer decode it a second time.
         const relayed = new Headers(response.headers)
@@ -295,9 +325,19 @@ export const startNativeRendererServer = (distDirectory: string, apiOrigin: stri
   })
   host = `127.0.0.1:${server.port}`
   origin = `http://${host}`
+  try {
+    if (server.port === undefined) throw new Error("Native renderer has no listening port.")
+    save(server.port)
+  } catch (error) {
+    server.stop(true)
+    throw error
+  }
   return {
     origin,
     stop: () => {
+      if (stopped) return
+      stopped = true
+      generation++
       for (const controller of inFlight) controller.abort()
       for (const invalidate of activeBodies) invalidate()
       for (const socket of tunnels) socket.terminate()
