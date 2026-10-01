@@ -14,7 +14,7 @@ test("keyboard selection reads every filtered named-view page and survives reloa
   if (!await Bun.file(join(dist, "index.html")).exists()) {
     throw new Error("Build the current app SPA before running browser probes")
   }
-  const backend = await startFullBackend()
+  const backend = await startFullBackend({ labels: true })
   let root: string | undefined
   let renderer: ReturnType<typeof startNativeRendererServer> | undefined
   let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined
