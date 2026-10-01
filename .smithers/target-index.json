@@ -24356,6 +24356,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/ui/src/app-operations/account.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/ui/src/app-operations/index.ts"
       },
       {
@@ -31033,6 +31037,10 @@
       },
       {
         "kind": "file",
+        "path": "flows/issue-sweep/test/claude.test.ts"
+      },
+      {
+        "kind": "file",
         "path": "flows/issue-sweep/test/land.test.ts"
       },
       {
@@ -31088,6 +31096,10 @@
       {
         "kind": "file",
         "path": "flows/issue-sweep/test/vm.real.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/issue-sweep/test/vm.claude.real.test.ts"
       },
       {
         "kind": "glob",
