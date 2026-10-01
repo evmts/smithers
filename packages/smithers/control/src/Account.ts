@@ -3,6 +3,7 @@
  * @since 1.0.0
  */
 
+import { Schema } from "effect"
 import { NoInput, operation } from "./Operation.ts"
 export { NoInput } from "./Operation.ts"
 
@@ -13,6 +14,83 @@ export { NoInput } from "./Operation.ts"
 export const accountOperations = [
   operation({ name: "account.show", summary: "Show account", runtime: ["identity"], input: NoInput })
 ] as const
+
+/** Public verified identity; credentials and host presentation facts never cross this port.
+ * @since 1.0.0
+ * @category schemas
+ */
+export const Identity = Schema.Struct({ login: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)) })
+/** Durable product request identity, distinct from a completed account read.
+ * @since 1.0.0
+ * @category schemas
+ */
+export const RequestId = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/))
+/** Delivery states of the existing product job store.
+ * @since 1.0.0
+ * @category schemas
+ */
+export const RequestState = Schema.Literals([
+  "accepted",
+  "dispatching",
+  "running",
+  "waiting",
+  "completed",
+  "failed",
+  "cancelled",
+  "uncertain"
+])
+/** One authenticated invocation of the shared operation.
+ * @since 1.0.0
+ * @category schemas
+ */
+export const Invocation = Schema.Struct({
+  name: Schema.Literal(accountOperations[0].name),
+  requestId: RequestId,
+  input: NoInput
+})
+/** An owned request selected for read or cancellation.
+ * @since 1.0.0
+ * @category schemas
+ */
+export const RequestReference = Schema.Struct({ name: Schema.Literal(accountOperations[0].name), requestId: RequestId })
+/** The durable admission receipt; acceptance promises no result.
+ * @since 1.0.0
+ * @category schemas
+ */
+export const RequestReceipt = Schema.Struct({
+  operationId: Schema.String,
+  requestId: RequestId,
+  kind: Schema.Literal("requested"),
+  state: RequestState,
+  acceptedAt: Schema.String
+})
+const outcomeIdentity = {
+  operationId: Schema.String,
+  requestId: RequestId,
+  actor: Schema.Literals(["user", "agent", "api"])
+}
+/** An owned operation's current projection; only a completed read carries identity.
+ * @since 1.0.0
+ * @category schemas
+ */
+export const RequestOutcome = Schema.Union([
+  Schema.Struct({ ...outcomeIdentity, state: Schema.Literal("completed"), result: Identity }),
+  Schema.Struct({ ...outcomeIdentity, state: Schema.Literals(["failed", "uncertain"]), error: Schema.String }),
+  Schema.Struct({
+    ...outcomeIdentity,
+    state: Schema.Literals(["accepted", "dispatching", "running", "waiting", "cancelled"])
+  })
+])
+
+/** Reconnect to owned receipts through the existing product delivery stream.
+ * @since 1.0.0
+ * @category schemas
+ */
+export const RequestHistory = Schema.Struct({
+  cursor: Schema.Number,
+  truncated: Schema.Boolean,
+  items: Schema.Array(RequestOutcome)
+})
 
 /**
  * Account facts verified by the selected host.

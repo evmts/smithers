@@ -55110,6 +55110,118 @@
     }
   },
   {
+    "label": "//scripts:appOperationContracts",
+    "package": "scripts",
+    "name": "appOperationContracts",
+    "rule": "NodeBinary",
+    "kinds": [
+      "build"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "scripts/generate-app-operation-contracts.ts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "scripts/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "scripts/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "scripts/fixtures/**/*.json",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/control/src/Account.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/control/src/Operation.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/backend/appoperation/account.generated.json"
+      },
+      {
+        "kind": "file",
+        "path": "package.json"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "scripts/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//scripts:appOperationContractsUnit",
+    "package": "scripts",
+    "name": "appOperationContractsUnit",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "scripts/generate-app-operation-contracts.test.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": "scripts/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "scripts/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "scripts/fixtures/**/*.json",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/control/src/Account.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/control/src/Operation.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/backend/appoperation/account.generated.json"
+      },
+      {
+        "kind": "file",
+        "path": "package.json"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "scripts/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//scripts:benchmarkGate",
     "package": "scripts",
     "name": "benchmarkGate",

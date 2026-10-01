@@ -380,3 +380,11 @@ func (s *WorkspaceService) handleWorkspaceCommandWithTimeout(ctx context.Context
 	defer stop()
 	return lease.Complete(settlement, receipt)
 }
+
+// WorkspaceCommandJobOperation names the existing command delivery owner.
+func WorkspaceCommandJobOperation() string { return workspaceCommandOperation }
+
+// HandleWorkspaceCommand binds the existing implementation into a shared product worker.
+func (s *WorkspaceService) HandleWorkspaceCommand(ctx context.Context, lease *jobs.Lease) error {
+	return s.handleWorkspaceCommand(ctx, lease)
+}

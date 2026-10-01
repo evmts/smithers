@@ -6,7 +6,7 @@ import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { makeCli } from "../src/Cli.ts"
 import { browserLogin } from "../src/internal/backend/Auth.ts"
-import { Client } from "../src/internal/backend/Client.ts"
+import { Client, object } from "../src/internal/backend/Client.ts"
 import { commandPath, groups, handlers } from "../src/internal/backend/Commands.ts"
 import { definitions } from "../src/internal/backend/Definitions.ts"
 import { Session } from "../src/internal/backend/Session.ts"
@@ -267,12 +267,20 @@ describe("migrated command dispatch", () => {
       expect(result.code, result.output).toBe(0)
     }
   })
-  it("discovers Account as a read-only command with no input and executes only its authenticated read", async () => {
+  it("discovers Account with no operation input and returns its authenticated admission receipt", async () => {
     const requests: Array<{ method: string | undefined; url: string | undefined; body: unknown }> = []
     const f = await fixture((req, res, body) => {
       expect(req.headers.authorization).toBe("token test-session-secret")
       requests.push({ method: req.method, url: req.url, body })
-      res.end(JSON.stringify({ username: "selected-owner", email: "private-email", token: "private-token" }))
+      res.end(
+        JSON.stringify({
+          operationId: "operation-1",
+          requestId: object(object(body).payload).requestId,
+          kind: "requested",
+          state: "accepted",
+          acceptedAt: "2026-10-01T00:00:00Z"
+        })
+      )
     })
     const accountHelp = await f.run(["account", "--help"])
     expect(accountHelp.code).toBe(0)
@@ -300,10 +308,24 @@ describe("migrated command dispatch", () => {
     expect(requests).toEqual([])
     const result = await f.run(["account", "show"])
     expect(result.code).toBe(0)
-    expect(JSON.parse(result.output)).toEqual({ login: "selected-owner" })
+    const receipt = JSON.parse(result.output)
+    expect(receipt).toEqual({
+      operationId: "operation-1",
+      requestId: expect.any(String),
+      kind: "requested",
+      state: "accepted",
+      acceptedAt: "2026-10-01T00:00:00Z"
+    })
     expect(result.output).not.toContain("private-email")
     expect(result.output).not.toContain("private-token")
-    expect(requests).toEqual([{ method: "GET", url: "/api/user", body: undefined }])
+    expect(requests).toEqual([{
+      method: "POST",
+      url: "/api/workflow/rpc",
+      body: {
+        procedure: "Operation.Dispatch",
+        payload: { name: "account.show", requestId: receipt.requestId, input: {} }
+      }
+    }])
   })
   it("summarizes every command and group instead of repeating its name", () => {
     const placeholders: string[] = [], summaries = new Map<string, string>()
