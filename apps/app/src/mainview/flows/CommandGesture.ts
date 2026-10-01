@@ -14,8 +14,8 @@ export interface CommandGesture {
   readonly chatInputCurrent?: () => boolean
   /** Submission owns only the input captured before its command receipt wait. */
   readonly composerDraftCurrent?: () => boolean
-  /** The maximized form still belongs to the human gesture captured before admission. */
-  readonly formPresentationCurrent?: () => boolean
+  /** The frame still belongs to the human gesture captured before admission. */
+  readonly presentationCurrent?: () => boolean
   /** The local preference already changed; the binding awaits its save without replaying it. */
   readonly inputModeChanged?: Promise<void>
   readonly wikiEditPrepared?: PreparedWikiEdit["complete"]
