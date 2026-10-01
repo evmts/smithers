@@ -49,6 +49,7 @@ export default defineConfig({
     video: "retain-on-failure"
   },
   webServer: externalBaseURL ? undefined : {
+    gracefulShutdown: { signal: "SIGTERM", timeout: 10_000 },
     command: "bun scripts/run-real-e2e.ts serve",
     url: `${baseURL}/api/health`,
     reuseExistingServer: false,
