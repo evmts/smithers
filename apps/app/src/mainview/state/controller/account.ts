@@ -1,16 +1,4 @@
-/*
- * The account card's controller half (factory mock 21, design session §6c):
- * `account.show` renders who is signed in as one read-only card of seam
- * facts. Every row comes from a seam the app already has: the identity
- * session (login, allowlist answer, access request), the identity worker's
- * scopes read (GET /api/auth/scopes, the same read the signed-out consent
- * copy makes), and the cloudWorkspaces collection (the boxes the workspaces
- * seam has listed, across every repository). A row whose seam did not answer
- * is absent. No billing, usage or seat rows exist because no seam holds them.
- *
- * Signed out, the card IS the sign-in step: the flow renders auth.prompt's
- * message, never an empty account.
- */
+/* Account presents canonical server identity receipts; scopes and boxes are observed card facets. */
 import { AUTH_SCOPES_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import {
   ACCOUNT_CARD_ID,
@@ -18,13 +6,16 @@ import {
   type AccountFacts,
   accountReads,
   type AccountRequest,
+  accountTransport,
+  AccountTransportError,
+  ACCOUNT_CANCELLED,
   createAccountController as createSharedAccountController,
   readAccountPermissions
 } from "@smthrs/ui/account-controller"
 import { actorSharedState } from "../ActorBindings"
 import type { Card } from "../AppState"
 import type { ControllerContext } from "./context"
-import { TOAST_SUPERSEDED } from "./failures"
+import { TOAST_CANCELLED, TOAST_SUPERSEDED } from "./failures"
 
 export { ACCOUNT_CARD_ID, IDENTITY_PENDING_TEXT, SIGNED_OUT_VALUE } from "@smthrs/ui/account-controller"
 export interface AccountController {
@@ -70,16 +61,10 @@ export const createAccountController = (ctx: ControllerContext, deps: AccountCon
   const shared = createSharedAccountController({
     authority,
     disposed: () => ctx.disposed,
-    boxes: () =>
-      [...store.collections.cloudWorkspaces.values()].map(({ id, repoId, name, status }) => ({
-        id,
-        repoId,
-        name,
-        status
-      })),
     signIn: () => deps.promptSignIn(false, { name: "account.show" }),
-    admit: async (request, facts) => {
-      if (facts === undefined) return
+    admit: async (request) => {
+      const selected = authority()
+      const facts: AccountFacts = { login: selected.login ?? "", ...(selected.provider === undefined ? {} : { provider: selected.provider }), scopes: [], boxes: [] }
       const next: AccountCard = {
         id: ACCOUNT_CARD_ID,
         kind: "account",
@@ -89,58 +74,76 @@ export const createAccountController = (ctx: ControllerContext, deps: AccountCon
         ordinal: deps.nextOrdinal(),
         payload: {
           ...mutableFacts(facts),
-          ...(request.read === "permissions" ? { refresh: { id: request.id, state: "requested" as const } } : {})
+          refresh: { id: request.id, state: "requested" }
         }
       }
       await store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card: next }).isPersisted.promise
     },
+    acknowledged: async (request, receipt) => {
+      const row = card()
+      if (row?.payload.refresh?.id !== request.id) return
+      await store.dispatch({ type: "card.upsert", actor: "system", card: { ...row, payload: { ...row.payload, refresh: { id: request.id, operationId: receipt.operationId, state: "requested" } } } }).isPersisted.promise
+    },
     pending: () => {
-      const current = card(), owner = authority()
-      if (
-        current === undefined || owner.state !== "signed-in" || !owner.readsScopes || owner.provider !== "github" ||
-        current?.payload.login !== owner.login || current.payload.provider !== owner.provider ||
-        current.payload.refresh?.state !== "requested"
-      ) return undefined
-      return { id: current.payload.refresh.id, authority: owner, read: "permissions" }
+      const row = card(), owner = authority()
+      if (row === undefined || owner.state !== "signed-in" || row.payload.login !== owner.login || row.payload.provider !== owner.provider || !(row.payload.refresh?.state === "requested" || row.payload.refresh?.state === "failed" && row.payload.refresh.operationId === undefined)) return undefined
+      return { id: row.payload.refresh.id, authority: owner, ...(row.payload.refresh.operationId === undefined ? {} : { operationId: row.payload.refresh.operationId }) }
     },
     current: (request) => card()?.payload.refresh?.id === request.id,
-    read: (_request, facts, signal) =>
-      readAccountPermissions(() => ctx.boundedFetch(`${ctx.baseUrl}${AUTH_SCOPES_PATH}`, { signal }), facts!),
-    complete: async (request, answer) => {
-      const current = card()
-      if (current === undefined) return
-      const failed = "error" in answer
-      await store.dispatch({
-        type: "card.upsert",
-        actor: "system",
-        card: {
-          ...current,
-          status: failed ? "error" : "active",
-          payload: {
-            ...(failed ? { ...current.payload, scopes: [] } : mutableFacts(answer.facts)),
-            refresh: failed
-              ? { id: request.id, state: "failed", error: answer.error }
-              : { id: request.id, state: "complete" }
-          }
-        }
-      }).isPersisted.promise
+    transport: (request) => accountTransport({
+      current: () => !ctx.disposed && ctx.accountEpoch === request.authority.epoch && ctx.accountOwner() === request.authority.owner && ctx.baseUrl === request.authority.origin,
+      post: async (path, body, signal) => {
+        const response = await ctx.boundedFetch(`${ctx.baseUrl}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal })
+        if (!response.ok) { await response.body?.cancel(); throw new AccountTransportError("account_read_failed", response.status) }
+        return response.json()
+      }
+    }),
+    complete: async (request, outcome) => {
+      const row = card()
+      if (row === undefined) return
+      if ("result" in outcome && outcome.result.login !== ctx.accountOwner()) {
+        ctx.endAccount()
+        void ctx.loadSession()
+        return
+      }
+      const failed = "error" in outcome
+      const facts: AccountFacts = {
+        login: "result" in outcome ? outcome.result.login : row.payload.login,
+        ...(row.payload.provider === undefined ? {} : { provider: row.payload.provider }), scopes: [],
+        boxes: [...store.collections.cloudWorkspaces.values()].map(({ id, repoId, name, status }) => ({ id, repoId, name, status })).sort((a,b) => a.repoId.localeCompare(b.repoId) || a.name.localeCompare(b.name))
+      }
+      await store.dispatch({ type: "card.upsert", actor: "system", card: { ...row, status: failed ? "error" : "active", payload: {
+        ...mutableFacts(facts), refresh: failed ? { id: request.id, operationId: outcome.operationId, state: "failed", error: outcome.error } : { id: request.id, operationId: outcome.operationId, state: outcome.state === "cancelled" ? "cancelled" : "complete" }
+      } } }).isPersisted.promise
+      // Permission rows are supplementary observations. Their answer cannot complete or fail the identity job.
+      if (outcome.state === "completed" && deps.readsScopes && facts.provider === "github") {
+        void readAccountPermissions(() => ctx.boundedFetch(`${ctx.baseUrl}${AUTH_SCOPES_PATH}`), facts).then(answer => {
+          const current = card()
+          if (ctx.disposed || ctx.accountEpoch !== request.authority.epoch || current?.payload.refresh?.id !== request.id) return
+          store.dispatch({ type: "card.upsert", actor: "system", card: { ...current, payload: { ...current.payload,
+            ...("error" in answer ? { permissionsError: answer.error } : { scopes: mutableFacts(answer.facts).scopes, permissionsError: undefined }) } } })
+        }).catch(error => ctx.failures.report("toast.work", error, "account.permissions"))
+      }
     },
     work: (_request: AccountRequest, run, current) =>
       ctx.withToast(
         "account.permissions",
-        "Loading permissions…",
-        "Permissions loaded",
-        async () => (await run()) ?? TOAST_SUPERSEDED,
+        "Account",
+        "Account",
+        async () => { const outcome = await run(); return outcome === ACCOUNT_CANCELLED ? TOAST_CANCELLED : outcome ?? TOAST_SUPERSEDED },
         false,
         current,
         ACCOUNT_CARD_ID
       ),
-    failed: (detail) =>
-      ctx.resolveToast("account.permissions", {
-        status: "failed",
-        detail,
-        action: { flow: "account.show", label: "Retry" }
-      }),
+    failed: (detail) => {
+      const row = card()
+      if (row?.payload.refresh !== undefined) {
+        const saved = store.dispatch({ type: "card.upsert", actor: "system", card: { ...row, status: "error", payload: { ...row.payload, scopes: [], boxes: [],
+          refresh: { id: row.payload.refresh.id, ...(row.payload.refresh.operationId === undefined ? {} : { operationId: row.payload.refresh.operationId }), state: "failed", error: detail } } } })
+        void saved.isPersisted.promise.catch(error => ctx.failures.report("toast.work", error, "account.permissions"))
+      }
+      ctx.resolveToast("account.permissions", { status: "failed", detail, action: { flow: "account.show", label: "Retry" } })
+    },
     report: (error) => ctx.failures.report("toast.work", error, "account.permissions")
   }, actorSharedState(ctx, "account.reads", accountReads))
   const unsubscribe = ctx.onAccountChange(shared.dispose)
@@ -148,5 +151,15 @@ export const createAccountController = (ctx: ControllerContext, deps: AccountCon
     unsubscribe()
     shared.dispose()
   })
-  return shared
+  return {
+    showAccount: shared.showAccount,
+    resumeAccount: () => {
+      const row = card()
+      if (row?.payload.refresh === undefined) return
+      if (row.payload.refresh.state === "requested") { shared.resumeAccount(); return }
+      // Persist only a reconnect projection. Restored terminal facts require the same live source before publication.
+      void store.dispatch({ type: "card.upsert", actor: "system", card: { ...row, payload: { ...row.payload, scopes: [], boxes: [], permissionsError: undefined,
+        refresh: { id: row.payload.refresh.id, ...(row.payload.refresh.operationId === undefined ? {} : { operationId: row.payload.refresh.operationId }), state: "requested" } } } }).isPersisted.promise.then(() => shared.resumeAccount()).catch(error => ctx.failures.report("toast.work", error, "account.permissions"))
+    }
+  }
 }

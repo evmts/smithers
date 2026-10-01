@@ -1191,7 +1191,8 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       codingChangeId: z.string().optional(),
       /** An issue-sweep run's board: the one state it narrows to, and the issue whose detail is open. */
       burndown: z.object({
-        filter: z.enum(["skip", "ours", "claimed", "working", "adopting", "landing", "landed", "held", "failed"]).optional(),
+        filter: z.enum(["skip", "ours", "claimed", "working", "adopting", "landing", "landed", "held", "failed"])
+          .optional(),
         item: z.number().int().nonnegative().optional()
       }).optional(),
       /**
@@ -1881,12 +1882,14 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       provider: z.enum(["github", "local"]).optional(),
       /** GET /api/auth/scopes rows, one plain sentence per scope; empty when the seam did not answer, and the section is then absent. */
       scopes: z.array(z.object({ scope: z.string(), plain: z.string() })),
-      /** Permission reads survive reload; legacy cards have no pending request. */
+      /** A request/reconnect pointer; canonical server receipts alone establish identity completion. */
       refresh: z.discriminatedUnion("state", [
-        z.object({ id: z.string(), state: z.literal("requested") }),
-        z.object({ id: z.string(), state: z.literal("complete") }),
-        z.object({ id: z.string(), state: z.literal("failed"), error: z.string() })
+        z.object({ id: z.string(), operationId: z.string().optional(), state: z.literal("requested") }),
+        z.object({ id: z.string(), operationId: z.string().optional(), state: z.literal("complete") }),
+        z.object({ id: z.string(), operationId: z.string().optional(), state: z.literal("cancelled") }),
+        z.object({ id: z.string(), operationId: z.string().optional(), state: z.literal("failed"), error: z.string() })
       ]).optional(),
+      permissionsError: z.string().optional(),
       /** The cloudWorkspaces rows at render time: the person's boxes across every repository this app has listed. */
       boxes: z.array(z.object({ id: z.string(), repoId: z.string(), name: z.string(), status: z.string() }))
     })
@@ -2818,8 +2821,12 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       given: z.record(z.string(), z.unknown()),
       /** A Review PR request held while its explicitly opened box becomes selectable. */
       afterBox: z.object({
-        kind: z.literal("prs.triage"), repo: z.string(), number: z.number().int().positive(), owner: z.string(),
-        workspaceId: z.string().optional(), consumed: z.boolean().optional()
+        kind: z.literal("prs.triage"),
+        repo: z.string(),
+        number: z.number().int().positive(),
+        owner: z.string(),
+        workspaceId: z.string().optional(),
+        consumed: z.boolean().optional()
       }).optional(),
       /** A submission holds the form until its invocation settles. */
       submitting: z.boolean().optional(),
@@ -3019,7 +3026,9 @@ export const CardSchema = Object.assign(
     const integrations = payload?.integrations as Record<string, unknown> | undefined
     if (row.kind === "connect" && Array.isArray(integrations?.rows)) {
       /* D-11 retired the first-party Linear integration; a stored connect card keeps its other rows. */
-      const rows = integrations.rows.filter((entry: unknown) => (entry as Record<string, unknown> | null)?.id !== "linear")
+      const rows = integrations.rows.filter((entry: unknown) =>
+        (entry as Record<string, unknown> | null)?.id !== "linear"
+      )
       return { ...row, payload: { ...payload, integrations: { ...integrations, rows } } }
     }
     if (row.kind === "agents" && Array.isArray(payload?.agents)) {

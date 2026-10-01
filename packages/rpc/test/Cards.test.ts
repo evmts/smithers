@@ -1741,7 +1741,8 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       login: "will",
       provider: "github",
       scopes: [{ scope: "repo", plain: "read and write your repositories" }],
-      refresh: { id: "account-read", state: "failed", error: "Permissions could not be loaded." },
+      refresh: { id: "account-request", operationId: "account-job", state: "failed", error: "Account read failed." },
+      permissionsError: "Permissions could not be loaded.",
       boxes: [{ id: "ws-1", repoId: "smithersai/smithers", name: "review", status: "running" }]
     }
   },
@@ -3372,4 +3373,38 @@ test("browser input refusal survives persisted JSON without arbitrary upstream f
   if (parsed.kind !== "browser") throw new Error("Missing browser card")
   expect(parsed.payload.refusal).toEqual({ status: 400, code: "request_invalid", fault: "user", origin: "local", message: "That page couldn't be read." })
   expect(JSON.stringify(parsed)).not.toContain("never retained")
+})
+
+for (const state of ["requested", "complete", "failed", "cancelled"] as const) {
+  for (const acknowledged of [false, true]) {
+    test(`Account ${state} pointer survives persisted JSON, acknowledged=${acknowledged}`, () => {
+      const refresh = {
+        id: "request-1",
+        state,
+        ...(acknowledged ? { operationId: "job-1" } : {}),
+        ...(state === "failed" ? { error: "Account read failed." } : {})
+      }
+      const row = card("account", {
+        ...FIXTURES.account.minimal,
+        refresh,
+        permissionsError: "Permissions could not be loaded."
+      })
+      const parsed = CardSchema.parse(JSON.parse(JSON.stringify(row)))
+      if (parsed.kind !== "account") throw new Error("Expected Account card")
+      expect(parsed.payload.refresh).toEqual(refresh)
+      expect(parsed.payload.permissionsError).toBe("Permissions could not be loaded.")
+      expect(parsed.payload.login).toBe("will")
+      expect(parsed.payload.scopes).toEqual([])
+      expect(parsed.payload.boxes).toEqual([])
+    })
+  }
+}
+test("Account pointer rejects malformed receipt and supplementary-error field types", () => {
+  for (
+    const invalid of [{ refresh: { id: "request-1", operationId: 1, state: "requested" } }, {
+      refresh: { id: "request-1", state: "failed" }
+    }, { permissionsError: 1 }]
+  ) {
+    expect(CardSchema.safeParse(card("account", { ...FIXTURES.account.minimal, ...invalid })).success).toBe(false)
+  }
 })

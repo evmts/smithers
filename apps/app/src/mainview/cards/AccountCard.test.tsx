@@ -18,9 +18,16 @@ for (const provider of ["local", "github"] as const) {
     const storage = memoryStorage()
     const store = await createAppStore({ kind: "localStorage", storage })
     const paths: string[] = []
-    const profile = signupProfileFetch(async input => {
+    const profile = signupProfileFetch(async (input, init) => {
       const path = new URL(String(input), "https://owner.test").pathname
       paths.push(path)
+      if (path === "/api/workflow/rpc") {
+        const body = JSON.parse(String(init?.body)) as { procedure: string; payload: { requestId: string } }
+        const common = { operationId: `job-${body.payload.requestId}`, requestId: body.payload.requestId }
+        return Response.json(body.procedure === "Operation.Dispatch"
+          ? { ...common, kind: "requested", state: "accepted", acceptedAt: "2026-10-01T00:00:00Z" }
+          : { ...common, actor: "api", state: "completed", result: { login: "owner" } })
+      }
       return path === "/api/auth/scopes"
         ? Response.json({ scopes: [{ scope: "contents:read", plain: "Read repository files" }] })
         : new Response(null, { status: 404 })
@@ -39,17 +46,18 @@ for (const provider of ["local", "github"] as const) {
     await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "owner", admin: false, scopesPlain: null }).isPersisted.promise
     await waitFor(() => profile.reads.length === 1)
     await settled()
-    const result = await controller.showAccount()
+    const result = await controller.commands.run("account.show")
     await store.settled?.()
-    expect(paths).toEqual([])
+    await waitFor(() => { const row = store.collections.cards.get("account"); return row?.kind === "account" && row.payload.refresh?.state === "complete" })
+    expect(paths.filter(path => path === "/api/workflow/rpc")).toHaveLength(2)
     expect(profile.reads).toEqual([SIGNUP_PROFILE_PATH])
-    expect(result).toEqual({ value: "account: @owner; 0 box(es) listed" })
+    expect(result).toEqual({ status: "executed", value: "Requested" })
     const restored = await createAppStore({ kind: "localStorage", storage })
     try {
       const card = restored.collections.cards.get("account")!
       if (card.kind !== "account") throw new Error("Missing account card")
       expect(card.payload).toMatchObject({ provider, login: "owner" })
-      expect(card.payload.refresh).toBeUndefined()
+      expect(card.payload.refresh).toMatchObject({ state: "complete", operationId: expect.any(String) })
       const html = renderToStaticMarkup(<AccountCardBody card={card} onRunCommand={() => {}} />)
       expect(html.includes("GitHub")).toBe(provider === "github")
       expect(html.includes("read:user")).toBe(provider === "github")
@@ -71,7 +79,7 @@ test("legacy account cards without provider evidence do not claim GitHub authori
 test("failed permissions keep a keyboard Retry door on the Account card", () => {
   const html = renderToStaticMarkup(<AccountCardBody card={{ id: "account", kind: "account", title: "Account", status: "error", createdAt: 1, ordinal: 1,
     payload: { login: "owner", provider: "github", scopes: [], boxes: [],
-      refresh: { id: "read", state: "failed", error: "Permissions could not be loaded (HTTP 500)." } } }} onRunCommand={() => {}} />)
+      refresh: { id: "read", operationId: "job-read", state: "complete" }, permissionsError: "Permissions could not be loaded (HTTP 500)." } }} onRunCommand={() => {}} />)
   expect(html).toMatch(/role="alert"[^>]*data-fault="infra"[^>]*data-failure="AccountPermissionsFailed"/)
   expect(html).toContain("<p>Smithers could not load your permissions. Not your fault.</p>")
   expect(html).toContain('<details><summary>Details</summary><pre tabindex="0" role="region" aria-label="Failure details">Permissions could not be loaded (HTTP 500).</pre></details>')
