@@ -1,0 +1,38 @@
+✔ manifest: every sampled repository is pinned, unique and in a documented cell (1.066709ms)
+✔ real corpus: one recorded case per manifest entry, never synthetic (0.303583ms)
+✖ real fit is what the fitter computes from the real corpus (32.977959ms)
+✔ recorded corpus reproduces from the manifest for a five-repository sample (31960.759084ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 3
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 32651.779709
+
+✖ failing tests:
+
+test at test/registration-calibration-real.test.ts:70:1
+✖ real fit is what the fitter computes from the real corpus (32.977959ms)
+  AssertionError [ERR_ASSERTION]: .weights.duplicates
+  
+  NaN !== null
+  
+      at close (file:///private/tmp/smithers-registration-inventory-3071/flows/test/registration-calibration-real.test.ts:27:17)
+      at close (file:///private/tmp/smithers-registration-inventory-3071/flows/test/registration-calibration-real.test.ts:26:42)
+      at close (file:///private/tmp/smithers-registration-inventory-3071/flows/test/registration-calibration-real.test.ts:26:42)
+      at TestContext.<anonymous> (file:///private/tmp/smithers-registration-inventory-3071/flows/test/registration-calibration-real.test.ts:71:3)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: NaN,
+    expected: null,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

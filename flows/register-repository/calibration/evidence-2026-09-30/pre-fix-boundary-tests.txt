@@ -1,0 +1,61 @@
+✖ normalization keeps zero-anchor, missing and positive measurements finite (1.090292ms)
+✖ zero human anchors yield a finite fitted simplex and lossless JSON artifact (11.130416ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 0
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 86.408708
+
+✖ failing tests:
+
+test at ../../../private/tmp/smithers-surface-receipts-20260930/inventory-3071/fit3297-maintained-baseline.test.ts:100:1
+✖ normalization keeps zero-anchor, missing and positive measurements finite (1.090292ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+  +   NaN,
+  -   0,
+      0.5,
+      0,
+  +   NaN,
+      0,
+  -   0
+    ]
+  
+      at TestContext.<anonymous> (file:///private/tmp/smithers-surface-receipts-20260930/inventory-3071/fit3297-maintained-baseline.test.ts:105:10)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.start (node:internal/test_runner/test:1242:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:387:17) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ NaN, 0.5, 0, NaN, 0 ],
+    expected: [ 0, 0.5, 0, 0, 0 ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at ../../../private/tmp/smithers-surface-receipts-20260930/inventory-3071/fit3297-maintained-baseline.test.ts:111:1
+✖ zero human anchors yield a finite fitted simplex and lossless JSON artifact (11.130416ms)
+  AssertionError [ERR_ASSERTION]: duplicates
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///private/tmp/smithers-surface-receipts-20260930/inventory-3071/fit3297-maintained-baseline.test.ts:123:12)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
