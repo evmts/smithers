@@ -1,5 +1,5 @@
 import { expect, test } from './browserTest'
-import { identityRoute } from './identity'
+import { identityRoute, skipSignup } from './identity'
 
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/bootstrap', route => route.fulfill({ json: {
@@ -8,6 +8,14 @@ test.beforeEach(async ({ page }) => {
   } }))
   await page.route('**/api/user', identityRoute(null))
   await page.goto('/')
+  await skipSignup(page)
+  await page.reload()
+  await expect(page.getByTestId('signup')).toHaveCount(0)
+  await expect(page.getByTestId('chrome-sign-in')).toBeVisible()
+  expect(await page.evaluate(async () => {
+    const response = await fetch('/api/user')
+    return { status: response.status, body: await response.json() }
+  })).toEqual({ status: 401, body: { code: 'unauthorized', fault: 'user', message: 'authentication required' } })
   await expect(page.getByRole('button', { name: 'Mode: Normal' })).toBeVisible()
   await page.keyboard.press('m')
   await page.keyboard.press('ArrowDown')
