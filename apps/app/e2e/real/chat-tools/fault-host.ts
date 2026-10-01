@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { createInterface } from "node:readline"
 import { startLocalServer } from "../../../src/bun/server"
+import { realHostCredentialOptions, startRealChatBackend } from "../support/chat-backend"
 
 const appDir = resolve(import.meta.dir, "../../..")
 const proxyScript = resolve(import.meta.dir, "upstream-proxy.ts")
@@ -36,6 +37,7 @@ const waitForExit = async (child: ReturnType<typeof spawn>): Promise<number | nu
 
 const proxyPort = await availablePort()
 let proxy: ReturnType<typeof spawn> | undefined
+let backend: Awaited<ReturnType<typeof startRealChatBackend>> | undefined
 const pause = (milliseconds: number): Promise<void> =>
   new Promise((resolvePause) => setTimeout(resolvePause, milliseconds))
 
@@ -43,7 +45,7 @@ const startProxy = async (): Promise<void> => {
   if (proxy !== undefined && proxy.exitCode === null && proxy.signalCode === null) throw new Error("The chat passthrough process is already running.")
   proxy = spawn("bun", [proxyScript], {
     cwd: appDir,
-    env: { ...process.env, SMITHERS_REAL_CHAT_PROXY_PORT: String(proxyPort) },
+    env: { ...process.env, SMITHERS_REAL_CHAT_PROXY_PORT: String(proxyPort), SMITHERS_REAL_CHAT_UPSTREAM: backend!.origin },
     stdio: ["ignore", "inherit", "inherit"]
   })
   const deadline = Date.now() + 10_000
@@ -78,32 +80,52 @@ const stopProxy = async (): Promise<void> => {
 
 let product: Awaited<ReturnType<typeof startLocalServer>> | undefined
 let stopping: Promise<void> | undefined
+let starting: Promise<void> | undefined
+let requestedStop = false
 const cleanup = (): Promise<void> => stopping ??= (async () => {
-  const results = await Promise.allSettled([product?.stop(), stopProxy()])
-  await rm(root, { recursive: true, force: true })
-  const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected")
-  if (failures.length) throw new AggregateError(failures.map((failure) => failure.reason), "Fault harness cleanup failed")
+  requestedStop = true
+  await starting?.catch(() => {})
+  const failures: unknown[] = []
+  for (const release of [() => product?.stop(), stopProxy, () => backend?.stop(), () => rm(root, { recursive: true, force: true })]) {
+    try { await release() } catch (error) { failures.push(error) }
+  }
+  if (failures.length) throw new AggregateError(failures, "Fault harness cleanup failed")
 })()
 
-process.once("SIGTERM", () => {
+const shutdown = () => {
   void cleanup().then(() => process.exit(0), (error) => {
     console.error(error)
     process.exit(1)
   })
-})
+}
+process.on("SIGINT", shutdown)
+process.on("SIGTERM", shutdown)
 
 try {
-await startProxy()
-product = await startLocalServer({
-  port: 0,
-  distDir: join(appDir, "dist"),
-  home,
-  stateDir: join(root, "state"),
-  cloudMode: "hybrid",
-  cloudApi: `http://127.0.0.1:${proxyPort}`,
-  log: (line) => console.error(`[fault-product] ${line}`)
-})
+starting = (async () => {
+  backend = await startRealChatBackend()
+  if (requestedStop) return
+  await startProxy()
+  if (requestedStop) return
+  const credentials = realHostCredentialOptions()
+  product = await startLocalServer({
+    env: credentials.env,
+    cloudKeychain: credentials.cloudKeychain,
+    modelKeychain: credentials.modelKeychain,
+    port: 0,
+    distDir: join(appDir, "dist"),
+    home,
+    stateDir: join(root, "state"),
+    cloudMode: "hybrid",
+    chatBackend: { origin: `http://127.0.0.1:${proxyPort}`, token: backend.token },
+    cloudApi: `http://127.0.0.1:${proxyPort}`,
+    log: (line) => console.error(`[fault-product] ${line}`)
+  })
 
+})()
+await starting
+if (requestedStop) { await cleanup(); process.exit(0) }
+if (!product) throw new Error("Fault product did not start")
 console.log(JSON.stringify({ event: "ready", origin: product.origin }))
 const lines = createInterface({ input: process.stdin, crlfDelay: Infinity })
 for await (const line of lines) {
