@@ -300,7 +300,15 @@ interface DeclaredMove {
 }
 
 const DECLARED: ReadonlyArray<DeclaredMove> = [
-  ...(["runs.list", "github.mirror.retry-ref", "box.open", "box.desktop.open", "desktop", "flow.create", "feature.prototype"] as const).map(flow => ({
+  {
+    flow: "box.open", kind: "card", rows: 38,
+    because: "Owned VM recovery (#3287, upstream 315425b961) adds optional Snapshot and RecoveryOf fields to the same box.open form. Every baseline-known swept card gains those two fields; the canonical grammar fix (#3318) preserves their values across button, slash and agent doors."
+  },
+  {
+    flow: "box.open", kind: "sentence", rows: 16,
+    because: "The canonical box recovery grammar (#3318) retains two structured-input diagnostics and names its supported recovery flags on fourteen unsupported-flag rows. Twelve existing sentences change and two formerly silent bare flags now refuse; valid kind, snapshot and recovery values stay intact."
+  },
+  ...(["runs.list", "github.mirror.retry-ref", "box.desktop.open", "desktop", "flow.create", "feature.prototype"] as const).map(flow => ({
     flow, kind: "sentence" as const, rows: 2,
     because: "Structured button arguments preserve their explicit repository without inventory (#2082). Malformed JSON and unknown fields now receive a grammar diagnostic rather than being interpreted as an identifier or filter."
   })),
@@ -479,7 +487,8 @@ describe("the card every slash line opens, against main@origin", () => {
     /* 1449: the thirteen typed `/triggers.pause` lines no longer quote a button-only refusal (#1732). */
     /* 1454: `/flow.create` and `/feature.prototype` read box-chooser JSON, so malformed JSON and unknown fields get the grammar's diagnostic. */
     /* 1483: the 29 `/appearance.dark-mode` lines that name no mode read `dark-mode takes light or dark` (#3311). */
-    expect({ atMain, here }).toEqual({ atMain: 1437, here: 1483 })
+    /* 1485: box recovery grammar (#3318) refuses bare --nope and --summarize instead of treating them as bookmarks. */
+    expect({ atMain, here }).toEqual({ atMain: 1437, here: 1485 })
     /* Every slash line must be answerable without a dispatch exception, including scalar JSON. */
     expect(rows.filter((row) => row.threw !== null).map((row) => `/${row.flow} ${row.args ?? ""}`)).toEqual([])
   }, 1_800_000)
@@ -487,4 +496,22 @@ describe("the card every slash line opens, against main@origin", () => {
   test("every declared move states why it is one", () => {
     expect(DECLARED.filter((move) => move.because.trim().length < 40).map((move) => move.flow)).toEqual([])
   })
+})
+
+
+test("the box recovery form retains exact recovery identity and refuses invalid kinds", async () => {
+  const { store, controller } = await boot()
+  try {
+    const draft = { bookmark: "topic", repo: "owner/repo", kind: "vm", snapshot: "snapshot-7", recoveryOf: "workspace-9" }
+    expect(controller.renderFlowForm({ name: "box.open", args: JSON.stringify(draft), via: "user" })).toBeDefined()
+    const card = formOf(store, "box.open")!
+    expect(card.payload.fields.map((field) => field.name)).toEqual(["bookmark", "repo", "kind", "snapshot", "recoveryOf"])
+    expect(card.payload.draft).toEqual(draft)
+    expect(card.payload.error).toBeUndefined()
+    controller.renderFlowForm({ name: "box.open", args: "--kind gpu", via: "user" })
+    expect(formOf(store, "box.open")?.payload.error).toBe("box.open's kind must be container, vm, or desktop")
+  } finally {
+    await controller.dispose()
+    await store.dispose?.()
+  }
 })
