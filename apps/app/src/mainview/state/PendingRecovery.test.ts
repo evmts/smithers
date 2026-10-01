@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test"
 import { admitsPendingRecovery, pendingRecoveryScope, sameRecoveryScope, type PendingRecoveryAuthority } from "./PendingRecovery"
 import { createAppStore as openAppStore, type AppStore } from "./AppStore"
 import { memoryStorage } from "./TestFixtures"
-import { writeEntityRecovery, readEntityRecoveries, clearEntityRecovery, ENTITY_RECOVERY_STORAGE_KEY } from "./EntityRecovery"
+import { writeEntityRecovery, readEntityRecoveries, clearEntityRecovery, formRecoveryIdentity, ENTITY_RECOVERY_STORAGE_KEY } from "./EntityRecovery"
 import { writeWikiRecovery, WIKI_RECOVERY_STORAGE_KEY } from "./WikiRecovery"
 import { writeDraftRecovery, DRAFT_RECOVERY_STORAGE_KEY } from "./DraftRecovery"
 import type { Card } from "./AppState"
@@ -304,4 +304,119 @@ test("a persisted Wiki edit is replayed", async () => {
       if (prior) Object.defineProperty(globalThis, "window", prior); else Reflect.deleteProperty(globalThis, "window")
     }
   }
+})
+
+
+const carriedFormRecord = () => {
+  const form: Extract<Card, { kind: "flow-form" }> = {
+    ...card,
+    kind: "flow-form",
+    payload: {
+      ...card.payload as Extract<Card, { kind: "flow-form" }>["payload"],
+      fields: [{ name: "path", label: "Path", kind: "text", required: true }]
+    }
+  }
+  const authority: PendingRecoveryAuthority = {
+    streamId: "carried-stream",
+    baseSequence: 0,
+    baseEventHash: "a".repeat(64),
+    actor: "user",
+    intentId: "editing",
+    workspaceId: "workspace-main",
+    branchId: "branch-main",
+    conversationTabId: null
+  }
+  return {
+    key: "card:workspace-main:branch-main:form",
+    revision: 3,
+    authority,
+    preparedCommandId: "editing",
+    pendingCard: { revision: 2, authority: { ...authority, intentId: "creating" }, form: formRecoveryIdentity(form) },
+    value: { kind: "card" as const, workspaceId: "workspace-main", branchId: "branch-main", id: form.id, card: form }
+  }
+}
+
+for (
+  const boundary of [
+    "zero",
+    "equal",
+    "newer",
+    "fraction",
+    "foreign-stream",
+    "foreign-branch",
+    "foreign-workspace",
+    "agent",
+    "missing-preparation",
+    "missing-form-proof",
+    "different-id",
+    "different-flow",
+    "different-fields",
+    "different-given",
+    "different-actor",
+    "non-card",
+    "null-attachment",
+    "array-attachment",
+    "foreign-conversation"
+  ] as const
+) {
+  test(`carried form recovery refuses ${boundary} attachment without losing its original bytes`, () => {
+    const storage = memoryStorage(), original = carriedFormRecord(), changed = structuredClone(original)
+    if (boundary === "zero") changed.pendingCard.revision = 0
+    if (boundary === "equal") changed.pendingCard.revision = changed.revision
+    if (boundary === "newer") changed.pendingCard.revision = changed.revision + 1
+    if (boundary === "fraction") changed.pendingCard.revision = 1.5
+    if (boundary === "foreign-stream") changed.pendingCard.authority.streamId = "other-stream"
+    if (boundary === "foreign-branch") changed.pendingCard.authority.branchId = "other-branch"
+    if (boundary === "foreign-workspace") changed.pendingCard.authority.workspaceId = "other-workspace"
+    if (boundary === "agent") changed.pendingCard.authority.actor = "smithers"
+    if (boundary === "missing-preparation") Reflect.deleteProperty(changed, "preparedCommandId")
+    if (boundary === "missing-form-proof") Reflect.deleteProperty(changed.pendingCard, "form")
+    if (boundary === "different-id") {
+      changed.value.id = "other-form"
+      changed.value.card.id = "other-form"
+      changed.key = "card:workspace-main:branch-main:other-form"
+    }
+    if (boundary === "different-flow") changed.value.card.payload.flow = "tab.card"
+    if (boundary === "different-fields") {
+      changed.value.card.payload.fields = [{ name: "other", label: "Other", kind: "text", required: true }]
+    }
+    if (boundary === "different-given") changed.value.card.payload.given = { path: "different" }
+    if (boundary === "different-actor") changed.value.card.payload.via = "agent"
+    if (boundary === "foreign-conversation") changed.pendingCard.authority.conversationTabId = "other-conversation"
+    const attached = boundary === "non-card" ?
+      { ...changed, value: { kind: "hint-dismissed", id: "chat" } }
+      : boundary === "null-attachment" ?
+      { ...changed, pendingCard: null }
+      : boundary === "array-attachment"
+      ? { ...changed, pendingCard: [] }
+      : changed
+    const raw = JSON.stringify({ version: 1, records: { [changed.key]: attached } })
+    storage.setItem(ENTITY_RECOVERY_STORAGE_KEY, raw)
+    expect(readEntityRecoveries(storage)).toEqual([])
+    expect(storage.getItem(ENTITY_RECOVERY_STORAGE_KEY)).toBe(raw)
+    writeEntityRecovery(storage, original)
+    expect(readEntityRecoveries(storage)).toEqual([original])
+  })
+}
+
+test("an older card acknowledgement cannot erase a newer prepared carried form", () => {
+  const storage = memoryStorage(), first = carriedFormRecord()
+  writeEntityRecovery(storage, first)
+  const next = {
+    ...first,
+    revision: first.revision + 1,
+    authority: { ...first.authority, intentId: "next-edit" },
+    preparedCommandId: "next-edit",
+    value: {
+      ...first.value,
+      card: { ...first.value.card, payload: { ...first.value.card.payload, draft: { path: "Latest.md" } } }
+    }
+  }
+  writeEntityRecovery(storage, next)
+  clearEntityRecovery(storage, first)
+  expect(readEntityRecoveries(storage)).toEqual([next])
+  clearEntityRecovery(storage, { ...next, pendingCard: { ...next.pendingCard, form: "different" } })
+  expect(readEntityRecoveries(storage)).toEqual([next])
+  clearEntityRecovery(storage, next)
+  expect(readEntityRecoveries(storage)).toEqual([])
 })
