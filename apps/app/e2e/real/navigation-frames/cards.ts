@@ -30,7 +30,6 @@ const FORM_VEHICLE_FIELD = "cardId"
 export const FORM_VEHICLE_CARD_ID = `card-form-${FORM_VEHICLE_FLOW}`
 /** The vehicle's required field, for the scenarios that re-locate it on a page they booted themselves. */
 export const FORM_VEHICLE_FIELD_TESTID = `flow-form-${FORM_VEHICLE_FIELD}`
-export const PRACTICE_REPOSITORY = "practice:smithersai/hello-server"
 export const LOCAL_REPOSITORY_PATH = "/smithersai/smithers"
 
 export interface VehicleForm {
@@ -95,21 +94,6 @@ export const openVehicleForm = async (
   await input.fill(value)
   await expect(input).toHaveValue(value)
   return { card, input }
-}
-
-/** Open the shipped practice issue stack. It proves local card behavior, not a provider call. */
-export const openPracticeIssues = async (page: Page): Promise<Locator> => {
-  if (process.env.SMITHERS_REAL_E2E_HOST === "production") {
-    // The signed-out practice tests must not enter the private canary repo.
-    const startedAt = performance.now()
-    await page.goto(LOCAL_REPOSITORY_PATH)
-    await expectAppReady(page, startedAt)
-  } else await enterUrlApp(page)
-  await command(page, `/issues.list open ${PRACTICE_REPOSITORY}`)
-  await closeComposer(page)
-  const card = page.getByTestId("card-practice-issues")
-  await expect(card).toHaveAttribute("data-kind", "issue-list")
-  return card
 }
 
 export const expectSameElement = async (locator: Locator, original: Awaited<ReturnType<Locator["elementHandle"]>>): Promise<void> => {
