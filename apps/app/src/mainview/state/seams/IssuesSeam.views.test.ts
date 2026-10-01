@@ -831,3 +831,67 @@ test.each(["preload", "activation"] as const)(
     }
   }
 )
+
+test.each(["unreadable", "cycle", "page-limit", "item-limit"] as const)(
+  "a %s named collection refuses safely and recovers on a fresh read",
+  async (mode) => {
+    let recover = false
+    const queries: string[] = []
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
+      const url = new URL(request.url)
+      if (url.pathname === "/api/user") return Response.json({ id: 1, username: "will", is_admin: false })
+      if (url.pathname.endsWith("/issue-views")) return Response.json(VIEWS)
+      if (url.pathname !== "/api/repos/will/flows/issues") return new Response(null, { status: 404 })
+      queries.push(url.search)
+      if (recover) return Response.json([wireIssue(91)])
+      if (mode === "item-limit") return Response.json(Array.from({ length: 10_001 }, () => ({
+        id: 1, number: 1, title: "Bounded row", state: "open", labels: [], assignees: [],
+        author: { id: 3, login: "ana" }, comment_count: 0,
+        created_at: "2026-08-10T09:00:00Z", updated_at: "2026-08-11T09:00:00Z"
+      })))
+      if (mode === "unreadable" && url.searchParams.has("cursor")) return Response.json({ private: "private-pagination-marker" })
+      const cursor = mode === "page-limit" ? `page${queries.length}` : "repeat"
+      return Response.json([wireIssue(queries.length)], {
+        headers: { Link: `<${url.origin}${url.pathname}?view=bugs&limit=100&cursor=${cursor}>; rel="next"` }
+      })
+    } })
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const controller = createAppController(store, unavailableAgent, {
+      baseUrl: server.url.origin, fetchImpl: fetch, bootstrap: pagedViewBootstrap,
+      applicationIdentity: applicationIdentityFromFetch(fetch, server.url.origin)
+    })
+    try {
+      await controller.loadSession()
+      const outcome = await controller.commands.run("issues.list", "all --view bugs will/flows")
+      expect(outcome.status).toBe("failed")
+      expect(outcome).toEqual({ status: "failed", error: "Could not reach the backend to list issues for will/flows. Nothing answered at all — that's the connection, not something you did. Try it again." })
+      for (const raw of ["private-pagination-marker", "CloudAnswerUnusable", "completed issue view pagination", "issue view within the collection limit", "issue view page"]) {
+        expect(JSON.stringify(outcome)).not.toContain(raw)
+        expect(JSON.stringify(store.collections.cards.get("issues-will/flows"))).not.toContain(raw)
+      }
+      expect(store.collections.cards.get("issues-will/flows")?.status).toBe("error")
+      expect(store.collections.cards.get("issues-will/flows")?.kind).not.toBe("issue-list")
+      expect(queries).toHaveLength(mode === "page-limit" ? 100 : mode === "item-limit" ? 1 : 2)
+      expect(queries.every((query) => {
+        const parameters = new URLSearchParams(query)
+        return parameters.get("view") === "bugs" && parameters.get("limit") === "100" && !parameters.has("state")
+      })).toBe(true)
+      recover = true
+      expect((await controller.commands.run("issues.list", "all --view bugs will/flows")).status).toBe("executed")
+      expect(queries.at(-1)).toBe(queries[0])
+      expect(listCard(store).payload.view).toBe("bugs")
+      expect(listCard(store).payload.issues.map((issue) => issue.number)).toEqual([91])
+      expect(listCard(store).status).not.toBe("error")
+    } finally {
+      try {
+        await controller.dispose()
+      } finally {
+        try {
+          await store.dispose?.()
+        } finally {
+          await server.stop(true)
+        }
+      }
+    }
+  }
+)
