@@ -311,7 +311,10 @@ describe("flow runs", () => {
       ...call("control.run.running", 1),
       payload: { factVersion: 1, baseline: "created", run: { runId: "run-1", deadlineAt } }
     })
-    expect(f.runs.panel("r1").rows[0]).toMatchObject({ id: "deadline", label: `Deadline ${Deadline.label(deadlineAt, Date.now())}` })
+    expect(f.runs.panel("r1").rows[0]).toMatchObject({
+      id: "deadline",
+      label: `Deadline ${Deadline.label(deadlineAt, Date.now())}`
+    })
     f.watches[0]!.done.resolve({ kind: "done", answer: "ok" })
     await tick()
     expect(f.runs.panel("r1").rows.some((row) => row.id === "deadline")).toBe(false)
