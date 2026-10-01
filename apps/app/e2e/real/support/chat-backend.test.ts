@@ -188,7 +188,7 @@ test("rejected public credential enrollment releases its owned backend and Postg
     const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
     if (code !== 0) throw new Error(`Owned enrollment child failed: ${stderr}`)
     expect(stdout).toContain("public-enrollment-refused")
-    expect((await readdir(scratch)).filter(name => name.startsWith("smithers-full-backend-"))).toEqual([])
+    expect(await readdir(scratch)).toEqual([])
   } finally { await rm(scratch, { recursive: true, force: true }) }
 }, 120_000)
 
