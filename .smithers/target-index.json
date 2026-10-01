@@ -21868,6 +21868,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/flows/kernel/src/HttpPagination.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/kernel/src/Jj.ts"
       },
       {
@@ -28865,6 +28869,71 @@
     "dependencies": [],
     "source": {
       "file": "flows/wiki/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//flows:calibrationReal",
+    "package": "flows",
+    "name": "calibrationReal",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "flows/test/registration-calibration-real.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/register-repository/calibration/manifest.json"
+      },
+      {
+        "kind": "file",
+        "path": "flows/register-repository/calibration/real-corpus.json"
+      },
+      {
+        "kind": "file",
+        "path": "flows/register-repository/calibration/real-fit.json"
+      },
+      {
+        "kind": "file",
+        "path": "flows/register-repository/calibration/record.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/register-repository/calibration/fit.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/register-repository/tree.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/register-repository/history.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/register-repository/cleanup.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/register-repository/judged.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/register-repository/jev.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/register-repository/schema.ts"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "flows/PACKAGE.ts"
     }
   },
   {
