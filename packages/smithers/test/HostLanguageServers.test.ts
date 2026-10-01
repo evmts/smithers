@@ -1,5 +1,6 @@
 import { NodeServices } from "@effect/platform-node"
 import * as KernelChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
+import * as ProcessConfinement from "@smthrs/kernel/ProcessConfinement"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as Workspace from "@smthrs/kernel/Workspace"
 import * as Edit from "@smthrs/std/Edit"
@@ -165,7 +166,7 @@ describe("HostLanguageServers.make", () => {
     const host = install(join(root, "host"))
     writeFileSync(join(workspace, "a.ts"), "ERROR\n")
     const guarded = KernelChildProcessSpawner.layer.pipe(
-      Layer.provide([NodeControl.layerGrantStore(workspace), Workspace.layer(workspace)]),
+      Layer.provide([NodeControl.layerGrantStore(workspace), Workspace.layer(workspace), ProcessConfinement.layerNoop]),
       Layer.provideMerge(NodeServices.layer)
     )
     const report = await Effect.runPromise(
@@ -179,7 +180,8 @@ describe("HostLanguageServers.make", () => {
     const ruleless = KernelChildProcessSpawner.layer.pipe(
       Layer.provide([
         Layer.orDie(GrantStore.layer({ attended: false, rules: [] })).pipe(Layer.provide(Workspace.layer(workspace))),
-        Workspace.layer(workspace)
+        Workspace.layer(workspace),
+        ProcessConfinement.layerNoop
       ]),
       Layer.provideMerge(NodeServices.layer)
     )

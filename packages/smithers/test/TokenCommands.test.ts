@@ -102,7 +102,7 @@ describe("smthrs token mint", () => {
     const claims = await Effect.runPromise(ScopedToken.verify(key, token!, Date.now()))
     expect(claims.exp - claims.iat).toBe(60 * 60 * 1000)
     expect(claims.flowId).toBe("demo")
-    expect(claims.procedures).toEqual(["Plan", "Run", "Steer", "Signal", "Cancel", "Resume"])
+    expect(claims.procedures).toEqual(["Plan", "Run", "Steer", "Signal", "Cancel", "Resume", "Run.Fork", "Run.Verify"])
   })
 
   it("refuses to mint without SMITHERS_TOKEN, with an unknown scope, or with a bad lifetime", async () => {
