@@ -697,6 +697,7 @@ const ci = Smithers.GithubCiGen({
       toolchain: Smithers.CiToolchain.Needs({
         cargoBinaries: nativeFilesystem,
         runtimes: [node, bun],
+        playwrightChromium: Smithers.CiToolchain.PlaywrightChromium({ cwd: "apps/tui" }),
         jj,
         ripgrep,
         apt: bubblewrap,
