@@ -200,12 +200,27 @@ authenticatedTest("a product terminal accepts keyboard input on its workspace", 
 })
 
 
+// Profile state survives scenarios. Bind setup to the new public toggle receipt,
+// rather than matching an older "Verbose on" message in the transcript.
+const enableCurrentVerboseEvidence = async (page: Page): Promise<void> => {
+  const receipts = page.getByTestId("transcript").getByText(/^Verbose (?:on|off)/)
+  const toggle = async () => {
+    const before = await receipts.count()
+    await command(page, "/verbose")
+    await closeComposer(page)
+    await expect(receipts).toHaveCount(before + 1)
+    return await receipts.last().innerText()
+  }
+  if ((await toggle()).startsWith("Verbose off")) await toggle()
+  await expect(receipts.last()).toContainText("Verbose on")
+}
+
 authenticatedTest("workspace.rename persists the local session name across reload", scenario("workspaces.local-name-persistence", {
   capabilities: [],
   coverage: ["action:workspace.rename", "host:local", "host:production", "path:success", "path:persistence", "path:keyboard", "door:slash", "dimension:keyboard", "dimension:physical-sqlite", "evidence:local-session-name"]
 }), async ({ page, context }, testInfo) => {
   await finishFirstVisit(page)
-  await enableVerboseEvidence(page)
+  await enableCurrentVerboseEvidence(page)
   const name = `Workspace ${Date.now()}`
   await command(page, `/workspace.rename ${name}`)
   await closeComposer(page)
@@ -246,7 +261,7 @@ authenticatedTest("box.list reports the exact owned box without changing reposit
       await appPage.goto(productUrl(page, `/${repo.fullName}`), { waitUntil: "domcontentloaded" })
       await awaitBoot(appPage, "navigate", startedAt)
       await finishFirstVisit(appPage)
-      await enableVerboseEvidence(appPage)
+      await enableCurrentVerboseEvidence(appPage)
       const read = await realApi(appPage, request, "GET", `${repo.path}/workspaces`)
       expect(read.status()).toBe(200)
       const repository = await realApi(appPage, request, "GET", repo.path)
