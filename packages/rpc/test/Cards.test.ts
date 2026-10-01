@@ -1878,6 +1878,7 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
     minimal: { repo: "smithersai/smithers", path: "README.md", content: "# hi\n", truncated: false },
     full: {
       repo: "smithersai/smithers",
+      workspaceId: "ws-file-read",
       localRepoId: "repo-1",
       path: "README.md",
       content: "# hi\n",
