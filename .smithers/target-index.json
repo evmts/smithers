@@ -1298,7 +1298,9 @@
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/tui:recordingSources"
+    ],
     "source": {
       "file": "apps/app/PACKAGE.ts"
     }
@@ -1373,7 +1375,8 @@
     ],
     "outputs": [],
     "dependencies": [
-      "//apps/app:devkit"
+      "//apps/app:devkit",
+      "//apps/tui:recordingSources"
     ],
     "source": {
       "file": "apps/app/PACKAGE.ts"
@@ -1472,6 +1475,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//apps/tui:recordingSources",
       "//packages/rpc:check",
       "//packages/smithers/agent/harness-detect:check",
       "//packages/smithers/gateway:check",
@@ -1731,6 +1735,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//apps/tui:recordingSources",
       "//packages/rpc:check",
       "//packages/smithers/agent/harness-detect:check",
       "//packages/smithers/gateway:check",
