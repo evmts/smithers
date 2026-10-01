@@ -499,8 +499,7 @@ test("published adapters remain optional while executable SQLite and Bun host pr
   const byName = new Map([...readWorkspaceManifests().values()].map((manifest) => [manifest.name, publicationManifest(manifest)]))
   const optional = {
     "@smthrs/database": { "@effect/sql-sqlite-node": "4.0.0-rc.115" },
-    "@smthrs/gateway": { "@effect/platform-node": "4.0.0-rc.115", "@effect/platform-bun": "4.0.0-rc.115" },
-    "@smthrs/flows": { "@smthrs/platform-node": releaseVersion, "@effect/platform-node": "4.0.0-rc.115" },
+    "@smthrs/flows": { "@smthrs/platform-node": releaseVersion, "@smthrs/platform-bun": releaseVersion },
     "@smthrs/create-app": { "@smthrs/testing": releaseVersion },
     "@smthrs/observability": {
       "@opentelemetry/exporter-logs-otlp-http": "0.222.0", "@opentelemetry/exporter-metrics-otlp-http": "0.222.0",
@@ -519,11 +518,30 @@ test("published adapters remain optional while executable SQLite and Bun host pr
   }
   for (const [name, peer, version] of [
     ["@smthrs/cli", "@effect/sql-sqlite-node", "4.0.0-rc.115"],
-    ["@smthrs/platform-bun", "@smthrs/platform-node", releaseVersion],
-    ["@smthrs/platform-bun", "@effect/platform-node", "4.0.0-rc.115"]
+    ["@smthrs/platform-bun", "@smthrs/platform-node", releaseVersion]
   ]) {
     assert.equal(byName.get(name).peerDependencies[peer], version)
     assert.notEqual(byName.get(name).peerDependenciesMeta?.[peer]?.optional, true)
+  }
+  const privateAdapters = {
+    "@smthrs/cli": ["@effect/platform-bun", "@effect/platform-node", "@effect/platform-node-shared"],
+    "@smthrs/gateway": ["@effect/platform-bun", "@effect/platform-node", "@effect/platform-node-shared"],
+    "@smthrs/flows": ["@effect/platform-node", "@effect/platform-node-shared"],
+    "@smthrs/platform-bun": ["@effect/platform-bun", "@effect/platform-node", "@effect/platform-node-shared"]
+  }
+  for (const [name, adapters] of Object.entries(privateAdapters)) {
+    const manifest = byName.get(name)
+    assert.deepEqual(manifest.smthrs.privateEffectAdapters, adapters)
+    for (const adapter of adapters) {
+      assert.equal(manifest.dependencies?.[adapter], undefined, `${name} privately bundles ${adapter}`)
+      assert.equal(manifest.peerDependencies?.[adapter], undefined)
+      assert.equal(manifest.peerDependenciesMeta?.[adapter], undefined)
+      assert.equal(manifest.devDependencies[adapter], "4.0.0-rc.115")
+    }
+  }
+  for (const name of ["@smthrs/gateway", "@smthrs/flows", "@smthrs/platform-bun"]) {
+    assert.equal(byName.get(name).peerDependencies.effect, "4.0.0-rc.115")
+    assert.notEqual(byName.get(name).peerDependenciesMeta?.effect?.optional, true)
   }
   assert.equal(byName.get("@smthrs/observability").dependencies["@opentelemetry/sdk-logs"], "0.222.0")
   assert.equal(byName.get("@smthrs/observability").dependencies["@opentelemetry/sdk-metrics"], "2.11.0")
