@@ -180,6 +180,47 @@ describe("the default rules in a durable row", () => {
 
 describe("redactDiagnostic", () => {
   it.each([
+    `Authorization Token ${secret}`,
+    `authorization token ${secret}`,
+    `AUTHORIZATION\tTOKEN\t${secret}`,
+    `Proxy-Authorization Bearer ${secret}`,
+    `proxy-authorization Basic ${secret}`,
+    `Authorization Token '${secret}'`,
+    `Authorization Token "${secret}"`,
+    `Authorization Token '${secret}`,
+    `Authorization Token ${secret.slice(0, 12)}`
+  ])("redacts finite whitespace authorization credentials in %s", (input) => {
+    const output = Redaction.redactDiagnostic(input)
+    expect(output).not.toContain(secret.slice(0, 12))
+    expect(output).toContain(/token/i.test(input) ? Redaction.placeholder : "[REDACTED_TOKEN]")
+    expect(Redaction.redactDiagnostic(output)).toBe(output)
+    // Diagnostic command text is not a durable header assignment.
+    if (/token/i.test(input)) expect(Redaction.redact(input)).toBe(input)
+    else expect(Redaction.redact(input)).not.toContain(secret)
+  })
+
+  it.each(["''", "\"\""])("keeps the conservative header policy for an explicit empty quoted value %s", (value) => {
+    const input = `Authorization Token ${value}`
+    expect(Redaction.redactDiagnostic(input)).toBe(`Authorization ${Redaction.placeholder}`)
+    expect(Redaction.redact(input)).toBe(input)
+    expect(Redaction.redactDiagnostic(Redaction.redactDiagnostic(input))).toBe(`Authorization ${Redaction.placeholder}`)
+  })
+
+  it.each([
+    "Authorization is required to continue",
+    "Authorization Token",
+    "Authorization Token   ",
+    "Proxy-Authorization Basic",
+    "Authorization policy allows local execution",
+    "Authorization Digest is documented here",
+    "PreAuthorization Token is a policy label",
+    "x-authorization Token is a policy label"
+  ])("preserves noncredential authorization prose in %s", (input) => {
+    expect(Redaction.redactDiagnostic(input)).toBe(input)
+    expect(Redaction.redact(input)).toBe(input)
+  })
+
+  it.each([
     ["a separated -p value", `sshpass -p ${secret} ssh host`],
     ["an attached -p value", `mysql -u root -p${secret} app`],
     ["an authorization header in any scheme", `Authorization: Token ${secret}`],
