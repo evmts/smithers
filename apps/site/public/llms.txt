@@ -188,6 +188,7 @@
 - [llms.txt](https://smithers.sh/docs/reference/llms-txt/): Agent-facing entry points: the curated llms.txt index and the full-prose llms-full.txt, regenerated from the docs tree.
 - [MCP tools](https://smithers.sh/docs/reference/mcp-tools/): Discover and call the Smithers command tree through its stdio MCP server.
 - [Project layout](https://smithers.sh/docs/reference/project-layout/): The files of a Smithers project: flows/ sources, .flows/ run state, and the root resolution rules.
+- [smthrs account](https://smithers.sh/docs/reference/cli/account/): Account
 - [smthrs admin](https://smithers.sh/docs/reference/cli/admin/): Administer the Smithers installation
 - [smthrs affected](https://smithers.sh/docs/reference/cli/affected/): Execute targets affected by changed files, conservatively including ambient inputs
 - [smthrs agent](https://smithers.sh/docs/reference/cli/agent/): Ask the Smithers helper and hold remote conversations
