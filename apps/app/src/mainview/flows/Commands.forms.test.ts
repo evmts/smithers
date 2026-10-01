@@ -530,3 +530,49 @@ test("GitHub installation choice has the same missing-input form at slash and ag
   expect(formOf(store, "github.app.choose")?.payload.via).toBe("agent")
   await controller.dispose()
 })
+
+test("box.open's public registry forwards recovery inputs and refuses invalid input before its outbound action", async () => {
+  // The outbound action is a unit seam; this does not claim Cloud provisioning.
+  // The production registry, grammar, schema and handler execute independently.
+  const opened: ReadonlyArray<unknown>[] = []
+  const actions = new Proxy({}, {
+    get: (_target, property: string) => {
+      if (property === "bootstrap") return EVERYTHING
+      if (property === "snapshot") {
+        return () => ({ surface: "chat", typing: false, hasConnectors: false, admin: false, signedOut: false })
+      }
+      if (property === "repositoryFlows") return () => undefined
+      if (property === "knownRepositories") return () => new Set(["owner/repo"])
+      if (property === "openWorkspace") {
+        return (...args: ReadonlyArray<unknown>) => {
+          opened.push(args)
+        }
+      }
+      return () => undefined
+    },
+  }) as CommandActions
+  const registry = createCommandRegistry(actions)
+  for (const kind of ["container", "vm", "desktop"] as const) {
+    await registry.run("box.open", `topic --snapshot snapshot-7 --kind ${kind} --recoveryOf workspace-9 owner/repo`)
+    expect(opened.at(-1)).toEqual(["topic", "owner/repo", kind, "snapshot-7", "workspace-9"])
+    await registry.run(
+      "box.open",
+      JSON.stringify({ repo: "owner/repo", kind, snapshot: "snapshot-7", recoveryOf: "workspace-9" }),
+    )
+    expect(opened.at(-1)).toEqual([undefined, "owner/repo", kind, "snapshot-7", "workspace-9"])
+  }
+  expect(opened).toHaveLength(6)
+  for (
+    const args of [
+      "--snapshot",
+      "--recoveryOf",
+      "--snapshot a --snapshot b",
+      "--kind gpu",
+      "{\"repo\":\"owner/repo\",\"kind\":\"gpu\"}",
+    ]
+  ) {
+    const result = await registry.run("box.open", args)
+    expect(result.status).toBe("failed")
+    expect(opened).toHaveLength(6)
+  }
+})
