@@ -3,6 +3,8 @@ import type { SetupHostInput, SetupOperationResponseSchema } from "@smthrs/rpc/R
 import type { z } from "zod"
 import { SCOPED_TEST_USER, skipSignup, identityRoute } from "./identity"
 import { settleAnimations } from "./animations"
+import { signupProfile } from "./signup-profile"
+import { SIGNUP_PROFILE_PATH } from "../../src/mainview/state/Signup"
 
 // Real built app, SQLite, registry and keyboard. Setup/Control responses are
 // explicit fixtures: these tests do not claim a host executed repository work.
@@ -10,7 +12,9 @@ const repo = "smithersai/smithers"
 const workspaceId = "de29f26b-e593-4ec2-99fc-583d4711f20a"
 type Response = z.infer<typeof SetupOperationResponseSchema>
 type Start = Omit<SetupHostInput, "operation">
+const profiles = new WeakMap<Page, Awaited<ReturnType<typeof signupProfile>>>()
 const bootstrap = async (page: Page, signedIn: boolean) => {
+  if (signedIn) profiles.set(page, await signupProfile(page))
   await page.route("**/api/bootstrap", route => route.fulfill({ json: {
     apiVersion: 1, host: "cloud", version: "test", buildSha: "test",
     capabilities: ["agent", "identity", "cloud"], authFlow: "native-handoff", sandbox: null
@@ -30,9 +34,29 @@ const bootstrap = async (page: Page, signedIn: boolean) => {
   } }))
 }
 const open = async (page: Page, signedIn = false) => {
-  await page.goto(`/${repo}/`)
+  if (signedIn) {
+    await page.goto("/")
+    await expect(page.getByTestId("signup-account")).toHaveValue(SCOPED_TEST_USER.login)
+    await page.getByTestId("signup-name").fill("Repository setup tester")
+    await page.getByTestId("signup-account-continue").click()
+    const profile = profiles.get(page)!
+    await expect.poll(() => profile.writes).toContainEqual(expect.objectContaining({
+      name: "Repository setup tester", account: SCOPED_TEST_USER.login, stage: "poll"
+    }))
+    await skipSignup(page)
+    await expect.poll(() => profile.writes.at(-1)).toMatchObject({ account: SCOPED_TEST_USER.login, stage: "done" })
+    const saved = profile.writes.at(-1)!
+    const before = profile.reads.length
+    await page.goto(`/${repo}/`)
+    await page.reload()
+    expect(await page.evaluate(async path => {
+      const response = await fetch(path)
+      return { status: response.status, body: await response.json() }
+    }, SIGNUP_PROFILE_PATH)).toEqual({ status: 200, body: { profile: saved } })
+    expect(profile.reads.slice(before)).toContainEqual(saved)
+    await expect(page.getByTestId("signup")).toHaveCount(0)
+  } else await page.goto(`/${repo}/`)
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
-  if (signedIn) await skipSignup(page)
 }
 const keyboardClick = async (page: Page, name: string) => {
   // A job button reads its state after the name ("Handle issues · Off").
