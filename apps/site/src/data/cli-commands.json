@@ -2,6 +2,43 @@
   "version": "incur.v1",
   "commands": [
     {
+      "name": "account show",
+      "description": "Show account",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "request": {
+              "description": "Read a request",
+              "type": "string"
+            },
+            "history": {
+              "description": "Show requests",
+              "type": "boolean"
+            },
+            "cancel": {
+              "description": "Cancel the selected request",
+              "type": "boolean"
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
       "name": "admin alerts channels add",
       "description": "Add an alert channel",
       "schema": {
@@ -14050,7 +14087,7 @@
             },
             "disk": {
               "type": "number",
-              "description": "Writable disk in MiB"
+              "description": "Writable disk in GiB"
             },
             "idleTimeout": {
               "type": "number",

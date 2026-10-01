@@ -20706,7 +20706,8 @@ The signed-in Smithers Cloud session for hosts other than the CLI (the terminal 
 | Export       | Signature                                 | Meaning                                                                                                                           |
 | ------------ | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `Cloud`      | interface                                 | `origin`, and `get(path, signal?)` for a `/api/…` path on that origin as the signed-in person: no redirects, 30 s, at most 4 MiB. |
-| `signedIn`   | `(env) => Promise<Cloud \| undefined>`    | The session, or undefined without an origin or a login.                                                                           |
+| `SelectedCloud` | interface | Extends `Cloud` with an opaque `identity` binding and `current()` to verify that the selected origin and credential still match. Neither exposes the credential. |
+| `signedIn`   | `(env) => Promise<SelectedCloud \| undefined>`    | The session, or undefined without an origin or a login.                                                                           |
 | `repository` | `(directory, env) => string \| undefined` | The `owner/name` a checkout's git or jj remote names, as `smthrs open` reads it.                                                  |
 
 ## Agents
@@ -20890,6 +20891,33 @@ const program = Effect.gen(function*() {
   })
 })
 ```
+
+## Operation
+
+`Operation` owns the handler-free declarations shared by host adapters.
+`operation` preserves literal metadata and `NoInput` is the single empty-input
+schema. `OperationPayload`, `OperationMetadata`, and `Operation` describe input,
+requirements, actor rules, and host-bound form hints; they carry no UI imports.
+
+## Account
+
+`accountOperations` declares `account.show` with `NoInput` and the `identity`
+capability. `createAccountController` binds its lifecycle to `AccountHost`:
+persist admission before reading, share pending work, and publish only while
+the authority and request still match. `accountReads` creates the flight slot
+shared by human and agent adapters. Disposal cancels that slot.
+
+`AccountAuthority` binds owner, origin, and epoch. `AccountRequest`,
+`AccountAnswer`, `AccountRead`, `AccountReads`, and `AccountFacts` describe the
+request and its verified result. `identityFacts` projects the backend username;
+`readAccountPermissions` decodes the existing permission response. Neither
+function invents identity, permissions, or boxes.
+
+`ACCOUNT_CARD_ID`, `SIGNED_OUT_VALUE`, and `IDENTITY_PENDING_TEXT` preserve the
+existing Account presentation contract. `NoInput` is re-exported from
+`Operation`. Hosts own storage, credentials, and presentation. The CLI waits
+for its ordinary read; this module does not create a CLI run or operation
+history. API operation dispatch is not supplied by this module.
 
 ## Control
 
@@ -36839,11 +36867,8 @@ Cerebras, and most other "OpenAI-compatible" servers implement.
 | `protocolWith(options?)` | constructor | Builds the protocol, optionally with native structured output. Without the option the lowering is byte-for-byte the historical one, so existing sealed step keys are unchanged.                  |
 | `protocol`               | protocol    | `protocolWith()` with structured output off. Id `openai-chat-completions`.                                                                                                                       |
 
-A route configured with `structuredOutput` refuses a request that declares
-tools, failing preparation with `invalid_request`, because providers reject
-`tools` together with `response_format`. The one exception is
-`toolChoice: "none"`: that lowering omits `tools`, so the two fields never
-meet on the wire. Finish reasons map `stop`, `length`, `tool_calls`, and
+A route configured with `structuredOutput` preserves declared tools alongside
+`response_format`. `toolChoice: "none"` omits tools. Finish reasons map `stop`, `length`, `tool_calls`, and
 `content_filter` onto the matching stop reasons; only `stop` normalizes to
 `"tool-calls"` when a call completed, since Gemini finishes a successful tool
 turn that way, while `length` and `content_filter` after a completed call stay
@@ -51547,6 +51572,66 @@ Every command that touches durable state resolves the same project root, in this
 
 ---
 
+# smthrs account
+https://smithers.sh/docs/reference/cli/account/
+
+```text
+smthrs account — Account
+
+Usage: smthrs account <command>
+
+Commands:
+  show  Show account
+
+Custom Global Options:
+  --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)
+  --silent                       Suppress progress; retain the result and actionable failures
+  --ui <auto|tty|stream|plain>   Terminal renderer: tty draws in place, stream colours without cursor motion, plain prints bare lines; auto shows live human progress; agent, --silent, pipe and dumb-terminal policies take precedence (default: auto)
+
+Global Options:
+  --filter-output <keys>              Filter output by key paths (e.g. foo,bar.baz,a[0,3])
+  --format <toon|json|yaml|md|jsonl>  Output format
+  --full-output                       Show full output envelope
+  --help                              Show help
+  --llms, --llms-full                 Print LLM-readable manifest
+  --schema                            Show JSON Schema for command
+  --token-count                       Print token count of output (instead of output)
+  --token-limit <n>                   Limit output to n tokens
+  --token-offset <n>                  Skip first n tokens of output
+```
+
+## account show
+
+```text
+smthrs account show — Show account
+
+Usage: smthrs account show [options]
+
+Options:
+  --request <string>  Read a request
+  --history           Show requests
+  --cancel            Cancel the selected request
+  --verbose           Show redacted diagnostic details
+
+Custom Global Options:
+  --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)
+  --silent                       Suppress progress; retain the result and actionable failures
+  --ui <auto|tty|stream|plain>   Terminal renderer: tty draws in place, stream colours without cursor motion, plain prints bare lines; auto shows live human progress; agent, --silent, pipe and dumb-terminal policies take precedence (default: auto)
+
+Global Options:
+  --filter-output <keys>              Filter output by key paths (e.g. foo,bar.baz,a[0,3])
+  --format <toon|json|yaml|md|jsonl>  Output format
+  --full-output                       Show full output envelope
+  --help                              Show help
+  --llms, --llms-full                 Print LLM-readable manifest
+  --schema                            Show JSON Schema for command
+  --token-count                       Print token count of output (instead of output)
+  --token-limit <n>                   Limit output to n tokens
+  --token-offset <n>                  Skip first n tokens of output
+```
+
+---
+
 # smthrs admin
 https://smithers.sh/docs/reference/cli/admin/
 
@@ -62587,6 +62672,7 @@ flow is a durable program built with `Flow.make`, and a run is a persisted flow 
 
 | Command | Purpose |
 | --- | --- |
+| [`account`](/docs/reference/cli/account/) | Account |
 | [`admin`](/docs/reference/cli/admin/) | Administer the Smithers installation |
 | [`affected`](/docs/reference/cli/affected/) | Execute targets affected by changed files, conservatively including ambient inputs |
 | [`agent`](/docs/reference/cli/agent/) | Ask the Smithers helper and hold remote conversations |
