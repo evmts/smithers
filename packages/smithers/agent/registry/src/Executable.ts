@@ -1093,6 +1093,7 @@ const namingMissing = (
 const moduleServices = (
   descriptor: Descriptor.FlowDescriptor,
   implementation: Layer.Layer<unknown, unknown, unknown>,
+  declarations: ReadonlyArray<RuntimeFlow.Any>,
   own: (scope: Scope.Closeable) => void
 ): Effect.Effect<{ readonly layer: Layer.Layer<unknown>; readonly scope: Scope.Closeable }, ExecutableError> =>
   Effect.gen(function*() {
@@ -1122,26 +1123,36 @@ const moduleServices = (
       get: (name) => Effect.map(table.get(name), Option.map((found) => namingMissing(descriptor, found)))
     })
     const fallback = (name: string) => Option.isSome(hostTable) ? hostTable.value.get(name) : Effect.succeedNone
+    const ownedDeclarations = new Set(declarations)
+    let constructingLayer = true
     // Bind registration before constructing the exported layer: its private
     // interpreters belong to this module just as its default flow does.
     const registrationRuntime = Option.map(runtime, (hostRuntime) =>
       FlowRuntime.of({
         ...hostRuntime,
-        register: (flow, execute) =>
-          hostRuntime.register(flow, (payload, executionId) => {
+        register: (flow, execute) => {
+          // Only declarations explicitly registered by this module own its
+          // private table. Interpreter preflight also registers reachable host
+          // children; discovering one does not transfer its implementation
+          // ownership to the parent module.
+          if (constructingLayer) ownedDeclarations.add(flow)
+          const owned = ownedDeclarations.has(flow)
+          return hostRuntime.register(flow, (payload, executionId) => {
             const implementations = Action.Implementations.of({
               add: table.add,
               get: (name) =>
                 Effect.flatMap(Effect.serviceOption(FlowInstance), (instance) =>
-                  Option.isSome(instance) && instance.value.executionId !== executionId
+                  !owned || (Option.isSome(instance) && instance.value.executionId !== executionId)
                     ? fallback(name)
                     : Effect.flatMap(
                       moduleTable.get(name),
-                      (found) => Option.isSome(found) ? Effect.succeed(found) : fallback(name)
+                      (found) =>
+                        Option.isSome(found) ? Effect.succeed(found) : fallback(name)
                     ))
             })
             return execute(payload, executionId).pipe(Effect.provideService(Action.Implementations, implementations))
           })
+        }
       }))
     const input = Context.merge(hostServices, local)
     const built = yield* Layer.buildWithScope(Layer.fresh(implementation), scope).pipe(
@@ -1165,6 +1176,7 @@ const moduleServices = (
         }))
       })
     ) as Effect.Effect<Context.Context<unknown>, ExecutableError>
+    constructingLayer = false
     const exportedTable = Context.getOption(built, Action.Implementations)
     if (Option.isSome(exportedTable) && exportedTable.value !== table) {
       yield* Scope.close(scope, Exit.void)
@@ -1486,9 +1498,14 @@ export const fromDescriptor = (
       )
       const implementations = body.layer === undefined
         ? undefined
-        : yield* moduleServices(descriptor, body.layer, (scope) => {
-          moduleScope = scope
-        })
+        : yield* moduleServices(
+          descriptor,
+          body.layer,
+          body.flow === undefined ? [flow] : [flow, body.flow],
+          (scope) => {
+            moduleScope = scope
+          }
+        )
       const executable: Executable = {
         descriptor,
         declaredTag: body.flow?._tag,
@@ -1519,9 +1536,11 @@ export const fromDescriptor = (
       }
       if (implementations !== undefined) moduleScopes.set(executable, implementations.scope)
       return executable
-    }).pipe(Effect.onExit((exit) =>
-      Exit.isFailure(exit) && moduleScope !== undefined ? Scope.close(moduleScope, exit) : Effect.void
-    ))
+    }).pipe(
+      Effect.onExit((exit) =>
+        Exit.isFailure(exit) && moduleScope !== undefined ? Scope.close(moduleScope, exit) : Effect.void
+      )
+    )
   })
 
 /**

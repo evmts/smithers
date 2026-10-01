@@ -1,0 +1,43 @@
+{
+  "issue": 3351,
+  "base": "a34fbb737bc3238b53b9fbe2da1fcfbccb2216ba",
+  "sources": [
+    {
+      "path": "packages/smithers/agent/registry/src/Executable.ts",
+      "sha256": "8c9a4250efe6dbe2805f164b867a2531f01f5d01cc566f79036620eacc0f59f9"
+    },
+    {
+      "path": "packages/smithers/agent/registry/test/ExecutableEngine.test.ts",
+      "sha256": "9170fe3e8cc1bdbe79167bfd485bf7248820c308a91216c84318c7033c75545c"
+    }
+  ],
+  "changes": "Module-owned native/bridge declarations and explicitly layer-registered declarations use module implementations; independently reachable host children retain host table ownership.",
+  "checks": [
+    {
+      "command": "pnpm exec vitest run test/ModuleLayerComposition.test.ts test/ExecutableEngine.test.ts -t 'composition|child ownership' --coverage.enabled=false",
+      "exit": 0,
+      "passed": 14,
+      "deselected": 25
+    },
+    {
+      "command": "pnpm exec tsc -p tsconfig.test.json --noEmit",
+      "exit": 0
+    },
+    {
+      "command": "pnpm exec eslint src/Executable.ts --max-warnings=0",
+      "exit": 0
+    },
+    {
+      "command": "pnpm exec dprint check src/Executable.ts test/ExecutableEngine.test.ts",
+      "exit": 0
+    }
+  ],
+  "boundedSourceInputs": 6559,
+  "inputsStableAfterFinalGates": true,
+  "canonicalFormatting": "Initial clean baseline dprint exited20; formatting only applied, all owning controls/types/lint rerun successfully on final bytes. Initial red retained.",
+  "limits": [
+    "Focused coverage explicitly disabled; no whole-registry100% claim at this point.",
+    "All395 unrelatedWIP paths absent; two new3340tests independently preserved outside stash.",
+    "Real file-backed SQLite fresh-host replay; existing unrelated Jj stub retained from owning fixture."
+  ]
+}

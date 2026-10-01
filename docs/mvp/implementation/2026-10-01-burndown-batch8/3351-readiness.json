@@ -1,0 +1,46 @@
+{
+  "issue": 3351,
+  "state": "READY narrow independent prerequisite, source frozen",
+  "baselineRef": "8cc9e5e7fad446a76ed0223de732e6ce6825bf25",
+  "currentHead": "a34fbb737bc3238b53b9fbe2da1fcfbccb2216ba",
+  "production": "3351-authenticated-baseline.patch",
+  "regression": "3351-separable-regression.patch",
+  "semantics": "Object-identity ownership of explicit native/bridge declarations and module-layer registrations; reachable host-child discovery does not transfer ownership. Same-tag host fallback/private layer table maintained. No resolver/capability expansion.",
+  "qualification": {
+    "baselineOnlyRed": "committed8source overlay, same original expectedhost:child assertion fails module:child",
+    "baselinePlusPatchGreen": "14pass (12 unchanged composition controls+2 real SQLite cold-reopen cases),25 existing nonselected skipped; no skip inside owning cases",
+    "baselineSourceTypes": "TS5.9.3,794inputs,0diagnostics,0inputdrift",
+    "baselineOwnedTestTypes": "TS5.9.3,1218inputs,0diagnostics,0inputdrift",
+    "currentConfiguredAllRegistryTestTypes": "exit0; no casts/assertions removed",
+    "baselineESLint": "exit0",
+    "owningCurrentDprintCheck": "exit0",
+    "coldStorage": "real file-backed SQLite, fresh EngineStore scopes/registrations; exactcompletedpersistedvalues, no action execution upon same-run coldreopen",
+    "limits": "Full2271 strict coverage remainsred; no claim wholepackage100. No realPG required by3351; SQLite storage unmocked, external Jj stub only existing fixture boundary unrelated to action-table ownership."
+  },
+  "currentOwningHashes": {
+    "packages/smithers/agent/registry/src/Executable.ts": "66b7c0f84a8a40b5d9251a73fdf34238415a8699ced3bade02ba1c94892aa753",
+    "packages/smithers/agent/registry/test/ExecutableEngine.test.ts": "ba1805d3d8c19632471a4b3e18c9322fec4bca3cdbc3dc793760f869e69e88b9",
+    "packages/smithers/agent/registry/test/ModuleLayerComposition.test.ts": "2ed5aea36005b0330c2cb152c2b76c1ddd2393ee3a6bf3a0ac664d157ec78859"
+  },
+  "receipts": {
+    "3351-authenticated-baseline.patch": "dd41eb4e069f923e5a0f1df045ec7571ceae759bfaad251c99e9cb1c55a30198",
+    "3351-separable-regression.patch": "9eb1b55b907832c4b10075868d17066bd402efc58637b4e7fd717f2c5da8edf6",
+    "3351-separable-regression.json": "f737232cd1925606460dd446bffa707d806a8393ff8c89babb67a1020b69fcac",
+    "3351-patched-baseline.config.mjs": "8e1a354d48e9e473f210f1df049b5588413303d9328c2d6fb6b1e29718dd562f",
+    "3351-patched-baseline-inputs.json": "a07ce4f591ffaa1afe7153aa936952a130a353ba17e9c82fc4da6f431322a511",
+    "3351-separable-baseline-final-green.log": "24693c7d526feb69f4d510e64a0f31c5feb3ebb3157ca82f449a5c95e1b50c71",
+    "3351-baseline-source-types.mjs": "d871145fa8f03934b6ac11775d02b05cf67e6c32cca0f33e35ca43e87a065ed7",
+    "3351-baseline-source-types.json": "10d1aec4a1104531b6d7fc75cc065cf00c7d58f38165195e600067f1a6c6b6d2",
+    "3351-baseline-source-types.log": "fbbd92d6e97e44b684bf09fe9cf5bbbb912b742775d95d22b287802f0abce4ef",
+    "3351-baseline-owned-test-types.mjs": "0c4722c9a377ffd9675182df0350588a8ca6389caf78297ec12110967dcae55e",
+    "3351-baseline-owned-test-types.json": "70a95769c15263fbeb091c65568746396f6fe45ac8947fd94f3d0d793e03987b",
+    "3351-baseline-owned-test-types.log": "7c7471891313772331a997fb791a2cc7a12aa91e129f14b32bf3408207dc84a6",
+    "3351-baseline-lint.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "3351-format-check.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "3351-registry-test-types-second.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "3351-module-ownership-first.log": "740c4cc269cde8f25e4a33e725b195ef85f62149f278f29d3829a53221ccca8e",
+    "3351-child-cold-sqlite-first.log": "a041dbfa2ae48c05b8042277d095f3f159d88384c2e2a88047c121daacd48484",
+    "2271-host-child-full-baseline-overlay.json": "30f684d2ecb18bfeffb676ce6cde23fd4d2bfb1b091eb38cc0002ebe52f67b0a",
+    "2271-host-child-full-baseline.log": "f2e5470b2e9f10fb8cc3252003ef044ec17199019f6b230a2477d2fa5d24091d"
+  }
+}

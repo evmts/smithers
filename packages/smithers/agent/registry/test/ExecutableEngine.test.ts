@@ -32,6 +32,7 @@ import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import { type Ownership, RunStore } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
+import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
@@ -222,6 +223,79 @@ const execute = (
   )
 
 describe("a discovered flow runs on the durable engine", () => {
+  for (const privateChild of [false, true]) {
+    it.effect(`retains ${privateChild ? "module-private" : "independent host"} child ownership across SQLite cold replay`, () =>
+      Effect.gen(function*() {
+        const fs = yield* FileSystem.FileSystem
+        const directory = yield* fs.makeTempDirectoryScoped({ prefix: "registry-child-ownership-" })
+        const filename = join(directory, "engine.db")
+        const calls: Array<string> = []
+        const Shared = Action.make("test/ColdChildOwnership", {
+          payload: { value: Schema.String },
+          success: Schema.String
+        })
+        const child = Flow.make("test/ColdOwnershipChild", {
+          payload: { name: Schema.String },
+          success: Schema.String,
+          body: () => Shared.call({ value: "child" })
+        })
+        const module = Flow.make("test/standalone", {
+          payload: { name: Schema.String },
+          success: Schema.Struct({ own: Schema.String, child: Schema.String }),
+          body: () => Node.all({ own: Shared.call({ value: "parent" }), child: child.child({ name: "unused" }) })
+        })
+        const descriptor = yield* descriptorNamed("standalone")
+        for (const incarnation of ["first", "cold"]) {
+          yield* Effect.gen(function*() {
+            const executable = yield* Executable.fromDescriptor(descriptor, {
+              delegates: [],
+              load: () =>
+                Effect.succeed({
+                  default: module,
+                  layer: Layer.mergeAll(
+                    Shared.toLayer(({ value }) =>
+                      Effect.sync(() => {
+                        calls.push(`module:${value}`)
+                        return `module:${value}`
+                      })
+                    ),
+                    ...(privateChild ? [Interpreter.layer(child)] : [])
+                  )
+                })
+            })
+            yield* Layer.build(executable.layer)
+            const result = yield* executable.flow.execute({ input: { name: "unused" } }, {
+              executionId: "same-owned-child-run"
+            })
+            expect(result).toEqual({ own: "module:parent", child: `${privateChild ? "module" : "host"}:child` })
+            const row = yield* (yield* RunStore.RunStore).get("same-owned-child-run")
+            expect(row.status).toBe("completed")
+            expect(JSON.parse(row.stateJson).result.exit).toMatchObject({
+              _tag: "Success",
+              value: result
+            })
+          }).pipe(
+            Effect.provide(durable(
+              filename,
+              `child-${incarnation}`,
+              Layer.mergeAll(
+                Shared.toLayer(({ value }) =>
+                  Effect.sync(() => {
+                    calls.push(`host:${value}`)
+                    return `host:${value}`
+                  })
+                ),
+                ...(!privateChild ? [Interpreter.layer(child)] : [])
+              ).pipe(Layer.provideMerge(Action.layerImplementations))
+            )),
+            Effect.scoped
+          )
+          // Reopening the real SQLite engine must decode the recorded outcome;
+          // neither the host nor the module action may execute again.
+          expect(calls).toEqual(["module:parent", `${privateChild ? "module" : "host"}:child`])
+        }
+      }).pipe(Effect.provide(platform), Effect.scoped))
+  }
   for (const name of ["greet", "tuned"]) {
     it.effect(`supports a custom delegate without explicit codecs through ${name}`, () =>
       Effect.gen(function*() {
