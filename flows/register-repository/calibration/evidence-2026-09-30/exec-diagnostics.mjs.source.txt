@@ -1,0 +1,22 @@
+import childProcess from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
+import { promisify } from "node:util";
+import { appendFileSync } from "node:fs";
+const original = childProcess.execFile;
+const redact = (value) => String(value ?? "").replace(/(?:ghp_|github_pat_|sk-)[A-Za-z0-9_-]+/g, "[redacted]").replace(/(https?:\/\/)[^/\s@]+@/g, "$1[redacted]@");
+const observe = (args, error) => {
+  if (!error) return;
+  try { appendFileSync(process.env.SMITHERS_CALIBRATION_DIAGNOSTICS, JSON.stringify({ at: new Date().toISOString(), id: process.argv[2], command: args[0], args: args[1], code: error.code, signal: error.signal, killed: error.killed, message: redact(error.message), stderr: redact(error.stderr) }) + "\n", { mode: 0o600 }); } catch {}
+};
+function observed(...args) {
+  const callback = args.at(-1);
+  if (typeof callback === "function") args[args.length - 1] = function(error, ...rest) { observe(args, error); return callback.call(this, error, ...rest); };
+  return original.apply(this, args);
+}
+Object.defineProperty(observed, promisify.custom, { value: function(...args) {
+  const result = original[promisify.custom].apply(this, args);
+  result.then(undefined, (error) => observe(args, error));
+  return result;
+} });
+childProcess.execFile = observed;
+syncBuiltinESMExports();

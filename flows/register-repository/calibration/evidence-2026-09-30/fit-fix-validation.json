@@ -1,0 +1,79 @@
+{
+  "issue": 3297,
+  "head": "45716a305a43e573eeb5f6607403c15f67e63dea",
+  "base": "b00abe0e088febd9db19acd2706206dd247ed3cc",
+  "worktree": "/private/tmp/smithers-calibration-zero-anchor-3297",
+  "trackedClean": true,
+  "untrackedCampaignArtifacts": [
+    "flows/register-repository/calibration/real-corpus.json",
+    "flows/register-repository/calibration/real-fit.json"
+  ],
+  "sourceStartEqualsEnd": true,
+  "files": {
+    "flows/register-repository/calibration/fit.ts": "26dfe2f82464794d847e37046829c2d262524b2a2fa42c3c7049766c314825d1",
+    "flows/test/registration-calibration.test.ts": "b2404bce8e043fe4fae3d94ca1cf684df28eba540b2c606a9a1d580f9b38550d",
+    "flows/test/registration-calibration-real.test.ts": "232ee5c3174bab23aa278c3a1d5f19eaa2042785c28be8f67f6c027a583765b0",
+    "flows/register-repository/calibration/real-corpus.json": "13ce8511e2b4f58ae5dc1bdae1d0dc1ec88476866be7b1825d7afe3bb47b7ed2",
+    "flows/register-repository/calibration/real-fit.json": "39baf1eb93a08a52ed71f17226d70d3824c195581790a2aad588c53fbd090237",
+    "flows/register-repository/calibration/manifest.json": "a6ef6682bec2b71537be84cb70812eca31a1586b9039f2d6d523f326313c48ec",
+    "flows/register-repository/calibration/record.ts": "8d0e372142d5498d722329722f1191d2c186696cfebdd5dba14131f7e02f25a3",
+    "pnpm-lock.yaml": "e98818e9bc1b469634e2bac6f0d2e31d5057864cbe9a9a1654a730c7b91a29b3"
+  },
+  "results": {
+    "maintainedUnitAndReal": {
+      "pass": 12,
+      "fail": 0,
+      "skip": 0,
+      "unit": 8,
+      "real": 4,
+      "realSampleReRecorded": 5,
+      "durationMs": 34688.194542,
+      "log": "final-unit-real.log"
+    },
+    "scopedSourceTypecheck": {
+      "exit": 0,
+      "log": "../fit3297-source-typecheck-typed.log"
+    },
+    "sourceEslint": {
+      "exit": 0,
+      "log": "source-eslint.log",
+      "testFilesIgnoredByMaintainedConfiguration": true
+    },
+    "threeOwnedFilesFormatCheck": {
+      "exit": 0,
+      "log": "final-format-check.log"
+    },
+    "normalFlowsCheck": {
+      "exit": 2,
+      "log": "final-check.log",
+      "remainingDiagnostic": "packages/smithers/src/history/History.ts:369 TS2559; existing #3283 dependency, fixed by9850473f1b3c8d487a9db1650dae98d9f9c2df09; no CLI edit in this item"
+    },
+    "exactRefitArtifactBytes": {
+      "matches": true,
+      "cases": 110,
+      "log": "exact-refit.log"
+    },
+    "diffCheck": 0
+  },
+  "baseline": {
+    "newMaintainedCasesPass": 0,
+    "newMaintainedCasesFail": 2,
+    "log": "../inventory-3071/fit3297-maintained-baseline.log",
+    "realCounterexample": "../inventory-3071/calibration-fit-counterexample.json"
+  },
+  "publication": {
+    "raw110CorpusUnchanged": true,
+    "rawCorpusSha256": "13ce8511e2b4f58ae5dc1bdae1d0dc1ec88476866be7b1825d7afe3bb47b7ed2",
+    "refittedArtifactSha256": "39baf1eb93a08a52ed71f17226d70d3824c195581790a2aad588c53fbd090237",
+    "owner": "parent #3071 campaign publication; both artifact files retained here and untracked in checkout, not included in source-only3297 commit"
+  },
+  "review": {
+    "required": "claude -p --model fable",
+    "status": "pending: parent reports quota unavailable; no substitute"
+  },
+  "limits": [
+    "No new statistical separation or benchmark performance claim",
+    "No changed labels, quotas, weights fitting method, anchors, split, acceptance thresholds or measurements",
+    "Full flows type gate remains blocked by known #3283 dependency on b00"
+  ]
+}

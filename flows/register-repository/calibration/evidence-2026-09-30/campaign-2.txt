@@ -1,0 +1,16 @@
+{"id":"go-medium-human-05","recorded":22,"total":110,"result":"recorded"}
+{"id":"go-medium-hybrid-02","recorded":23,"total":110,"result":"recorded"}
+{"id":"python-large-agent-01","recorded":24,"total":110,"result":"recorded"}
+{"id":"python-large-agent-03","recorded":25,"total":110,"result":"recorded"}
+{"id":"python-large-agent-02","recorded":26,"total":110,"result":"recorded"}
+{"id":"go-large-hybrid-02","recorded":26,"total":110,"result":"failed","reason":"Command failed: git -C /private/tmp/smithers-surface-receipts-20260930/inventory-3071/calibration-resumable/work/go-large-hybrid-02/calibration-E0lxr6 log -n 50000 --format=%x1e%H%x1f%ae%x1f%an%x1f%at"}
+{"id":"go-large-agent-01","recorded":26,"total":110,"result":"failed","reason":"Command failed: git -C /private/tmp/smithers-surface-receipts-20260930/inventory-3071/calibration-resumable/work/go-large-agent-01/calibration-5Zr9Yz log -n 50000 --format=%x1e%H%x1f%ae%x1f%an%x1f%at%"}
+{"id":"go-large-human-04","recorded":26,"total":110,"result":"failed","reason":"Command failed: git -C /private/tmp/smithers-surface-receipts-20260930/inventory-3071/calibration-resumable/work/go-large-human-04/calibration-GSAL66 log -n 50000 --format=%x1e%H%x1f%ae%x1f%an%x1f%at%"}
+{"id":"python-large-human-01","recorded":27,"total":110,"result":"recorded"}
+{"id":"python-large-hybrid-01","recorded":28,"total":110,"result":"recorded"}
+{"id":"python-large-human-05","recorded":28,"total":110,"result":"failed","reason":"campaign limit: SIGTERM"}
+{"id":"python-large-human-04","recorded":28,"total":110,"result":"failed","reason":"campaign limit: SIGTERM"}
+{"id":"python-large-human-03","recorded":28,"total":110,"result":"failed","reason":"campaign limit: SIGTERM"}
+{"id":"python-large-human-02","recorded":28,"total":110,"result":"failed","reason":"campaign limit: SIGTERM"}
+{"id":"python-large-hybrid-02","recorded":28,"total":110,"result":"failed","reason":"campaign limit: SIGTERM"}
+{"complete":false,"recorded":28,"total":110,"campaignLimit":true,"failures":15}

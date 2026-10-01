@@ -1,0 +1,2273 @@
+{
+  "synthetic": false,
+  "manifest": "manifest.json",
+  "cases": [
+    {
+      "id": "go-large-agent-01",
+      "repo": "ocrampete16/naftpy",
+      "sha": "03f9092712035a7499675cd92f6e5225cfc156b5",
+      "language": "go",
+      "band": "large",
+      "label": "agent",
+      "lines": 90644,
+      "coverage": 0.72,
+      "commits": 541,
+      "traced": 0,
+      "markers": [
+        ".github/copilot-instructions.md"
+      ],
+      "values": {
+        "duplicates": 3.1883,
+        "churn": 0.2363,
+        "lexicon": 1.015,
+        "stubs": 0.2758,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "go-large-human-01",
+      "repo": "beego/beego",
+      "sha": "5a873ea0f0713863c3c12121ddb6c8dbebdd430b",
+      "language": "go",
+      "band": "large",
+      "label": "human",
+      "lines": 83836,
+      "coverage": 1,
+      "commits": 57,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 6.7513,
+        "churn": 0.0897,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "go-large-human-02",
+      "repo": "goharbor/harbor",
+      "sha": "5afd11015a1390d0b0dc6c3d7323cb9a90c5f3d7",
+      "language": "go",
+      "band": "large",
+      "label": "human",
+      "lines": 250990,
+      "coverage": 0.96,
+      "commits": 276,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 6.4385,
+        "churn": 0.0343,
+        "lexicon": 0.0239,
+        "stubs": 0.0159,
+        "dead-code": 0.1073
+      }
+    },
+    {
+      "id": "go-large-human-03",
+      "repo": "anchore/syft",
+      "sha": "3db3efacdcd26ca504eedd56f18fe8822fc09c52",
+      "language": "go",
+      "band": "large",
+      "label": "human",
+      "lines": 54444,
+      "coverage": 1,
+      "commits": 189,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 6.3552,
+        "churn": 0.0285,
+        "lexicon": 0.0184,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "go-large-human-04",
+      "repo": "codenotary/immudb",
+      "sha": "83704671e98a97c0f0c15201e61627d77940ac71",
+      "language": "go",
+      "band": "large",
+      "label": "human",
+      "lines": 130996,
+      "coverage": 1,
+      "commits": 484,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 22.1228,
+        "churn": 0.5704,
+        "lexicon": 0.0153,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "go-large-human-05",
+      "repo": "Consensys-Incorporated/gnark-crypto",
+      "sha": "30a947277be521568f1c4b085b4e1ea6c915963c",
+      "language": "go",
+      "band": "large",
+      "label": "human",
+      "lines": 299649,
+      "coverage": 1,
+      "commits": 333,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 96.2893,
+        "churn": 0.1034,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "go-large-hybrid-01",
+      "repo": "mostlygeek/llama-swap",
+      "sha": "7e1855431c56df9d5a6e2f24f28e47e1e0039afb",
+      "language": "go",
+      "band": "large",
+      "label": "hybrid",
+      "lines": 77684,
+      "coverage": 1,
+      "commits": 219,
+      "traced": 14,
+      "markers": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "values": {
+        "duplicates": 2.3428,
+        "churn": 0.0518,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": 0.3524
+      }
+    },
+    {
+      "id": "go-large-hybrid-02",
+      "repo": "sigpanic/goink",
+      "sha": "1a444c47697a61c9c39ce4e67a746af9dff8b9b6",
+      "language": "go",
+      "band": "large",
+      "label": "hybrid",
+      "lines": 86981,
+      "coverage": 1,
+      "commits": 960,
+      "traced": 8,
+      "markers": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "values": {
+        "duplicates": 3.0466,
+        "churn": 0.0736,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": 0.1481
+      }
+    },
+    {
+      "id": "go-medium-agent-01",
+      "repo": "stephenkingston/claude-code-tiny-vm",
+      "sha": "b9aea4cbd5ce81c5a19a24d6c338704c60c63d51",
+      "language": "go",
+      "band": "medium",
+      "label": "agent",
+      "lines": 5570,
+      "coverage": 1,
+      "commits": 2,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 2.8725,
+        "churn": 0,
+        "lexicon": 0.1795,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "go-medium-agent-02",
+      "repo": "jirkafm/windowsuseruptimecontrol",
+      "sha": "d853820abd0e9c97509a158eebf00b279190cc1b",
+      "language": "go",
+      "band": "medium",
+      "label": "agent",
+      "lines": 6774,
+      "coverage": 1,
+      "commits": 31,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 9.8908,
+        "churn": 0.0164,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "go-medium-agent-03",
+      "repo": "maltehedderich/api-gateway-go",
+      "sha": "157049ec1fa7e5d71245b516e01d1ec15b4ab985",
+      "language": "go",
+      "band": "medium",
+      "label": "agent",
+      "lines": 11989,
+      "coverage": 1,
+      "commits": 37,
+      "traced": 14,
+      "markers": [
+        "CLAUDE.md"
+      ],
+      "values": {
+        "duplicates": 2.6691,
+        "churn": 0.0026,
+        "lexicon": 0.417,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "go-medium-human-01",
+      "repo": "aws/amazon-vpc-cni-k8s",
+      "sha": "3b808494f0fbb23e57ec5933dc0baeb01e682c77",
+      "language": "go",
+      "band": "medium",
+      "label": "human",
+      "lines": 43461,
+      "coverage": 1,
+      "commits": 127,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 13.8745,
+        "churn": 0.0164,
+        "lexicon": 0.115,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "go-medium-human-02",
+      "repo": "bitnami/sealed-secrets",
+      "sha": "09052c3e224901ec0f87cc33d76eb97fbfd09781",
+      "language": "go",
+      "band": "medium",
+      "label": "human",
+      "lines": 7316,
+      "coverage": 1,
+      "commits": 106,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 6.0142,
+        "churn": 0.8288,
+        "lexicon": 0.2734,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "go-medium-human-03",
+      "repo": "flannel-io/flannel",
+      "sha": "9a38dac9dcbdbca2fabe300d67a4bf6e77108210",
+      "language": "go",
+      "band": "medium",
+      "label": "human",
+      "lines": 13828,
+      "coverage": 1,
+      "commits": 114,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 3.0373,
+        "churn": 0.0057,
+        "lexicon": 0.0723,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "go-medium-human-04",
+      "repo": "kubernetes-retired/kubefed",
+      "sha": "6c2b0b83918d6f39d7e42db6a31a77d1e7de9c40",
+      "language": "go",
+      "band": "medium",
+      "label": "human",
+      "lines": 34763,
+      "coverage": 1,
+      "commits": 33,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 12.7722,
+        "churn": 0.0187,
+        "lexicon": 0.0288,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "go-medium-human-05",
+      "repo": "lestrrat-go/jwx",
+      "sha": "dc603b6e88971ce0c477c48fd8b77e84ffefb169",
+      "language": "go",
+      "band": "medium",
+      "label": "human",
+      "lines": 44233,
+      "coverage": 1,
+      "commits": 224,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 12.5924,
+        "churn": 0.1982,
+        "lexicon": 0.0226,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "go-medium-hybrid-01",
+      "repo": "kiki-ki/go-qo",
+      "sha": "1b484d3502bbb163a8f31520c4e3c6f1e640bd9d",
+      "language": "go",
+      "band": "medium",
+      "label": "hybrid",
+      "lines": 5087,
+      "coverage": 1,
+      "commits": 90,
+      "traced": 23,
+      "markers": [
+        "CLAUDE.md"
+      ],
+      "values": {
+        "duplicates": 3.9316,
+        "churn": 0.2552,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "go-medium-hybrid-02",
+      "repo": "suzuki-shunsuke/ghtkn",
+      "sha": "c796e12248ee88f495989b400ea49ad84759ef09",
+      "language": "go",
+      "band": "medium",
+      "label": "hybrid",
+      "lines": 12766,
+      "coverage": 1,
+      "commits": 298,
+      "traced": 50,
+      "markers": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "values": {
+        "duplicates": 1.645,
+        "churn": 0.1421,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "go-small-agent-01",
+      "repo": "rossus/codex-gen-quadria-ui",
+      "sha": "13814d87b251fca9f6de5dd98a2f6e920bb978d5",
+      "language": "go",
+      "band": "small",
+      "label": "agent",
+      "lines": 271,
+      "coverage": 1,
+      "commits": 13,
+      "traced": 2,
+      "markers": [],
+      "values": {
+        "duplicates": 0,
+        "churn": 0.136,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "go-small-agent-02",
+      "repo": "oyaguma3/go-eapaka",
+      "sha": "db627581125a38f36f020694f7e9483502b6959d",
+      "language": "go",
+      "band": "small",
+      "label": "agent",
+      "lines": 2843,
+      "coverage": 1,
+      "commits": 12,
+      "traced": 2,
+      "markers": [],
+      "values": {
+        "duplicates": 2.1104,
+        "churn": 0.2032,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "go-small-agent-03",
+      "repo": "yegor256/rssp",
+      "sha": "4bbd75c23c2a44caab282181942fbfa714eb8262",
+      "language": "go",
+      "band": "small",
+      "label": "agent",
+      "lines": 2515,
+      "coverage": 1,
+      "commits": 2,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 11.9284,
+        "churn": 0,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "go-small-human-01",
+      "repo": "devtron-labs/winter-soldier",
+      "sha": "b6a9ac2919353701acf40a3356945c58c8c1a3a4",
+      "language": "go",
+      "band": "small",
+      "label": "human",
+      "lines": 4913,
+      "coverage": 1,
+      "commits": 10,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 20.9648,
+        "churn": 0.0348,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "go-small-human-02",
+      "repo": "pkg/xattr",
+      "sha": "060805c9517bd033db3145ab9e2af0d4dbeb31e9",
+      "language": "go",
+      "band": "small",
+      "label": "human",
+      "lines": 1332,
+      "coverage": 1,
+      "commits": 9,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 0,
+        "churn": 0.0316,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "go-small-human-03",
+      "repo": "unknwon/go-fundamental-programming",
+      "sha": "333668716b19288524288ac6431ccefa7d3f397a",
+      "language": "go",
+      "band": "small",
+      "label": "human",
+      "lines": 118,
+      "coverage": 1,
+      "commits": 32,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 0,
+        "churn": 0.3269,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "go-small-human-04",
+      "repo": "XIU2/CloudflareSpeedTest",
+      "sha": "12695563d71e970f98009daa1fb920701a569fa8",
+      "language": "go",
+      "band": "small",
+      "label": "human",
+      "lines": 989,
+      "coverage": 1,
+      "commits": 46,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 6,
+        "churn": 0.1087,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "go-small-human-05",
+      "repo": "cloudflare/gokey",
+      "sha": "751c284a3a4c6f8cdc26ac484848a07e8a97b7ec",
+      "language": "go",
+      "band": "small",
+      "label": "human",
+      "lines": 1479,
+      "coverage": 1,
+      "commits": 0,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 4.0568,
+        "churn": 0,
+        "lexicon": 0.6761,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "python-large-agent-01",
+      "repo": "chengfei867/chronos-agent",
+      "sha": "aa85d5934bbec3cdb35e06af8f0dbd8da39685b6",
+      "language": "python",
+      "band": "large",
+      "label": "agent",
+      "lines": 50042,
+      "coverage": 1,
+      "commits": 140,
+      "traced": 1,
+      "markers": [],
+      "values": {
+        "duplicates": 3.1973,
+        "churn": 0.1007,
+        "lexicon": 0.02,
+        "stubs": 0.04,
+        "dead-code": 0.1733
+      }
+    },
+    {
+      "id": "python-large-agent-02",
+      "repo": "NeoZorK/Monte-Neo",
+      "sha": "eac2a2a04ed20229969bc25aba2a64511e071e90",
+      "language": "python",
+      "band": "large",
+      "label": "agent",
+      "lines": 56654,
+      "coverage": 1,
+      "commits": 87,
+      "traced": 1,
+      "markers": [
+        "CLAUDE.md"
+      ],
+      "values": {
+        "duplicates": 2.4005,
+        "churn": 0.0543,
+        "lexicon": 0.1765,
+        "stubs": 0.1059,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "python-large-agent-03",
+      "repo": "NoidLiu/Software-Engineering-Coursework",
+      "sha": "d1cb292b84a84a170215110ca1a54eda4b4a04f0",
+      "language": "python",
+      "band": "large",
+      "label": "agent",
+      "lines": 187868,
+      "coverage": 1,
+      "commits": 7,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 18.0712,
+        "churn": 0.0001,
+        "lexicon": 0.0852,
+        "stubs": 0.8091,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "python-large-human-01",
+      "repo": "microsoft/debugpy",
+      "sha": "e94b71925aa101b7358c23b6fc3640a43e5fb90e",
+      "language": "python",
+      "band": "large",
+      "label": "human",
+      "lines": 154997,
+      "coverage": 0.63,
+      "commits": 83,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 6.4969,
+        "churn": 0.135,
+        "lexicon": 0.0903,
+        "stubs": 1.2258,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "python-large-human-02",
+      "repo": "Kozea/WeasyPrint",
+      "sha": "26d5d8264d33168120ffaa93218ba013b1a5c784",
+      "language": "python",
+      "band": "large",
+      "label": "human",
+      "lines": 54758,
+      "coverage": 1,
+      "commits": 322,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 10.2268,
+        "churn": 0.1646,
+        "lexicon": 0.0365,
+        "stubs": 0.0365,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "python-large-human-03",
+      "repo": "open-mmlab/mmdetection",
+      "sha": "3b24fdd0986860cd3936225bf17fa34dc63c8114",
+      "language": "python",
+      "band": "large",
+      "label": "human",
+      "lines": 127640,
+      "coverage": 1,
+      "commits": 249,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 25.3604,
+        "churn": 0.0177,
+        "lexicon": 0.0235,
+        "stubs": 0.6816,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "python-large-human-04",
+      "repo": "explosion/spaCy",
+      "sha": "dca2e8c6442d67a398f4d432388f188986d25ca5",
+      "language": "python",
+      "band": "large",
+      "label": "human",
+      "lines": 109984,
+      "coverage": 0.92,
+      "commits": 249,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 4.2188,
+        "churn": 0.0716,
+        "lexicon": 0.0364,
+        "stubs": 0.291,
+        "dead-code": 0.0989
+      }
+    },
+    {
+      "id": "python-large-human-05",
+      "repo": "pycaret/pycaret",
+      "sha": "5ed73113c1b8266e353c0bf653aaa27714c19a73",
+      "language": "python",
+      "band": "large",
+      "label": "human",
+      "lines": 71422,
+      "coverage": 1,
+      "commits": 982,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 33.2671,
+        "churn": 0.3639,
+        "lexicon": 0.112,
+        "stubs": 0.5461,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "python-large-hybrid-01",
+      "repo": "trailofbits/skills",
+      "sha": "82fe8226252622fa807643bdca1710901198553a",
+      "language": "python",
+      "band": "large",
+      "label": "hybrid",
+      "lines": 92535,
+      "coverage": 1,
+      "commits": 103,
+      "traced": 61,
+      "markers": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "values": {
+        "duplicates": 2.6152,
+        "churn": 0.0189,
+        "lexicon": 0.0108,
+        "stubs": 0.0432,
+        "dead-code": 0.1282
+      }
+    },
+    {
+      "id": "python-large-hybrid-02",
+      "repo": "Human-Agent-Society/reef",
+      "sha": "f4060bd1c9070e11333c2bfcfbd58d25d81bafa6",
+      "language": "python",
+      "band": "large",
+      "label": "hybrid",
+      "lines": 239969,
+      "coverage": 1,
+      "commits": 396,
+      "traced": 80,
+      "markers": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "values": {
+        "duplicates": 2.742,
+        "churn": 0.1235,
+        "lexicon": 0,
+        "stubs": 0.5792,
+        "dead-code": 0.1429
+      }
+    },
+    {
+      "id": "python-medium-agent-01",
+      "repo": "sureshdiff/storyline_EEA_verification",
+      "sha": "5a0067550c47caf77737990c32f9eb6c83a55941",
+      "language": "python",
+      "band": "medium",
+      "label": "agent",
+      "lines": 7038,
+      "coverage": 1,
+      "commits": 95,
+      "traced": 51,
+      "markers": [],
+      "values": {
+        "duplicates": 7.3885,
+        "churn": 0.2688,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "python-medium-agent-02",
+      "repo": "spencerahill/axisym-hc-swm",
+      "sha": "506a44ee30cce99ba1e02cacbd3b72d463ede19a",
+      "language": "python",
+      "band": "medium",
+      "label": "agent",
+      "lines": 18246,
+      "coverage": 1,
+      "commits": 105,
+      "traced": 99,
+      "markers": [
+        "CLAUDE.md"
+      ],
+      "values": {
+        "duplicates": 4.3845,
+        "churn": 0.0686,
+        "lexicon": 0.1096,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "python-medium-agent-03",
+      "repo": "spirmx/SACHECK",
+      "sha": "672ab6c1134e60749f47165e7ccf443469244aa1",
+      "language": "python",
+      "band": "medium",
+      "label": "agent",
+      "lines": 16407,
+      "coverage": 1,
+      "commits": 85,
+      "traced": 12,
+      "markers": [],
+      "values": {
+        "duplicates": 4.9979,
+        "churn": 0.2503,
+        "lexicon": 0,
+        "stubs": 0.0609,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "python-medium-human-01",
+      "repo": "trailofbits/graphtage",
+      "sha": "b14163485b05104286e313a24fdb01f311d206d3",
+      "language": "python",
+      "band": "medium",
+      "label": "human",
+      "lines": 10232,
+      "coverage": 1,
+      "commits": 32,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 1.0751,
+        "churn": 0.3681,
+        "lexicon": 0.1955,
+        "stubs": 3.1274,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "python-medium-human-02",
+      "repo": "openai/openai-python",
+      "sha": "64c4533098067e5e22f86f43e4cee1b6c5052752",
+      "language": "python",
+      "band": "medium",
+      "label": "human",
+      "lines": 5700,
+      "coverage": 1,
+      "commits": 29,
+      "traced": 2,
+      "markers": [],
+      "values": {
+        "duplicates": 2.4561,
+        "churn": 0.0094,
+        "lexicon": 0,
+        "stubs": 0.3509,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "python-medium-human-03",
+      "repo": "pyparsing/pyparsing",
+      "sha": "58933f7fd4af520182f3d3db3b2bd86f04aec1a5",
+      "language": "python",
+      "band": "medium",
+      "label": "human",
+      "lines": 32480,
+      "coverage": 0.68,
+      "commits": 72,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 1.6626,
+        "churn": 0.5445,
+        "lexicon": 0,
+        "stubs": 0.2155,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "python-medium-human-04",
+      "repo": "google-deepmind/sonnet",
+      "sha": "d1cd37117bcb98223b3e4b930717d418abb76484",
+      "language": "python",
+      "band": "medium",
+      "label": "human",
+      "lines": 23289,
+      "coverage": 1,
+      "commits": 6,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 7.6002,
+        "churn": 0,
+        "lexicon": 0.0429,
+        "stubs": 0.9017,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "python-medium-human-05",
+      "repo": "huggingface/accelerate",
+      "sha": "114707449b11fd59bb9b6acf9d566ce12b7ec7d1",
+      "language": "python",
+      "band": "medium",
+      "label": "human",
+      "lines": 14124,
+      "coverage": 1,
+      "commits": 120,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 15.6471,
+        "churn": 0.0843,
+        "lexicon": 0.0708,
+        "stubs": 0.2124,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "python-medium-hybrid-01",
+      "repo": "eatmoreduck/boss-zhipin-scraper",
+      "sha": "46e2965de42c6c44a18021c1f8602a62b838297c",
+      "language": "python",
+      "band": "medium",
+      "label": "hybrid",
+      "lines": 5677,
+      "coverage": 1,
+      "commits": 61,
+      "traced": 9,
+      "markers": [
+        "AGENTS.md"
+      ],
+      "values": {
+        "duplicates": 2.4661,
+        "churn": 0.1083,
+        "lexicon": 0,
+        "stubs": 0.1761,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "python-medium-hybrid-02",
+      "repo": "leonyangdev/lc-studylab",
+      "sha": "996c23719ae55e26a95298f75a7aecdc0b321411",
+      "language": "python",
+      "band": "medium",
+      "label": "hybrid",
+      "lines": 29491,
+      "coverage": 1,
+      "commits": 23,
+      "traced": 0,
+      "markers": [
+        ".cursor"
+      ],
+      "values": {
+        "duplicates": 2.1702,
+        "churn": 0.1736,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": 0.6952
+      }
+    },
+    {
+      "id": "python-small-agent-01",
+      "repo": "saranyim/Robot-Track-Timer-Time-Trial-",
+      "sha": "7b8287064659bdc43fcecee2a195919458344aee",
+      "language": "python",
+      "band": "small",
+      "label": "agent",
+      "lines": 164,
+      "coverage": 1,
+      "commits": 5,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 0,
+        "churn": 0.1047,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "python-small-agent-02",
+      "repo": "jeedo/research-agent",
+      "sha": "851a14e1f8e2701a468676182f6abdc6f453c070",
+      "language": "python",
+      "band": "small",
+      "label": "agent",
+      "lines": 1244,
+      "coverage": 1,
+      "commits": 8,
+      "traced": 2,
+      "markers": [
+        "CLAUDE.md"
+      ],
+      "values": {
+        "duplicates": 0,
+        "churn": 0.0006,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "python-small-agent-03",
+      "repo": "educypriano/fop-optics",
+      "sha": "b4719687241363e229c188023288a9c1a30b4167",
+      "language": "python",
+      "band": "small",
+      "label": "agent",
+      "lines": 1616,
+      "coverage": 1,
+      "commits": 1,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 1.8564,
+        "churn": 0,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "python-small-human-01",
+      "repo": "a312863063/generators-with-stylegan2",
+      "sha": "dab439ae57f7899c41fd76fab36eb3fc04014854",
+      "language": "python",
+      "band": "small",
+      "label": "human",
+      "lines": 3290,
+      "coverage": 1,
+      "commits": 3,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 1.5198,
+        "churn": 0.1111,
+        "lexicon": 0,
+        "stubs": 0.304,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "python-small-human-02",
+      "repo": "siavashk/pycpd",
+      "sha": "229fc47d395f58115e90ba147248f2ca8e198b19",
+      "language": "python",
+      "band": "small",
+      "label": "human",
+      "lines": 1289,
+      "coverage": 1,
+      "commits": 5,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 27.1528,
+        "churn": 0.0282,
+        "lexicon": 0,
+        "stubs": 3.1032,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "python-small-human-03",
+      "repo": "doino-gretchenliev/revolut-stocks",
+      "sha": "61b9f1eaa5564eaca270da0d22e3f4f64fde5aa5",
+      "language": "python",
+      "band": "small",
+      "label": "human",
+      "lines": 3504,
+      "coverage": 1,
+      "commits": 3,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 1.9977,
+        "churn": 0.0057,
+        "lexicon": 0,
+        "stubs": 0.8562,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "python-small-human-04",
+      "repo": "Numenorean/ShazamAPI",
+      "sha": "a7ec3a64b4c1914baedcda198b67845c0662fdc7",
+      "language": "python",
+      "band": "small",
+      "label": "human",
+      "lines": 684,
+      "coverage": 1,
+      "commits": 19,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 0,
+        "churn": 0.1496,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "python-small-human-05",
+      "repo": "meijieru/crnn.pytorch",
+      "sha": "cdf07cc6d8dce0557e542e6cdc0558bd1ad66b53",
+      "language": "python",
+      "band": "small",
+      "label": "human",
+      "lines": 899,
+      "coverage": 1,
+      "commits": 0,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 1,
+        "churn": 0,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "rust-large-agent-01",
+      "repo": "tomek-anuszkiewicz/amiga-studio",
+      "sha": "f5ff355d2d56b89e97e6c5bc3ae21787c98e9136",
+      "language": "rust",
+      "band": "large",
+      "label": "agent",
+      "lines": 105096,
+      "coverage": 1,
+      "commits": 784,
+      "traced": 0,
+      "markers": [
+        "AGENTS.md"
+      ],
+      "values": {
+        "duplicates": 23.1217,
+        "churn": 0.452,
+        "lexicon": 0,
+        "stubs": 0.0095,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "rust-large-agent-02",
+      "repo": "feldgendler/clawfish",
+      "sha": "46657698b68296fff42d046c442d734a4980ed3e",
+      "language": "rust",
+      "band": "large",
+      "label": "agent",
+      "lines": 87289,
+      "coverage": 0.83,
+      "commits": 275,
+      "traced": 266,
+      "markers": [
+        "CLAUDE.md"
+      ],
+      "values": {
+        "duplicates": 4.0784,
+        "churn": 0.0848,
+        "lexicon": 0.0802,
+        "stubs": 0.0802,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "rust-large-human-01",
+      "repo": "wasm-bindgen/wasm-bindgen",
+      "sha": "cbcf3e78ac1e17884cceb855fced173ddde37020",
+      "language": "rust",
+      "band": "large",
+      "label": "human",
+      "lines": 214962,
+      "coverage": 0.92,
+      "commits": 54,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 10.1832,
+        "churn": 0.0069,
+        "lexicon": 0.1256,
+        "stubs": 0.014,
+        "dead-code": 0
+      }
+    },
+    {
+      "id": "rust-large-human-02",
+      "repo": "bottlerocket-os/bottlerocket",
+      "sha": "b2059d7ca7367106d890a76f813ec70b0d858591",
+      "language": "rust",
+      "band": "large",
+      "label": "human",
+      "lines": 52165,
+      "coverage": 1,
+      "commits": 412,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 5.4826,
+        "churn": 0.0403,
+        "lexicon": 0.0767,
+        "stubs": 0.0192,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "rust-large-human-03",
+      "repo": "tree-sitter/tree-sitter",
+      "sha": "efe009f47d8fc4e712ad5693cf5f3885133b5772",
+      "language": "rust",
+      "band": "large",
+      "label": "human",
+      "lines": 54442,
+      "coverage": 1,
+      "commits": 137,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 2.1858,
+        "churn": 0.2316,
+        "lexicon": 0.0184,
+        "stubs": 0.0184,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "rust-large-human-04",
+      "repo": "mhogrefe/malachite",
+      "sha": "bb8d2455d95d9c5f3c8430bc65cafbc00a783a31",
+      "language": "rust",
+      "band": "large",
+      "label": "human",
+      "lines": 473098,
+      "coverage": 0.79,
+      "commits": 5,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 15.259,
+        "churn": 0.0046,
+        "lexicon": 0.0021,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "rust-large-human-05",
+      "repo": "tokio-rs/tokio",
+      "sha": "925314ba43efb18af6b57c666d1f2f1a4a806b76",
+      "language": "rust",
+      "band": "large",
+      "label": "human",
+      "lines": 116236,
+      "coverage": 1,
+      "commits": 185,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 3.9403,
+        "churn": 0.0793,
+        "lexicon": 0.1463,
+        "stubs": 0.0774,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "rust-large-hybrid-01",
+      "repo": "EricLBuehler/mistral.rs",
+      "sha": "2370966bb91e2e3dafa0b1521b87c50fd5c01244",
+      "language": "rust",
+      "band": "large",
+      "label": "hybrid",
+      "lines": 502422,
+      "coverage": 0.85,
+      "commits": 282,
+      "traced": 0,
+      "markers": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "values": {
+        "duplicates": 16.2473,
+        "churn": 0.0721,
+        "lexicon": 0.0358,
+        "stubs": 0.0796,
+        "dead-code": 0.2923
+      }
+    },
+    {
+      "id": "rust-large-hybrid-02",
+      "repo": "LargeModGames/spotatui",
+      "sha": "4190c8439023680a91541887a0e0f98f8d8ccbf3",
+      "language": "rust",
+      "band": "large",
+      "label": "hybrid",
+      "lines": 150644,
+      "coverage": 1,
+      "commits": 750,
+      "traced": 25,
+      "markers": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "values": {
+        "duplicates": 2.5092,
+        "churn": 0.1131,
+        "lexicon": 0.0398,
+        "stubs": 0,
+        "dead-code": 0.0341
+      }
+    },
+    {
+      "id": "rust-medium-agent-01",
+      "repo": "frankhart2018/animdsl",
+      "sha": "bdb201e2746508912211bd5b61035a5586d009a9",
+      "language": "rust",
+      "band": "medium",
+      "label": "agent",
+      "lines": 7689,
+      "coverage": 1,
+      "commits": 3,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 3.5115,
+        "churn": 0.0045,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "rust-medium-agent-02",
+      "repo": "Nemo-010/ko-racing-3d-re",
+      "sha": "ab2fd92769ce57b0668e93339bbb835eb11ea94c",
+      "language": "rust",
+      "band": "medium",
+      "label": "agent",
+      "lines": 12022,
+      "coverage": 1,
+      "commits": 41,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 1.3309,
+        "churn": 0.139,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "rust-medium-agent-03",
+      "repo": "Erizeez/minecrust",
+      "sha": "f3d605f2980a5e1ce94bf9ef4110992769058aed",
+      "language": "rust",
+      "band": "medium",
+      "label": "agent",
+      "lines": 6734,
+      "coverage": 1,
+      "commits": 20,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 4.455,
+        "churn": 0.1839,
+        "lexicon": 0.297,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "rust-medium-human-01",
+      "repo": "dandavison/delta",
+      "sha": "e7dbdd48469699f6ce4054cf610e686563314efe",
+      "language": "rust",
+      "band": "medium",
+      "label": "human",
+      "lines": 25980,
+      "coverage": 1,
+      "commits": 213,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 4.0031,
+        "churn": 0.1914,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "rust-medium-human-02",
+      "repo": "spacejam/sled",
+      "sha": "15fb2ba2ff110055506f8fbd50e3d6f1d46ba17f",
+      "language": "rust",
+      "band": "medium",
+      "label": "human",
+      "lines": 33706,
+      "coverage": 1,
+      "commits": 16,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 1.7504,
+        "churn": 0.0756,
+        "lexicon": 0.0297,
+        "stubs": 0.0297,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "rust-medium-human-03",
+      "repo": "epi052/feroxbuster",
+      "sha": "a4240571668b22fe1895f3331486e8959a79e422",
+      "language": "rust",
+      "band": "medium",
+      "label": "human",
+      "lines": 23071,
+      "coverage": 1,
+      "commits": 265,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 10.2293,
+        "churn": 0.2618,
+        "lexicon": 0.1734,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "rust-medium-human-04",
+      "repo": "iced-rs/iced",
+      "sha": "c275fde67a7f5d1d5789540dc7905250a2f01fe7",
+      "language": "rust",
+      "band": "medium",
+      "label": "human",
+      "lines": 49691,
+      "coverage": 1,
+      "commits": 357,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 16.8642,
+        "churn": 0.1325,
+        "lexicon": 0.1207,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "rust-medium-human-05",
+      "repo": "yewstack/yew",
+      "sha": "cb5a609e0897d3c79a07aa2f5c2b377a8e54c12a",
+      "language": "rust",
+      "band": "medium",
+      "label": "human",
+      "lines": 41490,
+      "coverage": 1,
+      "commits": 264,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 7.8332,
+        "churn": 0.3277,
+        "lexicon": 0.0723,
+        "stubs": 1.9041,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "rust-medium-hybrid-01",
+      "repo": "QuipNetwork/quip-validator",
+      "sha": "c236a6866951ea29a91c281188883daed928bc7b",
+      "language": "rust",
+      "band": "medium",
+      "label": "hybrid",
+      "lines": 30991,
+      "coverage": 1,
+      "commits": 302,
+      "traced": 15,
+      "markers": [
+        "AGENTS.md"
+      ],
+      "values": {
+        "duplicates": 4.098,
+        "churn": 0.1223,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": 0.4571
+      }
+    },
+    {
+      "id": "rust-medium-hybrid-02",
+      "repo": "pandaadir05/ghost",
+      "sha": "2a9ba276bd79cff6dcb0e2ad34dcd2d036ed4afd",
+      "language": "rust",
+      "band": "medium",
+      "label": "hybrid",
+      "lines": 23280,
+      "coverage": 1,
+      "commits": 3,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 1.1598,
+        "churn": 0,
+        "lexicon": 0.6014,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "rust-small-agent-01",
+      "repo": "qwenbona/agent-pay-solana",
+      "sha": "5cdb006bae08f59a7ef1fabf955a2258ba747f70",
+      "language": "rust",
+      "band": "small",
+      "label": "agent",
+      "lines": 852,
+      "coverage": 1,
+      "commits": 1,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 3,
+        "churn": 0,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "rust-small-agent-02",
+      "repo": "Danny-Devito-GB/epub-zipper",
+      "sha": "42537a2a7fda5b8b95c52fc4604c51394517b9ba",
+      "language": "rust",
+      "band": "small",
+      "label": "agent",
+      "lines": 1629,
+      "coverage": 1,
+      "commits": 3,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 0.6139,
+        "churn": 0.0005,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "rust-small-agent-03",
+      "repo": "zacharysiegel/rss-claude",
+      "sha": "bf26819f403139ac39ba2ec1bcf2007189ae18c7",
+      "language": "rust",
+      "band": "small",
+      "label": "agent",
+      "lines": 2332,
+      "coverage": 1,
+      "commits": 20,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 3.4305,
+        "churn": 0.2046,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "rust-small-human-01",
+      "repo": "openrr/urdf-viz",
+      "sha": "5c2ea5ccb921774f541110138bdc7d5dd541d7e8",
+      "language": "rust",
+      "band": "small",
+      "label": "human",
+      "lines": 2694,
+      "coverage": 1,
+      "commits": 37,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 4.0831,
+        "churn": 0.1338,
+        "lexicon": 0,
+        "stubs": 0.3712,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "rust-small-human-02",
+      "repo": "BurtonQin/lockbud",
+      "sha": "b5fb7a8fa7ec644e2a60f87fd8c4bcc4954507e9",
+      "language": "rust",
+      "band": "small",
+      "label": "human",
+      "lines": 2576,
+      "coverage": 1,
+      "commits": 25,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 0,
+        "churn": 0.4488,
+        "lexicon": 0.3882,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "rust-small-human-03",
+      "repo": "cantino/mcfly",
+      "sha": "8bd3dd0268c42ad6d4ef3e59b16a34f3d6758c60",
+      "language": "rust",
+      "band": "small",
+      "label": "human",
+      "lines": 4746,
+      "coverage": 1,
+      "commits": 55,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 1.2642,
+        "churn": 0.159,
+        "lexicon": 0.2107,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "rust-small-human-04",
+      "repo": "ostrosco/device_query",
+      "sha": "332fedc4a8be82d6170b8a84a06efe715c5ae59d",
+      "language": "rust",
+      "band": "small",
+      "label": "human",
+      "lines": 1533,
+      "coverage": 1,
+      "commits": 13,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 1.3046,
+        "churn": 0.0749,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "rust-small-human-05",
+      "repo": "lemunozm/termchat",
+      "sha": "06ef45a95942a5eff3e9ca8237146ac6d74436aa",
+      "language": "rust",
+      "band": "small",
+      "label": "human",
+      "lines": 1712,
+      "coverage": 1,
+      "commits": 2,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 0.5841,
+        "churn": 0.015,
+        "lexicon": 0,
+        "stubs": 2.3364,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "ts-large-agent-01",
+      "repo": "framerslab/wunderland-sol",
+      "sha": "954847f7c33042206f389cdb336ac159702aa1ca",
+      "language": "ts",
+      "band": "large",
+      "label": "agent",
+      "lines": 204912,
+      "coverage": 1,
+      "commits": 431,
+      "traced": 359,
+      "markers": [
+        "CLAUDE.md"
+      ],
+      "values": {
+        "duplicates": 34.3172,
+        "churn": 0.2047,
+        "lexicon": 0.0878,
+        "stubs": 0,
+        "dead-code": 0.0784
+      }
+    },
+    {
+      "id": "ts-large-agent-02",
+      "repo": "gitpod-io/memo",
+      "sha": "01b521f3b56ea30b4482d232fcb8ec4da25a0b8e",
+      "language": "ts",
+      "band": "large",
+      "label": "agent",
+      "lines": 132048,
+      "coverage": 1,
+      "commits": 964,
+      "traced": 0,
+      "markers": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "values": {
+        "duplicates": 12.0486,
+        "churn": 0.0743,
+        "lexicon": 0.0227,
+        "stubs": 0.0379,
+        "dead-code": 0.3674
+      }
+    },
+    {
+      "id": "ts-large-agent-03",
+      "repo": "milodule3-debug/aura-code",
+      "sha": "c80412869124adb2c87bea8ed7d31f5cd31d7707",
+      "language": "ts",
+      "band": "large",
+      "label": "agent",
+      "lines": 65453,
+      "coverage": 1,
+      "commits": 364,
+      "traced": 129,
+      "markers": [
+        "CLAUDE.md"
+      ],
+      "values": {
+        "duplicates": 1.7723,
+        "churn": 0.1783,
+        "lexicon": 0.0917,
+        "stubs": 0.4125,
+        "dead-code": 0.2565
+      }
+    },
+    {
+      "id": "ts-large-human-01",
+      "repo": "date-fns/date-fns",
+      "sha": "fd6bb1a0bab143f2da068c05a9c562b9bee1357d",
+      "language": "ts",
+      "band": "large",
+      "label": "human",
+      "lines": 92363,
+      "coverage": 1,
+      "commits": 102,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 22.4007,
+        "churn": 0.0376,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": 0.0426
+      }
+    },
+    {
+      "id": "ts-large-human-02",
+      "repo": "NG-ZORRO/ng-zorro-antd",
+      "sha": "40815ad90d4160be4a6a9dd29ee7b072ecde5f75",
+      "language": "ts",
+      "band": "large",
+      "label": "human",
+      "lines": 145827,
+      "coverage": 1,
+      "commits": 152,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 9.1821,
+        "churn": 0.0274,
+        "lexicon": 0.0411,
+        "stubs": 0.0137,
+        "dead-code": 0.4616
+      }
+    },
+    {
+      "id": "ts-large-human-03",
+      "repo": "gitkraken/vscode-gitlens",
+      "sha": "cf8cbfd646f8f07b6f72ed30d9ccde5552c9c8f7",
+      "language": "ts",
+      "band": "large",
+      "label": "human",
+      "lines": 82251,
+      "coverage": 1,
+      "commits": 508,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 8.8753,
+        "churn": 0.1995,
+        "lexicon": 0.0243,
+        "stubs": 0.3283,
+        "dead-code": 0.2066
+      }
+    },
+    {
+      "id": "ts-large-human-04",
+      "repo": "manga-download/haruneko",
+      "sha": "dc4126d7dba7f58da25b1c7b85a28e1a04bc2dfa",
+      "language": "ts",
+      "band": "large",
+      "label": "human",
+      "lines": 64025,
+      "coverage": 1,
+      "commits": 215,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 4.6857,
+        "churn": 0.0359,
+        "lexicon": 0.0156,
+        "stubs": 0.0625,
+        "dead-code": 0.0204
+      }
+    },
+    {
+      "id": "ts-large-human-05",
+      "repo": "aws-amplify/amplify-js",
+      "sha": "9e3792f60a6bcc45588d17a74713832313b2ecdc",
+      "language": "ts",
+      "band": "large",
+      "label": "human",
+      "lines": 149013,
+      "coverage": 0.82,
+      "commits": 139,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 15.2671,
+        "churn": 0.0033,
+        "lexicon": 0.047,
+        "stubs": 0.0604,
+        "dead-code": 0.1337
+      }
+    },
+    {
+      "id": "ts-large-hybrid-01",
+      "repo": "agegr/pi-web",
+      "sha": "2bb48f5e902fb60002f2ad76fd23360ace173cbb",
+      "language": "ts",
+      "band": "large",
+      "label": "hybrid",
+      "lines": 130621,
+      "coverage": 1,
+      "commits": 763,
+      "traced": 91,
+      "markers": [
+        "AGENTS.md"
+      ],
+      "values": {
+        "duplicates": 42.5736,
+        "churn": 0.1128,
+        "lexicon": 0,
+        "stubs": 0.0689,
+        "dead-code": 0.0497
+      }
+    },
+    {
+      "id": "ts-large-hybrid-02",
+      "repo": "aidenybai/react-grab",
+      "sha": "ea4bbec9e80f4802e8ae19ad18431edb9ddbb670",
+      "language": "ts",
+      "band": "large",
+      "label": "hybrid",
+      "lines": 81940,
+      "coverage": 1,
+      "commits": 458,
+      "traced": 38,
+      "markers": [
+        "AGENTS.md"
+      ],
+      "values": {
+        "duplicates": 3.4904,
+        "churn": 0.4943,
+        "lexicon": 0,
+        "stubs": 0.3417,
+        "dead-code": 0.0742
+      }
+    },
+    {
+      "id": "ts-medium-agent-01",
+      "repo": "VTHoop/campout",
+      "sha": "b951371b771a94e6645312879cddc61b585aaae1",
+      "language": "ts",
+      "band": "medium",
+      "label": "agent",
+      "lines": 9189,
+      "coverage": 1,
+      "commits": 146,
+      "traced": 126,
+      "markers": [
+        "AGENTS.md",
+        "CLAUDE.md"
+      ],
+      "values": {
+        "duplicates": 1.3059,
+        "churn": 0.0957,
+        "lexicon": 0.1088,
+        "stubs": 0,
+        "dead-code": 0.0336
+      }
+    },
+    {
+      "id": "ts-medium-agent-02",
+      "repo": "orel56000/CommunityIPTVPlayer",
+      "sha": "b3dd0e9cbcd3e7450f4598a69c7737bc8d77ecd7",
+      "language": "ts",
+      "band": "medium",
+      "label": "agent",
+      "lines": 30135,
+      "coverage": 1,
+      "commits": 86,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 0.8296,
+        "churn": 0.0504,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": 0.2791
+      }
+    },
+    {
+      "id": "ts-medium-agent-03",
+      "repo": "paul80nd/tilth",
+      "sha": "c9a4b546c8e1ac3515b6a167f4e3b60e804a2590",
+      "language": "ts",
+      "band": "medium",
+      "label": "agent",
+      "lines": 18557,
+      "coverage": 0.99,
+      "commits": 162,
+      "traced": 144,
+      "markers": [
+        "CLAUDE.md"
+      ],
+      "values": {
+        "duplicates": 1.5089,
+        "churn": 0.1617,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": 0.1211
+      }
+    },
+    {
+      "id": "ts-medium-human-01",
+      "repo": "blacksmithgu/obsidian-dataview",
+      "sha": "3f93abc03d7834f2fc9bdd4d57ba6482b3633fc8",
+      "language": "ts",
+      "band": "medium",
+      "label": "human",
+      "lines": 10857,
+      "coverage": 1,
+      "commits": 128,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 1.1974,
+        "churn": 0.1517,
+        "lexicon": 0.2763,
+        "stubs": 0.0921,
+        "dead-code": 0.3863
+      }
+    },
+    {
+      "id": "ts-medium-human-02",
+      "repo": "panva/openid-client",
+      "sha": "3f8dde8b891382d9adac586255c521f444b4bb81",
+      "language": "ts",
+      "band": "medium",
+      "label": "human",
+      "lines": 11677,
+      "coverage": 1,
+      "commits": 34,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 13.5309,
+        "churn": 0.0218,
+        "lexicon": 0,
+        "stubs": 0.4282,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "ts-medium-human-03",
+      "repo": "vadimdemedes/ink",
+      "sha": "0099134cf8fd6e8fca483bd5dbb24adae8ef29a7",
+      "language": "ts",
+      "band": "medium",
+      "label": "human",
+      "lines": 8146,
+      "coverage": 1,
+      "commits": 8,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 2.578,
+        "churn": 0.2237,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": 0.0789
+      }
+    },
+    {
+      "id": "ts-medium-human-04",
+      "repo": "JiLiZART/BBob",
+      "sha": "7a705c599a39702c7d5449b45be72b95601ac481",
+      "language": "ts",
+      "band": "medium",
+      "label": "human",
+      "lines": 5832,
+      "coverage": 1,
+      "commits": 9,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 7.8875,
+        "churn": 0.0004,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": 0.0833
+      }
+    },
+    {
+      "id": "ts-medium-human-05",
+      "repo": "geoman-io/leaflet-geoman",
+      "sha": "f756db8d6ebc5bd0016a7cd96a729399f3617f74",
+      "language": "ts",
+      "band": "medium",
+      "label": "human",
+      "lines": 17923,
+      "coverage": 1,
+      "commits": 42,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 13.837,
+        "churn": 0.0113,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": 0.3704
+      }
+    },
+    {
+      "id": "ts-medium-hybrid-01",
+      "repo": "NO6KIKO/gorest-2d-animation-spritesheet-generator",
+      "sha": "0bd4ccc4c116f287656e81937b76d9294652d3e7",
+      "language": "ts",
+      "band": "medium",
+      "label": "hybrid",
+      "lines": 26859,
+      "coverage": 1,
+      "commits": 122,
+      "traced": 1,
+      "markers": [
+        "AGENTS.md"
+      ],
+      "values": {
+        "duplicates": 1.6382,
+        "churn": 0.1805,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": 0.1176
+      }
+    },
+    {
+      "id": "ts-medium-hybrid-02",
+      "repo": "openai/mcp-extensions",
+      "sha": "e314720a0daac326217d1f123fcf51647868fa9f",
+      "language": "ts",
+      "band": "medium",
+      "label": "hybrid",
+      "lines": 9272,
+      "coverage": 1,
+      "commits": 11,
+      "traced": 0,
+      "markers": [
+        "AGENTS.md"
+      ],
+      "values": {
+        "duplicates": 0,
+        "churn": 0.0001,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": 0.069
+      }
+    },
+    {
+      "id": "ts-small-agent-01",
+      "repo": "realjacoblinder/HabitFlow",
+      "sha": "1ec45c9a6f0446c4f837f062566dec925274079f",
+      "language": "ts",
+      "band": "small",
+      "label": "agent",
+      "lines": 3517,
+      "coverage": 1,
+      "commits": 36,
+      "traced": 0,
+      "markers": [
+        "AGENTS.md"
+      ],
+      "values": {
+        "duplicates": 2.2747,
+        "churn": 0.5338,
+        "lexicon": 0,
+        "stubs": 1.1373,
+        "dead-code": 0.087
+      }
+    },
+    {
+      "id": "ts-small-agent-02",
+      "repo": "andrewrazaly/built-by-AI",
+      "sha": "40494367d7c6d85b7cb12a5d440a5bd9e18564c5",
+      "language": "ts",
+      "band": "small",
+      "label": "agent",
+      "lines": 2308,
+      "coverage": 1,
+      "commits": 1,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 0.8666,
+        "churn": 0,
+        "lexicon": 0.4333,
+        "stubs": 0,
+        "dead-code": 0.4516
+      }
+    },
+    {
+      "id": "ts-small-agent-03",
+      "repo": "Yash2003Bisht/Null",
+      "sha": "29eb6827a72a26896ef9ac0964bfa9432d0128d3",
+      "language": "ts",
+      "band": "small",
+      "label": "agent",
+      "lines": 1144,
+      "coverage": 1,
+      "commits": 13,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 0,
+        "churn": 0.1766,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "ts-small-human-01",
+      "repo": "unjs/ipx",
+      "sha": "9296aa2e0fb376f8f18824f1306a9998b8a39a98",
+      "language": "ts",
+      "band": "small",
+      "label": "human",
+      "lines": 811,
+      "coverage": 1,
+      "commits": 26,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 0,
+        "churn": 0.0629,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": 0.5893
+      }
+    },
+    {
+      "id": "ts-small-human-02",
+      "repo": "formulahendry/vscode-code-runner",
+      "sha": "4879bfe4bb83a450aa59926f9f54f8a78ed89644",
+      "language": "ts",
+      "band": "small",
+      "label": "human",
+      "lines": 656,
+      "coverage": 1,
+      "commits": 6,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 0,
+        "churn": 0.1818,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "ts-small-human-03",
+      "repo": "NightCatSama/vue-slider-component",
+      "sha": "ac0f1e5074cd8da283363e1e41dd3a7ca28d0f82",
+      "language": "ts",
+      "band": "small",
+      "label": "human",
+      "lines": 3642,
+      "coverage": 1,
+      "commits": 3,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 2.1966,
+        "churn": 0,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": 0.375
+      }
+    },
+    {
+      "id": "ts-small-human-04",
+      "repo": "vercel/serve",
+      "sha": "3e59bc1fba457c89cd26b9bf5b97d74140693192",
+      "language": "ts",
+      "band": "small",
+      "label": "human",
+      "lines": 463,
+      "coverage": 1,
+      "commits": 13,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 0,
+        "churn": 0.0345,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      }
+    },
+    {
+      "id": "ts-small-human-05",
+      "repo": "utterance/utterances",
+      "sha": "9e79bdaaa48c0b83d224c58f132db317785103cd",
+      "language": "ts",
+      "band": "small",
+      "label": "human",
+      "lines": 1702,
+      "coverage": 1,
+      "commits": 10,
+      "traced": 0,
+      "markers": [],
+      "values": {
+        "duplicates": 0,
+        "churn": 0.5025,
+        "lexicon": 0,
+        "stubs": 0.5875,
+        "dead-code": 0.1277
+      }
+    },
+    {
+      "id": "ts-small-hybrid-01",
+      "repo": "johnlindquist/claude-hooks",
+      "sha": "af5b18d864e2ac7a2bdb0e35d6bb3c31547e145c",
+      "language": "ts",
+      "band": "small",
+      "label": "hybrid",
+      "lines": 2299,
+      "coverage": 1,
+      "commits": 119,
+      "traced": 46,
+      "markers": [
+        "CLAUDE.md"
+      ],
+      "values": {
+        "duplicates": 2.1749,
+        "churn": 0.3617,
+        "lexicon": 0.8699,
+        "stubs": 0.8699,
+        "dead-code": 0.5692
+      }
+    }
+  ]
+}

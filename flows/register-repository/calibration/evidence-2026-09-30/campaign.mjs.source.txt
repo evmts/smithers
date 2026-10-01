@@ -1,0 +1,105 @@
+import { spawn, execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { readFileSync, writeFileSync, renameSync, mkdirSync, rmSync, existsSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { fit, DETERMINISTIC } from "/private/tmp/smithers-registration-inventory-3071/flows/register-repository/calibration/fit.ts";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const source = "/private/tmp/smithers-registration-inventory-3071";
+const calibration = join(source, "flows/register-repository/calibration");
+const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
+const inputs = ["calibration/manifest.json", "calibration/record.ts", "calibration/fit.ts", "tree.ts", "history.ts", "cleanup.ts", "judged.ts", "jev.ts", "schema.ts"];
+const identity = {
+  source: Object.fromEntries(inputs.map((path) => [path, hash(readFileSync(join(source, "flows/register-repository", path)))])),
+  node: process.version, executable: process.execPath,
+  git: execFileSync("git", ["--version"], { encoding: "utf8" }).trim(),
+  worker: hash(readFileSync(join(here, "worker.mjs")))
+};
+const fingerprint = hash(JSON.stringify(identity));
+const manifest = JSON.parse(readFileSync(join(calibration, "manifest.json"), "utf8"));
+const checkpointPath = join(here, "checkpoint.json");
+const validate = (row) => {
+  const entry = manifest.entries.find((entry) => entry.id === row.id);
+  if (!entry || !["id", "repo", "sha", "language", "band", "label"].every((key) => row[key] === entry[key])) throw new Error("Manifest mismatch: " + row.id);
+  if (!(row.lines > 0 && row.coverage >= 0.6 && row.coverage <= 1)) throw new Error("Invalid measurement: " + row.id);
+  for (const key of DETERMINISTIC) if (!(row.values[key] === null || (Number.isFinite(row.values[key]) && row.values[key] >= 0))) throw new Error("Invalid signal: " + row.id + " " + key);
+  if (row.values.duplicates === null) throw new Error("Missing duplicate measurement: " + row.id);
+};
+const prior = existsSync(checkpointPath) ? JSON.parse(readFileSync(checkpointPath, "utf8")) : undefined;
+if (prior && prior.fingerprint !== fingerprint) throw new Error("Checkpoint source/tool identity mismatch");
+for (const row of prior?.cases ?? []) validate(row);
+const cases = new Map((prior?.cases ?? []).map((row) => [row.id, row]));
+const failures = prior?.failures ?? [];
+const attempts = prior?.attempts ?? [];
+const began = Date.now(), deadline = began + 15 * 60_000;
+const campaign = new Date(began).toISOString();
+const preload = join(here, "exec-diagnostics.mjs");
+const nodeOptions = "--import=" + preload;
+if (process.env.NODE_OPTIONS !== undefined) throw new Error("Ambient NODE_OPTIONS requires explicit provenance review");
+writeFileSync(join(here, "instrumentation-" + campaign.replaceAll(":", "-") + ".json"), JSON.stringify({ campaign, preload, preloadSha: hash(readFileSync(preload)), NODE_OPTIONS: nodeOptions, scheduling: "fewest previous attempts first", sourceFingerprint: fingerprint }, null, 2) + "\n");
+const queue = manifest.entries.filter((entry) => !cases.has(entry.id)).sort((a, b) => attempts.filter((item) => item.id === a.id).length - attempts.filter((item) => item.id === b.id).length);
+const active = new Map();
+let bounded = false;
+const atomic = (path, value) => {
+  const tmp = path + ".tmp";
+  writeFileSync(tmp, JSON.stringify(value, null, 2) + "\n");
+  renameSync(tmp, path);
+};
+const save = () => atomic(checkpointPath, { fingerprint, identity, updatedAt: new Date().toISOString(), complete: cases.size === manifest.entries.length, cases: manifest.entries.filter((entry) => cases.has(entry.id)).map((entry) => cases.get(entry.id)), failures, attempts, active: [...active.values()].map((item) => item.id), pending: queue.map((entry) => entry.id) });
+const killTree = (pid) => {
+  const rows = execFileSync("ps", ["-axo", "pid=,ppid="], { encoding: "utf8" }).trim().split("\n").map((line) => line.trim().split(/\s+/).map(Number));
+  const owned = new Set([pid]);
+  for (;;) {
+    const before = owned.size;
+    for (const [child, parent] of rows) if (owned.has(parent)) owned.add(child);
+    if (owned.size === before) break;
+  }
+  for (const child of [...owned].reverse()) { try { process.kill(child, "SIGTERM"); } catch {} }
+};
+const timer = setTimeout(() => {
+  bounded = true;
+  for (const [pid] of active) killTree(pid);
+}, 15 * 60_000);
+save();
+await Promise.all(Array.from({ length: 5 }, async () => {
+  while (queue.length && Date.now() < deadline) {
+    const entry = queue.shift();
+    const work = join(here, "work", entry.id);
+    mkdirSync(work, { recursive: true });
+    const result = await new Promise((resolve) => {
+      const child = spawn(process.execPath, [join(here, "worker.mjs"), entry.id, work], { cwd: source, env: { ...process.env, NODE_OPTIONS: nodeOptions, SMITHERS_CALIBRATION_DIAGNOSTICS: join(here, "exec-failures.jsonl"), GIT_TERMINAL_PROMPT: "0", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" }, stdio: ["ignore", "pipe", "pipe"] });
+      active.set(child.pid, { id: entry.id });
+      save();
+      let stdout = "", stderr = "";
+      child.stdout.on("data", (part) => { stdout += part; });
+      child.stderr.on("data", (part) => { stderr += part; });
+      child.on("error", (error) => resolve({ ok: false, reason: String(error) }));
+      child.on("close", (code, signal) => {
+        active.delete(child.pid);
+        if (code !== 0) return resolve({ ok: false, reason: signal ? "campaign limit: " + signal : "worker exit " + code + ": " + stderr.slice(0, 200) });
+        try { resolve(JSON.parse(stdout)); } catch { resolve({ ok: false, reason: "Invalid worker result: " + stdout.slice(0, 200) }); }
+      });
+    });
+    if (result.ok && result.measuredLanguage === entry.language && result.recorded.band === entry.band) {
+      validate(result.recorded);
+      cases.set(entry.id, result.recorded);
+    } else failures.push({ id: entry.id, campaign, result });
+    attempts.push({ id: entry.id, campaign, finishedAt: new Date().toISOString(), ok: cases.has(entry.id) });
+    save();
+    console.log(JSON.stringify({ id: entry.id, recorded: cases.size, total: manifest.entries.length, result: cases.has(entry.id) ? "recorded" : "failed", reason: result.reason }));
+    rmSync(work, { recursive: true, force: true });
+    if (bounded) break;
+  }
+}));
+clearTimeout(timer);
+save();
+if (cases.size !== manifest.entries.length) {
+  console.error(JSON.stringify({ complete: false, recorded: cases.size, total: manifest.entries.length, campaignLimit: bounded, failures: failures.length }));
+  process.exitCode = 1;
+} else {
+  const ordered = manifest.entries.map((entry) => cases.get(entry.id));
+  atomic(join(calibration, "real-corpus.json"), { synthetic: false, manifest: "manifest.json", cases: ordered });
+  atomic(join(calibration, "real-fit.json"), fit(ordered, "calibrated-real-v1"));
+  console.log("COMPLETE " + ordered.length);
+}
