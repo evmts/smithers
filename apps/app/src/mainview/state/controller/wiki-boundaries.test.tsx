@@ -4,6 +4,7 @@ import * as Y from "yjs"
 import { WorldCardBody } from "../../cards/ConversationCards"
 import { ControllerContext } from "../../ControllerContext"
 import { encodeWikiState, wikiDocumentId } from "../../wiki/CloudWiki"
+import { createActorBindings } from "../ActorBindings"
 import type { AppController } from "../AppController"
 import type { Card, WorldDocument } from "../AppState"
 import { createAppStore } from "../AppStore"
@@ -204,6 +205,74 @@ const pane = async (fetchImpl: (input: RequestInfo | URL, init?: RequestInit) =>
   await controller.selectRepo("owner/a")
   return { store, controller }
 }
+
+test.each(["new selection", "same-page reselect", "selection ABA", "uncached page open", "invalid selection", "agent embedded read", "explicit read superseded"] as const)("a real pending pane read respects %s ordering", async ordering => {
+  const requested = Promise.withResolvers<void>()
+  const release = Promise.withResolvers<void>()
+  const requests: string[] = []
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
+    const url = new URL(request.url)
+    requests.push(url.pathname)
+    if (url.pathname.endsWith("/navigation/index")) return Response.json(index(1))
+    if (url.pathname.endsWith("/home/document")) {
+      requested.resolve()
+      await release.promise
+      return Response.json(page(1, "public"))
+    }
+    if (url.pathname.endsWith("/start/document")) {
+      const answer = page(2, "public")
+      return Response.json({ ...answer, page: { ...answer.page, slug: "start", title: "Start" } })
+    }
+    return new Response(null, { status: 404 })
+  } })
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  await signIn(store)
+  await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [
+    { id: "owner/a", org: "owner", ownerKind: "user", name: "a", head: null }
+  ] }).isPersisted.promise
+  await store.dispatch({ type: "repo.selected", actor: "user", id: "owner/a" }).isPersisted.promise
+  await store.dispatch({ type: "surface.changed", actor: "user", surface: "world" }).isPersisted.promise
+  const start = { ...note("public", "owner/a"), id: wikiDocumentId("owner/a", 2), title: "Start", path: "Guides/Start.md",
+    cloud: { ...note("public", "owner/a").cloud!, pageId: 2, slug: "start", path: "Guides/Start.md" } }
+  if (ordering !== "uncached page open") await store.dispatch({ type: "world.document.upserted", actor: "system", document: start, select: ordering !== "new selection" }).isPersisted.promise
+  const home = { ...note("public", "owner/a"), title: "Home" }
+  await store.dispatch({ type: "world.document.upserted", actor: "system", document: home, select: false }).isPersisted.promise
+  const ctx = createControllerContext(store, silentAgent, {
+    fetchImpl: (input, init) => fetch(new URL(String(input), server.url), init)
+  })
+  ctx.withToast = async (_key, _title, _done, work) => work()
+  const actors = createActorBindings(ctx.onDispose)
+  const wiki = actors.pair(ctx, context => createCloudWikiController(context, store.nextOrdinal))
+  const world = createWorldController(ctx, { nextOrdinal: store.nextOrdinal, cloudWiki: wiki })
+  let reading: Promise<unknown> | undefined
+  try {
+    reading = ordering === "explicit read superseded" ? wiki.openCloudWiki("owner/a", "home", 1, "public") : wiki.readWikiForPane()
+    await requested.promise
+    expect(requests).toEqual(ordering === "explicit read superseded" ? ["/api/repos/owner/a/wiki/home/document"] : ["/api/repos/owner/a/wiki/navigation/index", "/api/repos/owner/a/wiki/home/document"])
+    if (ordering === "selection ABA") expect(world.selectWorldDocument(home.id)).toBeUndefined()
+    if (ordering === "uncached page open") {
+      expect(store.collections.worldDocuments.has(start.id)).toBe(false)
+      await wiki.openCloudWiki("owner/a", "start", 2, "public")
+    } else if (ordering === "invalid selection") {
+      expect(world.selectWorldDocument("missing")).toBe("There is no Wiki note with id missing.")
+    } else if (ordering === "agent embedded read") {
+      await actors.select(wiki).openCloudWiki("owner/a", "start", 2, "public")
+      expect(store.collections.cards.get(`wiki-open-${start.id}`)?.kind).toBe("world")
+    } else expect(world.selectWorldDocument(start.id)).toBeUndefined()
+    expect(store.session().selectedWorldDocumentId).toBe(start.id)
+    release.resolve()
+    await reading
+    expect(store.session().selectedWorldDocumentId).toBe(ordering === "invalid selection" || ordering === "agent embedded read" ? home.id : start.id)
+    expect(store.collections.worldDocuments.get(start.id)?.body).toBe(ordering === "uncached page open" || ordering === "agent embedded read" ? "# Different heading" : start.body)
+    expect(requests.filter(path => path.endsWith("/start/document"))).toHaveLength(ordering === "uncached page open" || ordering === "agent embedded read" ? 1 : 0)
+  } finally {
+    release.resolve()
+    await reading?.catch(() => {})
+    await ctx.dispose()
+    await store.dispose?.()
+    await server.stop(true)
+  }
+})
 
 test("pane opening with an existing repository opens the first page, preserves stored titles and selected space", async () => {
   const { store, controller } = await pane(async (input) => {
