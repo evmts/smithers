@@ -32,7 +32,10 @@ test("Claude form and controller keep a held token out of history and persisted 
   expect(card?.kind === "flow-form" && card.payload.fields.find(field => field.name === "value")?.kind).toBe("write-only")
   const token = "sk-ant-api03-private-controller-fixture"
   expect(await controller.commands.run("form.set", `${id} value ${token}`)).toMatchObject({ status: "failed" })
-  expect(await controller.commands.submit({ name: "form.submit", actor: "user", payload: { cardId: id }, gesture: writeOnlyGesture("form.submit", { value: token }) })).toMatchObject({ status: "executed", value: "Requested" })
+  await controller.commands.run("card.maximize", id)
+  expect(store.session().maximizedCardId).toBe(id)
+  expect(await controller.commands.submit({ name: "form.submit", actor: "user", payload: { cardId: id }, originCardId: id, gesture: writeOnlyGesture("form.submit", { value: token }) })).toMatchObject({ status: "executed", value: "Requested" })
+  const paneAfterSubmission = store.session().maximizedCardId
   await waitFor(() => posts.length === 1)
   await store.settled?.()
   expect(JSON.stringify([...persisted])).not.toContain(token)
@@ -40,10 +43,12 @@ test("Claude form and controller keep a held token out of history and persisted 
   const request = store.session().codingProviderRequests?.[0]
   expect(request).toMatchObject({ owner: "alice", action: "connect", state: "requested" })
   expect(posts[0]).toContain(token)
-  expect(await controller.commands.submit({ name: "form.submit", actor: "user", payload: { cardId: id }, gesture: writeOnlyGesture("form.submit", { value: token }) })).toMatchObject({ status: "failed" })
+  expect(await controller.commands.submit({ name: "form.submit", actor: "user", payload: { cardId: id }, originCardId: id, gesture: writeOnlyGesture("form.submit", { value: token }) })).toMatchObject({ status: "failed" })
   expect(posts).toHaveLength(1)
   hold.resolve(Response.json({ id: "conn-1", provider: "claude", state: "active", label: `web-${request!.id}` }, { status: 201 }))
   await waitFor(() => store.session().codingProviderRequests?.[0]?.state === "completed")
+  expect(paneAfterSubmission).toBeNull()
+  expect(store.session().maximizedCardId).toBeNull()
 })
 
 test("reload reconciles a token-free connect receipt and revocation through the controller", async () => {
