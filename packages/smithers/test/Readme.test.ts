@@ -14,7 +14,8 @@
  * the package typecheck compiles the published example and this file proves the
  * two have not drifted apart.
  */
-import { readFileSync } from "node:fs"
+import { execFileSync } from "node:child_process"
+import { readFileSync, statSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import * as Cli from "../src/index.ts"
@@ -105,11 +106,23 @@ describe("the CLI documentation contracts", () => {
     const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"))
     const introduction = readme.split("**Documentation:**")[0]!.replace(/\s+/g, " ")
 
-    expect(manifest.dependencies.effect).toBe(manifest.dependencies["@effect/platform-node"])
+    expect(manifest.smthrs.privateEffectAdapters).toEqual([
+      "@effect/platform-bun",
+      "@effect/platform-node",
+      "@effect/platform-node-shared"
+    ])
+    for (const adapter of manifest.smthrs.privateEffectAdapters) {
+      expect(manifest.devDependencies[adapter]).toBe(manifest.dependencies.effect)
+      expect(manifest.dependencies[adapter]).toBeUndefined()
+      expect(manifest.peerDependencies[adapter]).toBeUndefined()
+      expect(manifest.optionalDependencies?.[adapter]).toBeUndefined()
+      expect(introduction).toContain(`\`${adapter}\``)
+    }
+    expect(introduction).toContain("shipped under `dist/vendor`, without published dependency edges")
     expect(Object.keys(manifest.peerDependencies)).toEqual(["@effect/sql-sqlite-node", "@effect/sql-pg"])
     expect(manifest.peerDependenciesMeta["@effect/sql-pg"].optional).toBe(true)
     expect(introduction).toContain(
-      `\`effect\` and \`@effect/platform-node\` as exact \`${manifest.dependencies.effect}\` direct dependencies`
+      `\`effect\` as an exact \`${manifest.dependencies.effect}\` direct dependency`
     )
     expect(introduction).toContain(
       `\`@effect/sql-sqlite-node\` is the required peer dependency, at \`${
@@ -120,7 +133,7 @@ describe("the CLI documentation contracts", () => {
 })
 
 const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
-  exports: Record<string, string | null>
+  exports: Record<string, string | Record<string, string> | null>
   sideEffects: ReadonlyArray<string>
 }
 
@@ -138,9 +151,38 @@ const subpathOnly = ((readme.split("### Subpath-only modules\n")[1] ?? "").split
   })
 
 describe("the export map", () => {
+  it("resolves the documented conditional native adapter through the public package boundary", () => {
+    expect(
+      Object.entries(manifest.exports).filter(([, target]) => target !== null && typeof target === "object").map((
+        [key]
+      ) => key)
+    ).toEqual(["./tui-native"])
+    expect(manifest.exports["./tui-native"]).toEqual({
+      types: "./vendor/opentui-native/runtime.d.ts",
+      bun: "./vendor/opentui-native/runtime.bun.mjs",
+      default: "./vendor/opentui-native/runtime.node.mjs"
+    })
+    expect(readme).toContain(
+      "`@smthrs/cli/tui-native` selects the vendored OpenTUI runtime for Bun or Node through export conditions"
+    )
+    expect(Object.keys(Cli)).not.toContain("tui-native")
+    const cwd = fileURLToPath(new URL("../", import.meta.url))
+    for (const [flags, target] of [[[], "runtime.node.mjs"], [["--conditions=bun"], "runtime.bun.mjs"]] as const) {
+      const resolved = execFileSync(process.execPath, [
+        ...flags,
+        "--input-type=module",
+        "-e",
+        "console.log(import.meta.resolve(\"@smthrs/cli/tui-native\"))"
+      ], { cwd, encoding: "utf8" }).trim()
+      expect(resolved).toBe(new URL(`../vendor/opentui-native/${target}`, import.meta.url).href)
+      expect(statSync(new URL(resolved)).isFile()).toBe(true)
+    }
+  })
   it("makes every top-level subpath a barrel namespace, and every namespace a subpath", () => {
     // `bin` and `index` are the executable and the barrel itself, never namespaces.
-    const topLevel = subpaths.filter((key) => !key.includes("/") && key !== "bin" && key !== "index")
+    const topLevel = subpaths.filter((key) =>
+      !key.includes("/") && key !== "bin" && key !== "index" && typeof manifest.exports[`./${key}`] === "string"
+    )
 
     expect(topLevel.sort()).toEqual(Object.keys(Cli).sort())
   })
@@ -157,8 +199,10 @@ describe("the export map", () => {
     // A bundler that honours `sideEffects` prunes an import whose bindings are
     // unused. `bin.ts` loads `cli/LegacyBin.ts` for its `NodeRuntime.runMain`
     // alone, so both must be listed as source and as each compiled output.
-    const entries = subpaths.filter((key) =>
-      /^NodeRuntime\.runMain\(/m.test(readFileSync(new URL(`../src/${key}.ts`, import.meta.url), "utf8"))
+    const entries = subpaths.filter((key) => typeof manifest.exports[`./${key}`] === "string").filter((key) =>
+      /^NodeRuntime\.runMain\(/m.test(
+        readFileSync(new URL(`../${manifest.exports[`./${key}`]}`, import.meta.url), "utf8")
+      )
     )
     const missing = entries.flatMap((key) =>
       [`./src/${key}.ts`, `./dist/esm/${key}.js`, `./dist/cjs/${key}.js`].filter((path) =>
