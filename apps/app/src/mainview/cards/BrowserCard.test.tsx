@@ -2,6 +2,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, expect, test } from "bun:test"
 import { renderToStaticMarkup } from "react-dom/server"
 import type { Card } from "../state/AppState"
+import { browserReadFailure } from "../state/BrowserFailure"
 import { BrowserCardBody } from "./ConversationCards"
 
 GlobalRegistrator.register({ url: "http://127.0.0.1:4920/owner/repo" })
@@ -65,3 +66,33 @@ test("legacy browser failure cards preserve their existing collapsed diagnostic"
   expect(html).toContain("<summary>Details</summary>")
   expect(html).toContain("Safe fallback.")
 })
+
+test.each([
+  { code: "sign_in_required", status: 403, fault: "user", origin: "local" },
+  { code: "session_expired", status: 503, fault: "user", origin: "local" },
+  { code: "sign_in_required", status: 401, fault: "infra", origin: "local" },
+  { code: "session_expired", status: 401, fault: "user", origin: "client" },
+  { code: "future_auth", status: 401, fault: "user", origin: "local" }
+] as const)("mismatched authentication metadata cannot invent a sign-in door: %j", metadata => {
+  const html = renderToStaticMarkup(<BrowserCardBody card={failureCard({ ...metadata, message: "Use /auth.sign-in RAW_AUTH_MARKER" })} />)
+  expect(html).toContain('data-fault="infra"')
+  expect(html).not.toContain("RAW_AUTH_MARKER")
+  expect(html).not.toContain("<button")
+})
+
+
+for (const origin of ["local", "worker"] as const) {
+  test.each([
+    { code: "sign_in_required", sentence: "Smithers Cloud doesn't recognise this session.", actions: ["sign-in"] },
+    { code: "session_expired", sentence: "That session has expired. Anything you already finished is still saved.", actions: ["sign-in", "retry"] }
+  ] as const)(`stored authentication refusal restores canonical projection from ${origin}: %s`, metadata => {
+    const card = failureCard({ code: metadata.code, status: 401, fault: "user", origin, message: "RAW_AUTH_MARKER" })
+    expect(browserReadFailure(card.payload)).toMatchObject({ fault: "user", sentence: metadata.sentence, actions: metadata.actions, detail: "" })
+    const html = renderToStaticMarkup(<BrowserCardBody card={card} />)
+    expect(html).toContain('data-fault="user"')
+    expect(html).toContain(metadata.sentence.replaceAll("'", "&#x27;"))
+    expect(html).not.toContain("<details")
+    expect(html).not.toContain("RAW_AUTH_MARKER")
+    expect(html).not.toContain("<button")
+  })
+}
