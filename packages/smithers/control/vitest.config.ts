@@ -12,7 +12,7 @@ export default defineConfig({
     hookTimeout: 30_000,
     coverage: {
       enabled: true,
-      provider: "v8",
+      provider: "istanbul",
       // Per-process report directory so concurrent vitest runs do not destroy
       // each other's coverage scratch state (issues #115/#121).
       reportsDirectory: join(tmpdir(), `flows-control-coverage-${process.pid}`),

@@ -775,6 +775,23 @@ const conformanceCheck = Smithers.Typecheck({
 })
 
 /**
+ * Executes the published coverage provider against independent generator and
+ * source-map counterexamples, including a deliberately incomplete 100% gate.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const coverageProvider = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//scripts/coverage-provider.test.mjs")]),
+  srcs: [
+    ...sources,
+    Smithers.file("//packages/smithers/control/package.json"),
+    Smithers.file("//packages/smithers/control/vitest.config.ts")
+  ],
+  deps: []
+})
+
+/**
  * Repository-wide CI, publication, coverage and containment policy.
  *
  * These checks read other packages and root configuration, so they run in the
@@ -992,6 +1009,7 @@ export const Package = Smithers.Package({
     commit,
     conformanceCheck,
     repositoryConformance,
+    coverageProvider,
     mutationGate,
     benchmarkGate,
     tierContracts,

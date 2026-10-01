@@ -157,7 +157,6 @@ export const planFingerprint = (input: PlanInput): string =>
  * @private
  */
 export const accepted = (receiptId: string, runId?: RunId): Receipt => {
-  /* v8 ignore next 3 -- both runtimes call this from `launch`, which has the run it just started; the parameter stays optional for the receipt's shape rather than for a caller */
   return runId === undefined
     ? { _tag: "Accepted", receiptId }
     : { _tag: "Accepted", receiptId, runId }
