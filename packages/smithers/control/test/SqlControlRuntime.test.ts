@@ -840,6 +840,51 @@ describe("SqlControlRuntime", () => {
     )
   })
 
+  it("retries a refused parked-host takeover only after a fresh dead-host receipt", async () => {
+    const owner = { hostId: "mac", pid: 101, nonce: "parked-host" }
+    const claimant = { hostId: "mac", pid: 202, nonce: "successor" }
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const first = yield* ControlRuntime
+        const store = yield* RunStore.RunStore
+        const { runId } = yield* started
+        const oldFence = yield* first.claimFence(runId)
+        const parkedSummary = yield* park(first, runId)
+        const parked = yield* store.get(runId)
+        let alive = true
+        const probes: Array<{ owner: Ownership.OwnerId; context: Ownership.LivenessContext }> = []
+        const successor = yield* SqlControlRuntime.make({
+          owner: claimant,
+          isAlive: (expected, context) =>
+            Effect.sync(() => {
+              probes.push({ owner: expected, context })
+              return alive
+            })
+        })
+        const refusal = yield* Effect.flip(successor.resume(runId, { scope: "launched" }))
+        expect(refusal).toBeInstanceOf(ClaimLost)
+        expect(yield* store.get(runId)).toEqual(parked)
+        expect(probes).toHaveLength(1)
+        expect(probes[0]?.owner).toMatchObject({ hostId: "mac", pid: 101 })
+        expect(JSON.stringify(probes[0]?.owner)).toBe(parkedSummary.parkedBy)
+        expect(probes[0]?.context).toMatchObject({ claimant, heartbeatAtMs: parked.heartbeatAtMs })
+
+        alive = false
+        const resumed = yield* successor.resume(runId, { scope: "launched" })
+        expect(resumed.status).toBe("accepted")
+        expect(probes).toHaveLength(2)
+        expect(probes[1]?.owner).toEqual(probes[0]?.owner)
+        expect(probes[1]?.context).toMatchObject({ claimant, heartbeatAtMs: parked.heartbeatAtMs })
+        expect((yield* store.get(runId)).owner).toMatchObject({ hostId: "mac", pid: 202 })
+        expect(yield* Effect.flip(first.writeStatus(runId, oldFence, "running"))).toBeInstanceOf(ClaimLost)
+        const fence = yield* successor.claimFence(runId)
+        expect((yield* successor.writeStatus(runId, fence, "running")).status).toBe("running")
+        expect((yield* successor.resume(runId, { scope: "launched" })).status).toBe("running")
+        expect(probes).toHaveLength(2)
+      }).pipe(Effect.provide(durable({ owner })), Effect.scoped, Effect.orDie)
+    )
+  })
+
   it("takes over a running run whose owner is gone only once its lease has expired", async () => {
     const owner = { hostId: "mac", pid: 101, nonce: "first" }
     const observed = await Effect.runPromise(
