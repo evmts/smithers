@@ -40,11 +40,12 @@ const describe = (error: unknown, seen = new Set<unknown>()): string => {
   seen.add(error)
   if (!(error instanceof Error)) return typeof error === "object" && error !== null ? fields(error) : String(error)
   const stack = error.stack
+  const message = error.message
   const own = stack === undefined
-    ? `${error.name}: ${error.message}`
-    : stack.includes(error.message)
+    ? `${error.name}: ${message}`
+    : stack.includes(message)
     ? stack
-    : [`${error.name}: ${error.message}`, ...stack.split("\n").slice(1)].join("\n")
+    : [`${error.name}: ${message}`, ...stack.split("\n").slice(1)].join("\n")
   return error.cause === undefined ? own : `${own}\nCaused by: ${describe(error.cause, seen)}`
 }
 /** Record the full cause, redacting credential-shaped text before writing. */
