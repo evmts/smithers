@@ -130,7 +130,23 @@ export async function startFullBackend(options: { readonly labels?: boolean } = 
       headers.set("authorization", `token ${token}`)
       return fetch(new URL(String(input), origin), { ...init, headers })
     }
-    return { origin, token, username, http, stop }
+    const signIn = async (rendererOrigin: string) => {
+      const target = new URL(rendererOrigin)
+      if (target.protocol !== "http:" || target.hostname !== "127.0.0.1" || target.origin !== rendererOrigin) {
+        throw new Error("Fixture sign-in requires a loopback renderer origin")
+      }
+      const response = await fetch(`${target.origin}/api/auth/local/login`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username, password })
+      })
+      if (!response.ok) throw new Error(`Fixture local sign-in refused (${response.status})`)
+      const identity = await fetch(`${target.origin}/api/user`)
+      if (!identity.ok) throw new Error(`Fixture owner readback refused (${identity.status})`)
+      const user = await identity.json() as { username?: unknown; is_admin?: unknown }
+      if (user.username !== username || user.is_admin !== true) throw new Error("Fixture owner readback mismatch")
+    }
+    return { origin, token, username, http, signIn, stop }
   } catch (error) {
     try {
       await stop()
