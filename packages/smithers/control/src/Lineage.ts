@@ -82,6 +82,14 @@ export const forkCreatedEventType = "flows.time-travel.fork-created"
  */
 export const lineageEventType = "control.run.lineage"
 
+function ancestryOrigin(ancestry: Ancestry & { readonly parentRunId: string }): Origin
+function ancestryOrigin(ancestry: Ancestry): Origin | undefined
+function ancestryOrigin(ancestry: Ancestry): Origin | undefined {
+  if (ancestry.forked === true) return "fork"
+  if (ancestry.roundOrdinal !== undefined && ancestry.roundOrdinal > 0) return "continuation"
+  return ancestry.parentRunId === undefined ? undefined : "child"
+}
+
 /**
  * Decides how a run came to exist from its ancestry facts.
  *
@@ -92,11 +100,7 @@ export const lineageEventType = "control.run.lineage"
  * @category projections
  * @since 0.1.0
  */
-export const originOf = (ancestry: Ancestry): Origin | undefined => {
-  if (ancestry.forked === true) return "fork"
-  if (ancestry.roundOrdinal !== undefined && ancestry.roundOrdinal > 0) return "continuation"
-  return ancestry.parentRunId === undefined ? undefined : "child"
-}
+export const originOf = (ancestry: Ancestry): Origin | undefined => ancestryOrigin(ancestry)
 
 const record = (value: unknown): Readonly<Record<string, unknown>> | undefined =>
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -168,7 +172,7 @@ export const derive = (event: ControlEvent): ControlEvent | undefined => {
   if (edge === undefined || edge.runId === undefined || edge.parentRunId === undefined) return undefined
   const lineageId = "lineageId" in edge ? edge.lineageId : undefined
   const roundOrdinal = "roundOrdinal" in edge ? edge.roundOrdinal : undefined
-  const origin = originOf({
+  const origin = ancestryOrigin({
     parentRunId: edge.parentRunId,
     ...(roundOrdinal === undefined ? {} : { roundOrdinal }),
     forked: edge.forked
@@ -183,7 +187,7 @@ export const derive = (event: ControlEvent): ControlEvent | undefined => {
       parentRunId: edge.parentRunId,
       ...(lineageId === undefined ? {} : { lineageId }),
       ...(roundOrdinal === undefined ? {} : { roundOrdinal }),
-      ...(origin === undefined ? {} : { origin })
+      origin
     }
   }
 }
