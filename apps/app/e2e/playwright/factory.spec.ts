@@ -192,7 +192,11 @@ const boot = async (page: Page): Promise<void> => {
   await expect(page.getByTestId("setup-checklist")).toBeVisible()
   await page.getByRole("button", { name: "Dismiss", exact: true }).focus()
   await page.keyboard.press("Enter")
-  await expect(page.getByTestId("setup-checklist")).toBeHidden()
+  const setup = page.getByTestId("setup-checklist")
+  await expect(setup).toHaveAttribute("data-complete", "true")
+  await expect(setup.getByRole("button", { name: "Dismiss", exact: true })).toHaveCount(0)
+  await expect(setup.locator("progress, ol")).toHaveCount(0)
+  await expect(setup.getByRole("region", { name: "Repository jobs", exact: true })).toBeVisible()
 }
 
 /** Flip the theme through /appearance.dark-mode and wait for the root to say so. */
