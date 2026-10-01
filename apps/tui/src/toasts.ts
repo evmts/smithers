@@ -49,6 +49,7 @@ export const rows = (input: {
   readonly tabs: ReadonlyArray<Tab>
   readonly runs: ReadonlyArray<Run>
   readonly search: TextSearch | undefined
+  readonly issueViews?: number
   /** When a running undo started. */
   readonly undoing: number | undefined
   readonly toast: Toast | undefined
@@ -77,6 +78,9 @@ export const rows = (input: {
     })),
     ...(search?.status === "running" && now - search.startedAt >= WORK_NOTICE_DELAY_MS
       ? [{ id: "search", text: `${tick} text: ${search.query}`, tone: "info" as const }]
+      : []),
+    ...(input.issueViews !== undefined && now - input.issueViews >= WORK_NOTICE_DELAY_MS
+      ? [{ id: "issue-views", text: `${tick} Issue views`, tone: "info" as const }]
       : []),
     ...(undoing !== undefined && now - undoing >= WORK_NOTICE_DELAY_MS
       ? [{ id: "undo", text: `${tick} Undoing`, tone: "info" as const }]

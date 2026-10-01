@@ -1,3 +1,4 @@
+import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import { renderToStaticMarkup } from "react-dom/server"
@@ -8,6 +9,7 @@ import { createAppController } from "../AppController"
 import type { AppServices } from "../AppController"
 import type { Card } from "../AppState"
 import { createAppStore } from "../AppStore"
+import { applicationIdentityFromFetch } from "../TestFixtures"
 import { flowArgs } from "../../flows/FlowArgs"
 import { payloadFor } from "../../flows/SlashPayload"
 import { IssueListCardBody } from "../../cards/IssueCards"
@@ -98,7 +100,7 @@ describe("saved issue views in the issue list", () => {
     const card = listCard(store)
     expect(card.payload.view).toBe("bugs")
     expect(card.payload.issues.map((issue) => issue.number)).toEqual([9])
-    expect(calls).toContain("GET /api/repos/will/flows/issues?view=bugs")
+    expect(calls).toContain("GET /api/repos/will/flows/issues?view=bugs&limit=100")
     expect(calls.some((call) => call.includes("state="))).toBe(false)
     expect(calls.some((call) => call.startsWith("GET /api/user/github-repos/"))).toBe(false)
 
@@ -212,3 +214,420 @@ describe("the issue list card's view toggles", () => {
     expect(html).not.toContain('aria-label="Views"')
   })
 })
+
+
+const pagedViewBootstrap: AppBootstrap = {
+  apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["identity", "cloud"],
+  authFlow: "redirect", sandbox: null
+}
+
+test.each([100, 105])(
+  "a named view reads %i rows through the keyset and persists its repository selection",
+  async (total) => {
+    const storage = memoryStorage()
+    const calls: Array<{ method: string; path: string; query: string }> = []
+    const cursor = "MTAw"
+    const originalLocation = Object.getOwnPropertyDescriptor(globalThis, "location")
+    let frontendReads = 0
+    const frontend = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch() {
+        frontendReads++
+        return new Response(null, { status: 404 })
+      }
+    })
+    Object.defineProperty(globalThis, "location", { configurable: true, value: new URL(frontend.url.origin) })
+    const rows = Array.from({ length: total }, (_, index) => wireIssue(index + 1))
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(request) {
+        const url = new URL(request.url)
+        calls.push({ method: request.method, path: url.pathname, query: url.search })
+        if (url.pathname === "/api/user") return Response.json({ id: 1, username: "will", is_admin: false })
+        if (url.pathname === "/api/repos/will/flows/issue-views") return Response.json(VIEWS)
+        if (url.pathname === "/api/repos/will/flows/issues" && url.searchParams.get("view") === "bugs") {
+          if (!url.searchParams.has("cursor")) {
+            return new Response((total === 100 ? "\uFEFF" : "") + JSON.stringify(rows.slice(0, 100)), {
+              headers: {
+                ...(total > 100
+                  ? {
+                    Link: `<${url.origin}/api/repos/will/flows/issues?view=bugs&cursor=${cursor}&limit=100>; rel="next"`
+                  }
+                  : {}),
+                "content-type": "application/json",
+                "X-Total-Count": String(total),
+                "X-Per-Page": "100"
+              }
+            })
+          }
+          if (url.searchParams.get("cursor") === cursor) {
+            return Response.json(rows.slice(100), { headers: { "X-Total-Count": "105" } })
+          }
+        }
+        return new Response(null, { status: 404 })
+      }
+    })
+    const store = await createAppStore({ kind: "localStorage", storage })
+    const controller = createAppController(store, unavailableAgent, {
+      baseUrl: server.url.origin,
+      fetchImpl: fetch,
+      bootstrap: pagedViewBootstrap,
+      applicationIdentity: applicationIdentityFromFetch(fetch, server.url.origin)
+    })
+    try {
+      await controller.loadSession()
+      expect(store.collections.identitySessions.get("identity")?.login).toBe("will")
+      expect((await controller.commands.run("issues.list", "all --view bugs will/flows")).status).toBe("executed")
+      await store.settled?.()
+      const card = listCard(store)
+      expect(card.payload.issues.map((issue) => issue.number)).toEqual(rows.map((issue) => issue.number))
+      expect(card.payload.view).toBe("bugs")
+      expect(card.payload.repo).toBe("will/flows")
+      const issueCalls = calls.filter((call) => call.path.endsWith("/issues"))
+      expect(issueCalls).toHaveLength(total > 100 ? 2 : 1)
+      expect(issueCalls.every((call) => call.method === "GET" && call.path === "/api/repos/will/flows/issues")).toBe(
+        true
+      )
+      expect(issueCalls.map((call) => new URLSearchParams(call.query).get("view"))).toEqual(
+        total > 100 ? ["bugs", "bugs"] : ["bugs"]
+      )
+      expect(issueCalls.map((call) => new URLSearchParams(call.query).get("cursor"))).toEqual(
+        total > 100 ? [null, cursor] : [null]
+      )
+      expect(issueCalls.some((call) => new URLSearchParams(call.query).has("state"))).toBe(false)
+      expect(calls.some((call) => call.path.startsWith("/api/user/github-repos/"))).toBe(false)
+      expect(frontendReads).toBe(0)
+      const html = renderToStaticMarkup(createElement(IssueListCardBody, { card, onRunCommand: () => {} }))
+      expect(html).toContain(`${total} Open`)
+      expect(html).toContain("aria-pressed=\"true\"")
+      await controller.dispose()
+      const reloaded = await createAppStore({ kind: "localStorage", storage })
+      try {
+        expect(listCard(reloaded).payload.view).toBe("bugs")
+        expect(listCard(reloaded).payload.repo).toBe("will/flows")
+        expect(listCard(reloaded).payload.issues.map((issue) => issue.number)).toEqual(
+          rows.map((issue) => issue.number)
+        )
+      } finally {
+        await reloaded.dispose?.()
+      }
+    } finally {
+      if (originalLocation) Object.defineProperty(globalThis, "location", originalLocation)
+      else Reflect.deleteProperty(globalThis, "location")
+      try {
+        await controller.dispose()
+      } finally {
+        try {
+          await store.dispose?.()
+        } finally {
+          try {
+            await server.stop(true)
+          } finally {
+            await frontend.stop(true)
+          }
+        }
+      }
+    }
+  }
+)
+
+test("a failed continuation keeps the previous view intact and a retry reads the complete named view", async () => {
+  const calls: string[] = []
+  let fail = true
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request) {
+      const url = new URL(request.url)
+      if (url.pathname === "/api/user") return Response.json({ id: 1, username: "will", is_admin: false })
+      if (url.pathname === "/api/repos/will/flows/issue-views") return Response.json(VIEWS)
+      if (url.pathname === "/api/repos/will/flows/issues") {
+        calls.push(`${request.method} ${url.pathname}${url.search}`)
+        if (url.searchParams.get("view") === "triage") return Response.json([wireIssue(3)])
+        if (url.searchParams.get("view") === "bugs" && !url.searchParams.has("cursor")) {
+          return Response.json([wireIssue(7)], {
+            headers: {
+              Link: `<${url.origin}${url.pathname}?view=bugs&cursor=OA&limit=100>; rel="next"`,
+              "X-Total-Count": "2"
+            }
+          })
+        }
+        if (url.searchParams.get("view") === "bugs" && url.searchParams.get("cursor") === "OA") {
+          return fail
+            ? Response.json({ message: "private-upstream-debug-marker" }, { status: 503 })
+            : Response.json([wireIssue(8)])
+        }
+      }
+      return new Response(null, { status: 404 })
+    }
+  })
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, unavailableAgent, {
+    baseUrl: server.url.origin,
+    fetchImpl: fetch,
+    bootstrap: pagedViewBootstrap,
+    applicationIdentity: applicationIdentityFromFetch(fetch, server.url.origin)
+  })
+  try {
+    await controller.loadSession()
+    expect(store.collections.identitySessions.get("identity")?.login).toBe("will")
+    expect((await controller.commands.run("issues.list", "all --view triage will/flows")).status).toBe("executed")
+    const failed = await controller.commands.run("issues.list", "all --view bugs will/flows")
+    expect(failed.status).toBe("failed")
+    expect(JSON.stringify(failed)).not.toContain("private-upstream-debug-marker")
+    expect(store.collections.cards.get("issues-will/flows")?.kind).not.toBe("issue-list")
+    expect(store.collections.cards.get("issues-will/flows")?.status).toBe("error")
+    expect((await controller.commands.run("card.history.back", "issues-will/flows")).status).toBe("executed")
+    expect(listCard(store).payload.view).toBe("triage")
+    expect(listCard(store).payload.issues.map((issue) => issue.number)).toEqual([3])
+    fail = false
+    expect((await controller.commands.run("issues.list", "all --view bugs will/flows")).status).toBe("executed")
+    expect(listCard(store).payload.view).toBe("bugs")
+    expect(listCard(store).payload.issues.map((issue) => issue.number)).toEqual([7, 8])
+    const pages = calls.filter((call) => call.includes("view=bugs"))
+    expect(pages).toHaveLength(4)
+    expect(pages[0]).toBe(pages[2])
+    expect(pages[1]).toBe(pages[3])
+    expect(pages.every((call) => call.startsWith("GET /api/repos/will/flows/issues?") && !call.includes("state=")))
+      .toBe(true)
+  } finally {
+    await controller.dispose()
+    await store.dispose?.()
+    await server.stop(true)
+  }
+})
+
+test.each(
+  ["repeated", "missing", "malformed", "cross-origin", "foreign-path", "changed-view", "extra-filter"] as const
+)("a %s continuation cursor refuses without publishing a partial named view", async (mode) => {
+  let reads = 0
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request) {
+      const url = new URL(request.url)
+      if (url.pathname === "/api/user") return Response.json({ id: 1, username: "will", is_admin: false })
+      if (url.pathname === "/api/repos/will/flows/issue-views") return Response.json(VIEWS)
+      if (url.pathname === "/api/repos/will/flows/issues") {
+        reads++
+        return Response.json([wireIssue(reads)], {
+          headers: {
+            Link: mode === "malformed"
+              ? "not-a-link"
+              : `<${mode === "cross-origin" ? "https://pagination.invalid" : url.origin}${
+                mode === "foreign-path" ? "/api/repos/other/repo/issues" : url.pathname
+              }?view=${mode === "changed-view" ? "triage" : "bugs"}${mode === "missing" ? "" : "&cursor=OA"}&limit=100${
+                mode === "extra-filter" ? "&state=closed" : ""
+              }>; rel="next"`
+          }
+        })
+      }
+      return new Response(null, { status: 404 })
+    }
+  })
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, unavailableAgent, {
+    baseUrl: server.url.origin,
+    fetchImpl: fetch,
+    bootstrap: pagedViewBootstrap,
+    applicationIdentity: applicationIdentityFromFetch(fetch, server.url.origin)
+  })
+  try {
+    await controller.loadSession()
+    const outcome = await controller.commands.run("issues.list", "all --view bugs will/flows")
+    expect(outcome.status).toBe("failed")
+    expect(store.collections.cards.get("issues-will/flows")?.kind).not.toBe("issue-list")
+    expect(reads).toBe(mode === "repeated" ? 2 : 1)
+  } finally {
+    await controller.dispose()
+    await store.dispose?.()
+    await server.stop(true)
+  }
+})
+
+test.each(["account", "repository"] as const)(
+  "a held continuation stops after %s scope replacement",
+  async (replacement) => {
+    const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
+    let login = "will", reads = 0
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(request) {
+        const url = new URL(request.url)
+        if (url.pathname === "/api/user") {
+          return Response.json({ id: login === "will" ? 1 : 2, username: login, is_admin: false })
+        }
+        if (url.pathname === "/api/repos/will/flows/issue-views") {
+          return Response.json(VIEWS)
+        }
+        if (url.pathname === "/api/repos/will/flows/issues") {
+          reads++
+          if (!url.searchParams.has("cursor")) {
+            return Response.json([wireIssue(7)], {
+              headers: {
+                Link: `<${url.origin}${url.pathname}?view=bugs&cursor=OA&limit=100>; rel="next"`
+              }
+            })
+          }
+          if (url.searchParams.get("cursor") === "OQ") return Response.json([wireIssue(9)])
+          entered.resolve()
+          await release.promise
+          return Response.json([wireIssue(8)], {
+            headers: {
+              Link: `<${url.origin}${url.pathname}?view=bugs&cursor=OQ&limit=100>; rel="next"`
+            }
+          })
+        }
+        return new Response(null, { status: 404 })
+      }
+    })
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const controller = createAppController(store, unavailableAgent, {
+      baseUrl: server.url.origin,
+      fetchImpl: fetch,
+      bootstrap: pagedViewBootstrap,
+      applicationIdentity: applicationIdentityFromFetch(fetch, server.url.origin)
+    })
+    try {
+      await controller.loadSession()
+      expect(store.collections.identitySessions.get("identity")?.login).toBe("will")
+      const pending = controller.commands.run("issues.list", "all --view bugs will/flows")
+      await entered.promise
+      expect(store.collections.cards.get("issues-will/flows")?.kind).not.toBe("issue-list")
+      if (replacement === "account") {
+        login = "other"
+        await controller.loadSession()
+        expect(store.collections.identitySessions.get("identity")?.login).toBe("other")
+      } else {
+        await store.dispatch({
+          type: "repositories.loaded",
+          actor: "system",
+          repositories: [{ id: "will/other", org: "will", ownerKind: "user", name: "other", head: null }]
+        }).isPersisted.promise
+        await store.dispatch({ type: "repo.selected", actor: "user", id: "will/other" }).isPersisted.promise
+        expect(store.session().activeRepoKey).toBe("will/other")
+      }
+      release.resolve()
+      await pending
+      await store.settled?.()
+      expect(reads).toBe(2)
+      expect(store.collections.cards.get("issues-will/flows")?.kind).not.toBe("issue-list")
+    } finally {
+      release.resolve()
+      await controller.dispose()
+      await store.dispose?.()
+      await server.stop(true)
+    }
+  }
+)
+
+test("a later view selection wins over a held named-view continuation", async () => {
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
+  const reads: string[] = []
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const url = new URL(request.url)
+      if (url.pathname === "/api/user") return Response.json({ id: 1, username: "will", is_admin: false })
+      if (url.pathname.endsWith("/issue-views")) return Response.json(VIEWS)
+      if (url.pathname === "/api/repos/will/flows/issues") {
+        reads.push(url.search)
+        if (url.searchParams.get("view") === "triage") return Response.json([wireIssue(3)])
+        if (!url.searchParams.has("cursor")) {
+          return Response.json([wireIssue(7)], {
+            headers: {
+              Link: `<${url.origin}${url.pathname}?view=bugs&cursor=OA&limit=100>; rel="next"`
+            }
+          })
+        }
+        if (url.searchParams.get("cursor") === "OQ") return Response.json([wireIssue(9)])
+        entered.resolve()
+        await release.promise
+        return Response.json([wireIssue(8)], {
+          headers: {
+            Link: `<${url.origin}${url.pathname}?view=bugs&cursor=OQ&limit=100>; rel="next"`
+          }
+        })
+      }
+      return new Response(null, { status: 404 })
+    }
+  })
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, unavailableAgent, {
+    baseUrl: server.url.origin,
+    fetchImpl: fetch,
+    bootstrap: pagedViewBootstrap,
+    applicationIdentity: applicationIdentityFromFetch(fetch, server.url.origin)
+  })
+  try {
+    await controller.loadSession()
+    const pending = controller.commands.run("issues.list", "all --view bugs will/flows")
+    await entered.promise
+    expect((await controller.commands.run("issues.list", "all --view triage will/flows")).status).toBe("executed")
+    expect(listCard(store).payload.issues.map((issue) => issue.number)).toEqual([3])
+    release.resolve()
+    await pending
+    await store.settled?.()
+    expect(listCard(store).payload.view).toBe("triage")
+    expect(listCard(store).payload.issues.map((issue) => issue.number)).toEqual([3])
+    expect(reads).toEqual(["?view=bugs&limit=100", "?view=bugs&limit=100&cursor=OA", "?view=triage&limit=100"])
+  } finally {
+    release.resolve()
+    await controller.dispose()
+    await store.dispose?.()
+    await server.stop(true)
+  }
+})
+
+test.each(["page", "aggregate"] as const)(
+  "an oversized %s body refuses without publishing a partial named view",
+  async (mode) => {
+    let reads = 0
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(request) {
+        const url = new URL(request.url)
+        if (url.pathname === "/api/user") return Response.json({ id: 1, username: "will", is_admin: false })
+        if (url.pathname.endsWith("/issue-views")) return Response.json(VIEWS)
+        if (url.pathname === "/api/repos/will/flows/issues") {
+          reads++
+          if (!url.searchParams.has("cursor")) {
+            return Response.json([{
+              ...wireIssue(7),
+              padding: mode === "aggregate" ? "x".repeat(2 * 1024 * 1024) : ""
+            }], {
+              headers: {
+                Link: `<${url.origin}${url.pathname}?view=bugs&cursor=OA&limit=100>; rel="next"`
+              }
+            })
+          }
+          return Response.json([{ ...wireIssue(8), padding: "x".repeat((mode === "aggregate" ? 2 : 4) * 1024 * 1024) }])
+        }
+        return new Response(null, { status: 404 })
+      }
+    })
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const controller = createAppController(store, unavailableAgent, {
+      baseUrl: server.url.origin,
+      fetchImpl: fetch,
+      bootstrap: pagedViewBootstrap,
+      applicationIdentity: applicationIdentityFromFetch(fetch, server.url.origin)
+    })
+    try {
+      await controller.loadSession()
+      expect((await controller.commands.run("issues.list", "all --view bugs will/flows")).status).toBe("failed")
+      expect(reads).toBe(2)
+      expect(store.collections.cards.get("issues-will/flows")?.kind).not.toBe("issue-list")
+      expect(store.collections.cards.get("issues-will/flows")?.status).toBe("error")
+    } finally {
+      await controller.dispose()
+      await store.dispose?.()
+      await server.stop(true)
+    }
+  }
+)

@@ -15,6 +15,7 @@ describe("kernel package barrel", () => {
       "GrantStore",
       "HostServices",
       "HttpClient",
+      "HttpPagination",
       "Jj",
       "JournalGrantStore",
       "Path",

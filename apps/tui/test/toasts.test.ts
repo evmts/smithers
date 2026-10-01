@@ -91,3 +91,22 @@ test("a run whose chat card is on screen gets no toast, at any status; other run
   // Off the chat, nothing is carded and both toast again.
   expect(project([], [run, other], 300).map((row) => row.id)).toEqual(["flow:flow", "flow:other"])
 })
+
+test("issue view reads debounce, remain running while unresolved, and disappear on settlement", () => {
+  const projectRead = (issueViews: number | undefined, now: number) =>
+    rows({
+      tabs: [],
+      runs: [],
+      now,
+      tick: "*",
+      search: undefined,
+      undoing: undefined,
+      toast: undefined,
+      issueViews
+    })
+  expect(projectRead(100, 399)).toEqual([])
+  expect(projectRead(100, 400)).toEqual([{ id: "issue-views", text: "* Issue views", tone: "info" }])
+  expect(projectRead(100, 100_000)).toHaveLength(1)
+  expect(projectRead(undefined, 100_000)).toEqual([])
+  expect(projectRead(100_000, 100_299)).toEqual([])
+})
