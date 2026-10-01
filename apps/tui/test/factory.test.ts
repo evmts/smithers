@@ -326,7 +326,7 @@ it("shows a refused retry as a typed failure, and never posts for an issue that 
   )
   const refused = await Factory.retryCommand("2431", "o/r", signIn(origin)).settled
   expect(refused).toEqual({
-    text: "#2431 not retried: The retry could not start. Details: /conversation",
+    text: "#2431 not retried: That command could not run. Details: /conversation",
     tone: "warning"
   })
   const cloud = (await signIn(origin)())!
@@ -358,6 +358,7 @@ it("persists a retry request before authentication or lookup and refuses a faile
   })
   expect(ordering).toEqual(["persist", "authenticate"])
   expect(await request.settled).toEqual({ text: "Sign in to retry: smthrs auth login", tone: "warning" })
+  const logOffset = existsSync(Log.path()) ? readFileSync(Log.path(), "utf8").length : 0
   const refused = Factory.retryCommand("#2431", "o/r", async () => {
     ordering.push("must not authenticate")
     return undefined
@@ -365,7 +366,12 @@ it("persists a retry request before authentication or lookup and refuses a faile
     throw new Error("disk full")
   })
   expect(refused.settled).toBeUndefined()
-  expect(refused.now).toEqual({ text: "Retry #2431 not requested: disk full", tone: "warning" })
+  expect(refused.now).toEqual({
+    text: "Retry #2431 not requested: The retry could not start. Details: /conversation",
+    tone: "warning"
+  })
+  expect(refused.now.text).not.toContain("disk full")
+  expect(readFileSync(Log.path(), "utf8").slice(logOffset)).toContain("disk full")
   expect(ordering).toEqual(["persist", "authenticate"])
 })
 
@@ -610,7 +616,7 @@ for (const boundary of ["GET", "POST"] as const) {
     const beforePresentation = existsSync(Log.path()) ? readFileSync(Log.path(), "utf8").length : 0
     const result = await Factory.landCommand("2450", "o/r", signIn(origin)).settled
     expect(result).toEqual({
-      text: "#2450 not landed: The landing could not start. Details: /conversation",
+      text: "#2450 not landed: That command could not run. Details: /conversation",
       tone: "warning"
     })
     expect(result?.text).not.toContain(marker)
