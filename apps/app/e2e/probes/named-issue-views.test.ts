@@ -237,7 +237,7 @@ test("terminal keyboard reads every owned named-view page and refreshes after re
     expect(owner.status).toBe(200)
     expect(await owner.json()).toMatchObject({ username, is_admin: true })
     const credential = await setup<{ token: string; id: number }>("/api/user/tokens", {
-      name: "terminal-owned-view", scopes: ["all"]
+      name: "terminal-owned-view", scopes: ["write:repository", "read:user"]
     })
     expect(typeof credential.token).toBe("string")
     expect(Number.isSafeInteger(credential.id)).toBe(true)
