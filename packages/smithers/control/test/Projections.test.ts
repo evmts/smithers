@@ -153,6 +153,13 @@ describe("Lineage.derive", () => {
 })
 
 describe("Lineage.originOf", () => {
+  it("keeps parentless origins optional without losing explicit fork or continuation facts", () => {
+    expect(Lineage.originOf({ forked: true, roundOrdinal: 2 })).toBe("fork")
+    expect(Lineage.originOf({ roundOrdinal: 2 })).toBe("continuation")
+    expect(Lineage.originOf({ roundOrdinal: 0 })).toBeUndefined()
+    expect(Lineage.originOf({ forked: false })).toBeUndefined()
+  })
+
   it("reports a fork ahead of a continuation and a continuation ahead of a child", () => {
     expect(Lineage.originOf({ parentRunId: "p", forked: true, roundOrdinal: 3 })).toBe("fork")
     expect(Lineage.originOf({ parentRunId: "p", roundOrdinal: 3 })).toBe("continuation")
