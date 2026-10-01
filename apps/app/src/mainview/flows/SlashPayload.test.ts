@@ -423,3 +423,46 @@ test("coding connection revocation decodes its ID and requires a missing ID", ()
   expect(payloadFor("secrets.bind", JSON.stringify({ name: "NPM_TOKEN", hosts: "registry.npmjs.org", headers: "authorization" })))
     .toEqual({ payload: { name: "NPM_TOKEN", hosts: "registry.npmjs.org", headers: "authorization" } })
 })
+
+test("box.open preserves all recovery inputs across slash flag positions", () => {
+  for (const kind of [undefined, "container", "vm", "desktop"] as const) {
+    for (const snapshot of [undefined, "snapshot-7"]) {
+      for (const recoveryOf of [undefined, "workspace-9"]) {
+        const flags = [
+          kind === undefined ? "" : `--kind ${kind}`,
+          snapshot === undefined ? "" : `--snapshot ${snapshot}`,
+          recoveryOf === undefined ? "" : `--recoveryOf ${recoveryOf}`,
+        ].filter(Boolean).join(" ")
+        const payload = {
+          bookmark: "topic",
+          repo: "owner/repo",
+          ...(kind === undefined ? {} : { kind }),
+          ...(snapshot === undefined ? {} : { snapshot }),
+          ...(recoveryOf === undefined ? {} : { recoveryOf }),
+        }
+        for (
+          const args of [`${flags} topic owner/repo`, `topic ${flags} owner/repo`, `topic owner/repo ${flags}`]
+        ) {
+          expect(payloadFor("box.open", args, undefined, new Set(["owner/repo"]))).toEqual({ payload })
+        }
+      }
+    }
+  }
+})
+
+test("box.open refuses missing, duplicate and invalid flags", () => {
+  for (
+    const args of [
+      "--kind",
+      "--snapshot",
+      "--recoveryOf",
+      "--kind --snapshot snap",
+      "--snapshot --recoveryOf box",
+      "--kind gpu",
+      "--kind vm --kind desktop",
+      "--snapshot a --snapshot b",
+      "--recoveryOf a --recoveryOf b",
+      "--unknown value",
+    ]
+  ) expect(payloadFor("box.open", args)).toHaveProperty("error")
+})
