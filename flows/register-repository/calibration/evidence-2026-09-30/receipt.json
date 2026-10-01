@@ -1,0 +1,90 @@
+{
+  "issues": [
+    3276,
+    3071,
+    3297
+  ],
+  "measurementProducerBase": "b00abe0e088febd9db19acd2706206dd247ed3cc",
+  "measurementGraphCommit": "1bd72d856f74c4a3491affd932cd3f81f4d1c71c",
+  "fitFixCommit": "45716a305a43e573eeb5f6607403c15f67e63dea",
+  "typecheckDependencyCommit": "9850473f1b3c8d487a9db1650dae98d9f9c2df09",
+  "runtimeIdentity": {
+    "source": {
+      "calibration/manifest.json": "a6ef6682bec2b71537be84cb70812eca31a1586b9039f2d6d523f326313c48ec",
+      "calibration/record.ts": "8d0e372142d5498d722329722f1191d2c186696cfebdd5dba14131f7e02f25a3",
+      "calibration/fit.ts": "36025f9ac81e809f397a5885c18feac8db0d2f91ec6c085d0273566e4bf5eee4",
+      "tree.ts": "ca2d6d39f614d8a19ea308bef6cade3d2e0a05a39c856957595e0798f6dbceff",
+      "history.ts": "647e5ffd7580329d5d736947f9c97506debeabdad67b25fb9f911019258a10a1",
+      "cleanup.ts": "708fcd660863fe1121e4d33b641e8c07ee638fb074e1e63bc6541becedbd43da",
+      "judged.ts": "a7caf961b1cf7b1b16d3c4771173088e4052214255569f9ca7a1fd4a1f1705e3",
+      "jev.ts": "505fbb73cd1ed7b4b3ef014b642d400c77a3bcd2b780591c7655f9a00ec87969",
+      "schema.ts": "df178b6005fbec12b7bc824b5492f8b376a116add2208c623d0cb7ca1020d591"
+    },
+    "node": "v26.5.0",
+    "executable": "/Users/williamcory/.nvm/versions/node/v26.5.0/bin/node",
+    "git": "git version 2.53.0",
+    "worker": "958e56a4b50d659ae527e28cacbd48fb20435e5cfbcd318d4537132b0c429332"
+  },
+  "sourceFingerprint": "feb2e95bf191ac0f4044ac35b82664ab68c7edad74ed744345445839a1db1277",
+  "method": {
+    "recorder": "recordRepository",
+    "fitter": "fit(cases, calibrated-real-v1)",
+    "workers": 5,
+    "campaignCapMs": 900000,
+    "canonicalGitCommandTimeoutMs": 600000,
+    "campaigns": 5,
+    "atomicFullRowCheckpoint": true,
+    "staticAnalysisOnly": true,
+    "fetchedCodeExecuted": false,
+    "campaigns1and2": "no exec diagnostic observer",
+    "campaigns3through5": "external execFile rejection/callback observer; original return/callback/options/timeouts preserved, instrumentation hashes retained",
+    "scheduling": "fewest previous attempts first; manifest labels and commits unchanged"
+  },
+  "results": {
+    "rows": 110,
+    "complete": true,
+    "failedAttemptsPreserved": 26,
+    "labelCounts": {
+      "agent": 33,
+      "human": 60,
+      "hybrid": 17
+    },
+    "signalOnly": "S1-S5 deterministic values; S6-S10 not measured",
+    "fitShippedToRegistrationScoring": false
+  },
+  "artifactHashes": {
+    "manifest.json": "a6ef6682bec2b71537be84cb70812eca31a1586b9039f2d6d523f326313c48ec",
+    "real-corpus.json": "13ce8511e2b4f58ae5dc1bdae1d0dc1ec88476866be7b1825d7afe3bb47b7ed2",
+    "real-fit.json": "39baf1eb93a08a52ed71f17226d70d3824c195581790a2aad588c53fbd090237"
+  },
+  "evidenceHashes": {
+    "campaign-1.txt": "e9c3345ca6200209155e6019c74aa0700f76a7252b2a38a00e2b44944a40dd73",
+    "campaign-2.txt": "356bcfcfa48b791bccf93d698b4d5c4ae13f4ff24429307acabfa1fc0d38542e",
+    "campaign-3.txt": "e2fb0166c48779f90ecd33ea2ec72982eee72e3c9f80874c04266d79022f9fde",
+    "campaign-4.txt": "737a05d27d6b12976aafb48d0d964d7e6635c9ac14073b39c82704eea312ddcd",
+    "campaign-5.txt": "7514bd7b0deabac3a082f799a1f86969894da1ce54ccbec050a6af853deb39c8",
+    "campaign.mjs.source.txt": "1752f42015885e0ba9705099520d6add6065a0759cf990ad477b833afb4a9626",
+    "checkpoint.json": "6e2ea368aa5ebd1f9b32cd8f4415d3e64c1a58db8d1fe3e27a4c6b2201a15fa4",
+    "exec-diagnostics.mjs.source.txt": "7b0197d2436f7cbe9b30724928d781ec9b65f576620185d97ccb9482f699582d",
+    "exec-failures.jsonl": "e4212bd91e624fddb57e4f4d2e815b618216e6afa11d435f8b82d5afbd5ec38f",
+    "fit-fix-validation.json": "b60f2001a24887d4c601d152e8e7cb759cee1e55ac64ed6f8efabf6ad998acab",
+    "instrumentation-2026-10-01T00-35-22.094Z.json": "ec9cb76297a017ce3c03b203b65094f7d5eb8187cf7777d1712b6593f4c3b22f",
+    "instrumentation-2026-10-01T00-51-08.843Z.json": "86969f044d16b367ec8b206595cdb15b4cbc17a9e6a2a3f6d316ae12c8d15b86",
+    "instrumentation-2026-10-01T01-07-03.073Z.json": "fe1001872c98caa02a8d90e30a89bc6a9661596ab876527166e6971b6bbe1bd0",
+    "pre-fix-boundary-tests.txt": "8e49501c0bfc8c3c2dcac2fc962f885d9bf2e5ff7ce109da9ff54fd69bc45865",
+    "pre-fix-real-target.txt": "85ece82f7c88a731401928f76d0410b71acc177a78af298eb439394e2d9aafcc",
+    "worker.mjs.source.txt": "958e56a4b50d659ae527e28cacbd48fb20435e5cfbcd318d4537132b0c429332",
+    "zero-anchor-counterexample.json": "aff6d46b540aa6f8db0a372010e5ad1bdbc77876298f072dd834beaef821ec82"
+  },
+  "limitations": [
+    "110 manifest-selected public repositories, not a representative or independently adjudicated authorship sample",
+    "Manifest labels are selection evidence; they are not proof every source line was authored by a human or agent",
+    "Null signals represent unavailable measurements; language/band coverage limits retained per recorded row",
+    "P90 anchors in sparse strata borrow pooled anchors; zero anchors remain zero with measured zero normalized to zero",
+    "No Jev judgments or hand-reviewed findings; precisionAtP90 is repository-level, not finding precision",
+    "AUROC/weights are fitted observations, not detector efficacy, model performance, latency, or release qualification claims",
+    "Raw rows were measured under original source; fit-only regeneration uses the zero-anchor fix and does not re-record or relabel rows",
+    "Old truncated canonical failures and external observer diagnostics are retained separately; campaigns are not identical uninstrumented runs",
+    "Whole CI and cross-platform qualification remain separate requirements"
+  ]
+}
