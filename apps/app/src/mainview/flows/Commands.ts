@@ -471,7 +471,11 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
       named = publicFormPayload(fields, named)
       if (fields.some(field => field.kind === "write-only")) args = assembleArgs(fields, declared.metadata.form, named)
     }
-    const gesture = inheritedGesture?.name === name ? inheritedGesture
+    const inherited = inheritedGesture?.name === name ? inheritedGesture : undefined
+    const gesture = inherited !== undefined
+      ? invoker === "user" && name === "form.submit"
+        ? lifecycle?.reserveGesture?.(request, args, named, inherited) ?? inherited
+        : inherited
       : invoker === "user" && find(name) !== undefined ? lifecycle?.reserveGesture?.(request, args, named) : undefined
     // A new human command is a return to the transcript. A stale maximized
     // card from an earlier session must not hide the card this command renders.

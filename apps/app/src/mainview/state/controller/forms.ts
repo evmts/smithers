@@ -645,6 +645,9 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     const accountEnded = () => ctx.accountEpoch !== epoch
     const existingBoxes = card.payload.afterBox === undefined ? undefined : new Set(store.collections.cloudWorkspaces.keys())
     const selectedBefore = store.session().activeRepoKey
+    // Reveal this human submission's result before its durable wait. A newer
+    // frame gesture owns presentation, and agent/automatic submissions have none.
+    if (!asAgent && gesture?.formPresentationCurrent?.() === true) deps.minimizeCard?.()
     await patch(card, { ...card.payload, submitting: true }, "active")
     if (accountEnded()) {
       continuations.delete(cardId)
