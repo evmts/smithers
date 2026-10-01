@@ -200,7 +200,11 @@ const withSeparateSecretAuthorities = async (
 ) => withOwnedRepository(page, request, async (repo) => {
   const name = "CI_ACCEPTANCE_TOKEN"
   const otherName = "UNTOUCHED_TOKEN"
-  const values = [fixtureInputText(`ci-private-${randomUUID()}`), fixtureInputText(`agent-private-${randomUUID()}`), fixtureInputText(`other-private-${randomUUID()}`)]
+  const ciValue = fixtureInputText(`ci-private-${randomUUID()}`)
+  const agentValue = fixtureInputText(`agent-private-${randomUUID()}`)
+  const otherValue = fixtureInputText(`other-private-${randomUUID()}`)
+  const agentHost = fixtureInputText("agent.example.test")
+  const values = [ciValue, agentValue, otherValue]
   const privateText = (text: string) => { for (const value of values) expect(text.includes(value)).toBe(false) }
   const collection = `${repo.path}/secrets`
   const secretPath = `${collection}/${name}`
@@ -213,7 +217,7 @@ const withSeparateSecretAuthorities = async (
   const untouched = await other.json() as SecretMetadata
   privateText(JSON.stringify(untouched))
   const agent = await realApi(page, request, "PUT", `${environmentPath}/secrets/${name}`, {
-    value: values[1], hosts: [fixtureInputText("agent.example.test")], match_headers: ["authorization"]
+    value: values[1], hosts: [agentHost], match_headers: ["authorization"]
   })
   expect(agent.status()).toBe(201)
   privateText(await agent.text())

@@ -515,6 +515,11 @@ test("fixture workflow input and protocol IDs preserve explicit product checks",
     'function nested() { function protocol() {} const id = protocol(`missing-card-${nonce}`) }',
     'try {} catch (protocol) { const id = protocol(`missing-card-${nonce}`) }'
   ]) expect(check(imports + statement).length, statement).toBeGreaterThan(0)
+  expect(check(imports + 'const ci = input(`ci-private-${nonce}`); const agent = input(`agent-private-${nonce}`); const host = input("agent.example.test"); const body = { values: [ci, agent], hosts: [host] }; send(body);')).toEqual([])
+  for (const statement of [
+    'const id = input(`ci-private-${nonce}`); page.getByTestId(id);',
+    'const id = input("agent.example.test"); runCommand(id);'
+  ]) expect(check(imports + statement).length, statement).toBeGreaterThan(0)
   const inputClaim = 'const text = input(`missing-card-${nonce}`);'
   expect(check('import { fixtureInputText as input } from "./support/values";' + inputClaim)).toEqual([])
   expect(check('import { fixtureInputText as input } from "./unrelated";' + inputClaim).map(violation => violation.rule))
