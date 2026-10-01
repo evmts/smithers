@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
 import { isControlError } from "../src/ControlClient.ts"
 import { PlanDigestMismatch, RunNotFound, TransportError, Unauthorized } from "../src/ControlError.ts"
-import { bearerAuthenticator, ControlRpcs, layerAuth, layerNoopAuth } from "../src/ControlRpcs.ts"
+import { bearerAuthenticator, ControlRpcs, layerAuth, layerNoopAuth, RunVisibility } from "../src/ControlRpcs.ts"
 import { ControlRuntime } from "../src/ControlRuntime.ts"
 import type { Envelope, Principal, RunSummary, SteerMessage } from "../src/ControlSchema.ts"
 import * as ControlServer from "../src/ControlServer.ts"
@@ -42,6 +42,20 @@ const plan = (rpc: ControlRpcClient) =>
   rpc.Plan({ flowId: "system/release", input: { release: true }, idempotencyKey: "plan" })
 
 describe("ControlRpcs", () => {
+  it("defaults to no cross-principal visibility even for an operator-shaped principal", async () => {
+    const policy = await Effect.runPromise(Effect.service(RunVisibility))
+    for (const kind of ["user", "service", "operator"]) {
+      expect(policy.seesAllRuns({ id: "unconfigured-host", kind, stampedAt: 0 })).toBe(false)
+    }
+    const selected = await Effect.runPromise(
+      Effect.service(RunVisibility).pipe(
+        Effect.provideService(RunVisibility, { seesAllRuns: (actor) => actor.kind === "operator" })
+      )
+    )
+    expect(selected.seesAllRuns({ id: "authorized-operator", kind: "operator", stampedAt: 0 })).toBe(true)
+    expect(selected.seesAllRuns({ id: "authorized-operator", kind: "user", stampedAt: 0 })).toBe(false)
+  })
+
   it("authenticates exactly the configured bearer token", async () => {
     const authenticator = bearerAuthenticator({
       token: "alpha-secret",
