@@ -60,7 +60,7 @@ authenticatedTest("search.issues filters real listed issues and opens the select
     await button.focus()
     await expect(button).toBeFocused()
     await button.press("Enter")
-    const thread = page.getByTestId(`card-issue-${repo.fullName}-${open}`).locator(`article.ghc-detail[data-issue="${open}"]`)
+    const thread = page.getByRole("region", { name: `Issue #${open} · ${repo.fullName}`, exact: true }).locator(`article.ghc-detail[data-issue="${open}"]`)
     await expect(thread).toContainText(`${marker} open`)
     await reloadApp(page)
     await expect(thread).toContainText(`${marker} open`)
