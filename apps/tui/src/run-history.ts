@@ -10,8 +10,7 @@
  */
 import * as RunHistory from "@smthrs/gateway/RunHistory"
 import { Cause, Effect, Exit, Option, Schema } from "effect"
-
-const unknown = "Something went wrong on our side. Not your fault."
+import * as Failures from "./failures.ts"
 
 /** Where a served gateway answers, and the credential it takes. */
 export interface Gateway {
@@ -69,8 +68,8 @@ const call = <A, E>(
     }
     const refused = Option.firstSomeOf(exit.value.exit.cause.map((reason) => decodeRefusal(reason)))
     if (Option.isNone(refused)) return yield* Effect.die(new Error(`${tag} failed`))
-    const error = refused.value.error
-    return yield* new RunHistory.HistoryRefused({ code: error.code ?? error._tag, message: error.message })
+    const { code, _tag, message } = refused.value.error
+    return yield* new RunHistory.HistoryRefused({ code: code ?? _tag, message })
   })
 
 /** The history service a served gateway answers. */
@@ -94,9 +93,8 @@ export const verifyLines = (report: RunHistory.VerifyReport): ReadonlyArray<stri
 export const forkLine = (fork: RunHistory.ForkOutput): string =>
   `${fork.runId} ${fork.status} (fork of ${fork.parentRunId})`
 
-/** The refusal's sentence; a defect reads as the one sentence nobody designed. */
-const refusal = (cause: Cause.Cause<RunHistory.HistoryRefused>): string =>
-  Option.match(Cause.findErrorOption(cause), { onNone: () => unknown, onSome: (refused) => refused.message })
+/** Codes select the shared copy; remote text and defects stay in diagnostics. */
+const refusal = (cause: Cause.Cause<RunHistory.HistoryRefused>): string => Failures.line("history", Cause.squash(cause))
 
 /** The note for `/verify-run <run>`. */
 export const verify = async (argument: string, history: RunHistory.Service): Promise<string> => {
