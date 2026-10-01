@@ -19,12 +19,13 @@ const slash = async (page: Page, line: string) => {
   await command(page, line)
   await closeComposer(page)
 }
-const seed = async (page: Page, request: APIRequestContext, repo: OwnedRepository, title: string) => {
-  const response = await realApi(page, request, "POST", `${repo.path}/issues`, { title })
+const seed = async (page: Page, request: APIRequestContext, repo: OwnedRepository, title: string, kind: "issue" | "chat" = "issue") => {
+  const response = await realApi(page, request, "POST", `${repo.path}/issues`, { title, kind })
   expect(response.status(), await response.text()).toBe(201)
-  const body = await response.json() as { number: number; title: string }
+  const body = await response.json() as { number: number; title: string; kind: string }
   expect(body.title).toBe(title)
   expect(body.number).toEqual(expect.any(Number))
+  expect(body.kind).toBe(kind)
   return body.number
 }
 const read = async (page: Page, request: APIRequestContext, repo: OwnedRepository, number: number) => {
@@ -59,7 +60,7 @@ authenticatedTest("search.issues filters real listed issues and opens the select
     await button.focus()
     await expect(button).toBeFocused()
     await button.press("Enter")
-    const thread = page.getByTestId(`conversation-${open}`)
+    const thread = page.locator(`article.ghc-detail[data-issue="${open}"]`)
     await expect(thread).toContainText(`${marker} open`)
     await reloadApp(page)
     await expect(thread).toContainText(`${marker} open`)
@@ -81,7 +82,7 @@ authenticatedTest("issues.set persists priority and due date without changing an
     const before = await read(page, request, repo, untouched)
     await boot(page, repo)
     await slash(page, `/issues.view ${target} ${repo.fullName}`)
-    const thread = page.getByTestId(`conversation-${target}`)
+    const thread = page.locator(`article.ghc-detail[data-issue="${target}"]`)
     await expect(thread).toBeVisible()
     const writes: Array<unknown> = []
     page.on("request", (outgoing) => {
@@ -116,7 +117,7 @@ authenticatedTest("issues.comment.react records one reaction and its keyboard re
   coverage: ["action:issues.comment.react", "host:local", "path:success", "path:persistence", "path:keyboard", "door:slash", "door:button", "dimension:reaction-idempotency", "dimension:reload", "evidence:reaction-api-readback"]
 }), async ({ page, request }, testInfo) => {
   await withOwnedRepository(page, request, async (repo) => {
-    const number = await seed(page, request, repo, `reaction-${randomUUID()}`)
+    const number = await seed(page, request, repo, `reaction-${randomUUID()}`, "chat")
     const response = await realApi(page, request, "POST", `${repo.path}/issues/${number}/comments`, { body: `comment-${randomUUID()}` })
     expect(response.status()).toBe(201)
     const comment = await response.json() as { id: number }
