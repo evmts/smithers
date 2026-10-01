@@ -23723,6 +23723,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/src/cli/RunActivity.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/src/cli/RunProgress.ts"
       },
       {
@@ -30948,7 +30952,41 @@
       },
       {
         "kind": "file",
+        "path": "flows/issue-sweep/test/land-jj.test.ts"
+      },
+      {
+        "kind": "file",
         "path": "flows/issue-sweep/test/work.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/issue-sweep/test/vm.test.ts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.ts",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "flows/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//flows:issueSweepVm",
+    "package": "flows",
+    "name": "issueSweepVm",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "flows/issue-sweep/test/vm.real.test.ts"
       },
       {
         "kind": "glob",
