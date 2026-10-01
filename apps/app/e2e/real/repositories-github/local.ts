@@ -15,8 +15,20 @@ export const bootRepositoryWorkbench = async (page: Page): Promise<void> => {
 }
 
 export const enableVerboseEvidence = async (page: Page): Promise<void> => {
-  await command(page, "/verbose")
-  await expect(page.getByTestId("transcript")).toContainText("Verbose on")
+  // The public scroller's message identity distinguishes the new receipt from
+  // retained history without assuming the transcript grows or is unpaginated.
+  const receipts = page.getByTestId("transcript").locator("[data-message-id]").filter({
+    has: page.getByText(/^Verbose (?:on|off)/)
+  })
+  const toggle = async () => {
+    const before = await receipts.count() === 0 ? null : await receipts.last().getAttribute("data-message-id")
+    await command(page, "/verbose")
+    await expect.poll(async () => await receipts.count() === 0 ? null : await receipts.last().getAttribute("data-message-id")).not.toBe(before)
+    await expect(receipts.last()).toHaveAttribute("data-message-id", /.+/)
+    return await receipts.last().innerText()
+  }
+  if ((await toggle()).startsWith("Verbose off")) await toggle()
+  await expect(receipts.last()).toContainText("Verbose on")
 }
 
 export const expectFlowOutcome = async (
