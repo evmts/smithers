@@ -1,5 +1,6 @@
 import { expect } from "@playwright/test"
 import { showcase } from "../showcase"
+import { signupProfile } from "../../playwright/signup-profile"
 import { identityRoute } from "../../playwright/identity"
 
 export default showcase({
@@ -11,6 +12,7 @@ export default showcase({
   run: async ({ page, app, backend }) => {
     let signedIn = false
     await backend.signedOut()
+    const profile = await signupProfile(page)
     await backend.route(url => url.pathname === "/api/user", route => identityRoute(signedIn ? "adapark" : null)(route))
     await backend.json("/api/billing/balance", { state: "ok", allowedToStartWork: true, balance: { totalUsd: "500", lifetimeChargedUsd: "0", chargeCount: 0 } })
     // The GitHub round trip: the redirect comes straight back signed in.
@@ -56,5 +58,7 @@ export default showcase({
     await app.click(page.getByTestId("signup-finish"))
     await expect(signup).toHaveCount(0)
     await expect(page.getByTestId("setup-checklist")).toBeVisible()
+    expect(profile.writes[0]).toMatchObject({ name: "Ada Park", account: "adapark", stage: "poll", question: 0 })
+    expect(profile.writes.at(-1)).toMatchObject({ name: "Ada Park", account: "adapark", stage: "done" })
   }
 })
