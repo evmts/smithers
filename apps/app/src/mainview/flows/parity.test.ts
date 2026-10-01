@@ -406,11 +406,11 @@ describe("launch-law parity: every affordance is a command", () => {
        * the 409's Resume. The create affordance's three kind buttons share one
        * handler, and so does the facet strip (the Desktop tab mints through
        * box.desktop, every other tab switches through box.facet).
-       * 20 = 19 + the Desktop facet's "Open a new box": the only door for a
-       * box whose image predates the desktop tools, where a Retry is a door
-       * onto a wall.
+       * 19 = 17 + Restore snapshot and Create fresh box. WorkspaceCard.test
+       * independently checks both canonical box.open payloads, focus and
+       * duplicate-request disabling for these recovery doors.
        */
-      "../cards/WorkspaceCard.tsx": 17,
+      "../cards/WorkspaceCard.tsx": 19,
       /* The trace owns selection, views, filters and child navigation.
        * The extracted strip selects recorded sequences; summary actions reuse
        * approvals.open and runs.resume; goals reuse runs.coding.select. */
