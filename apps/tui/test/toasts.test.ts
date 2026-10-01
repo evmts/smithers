@@ -124,3 +124,23 @@ test("offscreen issue-view failures stay actionable and retries replace them wit
   // Visible panels and successful settled reads omit the derived failure.
   expect(rows(base)).toEqual([])
 })
+
+test("Account progress debounces, survives an unresolved read, and retries replace the retained failure", () => {
+  const base = { tabs: [], runs: [], tick: "*", search: undefined, undoing: undefined, toast: undefined }
+  const detail = "That command could not run. Details: /conversation"
+  expect(rows({ ...base, now: 399, account: 100 })).toEqual([])
+  expect(rows({ ...base, now: 400, account: 100 })).toEqual([{ id: "account", text: "* Account", tone: "info" }])
+  expect(rows({ ...base, now: 100000, account: 100 })).toEqual([{ id: "account", text: "* Account", tone: "info" }])
+  expect(rows({ ...base, now: 100001 })).toEqual([])
+  expect(rows({ ...base, now: 100001, accountFailure: detail })).toEqual([{
+    id: "account",
+    text: detail,
+    tone: "danger"
+  }])
+  expect(rows({ ...base, now: 100299, account: 100000, accountFailure: detail })).toEqual([])
+  expect(rows({ ...base, now: 100300, account: 100000, accountFailure: detail })).toEqual([{
+    id: "account",
+    text: "* Account",
+    tone: "info"
+  }])
+})

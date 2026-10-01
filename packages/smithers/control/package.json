@@ -66,7 +66,9 @@
     "./WebhookChannel": "./src/WebhookChannel.ts",
     "./index": "./src/index.ts",
     "./test/TestControl": "./src/test/TestControl.ts",
-    "./Health": "./src/Health.ts"
+    "./Health": "./src/Health.ts",
+    "./Account": "./src/Account.ts",
+    "./Operation": "./src/Operation.ts"
   },
   "files": [
     "src/**/*.ts",
@@ -386,6 +388,26 @@
         "require": {
           "types": "./dist/cjs/Health.d.ts",
           "default": "./dist/cjs/Health.js"
+        }
+      },
+      "./Account": {
+        "import": {
+          "types": "./dist/esm/Account.d.ts",
+          "default": "./dist/esm/Account.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Account.d.ts",
+          "default": "./dist/cjs/Account.js"
+        }
+      },
+      "./Operation": {
+        "import": {
+          "types": "./dist/esm/Operation.d.ts",
+          "default": "./dist/esm/Operation.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Operation.d.ts",
+          "default": "./dist/cjs/Operation.js"
         }
       }
     }

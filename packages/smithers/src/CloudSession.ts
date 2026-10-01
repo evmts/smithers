@@ -9,6 +9,7 @@
  */
 
 import { pageText, paginationCursor } from "@smthrs/kernel/HttpPagination"
+import { createHash } from "node:crypto"
 import * as CliError from "./CliError.ts"
 import { processHost, resolveRepo } from "./commands/Open.ts"
 import { Session } from "./internal/backend/Session.ts"
@@ -38,12 +39,25 @@ export interface Cloud {
 }
 
 /**
+ * Selected authority for a retained request. The opaque binding is not a credential;
+ * current re-resolves the same host selection without making a network request.
+ * @category models
+ * @since 1.0.0
+ */
+export interface SelectedCloud extends Cloud {
+  readonly identity: string
+  readonly current: () => Promise<boolean>
+}
+
+/**
  * The signed-in session, or undefined when there is no origin or no login.
  *
  * @category constructors
  * @since 1.0.0
  */
-export const signedIn = async (env: Readonly<Record<string, string | undefined>>): Promise<Cloud | undefined> => {
+export const signedIn = async (
+  env: Readonly<Record<string, string | undefined>>
+): Promise<SelectedCloud | undefined> => {
   const session = new Session(env)
   let resolved: Awaited<ReturnType<Session["resolve"]>>
   try {
@@ -104,6 +118,11 @@ export const signedIn = async (env: Readonly<Record<string, string | undefined>>
   }
   return {
     origin,
+    identity: createHash("sha256").update(origin).update("\0").update(token).digest("hex"),
+    current: async () => {
+      const current = await session.resolve()
+      return current?.api_url === origin && current.token === token
+    },
     get: async (path, signal) => (await call("GET", path, undefined, signal)).body,
     getPage: async (path, signal) => {
       const result = await call("GET", path, undefined, signal)

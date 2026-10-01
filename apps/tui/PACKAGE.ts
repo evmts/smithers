@@ -9,6 +9,7 @@
  * @since 1.0.0
  */
 import { Smithers } from "@smthrs/targets"
+import { Package as control } from "../../packages/smithers/control/PACKAGE.ts"
 import { Package as cli } from "../../packages/smithers/PACKAGE.ts"
 
 const cwd = "apps/tui"
@@ -33,7 +34,7 @@ const sources = [
  */
 const check = Smithers.Typecheck({
   srcs: sources,
-  deps: [cli.nativeSources],
+  deps: [cli.nativeSources, control.check],
   tsconfig: Smithers.file("tsconfig.json"),
   buildMode: false,
   incremental: false,
@@ -52,7 +53,7 @@ const unitTests = Smithers.NodeTest({
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
   runner: Smithers.testSuite(["./test"]),
   srcs: sources,
-  deps: [cli.nativeSources],
+  deps: [cli.nativeSources, control.check],
   cwd
 })
 
@@ -67,7 +68,7 @@ const e2eTests = Smithers.NodeTest({
   timeout: "20m",
   exclusive: true,
   srcs: sources,
-  deps: [cli.nativeSources],
+  deps: [cli.nativeSources, control.check],
   cwd
 })
 
@@ -104,7 +105,7 @@ const fmt = Smithers.Dprint({
 const docsFiles = Smithers.Filegroup({ srcs: [Smithers.glob("docs/**/*.md")], cwd })
 /** The real renderer and replay fixture used to execute documentation scripts. */
 const recordingSources = Smithers.Filegroup({
-  srcs: [...sources, Smithers.file("package.json"), cli.nativeSources],
+  srcs: [...sources, Smithers.file("package.json"), cli.nativeSources, control.check],
   cwd
 })
 

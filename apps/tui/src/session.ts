@@ -33,6 +33,7 @@ import {
 import { homedir } from "node:os"
 import { basename, join } from "node:path"
 import { StringDecoder } from "node:string_decoder"
+import * as Account from "./account.ts"
 import type * as Activity from "./activity.ts"
 import type * as Changes from "./changes.ts"
 import type * as Context from "./context.ts"
@@ -46,6 +47,7 @@ import * as Transcript from "./transcript.ts"
 import type * as Workspace from "./workspace.ts"
 
 export type Record =
+  | { readonly type: "account"; readonly at: number; readonly receipt: Account.Receipt }
   | { readonly type: "caption"; readonly prose: string }
   /** A worker's card is placed here and drawn in its own file's `card` record. */
   | { readonly type: "panel"; readonly panel: Panels.Panel; readonly placement?: "card" }
@@ -659,6 +661,7 @@ export const recover = (records: ReadonlyArray<Record>, at = Date.now()): {
 /** What a session file rebuilds: the screen, the agent's context, and the prompt history. */
 export const restore = (records: ReadonlyArray<Record>): {
   readonly transcript: Transcript.Transcript
+  readonly account: Account.Receipt | undefined
   readonly workspace: Workspace.Snapshot
   readonly flows: ReadonlyArray<Flows.Run>
   readonly monitors: ReadonlyArray<Monitors.Monitor>
@@ -677,12 +680,21 @@ export const restore = (records: ReadonlyArray<Record>): {
   const flows = new Map<string, Flows.Run>()
   const monitors = new Map<string, Monitors.Monitor>()
   let transcript = Transcript.empty
+  let account: Account.Receipt | undefined
   const entries: Array<Context.Entry> = []
   const prompts: Array<string> = []
   let queued: ReadonlyArray<PromptQueue.Prompt> = []
   let name: string | undefined
   for (const record of records) {
     switch (record.type) {
+      case "account": {
+        const receipt = Account.receiptOf(record.receipt)
+        if (receipt !== undefined) {
+          account = receipt
+          transcript = Transcript.card(transcript, Account.panel({ phase: "idle" }), record.at)
+        }
+        break
+      }
       case "caption":
         transcript = Transcript.caption(transcript, record.prose)
         break
@@ -780,6 +792,7 @@ export const restore = (records: ReadonlyArray<Record>): {
   }
   return {
     transcript,
+    account,
     entries,
     prompts,
     queued,
