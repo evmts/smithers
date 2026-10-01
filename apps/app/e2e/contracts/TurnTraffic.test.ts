@@ -1,3 +1,5 @@
+import { createChatStub } from "../support/ChatStub"
+import type { StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import { expect, test } from "bun:test"
 import { digest } from "@smthrs/core/Digest"
 import { agentTurnJournalDigestInput, type AgentTurnBatch, type AgentTurnCursor, type AgentTurnJournalDelivery } from "@smthrs/rpc/AgentTurnJournal"
@@ -85,4 +87,39 @@ test("network capture requires the actual advertised journal version, with expli
   }
   expect(() => assertTurnTrafficProtocol({}, "legacy")).not.toThrow()
   expect(() => assertTurnTrafficProtocol({ "x-smithers-turn-journal": "1" }, "legacy")).toThrow()
+})
+
+
+test("the offline fixture keeps opaque tool correlation separate from card identity across continuation", async () => {
+  const frames: AgentTurnFrame[] = []
+  const done = new Map<string, ReturnType<typeof Promise.withResolvers<void>>>()
+  const stub = createChatStub(frame => {
+    frames.push(frame)
+    if (frame.type === "done") done.get(frame.runId)?.resolve()
+  })
+  const request = (runId: string, continuation = false): StartAgentTurnRequest => ({
+    runId, instructions: "", messages: [
+      { role: "user", content: "stub-tool files.read README.md owner/repo" },
+      ...(continuation ? [{ type: "function_call_output" as const, call_id: "stub-call-fixture-one", output: "executed /files.read" }] : [])
+    ]
+  })
+  for (const id of ["fixture-one", "fixture-two", "fixture-continuation"]) done.set(id, Promise.withResolvers<void>())
+  expect(stub.start(request("fixture-one"))).toEqual({ status: "started" })
+  expect(stub.start(request("fixture-one"))).toMatchObject({ status: "error" })
+  await done.get("fixture-one")!.promise
+  expect(stub.start(request("fixture-two"))).toEqual({ status: "started" })
+  await done.get("fixture-two")!.promise
+  const calls = frames.filter(frame => frame.type === "tool_call")
+  expect(calls).toEqual([
+    { runId: "fixture-one", type: "tool_call", call_id: "stub-call-fixture-one", name: "commands", arguments: JSON.stringify({ action: "execute", name: "files.read", args: "README.md owner/repo" }) },
+    { runId: "fixture-two", type: "tool_call", call_id: "stub-call-fixture-two", name: "commands", arguments: JSON.stringify({ action: "execute", name: "files.read", args: "README.md owner/repo" }) }
+  ])
+  expect(stub.start(request("fixture-continuation", true))).toEqual({ status: "started" })
+  await done.get("fixture-continuation")!.promise
+  expect(frames.filter(frame => frame.runId === "fixture-continuation")).toEqual([
+    { runId: "fixture-continuation", type: "delta", kind: "reasoning", text: "stub: thinking" },
+    { runId: "fixture-continuation", type: "delta", kind: "text", text: "stub: stub-tool files.read README.md owner/repo" },
+    { runId: "fixture-continuation", type: "done", reason: "stop" }
+  ])
+  expect(stub.cancel("fixture-one")).toEqual({ status: "not-found" })
 })
