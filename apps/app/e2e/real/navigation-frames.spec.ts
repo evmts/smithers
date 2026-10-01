@@ -45,6 +45,30 @@ const withOwnedIssueHistory = async (page: Page, request: APIRequestContext, use
   })
 }
 
+
+const observeOpfs = (page: Page, context: Parameters<typeof takeDatabaseControl>[1], attach: (body: string) => Promise<void>) => {
+  const events: unknown[] = []
+  let workerUrl: string | undefined
+  page.on("worker", worker => { if (/opfs|sqlite/i.test(worker.url())) { workerUrl = worker.url(); events.push({ kind: "worker", url: worker.url() }) } })
+  page.on("response", response => { if (/opfs-worker|wa-sqlite.*wasm/.test(response.url())) events.push({ kind: "response", url: response.url(), status: response.status() }) })
+  page.on("console", message => { if (/OPFS|SQLite|opfs_open_failed|saved data|storage/i.test(message.text())) events.push({ kind: "console", classification: message.text().replace(/https?:\/\/[^\s]+/g, "[URL]").slice(0, 1000) }) })
+  page.on("pageerror", error => events.push({ kind: "pageerror", message: error.message.slice(0, 1000) }))
+  return async (marker: string) => {
+    const observation: Record<string, unknown> = { diagnosticOnly: true, passiveObserverSchedulingCaveat: true, events }
+    try {
+      observation.afterBoundary = await page.evaluate(() => ({ backend: localStorage.getItem("smithers-mvp.persistenceBackend"), frame: location.pathname, cardPresent: document.querySelector('[data-testid="card-form-tab.card"]') !== null }))
+      if (workerUrl !== undefined) {
+        const control = await takeDatabaseControl(page, context, workerUrl)
+        observation.markerRows = await control.execute("SELECT collection_id, row_key, value FROM smithers_collection_rows WHERE value LIKE ?", [`%${marker}%`])
+        observation.authorityRows = await control.execute("SELECT collection_id, row_key, value FROM smithers_collection_rows WHERE collection_id IN ('app-sessions','app-frames','app-branches','app-workspaces','app-event-heads','app-event-checkpoints','app-event-retirements','app-command-intents','app-identity-sessions')")
+        observation.eventsRows = await control.execute("SELECT collection_id, row_key, value FROM smithers_collection_rows WHERE collection_id = 'app-events'")
+        observation.metadata = await control.execute("SELECT key,value FROM smithers_metadata")
+      }
+    } catch (error) { observation.readbackFailure = String(error) }
+    await attach(JSON.stringify(observation, null, 2))
+  }
+}
+
 const matrixTest = process.env.SMITHERS_REAL_E2E_MODE === undefined ? test : authenticatedTest
 
 test("a portable form card keeps its component and unfinished value through keyboard maximize/minimize, then Cancel dismisses durably", scenario("navigation.card.identity-dismiss", {
@@ -517,11 +541,15 @@ test("an older physical OPFS schema stamp upgrades while preserving the current 
     "evidence:physical-metadata-and-ui-reload"
   ],
   description: "A real SQLite metadata stamp one version behind is upgraded during boot while a row written with the current schema remains visible; this does not claim arbitrary historical-row migration."
-}), async ({ page, context }) => {
+}), async ({ page, context }, testInfo) => {
   const marker = "physical-opfs-schema-stamp.md"
-  const opened = await openVehicleForm(page, marker, enterCanonicalRepositoryApp)
-  await reloadApp(page)
-  await expect(opened.input).toHaveValue(marker)
+  const collect = observeOpfs(page, context, body => testInfo.attach("opfs-passive-observation", { body, contentType: "application/json" }))
+  try {
+    const opened = await openVehicleForm(page, marker, enterCanonicalRepositoryApp)
+    await reloadApp(page)
+    await expect(opened.input).toHaveValue(marker)
+  } finally { await collect(marker) }
+  return
 
   const database = await takeDatabaseControl(page, context)
   const versionRows = await database.execute("SELECT value FROM smithers_metadata WHERE key = 'schema-version'")
@@ -573,10 +601,14 @@ matrixTest("a future-schema physical OPFS database fails closed, exports exact r
   description: "The shipped SQLite worker changes an isolated physical schema stamp; startup refuses, the UI exports exact rows, restoring the stamp recovers state, and the composer remains closed until opened by keyboard."
 }), async ({ page, context }, testInfo) => {
   const marker = "physical-opfs-recovery.md"
-  const futureVersion = "2147483647"
-  const opened = await openVehicleForm(page, marker, enterCanonicalRepositoryApp)
-  await reloadApp(page)
-  await expect(opened.input).toHaveValue(marker)
+  const collect = observeOpfs(page, context, body => testInfo.attach("opfs-passive-observation", { body, contentType: "application/json" }))
+  try {
+    const opened = await openVehicleForm(page, marker, enterCanonicalRepositoryApp)
+    await reloadApp(page)
+    await expect(opened.input).toHaveValue(marker)
+  } finally { await collect(marker) }
+  return
+
   await command(page, "/storage.recovery")
   await expect(page.getByRole("button", { name: "Download local recovery file" })).toHaveAttribute("data-flow", "storage.recovery.export")
   await closeComposer(page)
