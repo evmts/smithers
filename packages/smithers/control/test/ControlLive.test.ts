@@ -169,7 +169,9 @@ describe("ControlLive", () => {
     await Effect.runPromise(
       Effect.gen(function*() {
         const control = yield* Control
-        expect(yield* Effect.flip(control.resume({ runId, idempotencyKey: "resume-live-host", allowCodeDrift }))).toBe(refusal)
+        expect(yield* Effect.flip(control.resume({ runId, idempotencyKey: "resume-live-host", allowCodeDrift }))).toBe(
+          refusal
+        )
         const journal = yield* Journal.Journal
         const events = yield* journal.entries({ runId: JournalEvent.RunId.make(runId), limit: 100 })
         expect(events.entries.some((entry) => entry.eventType === "control.run.resume")).toBe(false)
