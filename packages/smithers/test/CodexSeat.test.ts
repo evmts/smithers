@@ -5,8 +5,11 @@ import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
+import * as ProcessReaper from "@smthrs/platform-node/ProcessReaper"
 import { Effect, Fiber, Layer, Stream } from "effect"
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { spawnSync } from "node:child_process"
+import { randomUUID } from "node:crypto"
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -442,23 +445,103 @@ process.stdin.on('end', () => { fs.appendFileSync('prompts', JSON.stringify(prom
   })
 
   it("fails a call whose supervisor is lost mid-call as a transport failure", async () => {
-    const fake = fakeModel(`require('node:fs').writeFileSync('supervisor', String(process.ppid));
+    const nonce = randomUUID()
+    const fake = fakeModel(`const fs = require('node:fs');
+fs.writeFileSync('identity.tmp', JSON.stringify({ nonce: ${JSON.stringify(nonce)}, vendor: process.pid,
+  supervisor: process.ppid, executable: process.execPath, fixture: process.argv[1] }));
+fs.renameSync('identity.tmp', 'identity');
 setInterval(() => {}, 1000);`)
-    const failure = await Effect.runPromise(Effect.gen(function*() {
-      const fiber = yield* Effect.forkChild(Effect.flip(Stream.runCollect(fake.model.stream(request()))))
-      yield* Effect.promise(async () => {
-        let supervisor = 0
-        for (let attempt = 0; attempt < 1000 && supervisor === 0; attempt++) {
-          try {
-            supervisor = Number(readFileSync(join(fake.root, "supervisor"), "utf8"))
-          } catch {}
-          if (supervisor === 0) await new Promise((resolve) => setTimeout(resolve, 10))
-        }
-        process.kill(supervisor, "SIGKILL")
+    type Receipt = { nonce: string; vendor: number; supervisor: number; executable: string; fixture: string }
+    let receipt: Receipt | undefined
+    let vendorStart: ProcessReaper.StartTime | undefined
+    const system = ProcessReaper.systemFor(process.platform)
+    const executable = realpathSync(process.execPath)
+    const probe = (pid: number, column: string): string => {
+      const result = spawnSync(ProcessReaper.defaultPsExecutable, ["-p", String(pid), "-o", `${column}=`], {
+        encoding: "utf8",
+        timeout: 1000,
+        env: { LC_ALL: "C", TZ: "UTC" }
       })
-      return yield* Fiber.join(fiber)
-    }))
-    expect(failure).toMatchObject({ code: "transport" })
+      expect(result.error).toBeUndefined()
+      expect(result.status).toBe(0)
+      return result.stdout.trim()
+    }
+    const executableOf = (pid: number): string =>
+      process.platform === "linux"
+        ? realpathSync(`/proc/${pid}/exe`)
+        : realpathSync(probe(pid, "comm"))
+    const verifyVendor = (owned: Receipt): void => {
+      expect(system.startedAtMs(owned.vendor)).toEqual(vendorStart)
+      expect(executableOf(owned.vendor)).toBe(executable)
+      // Only a boolean is asserted: provider arguments are never diagnostic output.
+      expect(probe(owned.vendor, "args").includes(owned.fixture)).toBe(true)
+    }
+    try {
+      const failure = await Effect.runPromise(Effect.gen(function*() {
+        const fiber = yield* Effect.forkChild(Effect.flip(Stream.runCollect(fake.model.stream(request()))))
+        yield* Effect.promise(async () => {
+          for (let attempt = 0; attempt < 1000 && receipt === undefined; attempt++) {
+            try {
+              receipt = JSON.parse(readFileSync(join(fake.root, "identity"), "utf8")) as Receipt
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+            }
+            if (receipt === undefined) await new Promise((resolve) => setTimeout(resolve, 10))
+          }
+          expect(receipt).toBeDefined()
+          const owned = receipt!
+          expect(owned.nonce).toBe(nonce)
+          expect(owned.fixture).toBe(join(fake.root, "codex"))
+          expect(realpathSync(owned.executable)).toBe(executable)
+          expect(Number.isSafeInteger(owned.vendor)).toBe(true)
+          expect(Number.isSafeInteger(owned.supervisor)).toBe(true)
+          expect(owned.vendor).toBeGreaterThan(1)
+          expect(owned.supervisor).toBeGreaterThan(1)
+          expect(owned.vendor).not.toBe(process.pid)
+          expect(owned.supervisor).not.toBe(process.pid)
+          expect(Number(probe(owned.vendor, "ppid"))).toBe(owned.supervisor)
+          vendorStart = system.startedAtMs(owned.vendor)
+          expect(vendorStart._tag).toBe("started")
+          verifyVendor(owned)
+          const supervisorStart = system.startedAtMs(owned.supervisor)
+          expect(supervisorStart._tag).toBe("started")
+          expect(executableOf(owned.supervisor)).toBe(executable)
+          expect(system.startedAtMs(owned.supervisor)).toEqual(supervisorStart)
+          console.info(
+            "CODEX_FIXTURE_OWNERSHIP " + JSON.stringify({
+              fixtureId: nonce,
+              fixture: owned.fixture,
+              executable,
+              vendor: owned.vendor,
+              supervisor: owned.supervisor,
+              vendorStart,
+              supervisorStart
+            })
+          )
+          process.kill(owned.supervisor, "SIGKILL")
+        })
+        return yield* Fiber.join(fiber)
+      }))
+      expect(failure).toMatchObject({ code: "transport" })
+    } finally {
+      if (receipt !== undefined && vendorStart?._tag === "started" && system.isAlive(receipt.vendor) !== "dead") {
+        verifyVendor(receipt)
+        try {
+          process.kill(receipt.vendor, "SIGTERM")
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error
+        }
+        for (let attempt = 0; attempt < 500 && system.isAlive(receipt.vendor) !== "dead"; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 10))
+        }
+        expect(system.isAlive(receipt.vendor), "owned fault-injection vendor outlived fixture cleanup").toBe("dead")
+      }
+    }
+    expect(receipt).toBeDefined()
+    expect(system.isAlive(receipt!.vendor)).toBe("dead")
+    console.info(
+      "CODEX_FIXTURE_CLEANUP " + JSON.stringify({ fixtureId: nonce, vendor: receipt!.vendor, state: "dead" })
+    )
   })
 
   it("launches the vendor under the contained spawner's supervisor and kills its whole tree on cancel", async () => {
