@@ -38,7 +38,7 @@ export type CommandAcceptance =
 export interface CommandLifecycle {
   /** Infrastructure refusal before gestures, state reads, or durable admission. */
   readonly before?: (request: CommandRequest, args?: string, named?: Record<string, unknown>) => CommandOutcome | undefined
-  readonly reserveGesture?: (request: CommandRequest, args?: string, named?: Record<string, unknown>) => CommandGesture | undefined
+  readonly reserveGesture?: (request: CommandRequest, args?: string, named?: Record<string, unknown>, inherited?: CommandGesture) => CommandGesture | undefined
   readonly accept: (request: CommandRequest, pendingFieldInput?: PendingFieldInput | PendingFormInput) => Promise<CommandAcceptance>
   readonly canExecute?: (receipt: CommandReceipt, request: CommandRequest) => boolean
   /** Whether this invocation still owns its durable diagnostics after an await. */
