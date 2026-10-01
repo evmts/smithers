@@ -66,7 +66,7 @@ authenticatedTest("repository secret metadata survives reload and follows actual
       expect(JSON.stringify(body).includes(value)).toBe(false)
       for (const secret of body) expect(secret).not.toHaveProperty("value")
     }
-    const card = page.locator('.smithers-card[data-kind="secrets"]')
+    const card = page.getByTestId(`card-secrets-${repo}`)
     const row = card.getByTestId(`secret-${secretName}`)
     await list()
     await expect(card).toBeVisible()
@@ -144,8 +144,9 @@ authenticatedTest("the Secrets card adds, rotates and deletes a secret through t
     await finishFirstVisit(page)
     await command(page, `/secrets.list ${repo}`)
     await closeComposer(page)
-    const card = page.locator('.smithers-card[data-kind="secrets"]')
+    const card = page.getByTestId(`card-secrets-${repo}`)
     await expect(card).toBeVisible()
+    await expect(card.locator(".world-card-path")).toHaveText(repo)
     const form = page.locator('.flow-form[data-flow-name="secrets.set"]').last()
     const save = async (value: string, fields: Record<string, string>) => {
       for (const [field, text] of Object.entries(fields)) await form.getByTestId(`flow-form-${field}`).fill(text)
@@ -250,7 +251,9 @@ const withSeparateSecretAuthorities = async (
   const list = async () => {
     await command(page, `/secrets.list ${repo.fullName}`)
     await closeComposer(page)
-    await expect(page.locator('.smithers-card[data-kind="secrets"]').getByTestId(`secret-${name}`)).toBeVisible()
+    const card = page.getByTestId(`card-secrets-${repo.fullName}`)
+    await expect(card.locator(".world-card-path")).toHaveText(repo.fullName)
+    await expect(card.getByTestId(`secret-${name}`)).toBeVisible()
   }
   await list()
   await use({ repo, name, secretPath, read, unchanged, privateText, list })
@@ -262,7 +265,7 @@ authenticatedTest("CI secret scope keyboard actions persist without touching age
   coverage: ["action:secrets.scope", "host:local", "path:success", "path:persistence", "path:keyboard", "dimension:keyboard", "dimension:secret-authority-isolation", "dimension:reload", "dimension:main-only-and-all", "door:button", "door:slash", "evidence:ci-secret-metadata-readback"]
 }), async ({ page, request }, testInfo) => {
   await withSeparateSecretAuthorities(page, request, async ({ repo, name, secretPath, read, unchanged, privateText, list }) => {
-    const row = page.locator('.smithers-card[data-kind="secrets"]').getByTestId(`secret-${name}`)
+    const row = page.getByTestId(`card-secrets-${repo.fullName}`).getByTestId(`secret-${name}`)
     const before = (await read()).find(secret => secret.name === name)!
     expect(before.main_only).toBe(false)
     const button = row.getByRole("button", { name: `Limit to main ${name}`, exact: true })
@@ -288,6 +291,7 @@ authenticatedTest("CI secret scope keyboard actions persist without touching age
     privateText(await restored.text())
     await expect.poll(async () => (await read()).find(secret => secret.name === name)?.main_only).toBe(false)
     await list()
+    await expect(row.getByRole("cell").nth(1)).toHaveText("no")
     await reloadApp(page)
     await expect(row.getByRole("cell").nth(1)).toHaveText("no")
     const after = (await read()).find(secret => secret.name === name)!
@@ -303,7 +307,7 @@ authenticatedTest("CI secret binding form persists exact metadata and refuses an
   coverage: ["action:secrets.bind", "host:local", "path:success", "path:error", "path:persistence", "path:keyboard", "dimension:keyboard", "dimension:secret-authority-isolation", "dimension:invalid-binding", "dimension:reload", "door:button", "door:slash", "evidence:ci-secret-binding-api-readback"]
 }), async ({ page, request }, testInfo) => {
   await withSeparateSecretAuthorities(page, request, async ({ repo, name, secretPath, read, unchanged, privateText, list }) => {
-    const row = page.locator('.smithers-card[data-kind="secrets"]').getByTestId(`secret-${name}`)
+    const row = page.getByTestId(`card-secrets-${repo.fullName}`).getByTestId(`secret-${name}`)
     const bind = row.getByRole("button", { name: `Bind ${name}`, exact: true })
     await bind.focus()
     await expect(bind).toBeFocused()
@@ -315,6 +319,7 @@ authenticatedTest("CI secret binding form persists exact metadata and refuses an
     await form.getByTestId("flow-form-headers").fill("authorization,x-api-key")
     const pending = page.waitForResponse(response => response.request().method() === "PATCH" && new URL(response.url()).pathname === secretPath)
     const submit = form.getByTestId("flow-form-submit")
+    await expect(submit).toBeEnabled()
     await submit.focus()
     await expect(submit).toBeFocused()
     await submit.press("Enter")
