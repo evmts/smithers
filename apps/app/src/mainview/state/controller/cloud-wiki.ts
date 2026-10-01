@@ -465,6 +465,7 @@ export const createCloudWikiController = (ctx: ControllerContext, nextOrdinal: (
   }
 
   let paneRead = 0
+  const invalidatePaneRead = (): void => { ++paneRead }
 
   const readWikiForPane = async (): Promise<void> => {
     const generation = ++paneRead
@@ -558,7 +559,7 @@ export const createCloudWikiController = (ctx: ControllerContext, nextOrdinal: (
     slug: string,
     expectedPageId?: number,
     spaceArg?: WikiSpace,
-    isCurrent: () => boolean = () => true
+    isCurrent?: () => boolean
   ): Promise<string | { value: string }> => {
     const space = spaceArg ?? shared.space()
     const owner = shared.login()
@@ -570,12 +571,17 @@ export const createCloudWikiController = (ctx: ControllerContext, nextOrdinal: (
     }
     const originBranch = shared.branch()
     const actor = ctx.commandActor
+    // Explicit navigation owns the pane even before its page arrives.
+    // Embedded agent reads do not supersede the person's selection.
+    const generation = isCurrent === undefined && actor === "user" && ctx.store.session().surface === "world"
+      ? ++paneRead : undefined
+    const current = isCurrent ?? (() => generation === undefined || generation === paneRead)
     return shared.run(
       Effect.gen(function*() {
         const api = yield* CloudWikiTransport
         const incoming = yield* api.read(repo, slug, space)
         if (
-          shared.disposed() || shared.login() !== owner || shared.branch() !== originBranch || !isCurrent()
+          shared.disposed() || shared.login() !== owner || shared.branch() !== originBranch || !current()
         ) return "The account or conversation changed while the Wiki was loading."
         if (expectedPageId !== undefined && incoming.page.id !== expectedPageId) {
           const oldId = wikiDocumentId(repo, expectedPageId)
@@ -589,11 +595,11 @@ export const createCloudWikiController = (ctx: ControllerContext, nextOrdinal: (
         }
         const id = wikiDocumentId(repo, incoming.page.id)
         yield* shared.accept(repo, { ...incoming, page: { ...incoming.page, visibility: incoming.page.visibility ?? space } }, owner, originBranch, actor)
-        if (!isCurrent()) return "The Wiki selection changed while the page was loading."
+        if (!current()) return "The Wiki selection changed while the page was loading."
         shared.watch(id)
         const document = shared.read(id)!
         yield* shared.persist({ ...document, cloud: { ...document.cloud, phase: "live" } }, actor)
-        if (!isCurrent()) return "The Wiki selection changed while the page was loading."
+        if (!current()) return "The Wiki selection changed while the page was loading."
         // With the Wiki pane open, the page opened is the page shown (the pane reads the session's selection), and no card doubles it in the chat.
         if (ctx.store.session().surface === "world" && actor === "user") {
           ctx.store.dispatch({ type: "world.document.selected", actor, id })
@@ -921,5 +927,5 @@ export const createCloudWikiController = (ctx: ControllerContext, nextOrdinal: (
   }
   return { listCloudWiki, openCloudWiki, editCloudWiki, prepareCloudWiki, retryCloudWiki, attachWorldEditor, scrollEditor,
     loadWikiIndex, readWikiForPane, setWikiSpace, setWikiPageView, showWikiHistory, createCloudWikiPage, renameCloudWikiPage, deleteCloudWikiPage, attachCloudWiki,
-    wikiIndexes: shared.wikiIndexes, hasIndexedPage }
+    wikiIndexes: shared.wikiIndexes, hasIndexedPage, invalidatePaneRead }
 }
