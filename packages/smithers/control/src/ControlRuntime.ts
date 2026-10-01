@@ -799,16 +799,22 @@ interface MutablePlan {
   decision: "pending" | "approved" | "denied"
 }
 
-interface MutableToken {
+type MutableToken = {
+  readonly kind: "Plan"
   readonly tokenId: string
-  readonly target: ApprovalTarget
+  readonly target: Extract<ApprovalTarget, { readonly _tag: "Plan" }>
+  readonly plan: MutablePlan
+  decision: ApprovalDecision
+} | {
+  readonly kind: "Node"
+  readonly tokenId: string
+  readonly target: Extract<ApprovalTarget, { readonly _tag: "Node" }>
   decision: ApprovalDecision
 }
 
 interface MutableRun {
   summary: RunSummary
   fence?: string | undefined
-  localFence?: string | undefined
   fiber?: Fiber.Fiber<unknown, unknown> | undefined
   readonly sequence: number
   readonly signals: Array<SignalPayload>
@@ -837,11 +843,6 @@ const approvalKey = (target: ApprovalTarget): string =>
   target._tag === "Plan"
     ? JSON.stringify([target._tag, target.planId])
     : JSON.stringify([target._tag, target.runId, target.requestId])
-
-const sameApprovalIdentity = (left: ApprovalTarget, right: ApprovalTarget): boolean =>
-  left._tag === "Plan"
-    ? right._tag === "Plan" && left.planId === right.planId
-    : right._tag === "Node" && left.runId === right.runId && left.requestId === right.requestId
 
 const approvalToken = (token: MutableToken): ApprovalToken => ({
   tokenId: token.tokenId,
@@ -890,7 +891,7 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
       const plans = new Map<string, MutablePlan>()
       const planKeys = new Map<IdempotencyKey, {
         readonly fingerprint: string
-        readonly planId: string
+        readonly plan: MutablePlan
       }>()
       const tokens = new Map<string, MutableToken>()
       const runs = new Map<RunId, MutableRun>()
@@ -932,17 +933,13 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
             run.summary.status === "completed" ||
             run.summary.status === "failed"
           ) return snapshot(run.summary)
-          // Accepted claims are owned too; releasePending clears both fences.
+          // Accepted claims are owned too; releasePending clears the fence.
           if (run.fence !== undefined) {
-            if (run.localFence === undefined || run.fence !== run.localFence) {
-              return yield* new ClaimLost({ runId })
-            }
             return snapshot(run.summary)
           }
           const adopted = adopt === undefined ? undefined : yield* adopt(run)
           const fence = `fence-${++fenceSequence}`
           run.fence = fence
-          run.localFence = fence
           // Claiming ends the park, so it ends the record of who wrote it.
           return updateSummary(run, {
             ...adopted,
@@ -976,8 +973,7 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
                   issue: `idempotency key ${submitted.idempotencyKey} was used for another plan`
                 })
               }
-              const stored = plans.get(prior.planId)
-              if (stored !== undefined) return { card: snapshot(stored.card), created: false }
+              return { card: snapshot(prior.plan.card), created: false }
             }
           }
           const decoded = yield* (flow.decode?.(submitted.input) ?? Effect.try({
@@ -1012,12 +1008,14 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
                   issue: `idempotency key ${submitted.idempotencyKey} was used for another plan`
                 })
               }
-              const stored = plans.get(prior.planId)
-              if (stored !== undefined) return { card: snapshot(stored.card), created: false }
+              return { card: snapshot(prior.plan.card), created: false }
             }
           }
-          plans.set(planId, { card, decodedInput: snapshot(decoded), decision: "pending" })
+          const plan: MutablePlan = { card, decodedInput: snapshot(decoded), decision: "pending" }
+          plans.set(planId, plan)
           tokens.set(approvalKey(card.approval.target), {
+            kind: "Plan",
+            plan,
             tokenId: planId,
             target: snapshot(card.approval.target),
             decision: { _tag: "Pending" }
@@ -1025,7 +1023,7 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
           if (submitted.idempotencyKey !== undefined) {
             planKeys.set(submitted.idempotencyKey, {
               fingerprint: requestFingerprint,
-              planId
+              plan
             })
           }
           return { card: snapshot(card), created: true }
@@ -1068,18 +1066,6 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
                 ? new RunNotFound({ runId: requested.runId })
                 : new PlanNotFound({ planId: requested.planId })
           )
-          // A stored target that disagrees with its composite key is corrupted;
-          // accepting only its digest and envelope would recreate the alias the
-          // composite identity closes. In memory the key is DERIVED from the
-          // identity, so only a caller reaching into the map can produce the
-          // disagreement; `SqlControlRuntime` stores the two apart and covers
-          // the same refusal against a rewritten row.
-          if (!sameApprovalIdentity(token.target, requested)) {
-            return yield* new PersistenceError({
-              operation: "validate an approval token",
-              message: "The stored approval target does not match its identity"
-            })
-          }
           if (token.target.digest !== requested.digest) {
             return yield* new PlanDigestMismatch({
               planId: tokenId,
@@ -1104,18 +1090,13 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
           const existing = tokens.get(key)
           if (existing === undefined) {
             const stored: MutableToken = {
+              kind: "Node",
               tokenId: requested.requestId,
               target: requested,
               decision: { _tag: "Pending" }
             }
             tokens.set(key, stored)
             return approvalToken(stored)
-          }
-          if (!sameApprovalIdentity(existing.target, requested)) {
-            return yield* new PersistenceError({
-              operation: "validate an approval token",
-              message: "The stored approval target does not match its identity"
-            })
           }
           if (existing.target.digest !== requested.digest) {
             return yield* new PlanDigestMismatch({
@@ -1169,10 +1150,7 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
               return yield* new AlreadyResolved({ requestId: requested.tokenId })
             }
             mutable.decision = answer
-            if (requested.target._tag === "Plan") {
-              const plan = plans.get(requested.target.planId)
-              if (plan !== undefined) plan.decision = decision
-            }
+            if (mutable.kind === "Plan") mutable.plan.decision = decision
           }
         ),
         launch: Effect.fn("ControlRuntime.launch")(function*(planId, requestedDigest, envelope, principal) {
@@ -1230,7 +1208,6 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
           runs.set(runId, {
             summary: snapshot(summary),
             fence,
-            localFence: fence,
             sequence: runSequence,
             signals: []
           })
@@ -1443,8 +1420,8 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
             run.summary.status === "completed" ||
             run.summary.status === "failed"
           ) return snapshot(run.summary)
-          if (run.localFence === undefined) return yield* new ClaimLost({ runId })
-          const fence = run.localFence
+          if (run.fence === undefined) return yield* new ClaimLost({ runId })
+          const fence = run.fence
           yield* checkFence(runId, run, fence)
           if (run.fiber !== undefined) yield* Fiber.interrupt(run.fiber)
           return yield* settle(Effect.gen(function*() {
@@ -1456,7 +1433,6 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
             ) return snapshot(run.summary)
             yield* checkFence(runId, run, fence)
             run.fence = undefined
-            run.localFence = undefined
             return updateSummary(run, { status: "cancelled", ownerId: undefined, parkedBy: undefined })
           }))
         }),
@@ -1481,14 +1457,13 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
         ),
         claimFence: Effect.fn("ControlRuntime.claimFence")(function*(runId) {
           const run = yield* requireRun(runId)
-          if (run.localFence === undefined) return yield* new ClaimLost({ runId })
-          return run.localFence
+          if (run.fence === undefined) return yield* new ClaimLost({ runId })
+          return run.fence
         }),
         releasePending: Effect.fn("ControlRuntime.releasePending")(function*(runId, fence) {
           const run = yield* requireRun(runId)
           yield* checkFence(runId, run, fence)
           run.fence = undefined
-          run.localFence = undefined
           return updateSummary(run, {
             status: "accepted",
             ownerId: undefined,
@@ -1504,7 +1479,6 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
             return updateSummary(run, { status, parkedBy: undefined })
           }
           run.fence = undefined
-          run.localFence = undefined
           // The spent fence is kept on a park, and only on a park: it is the
           // only thing left on the row that says which host parked it.
           return updateSummary(run, {
