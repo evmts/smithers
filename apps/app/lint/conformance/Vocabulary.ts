@@ -37,6 +37,8 @@ const DOTTED_HEAD = /^[a-z][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)*\.$/
 export const UI_APP = from("../../")
 /** `apps/app/src`. */
 export const UI_SRC = from("../../src/")
+/** The site renders the App and supplies its transition scripts. */
+export const SITE_SRC = from("../../../site/src/")
 /** `apps/app/scripts` — the standalone e2e and live-check runners, the launch checklist included. */
 export const SCRIPTS = from("../../scripts")
 /** `apps/app/e2e` — the hermetic harness and its suites. */
@@ -184,26 +186,20 @@ export const manifestFlowNames = async (): Promise<ReadonlySet<string>> => {
   return new Set(controller.commands.all().map((command) => command.name))
 }
 
-/**
- * Every `data-*` attribute the rendered DOM can carry. There are three ways to
- * put one there and all three are read: a JSX attribute, a `setAttribute`/`toggleAttribute`
- * call, and a `dataset` property write. Sources are the app's own components
- * and the component library the app renders through, plus the `data-*` props
- * React Flow's compiled bundle writes on the node and edge wrappers it owns
- * (`"data-id": id`), since the graph canvas renders those — a CDP selector naming
- * anything else matches nothing, which is exactly what seventeen stale
- * `data-command` selectors did after the rename. Tests are left out for the
- * same reason they are left out of the source corpus: an attribute only a
- * test renders is not one the app puts on the page.
- */
-export const emittedDataAttributes = (): ReadonlySet<string> => {
+/** Astro's runtime scripts use the same TypeScript emission rules as App sources. */
+export const dataAttributesFromSource = (file: string, source: string): ReadonlySet<string> => {
   const emitted = new Set<string>()
-  const rendered = [...sourceFiles(UI_SRC), ...sourceFiles(COMPONENT_LIBRARY)]
-    .filter((candidate) => !assertsAgainstTheApp(candidate))
-  for (const file of rendered) {
+  const scripts = file.endsWith(".astro")
+    ? [
+      ...source.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, "").replace(/<!--[\s\S]*?-->/g, "").matchAll(
+        /<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi
+      )
+    ].map((match) => match[1]!)
+    : [source]
+  for (const source of scripts) {
     const parsed = ts.createSourceFile(
       file,
-      readFileSync(file, "utf8"),
+      source,
       ts.ScriptTarget.ESNext,
       true,
       file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS
@@ -237,7 +233,35 @@ export const emittedDataAttributes = (): ReadonlySet<string> => {
     }
     visit(parsed)
   }
-  for (const match of readFileSync(REACT_FLOW_BUNDLE, "utf8").matchAll(/"(data-[a-z][a-z-]*)":/g)) emitted.add(match[1]!)
+  return emitted
+}
+
+/**
+ * Every `data-*` attribute the rendered DOM can carry. There are three ways to
+ * put one there and all three are read: a JSX attribute, a `setAttribute`/`toggleAttribute`
+ * call, and a `dataset` property write. Sources are the app's own components
+ * and the component library the app renders through, plus the `data-*` props
+ * React Flow's compiled bundle writes on the node and edge wrappers it owns
+ * (`"data-id": id`), since the graph canvas renders those — a CDP selector naming
+ * anything else matches nothing, which is exactly what seventeen stale
+ * `data-command` selectors did after the rename. Tests are left out for the
+ * same reason they are left out of the source corpus: an attribute only a
+ * test renders is not one the app puts on the page.
+ */
+export const emittedDataAttributes = (): ReadonlySet<string> => {
+  const emitted = new Set<string>()
+  const rendered = [
+    ...sourceFiles(UI_SRC),
+    ...sourceFiles(COMPONENT_LIBRARY),
+    ...sourceFiles(SITE_SRC, [".ts", ".tsx", ".astro"])
+  ]
+    .filter((candidate) => !assertsAgainstTheApp(candidate))
+  for (const file of rendered) {
+    for (const attribute of dataAttributesFromSource(file, readFileSync(file, "utf8"))) emitted.add(attribute)
+  }
+  for (const match of readFileSync(REACT_FLOW_BUNDLE, "utf8").matchAll(/"(data-[a-z][a-z-]*)":/g)) {
+    emitted.add(match[1]!)
+  }
   return emitted
 }
 
