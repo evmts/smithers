@@ -109,11 +109,32 @@ test(
     await command(page, "/wiki"); await closeComposer(page)
     const pane = page.getByTestId("card-world-embedded")
     await expect(pane.getByText("No Wiki yet.", { exact: true })).toBeVisible()
+    const mutations: string[] = []
+    page.on("request", request => {
+      const path = new URL(request.url()).pathname
+      if (path.startsWith("/api/") && ["POST", "PUT", "PATCH", "DELETE"].includes(request.method())) mutations.push(`${request.method()} ${path}`)
+    })
     await pane.getByRole("button", { name: "Create Wiki", exact: true }).click()
+    const form = page.locator('form.flow-form[data-flow-name="wiki.create"]').last()
+    await expect(form.getByTestId("flow-form-submit")).toBeDisabled()
+    await form.getByRole("textbox", { name: "Repository", exact: true }).fill("smithersai/smithers")
+    await expect(form.getByTestId("flow-form-submit")).toBeEnabled()
+    await form.getByRole("textbox", { name: "Repository", exact: true }).press("Enter")
     await closeComposer(page)
-    await expect(page.getByText("Sign in with GitHub to continue.", { exact: true })).toBeVisible()
+    await expect(page.getByText("Sign in with GitHub to continue.", { exact: true }).last()).toBeVisible()
+    await command(page, "/wiki.create smithersai/smithers"); await closeComposer(page)
+    await expect(page.getByText("Sign in with GitHub to continue.", { exact: true }).last()).toBeVisible()
     await expect(pane.locator('.world-card-sidebar button')).toHaveCount(0)
     await expect(pane.getByText("No Wiki yet.", { exact: true })).toBeVisible()
+    expect(mutations).toEqual([])
+    const reloadedAt = performance.now()
+    await reloadApp(page)
+    await awaitBoot(page, "reload", reloadedAt)
+    await command(page, "/wiki"); await closeComposer(page)
+    const reopened = page.getByTestId("card-world-embedded")
+    await expect(reopened.getByText("No Wiki yet.", { exact: true })).toBeVisible()
+    await expect(reopened.locator('.world-card-sidebar button')).toHaveCount(0)
+    expect(mutations).toEqual([])
   }
 )
 
