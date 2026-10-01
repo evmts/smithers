@@ -173,3 +173,106 @@ authenticatedTest("issues.comment.react records one reaction and its keyboard re
     await attachJson(testInfo, "reaction-readback", { repo: repo.fullName, number, commentId: comment.id, reactions: await reactions() })
   })
 })
+
+
+authenticatedTest("owned issue comments, close and reopen survive reload through keyboard doors", scenario("issues.local-comment-close-reopen-persistence", {
+  capabilities: ["identity"],
+  description: "Replace the retired practice lifecycle with an owned canonical backend issue: submit a keyboard comment, compare the real creation receipt and stored body, close and reopen across reload, and leave another issue unchanged.",
+  coverage: ["action:issues.comment", "action:issues.close", "action:issues.reopen", "host:local", "path:success", "path:persistence", "path:keyboard", "dimension:keyboard", "dimension:reload", "dimension:issue-isolation", "door:slash", "door:button", "evidence:owned-issue-lifecycle-api-readback"]
+}), async ({ page, request }, testInfo) => {
+  await withOwnedRepository(page, request, async (repo) => {
+    const number = await seed(page, request, repo, `lifecycle-${randomUUID()}`)
+    const other = await seed(page, request, repo, `untouched-${randomUUID()}`)
+    const untouched = await read(page, request, repo, other)
+    await boot(page, repo)
+    await slash(page, `/issues.view ${number} ${repo.fullName}`)
+    const issue = page.locator(`article.ghc-detail[data-issue="${number}"]`)
+    const commentsPath = `${repo.path}/issues/${number}/comments`
+    const readComments = async () => {
+      const response = await realApi(page, request, "GET", commentsPath)
+      expect(response.status()).toBe(200)
+      return response.json() as Promise<Array<{ id: number; body: string }>>
+    }
+    expect(await readComments()).toEqual([])
+    const marker = `comment-${randomUUID()}`
+    const editor = issue.getByRole("textbox", { name: "Add a comment", exact: true })
+    await editor.fill(marker)
+    const posted = page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname === commentsPath)
+    await editor.press("ControlOrMeta+Enter")
+    const response = await posted
+    expect(response.status()).toBe(201)
+    const created = await response.json() as { id: number; body: string }
+    expect(created.body).toBe(marker)
+    expect(created.id).toEqual(expect.any(Number))
+    await expect(issue).toContainText(marker)
+    await expect(editor).toHaveValue("")
+    expect(await readComments()).toEqual([expect.objectContaining({ id: created.id, body: marker })])
+    const close = issue.getByRole("button", { name: "Close issue", exact: true })
+    await close.focus()
+    await expect(close).toBeFocused()
+    const closed = page.waitForResponse(response => response.request().method() === "PATCH" && new URL(response.url()).pathname === `${repo.path}/issues/${number}`)
+    await close.press("Enter")
+    expect((await closed).status()).toBe(200)
+    expect((await read(page, request, repo, number)).state).toBe("closed")
+    await reloadApp(page)
+    await expect(issue).toHaveAttribute("data-state", "closed")
+    await expect(issue).toContainText(marker)
+    const reopen = issue.getByRole("button", { name: "Reopen issue", exact: true })
+    await reopen.focus()
+    await expect(reopen).toBeFocused()
+    const reopened = page.waitForResponse(response => response.request().method() === "PATCH" && new URL(response.url()).pathname === `${repo.path}/issues/${number}`)
+    await reopen.press("Enter")
+    expect((await reopened).status()).toBe(200)
+    expect((await read(page, request, repo, number)).state).toBe("open")
+    await reloadApp(page)
+    await expect(issue).toHaveAttribute("data-state", "open")
+    await expect(issue).toContainText(marker)
+    expect(await readComments()).toEqual([expect.objectContaining({ id: created.id, body: marker })])
+    expect(await read(page, request, repo, other)).toEqual(untouched)
+    await attachJson(testInfo, "owned-issue-lifecycle-readback", { repo: repo.fullName, issue: await read(page, request, repo, number), comments: await readComments(), untouched })
+  })
+})
+
+authenticatedTest("issues.fix records the actual fixer and refuses self verification without changing another issue", scenario("issues.fix-and-self-verification-refusal", {
+  capabilities: ["identity"],
+  description: "Mark an owned issue fixed through the public command, compare the canonical actor and timestamp across reload, and prove the same actor cannot verify their own fix. Distinct-verifier success remains unqualified.",
+  coverage: ["action:issues.fix", "host:local", "path:success", "path:error", "path:persistence", "dimension:fixer-authority", "dimension:self-verification-refusal", "dimension:reload", "dimension:issue-isolation", "door:slash", "evidence:fixed-issue-api-readback"]
+}), async ({ page, request }, testInfo) => {
+  await withOwnedRepository(page, request, async (repo) => {
+    const number = await seed(page, request, repo, `fix-${randomUUID()}`)
+    const other = await seed(page, request, repo, `untouched-${randomUUID()}`)
+    const untouched = await read(page, request, repo, other)
+    const viewerResponse = await realApi(page, request, "GET", "/api/user")
+    expect(viewerResponse.status()).toBe(200)
+    const viewer = await viewerResponse.json() as { id: number; username: string }
+    await boot(page, repo)
+    await slash(page, `/issues.view ${number} ${repo.fullName}`)
+    const issue = page.locator(`article.ghc-detail[data-issue="${number}"]`)
+    const fixedResponse = page.waitForResponse(response => response.request().method() === "PATCH" && new URL(response.url()).pathname === `${repo.path}/issues/${number}`)
+    await slash(page, `/issues.fix ${number} ${repo.fullName}`)
+    expect((await fixedResponse).status()).toBe(200)
+    const fixed = await read(page, request, repo, number) as Awaited<ReturnType<typeof read>> & { fixed_by: { id: number; login: string }; fixed_at: string; verified_by: null; verified_at: null }
+    expect(fixed.state).toBe("fixed")
+    expect(fixed.fixed_by).toMatchObject({ id: viewer.id, login: viewer.username })
+    expect(Number.isFinite(Date.parse(fixed.fixed_at))).toBe(true)
+    expect(fixed.verified_by).toBeNull()
+    expect(fixed.verified_at).toBeNull()
+    await reloadApp(page)
+    await expect(issue).toHaveAttribute("data-state", "fixed")
+    expect(await read(page, request, repo, number)).toEqual(fixed)
+    const refusalResponse = page.waitForResponse(response => response.request().method() === "PATCH" && new URL(response.url()).pathname === `${repo.path}/issues/${number}`)
+    await command(page, `/issues.verify ${number} ${repo.fullName}`)
+    const refusal = await refusalResponse
+    expect(refusal.status()).toBe(422)
+    const body = await refusal.json() as { errors: Array<{ resource: string; field: string; code: string }> }
+    expect(body.errors).toContainEqual({ resource: "Issue", field: "state", code: "self_verification" })
+    await expect(page.locator('.toast[data-toast-status="failed"]').last()).toBeVisible()
+    expect(await read(page, request, repo, number)).toEqual(fixed)
+    await closeComposer(page)
+    await reloadApp(page)
+    await expect(issue).toHaveAttribute("data-state", "fixed")
+    expect(await read(page, request, repo, number)).toEqual(fixed)
+    expect(await read(page, request, repo, other)).toEqual(untouched)
+    await attachJson(testInfo, "fix-and-refusal-readback", { repo: repo.fullName, viewer, fixed, refusal: body, untouched, verificationSuccessQualified: false })
+  })
+})
