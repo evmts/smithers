@@ -110,3 +110,17 @@ test("issue view reads debounce, remain running while unresolved, and disappear 
   expect(projectRead(undefined, 100_000)).toEqual([])
   expect(projectRead(100_000, 100_299)).toEqual([])
 })
+
+test("offscreen issue-view failures stay actionable and retries replace them with debounced progress", () => {
+  const issueViewsFailure = "That command could not run. Details: /conversation"
+  const base = { tabs: [], runs: [], now: 1000, tick: "*", search: undefined, undoing: undefined, toast: undefined }
+  expect(rows({ ...base, issueViewsFailure })).toEqual([{ id: "issue-views", text: issueViewsFailure, tone: "danger" }])
+  expect(rows({ ...base, issueViews: 1000, issueViewsFailure })).toEqual([])
+  expect(rows({ ...base, now: 1300, issueViews: 1000, issueViewsFailure })).toEqual([{
+    id: "issue-views",
+    text: "* Issue views",
+    tone: "info"
+  }])
+  // Visible panels and successful settled reads omit the derived failure.
+  expect(rows(base)).toEqual([])
+})
