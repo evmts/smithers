@@ -249,7 +249,10 @@ describe("one npm CLI backend contracts", () => {
 
 describe("migrated command dispatch", () => {
   it("accounts for every Go command without replacing target cache operations", async () => {
-    expect(Object.keys(handlers).sort()).toEqual(Object.keys(definitions).sort())
+    const legacyCommands = Object.keys(definitions).sort()
+    expect(Object.keys(handlers).filter((name) => name !== "account show").sort()).toEqual(legacyCommands)
+    expect(Object.keys(handlers).sort()).toEqual([...legacyCommands, "account show"].sort())
+    expect(Object.keys(handlers)).toHaveLength(212)
     // Independent count rejects a command dropped from both handlers and definitions.
     // Includes history land and workspace children list/spawn/stop (b80b439db473).
     expect(Object.keys(definitions)).toHaveLength(211)
@@ -263,6 +266,44 @@ describe("migrated command dispatch", () => {
       const result = await f.run([...command, "--help"])
       expect(result.code, result.output).toBe(0)
     }
+  })
+  it("discovers Account as a read-only command with no input and executes only its authenticated read", async () => {
+    const requests: Array<{ method: string | undefined; url: string | undefined; body: unknown }> = []
+    const f = await fixture((req, res, body) => {
+      expect(req.headers.authorization).toBe("token test-session-secret")
+      requests.push({ method: req.method, url: req.url, body })
+      res.end(JSON.stringify({ username: "selected-owner", email: "private-email", token: "private-token" }))
+    })
+    const accountHelp = await f.run(["account", "--help"])
+    expect(accountHelp.code).toBe(0)
+    expect(accountHelp.output).toContain("show")
+    const help = await f.run(["account", "show", "--help"])
+    expect(help.code).toBe(0)
+    expect(help.output).toContain("Show account")
+    const schema = await f.run(["account", "show", "--schema"])
+    expect(schema.code).toBe(0)
+    expect(JSON.parse(schema.output).args).toEqual({
+      type: "object",
+      properties: {},
+      additionalProperties: false
+    })
+    const commands = Cli.toCommands.get(makeCli({ environment: f.environment }) as never)!
+    const account = commands.get("account")!
+    expect("_group" in account).toBe(true)
+    if (!("_group" in account)) throw new Error("Account command group missing")
+    const show = account.commands.get("show")!
+    if ("_group" in show || "_alias" in show || "_fetch" in show) throw new Error("Account show command missing")
+    expect(show.mcp).toMatchObject({ annotations: { readOnlyHint: true } })
+    expect(requests).toEqual([])
+    const invalid = await f.run(["account", "show", "unexpected-input"])
+    expect(invalid.code).not.toBe(0)
+    expect(requests).toEqual([])
+    const result = await f.run(["account", "show"])
+    expect(result.code).toBe(0)
+    expect(JSON.parse(result.output)).toEqual({ login: "selected-owner" })
+    expect(result.output).not.toContain("private-email")
+    expect(result.output).not.toContain("private-token")
+    expect(requests).toEqual([{ method: "GET", url: "/api/user", body: undefined }])
   })
   it("summarizes every command and group instead of repeating its name", () => {
     const placeholders: string[] = [], summaries = new Map<string, string>()
