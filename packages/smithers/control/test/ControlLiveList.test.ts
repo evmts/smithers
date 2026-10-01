@@ -69,6 +69,39 @@ const items = (listed: ListResponse): ReadonlyArray<string> => {
 }
 
 describe("ControlLive listings", () => {
+  it.each([
+    { name: "null", input: null },
+    { name: "scalar", input: "ordinary input" },
+    { name: "array", input: ["ordinary input"] }
+  ])("admits a $name input without inventing trigger provenance and preserves its plan JSON", async ({ input }) => {
+    const observed = await run(Effect.gen(function*() {
+      const control = yield* Control
+      const journal = yield* Journal.Journal
+      const card = yield* control.plan({ flowId: "system/test", input })
+      const plans = yield* control.list({ _tag: "plans" })
+      yield* control.approve({ ...card.approval, idempotencyKey: "approve:non-record" })
+      const receipt = yield* control.run({
+        _tag: "Plan",
+        planId: card.planId,
+        digest: card.digest,
+        envelope: card.envelope,
+        idempotencyKey: "run:non-record"
+      })
+      if (receipt._tag !== "Accepted" || receipt.runId === undefined) return yield* Effect.die("expected admission")
+      yield* journal.flush
+      const recorded = yield* Stream.runCollect(control.watch({ runId: receipt.runId, follow: false }))
+      return { card, plans, recorded }
+    }))
+    expect(observed.plans._tag).toBe("plans")
+    if (observed.plans._tag === "plans") {
+      expect(observed.plans.items).toHaveLength(1)
+      expect(observed.plans.items[0]).toMatchObject({ card: { planId: observed.card.planId }, input })
+    }
+    const accepted = observed.recorded.filter((event) => event.kind === "control.run.accepted")
+    expect(accepted).toHaveLength(1)
+    expect(accepted[0]!.payload).not.toHaveProperty("trigger")
+  })
+
   it("pages valid flow listings and refuses sizes or cursors that cannot make progress", async () => {
     const observed = await run(Effect.gen(function*() {
       const control = yield* Control
@@ -1384,7 +1417,12 @@ describe("ControlLive trigger listings", () => {
           byRun: yield* control.list({ _tag: "fires", filters: { runId: "run-lint-3" } }),
           byTrigger: yield* control.list({ _tag: "fires", filters: { triggerId: "hourly-triage" } }),
           launched: yield* control.list({ _tag: "fires", filters: { outcome: "launched" } }),
-          unknownRun: yield* control.list({ _tag: "fires", filters: { runId: "run-nobody" } })
+          unknownRun: yield* control.list({ _tag: "fires", filters: { runId: "run-nobody" } }),
+          restricted: yield* control.list({
+            _tag: "fires",
+            reader: { id: "memory", kind: "test", stampedAt: 0 },
+            filters: { runId: "run-lint-3" }
+          })
         }
       }),
       live({ runtime: memoryRuntime({ flows }), dispatch: reader })
@@ -1413,6 +1451,38 @@ describe("ControlLive trigger listings", () => {
     expect(items(observed.byTrigger)).toEqual(["hourly-triage@1700003600000", "hourly-triage@1699999200000"])
     expect(items(observed.launched)).toEqual(["nightly-lint@1700000000000", "nightly-lint@1699827200000"])
     expect(observed.unknownRun).toEqual({ _tag: "fires", items: [] })
+    expect(observed.restricted).toEqual({ _tag: "fires", items: [] })
+  })
+
+  it("shows only fires bound to a run launched by the exact restricted principal", async () => {
+    // Unit dispatch port supplies rows; run ownership comes from real Control launch receipts.
+    let ledger: ReadonlyArray<FireSummary> = []
+    const dispatch = DispatchReader.make({ list: () => Effect.succeed([]), fires: () => Effect.succeed(ledger) })
+    const observed = await run(
+      Effect.gen(function*() {
+        const control = yield* Control
+        const { runId } = yield* start("system/test", "owned-fire")
+        ledger = [
+          { triggerId: "owned", occurrenceAtMs: 3, outcome: "launched", runId },
+          { triggerId: "unbound", occurrenceAtMs: 2, outcome: "skipped" },
+          { triggerId: "unrecorded", occurrenceAtMs: 1, outcome: "launched", runId: "not-a-launched-run" }
+        ]
+        const reader = { id: "memory", kind: "test", stampedAt: 0 }
+        return {
+          all: yield* control.list({ _tag: "fires" }),
+          own: yield* control.list({ _tag: "fires", reader }),
+          otherKind: yield* control.list({ _tag: "fires", reader: { ...reader, kind: "user" } }),
+          otherID: yield* control.list({ _tag: "fires", reader: { ...reader, id: "another-reader" } }),
+          runId
+        }
+      }),
+      live({ runtime: memoryRuntime({ flows }), dispatch })
+    )
+    expect(observed.all.items).toEqual(ledger)
+    expect(observed.own).toEqual({ _tag: "fires", items: [ledger[0]] })
+    expect(observed.own.items[0]).toMatchObject({ runId: observed.runId })
+    expect(observed.otherKind).toEqual({ _tag: "fires", items: [] })
+    expect(observed.otherID).toEqual({ _tag: "fires", items: [] })
   })
 
   it("refuses sizes and cursors that cannot make progress before asking the reader", async () => {
