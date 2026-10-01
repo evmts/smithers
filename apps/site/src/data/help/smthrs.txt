@@ -3,6 +3,7 @@ smthrs@1.0.0-rc.1 — Build workspace targets and operate durable agent flows
 Usage: smthrs <command>
 
 Commands:
+  account       Account
   admin         Administer the Smithers installation
   affected      Execute targets affected by changed files, conservatively including ambient inputs
   agent         Ask the Smithers helper and hold remote conversations
