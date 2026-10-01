@@ -623,7 +623,11 @@ describe("unified control dispatch", () => {
       executionRoot: "/stale-child"
     })
     expect(ports.prepare).toHaveBeenCalledExactlyOnceWith("/fixture", "child")
-    expect(ports.invoke).toHaveBeenCalledExactlyOnceWith(["resume", "child"], { root: "/fixture", quiet: false, verbose: false }, {
+    expect(ports.invoke).toHaveBeenCalledExactlyOnceWith(["resume", "child"], {
+      root: "/fixture",
+      quiet: false,
+      verbose: false
+    }, {
       ...result.config,
       executionRoot: "/isolated-child"
     })
@@ -761,7 +765,11 @@ describe("unified control dispatch", () => {
         const result = await invoke(["runs", verb, "run-1", "--root", "/fixture", "--json"])
         expect(result.codes).toEqual([])
         expect(ports.prepare).toHaveBeenCalledExactlyOnceWith("/fixture", "run-1")
-        expect(ports.invoke).toHaveBeenCalledExactlyOnceWith(["resume", "run-1"], { root: "/fixture", quiet: false, verbose: false }, {
+        expect(ports.invoke).toHaveBeenCalledExactlyOnceWith(["resume", "run-1"], {
+          root: "/fixture",
+          quiet: false,
+          verbose: false
+        }, {
           ...result.config,
           executionRoot: "/isolated-child"
         })
