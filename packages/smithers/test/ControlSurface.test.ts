@@ -668,7 +668,19 @@ describe("Control surface", () => {
     expect(Array.isArray(local.logs.value)).toBe(true)
     expect((local.logs.value as ReadonlyArray<unknown>).length).toBeGreaterThan(0)
     expect(remote.hostname).toBe("127.0.0.1")
-    expect(normalize(remote.result)).toEqual(normalize(local))
+    const withActor = (value: unknown, actor: { id: string; kind: string }) => {
+      let seen = 0
+      const result = JSON.parse(JSON.stringify(value, (key, entry) => {
+        if (key !== "launchedBy") return entry
+        expect(entry).toEqual(actor)
+        seen++
+        return { id: "compared-principal", kind: "compared-principal" }
+      }))
+      expect(seen).toBeGreaterThan(0)
+      return result
+    }
+    expect(withActor(normalize(remote.result), { id: "alpha", kind: "bearer" }))
+      .toEqual(withActor(normalize(local), { id: "memory", kind: "test" }))
   })
 
   it("refuses an unauthenticated request on an explicitly exposed bind", async () => {
