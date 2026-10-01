@@ -8,6 +8,7 @@ import type { Runtime } from "../../cli/ControlBridge.ts"
 import * as Presentation from "../../cli/Presentation.ts"
 import { Refused } from "../../CliError.ts"
 import * as Failure from "../Failure.ts"
+import { declarations as accountDeclarations, handlers as accountHandlers } from "./Account.ts"
 import { admin } from "./Admin.ts"
 import { ask } from "./AgentDocs.ts"
 import { auth } from "./Auth.ts"
@@ -30,6 +31,7 @@ import { workspaces } from "./Workspaces.ts"
  */
 export const handlers: Record<string, Handler> = {
   ...resources,
+  ...accountHandlers,
   ...admin,
   ...auth,
   ...local,
@@ -50,6 +52,7 @@ export const handlers: Record<string, Handler> = {
  * @since 1.0.0
  */
 export const groups: Record<string, string> = {
+  "account": "Account",
   "admin": "Administer the Smithers installation",
   "admin alerts": "Manage alert channels and policies",
   "admin alerts channels": "Manage where alerts are delivered",
@@ -130,7 +133,7 @@ const repoHome = (value: unknown): string | undefined =>
  */
 export const mount = (cli: Cli.Cli<any, any, any, any>, runtime: Runtime) => {
   const tree = Cli.toCommands.get(cli as never)!
-  for (const [name, definition] of Object.entries(definitions)) {
+  for (const [name, definition] of Object.entries({ ...definitions, ...accountDeclarations })) {
     const handler = handlers[name]
     if (!handler) throw new Error(`Missing backend command: ${name}`)
     // workflow watch is the same handler and contract as run watch.

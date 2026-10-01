@@ -1,9 +1,10 @@
 import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
 /** Standard package targets plus package-owned documentation generation. */
 import { Smithers } from "@smthrs/targets"
+import { Package as control } from "./control/PACKAGE.ts"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({
-  deps: [],
+  deps: [control.check],
   cwd: "packages/smithers",
   // On the Node 22 CI hosts this complete process-boundary suite took
   // 1166.5 s on macOS and was killed at 1200.1 s on Ubuntu. Keep its
