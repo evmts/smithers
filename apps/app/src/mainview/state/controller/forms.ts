@@ -658,6 +658,8 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
         name: flow,
         payload,
         actor: asAgent ? "agent" : "user",
+        // Submit already handled presentation before this durable admission wait.
+        presentation: "continue",
         ...(!asAgent && gesture !== undefined ? { gesture: { ...gesture, name: flow } } : {}),
         ...(args === "" ? {} : { display: args }),
         ...(asAgent && continuation !== undefined ? { invocation: continuation } : {})
