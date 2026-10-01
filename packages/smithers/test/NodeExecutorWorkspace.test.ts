@@ -115,6 +115,7 @@ describe("NodeControl.layerExecutor over a fork's checkout", () => {
       // `root`, so a fork's runner has to name the fork under both.
       expect(observed.runners.at(-1)).toEqual({
         command: "project-test-command",
+        baseline: false,
         cwd: workspace,
         root: workspace
       })
