@@ -1086,27 +1086,41 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
    */
   "box.list": (args) => repoOnly("box.list", args),
   "box.open": (args, known) => {
-    const structured = structuredFields("box.open", args, ["bookmark", "repo", "kind"])
+    const structured = structuredFields("box.open", args, ["bookmark", "repo", "kind", "snapshot", "recoveryOf"])
     if (structured !== undefined) return structured
-    /*
-     * ADR 0002: the kind IS the choice, so it rides the line as `--kind
-     * <container|vm|desktop>` wherever the caller put it — the card's three
-     * buttons append it, a human may type it anywhere. Everything left after
-     * it is the bookmark and the optional trailing owner/repo.
-     */
-    const flagged = /(?:^|\s)--kind(?:\s+(\S+))?/.exec(args ?? "")
-    if (flagged !== null && (flagged[1] === undefined || !KINDS.includes(flagged[1]))) {
+    // Flags may precede, follow, or sit between the bookmark and repository.
+    // Remove their values before applying the shared repository interpretation.
+    const flags: Record<string, string> = {}
+    const positional: string[] = []
+    const tokens = tokensOf(args)
+    for (let index = 0; index < tokens.length; index += 1) {
+      const token = tokens[index]!
+      if (token !== "--kind" && token !== "--snapshot" && token !== "--recoveryOf") {
+        if (token.startsWith("--")) return no("box.open takes --kind, --snapshot, or --recoveryOf")
+        positional.push(token)
+        continue
+      }
+      const field = token.slice(2)
+      const value = tokens[index + 1]
+      if (value === undefined || value.startsWith("--")) {
+        return no(token === "--kind"
+          ? "box.open's kind must be container, vm, or desktop"
+          : `box.open needs a value for ${token}`)
+      }
+      if (flags[field] !== undefined) return no(`box.open takes ${token} once`)
+      flags[field] = value
+      index += 1
+    }
+    if (flags.kind !== undefined && !KINDS.includes(flags.kind)) {
       return no("box.open's kind must be container, vm, or desktop")
     }
-    const kind = flagged?.[1]
-    const line = flagged === null ? args : (args ?? "").replace(flagged[0], " ")
-    const { rest, repo } = identifierRepo(line, known)
+    const { rest, repo } = identifierRepo(positional.join(" "), known)
     const bookmark = rest.trim()
     if (/\s/.test(bookmark)) return no("box.open takes a bookmark and optionally an owner/repo")
     return ok({
       ...(bookmark === "" ? {} : { bookmark }),
       ...(repo === undefined ? {} : { repo }),
-      ...(kind === undefined ? {} : { kind })
+      ...flags
     })
   },
   "box.view": (args) => required("workspaceId", args, "box.view needs a workspace id"),
