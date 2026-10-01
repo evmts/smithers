@@ -1,6 +1,7 @@
 /** Agent-facing runtime UI and delegation use the harness's existing flow catalog. */
 import * as SmithersPlugin from "@smthrs/agent/SmithersPlugin"
 import * as StandardFlows from "@smthrs/agent/StandardFlows"
+import { accountOperations } from "@smthrs/control/Account"
 import { Flow } from "@smthrs/flow"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
@@ -16,6 +17,8 @@ import * as Panels from "./panels.ts"
 import type { Vendor } from "./wrapped.ts"
 
 export interface Ports {
+  /** Account binds the host-selected identity; it never accepts an origin or credential. */
+  readonly account?: (input: unknown) => Promise<unknown>
   /** Throws a one-line refusal (`Contributions.Refusal`) when the contribution cannot be shown. */
   readonly publish: (contribution: Extension.Contribution) => void
   readonly delegate?: (
@@ -136,6 +139,11 @@ const publishInput = Schema.Union([
 
 export const source = (ports: Ports): FlowBinding.Source =>
   FlowBinding.source("tui/runtime", [
+    ...(ports.account === undefined ?
+      [] :
+      accountOperations.map((operation) =>
+        bind(operation.name, operation.summary, operation.input, (input) => ports.account!(input))
+      )),
     bind(
       "ui.publish",
       "Create or update custom terminal UI; returns immediately. A bare panel is a tab; {kind:\"panel\",placement:\"card\",panel} is a live chat card; {kind:\"status\",status} is a footer item; {kind:\"key\",key} is a key. Same id replaces it without stealing focus. Use one sentence and concise rows with expandable code, tables, text or diffs.",

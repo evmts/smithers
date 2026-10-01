@@ -40,6 +40,33 @@ const program = Effect.gen(function*() {
 })
 ```
 
+## Operation
+
+`Operation` owns the handler-free declarations shared by host adapters.
+`operation` preserves literal metadata and `NoInput` is the single empty-input
+schema. `OperationPayload`, `OperationMetadata`, and `Operation` describe input,
+requirements, actor rules, and host-bound form hints; they carry no UI imports.
+
+## Account
+
+`accountOperations` declares `account.show` with `NoInput` and the `identity`
+capability. `createAccountController` binds its lifecycle to `AccountHost`:
+persist admission before reading, share pending work, and publish only while
+the authority and request still match. `accountReads` creates the flight slot
+shared by human and agent adapters. Disposal cancels that slot.
+
+`AccountAuthority` binds owner, origin, and epoch. `AccountRequest`,
+`AccountAnswer`, `AccountRead`, `AccountReads`, and `AccountFacts` describe the
+request and its verified result. `identityFacts` projects the backend username;
+`readAccountPermissions` decodes the existing permission response. Neither
+function invents identity, permissions, or boxes.
+
+`ACCOUNT_CARD_ID`, `SIGNED_OUT_VALUE`, and `IDENTITY_PENDING_TEXT` preserve the
+existing Account presentation contract. `NoInput` is re-exported from
+`Operation`. Hosts own storage, credentials, and presentation. The CLI waits
+for its ordinary read; this module does not create a CLI run or operation
+history. API operation dispatch is not supplied by this module.
+
 ## Control
 
 The transport-independent control vtable. Every implementation in this package

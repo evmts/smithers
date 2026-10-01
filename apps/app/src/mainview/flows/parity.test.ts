@@ -1,3 +1,4 @@
+import { operationSources } from "../../../scripts/operation-sources"
 import { describe,expect,test } from "bun:test"
 import { readdirSync,readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
@@ -59,7 +60,7 @@ const registrySources = (): string => {
   return [
     read("./Flows.ts"),
     ...readdirSync(entries).sort().map((file) => read(`./entries/${file}`)),
-    ...readdirSync(shared).sort().map((file) => readFileSync(`${shared}${file}`, "utf8"))
+    ...operationSources(shared).map(({ source }) => source)
   ].join("\n")
 }
 
