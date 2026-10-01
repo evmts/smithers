@@ -31,6 +31,34 @@ const builtInCardRow = {
 const base = { id: "card-r1", title: "Aomi", status: "active", createdAt: 0, ordinal: 0 }
 
 describe("persisted card decoding units", () => {
+  test("native reaction usernames round-trip while external and older actor-only rows keep their exact identity", () => {
+    const reactions = [
+      { name: "thumbsup", actor: "user:1", username: "MixedCaseOwner", active: true },
+      { name: "thumbsup", actor: "MixedCaseOwner", active: true },
+      { name: "eyes", actor: "slack:T1:U1", active: true }
+    ]
+    const row = {
+      ...base,
+      kind: "issue",
+      payload: {
+        repo: "owner/repo",
+        number: 1,
+        title: "Conversation",
+        state: "open",
+        author: null,
+        issueBody: "",
+        labels: [],
+        comments: [{ id: 1, author: "MixedCaseOwner", commentBody: "Hello", createdAt: null, reactions }]
+      }
+    }
+    const decoded = CardSchema.parse(JSON.parse(JSON.stringify(row)))
+    expect(decoded).toEqual(row)
+    expect(CardSchema.parse(JSON.parse(JSON.stringify(decoded)))).toEqual(row)
+    if (decoded.kind !== "issue") throw new Error("The persisted conversation changed kind")
+    expect(decoded.payload.comments[0]!.reactions).toEqual(reactions)
+    expect(decoded.payload.comments[0]!.reactions![1]).not.toHaveProperty("username")
+  })
+
   test.each([
     { name: "null", value: null },
     { name: "missing row", value: undefined },
