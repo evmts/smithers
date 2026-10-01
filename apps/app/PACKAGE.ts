@@ -8,6 +8,7 @@
  * use the workspace's Node runtime and package manager.
  */
 import { Smithers } from "@smthrs/targets"
+import { Package as tuiPackage } from "../tui/PACKAGE.ts"
 import { Package as rpcPackage } from "../../packages/rpc/PACKAGE.ts"
 import { Package as harnessDetectPackage } from "../../packages/smithers/agent/harness-detect/PACKAGE.ts"
 import { Package as gatewayPackage } from "../../packages/smithers/gateway/PACKAGE.ts"
@@ -40,6 +41,8 @@ const harnessSources = Smithers.glob("//apps/app/scripts/**/*")
 /** The lint sources outside `src/`: the literal pin and the vocabularies it derives. */
 const lintSources = Smithers.glob("//apps/app/lint/**/*")
 const suiteSources = Smithers.glob("//apps/app/e2e/**/*")
+// The named-view probe imports the TUI tmux driver and starts its real entrypoint;
+// every consumer below also keys the existing TUI source group.
 
 /** The assertion contracts the e2e tiers share; pure, so the unit suite gates them. */
 const contractSources = Smithers.glob("//apps/app/e2e/contracts/**/*.ts")
@@ -100,7 +103,7 @@ const check = Smithers.Typecheck({
     Smithers.file("playwright.config.ts"),
     Smithers.file("playwright.showcase.config.ts")
   ],
-  deps: [devkit],
+  deps: [devkit, tuiPackage.recordingSources],
   tsconfig: Smithers.file("tsconfig.json"),
   buildMode: false,
   incremental: false,
@@ -144,7 +147,7 @@ const unitTests = Smithers.NodeTest({
     Smithers.file("//packages/rpc/fixtures/force/plan-typeCheck.json")
   ],
   // Globs cannot cross PACKAGE.ts boundaries; dependency keys carry these sources.
-  deps: [rpcPackage.check, componentPackage.check, gatewayPackage.check, harnessDetectPackage.check],
+  deps: [rpcPackage.check, componentPackage.check, gatewayPackage.check, harnessDetectPackage.check, tuiPackage.recordingSources],
   cwd
 })
 
@@ -184,7 +187,7 @@ const conformance = Smithers.NodeTest({
     Smithers.file("//packages/backend/internal/services/issue_sync.go")
   ],
   // Globs cannot cross PACKAGE.ts boundaries; dependency keys carry these sources.
-  deps: [rpcPackage.check, componentPackage.check, gatewayPackage.check, harnessDetectPackage.check],
+  deps: [rpcPackage.check, componentPackage.check, gatewayPackage.check, harnessDetectPackage.check, tuiPackage.recordingSources],
   cwd
 })
 
@@ -207,7 +210,7 @@ const browserE2e = Smithers.NodeTest({
     Smithers.file("playwright.showcase.config.ts"), Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml"),
     // `bun test` steps preload the toolchain floor.
     Smithers.file("bunfig.toml"), Smithers.file("//package.json"), Smithers.file("//scripts/require-toolchain.mjs")],
-  deps: [],
+  deps: [tuiPackage.recordingSources],
   env: { SMITHERS_CHAT_STUB: "1" },
   exclusive: true,
   cwd
