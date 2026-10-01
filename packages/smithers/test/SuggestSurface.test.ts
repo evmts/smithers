@@ -145,13 +145,8 @@ const scripted = (pick: string): Scripted => {
 }
 
 describe("the credential store the seat scan reads when it is handed no reader", () => {
-  it("opens ~/.codex/auth.json and runs on the Codex seat when it holds a session", async () => {
+  it("selects the external Codex seat when explicitly requested", async () => {
     const home = directory("smthrs-suggest-home-")
-    mkdirSync(join(home, ".codex"))
-    writeFileSync(
-      join(home, ".codex", "auth.json"),
-      JSON.stringify({ tokens: { access_token: "fabricated-access", refresh_token: "fabricated-refresh" } })
-    )
     const documents: Array<string> = []
 
     const outcome = await Effect.runPromise(
@@ -167,18 +162,18 @@ describe("the credential store the seat scan reads when it is handed no reader",
       })
     )
 
-    // No `readFile`, no API key: the only thing that can have
-    // chosen this seat is the file the default reader opened under `home`.
-    expect(outcome.seat).toBe("openai:gpt-6-sol")
+    // No API key or credential file participates in selection. The vendor
+    // login check belongs to execution, not this list-only selection.
+    expect(outcome.seat).toBe("codex:sol")
     expect(JSON.parse(documents.at(-2)!)).toEqual({
       document: "seat",
-      seat: "openai:gpt-6-sol",
+      seat: "codex:sol",
       source: "codex-subscription",
       label: "Codex subscription"
     })
   })
 
-  it("answers `no file` rather than throwing when the store is not there", async () => {
+  it("reports the supported login opt-in when no seat is selected", async () => {
     const home = directory("smthrs-suggest-home-")
 
     const error = await Effect.runPromise(
@@ -195,10 +190,11 @@ describe("the credential store the seat scan reads when it is handed no reader",
       )
     )
 
-    // A missing store is a seat that is not available, never a crash: the
-    // report names the path it looked at and moves on to the next candidate.
+    // With no selected seat, the diagnostic names the supported opt-in
+    // and retains each other provider's independent missing-key reason.
     expect(CliError.exitCode(error)).toBe(1)
-    expect(error.message).toContain(`no ${join(home, ".codex", "auth.json")}`)
+    expect(error.message).toContain("Codex subscription (codex:sol): set SMITHERS_OPENAI_AUTH=chatgpt to use Codex")
+    expect(error.message).not.toContain(join(home, ".codex", "auth.json"))
     expect(error.message).toContain("Kimi K3 (moonshot:kimi-k3): $MOONSHOT_API_KEY is not set")
   })
 })
