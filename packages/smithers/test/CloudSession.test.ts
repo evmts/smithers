@@ -12,10 +12,12 @@ const servers: Array<() => void> = []
 afterEach(() => {
   for (const close of servers.splice(0)) close()
 })
-const origin = async (reply: (path: string, auth: string | undefined) => { status: number; body: unknown }) => {
+const origin = async (
+  reply: (path: string, auth: string | undefined) => { status: number; body: unknown; headers?: Record<string, string> }
+) => {
   const server = createServer((request, response) => {
-    const { status, body } = reply(request.url ?? "", request.headers.authorization)
-    response.writeHead(status, { "content-type": "application/json" })
+    const { status, body, headers } = reply(request.url ?? "", request.headers.authorization)
+    response.writeHead(status, { "content-type": "application/json", ...headers })
     response.end(JSON.stringify(body))
   })
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
@@ -144,4 +146,124 @@ describe("CloudSession.repository", () => {
     execFileSync("git", ["-C", dir, "remote", "set-url", "origin", "/srv/git/acme/secret-project.git"])
     expect(CloudSession.repository(dir, process.env)).toBeUndefined()
   })
+})
+
+it("reads opaque page metadata while keeping ordinary GET body-compatible", async () => {
+  const seen: Array<{ path: string; auth: string | undefined }> = []
+  const path = "/api/repos/o/r/issues?view=bugs&limit=100"
+  const at = await origin((requested, auth) => {
+    seen.push({ path: requested, auth })
+    return {
+      status: 200,
+      body: [{ number: 17, title: "Visible issue" }],
+      headers: { Link: `<${path}&cursor=MTc>; rel="next"`, "X-Total-Count": "2" }
+    }
+  })
+  const cloud = await CloudSession.signedIn({
+    HOME: home(),
+    XDG_CONFIG_HOME: home(),
+    SMITHERS_API_ORIGIN: at,
+    SMITHERS_TOKEN: "tok_page"
+  })
+  expect(await cloud!.getPage(path)).toEqual({
+    body: [{ number: 17, title: "Visible issue" }],
+    nextCursor: "MTc",
+    bytes: Buffer.byteLength(JSON.stringify([{ number: 17, title: "Visible issue" }]))
+  })
+  expect(await cloud!.get(path)).toEqual([{ number: 17, title: "Visible issue" }])
+  expect(seen).toEqual([{ path, auth: "token tok_page" }, { path, auth: "token tok_page" }])
+})
+
+for (const changed of ["origin", "repository", "view", "limit", "state", "duplicate-cursor"] as const) {
+  it(`refuses ${changed} page continuation authority before another credentialed request`, async () => {
+    let calls = 0
+    const path = "/api/repos/o/r/issues?view=bugs&limit=100"
+    const at = await origin(() => {
+      calls += 1
+      const next = changed === "origin" ?
+        "http://127.0.0.1:1/api/repos/o/r/issues?view=bugs&limit=100&cursor=MTc"
+        : changed === "repository" ?
+        "/api/repos/other/r/issues?view=bugs&limit=100&cursor=MTc"
+        : changed === "view" ?
+        "/api/repos/o/r/issues?view=everything&limit=100&cursor=MTc"
+        : changed === "limit" ?
+        "/api/repos/o/r/issues?view=bugs&limit=500&cursor=MTc"
+        : changed === "state" ?
+        "/api/repos/o/r/issues?view=bugs&limit=100&state=closed&cursor=MTc"
+        : path + "&cursor=MTc&cursor=MjA"
+      return { status: 200, body: [], headers: { Link: `<${next}>; rel="next"` } }
+    })
+    const cloud = await CloudSession.signedIn({
+      HOME: home(),
+      XDG_CONFIG_HOME: home(),
+      SMITHERS_API_ORIGIN: at,
+      SMITHERS_TOKEN: "tok_page_authority"
+    })
+    await expect(cloud!.getPage(path)).rejects.toMatchObject({ fault: "infra", code: "backend_protocol" })
+    expect(calls).toBe(1)
+    expect(await cloud!.get(path)).toEqual([])
+    expect(calls).toBe(2)
+  })
+}
+
+it("bounds successful response bytes rather than decoded Unicode characters", async () => {
+  const at = await origin(() => ({ status: 200, body: "é".repeat(2 * 1024 * 1024) }))
+  const cloud = await CloudSession.signedIn({
+    HOME: home(),
+    XDG_CONFIG_HOME: home(),
+    SMITHERS_API_ORIGIN: at,
+    SMITHERS_TOKEN: "tok_unicode"
+  })
+  await expect(cloud!.getPage("/api/repos/o/r/issues?view=bugs&limit=100")).rejects.toMatchObject({
+    fault: "infra",
+    code: "cloud_response_too_large"
+  })
+})
+
+it("cancels an unresolved response stream and permits a fresh completed read", async () => {
+  let entered!: () => void
+  const streaming = new Promise<void>((resolve) => {
+    entered = resolve
+  })
+  const server = createServer((request, response) => {
+    response.writeHead(200, { "content-type": "application/json" })
+    if (request.url === "/api/held") {
+      response.write("[")
+      entered()
+    } else response.end("[]")
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  servers.push(() => {
+    server.closeAllConnections()
+    server.close()
+  })
+  const cloud = await CloudSession.signedIn({
+    HOME: home(),
+    XDG_CONFIG_HOME: home(),
+    SMITHERS_API_ORIGIN: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+    SMITHERS_TOKEN: "tok_stream"
+  })
+  const abort = new AbortController()
+  const read = cloud!.getPage("/api/held", abort.signal)
+  await streaming
+  abort.abort()
+  await expect(read).rejects.toMatchObject({ name: "AbortError" })
+  expect(await cloud!.getPage("/api/completed")).toEqual({ body: [], nextCursor: "", bytes: 2 })
+})
+
+it("accepts an actual BOM-prefixed JSON page as ordinary GET does", async () => {
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "application/json" })
+    response.end("\uFEFF[]")
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  servers.push(() => server.close())
+  const cloud = await CloudSession.signedIn({
+    HOME: home(),
+    XDG_CONFIG_HOME: home(),
+    SMITHERS_TOKEN: "tok_bom",
+    SMITHERS_API_ORIGIN: `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  })
+  expect(await cloud!.getPage("/api/page")).toEqual({ body: [], nextCursor: "", bytes: 5 })
+  expect(await cloud!.get("/api/page")).toEqual([])
 })
