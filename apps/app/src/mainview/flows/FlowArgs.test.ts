@@ -381,3 +381,20 @@ test("secret scope and binding inputs round-trip through the canonical grammar",
   const complete = { name: "DEPLOY", hosts: "api.example.com, registry.example.com", headers: "authorization, x-api-key", repo: "ada/other" }
   expect(payloadFor("secrets.bind", JSON.stringify(complete))).toEqual({ payload: complete })
 })
+
+test("box opening buttons preserve snapshot and recovery through the structured grammar", () => {
+  for (const kind of [undefined, "container", "vm", "desktop"] as const) {
+    for (const snapshot of [undefined, "snapshot-7"]) {
+      for (const recoveryOf of [undefined, "workspace-9"]) {
+        const input = {
+          bookmark: "topic",
+          repo: "owner/repo",
+          ...(kind === undefined ? {} : { kind }),
+          ...(snapshot === undefined ? {} : { snapshot }),
+          ...(recoveryOf === undefined ? {} : { recoveryOf }),
+        }
+        roundTrip("box.open", input, JSON.stringify(input), input)
+      }
+    }
+  }
+})
