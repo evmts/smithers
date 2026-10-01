@@ -2,7 +2,7 @@ import type { StorageApi } from "@tanstack/db"
 import { PERSISTED_KEY_PREFIX } from "../chain/SchemaVersion"
 import { CardHistorySchema,CardSchema,StarredTargetSchema,type Card,type CardHistory,type StarredTarget } from "./AppState"
 import { canonicalStoredJsonValue } from "./EventValue"
-import { PendingRecoveryAuthoritySchema,type PendingRecoveryAuthority } from "./PendingRecovery"
+import { PendingRecoveryAuthoritySchema,sameRecoveryScope,type PendingRecoveryAuthority } from "./PendingRecovery"
 import { SignupSchema,type Signup } from "./Signup"
 
 export const ENTITY_RECOVERY_STORAGE_KEY = `${PERSISTED_KEY_PREFIX}entity-recovery`
@@ -21,6 +21,14 @@ export interface EntityRecoveryRecord {
   readonly value: EntityRecoveryValue
   readonly authority?: PendingRecoveryAuthority
   readonly preparedCommandId?: string
+  /** The ordinary card receipt replaced by a prepared edit, while its write is still pending. */
+  readonly pendingCard?: { readonly revision: number; readonly authority: PendingRecoveryAuthority; readonly form: string }
+}
+
+/** Immutable form identity shared by preparation, decoding and replay. */
+export const formRecoveryIdentity = (card: Extract<Card, { kind: "flow-form" }>): string => {
+  const { draft: _draft, error: _error, ...payload } = card.payload
+  return canonicalStoredJsonValue({ ...card, status: "active", payload })
 }
 
 interface RecoveryEnvelope {
@@ -43,15 +51,27 @@ const envelope = (raw: string | null | undefined): RecoveryEnvelope | undefined 
 
 const record = (key: string, input: unknown): EntityRecoveryRecord | undefined => {
   if (typeof input !== "object" || input === null || Array.isArray(input)) return undefined
-  const candidate = input as { readonly revision?: unknown; readonly value?: unknown; readonly authority?: unknown; readonly preparedCommandId?: unknown }
+  const candidate = input as { readonly revision?: unknown; readonly value?: unknown; readonly authority?: unknown; readonly preparedCommandId?: unknown; readonly pendingCard?: unknown }
   if (!Number.isSafeInteger(candidate.revision) || (candidate.revision as number) < 1 ||
     typeof candidate.value !== "object" || candidate.value === null || Array.isArray(candidate.value)) return undefined
   const authority = candidate.authority === undefined ? undefined : PendingRecoveryAuthoritySchema.safeParse(candidate.authority)
   if (authority && !authority.success) return undefined
   if (candidate.preparedCommandId !== undefined && (typeof candidate.preparedCommandId !== "string" ||
     !authority?.success || authority.data.actor !== "user" || authority.data.intentId !== candidate.preparedCommandId)) return undefined
+  let pendingCard: EntityRecoveryRecord["pendingCard"]
+  if (candidate.pendingCard !== undefined) {
+    if (candidate.preparedCommandId === undefined || !authority?.success ||
+      typeof candidate.pendingCard !== "object" || candidate.pendingCard === null || Array.isArray(candidate.pendingCard)) return undefined
+    const pending = candidate.pendingCard as { readonly revision?: unknown; readonly authority?: unknown; readonly form?: unknown }
+    const pendingAuthority = PendingRecoveryAuthoritySchema.safeParse(pending.authority)
+    if (!Number.isSafeInteger(pending.revision) || (pending.revision as number) < 1 || (pending.revision as number) >= (candidate.revision as number) ||
+      typeof pending.form !== "string" || !pendingAuthority.success || pendingAuthority.data.actor !== "user" || pendingAuthority.data.streamId !== authority.data.streamId ||
+      !sameRecoveryScope(pendingAuthority.data, authority.data)) return undefined
+    pendingCard = { revision: pending.revision as number, authority: pendingAuthority.data, form: pending.form }
+  }
   const binding = { ...(authority?.success ? { authority: authority.data } : {}),
-    ...(typeof candidate.preparedCommandId === "string" ? { preparedCommandId: candidate.preparedCommandId } : {}) }
+    ...(typeof candidate.preparedCommandId === "string" ? { preparedCommandId: candidate.preparedCommandId } : {}),
+    ...(pendingCard === undefined ? {} : { pendingCard }) }
   const value = candidate.value as { readonly kind?: unknown; readonly workspaceId?: unknown; readonly branchId?: unknown; readonly card?: unknown; readonly history?: unknown; readonly star?: unknown; readonly id?: unknown; readonly repoId?: unknown; readonly question?: unknown; readonly text?: unknown; readonly signup?: unknown }
   if (value.kind === "card" && typeof value.workspaceId === "string" && typeof value.branchId === "string" && typeof value.id === "string" &&
     key === `card:${value.workspaceId}:${value.branchId}:${value.id}`) {
@@ -61,6 +81,7 @@ const record = (key: string, input: unknown): EntityRecoveryRecord | undefined =
     const card = CardSchema.safeParse(value.card)
     if (!card.success || card.data.id !== value.id || card.data.kind === "env" || card.data.kind === "approval" ||
       card.data.kind === "approvals-inbox" || (card.data.kind === "flow-form" && card.data.payload.flow === "env.set")) return undefined
+    if (pendingCard !== undefined && (card.data.kind !== "flow-form" || pendingCard.form !== formRecoveryIdentity(card.data))) return undefined
     const history = value.history === undefined ? undefined : CardHistorySchema.safeParse(value.history)
     if (history !== undefined && (!history.success || history.data.id !== value.id || history.data.index >= history.data.entries.length || history.data.entries.some(entry =>
       entry.id !== value.id || entry.kind === "env" || entry.kind === "approval" || entry.kind === "approvals-inbox" ||
@@ -70,6 +91,7 @@ const record = (key: string, input: unknown): EntityRecoveryRecord | undefined =
       ...(history?.success ? { history: history.data } : {}),
     } }
   }
+  if (pendingCard !== undefined) return undefined
   if (value.kind === "approval-answer") {
     if (!authority?.success || authority.data.actor !== "user" || typeof value.id !== "string" || !value.id ||
       typeof value.question !== "string" || !/^[0-9a-f]{64}$/.test(value.question) || typeof value.text !== "string" ||
@@ -126,7 +148,7 @@ export const writeEntityRecovery = (
     if (current === undefined) return undefined
     storage.setItem(ENTITY_RECOVERY_STORAGE_KEY, JSON.stringify({
       version: 1,
-      records: { ...current.records, [record.key]: { revision: record.revision, value: record.value, ...(record.authority === undefined ? {} : { authority: record.authority }), ...(record.preparedCommandId === undefined ? {} : { preparedCommandId: record.preparedCommandId }) } }
+      records: { ...current.records, [record.key]: { revision: record.revision, value: record.value, ...(record.authority === undefined ? {} : { authority: record.authority }), ...(record.preparedCommandId === undefined ? {} : { preparedCommandId: record.preparedCommandId }), ...(record.pendingCard === undefined ? {} : { pendingCard: record.pendingCard }) } }
     }))
     return record
   } catch {
@@ -142,6 +164,7 @@ export const clearEntityRecovery = (storage: StorageApi | undefined, expected: E
     if (current === undefined) return
     const saved = record(expected.key, current.records[expected.key])
     if (saved?.revision !== expected.revision || saved.preparedCommandId !== expected.preparedCommandId || canonicalStoredJsonValue(saved.authority ?? null) !== canonicalStoredJsonValue(expected.authority ?? null) ||
+      canonicalStoredJsonValue(saved.pendingCard ?? null) !== canonicalStoredJsonValue(expected.pendingCard ?? null) ||
       canonicalStoredJsonValue(saved.value) !== canonicalStoredJsonValue(expected.value)) return
     const { [expected.key]: _cleared, ...records } = current.records
     if (Object.keys(records).length === 0) storage.removeItem(ENTITY_RECOVERY_STORAGE_KEY)

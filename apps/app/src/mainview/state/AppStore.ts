@@ -116,7 +116,7 @@ import { isCurrentApprovalAnswer,type ApprovalAnswerInput } from "./ApprovalAnsw
 import { captureBrowserStorageRecovery,recoveryStorage } from "./BrowserStorageRecovery"
 import { CommandIntentSchema } from "./CommandIntent"
 import { DRAFT_RECOVERY_STORAGE_KEY,clearDraftRecovery,readDraftRecovery,writeDraftRecovery } from "./DraftRecovery"
-import { ENTITY_RECOVERY_STORAGE_KEY,clearEntityRecovery,readEntityRecoveries,writeEntityRecovery,type EntityRecoveryRecord } from "./EntityRecovery"
+import { ENTITY_RECOVERY_STORAGE_KEY,clearEntityRecovery,formRecoveryIdentity,readEntityRecoveries,writeEntityRecovery,type EntityRecoveryRecord } from "./EntityRecovery"
 import { canonicalStoredJsonValue } from "./EventValue"
 import { HttpTurnLegSchema,HttpTurnSchema, type HttpTurn } from "./HttpTurn"
 import { freezeProjectionValue } from "./ImmutableProjection"
@@ -1583,28 +1583,32 @@ const initializeAppStore = async (
     if (!original.payload.fields.some(candidate => candidate.name === field)) return undefined
     // The preparation hook may only change validated draft fields and clear an old error.
     // It cannot replace field options, the target flow, caller, history or capabilities.
-    const withoutDraft = (row: Extract<Card, { kind: "flow-form" }>) => {
-      const { draft: _draft, error: _error, ...payload } = row.payload
-      return { ...row, status: "active", payload }
-    }
-    if (canonicalStoredJsonValue(withoutDraft(card)) !== canonicalStoredJsonValue(withoutDraft(original))) return undefined
+    if (formRecoveryIdentity(card) !== formRecoveryIdentity(original)) return undefined
     const beforeOther = { ...original.payload.draft }, afterOther = { ...card.payload.draft }
     delete beforeOther[field]; delete afterOther[field]
     if (canonicalStoredJsonValue(beforeOther) !== canonicalStoredJsonValue(afterOther)) return undefined
     const authority = recoveryAuthority(optimistic, "user", intentId)
     const key = `card:${authority.workspaceId}:${authority.branchId}:${cardId}`
     const pending = readEntityRecoveries(draftRecoveryStorage).find(row => row.key === key)
-    if (pending?.preparedCommandId && pending.authority?.streamId === authority.streamId && sameRecoveryScope(pending.authority, authority) &&
-      admitsPendingRecovery(pending, { head: committed.head, checkpoint: committedCheckpoint, events: committedEvents, commands: optimistic.snapshot.commandIntents }) &&
-      pending.value.kind === "card" && pending.value.card?.kind === "flow-form" &&
-      canonicalStoredJsonValue(withoutDraft(pending.value.card)) === canonicalStoredJsonValue(withoutDraft(card))) {
-      const merged = { ...pending.value.card.payload.draft }
-      if (Object.hasOwn(card.payload.draft, field)) merged[field] = card.payload.draft[field]!
-      else delete merged[field]
-      card = { ...card, payload: { ...card.payload, draft: merged } }
+    const boundary = { head: committed.head, checkpoint: committedCheckpoint, events: committedEvents, commands: optimistic.snapshot.commandIntents }
+    let pendingCard: EntityRecoveryRecord["pendingCard"]
+    if (pending?.authority?.streamId === authority.streamId && sameRecoveryScope(pending.authority, authority) &&
+      admitsPendingRecovery(pending, boundary) && pending.value.kind === "card" && pending.value.card?.kind === "flow-form" &&
+      formRecoveryIdentity(pending.value.card) === formRecoveryIdentity(card)) {
+      // A prepared edit must retain the ordinary receipt it replaces. Otherwise
+      // reload can lose both the uncommitted form and the person's first input.
+      const base = pending.preparedCommandId === undefined ? { revision: pending.revision, authority: pending.authority, form: formRecoveryIdentity(pending.value.card) } : pending.pendingCard
+      if (base !== undefined && admitsPendingRecovery(base, boundary)) pendingCard = base
+      if (pending.preparedCommandId !== undefined) {
+        const merged = { ...pending.value.card.payload.draft }
+        if (Object.hasOwn(card.payload.draft, field)) merged[field] = card.payload.draft[field]!
+        else delete merged[field]
+        card = { ...card, payload: { ...card.payload, draft: merged } }
+      }
     }
     const record = writeEntityRecovery(draftRecoveryStorage, {
       key, revision: optimistic.head.revision + 1, authority, preparedCommandId: intentId,
+      ...(pendingCard === undefined ? {} : { pendingCard }),
       value: { kind: "card", workspaceId: authority.workspaceId, branchId: authority.branchId, id: cardId, card }
     })
     return record === undefined ? undefined : { clear: () => clearEntityRecovery(draftRecoveryStorage, record) }
@@ -1812,13 +1816,13 @@ const initializeAppStore = async (
     const currentScope = pendingRecoveryScope(savedSession)
     const cards = scope.branchId === currentScope.branchId && scope.workspaceId === currentScope.workspaceId ? recoverySnapshot.cards
       : recoverySnapshot.branches.find(branch => branch.id === scope.branchId && branch.workspaceId === scope.workspaceId)?.snapshot?.cards
+    // The original pending card still has to be ahead of the verified durable
+    // head. A committed removal/replacement or retired stream cannot revive it.
+    if (cards !== undefined && record.pendingCard !== undefined &&
+      admitsPendingRecovery(record.pendingCard, recoveryBoundary)) return true
     const prior = cards?.find(row => row.id === value.id)
     if (prior?.kind !== "flow-form" || prior.status === "acted" || prior.payload.submitting) return false
-    const metadata = (card: Extract<Card, { kind: "flow-form" }>) => {
-      const { draft: _draft, error: _error, ...payload } = card.payload
-      return { ...card, status: "active", payload }
-    }
-    return canonicalStoredJsonValue(metadata(prior)) === canonicalStoredJsonValue(metadata(value.card))
+    return formRecoveryIdentity(prior) === formRecoveryIdentity(value.card)
   }
   for (const pending of pendingRecoveries) {
     const authority = pending.record.authority
