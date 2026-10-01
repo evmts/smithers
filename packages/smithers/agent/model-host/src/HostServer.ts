@@ -14,7 +14,7 @@ import { z } from "zod"
 import { runDurableChatTurn } from "./DurableChatProducer.ts"
 import type { DurableChatGrant } from "./DurableChatProducer.ts"
 import type { ProducerError, ResolveFailed } from "./ModelHostError.ts"
-import { StreamTooLarge } from "./ModelHostError.ts"
+import { MAX_MODEL_OUTPUT_BYTES, StreamTooLarge } from "./ModelHostError.ts"
 import { runModelTurn } from "./ModelTurnHost.ts"
 import type { ModelTurnOptions } from "./ModelTurnHost.ts"
 
@@ -193,7 +193,6 @@ const boundedJson = async (request: Request): Promise<unknown | undefined> => {
 }
 
 /** The most NDJSON bytes one sealed stream response holds; the Go reader caps at the same 16 MiB. */
-const MAX_STREAM_BYTES = 16 * 1024 * 1024
 
 /**
  * Failed model host turns by failure class.
@@ -227,7 +226,9 @@ interface TurnFailure {
   readonly response: "turn_failed" | "provider_quota" | "cancelled"
 }
 
-const classify = (cause: Cause.Cause<ResolveFailed | ProducerError | Model.ModelFailure>): TurnFailure => {
+const classify = (
+  cause: Cause.Cause<ResolveFailed | ProducerError | Model.ModelFailure | StreamTooLarge>
+): TurnFailure => {
   const error = Option.getOrUndefined(Cause.findErrorOption(cause))
   if (error === undefined) {
     return Cause.hasInterruptsOnly(cause)
@@ -313,7 +314,9 @@ export const createModelTurnHandler = (options: ModelTurnHandlerOptions): (reque
           runModelTurn(resolved.model, body, resolved.options, (frame: AgentTurnFrame) => {
             const line = `${JSON.stringify(frame)}\n`
             size += encoder.encode(line).byteLength
-            if (size > MAX_STREAM_BYTES) return Effect.fail(new StreamTooLarge({ limitBytes: MAX_STREAM_BYTES }))
+            if (size > MAX_MODEL_OUTPUT_BYTES) {
+              return Effect.fail(new StreamTooLarge({ limitBytes: MAX_MODEL_OUTPUT_BYTES }))
+            }
             lines.push(line)
             return Effect.void
           }),
