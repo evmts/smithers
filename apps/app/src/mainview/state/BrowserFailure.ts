@@ -13,12 +13,14 @@ export const browserReadFailure = (
   { error, refusal }: Pick<Extract<Card, { kind: "browser" }>["payload"], "error" | "refusal">
 ): UserFailure | null => {
   if (error === undefined) return null
-  // A status or an upstream message alone cannot establish an input fault.
-  const input = WORKER_FAILURES.request_invalid
-  if (refusal?.code === "request_invalid" && refusal.status === input.status && refusal.fault === input.fault &&
+  // A status or upstream prose cannot establish an input or sign-in refusal.
+  const code = refusal?.code
+  const entry = code === "request_invalid" || code === "sign_in_required" || code === "session_expired"
+    ? WORKER_FAILURES[code] : undefined
+  if (entry !== undefined && refusal !== undefined && refusal.status === entry.status && refusal.fault === entry.fault &&
       (refusal.origin === "local" || refusal.origin === "worker")) {
     const failure = refusalUserFailure(refusalFromStored(refusal))
-    return { ...failure, actions: [], detail: "" }
+    return { ...failure, ...(code === "request_invalid" ? { actions: [] } : {}), detail: "" }
   }
   return { tag: "BrowserReadFailed", ...BROWSER_READ_FAILURE, detail: error }
 }
