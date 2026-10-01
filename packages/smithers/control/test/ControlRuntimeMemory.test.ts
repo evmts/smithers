@@ -295,6 +295,58 @@ describe("ControlRuntime.layerMemory", () => {
     }
   })
 
+  it("keeps keyed plan snapshots detached while approval updates the stored decision", async () => {
+    const observed = await withRuntime((runtime) =>
+      Effect.gen(function*() {
+        const first = yield* runtime.plan({ flowId: "system/test", input: { a: 1 }, idempotencyKey: "snapshot:key" })
+        const expectedDigest = first.card.digest
+        Object.assign(first.card.approval.target, { digest: "caller-mutated" })
+        const replay = yield* runtime.plan({ flowId: "system/test", input: { a: 1 }, idempotencyKey: "snapshot:key" })
+        const token = yield* runtime.lookupApproval(replay.card.approval.target)
+        yield* runtime.resolveApproval(token, "approved", principal)
+        Object.assign(replay.card, { flowId: "caller-mutated" })
+        return {
+          expectedDigest,
+          final: yield* runtime.plan({ flowId: "system/test", input: { a: 1 }, idempotencyKey: "snapshot:key" }),
+          stored: yield* runtime.getPlan(first.card.planId),
+          approved: yield* runtime.queryPlans({ decision: "approved", limit: 10 })
+        }
+      })
+    )
+    expect(observed.final.created).toBe(false)
+    expect(observed.final.card.flowId).toBe("system/test")
+    expect(observed.final.card.approval.target.digest).toBe(observed.expectedDigest)
+    expect(observed.stored.decision).toBe("approved")
+    expect(observed.approved.plans).toEqual([observed.stored])
+  })
+
+  it("refuses an interrupt settlement after its owner was released and replaced", async () => {
+    const observed = await withRuntime((runtime) =>
+      Effect.gen(function*() {
+        const { run } = yield* start(runtime)
+        const oldFence = yield* runtime.claimFence(run.runId)
+        const refused = yield* Effect.flip(runtime.interrupt(run.runId, (settlement) =>
+          Effect.gen(function*() {
+            yield* runtime.releasePending(run.runId, oldFence)
+            yield* runtime.resume(run.runId)
+            return yield* settlement
+          })))
+        return {
+          refused,
+          oldFence,
+          currentFence: yield* runtime.claimFence(run.runId),
+          summary: yield* runtime.getRun(run.runId),
+          staleWrite: yield* Effect.flip(runtime.writeStatus(run.runId, oldFence, "completed"))
+        }
+      })
+    )
+    expect(observed.refused).toBeInstanceOf(ClaimLost)
+    expect(observed.staleWrite).toBeInstanceOf(ClaimLost)
+    expect(observed.currentFence).not.toBe(observed.oldFence)
+    expect(observed.summary.status).toBe("accepted")
+    expect(observed.summary.ownerId).toBe("memory-owner")
+  })
+
   it("reports a missing approval token against the identifier its target names", async () => {
     const observed = await withRuntime((runtime) =>
       Effect.gen(function*() {
