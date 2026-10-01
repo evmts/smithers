@@ -30996,14 +30996,6 @@
       },
       {
         "kind": "file",
-        "path": "flows/issue-sweep/test/github.test.ts"
-      },
-      {
-        "kind": "file",
-        "path": "flows/issue-sweep/test/host.test.ts"
-      },
-      {
-        "kind": "file",
         "path": "flows/issue-sweep/test/land.test.ts"
       },
       {
@@ -31017,6 +31009,22 @@
       {
         "kind": "file",
         "path": "flows/issue-sweep/test/vm.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/issue-sweep/test/github.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/issue-sweep/test/host.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/issue-sweep/test/verdict.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/issue-sweep/test/land-queue.test.ts"
       },
       {
         "kind": "glob",
