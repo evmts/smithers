@@ -1,4 +1,5 @@
 import { pageText, paginationCursor, paginationLimits } from "@smthrs/kernel/HttpPagination"
+import { CloudAnswerUnusable } from "./CloudClient"
 import { invalidatePreparedViews,preparedView,type ViewAction,type ViewResult } from "../PreparedView"
 import { readRepositoryDetail } from "../RepositoryReadReceipts"
 import { readRepositoryListError,repositoryListRead,type RepositoryForm } from "./RepositoryListSeam"
@@ -661,10 +662,10 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
         try {
           while (true) {
             if (!ownerCurrent() || !current()) return "Loading was interrupted. Open this view again to retry."
-            if (body.length > paginationLimits.items || bytes > paginationLimits.bytes) throw new Error("Issue view exceeds the collection limit")
+            if (body.length > paginationLimits.items || bytes > paginationLimits.bytes) throw new CloudAnswerUnusable({ expected: "issue view within the collection limit" })
             const cursor = paginationCursor(response.headers, currentUrl, { preserveQuery: true })
             if (cursor === "") break
-            if (page >= paginationLimits.pages || seen.has(cursor)) throw new Error("Issue view pagination did not finish")
+            if (page >= paginationLimits.pages || seen.has(cursor)) throw new CloudAnswerUnusable({ expected: "completed issue view pagination" })
             seen.add(cursor)
             const next = new URLSearchParams(search)
             next.set("cursor", cursor)
@@ -672,7 +673,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
             if (!ownerCurrent() || !current()) return "Loading was interrupted. Open this view again to retry."
             if (!response.ok) return readRepositoryListError(response, `Listing the ${named} view of ${repo} failed (${response.status})`)
             const rows = await readPage(response)
-            if (!Array.isArray(rows)) throw new Error("Issue view returned an unreadable page")
+            if (!Array.isArray(rows)) throw new CloudAnswerUnusable({ expected: "issue view page" })
             body.push(...rows)
             page += 1
           }
