@@ -294,3 +294,25 @@ it("keeps the original error and mounted notification when append fails with ENO
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+it("retains a stackless message and redacted nested cause without changing the diagnostic", () => {
+  const previous = process.env.SMITHERS_TUI_SESSION_DIR
+  const root = mkdtempSync(join(tmpdir(), "tui-log-message-"))
+  process.env.SMITHERS_TUI_SESSION_DIR = root
+  try {
+    const marker = `retained-${crypto.randomUUID()}`
+    const secret = `ghp_${"y".repeat(36)}`
+    const failure = new Error(marker, { cause: new Error(`nested ${secret}`) })
+    failure.stack = undefined
+    Log.write("history", failure)
+    const [record] = readFileSync(Log.path(), "utf8").trim().split("\n").map((line) => JSON.parse(line))
+    expect(record.tag).toBe("history")
+    expect(record.detail).toContain(`Error: ${marker}`)
+    expect(record.detail).toContain("Caused by: Error: nested")
+    expect(record.detail).not.toContain(secret)
+  } finally {
+    if (previous === undefined) delete process.env.SMITHERS_TUI_SESSION_DIR
+    else process.env.SMITHERS_TUI_SESSION_DIR = previous
+    rmSync(root, { recursive: true, force: true })
+  }
+})
