@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "./browserTest"
+import { signupProfile } from "./signup-profile"
 import { identityRoute, signedOutVisitor, skipSignup } from "./identity"
 
 /*
@@ -41,6 +42,7 @@ const overflow = (page: Page) => page.evaluate(() => {
 test("the signup fits a 390 px phone at every stage", async ({ page }) => {
   await page.setViewportSize(PHONE)
   await signedOutVisitor(page)
+  const profile = await signupProfile(page)
   await page.goto("/")
   await expect(page.getByTestId("signup-github")).toBeVisible()
   await page.waitForTimeout(1500)
@@ -64,6 +66,7 @@ test("the signup fits a 390 px phone at every stage", async ({ page }) => {
   }
   await expect(page.getByTestId("signup-finish")).toBeVisible()
   expect(await overflow(page)).toEqual([])
+  expect(profile.writes.at(-1)).toMatchObject({ name: "Ada Park", account: "adapark", stage: "ready", question: 6 })
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/signup-4-ready.png`, fullPage: true })
 })
 
