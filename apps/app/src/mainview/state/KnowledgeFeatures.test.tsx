@@ -68,6 +68,14 @@ describe("the Wiki is core", () => {
     expect(card.status).toBe("error")
     expect(card.payload.error).toBe("Sign in to continue.")
     expect(card.payload.errorKind).toBeUndefined()
+    const rendered = renderToStaticMarkup(createElement(ControllerTestProvider, {
+      controller,
+      children: createElement(CardView, { card, maximized: false, worldDocuments: [], ...cardActions(controller) })
+    }))
+    expect(rendered).toContain('data-fault="user"')
+    expect(rendered).toContain("Sign in to continue.")
+    expect(rendered).not.toContain("<details")
+    expect(rendered).not.toContain("Not your fault")
     expect(await controller.commands.runAsAgent("wiki.create", "owner/repo")).toMatchObject({
       status: "executed", value: expect.stringContaining("nothing has happened yet")
     })
