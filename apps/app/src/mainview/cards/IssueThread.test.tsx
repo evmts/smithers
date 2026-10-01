@@ -3,7 +3,9 @@ import { renderToStaticMarkup } from "react-dom/server"
 import type { Card } from "../state/AppState"
 import { fixtureCards } from "./fixtures/UiSurfaces"
 import { IssueCardBody, IssueListCardBody } from "./IssueCards"
-import { dueWords, reactionChips, stateActions, syncUrl } from "./IssueThread"
+import { dueWords, reactionChips, stateActions, syncUrl, threadContext } from "./IssueThread"
+import { createAppStore } from "../state/AppStore"
+import { memoryStorage } from "../state/TestFixtures"
 
 const noop = () => {}
 const issue = () => fixtureCards().find((card): card is Extract<Card, { kind: "issue" }> => card.kind === "issue")!
@@ -20,7 +22,7 @@ describe("a conversation renders inside the issue card (smithers-ui-DESIGN.md §
     expect(html).toContain("✅ 1")
     // Without a signed-in viewer no chip is "mine"; with one, the chip the viewer set toggles off.
     expect(html).not.toContain("Remove your")
-    expect(reactionChips([{ name: "👀", actor: "owner", active: true }, { name: "👀", actor: "U1", active: true }, { name: "✅", actor: "U1", active: false }], "owner")).toEqual([{ name: "👀", count: 2, mine: true }])
+    expect(reactionChips([{ name: "👀", actor: "user:1", username: "owner", active: true }, { name: "👀", actor: "U1", active: true }, { name: "✅", actor: "U1", active: false }], "owner")).toEqual([{ name: "👀", count: 2, mine: true }])
     expect(html).toContain('data-state="fixed"')
     expect(html).toContain("P1")
     expect(html).toContain("#2088 Wiki freshness")
@@ -63,6 +65,50 @@ describe("a conversation renders inside the issue card (smithers-ui-DESIGN.md §
     expect(dueWords(new Date(now).toISOString(), now)).toEqual({ words: "today", past: false })
     expect(dueWords(new Date(now + 86_400_000).toISOString(), now)).toEqual({ words: "tomorrow", past: false })
     expect(dueWords("2026-09-20", now)).toEqual({ words: "09-20", past: true })
+  })
+})
+
+describe("reaction ownership uses authoritative native username metadata", () => {
+  test("native, external and legacy reactions keep independent counts without confusing actor IDs with login", () => {
+    const reactions = [
+      { name: "eyes", actor: "user:1", username: "owner", active: true },
+      { name: "eyes", actor: "owner", active: true },
+      { name: "eyes", actor: "user:2", username: "other", active: true },
+      { name: "old", actor: "owner", active: true },
+      { name: "removed", actor: "user:1", username: "owner", active: false }
+    ]
+    expect(reactionChips(reactions, "owner")).toEqual([{ name: "eyes", count: 3, mine: true }, { name: "old", count: 1, mine: false }])
+    expect(reactionChips(reactions, "unrelated")).toEqual([{ name: "eyes", count: 3, mine: false }, { name: "old", count: 1, mine: false }])
+    expect(reactionChips(reactions, undefined)).toEqual([{ name: "eyes", count: 3, mine: false }, { name: "old", count: 1, mine: false }])
+    expect(reactionChips([{ name: "eyes", actor: "user:1", username: "MixedCaseOwner", active: true }], "MixedCaseOwner")).toEqual([{ name: "eyes", count: 1, mine: true }])
+    expect(reactionChips([{ name: "eyes", actor: "user:1", username: "MixedCaseOwner", active: true }], "mixedcaseowner")).toEqual([{ name: "eyes", count: 1, mine: false }])
+  })
+
+  test("definitive identity changes remove the owned button despite a stale signed-in Cloud session", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    try {
+      await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "owner", expiresAt: null, scopes: null }).isPersisted.promise
+      const card = issue()
+      card.payload.comments = [{ ...card.payload.comments[0]!, reactions: [{ name: "thumbsup", actor: "user:1", username: "owner", active: true }] }]
+      expect(store.collections.identitySessions.get("identity")?.state).toBe("unknown")
+      expect(threadContext(store).viewer).toBeUndefined()
+      expect(renderToStaticMarkup(<IssueCardBody card={card} onRunCommand={noop} projectionStore={store} />)).not.toContain("Remove your")
+      const { identitySessions: _identity, ...legacyCollections } = store.collections
+      expect(threadContext({ collections: legacyCollections }).viewer).toBe("owner")
+      await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "owner", admin: false, scopesPlain: null }).isPersisted.promise
+      expect(threadContext(store).viewer).toBe("owner")
+      expect(renderToStaticMarkup(<IssueCardBody card={card} onRunCommand={noop} projectionStore={store} />)).toContain("Remove your thumbsup reaction")
+      for (const state of ["signed-out", "unavailable"] as const) {
+        await store.dispatch({ type: "identity.session.loaded", actor: "system", state, login: null, admin: false, scopesPlain: null }).isPersisted.promise
+        expect(threadContext(store).viewer).toBeUndefined()
+        expect(renderToStaticMarkup(<IssueCardBody card={card} onRunCommand={noop} projectionStore={store} />)).not.toContain("Remove your")
+      }
+      await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "other", admin: false, scopesPlain: null }).isPersisted.promise
+      expect(threadContext(store).viewer).toBe("other")
+      expect(renderToStaticMarkup(<IssueCardBody card={card} onRunCommand={noop} projectionStore={store} />)).not.toContain("Remove your")
+    } finally {
+      await store.dispose?.()
+    }
   })
 })
 

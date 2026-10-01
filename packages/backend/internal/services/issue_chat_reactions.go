@@ -14,6 +14,8 @@ type IssueReaction struct {
 	Name   string `json:"name"`
 	Actor  string `json:"actor"`
 	Active bool   `json:"active"`
+	// Username identifies a native account; external provider actors have none.
+	Username string `json:"username,omitempty"`
 }
 
 var reactionName = regexp.MustCompile(`^[a-z0-9_+\-]{1,64}$`)
@@ -36,7 +38,7 @@ func (s *IssueService) IssueReactions(ctx context.Context, actor *db.User, owner
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `SELECT r.emoji,COALESCE(e.actor,'user:'||r.user_id::text) FROM reactions r LEFT JOIN issue_external_reactions e ON e.reaction_id=r.id WHERE r.target_type='issue_comment' AND r.target_id=$1 ORDER BY r.id`, commentID)
+	rows, err := tx.Query(ctx, `SELECT r.emoji,COALESCE(e.actor,'user:'||r.user_id::text),CASE WHEN e.reaction_id IS NULL THEN u.username ELSE '' END FROM reactions r LEFT JOIN users u ON u.id=r.user_id LEFT JOIN issue_external_reactions e ON e.reaction_id=r.id WHERE r.target_type='issue_comment' AND r.target_id=$1 ORDER BY r.id`, commentID)
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +47,7 @@ func (s *IssueService) IssueReactions(ctx context.Context, actor *db.User, owner
 	for rows.Next() {
 		var r IssueReaction
 		r.Active = true
-		if err = rows.Scan(&r.Name, &r.Actor); err != nil {
+		if err = rows.Scan(&r.Name, &r.Actor, &r.Username); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
