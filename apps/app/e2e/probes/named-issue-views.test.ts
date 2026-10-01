@@ -204,7 +204,7 @@ test("keyboard selection reads every filtered named-view page and survives reloa
   }
 }, 120000)
 
-// A non-admin person drives the real terminal against Go/PostgreSQL. The public
+// The supported selfhost first owner drives the real terminal against Go/PostgreSQL. The public
 // --model flag is a startup prerequisite only: no model request or replay occurs.
 test("terminal keyboard reads every owned named-view page and refreshes after restart", async () => {
   const backend = await startFullBackend({ labels: true })
@@ -212,7 +212,7 @@ test("terminal keyboard reads every owned named-view page and refreshes after re
   let tui: Tui | undefined
   let token: string | undefined
   let tokenID: number | undefined
-  const username = "terminalviewer"
+  const username = backend.username
   const repository = "terminal-named-view"
   const repo = `${username}/${repository}`
   const repoPath = `/api/repos/${repo}`
@@ -233,20 +233,17 @@ test("terminal keyboard reads every owned named-view page and refreshes after re
     return response.json() as Promise<T>
   }
   try {
-    expect(await setup("/api/admin/users", {
-      username, email: "terminalviewer@example.test", display_name: "Terminal viewer"
-    })).toMatchObject({ username, is_admin: false })
-    const credential = await setup<{ token: string; id: number }>(`/api/admin/users/${username}/tokens`, {
+    const owner = await backend.http("/api/user")
+    expect(owner.status).toBe(200)
+    expect(await owner.json()).toMatchObject({ username, is_admin: true })
+    const credential = await setup<{ token: string; id: number }>("/api/user/tokens", {
       name: "terminal-owned-view", scopes: ["all"]
     })
     expect(typeof credential.token).toBe("string")
     expect(Number.isSafeInteger(credential.id)).toBe(true)
     token = credential.token
     tokenID = credential.id
-    expect(await api("/api/user")).toMatchObject({ username, is_admin: false })
-    expect((await fetch(`${backend.origin}/api/admin/users`, {
-      headers: { authorization: `token ${token}` }
-    })).status).toBe(403)
+    expect(await api("/api/user")).toMatchObject({ username, is_admin: true })
     expect(await api("/api/user/repos", "POST", { name: repository, private: true, auto_init: true }))
       .toMatchObject({ full_name: repo })
     const other = await api<{ full_name: string }>("/api/user/repos", "POST", {
@@ -413,7 +410,7 @@ test("terminal keyboard reads every owned named-view page and refreshes after re
     expect(modelRequests).toEqual([])
     const evidence = process.env.SMITHERS_TUI_REAL_EVIDENCE_PATH
     if (evidence) await writeFile(evidence, JSON.stringify({
-      repo, actor: { username, is_admin: false }, before: matching.slice().reverse(), after: matching.slice(1).reverse(),
+      repo, actor: { username, is_admin: true }, before: matching.slice().reverse(), after: matching.slice(1).reverse(),
       namedView: "bugs", pages: 2, exclusions: [unrelated.number, closed.number], otherRepository: other.full_name,
       restart: "same profile; normal keyboard reselect", automaticSelectionRestorationClaimed: false,
       modelRequestCount: modelRequests.length
@@ -430,7 +427,7 @@ test("terminal keyboard reads every owned named-view page and refreshes after re
     finally {
       try {
         if (tokenID !== undefined) {
-          expect((await backend.http(`/api/admin/users/${username}/tokens/${tokenID}`, { method: "DELETE" })).status).toBe(204)
+          expect((await backend.http(`/api/user/tokens/${tokenID}`, { method: "DELETE" })).status).toBe(204)
           expect((await fetch(`${backend.origin}/api/user`, { headers: { authorization: `token ${token}` } })).status).toBe(401)
         }
       } finally {
