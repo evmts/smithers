@@ -201,10 +201,10 @@ describe("coverage conformance", () => {
       // explicitly filtered developer run opts out through the helper whose
       // full-suite behavior is exercised below. Pin the parser and wiring,
       // so an unrelated dynamic expression cannot disable the gate.
-      assert.ok(source.includes('import { parseCLI } from "vitest/node"'))
-      assert.ok(source.includes('import { coversWholeSuite } from "./test/CoverageGate.ts"'))
+      assert.ok(source.includes("import { parseCLI } from \"vitest/node\""))
+      assert.ok(source.includes("import { coversWholeSuite } from \"./test/CoverageGate.ts\""))
       assert.ok(coverage!.includes(
-        'enabled: coversWholeSuite(parseCLI(["vitest", ...process.argv.slice(2)], { allowUnknownOptions: true })),\n'
+        "enabled: coversWholeSuite(parseCLI([\"vitest\", ...process.argv.slice(2)], { allowUnknownOptions: true })),\n"
       ))
     } else {
       assert.match(
@@ -214,7 +214,10 @@ describe("coverage conformance", () => {
           : /\benabled:\s*true/
       )
     }
-    assert.match(coverage!, /\bprovider:\s*"v8"/)
+    assert.match(
+      coverage!,
+      name === "smithers/control" ? /\bprovider:\s*"istanbul"/ : /\bprovider:\s*"v8"/
+    )
     assert.doesNotMatch(coverage!, /\b(?:include|exclude):\s*\[[^\]]*\]\s*\.map\(/)
     const included = [...(/\binclude\s*:\s*\[([^\]]*)\]/.exec(coverage ?? "")?.[1] ?? "")
       .matchAll(/"([^"]+)"/g)].map((match) => match[1]!)
@@ -277,6 +280,17 @@ describe("coverage conformance", () => {
     }
   })
 
+  it("pins Control's instrumented provider without changing other projects", () => {
+    const control = "coverage: { enabled: true, provider: \"istanbul\", include: [\"src/**\"] }"
+    assertCoverageDenominator("smithers/control", control)
+    assert.throws(() => assertCoverageDenominator("smithers/control", control.replace("\"istanbul\"", "\"v8\"")))
+    assert.throws(() => assertCoverageDenominator("testing", control))
+    assert.throws(() => assertCoverageDenominator("smithers/control", control.replace("\"src/**\"", "\"src/One.ts\"")))
+    assert.throws(() =>
+      assertCoverageDenominator("smithers/control", control.replace(" }", ", exclude: [\"src/One.ts\"] }"))
+    )
+  })
+
   it("keeps flow's parsed full-suite invocations under the coverage gate", async () => {
     const directory = join(packagesDir, "smithers/flows/flow")
     const { coversWholeSuite } = await import(pathToFileURL(join(directory, "test/CoverageGate.ts")).href)
@@ -290,11 +304,16 @@ describe("coverage conformance", () => {
     }
     const source = configs.find((config) => config.name === "smithers/flows/flow")!.source
     assertCoverageDenominator("smithers/flows/flow", source)
-    for (const changed of [
-      source.replace("enabled: coversWholeSuite(", "enabled: false && coversWholeSuite("),
-      source.replace('parseCLI(["vitest", ...process.argv.slice(2)]', 'parseCLI(["vitest", "test/Only.test.ts"]'),
-      source.replace('from "./test/CoverageGate.ts"', 'from "./test/AnotherGate.ts"')
-    ]) assert.throws(() => assertCoverageDenominator("smithers/flows/flow", changed))
+    for (
+      const changed of [
+        source.replace("enabled: coversWholeSuite(", "enabled: false && coversWholeSuite("),
+        source.replace(
+          "parseCLI([\"vitest\", ...process.argv.slice(2)]",
+          "parseCLI([\"vitest\", \"test/Only.test.ts\"]"
+        ),
+        source.replace("from \"./test/CoverageGate.ts\"", "from \"./test/AnotherGate.ts\"")
+      ]
+    ) assert.throws(() => assertCoverageDenominator("smithers/flows/flow", changed))
   })
 
   it("requires the exact HostContract handoff to retain its full destination gate", () => {
@@ -444,11 +463,10 @@ describe("coverage conformance", () => {
       // still counts against the 100% thresholds; `all: false` (or an
       // extension list that drops files) restricts the check to files tests
       // happen to load while every pinned assertion above stays green.
-      // The provider itself must be pinned to "v8" (issue #157): the whole
-      // ignore-directive inventory below is written against the v8 provider's
-      // hint grammar, and a silent flip to `provider: "istanbul"` would
-      // activate `istanbul ignore` comments under a different parser while
-      // every assertion above stays green.
+      // Each provider is pinned above. Control uses Istanbul instrumentation
+      // because suspended generators can produce negative V8-derived branch
+      // counts (#3363). The ignore inventory below covers both grammars;
+      // changing providers never authorizes an unowned ignore directive.
       // `coverage.ignoreClassMethods` subtracts every method with a matching
       // name from the denominator with no per-site comment to inventory —
       // forbid it outright (issue #157).
@@ -480,40 +498,8 @@ describe("coverage conformance", () => {
       // fallbacks keep diagnostics total if that dependency widens in the
       // future.
       "smithers/src/Gc.ts": 2,
-      // Control's three arms sit behind the mutation boundary: every caller
-      // hands `principalOf` a mutation the boundary already decoded into a
-      // struct, and an unpaired high or lone low surrogate is refused there
-      // before the redaction helper can meet it. TestControl's deterministic
-      // runtime derives every identifier from a counter, so the random-byte
-      // primitive `Crypto.make` requires is never asked for bytes.
-      "smithers/control/src/ControlLive.ts": 3,
-      "smithers/control/src/test/TestControl.ts": 1,
-      // The rest of control's arms defend invariants its own code establishes:
-      // a run is attributed only once one of its three cancellation sources
-      // exists, so the trailing zero in `Cancellation` is unreachable; a
-      // `Uint8Array` host always has the prototype accessors `Channels`
-      // refuses to run without; the runtime's approval and target maps are
-      // keyed by the identity they are compared against, and one process
-      // writes `fence` and `localFence` together; `planning` is called only by
-      // `launch`, which has the run it just started; and `Lineage` has already
-      // refused an edge with no parent before `originOf` could answer nothing.
-      // The transport classification added in 97c703dc0d brought the rest:
-      // `ControlClient` reads a status only off a `StatusCodeError` cause,
-      // which always carries a response with a numeric status, and re-raises
-      // an interrupt-only cause the fiber never delivers to that operator;
-      // the in-memory runtime's plan and approval maps are keyed by the
-      // identity they are compared against, so a stored row can only
-      // disagree with its key after a reach into private state; and
-      // `SqlControlRuntime` has no remaining exclusions: explicit null input
-      // round trips through SQL, and sequence, approval-token, and run-key
-      // readback failures are exercised with real database triggers.
-      "smithers/control/src/Cancellation.ts": 1,
-      "smithers/control/src/Channels.ts": 1,
-      "smithers/control/src/ControlClient.ts": 4,
-      // Both idempotency lookup paths refer to plans retained by the same map.
-      "smithers/control/src/ControlRuntime.ts": 6,
-      "smithers/control/src/Lineage.ts": 1,
-      "smithers/control/src/internal/planning.ts": 1,
+      // Control has no ignore directives. Its Istanbul collector measures
+      // the formerly V8-hidden guards too (#3363).
       // The agent package's former hints (FlowEngineLike's canonicalization
       // mappers and AgentSession's process-loss fallbacks) were removed with
       // the code that needed them in 81b218ce7; the entries leave with them.
@@ -604,11 +590,6 @@ describe("coverage conformance", () => {
       // AttemptStore's insert conflict and row lookup share one serialized
       // write transaction, so the conflicting attempt cannot disappear.
       "smithers/flows/run-store/src/AttemptStore.ts": 1,
-      // RunStore's two reflection hints left with the shared JSON admission
-      // helper. Its remaining hint covers V8's synthetic generator branch;
-      // RunStore.test.ts asserts successful, missing and stale-owner CAS
-      // outcomes through the real SQLite adapter.
-      "smithers/flows/run-store/src/RunStore.ts": 1,
       // Provider processes can only originate from each provider's `spawn`,
       // which records the opaque handle before returning it. These guards
       // turn a future provenance violation into a typed unknown-process error.

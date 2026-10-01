@@ -85,12 +85,9 @@ const transportError = (cause: unknown, classification: TransportClassification)
 // are what keeps a hand-built wrapper without one from being read as a 5xx and
 // retried forever; none of them is reachable from the client's own transports.
 const statusFrom = (cause: unknown): number | undefined => {
-  /* v8 ignore next -- a StatusCodeError cause always carries its response */
   if (typeof cause !== "object" || cause === null || !("response" in cause)) return undefined
   const response = cause.response
-  /* v8 ignore next -- as above: the response is an object carrying a status */
   if (typeof response !== "object" || response === null || !("status" in response)) return undefined
-  /* v8 ignore next -- as above: the status is a number */
   return typeof response.status === "number" ? response.status : undefined
 }
 
@@ -172,7 +169,6 @@ const normalizedFailure = <E>(cause: Cause.Cause<E>): Effect.Effect<never, (E & 
   // A cause with neither a failure nor a defect is an interruption, and an
   // operator's own cancellation is not the server failing. It is re-raised
   // exactly as it arrived rather than described as a transport failure.
-  /* v8 ignore next 2 -- the fiber propagates an interrupt-only cause without reaching this operator */
   return Result.isSuccess(defect)
     ? Effect.fail(transportError(defect.success, classify(defect.success)))
     : Effect.failCause(cause as Cause.Cause<(E & ControlError) | TransportError>)
