@@ -4,24 +4,16 @@
  * @since 0.1.0
  */
 
+import * as Sha256 from "@smthrs/crypto/Sha256"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
-import { Crypto, Effect, Layer } from "effect"
+import { Crypto, Layer } from "effect"
 import * as ControlExecutor from "../ControlExecutor.ts"
 import * as ControlLive from "../ControlLive.ts"
 import * as ControlRuntime from "../ControlRuntime.ts"
 
-const browserCrypto = Layer.succeed(
-  Crypto.Crypto,
-  Crypto.make({
-    randomBytes: (size) => globalThis.crypto.getRandomValues(new Uint8Array(size)),
-    digest: (algorithm, data) =>
-      Effect.promise(() => globalThis.crypto.subtle.digest(algorithm, data.slice().buffer)).pipe(
-        Effect.map((buffer) => new Uint8Array(buffer))
-      )
-  })
-)
+const browserCrypto = Layer.succeed(Crypto.Crypto, Sha256.syncCrypto)
 
 /**
  * Provides Control, ControlRuntime, the in-memory journal bundle, and an empty

@@ -6,6 +6,7 @@
  * notification queue, a populated registry, or a missing executor can each be
  * observed against the same `ControlLive`.
  */
+import * as Sha256 from "@smthrs/crypto/Sha256"
 import type { Journal } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { NotificationQueue } from "@smthrs/notifications"
@@ -19,16 +20,7 @@ import * as ControlRuntime from "../src/ControlRuntime.ts"
 import * as DispatchReader from "../src/DispatchReader.ts"
 
 /** The same host-free crypto `TestControl` uses, without a Node import. */
-export const browserCrypto = Layer.succeed(
-  Crypto.Crypto,
-  Crypto.make({
-    randomBytes: (size) => globalThis.crypto.getRandomValues(new Uint8Array(size)),
-    digest: (algorithm, data) =>
-      Effect.promise(() => globalThis.crypto.subtle.digest(algorithm, data.slice().buffer)).pipe(
-        Effect.map((buffer) => new Uint8Array(buffer))
-      )
-  })
-)
+export const browserCrypto = Layer.succeed(Crypto.Crypto, Sha256.syncCrypto)
 
 /**
  * The deterministic in-memory runtime, already carrying its crypto.
