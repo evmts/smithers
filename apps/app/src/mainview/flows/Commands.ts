@@ -172,6 +172,8 @@ export interface FlowSubmission {
   readonly gesture?: CommandGesture
   /** Presentation context only; it conveys no command authority. */
   readonly originCardId?: string
+  /** The form already handled its human gesture before saving the submission. */
+  readonly presentation?: "continue"
 }
 
 export interface CommandRegistry {
@@ -455,7 +457,8 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     named?: Record<string, unknown>,
     httpCall?: AgentToolCall["httpCall"],
     inheritedGesture?: CommandGesture,
-    originCardId?: string
+    originCardId?: string,
+    presentation?: FlowSubmission["presentation"]
   ): Promise<CommandOutcome> => {
     invocation?.signal?.throwIfAborted()
     const request = { name, actor: invoker === "agent" ? "smithers" as const : invoker,
@@ -479,7 +482,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     const staysInMaximizedCard = (originCardId !== undefined && originCardId === maximizedCardId) ||
       name === "card.maximize" || name === "card.minimize" || name.startsWith("card.history.") ||
       name.startsWith("frame.") || OVER_MAXIMIZED_CARD.has(name)
-    if (invoker === "user" && maximizedCardId != null && !staysInMaximizedCard) actions.minimizeCard()
+    if (invoker === "user" && presentation !== "continue" && maximizedCardId != null && !staysInMaximizedCard) actions.minimizeCard()
     // Only the human's local field edit has a synchronous recovery preparation.
     // Agent input waits for capability authorization in settle before dispatch.
     let pendingFieldInput: PendingFieldInput | PendingFormInput | undefined
@@ -829,9 +832,9 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
         signal: signal ?? invocation?.signal
       })
     },
-    submit: async ({ name, payload, actor, display, invocation, gesture, originCardId }) => {
+    submit: async ({ name, payload, actor, display, invocation, gesture, originCardId, presentation }) => {
       const clean = canonicalCommandName(name)
-      if (actor === "user") return runAs("user", clean, display, new Set(), invocation, payload, undefined, gesture, originCardId)
+      if (actor === "user") return runAs("user", clean, display, new Set(), invocation, payload, undefined, gesture, originCardId, presentation)
       const early = lifecycle?.before?.({ name: clean, actor: "smithers", source: "form", invocation }, display, payload)
       if (early !== undefined) return early
       const target = find(clean)
