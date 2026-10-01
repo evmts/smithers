@@ -571,7 +571,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
         }
         const rows: unknown = await response.json().catch(() => null)
         if (!Array.isArray(rows)) return "Reactions returned an unreadable response."
-        comment.reactions = rows.flatMap(row => isRecord(row) && typeof row.name === "string" && typeof row.actor === "string" && typeof row.active === "boolean" ? [{ name: row.name, actor: row.actor, active: row.active }] : [])
+        comment.reactions = rows.flatMap(row => isRecord(row) && typeof row.name === "string" && typeof row.actor === "string" && typeof row.active === "boolean" ? [{ name: row.name, actor: row.actor, active: row.active, ...(typeof row.username === "string" && row.username !== "" ? { username: row.username } : {}) }] : [])
       }
     }
     const card: Card = {
