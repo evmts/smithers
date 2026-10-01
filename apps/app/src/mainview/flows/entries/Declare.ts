@@ -6,6 +6,7 @@
 import * as Flow from "@smthrs/core/Flow"
 import type * as Cell from "@smthrs/harness/Cell"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
+import { HarnessError } from "@smthrs/harness/HarnessError"
 import { Effect, Schema } from "effect"
 import { FlowCancellation } from "../FlowCancellation"
 import { FlowGesture, type CommandGesture } from "../CommandGesture"
@@ -13,6 +14,8 @@ import type { AppBootstrap, RuntimeCapability } from "@smthrs/rpc/AppBootstrap"
 import { NoInput, type Operation, type OperationPayload } from "@smthrs/ui/app-operations"
 import type { AppController } from "../../state/AppController"
 import { lostActRefusal } from "../../state/BrowserWriteFailure"
+import { signInRequired } from "../../state/seams/SeamContext"
+import { SIGN_IN_REQUIRED_COPY } from "../../state/controller/AppFailure"
 import type { CommandState, FlowEntry, FlowMetadata } from "../registry"
 
 /**
@@ -80,12 +83,12 @@ export const Ack = Schema.Struct({ value: Schema.optional(Schema.String) })
  *
  * The controller's string return is its honest refusal, so it becomes the
  * typed error channel — which `FlowBinding` renders as a catchable `failure`
- * call result rather than a harness failure. Thrown host errors use the opaque
- * default; only explicitly returned refusal strings are public.
+ * call result rather than a harness failure. A known sign-in refusal retains
+ * its permission identity; other thrown host errors use the opaque default.
  */
 const act = (
   run: (signal: AbortSignal) => CommandResult | Promise<CommandResult>
-): Effect.Effect<{ readonly value?: string }, string | { readonly cause: unknown }> =>
+): Effect.Effect<{ readonly value?: string }, string | { readonly cause: unknown } | HarnessError> =>
   Effect.suspend(() => {
     let pending: Promise<CommandResult> | undefined
     return Effect.tryPromise({
@@ -94,7 +97,11 @@ const act = (
         return pending
       },
       // Preserve diagnostics for host-side error taps, including thrown strings.
-      catch: (cause) => ({ cause })
+      catch: (cause) => signInRequired(cause)
+        // Permission failures use FlowBinding's existing escalation channel;
+        // returning a public string would erase the form's user-fault identity.
+        ? new HarnessError({ code: "suspended", message: SIGN_IN_REQUIRED_COPY.sentence, cause })
+        : { cause }
     }).pipe(
       // Abort is cooperative. A controller that cannot abort must finish before
       // its binding exits, so no abandoned promise can mutate after Stop returns.
@@ -165,7 +172,7 @@ export const flow = <I extends OperationPayload>(declaration: Declaration<I>): F
          * this app's bug and says so. Host-authored text over a closed set,
          * never a thrown message; `cause` still rides to the error taps.
          */
-        publicError: (failure: string | { readonly cause: unknown }) => typeof failure === "string" ? failure : lostActRefusal(failure.cause),
+        publicError: (failure: string | { readonly cause: unknown } | HarnessError) => typeof failure === "string" ? failure : lostActRefusal(failure.cause),
         handler: (payload, call) => Effect.flatMap(FlowCancellation, (cancellation) =>
           Effect.flatMap(FlowGesture, gesture => act((signal) => handler(payload, cancellation ?? signal, call, gesture))))
       })
