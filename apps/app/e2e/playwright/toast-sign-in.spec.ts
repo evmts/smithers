@@ -13,8 +13,9 @@ for (const path of ["/", "/smithersai/smithers/"]) {
         capabilities: ["identity", "cloud", "agent", "browser.read"], authFlow: "redirect", sandbox: null
       } }))
       await page.route("**/api/auth/github**", route => route.fulfill({ contentType: "text/html", body: "Sign-in started" }))
-      await page.goto(path)
+      await page.goto("/")
       await skipSignup(page)
+      await page.goto(path)
       await page.reload()
       await expect(page.getByTestId("signup")).toHaveCount(0)
       await expect(page.getByTestId("chrome-sign-in")).toBeVisible()
