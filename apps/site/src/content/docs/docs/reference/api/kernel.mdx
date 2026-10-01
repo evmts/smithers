@@ -1527,3 +1527,12 @@ contract before marking the client. Replacing the client does not inherit the as
 the kernel guard preserves it when wrapping a supported client. The standard Node and Bun host
 bundles implement it. `HttpClient.supportsDestinationPinning(client)` reports
 whether that exact client is marked. Model requests leave `Destination` unset.
+
+## HttpPagination
+
+`@smthrs/kernel/HttpPagination` exports `paginationCursor`, `paginationLimits`,
+and `pageText`. Cursor extraction rejects a changed origin or route; callers
+that require unchanged filters set `preserveQuery: true`. It returns only the
+opaque cursor, so callers retain authority over the next request's URL.
+`pageText` bounds UTF-8 response bytes before decoding and cancels the reader
+on overflow. Callers can supply their existing typed refusal constructors.
