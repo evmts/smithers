@@ -6,6 +6,9 @@ import { THEME_PICKER_CARD_ID } from "../AppStore"
 import { parseDiagnosticQuery,readDiagnostics } from "../Diagnostics"
 import type { ControllerContext,NetEntry } from "./context"
 import { all as allChat, CHAT_KINDS, subagentsFromCards, toggle as toggleChat } from "../ChatTimeline"
+import { storedRefusal, type StoredRefusal } from "@smthrs/rpc/Refusal"
+import { readRefusal } from "../seams/SeamContext"
+import { browserReadFailure } from "../BrowserFailure"
 
 export interface PresentationController {
   readonly showChat: () => void
@@ -333,10 +336,14 @@ export const createPresentationController = (
         body: JSON.stringify({ url })
       })
       if (!response.ok) {
-        const message = await ctx.errorMessageOf(response, "That page couldn't be read.")
-        const card = browserCard(url, { error: message })
+        const fallback = "That page couldn't be read."
+        const refusal = await readRefusal(response, fallback)
+        const card = browserCard(url, {
+          error: fallback,
+          ...(refusal.code === null ? {} : { refusal: storedRefusal({ ...refusal, message: fallback }) })
+        })
         ctx.store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card })
-        return message
+        return browserReadFailure(card.payload)!.sentence
       }
       outcome = (await response.json().catch(() => undefined)) as typeof outcome
     } catch {
@@ -370,15 +377,16 @@ export const createPresentationController = (
     url: string,
     result:
       | { finalUrl: string; status: number; frameable: boolean; blockReason: string | null }
-      | { error: string }
-  ): Card => {
+      | { error: string; refusal?: StoredRefusal }
+  ): Extract<Card, { kind: "browser" }> => {
     const id = browserCardId(url)
     const existing = ctx.store.collections.cards.get(id)
     let highest = -1
     for (const message of ctx.store.collections.messages.values()) highest = Math.max(highest, message.ordinal)
     for (const card of ctx.store.collections.cards.values()) highest = Math.max(highest, card.ordinal)
     const payload: Extract<Card, { kind: "browser" }>["payload"] = "error" in result
-      ? { url, finalUrl: null, status: null, frameable: false, blockReason: null, error: result.error }
+      ? { url, finalUrl: null, status: null, frameable: false, blockReason: null, error: result.error,
+        ...(result.refusal === undefined ? {} : { refusal: result.refusal }) }
       : {
         url,
         finalUrl: result.finalUrl,
