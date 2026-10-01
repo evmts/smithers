@@ -9,7 +9,7 @@ import { randomBytes, randomUUID } from "node:crypto"
 import { AgentTurnJournalReplySchema } from "@smthrs/rpc/AgentTurnJournal"
 import { startRealChatBackend, realHostCredentialOptions } from "./chat-backend"
 import { launchModelProvider } from "./model-provider-process"
-import { PROVIDER_MODEL, PROVIDER_REPLY } from "./model-provider-behaviors"
+import { PROVIDER_MODEL, PROVIDER_REPLY, PROVIDER_ECHO_LEAD } from "./model-provider-behaviors"
 import { inspectTurnTraffic } from "../chat-tools/traffic"
 
 // Remote authority is deliberately not contacted here: unavailable external Cloud
@@ -76,6 +76,31 @@ test("owned named-model output is committed, independently replayable, private, 
     expect(duplicate.status).toBe(200)
     await duplicate.text()
     expect(await provider.journal()).toEqual(before)
+    const echo = request(PROVIDER_MODEL.echoes)
+    const echoed = await http("/api/agent/turn", echo)
+    expect(echoed.status).toBe(200)
+    const echoLive = inspectTurnTraffic(await echoed.text())
+    expect(echoLive.complete).toBe(true)
+    const echoText = echoLive.frames.filter(frame => frame.type === "delta").map(frame => frame.type === "delta" ? frame.text : "").join("")
+    expect(echoText).toContain(PROVIDER_ECHO_LEAD)
+    expect(echoText).not.toContain(key)
+    expect(JSON.stringify(echoLive.frames)).not.toContain(key)
+    if (!echoLive.cursor) throw new Error("Missing echo commit cursor")
+    // Read the canonical backend directly, independently of the streaming host.
+    const echoReload = await fetch(origin + "/api/agent/turn/replay", { method: "POST", headers: { authorization: `token ${backend.token}`, "content-type": "application/json" }, body: JSON.stringify({ runId: echo.runId, journal: echo.journal }) })
+    expect(echoReload.status).toBe(200)
+    const echoReceipt = AgentTurnJournalReplySchema.parse(await echoReload.json())
+    if (echoReceipt.status !== "ok") throw new Error("Missing persisted echo receipt")
+    expect(echoReceipt.terminal).toBe(true)
+    expect(echoReceipt.head).toEqual(echoLive.cursor)
+    expect(echoReceipt.batches.flatMap(batch => batch.frames)).toEqual(echoLive.frames.map(({ journal: _journal, ...frame }) => frame))
+    expect(JSON.stringify(echoReceipt)).not.toContain(key)
+    const echoCalls = await provider.journal()
+    expect(echoCalls.filter(entry => entry.modelId === PROVIDER_MODEL.echoes)).toHaveLength(1)
+    const echoDuplicate = await http("/api/agent/turn", echo)
+    expect(echoDuplicate.status).toBe(200)
+    expect(await echoDuplicate.text()).not.toContain(key)
+    expect(await provider.journal()).toEqual(echoCalls)
     const wrongToken = await http("/api/agent/turn/replay", { runId: turn.runId, journal: { ...turn.journal, token: randomBytes(32).toString("base64url") } })
     expect(wrongToken.ok).toBe(false)
     expect(await wrongToken.text()).not.toContain(PROVIDER_REPLY.join(""))
