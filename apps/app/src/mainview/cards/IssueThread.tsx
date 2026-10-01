@@ -32,7 +32,11 @@ export interface ThreadContext {
   readonly profiles: ReadonlyArray<{ readonly id: string; readonly name: string }>
 }
 export const threadContext = (store: CardProjectionAuthority | undefined): ThreadContext => {
-  const login = store?.collections.identitySessions?.get("identity")?.login ?? store?.collections.cloudSessions?.get("cloud")?.username
+  const identity = store?.collections.identitySessions?.get("identity")
+  const cloud = store?.collections.cloudSessions?.get("cloud")
+  const login = identity === undefined
+    ? cloud?.state === "signed-in" ? cloud.username : undefined
+    : identity.state === "signed-in" ? identity.login : undefined
   const agents = store?.collections.cards?.get("agents")
   const profiles = agents?.kind === "agents" && "native" in agents.payload ? agents.payload.agents.map((agent) => ({ id: agent.id, name: agent.label })) : []
   return { viewer: login === null || login === "" ? undefined : login, profiles }
@@ -71,7 +75,7 @@ export const reactionChips = (reactions: Comment["reactions"], viewer: string | 
     if (!reaction.active) continue
     const held = counts.get(reaction.name) ?? { count: 0, mine: false }
     held.count += 1
-    if (viewer !== undefined && reaction.actor === viewer) held.mine = true
+    if (viewer !== undefined && reaction.username === viewer) held.mine = true
     counts.set(reaction.name, held)
   }
   return [...counts].map(([name, { count, mine }]) => ({ name, count, mine }))
