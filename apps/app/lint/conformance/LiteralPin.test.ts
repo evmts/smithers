@@ -526,6 +526,97 @@ test("fixture workflow input and protocol IDs preserve explicit product checks",
     .toContain("card-id-prefix")
 })
 
+test("fixture repository suffixes require a source-backed composed card head", () => {
+  const check = (source: string) =>
+    extractLiterals("/app/e2e/real/probe.spec.ts", source)
+      .flatMap((literal) => [...violationsOf(literal, vocabularies)])
+  const imports = "import { fixtureProtocolId as protocol } from \"./support/values\";"
+  for (const namespace of ["smithers-e2e-secrets-", "smithers-e2e-secret-editor-"]) {
+    const repository = "const name = protocol(`" + namespace + "${nonce}`); const repo = `${username}/${name}`;"
+    for (
+      const lookup of [
+        "page.getByTestId(`card-secrets-${repo}`);",
+        "const cardId = `card-secrets-${repo}`; const alias = cardId; page.getByTestId(alias);",
+        "const make = name => ({ repo: `${username}/${name}`, id: serverId }); const row = make(name); page.getByTestId(`card-secrets-${row.repo}`);"
+      ]
+    ) expect(check(imports + repository + lookup), lookup).toEqual([])
+  }
+})
+
+test("fixture card suffix provenance cannot hide unbacked or mixed product claims", () => {
+  const check = (source: string) =>
+    extractLiterals("/app/e2e/real/probe.spec.ts", source)
+      .flatMap((literal) => [...violationsOf(literal, vocabularies)])
+  const imports = "import { fixtureProtocolId as protocol } from \"./support/values\";"
+  for (const namespace of ["smithers-e2e-secrets-", "smithers-e2e-secret-editor-"]) {
+    const repository = "const name = protocol(`" + namespace + "${nonce}`); const repo = `${username}/${name}`;"
+    for (
+      const lookup of [
+        "page.getByTestId(`card-unbacked-${repo}`);",
+        "page.getByTestId(`card-secrets-${repo}`); page.getByTestId(name);",
+        "page.getByTestId(`card-secrets-${repo}`); card.id.startsWith(name);"
+      ]
+    ) {
+      expect(check(imports + repository + lookup).map((violation) => violation.rule), lookup)
+        .toContain("card-id-prefix")
+    }
+  }
+  const repository = "const name = protocol(`smithers-e2e-secrets-${nonce}`); const repo = `${username}/${name}`;"
+  const valid = "page.getByTestId(`card-secrets-${repo}`);"
+  for (
+    const invalid of [
+      "page.getByTestId(`card-unbacked-${repo}`);",
+      "page.getByTestId(`card-${repo}`);",
+      "page.getByTestId(name);"
+    ]
+  ) {
+    for (const order of [valid + invalid, invalid + valid]) {
+      expect(
+        check(imports + repository + order).some((violation) =>
+          violation.rule === "card-id-prefix" && violation.value === "smithers-e2e-secrets-"
+        ),
+        order
+      ).toBe(true)
+    }
+  }
+  for (
+    const claim of [
+      "const make = id => ({ id }); const row = make(protocol(`missing-card-${nonce}`)); page.getByTestId(row.id);",
+      "const make = id => ({ id }); const row = make(protocol(`missing-card-${nonce}`)); page.getByTestId(`card-${row.id}`);",
+      "const id = protocol(`missing-card-${nonce}`); page.getByTestId(`card-${id}`);",
+      "const id = protocol(`missing-card-${nonce}`); page.getByTestId(id);",
+      "const id = protocol(`missing-card-${nonce}`); const alias = id; page.getByTestId(alias);",
+      "const prefix = protocol(`missing-card-${nonce}`); page.getByTestId(`${prefix}${repo}`);",
+      "card.id.startsWith(protocol(\"workflow-run-\"));"
+    ]
+  ) expect(check(imports + claim).map((violation) => violation.rule), claim).toContain("card-id-prefix")
+  for (
+    const claim of [
+      "const name = protocol(\"workflow.create\"); runCommand(name);",
+      "const name = protocol(\"workflow.create\"); runCommand(`issues.${name}`);"
+    ]
+  ) expect(check(imports + claim).length, claim).toBeGreaterThan(0)
+  expect(check(imports + "const response = { sessionId: protocol(`session-${nonce}`) };")).toEqual([])
+})
+
+test("opaque card suffix evidence requires both emitted prefix owners", () => {
+  const source =
+    "import { fixtureProtocolId as protocol } from \"./support/values\"; const name = protocol(`smithers-e2e-secrets-${nonce}`); const repo = `${username}/${name}`; page.getByTestId(`card-secrets-${repo}`);"
+  const literals = extractLiterals("/app/e2e/real/probe.spec.ts", source)
+  for (const removed of ["card-", "secrets-"]) {
+    expect(vocabularies.cardIdPrefixes.has(removed)).toBe(true)
+    const narrowed = {
+      ...vocabularies,
+      cardIdPrefixes: new Set([...vocabularies.cardIdPrefixes].filter((prefix) => prefix !== removed))
+    }
+    const violations = literals.flatMap((literal) => [...violationsOf(literal, narrowed)])
+    expect(violations.some((violation) => violation.rule === "card-id-prefix" && violation.value === "card-secrets-"))
+      .toBe(true)
+    expect(
+      violations.some((violation) => violation.rule === "card-id-prefix" && violation.value === "smithers-e2e-secrets-")
+    ).toBe(true)
+  }
+})
 test("fixture input provenance follows a local factory's selected return field", () => {
   const check = (source: string) => extractLiterals("/app/e2e/real/probe.spec.ts", source)
     .flatMap(literal => [...violationsOf(literal, vocabularies)])
