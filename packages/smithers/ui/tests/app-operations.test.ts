@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Schema } from "effect"
-import { operation } from "../src/app-operations"
+import { accountOperations } from "../src/app-operations/account"
+import { NoInput, operation } from "../src/app-operations"
 import { WIKI_DISPLAY_NAME, wikiOperations, wikiSurfaceOperations } from "../src/app-operations/wiki"
 
 const all = [...wikiSurfaceOperations, ...wikiOperations]
@@ -68,5 +69,17 @@ describe("operation", () => {
   test("keeps the declaration's literal shape for host binding", () => {
     const declared = operation({ name: "demo.run", summary: "Run the demo", input: Schema.Struct({ id: Schema.String }), requires: ["signed-in"] })
     expect(declared).toEqual({ name: "demo.run", summary: "Run the demo", input: declared.input, requires: ["signed-in"] })
+  })
+})
+
+describe("account operation", () => {
+  test("keeps the identity read available while signed out and model invocable without a host handler", () => {
+    expect(accountOperations).toHaveLength(1)
+    const declared = accountOperations[0]
+    expect(declared).toEqual({ name: "account.show", summary: "Show account", runtime: ["identity"], input: NoInput })
+    expect(Schema.decodeUnknownSync(declared.input)({})).toEqual({})
+    expect(() => Schema.decodeUnknownSync(declared.input)(null)).toThrow()
+    expect(Object.keys(declared)).not.toContain("handler")
+    expect(Object.keys(declared)).not.toContain("prepare")
   })
 })
