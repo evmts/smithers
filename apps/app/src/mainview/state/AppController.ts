@@ -1226,6 +1226,7 @@ export const createAppController = (
     decideApproval,
     retryLastTurn
   } = createTurnController(ctx, {
+    minimizeCard,
     settleTurnBilling,
     nextOrdinal: store.nextOrdinal,
     surfaceCommandFailure,
@@ -2060,10 +2061,10 @@ export const createAppController = (
    */
   const commands: CommandRegistry = {
     ...registry,
-    run: async (name, args, source, originCardId) => {
+    run: async (name, args, source, originCardId, presentation) => {
       if (ctx.disposed) return { status: "failed", error: "The controller is closed." }
       try {
-        return await registry.run(name, args, source, originCardId)
+        return await registry.run(name, args, source, originCardId, presentation)
       } catch (error) {
         /*
          * The floor under the person's door. A handler's throw is classified
