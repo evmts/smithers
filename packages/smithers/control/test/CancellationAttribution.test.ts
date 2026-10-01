@@ -126,6 +126,50 @@ const generate = (random: () => number): Cancellation.Input => {
 }
 
 describe("Cancellation.attribute matches an independent oracle", () => {
+  it("observes each request once per decision without consulting membership", () => {
+    const observations: Array<string> = []
+    class ObservedRequests extends Map<string, Cancellation.Request> {
+      override has(): boolean {
+        throw new Error("membership is not a cancellation receipt")
+      }
+      override get(id: string): Cancellation.Request | undefined {
+        observations.push(id)
+        if (id === "parent") return { requestedAt: 0, reason: "owned request" }
+        return undefined
+      }
+    }
+    const answers = Cancellation.attribute({
+      runs: [
+        { runId: "child", parentRunId: "parent", cancelRequestedAt: 0, cancelledAt: 9 },
+        { runId: "parent", cancelRequestedAt: 8, cancelledAt: 10 },
+        { runId: "untouched" }
+      ],
+      requests: new ObservedRequests()
+    })
+    expect([...answers]).toEqual([
+      ["child", { requestedAt: 0, source: "cascade", reason: "owned request", cascadedFrom: "parent" }],
+      ["parent", { requestedAt: 0, source: "control", reason: "owned request" }]
+    ])
+    expect(observations).toEqual(["child", "parent", "parent", "untouched"])
+  })
+
+  it("keeps control, row-request and engine timestamp precedence including zero", () => {
+    const answers = Cancellation.attribute({
+      runs: [
+        { runId: "control", cancelRequestedAt: 8, cancelledAt: 9 },
+        { runId: "requested", cancelRequestedAt: 0, cancelledAt: 9 },
+        { runId: "engine", cancelledAt: 0 },
+        { runId: "untouched" }
+      ],
+      requests: new Map([["control", { requestedAt: 0 }]])
+    })
+    expect([...answers]).toEqual([
+      ["control", { requestedAt: 0, source: "control" }],
+      ["requested", { requestedAt: 0, source: "engine" }],
+      ["engine", { requestedAt: 0, source: "engine" }]
+    ])
+  })
+
   it("agrees on 300 generated ancestry forests", () => {
     const random = mulberry32(0x5eed_1234)
     for (let round = 0; round < 300; round++) {
