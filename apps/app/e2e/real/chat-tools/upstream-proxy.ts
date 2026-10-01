@@ -1,7 +1,7 @@
 import { DEFAULT_CLOUD_API } from "../../../src/bun/server"
 
 // The shared backend the fault host's hybrid agent reaches through this passthrough.
-const upstream = new URL(process.env.SMITHERS_CLOUD_API ?? DEFAULT_CLOUD_API).origin
+const upstream = new URL(process.env.SMITHERS_REAL_CHAT_UPSTREAM ?? process.env.SMITHERS_CLOUD_API ?? DEFAULT_CLOUD_API).origin
 const port = Number(process.env.SMITHERS_REAL_CHAT_PROXY_PORT)
 if (!Number.isInteger(port) || port < 1 || port > 65_535) {
   throw new Error(`Invalid SMITHERS_REAL_CHAT_PROXY_PORT: ${process.env.SMITHERS_REAL_CHAT_PROXY_PORT}`)
