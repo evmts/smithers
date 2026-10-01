@@ -1,19 +1,30 @@
 /** A real attended flow parks, stays visible, leaves chat usable, and stops. */
 import { Database } from "bun:sqlite"
 import { expect, it } from "bun:test"
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { key, Tui } from "./tmux.ts"
 
 const app = resolve(import.meta.dir, "..")
-it("shows a real durable park and question without claiming the run is still executing", async () => {
-  const root = mkdtempSync(join(tmpdir(), "tui-park-"))
+it("parks a canonical file flow and completes its durable wait through a public signal", async () => {
+  const root = mkdtempSync(join(tmpdir(), "tui-file-park-"))
   const project = join(root, "project")
   mkdirSync(join(project, "flows/ask"), { recursive: true })
+  symlinkSync(resolve(app, "../../node_modules"), join(project, "node_modules"))
   writeFileSync(
-    join(project, "flows/ask/flow.mdx"),
-    "---\ndescription: Ask a question\nmodel: openai:gpt-6-sol\n---\nAsk which branch to use.\n"
+    join(project, "flows/ask/flow.ts"),
+    `
+import { Flow, WaitFor } from "@smthrs/flow"
+import { Schema } from "effect"
+export const layer = WaitFor.layer
+export default Flow.make("ask", {
+  description: "Wait for branch", capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  payload: {}, success: Schema.Json, error: WaitFor.WaitForRequestInvalid,
+  body: () => WaitFor.action.call({name: "branch"})
+})
+`
   )
   let tui: Tui | undefined
   try {
@@ -23,61 +34,136 @@ it("shows a real durable park and question without claiming the run is still exe
       env: {
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",
-        SMITHERS_TUI_SESSION_DIR: join(root, "sessions"),
-        TUI_FLOW_CELL: "ctx.park(\"waiting-input\", \"Which branch?\")"
+        SMITHERS_TUI_SESSION_DIR: join(root, "sessions")
       }
     })
     await tui.until((screen) => /↑\S+ ↓\S+/.test(screen), 20_000, "first draw")
     await tui.type("/flow ask")
     await tui.press(key.enter)
-    await tui.until((screen) => screen.includes("⏸ ask"), 30_000, "paused flow tab")
+    await tui.until((screen) => screen.includes("⏸ ask"), 30_000, "paused file flow")
     expect(tui.screen()).not.toContain("ask · running")
     const db = new Database(join(project, ".flows/control.db"), { readonly: true })
+    let runId: string | undefined
     try {
-      const events = () =>
-        db.query(
-          "select event_type, payload_json from flows_journal_events where event_type in ('control.agent.discipline-armed', 'control.run.parked')"
-        ).all() as Array<{ event_type: string; payload_json: string }>
-      // The control watch merges the execution journal before its mirror has
-      // necessarily reached control.db; require the durable mirror as well.
       await tui.until(
-        () =>
-          events().some((event) =>
-            event.event_type === "control.agent.discipline-armed" &&
-            JSON.parse(event.payload_json).approvalChannel === true
-          ) && events().some((event) => event.event_type === "control.run.parked"),
+        () => {
+          const rows = db.query("select payload_json from flows_journal_events where event_type = 'control.run.parked'")
+            .all() as Array<{ payload_json: string }>
+          for (const row of rows) runId = JSON.parse(row.payload_json).runId
+          return runId !== undefined
+        },
         5_000,
-        "mirrored approval and park receipts"
+        "durable park receipt"
       )
-      expect(events().some((event) => event.event_type === "control.run.parked")).toBe(true)
+      expect(runId).toBeDefined()
     } finally {
       db.close()
     }
     await tui.type("still usable")
     await tui.press(key.enter)
     await tui.until((screen) => screen.includes("Still here."), 10_000, "chat while parked")
-    await tui.press(key.ctrlBracket + key.ctrlBracket)
-    await tui.until((screen) => screen.includes("Which branch?"), 10_000, "parked question")
-    expect(tui.screen()).toContain("c Continue")
-    expect(tui.screen()).toContain("x Stop")
-    await tui.type("x")
-    await tui.until(
-      (screen) => screen.includes("■ ask") && screen.includes("stopped"),
-      15_000,
-      "cancelled receipt"
-    )
-    expect(tui.screen()).toContain("r Resume")
-    expect(tui.screen()).not.toContain("x Stop")
-  } catch (error) {
-    if (process.env.TUI_PARK_EVIDENCE_DIR !== undefined) {
-      const saved = join(process.env.TUI_PARK_EVIDENCE_DIR, String(Date.now()))
-      mkdirSync(saved, { recursive: true })
-      writeFileSync(join(saved, "screen.txt"), tui?.screen() ?? "No terminal")
-      await tui?.stop()
-      tui = undefined
-      cpSync(root, join(saved, "state"), { recursive: true })
+    const script = `
+import * as BunControl from "@smthrs/cli/BunControl";
+import { Control } from "@smthrs/control";
+import { Effect, ManagedRuntime } from "effect";
+const runtime = ManagedRuntime.make(BunControl.layerControl({root:process.argv[1], startsRuns:false}));
+try { console.log("signal-receipt:" + JSON.stringify(await runtime.runPromise(Effect.flatMap(Control.Control, c => { return c.signal({runId:process.argv[2],signal:{name:"branch",payload:"feature"},idempotencyKey:"branch-answer"}); })))); }
+finally { await runtime.dispose(); }
+`
+    const child = Bun.spawn([process.execPath, "-e", script, project, runId!], {
+      cwd: app,
+      env: process.env,
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 10_000
+    })
+    const [stdout, stderr, exit] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited
+    ])
+    expect({ exit, stderr }).toEqual({ exit: 0, stderr: "" })
+    const receipt = stdout.split("\n").find((line) => line.startsWith("signal-receipt:"))
+    expect(receipt).toBeDefined()
+    expect(JSON.parse(receipt!.slice("signal-receipt:".length))).toMatchObject({ _tag: "Accepted", runId })
+    await tui.until((screen) => /✓ ask.*feature/.test(screen), 15_000, "durable signal completion")
+    expect(tui.screen()).not.toContain("⏸ ask")
+    const committed = new Database(join(project, ".flows/control.db"), { readonly: true })
+    try {
+      const completions = () =>
+        committed.query(
+          "select payload_json from flows_journal_events where event_type = 'control.run.completed'"
+        ).all() as Array<{ payload_json: string }>
+      await tui.until(
+        () => completions().some((row) => JSON.parse(row.payload_json).runId === runId),
+        5_000,
+        "independent committed completion"
+      )
+      expect(completions().some((row) => JSON.parse(row.payload_json).runId === runId)).toBe(true)
+      if (process.env.TUI_PARK_EVIDENCE_DIR !== undefined) {
+        mkdirSync(process.env.TUI_PARK_EVIDENCE_DIR, { recursive: true })
+        writeFileSync(
+          join(process.env.TUI_PARK_EVIDENCE_DIR, "public-signal.json"),
+          JSON.stringify({ stdout, stderr, exit, runId, completions: completions() }, null, 2) + "\n"
+        )
+      }
+    } finally {
+      committed.close()
     }
-    throw error
+    await tui.type("/flow ask")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("⏸ ask"), 30_000, "second durable wait")
+    await tui.click("⏸ ask")
+    await tui.until((screen) => screen.includes("x Stop"), 5_000, "parked stop action")
+    await tui.press("x")
+    await tui.until(
+      (screen) => screen.includes("stopped") && !screen.includes("x Stop"),
+      15_000,
+      "cancelled wait receipt"
+    )
+    expect(tui.screen()).not.toContain("ask · running")
+  } finally {
+    await tui?.stop()
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 90_000)
+
+it("answers an actual custom agent's ask while coordinator Chat remains usable", async () => {
+  const root = mkdtempSync(join(tmpdir(), "tui-agent-ask-"))
+  mkdirSync(join(root, "flows/ask"), { recursive: true })
+  writeFileSync(
+    join(root, "flows/ask/flow.mdx"),
+    "---\ndescription: Ask a question\nmodel: openai:gpt-6-sol\n---\nAsk which branch to use.\n"
+  )
+  let tui: Tui | undefined
+  try {
+    tui = await Tui.start({
+      cwd: root,
+      command: `bun ${join(app, "e2e/real-flows-fixture.tsx")}`,
+      env: {
+        PATH: process.env.PATH ?? "",
+        HOME: process.env.HOME ?? "",
+        SMITHERS_TUI_SESSION_DIR: join(root, "sessions"),
+        TUI_FLOW_CELL:
+          "const reply = await ctx.call(\"ask\", {question:\"Which branch?\",options:[\"main\",\"feature\"]}); ctx.done(\"Using: \" + reply.answer)"
+      }
+    })
+    await tui.until((screen) => /↑\S+ ↓\S+/.test(screen), 20_000, "first draw")
+    await tui.type("/flow ask")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Which branch?"), 30_000, "actual agent question")
+    await tui.type("still usable")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Still here."), 10_000, "chat while agent waits")
+    await tui.press(key.ctrlS)
+    await tui.until((screen) => screen.includes("Needs you 1"), 5_000, "needs you")
+    await tui.press("a")
+    await tui.until((screen) => /Answer\s+main/.test(screen), 5_000, "answer form")
+    await tui.press("\x1b[C")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Done 1") && !screen.includes("Needs you"), 5_000, "answered")
+    await tui.press(" ")
+    await tui.until((screen) => screen.includes("Using: feature"), 5_000, "actual agent received answer")
   } finally {
     await tui?.stop()
     rmSync(root, { recursive: true, force: true })
