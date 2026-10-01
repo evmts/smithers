@@ -1,0 +1,29 @@
+{"id":"go-large-human-01","recorded":1,"total":110,"result":"recorded"}
+{"id":"go-large-human-03","recorded":2,"total":110,"result":"recorded"}
+{"id":"go-large-human-02","recorded":3,"total":110,"result":"recorded"}
+{"id":"go-large-human-05","recorded":4,"total":110,"result":"recorded"}
+{"id":"go-medium-agent-01","recorded":5,"total":110,"result":"recorded"}
+{"id":"go-medium-agent-02","recorded":6,"total":110,"result":"recorded"}
+{"id":"go-medium-agent-03","recorded":7,"total":110,"result":"recorded"}
+{"id":"go-large-agent-01","recorded":7,"total":110,"result":"failed","reason":"Command failed: git -C /private/tmp/smithers-surface-receipts-20260930/inventory-3071/calibration-resumable/work/go-large-agent-01/calibration-qr3cpf log -n 50000 --format=%x1e%H%x1f%ae%x1f%an%x1f%at%"}
+{"id":"go-large-human-04","recorded":7,"total":110,"result":"failed","reason":"Command failed: git -C /private/tmp/smithers-surface-receipts-20260930/inventory-3071/calibration-resumable/work/go-large-human-04/calibration-MMxj1G log -n 50000 --format=%x1e%H%x1f%ae%x1f%an%x1f%at%"}
+{"id":"go-large-hybrid-01","recorded":8,"total":110,"result":"recorded"}
+{"id":"go-medium-human-04","recorded":9,"total":110,"result":"recorded"}
+{"id":"go-medium-human-03","recorded":10,"total":110,"result":"recorded"}
+{"id":"go-medium-human-01","recorded":11,"total":110,"result":"recorded"}
+{"id":"go-medium-human-02","recorded":12,"total":110,"result":"recorded"}
+{"id":"go-small-agent-01","recorded":13,"total":110,"result":"recorded"}
+{"id":"go-medium-hybrid-01","recorded":14,"total":110,"result":"recorded"}
+{"id":"go-small-agent-02","recorded":15,"total":110,"result":"recorded"}
+{"id":"go-small-agent-03","recorded":16,"total":110,"result":"recorded"}
+{"id":"go-small-human-01","recorded":17,"total":110,"result":"recorded"}
+{"id":"go-small-human-02","recorded":18,"total":110,"result":"recorded"}
+{"id":"go-small-human-03","recorded":19,"total":110,"result":"recorded"}
+{"id":"go-small-human-05","recorded":20,"total":110,"result":"recorded"}
+{"id":"go-small-human-04","recorded":21,"total":110,"result":"recorded"}
+{"id":"python-large-agent-01","recorded":21,"total":110,"result":"failed","reason":"campaign limit: SIGTERM"}
+{"id":"go-medium-hybrid-02","recorded":21,"total":110,"result":"failed","reason":"campaign limit: SIGTERM"}
+{"id":"go-medium-human-05","recorded":21,"total":110,"result":"failed","reason":"campaign limit: SIGTERM"}
+{"id":"go-large-hybrid-02","recorded":21,"total":110,"result":"failed","reason":"campaign limit: SIGTERM"}
+{"id":"python-large-agent-02","recorded":21,"total":110,"result":"failed","reason":"campaign limit: SIGTERM"}
+{"complete":false,"recorded":21,"total":110,"campaignLimit":true,"failures":7}
