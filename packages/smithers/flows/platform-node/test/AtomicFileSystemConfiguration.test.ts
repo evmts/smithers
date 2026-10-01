@@ -179,6 +179,37 @@ describe("atomic helper configuration admission", () => {
     expect(result._tag).toBe("Failure")
   })
 
+  it("resolves the public helper diagnostic without executing the selected binary", async () => {
+    const root = await temporary()
+    const binary = join(root, "diagnostic-helper")
+    const marker = join(root, "spawned")
+    await writeFile(binary, `#!/bin/sh\nprintf spawned > '${marker}'\n`, { mode: 0o755 })
+    vi.stubEnv("SMITHERS_WORKSPACE_JJ_EXPORT_BINARY", binary)
+    const before = AtomicFileSystem.helperSpawns()
+    expect(AtomicFileSystem.resolveHelper()).toBe(binary)
+    expect(AtomicFileSystem.helperSpawns()).toBe(before)
+    await expect(NativeFs.stat(marker)).rejects.toMatchObject({ code: "ENOENT" })
+  })
+
+  it("refuses an unusable public diagnostic override without fallback or execution", async () => {
+    const root = await temporary()
+    const missing = join(root, "missing-diagnostic-helper")
+    vi.stubEnv("SMITHERS_WORKSPACE_JJ_EXPORT_BINARY", missing)
+    const before = AtomicFileSystem.helperSpawns()
+    expect(() => AtomicFileSystem.resolveHelper()).toThrow(AtomicFileSystem.AtomicHelperError)
+    try {
+      AtomicFileSystem.resolveHelper()
+      expect.fail("missing helper was admitted")
+    } catch (error) {
+      expect(error).toMatchObject({
+        _tag: "@smthrs/platform-node/AtomicHelperError",
+        code: "helper_unusable"
+      })
+      expect((error as Error).message).toContain(`SMITHERS_WORKSPACE_JJ_EXPORT_BINARY=${missing}`)
+    }
+    expect(AtomicFileSystem.helperSpawns()).toBe(before)
+  })
+
   it("refuses an unusable environment override without falling back or spawning", async () => {
     const root = await temporary()
     const missing = join(root, "missing-helper")
