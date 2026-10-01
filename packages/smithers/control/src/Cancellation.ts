@@ -87,13 +87,8 @@ export interface Input {
   readonly requests: ReadonlyMap<string, Request>
 }
 
-const cancelled = (evidence: Evidence, requests: Input["requests"]): boolean =>
-  evidence.cancelRequestedAt !== undefined || evidence.cancelledAt !== undefined ||
-  requests.has(evidence.runId)
-
-const requestedAtOf = (evidence: Evidence, request: Request | undefined): number => {
-  return request?.requestedAt ?? evidence.cancelRequestedAt ?? evidence.cancelledAt ?? 0
-}
+const requestedAtOf = (evidence: Evidence, request: Request | undefined): number | undefined =>
+  request?.requestedAt ?? evidence.cancelRequestedAt ?? evidence.cancelledAt
 
 const attributed = (
   source: Cancellation["source"],
@@ -135,9 +130,9 @@ export const attribute = (input: Input): ReadonlyMap<string, Cancellation> => {
   const evidence = new Map(input.runs.map((run) => [run.runId, run]))
   const result = new Map<string, Cancellation>()
   for (const run of input.runs) {
-    if (!cancelled(run, input.requests)) continue
     const own = input.requests.get(run.runId)
     const requestedAt = requestedAtOf(run, own)
+    if (requestedAt === undefined) continue
     if (own !== undefined) {
       result.set(run.runId, attributed("control", requestedAt, own))
       continue
@@ -150,12 +145,13 @@ export const attribute = (input: Input): ReadonlyMap<string, Cancellation> => {
       visited.add(ancestorId)
       const ancestor = evidence.get(ancestorId)
       if (ancestor === undefined) break
-      if (cancelled(ancestor, input.requests)) {
+      const request = input.requests.get(ancestorId)
+      if (requestedAtOf(ancestor, request) !== undefined) {
         // The nearest cancelled ancestor is the run this one was swept up
         // with; the request that started it may be further up still, because
         // a cascade cascades.
         if (cascadedFrom === undefined) cascadedFrom = ancestorId
-        origin = input.requests.get(ancestorId)
+        origin = request
         if (origin !== undefined) break
       }
       ancestorId = ancestor.parentRunId
