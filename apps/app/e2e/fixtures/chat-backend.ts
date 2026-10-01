@@ -62,7 +62,7 @@ export const startFixtureChatBackend = async (options: { readonly stateDir?: str
   let model: ReturnType<typeof Bun.spawn> | undefined
   try {
   const build = Bun.spawn(["go", "build", "-o", binary, "./packages/backend/testkit/chatfixture"], {
-    cwd: root, env: environment, stdin: "ignore", stdout: "ignore", stderr: "inherit"
+    cwd: root, env: { ...environment, SDKROOT: process.env.SDKROOT }, stdin: "ignore", stdout: "ignore", stderr: "inherit"
   })
   if (await build.exited !== 0) throw new Error("Canonical chat fixture build failed")
     model = Bun.spawn([Bun.which("bun")!, "apps/app/e2e/fixtures/chat-model-host.ts"], {
