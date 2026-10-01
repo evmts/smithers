@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "digest": "sha256:05247e8a9c3f9277f27fee13bd4b48371634a98ec29af1cf372b718b073dcdc0",
+  "digest": "sha256:5caa150e4bf35533411b073fb2a7bc095b918b4d92ac89f4cf06578641a719da",
   "faults": [
     "user",
     "wait",
@@ -920,6 +920,13 @@
       "status": 409,
       "retry_after": 0,
       "doc": "The workspace or snapshot was built while its repository stored a Claude or ChatGPT subscription token, which may remain on its disk. It is not reused; delete it and create a new workspace."
+    },
+    {
+      "code": "workspace_resources_exceeded",
+      "fault": "user",
+      "status": 400,
+      "retry_after": 0,
+      "doc": "Requested workspace CPU, memory or disk exceeds the configured maximum."
     },
     {
       "code": "workspace_session_kind_mismatch",
