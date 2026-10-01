@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test"
+import type { Page, Request } from "@playwright/test"
 import { scenario } from "./coverage/types"
 import { awaitBoot, command, expect, openApp, realApi, test } from "./support/test"
 
@@ -50,6 +50,11 @@ test("a real local browser sees an honest signed-out Cloud session", scenario("c
    * renders nothing in the app, so the window IS the act this reads. Only the
    * request it carries is asserted; GitHub's own page is GitHub's to change.
    */
+  const navigations: string[] = []
+  const observeNavigation = (sent: Request): void => {
+    if (sent.isNavigationRequest() && new URL(sent.url()).pathname === "/api/auth/github/cli") navigations.push(sent.url())
+  }
+  page.context().on("request", observeNavigation)
   const opening = page.waitForEvent("popup")
   await command(page, "/cloud.sign-in")
   const login = await opening
@@ -77,9 +82,17 @@ test("a real local browser sees an honest signed-out Cloud session", scenario("c
     expect(start.status()).toBe(200)
     const started = await start.json() as { url?: unknown }
     expect(started.url).toEqual(expect.any(String))
-    // The window the flow opened and the URL the API hands back are one login:
-    // GitHub redirects back to the same Cloud API origin that issued it.
-    expect(new URL(String(authorize.searchParams.get("redirect_uri"))).origin).toBe(new URL(String(started.url)).origin)
+    // The same pending attempt retains its real loopback listener and nonce.
+    // GitHub's callback may use the deployment's frontend origin rather than its API origin.
+    const pendingUrl = new URL(String(started.url))
+    expect(pendingUrl.pathname).toBe("/api/auth/github/cli")
+    expect(pendingUrl.searchParams.get("callback_port")).toMatch(/^[0-9]+$/)
+    const callbackPort = Number(pendingUrl.searchParams.get("callback_port"))
+    expect(callbackPort).toBeGreaterThan(0)
+    expect(callbackPort).toBeLessThanOrEqual(65535)
+    expect(pendingUrl.searchParams.get("callback_state")).toEqual(expect.any(String))
+    expect(pendingUrl.searchParams.get("callback_state")).not.toBe("")
+    expect(navigations).toContain(pendingUrl.href)
 
     const signOut = await realApi(page, request, "POST", "/api/cloud-auth/sign-out", {})
     expect(signOut.status()).toBe(200)
@@ -89,6 +102,7 @@ test("a real local browser sees an honest signed-out Cloud session", scenario("c
     expect(after.status()).toBe(200)
     expect(await after.json()).toEqual({ state: "signed-out", username: null, expiresAt: null })
   } finally {
+    page.context().off("request", observeNavigation)
     await login.close()
     /*
      * A failure above leaves the host's login attempt open — its listener and
@@ -127,8 +141,7 @@ test("a real signed-out browser never dials Smithers Cloud, and the proxy refuse
   const step = page.locator(".smithers-chat-message")
     .filter({ has: page.getByRole("button", { name: "Sign in with GitHub" }) }).last()
   await expect(step).toBeVisible()
-  await expect(step).toContainText(/sign in/i)
-  await expect(step).toContainText(/Smithers Cloud/i)
+  await expect(step).toContainText("Sign in with GitHub to continue.")
   expect(dialled).toEqual([])
 
   /*
