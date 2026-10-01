@@ -343,7 +343,10 @@ export const createPresentationController = (
           ...(refusal.code === null ? {} : { refusal: storedRefusal({ ...refusal, message: fallback }) })
         })
         ctx.store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card })
-        return browserReadFailure(card.payload)!.sentence
+        const failure = browserReadFailure(card.payload)!
+        // Only the trusted presenter's canonical door reaches the existing
+        // command-toast sign-in action; upstream prose never supplies a flow.
+        return failure.actions.includes("sign-in") ? `${failure.sentence} /auth.sign-in` : failure.sentence
       }
       outcome = (await response.json().catch(() => undefined)) as typeof outcome
     } catch {

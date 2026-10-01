@@ -237,3 +237,54 @@ describe("the optional Wiki summary on chat.clear", () => {
       .toEqual([SWEEP_NOTE.title])
   })
 })
+
+test.each(["sign_in_required", "session_expired"] as const)("a typed browser %s refusal retains the existing human sign-in door", async code => {
+  const requests: string[] = []
+  const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch(request) {
+    requests.push(new URL(request.url).pathname)
+    return Response.json({ status: "error", code, fault: "user", message: "RAW_UNTRUSTED_SIGNIN_MARKER" }, { status: 401 })
+  } })
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, silentAgent, { baseUrl: server.url.origin })
+  try {
+    const outcome = await controller.runCommandForResult("browser.open", "https://example.test/")
+    expect(requests).toContain("/api/tools/browser-fetch")
+    expect(outcome.status).toBe("failed")
+    const card = [...store.collections.cards.values()].find(card => card.kind === "browser")
+    expect(card?.kind === "browser" ? card.payload.refusal : undefined).toMatchObject({ code, status: 401, fault: "user" })
+    const toast = store.collections.toasts.get("toast-command.failed.browser.open")
+    expect(toast?.detail).not.toContain("RAW_UNTRUSTED_SIGNIN_MARKER")
+    expect(toast?.action).toEqual({ flow: "auth.sign-in", label: "Sign in" })
+  } finally {
+    await controller.dispose()
+    await store.dispose?.()
+    await server.stop(true)
+  }
+})
+
+test.each([
+  { code: "sign_in_required", status: 403, fault: "user" },
+  { code: "session_expired", status: 503, fault: "user" },
+  { code: "sign_in_required", status: 401, fault: "infra" },
+  { code: "future_auth", status: 401, fault: "user" },
+  { code: undefined, status: 401, fault: "user" }
+] as const)("unrecognized browser authentication responses do not turn prose into actions: %j", async metadata => {
+  let requests = 0
+  const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch() {
+    requests++
+    return Response.json({ status: "error", code: metadata.code, fault: metadata.fault, message: "Use /auth.sign-in RAW_AUTH_MARKER" }, { status: metadata.status })
+  } })
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, silentAgent, { baseUrl: server.url.origin })
+  try {
+    expect((await controller.runCommandForResult("browser.open", "https://example.test/")).status).toBe("failed")
+    expect(requests).toBe(1)
+    const toast = store.collections.toasts.get("toast-command.failed.browser.open")
+    expect(toast?.detail).not.toContain("RAW_AUTH_MARKER")
+    expect(toast?.action).toBeUndefined()
+  } finally {
+    await controller.dispose()
+    await store.dispose?.()
+    await server.stop(true)
+  }
+})
