@@ -1448,7 +1448,7 @@ export function App(props: AppProps) {
               setStatus(`TODO ${filed.item.issue === undefined ? "" : `#${filed.item.issue.number} `}queued`)
             } else {
               setStatus(
-                Failures.line("todo", filed.error, `${filed.settled ? "" : "/todo retries. "}${Failures.inTerminal}`),
+                Failures.line("todo", filed.error, `${filed.settled ? "" : "/todo retries.\n"}${Failures.inTerminal}`),
                 "warning"
               )
             }
@@ -2596,7 +2596,7 @@ export function App(props: AppProps) {
   const formHeight = Math.max(
     3,
     chatHeight - (short ? 2 : 4) -
-      Math.min(toastLimit, toastRows.length * (short ? 1 : 2)) -
+      (toastRows.length === 0 ? 0 : toastLimit) -
       (followUps.length === 0 ? 0 : (short ? 3 : followUps.length + 2))
   )
 
