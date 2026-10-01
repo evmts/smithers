@@ -690,3 +690,7 @@ present its sign-in door instead of an empty account.
 - [The adapters boundary](./concepts/adapters.md): what the six adapter
   subpaths cost.
 - [Troubleshooting](./troubleshooting.md): symptoms and fixes.
+
+`@smthrs/ui/account-controller` re-exports the published
+`@smthrs/control/Account` lifecycle. The operation declarations and empty input
+come from `@smthrs/control/Operation`; UI types specialize only their form hints.

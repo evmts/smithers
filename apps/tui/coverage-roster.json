@@ -1,4 +1,5 @@
 [
+  "src/account.ts",
   "src/activity-view.tsx",
   "src/activity.ts",
   "src/agents.ts",
