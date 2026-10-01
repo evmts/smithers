@@ -1,0 +1,126 @@
+{
+  "method": "calibrated-real-v1",
+  "pooled": {
+    "duplicates": 21.3122,
+    "churn": 0.3652,
+    "lexicon": 0.1611,
+    "stubs": 0.9989,
+    "dead-code": 0.4541
+  },
+  "strata": {
+    "ts/small": {
+      "duplicates": 0,
+      "churn": 0.4063,
+      "lexicon": 0,
+      "stubs": 0.4113,
+      "dead-code": 0.4541
+    },
+    "ts/medium": {
+      "duplicates": 13.7452,
+      "churn": 0.1127,
+      "lexicon": 0.1934,
+      "stubs": 0.3274,
+      "dead-code": 0.3831
+    },
+    "ts/large": {
+      "duplicates": 20.2606,
+      "churn": 0.0371,
+      "lexicon": 0.0452,
+      "stubs": 0.0619,
+      "dead-code": 0.3632
+    },
+    "python/small": {
+      "duplicates": 19.4629,
+      "churn": 0.1381,
+      "lexicon": 0,
+      "stubs": 2.2634,
+      "dead-code": 0.4541
+    },
+    "python/medium": {
+      "duplicates": 13.233,
+      "churn": 0.283,
+      "lexicon": 0.1581,
+      "stubs": 2.4597,
+      "dead-code": 0.4541
+    },
+    "python/large": {
+      "duplicates": 26.355,
+      "churn": 0.3041,
+      "lexicon": 0.1055,
+      "stubs": 1.0219,
+      "dead-code": 0.4541
+    },
+    "go/small": {
+      "duplicates": 16.4754,
+      "churn": 0.0865,
+      "lexicon": 0.4733,
+      "stubs": 0,
+      "dead-code": 0.4541
+    },
+    "go/medium": {
+      "duplicates": 13.5438,
+      "churn": 0.6396,
+      "lexicon": 0.2259,
+      "stubs": 0,
+      "dead-code": 0.4541
+    },
+    "go/large": {
+      "duplicates": 74.0394,
+      "churn": 0.4303,
+      "lexicon": 0.0213,
+      "stubs": 0.0111,
+      "dead-code": 0.4541
+    },
+    "rust/small": {
+      "duplicates": 3.2496,
+      "churn": 0.3543,
+      "lexicon": 0.2717,
+      "stubs": 1.7468,
+      "dead-code": 0.4541
+    },
+    "rust/medium": {
+      "duplicates": 14.1549,
+      "churn": 0.2868,
+      "lexicon": 0.1062,
+      "stubs": 1.3418,
+      "dead-code": 0.4541
+    },
+    "rust/large": {
+      "duplicates": 13.7363,
+      "churn": 0.0676,
+      "lexicon": 0.1401,
+      "stubs": 0.0599,
+      "dead-code": 0.4541
+    }
+  },
+  "weights": {
+    "duplicates": 0,
+    "churn": 24.3197,
+    "lexicon": 0,
+    "stubs": 0,
+    "dead-code": 30.6803
+  },
+  "scale": 0.8597,
+  "bias": -0.984,
+  "trainCases": 88,
+  "heldOutCases": 22,
+  "auroc": {
+    "train": 0.5335,
+    "heldOut": 0.35,
+    "hybridVsHuman": 0.6711
+  },
+  "precisionAtP90": {
+    "duplicates": 0.5,
+    "churn": 0.2857,
+    "lexicon": 0.75,
+    "stubs": 0.5,
+    "dead-code": null
+  },
+  "flaggedAtP90": {
+    "duplicates": 2,
+    "churn": 7,
+    "lexicon": 4,
+    "stubs": 2,
+    "dead-code": 0
+  }
+}

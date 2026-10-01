@@ -1,0 +1,613 @@
+{
+  "badRows": [
+    {
+      "id": "go-medium-agent-01",
+      "values": {
+        "duplicates": 2.8725,
+        "churn": 0,
+        "lexicon": 0.1795,
+        "stubs": 0,
+        "dead-code": null
+      },
+      "anchor": {
+        "duplicates": 13.54381,
+        "churn": 0.6396200000000001,
+        "lexicon": 0.22588000000000003,
+        "stubs": 0,
+        "dead-code": 0.45407000000000003
+      },
+      "normalized": [
+        0.21208950804832613,
+        0,
+        0.7946697361430847,
+        null,
+        0
+      ]
+    },
+    {
+      "id": "go-medium-agent-02",
+      "values": {
+        "duplicates": 9.8908,
+        "churn": 0.0164,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      },
+      "anchor": {
+        "duplicates": 13.54381,
+        "churn": 0.6396200000000001,
+        "lexicon": 0.22588000000000003,
+        "stubs": 0,
+        "dead-code": 0.45407000000000003
+      },
+      "normalized": [
+        0.7302819516812478,
+        0.02564022388293049,
+        0,
+        null,
+        0
+      ]
+    },
+    {
+      "id": "go-medium-human-01",
+      "values": {
+        "duplicates": 13.8745,
+        "churn": 0.0164,
+        "lexicon": 0.115,
+        "stubs": 0,
+        "dead-code": null
+      },
+      "anchor": {
+        "duplicates": 13.54381,
+        "churn": 0.6396200000000001,
+        "lexicon": 0.22588000000000003,
+        "stubs": 0,
+        "dead-code": 0.45407000000000003
+      },
+      "normalized": [
+        1,
+        0.02564022388293049,
+        0.509119886665486,
+        null,
+        0
+      ]
+    },
+    {
+      "id": "go-medium-human-02",
+      "values": {
+        "duplicates": 6.0142,
+        "churn": 0.8288,
+        "lexicon": 0.2734,
+        "stubs": 0,
+        "dead-code": null
+      },
+      "anchor": {
+        "duplicates": 13.54381,
+        "churn": 0.6396200000000001,
+        "lexicon": 0.22588000000000003,
+        "stubs": 0,
+        "dead-code": 0.45407000000000003
+      },
+      "normalized": [
+        0.44405525476213853,
+        1,
+        1,
+        null,
+        0
+      ]
+    },
+    {
+      "id": "go-medium-human-04",
+      "values": {
+        "duplicates": 12.7722,
+        "churn": 0.0187,
+        "lexicon": 0.0288,
+        "stubs": 0,
+        "dead-code": null
+      },
+      "anchor": {
+        "duplicates": 13.54381,
+        "churn": 0.6396200000000001,
+        "lexicon": 0.22588000000000003,
+        "stubs": 0,
+        "dead-code": 0.45407000000000003
+      },
+      "normalized": [
+        0.9430285864908028,
+        0.029236108939682936,
+        0.12750132813883477,
+        null,
+        0
+      ]
+    },
+    {
+      "id": "go-medium-human-05",
+      "values": {
+        "duplicates": 12.5924,
+        "churn": 0.1982,
+        "lexicon": 0.0226,
+        "stubs": 0,
+        "dead-code": null
+      },
+      "anchor": {
+        "duplicates": 13.54381,
+        "churn": 0.6396200000000001,
+        "lexicon": 0.22588000000000003,
+        "stubs": 0,
+        "dead-code": 0.45407000000000003
+      },
+      "normalized": [
+        0.9297531492246273,
+        0.30987148619492816,
+        0.10005312555339116,
+        null,
+        0
+      ]
+    },
+    {
+      "id": "go-medium-hybrid-01",
+      "values": {
+        "duplicates": 3.9316,
+        "churn": 0.2552,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      },
+      "anchor": {
+        "duplicates": 13.54381,
+        "churn": 0.6396200000000001,
+        "lexicon": 0.22588000000000003,
+        "stubs": 0,
+        "dead-code": 0.45407000000000003
+      },
+      "normalized": [
+        0.2902875926345688,
+        0.3989868984709671,
+        0,
+        null,
+        0
+      ]
+    },
+    {
+      "id": "go-medium-hybrid-02",
+      "values": {
+        "duplicates": 1.645,
+        "churn": 0.1421,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      },
+      "anchor": {
+        "duplicates": 13.54381,
+        "churn": 0.6396200000000001,
+        "lexicon": 0.22588000000000003,
+        "stubs": 0,
+        "dead-code": 0.45407000000000003
+      },
+      "normalized": [
+        0.1214576991260214,
+        0.2221631593758794,
+        0,
+        null,
+        0
+      ]
+    },
+    {
+      "id": "go-small-agent-01",
+      "values": {
+        "duplicates": 0,
+        "churn": 0.136,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      },
+      "anchor": {
+        "duplicates": 16.475360000000002,
+        "churn": 0.08653000000000002,
+        "lexicon": 0.47327000000000014,
+        "stubs": 0,
+        "dead-code": 0.45407000000000003
+      },
+      "normalized": [
+        0,
+        1,
+        0,
+        null,
+        0
+      ]
+    },
+    {
+      "id": "go-small-agent-02",
+      "values": {
+        "duplicates": 2.1104,
+        "churn": 0.2032,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      },
+      "anchor": {
+        "duplicates": 16.475360000000002,
+        "churn": 0.08653000000000002,
+        "lexicon": 0.47327000000000014,
+        "stubs": 0,
+        "dead-code": 0.45407000000000003
+      },
+      "normalized": [
+        0.12809431781763794,
+        1,
+        0,
+        null,
+        0
+      ]
+    },
+    {
+      "id": "go-small-human-01",
+      "values": {
+        "duplicates": 20.9648,
+        "churn": 0.0348,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      },
+      "anchor": {
+        "duplicates": 16.475360000000002,
+        "churn": 0.08653000000000002,
+        "lexicon": 0.47327000000000014,
+        "stubs": 0,
+        "dead-code": 0.45407000000000003
+      },
+      "normalized": [
+        1,
+        0.4021726568820061,
+        0,
+        null,
+        0
+      ]
+    },
+    {
+      "id": "go-small-human-02",
+      "values": {
+        "duplicates": 0,
+        "churn": 0.0316,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      },
+      "anchor": {
+        "duplicates": 16.475360000000002,
+        "churn": 0.08653000000000002,
+        "lexicon": 0.47327000000000014,
+        "stubs": 0,
+        "dead-code": 0.45407000000000003
+      },
+      "normalized": [
+        0,
+        0.36519126314572975,
+        0,
+        null,
+        0
+      ]
+    },
+    {
+      "id": "go-small-human-04",
+      "values": {
+        "duplicates": 6,
+        "churn": 0.1087,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      },
+      "anchor": {
+        "duplicates": 16.475360000000002,
+        "churn": 0.08653000000000002,
+        "lexicon": 0.47327000000000014,
+        "stubs": 0,
+        "dead-code": 0.45407000000000003
+      },
+      "normalized": [
+        0.36418020607743923,
+        1,
+        0,
+        null,
+        0
+      ]
+    },
+    {
+      "id": "go-small-human-05",
+      "values": {
+        "duplicates": 4.0568,
+        "churn": 0,
+        "lexicon": 0.6761,
+        "stubs": 0,
+        "dead-code": null
+      },
+      "anchor": {
+        "duplicates": 16.475360000000002,
+        "churn": 0.08653000000000002,
+        "lexicon": 0.47327000000000014,
+        "stubs": 0,
+        "dead-code": 0.45407000000000003
+      },
+      "normalized": [
+        0.24623437666915923,
+        0,
+        1,
+        null,
+        0
+      ]
+    },
+    {
+      "id": "python-small-agent-01",
+      "values": {
+        "duplicates": 0,
+        "churn": 0.1047,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      },
+      "anchor": {
+        "duplicates": 19.462900000000005,
+        "churn": 0.13805,
+        "lexicon": 0,
+        "stubs": 2.2634400000000006,
+        "dead-code": 0.45407000000000003
+      },
+      "normalized": [
+        0,
+        0.7584208620065194,
+        null,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "python-small-agent-02",
+      "values": {
+        "duplicates": 0,
+        "churn": 0.0006,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      },
+      "anchor": {
+        "duplicates": 19.462900000000005,
+        "churn": 0.13805,
+        "lexicon": 0,
+        "stubs": 2.2634400000000006,
+        "dead-code": 0.45407000000000003
+      },
+      "normalized": [
+        0,
+        0.004346251358203549,
+        null,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "python-small-human-01",
+      "values": {
+        "duplicates": 1.5198,
+        "churn": 0.1111,
+        "lexicon": 0,
+        "stubs": 0.304,
+        "dead-code": null
+      },
+      "anchor": {
+        "duplicates": 19.462900000000005,
+        "churn": 0.13805,
+        "lexicon": 0,
+        "stubs": 2.2634400000000006,
+        "dead-code": 0.45407000000000003
+      },
+      "normalized": [
+        0.0780870271131229,
+        0.8047808764940239,
+        null,
+        0.13430883964231433,
+        0
+      ]
+    },
+    {
+      "id": "python-small-human-02",
+      "values": {
+        "duplicates": 27.1528,
+        "churn": 0.0282,
+        "lexicon": 0,
+        "stubs": 3.1032,
+        "dead-code": null
+      },
+      "anchor": {
+        "duplicates": 19.462900000000005,
+        "churn": 0.13805,
+        "lexicon": 0,
+        "stubs": 2.2634400000000006,
+        "dead-code": 0.45407000000000003
+      },
+      "normalized": [
+        1,
+        0.2042738138355668,
+        null,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "python-small-human-04",
+      "values": {
+        "duplicates": 0,
+        "churn": 0.1496,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      },
+      "anchor": {
+        "duplicates": 19.462900000000005,
+        "churn": 0.13805,
+        "lexicon": 0,
+        "stubs": 2.2634400000000006,
+        "dead-code": 0.45407000000000003
+      },
+      "normalized": [
+        0,
+        1,
+        null,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "python-small-human-05",
+      "values": {
+        "duplicates": 1,
+        "churn": 0,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      },
+      "anchor": {
+        "duplicates": 19.462900000000005,
+        "churn": 0.13805,
+        "lexicon": 0,
+        "stubs": 2.2634400000000006,
+        "dead-code": 0.45407000000000003
+      },
+      "normalized": [
+        0.051379804653982696,
+        0,
+        null,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "ts-small-agent-01",
+      "values": {
+        "duplicates": 2.2747,
+        "churn": 0.5338,
+        "lexicon": 0,
+        "stubs": 1.1373,
+        "dead-code": 0.087
+      },
+      "anchor": {
+        "duplicates": 0,
+        "churn": 0.40629000000000004,
+        "lexicon": 0,
+        "stubs": 0.4112500000000001,
+        "dead-code": 0.45407000000000003
+      },
+      "normalized": [
+        1,
+        1,
+        null,
+        1,
+        0.19160041403307856
+      ]
+    },
+    {
+      "id": "ts-small-human-01",
+      "values": {
+        "duplicates": 0,
+        "churn": 0.0629,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": 0.5893
+      },
+      "anchor": {
+        "duplicates": 0,
+        "churn": 0.40629000000000004,
+        "lexicon": 0,
+        "stubs": 0.4112500000000001,
+        "dead-code": 0.45407000000000003
+      },
+      "normalized": [
+        null,
+        0.1548155258559157,
+        null,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "ts-small-human-02",
+      "values": {
+        "duplicates": 0,
+        "churn": 0.1818,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      },
+      "anchor": {
+        "duplicates": 0,
+        "churn": 0.40629000000000004,
+        "lexicon": 0,
+        "stubs": 0.4112500000000001,
+        "dead-code": 0.45407000000000003
+      },
+      "normalized": [
+        null,
+        0.44746363434984854,
+        null,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "ts-small-human-04",
+      "values": {
+        "duplicates": 0,
+        "churn": 0.0345,
+        "lexicon": 0,
+        "stubs": 0,
+        "dead-code": null
+      },
+      "anchor": {
+        "duplicates": 0,
+        "churn": 0.40629000000000004,
+        "lexicon": 0,
+        "stubs": 0.4112500000000001,
+        "dead-code": 0.45407000000000003
+      },
+      "normalized": [
+        null,
+        0.08491471608949272,
+        null,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "ts-small-human-05",
+      "values": {
+        "duplicates": 0,
+        "churn": 0.5025,
+        "lexicon": 0,
+        "stubs": 0.5875,
+        "dead-code": 0.1277
+      },
+      "anchor": {
+        "duplicates": 0,
+        "churn": 0.40629000000000004,
+        "lexicon": 0,
+        "stubs": 0.4112500000000001,
+        "dead-code": 0.45407000000000003
+      },
+      "normalized": [
+        null,
+        1,
+        null,
+        1,
+        0.28123417094280617
+      ]
+    }
+  ],
+  "nonfiniteWeights": [
+    "duplicates",
+    "churn",
+    "lexicon",
+    "stubs",
+    "dead-code"
+  ],
+  "scaleFinite": false,
+  "biasFinite": false
+}

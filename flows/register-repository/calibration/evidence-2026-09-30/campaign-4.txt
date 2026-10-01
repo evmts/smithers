@@ -1,0 +1,47 @@
+{"id":"rust-small-agent-01","recorded":57,"total":110,"result":"recorded"}
+{"id":"rust-small-agent-02","recorded":58,"total":110,"result":"recorded"}
+{"id":"rust-medium-hybrid-02","recorded":59,"total":110,"result":"recorded"}
+{"id":"rust-small-human-02","recorded":60,"total":110,"result":"recorded"}
+{"id":"rust-small-agent-03","recorded":61,"total":110,"result":"recorded"}
+{"id":"rust-small-human-04","recorded":62,"total":110,"result":"recorded"}
+{"id":"rust-small-human-01","recorded":63,"total":110,"result":"recorded"}
+{"id":"rust-small-human-05","recorded":64,"total":110,"result":"recorded"}
+{"id":"rust-small-human-03","recorded":65,"total":110,"result":"recorded"}
+{"id":"rust-medium-hybrid-01","recorded":66,"total":110,"result":"recorded"}
+{"id":"rust-medium-human-05","recorded":67,"total":110,"result":"recorded"}
+{"id":"ts-large-human-01","recorded":68,"total":110,"result":"recorded"}
+{"id":"ts-large-agent-03","recorded":69,"total":110,"result":"recorded"}
+{"id":"ts-large-human-02","recorded":70,"total":110,"result":"recorded"}
+{"id":"ts-large-agent-01","recorded":71,"total":110,"result":"recorded"}
+{"id":"ts-large-human-04","recorded":72,"total":110,"result":"recorded"}
+{"id":"ts-large-agent-02","recorded":73,"total":110,"result":"recorded"}
+{"id":"ts-large-human-05","recorded":74,"total":110,"result":"recorded"}
+{"id":"ts-medium-agent-02","recorded":75,"total":110,"result":"recorded"}
+{"id":"ts-medium-agent-01","recorded":76,"total":110,"result":"recorded"}
+{"id":"ts-medium-agent-03","recorded":77,"total":110,"result":"recorded"}
+{"id":"ts-medium-human-01","recorded":78,"total":110,"result":"recorded"}
+{"id":"ts-medium-human-03","recorded":79,"total":110,"result":"recorded"}
+{"id":"ts-medium-human-04","recorded":80,"total":110,"result":"recorded"}
+{"id":"ts-medium-human-02","recorded":81,"total":110,"result":"recorded"}
+{"id":"ts-medium-human-05","recorded":82,"total":110,"result":"recorded"}
+{"id":"ts-large-human-03","recorded":83,"total":110,"result":"recorded"}
+{"id":"ts-medium-hybrid-02","recorded":84,"total":110,"result":"recorded"}
+{"id":"ts-small-agent-02","recorded":85,"total":110,"result":"recorded"}
+{"id":"ts-small-agent-03","recorded":86,"total":110,"result":"recorded"}
+{"id":"ts-small-agent-01","recorded":87,"total":110,"result":"recorded"}
+{"id":"ts-small-human-02","recorded":88,"total":110,"result":"recorded"}
+{"id":"ts-small-human-03","recorded":89,"total":110,"result":"recorded"}
+{"id":"ts-small-human-01","recorded":90,"total":110,"result":"recorded"}
+{"id":"ts-small-human-04","recorded":91,"total":110,"result":"recorded"}
+{"id":"ts-small-human-05","recorded":92,"total":110,"result":"recorded"}
+{"id":"ts-medium-hybrid-01","recorded":93,"total":110,"result":"recorded"}
+{"id":"ts-small-hybrid-01","recorded":94,"total":110,"result":"recorded"}
+{"id":"ts-large-hybrid-02","recorded":95,"total":110,"result":"recorded"}
+{"id":"ts-large-hybrid-01","recorded":96,"total":110,"result":"recorded"}
+{"id":"python-large-human-02","recorded":97,"total":110,"result":"recorded"}
+{"id":"python-large-hybrid-02","recorded":97,"total":110,"result":"failed","reason":"campaign limit: SIGTERM"}
+{"id":"python-large-human-05","recorded":97,"total":110,"result":"failed","reason":"campaign limit: SIGTERM"}
+{"id":"python-large-human-04","recorded":97,"total":110,"result":"failed","reason":"campaign limit: SIGTERM"}
+{"id":"python-large-human-03","recorded":97,"total":110,"result":"failed","reason":"campaign limit: SIGTERM"}
+{"id":"rust-large-agent-01","recorded":97,"total":110,"result":"failed","reason":"campaign limit: SIGTERM"}
+{"complete":false,"recorded":97,"total":110,"campaignLimit":true,"failures":26}
