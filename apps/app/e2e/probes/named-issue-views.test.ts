@@ -118,8 +118,26 @@ test("keyboard selection reads every filtered named-view page and survives reloa
       { method: string; path: string; view: string | null; cursor: string | null; status: number; link: string | null }
     > = []
     const responseReads: Promise<void>[] = []
+    let phase = "navigation"
+    const observed: Array<Record<string, unknown>> = []
+    page.on("request", (request) => {
+      const url = new URL(request.url())
+      if (url.pathname === "/api/user" || url.pathname === `/api/repos/${repo}/issues`) {
+        observed.push({ event: "request", phase, time: Date.now(), path: url.pathname, query: url.search })
+      }
+    })
     page.on("response", (response) => {
       const url = new URL(response.url())
+      if (url.pathname === "/api/user" || url.pathname === `/api/repos/${repo}/issues`) {
+        observed.push({
+          event: "response",
+          phase,
+          time: Date.now(),
+          path: url.pathname,
+          query: url.search,
+          status: response.status()
+        })
+      }
       if (url.pathname === `/api/repos/${repo}/issues` && url.searchParams.get("view") === "bugs") {
         responseReads.push(
           response.allHeaders().then((headers) => {
@@ -146,11 +164,14 @@ test("keyboard selection reads every filtered named-view page and survives reloa
     const bugs = card.getByRole("button", { name: "Open bugs", exact: true })
     await browserExpect(bugs).toBeVisible()
     await input.press("Escape")
+    phase = "keyboard focus"
     for (let step = 0; step < 80; step++) {
       if (await bugs.evaluate((button) => button === document.activeElement)) break
       await page.keyboard.press("Tab")
     }
     await browserExpect(bugs).toBeFocused()
+    phase = "keyboard activation"
+    observed.push({ event: "enter", time: Date.now() })
     await page.keyboard.press("Enter")
     await browserExpect(bugs).toHaveAttribute("aria-pressed", "true")
     await browserExpect(card.locator("li[data-issue]")).toHaveCount(105)
@@ -163,6 +184,7 @@ test("keyboard selection reads every filtered named-view page and survives reloa
     await browserExpect(card.locator(`[data-issue="${unrelated.number}"]`)).toHaveCount(0)
     await browserExpect(card.locator(`[data-issue="${closed.number}"]`)).toHaveCount(0)
     await Promise.all(responseReads)
+    console.info("Named-view HTTP ordering", JSON.stringify(observed))
     expect(pages).toHaveLength(2)
     expect(pages.map((receipt) => [receipt.method, receipt.path, receipt.view, receipt.status])).toEqual([
       ["GET", `/api/repos/${repo}/issues`, "bugs", 200],
