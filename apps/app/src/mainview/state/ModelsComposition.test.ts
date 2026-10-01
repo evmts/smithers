@@ -5,6 +5,8 @@
  */
 import { afterEach, expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
+import { Authorize } from "@smthrs/chain"
+import { Effect } from "effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -315,3 +317,234 @@ test.each([
   },
   10000,
 )
+
+test.each(["direct", "composer"] as const)(
+  "the %s chrome door preserves the maximized card without a hidden turn",
+  async (door) => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const controller = createAppController(store, unavailableAgent)
+    try {
+      await controller.commands.run("appearance.theme")
+      const card = [...store.collections.cards.values()].find((row) => row.kind === "theme-picker")!
+      await controller.commands.run("card.maximize", card.id)
+      const messages = [...store.collections.messages.values()]
+      const turns = [...store.collections.httpTurns.values()]
+      const result = door === "direct"
+        ? await controller.commands.run("appearance.dark-mode")
+        : await controller.commands.run("chat.send", "/appearance.dark-mode")
+      expect(result.status).toBe("executed")
+      await waitFor(() => store.session().theme === "dark")
+      expect(store.session().maximizedCardId).toBe(card.id)
+      expect([...store.collections.messages.values()]).toEqual(messages)
+      expect([...store.collections.httpTurns.values()]).toEqual(turns)
+    } finally {
+      try {
+        await controller.dispose()
+      } finally {
+        await store.dispose?.()
+      }
+    }
+  }
+)
+
+test.each([
+  ...(["outer", "inner"] as const).flatMap((barrier) =>
+    (["maximize", "minimize", "away-and-back", "models", "new-form"] as const).map((gesture) => ({
+      barrier,
+      gesture,
+      missing: false
+    }))
+  ),
+  { barrier: "outer", gesture: "cancel", missing: false } as const,
+  ...(["maximize", "away-and-back"] as const).map((gesture) => ({ barrier: "outer" as const, gesture, missing: true }))
+])(
+  "a composer missing=$missing preserves $gesture during $barrier durable admission",
+  async ({ barrier, gesture, missing }) => {
+    const directory = mkdtempSync(join(tmpdir(), "smithers-chat-order-"))
+    const db = new Database(join(directory, "app.sqlite"))
+    const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
+    let hold = false, commandWrite = false
+    const adapter = await openSqliteRowStorage({
+      execute: async <Row>(sql: string, params: ReadonlyArray<unknown> = []) => {
+        if (
+          hold && /^\s*INSERT\b/i.test(sql) && params[0] === "app-command-intents" && typeof params[3] === "string"
+          && JSON.parse(params[3]).name === (barrier === "outer" ? "chat.send" : "model.edit")
+        ) commandWrite = true
+        if (hold && commandWrite && /^\s*COMMIT\b/i.test(sql)) {
+          hold = false
+          entered.resolve()
+          await release.promise
+        }
+        const statement = db.query(sql)
+        if (/^\s*(SELECT|PRAGMA)/i.test(sql)) return statement.all(...params as []) as ReadonlyArray<Row>
+        statement.run(...params as [])
+        return []
+      },
+      close: () => db.close()
+    }, { collections: PERSISTED_COLLECTION_SPECS, schemaVersion: APP_SCHEMA_VERSION })
+    const store = await createAppStore({
+      kind: "opfs",
+      ...adapter,
+      storageEventApi: { addEventListener: () => {}, removeEventListener: () => {} }
+    })
+    const controller = createAppController(store, unavailableAgent, { fetchImpl: host().fetchImpl })
+    let pending: Promise<unknown> | undefined
+    try {
+      await controller.commands.run(
+        "model.save",
+        "--name mine --protocol openai-chat --model original --credential CEREBRAS_API_KEY --url https://api.cerebras.ai"
+      )
+      await controller.commands.run("appearance.theme")
+      await controller.commands.run("card.maximize", "theme-picker")
+      await store.settled?.()
+      hold = true
+      const cancellation = new AbortController()
+      pending = gesture === "cancel"
+        ? controller.commands.submit({
+          name: "chat.send",
+          payload: { text: "/model.edit mine" },
+          actor: "user",
+          invocation: {
+            signal: cancellation.signal,
+            slot: { chain: "app", link: 0, ordinal: 0 },
+            authorize: Authorize.make({ authorize: () => Effect.void }),
+            refused: () => {}
+          }
+        })
+        : controller.commands.run("chat.send", missing ? undefined : "/model.edit mine")
+      await entered.promise
+      if (gesture === "minimize" || gesture === "away-and-back") controller.minimizeCard()
+      if (gesture === "models") {
+        expect(store.collections.cards.get(MODELS_CARD_ID)?.kind).toBe("models")
+        controller.maximizeCard(MODELS_CARD_ID)
+      } else if (gesture === "new-form") {
+        expect(controller.renderFlowForm({ name: "files.list", args: undefined, via: "user" })).toBeDefined()
+        controller.maximizeCard("form-files.list")
+      } else if (gesture !== "minimize") controller.maximizeCard("theme-picker")
+      const expected = gesture === "minimize"
+        ? null
+        : gesture === "models"
+        ? MODELS_CARD_ID
+        : gesture === "new-form"
+        ? "form-files.list"
+        : "theme-picker"
+      if (gesture === "cancel") cancellation.abort()
+      release.resolve()
+      if (gesture === "cancel") {
+        expect(await pending).toMatchObject({ status: "failed" })
+        pending = undefined
+        expect(store.session().maximizedCardId).toBe(expected)
+        expect(store.collections.cards.has("form-model.save")).toBe(false)
+        expect([...store.collections.httpTurns.values()]).toEqual([])
+        expect([...store.collections.messages.values()]).toEqual([])
+        return
+      }
+      await pending
+      const resultId = missing ? "form-chat.send" : "form-model.save"
+      await waitFor(() => store.collections.cards.get(resultId)?.kind === "flow-form")
+      await store.settled?.()
+      expect(store.session().maximizedCardId).toBe(expected)
+      expect([...store.collections.httpTurns.values()]).toEqual([])
+      const rows = db.query(`SELECT value FROM ${ROW_TABLE_NAME} WHERE collection_id = ?`).all("app-cards") as Array<
+        { value: string }
+      >
+      expect(rows.map((row) => JSON.parse(row.value)).find((row) => row.id === resultId)?.kind).toBe(
+        "flow-form"
+      )
+    } finally {
+      release.resolve()
+      try {
+        await pending
+      } finally {
+        try {
+          await controller.dispose()
+        } finally {
+          try {
+            await store.dispose?.()
+          } finally {
+            rmSync(directory, { recursive: true, force: true })
+          }
+        }
+      }
+    }
+  }
+)
+
+test("a composer card-producing slash reveals its form, while the agent cannot submit the composer", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, unavailableAgent, { fetchImpl: host().fetchImpl })
+  try {
+    await controller.commands.run(
+      "model.save",
+      "--name mine --protocol openai-chat --model original --credential CEREBRAS_API_KEY --url https://api.cerebras.ai"
+    )
+    await controller.commands.run("appearance.theme")
+    await controller.commands.run("card.maximize", "theme-picker")
+    expect((await controller.commands.run("chat.send", "/model.edit mine")).status).toBe("executed")
+    await waitFor(() => store.collections.cards.get("form-model.save")?.kind === "flow-form")
+    expect(store.session().maximizedCardId).toBeNull()
+    await controller.commands.run("card.maximize", "theme-picker")
+    const cards = [...store.collections.cards.values()]
+    const messages = [...store.collections.messages.values()]
+    expect(await controller.commands.runAsAgent("chat.send", "/appearance.dark-mode")).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("composer is the human")
+    })
+    expect(store.session().maximizedCardId).toBe("theme-picker")
+    expect(store.session().theme).not.toBe("dark")
+    expect([...store.collections.cards.values()]).toEqual(cards)
+    expect([...store.collections.messages.values()]).toEqual(messages)
+    expect([...store.collections.httpTurns.values()]).toEqual([])
+  } finally {
+    try {
+      await controller.dispose()
+    } finally {
+      await store.dispose?.()
+    }
+  }
+})
+
+test("ordinary composer text returns to the transcript and records the user's exact words", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, unavailableAgent, { fetchImpl: host().fetchImpl })
+  try {
+    await controller.commands.run("appearance.theme")
+    await controller.commands.run("card.maximize", "theme-picker")
+    expect((await controller.commands.run("chat.send", "A plain prompt, not a slash.")).status).toBe("executed")
+    await waitFor(() =>
+      [...store.collections.messages.values()].some((row) =>
+        row.role === "user" && row.text === "A plain prompt, not a slash."
+      )
+    )
+    expect(store.session().maximizedCardId).toBeNull()
+    expect(store.session().theme).not.toBe("dark")
+    expect([...store.collections.messages.values()].filter((row) => row.role === "user").map((row) => row.text))
+      .toEqual(["A plain prompt, not a slash."])
+  } finally {
+    try {
+      await controller.dispose()
+    } finally {
+      await store.dispose?.()
+    }
+  }
+})
+
+test("submitting the composer without text reveals its canonical form", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, unavailableAgent)
+  try {
+    await controller.commands.run("appearance.theme")
+    await controller.commands.run("card.maximize", "theme-picker")
+    expect((await controller.commands.run("chat.send")).status).toBe("form")
+    expect(store.collections.cards.get("form-chat.send")?.kind).toBe("flow-form")
+    expect(store.session().maximizedCardId).toBeNull()
+    expect([...store.collections.httpTurns.values()]).toEqual([])
+    expect([...store.collections.messages.values()]).toEqual([])
+  } finally {
+    try {
+      await controller.dispose()
+    } finally {
+      await store.dispose?.()
+    }
+  }
+})
