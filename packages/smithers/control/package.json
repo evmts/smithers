@@ -445,7 +445,7 @@
     "@smthrs/step-cache": "1.0.0-rc.1",
     "@smthrs/time-travel": "1.0.0-rc.1",
     "@types/node": "26.4.1",
-    "@vitest/coverage-v8": "5.0.0",
+    "@vitest/coverage-istanbul": "5.0.0",
     "dprint": "0.57.1",
     "effect": "4.0.0-rc.115",
     "esbuild": "0.28.2",

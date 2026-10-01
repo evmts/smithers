@@ -934,7 +934,6 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
           ) return snapshot(run.summary)
           // Accepted claims are owned too; releasePending clears both fences.
           if (run.fence !== undefined) {
-            /* v8 ignore next 3 -- one process holds this whole runtime, and it writes `fence` and `localFence` together; the peer this refuses exists only over a shared database, which is `SqlControlRuntime`'s fence */
             if (run.localFence === undefined || run.fence !== run.localFence) {
               return yield* new ClaimLost({ runId })
             }
@@ -978,7 +977,6 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
                 })
               }
               const stored = plans.get(prior.planId)
-              /* v8 ignore next -- this map never loses a plan a key names; `SqlControlRuntime` covers the storage that can */
               if (stored !== undefined) return { card: snapshot(stored.card), created: false }
             }
           }
@@ -1015,7 +1013,6 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
                 })
               }
               const stored = plans.get(prior.planId)
-              /* v8 ignore next -- this map never loses a plan a key names; `SqlControlRuntime` covers the storage that can */
               if (stored !== undefined) return { card: snapshot(stored.card), created: false }
             }
           }
@@ -1077,7 +1074,6 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
           // identity, so only a caller reaching into the map can produce the
           // disagreement; `SqlControlRuntime` stores the two apart and covers
           // the same refusal against a rewritten row.
-          /* v8 ignore next 6 -- unreachable while the map key is derived from the identity it is compared against */
           if (!sameApprovalIdentity(token.target, requested)) {
             return yield* new PersistenceError({
               operation: "validate an approval token",
@@ -1115,7 +1111,6 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
             tokens.set(key, stored)
             return approvalToken(stored)
           }
-          /* v8 ignore next 6 -- as in `lookupApproval`: the map key is derived from the identity, so a stored target can only disagree with it after a reach into the map */
           if (!sameApprovalIdentity(existing.target, requested)) {
             return yield* new PersistenceError({
               operation: "validate an approval token",
@@ -1176,7 +1171,6 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
             mutable.decision = answer
             if (requested.target._tag === "Plan") {
               const plan = plans.get(requested.target.planId)
-              /* v8 ignore next -- a plan token is only ever registered by `plan`, which stores the plan in the same call */
               if (plan !== undefined) plan.decision = decision
             }
           }
