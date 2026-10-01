@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { BANDS, DETERMINISTIC, fit, type Fit, LANGUAGES } from "../register-repository/calibration/fit.ts"
+import { BANDS, DETERMINISTIC, type Fit, fit, LANGUAGES } from "../register-repository/calibration/fit.ts"
 import { type ManifestEntry, type RealCase, recordRepository } from "../register-repository/calibration/record.ts"
 
 const read = <T>(name: string): T =>
@@ -57,7 +57,9 @@ test("real corpus: one recorded case per manifest entry, never synthetic", () =>
   assert.equal(corpus.cases.length, manifest.entries.length)
   manifest.entries.forEach((entry, index) => {
     const recorded = corpus.cases[index]!
-    for (const key of ["id", "repo", "sha", "language", "band", "label"] as const) assert.equal(recorded[key], entry[key])
+    for (const key of ["id", "repo", "sha", "language", "band", "label"] as const) {
+      assert.equal(recorded[key], entry[key])
+    }
     assert.ok(recorded.coverage >= 0.6 && recorded.lines > 0, entry.id)
     for (const id of DETERMINISTIC) {
       const value = recorded.values[id]
@@ -68,7 +70,16 @@ test("real corpus: one recorded case per manifest entry, never synthetic", () =>
 })
 
 test("real fit is what the fitter computes from the real corpus", () => {
-  close(fit(corpus.cases, "calibrated-real-v1"), artifact)
+  const fitted = fit(corpus.cases, "calibrated-real-v1")
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(fitted)),
+    fitted,
+    "real fit must not silently serialize nonfinite measurements as null"
+  )
+  for (const id of DETERMINISTIC) assert.equal(Number.isFinite(fitted.weights[id]), true, id)
+  assert.equal(Number.isFinite(fitted.scale), true)
+  assert.equal(Number.isFinite(fitted.bias), true)
+  close(fitted, artifact)
   assert.equal(artifact.method, "calibrated-real-v1")
 })
 
@@ -99,7 +110,9 @@ test("recorded corpus reproduces from the manifest for a five-repository sample"
   try {
     const picked = sample()
     assert.equal(picked.length, 5)
-    const results = await Promise.all(picked.map((entry) => recordRepository(manifest.entries.find((m) => m.id === entry.id)!, work)))
+    const results = await Promise.all(
+      picked.map((entry) => recordRepository(manifest.entries.find((m) => m.id === entry.id)!, work))
+    )
     results.forEach((result, index) => {
       assert.ok(result.ok, picked[index]!.id)
       if (result.ok) assert.deepEqual(result.recorded, picked[index])
