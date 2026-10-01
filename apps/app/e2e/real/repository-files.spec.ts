@@ -132,9 +132,9 @@ authenticatedTest("branches.list, commits.list and commits.read follow a pushed 
     const branches = card(page, `branches-${repo.fullName}`)
     await expect(branches).toBeVisible({ timeout: 30_000 })
     await expect.poll(async () => (await branches.locator(".branches-row-open .world-card-title").allTextContents()).sort()).toEqual(["fixture", "main"])
-    await expect(branches.getByRole("button", { name: /^fixture/ })).toContainText(commit.slice(0, 8))
+    await expect(branches.getByRole("button", { name: "Commits on fixture", exact: true })).toContainText(commit.slice(0, 8))
 
-    await pressKey(branches.getByRole("button", { name: /^fixture/ }))
+    await pressKey(branches.getByRole("button", { name: "Commits on fixture", exact: true }))
     const commits = card(page, `commits-${repo.fullName}-fixture`)
     await expect(commits).toBeVisible({ timeout: 30_000 })
     const commitRow = commits.locator(`[data-commit-id="${commit}"]`)
