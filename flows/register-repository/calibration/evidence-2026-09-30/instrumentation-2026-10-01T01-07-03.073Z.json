@@ -1,0 +1,8 @@
+{
+  "campaign": "2026-10-01T01:07:03.073Z",
+  "preload": "/private/tmp/smithers-surface-receipts-20260930/inventory-3071/calibration-resumable/exec-diagnostics.mjs",
+  "preloadSha": "7b0197d2436f7cbe9b30724928d781ec9b65f576620185d97ccb9482f699582d",
+  "NODE_OPTIONS": "--import=/private/tmp/smithers-surface-receipts-20260930/inventory-3071/calibration-resumable/exec-diagnostics.mjs",
+  "scheduling": "fewest previous attempts first",
+  "sourceFingerprint": "feb2e95bf191ac0f4044ac35b82664ab68c7edad74ed744345445839a1db1277"
+}
