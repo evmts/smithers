@@ -2490,7 +2490,7 @@ describe("approvals", () => {
     await started.tui.until((screen) => screen.includes("n deny"))
     await started.tui.press("n")
     await started.tui.until((screen) =>
-      /✗ consequential · \d+m?s · consequential was not approved/.test(screen) && !screen.includes("n deny")
+      /✗ consequential · \d+m?s · failed: consequential was not approved\./.test(screen) && !screen.includes("n deny")
     )
     const sessions = sessionFolder(started.sessions)
     const records = Session.load(join(sessions, readdirSync(sessions).find((name) => name.endsWith(".jsonl"))!))
@@ -2953,7 +2953,7 @@ describe("extensions", () => {
     await tui.until((screen) => screen.includes("◌ review"), 5_000, "row action requested the flow")
     expect(tui.screen()).toContain("Release plan")
     await tui.click("Chat")
-    await tui.until((screen) => screen.includes("review · running"), 5_000, "running progress remains visible in Chat")
+    await tui.until((screen) => /◌ review · \d+m?s/.test(screen), 5_000, "running progress remains visible in Chat")
     const records = readdirSync(sessionFolder(sessions)).filter((name) => name.endsWith(".jsonl")).flatMap((name) =>
       Session.load(join(sessionFolder(sessions), name))
     )
