@@ -1,18 +1,49 @@
+import type { APIRequestContext, Locator, Page } from "@playwright/test"
+import { randomUUID } from "node:crypto"
+import { withOwnedRepository } from "./portable/owned-repository"
+import { finishFirstVisit } from "./support/first-visit"
 import { scenario } from "./coverage/types"
 import { authenticatedTest } from "./auth-permissions/profile"
-import { awaitBoot, closeComposer, command, expect, openComposer, reloadApp, test } from "./support/test"
+import { awaitBoot, closeComposer, command, expect, openComposer, realApi, reloadApp, test } from "./support/test"
 import {
   decodedFramePath,
   enterCanonicalRepositoryApp,
   enterUrlApp,
   expectSameElement,
   frameLocation,
-  openPracticeIssues,
   openVehicleForm,
   FORM_VEHICLE_CARD_ID,
   FORM_VEHICLE_FIELD_TESTID
 } from "./navigation-frames/cards"
 import { downloadRecovery, takeDatabaseControl } from "./navigation-frames/storage"
+
+const withOwnedIssueHistory = async (page: Page, request: APIRequestContext, use: (card: Locator, primary: number, secondary: number) => Promise<void>): Promise<void> => {
+  await withOwnedRepository(page, request, async repo => {
+    const numbers: number[] = []
+    for (const label of ["primary", "secondary"]) {
+      const title = `Navigation ${label} ${randomUUID()}`
+      const created = await realApi(page, request, "POST", `${repo.path}/issues`, { title, kind: "issue" })
+      expect(created.status()).toBe(201)
+      const issue = await created.json() as { number: number; title: string; kind: string }
+      expect(issue).toMatchObject({ title, kind: "issue" })
+      expect(issue.number).toBeGreaterThan(0)
+      const read = await realApi(page, request, "GET", `${repo.path}/issues/${issue.number}`)
+      expect(read.status()).toBe(200)
+      expect(await read.json()).toMatchObject({ number: issue.number, title, kind: "issue", state: "open" })
+      numbers.push(issue.number)
+    }
+    const listed = await realApi(page, request, "GET", `${repo.path}/issues?state=open`)
+    expect(listed.status()).toBe(200)
+    expect((await listed.json() as Array<{ number: number }>).map(issue => issue.number).sort((a, b) => a - b)).toEqual([...numbers].sort((a, b) => a - b))
+    await finishFirstVisit(page)
+    await enterUrlApp(page)
+    await command(page, `/issues.list open ${repo.fullName}`)
+    await closeComposer(page)
+    const card = page.getByTestId(`card-issues-${repo.fullName}`)
+    await expect(card).toHaveAttribute("data-kind", "issue-list")
+    await use(card, numbers[0]!, numbers[1]!)
+  })
+}
 
 const matrixTest = process.env.SMITHERS_REAL_E2E_MODE === undefined ? test : authenticatedTest
 
@@ -261,45 +292,44 @@ test("open in tab shares unfinished form state and persists both the session and
   await expect(page.getByTestId(`tab-body-${FORM_VEHICLE_CARD_ID}`)).toHaveCount(1)
 })
 
-test("the shipped practice issue card keeps local history, reloads it, and discards forward state after new navigation", scenario("navigation.card.local-history", {
-  capabilities: [],
+authenticatedTest("the publicly seeded owned issue card keeps local history, reloads it, and discards forward state after new navigation", scenario("navigation.card.local-history", {
+  capabilities: ["identity"],
   coverage: [
     "action:issues.view",
     "action:card.history.back",
     "action:card.history.forward",
     "host:local",
-    "host:production",
     "path:success",
     "path:persistence",
     "door:button",
     "dimension:card-local-history",
-    "dimension:shipped-practice-capture",
+    "dimension:owned-issue-api-readback",
     "evidence:sqlite-reload-and-card-history"
   ],
-  description: "The shipped practice capture exercises only local issue-card history: one durable card retains its recorded stack through back, forward, divergent navigation, and reload."
-}), async ({ page }) => {
-  const card = await openPracticeIssues(page)
+  description: "Publicly seeded local-owner issues exercise only local issue-card history: one durable card retains its recorded stack through back, forward, divergent navigation, and reload."
+}), async ({ page, request }) => {
+  await withOwnedIssueHistory(page, request, async (card, primary, secondary) => {
+    await card.locator(`[data-issue="${primary}"] button[data-flow="issues.view"]`).click()
+    await expect(card).toHaveAttribute("data-kind", "issue")
+    await expect(card.locator(`article[data-issue="${primary}"]`)).toBeVisible()
+    await expect(card.getByRole("button", { name: "Back in frame", exact: true })).toBeEnabled()
+    await expect(card.getByRole("button", { name: "Forward in frame", exact: true })).toBeDisabled()
 
-  await card.locator('[data-issue="3"] button[data-flow="issues.view"]').click()
-  await expect(card).toHaveAttribute("data-kind", "issue")
-  await expect(card.locator('article[data-issue="3"]')).toBeVisible()
-  await expect(card.getByRole("button", { name: "Back in frame", exact: true })).toBeEnabled()
-  await expect(card.getByRole("button", { name: "Forward in frame", exact: true })).toBeDisabled()
+    await card.getByRole("button", { name: "Back in frame", exact: true }).click()
+    await expect(card).toHaveAttribute("data-kind", "issue-list")
+    await reloadApp(page)
+    await expect(card).toHaveAttribute("data-kind", "issue-list")
+    await expect(card.getByRole("button", { name: "Forward in frame", exact: true })).toBeEnabled()
 
-  await card.getByRole("button", { name: "Back in frame", exact: true }).click()
-  await expect(card).toHaveAttribute("data-kind", "issue-list")
-  await reloadApp(page)
-  await expect(card).toHaveAttribute("data-kind", "issue-list")
-  await expect(card.getByRole("button", { name: "Forward in frame", exact: true })).toBeEnabled()
-
-  await card.getByRole("button", { name: "Forward in frame", exact: true }).click()
-  await expect(card.locator('article[data-issue="3"]')).toBeVisible()
-  await card.getByRole("button", { name: "Back in frame", exact: true }).click()
-  await card.locator('[data-issue="2"] button[data-flow="issues.view"]').click()
-  await expect(card.locator('article[data-issue="2"]')).toBeVisible()
-  await expect(card.getByRole("button", { name: "Forward in frame", exact: true })).toBeDisabled()
-  await reloadApp(page)
-  await expect(card.locator('article[data-issue="2"]')).toBeVisible()
+    await card.getByRole("button", { name: "Forward in frame", exact: true }).click()
+    await expect(card.locator(`article[data-issue="${primary}"]`)).toBeVisible()
+    await card.getByRole("button", { name: "Back in frame", exact: true }).click()
+    await card.locator(`[data-issue="${secondary}"] button[data-flow="issues.view"]`).click()
+    await expect(card.locator(`article[data-issue="${secondary}"]`)).toBeVisible()
+    await expect(card.getByRole("button", { name: "Forward in frame", exact: true })).toBeDisabled()
+    await reloadApp(page)
+    await expect(card.locator(`article[data-issue="${secondary}"]`)).toBeVisible()
+  })
 })
 
 test("forking a historical form frame restores its recorded draft and isolates later source and fork edits", scenario("navigation.frame.form-draft-fork-isolation", {
@@ -372,8 +402,8 @@ test("forking a historical form frame restores its recorded draft and isolates l
   await expect(input).toHaveValue(forkOnly)
 })
 
-test("the practice issue payload also isolates historical fork state and preserves its immediate-reload race contract", scenario("navigation.frame.practice-fork-isolation", {
-  capabilities: [],
+authenticatedTest("the owned issue payload also isolates historical fork state and preserves its immediate-reload race contract", scenario("navigation.frame.practice-fork-isolation", {
+  capabilities: ["identity"],
   coverage: [
     "action:issues.view",
     "action:card.maximize",
@@ -384,47 +414,50 @@ test("the practice issue payload also isolates historical fork state and preserv
     "path:persistence",
     "door:button",
     "door:user-only",
-    "dimension:historical-practice-frame",
+    "dimension:historical-owned-issue-frame",
     "dimension:branch-isolation",
     "dimension:immediate-reload",
     "evidence:bidirectional-branch-reload"
   ],
-  description: "As adjacent payload-shape coverage, the shipped practice issue card forks its historical list while source issue 3 and fork issue 2 remain isolated through an immediate reload."
-}), async ({ page }) => {
-  const card = await openPracticeIssues(page)
+  description: "As adjacent payload-shape coverage, the publicly seeded owned issue card forks its historical list while source and fork issue records remain isolated through an immediate reload."
+}), async ({ page, request }) => {
+  await withOwnedIssueHistory(page, request, async (card, primary, secondary) => {
+    const cardId = (await card.getAttribute("data-testid"))!.replace(/^card-/, "")
+    await card.getByRole("button", { name: "Maximize card", exact: true }).click()
+    await expect(card).toHaveAttribute("data-maximized", "true")
+    await expect.poll(() => decodedFramePath(page)).toBe(`/w/workspace-main/b/branch-main/f/frame-card:branch-main:${cardId}`)
+    const sourceFrameUrl = page.url()
+    await card.getByRole("button", { name: "Restore", exact: true }).click()
+    await card.locator(`[data-issue="${primary}"] button[data-flow="issues.view"]`).click()
+    await expect(card.locator(`article[data-issue="${primary}"]`)).toBeVisible()
 
-  await card.getByRole("button", { name: "Maximize card", exact: true }).click()
-  const sourceFrameUrl = page.url()
-  await card.getByRole("button", { name: "Restore", exact: true }).click()
-  await card.locator('[data-issue="3"] button[data-flow="issues.view"]').click()
-  await expect(card.locator('article[data-issue="3"]')).toBeVisible()
+    await page.goBack()
+    await expect(page).toHaveURL(sourceFrameUrl)
+    await expect(card).toHaveAttribute("data-maximized", "true")
+    await expect(card.locator(`article[data-issue="${primary}"]`)).toBeVisible()
+    await card.getByRole("button", { name: "Fork frame", exact: true }).click()
+    await expect.poll(() => decodedFramePath(page)).toMatch(/^\/w\/workspace-main\/b\/branch-(?!main)[^/]+\/f\/frame-card:branch-/)
+    const forkUrl = page.url()
+    expect(forkUrl).not.toBe(sourceFrameUrl)
+    await expect(card).toHaveAttribute("data-kind", "issue-list")
 
-  await page.goBack()
-  await expect(page).toHaveURL(sourceFrameUrl)
-  await expect(card).toHaveAttribute("data-maximized", "true")
-  await expect(card.locator('article[data-issue="3"]')).toBeVisible()
-  await card.getByRole("button", { name: "Fork frame", exact: true }).click()
-  const forkUrl = page.url()
-  expect(forkUrl).not.toBe(sourceFrameUrl)
-  expect(decodedFramePath(page)).toMatch(/^\/w\/workspace-main\/b\/branch-(?!main)[^/]+\/f\/frame-card:branch-/)
-  await expect(card).toHaveAttribute("data-kind", "issue-list")
+    await card.locator(`[data-issue="${secondary}"] button[data-flow="issues.view"]`).click()
+    await expect(card.locator(`article[data-issue="${secondary}"]`)).toBeVisible()
+    await reloadApp(page)
+    await expect(page).toHaveURL(forkUrl)
+    await expect(card.locator(`article[data-issue="${secondary}"]`)).toBeVisible()
 
-  await card.locator('[data-issue="2"] button[data-flow="issues.view"]').click()
-  await expect(card.locator('article[data-issue="2"]')).toBeVisible()
-  await reloadApp(page)
-  await expect(page).toHaveURL(forkUrl)
-  await expect(card.locator('article[data-issue="2"]')).toBeVisible()
-
-  await page.goBack()
-  await expect(page).toHaveURL(sourceFrameUrl)
-  await expect(card.locator('article[data-issue="3"]')).toBeVisible()
-  await page.goForward()
-  await expect(page).toHaveURL(forkUrl)
-  await expect(card.locator('article[data-issue="2"]')).toBeVisible()
+    await page.goBack()
+    await expect(page).toHaveURL(sourceFrameUrl)
+    await expect(card.locator(`article[data-issue="${primary}"]`)).toBeVisible()
+    await page.goForward()
+    await expect(page).toHaveURL(forkUrl)
+    await expect(card.locator(`article[data-issue="${secondary}"]`)).toBeVisible()
+  })
 })
 
-test("archive creates a durable new conversation whose recovery link restores the exact prior practice issue state", scenario("navigation.chat.archive-restore", {
-  capabilities: [],
+authenticatedTest("archive creates a durable new conversation whose recovery link restores the exact prior owned issue state", scenario("navigation.chat.archive-restore", {
+  capabilities: ["identity"],
   coverage: [
     "action:issues.view",
     "action:chat.clear",
@@ -437,35 +470,36 @@ test("archive creates a durable new conversation whose recovery link restores th
     "dimension:conversation-isolation",
     "evidence:archive-link-and-sqlite-reload"
   ],
-  description: "The local archive transaction starts a separate branch and its persisted link restores the exact prior shipped practice issue stack after reload."
-}), async ({ page }) => {
-  const card = await openPracticeIssues(page)
-  await card.locator('[data-issue="3"] button[data-flow="issues.view"]').click()
-  await expect(card.locator('article[data-issue="3"]')).toBeVisible()
-  const archivedUrl = page.url()
+  description: "The local archive transaction starts a separate branch and its persisted link restores the exact prior publicly seeded owned issue stack after reload."
+}), async ({ page, request }) => {
+  await withOwnedIssueHistory(page, request, async (card, primary) => {
+    await card.locator(`[data-issue="${primary}"] button[data-flow="issues.view"]`).click()
+    await expect(card.locator(`article[data-issue="${primary}"]`)).toBeVisible()
+    const archivedUrl = page.url()
 
-  await command(page, "/chat.clear")
-  const recoveryLink = page.getByRole("link", { name: "Open the archived conversation" })
-  await expect(recoveryLink).toBeVisible()
-  await expect(card).toHaveCount(0)
-  await expect.poll(() => page.url()).not.toBe(archivedUrl)
-  const freshUrl = page.url()
-  await closeComposer(page)
+    await command(page, "/chat.clear")
+    const recoveryLink = page.getByRole("link", { name: "Open the archived conversation" })
+    await expect(recoveryLink).toBeVisible()
+    await expect(card).toHaveCount(0)
+    await expect.poll(() => page.url()).not.toBe(archivedUrl)
+    const freshUrl = page.url()
+    await closeComposer(page)
 
-  await reloadApp(page)
-  await expect(page).toHaveURL(freshUrl)
-  await expect(recoveryLink).toBeVisible()
-  await recoveryLink.click()
-  await expect(page).toHaveURL(archivedUrl)
-  await expect(card).toBeVisible()
-  await expect(card.locator('article[data-issue="3"]')).toBeVisible()
-  await reloadApp(page)
-  await expect(card.locator('article[data-issue="3"]')).toBeVisible()
+    await reloadApp(page)
+    await expect(page).toHaveURL(freshUrl)
+    await expect(recoveryLink).toBeVisible()
+    await recoveryLink.click()
+    await expect(page).toHaveURL(archivedUrl)
+    await expect(card).toBeVisible()
+    await expect(card.locator(`article[data-issue="${primary}"]`)).toBeVisible()
+    await reloadApp(page)
+    await expect(card.locator(`article[data-issue="${primary}"]`)).toBeVisible()
 
-  await page.goBack()
-  await expect(page).toHaveURL(freshUrl)
-  await expect(recoveryLink).toBeVisible()
-  await expect(card).toHaveCount(0)
+    await page.goBack()
+    await expect(page).toHaveURL(freshUrl)
+    await expect(recoveryLink).toBeVisible()
+    await expect(card).toHaveCount(0)
+  })
 })
 
 test("an older physical OPFS schema stamp upgrades while preserving the current durable form row", scenario("navigation.storage.opfs-schema-stamp-upgrade", {
