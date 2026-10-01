@@ -6,7 +6,9 @@ import type * as Complete from "../src/complete.ts"
 import type * as Extension from "../src/extension.ts"
 import type { FlowForm } from "../src/key-dispatch.ts"
 import type * as Models from "../src/models.ts"
+import * as Tabs from "../src/tabs.ts"
 import * as Transcript from "../src/transcript.ts"
+import * as View from "../src/view.tsx"
 
 let setup: Awaited<ReturnType<typeof testRender>> | undefined
 afterEach(async () => {
@@ -430,4 +432,132 @@ test("status line renders the assessment and dispatches only the item actually c
   await setup!.mockMouse.click(lines[y]!.indexOf("Review") + 1, y)
   expect(selected).toEqual([item])
   expect(selected[0]).toBe(item)
+})
+
+test.each([[110, 30], [40, 12], [30, 8]])(
+  "failure toast keeps its retry and diagnostic door readable at %i by %i",
+  async (width, height) => {
+    const message = "That command could not run. /todo retries.\nDetails: /conversation"
+    setup = await testRender(
+      <box style={{ height: "100%", flexDirection: "column" }}>
+        <box style={{ flexGrow: 1, minHeight: 0 }}>
+          <text>Chat</text>
+        </box>
+        <View.ToastStack
+          rows={[{ id: "failure", tone: "warning", text: message }]}
+          height={Math.floor(height / 2)}
+          compact={height < 16}
+        />
+        <textarea focused initialValue="draft" style={{ height: 3, flexShrink: 0 }} />
+        <text>enter Send</text>
+      </box>,
+      { width, height }
+    )
+    await setup.renderOnce()
+    const frame = setup.captureCharFrame()
+    const visible = frame.split("\n").map((line) => line.replaceAll("┃", " ").trim()).join(" ").replace(/\s+/g, " ")
+    expect(visible.replace(/\s/g, "")).toContain(message.replace(/\s/g, ""))
+    expect(frame).toContain("/todo")
+    expect(frame).toContain("retries.")
+    expect(frame).toContain("/conversation")
+    expect(frame).toContain("draft")
+    expect(frame).toContain("enter Send")
+    for (const line of frame.split("\n")) expect([...line.trimEnd()].length).toBeLessThanOrEqual(width)
+    await act(async () => {
+      setup!.mockInput.pressKeys(["END"])
+      await setup!.mockInput.typeText(" still usable")
+    })
+    await setup.renderOnce()
+    expect(setup.captureCharFrame()).toContain("draft still usable")
+  }
+)
+
+test.each([[110, 30], [40, 12], [30, 8]])(
+  "quarter-height notice budget preserves the diagnostic and composer at %i by %i",
+  async (width, height) => {
+    setup = await testRender(
+      <box style={{ height: "100%", flexDirection: "column" }}>
+        <box style={{ flexGrow: 1, minHeight: 0 }}>
+          <text>Chat</text>
+        </box>
+        <View.ToastStack
+          rows={[{
+            id: "failure",
+            tone: "warning",
+            text: "That command could not run. /todo retries.\nDetails: /conversation"
+          }]}
+          height={Math.max(1, Math.floor(height / 4))}
+          compact={height < 20}
+        />
+        <textarea focused initialValue="draft" style={{ height: 3, flexShrink: 0 }} />
+        <text>enter Send</text>
+      </box>,
+      { width, height }
+    )
+    await setup.renderOnce()
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("Details: /conversation")
+    expect(frame).toContain("draft")
+    expect(frame).toContain("enter Send")
+    await act(async () => {
+      setup!.mockInput.pressKeys(["END"])
+      await setup!.mockInput.typeText(" usable")
+    })
+    await setup.renderOnce()
+    expect(setup.captureCharFrame()).toContain("draft usable")
+  }
+)
+
+test("wrapped notice beside a flow form preserves worker actions and the focused field", async () => {
+  const tab = {
+    id: "worker",
+    depth: 0,
+    title: "Review",
+    prompt: "Review",
+    seat: "test",
+    file: "session",
+    status: "running" as const,
+    startedAt: 0
+  }
+  const actions: string[] = []
+  setup = await testRender(
+    <box style={{ height: "100%", flexDirection: "column" }}>
+      <box style={{ flexGrow: 1, minHeight: 0 }}>
+        <text>Chat</text>
+      </box>
+      <View.ToastStack
+        rows={[
+          {
+            id: "worker",
+            tone: "info",
+            text: "Review running",
+            worker: {
+              tab,
+              actions: Tabs.actions(tab).filter((action) => action.id === "stop" || action.id === "steer")
+            }
+          },
+          { id: "failure", tone: "warning", text: "That command could not run. /todo retries.\nDetails: /conversation" }
+        ]}
+        height={6}
+        compact={false}
+        onAction={(_tab, action) => actions.push(action)}
+      />
+      <AppView.FlowFormView form={form} height={12} compact={false} onField={() => {}} />
+      <text>enter Run</text>
+    </box>,
+    { width: 110, height: 30 }
+  )
+  await setup.renderOnce()
+  const frame = setup.captureCharFrame()
+  expect(frame).toContain("Details: /conversation")
+  expect(frame).toContain("Copies")
+  expect(frame).toContain("smithers")
+  expect(frame).toContain("enter Run")
+  for (const label of ["Stop", "Steer"]) {
+    const lines = setup.captureCharFrame().split("\n")
+    const y = lines.findIndex((line) => line.includes(label))
+    expect(y).toBeGreaterThanOrEqual(0)
+    await setup.mockMouse.click(lines[y]!.indexOf(label) + 1, y)
+  }
+  expect(actions).toEqual(["stop", "steer"])
 })
