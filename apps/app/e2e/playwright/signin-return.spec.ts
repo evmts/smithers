@@ -2,6 +2,7 @@ import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { expect, test } from "./browserTest"
 import { SCOPED_TEST_USER, identityRoute, signedOutVisitor } from "./identity"
+import { signupProfile } from "./signup-profile"
 import { APPLICATION_SIGN_IN_PATH } from "@smthrs/rpc/ApplicationAuth"
 
 /*
@@ -14,6 +15,10 @@ import { APPLICATION_SIGN_IN_PATH } from "@smthrs/rpc/ApplicationAuth"
  */
 test("the chrome sign-in door returns to the repository page signed in", async ({ page, baseURL }) => {
   await signedOutVisitor(page)
+  const completedProfile = {
+    name: "Returning visitor", account: SCOPED_TEST_USER.login, stage: "done", question: 7, answers: {}
+  } as const
+  const profile = await signupProfile(page, completedProfile)
   let signedIn = false
   const starts: string[] = []
   await page.route("**/api/user", route => identityRoute(signedIn ? SCOPED_TEST_USER.login : null)(route))
@@ -53,6 +58,9 @@ test("the chrome sign-in door returns to the repository page signed in", async (
     expect(destination.pathname).toBe("/smithersai/smithers/")
     expect(starts).toEqual(["/smithersai/smithers/"])
 
+    await expect.poll(() => profile.reads).toContainEqual(completedProfile)
+    await expect(page.getByTestId("signup")).toHaveCount(0)
+    expect(profile.writes).toEqual([])
     await page.getByRole("button", { name: "Chat", exact: true }).click()
     await page.getByTestId("composer-input").fill("/account.show")
     await page.getByTestId("composer-send").click()
