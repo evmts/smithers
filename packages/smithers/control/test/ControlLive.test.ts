@@ -19,6 +19,35 @@ import { live, memoryRuntime } from "./TestStack.ts"
 contract("memory", (executor) => TestControl.layer(undefined, executor) as unknown as Layer.Layer<Stack>)
 
 describe("ControlLive", () => {
+  it("accepts a Plan approval without a run and supplies the run only after launch", async () => {
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const control = yield* Control
+        const card = yield* control.plan({ flowId: "system/test", input: {} })
+        expect(yield* control.approve(card.approval)).toEqual({
+          _tag: "Accepted",
+          receiptId: card.approval.idempotencyKey
+        })
+        const launched = yield* control.run({
+          _tag: "Plan",
+          planId: card.planId,
+          digest: card.digest,
+          envelope: card.envelope,
+          idempotencyKey: "receipt:launch-after-approval"
+        })
+        expect(launched._tag).toBe("Accepted")
+        if (launched._tag !== "Accepted" || launched.runId === undefined) {
+          return yield* Effect.die("expected launch acceptance with a run")
+        }
+        expect(launched.runId).toBeDefined()
+        const runtime = yield* ControlRuntime
+        const run = yield* runtime.getRun(launched.runId)
+        expect(run.planId).toBe(card.planId)
+        expect(run.flowId).toBe("system/test")
+      }).pipe(Effect.provide(TestControl.layer()), Effect.scoped, Effect.orDie)
+    )
+  })
+
   it.each([false, true])("resumes after every expanded member without losing deltas (follow=%s)", async (follow) => {
     await Effect.runPromise(
       Effect.gen(function*() {
