@@ -325,7 +325,9 @@ describe("environment refusal and recovery", () => {
     expect(valid.args).toContain("127.0.0.1:1:127.0.0.1:65535")
     expect(valid.args.filter((arg) => arg.startsWith("ClearAllForwardings="))).toEqual(["ClearAllForwardings=no"])
     await expect(Environments.run(profile, [join(root, "missing-executable")], source)).rejects.toMatchObject({
-      code: "ENOENT"
+      code: "environment_command_not_found",
+      fault: "user",
+      message: `Command not found: ${join(root, "missing-executable")}. Check that it is installed and on PATH`
     })
     expect(Environments.registryPath({ HOME: root })).toBe(join(root, ".config/smithers/environments.json"))
     const { homedir } = await import("node:os")
