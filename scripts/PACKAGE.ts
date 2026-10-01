@@ -46,6 +46,37 @@ const privateAdapterManifests = [
   "packages/smithers/create-app"
 ].map((directory) => Smithers.file(`//${directory}/package.json`))
 
+/** The Go identity host must consume the current authoritative Control schemas.
+ * @since 1.0.0
+ * @category test
+ */
+const appOperationContractsUnit = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//scripts/generate-app-operation-contracts.test.mjs")]),
+  srcs: [
+    ...sources,
+    Smithers.file("//packages/smithers/control/src/Account.ts"),
+    Smithers.file("//packages/smithers/control/src/Operation.ts"),
+    Smithers.file("//packages/backend/appoperation/account.generated.json"),
+    Smithers.file("//package.json"),
+    Smithers.file("//pnpm-lock.yaml")
+  ],
+  deps: []
+})
+
+const appOperationContracts = Smithers.NodeBinary({
+  entry: Smithers.file("//scripts/generate-app-operation-contracts.ts"),
+  args: ["--check"],
+  srcs: [
+    ...sources,
+    Smithers.file("//packages/smithers/control/src/Account.ts"),
+    Smithers.file("//packages/smithers/control/src/Operation.ts"),
+    Smithers.file("//packages/backend/appoperation/account.generated.json"),
+    Smithers.file("//package.json"),
+    Smithers.file("//pnpm-lock.yaml")
+  ],
+  deps: []
+})
+
 /**
  * Checks the release manifest: which packages are published, in what order, and
  * with which internal ranges retargeted.
@@ -1034,6 +1065,8 @@ export const Package = Smithers.Package({
     npmDedupe,
     npmDedupeUnit,
     packManifest,
+    appOperationContracts,
+    appOperationContractsUnit,
     privateEffectAdapters,
     releaseCut,
     releasePack,

@@ -112,6 +112,45 @@ const fixture = (initial = authority(), heldAdmission = false) => {
 }
 
 describe("shared Account authority", () => {
+  it("requires real completion evidence and keeps private facts outside the identity wire contract", () => {
+    const decode = Schema.decodeUnknownSync(Account.RequestOutcome, { onExcessProperty: "error" })
+    expect(decode({ operationId: "operation-1", requestId: "request-1", actor: "api", state: "accepted" })).toEqual({
+      operationId: "operation-1",
+      requestId: "request-1",
+      actor: "api",
+      state: "accepted"
+    })
+    expect(
+      decode({
+        operationId: "operation-1",
+        requestId: "request-1",
+        actor: "user",
+        state: "completed",
+        result: { login: "owner" }
+      })
+    ).toMatchObject({ state: "completed", result: { login: "owner" } })
+    for (
+      const invalid of [
+        { operationId: "operation-1", requestId: "request-1", actor: "api", state: "completed" },
+        {
+          operationId: "operation-1",
+          requestId: "request-1",
+          actor: "api",
+          state: "accepted",
+          result: { login: "owner" }
+        },
+        {
+          operationId: "operation-1",
+          requestId: "request-1",
+          actor: "api",
+          state: "completed",
+          result: { login: "owner", token: "secret" }
+        },
+        { operationId: "operation-1", requestId: "request-1", actor: "agent", state: "failed" }
+      ]
+    ) expect(() => decode(invalid)).toThrow()
+  })
+
   it.each([
     { unknown: 1 },
     { unknown: { nested: true } },

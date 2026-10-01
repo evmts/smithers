@@ -31,6 +31,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: Request identity conflicts with a different invocation
         '422':
           $ref: '#/components/responses/ValidationError'
         '429':
@@ -49,6 +51,18 @@ paths:
         `recordedAt`), or `null`. Private repositories never have one.
         The backend records a report itself when it relays the journal of a
         completed `register-repository` run of a public repository.
+        Account identity operations use this same authenticated endpoint without
+        a repository or box: `Operation.Discover`, `Operation.Dispatch`,
+        `Operation.Read`, `Operation.History`, and `Operation.Cancel` require
+        `read:user`; previous workflow procedures retain `write:repository`.
+        Discovery returns the shared operation metadata and generated schemas.
+        Dispatch payload is `{"name":"account.show","requestId":"request-1","input":{}}`.
+        It returns a durable requested receipt before the worker finishes.
+        Read and cancel select `{"name":"account.show","requestId":"request-1"}`;
+        history and discovery take `{}`. Read/history report real delivery state;
+        only completed reads carry `{"login":"username"}`. Unknown input fields
+        are refused. Requests remain bound to the admitted credential source.
+        This identity projection excludes the GUI/TUI account card's wider facts.
       operationId: post_api_workflow_rpc
       tags:
         - Workflow

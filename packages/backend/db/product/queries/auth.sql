@@ -408,3 +408,15 @@ DELETE FROM access_tokens
 WHERE user_id = sqlc.arg(user_id)
   AND name = sqlc.arg(name)
   AND system_issued;
+
+-- name: LegacyAuthSessionLiveForUser :one
+-- A durable request must retain its verified owner as well as its cookie
+-- fingerprint. The raw legacy cookie never enters the request receipt.
+SELECT EXISTS (
+    SELECT 1
+    FROM auth_sessions
+    WHERE length(session_key) = 36
+      AND encode(sha256(convert_to(session_key, 'UTF8')), 'hex') = sqlc.arg(session_digest)::text
+      AND user_id = sqlc.arg(user_id)
+      AND expires_at > NOW()
+) AS live;

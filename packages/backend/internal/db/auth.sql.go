@@ -853,6 +853,31 @@ func (q *Queries) LegacyAuthSessionLive(ctx context.Context, sessionDigest strin
 	return live, err
 }
 
+const legacyAuthSessionLiveForUser = `-- name: LegacyAuthSessionLiveForUser :one
+SELECT EXISTS (
+    SELECT 1
+    FROM auth_sessions
+    WHERE length(session_key) = 36
+      AND encode(sha256(convert_to(session_key, 'UTF8')), 'hex') = $1::text
+      AND user_id = $2
+      AND expires_at > NOW()
+) AS live
+`
+
+type LegacyAuthSessionLiveForUserParams struct {
+	SessionDigest string `json:"session_digest"`
+	UserID        int64  `json:"user_id"`
+}
+
+// A durable request must retain its verified owner as well as its cookie
+// fingerprint. The raw legacy cookie never enters the request receipt.
+func (q *Queries) LegacyAuthSessionLiveForUser(ctx context.Context, arg LegacyAuthSessionLiveForUserParams) (bool, error) {
+	row := q.db.QueryRow(ctx, legacyAuthSessionLiveForUser, arg.SessionDigest, arg.UserID)
+	var live bool
+	err := row.Scan(&live)
+	return live, err
+}
+
 const listAccessTokensByUserID = `-- name: ListAccessTokensByUserID :many
 SELECT id, user_id, name, token_hash, token_last_eight, scopes, expires_at, last_used_at, created_at, updated_at, system_issued
 FROM access_tokens

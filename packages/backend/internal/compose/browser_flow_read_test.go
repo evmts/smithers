@@ -319,3 +319,11 @@ func TestBrowserFlowBudgetsAllButProgressReads(t *testing.T) {
 	}
 	require.Len(t, limited, 2)
 }
+
+func TestBrowserFlowProvisionWithoutHostReportsUnavailable(t *testing.T) {
+	api := &browserFlowAPI{}
+	response := httptest.NewRecorder()
+	api.provision(response, httptest.NewRequest(http.MethodPost, "/api/workflow/provision", strings.NewReader(`{}`)))
+	require.Equal(t, http.StatusServiceUnavailable, response.Code)
+	require.Contains(t, response.Body.String(), "Workflow host unavailable.")
+}

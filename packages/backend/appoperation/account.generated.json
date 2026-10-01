@@ -1,0 +1,411 @@
+{
+  "version": 1,
+  "operations": [
+    {
+      "name": "account.show",
+      "summary": "Show account",
+      "runtime": [
+        "identity"
+      ],
+      "input": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "userOnly": false,
+      "confirm": null
+    }
+  ],
+  "schemas": {
+    "invocation": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "enum": [
+            "account.show"
+          ]
+        },
+        "requestId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "input": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "name",
+        "requestId",
+        "input"
+      ],
+      "additionalProperties": false
+    },
+    "reference": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "enum": [
+            "account.show"
+          ]
+        },
+        "requestId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        }
+      },
+      "required": [
+        "name",
+        "requestId"
+      ],
+      "additionalProperties": false
+    },
+    "noInput": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "identity": {
+      "type": "object",
+      "properties": {
+        "login": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "login"
+      ],
+      "additionalProperties": false
+    },
+    "receipt": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "requested"
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "accepted",
+            "dispatching",
+            "running",
+            "waiting",
+            "completed",
+            "failed",
+            "cancelled",
+            "uncertain"
+          ]
+        },
+        "acceptedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "operationId",
+        "requestId",
+        "kind",
+        "state",
+        "acceptedAt"
+      ],
+      "additionalProperties": false
+    },
+    "outcome": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "operationId": {
+              "type": "string"
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "actor": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent",
+                "api"
+              ]
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "completed"
+              ]
+            },
+            "result": {
+              "type": "object",
+              "properties": {
+                "login": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": [
+                "login"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "operationId",
+            "requestId",
+            "actor",
+            "state",
+            "result"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "operationId": {
+              "type": "string"
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "actor": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent",
+                "api"
+              ]
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "failed",
+                "uncertain"
+              ]
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "operationId",
+            "requestId",
+            "actor",
+            "state",
+            "error"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "operationId": {
+              "type": "string"
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            },
+            "actor": {
+              "type": "string",
+              "enum": [
+                "user",
+                "agent",
+                "api"
+              ]
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "accepted",
+                "dispatching",
+                "running",
+                "waiting",
+                "cancelled"
+              ]
+            }
+          },
+          "required": [
+            "operationId",
+            "requestId",
+            "actor",
+            "state"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "history": {
+      "type": "object",
+      "properties": {
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string",
+              "enum": [
+                "Infinity",
+                "-Infinity",
+                "NaN"
+              ]
+            }
+          ]
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "operationId": {
+                    "type": "string"
+                  },
+                  "requestId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                  },
+                  "actor": {
+                    "type": "string",
+                    "enum": [
+                      "user",
+                      "agent",
+                      "api"
+                    ]
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "completed"
+                    ]
+                  },
+                  "result": {
+                    "type": "object",
+                    "properties": {
+                      "login": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      }
+                    },
+                    "required": [
+                      "login"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "operationId",
+                  "requestId",
+                  "actor",
+                  "state",
+                  "result"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "operationId": {
+                    "type": "string"
+                  },
+                  "requestId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                  },
+                  "actor": {
+                    "type": "string",
+                    "enum": [
+                      "user",
+                      "agent",
+                      "api"
+                    ]
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "failed",
+                      "uncertain"
+                    ]
+                  },
+                  "error": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "operationId",
+                  "requestId",
+                  "actor",
+                  "state",
+                  "error"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "operationId": {
+                    "type": "string"
+                  },
+                  "requestId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                  },
+                  "actor": {
+                    "type": "string",
+                    "enum": [
+                      "user",
+                      "agent",
+                      "api"
+                    ]
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "accepted",
+                      "dispatching",
+                      "running",
+                      "waiting",
+                      "cancelled"
+                    ]
+                  }
+                },
+                "required": [
+                  "operationId",
+                  "requestId",
+                  "actor",
+                  "state"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "cursor",
+        "truncated",
+        "items"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
