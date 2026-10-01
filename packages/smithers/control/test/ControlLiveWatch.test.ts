@@ -76,7 +76,12 @@ describe("ControlLive.watch failures", () => {
         const control = yield* Control
         return {
           followed: yield* Effect.flip(Stream.runCollect(control.watch({ runId: "run-1" }))),
-          snapshot: yield* Effect.flip(Stream.runCollect(control.watch({ runId: "run-1", follow: false })))
+          snapshot: yield* Effect.flip(Stream.runCollect(control.watch({ runId: "run-1", follow: false }))),
+          restricted: yield* Effect.flip(Stream.runCollect(control.watch({
+            follow: false,
+            afterSequence: 1,
+            reader: { id: "memory", kind: "test", stampedAt: 0 }
+          })))
         }
       }),
       live({
@@ -90,6 +95,8 @@ describe("ControlLive.watch failures", () => {
     expect((observed.followed as Unavailable).feature).toBe("watch")
     expect(observed.snapshot).toBeInstanceOf(Unavailable)
     expect((observed.snapshot as Unavailable).feature).toBe("watch")
+    expect(observed.restricted).toBeInstanceOf(InvalidInput)
+    expect((observed.restricted as InvalidInput).issue).toContain("afterSequence")
   })
 
   it("reports a page read that fails after the high-water mark was pinned as a persistence failure with its cause", async () => {
@@ -123,7 +130,54 @@ describe("ControlLive.watch failures", () => {
   })
 })
 
+it("keeps a restricted global watch's storage failure opaque while preserving typed incompleteness", async () => {
+  const failingPages = Layer.effect(
+    Journal.Journal,
+    Effect.map(Journal.Journal, (journal) =>
+      Journal.make({
+        ...journal,
+        entries: (options) =>
+          options.limit === 1024
+            ? Effect.fail(new Journal.JournalError({ code: "unknown", message: "private-partition-read-marker" }))
+            : journal.entries(options)
+      }))
+  ).pipe(Layer.provide(TestJournal.layer()), Layer.orDie)
+  const error = await run(
+    Effect.gen(function*() {
+      const control = yield* Control
+      yield* start("restricted-private-page")
+      return yield* Effect.flip(Stream.runCollect(control.watch({
+        follow: false,
+        reader: { id: "memory", kind: "test", stampedAt: 0 }
+      })))
+    }),
+    live({ runtime: memoryRuntime({ flows }), journal: failingPages })
+  )
+  expect(error).toBeInstanceOf(PersistenceError)
+  expect(error).toMatchObject({ operation: "watch", message: "the watch lost journal entries and ended" })
+  expect(JSON.stringify(error)).not.toContain("private-partition-read-marker")
+  expect(JSON.stringify(error)).not.toContain("restricted-private-page")
+})
+
 describe("ControlLive.watch snapshots", () => {
+  it("returns the exact named run snapshot to its recorded launcher", async () => {
+    const observed = await run(Effect.gen(function*() {
+      const control = yield* Control
+      const { runId } = yield* start("own-restricted-snapshot")
+      const unrestricted = yield* Stream.runCollect(control.watch({ runId, follow: false }))
+      const restricted = yield* Stream.runCollect(control.watch({
+        runId,
+        follow: false,
+        reader: { id: "memory", kind: "test", stampedAt: 0 }
+      }))
+      return { unrestricted, restricted, runId }
+    }))
+    expect(observed.unrestricted.length).toBeGreaterThan(1)
+    expect(observed.restricted).toEqual(observed.unrestricted)
+    expect(observed.restricted.every((event) => event.runId === observed.runId)).toBe(true)
+    expect(observed.restricted.some((event) => event.kind === "control.run.accepted")).toBe(true)
+  })
+
   it("resumes inside an expansion at journal sequence zero", async () => {
     const source = {
       ...entry(0, "run-zero"),

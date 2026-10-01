@@ -1,6 +1,6 @@
-import { Effect, Layer } from "effect"
+import { Cause, Effect, Exit, Layer } from "effect"
 import { RpcTest } from "effect/unstable/rpc"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { Unauthorized } from "../src/ControlError.ts"
 import { anyAuthenticator, bearerAuthenticator, ControlRpcs, layerAuth } from "../src/ControlRpcs.ts"
 import * as ControlServer from "../src/ControlServer.ts"
@@ -37,6 +37,53 @@ describe("minting and verifying", () => {
       exp: 61_000
     })
     expect(await Effect.runPromise(ScopedToken.verify(key, token, 60_999))).toEqual(claims)
+  })
+
+  it("uses the host clock when no mint clock is supplied", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(123456)
+    try {
+      const result = await Effect.runPromise(ScopedToken.mint({ key, scopes: ["read:runs"], ttlMillis: 1000 }))
+      expect(result.claims.iat).toBe(123456)
+      expect(result.claims.exp).toBe(124456)
+      expect(await Effect.runPromise(ScopedToken.verify(key, result.token, 124455))).toEqual(result.claims)
+      expect(await Effect.runPromise(Effect.flip(ScopedToken.verify(key, result.token, 124456)))).toBeInstanceOf(
+        Unauthorized
+      )
+    } finally {
+      clock.mockRestore()
+    }
+  })
+
+  it("fails closed when the host cannot verify signatures with Web Crypto", async () => {
+    const { token } = await minted()
+    vi.stubGlobal("crypto", undefined)
+    try {
+      const result = await Effect.runPromiseExit(ScopedToken.verify(key, token, 2000))
+      expect(Exit.isFailure(result)).toBe(true)
+      if (Exit.isFailure(result)) {
+        const failure = Cause.squash(result.cause)
+        expect(failure).toBeInstanceOf(Error)
+        expect(String(failure)).toContain("Web Crypto is not available on this host")
+      }
+    } finally {
+      vi.unstubAllGlobals()
+    }
+    expect(await Effect.runPromise(ScopedToken.verify(key, token, 2000))).toMatchObject({ iat: 1000 })
+  })
+
+  it("refuses authenticated but undecodable payload bytes without exposing a parsing oracle", async () => {
+    const encoder = new TextEncoder()
+    const hmac = await crypto.subtle.importKey("raw", encoder.encode(key), { name: "HMAC", hash: "SHA-256" }, false, [
+      "sign"
+    ])
+    for (const body of ["%%%", Buffer.from([0xc3, 0x28]).toString("base64url")]) {
+      const signature = Buffer.from(await crypto.subtle.sign("HMAC", hmac, encoder.encode(`smt1.${body}`))).toString(
+        "base64url"
+      )
+      const result = await Effect.runPromise(Effect.flip(ScopedToken.verify(key, `smt1.${body}.${signature}`, 2000)))
+      expect(result).toBeInstanceOf(Unauthorized)
+      expect(result.message).toBe("A valid scoped token is required")
+    }
   })
 
   it("gives two tokens of the same grant different identities", async () => {
