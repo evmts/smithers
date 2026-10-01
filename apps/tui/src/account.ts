@@ -1,5 +1,4 @@
 /** Account's terminal adapter: existing Cloud authority, Session receipts and shared lifecycle. */
-import { Refused } from "@smthrs/cli/CliError"
 import * as CloudSession from "@smthrs/cli/CloudSession"
 import * as Account from "@smthrs/control/Account"
 import { Option, Schema } from "effect"
@@ -11,7 +10,8 @@ export const operations = Account.accountOperations
 /** Only request identity is durable. Account facts are refetched under the selected authority. */
 export const Receipt = Schema.Struct({
   actor: Schema.Literals(["user", "agent"]),
-  id: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
+  id: Account.RequestId,
+  operationId: Schema.optional(Schema.String),
   owner: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
   origin: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(2048)),
   state: Schema.Literals(["requested", "complete", "failed", "cancelled"])
@@ -20,7 +20,7 @@ export type Receipt = typeof Receipt.Type
 const decodeReceipt = Schema.decodeUnknownOption(Receipt)
 export const receiptOf = (value: unknown): Receipt | undefined => Option.getOrUndefined(decodeReceipt(value))
 export type State =
-  | { readonly phase: "idle" | "signed-out" }
+  | { readonly phase: "idle" | "signed-out" | "cancelled" }
   | { readonly phase: "requested"; readonly startedAt: number }
   | { readonly phase: "complete"; readonly facts: Account.AccountFacts }
   | { readonly phase: "failed"; readonly detail: string }
@@ -28,7 +28,13 @@ export type State =
 export const panel = (state: State): Panels.Panel => ({
   id,
   title: state.phase === "complete" ? `Account · @${state.facts.login}` : "Account",
-  summary: state.phase === "requested" ? "Requested" : state.phase === "signed-out" ? "Sign in" : "Account",
+  summary: state.phase === "requested"
+    ? "Requested"
+    : state.phase === "signed-out"
+    ? "Sign in"
+    : state.phase === "cancelled"
+    ? "Cancelled"
+    : "Account",
   rows: state.phase === "complete" ?
     [{ id: "identity", label: `@${state.facts.login}`, details: [] }]
     : state.phase === "signed-out" ?
@@ -67,7 +73,7 @@ export const controller = (options: {
   const requestOf = (receipt: Receipt): Account.AccountRequest => ({
     id: receipt.id,
     authority: authority(),
-    read: "identity"
+    ...(receipt.operationId === undefined ? {} : { operationId: receipt.operationId })
   })
   const current = (request: Account.AccountRequest) =>
     !disposed && request.authority.epoch === epoch && retained?.id === request.id
@@ -79,7 +85,6 @@ export const controller = (options: {
   const core = Account.createAccountController({
     authority,
     disposed: () => disposed,
-    boxes: () => [],
     signIn: () => {
       set({ phase: "signed-out" })
       options.present(Date.now())
@@ -96,46 +101,38 @@ export const controller = (options: {
       set({ phase: "requested", startedAt: at })
       options.present(at)
     },
-    pending: () =>
-      retained?.state === "requested" && retained.owner === cloud?.identity && retained.origin === cloud.origin
-        ? requestOf(retained) :
-        undefined,
-    current,
-    read: async (request, _facts, signal) => {
-      const selected = cloud
-      const valid = async () =>
-        selected !== undefined && current(request) && await selected.current() && current(request)
-      if (!await valid()) {
-        if (current(request)) {
-          epoch++
-          core.dispose()
-          set({ phase: "idle" })
-        }
-        return { error: "Account request is no longer current." }
-      }
-      const value = await selected!.get("/api/user", signal)
-      if (!await valid()) {
-        if (current(request)) {
-          epoch++
-          core.dispose()
-          set({ phase: "idle" })
-        }
-        return { error: "Account request is no longer current." }
-      }
-      const facts = Account.identityFacts(value)
-      if (facts === undefined) {
-        throw new Refused({
-          fault: "infra",
-          code: "backend_protocol",
-          message: "The backend returned an unreadable account."
-        })
-      }
-      return { facts }
+    acknowledged: async (request, receipt) => {
+      if (retained?.id === request.id) save({ ...retained, operationId: receipt.operationId })
     },
-    complete: async (_request, answer) => {
+    pending: () =>
+      (retained?.state === "requested" || retained?.state === "failed" && retained.operationId === undefined) &&
+        retained.owner === cloud?.identity && retained.origin === cloud.origin
+        ? requestOf(retained)
+        : undefined,
+    current,
+    transport: (request) => {
+      const selected = cloud
+      if (selected === undefined) throw new Account.AccountTransportError("account_changed")
+      return Account.accountTransport({
+        current: async () => current(request) && await selected.current() && current(request),
+        post: (path, body, signal) => selected.post(path, body, signal)
+      })
+    },
+    complete: async (_request, outcome) => {
       if (retained === undefined) return
-      save({ ...retained, state: "error" in answer ? "failed" : "complete" })
-      set("error" in answer ? { phase: "failed", detail: answer.error } : { phase: "complete", facts: answer.facts })
+      const failed = "error" in outcome
+      save({
+        ...retained,
+        operationId: outcome.operationId,
+        state: failed ? "failed" : outcome.state === "cancelled" ? "cancelled" : "complete"
+      })
+      set(
+        failed
+          ? { phase: "failed", detail: outcome.error }
+          : "result" in outcome
+          ? { phase: "complete", facts: { login: outcome.result.login, scopes: [], boxes: [] } }
+          : { phase: "cancelled" }
+      )
     },
     work: async (_request, run) => await run(),
     failed: (detail) => set({ phase: "failed", detail }),
@@ -163,7 +160,7 @@ export const controller = (options: {
         return { value: "Account request is no longer current." }
       }
       actor = restore.actor
-      retained = restore.state === "requested" ? restore : undefined
+      retained = { ...restore, state: "requested" }
       if (retained !== undefined) {
         set({ phase: "requested", startedAt: Date.now() })
         core.resumeAccount()
@@ -206,6 +203,7 @@ export const controller = (options: {
       }
     },
     show,
+    cancel: core.cancelAccount,
     restore,
     dispose: () => {
       disposed = true

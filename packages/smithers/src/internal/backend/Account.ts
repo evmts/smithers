@@ -56,22 +56,30 @@ export const handlers: Record<string, Handler> = Object.fromEntries(
     const ownerOf = (value: typeof selected) =>
       createHash("sha256").update(JSON.stringify([value.api_url, value.source, value.token])).digest("hex")
     const owner = ownerOf(selected)
-    const current = async () => {
-      if (ownerOf(await client.session.require()) !== owner) {
-        throw new Refused({ fault: "user", code: "account_changed", message: "Account changed" })
+    const remote = Account.accountTransport({
+      current: async () => ownerOf(await client.session.require()) === owner,
+      post: (path, body, signal) =>
+        client.request("POST", path, body, {
+          origin: selected.api_url,
+          token: selected.token,
+          ...(signal ? { signal } : {})
+        })
+    })
+    const checked = async <A>(run: () => Promise<A>): Promise<A> => {
+      try {
+        return await run()
+      } catch (error) {
+        if (error instanceof Account.AccountTransportError) {
+          throw new Refused({
+            fault: error.code === "account_changed" ? "user" : "infra",
+            code: error.code,
+            message: error.message
+          })
+        }
+        throw error
       }
     }
-    const rpc = async (procedure: string, payload: unknown) => {
-      await current()
-      const answer = await client.request("POST", "/api/workflow/rpc", { procedure, payload }, {
-        origin: selected.api_url,
-        token: selected.token,
-        ...(client.runtime.signal ? { signal: client.runtime.signal } : {})
-      })
-      await current()
-      return answer
-    }
-    if (options.history) return decode(Account.RequestHistory, await rpc("Operation.History", {}))
+    if (options.history) return checked(() => remote.history(client.runtime.signal))
     const requestId = options.request === undefined ? randomUUID() : decode(Account.RequestId, options.request)
     const path = join(
       dirname(client.session.authPath),
@@ -87,21 +95,18 @@ export const handlers: Record<string, Handler> = Object.fromEntries(
       if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error
     }
     if (retained && retained.requestId !== requestId) throw protocol()
-    const reference = { name: operation.name, requestId }
-    const read = async (procedure: "Operation.Cancel" | "Operation.Read") => {
-      const outcome = decode(Account.RequestOutcome, await rpc(procedure, reference))
-      if (
-        outcome.requestId !== requestId || retained?.receipt && outcome.operationId !== retained.receipt.operationId
-      ) throw protocol()
-      return outcome
-    }
+    const read = (procedure: "Operation.Cancel" | "Operation.Read") =>
+      checked(() =>
+        procedure === "Operation.Cancel"
+          ? remote.cancel(requestId, retained?.receipt?.operationId, client.runtime.signal)
+          : remote.read(requestId, retained?.receipt?.operationId, client.runtime.signal)
+      )
     if (options.cancel) return read("Operation.Cancel")
     if (options.request && (!retained || retained.receipt)) return read("Operation.Read")
     // Commit the reconnect identity before admission. A failed/unresolved
     // request retains its ID for the same idempotent admission after reload.
     client.session.write(path, JSON.stringify({ requestId }) + "\n")
-    const receipt = decode(Account.RequestReceipt, await rpc("Operation.Dispatch", { ...reference, input: {} }))
-    if (receipt.requestId !== requestId) throw protocol()
+    const receipt = await checked(() => remote.dispatch(requestId, {}, client.runtime.signal))
     client.session.write(path, JSON.stringify({ requestId, receipt }) + "\n")
     return receipt
   }])

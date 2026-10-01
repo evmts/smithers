@@ -11,8 +11,17 @@ const fixture = async (provider: "github" | "local" = "github", storage = memory
   const identity = (login: string) => store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login,
     provider, admin: false, scopesPlain: null }).isPersisted.promise
   await identity("old-owner")
+  const calls: { procedure: string; requestId: string }[] = []
   const reads: ReturnType<typeof Promise.withResolvers<Response>>[] = []
-  const ctx = createControllerContext(store, unavailableAgent, { fetchImpl: async () => {
+  const ctx = createControllerContext(store, unavailableAgent, { fetchImpl: async (url, init) => {
+    if (String(url).endsWith("/api/workflow/rpc")) {
+      const body = JSON.parse(String(init?.body)) as { procedure: string; payload: { requestId: string } }
+      calls.push({ procedure: body.procedure, requestId: body.payload.requestId })
+      const common = { operationId: `job-${body.payload.requestId}`, requestId: body.payload.requestId }
+      return Response.json(body.procedure === "Operation.Dispatch"
+        ? { ...common, kind: "requested", state: "accepted", acceptedAt: "2026-10-01T00:00:00Z" }
+        : { ...common, actor: "api", state: "completed", result: { login: store.collections.identitySessions.get("identity")?.login ?? "old-owner" } })
+    }
     const read = Promise.withResolvers<Response>()
     reads.push(read)
     return read.promise
@@ -20,7 +29,7 @@ const fixture = async (provider: "github" | "local" = "github", storage = memory
   Object.assign(ctx, createFailureController(ctx))
   const actors = createActorBindings(ctx.onDispose)
   const account = actors.pair(ctx, context => createAccountController(context, { provider, readsScopes, nextOrdinal: store.nextOrdinal, promptSignIn: () => {} }))
-  return { store, ctx, account, agentShow: () => actors.select(account.showAccount)(), reads, identity, dispose: async () => {
+  return { store, ctx, account, agentShow: () => actors.select(account.showAccount)(), reads, calls, identity, dispose: async () => {
     for (const read of reads) read.resolve(Response.json({ scopes: [] }))
     await ctx.dispose(); await store.dispose?.()
   } }
@@ -105,13 +114,16 @@ for (const first of ["user", "smithers"] as const) {
       const recent = first === "user" ? t.agentShow() : t.account.showAccount()
       expect(await old).toEqual({ value: "Requested" })
       expect(await recent).toEqual({ value: "Requested" })
-      expect(t.reads).toHaveLength(1)
+      await waitFor(() => t.reads.length === 1)
       t.reads[0]!.resolve(scopes("current"))
       await waitFor(() => JSON.stringify(t.store.collections.cards.get("account")).includes("current"))
       await t.store.settled?.()
       expect(t.store.collections.cards.get("account")?.payload).toMatchObject({ scopes: [{ scope: "current", plain: "current" }] })
       const writes = [...t.store.collections.transitions.values()].filter(event => event.type === "card.upsert")
-      expect(writes.map(event => event.actor)).toEqual([first, "system"])
+      expect(writes[0]?.actor).toBe(first)
+      expect(writes.slice(1).every(event => event.actor === "system")).toBe(true)
+      expect(t.calls.map(call => call.procedure)).toEqual(["Operation.Dispatch", "Operation.Read"])
+      expect(new Set(t.calls.map(call => call.requestId)).size).toBe(1)
     } finally { await t.dispose() }
   })
 }
@@ -142,7 +154,7 @@ for (const change of [false, true]) {
       if (change) {
         expect(JSON.stringify(result)).not.toContain("old-owner")
         expect(t.store.collections.cards.has("account")).toBe(false)
-      } else expect(result).toMatchObject({ value: expect.stringContaining("old-owner") })
+      } else expect(result).toEqual({ value: "Requested" })
     } finally { saved.resolve(); Object.assign(t.store, { dispatch }); await t.dispose() }
   })
 }
@@ -164,7 +176,7 @@ test("a real refused Account save fails without a success claim and can retry", 
     await expect(t.account.showAccount()).rejects.toThrow()
     expect(refused).toBe(1)
     expect(t.store.collections.cards.has("account")).toBe(false)
-    expect(await t.account.showAccount()).toMatchObject({ value: expect.stringContaining("old-owner") })
+    expect(await t.account.showAccount()).toEqual({ value: "Requested" })
   } finally { await t.dispose() }
 })
 
@@ -182,11 +194,14 @@ test("a disposed Account controller starts no read or write", async () => {
 test("a selected backend identity shows the GitHub account without the identity worker's scopes read", async () => {
   const t = await fixture("github", memoryStorage(), false)
   try {
-    expect(await t.account.showAccount()).toEqual({ value: "account: @old-owner; 0 box(es) listed" })
+    expect(await t.account.showAccount()).toEqual({ value: "Requested" })
+    await waitFor(() => t.calls.length === 2)
+    await waitFor(() => { const row = t.store.collections.cards.get("account"); return row?.kind === "account" && row.payload.refresh?.state === "complete" })
     await settle()
     expect(t.reads).toHaveLength(0)
     const card = t.store.collections.cards.get("account")
     expect(card?.kind === "account" ? card.payload : undefined).toMatchObject({ login: "old-owner", provider: "github", scopes: [] })
-    expect(card?.kind === "account" ? card.payload.refresh : "missing").toBeUndefined()
+    expect(card?.kind === "account" ? card.payload.refresh : undefined).toMatchObject({ state: "complete", operationId: expect.any(String) })
+    expect(t.calls.map(call => call.procedure)).toEqual(["Operation.Dispatch", "Operation.Read"])
   } finally { await t.dispose() }
 })

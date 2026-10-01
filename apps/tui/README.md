@@ -107,8 +107,11 @@ the append-only `spend/<UTC day>.jsonl` under `~/.smithers/tui`
 
 `/account.show` shows the selected backend account in Chat. Account requests
 use the same login as `smthrs auth login`. The conversation retains only an
-origin-bound request receipt; reopening refetches account facts under that
-same selected login. Repeating the command retries a failed read.
+source-bound request pointer. Reopening reads the same server receipt;
+acceptance stays pending until real completion. An interrupted admission
+reuses its request ID. Repeating a failed command requests a fresh retry.
+Changing the selected login or source fences prior requests. Account facts
+and credentials are never written to the conversation history.
 
 ## Keys
 

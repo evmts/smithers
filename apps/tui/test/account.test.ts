@@ -22,6 +22,46 @@ const deferred = <A>() => {
   return { promise, resolve }
 }
 
+const identityAnswer = async (request: Request, login: string) => {
+  const body = await request.clone().json()
+  return Response.json({
+    operationId: `job-${body.payload.requestId}`,
+    requestId: body.payload.requestId,
+    state: "completed",
+    actor: "api",
+    result: { login }
+  })
+}
+
+// Owned wire fixture preserves held reads and independently projects literal product RPC receipts.
+const accountServer = (
+  options: { hostname: string; port: number; fetch: (request: Request) => Response | Promise<Response> }
+) =>
+  Bun.serve({
+    hostname: options.hostname,
+    port: options.port,
+    async fetch(request) {
+      expect(request.method).toBe("POST")
+      expect(new URL(request.url).pathname).toBe("/api/workflow/rpc")
+      const body = await request.clone().json()
+      expect(body.payload.name).toBe("account.show")
+      expect(typeof body.payload.requestId).toBe("string")
+      if (body.procedure === "Operation.Dispatch") {
+        expect(body.payload.input).toEqual({})
+        return Response.json({
+          operationId: `job-${body.payload.requestId}`,
+          requestId: body.payload.requestId,
+          kind: "requested",
+          state: "accepted",
+          acceptedAt: "2026-10-01T00:00:00Z"
+        })
+      }
+      expect(body.procedure).toBe("Operation.Read")
+      expect(Object.keys(body.payload).sort()).toEqual(["name", "requestId"])
+      return options.fetch(request)
+    }
+  })
+
 it("shows signed out without writing an account receipt or attempting a backend read", async () => {
   const root = mkdtempSync(join(tmpdir(), "tui-account-signed-out-"))
   const receipts: Account.Receipt[] = []
@@ -53,16 +93,16 @@ it("persists only request identity before a held read, shares actors, and refetc
   let username = "first-account-owner"
   let reads = 0
   const order: string[] = []
-  const server = Bun.serve({
+  const server = accountServer({
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
-      expect(new URL(request.url).pathname).toBe("/api/user")
+      expect(new URL(request.url).pathname).toBe("/api/workflow/rpc")
       expect(request.headers.get("authorization")).toBe("token owned-account-token")
       reads++
       order.push("read")
       await gate.promise
-      return Response.json({ username, token: "private-response-value", scopes: ["invented"] })
+      return identityAnswer(request, username)
     }
   })
   const env = {
@@ -103,13 +143,13 @@ it("persists only request identity before a held read, shares actors, and refetc
     const receipt = Session.restore(Session.load(writer.file)).account
     expect(receipt?.state).toBe("complete")
     controller.dispose()
-    username = "fresh-read-owner"
+    // Reconnect the same immutable completed request; a fresh invocation is distinct.
     restored = make()
     restored.restore(receipt)
     await waitFor(() => restored?.state().phase === "complete")
     expect(reads).toBe(2)
     expect(restored.state()).toEqual({ phase: "complete", facts: { login: username, scopes: [], boxes: [] } })
-    expect(Session.restore(Session.load(writer.file)).account?.id).not.toBe(receipt?.id)
+    expect(Session.restore(Session.load(writer.file)).account?.id).toBe(receipt?.id)
   } finally {
     gate.resolve(undefined)
     controller.dispose()
@@ -129,14 +169,14 @@ for (const mode of ["revoked", "malformed"] as const) {
     let refuse = true
     let reads = 0
     const receipts: Account.Receipt[] = []
-    const server = Bun.serve({
+    const server = accountServer({
       hostname: "127.0.0.1",
       port: 0,
-      fetch() {
+      fetch(request) {
         reads++
         return refuse
           ? Response.json({ message: "private-server-marker" }, { status: mode === "revoked" ? 401 : 200 })
-          : Response.json({ username: "current-owner" })
+          : identityAnswer(request, "current-owner")
       }
     })
     const controller = Account.controller({
@@ -157,12 +197,12 @@ for (const mode of ["revoked", "malformed"] as const) {
       await waitFor(() => controller.state().phase === "failed")
       expect(JSON.stringify(controller.state())).not.toContain("private-server-marker")
       expect(JSON.stringify(Account.panel(controller.state()))).not.toContain("private-server-marker")
-      expect(receipts.map((receipt) => receipt.state)).toEqual(["requested", "failed"])
+      expect(receipts.map((receipt) => receipt.state)).toEqual(["requested", "requested", "failed"])
       const previous = receipts[0]!.id
       refuse = false
       await controller.show()
       await waitFor(() => controller.state().phase === "complete")
-      expect(receipts[2]!.id).not.toBe(previous)
+      expect(receipts[3]!.id).not.toBe(previous)
       expect(reads).toBe(2)
       expect(controller.state()).toEqual({
         phase: "complete",
@@ -185,24 +225,24 @@ for (const change of ["credential", "origin", "logout ABA", "session switch", "d
     const release = deferred<void>()
     let oldReads = 0
     let newReads = 0
-    const oldServer = Bun.serve({
+    const oldServer = accountServer({
       hostname: "127.0.0.1",
       port: 0,
-      async fetch() {
+      async fetch(request) {
         oldReads++
         if (oldReads === 1) {
           await release.promise
-          return Response.json({ username: "private-old-account" })
+          return identityAnswer(request, "private-old-account")
         }
-        return Response.json({ username: "current-owner" })
+        return identityAnswer(request, "current-owner")
       }
     })
-    const newServer = Bun.serve({
+    const newServer = accountServer({
       hostname: "127.0.0.1",
       port: 0,
-      fetch() {
+      fetch(request) {
         newReads++
-        return Response.json({ username: "current-owner" })
+        return identityAnswer(request, "current-owner")
       }
     })
     const env: Record<string, string | undefined> = {
@@ -289,16 +329,16 @@ it("resumes the durable pending Account request without another admission or dup
   const root = mkdtempSync(join(tmpdir(), "tui-account-pending-recovery-"))
   const gate = deferred<void>()
   let reads = 0
-  const server = Bun.serve({
+  const server = accountServer({
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
-      expect(request.method).toBe("GET")
-      expect(new URL(request.url).pathname).toBe("/api/user")
+      expect(request.method).toBe("POST")
+      expect(new URL(request.url).pathname).toBe("/api/workflow/rpc")
       expect(request.headers.get("authorization")).toBe("token pending-owned-token")
       reads++
       await gate.promise
-      return Response.json({ username: "resumed-owner", token: "private-restored-response" })
+      return identityAnswer(request, "resumed-owner")
     }
   })
   const env = {
@@ -368,31 +408,31 @@ for (const changed of ["credential", "origin"] as const) {
     const root = mkdtempSync(join(tmpdir(), "tui-account-foreign-recovery-"))
     const gate = deferred<void>()
     let oldReads = 0, currentReads = 0
-    const oldServer = Bun.serve({
+    const oldServer = accountServer({
       hostname: "127.0.0.1",
       port: 0,
       async fetch(request) {
-        expect(request.method).toBe("GET")
-        expect(new URL(request.url).pathname).toBe("/api/user")
+        expect(request.method).toBe("POST")
+        expect(new URL(request.url).pathname).toBe("/api/workflow/rpc")
         if (request.headers.get("authorization") === "token old-owned-token") {
           oldReads++
           await gate.promise
-          return Response.json({ username: "private-old-owner" })
+          return identityAnswer(request, "private-old-owner")
         }
         expect(request.headers.get("authorization")).toBe("token replacement-owned-token")
         currentReads++
-        return Response.json({ username: "selected-current-owner" })
+        return identityAnswer(request, "selected-current-owner")
       }
     })
-    const newServer = Bun.serve({
+    const newServer = accountServer({
       hostname: "127.0.0.1",
       port: 0,
       fetch(request) {
-        expect(request.method).toBe("GET")
-        expect(new URL(request.url).pathname).toBe("/api/user")
+        expect(request.method).toBe("POST")
+        expect(new URL(request.url).pathname).toBe("/api/workflow/rpc")
         expect(request.headers.get("authorization")).toBe("token old-owned-token")
         currentReads++
-        return Response.json({ username: "selected-current-owner" })
+        return identityAnswer(request, "selected-current-owner")
       }
     })
     const env = {
@@ -477,3 +517,150 @@ for (const changed of ["credential", "origin"] as const) {
     }
   })
 }
+
+// Independent literal RPC responses exercise held admission and running jobs through actual HTTP.
+it("retains one canonical request across held admission, running job, restart and cancellation", async () => {
+  const root = mkdtempSync(join(tmpdir(), "tui-account-server-job-")), gate = deferred<void>()
+  const records: Parameters<typeof Session.restore>[0][number][] = []
+  let phase: "running" | "cancelled" = "running", dispatches = 0, reads = 0, admittedId: string | undefined
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      expect(request.method).toBe("POST")
+      expect(new URL(request.url).pathname).toBe("/api/workflow/rpc")
+      expect(request.headers.get("authorization")).toBe("token owned-server-token")
+      const body = await request.json()
+      expect(body.payload.name).toBe("account.show")
+      if (body.procedure === "Operation.Dispatch") {
+        dispatches++
+        expect(body.payload.input).toEqual({})
+        if (admittedId === undefined) admittedId = body.payload.requestId
+        else expect(body.payload.requestId).toBe(admittedId)
+        await gate.promise
+        return Response.json({
+          operationId: "owned-server-job",
+          requestId: admittedId,
+          kind: "requested",
+          state: "accepted",
+          acceptedAt: "2026-10-01T00:00:00Z"
+        })
+      }
+      expect(body.payload.requestId).toBe(admittedId)
+      if (body.procedure === "Operation.Cancel") phase = "cancelled"
+      else {
+        expect(body.procedure).toBe("Operation.Read")
+        reads++
+      }
+      return Response.json({ operationId: "owned-server-job", requestId: admittedId, state: phase, actor: "api" })
+    }
+  })
+  const env = {
+    HOME: root,
+    SMITHERS_DISABLE_SYSTEM_KEYRING: "1",
+    SMITHERS_API_ORIGIN: server.url.origin,
+    SMITHERS_TOKEN: "owned-server-token"
+  }
+  const make = () =>
+    Account.controller({
+      session: () => CloudSession.signedIn(env),
+      persist: (receipt, at) => records.push({ type: "account", at, receipt }),
+      present: () => {}
+    })
+  const original = make()
+  let restored: ReturnType<typeof make> | undefined
+  try {
+    expect(await original.show({}, "agent")).toEqual({ value: "Requested" })
+    await waitFor(() => dispatches === 1)
+    const pending = Session.restore(records).account!
+    expect(pending.state).toBe("requested")
+    expect(pending.operationId).toBeUndefined()
+    expect(await original.show({}, "user")).toEqual({ value: "Requested" })
+    expect(dispatches).toBe(1)
+    original.dispose()
+    restored = make()
+    restored.restore(pending)
+    await waitFor(() => dispatches === 2)
+    expect(admittedId).toBe(pending.id)
+    gate.resolve(undefined)
+    await waitFor(() => reads >= 1)
+    expect(restored.state().phase).toBe("requested")
+    expect(Session.restore(records).account).toMatchObject({
+      id: pending.id,
+      operationId: "owned-server-job",
+      state: "requested",
+      actor: "agent"
+    })
+    expect(await restored.cancel()).toEqual({
+      operationId: "owned-server-job",
+      requestId: pending.id,
+      state: "cancelled",
+      actor: "api"
+    })
+    await waitFor(() => restored!.state().phase === "cancelled")
+    expect(Session.restore(records).account).toMatchObject({
+      id: pending.id,
+      operationId: "owned-server-job",
+      state: "cancelled"
+    })
+    expect(JSON.stringify(records)).not.toContain("owned-server-token")
+    expect(dispatches).toBe(2)
+  } finally {
+    gate.resolve(undefined)
+    original.dispose()
+    restored?.dispose()
+    await server.stop(true)
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+it("rejects private identity fields on the actual server wire instead of trimming them", async () => {
+  const root = mkdtempSync(join(tmpdir(), "tui-account-wire-private-"))
+  const records: Account.Receipt[] = []
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const body = await request.json()
+      return Response.json(
+        body.procedure === "Operation.Dispatch"
+          ? {
+            operationId: "job-private",
+            requestId: body.payload.requestId,
+            kind: "requested",
+            state: "accepted",
+            acceptedAt: "2026-10-01T00:00:00Z"
+          }
+          : {
+            operationId: "job-private",
+            requestId: body.payload.requestId,
+            state: "completed",
+            actor: "api",
+            result: { login: "private-owner", token: "private-server-token" }
+          }
+      )
+    }
+  })
+  const controller = Account.controller({
+    session: () =>
+      CloudSession.signedIn({
+        HOME: root,
+        SMITHERS_DISABLE_SYSTEM_KEYRING: "1",
+        SMITHERS_API_ORIGIN: server.url.origin,
+        SMITHERS_TOKEN: "owned-token"
+      }),
+    persist: (receipt) => records.push(receipt),
+    present: () => {}
+  })
+  try {
+    await controller.show()
+    await waitFor(() => controller.state().phase === "failed")
+    expect(JSON.stringify(controller.state())).not.toContain("private-owner")
+    expect(JSON.stringify(records)).not.toContain("private-server-token")
+    expect(records.at(-1)?.state).toBe("failed")
+  } finally {
+    controller.dispose()
+    await server.stop(true)
+    rmSync(root, { recursive: true, force: true })
+  }
+})

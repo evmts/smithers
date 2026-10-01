@@ -9,7 +9,7 @@ import { flowAction } from "../flows/FlowAction"
  * exists here: no billing, usage or seat rows, because no seam holds them.
  */
 import { Button } from "@smthrs/ui"
-import type { UserFailureCopy } from "@smthrs/rpc/UserFailure"
+import { UNKNOWN_FAILURE, type UserFailureCopy } from "@smthrs/rpc/UserFailure"
 import { describedFailure, FailureNotice } from "../FailureNotice"
 import type { Card } from "../state/AppState"
 import type { CardFamily, RunCommand } from "./CardFamily"
@@ -71,8 +71,11 @@ export const AccountCardBody = ({
         </table>
       </>
     )}
-    {card.payload.refresh?.state === "failed" && <FailureNotice data-testid="account-permissions-failure"
-      failure={describedFailure("AccountPermissionsFailed", PERMISSIONS_FAILED, card.payload.refresh.error)}
+    {card.payload.refresh?.state === "failed" && <FailureNotice data-testid="account-operation-failure"
+      failure={describedFailure("AccountOperationFailed", { ...UNKNOWN_FAILURE, fault: "infra" }, card.payload.refresh.error)}
+      actions={{ retry: flowAction(onRunCommand, "account.show") }} />}
+    {card.payload.permissionsError !== undefined && <FailureNotice data-testid="account-permissions-failure"
+      failure={describedFailure("AccountPermissionsFailed", PERMISSIONS_FAILED, card.payload.permissionsError)}
       actions={{ retry: flowAction(onRunCommand, "account.show") }} />}
     <Button size="sm" variant="outline"  {...flowAction(onRunCommand, "auth.sign-out")}>
       Sign out

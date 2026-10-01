@@ -122,110 +122,177 @@ export interface AccountAuthority {
   readonly readsScopes: boolean
 }
 
-/**
- * An Account read bound to one selected authority.
- *
+/** A host's durable pointer; server receipts alone establish delivery state.
  * @since 1.0.0
  * @category models
  */
 export interface AccountRequest {
   readonly id: string
   readonly authority: AccountAuthority
-  readonly read: "identity" | "permissions" | "snapshot"
+  readonly operationId?: string
 }
-/**
- * The acknowledgment returned by the Account operation.
- *
+/** The existing acknowledgment, independent of remote admission and execution.
  * @since 1.0.0
  * @category models
  */
 export type AccountAnswer = string | { readonly value: string }
-/**
- * Verified Account facts or a safe read failure.
- *
+/** Supplementary card observations never settle the identity operation.
  * @since 1.0.0
  * @category models
  */
 export type AccountRead = { readonly facts: AccountFacts } | { readonly error: string }
+/** Safe typed transport refusal; no response diagnostics or credentials are retained.
+ * @since 1.0.0
+ * @category errors
+ */
+export class AccountTransportError extends Error {
+  readonly code: "account_changed" | "backend_protocol" | "account_read_failed"
+  readonly status: number | undefined
+  constructor(code: "account_changed" | "backend_protocol" | "account_read_failed", status?: number) {
+    super(
+      code === "account_changed"
+        ? "Account changed"
+        : code === "account_read_failed"
+        ? `Account read failed${status === undefined ? "" : ` (HTTP ${status})`}.`
+        : "Invalid account operation receipt"
+    )
+    this.code = code
+    this.status = status
+  }
+}
+/** The selected host owns authenticated HTTP and selection revalidation.
+ * @since 1.0.0
+ * @category constructors
+ */
+export const accountTransport = (options: {
+  readonly current: () => boolean | Promise<boolean>
+  readonly post: (path: string, body: unknown, signal?: AbortSignal) => Promise<unknown>
+}) => {
+  const decode = <S extends Schema.ConstraintDecoder<unknown, never>>(schema: S, value: unknown): S["Type"] => {
+    try {
+      return Schema.decodeUnknownSync(schema, { onExcessProperty: "error" })(value)
+    } catch {
+      throw new AccountTransportError("backend_protocol")
+    }
+  }
+  const call = async (procedure: string, payload: unknown, signal?: AbortSignal) => {
+    if (!await options.current()) throw new AccountTransportError("account_changed")
+    const answer = await options.post("/api/workflow/rpc", { procedure, payload }, signal)
+    if (!await options.current()) throw new AccountTransportError("account_changed")
+    return answer
+  }
+  const reference = (id: string) => decode(RequestReference, { name: accountOperations[0].name, requestId: id })
+  const selection = async (
+    procedure: "Operation.Read" | "Operation.Cancel",
+    id: string,
+    operationId?: string,
+    signal?: AbortSignal
+  ) => {
+    const outcome = decode(RequestOutcome, await call(procedure, reference(id), signal))
+    if (outcome.requestId !== id || operationId !== undefined && outcome.operationId !== operationId) {
+      throw new AccountTransportError("backend_protocol")
+    }
+    return outcome
+  }
+  return {
+    dispatch: async (id: string, input: unknown = {}, signal?: AbortSignal) => {
+      const invocation = decode(Invocation, { ...reference(id), input })
+      const receipt = decode(RequestReceipt, await call("Operation.Dispatch", invocation, signal))
+      if (receipt.requestId !== id) throw new AccountTransportError("backend_protocol")
+      return receipt
+    },
+    read: (id: string, operationId?: string, signal?: AbortSignal) =>
+      selection("Operation.Read", id, operationId, signal),
+    cancel: (id: string, operationId?: string, signal?: AbortSignal) =>
+      selection("Operation.Cancel", id, operationId, signal),
+    history: async (signal?: AbortSignal) => decode(RequestHistory, await call("Operation.History", {}, signal))
+  }
+}
+/** Canonical typed transport shared by every host.
+ * @since 1.0.0
+ * @category models
+ */
+export type AccountTransport = ReturnType<typeof accountTransport>
 interface Flight extends AccountRequest {
   readonly abort: AbortController
-  admitted: boolean
   admission: Promise<AccountAnswer>
+  persisted: boolean
 }
-/** One shared flight across human and agent bindings of the same host.
- *
+/** A shared observation slot, never an execution or history store.
  * @since 1.0.0
  * @category models
  */
 export interface AccountReads {
   flight: Flight | undefined
 }
-/**
- * Create the shared request slot for a host.
- *
+/** Create one observation slot for a host's human and model doors.
  * @since 1.0.0
  * @category constructors
  */
 export const accountReads = (): AccountReads => ({ flight: undefined })
-
-/**
- * The existing Account card identity.
- *
+/** The existing Account card identity.
  * @since 1.0.0
  * @category constructors
  */
 export const ACCOUNT_CARD_ID = "account"
-/**
- * The existing signed-out acknowledgment.
- *
+/** The existing signed-out acknowledgment.
  * @since 1.0.0
  * @category constructors
  */
 export const SIGNED_OUT_VALUE = "signed out: the sign-in step is in the chat"
-/**
- * The existing identity-selection acknowledgment.
- *
+/** The existing identity-selection acknowledgment.
  * @since 1.0.0
  * @category constructors
  */
 export const IDENTITY_PENDING_TEXT = "Still checking who is signed in. Try again in a moment."
+/** Canonical cancellation has its own presentation result.
+ * @since 1.0.0
+ * @category constructors
+ */
+export const ACCOUNT_CANCELLED = Symbol("Account cancelled")
 const REQUESTED = { value: "Requested" } as const
 const superseded = (): AccountAnswer => ({ value: "Account request is no longer current." })
-
-/** Storage and presentation adapters contain no request lifecycle decisions.
- *
+/** Existing host storage and presentation, bound to the sole server authority.
  * @since 1.0.0
  * @category models
  */
 export interface AccountHost {
   readonly authority: () => AccountAuthority
   readonly disposed: () => boolean
-  readonly boxes: () => AccountFacts["boxes"]
   readonly signIn: () => void
-  /** Persist before starting any read. Facts may be absent until /api/user answers. */
-  readonly admit: (request: AccountRequest, facts: AccountFacts | undefined) => Promise<void>
-  /** The currently retained request; host validation fences restoration to its current authority. */
+  readonly admit: (request: AccountRequest) => Promise<void>
+  readonly acknowledged: (request: AccountRequest, receipt: typeof RequestReceipt.Type) => Promise<void>
   readonly pending: () => AccountRequest | undefined
   readonly current: (request: AccountRequest) => boolean
-  readonly read: (request: AccountRequest, facts: AccountFacts | undefined, signal: AbortSignal) => Promise<AccountRead>
-  readonly complete: (request: AccountRequest, answer: AccountRead) => Promise<void>
-  /** Existing host notification stack; undefined means superseded. */
+  readonly transport: (request: AccountRequest) => AccountTransport
+  readonly complete: (request: AccountRequest, outcome: typeof RequestOutcome.Type) => Promise<void>
   readonly work: (
     request: AccountRequest,
-    run: () => Promise<true | string | undefined>,
+    run: () => Promise<true | string | typeof ACCOUNT_CANCELLED | undefined>,
     current: () => boolean
   ) => Promise<unknown>
   readonly failed: (detail: string) => void
   readonly report: (error: unknown) => void
+  readonly wait?: (signal: AbortSignal) => Promise<void>
 }
-
 const sameAuthority = (a: AccountAuthority, b: AccountAuthority): boolean =>
   a.state === b.state && a.owner === b.owner && a.origin === b.origin && a.epoch === b.epoch &&
   a.provider === b.provider && a.login === b.login && a.readsScopes === b.readsScopes
-
-/**
- * Bind the Account lifecycle to host-owned ports.
- *
+const waitForRead = (signal: AbortSignal): Promise<void> =>
+  new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve()
+      return
+    }
+    const finish = () => {
+      clearTimeout(timer)
+      signal.removeEventListener("abort", finish)
+      resolve()
+    }
+    const timer = setTimeout(finish, 250)
+    signal.addEventListener("abort", finish, { once: true })
+  })
+/** Persist a pointer immediately; observe server admission and real completion in the background.
  * @since 1.0.0
  * @category constructors
  */
@@ -236,36 +303,50 @@ export const createAccountController = (host: AccountHost, reads = accountReads(
   const release = (flight: Flight) => {
     if (reads.flight === flight) reads.flight = undefined
   }
-  const factsOf = (authority: AccountAuthority): AccountFacts | undefined =>
-    authority.login === undefined ? undefined : ({
-      login: authority.login,
-      ...(authority.provider === undefined ? {} : { provider: authority.provider }),
-      scopes: [],
-      boxes: [...host.boxes()].sort((a, b) => a.repoId.localeCompare(b.repoId) || a.name.localeCompare(b.name))
-    })
-  const launch = (flight: Flight, facts: AccountFacts | undefined): void => {
+  const launch = (flight: Flight): void => {
     const current = () => owns(flight) && host.current(flight)
-    void host.work(flight, async () => {
+    const observe = async (): Promise<true | string | typeof ACCOUNT_CANCELLED | undefined> => {
       if (!current()) return undefined
-      const answer = await host.read(flight, facts, flight.abort.signal)
-      if (!current()) return undefined
-      await host.complete(flight, answer)
-      if (!current()) return undefined
-      return "error" in answer ? answer.error : true
-    }, current).then((outcome) => {
-      if (current() && typeof outcome === "string") host.failed(outcome)
-      release(flight)
-    }).catch((error) => {
-      const currentRequest = current()
-      release(flight)
-      if (currentRequest) host.report(error)
-    })
+      const remote = host.transport(flight)
+      let operationId = flight.operationId
+      if (operationId === undefined) {
+        const receipt = await remote.dispatch(flight.id, {}, flight.abort.signal)
+        if (!current()) return undefined
+        await host.acknowledged(flight, receipt)
+        if (!current()) return undefined
+        operationId = receipt.operationId
+      }
+      while (current()) {
+        const outcome = await remote.read(flight.id, operationId, flight.abort.signal)
+        if (!current()) return undefined
+        if (["completed", "failed", "uncertain", "cancelled"].includes(outcome.state)) {
+          await host.complete(flight, outcome)
+          if (!current()) return undefined
+          return outcome.state === "cancelled" ? ACCOUNT_CANCELLED : "error" in outcome ? outcome.error : true
+        }
+        await (host.wait ?? waitForRead)(flight.abort.signal)
+      }
+      return undefined
+    }
+    // Some notification adapters consume failures. Publish the safe failed observation before handing it to them.
+    void host.work(flight, () =>
+      observe().catch((error: unknown) => {
+        if (current()) host.failed(error instanceof AccountTransportError ? error.message : "Account read failed.")
+        throw error
+      }), current).then((outcome) => {
+        if (current() && typeof outcome === "string") host.failed(outcome)
+        release(flight)
+      }).catch((error) => {
+        const active = current()
+        release(flight)
+        if (active) host.report(error)
+      })
   }
   const resumeAccount = (): void => {
     if (host.disposed()) return
     const request = host.pending()
     if (
-      request === undefined || request.read === "snapshot" || request.authority.state !== "signed-in" ||
+      request === undefined || request.authority.state !== "signed-in" ||
       !sameAuthority(request.authority, host.authority())
     ) return
     if (reads.flight && owns(reads.flight) && host.current(reads.flight)) return
@@ -273,11 +354,11 @@ export const createAccountController = (host: AccountHost, reads = accountReads(
     const flight: Flight = {
       ...request,
       abort: new AbortController(),
-      admitted: true,
-      admission: Promise.resolve(REQUESTED)
+      admission: Promise.resolve(REQUESTED),
+      persisted: true
     }
     reads.flight = flight
-    launch(flight, factsOf(request.authority))
+    launch(flight)
   }
   const showAccount = async (): Promise<AccountAnswer> => {
     if (host.disposed()) return superseded()
@@ -287,12 +368,11 @@ export const createAccountController = (host: AccountHost, reads = accountReads(
       host.signIn()
       return { value: SIGNED_OUT_VALUE }
     }
-    if (
-      reads.flight && owns(reads.flight) &&
-      (!reads.flight.admitted || host.current(reads.flight))
-    ) return reads.flight.admission
+    if (reads.flight && owns(reads.flight) && (!reads.flight.persisted || host.current(reads.flight))) {
+      return reads.flight.admission
+    }
     const pending = host.pending()
-    if (pending && sameAuthority(pending.authority, authority) && pending.read !== "snapshot") {
+    if (pending && sameAuthority(pending.authority, authority)) {
       resumeAccount()
       return REQUESTED
     }
@@ -300,47 +380,38 @@ export const createAccountController = (host: AccountHost, reads = accountReads(
     const flight: Flight = {
       id: crypto.randomUUID(),
       authority,
-      read: authority.login === undefined
-        ? "identity"
-        : authority.provider === "github" && authority.readsScopes
-        ? "permissions"
-        : "snapshot",
       abort: new AbortController(),
-      admitted: false,
-      admission: Promise.resolve(REQUESTED)
+      admission: Promise.resolve(REQUESTED),
+      persisted: false
     }
     reads.flight = flight
-    const facts = factsOf(authority)
-    try {
-      flight.admission = host.admit(flight, facts).then(() => {
-        flight.admitted = true
-        if (!owns(flight) || (flight.read !== "snapshot" && !host.current(flight))) {
-          release(flight)
-          return superseded()
-        }
-        if (flight.read !== "snapshot") {
-          launch(flight, facts)
-          return REQUESTED
-        }
+    flight.admission = Promise.resolve().then(() => host.admit(flight)).then(() => {
+      flight.persisted = true
+      if (!owns(flight) || !host.current(flight)) {
         release(flight)
-        return { value: `account: @${facts!.login}; ${facts!.boxes.length} box(es) listed` }
-      }).catch((error) => {
-        const current = owns(flight)
-        release(flight)
-        if (!current) return superseded()
-        throw error
-      })
-      return await flight.admission
-    } catch (error) {
+        return superseded()
+      }
+      launch(flight)
+      return REQUESTED
+    }).catch((error) => {
+      const active = owns(flight)
       release(flight)
+      if (!active) return superseded()
       throw error
-    }
+    })
+    return flight.admission
+  }
+  const cancelAccount = async (): Promise<typeof RequestOutcome.Type | undefined> => {
+    const flight = reads.flight
+    if (flight === undefined || !owns(flight) || !host.current(flight)) return undefined
+    const pending = host.pending()
+    return host.transport(flight).cancel(flight.id, pending?.operationId, flight.abort.signal)
   }
   const dispose = (): void => {
     reads.flight?.abort.abort()
     reads.flight = undefined
   }
-  return { showAccount, resumeAccount, dispose }
+  return { showAccount, resumeAccount, cancelAccount, dispose }
 }
 
 /** Decode the identity worker's existing permission answer without inventing scope facts.
@@ -375,16 +446,4 @@ export const readAccountPermissions = async (
   } catch {
     return { error: "Permissions could not be loaded." }
   }
-}
-
-/** Project only the selected backend's canonical identity, never token or profile metadata.
- * @since 1.0.0
- * @category constructors
- */
-export const identityFacts = (value: unknown): AccountFacts | undefined => {
-  if (
-    typeof value !== "object" || value === null || !("username" in value) ||
-    typeof value.username !== "string" || value.username.trim() === ""
-  ) return undefined
-  return { login: value.username, scopes: [], boxes: [] }
 }

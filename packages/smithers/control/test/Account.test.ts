@@ -1,7 +1,6 @@
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Account from "../src/Account.ts"
-
 const deferred = <A>() => {
   let resolve!: (value: A | PromiseLike<A>) => void
   let reject!: (reason: unknown) => void
@@ -11,106 +10,136 @@ const deferred = <A>() => {
   })
   return { promise, resolve, reject }
 }
-
+const facts: Account.AccountFacts = { login: "selected-user", scopes: [], boxes: [] }
 const authority = (overrides: Partial<Account.AccountAuthority> = {}): Account.AccountAuthority => ({
   state: "signed-in",
-  owner: "selected-token-owner",
-  origin: "http://127.0.0.1:32101",
+  owner: "selected-owner",
+  origin: "https://selected.test",
   epoch: 1,
   readsScopes: false,
   ...overrides
 })
-const facts: Account.AccountFacts = { login: "selected-user", scopes: [], boxes: [] }
 const settle = async () => {
-  for (let i = 0; i < 3; i++) await new Promise<void>((resolve) => setImmediate(resolve))
+  for (let i = 0; i < 5; i++) await new Promise<void>((resolve) => setImmediate(resolve))
 }
-
-/** Unit host ports: storage commit and network verdicts are independently held; no live-host proof. */
-const fixture = (initial = authority(), heldAdmission = false) => {
-  let selected = initial
-  let disposed = false
-  let retained: Account.AccountRequest | undefined
-  let pending = false
+const receipt = (id: string) => ({
+  operationId: "job-1",
+  requestId: id,
+  kind: "requested",
+  state: "accepted",
+  acceptedAt: "2026-10-01T00:00:00Z"
+})
+// Unit storage and typed transport ports are independently held; real database/HTTP proof is separate.
+const fixture = (initial = authority(), defaultWait = false) => {
+  let selected = initial, disposed = false, retained: Account.AccountRequest | undefined
+  const saved: Account.AccountRequest[] = [],
+    completed: Array<typeof Account.RequestOutcome.Type> = [],
+    reports: unknown[] = [],
+    failures: string[] = [],
+    jobs: Promise<unknown>[] = [],
+    calls: Array<{ procedure: string; payload: unknown }> = []
+  const dispatch = deferred<unknown>(), read = deferred<unknown>(), commit = deferred<void>()
+  commit.resolve(undefined)
   let signIns = 0
-  const commit = deferred<void>()
-  if (!heldAdmission) commit.resolve(undefined)
-  const admissions: Account.AccountRequest[] = []
-  const reads: {
-    request: Account.AccountRequest
-    signal: AbortSignal
-    answer: ReturnType<typeof deferred<Account.AccountRead>>
-  }[] = []
-  const completed: Account.AccountRead[] = []
-  const failures: string[] = []
-  const reports: unknown[] = []
-  const jobs: Promise<unknown>[] = []
   const shared = Account.accountReads()
   const host: Account.AccountHost = {
     authority: () => selected,
     disposed: () => disposed,
-    boxes: () => [],
     signIn: () => {
       signIns++
     },
     admit: async (request) => {
-      admissions.push(request)
+      saved.push(request)
       await commit.promise
       retained = request
-      pending = true
     },
-    pending: () => pending ? retained : undefined,
+    acknowledged: async (request, answer) => {
+      retained = { ...request, operationId: answer.operationId }
+    },
+    pending: () => retained,
     current: (request) => retained?.id === request.id,
-    read: async (request, _facts, signal) => {
-      const answer = deferred<Account.AccountRead>()
-      reads.push({ request, signal, answer })
-      return answer.promise
-    },
-    complete: async (_request, answer) => {
-      completed.push(answer)
-      pending = false
+    transport: (request) =>
+      Account.accountTransport({
+        current: () => selected === request.authority && !disposed,
+        post: async (path, body) => {
+          expect(path).toBe("/api/workflow/rpc")
+          if (
+            typeof body !== "object" || body === null || !("procedure" in body) || typeof body.procedure !== "string" ||
+            !("payload" in body)
+          ) throw new Error("Invalid test command")
+          const command = { procedure: body.procedure, payload: body.payload }
+          calls.push(command)
+          if (command.procedure === "Operation.Dispatch") return dispatch.promise
+          if (command.procedure === "Operation.Cancel") {
+            return { operationId: "job-1", requestId: request.id, state: "cancelled", actor: "api" }
+          }
+          return read.promise
+        }
+      }),
+    complete: async (_request, outcome) => {
+      completed.push(outcome)
     },
     work: (_request, run) => {
       const job = run()
       jobs.push(job)
       return job
     },
-    failed: (detail) => {
-      failures.push(detail)
+    failed: (line) => {
+      failures.push(line)
     },
     report: (error) => {
       reports.push(error)
-    }
+    },
+    ...(defaultWait
+      ? {}
+      : {
+        wait: (signal: AbortSignal) =>
+          new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+      })
   }
-  const controller = Account.createAccountController(host, shared)
+  const core = Account.createAccountController(host, shared)
   return {
     host,
     shared,
-    controller,
-    commit,
-    admissions,
-    reads,
+    core,
+    saved,
     completed,
-    failures,
     reports,
-    jobs,
+    failures,
+    calls,
+    dispatch,
+    read,
     select: (value: Account.AccountAuthority) => {
       selected = value
     },
     retain: (value: Account.AccountRequest) => {
       retained = value
-      pending = true
+    },
+    clear: () => {
+      retained = undefined
     },
     signIns: () => signIns,
+    async accepted() {
+      const id = saved[0]?.id ?? retained!.id
+      dispatch.resolve(receipt(id))
+      await settle()
+      return id
+    },
     async close() {
       disposed = true
-      controller.dispose()
-      commit.resolve(undefined)
-      for (const read of reads) read.answer.resolve({ facts })
+      core.dispose()
+      dispatch.resolve(receipt(saved[0]?.id ?? "closed"))
+      read.resolve({
+        operationId: "job-1",
+        requestId: saved[0]?.id ?? "closed",
+        state: "completed",
+        actor: "api",
+        result: { login: "selected-user" }
+      })
       await Promise.allSettled(jobs)
     }
   }
 }
-
 describe("shared Account authority", () => {
   it("requires real completion evidence and keeps private facts outside the identity wire contract", () => {
     const decode = Schema.decodeUnknownSync(Account.RequestOutcome, { onExcessProperty: "error" })
@@ -187,490 +216,617 @@ describe("shared Account authority", () => {
     expect(() => Schema.decodeUnknownSync(Account.NoInput)(null)).toThrow()
   })
 
-  it("distinguishes pending identity from signed out without admitting or reading", async () => {
-    const t = fixture(authority({ state: "unknown" }))
+  it.each(["unknown", "signed-out"] as const)("does not admit for %s identity", async (state) => {
+    const t = fixture(authority({ state }))
     try {
-      expect(await t.controller.showAccount()).toBe(Account.IDENTITY_PENDING_TEXT)
-      expect(t.signIns()).toBe(0)
-      t.select(authority({ state: "signed-out" }))
-      expect(await t.controller.showAccount()).toEqual({ value: Account.SIGNED_OUT_VALUE })
-      expect(t.signIns()).toBe(1)
-      expect(t.admissions).toEqual([])
-      expect(t.reads).toEqual([])
+      const answer = await t.core.showAccount()
+      expect(t.saved).toEqual([])
+      expect(t.calls).toEqual([])
+      expect(t.signIns()).toBe(state === "signed-out" ? 1 : 0)
+      expect(answer).toEqual(state === "unknown" ? Account.IDENTITY_PENDING_TEXT : { value: Account.SIGNED_OUT_VALUE })
     } finally {
       await t.close()
     }
   })
-
-  it("isolates default read ownership while deduplicating each host's held admission", async () => {
-    const first = fixture(authority(), true)
-    const second = fixture(authority(), true)
-    const left = Account.createAccountController(first.host)
-    const right = Account.createAccountController(second.host)
-    const admissions = [left.showAccount(), left.showAccount(), right.showAccount(), right.showAccount()]
-    try {
-      await settle()
-      expect(first.admissions).toHaveLength(1)
-      expect(second.admissions).toHaveLength(1)
-      expect(first.reads).toEqual([])
-      expect(second.reads).toEqual([])
-      first.commit.resolve(undefined)
-      expect(await admissions[0]).toEqual({ value: "Requested" })
-      expect(await admissions[1]).toEqual({ value: "Requested" })
-      expect(first.reads).toHaveLength(1)
-      expect(second.reads).toEqual([])
-      second.commit.resolve(undefined)
-      expect(await admissions[2]).toEqual({ value: "Requested" })
-      expect(await admissions[3]).toEqual({ value: "Requested" })
-      expect(second.reads).toHaveLength(1)
-      left.dispose()
-      expect(first.reads[0]!.signal.aborted).toBe(true)
-      expect(second.reads[0]!.signal.aborted).toBe(false)
-      first.reads[0]!.answer.resolve({ facts: { login: "stale-first", scopes: [], boxes: [] } })
-      second.reads[0]!.answer.resolve({ facts: { login: "current-second", scopes: [], boxes: [] } })
-      await Promise.all([...first.jobs, ...second.jobs])
-      expect(first.completed).toEqual([])
-      expect(second.completed).toEqual([{ facts: { login: "current-second", scopes: [], boxes: [] } }])
-    } finally {
-      left.dispose()
-      right.dispose()
+  it.each([undefined, "github", "local"] as const)(
+    "always uses server identity despite cached provider %s",
+    async (provider) => {
+      const t = fixture(
+        authority({ login: "selected-user", ...(provider === undefined ? {} : { provider }), readsScopes: true })
+      )
       try {
-        await first.close()
+        expect(await t.core.showAccount()).toEqual({ value: "Requested" })
+        await settle()
+        expect(t.calls).toHaveLength(1)
+        expect(t.calls[0]).toMatchObject({
+          procedure: "Operation.Dispatch",
+          payload: { name: "account.show", input: {} }
+        })
+        expect(t.completed).toEqual([])
+        const id = await t.accepted()
+        expect(t.calls[1]).toEqual({ procedure: "Operation.Read", payload: { name: "account.show", requestId: id } })
+        t.read.resolve({
+          operationId: "job-1",
+          requestId: id,
+          state: "completed",
+          actor: "api",
+          result: { login: "selected-user" }
+        })
+        await settle()
+        expect(t.completed).toHaveLength(1)
       } finally {
-        await second.close()
-        await Promise.allSettled(admissions)
+        await t.close()
       }
     }
-  })
-
-  it("shares a held durable admission across actors, then acknowledges before the read finishes", async () => {
-    const t = fixture(authority(), true)
-    const other = Account.createAccountController(t.host, t.shared)
-    let acknowledged = false
-    const first = t.controller.showAccount().then((value) => {
-      acknowledged = true
-      return value
-    })
-    const second = other.showAccount()
+  )
+  it("deduplicates human and model doors while both remote admission and execution are held", async () => {
+    const t = fixture()
     try {
+      const other = Account.createAccountController(t.host, t.shared)
+      expect(await Promise.all([t.core.showAccount(), other.showAccount()])).toEqual([{ value: "Requested" }, {
+        value: "Requested"
+      }])
       await settle()
-      expect(t.admissions).toHaveLength(1)
-      expect(t.reads).toEqual([])
-      expect(acknowledged).toBe(false)
-      t.commit.resolve(undefined)
-      expect(await first).toEqual({ value: "Requested" })
-      expect(await second).toEqual({ value: "Requested" })
-      expect(t.reads).toHaveLength(1)
+      expect(t.saved).toHaveLength(1)
+      expect(t.calls).toHaveLength(1)
+      await t.accepted()
       expect(t.completed).toEqual([])
-      let unrelatedAction = false
-      queueMicrotask(() => {
-        unrelatedAction = true
-      })
-      await settle()
-      expect(unrelatedAction).toBe(true)
-      expect(t.completed).toEqual([])
-      t.reads[0]!.answer.resolve({ facts })
-      await Promise.all(t.jobs)
-      expect(t.completed).toEqual([{ facts }])
     } finally {
       await t.close()
-      await Promise.allSettled([first, second])
     }
   })
-
-  for (const change of ["owner", "origin", "login", "readsScopes", "logout", "ABA", "dispose"] as const) {
-    it(`rejects a late private answer after ${change}`, async () => {
-      const t = fixture(authority({ login: "selected-user", provider: "github", readsScopes: true }))
+  it.each(["accepted", "dispatching", "running", "waiting"] as const)(
+    "never completes a server %s receipt",
+    async (state) => {
+      const t = fixture()
       try {
-        await t.controller.showAccount()
-        expect(t.reads).toHaveLength(1)
-        const initial = t.reads[0]!.request.authority
-        if (change === "owner") t.select({ ...initial, owner: "other-owner" })
-        if (change === "origin") t.select({ ...initial, origin: "http://127.0.0.1:32102" })
-        if (change === "login") t.select({ ...initial, login: "replacement-login" })
-        if (change === "readsScopes") t.select({ ...initial, readsScopes: false })
-        if (change === "logout") t.select({ ...initial, state: "signed-out", epoch: 2 })
-        if (change === "ABA") {
-          t.select({ ...initial, state: "signed-out", epoch: 2 })
-          t.select({ ...initial, epoch: 3 })
+        await t.core.showAccount()
+        const id = await t.accepted()
+        t.read.resolve({ operationId: "job-1", requestId: id, state, actor: "api" })
+        await settle()
+        expect(t.completed).toEqual([])
+        expect(t.shared.flight).toBeDefined()
+      } finally {
+        await t.close()
+      }
+    }
+  )
+  it.each(["completed", "failed", "uncertain", "cancelled"] as const)(
+    "settles only server terminal %s",
+    async (state) => {
+      const t = fixture()
+      try {
+        await t.core.showAccount()
+        const id = await t.accepted()
+        t.read.resolve({
+          operationId: "job-1",
+          requestId: id,
+          state,
+          actor: "agent",
+          ...(state === "completed"
+            ? { result: { login: "selected-user" } }
+            : state === "failed" || state === "uncertain"
+            ? { error: "Account read failed." }
+            : {})
+        })
+        await settle()
+        expect(t.completed).toHaveLength(1)
+        expect(t.completed[0]?.state).toBe(state)
+        expect(t.shared.flight).toBeUndefined()
+        expect(t.failures).toEqual(state === "failed" || state === "uncertain" ? ["Account read failed."] : [])
+      } finally {
+        await t.close()
+      }
+    }
+  )
+  it.each(["owner", "origin", "epoch", "provider", "readsScopes"] as const)(
+    "fences replacement of %s during admission",
+    async (field) => {
+      const selected = authority({ provider: "github" })
+      const t = fixture(selected)
+      try {
+        await t.core.showAccount()
+        await settle()
+        t.select({
+          ...selected,
+          ...(field === "owner"
+            ? { owner: "another" }
+            : field === "origin"
+            ? { origin: "https://another.test" }
+            : field === "epoch"
+            ? { epoch: 2 }
+            : field === "provider"
+            ? { provider: "local" }
+            : { readsScopes: true })
+        })
+        await t.accepted()
+        expect(t.calls).toHaveLength(1)
+        expect(t.completed).toEqual([])
+        expect(t.reports).toEqual([])
+      } finally {
+        await t.close()
+      }
+    }
+  )
+  it.each([true, false])("reconnects existing request, known operation=%s", async (known) => {
+    const owner = authority()
+    const t = fixture(owner)
+    try {
+      t.retain({ id: "retained-1", authority: owner, ...(known ? { operationId: "job-1" } : {}) })
+      t.core.resumeAccount()
+      t.core.resumeAccount()
+      await settle()
+      expect(t.saved).toEqual([])
+      expect(t.calls.map((c) => c.procedure)).toEqual([known ? "Operation.Read" : "Operation.Dispatch"])
+      if (!known) await t.accepted()
+      expect(t.calls.at(-1)?.payload).toEqual({ name: "account.show", requestId: "retained-1" })
+    } finally {
+      await t.close()
+    }
+  })
+  it("waits for one durable local pointer while remote launch remains unresolved", async () => {
+    const t = fixture(), storage = deferred<void>()
+    const core = Account.createAccountController({
+      ...t.host,
+      admit: async (request) => {
+        await storage.promise
+        await t.host.admit(request)
+      }
+    }, t.shared)
+    try {
+      let acknowledged = false
+      const first = core.showAccount().then((answer) => {
+        acknowledged = true
+        return answer
+      })
+      const second = core.showAccount()
+      await settle()
+      expect(acknowledged).toBe(false)
+      expect(t.saved).toEqual([])
+      expect(t.calls).toEqual([])
+      storage.resolve(undefined)
+      expect(await Promise.all([first, second])).toEqual([{ value: "Requested" }, { value: "Requested" }])
+      await settle()
+      expect(t.saved).toHaveLength(1)
+      expect(t.calls).toHaveLength(1)
+      expect(t.completed).toEqual([])
+    } finally {
+      storage.resolve(undefined)
+      core.dispose()
+      await t.close()
+    }
+  })
+  it("does not reuse an observer whose persisted presentation pointer was cleared", async () => {
+    const t = fixture()
+    try {
+      await t.core.showAccount()
+      await t.accepted()
+      const first = t.saved[0]!.id
+      t.clear()
+      expect(await t.core.showAccount()).toEqual({ value: "Requested" })
+      expect(t.saved).toHaveLength(2)
+      expect(t.saved[1]!.id).not.toBe(first)
+      await settle()
+      expect(t.calls.filter((call) => call.procedure === "Operation.Dispatch")).toHaveLength(2)
+      expect(t.calls.some((call) => call.procedure === "Operation.Cancel")).toBe(false)
+    } finally {
+      await t.close()
+    }
+  })
+  it("disposal stops observation without cancelling server execution", async () => {
+    const t = fixture()
+    try {
+      await t.core.showAccount()
+      await t.accepted()
+      t.core.dispose()
+      await settle()
+      expect(t.calls.map((c) => c.procedure)).toEqual(["Operation.Dispatch", "Operation.Read"])
+      expect(await t.core.cancelAccount()).toBeUndefined()
+      expect(t.completed).toEqual([])
+    } finally {
+      await t.close()
+    }
+  })
+  it("explicit cancellation uses the canonical operation and request identity", async () => {
+    const t = fixture()
+    try {
+      await t.core.showAccount()
+      const id = await t.accepted()
+      expect(await t.core.cancelAccount()).toEqual({
+        operationId: "job-1",
+        requestId: id,
+        state: "cancelled",
+        actor: "api"
+      })
+      expect(t.calls.at(-1)).toEqual({
+        procedure: "Operation.Cancel",
+        payload: { name: "account.show", requestId: id }
+      })
+      expect(t.completed).toEqual([])
+    } finally {
+      await t.close()
+    }
+  })
+  it("refuses failed local storage before network admission and permits a fresh attempt", async () => {
+    const t = fixture()
+    let broken = true
+    const core = Account.createAccountController({
+      ...t.host,
+      admit: async (r) => {
+        if (broken) throw new Error("storage refused")
+        await t.host.admit(r)
+      }
+    }, t.shared)
+    try {
+      await expect(core.showAccount()).rejects.toThrow("storage refused")
+      expect(t.calls).toEqual([])
+      broken = false
+      expect(await core.showAccount()).toEqual({ value: "Requested" })
+    } finally {
+      core.dispose()
+      await t.close()
+    }
+  })
+  it("releases a synchronous local admission failure and admits a fresh retry", async () => {
+    const t = fixture()
+    let first = true
+    const core = Account.createAccountController({
+      ...t.host,
+      admit: (request) => {
+        if (first) {
+          first = false
+          throw new Error("synchronous storage refusal")
         }
-        if (change === "dispose") t.controller.dispose()
-        t.reads[0]!.answer.resolve({ facts: { ...facts, login: "private-old-owner" } })
-        await Promise.all(t.jobs)
+        return t.host.admit(request)
+      }
+    }, t.shared)
+    try {
+      await expect(core.showAccount()).rejects.toThrow("synchronous storage refusal")
+      expect(t.shared.flight).toBeUndefined()
+      expect(t.calls).toEqual([])
+      expect(await core.showAccount()).toEqual({ value: "Requested" })
+      expect(t.saved).toHaveLength(1)
+    } finally {
+      core.dispose()
+      await t.close()
+    }
+  })
+  it.each(["missing", "signed-out", "foreign-owner"] as const)(
+    "does not reconnect a %s request pointer",
+    async (kind) => {
+      const t = fixture()
+      try {
+        if (kind !== "missing") {
+          t.retain({
+            id: "retained-request",
+            authority: authority(kind === "signed-out" ? { state: "signed-out" } : { owner: "foreign" }),
+            operationId: "job-1"
+          })
+        }
+        t.core.resumeAccount()
+        await settle()
+        expect(t.calls).toEqual([])
+        expect(t.saved).toEqual([])
+        expect(t.shared.flight).toBeUndefined()
+      } finally {
+        await t.close()
+      }
+    }
+  )
+  it("reconnects the newly selected owner's pending operation while aborting only old observation", async () => {
+    const t = fixture()
+    try {
+      await t.core.showAccount()
+      const old = t.shared.flight
+      if (old === undefined) throw new Error("Expected active observation")
+      const replacement = authority({ owner: "replacement", epoch: 2 })
+      t.select(replacement)
+      t.retain({ id: "replacement-request", operationId: "job-1", authority: replacement })
+      t.core.resumeAccount()
+      await settle()
+      expect(old.abort.signal.aborted).toBe(true)
+      expect(t.saved).toHaveLength(1)
+      expect(t.calls).toEqual([
+        { procedure: "Operation.Dispatch", payload: { name: "account.show", requestId: old.id, input: {} } },
+        { procedure: "Operation.Read", payload: { name: "account.show", requestId: "replacement-request" } }
+      ])
+      expect(t.calls.some((call) => call.procedure === "Operation.Cancel")).toBe(false)
+    } finally {
+      await t.close()
+    }
+  })
+  it("show reconnects the retained accepted operation without new admission and shares repeated restore", async () => {
+    const owner = authority(), t = fixture(owner)
+    try {
+      t.retain({ id: "retained-2", authority: owner, operationId: "job-1" })
+      expect(await t.core.showAccount()).toEqual({ value: "Requested" })
+      t.core.resumeAccount()
+      await settle()
+      expect(t.saved).toEqual([])
+      expect(t.calls).toEqual([{
+        procedure: "Operation.Read",
+        payload: { name: "account.show", requestId: "retained-2" }
+      }])
+    } finally {
+      await t.close()
+    }
+  })
+  it.each(["dispatch", "read"] as const)(
+    "ignores a cleared presentation pointer after held remote %s",
+    async (stage) => {
+      const t = fixture()
+      try {
+        await t.core.showAccount()
+        const saved = t.saved[0]
+        if (saved === undefined) throw new Error("Expected persisted Account request")
+        const id = saved.id
+        if (stage === "read") await t.accepted()
+        t.clear()
+        if (stage === "dispatch") t.dispatch.resolve(receipt(id))
+        else {t.read.resolve({
+            operationId: "job-1",
+            requestId: id,
+            actor: "api",
+            state: "completed",
+            result: { login: "owner" }
+          })}
+        await settle()
         expect(t.completed).toEqual([])
         expect(t.failures).toEqual([])
         expect(t.reports).toEqual([])
-        if (change === "dispose") expect(t.reads[0]!.signal.aborted).toBe(true)
+        expect(t.shared.flight).toBeUndefined()
+        expect(await t.core.cancelAccount()).toBeUndefined()
       } finally {
         await t.close()
       }
-    })
-  }
-
-  it("admits a different owner while the old read remains held and rejects its later completion", async () => {
-    const t = fixture()
+    }
+  )
+  it("does not start remote execution from a held notification adapter after the owner changes", async () => {
+    const t = fixture(), start = deferred<void>()
+    const core = Account.createAccountController({
+      ...t.host,
+      work: async (_request, run) => {
+        await start.promise
+        return run()
+      }
+    }, t.shared)
     try {
-      await t.controller.showAccount()
-      const previous = t.reads[0]!
-      t.select(authority({ owner: "replacement-owner" }))
-      await t.controller.showAccount()
-      expect(t.admissions).toHaveLength(2)
-      expect(t.reads).toHaveLength(2)
-      expect(t.reads[1]!.request.id).not.toBe(previous.request.id)
-      expect(previous.signal.aborted).toBe(true)
-      const replacement = { ...facts, login: "replacement-owner" }
-      t.reads[1]!.answer.resolve({ facts: replacement })
-      await t.jobs[1]
-      expect(t.completed).toEqual([{ facts: replacement }])
-      previous.answer.resolve({ facts: { ...facts, login: "private-old-owner" } })
-      await Promise.all(t.jobs)
-      expect(t.completed).toEqual([{ facts: replacement }])
+      expect(await core.showAccount()).toEqual({ value: "Requested" })
+      t.select(authority({ owner: "replacement" }))
+      expect(await core.cancelAccount()).toBeUndefined()
+      start.resolve()
+      await settle()
+      expect(t.calls).toEqual([])
+      expect(t.completed).toEqual([])
+      expect(t.shared.flight).toBeUndefined()
+    } finally {
+      start.resolve()
+      core.dispose()
+      await t.close()
+    }
+  })
+  it.each([undefined, 503])("publishes typed transport failure safely, HTTP=%s", async (status) => {
+    const t = fixture()
+    const core = Account.createAccountController({
+      ...t.host,
+      transport: () =>
+        Account.accountTransport({
+          current: () => true,
+          post: async () => {
+            throw new Account.AccountTransportError("account_read_failed", status)
+          }
+        })
+    }, t.shared)
+    try {
+      await core.showAccount()
+      await settle()
+      expect(t.completed).toEqual([])
+      expect(t.failures).toEqual([status === undefined ? "Account read failed." : "Account read failed (HTTP 503)."])
+      expect(t.reports).toHaveLength(1)
+      expect(t.reports[0]).toMatchObject({ code: "account_read_failed", status })
+      expect(t.shared.flight).toBeUndefined()
+    } finally {
+      core.dispose()
+      await t.close()
+    }
+  })
+  it("polls a running server with the default cadence and stops further reads on disposal", async () => {
+    const t = fixture(authority(), true)
+    try {
+      await t.core.showAccount()
+      const id = await t.accepted()
+      t.read.resolve({ operationId: "job-1", requestId: id, state: "running", actor: "api" })
+      await settle()
+      expect(t.calls.filter((call) => call.procedure === "Operation.Read")).toHaveLength(1)
+      const deadline = Date.now() + 2000
+      while (t.calls.filter((call) => call.procedure === "Operation.Read").length < 2 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      }
+      expect(t.calls.filter((call) => call.procedure === "Operation.Read")).toHaveLength(2)
+      t.core.dispose()
+      await settle()
+      expect(t.completed).toEqual([])
+      await new Promise((resolve) => setTimeout(resolve, 275))
+      expect(t.calls.filter((call) => call.procedure === "Operation.Read")).toHaveLength(2)
       expect(t.failures).toEqual([])
     } finally {
       await t.close()
     }
   })
-
-  it("cancels a superseded origin read and permits only the new selected origin to publish", async () => {
-    const t = fixture()
-    try {
-      await t.controller.showAccount()
-      t.select(authority({ origin: "http://127.0.0.1:32102", epoch: 2 }))
-      await t.controller.showAccount()
-      expect(t.reads).toHaveLength(2)
-      expect(t.reads[0]!.signal.aborted).toBe(true)
-      t.reads[1]!.answer.resolve({ facts })
-      t.reads[0]!.answer.resolve({ facts: { ...facts, login: "private-old-owner" } })
-      await Promise.all(t.jobs)
-      expect(t.completed).toEqual([{ facts }])
-    } finally {
-      await t.close()
-    }
-  })
-
-  it("retains a safe failure and allows a fresh request to recover without duplicate completion", async () => {
-    const t = fixture()
-    try {
-      await t.controller.showAccount()
-      t.reads[0]!.answer.resolve({ error: "Account could not be read." })
-      await Promise.all(t.jobs)
-      expect(t.failures).toEqual(["Account could not be read."])
-      const oldId = t.reads[0]!.request.id
-      await t.controller.showAccount()
-      expect(t.reads[1]!.request.id).not.toBe(oldId)
-      t.reads[1]!.answer.resolve({ facts })
-      await Promise.all(t.jobs)
-      expect(t.completed).toEqual([{ error: "Account could not be read." }, { facts }])
-    } finally {
-      await t.close()
-    }
-  })
-
-  it("reconnects a retained matching request without new admission and refuses an old origin receipt", async () => {
-    const t = fixture()
-    const request: Account.AccountRequest = { id: "persisted-request", authority: authority(), read: "identity" }
-    try {
-      t.retain(request)
-      t.controller.resumeAccount()
-      t.controller.resumeAccount()
-      expect(t.admissions).toEqual([])
-      expect(t.reads).toHaveLength(1)
-      expect(t.reads[0]!.request.id).toBe(request.id)
-      t.reads[0]!.answer.resolve({ facts })
-      await Promise.all(t.jobs)
-      t.retain({ ...request, authority: authority({ origin: "http://127.0.0.1:32102" }) })
-      t.controller.resumeAccount()
-      expect(t.reads).toHaveLength(1)
-    } finally {
-      await t.close()
-    }
-  })
-
-  it("persists verified snapshot facts in repository/name order without a permissions read", async () => {
-    const t = fixture(authority({ login: "selected-user", provider: "local" }))
-    const boxes = [
-      { id: "3", repoId: "z/repo", name: "a", status: "running" },
-      { id: "2", repoId: "a/repo", name: "z", status: "stopped" },
-      { id: "1", repoId: "a/repo", name: "a", status: "running" }
-    ]
-    const admitted: Account.AccountFacts[] = []
-    const controller = Account.createAccountController({
-      ...t.host,
-      boxes: () => boxes,
-      admit: async (request, value) => {
-        if (value !== undefined) admitted.push(value)
-        await t.host.admit(request, value)
-      }
-    }, t.shared)
-    try {
-      expect(await controller.showAccount()).toEqual({ value: "account: @selected-user; 3 box(es) listed" })
-      expect(admitted).toEqual([{
-        login: "selected-user",
-        provider: "local",
-        scopes: [],
-        boxes: [boxes[2], boxes[1], boxes[0]]
-      }])
-      expect(boxes.map((box) => box.id)).toEqual(["3", "2", "1"])
-      expect(t.reads).toEqual([])
-      controller.resumeAccount()
-      expect(t.reads).toEqual([])
-    } finally {
-      await t.close()
-    }
-  })
-
-  it("refuses a failed durable admission before any read and recovers through a new request", async () => {
-    const t = fixture()
-    const failure = new Error("owned-storage-refused")
-    let refuse = true
-    const controller = Account.createAccountController({
-      ...t.host,
-      admit: async (request, value) => {
-        if (refuse) {
-          refuse = false
-          throw failure
+  it.each(["admission", "acknowledgment", "completion"] as const)(
+    "fences owner replacement during held %s persistence",
+    async (stage) => {
+      const t = fixture(), entered = deferred<void>(), commit = deferred<void>()
+      const core = Account.createAccountController({
+        ...t.host,
+        admit: async (request) => {
+          if (stage === "admission") {
+            entered.resolve()
+            await commit.promise
+          }
+          await t.host.admit(request)
+        },
+        acknowledged: async (request, answer) => {
+          if (stage === "acknowledgment") {
+            entered.resolve()
+            await commit.promise
+          }
+          await t.host.acknowledged(request, answer)
+        },
+        complete: async (request, outcome) => {
+          if (stage === "completion") {
+            entered.resolve()
+            await commit.promise
+          }
+          await t.host.complete(request, outcome)
         }
-        await t.host.admit(request, value)
-      }
-    }, t.shared)
-    try {
-      await expect(controller.showAccount()).rejects.toBe(failure)
-      expect(t.reads).toEqual([])
-      expect(await controller.showAccount()).toEqual({ value: "Requested" })
-      t.reads[0]!.answer.resolve({ facts })
-      await Promise.all(t.jobs)
-      expect(t.completed).toEqual([{ facts }])
-    } finally {
-      await t.close()
-    }
-  })
-
-  it("does not launch a read after account replacement while admission is held", async () => {
-    const t = fixture(authority(), true)
-    const showing = t.controller.showAccount()
-    try {
-      t.select(authority({ owner: "replacement", epoch: 2 }))
-      t.commit.resolve(undefined)
-      expect(await showing).toEqual({ value: "Account request is no longer current." })
-      expect(t.reads).toEqual([])
-      expect(t.completed).toEqual([])
-    } finally {
-      await t.close()
-      await Promise.allSettled([showing])
-    }
-  })
-
-  for (const stale of [false, true]) {
-    it(`reports a thrown read only while its request is ${stale ? "superseded" : "current"}`, async () => {
-      const t = fixture()
-      const thrown = new Error("private-diagnostic-only")
+      }, t.shared)
       try {
-        await t.controller.showAccount()
-        if (stale) t.select(authority({ epoch: 2 }))
-        t.reads[0]!.answer.reject(thrown)
-        await Promise.allSettled(t.jobs)
+        const answer = core.showAccount()
+        if (stage !== "admission") {
+          expect(await answer).toEqual({ value: "Requested" })
+          const saved = t.saved[0]
+          if (saved === undefined) throw new Error("Expected persisted Account request")
+          const id = saved.id
+          t.dispatch.resolve(receipt(id))
+          if (stage === "completion") {
+            t.read.resolve({
+              operationId: "job-1",
+              requestId: id,
+              actor: "api",
+              state: "completed",
+              result: { login: "selected-user" }
+            })
+          }
+        }
+        await entered.promise
+        t.select(authority({ owner: "replacement" }))
+        commit.resolve()
         await settle()
-        expect(t.reports).toEqual(stale ? [] : [thrown])
-        expect(t.completed).toEqual([])
+        if (stage === "admission") expect(await answer).toEqual({ value: "Account request is no longer current." })
+        expect(t.calls.filter((call) => call.procedure === "Operation.Read")).toHaveLength(
+          stage === "completion" ? 1 : 0
+        )
+        expect(t.shared.flight).toBeUndefined()
+        expect(t.reports).toEqual([])
         expect(t.failures).toEqual([])
       } finally {
+        commit.resolve()
+        core.dispose()
         await t.close()
       }
-    })
-  }
-
-  it("reports completion storage failure without a success receipt and can retry", async () => {
-    const t = fixture()
-    const failure = new Error("completion-storage-refused")
-    let refuse = true
-    const controller = Account.createAccountController({
-      ...t.host,
-      complete: async (request, answer) => {
-        if (refuse) {
-          refuse = false
-          throw failure
-        }
-        await t.host.complete(request, answer)
-      }
-    }, t.shared)
-    try {
-      await controller.showAccount()
-      t.reads[0]!.answer.resolve({ facts })
-      await Promise.allSettled(t.jobs)
-      await settle()
-      expect(t.reports).toEqual([failure])
-      expect(t.completed).toEqual([])
-      await controller.showAccount()
-      expect(t.admissions).toHaveLength(1)
-      expect(t.reads).toHaveLength(2)
-      expect(t.reads[1]!.request.id).toBe(t.reads[0]!.request.id)
-      t.reads[1]!.answer.resolve({ facts })
-      await Promise.allSettled(t.jobs)
-      expect(t.completed).toEqual([{ facts }])
-    } finally {
-      await t.close()
     }
-  })
-
-  it("never resumes or admits after its host is disposed", async () => {
+  )
+  it("refuses show, reconnect and cancellation after host disposal without any remote call", async () => {
     const t = fixture()
     await t.close()
-    t.retain({ id: "stored", authority: authority(), read: "identity" })
-    t.controller.resumeAccount()
-    expect(await t.controller.showAccount()).toEqual({ value: "Account request is no longer current." })
-    expect(t.admissions).toEqual([])
-    expect(t.reads).toEqual([])
+    expect(await t.core.showAccount()).toEqual({ value: "Account request is no longer current." })
+    t.core.resumeAccount()
+    expect(await t.core.cancelAccount()).toBeUndefined()
+    expect(t.calls).toEqual([])
+    expect(t.saved).toEqual([])
   })
-
-  for (const provider of ["github", "local"] as const) {
-    for (const readsScopes of [false, true]) {
-      it(`uses permission reads only for verified GitHub identity with scopes authority (${provider}/${readsScopes})`, async () => {
-        const t = fixture(authority({ login: "selected-user", provider, readsScopes }))
-        try {
-          await t.controller.showAccount()
-          expect(t.admissions[0]!.read).toBe(provider === "github" && readsScopes ? "permissions" : "snapshot")
-          expect(t.reads).toHaveLength(provider === "github" && readsScopes ? 1 : 0)
-          if (t.reads[0]) {
-            t.reads[0].answer.resolve({ facts })
-            await Promise.all(t.jobs)
-          }
-        } finally {
-          await t.close()
+  it("reports a completion storage failure without a success result", async () => {
+    const t = fixture()
+    const core = Account.createAccountController({
+      ...t.host,
+      complete: async () => {
+        throw new Error("save refused")
+      }
+    }, t.shared)
+    try {
+      await core.showAccount()
+      const id = await t.accepted()
+      t.read.resolve({
+        operationId: "job-1",
+        requestId: id,
+        state: "completed",
+        actor: "user",
+        result: { login: "selected-user" }
+      })
+      await settle()
+      expect(t.completed).toEqual([])
+      expect(t.reports).toHaveLength(1)
+      expect(t.shared.flight).toBeUndefined()
+    } finally {
+      core.dispose()
+      await t.close()
+    }
+  })
+  it.each([
+    { state: "completed" },
+    { state: "accepted", result: { login: "unearned" } },
+    { state: "completed", result: { login: "owner", token: "private" } },
+    { state: "failed" },
+    { state: "completed", requestId: "wrong", result: { login: "owner" } },
+    { state: "completed", operationId: "wrong", result: { login: "owner" } }
+  ])("refuses invalid or stale terminal evidence %j", async (invalid) => {
+    const t = fixture()
+    try {
+      await t.core.showAccount()
+      const id = await t.accepted()
+      t.read.resolve({ operationId: "job-1", requestId: id, actor: "api", ...invalid })
+      await settle()
+      expect(t.completed).toEqual([])
+      expect(t.reports).toHaveLength(1)
+      expect(t.reports[0]).toBeInstanceOf(Account.AccountTransportError)
+    } finally {
+      await t.close()
+    }
+  })
+  it.each(["before", "after"] as const)(
+    "refuses selected-source change %s HTTP and never exposes its receipt",
+    async (changed) => {
+      let current = changed !== "before", posts = 0
+      const remote = Account.accountTransport({
+        current: () => current,
+        post: async () => {
+          posts++
+          current = false
+          return { cursor: 1, truncated: false, items: [] }
         }
       })
+      await expect(remote.history()).rejects.toMatchObject({ code: "account_changed" })
+      expect(posts).toBe(changed === "before" ? 0 : 1)
     }
-  }
-
-  it("does not publish after another retained request supersedes the same owner and origin", async () => {
-    const t = fixture()
-    try {
-      await t.controller.showAccount()
-      t.retain({ ...t.reads[0]!.request, id: "newer-request" })
-      await t.controller.showAccount()
-      expect(t.admissions).toHaveLength(1)
-      expect(t.reads).toHaveLength(2)
-      expect(t.reads[1]!.request.id).toBe("newer-request")
-      expect(t.reads[0]!.signal.aborted).toBe(true)
-      t.reads[1]!.answer.resolve({ facts })
-      await t.jobs[1]
-      t.reads[0]!.answer.resolve({ facts: { ...facts, login: "private-old-answer" } })
-      await Promise.all(t.jobs)
-      expect(t.completed).toEqual([{ facts }])
-      expect(t.failures).toEqual([])
-    } finally {
-      await t.close()
-    }
-  })
-
-  it("ignores a superseded admission failure without exposing its storage diagnostics", async () => {
-    const t = fixture()
-    const storage = deferred<void>()
-    const controller = Account.createAccountController({ ...t.host, admit: () => storage.promise }, t.shared)
-    const showing = controller.showAccount()
-    try {
-      t.select(authority({ owner: "replacement", epoch: 2 }))
-      storage.reject(new Error("private-storage-detail"))
-      expect(await showing).toEqual({ value: "Account request is no longer current." })
-      expect(t.reads).toEqual([])
-      expect(t.reports).toEqual([])
-    } finally {
-      storage.resolve(undefined)
-      await t.close()
-      await Promise.allSettled([showing])
-    }
-  })
-
-  it("honors a matching retained request on show instead of creating a second durable admission", async () => {
-    const t = fixture()
-    try {
-      t.retain({ id: "durable-request", authority: authority(), read: "identity" })
-      expect(await t.controller.showAccount()).toEqual({ value: "Requested" })
-      expect(t.admissions).toEqual([])
-      expect(t.reads[0]!.request.id).toBe("durable-request")
-      t.reads[0]!.answer.resolve({ facts })
-      await Promise.all(t.jobs)
-      expect(t.completed).toEqual([{ facts }])
-    } finally {
-      await t.close()
-    }
-  })
-
-  it("does not start a queued notification read after the selected authority changes", async () => {
-    const t = fixture()
-    const start = deferred<void>()
-    const controller = Account.createAccountController({
-      ...t.host,
-      work: (_request, run) => {
-        const job = start.promise.then(run)
-        t.jobs.push(job)
-        return job
+  )
+  it("reads authenticated history through the literal public contract", async () => {
+    const calls: unknown[] = []
+    const remote = Account.accountTransport({
+      current: () => true,
+      post: async (path, body) => {
+        calls.push([path, body])
+        return {
+          cursor: 7,
+          truncated: false,
+          items: [{
+            operationId: "job-1",
+            requestId: "request-1",
+            actor: "api",
+            state: "completed",
+            result: { login: "owner" }
+          }]
+        }
       }
-    }, t.shared)
-    try {
-      await controller.showAccount()
-      t.select(authority({ epoch: 2 }))
-      start.resolve(undefined)
-      await Promise.all(t.jobs)
-      expect(t.reads).toEqual([])
-      expect(t.completed).toEqual([])
-    } finally {
-      start.resolve(undefined)
-      await t.close()
-    }
+    })
+    expect(await remote.history()).toMatchObject({
+      cursor: 7,
+      items: [{ state: "completed", result: { login: "owner" } }]
+    })
+    expect(calls).toEqual([["/api/workflow/rpc", { procedure: "Operation.History", payload: {} }]])
   })
-
-  it("does not surface a failed completion after logout while its durable save is held", async () => {
-    const t = fixture()
-    const save = deferred<void>()
-    const controller = Account.createAccountController({ ...t.host, complete: async () => save.promise }, t.shared)
-    try {
-      await controller.showAccount()
-      t.reads[0]!.answer.resolve({ error: "Old account failed." })
-      await settle()
-      t.select(authority({ state: "signed-out", epoch: 2 }))
-      save.resolve(undefined)
-      await Promise.all(t.jobs)
-      expect(t.failures).toEqual([])
-      expect(t.reports).toEqual([])
-    } finally {
-      save.resolve(undefined)
-      await t.close()
-    }
-  })
-
-  it("does not invent a provider for a verified identity snapshot", async () => {
-    const t = fixture(authority({ login: "selected-user" }))
-    const admitted: Account.AccountFacts[] = []
-    const controller = Account.createAccountController({
-      ...t.host,
-      admit: async (request, value) => {
-        if (value !== undefined) admitted.push(value)
-        await t.host.admit(request, value)
+  it.each(["", "../outside", "x".repeat(129)])("refuses invalid request identity before HTTP %j", async (id) => {
+    let posts = 0
+    const remote = Account.accountTransport({
+      current: () => true,
+      post: async () => {
+        posts++
+        return {}
       }
-    }, t.shared)
-    try {
-      expect(await controller.showAccount()).toEqual({ value: "account: @selected-user; 0 box(es) listed" })
-      expect(admitted).toEqual([facts])
-      expect(t.reads).toEqual([])
-    } finally {
-      await t.close()
-    }
+    })
+    await expect(remote.dispatch(id)).rejects.toMatchObject({ code: "backend_protocol" })
+    expect(posts).toBe(0)
   })
-
-  it("projects canonical selected identity without retaining credentials or invented scopes", () => {
-    expect(
-      Account.identityFacts({
-        username: "SelectedUser",
-        token: "private-token",
-        scopes: ["invented"],
-        email: "private-email"
-      })
-    ).toEqual({ login: "SelectedUser", scopes: [], boxes: [] })
-    for (const value of [null, {}, { username: "" }, { username: 1 }, { username: "   " }]) {
-      expect(Account.identityFacts(value)).toBeUndefined()
-    }
-  })
-
   it("decodes only real permission rows and rejects malformed or duplicate scope claims", async () => {
     expect(
       await Account.readAccountPermissions(

@@ -48,23 +48,29 @@ requirements, actor rules, and host-bound form hints; they carry no UI imports.
 
 ## Account
 
-`accountOperations` declares `account.show` with `NoInput` and the `identity`
-capability. `createAccountController` binds its lifecycle to `AccountHost`:
-persist admission before reading, share pending work, and publish only while
-the authority and request still match. `accountReads` creates the flight slot
-shared by human and agent adapters. Disposal cancels that slot.
+`accountOperations` declares `account.show` with strict `NoInput` and the
+`identity` capability. `Identity`, `RequestReceipt`, `RequestOutcome`, and
+`RequestHistory` are the canonical wire schemas. `accountTransport` validates
+Dispatch, Read, History, and Cancel through the authenticated
+`/api/workflow/rpc` owner. The backend's existing jobs store owns admission,
+deduplication, replay, cancellation, and completion.
 
-`AccountAuthority` binds owner, origin, and epoch. `AccountRequest`,
-`AccountAnswer`, `AccountRead`, `AccountReads`, and `AccountFacts` describe the
-request and its verified result. `identityFacts` projects the backend username;
-`readAccountPermissions` decodes the existing permission response. Neither
-function invents identity, permissions, or boxes.
+`createAccountController` persists a request pointer before acknowledging,
+then observes admission and execution in the background. Accepted and running
+receipts remain pending. Only a server terminal receipt settles presentation.
+Reload reads the same operation; interrupted admission repeats its request ID.
+`AccountAuthority` binds owner, source, and epoch, fencing stale publication.
+Disposal stops local observation; explicit cancellation calls server Cancel.
+
+Hosts supply authenticated transport, pointer persistence, and presentation.
+The verified server actor remains separate from command provenance. CLI and TUI
+history retain request identity, never credentials or account facts. GUI scopes
+and boxes are supplementary card observations; `readAccountPermissions` decodes
+permission answers without completing the identity operation. The wider GUI
+card and GUI/TUI user cancellation controls are outside this identity slice.
 
 `ACCOUNT_CARD_ID`, `SIGNED_OUT_VALUE`, and `IDENTITY_PENDING_TEXT` preserve the
-existing Account presentation contract. `NoInput` is re-exported from
-`Operation`. Hosts own storage, credentials, and presentation. The CLI waits
-for its ordinary read; this module does not create a CLI run or operation
-history. API operation dispatch is not supplied by this module.
+existing Account presentation contract. `NoInput` is re-exported from `Operation`.
 
 ## Control
 

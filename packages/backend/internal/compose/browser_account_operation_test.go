@@ -440,3 +440,119 @@ func TestAccountOperationCookieOwnerChangeInvalidatesQueuedAuthority(t *testing.
 		})
 	}
 }
+
+func TestAccountOperationRealHTTPTUIReceiptAndProcessReload(t *testing.T) {
+	f := newAccountHTTPFixture(t)
+	entered, release := make(chan struct{}, 1), make(chan struct{})
+	released := false
+	t.Cleanup(func() {
+		if !released {
+			close(release)
+		}
+	})
+	stop := f.worker(t, func(ctx context.Context, lease *jobs.Lease) error {
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		select {
+		case <-release:
+		case <-ctx.Done():
+		}
+		return f.service.Handle(ctx, lease)
+	})
+	home := t.TempDir()
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	root := filepath.Clean(filepath.Join(cwd, "../../../.."))
+	run := func(mode, token string) []byte {
+		t.Helper()
+		script := fmt.Sprintf(`
+const Account = await import(%q);
+const Session = await import(%q);
+const { readFileSync } = await import("node:fs");
+const home = process.env.HOME, file = home + "/account.jsonl", mode = %q;
+const writer = mode === "launch" ? Session.create(home, "chat", { file }) : Session.reopen(file);
+const previous = mode === "launch" ? undefined : Session.restore(Session.load(file)).account;
+const view = Account.controller({ persist: (receipt, at) => writer.append({ type: "account", at, receipt }), present: () => {} });
+let restoring = false;
+const foreignSelected = new Promise(resolve => view.subscribe(() => {
+  if (mode === "foreign" && !restoring && view.state().phase === "idle") resolve();
+}));
+if (mode === "launch") await view.show({}, "agent"); else { restoring = true; view.restore(previous); restoring = false; }
+if (mode === "foreign") await foreignSelected;
+const deadline = Date.now() + 10000;
+while (Date.now() < deadline) {
+  if (mode === "foreign" ? view.state().phase === "idle" : mode === "launch" ? Session.restore(Session.load(file)).account?.operationId !== undefined : view.state().phase === "complete") break;
+  await new Promise(resolve => setTimeout(resolve, 5));
+}
+const output = { state: view.state(), receipt: Session.restore(Session.load(file)).account, history: readFileSync(file, "utf8") };
+view.dispose(); console.log(JSON.stringify(output));
+`, filepath.Join(root, "apps/tui/src/account.ts"), filepath.Join(root, "apps/tui/src/session.ts"), mode)
+		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+		defer cancel()
+		command := exec.CommandContext(ctx, "bun", "--eval", script)
+		command.Dir = root
+		command.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "SMITHERS_DISABLE_SYSTEM_KEYRING=1", "SMITHERS_API_ORIGIN=" + f.server.URL, "SMITHERS_TOKEN=" + token, "SMITHERS_TUI_SESSION_DIR=" + filepath.Join(home, "sessions")}
+		output, err := command.CombinedOutput()
+		require.NoError(t, err, string(output))
+		return output
+	}
+	var first struct {
+		State struct {
+			Phase string `json:"phase"`
+		} `json:"state"`
+		Receipt struct {
+			ID          string `json:"id"`
+			OperationID string `json:"operationId"`
+			Actor       string `json:"actor"`
+		} `json:"receipt"`
+		History string `json:"history"`
+	}
+	require.NoError(t, json.Unmarshal(run("launch", f.token), &first))
+	require.Equal(t, "requested", first.State.Phase)
+	require.NotEmpty(t, first.Receipt.ID)
+	require.NotEmpty(t, first.Receipt.OperationID)
+	require.Equal(t, "agent", first.Receipt.Actor, "invocation provenance remains distinct from the verified credential actor")
+	require.NotContains(t, first.History, f.token)
+	require.NotContains(t, first.History, "identity-owner")
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("real worker never claimed TUI request")
+	}
+	canonical := f.dispatch(t, first.Receipt.ID)
+	require.Equal(t, first.Receipt.OperationID, canonical.OperationID)
+	close(release)
+	released = true
+	terminal := f.outcome(t, first.Receipt.ID, jobs.StateCompleted)
+	require.Equal(t, "api", terminal.Actor)
+	require.JSONEq(t, `{"login":"identity-owner"}`, string(terminal.Result))
+	var second struct {
+		State struct {
+			Phase string `json:"phase"`
+			Facts struct {
+				Login string `json:"login"`
+			} `json:"facts"`
+		} `json:"state"`
+		Receipt struct {
+			ID          string `json:"id"`
+			OperationID string `json:"operationId"`
+			State       string `json:"state"`
+		} `json:"receipt"`
+		History string `json:"history"`
+	}
+	require.NoError(t, json.Unmarshal(run("restore", f.token), &second))
+	require.Equal(t, "complete", second.State.Phase)
+	require.Equal(t, "identity-owner", second.State.Facts.Login)
+	require.Equal(t, first.Receipt.ID, second.Receipt.ID)
+	require.Equal(t, first.Receipt.OperationID, second.Receipt.OperationID)
+	require.Equal(t, "complete", second.Receipt.State)
+	require.NotContains(t, second.History, "identity-owner")
+	require.NotContains(t, second.History, f.token)
+	replacement, _ := f.mint(t, f.user.ID, "read:user", false)
+	foreign := run("foreign", replacement)
+	require.Contains(t, string(foreign), `"phase":"idle"`)
+	require.NotContains(t, string(foreign), "identity-owner")
+	stop()
+}

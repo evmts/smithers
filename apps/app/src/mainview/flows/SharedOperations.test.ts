@@ -83,7 +83,19 @@ describe("GUI account operation", () => {
     for (const actor of ["user", "agent"] as const) {
       test(`${actor} uses the current account controller while ${signedIn ? "signed in" : "signed out"}`, async () => {
         const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+        const requests: { procedure: string; payload: { name: string; requestId: string; input?: object } }[] = []
         const controller = createAppController(store, unavailableAgent, {
+          fetchImpl: async (url, init) => {
+            if (String(url).endsWith("/api/workflow/rpc")) {
+              const body = JSON.parse(String(init?.body)) as typeof requests[number]
+              requests.push(body)
+              const common = { requestId: body.payload.requestId, operationId: `job-${body.payload.requestId}` }
+              return Response.json(body.procedure === "Operation.Dispatch"
+                ? { ...common, kind: "requested", state: "accepted", acceptedAt: "2026-10-01T00:00:00Z" }
+                : { ...common, actor: "api", state: "completed", result: { login: "account-owner" } })
+            }
+            return new Response(null, { status: 404 })
+          },
           bootstrap: {
             apiVersion: 1,
             host: "local",
@@ -106,6 +118,8 @@ describe("GUI account operation", () => {
           const result = await controller.commands.submit({ name: "account.show", payload: {}, actor })
           expect(result.status).toBe("executed")
           await store.settled?.()
+          if (signedIn) await waitFor(() => { const row = store.collections.cards.get("account"); return row?.kind === "account" && row.payload.refresh?.state === "complete" })
+          await store.settled?.()
           const card = store.collections.cards.get("account")
           if (signedIn) {
             expect(card?.kind).toBe("account")
@@ -115,11 +129,19 @@ describe("GUI account operation", () => {
               scopes: []
             })
             const writes = [...store.collections.transitions.values()].filter((event) =>
-              event.type === "card.upsert" && !before.has(event.id)
-            )
-            expect(writes.map((event) => event.actor)).toEqual([actor === "agent" ? "smithers" : "user"])
+              event.type === "card.upsert" && !before.has(event.id) && JSON.parse(event.payload).card?.id === "account"
+            ).sort((left, right) => left.revision - right.revision)
+            expect(writes.map((event) => event.actor)).toEqual([actor === "agent" ? "smithers" : "user", "system", "system"])
+            const requestId = card?.kind === "account" ? card.payload.refresh?.id : undefined
+            expect(requestId).toBeString()
+            if (requestId === undefined) throw new Error("Account admission has no persisted request ID")
+            expect(requests).toEqual([
+              { procedure: "Operation.Dispatch", payload: { name: "account.show", requestId, input: {} } },
+              { procedure: "Operation.Read", payload: { name: "account.show", requestId } }
+            ])
           } else {
             expect(card).toBeUndefined()
+            expect(requests).toEqual([])
             expect([...store.collections.messages.values()].some((message) => message.text.includes("Sign in"))).toBe(
               true
             )
