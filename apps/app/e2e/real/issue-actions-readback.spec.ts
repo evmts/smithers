@@ -145,8 +145,9 @@ authenticatedTest("issues.comment.react records one reaction and its keyboard re
     await reloadApp(page)
     const identity = await realApi(page, request, "GET", "/api/user")
     expect(identity.status()).toBe(200)
-    const viewer = await identity.json() as { id: number; login: string }
-    await attachJson(testInfo, "reaction-before-keyboard-removal", { viewer: { id: viewer.id, login: viewer.login }, reactions: await reactions(), repo: repo.fullName, commentId: comment.id })
+    const viewer = await identity.json() as { id: number; username: string }
+    expect(viewer.username).toEqual(expect.any(String))
+    await attachJson(testInfo, "reaction-before-keyboard-removal", { viewer: { id: viewer.id, username: viewer.username }, reactions: await reactions(), repo: repo.fullName, commentId: comment.id })
     const remove = thread.getByRole("button", { name: "Remove your thumbsup reaction", exact: true })
     await expect(remove).toBeVisible()
     await remove.focus()
