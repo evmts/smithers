@@ -240,6 +240,123 @@ const commentDto = (id: number, body: string, extra: Record<string, unknown>) =>
   ({ id, issue_id: 700, user_id: 1, commenter: "will", body, type: "issue_comment", created_at: at, updated_at: at, ...extra })
 
 describe("a conversation on the chat = issues contract", () => {
+  test("close and reopen acknowledge only after authoritative refresh and SQLite commit", async () => {
+    const root = mkdtempSync(join(tmpdir(), "smithers-issue-completion-"))
+    const path = join(root, "state.sqlite")
+    let state = "open"
+    let readHeld = false
+    let readArrived = false
+    let releaseRead = () => {}
+    let commitHeld = false
+    let commitArrived = false
+    let targetWriteState: string | undefined
+    let heldWriteState: string | undefined
+    let releaseCommit = () => {}
+    const unexpected: string[] = []
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
+      const route = `${request.method} ${new URL(request.url).pathname}`
+      if (route === "GET /api/user/settings/signup") return json(200, { profile: null })
+      if (route === "PATCH /api/repos/will/flows/issues/7") {
+        state = (await request.json() as { state: string }).state
+        return json(200, { ...issueDto, state })
+      }
+      if (route === "GET /api/repos/will/flows/issues/7") {
+        if (readHeld) {
+          readArrived = true
+          await new Promise<void>(resolve => { releaseRead = resolve })
+        }
+        return json(200, { ...issueDto, state })
+      }
+      if (route === "GET /api/repos/will/flows/issues/7/comments") return json(200, [])
+      if (route === "GET /api/repos/will/flows/issues/7/sync" || absentRoutes.has(route)) return json(404, { message: "not configured" })
+      unexpected.push(route)
+      return json(404, { message: "unexpected test request" })
+    } })
+    const open = async () => {
+      const db = new Database(path)
+      const adapter = await openSqliteRowStorage({
+        execute: async <Row,>(sql: string, params: ReadonlyArray<unknown> = []) => {
+          if (sql.startsWith("BEGIN")) targetWriteState = undefined
+          if (sql.startsWith("INSERT INTO smithers_collection_rows") && params[0] === "app-cards" && params[1] === `s:issue-${REPO}-7`) {
+            targetWriteState = (JSON.parse(String(params[3])) as { payload: { state: string } }).payload.state
+          }
+          if (sql === "COMMIT" && commitHeld && targetWriteState !== undefined) {
+            heldWriteState = targetWriteState
+            commitArrived = true
+            await new Promise<void>(resolve => { releaseCommit = resolve })
+          }
+          const statement = db.query(sql)
+          if (/^\s*(SELECT|PRAGMA)/i.test(sql)) return statement.all(...params as []) as ReadonlyArray<Row>
+          statement.run(...params as [])
+          return []
+        }, close: () => db.close()
+      }, { collections: PERSISTED_COLLECTION_SPECS, schemaVersion: APP_SCHEMA_VERSION })
+      return createAppStore({ kind: "opfs", ...adapter, storageEventApi: { addEventListener: () => {}, removeEventListener: () => {} } })
+    }
+    const storedState = () => {
+      const reader = new Database(path, { readonly: true })
+      try {
+        const row = reader.query("SELECT value FROM smithers_collection_rows WHERE collection_id = 'app-cards' AND row_key = ?").get(`s:issue-${REPO}-7`) as { value: string } | null
+        if (!row) throw new Error("The committed issue is absent")
+        return (JSON.parse(row.value) as { payload: { state: string } }).payload.state
+      } finally { reader.close() }
+    }
+    let controller: ReturnType<typeof createAppController> | undefined
+    let reopened: AppStore | undefined
+    try {
+      const store = await open()
+      controller = createAppController(store, unavailableAgent, { fetchImpl: (input, init) => {
+        const raw = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+        return observe(fetch(new URL(new URL(raw, "https://app.test").pathname, server.url), init).then(trackResponse))
+      } })
+      await signedIn(store)
+      expect((await controller.runCommandForResult("issues.view", `7 ${REPO}`)).status).toBe("executed")
+      await flushStore(store)
+      expect(storedState()).toBe("open")
+      for (const [command, next, previous] of [["issues.close", "closed", "open"], ["issues.reopen", "open", "closed"]] as const) {
+        readHeld = true
+        readArrived = false
+        let completed = false
+        const result = observe(controller.runCommandForResult(command, `7 ${REPO}`).then(value => { completed = true; return value }))
+        await waitUntil(() => readArrived)
+        expect(state).toBe(next) // The actual PATCH completed; the projection has not.
+        expect(completed).toBe(false)
+        expect(storedState()).toBe(previous)
+        commitHeld = true
+        commitArrived = false
+        readHeld = false
+        releaseRead()
+        await waitUntil(() => commitArrived)
+        expect(heldWriteState).toBe(next)
+        expect(completed).toBe(false)
+        expect(storedState()).toBe(previous)
+        commitHeld = false
+        releaseCommit()
+        expect((await result).status).toBe("executed")
+        expect(storedState()).toBe(next)
+      }
+      await controller.dispose()
+      controller = undefined
+      reopened = await open()
+      const card = reopened.collections.cards.get(`issue-${REPO}-7`)
+      if (card?.kind !== "issue") throw new Error("The restored issue is absent")
+      expect(card.payload.state).toBe("open")
+      expect(unexpected).toEqual([])
+    } finally {
+      readHeld = false
+      commitHeld = false
+      releaseRead()
+      releaseCommit()
+      const errors: unknown[] = []
+      try { await bounded(drain()) } catch (error) { errors.push(error) }
+      for (const release of [() => controller?.dispose(), () => reopened?.dispose?.(), () => server.stop(true)]) {
+        try { await release() } catch (error) { errors.push(error) }
+      }
+      try { rmSync(root, { recursive: true, force: true }) } catch (error) { errors.push(error) }
+      if (errors.length) throw new AggregateError(errors, "Issue completion HTTP/SQLite cleanup failed")
+    }
+  })
+
   test("loopback HTTP reaction metadata survives a real SQLite close and reopen without rereading the server", async () => {
     // A controlled wire-contract server isolates transport and persistence; the
     // separately required-Pg test and real browser qualify backend authority.
