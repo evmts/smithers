@@ -1,5 +1,6 @@
 import { expect, test } from "./browserTest"
 import { identityRoute, signedOutVisitor } from "./identity"
+import { signupProfile } from "./signup-profile"
 import { APPLICATION_SIGN_IN_PATH } from "@smthrs/rpc/ApplicationAuth"
 
 /*
@@ -12,6 +13,7 @@ const SHOTS = process.env.SIGNUP_SHOTS
 
 test("a signed-out visitor walks the signup in the transcript and a reload resumes it", async ({ page }) => {
   await signedOutVisitor(page)
+  const profile = await signupProfile(page)
   // Identity answers late on a cold load: the title is the first paint, and nothing else shows before the doors.
   let answerIdentity = () => {}
   const identityAnswered = new Promise<void>(resolve => { answerIdentity = resolve })
@@ -65,9 +67,19 @@ test("a signed-out visitor walks the signup in the transcript and a reload resum
   await expect(question.getByRole("button", { name: "Back", exact: true })).toHaveCount(0)
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/4-poll.png` })
 
-  // A reload resumes the same question.
+  expect(profile.writes[0]).toMatchObject({ name: "Ada Park", account: "adapark", stage: "poll", question: 0 })
+  expect(profile.writes.at(-1)).toMatchObject({ stage: "poll", question: 0 })
+
+  // A reload resumes the one repository question from its canonical profile.
+  const readsBeforeReload = profile.reads.length
   await page.reload()
   await expect(page.getByTestId("signup-question")).toHaveAttribute("data-question", "repo")
+  const saved = await page.evaluate(async () => {
+    const response = await fetch("/api/user/settings/signup")
+    return { status: response.status, body: await response.json() }
+  })
+  expect(saved).toEqual({ status: 200, body: { profile: profile.writes.at(-1) } })
+  expect(profile.reads.slice(readsBeforeReload)).toContainEqual(profile.writes.at(-1))
   await page.getByTestId("signup-new-repo").click()
 
   await expect(page.getByTestId("signup-finish")).toBeVisible()
@@ -78,5 +90,6 @@ test("a signed-out visitor walks the signup in the transcript and a reload resum
   await page.getByTestId("signup-finish").click()
   await expect(page.getByTestId("signup")).toHaveCount(0)
   await expect(page.getByTestId("setup-checklist")).toBeVisible()
+  expect(profile.writes.at(-1)).toMatchObject({ name: "Ada Park", account: "adapark", stage: "done" })
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/6-home.png` })
 })
