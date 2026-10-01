@@ -29,6 +29,7 @@ type artifactRecordingClient struct {
 	writes      []string
 	content     map[string]string
 	commands    []string
+	events      []string
 	failWrite   int
 	createCalls []sandbox.CreateRequest
 }
@@ -88,10 +89,12 @@ func (c *artifactRecordingClient) WriteFile(ctx context.Context, _ string, p str
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		return err
 	}
+	c.events = append(c.events, "write "+p)
 	c.content[p] = decoded.Content
 	return nil
 }
 func (c *artifactRecordingClient) Execute(ctx context.Context, _ string, r sandbox.ExecRequest) (sandbox.ExecResult, error) {
+	c.events = append(c.events, "exec "+r.Command)
 	c.commands = append(c.commands, r.Command)
 	stdout := ""
 	if strings.HasPrefix(strings.TrimPrefix(r.Command, workspaceArtifactGuestPath), "if ! test -L ") {
@@ -163,14 +166,24 @@ func TestWorkspaceArtifactCancellationAndSourceErrors(t *testing.T) {
 	require.ErrorContains(t, finishWorkspaceArtifacts(t.Context(), client, "", "#!/bin/bash\ntrue\n"), "empty sandbox")
 }
 func TestWorkspaceCreateDefersBootstrapButKeepsBootBarrier(t *testing.T) {
-	source := filepath.Join(t.TempDir(), "cli")
-	require.NoError(t, os.WriteFile(source, []byte("payload"), 0600))
-	t.Setenv(workspaceCLIPackageEnv, source)
+	// These are artifact-transfer fixtures, not executable/native qualification.
+	artifacts := []struct{ env, target, body string }{
+		{workspaceCLIPackageEnv, filepath.Base(workspaceCLIPackageB64Path), "CLI payload"},
+		{workspaceCodingHostBinaryEnv, filepath.Base(workspaceCodingHostB64Path), "coding host payload"},
+		{workspaceJJExportBinaryEnv, filepath.Base(workspaceJJExportB64Path), "jj helper payload"},
+	}
+	for _, artifact := range artifacts {
+		source := filepath.Join(t.TempDir(), artifact.target)
+		require.NoError(t, os.WriteFile(source, []byte(artifact.body), 0600))
+		t.Setenv(artifact.env, source)
+	}
 	req, err := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}).buildWorkspaceVMRequest(t.Context(), "", nil, 0, "", "container")
+	require.NoError(t, err)
+	before, err := json.Marshal(req)
 	require.NoError(t, err)
 	client := newArtifactRecordingClient()
 	client.createVMFn = func(_ context.Context, got sandbox.CreateRequest) (sandbox.CreateResult, error) {
-		require.Empty(t, client.writes)
+		require.Empty(t, client.events, "Create precedes every write and execution")
 		for _, service := range got.Init.Services {
 			require.NotEqual(t, workspaceClaudeService, service.Name)
 		}
@@ -181,12 +194,69 @@ func TestWorkspaceCreateDefersBootstrapButKeepsBootBarrier(t *testing.T) {
 	}
 	_, err = createWorkspaceSandbox(t.Context(), client, req)
 	require.NoError(t, err)
-	require.NotEmpty(t, client.writes)
-	require.Contains(t, client.commands[1], workspaceArtifactBakedRoot)
-	require.Contains(t, client.commands[2], "ln -s")
-	require.Contains(t, client.commands[3], "setsid")
-	require.Contains(t, strings.Join(client.commands, "\n"), "setsid")
-	require.Equal(t, workspaceClaudeService, req.Init.Services[0].Name, "caller request remains unchanged")
+	require.Len(t, client.createCalls, 1)
+	index := func(fragment string) int {
+		t.Helper()
+		found := -1
+		for i, event := range client.events {
+			if strings.Contains(event, fragment) {
+				require.Equal(t, -1, found, "event must occur exactly once: %s", fragment)
+				found = i
+			}
+		}
+		require.NotEqual(t, -1, found, "missing event: %s", fragment)
+		return found
+	}
+	scriptWrite := -1
+	// Match writes only: publication also names the manifest and bootstrap script.
+	for i, event := range client.events {
+		if strings.HasPrefix(event, "write ") && strings.HasSuffix(event, "/bootstrap.sh") {
+			require.Equal(t, -1, scriptWrite)
+			scriptWrite = i
+		}
+	}
+	require.NotEqual(t, -1, scriptWrite)
+	manifestWrite := -1
+	for i, event := range client.events {
+		if strings.HasPrefix(event, "write ") && strings.HasSuffix(event, "/"+workspaceArtifactManifest) {
+			require.Equal(t, -1, manifestWrite)
+			manifestWrite = i
+		}
+	}
+	publish := index("ln -sT -- ")
+	launch := index("setsid /bin/sh -c ")
+	barrier := index("exec " + workspaceArtifactGuestPath + "if ! test -L ")
+	require.Greater(t, manifestWrite, scriptWrite)
+	require.Greater(t, publish, manifestWrite)
+	require.Greater(t, launch, publish)
+	require.Greater(t, barrier, launch)
+	for _, artifact := range artifacts {
+		probe := index(workspaceArtifactBakedRoot + "/" + artifact.target + ".source")
+		var encoded strings.Builder
+		first, last := -1, -1
+		for i, event := range client.events {
+			if strings.HasPrefix(event, "write ") && strings.Contains(event, "/"+artifact.target+".part") {
+				if first == -1 {
+					first = i
+				}
+				last = i
+				encoded.WriteString(client.content[strings.TrimPrefix(event, "write ")])
+			}
+		}
+		require.Greater(t, first, probe, "checked image probe before transfer: %s", artifact.target)
+		require.Less(t, last, scriptWrite, "complete artifact before recipe/publication: %s", artifact.target)
+		reader, err := gzip.NewReader(base64.NewDecoder(base64.StdEncoding, strings.NewReader(encoded.String())))
+		require.NoError(t, err)
+		decoded, err := io.ReadAll(reader)
+		require.NoError(t, err)
+		require.NoError(t, reader.Close())
+		require.Equal(t, []byte(artifact.body), decoded)
+	}
+	after, err := json.Marshal(req)
+	require.NoError(t, err)
+	require.Equal(t, before, after, "caller request remains byte-identical")
+	require.Equal(t, workspaceClaudeService, req.Init.Services[0].Name)
+
 }
 
 // Run separately in a 1GiB Linux container. One realistic low-compressibility
@@ -291,4 +361,39 @@ func (c *artifactMemoryClient) WriteFile(ctx context.Context, _ string, _ string
 	}
 	_, e = io.WriteString(c.sink, decoded.Content)
 	return e
+}
+
+func TestWorkspaceArtifactBakedProbeUsesArtifactMockBoundary(t *testing.T) {
+	client := newArtifactRecordingClient()
+	_, err := stageBakedWorkspaceArtifact(t.Context(), client, "guest", workspaceArtifactRoot+"/attempt", workspaceArtifactSource{
+		target: "fixture.b64", digest: strings.Repeat("a", 64),
+	})
+	require.NoError(t, err)
+	require.Len(t, client.commands, 1)
+	probe := client.commands[0]
+	require.True(t, isWorkspaceArtifactCommand(probe))
+	var delegated []string
+	failure := errors.New("owned repository/provider failure")
+	mock := &mockWorkspaceSandboxVMClient{execAwaitFn: func(_ context.Context, id string, request sandbox.ExecRequest) (sandbox.ExecResult, error) {
+		require.Equal(t, "guest", id)
+		delegated = append(delegated, request.Command)
+		return sandbox.ExecResult{}, failure
+	}}
+	result, err := mock.Execute(t.Context(), "guest", sandbox.ExecRequest{Command: probe})
+	require.NoError(t, err)
+	require.Zero(t, *result.StatusCode)
+	require.Empty(t, delegated, "artifact probe must not consume clone/scrub failure injection")
+	commands := []string{
+		workspaceSandboxLoginScrubCommand(),
+		buildForkBookmarkSwitchCommand("owned-fixture-token", "feature"),
+		"jj git clone https://example.test/owned.git /workspace",
+		workspaceArtifactGuestPath + "source='/outside/fixture'; target='" + workspaceArtifactRoot + "/attempt'",
+		workspaceArtifactGuestPath + "printf '" + workspaceArtifactBakedRoot + "/fixture " + workspaceArtifactRoot + "'",
+	}
+	for _, command := range commands {
+		require.False(t, isWorkspaceArtifactCommand(command))
+		_, err := mock.Execute(t.Context(), "guest", sandbox.ExecRequest{Command: command})
+		require.ErrorIs(t, err, failure, "real provider command retains its failure")
+	}
+	require.Equal(t, commands, delegated, "scrub/revision/clone commands preserve exact order and bytes")
 }
