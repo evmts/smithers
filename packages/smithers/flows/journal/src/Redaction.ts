@@ -235,6 +235,12 @@ const headerNames = new RegExp(
   "gi"
 )
 
+/** Diagnostic renderings can omit the delimiter before a known authorization scheme. */
+const diagnosticHeaderNames = new RegExp(
+  String.raw`${headerNames.source}|(?<![A-Za-z0-9_-])(?:proxy-)?authorization[ \t]+(?=(?:Token|Bearer|Basic)[ \t]+\S)`,
+  "gi"
+)
+
 /** Any credential or header name, to stop a bare value before the next pair. */
 const anyName = new RegExp(`${credentialNames.source}|${headerNames.source}`, "gi")
 
@@ -520,7 +526,8 @@ const redactValues = (text: string, names: RegExp, scope: Scope): string => {
   const budget: Budget = { remaining: containerBudget * text.length }
   let scanned = 0
   for (let match = keys.exec(text); match !== null; match = keys.exec(text)) {
-    const name = match[1]!
+    // Header values are always credentials; only ordinary field names need classification.
+    const name = scope.header ? "" : match[1]!
     if (!scope.header && plainKeyName(name)) continue
     track(stack, text, scanned, keys.lastIndex)
     scanned = keys.lastIndex
@@ -872,8 +879,8 @@ export const diagnosticRules: ReadonlyArray<Rule> = [
     // The header value is a credential whatever its scheme (`Token`, a cookie
     // list, `Digest` with quoted parameters), so the value runs to the end of
     // its line or the close of the string it was written in.
-    pattern: headerNames,
-    rewrite: (text) => redactValues(text, headerNames, { header: true, diagnostic: true })
+    pattern: diagnosticHeaderNames,
+    rewrite: (text) => redactValues(text, diagnosticHeaderNames, { header: true, diagnostic: true })
   },
   {
     id: "bearer-or-basic",
