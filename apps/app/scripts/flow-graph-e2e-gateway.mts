@@ -63,6 +63,7 @@ import { repositoryRoot, stackWith } from "../../../packages/smithers/test/Bridg
 import { GRAPH_BOX, GRAPH_FLOW, GRAPH_REPO, GRAPH_SCHEDULE } from "../e2e/graph/workspace.ts"
 import { AUTHENTICATED_USER_PATH } from "@smthrs/rpc/ApplicationAuth"
 import { SCOPED_TEST_USER } from "../e2e/playwright/identity.ts"
+import { SIGNUP_PROFILE_PATH, SignupProfileSchema } from "../src/mainview/state/Signup.ts"
 
 /** The workspace name the app addresses this gateway by. */
 export const REPO = GRAPH_REPO
@@ -240,6 +241,10 @@ const contents = async (repo: string, path: string, ref?: string): Promise<{ sta
  */
 const startRelay = (gatewayUrl: string): Promise<{ url: string; close: () => Promise<void> }> =>
   new Promise((listening) => {
+    // This returning fixture account has already completed the public signup.
+    let signupProfile = SignupProfileSchema.strict().parse({
+      name: "Graph fixture visitor", account: SCOPED_TEST_USER.login, stage: "done", question: 7, answers: {}
+    })
     const server = createServer((request, response) => {
       const chunks: Array<Buffer> = []
       request.on("data", (chunk: Buffer) => chunks.push(chunk))
@@ -251,6 +256,17 @@ const startRelay = (gatewayUrl: string): Promise<{ url: string; close: () => Pro
           try {
             const url = new URL(request.url ?? "/", "http://relay.local")
             if (url.pathname === AUTHENTICATED_USER_PATH) return json(response, 200, { id: 1, username: SCOPED_TEST_USER.login, is_admin: false })
+            if (url.pathname === SIGNUP_PROFILE_PATH) {
+              if (request.method === "GET") return json(response, 200, { profile: signupProfile })
+              if (request.method !== "PUT") return json(response, 405, { code: "method_not_allowed" })
+              let body: unknown
+              try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")) }
+              catch { return json(response, 400, { code: "invalid_json" }) }
+              const parsed = SignupProfileSchema.strict().safeParse(body)
+              if (!parsed.success) return json(response, 400, { code: "invalid_signup_profile" })
+              signupProfile = parsed.data
+              return json(response, 200, { profile: signupProfile })
+            }
             if (url.pathname === "/api/auth/scopes") return json(response, 200, { scopes: [] })
             if (url.pathname === "/api/workflow/provision") {
               return json(response, 200, { status: "ready", repo: REPO })
