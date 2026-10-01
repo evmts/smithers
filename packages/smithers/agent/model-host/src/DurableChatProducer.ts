@@ -14,7 +14,7 @@ import type { AgentTurnCursor, AgentTurnJournalReply } from "@smthrs/rpc/AgentTu
 import type { AgentTurnFrame, FetchLike, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import { Effect } from "effect"
 import { CommitRefused, ProducerUnreachable, ProviderStartRefused, ReceiptMismatch } from "./ModelHostError.ts"
-import type { ProducerError } from "./ModelHostError.ts"
+import type { ProducerError, StreamTooLarge } from "./ModelHostError.ts"
 import { runModelTurn } from "./ModelTurnHost.ts"
 import type { ModelTurnOptions } from "./ModelTurnHost.ts"
 
@@ -174,7 +174,7 @@ export const runDurableChatTurn = (
   options: ModelTurnOptions,
   callbackBaseUrl: string = grant.producerBaseUrl,
   fetchImpl?: FetchLike
-): Effect.Effect<void, Model.ModelFailure | ProducerError> => {
+): Effect.Effect<void, Model.ModelFailure | ProducerError | StreamTooLarge> => {
   const producer = new DurableChatProducer(callbackBaseUrl, grant, fetchImpl)
   return Effect.gen(function*() {
     yield* producer.providerStarted()
