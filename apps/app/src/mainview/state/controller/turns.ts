@@ -59,6 +59,8 @@ const RECENT_CARD_WINDOW = 12
 const CHAIN_SURFACE_CALLS = new Set(["author", "say", "card.show", "card.update"])
 
 export interface TurnControllerDependencies {
+  /** Optional for hosts without frame presentation; the app binds its existing frame action. */
+  readonly minimizeCard?: () => void
   readonly settleTurnBilling: () => void
   /** The next transcript ordinal, so a refusal card lands at the end of the conversation. */
   readonly nextOrdinal: () => number
@@ -81,7 +83,7 @@ export interface TurnControllerDependencies {
 
 export interface TurnController {
   readonly subscribeToAgent: () => void
-  readonly send: (text: string, admission?: { readonly turnId: string; readonly owner: string | null | undefined }, draftCurrent?: () => boolean) => Promise<boolean> | void
+  readonly send: (text: string, admission?: { readonly turnId: string; readonly owner: string | null | undefined }, draftCurrent?: () => boolean, presentationCurrent?: () => boolean) => Promise<boolean> | void
   readonly reset: () => void
   readonly stop: () => void
   readonly decideApproval: (id: string, decision: "approved" | "denied", answer?: unknown, question?: string) => void
@@ -929,7 +931,7 @@ export const createTurnController = (
       ? { status: "failed", error: outcome.reason }
       : outcome
 
-  const send: TurnController["send"] = (text, admission, capturedDraft) => {
+  const send: TurnController["send"] = (text, admission, capturedDraft, presentationCurrent) => {
     if (ctx.disposed) return
     const generation = ctx.accountEpoch
     if (admission && ctx.accountOwner() !== admission.owner) return
@@ -937,6 +939,7 @@ export const createTurnController = (
     if (admission && typeof admission.owner === "string" && store.committedHttpTurn(admission.turnId, admission.owner)) return Promise.resolve(true)
     const draftCurrent = capturedDraft ?? store.captureComposerDraft(text)
     const parsed = parseSubmit(text, ctx.commands.all())
+    const presentation = presentationCurrent
     if (parsed.kind === "empty") return
     if (parsed.kind === "unknown-command") {
       /*
@@ -951,7 +954,7 @@ export const createTurnController = (
       if (draftCurrent()) store.dispatch({ type: "composer.changed", actor: "user", draft: "" })
       /* Everything the door says from here on belongs to this line (controller/spokenLines.ts). */
       const saidBefore = latestOrdinal(store.collections)
-      void ctx.commands.run(parsed.name).then((outcome) => {
+      void ctx.commands.run(parsed.name, undefined, undefined, undefined, presentation).then((outcome) => {
         if (ownershipCurrent(generation)) surfaceCommandFailure(parsed.name, missAsFailure(parsed.name, outcome), saidBefore)
       })
       return
@@ -968,10 +971,13 @@ export const createTurnController = (
       /* Everything the door says from here on belongs to this line (controller/spokenLines.ts). */
       const saidBefore = latestOrdinal(store.collections)
       void ctx.commands
-        .run(parsed.name, parsed.args)
+        .run(parsed.name, parsed.args, undefined, undefined, presentation)
         .then((outcome) => { if (ownershipCurrent(generation)) surfaceCommandFailure(parsed.name, outcome, saidBefore) })
       return
     }
+    // Only a captured composer gesture owns this return to Chat. Direct send
+    // callers keep their existing presentation, and later navigation wins.
+    if (presentationCurrent?.() === true && store.session().maximizedCardId != null) dependencies.minimizeCard?.()
     const prompt = parsed.text
     if (store.session().phase !== "idle") {
       if (admission) return
