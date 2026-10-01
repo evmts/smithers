@@ -620,7 +620,7 @@ describe("unified control dispatch", () => {
       executionRoot: "/stale-child"
     })
     expect(ports.prepare).toHaveBeenCalledExactlyOnceWith("/fixture", "child")
-    expect(ports.invoke).toHaveBeenCalledExactlyOnceWith(["resume", "child"], { root: "/fixture", quiet: false }, {
+    expect(ports.invoke).toHaveBeenCalledExactlyOnceWith(["resume", "child"], { root: "/fixture", quiet: false, verbose: false }, {
       ...result.config,
       executionRoot: "/isolated-child"
     })
@@ -630,7 +630,7 @@ describe("unified control dispatch", () => {
     const result = await invoke(["runs", "resume", "child", "--allow-code-drift", "--root", "/fixture", "--json"])
     expect(ports.invoke).toHaveBeenCalledExactlyOnceWith(
       ["resume", "child", "--allow-code-drift"],
-      { root: "/fixture", quiet: false },
+      { root: "/fixture", quiet: false, verbose: false },
       { ...result.config, executionRoot: "/isolated-child" }
     )
   })
@@ -730,7 +730,7 @@ describe("unified control dispatch", () => {
       const result = await invoke(["runs", verb, "run-1", "--json"])
       expect(result.codes).toEqual([])
       expect(ports.watch).toHaveBeenCalledExactlyOnceWith({ runId: "run-1", follow: false })
-      expect(ports.invoke).toHaveBeenCalledExactlyOnceWith(argv, { quiet: false }, result.config)
+      expect(ports.invoke).toHaveBeenCalledExactlyOnceWith(argv, { quiet: false, verbose: false }, result.config)
       expect(ports.prepare).not.toHaveBeenCalled()
     })
 
@@ -743,7 +743,7 @@ describe("unified control dispatch", () => {
       await invoke(["runs", "stop", "run-1", "--json"])
       expect(ports.invoke).toHaveBeenCalledExactlyOnceWith(
         ["deny", JSON.stringify(guardPayload("timeout/run-1/cell"))],
-        { quiet: false },
+        { quiet: false, verbose: false },
         expect.anything()
       )
     })
@@ -758,7 +758,7 @@ describe("unified control dispatch", () => {
         const result = await invoke(["runs", verb, "run-1", "--root", "/fixture", "--json"])
         expect(result.codes).toEqual([])
         expect(ports.prepare).toHaveBeenCalledExactlyOnceWith("/fixture", "run-1")
-        expect(ports.invoke).toHaveBeenCalledExactlyOnceWith(["resume", "run-1"], { root: "/fixture", quiet: false }, {
+        expect(ports.invoke).toHaveBeenCalledExactlyOnceWith(["resume", "run-1"], { root: "/fixture", quiet: false, verbose: false }, {
           ...result.config,
           executionRoot: "/isolated-child"
         })
@@ -974,7 +974,7 @@ describe("unified durable log streams", () => {
     expect(ports.events).toHaveBeenCalledExactlyOnceWith(
       "run-1",
       false,
-      { after: 40, limit: 2, root: "/fixture", quiet: false, follow: false },
+      { after: 40, limit: 2, root: "/fixture", quiet: false, follow: false, verbose: false },
       result.config,
       40
     )
