@@ -22,6 +22,8 @@ import { cloudWikiPageFailure } from "../wiki/CloudWikiFailure"
 import { describedFailure, FailureNotice } from "../FailureNotice"
 import type { IntegrationRow } from "@smthrs/rpc/Threads"
 import type { UserFailureCopy } from "@smthrs/rpc/UserFailure"
+import { browserReadFailure } from "../state/BrowserFailure"
+export { BROWSER_READ_FAILURE } from "../state/BrowserFailure"
 
 
 
@@ -99,8 +101,6 @@ const INTEGRATION_SYNCS = { slack: "conversations" } as const
 export const INTEGRATION_FAILURES: Readonly<Record<IntegrationRow["id"], UserFailureCopy>> = {
   slack: { fault: "infra", sentence: "Smithers can't sync Slack right now. Not your fault.", actions: ["retry"] }
 }
-/** A browser card's error is a refusal whose type did not survive; the page's words are only its Details. */
-export const BROWSER_READ_FAILURE: UserFailureCopy = { fault: "infra", sentence: "That page couldn't be read. Not your fault.", actions: [] }
 
 /*
  * The world query's embedded answer card (§2c″) — the answer rides in the chat
@@ -261,13 +261,14 @@ const foreignHttpUrl = (url: string): URL | undefined => {
 }
 
 export const BrowserCardBody = ({ card }: { readonly card: Extract<Card, { kind: "browser" }> }) => {
-  const { url, finalUrl, frameable, blockReason, error } = card.payload
+  const { url, finalUrl, frameable, blockReason } = card.payload
+  const failure = browserReadFailure(card.payload)
   const shownUrl = finalUrl ?? url
   const target = foreignHttpUrl(shownUrl)
-  if (error !== undefined) {
+  if (failure !== null) {
     return (
       <FailureNotice className="sui-approval-error" data-testid="browser-card-failure"
-        failure={describedFailure("BrowserReadFailed", BROWSER_READ_FAILURE, error)} />
+        failure={failure} />
     )
   }
   return (

@@ -1,3 +1,7 @@
+import { createElement } from "react"
+import { renderToStaticMarkup } from "react-dom/server"
+import { BrowserCardBody } from "../cards/ConversationCards"
+import { handleBrowserFetch } from "../../bun/BrowserFetch"
 import { describe, expect, test } from "bun:test"
 import { scopedControllers } from "./ControllerTestScope"
 import type { AppServices } from "./AppController"
@@ -395,4 +399,132 @@ describe("wave 10 — sign-in IS the GitHub connector (§2a′)", () => {
     })
     expect(JSON.parse(events)).toBeInstanceOf(Array)
   })
+})
+
+describe("browser refusal through real HTTP and persisted cards", () => {
+  test.each(["human", "agent"] as const)("%s receives guarded input refusal after reload and can recover", async actor => {
+    const storage = memoryStorage()
+    let store = await createAppStore({ kind: "localStorage", storage })
+    let controller: ReturnType<typeof createAppController> | undefined
+    let targetReads = 0
+    const target = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => { targetReads++; return new Response("must not be read") } })
+    const url = `https://127.0.0.1:${target.port}/`
+    let recovery = false
+    const requests: string[] = []
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
+      const path = new URL(request.url).pathname
+      requests.push(path)
+      if (path === "/api/user") return Response.json({ id: 1, username: "will", is_admin: false })
+      if (path === "/api/tools/browser-fetch") {
+        if (recovery && (await request.clone().json()).url === "https://example.com/") return Response.json({ status: 200, finalUrl: "https://example.com/", text: "Recovered readable text", frameable: false, blockReason: "Embedding refused" })
+        return handleBrowserFetch(request)
+      }
+      return new Response(null, { status: 404 })
+    } })
+    try {
+      controller = createAppController(store, silentAgent, { baseUrl: server.url.origin, fetchImpl: fetch })
+      await signIn(store)
+      const result = actor === "agent"
+        ? await controller.commands.executeForAgent({ name: "commands", arguments: JSON.stringify({ action: "execute", name: "browser.open", args: url }) })
+        : await controller.commands.run("browser.open", url)
+      expect(JSON.stringify(result)).toContain("Smithers can't do that as asked.")
+      expect(targetReads).toBe(0)
+      if (!store.settled) throw new Error("Fixture has no persistence barrier")
+      await store.settled()
+      const id = `browser-${url}`
+      const before = store.collections.cards.get(id)
+      if (before?.kind !== "browser") throw new Error("Missing guarded refusal card")
+      expect(before.payload.refusal).toMatchObject({ status: 400, code: "request_invalid", fault: "user", origin: "local" })
+      const html = renderToStaticMarkup(createElement(BrowserCardBody, { card: before }))
+      expect(html).toContain('data-fault="user"')
+      expect(html).not.toContain("Details")
+      expect(html).not.toContain("private host")
+      await controller.dispose()
+      controller = undefined
+      store = await createAppStore({ kind: "localStorage", storage })
+      const restored = store.collections.cards.get(id)
+      expect(restored).toEqual(before)
+      if (restored?.kind !== "browser") throw new Error("Missing durable refusal after reload")
+      expect(renderToStaticMarkup(createElement(BrowserCardBody, { card: restored }))).toEqual(html)
+      recovery = true
+      controller = createAppController(store, silentAgent, { baseUrl: server.url.origin, fetchImpl: fetch })
+      await signIn(store)
+      const recovered = await controller.commands.executeForAgent({ name: "commands", arguments: JSON.stringify({ action: "execute", name: "browser.open", args: "https://example.com/" }) })
+      expect(recovered).toContain("Recovered readable text")
+      if (!store.settled) throw new Error("Fixture has no persistence barrier")
+      await store.settled()
+      expect(store.collections.cards.get(id)).toEqual(before)
+      const card = store.collections.cards.get("browser-https://example.com/")
+      expect(card?.kind === "browser" && card.payload.error).toBeUndefined()
+      expect(card?.kind === "browser" && card.payload.refusal).toBeUndefined()
+      expect([...store.collections.cards.values()].filter(card => card.id === "browser-https://example.com/")).toHaveLength(1)
+      expect(targetReads).toBe(0)
+      expect(requests.filter(path => path === "/api/tools/browser-fetch")).toHaveLength(2)
+    } finally {
+      try { await controller?.dispose(); await store.dispose?.() }
+      finally { await server.stop(true); await target.stop(true) }
+    }
+  })
+
+  test.each([
+    { name: "unknown", status: 400, body: { status: "error", code: "future_browser_code", message: "RAW_PRIVATE_MARKER" } },
+    { name: "status mismatch", status: 503, body: { status: "error", code: "request_invalid", message: "RAW_PRIVATE_MARKER" } },
+    { name: "malformed", status: 400, body: "RAW_PRIVATE_MARKER" }
+  ])("$name response remains opaque in agent result and persisted card", async ({ status, body }) => {
+    // Future/malformed bodies are this compatibility boundary. The decisive
+    // input fault above uses the actual maintained guarded HTTP handler.
+    let recover = false
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
+      const path = new URL(request.url).pathname
+      if (path === "/api/user") return Response.json({ id: 1, username: "will", is_admin: false })
+      if (path === "/api/tools/browser-fetch" && recover) return Response.json({ status: 200, finalUrl: "https://example.com/", text: "Recovered compatibility response", frameable: false, blockReason: "Embedding refused" })
+      if (path === "/api/tools/browser-fetch") return typeof body === "string" ? new Response(body, { status }) : Response.json(body, { status })
+      return new Response(null, { status: 404 })
+    } })
+    const store = await webStore()
+    const controller = createAppController(store, silentAgent, { baseUrl: server.url.origin, fetchImpl: fetch })
+    try {
+      await signIn(store)
+      const result = await controller.commands.executeForAgent({ name: "commands", arguments: JSON.stringify({ action: "execute", name: "browser.open", args: "https://example.com/" }) })
+      expect(result).not.toContain("RAW_PRIVATE_MARKER")
+      expect(result).toContain("That page couldn't be read. Not your fault.")
+      if (!store.settled) throw new Error("Fixture has no persistence barrier")
+      await store.settled()
+      const card = store.collections.cards.get("browser-https://example.com/")
+      expect(JSON.stringify(card)).not.toContain("RAW_PRIVATE_MARKER")
+      if (card?.kind !== "browser") throw new Error("Missing compatibility failure card")
+      const html = renderToStaticMarkup(createElement(BrowserCardBody, { card }))
+      expect(html).toContain('data-fault="infra"')
+      expect(html).not.toContain("RAW_PRIVATE_MARKER")
+      recover = true
+      const recovered = await controller.commands.executeForAgent({ name: "commands", arguments: JSON.stringify({ action: "execute", name: "browser.open", args: "https://example.com/" }) })
+      expect(recovered).toContain("Recovered compatibility response")
+      if (!store.settled) throw new Error("Fixture has no persistence barrier")
+      await store.settled()
+      const replaced = store.collections.cards.get(card.id)
+      expect(replaced?.kind === "browser" && replaced.payload.error).toBeUndefined()
+      expect(replaced?.kind === "browser" && replaced.payload.refusal).toBeUndefined()
+      expect([...store.collections.cards.values()].filter(row => row.id === card.id)).toHaveLength(1)
+    } finally { try { await controller.dispose() } finally { await server.stop(true) } }
+  })
+})
+
+
+test("a closed real browser service produces an opaque transport failure card", async () => {
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response(null, { status: 404 }) })
+  const origin = server.url.origin
+  await server.stop(true)
+  const store = await webStore()
+  const controller = createAppController(store, silentAgent, { baseUrl: origin, fetchImpl: fetch })
+  try {
+    await signIn(store)
+    const result = await controller.commands.executeForAgent({ name: "commands", arguments: JSON.stringify({ action: "execute", name: "browser.open", args: "https://example.com/" }) })
+    expect(result).not.toContain("ECONNREFUSED")
+    const card = store.collections.cards.get("browser-https://example.com/")
+    if (card?.kind !== "browser") throw new Error("Missing transport failure card")
+    expect(card.payload.refusal).toBeUndefined()
+    const html = renderToStaticMarkup(createElement(BrowserCardBody, { card }))
+    expect(html).toContain('data-fault="infra"')
+    expect(html).not.toContain("ECONNREFUSED")
+  } finally { await controller.dispose() }
 })
