@@ -741,6 +741,10 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	if err != nil {
 		return fmt.Errorf("workspace commands: %w", err)
 	}
+	accountOperations, err := services.NewAccountOperationService(commandJobs, queries)
+	if err != nil {
+		return fmt.Errorf("account operations: %w", err)
+	}
 	workspaceService := services.NewWorkspaceService(runtimeStores.Workspaces,
 		services.WithWorkspaceCommandJobs(commandJobs, webhookSecretCodec),
 		services.WithWorkspaceRuntime(options.Workspace),
@@ -1179,7 +1183,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		return err
 	}
 	var workspaceCommandWorker *criticalWorker
-	if options.topology.workers() && options.Workspace != nil && options.Workspace.Capabilities().Execution {
+	if options.topology.workers() {
 		workspaceCommandWorker = newCriticalWorker()
 	}
 	var messageDispatchWorker *criticalWorker
@@ -1455,12 +1459,22 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 			DeploymentAdmin:    deploymentAdminRoutes,
 			EgressPolicy:       &routes.RepositoryEgressPolicyHandler{Service: egressPolicyService}},
 	)
-	if flow != nil && options.topology.servesHTTP() {
-		browser := &browserFlowAPI{registrationPool: pool, repos: repoService, queries: queries, dispatcher: flow.dispatcher, boxes: workspaceService,
-			resumes: background.Jobs[string]{Timeout: 6 * time.Minute, FailureTTL: time.Minute},
-			limit:   middleware.GlobalAPIRateLimit(queries)}
-		mountBrowserFlow(router, cfg, queries, browser, &repositorySetupAPI{repos: repoService, setup: repositorySetupService})
+
+	if options.topology.servesHTTP() {
+		browser := &browserFlowAPI{accountOperations: accountOperations, limit: middleware.GlobalAPIRateLimit(queries)}
+		var setup *repositorySetupAPI
+		if flow != nil {
+			browser.registrationPool = pool
+			browser.repos = repoService
+			browser.queries = queries
+			browser.dispatcher = flow.dispatcher
+			browser.boxes = workspaceService
+			browser.resumes = background.Jobs[string]{Timeout: 6 * time.Minute, FailureTTL: time.Minute}
+			setup = &repositorySetupAPI{repos: repoService, setup: repositorySetupService}
+		}
+		mountBrowserFlow(router, cfg, queries, browser, setup)
 	}
+
 	if chatService != nil && options.topology.servesHTTP() {
 		mountChatPublic(router, chatService.runtime, queries, cfg)
 		mountChatProducerOnSharedListener(router, chatService)
@@ -1575,10 +1589,20 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	var workspaceCommandFailure <-chan error
 	if workspaceCommandWorker != nil {
 		workspaceCommandWorker.Start(workerCtx, "workspace commands", func(ctx context.Context) error {
-			return workspaceService.RunWorkspaceCommandWorker(ctx, jobs.WorkerConfig{
-				WorkerID: "workspace-command-" + uuid.NewString(), Capacity: 32, Lease: 2 * time.Minute, HeartbeatInterval: time.Second,
+			operations := []string{accountOperations.OperationName()}
+			if options.Workspace != nil && options.Workspace.Capabilities().Execution {
+				operations = append(operations, services.WorkspaceCommandJobOperation())
+			}
+			return commandJobs.RunWorker(ctx, jobs.WorkerConfig{
+				Operations: operations,
+				WorkerID:   "workspace-command-" + uuid.NewString(), Capacity: 32, Lease: 2 * time.Minute, HeartbeatInterval: time.Second,
 				PollInterval: 250 * time.Millisecond, RetryDelay: time.Second,
-				OnError: func(err error) { slog.Error("workspace command failed", "error", err) },
+				OnError: func(err error) { slog.Error("product operation failed", "error", err) },
+			}, func(ctx context.Context, lease *jobs.Lease) error {
+				if lease.Claim().Operation == accountOperations.OperationName() {
+					return accountOperations.Handle(ctx, lease)
+				}
+				return workspaceService.HandleWorkspaceCommand(ctx, lease)
 			})
 		})
 		workspaceCommandFailure = workspaceCommandWorker.Failed()

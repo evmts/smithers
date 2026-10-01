@@ -2,7 +2,7 @@
  * They do not substitute for public CLI acceptance against owned Go/PostgreSQL.
  */
 import * as Account from "@smthrs/control/Account"
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
@@ -27,25 +27,35 @@ it("uses the shared declaration for the existing CLI command and preserves its e
 })
 
 describe("CLI selected Account", () => {
-  it("awaits its selected authenticated read and returns only independently projected account facts", async () => {
+  it("retains a reconnect identity before unresolved admission and returns its real receipt", async () => {
     const root = mkdtempSync(join(tmpdir(), "cli-account-"))
     const entered = deferred<void>()
     const release = deferred<void>()
     let requests = 0
+    let requestId = ""
     const server = createServer(async (request, response) => {
-      expect(request.method).toBe("GET")
-      expect(request.url).toBe("/api/user")
+      expect(request.method).toBe("POST")
+      expect(request.url).toBe("/api/workflow/rpc")
       expect(request.headers.authorization).toBe("token owned-token")
       requests++
+      let raw = ""
+      for await (const chunk of request) raw += chunk
+      const invocation = JSON.parse(raw)
+      expect(invocation).toEqual({
+        procedure: "Operation.Dispatch",
+        payload: { name: "account.show", requestId: expect.any(String), input: {} }
+      })
+      requestId = invocation.payload.requestId
       entered.resolve(undefined)
       await release.promise
       response.setHeader("content-type", "application/json")
       response.end(
         JSON.stringify({
-          username: "selected-owner",
-          token: "private-server-token",
-          scopes: ["invented"],
-          email: "private-email"
+          operationId: "operation-1",
+          requestId,
+          kind: "requested",
+          state: "accepted",
+          acceptedAt: "2026-10-01T00:00:00Z"
         })
       )
     })
@@ -68,8 +78,21 @@ describe("CLI selected Account", () => {
       await entered.promise
       expect(settled).toBe(false)
       expect(requests).toBe(1)
+      const retained = readdirSync(root, { recursive: true }).filter((path) =>
+        typeof path === "string" && path.endsWith(".json")
+      )
+      expect(retained).toHaveLength(1)
+      const pending = readFileSync(join(root, String(retained[0])), "utf8")
+      expect(JSON.parse(pending)).toEqual({ requestId })
+      expect(pending).not.toContain("owned-token")
       release.resolve(undefined)
-      expect(await result).toEqual({ login: "selected-owner" })
+      expect(await result).toEqual({
+        operationId: "operation-1",
+        requestId,
+        kind: "requested",
+        state: "accepted",
+        acceptedAt: "2026-10-01T00:00:00Z"
+      })
       expect(requests).toBe(1)
     } finally {
       release.resolve(undefined)
@@ -121,7 +144,7 @@ describe("CLI selected Account", () => {
             expect(outcome.error).toBeInstanceOf(APIError)
             expect(outcome.error).toMatchObject({ status: 401 })
           } else {expect(outcome.error).toMatchObject({
-              code: verdict === "malformed" ? "backend_protocol" : "session_expired"
+              code: verdict === "malformed" ? "backend_protocol" : "account_changed"
             })}
           expect(String(outcome.error)).not.toContain("private-server-marker")
           expect(String(outcome.error)).not.toContain("private-old-owner")
@@ -136,6 +159,75 @@ describe("CLI selected Account", () => {
           rmSync(root, { recursive: true, force: true })
         }
       }
+    })
+  }
+})
+
+describe("CLI Account reconnect protocol", () => {
+  for (
+    const terminal of [
+      { operationId: "operation-1", requestId: "request-1", actor: "api", state: "completed" },
+      {
+        operationId: "operation-1",
+        requestId: "request-1",
+        actor: "api",
+        state: "accepted",
+        result: { login: "private-old-owner" }
+      },
+      {
+        operationId: "operation-1",
+        requestId: "request-1",
+        actor: "api",
+        state: "completed",
+        result: { login: "owner", email: "private-email" }
+      },
+      {
+        operationId: "operation-1",
+        requestId: "another-request",
+        actor: "api",
+        state: "completed",
+        result: { login: "private-old-owner" }
+      },
+      { operationId: "operation-1", requestId: "request-1", actor: "agent", state: "failed" }
+    ]
+  ) {
+    it(`refuses an invalid or stale terminal projection: ${JSON.stringify(terminal)}`, async () => {
+      const root = mkdtempSync(join(tmpdir(), "cli-account-reconnect-"))
+      const server = createServer(async (request, response) => {
+        let raw = ""
+        for await (const chunk of request) raw += chunk
+        expect(JSON.parse(raw)).toEqual({
+          procedure: "Operation.Read",
+          payload: { name: "account.show", requestId: "request-1" }
+        })
+        expect(request.url).toBe("/api/workflow/rpc")
+        response.setHeader("content-type", "application/json")
+        response.end(JSON.stringify(terminal))
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const client = new Client({
+        environment: {
+          HOME: root,
+          SMITHERS_DISABLE_SYSTEM_KEYRING: "1",
+          SMITHERS_API_ORIGIN: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+          SMITHERS_TOKEN: "owned-token"
+        }
+      })
+      try {
+        await expect(handlers["account show"]!(client, {}, { request: "request-1" })).rejects.toMatchObject({
+          code: "backend_protocol"
+        })
+      } finally {
+        server.closeAllConnections()
+        await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+  }
+  for (const options of [{ history: true, request: "request-1" }, { history: true, cancel: true }, { cancel: true }]) {
+    it(`refuses incompatible reconnect options before transport: ${JSON.stringify(options)}`, async () => {
+      const client = new Client({ environment: { HOME: tmpdir(), SMITHERS_DISABLE_SYSTEM_KEYRING: "1" } })
+      await expect(handlers["account show"]!(client, {}, options)).rejects.toMatchObject({ _tag: "/cli/UsageError" })
     })
   }
 })

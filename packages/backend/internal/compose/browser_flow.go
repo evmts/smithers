@@ -41,8 +41,9 @@ var browserFlowProcedures = map[string]bool{
 }
 
 type browserFlowAPI struct {
-	registrationPool *pgxpool.Pool
-	repos            interface {
+	registrationPool  *pgxpool.Pool
+	accountOperations *services.AccountOperationService
+	repos             interface {
 		GetRepoView(context.Context, *db.User, string, string) (services.RepoView, error)
 	}
 	queries interface {
@@ -214,6 +215,10 @@ func browserFlowWakeFailed(w http.ResponseWriter, err error) {
 // any run. Until then it wakes the box and starts the host in the
 // background, answering "provisioning", which the app polls.
 func (api *browserFlowAPI) provision(w http.ResponseWriter, r *http.Request) {
+	if api.dispatcher == nil {
+		browserFlowRefusal(w, http.StatusServiceUnavailable, "Workflow host unavailable.")
+		return
+	}
 	_, target, workspace, ok := api.prepare(w, r, true)
 	if !ok {
 		return
@@ -274,6 +279,16 @@ func (api *browserFlowAPI) rpc(w http.ResponseWriter, r *http.Request) {
 	}
 	var adminRequest browserFlowRequest
 	decoded := json.Unmarshal(body, &adminRequest) == nil
+	if decoded && accountOperationProcedure(adminRequest.Procedure) {
+		serve := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { api.accountOperationRPC(w, r, adminRequest) })
+		if api.limit != nil && (adminRequest.Procedure == "Operation.Dispatch" || adminRequest.Procedure == "Operation.Cancel") {
+			api.limit(serve).ServeHTTP(w, r)
+		} else {
+			serve.ServeHTTP(w, r)
+		}
+		return
+	}
+
 	if decoded && registrationDecision(adminRequest.Payload, adminRequest.Procedure) {
 		if !registrationAdmin(w, r, true) {
 			return
@@ -290,6 +305,14 @@ func (api *browserFlowAPI) rpc(w http.ResponseWriter, r *http.Request) {
 		} else {
 			serve.ServeHTTP(w, r)
 		}
+		return
+	}
+	if api.dispatcher == nil {
+		if !decoded || !browserFlowProcedures[adminRequest.Procedure] {
+			browserFlowRefusal(w, http.StatusBadRequest, "The workflow seam does not relay this procedure.")
+			return
+		}
+		browserFlowRefusal(w, http.StatusServiceUnavailable, "Workflow host unavailable.")
 		return
 	}
 	r.Body = io.NopCloser(strings.NewReader(string(body)))
@@ -370,11 +393,17 @@ func mountBrowserFlow(router chi.Router, cfg *config.Config, queries *db.Queries
 	router.With(flowAccess...).Post("/api/workflow/provision", browser.provision)
 	// The seam takes the API budget itself: a run's progress polls (a
 	// snapshot every two seconds per run) stay out of it (browserFlowAPI.limit).
-	router.With(access(false)...).Post("/api/workflow/rpc", browser.rpc)
-	router.With(flowAccess...).Post("/api/repository-setup/{operation}", setup.serve)
+	rpcAccess := access(false)
+	rpcAccess = append(rpcAccess[:len(rpcAccess)-1:len(rpcAccess)-1], workflowRPCScope)
+	router.With(rpcAccess...).Post("/api/workflow/rpc", browser.rpc)
+	if setup != nil {
+		router.With(flowAccess...).Post("/api/repository-setup/{operation}", setup.serve)
+	}
 	// A setup's progress is polled every few seconds for up to six hours,
 	// so its reads stay out of the API budget like a run's progress reads.
 	unlimited := access(false)
 	setupReads := append(unlimited[:len(unlimited)-1:len(unlimited)-1], middleware.RequireScope(middleware.ScopeReadRepository))
-	router.With(setupReads...).Get("/api/repository-setup/{operation}", setup.serve)
+	if setup != nil {
+		router.With(setupReads...).Get("/api/repository-setup/{operation}", setup.serve)
+	}
 }
