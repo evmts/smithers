@@ -40,6 +40,7 @@ it("takes over a worker with t, drives a frame from the composer, and releases i
     // A command stays a command while driving; only plain text goes to the worker.
     await tui.type("/conversation")
     await tui.press(key.enter)
+    await tui.press(key.ctrlO)
     await tui.type("use the session cookie")
     await tui.press(key.enter)
     await tui.until(
