@@ -27,8 +27,14 @@ pnpm add -D \
   @smthrs/notifications@1.0.0-rc.0 \
   @smthrs/registry@1.0.0-rc.0 \
   effect@4.0.0-rc.115 \
+  @effect/platform-node@4.0.0-rc.115 \
+  @effect/platform-node-shared@4.0.0-rc.115 \
   @effect/sql-sqlite-node@4.0.0-rc.115
 ```
+
+This example imports `NodeCrypto` directly, so it installs the Effect Node
+adapter and pins its shared adapter explicitly. These are example dependencies,
+not gateway peers.
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"

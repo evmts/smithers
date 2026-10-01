@@ -13,19 +13,16 @@ Version 1.0.0-rc.0 is not on npm yet. Until it is published, take the package
 from [the repository](https://github.com/smithersai/smithers); the rest of this
 page applies either way.
 
-The manifest declares five required peers, none optional:
+The manifest declares two required peers, none optional:
 
-| Peer                           | Version        | Why                                                        |
-| ------------------------------ | -------------- | ---------------------------------------------------------- |
-| `effect`                       | `4.0.0-rc.115` | The runtime every service tag belongs to.                  |
-| `@effect/platform-bun`         | `4.0.0-rc.115` | Imported at module load by the root entry and `BunHost`.   |
-| `@effect/platform-node`        | `4.0.0-rc.115` | The Node adapters the bundle falls back to off Bun.        |
-| `@effect/platform-node-shared` | `4.0.0-rc.115` | The shared adapter implementation both Effect bundles use. |
-| `@smthrs/platform-node`        | `1.0.0-rc.0`   | The atomic filesystem slot and the containment machinery.  |
+| Peer                    | Version        | Why                                                       |
+| ----------------------- | -------------- | --------------------------------------------------------- |
+| `effect`                | `4.0.0-rc.115` | The runtime every service tag belongs to.                 |
+| `@smthrs/platform-node` | `1.0.0-rc.1`   | The atomic filesystem slot and the containment machinery. |
 
-Package managers that resolve required peers install all five automatically;
-the command above pins them so a lockfile records the versions. All Effect
-versions are exact so the host shares one compatible Effect runtime.
+Package managers that resolve required peers install both automatically. The
+Effect platform adapters are bundled privately at pinned versions; the exact
+`effect` peer keeps the host on one compatible Effect runtime.
 
 ## Supported runtimes
 
