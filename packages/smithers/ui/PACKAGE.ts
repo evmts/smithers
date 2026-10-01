@@ -22,6 +22,7 @@
  * provide.
  */
 import { Smithers } from "@smthrs/targets"
+import { Package as control } from "../control/PACKAGE.ts"
 
 const cwd = "packages/smithers/ui"
 
@@ -44,7 +45,7 @@ const sources = [
  */
 const check = Smithers.Typecheck({
   srcs: sources,
-  deps: [],
+  deps: [control.check],
   tsconfig: Smithers.file("tsconfig.json"),
   buildMode: false,
   incremental: false,
@@ -66,7 +67,7 @@ const unitTests = Smithers.NodeTest({
     Smithers.glob("//packages/smithers/ui/tests/**/*.ts"),
     Smithers.glob("//packages/smithers/ui/tests/**/*.tsx")
   ],
-  deps: [],
+  deps: [control.check],
   cwd
 })
 
@@ -83,7 +84,7 @@ const docsFiles = Smithers.Filegroup({
 
 /** Complete React source input for the reproducible Solid projection. */
 const solidCodegenInputs = Smithers.Filegroup({
-  srcs: [Smithers.glob("src/**/*"), Smithers.file("package.json")],
+  srcs: [Smithers.glob("src/**/*"), Smithers.file("package.json"), control.check],
   cwd
 })
 

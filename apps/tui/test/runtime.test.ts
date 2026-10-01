@@ -5,6 +5,7 @@ import { Effect } from "effect"
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import * as Account from "../src/account.ts"
 import * as Agents from "../src/agents.ts"
 import * as Changes from "../src/changes.ts"
 import type * as Extension from "../src/extension.ts"
@@ -1105,4 +1106,39 @@ describe("custom view limit", () => {
     const restored = Session.restore(records).workspace.panels.map((each) => each.id)
     expect(restored).toEqual(ids)
   })
+})
+
+it("binds the declared Account action to the same signed-out controller without writing account facts", async () => {
+  let presentations = 0
+  let admissions = 0
+  const account = Account.controller({
+    session: async () => undefined,
+    persist: () => {
+      admissions++
+    },
+    present: () => {
+      presentations++
+    }
+  })
+  try {
+    const without = await Effect.runPromise(Runtime.source({ publish: () => {} }).bindings())
+    expect(without.some((binding) => binding.descriptor.name === "account.show")).toBe(false)
+    const bindings = await Effect.runPromise(
+      Runtime.source({
+        publish: () => {},
+        account: (input) => account.show(input, "agent")
+      }).bindings()
+    )
+    const selected = bindings.filter((binding) => binding.descriptor.name === Account.operations[0]!.name)
+    expect(selected).toHaveLength(1)
+    const binding = selected[0]!
+    expect(binding.descriptor.description).toBe(Account.operations[0]!.summary)
+    const result = await Effect.runPromise(binding.run({ input: {} } as Parameters<typeof binding.run>[0]))
+    expect(result.outcome).toBe("success")
+    expect(account.state()).toEqual({ phase: "signed-out" })
+    expect(presentations).toBe(1)
+    expect(admissions).toBe(0)
+  } finally {
+    account.dispose()
+  }
 })

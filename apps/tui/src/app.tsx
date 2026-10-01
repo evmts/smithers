@@ -1,7 +1,9 @@
+import { Refused } from "@smthrs/cli/CliError"
 import * as PromptQueue from "@smthrs/rpc/PromptQueue"
 import { useClock } from "@smthrs/ui/clock"
 import { parseArgs } from "@smthrs/ui/flow-arguments"
 import { NOTICE_SETTLE_MS } from "@smthrs/ui/notification-policy"
+import * as Account from "./account.ts"
 import * as Failures from "./failures.ts"
 import * as IssueViews from "./issue-views.ts"
 import * as Log from "./log.ts"
@@ -186,9 +188,18 @@ export function App(props: AppProps) {
     restored.file === undefined ? Session.create(props.host.cwd) : Session.reopen(restored.file)
   )
   const writer = useRef<Session.Writer>(Session.guarded(durableWriter.current, unsaved))
+  const [account] = useState(() =>
+    Account.controller({
+      persist: (receipt, at) => durableWriter.current.append({ type: "account", at, receipt }),
+      present: (at) => setTranscript((current) => Transcript.card(current, Account.panel({ phase: "idle" }), at))
+    })
+  )
+  const accountState = useSyncExternalStore(account.subscribe, account.state)
   // The interrupted turn's receipt, once: nothing runs it after a restart.
   useEffect(() => {
     if (restored.receipt !== undefined) writer.current.append(restored.receipt)
+    account.restore(restored.current?.account)
+    return account.dispose
   }, [])
   /** Status items, keys and plugin panels from every owner; runtime panels stay in the workspace. */
   const [contributions] = useState(() => {
@@ -562,6 +573,7 @@ export function App(props: AppProps) {
   }
   /** `ui:<id>` views: runtime tabs, plugin panels, the problems view, and any card while it is open. */
   const uiPanels: ReadonlyArray<Panels.Panel> = [
+    ...(surface === `ui:${Account.id}` ? [Account.panel(accountState)] : []),
     ...(props.issueViews !== undefined && surface === `ui:${IssueViews.id}` ? [IssueViews.panel(issueViewsState)] : []),
     ...snapshot.panels.filter((each) => !cardIds.has(each.id) || surface === `ui:${each.id}`),
     ...extensions.panels.filter((each) => each.placement === "tab" || surface === `ui:${each.panel.id}`).map((each) =>
@@ -576,7 +588,7 @@ export function App(props: AppProps) {
     return status === "input" ? "waiting" : status
   }
   const livePanel = (card: Panels.Panel): Panels.Panel =>
-    snapshot.panels.find((each) => each.id === card.id) ??
+    card.id === Account.id ? Account.panel(accountState) : snapshot.panels.find((each) => each.id === card.id) ??
       extensions.panels.find((each) => each.panel.id === card.id)?.panel ?? card
   const statusItems: ReadonlyArray<Extension.Status> = [
     ...(extensionPanel === undefined ? [] : [{
@@ -1109,6 +1121,7 @@ export function App(props: AppProps) {
     if (quitting.current) return
     quitting.current = true
     flowWatch.current?.dispose()
+    account.dispose()
     workspace.dispose()
     const monitorsStopped = monitors.dispose()
     const stopped = runs.dispose()
@@ -1158,6 +1171,7 @@ export function App(props: AppProps) {
         Agents.context(runs.listed())
       }\nDelegate models (pass as model, not agent): ${Models.delegable(props.models).join(", ") || "none"}`,
       runtime: {
+        account: (input) => account.show(input, "agent"),
         publish: (contribution) => {
           if (contribution.kind !== "panel") return contribute("runtime:chat", contribution)
           if (contribution.placement === "tab") {
@@ -1411,6 +1425,7 @@ export function App(props: AppProps) {
     setPanelFocus(false)
     setName(state.name)
     setTranscript(state.transcript)
+    account.restore(state.account)
     return state
   }, [props.flows, changeForm, unsaved, contribute, contributions, setQueue])
 
@@ -1486,6 +1501,21 @@ export function App(props: AppProps) {
     const parsed = Editor.parseCommand(text)
     if (parsed === undefined) return false
     const { name: verb, argument } = parsed
+    if (Account.operations.some((operation) => operation.name === verb)) {
+      if (argument.trim() !== "") {
+        setStatus(
+          Failures.line(
+            "command",
+            new Refused({ fault: "user", code: "invalid_input", message: "Account takes no input" })
+          ),
+          "danger"
+        )
+      } else {
+        void account.show().catch((error) => setStatus(Failures.line("command", error), "danger"))
+        showTab("chat")
+      }
+      return true
+    }
     switch (verb) {
       case "summary":
         showTab("summary")
@@ -2635,6 +2665,8 @@ export function App(props: AppProps) {
     runs: flowRuns,
     search,
     issueViews: issueViewsPending,
+    account: accountState.phase === "requested" ? accountState.startedAt : undefined,
+    accountFailure: accountState.phase === "failed" ? accountState.detail : undefined,
     issueViewsFailure: surface === `ui:${IssueViews.id}`
       ? undefined
       : issueViewsState.phase === "failed"
