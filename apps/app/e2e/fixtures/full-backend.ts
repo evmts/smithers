@@ -26,7 +26,7 @@ export async function startFullBackend() {
   const run = async (args: string[]) => {
     const child = Bun.spawn(args, {
       cwd: repository,
-      env: { ...env, GOCACHE, GOMODCACHE },
+      env: { ...env, GOCACHE, GOMODCACHE, ...(args[0] === "go" ? { SDKROOT: process.env.SDKROOT } : {}) },
       stdout: "pipe",
       stderr: "pipe"
     })
