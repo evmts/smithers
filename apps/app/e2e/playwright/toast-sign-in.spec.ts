@@ -18,13 +18,14 @@ for (const path of ["/", "/smithersai/smithers/"]) {
       // A seam that refuses for sign-in offers GitHub through the real
       // flow-failure toast, independently of embedded repository read failures.
       await page.route("**/api/tools/browser-fetch", route => route.fulfill({
-        status: 403, json: { message: "Use /auth.sign-in to continue with GitHub." },
+        status: 401, json: { status: "error", code: "sign_in_required", fault: "user", message: "RAW_REMOTE_SIGNIN_MARKER" },
       }))
       await fillComposer(page, "/browser.open https://example.com")
       await input.press("Enter")
       const stack = page.getByLabel("Notifications", { exact: true })
       const signIn = stack.getByRole("button", { name: "Sign in", exact: true })
       await expect(signIn).toBeVisible()
+      await expect(page.getByText("RAW_REMOTE_SIGNIN_MARKER", { exact: true })).toHaveCount(0)
       await expect(signIn).toHaveAttribute("aria-keyshortcuts", "Meta+Shift+G Control+Shift+G")
       if (!(await input.isVisible())) await page.keyboard.press("Control+k")
       await expect(input).toBeVisible()
