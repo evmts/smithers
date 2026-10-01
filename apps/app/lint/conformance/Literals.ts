@@ -42,6 +42,8 @@
  *  - explicit fixture comment, repository-name and attachment-label values
  *    from the real harness's imported constructors, at declarations or the
  *    known attachment sink. Constructors are transparent in product positions;
+ *    a test-id suffix retains its fixture provenance only when Rules verifies
+ *    the enclosing composed prefix against the product source;
  *  - a positive same-receiver `type === "delta"` conjunction, which proves
  *    that its `kind` belongs to a stream frame rather than a card.
  *
@@ -106,8 +108,10 @@ export interface ExtractedLiteral {
    * reads; `kindComparison` stays the narrow syntactic fact it always was.
    */
   readonly kindClaim: boolean
-  /** Only import-bound real-runner metadata declarations, never product uses. */
+  /** Import-bound real-runner metadata; suffix evidence below must also resolve. */
   readonly testOwnedContext?: "scenario-id" | "repository-name" | "comment-body" | "attachment-name" | "input-text" | "protocol-id"
+  /** Static test-id heads whose interpolated suffix depends on this fixture value. */
+  readonly testIdSuffixPrefixes?: ReadonlyArray<string>
 }
 
 /** Where a literal sits in an argument list. */
@@ -495,6 +499,7 @@ export const extractLiterals = (file: string, source: string): ReadonlyArray<Ext
   // metadata. Follow ordinary local const aliases, without inspecting arbitrary
   // callback bodies (Array.find's predicate is not a flow-name argument).
   const productValues = new Set<ts.Node>()
+  const suffixPrefixes = new Map<ts.Node, Set<string>>()
   if (fixtureComments.size + fixtureRepositories.size + fixtureAttachments.size + fixtureInputs.size + fixtureProtocols.size > 0) {
     const consumers = new Set(["runCommand", "runFlow", "find", "getByTestId", "locator", "querySelector", "querySelectorAll", "startsWith", "endsWith"])
     const callSites = new Map<string, Array<ts.CallExpression>>()
@@ -510,7 +515,7 @@ export const extractLiterals = (file: string, source: string): ReadonlyArray<Ext
     // Narrow only a single explicit object return: follow the selected field
     // and its actual parameter dependencies. Unknown/dynamic returns keep the
     // conservative walk through every argument, so wrappers cannot hide IDs.
-    const markReturnedField = (read: ts.PropertyAccessExpression): boolean => {
+    const markReturnedField = (read: ts.PropertyAccessExpression, use: string | undefined): boolean => {
       let receiver = unwrap(read.expression)
       const seenReceivers = new Set<ts.Node>()
       while (ts.isIdentifier(receiver)) {
@@ -554,30 +559,53 @@ export const extractLiterals = (file: string, source: string): ReadonlyArray<Ext
             if (binding.form === "value") dependencies(binding.expression)
             else if (binding.callee === name) {
               const argument = call.arguments[binding.index]
-              if (argument) mark(argument)
+              if (argument) mark(argument, use)
             }
           }
         } else ts.forEachChild(node, dependencies)
       }
       dependencies(value)
-      mark(value)
+      mark(value, use)
       return true
     }
-    const mark = (node: ts.Node): void => {
-      if (productValues.has(node) || ts.isFunctionLike(node)) return
-      productValues.add(node)
-      if (ts.isPropertyAccessExpression(node) && markReturnedField(node)) return
+    // Undefined means a whole product value; an empty string follows a test-id
+    // lookup until its static head; a nonempty head records conditional suffix
+    // provenance. Rules validates that head against the source vocabulary.
+    // Keep visits separate: the same fixture can also be used as a whole ID.
+    const visited = new Map<ts.Node, Set<string | undefined>>()
+    const mark = (node: ts.Node, use: string | undefined): void => {
+      if (visited.get(node)?.has(use) || ts.isFunctionLike(node)) return
+      const uses = visited.get(node) ?? new Set<string | undefined>()
+      uses.add(use)
+      visited.set(node, uses)
+      if (use) {
+        const prefixes = suffixPrefixes.get(node) ?? new Set<string>()
+        prefixes.add(use)
+        suffixPrefixes.set(node, prefixes)
+      } else productValues.add(node)
+      if (use === "" && ts.isTemplateExpression(node) && ID_PREFIX.test(node.head.text)) {
+        for (const span of node.templateSpans) mark(span.expression, node.head.text)
+        return
+      }
+      if (ts.isPropertyAccessExpression(node) && markReturnedField(node, use)) return
       if (ts.isIdentifier(node)) {
         for (const binding of bindingsOf(node.text, node)) {
-          if (binding.form === "value") mark(binding.expression)
-          else for (const call of callSites.get(binding.callee) ?? []) {
-            const argument = call.arguments[binding.index]
-            if (argument) mark(argument)
-          }
+          if (binding.form === "value") mark(binding.expression, use)
+          else {for (const call of callSites.get(binding.callee) ?? []) {
+              const argument = call.arguments[binding.index]
+              if (argument) mark(argument, use)
+            }}
         }
-      } else ts.forEachChild(node, mark)
+      } else ts.forEachChild(node, (child) => mark(child, use))
     }
-    for (const [name, calls] of callSites) if (consumers.has(name)) for (const call of calls) call.arguments.forEach(mark)
+    for (const [name, calls] of callSites) {
+      if (consumers.has(name)) {
+        for (const call of calls) {
+          call.arguments.forEach((argument) => mark(argument, name === "getByTestId" ? "" : undefined))
+        }
+      }
+    }
+
   }
   // A metadata constructor cannot hide an explicit enclosing flow, affix or
   // card-object claim. Keep the outer consumer as the literal's rule context.
@@ -612,6 +640,7 @@ export const extractLiterals = (file: string, source: string): ReadonlyArray<Ext
       ...call,
       ...objectContextOf(consumer),
       testOwnedContext: testOwnedContext(context),
+      testIdSuffixPrefixes: suffixPrefixes.has(context) ? [...suffixPrefixes.get(context)!] : undefined,
       kindClaim: call.kindComparison || claimed.has(node) || claimed.has(context)
     })
   }
