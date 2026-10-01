@@ -3,6 +3,8 @@
  * commands, and the double-press window for Ctrl+C.
  */
 
+import { accountOperations } from "@smthrs/control/Account"
+
 /** pi keeps this many prompts and skips a repeat of the latest one. */
 export const historyLimit = 100
 
@@ -57,6 +59,7 @@ export interface Command {
 }
 
 export const commands: ReadonlyArray<Command> = [
+  ...accountOperations.map((operation) => ({ name: operation.name, description: operation.summary })),
   { name: "model", args: "[query]", description: "Pick a model" },
   { name: "theme", description: "Pick a theme" },
   { name: "thinking", args: "[level]", description: "Set the reasoning effort" },

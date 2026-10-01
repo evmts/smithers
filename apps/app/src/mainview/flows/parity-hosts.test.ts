@@ -1,3 +1,4 @@
+import { operationSources } from "../../../scripts/operation-sources"
 import * as AgentApiRoutes from "@smthrs/rpc/AgentApiRoutes"
 /* Host parity: registries use the production capability tables, and every
  * extracted seam API path/method passes through the surviving transparent edge
@@ -167,7 +168,7 @@ const registrySources = (): string => {
   return [
     read("./Flows.ts"),
     ...readdirSync(entries).sort().map((file) => read(`./entries/${file}`)),
-    ...readdirSync(shared).sort().map((file) => readFileSync(`${shared}${file}`, "utf8"))
+    ...operationSources(shared).map(({ source }) => source)
   ].join("\n")
 }
 

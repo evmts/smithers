@@ -380,7 +380,8 @@ The signed-in Smithers Cloud session for hosts other than the CLI (the terminal 
 | Export       | Signature                                 | Meaning                                                                                                                           |
 | ------------ | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `Cloud`      | interface                                 | `origin`, and `get(path, signal?)` for a `/api/…` path on that origin as the signed-in person: no redirects, 30 s, at most 4 MiB. |
-| `signedIn`   | `(env) => Promise<Cloud \| undefined>`    | The session, or undefined without an origin or a login.                                                                           |
+| `SelectedCloud` | interface | Extends `Cloud` with an opaque `identity` binding and `current()` to verify that the selected origin and credential still match. Neither exposes the credential. |
+| `signedIn`   | `(env) => Promise<SelectedCloud \| undefined>`    | The session, or undefined without an origin or a login.                                                                           |
 | `repository` | `(directory, env) => string \| undefined` | The `owner/name` a checkout's git or jj remote names, as `smthrs open` reads it.                                                  |
 
 ## Agents
