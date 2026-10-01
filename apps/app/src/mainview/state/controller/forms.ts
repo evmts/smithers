@@ -48,6 +48,8 @@ export interface FormRenderRequest {
   readonly args: string | undefined
   readonly via: "user" | "agent"
   readonly invocation?: AgentInvocation
+  /** A transported command may reveal its form only while its original frame is current. */
+  readonly presentationCurrent?: () => boolean
   /** The original human act waiting for a box the person chooses to open. */
   readonly afterBox?: { readonly kind: "prs.triage"; readonly repo: string; readonly number: number }
   /** The flow's input schema and hints; looked up in the registry when the caller has only the name. */
@@ -463,7 +465,7 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     // Agent-created forms do not dismiss chrome the human is using.
     if (request.via === "user" && ctx.commandActor === "user") {
     }
-    if (request.via === "user" && ctx.commandActor === "user" && store.session().maximizedCardId === MODELS_CARD_ID) deps.minimizeCard?.()
+    if (request.via === "user" && ctx.commandActor === "user" && request.presentationCurrent?.() !== false && store.session().maximizedCardId === MODELS_CARD_ID) deps.minimizeCard?.()
     const existing = collections.cards.get(cardId)
     if (existing?.kind === "flow-form" && existing.payload.submitting === true) {
       reopens.set(cardId, () => { renderFlowForm(request) })
@@ -647,7 +649,7 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     const selectedBefore = store.session().activeRepoKey
     // Reveal this human submission's result before its durable wait. A newer
     // frame gesture owns presentation, and agent/automatic submissions have none.
-    if (!asAgent && gesture?.formPresentationCurrent?.() === true) deps.minimizeCard?.()
+    if (!asAgent && gesture?.presentationCurrent?.() === true) deps.minimizeCard?.()
     await patch(card, { ...card.payload, submitting: true }, "active")
     if (accountEnded()) {
       continuations.delete(cardId)
