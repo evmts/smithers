@@ -14319,7 +14319,7 @@ delegation must stand before adoption. The default is
 | `quotaPolicy`     | `Layer<QuotaPolicy.QuotaClassifier>`                                      | The required quota park/retry policy every model call in the run is decided under.                                                                  |
 | `budget`          | `(envelope: Envelope) => Layer<Budget.Budget, Budget.ConfigurationError>` | Builds the run-local spending policy from the plan that was approved. Provided inside each body invocation.                                         |
 | `flows`           | `ReadonlyArray<FlowBinding.Source>`                                       | Host executable-flow sources composed into every run's catalog. The durable wait and the control-wired approval are composed by the session itself. |
-| `sandbox`         | `(selection) => Effect<SandboxOpener, SandboxRefused> \| undefined`        | Opens the machine for a flow's `sandbox:` selection; `undefined` when no provider of that name is configured. Absent, every selection is refused.  |
+| `sandbox`         | `(selection) => Effect<SandboxOpener, SandboxRefused> \| undefined`       | Opens the machine for a flow's `sandbox:` selection; `undefined` when no provider of that name is configured. Absent, every selection is refused.   |
 | `system`          | `ReadonlyArray<string>`                                                   | Stable system teaching placed ahead of the cell contract.                                                                                           |
 | `maxFrames`       | `number`                                                                  | The cell-loop bound.                                                                                                                                |
 | `readOnlyCap`     | `number`                                                                  | Consecutive read-only frames a task run may spend. Defaults to `CellTurn.defaultReadOnlyFrames`.                                                    |
@@ -14637,6 +14637,7 @@ other error schemas throw `TypeError` before the layer is built.
 | `repair`      | `Repair<Payload>`                                  | One bounded repair ask made after the correction budget is spent, decoded by the same schema.                                                                                                          |
 | `modelParams` | `ModelRequest.GenerationParams`                    | Generation parameters for the step's model calls.                                                                                                                                                      |
 | `maxFrames`   | `number`                                           | The cell-loop bound for this step, ahead of the host's.                                                                                                                                                |
+| `claimCap`    | `number`                                           | Overrides `Host.claimCap` for this step. Zero disarms the completion claim brake, so an answer (a classification, an extraction) stands without the host's judge reading it.                           |
 | `memory`      | `(payload) => ReadonlyArray<SnapshotRecorder.Row>` | Opening memory rows for this step. A judged step's run-start relevance reading withholds the rows Jev is confident the task does not need and journals `relevance-settled`. Keep them out of `prompt`. |
 
 ### AgentAction.Repair
@@ -20486,7 +20487,7 @@ The Node composition for the command tree.
 | `engineDurable`                                            | `(root: string, registry?, authority?) => EngineDurable`                                                                                                                                                                                      | The real project engine. `authority` accepts `approvalAuthority`, `principal`, `credential`, and `stateRoot`. Open, migration, and journal startup failures are promoted to defects.                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `layerSeatEvaluator`                                       | layer                                                                                                                                                                                                                                         | The native judge: Jev through the Vercel AI Gateway (`AI_GATEWAY_API_KEY`; a missing key reads as unreachable) over its own egress HTTP client (fetch under Bun), backed up by the `luna` seat (`openai:gpt-6-luna`) only when Jev is unreachable, times out, or answers 5xx or 429 through its retries. Luna resolves through the seat resolver and the host `RequestExecutor` at judgment time, including account pools; if it cannot resolve either, the judgment fails `unreachable`. A gateway refusal (401, 403) or an invalid Jev answer fails without a fallback.                  |
 | `accountPoolDefaultModel` | constructor | Queries connected host-permitted account-pool routes and returns their shared default seat; incomplete, failed or unusable discovery returns no seat. Requires the shared `RequestExecutor`. |
-| `seatResolver`, `layerSeatResolver`                        | constructor, layer                                                                                                                                                                                                                            | Resolves a declared seat string into a credentialed model. A `claude-code:<model>` seat runs on the user's signed-in Claude Code through the Claude Agent SDK, one locked-down, tool-less session per conversation whose turns are the frames' new messages; it resolves only without `ANTHROPIC_API_KEY`, and this process never reads a Claude credential. Its session is discarded unless `SMITHERS_HIJACKABLE=1`, which keeps it on disk so `claude --resume <sessionId>`, run in the system temporary directory, opens it; the journaled `model-settled` row carries the `sessionId`. |
+| `seatResolver`, `scopedSeatResolver`, `layerSeatResolver`  | constructor, constructor, layer                                                                                                                                                                                                               | Resolves a declared seat string into a credentialed model. `scopedSeatResolver` and `layerSeatResolver` end every Claude Code session the seats hold when their scope closes, so an idle session never keeps the host process alive. A `claude-code:<model>` seat runs on the user's signed-in Claude Code through the Claude Agent SDK, one locked-down, tool-less session per conversation whose turns are the frames' new messages; it resolves only without `ANTHROPIC_API_KEY`, and this process never reads a Claude credential. Its session is discarded unless `SMITHERS_HIJACKABLE=1`, which keeps it on disk so `claude --resume <sessionId>`, run in the system temporary directory, opens it; the journaled `model-settled` row carries the `sessionId`. |
 | `seatCandidates`, `layerSeatCatalog`                       | constructor, layer                                                                                                                                                                                                                            | The routing graph's seats an undeclared or `auto` run may route to: each `SeatRouter.seats` alias whose provider the environment holds a credential for, by the rules `seatResolver` signs with. A Claude seat is offered on `ANTHROPIC_API_KEY` or on a Claude subscription signed in to Claude Code, never as a `claude-code` seat.                                                                                                                                                                                                                                                      |
 | `supervisorStance`                                         | `(environment) => "careful" \| "paranoid"`                                                                                                                                                                                                    | The stance a judged run on this host is taught: `SMITHERS_SUPERVISOR_STANCE`, `careful` when unset. Any other value throws a `UsageError`.                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `testRunner`, `testFlows`, `checkpointStore`               | constructors                                                                                                                                                                                                                                  | The `test` flow's runner, the flows it registers, and the checkpoint store. `testRunner(environment, root, workspaceRoot?)` declares the runner for `workspaceRoot`, named inside the mount `SMITHERS_TEST_CWD` gives `root`.                                                                                                                                                                                                                                                                                                                                                              |
@@ -21565,7 +21566,10 @@ before publication.
 
 `rollup(input)` combines authoritative lifecycle, optional independent base
 health, and the latest `{ observation, sequence }` into `StatusRollup`. The wire
-axes are `state`, `activity`, `health`, `attention`, and `freshness`; provenance
+axes are `state`, `activity`, `health`, `attention`, and `freshness`. Attention
+is `none`, `awaiting-approval`, `needs-input`, `needs-resume`, or `unhealthy`;
+`needs-resume` (reason `released`) marks a run parked over executions its owner
+released, which only an explicit resume restarts. Provenance
 carries checker/monitor IDs, opaque incarnation, evidence position, durable
 version, observation time, and expiry. `latestObservation` compares only matching
 incarnations and uses journal order for equal evidence. `runIncarnation` derives
@@ -24280,6 +24284,7 @@ permit deadlocks against a fiber doing the opposite.
 | `wake`                   | `(runId: string) => Effect<WakeOutcome>`                                                                                                                         |
 | `waiting`                | `(runId: string) => Effect<Option<WaitingRow>>`                                                                                                                  |
 | `waitingRuns`            | `(filter?: WaitingRunsFilter) => Effect<ReadonlyArray<WaitingRow>>`                                                                                              |
+| `waitingTree`            | `(runId: string, options?: WaitingTreeOptions) => Effect<ReadonlyArray<WaitingRow>>`                                                                             |
 | `pendingRuns`            | `(flowName: string, limit?: number, after?: PendingRunCursor, through?: PendingRunCursor, eligibleBeforeMs?: number) => Effect<ReadonlyArray<PendingRunCursor>>` |
 | `pendingRunTail`         | `(flowName: string, eligibleBeforeMs?: number) => Effect<Option<PendingRunCursor>>`                                                                              |
 | `staleRunningRuns`       | `(staleBeforeMs: number, limit?: number) => Effect<ReadonlyArray<StaleRunningRow>>`                                                                              |
@@ -25406,6 +25411,14 @@ The versioned state envelope stored in each run row.
 | -------------- | ---------------------------------------------------------------------------------------------------------- |
 | `RunState`     | `{ version: 1, flowName, payload, parentExecutionId?, onParentExit?, maxRounds?, result?, cancellation? }` |
 | `OnParentExit` | `"cancel"` or `"detach"`                                                                                   |
+
+`ReleaseCause` is why a driver released a run it still owned, recorded as the
+optional `cause` of its `interrupt-released` run decision:
+`{ kind: "lease-lapsed", unconfirmedMs }` when the host went that long without
+confirming its run lease, or `{ kind: "interrupted" }` for any other
+non-cancel interruption, usually a host shutdown. `releaseCauseOf(decision)`
+reads it and answers `undefined` for decisions recorded before the field
+existed.
 
 `parentExecutionId` is present only on a child run. `onParentExit` is recorded
 at first admission, including independent runs that a later caller may join as
@@ -30057,6 +30070,7 @@ machine-readable `reason`.
 | `credentials-missing` | A required credential was not configured.                                                                                                                        |
 | `permission-denied`   | The credential lacks the scope the operation needs.                                                                                                              |
 | `listener-conflict`   | An unowned hook holds a declared callback URL, or a reconcile apply lock is held.                                                                                |
+| `rate-limited`        | A rate limiter refused to wait for the budget. Nothing was sent; `details.retryAt` is the instant to retry.                                                      |
 
 | Export               | Signature                                       | Notes                                                                           |
 | -------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------- |
@@ -30239,12 +30253,64 @@ Service interface:
 | `MAX_PER_PAGE`        | `100`                                                                    | The largest `per_page` GitHub accepts.                                                                                                                                                         |
 | `DEFAULT_MAX_PAGES`   | `10`                                                                     | The default page budget.                                                                                                                                                                       |
 | `MAX_PAGES_LIMIT`     | `1000`                                                                   | The largest accepted page budget.                                                                                                                                                              |
+| `PROXY_RETRY_AT`      | `"x-smithers-retry-at"`                                                  | The header in which the GitHub proxy names when a refused request may be retried.                                                                                                              |
+| `PROXY_REASON`        | `"x-smithers-rate-limit-reason"`                                         | The header in which the GitHub proxy names why it refused.                                                                                                                                     |
+
+A `429` that carries `PROXY_RETRY_AT` comes from the [GitHub proxy](#githubproxy),
+which never sent the request to GitHub. The client fails `rate-limited` at once
+with `details.retryAt` and does not repeat the call, because a retry before
+that instant only waits again.
 
 `RequestOptions` fields: `query` and `retryUnsafeWrites`.
 `DecodedRequestOptions<A>` adds the required `schema`, whose type is the
 request's result type: a caller cannot name a response type the client never
 decoded. `Page` fields: `items` and `truncated`. `RequestMethod` is
 `"GET" | "POST" | "PATCH" | "PUT" | "DELETE"`.
+
+### GitHub.RateLimit
+
+The limiter the [GitHub proxy](#githubproxy) runs for each principal, so a
+machine stays inside GitHub's documented limits. Before a request it waits for
+a write slot (`POST`, `PATCH`, `PUT`, `DELETE`: 1 s apart, at most 80 a minute
+and 500 an hour), a concurrency permit (50), the pause a limit response
+imposed, and the primary budget of the request's resource, modeled from every
+response's `x-ratelimit-*` headers. A `403` or `429` limit response pauses
+every caller: for `retry-after`, until `x-ratelimit-reset` when the budget is
+spent, or for at least a minute, doubling while limits persist. A wait longer
+than `maxWait` fails `rate-limited` without running the request.
+
+| Export             | Signature                                                                             | Notes                                                                                                                                                                                                             |
+| ------------------ | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `make`             | `(options?: { limits?: Limits; maxWait?: Duration }) => Effect<RateLimiter>`          | A limiter with its own state.                                                                                                                                                                                     |
+| `RateLimiter`      | `{ limit(method, path, attempt, observe), earliestStart(writes, path) }`              | `limit` runs `attempt` once the budget allows and folds `observe(exit)` into it; `earliestStart` books nothing.                                                                                                   |
+| `Observation`      | `{ headers?: Headers; limited: boolean }`                                             | What one finished attempt tells the limiter.                                                                                                                                                                      |
+| `resolveLimits`    | `(explicit?: Partial<Limits>, env?) => Limits`                                        | Explicit values, then `SMITHERS_GITHUB_MAX_CONCURRENT`, `_WRITE_SPACING_MS`, `_WRITES_PER_MINUTE`, `_WRITES_PER_HOUR`, `_MIN_PAUSE_MS`, `_MAX_PAUSE_MS`, then the defaults. Throws for a value below its minimum. |
+| `DEFAULT_LIMITS`   | `Limits`                                                                              | 50 concurrent, 1000 ms spacing, 80 per minute, 500 per hour, 60 s minimum pause, 1 h maximum pause.                                                                                                               |
+| `DEFAULT_MAX_WAIT` | `Duration.minutes(1)`                                                                 | The longest one request waits.                                                                                                                                                                                    |
+| `rateLimited`      | `(retryAt: number, reason: string, method: string, path: string) => IntegrationError` | The `rate-limited` failure: `details` carries `retryAt`, `reason`, `method`, `path`, `rateLimited: true`, `retryable: false`.                                                                                     |
+| `waits`, `pauses`  | `Metric` counters                                                                     | `smithers_github_rate_limit_waits` by `reason` (`spacing`, `paused`, `budget`) and `smithers_github_rate_limit_pauses`.                                                                                           |
+
+### GitHub.Proxy
+
+The machine's one GitHub client: a reverse proxy that every other GitHub
+client on the machine calls instead of `api.github.com`. It owns one
+`RateLimit` limiter per principal and the credential: it drops any
+`Authorization` a caller sends and injects the principal's token. A request
+the limiter will not wait for is answered `429` with `retry-after`,
+`PROXY_RETRY_AT`, and `PROXY_REASON`. Everything else is forwarded once with
+GitHub's status, headers, and body; a `rel="next"` link is rewritten to the
+proxy. A transport failure is `502` and a deadline `504`; the proxy never
+repeats a request. The [GitHub guide](https://integrations.smithers.sh/guides/github/#stay-inside-githubs-rate-limits)
+shows how to run it.
+
+| Export           | Signature                                                                                 | Notes                                                                                                                                                                                                   |
+| ---------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `make`           | `(options: ProxyOptions) => Effect<Effect<HttpServerResponse, never, HttpServerRequest>>` | The proxy as an HTTP application.                                                                                                                                                                       |
+| `layer`          | `(options: ProxyOptions) => Layer<never, never, HttpServer>`                              | Serves it on the `HttpServer` in context, such as `NodeHttpServer.layer`.                                                                                                                               |
+| `ProxyOptions`   | `{ credential, upstream?, capability?, limits?, maxWait?, requestTimeout? }`              | `credential(repository)` answers `{ token, principal }` for a request on `owner/name` or on no repository. `capability`, when set, is required from every caller as `Authorization: Bearer` or `token`. |
+| `Credential`     | `{ token: string; principal: string }`                                                    | Credentials with one `principal` share one budget.                                                                                                                                                      |
+| `repositoryOf`   | `(path: string) => string \| undefined`                                                   | The `owner/name` a REST path addresses.                                                                                                                                                                 |
+| `CONTROL_PREFIX` | `"/_smithers/"`                                                                           | `GET /_smithers/health` answers `{ ok: true }`. `GET /_smithers/admission?repo=owner/name&writes=n` answers `{ principal, startsAt, deferred }` without booking anything.                               |
 
 ### GitHub.Repository
 
@@ -33509,6 +33575,15 @@ contract before marking the client. Replacing the client does not inherit the as
 the kernel guard preserves it when wrapping a supported client. The standard Node and Bun host
 bundles implement it. `HttpClient.supportsDestinationPinning(client)` reports
 whether that exact client is marked. Model requests leave `Destination` unset.
+
+## HttpPagination
+
+`@smthrs/kernel/HttpPagination` exports `paginationCursor`, `paginationLimits`,
+and `pageText`. Cursor extraction rejects a changed origin or route; callers
+that require unchanged filters set `preserveQuery: true`. It returns only the
+opaque cursor, so callers retain authority over the next request's URL.
+`pageText` bounds UTF-8 response bytes before decoding and cancels the reader
+on overflow. Callers can supply their existing typed refusal constructors.
 
 ---
 
@@ -38760,6 +38835,78 @@ than raised as a defect, so the residue still names it and the finalizers
 behind it still run. See
 [Undo work with compensation](/docs/guides/compensation/).
 
+## `Burndown`
+
+`Burndown` works a backlog down to nothing: GitHub issues, Linear tickets,
+queue messages, or anything else whose items carry a stable string `id`. Its
+halves differ from the other containers because a round's width is the
+length of a backlog that no plan knows when it is built.
+
+| Export                                | What it is                                                                                                    |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `make(options)`                       | The lineage: capacity gate, `discover`, one `dispatch` call, then a `Flow.to` handoff to the next round       |
+| `round(input, options)`               | The `Effect` one dispatch runs: select, claim, work, land, release, at `concurrency`, a freed slot at a time  |
+| `dispatch(tag)`                       | Declares the dispatch action `make` calls, with `DispatchPayload` in and `RoundResult` out                    |
+| `layer(action, options)`              | Implements that action with `round`                                                                           |
+| `child(flow, payload)`                | Builds a `work` member that runs `flow.execute(payload, { executionId })` under the derived id                |
+| `signal(name?)`                       | The `WaitFor` deferred an operator completes to resume an exhausted burndown                                  |
+| `Held`                                | The typed failure a `claim` raises when another owner holds the item                                          |
+| `available`, `waitUntil`, `exhausted` | `Capacity` answers: launch at most `slots`, sleep until an epoch-millisecond instant, or park for an operator |
+| `ours`, `skip(detail)`                | `Selection` answers                                                                                           |
+
+`make({ discover, dispatch, capacity?, maxRounds, deadline?, signal? })`
+settles to `{ rows, rounds, stopped }`. Each row is `{ id, status, detail }`
+with `status` one of `landed`, `held`, `failed`, `skipped`, or `requeued`. A round that
+launched at least one item hands off to the next round, which rediscovers the
+backlog; a round that launched nothing settles the lineage as `drained`.
+`maxRounds` bounds every round the lineage opens, parks included, and
+settles it as `max_rounds`. `deadline` is the lineage deadline `Flow.make`
+enforces. `make` throws an `invalid_decorator` `PatternError` for a
+`maxRounds` that is not a positive safe integer below `Number.MAX_SAFE_INTEGER`, a `deadline` that is not a
+positive finite duration, or a blank `signal`.
+
+A `capacity` answer of `WaitUntil` arms `Sleep.action` until the instant, and
+`Exhausted` awaits `WaitFor.action` on `signal` (default
+`"burndown/capacity"`). Either then hands off to a fresh round that asks for
+capacity again, so the lineage never launches while it is parked and never
+polls. A host executing a burndown with a capacity member provides
+`Sleep.layer` and `WaitFor.layer`. A capacity or dispatch answer outside its
+schema is a defect.
+
+`round` leaves alone the ids in `settled`, so a `held` or `failed` item is
+never retried within a lineage, while a `skipped` or `requeued` item is
+reconsidered every round. Only the exact `ours` selection launches an item; a malformed or failed
+selection skips it. Of the items that are ours, the first `slots` launch in
+discovery order, at most `slots` at a time. When an item finishes working, its
+slot asks the round's `capacity` member, when there is one, and admits the next
+item that is ours only on an `Available` answer with more slots than the work
+still in flight. The items never admitted count as `deferred`; without a round
+`capacity` member that is every item past `slots`. A `claim` that fails with
+`Held` settles the item `held` and is not released. Any other claim, work, or
+landing failure settles the item `failed` on its own row and never cancels
+the items beside it. A worked item enters the landing queue at once: `land`
+runs one item at a time, in the order work finished, while other items still
+work, and a failed landing does not stop the next; without `land`, a worked
+item counts as landed. `release` runs once for every successful claim, as soon
+as the item settles, with its final status. Interrupted work settles its item
+`failed` with `work: interrupted` only when the optional `cancelled` member
+answers `true` for a recorded operator cancel; any other interruption, such as
+a child released because its host's lease lapsed, gets a `requeued` row and a
+`requeued` release, and a later round works the item again. When a member
+dies, a release already running finishes and every claim not yet released is
+released with status `failed` and `round died`. When the round itself is
+interrupted, each open claim is released the same way if `cancelled` answers
+`true`, and otherwise with status `requeued` and `round interrupted`. A release failure is appended to the row's detail. Rows keep
+discovery order. `round` fails with `PatternError` before any member runs for a
+blank `key`, a `concurrency` or `slots` that is not a positive safe integer,
+a negative or fractional `round`, or an item without a unique nonblank string
+`id`.
+
+Each `work` call receives `executionId` `${key}/${item.id}`. Hand it to
+`Flow.execute`, or build `work` with `child`, so a rerun reaches the child
+execution that already exists instead of starting a second one. See
+[Burn down a backlog](https://smithers-patterns.smithers.sh/burndown/) for a GitHub issues example.
+
 ## A worked release
 
 [Failure control](/docs/examples/30-failure-control/) runs one release through
@@ -38797,7 +38944,7 @@ with a `graph_too_deep` `GraphBuildError` naming the node.
 
 The root exports each module as a namespace, and every module is also
 importable as `@smthrs/patterns/<Module>`. The `internal/*` and nested
-`*/index` subpaths are private. The [module index](https://smithers-patterns.smithers.sh/modules/) lists all 28
+`*/index` subpaths are private. The [module index](https://smithers-patterns.smithers.sh/modules/) lists all 29
 modules with their specifiers.
 
 [`@smthrs/flow`](/docs/reference/api/flow/) supplies `Flow` and `Graph`, and
@@ -42269,6 +42416,7 @@ class BodyRefModule {
   readonly path: string
   readonly contentDigest?: string
   readonly imports?: ReadonlyArray<ModuleImport>
+  readonly hostImports?: ReadonlyArray<string>
 }
 
 const BodyRef: Schema.Union<[typeof BodyRefMarkdown, typeof BodyRefModule]>
@@ -42305,6 +42453,13 @@ one that resolves to no file, a module it could not read, an `import()` or
 specifier, a `#` specifier with no relative `imports` target, a self-import of
 the flow's own package through `exports`, or a closure past its bound. Its `path` then carries that reason instead of a
 location, and `Executable.fromDescriptor` refuses to run such a module.
+
+`hostImports` names builtins, relative native `.node` addons and external package
+specifiers found in that project closure. The native host projects this sorted
+inventory into `envelope.hostImports` on plan and approval cards, bound to their
+digest. These modules run with host authority outside guarded capabilities.
+External packages are listed conservatively: this is not a native dependency
+audit or JavaScript confinement.
 
 The pin covers the loads a static scan of the source can read. It is not a
 sandbox: a module that hides a load from the scan, for example behind
@@ -44375,7 +44530,11 @@ stranding that host's runs forever. Node hosts only.
 ### heartbeatLoop
 
 ```ts
-const heartbeatLoop: (runId: string, owner: OwnerId) => Effect<never, never, RunStore>
+const heartbeatLoop: (
+  runId: string,
+  owner: OwnerId,
+  options?: HeartbeatLoopOptions
+) => Effect<never, never, RunStore>
 ```
 
 Pulses every `heartbeatInterval` on the injected `Clock`, each pulse renewing
@@ -44386,6 +44545,10 @@ and interrupts immediately. An independent deadline bounds failing or stalled
 writes by `heartbeatWriteTolerance` and interrupts the pending write at expiry.
 Successful pulses re-arm that deadline from the timestamp supplied to the store,
 not their completion time.
+
+`options.onLapse(unconfirmedMs)` runs once when the lease lapses, before the
+self-interrupt, with how long the lease went unconfirmed. A lost fence does not
+call it. The engine's run driver uses it to record a `lease-lapsed` release cause.
 
 ### The heartbeat constants
 
@@ -44958,7 +45121,7 @@ Commands run through `execStreamWith(shell, ["-c", command])` with the workdir a
 
 `image` and `snapshot` are exclusive; naming both fails with `unavailable` before any vendor call. A removed machine is gone with its files. With the default `backend: "local"`, `acquire` refuses before provisioning unless `sdk.defaultBackendKind()` is `local`, and refuses again when the opened machine reports another `backendKind`, so an ambient `MSB_BACKEND`, `MSB_API_KEY`, or `MSB_PROFILE` cannot move guest work off the host; a composition that must stay local also calls `sdk.setDefaultBackend("local")` once at startup. `backend: "any"` accepts the hosted backend. `cpus`, `maxCpus`, `memoryMib`, `maxMemoryMib`, `maxDurationSecs`, `idleTimeoutSecs`, `security`, and `pullPolicy` go to the builder as named. The provider registers no guest scripts: the pinned runtime rewrites them in the guest-writable `/.msb` share by path and follows guest links there. `network: "none"`, and a machine that names neither `network` nor `networkPolicy`, calls `disableNetwork()`: the vendor's own default reaches the public internet, so the provider closes it. `network: "open"` leaves that vendor default. `network: { allow }` goes to `network(b => b.policy(...))` as deny-by-default ingress and egress with egress allowed only to each listed host, whose domain rules also admit the DNS queries for exactly those names; an empty list sends no rules, so DNS is denied too. A `*.` entry becomes a domain-suffix rule, which the vendor also matches against the apex, so a deny rule for the apex precedes the suffix rules unless another entry admits the apex. `networkPolicy` (a `NetworkPolicy`: per-direction defaults and ordered rules in the vendor's shape) goes to the same builder call for rules the neutral option cannot say; naming both throws at `make`. Every machine carries a `smithers.network` label recording its network. An acquire refuses to reattach a machine whose label differs or is missing (one booted under the vendor's open default), before relabelling or connecting; bringing back a sticky machine whose guest stopped answering refuses the same way, and `captureSnapshot` refuses to start a stopped machine that records no network. `rootDiskMib` sets the root disk of an image boot; a snapshot boot keeps the disk it captured.
 
-Snapshots are named `<family>.<member>` (`snapshotName(family, member)`, separator `snapshotSeparator`): the family is the preparation a snapshot repeats, the member tells its captures apart and never contains the separator, so `snapshotFamily(name)` places every name in exactly one family. `captureSnapshot({ sdk, machine, family, member, secrets, stopTimeoutMs? })` scrubs a machine of credentials, stops it, captures its root disk as that snapshot, removes the machine whether or not the capture succeeded, and returns the name; a family and member that cannot name a snapshot fail with `unavailable` before any vendor call and leave the machine. `hasSnapshot(sdk, name)` answers whether one exists (a `SnapshotNotFound` answer is `false`; any other failure is `unavailable`). `pruneSnapshots(sdk, family, keep, retain?)` removes that family's snapshots beyond the `keep` newest, except those named in `retain`, and returns their names; a family whose name extends another's is never touched by the other's prune. `removeSnapshot(sdk, name)` removes one; one already gone is not an error. A machine booted from a snapshot does not depend on it afterwards, so pruning never disturbs a running machine.
+Snapshots are named `<family>.<member>` (`snapshotName(family, member)`, separator `snapshotSeparator`): the family is the preparation a snapshot repeats, the member tells its captures apart and never contains the separator, so `snapshotFamily(name)` places every name in exactly one family. `captureSnapshot({ sdk, machine, family, member, secrets, stopTimeoutMs? })` scrubs a machine of credentials, runs `sync` in the guest so files written just before the capture reach the disk whole (a failing `sync` refuses the capture before the stop), stops it, captures its root disk as that snapshot, removes the machine whether or not the capture succeeded, and returns the name; a family and member that cannot name a snapshot fail with `unavailable` before any vendor call and leave the machine. `hasSnapshot(sdk, name)` answers whether one exists (a `SnapshotNotFound` answer is `false`; any other failure is `unavailable`). `pruneSnapshots(sdk, family, keep, retain?)` removes that family's snapshots beyond the `keep` newest, except those named in `retain`, and returns their names; a family whose name extends another's is never touched by the other's prune. `removeSnapshot(sdk, name)` removes one; one already gone is not an error. A machine booted from a snapshot does not depend on it afterwards, so pruning never disturbs a running machine.
 
 A snapshot is restored into every later machine, so capture keeps credentials off it. `secrets` lists every credential value the machine was handed while it was prepared; pass `[]` when preparation ran without credentials. Before capture, a stopped machine is started, the credential-only files of `/root` and every `/home/*` are removed (`.git-credentials`, `.netrc`, `.pypirc`, `.config/gh/hosts.yml`, `.cargo/credentials.toml`, `.aws/credentials`, `.config/gcloud/application_default_credentials.json`, `.config/gcloud/credentials.db`, `.config/gcloud/access_tokens.db`, `.claude/.credentials.json`, `.codex/auth.json`, `.gemini/oauth_creds.json`, `.config/github-copilot/hosts.json`, `.config/github-copilot/apps.json`, `.local/share/opencode/auth.json`), and the disk outside `/proc`, `/sys`, and `/dev` is searched for each secret's longest line, so a PEM key is found by its body and not by its armor. The search includes `/run` and all root entry names, including names beginning with one or more dots. Each line is searched raw, as base64 and base64url at every byte alignment, percent-encoded, and JSON-escaped. A secret found anywhere, such as a token in a clone's remote URL, `.npmrc`, or Docker's `config.json`, fails the capture with `unavailable` naming the files and never the value. A secret whose longest line is under 8 bytes fails before any guest call. The removal touches only `/root` and `/home/*`, so a volume mounted at a home path loses those files too. The search does not find a secret split across lines, compressed, encrypted, or in any other encoding. Prefer preparing without credentials and handing them to machines at run time, after the restore.
 
