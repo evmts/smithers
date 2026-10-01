@@ -71,7 +71,7 @@ import {
 import * as DispatchReader from "./DispatchReader.ts"
 import { schemaIssuePath } from "./internal/issues.ts"
 import * as MutationBoundary from "./internal/MutationBoundary.ts"
-import { alreadyApplied, canonical, mutationKey } from "./internal/planning.ts"
+import { accepted, alreadyApplied, canonical, mutationKey } from "./internal/planning.ts"
 import * as Lineage from "./Lineage.ts"
 import * as Steering from "./Steering.ts"
 
@@ -100,11 +100,6 @@ const watchReadFailed = (cause: Journal.JournalError): Unavailable | Persistence
       message: `Reading the control journal failed (${cause.code})`,
       cause
     })
-
-const accepted = (key: IdempotencyKey, runId?: RunId): Receipt =>
-  runId === undefined
-    ? { _tag: "Accepted", receiptId: key }
-    : { _tag: "Accepted", receiptId: key, runId }
 
 const terminal = (status: RunSummary["status"]): boolean =>
   status === "cancelled" || status === "completed" || status === "failed"
