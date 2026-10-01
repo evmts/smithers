@@ -517,42 +517,11 @@ test("an older physical OPFS schema stamp upgrades while preserving the current 
     "evidence:physical-metadata-and-ui-reload"
   ],
   description: "A real SQLite metadata stamp one version behind is upgraded during boot while a row written with the current schema remains visible; this does not claim arbitrary historical-row migration."
- }), async ({ page, context }, testInfo) => {
+}), async ({ page, context }) => {
   const marker = "physical-opfs-schema-stamp.md"
-  const observation: Record<string, unknown> = { diagnosticOnly: true, observerSchedulingCaveat: true }
-  const events: unknown[] = []
-  let workerUrl: string | undefined
-  page.on("worker", worker => {
-    if (/opfs|sqlite/i.test(worker.url())) { workerUrl = worker.url(); events.push({ kind: "worker", url: worker.url() }) }
-  })
-  page.on("response", response => {
-    if (/opfs-worker|wa-sqlite.*wasm/.test(response.url())) events.push({ kind: "response", url: response.url(), status: response.status() })
-  })
-  page.on("console", message => {
-    const text = message.text()
-    if (/OPFS|SQLite|opfs_open_failed|saved data|storage/i.test(text)) events.push({ kind: "console", type: message.type(), classification: text.replace(/https?:\/\/[^\s]+/g, "[URL]").slice(0, 1000) })
-  })
-  page.on("pageerror", error => events.push({ kind: "pageerror", message: error.message.slice(0, 1000) }))
-  const stamp = () => page.evaluate(() => ({ backend: localStorage.getItem("smithers-mvp.persistenceBackend"), schema: localStorage.getItem("smithers-mvp.schemaVersion"), frame: location.pathname, cardPresent: document.querySelector('[data-testid="card-form-tab.card"]') !== null }))
-  try {
-    const opened = await openVehicleForm(page, marker, enterCanonicalRepositoryApp)
-    observation.beforeReload = await stamp()
-    await reloadApp(page)
-    observation.afterReload = await stamp()
-    await expect(opened.input).toHaveValue(marker)
-  } finally {
-    observation.events = events
-    if (workerUrl !== undefined && !page.isClosed()) {
-      try {
-        const control = await takeDatabaseControl(page, context, workerUrl)
-        observation.markerRows = await control.execute("SELECT collection_id, row_key, value FROM smithers_collection_rows WHERE value LIKE ?", [`%${marker}%`])
-        observation.authorityRows = await control.execute("SELECT collection_id, row_key, value FROM smithers_collection_rows WHERE collection_id IN ('app-sessions', 'app-frames', 'app-branches', 'app-workspaces', 'app-event-heads')")
-        observation.metadata = await control.execute("SELECT key, value FROM smithers_metadata")
-      } catch (error) { observation.readbackFailure = String(error) }
-    }
-    await testInfo.attach("opfs-reload-observation", { body: JSON.stringify(observation, null, 2), contentType: "application/json" })
-  }
-  return
+  const opened = await openVehicleForm(page, marker, enterCanonicalRepositoryApp)
+  await reloadApp(page)
+  await expect(opened.input).toHaveValue(marker)
 
   const database = await takeDatabaseControl(page, context)
   const versionRows = await database.execute("SELECT value FROM smithers_metadata WHERE key = 'schema-version'")
