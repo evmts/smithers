@@ -631,3 +631,203 @@ test.each(["page", "aggregate"] as const)(
     }
   }
 )
+
+test.each(["none", "repositories", "identity", "changed-account", "head", "provider"] as const)(
+  "named-view preload ownership across a %s transition",
+  async (transition) => {
+    let login = "will"
+    let issueNumber = 7
+    const reads: string[] = []
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(request) {
+        const url = new URL(request.url)
+        if (url.pathname === "/api/user") {
+          return Response.json({ id: login === "will" ? 1 : 2, username: login, is_admin: false })
+        }
+        if (url.pathname.endsWith("/issue-views")) return Response.json(VIEWS)
+        if (url.pathname === "/api/repos/will/flows/issues") {
+          if (url.searchParams.get("view") === "bugs") reads.push(url.search)
+          return Response.json([wireIssue(issueNumber)])
+        }
+        return new Response(null, { status: 404 })
+      }
+    })
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const controller = createAppController(store, unavailableAgent, {
+      baseUrl: server.url.origin,
+      fetchImpl: fetch,
+      bootstrap: pagedViewBootstrap,
+      applicationIdentity: applicationIdentityFromFetch(fetch, server.url.origin)
+    })
+    const repositories = [{ id: "will/flows", org: "will", ownerKind: "user" as const, name: "flows", head: null }]
+    const owner = () => {
+      const identity = store.collections.identitySessions.get("identity")
+      return {
+        login: identity?.login,
+        ownerRevision: identity?.ownerRevision,
+        repo: store.session().activeRepoKey,
+        workspace: store.session().activeWorkspaceId,
+        branch: store.session().activeBranchId
+      }
+    }
+    try {
+      await controller.loadSession()
+      if (transition === "provider") {
+        await store.dispatch({
+          type: "identity.session.loaded",
+          actor: "system",
+          state: "signed-in",
+          login: "will",
+          admin: false,
+          provider: "local",
+          scopesPlain: null
+        }).isPersisted.promise
+      }
+      await store.dispatch({ type: "repositories.loaded", actor: "system", repositories }).isPersisted.promise
+      expect((await controller.commands.run("issues.list", "all will/flows")).status).toBe("executed")
+      await store.settled?.()
+      const before = owner()
+      expect(before.login).toBe("will")
+      await controller.commands.preload?.("issues.list", "all --view bugs will/flows")
+      expect(reads).toEqual(["?view=bugs&limit=100"])
+      if (transition === "repositories") {
+        await store.dispatch({ type: "repositories.loaded", actor: "system", repositories }).isPersisted.promise
+      } else if (transition === "identity") {
+        await store.dispatch({
+          type: "identity.session.loaded",
+          actor: "system",
+          state: "signed-in",
+          login: "will",
+          admin: false,
+          scopesPlain: null
+        }).isPersisted.promise
+      } else if (transition === "changed-account") {
+        login = "other"
+        issueNumber = 9
+        await controller.loadSession()
+        expect(owner().login).toBe("other")
+        expect(owner().ownerRevision).not.toBe(before.ownerRevision)
+      } else if (transition === "head") {
+        issueNumber = 9
+        const head = { bookmark: "main", changeId: "updated-change", commitId: "a".repeat(40) }
+        await store.dispatch({
+          type: "repositories.loaded",
+          actor: "system",
+          repositories: [{ ...repositories[0]!, head }]
+        }).isPersisted.promise
+        expect(store.collections.repositories.get("will/flows")?.head).toEqual(head)
+      } else if (transition === "provider") {
+        issueNumber = 9
+        await store.dispatch({
+          type: "identity.session.loaded",
+          actor: "system",
+          state: "signed-in",
+          login: "will",
+          admin: false,
+          provider: "github",
+          scopesPlain: null
+        }).isPersisted.promise
+        expect(store.collections.identitySessions.get("identity")?.provider).toBe("github")
+        expect(owner().ownerRevision).not.toBe(before.ownerRevision)
+      }
+      const material = transition === "changed-account" || transition === "head" || transition === "provider"
+      if (transition !== "changed-account" && transition !== "provider") expect(owner()).toEqual(before)
+      expect((await controller.commands.run("issues.list", "all --view bugs will/flows")).status).toBe("executed")
+      await store.settled?.()
+      const card = listCard(store)
+      expect(card.payload.view).toBe("bugs")
+      expect(card.payload.repo).toBe("will/flows")
+      expect(card.payload.issues.map((issue) => issue.number)).toEqual([material ? 9 : 7])
+      expect(reads).toEqual(
+        material
+          ? ["?view=bugs&limit=100", "?view=bugs&limit=100"]
+          : ["?view=bugs&limit=100"]
+      )
+    } finally {
+      await controller.dispose()
+      await store.dispose?.()
+      await server.stop(true)
+    }
+  }
+)
+
+test.each(["preload", "activation"] as const)(
+  "an unchanged observation preserves a named read held during %s",
+  async (phase) => {
+    const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
+    let reads = 0
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(request) {
+        const url = new URL(request.url)
+        if (url.pathname === "/api/user") return Response.json({ id: 1, username: "will", is_admin: false })
+        if (url.pathname.endsWith("/issue-views")) return Response.json(VIEWS)
+        if (url.pathname === "/api/repos/will/flows/issues") {
+          if (url.searchParams.get("view") === "bugs") {
+            reads++
+            entered.resolve()
+            await release.promise
+          }
+          return Response.json([wireIssue(7)])
+        }
+        return new Response(null, { status: 404 })
+      }
+    })
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const controller = createAppController(store, unavailableAgent, {
+      baseUrl: server.url.origin,
+      fetchImpl: fetch,
+      bootstrap: pagedViewBootstrap,
+      applicationIdentity: applicationIdentityFromFetch(fetch, server.url.origin)
+    })
+    const repositories = [{ id: "will/flows", org: "will", ownerKind: "user" as const, name: "flows", head: null }]
+    const activated = Promise.withResolvers<void>()
+    let unsubscribe: (() => void) | undefined
+    let preload: ReturnType<NonNullable<typeof controller.commands.preload>> | undefined
+    let pending: ReturnType<typeof controller.commands.run> | undefined
+    try {
+      await controller.loadSession()
+      await store.dispatch({ type: "repositories.loaded", actor: "system", repositories }).isPersisted.promise
+      expect((await controller.commands.run("issues.list", "all will/flows")).status).toBe("executed")
+      await store.settled?.()
+      const identity = store.collections.identitySessions.get("identity")!
+      preload = controller.commands.preload?.("issues.list", "all --view bugs will/flows")
+      await entered.promise
+      const subscription = store.collections.cards.subscribeChanges(() => {
+        const card = store.collections.cards.get("issues-will/flows")
+        if (card?.loading && card.viewKey?.includes("\"bugs\"")) activated.resolve()
+      })
+      unsubscribe = () => subscription.unsubscribe()
+      if (phase === "activation") {
+        pending = controller.commands.run("issues.list", "all --view bugs will/flows")
+        await activated.promise
+      }
+      await store.dispatch({ type: "repositories.loaded", actor: "system", repositories }).isPersisted.promise
+      expect(store.collections.identitySessions.get("identity")?.ownerRevision).toBe(identity.ownerRevision)
+      if (phase === "preload") pending = controller.commands.run("issues.list", "all --view bugs will/flows")
+      release.resolve()
+      await preload
+      expect((await pending)!.status).toBe("executed")
+      await store.settled?.()
+      expect(reads).toBe(1)
+      expect(listCard(store).payload.view).toBe("bugs")
+      expect(listCard(store).payload.issues.map((issue) => issue.number)).toEqual([7])
+    } finally {
+      release.resolve()
+      unsubscribe?.()
+      try {
+        await controller.dispose()
+      } finally {
+        await Promise.allSettled([preload, pending])
+        try {
+          await store.dispose?.()
+        } finally {
+          await server.stop(true)
+        }
+      }
+    }
+  }
+)
