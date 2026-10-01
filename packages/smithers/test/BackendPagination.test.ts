@@ -106,3 +106,17 @@ describe("pagination collection", () => {
     expect(await c.pages((cursor) => url.pathname + `?cursor=${cursor}`, "", true)).toHaveLength(100)
   })
 })
+
+it("preserves the CLI raw text BOM across split UTF8 chunks", async () => {
+  const bytes = new TextEncoder().encode("\uFEFF[]")
+  const response = new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const byte of bytes) controller.enqueue(Uint8Array.of(byte))
+        controller.close()
+      }
+    })
+  )
+  const client = new Client({ environment: { SMITHERS_API_ORIGIN: url.origin } })
+  expect(await client.text(response)).toBe("\uFEFF[]")
+})

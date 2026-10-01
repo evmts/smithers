@@ -8,9 +8,12 @@
  * view rows select with Enter once the host routes `viewOf(row.id)` to
  * `select`.
  */
+import { Refused } from "@smthrs/cli/CliError"
+import type { Cloud as CloudSession } from "@smthrs/cli/CloudSession"
+import { paginationLimits } from "@smthrs/kernel/HttpPagination"
 import { failureDetail } from "@smthrs/rpc/UserFailure"
 import * as Failures from "./failures.ts"
-import type * as Panels from "./panels.ts"
+import * as Panels from "./panels.ts"
 
 /** Where a repository lives on Cloud: `owner/name`. */
 export type Repository = string
@@ -30,7 +33,7 @@ export interface Issue {
   readonly state: string
 }
 
-/** The most issues one read shows; a full page says more exist. */
+/** The requested size of each keyset page. */
 export const pageSize = 100
 
 const viewId = /^[a-z0-9][a-z0-9-]{0,63}$/
@@ -41,8 +44,10 @@ const segments = (repo: Repository): string => repo.split("/").map(encodeURIComp
 export const viewsRoute = (repo: Repository): string => `/api/repos/${segments(repo)}/issue-views`
 
 /** `GET /api/repos/{owner}/{repo}/issues?view=<id>&limit=<n>`. */
-export const issuesRoute = (repo: Repository, view: string): string =>
-  `/api/repos/${segments(repo)}/issues?view=${encodeURIComponent(view)}&limit=${pageSize}`
+export const issuesRoute = (repo: Repository, view: string, cursor?: string): string =>
+  `/api/repos/${segments(repo)}/issues?view=${encodeURIComponent(view)}&limit=${pageSize}${
+    cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""
+  }`
 
 const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -74,32 +79,60 @@ export const loadViews = async (
 ): Promise<ReadonlyArray<View>> => {
   const body = await get(viewsRoute(repo), signal)
   if (!Array.isArray(body)) throw new Error("Cloud answered the issue views with an unreadable payload")
+  if (body.length >= Panels.rowLimit) {
+    throw new Refused({ fault: "infra", code: "pagination_limit", message: "Issue views exceeded the panel limit" })
+  }
   return body.flatMap((entry) => {
     const view = parseView(entry)
     return view === undefined ? [] : [view]
   })
 }
 
-/** The first page of one view's issues; `more` when the page is full. */
+/** All bounded pages of one view, published only after the last page succeeds. */
 export const loadIssues = async (
-  get: (path: string, signal?: AbortSignal) => Promise<unknown>,
+  getPage: CloudSession["getPage"],
   repo: Repository,
   view: string,
-  signal?: AbortSignal
-): Promise<{ readonly issues: ReadonlyArray<Issue>; readonly more: boolean }> => {
-  const body = await get(issuesRoute(repo, view), signal)
-  if (!Array.isArray(body)) throw new Error("Cloud answered the issues with an unreadable payload")
-  const issues = body.flatMap((entry) => {
-    const issue = parseIssue(entry)
-    return issue === undefined ? [] : [issue]
+  signal?: AbortSignal,
+  limit = Panels.rowLimit
+): Promise<{ readonly issues: ReadonlyArray<Issue> }> => {
+  const issues = new Map<number, Issue>()
+  const seen = new Set<string>()
+  let cursor = ""
+  let bytes = 0
+  for (let page = 0; page < paginationLimits.pages; page++) {
+    signal?.throwIfAborted()
+    const result = await getPage(issuesRoute(repo, view, cursor), signal)
+    signal?.throwIfAborted()
+    if (!Array.isArray(result.body)) throw new Error("Cloud answered the issues with an unreadable payload")
+    bytes += result.bytes
+    for (const entry of result.body) {
+      const issue = parseIssue(entry)
+      if (issue !== undefined) issues.set(issue.number, issue)
+    }
+    if (issues.size > limit || bytes > paginationLimits.bytes) break
+    if (result.nextCursor === "") return { issues: [...issues.values()] }
+    if (seen.has(result.nextCursor)) {
+      throw new Refused({
+        fault: "infra",
+        code: "backend_protocol",
+        message: "Cloud repeated an issue pagination cursor"
+      })
+    }
+    seen.add(result.nextCursor)
+    cursor = result.nextCursor
+  }
+  throw new Refused({
+    fault: "infra",
+    code: "pagination_limit",
+    message: "The issue view exceeds the available panel limit"
   })
-  return { issues, more: body.length >= pageSize }
 }
 
 /** One view's read. */
 export type Selection =
   | { readonly id: string; readonly phase: "loading" }
-  | { readonly id: string; readonly phase: "loaded"; readonly issues: ReadonlyArray<Issue>; readonly more: boolean }
+  | { readonly id: string; readonly phase: "loaded"; readonly issues: ReadonlyArray<Issue> }
   | { readonly id: string; readonly phase: "failed"; readonly detail: string }
 
 /** What the tab shows. */
@@ -111,7 +144,8 @@ export type State =
 
 /** The session the reads use: `CloudSession.signedIn`'s `get`. */
 export interface Cloud {
-  readonly get: (path: string, signal?: AbortSignal) => Promise<unknown>
+  readonly get: CloudSession["get"]
+  readonly getPage: CloudSession["getPage"]
 }
 
 /** A 401 or 403: the session is gone or may not read the repository. */
@@ -141,31 +175,66 @@ export const controller = (
   onChange: (state: State) => void = () => {}
 ) => {
   let state: State = { phase: "idle" }
+  const listeners = new Set<() => void>()
+  let refreshStarted: number | undefined
+  let selectionStarted: number | undefined
+  const notify = () => {
+    state = { ...state }
+    for (const listener of listeners) listener()
+  }
   let cloud: Cloud | undefined
+  let disposed = false
+  let pendingSession: Promise<Cloud | undefined> | undefined
+  let refreshRead: AbortController | undefined
+  let selectionRead: AbortController | undefined
   // `epoch` advances when the session is dropped; `refreshes` and `selections` order their own reads.
   let epoch = 0
   let refreshes = 0
   let selections = 0
   let flying: { readonly id: string; readonly run: Promise<State> } | undefined
   const set = (next: State): State => {
+    if (disposed) return state
     state = next
     onChange(state)
+    notify()
     return state
   }
-  const session = async (): Promise<Cloud | undefined> => cloud ??= await signIn()
+  const session = (): Promise<Cloud | undefined> => {
+    if (cloud !== undefined) return Promise.resolve(cloud)
+    if (pendingSession !== undefined) return pendingSession
+    const started = epoch
+    const pending = signIn().then((signed) => {
+      if (!disposed && started === epoch) cloud = signed
+      return signed
+    }).finally(() => {
+      if (pendingSession === pending) pendingSession = undefined
+    })
+    pendingSession = pending
+    return pending
+  }
   const signOut = (): State => {
     cloud = undefined
+    refreshStarted = undefined
+    selectionStarted = undefined
     epoch += 1
+    pendingSession = undefined
+    refreshRead?.abort()
+    selectionRead?.abort()
     flying = undefined
     return set({ phase: "signed-out" })
   }
   const same = (left: View | undefined, right: View | undefined): boolean =>
     left !== undefined && right !== undefined && JSON.stringify(left) === JSON.stringify(right)
   const refresh = async (signal?: AbortSignal): Promise<State> => {
-    if (repo === undefined) return state
+    if (disposed || repo === undefined) return state
+    refreshRead?.abort()
+    refreshRead = new AbortController()
+    signal = signal === undefined ? refreshRead.signal : AbortSignal.any([signal, refreshRead.signal])
+    refreshStarted = Date.now()
+    notify()
     const mine = ++refreshes
     const started = epoch
-    const current = () => mine === refreshes && started === epoch && signal?.aborted !== true
+    const current = () => !disposed && mine === refreshes && started === epoch && signal?.aborted !== true
     try {
       const signed = await session()
       if (!current()) return state
@@ -181,26 +250,41 @@ export const controller = (
         ? previous.selected
         : undefined
       // A dropped selection also drops its read in flight.
-      if (kept === undefined) selections += 1
+      if (kept === undefined) {
+        selections += 1
+        selectionRead?.abort()
+        selectionStarted = undefined
+        flying = undefined
+      }
       return set({ phase: "ready", views, ...(kept === undefined ? {} : { selected: kept }) })
     } catch (error) {
       if (!current()) return state
       if (refused(error)) return signOut()
       return set({ phase: "failed", detail: Failures.line("issue-views", error) })
+    } finally {
+      if (!disposed && mine === refreshes) {
+        refreshStarted = undefined
+        notify()
+      }
     }
   }
   const select = (id: string, signal?: AbortSignal): Promise<State> => {
-    if (state.phase !== "ready" || repo === undefined) return Promise.resolve(state)
+    if (disposed || state.phase !== "ready" || repo === undefined) return Promise.resolve(state)
     const view = state.views.find((each) => each.id === id)
     if (view === undefined) return Promise.resolve(state)
     if (flying?.id === id) return flying.run
+    selectionRead?.abort()
+    selectionRead = new AbortController()
+    signal = signal === undefined ? selectionRead.signal : AbortSignal.any([signal, selectionRead.signal])
+    const limit = Panels.rowLimit - state.views.length
+    selectionStarted = Date.now()
     const mine = ++selections
     const started = epoch
     const before = state.selected
     set({ ...state, selected: { id, phase: "loading" } })
     // Publishes only while this is the newest selection, the session is the one it read as, and the view is unchanged.
     const current = () =>
-      mine === selections && started === epoch && state.phase === "ready" &&
+      !disposed && mine === selections && started === epoch && state.phase === "ready" &&
       same(view, state.views.find((each) => each.id === id))
     const run = (async (): Promise<State> => {
       let selection: Selection
@@ -208,9 +292,13 @@ export const controller = (
         const signed = await session()
         if (!current()) return state
         if (signed === undefined) return signOut()
-        selection = { id, phase: "loaded", ...await loadIssues(signed.get, repo, id, signal) }
+        selection = { id, phase: "loaded", ...await loadIssues(signed.getPage, repo, id, signal, limit) }
       } catch (error) {
-        if (!current()) return state
+        if (!current() || state.phase !== "ready") return state
+        if (signal?.aborted) {
+          const { selected: _dropped, ...rest } = state
+          return set(before === undefined ? rest : { ...rest, selected: before })
+        }
         if (refused(error)) return signOut()
         selection = { id, phase: "failed", detail: Failures.line("issues", error) }
       }
@@ -223,11 +311,43 @@ export const controller = (
       return set({ ...state, selected: selection })
     })().finally(() => {
       if (flying?.run === run) flying = undefined
+      if (!disposed && mine === selections) {
+        selectionStarted = undefined
+        notify()
+      }
     })
     flying = { id, run }
     return run
   }
-  return { refresh, select, state: (): State => state }
+  const dispose = () => {
+    if (disposed) return
+    disposed = true
+    epoch += 1
+    cloud = undefined
+    pendingSession = undefined
+    refreshRead?.abort()
+    selectionRead?.abort()
+    flying = undefined
+    listeners.clear()
+  }
+  return {
+    refresh,
+    select,
+    dispose,
+    state: (): State => state,
+    pending: (): number | undefined =>
+      refreshStarted === undefined
+        ? selectionStarted
+        : selectionStarted === undefined
+        ? refreshStarted
+        : Math.min(refreshStarted, selectionStarted),
+    subscribe: (listener: () => void): () => void => {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
+    }
+  }
 }
 
 /** The panel id; the surface is `ui:issue-views`. */
@@ -263,7 +383,7 @@ export const panel = (state: State): Panels.Panel => {
   const summary = chosen === undefined || selected === undefined
     ? `${views.length} ${views.length === 1 ? "view" : "views"}`
     : selected.phase === "loaded"
-    ? `${chosen.title} · ${selected.issues.length}${selected.more ? "+" : ""}`
+    ? `${chosen.title} · ${selected.issues.length}`
     : chosen.title
   const viewRows: ReadonlyArray<Panels.Row> = views.map((view) => ({
     id: rowId(view.id),

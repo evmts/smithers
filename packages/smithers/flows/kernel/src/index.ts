@@ -171,3 +171,10 @@ export * as Workspace from "./Workspace.ts"
  * @since 1.0.0-rc.1
  */
 export * as ProcessConfinement from "./ProcessConfinement.ts"
+
+/**
+ * Authenticated collection continuation and bounded response reads.
+ * @category namespace exports
+ * @since 1.0.0
+ */
+export * as HttpPagination from "./HttpPagination.ts"
