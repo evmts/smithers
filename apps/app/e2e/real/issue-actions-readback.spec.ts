@@ -37,7 +37,7 @@ const read = async (page: Page, request: APIRequestContext, repo: OwnedRepositor
 authenticatedTest("search.issues filters real listed issues and opens the selected result from the keyboard", scenario("issues.search-filter-readback", {
   capabilities: ["identity"],
   description: "Seed two actual issues with different persisted states, read them through the issue list, search the loaded public projection, and open its exact result with the keyboard; independently verify API state and reload identity.",
-  coverage: ["action:search.issues", "host:local", "path:success", "path:persistence", "path:keyboard", "door:slash", "door:button", "dimension:state-filter", "dimension:reload", "evidence:issues-api-readback"]
+  coverage: ["action:search.issues", "host:local", "path:success", "path:persistence", "path:keyboard", "dimension:keyboard", "door:slash", "door:button", "dimension:state-filter", "dimension:reload", "evidence:issues-api-readback"]
 }), async ({ page, request }, testInfo) => {
   await withOwnedRepository(page, request, async (repo) => {
     const marker = `search-${randomUUID()}`
@@ -125,7 +125,7 @@ authenticatedTest("issues.set persists priority and due date without changing an
 authenticatedTest("issues.comment.react records one reaction and its keyboard removal survives reload", scenario("issues.reaction-readback", {
   capabilities: ["identity"],
   description: "React to an actual stored comment through the registered flow, replay the same desired state without duplication, and remove the owned reaction from its keyboard button; independently compare the backend reaction list before and after reload.",
-  coverage: ["action:issues.comment.react", "host:local", "path:success", "path:persistence", "path:keyboard", "door:slash", "door:button", "dimension:reaction-idempotency", "dimension:reload", "evidence:reaction-api-readback"]
+  coverage: ["action:issues.comment.react", "host:local", "path:success", "path:persistence", "path:keyboard", "dimension:keyboard", "door:slash", "door:button", "dimension:reaction-idempotency", "dimension:reload", "evidence:reaction-api-readback"]
 }), async ({ page, request }, testInfo) => {
   await withOwnedRepository(page, request, async (repo) => {
     const number = await seed(page, request, repo, `reaction-${randomUUID()}`, "chat")
