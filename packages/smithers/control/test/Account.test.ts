@@ -112,6 +112,31 @@ const fixture = (initial = authority(), heldAdmission = false) => {
 }
 
 describe("shared Account authority", () => {
+  it.each([
+    { unknown: 1 },
+    { unknown: { nested: true } },
+    { "": null },
+    JSON.parse("{\"__proto__\":{}}"),
+    { constructor: "value" },
+    { prototype: false },
+    [],
+    [1],
+    "",
+    "value",
+    0,
+    1,
+    true,
+    false,
+    null
+  ])("refuses nonempty or non-object input: %j", (input) => {
+    expect(() => Schema.decodeUnknownSync(Account.accountOperations[0].input)(input)).toThrow()
+  })
+
+  it("projects an empty object contract that transport validators can enforce", () => {
+    expect(Schema.toJsonSchemaDocument(Account.NoInput, { onExcessProperty: "error" }).schema)
+      .toEqual({ type: "object", additionalProperties: false })
+  })
+
   it("declares one identity operation with the same empty schema that public hosts decode", () => {
     expect(Account.accountOperations).toEqual([{
       name: "account.show",

@@ -143,4 +143,4 @@ export const operation = <const O extends Operation>(declared: O): O => declared
  * @since 1.0.0
  * @category constructors
  */
-export const NoInput = Schema.Struct({})
+export const NoInput = Schema.Record(Schema.String, Schema.Never)
