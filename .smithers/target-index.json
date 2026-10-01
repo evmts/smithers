@@ -24388,6 +24388,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/ui/src/app-operations/account.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/ui/src/app-operations/index.ts"
       },
       {
