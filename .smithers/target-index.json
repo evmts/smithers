@@ -25181,6 +25181,14 @@
       },
       {
         "kind": "file",
+        "path": "apps/tui/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      },
+      {
+        "kind": "file",
         "path": "apps/tui/bunfig.toml"
       },
       {
@@ -25246,6 +25254,14 @@
         "kind": "glob",
         "pattern": "apps/tui/e2e/**/*",
         "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
       },
       {
         "kind": "file",
@@ -25348,6 +25364,14 @@
         "kind": "glob",
         "pattern": "apps/tui/e2e/**/*",
         "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
       },
       {
         "kind": "file",
@@ -25457,6 +25481,14 @@
         "kind": "glob",
         "pattern": "apps/tui/e2e/**/*",
         "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
       },
       {
         "kind": "file",

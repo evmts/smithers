@@ -621,6 +621,8 @@ jobs:
         with:
           "bun-version": "1.4.1"
       - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - name: "Install pinned Playwright Chromium"
+        run: "pnpm --dir 'apps/tui' exec playwright install --with-deps chromium"
       - uses: "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
       - name: "Install native smithers-jj-export"
         run: |

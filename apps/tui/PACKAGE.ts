@@ -19,6 +19,8 @@ const sources = [
   Smithers.glob("//apps/tui/src/**/*.tsx"),
   Smithers.glob("//apps/tui/test/**/*"),
   Smithers.glob("//apps/tui/e2e/**/*"),
+  Smithers.file("//apps/tui/package.json"),
+  Smithers.file("//pnpm-lock.yaml"),
   // Preloads `test/preload.ts`, which gives each run a private TMPDIR it removes.
   Smithers.file("//apps/tui/bunfig.toml")
 ]
