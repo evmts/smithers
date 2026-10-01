@@ -76,17 +76,17 @@ export const createCommandIntentLifecycle = (ctx: ControllerContext, onAccepted?
   before: createPrivacyActions(ctx).before,
   reserveGesture: (request, args, named, inherited) => {
     const gesture = inherited ?? reserveGesture(request, args, named)
-    if (ctx.disposed || request.actor !== "user" || request.name !== "form.submit" || gesture?.formPresentationCurrent !== undefined) return gesture
-    const id = typeof named?.cardId === "string" ? named.cardId : args?.trim()
+    if (ctx.disposed || request.actor !== "user" || (request.name !== "form.submit" && request.name !== "chat.send") || gesture?.presentationCurrent !== undefined) return gesture
     const session = ctx.store.session()
+    const id = request.name === "chat.send" ? session.maximizedCardId : typeof named?.cardId === "string" ? named.cardId : args?.trim()
     const frame = session.activeFrameId === undefined ? undefined : ctx.store.collections.frames.get(session.activeFrameId)
-    if (id === undefined || session.maximizedCardId !== id || frame === undefined) return gesture
+    if (request.name === "form.submit" && (id === undefined || session.maximizedCardId !== id || frame === undefined)) return gesture
     // The frame's existing revision fences navigation, including away-and-back,
     // while the outer command's durable admission is still pending.
     return {
       ...gesture,
       name: gesture?.name ?? request.name,
-      formPresentationCurrent: () => !ctx.disposed && ctx.store.session().activeFrameId === frame.id &&
+      presentationCurrent: () => !ctx.disposed && frame !== undefined && ctx.store.session().activeFrameId === frame.id &&
         ctx.store.session().maximizedCardId === id && ctx.store.collections.frames.get(frame.id)?.revision === frame.revision,
       // The caller still owns a supplied private-input gesture's release.
       release: inherited === undefined ? gesture?.release ?? (() => {}) : () => {}

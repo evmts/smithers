@@ -5,6 +5,7 @@
  */
 import { MODEL_FIELD_KINDS, MODEL_PROTOCOL_DEFAULTS, MODEL_PROTOCOLS, MODEL_QUESTION_TYPES } from "@smthrs/rpc/ConfiguredModel"
 import { Schema } from "effect"
+import type { CommandGesture } from "../CommandGesture"
 import { flag, line } from "@smthrs/ui/flow-form"
 import { flow, NoPayload } from "./Declare"
 import type { FlowEntry, Namespace } from "../registry"
@@ -72,7 +73,7 @@ export const modelFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
     name: "model.new",
     summary: "Add a model",
     input: NoPayload,
-    handler: () => actions.newModel()
+    handler: (_input, _signal, _call, gesture?: CommandGesture) => actions.newModel(gesture?.presentationCurrent)
   }),
   flow({
     name: "model.edit",
@@ -80,7 +81,7 @@ export const modelFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
     args: "<name>",
     input: ModelTarget,
     form: target,
-    handler: ({ id }) => actions.editModel(id)
+    handler: ({ id }, _signal, _call, gesture?: CommandGesture) => actions.editModel(id, gesture?.presentationCurrent)
   }),
   flow({
     name: "model.save",
