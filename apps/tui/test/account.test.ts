@@ -284,3 +284,196 @@ it("projects restored request receipts to canonical keys before they can be pers
   expect(Account.receiptOf(supplied)).toEqual(canonical)
   expect(supplied.token).toBe("private-retained-token")
 })
+
+it("resumes the durable pending Account request without another admission or duplicate read", async () => {
+  const root = mkdtempSync(join(tmpdir(), "tui-account-pending-recovery-"))
+  const gate = deferred<void>()
+  let reads = 0
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      expect(request.method).toBe("GET")
+      expect(new URL(request.url).pathname).toBe("/api/user")
+      expect(request.headers.get("authorization")).toBe("token pending-owned-token")
+      reads++
+      await gate.promise
+      return Response.json({ username: "resumed-owner", token: "private-restored-response" })
+    }
+  })
+  const env = {
+    HOME: root,
+    SMITHERS_DISABLE_SYSTEM_KEYRING: "1",
+    SMITHERS_API_ORIGIN: server.url.origin,
+    SMITHERS_TOKEN: "pending-owned-token"
+  }
+  const writer = Session.create(root, "chat", { file: join(root, "history.jsonl") })
+  const make = () =>
+    Account.controller({
+      session: () => CloudSession.signedIn(env),
+      persist: (receipt, at) => writer.append({ type: "account", at, receipt }),
+      present: () => {}
+    })
+  const original = make()
+  let restored: ReturnType<typeof make> | undefined
+  try {
+    expect(await original.show({}, "agent")).toEqual({ value: "Requested" })
+    await waitFor(() => reads === 1)
+    const pending = Session.restore(Session.load(writer.file)).account
+    expect(pending).toMatchObject({ actor: "agent", state: "requested" })
+    if (pending === undefined) throw new Error("The actual pending Account receipt is absent")
+    const prior = readFileSync(writer.file, "utf8")
+    original.dispose()
+    restored = make()
+    const notifications: Account.State[] = []
+    const unsubscribe = restored.subscribe(() => notifications.push(restored!.state()))
+    restored.restore(pending)
+    await waitFor(() => reads === 2)
+    expect(restored.state().phase).toBe("requested")
+    expect(notifications.some((state) => state.phase === "requested")).toBe(true)
+    expect(notifications.some((state) => state.phase === "complete")).toBe(false)
+    expect(readFileSync(writer.file, "utf8")).toBe(prior)
+    expect(await restored.show({}, "user")).toEqual({ value: "Requested" })
+    expect(reads).toBe(2)
+    gate.resolve(undefined)
+    await waitFor(() => restored!.state().phase === "complete")
+    expect(restored.state()).toEqual({ phase: "complete", facts: { login: "resumed-owner", scopes: [], boxes: [] } })
+    expect(Session.restore(Session.load(writer.file)).account).toEqual({ ...pending, state: "complete" })
+    expect(notifications.at(-1)).toEqual(restored.state())
+    const journal = readFileSync(writer.file, "utf8")
+    for (const value of [env.SMITHERS_TOKEN, "resumed-owner", "private-restored-response"]) {
+      expect(journal.includes(value)).toBe(false)
+    }
+    unsubscribe()
+    const count = notifications.length
+    expect(await restored.show()).toEqual({ value: "Requested" })
+    await waitFor(() => reads === 3 && restored!.state().phase === "complete")
+    expect(notifications).toHaveLength(count)
+    expect(Session.restore(Session.load(writer.file)).account?.id).not.toBe(pending.id)
+  } finally {
+    gate.resolve(undefined)
+    original.dispose()
+    restored?.dispose()
+    try {
+      await server.stop(true)
+    } finally {
+      rmSync(Session.directory(root), { recursive: true, force: true })
+      rmSync(root, { recursive: true, force: true })
+    }
+  }
+})
+
+for (const changed of ["credential", "origin"] as const) {
+  it(`rejects a restored pending receipt after selected ${changed} replacement, then reads the current account`, async () => {
+    const root = mkdtempSync(join(tmpdir(), "tui-account-foreign-recovery-"))
+    const gate = deferred<void>()
+    let oldReads = 0, currentReads = 0
+    const oldServer = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(request) {
+        expect(request.method).toBe("GET")
+        expect(new URL(request.url).pathname).toBe("/api/user")
+        if (request.headers.get("authorization") === "token old-owned-token") {
+          oldReads++
+          await gate.promise
+          return Response.json({ username: "private-old-owner" })
+        }
+        expect(request.headers.get("authorization")).toBe("token replacement-owned-token")
+        currentReads++
+        return Response.json({ username: "selected-current-owner" })
+      }
+    })
+    const newServer = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(request) {
+        expect(request.method).toBe("GET")
+        expect(new URL(request.url).pathname).toBe("/api/user")
+        expect(request.headers.get("authorization")).toBe("token old-owned-token")
+        currentReads++
+        return Response.json({ username: "selected-current-owner" })
+      }
+    })
+    const env = {
+      HOME: root,
+      SMITHERS_DISABLE_SYSTEM_KEYRING: "1",
+      SMITHERS_API_ORIGIN: oldServer.url.origin,
+      SMITHERS_TOKEN: "old-owned-token"
+    }
+    const writer = Session.create(root, "chat", { file: join(root, "history.jsonl") })
+    let presentations = 0
+    const make = () =>
+      Account.controller({
+        session: () => CloudSession.signedIn(env),
+        persist: (receipt, at) => writer.append({ type: "account", at, receipt }),
+        present: () => {
+          presentations++
+        }
+      })
+    const original = make()
+    let restored: ReturnType<typeof make> | undefined
+    try {
+      expect(await original.show()).toEqual({ value: "Requested" })
+      await waitFor(() => oldReads === 1)
+      const pending = Session.restore(Session.load(writer.file)).account
+      if (pending === undefined) throw new Error("The actual pending receipt is absent")
+      expect(pending.state).toBe("requested")
+      original.dispose()
+      if (changed === "credential") env.SMITHERS_TOKEN = "replacement-owned-token"
+      else env.SMITHERS_API_ORIGIN = newServer.url.origin
+      const selected = await CloudSession.signedIn(env)
+      if (selected === undefined) throw new Error("The current selected authority is absent")
+      const selection = deferred<void>()
+      presentations = 0
+      const prior = readFileSync(writer.file, "utf8")
+      restored = Account.controller({
+        session: async () => {
+          selection.resolve(undefined)
+          return selected
+        },
+        persist: (receipt, at) => writer.append({ type: "account", at, receipt }),
+        present: () => {
+          presentations++
+        }
+      })
+      restored.restore(pending)
+      await selection.promise
+      await new Promise((resolve) => setImmediate(resolve))
+      expect(restored.state()).toEqual({ phase: "idle" })
+      expect(currentReads).toBe(0)
+      expect(oldReads).toBe(1)
+      expect(presentations).toBe(0)
+      expect(readFileSync(writer.file, "utf8")).toBe(prior)
+      expect(await restored.show()).toEqual({ value: "Requested" })
+      await waitFor(() => restored!.state().phase === "complete")
+      expect(currentReads).toBe(1)
+      expect(restored.state()).toEqual({
+        phase: "complete",
+        facts: { login: "selected-current-owner", scopes: [], boxes: [] }
+      })
+      const receipt = Session.restore(Session.load(writer.file)).account
+      expect(receipt?.id).not.toBe(pending.id)
+      expect(receipt).toMatchObject({ owner: selected.identity, origin: selected.origin, state: "complete" })
+      const journal = readFileSync(writer.file, "utf8")
+      for (
+        const value of ["old-owned-token", "replacement-owned-token", "private-old-owner", "selected-current-owner"]
+      ) expect(journal.includes(value)).toBe(false)
+    } finally {
+      gate.resolve(undefined)
+      original.dispose()
+      restored?.dispose()
+      const errors: unknown[] = []
+      for (const release of [() => oldServer.stop(true), () => newServer.stop(true)]) {
+        try {
+          await release()
+        } catch (error) {
+          errors.push(error)
+        }
+      }
+      rmSync(Session.directory(root), { recursive: true, force: true })
+      rmSync(root, { recursive: true, force: true })
+      if (errors.length) throw new AggregateError(errors, "Account foreign recovery cleanup failed")
+    }
+  })
+}
