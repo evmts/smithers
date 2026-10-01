@@ -1,7 +1,7 @@
 import { NodeServices } from "@effect/platform-node"
 import * as KernelChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
-import * as ProcessConfinement from "@smthrs/kernel/ProcessConfinement"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
+import * as ProcessConfinement from "@smthrs/kernel/ProcessConfinement"
 import * as Workspace from "@smthrs/kernel/Workspace"
 import * as Edit from "@smthrs/std/Edit"
 import * as LanguageServer from "@smthrs/std/LanguageServer"
