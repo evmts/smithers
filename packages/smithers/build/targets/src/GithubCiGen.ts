@@ -912,6 +912,17 @@ export const toolchainSteps = (attrs: Attrs, job: Job): ReadonlyArray<RenderedSt
     for (const setup of needs.runtimes) steps.push(...runtimeSteps(setup, manager))
     if (needs.install) steps.push({ run: installArgv(attrs).join(" ") })
   }
+  if (needs.playwrightChromium !== undefined) {
+    const browser = CiToolchain.PlaywrightChromiumSetup.make(needs.playwrightChromium)
+    Schema.decodeUnknownSync(Schema.Struct({ packageManager: Schema.Literal("pnpm"), nix: Schema.Undefined }))({
+      packageManager: PackageManager.required(attrs.packageManager).name,
+      nix: needs.nix
+    })
+    steps.push({
+      name: "Install pinned Playwright Chromium",
+      run: `pnpm --dir ${shellWord(browser.cwd)} exec playwright install --with-deps chromium`
+    })
+  }
   if (needs.rust !== undefined) {
     steps.push({
       name: "Install pinned Rust toolchain",
