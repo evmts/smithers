@@ -107,7 +107,7 @@ it("UI typecheck skips TypeScript when strict devkit preparation fails in a clea
     // Every host binary a projected declaration names must be declared by the
     // workspace, so read them from the same declarations the fixture copies.
     const hostBins = [...new Set(
-      [...libraryPackages().map((entry) => `${entry.dir}/PACKAGE.ts`), "apps/app/PACKAGE.ts", "PACKAGE.ts", "flows/PACKAGE.ts"]
+      [...libraryPackages().map((entry) => `${entry.dir}/PACKAGE.ts`), "apps/app/PACKAGE.ts", "apps/tui/PACKAGE.ts", "PACKAGE.ts", "flows/PACKAGE.ts"]
         .filter((path) => existsSync(join(root, path)))
         .flatMap((path) => [...readFileSync(join(root, path), "utf8").matchAll(/\bHost\.bin\(\s*"([^"]+)"/g)].map(([, name]) => name))
     )].sort()
@@ -137,7 +137,7 @@ export const Workspace = S.Workspace("ui-devkit-refusal", {
       const destination = write(path, "")
       copyFileSync(join(root, path), destination)
     }
-    for (const path of ["PACKAGE.ts", "apps/site/src/data/project.json", "flows/PACKAGE.ts", ".smithers/coding-project.json"]) {
+    for (const path of ["PACKAGE.ts", "apps/tui/PACKAGE.ts", "apps/site/src/data/project.json", "flows/PACKAGE.ts", ".smithers/coding-project.json"]) {
       const destination = write(path, "")
       copyFileSync(join(root, path), destination)
     }
@@ -164,7 +164,7 @@ else { writeFileSync(${JSON.stringify(tscMarker)}, JSON.stringify(process.argv.s
     // directory, as the review anchors them. A declaration file is left out,
     // so the projection's own WORKSPACE.ts and PACKAGE.ts files stay the only
     // ones discovered.
-    for (const declaration of [...libraryDeclarations, "apps/app/PACKAGE.ts", "PACKAGE.ts", "flows/PACKAGE.ts"]) {
+    for (const declaration of [...libraryDeclarations, "apps/app/PACKAGE.ts", "apps/tui/PACKAGE.ts", "PACKAGE.ts", "flows/PACKAGE.ts"]) {
       const directory = dirname(declaration)
       const source = readFileSync(join(root, declaration), "utf8")
       const patterns = [...source.matchAll(/\b(?:paths|caller|authorization|service|storageOrEgress): \[([^\]]*)\]/g)]
