@@ -75,3 +75,11 @@ export type ProducerError = ProducerUnreachable | ProviderStartRefused | CommitR
  * @since 1.0.0-rc.1
  */
 export class StreamTooLarge extends Data.TaggedError("StreamTooLarge")<{ readonly limitBytes: number }> {}
+
+/**
+ * Maximum bytes accepted from a provider for one model turn or sealed response.
+ *
+ * @category limits
+ * @since 1.0.0-rc.1
+ */
+export const MAX_MODEL_OUTPUT_BYTES = 16 * 1024 * 1024

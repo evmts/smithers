@@ -67,7 +67,9 @@ const securityReview = Smithers.SecurityReview({
         "A prompt-injected or malicious provider reflects the owner's API key into frames, logs or HTTP responses the renderer and other users see.",
       lookFor: [
         "A text, reasoning, tool name or tool argument emission that bypasses StreamingCredentialCutter or cutModelCredential.",
-        "StreamingCredentialCutter emitting a secret prefix split across chunks, or finish() skipping the cut.",
+        "StreamingCredentialCutter publishing a retained prefix before later nested cuts finish, or flushing it after failure.",
+        "Provider-controlled tool IDs or decoded JSON argument strings and keys that carry the credential into a frame.",
+        "Text, reasoning or unfinished tool data retained before the shared provider-output byte budget is enforced.",
         "A log annotation, ModelHostError message or HTTP error body that includes a cause, provider message or URL."
       ],
       paths: [
