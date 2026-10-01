@@ -32,6 +32,8 @@ import {
   toolchainSteps
 } from "../src/GithubCiGen.ts"
 import { parseWorkflow as parseStrictWorkflow } from "../src/GithubWorkflow.ts"
+import * as Input from "../src/Input.ts"
+import * as Nix from "../src/Nix.ts"
 import * as RustToolchain from "../src/RustToolchain.ts"
 import { Secret } from "../src/Secret.ts"
 import * as Target from "../src/Target.ts"
@@ -46,6 +48,106 @@ const parseWorkflow = (source: string): ReturnType<typeof parseStrictWorkflow> =
 const node = CiToolchain.Node({ runtime, release: "26.4.0" })
 const bareNode = CiToolchain.Node({ runtime, release: "26.4.0", cachePackageStore: false })
 const rust = CiToolchain.Rust({ toolchain: RustToolchain.Pinned({}) })
+
+describe("declared Playwright Chromium provisioning", () => {
+  it.each([".", "apps/tui", "packages/browser-test", "fixtures_v2/browser.v2"])(
+    "keeps the reviewed package-relative path %s through construction and decoding",
+    (cwd) => {
+      const setup = CiToolchain.PlaywrightChromium({ cwd })
+      expect(Schema.decodeUnknownSync(CiToolchain.PlaywrightChromiumSetup)(setup)).toEqual(setup)
+      expect(CiToolchain.Needs({ playwrightChromium: setup }).playwrightChromium).toEqual(setup)
+    }
+  )
+
+  it.each([
+    "",
+    "/tmp/browser",
+    "../app",
+    "apps/../tui",
+    "apps/./tui",
+    "apps//tui",
+    "apps/tui/",
+    "apps\\tui",
+    "apps/tui space",
+    "-apps/tui",
+    "apps/-tui",
+    "apps/tui;echo",
+    "apps/$(id)",
+    "apps/'tui"
+  ])(
+    "refuses unsafe package paths through both public constructor and wire schema: %s",
+    (cwd) => {
+      expect(() => CiToolchain.PlaywrightChromium({ cwd })).toThrow()
+      const valid = CiToolchain.PlaywrightChromium({ cwd: "apps/tui" })
+      expect(() => Schema.decodeUnknownSync(CiToolchain.PlaywrightChromiumSetup)({ ...valid, cwd })).toThrow()
+    }
+  )
+
+  it("provisions the package-local declared browser after install and before every target gate", () => {
+    const job = {
+      ...goldenAttrs.jobs[0]!,
+      toolchain: CiToolchain.Needs({
+        runtimes: [node],
+        playwrightChromium: CiToolchain.PlaywrightChromium({ cwd: "apps/tui" })
+      })
+    }
+    const steps = toolchainSteps(goldenAttrs, job)
+    const install = steps.findIndex((step) => step.run?.startsWith("pnpm install --frozen-lockfile") === true)
+    const browser = steps.findIndex((step) =>
+      step.run === "pnpm --dir 'apps/tui' exec playwright install --with-deps chromium"
+    )
+    expect(install).toBeGreaterThanOrEqual(0)
+    expect(browser).toBeGreaterThan(install)
+    expect(steps.filter((step) => step.run?.includes("exec playwright"))).toHaveLength(1)
+    const yaml = render(
+      attrsOf({
+        ...goldenAttrs,
+        jobs: [job],
+        gates: goldenAttrs.gates.filter((gate) => gate.job === job.id),
+        requiredJobs: []
+      })
+    )
+    expect(yaml.indexOf("exec playwright install")).toBeLessThan(yaml.indexOf("steps.setup.conclusion"))
+    expect(yaml).not.toContain("npx playwright")
+    expect(yaml).not.toContain("playwright@latest")
+  })
+
+  it("refuses a mixed Nix/browser authority and a non-pnpm runner", () => {
+    const playwrightChromium = CiToolchain.PlaywrightChromium({ cwd: "apps/tui" })
+    const nix = CiToolchain.Nix({ environment: Nix.Environment({ flake: Input.file("//flake.nix") }) })
+    expect(() => CiToolchain.Needs({ nix, playwrightChromium })).toThrow(/Nix|nix/)
+    const decoded = Schema.decodeUnknownSync(CiToolchain.Toolchain)({
+      ...CiToolchain.Needs({ nix }),
+      playwrightChromium
+    })
+    expect(() => toolchainSteps(goldenAttrs, { ...goldenAttrs.jobs[0]!, toolchain: decoded })).toThrow()
+    const job = { ...goldenAttrs.jobs[0]!, toolchain: CiToolchain.Needs({ playwrightChromium }) }
+    const bunRuntime = { name: "bun" as const, version: ">=1.4.0" as const, executable: "bun" }
+    const attrs = attrsOf({
+      ...goldenAttrs,
+      packageManager: { name: "bun", version: ">=1.4.0", executable: "bun", runtime: bunRuntime }
+    })
+    expect(() => toolchainSteps(attrs, job)).toThrow(/pnpm/)
+  })
+
+  it("does not add browser provisioning to jobs without the requirement", () => {
+    expect(toolchainSteps(goldenAttrs, goldenAttrs.jobs[0]!).some((step) => step.run?.includes("playwright")))
+      .toBe(false)
+  })
+
+  it("allows explicitly preinstalled packages without secretly installing them", () => {
+    const job = {
+      ...goldenAttrs.jobs[0]!,
+      toolchain: CiToolchain.Needs({ install: false, playwrightChromium: CiToolchain.PlaywrightChromium({ cwd: "." }) })
+    }
+    const steps = toolchainSteps(goldenAttrs, job)
+    expect(steps.some((step) => step.run?.startsWith("pnpm install"))).toBe(false)
+    expect(steps.filter((step) => step.run === "pnpm --dir '.' exec playwright install --with-deps chromium"))
+      .toHaveLength(1)
+    expect(() => render(attrsOf({ ...goldenAttrs, gates: [], jobs: [job] })))
+      .toThrow(/declares install: false/)
+  })
+})
 
 describe("CI concurrency", () => {
   it("keeps one run in flight per branch, the newest commit next, and cancels superseded PR runs", () => {
