@@ -19,6 +19,14 @@ The guarded filesystem's `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` path is part of
 the build runner's inherited tool environment; other variables must be
 declared by their consuming targets.
 
+CI jobs using package-local Playwright declare
+`CiToolchain.Needs({ playwrightChromium: CiToolchain.PlaywrightChromium({ cwd: "apps/tui" }) })`.
+After the frozen pnpm install, setup provisions Chromium and its system libraries
+using that package's pinned CLI, before any target gates. The directory must be
+workspace-relative; Nix environments instead supply their own browser tools.
+Provisioning needs permission to install missing system libraries. A failed setup
+prevents the gates from running; tests never install a browser themselves.
+
 The declaration accepts either the complete Node.js trio (`runtime`,
 `packageManager`, and `nodeModules`) or a non-empty `toolchains` list. A
 repository that builds more than one language declares both. Omitting only part
