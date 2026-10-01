@@ -4,6 +4,9 @@ import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
 import { BOOKMARK_WIRE } from "./fixtures/BookmarkWire"
 import { USER_WORKSPACE_ROW } from "./fixtures/UserWorkspaceRow"
+import { createAppController } from "../AppController"
+import { unavailableAgent } from "../TestFixtures"
+import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
 import { createRepositoriesSeam } from "./RepositoriesSeam"
 import type { SeamContext } from "./SeamContext"
 
@@ -496,4 +499,95 @@ describe("repositories seam", () => {
       commitId: "c0ffee1"
     })
   })
+})
+
+
+test.each(["inventory", "head", "workspace"] as const)("a real %s read completing after controller disposal cannot write closed state", async phase => {
+  const arrived = Promise.withResolvers<void>()
+  const release = Promise.withResolvers<void>()
+  const requests: string[] = []
+  const heldPath = phase === "inventory" ? "/api/user/repos" : phase === "head" ? "/api/repos/will/smithers/bookmarks" : "/api/user/workspaces"
+  const backend = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: async request => {
+    const path = new URL(request.url).pathname
+    requests.push(path)
+    if (path === heldPath) {
+      arrived.resolve()
+      await release.promise
+    }
+    if (path === "/api/user/repos") return Response.json(phase === "head" ? [REPOS[0]] : [])
+    if (path === "/api/user/orgs") return Response.json([])
+    if (path === "/api/repos/will/smithers/bookmarks") return Response.json(BOOKMARK_WIRE.page([BOOKMARK_WIRE.row("main", "qupxosqw", "c0ffee1")]))
+    if (path === "/api/user/workspaces") return Response.json([USER_WORKSPACE_ROW])
+    return new Response(null, { status: 404 })
+  } })
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, unavailableAgent, {
+    baseUrl: backend.url.origin,
+    applicationIdentity: undefined,
+    fetchImpl: fetch,
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", authFlow: "redirect", sandbox: null,
+      capabilities: cloudCapabilities({ identity: false, cloud: true, agent: false, checkout: false, terminal: true }) }
+  })
+  const pending = controller.loadRepositories()
+  try {
+    await arrived.promise
+    expect(requests).toContain(heldPath)
+    const closing = controller.dispose()
+    await new Promise<void>(resolve => setImmediate(resolve))
+    release.resolve()
+    await expect(pending.catch(error => ({ unexpectedFailure: String(error) }))).resolves.toBeUndefined()
+    await closing
+    const beforeClosedRead = requests.length
+    await expect(controller.loadRepositories()).resolves.toBeUndefined()
+    expect(requests).toHaveLength(beforeClosedRead)
+  } finally {
+    release.resolve()
+    await pending.catch(() => undefined)
+    await controller.dispose()
+    await backend.stop(true)
+  }
+})
+
+test.each(["sign-out", "replacement", "same-account return"] as const)("a held real inventory cannot cross %s and the current account can refresh", async change => {
+  const arrived = Promise.withResolvers<void>()
+  const release = Promise.withResolvers<void>()
+  let reads = 0
+  let owner = "alice"
+  const backend = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: async request => {
+    const path = new URL(request.url).pathname
+    if (path === "/api/user/repos") {
+      const selected = owner
+      if (++reads === 1) { arrived.resolve(); await release.promise }
+      return Response.json([{ owner: selected, name: "private-project", default_bookmark: null }])
+    }
+    if (path === "/api/user/orgs" || path === "/api/user/workspaces") return Response.json([])
+    return new Response(null, { status: 404 })
+  } })
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const identity = (state: "signed-in" | "signed-out", login: string | null) => store.dispatch({
+    type: "identity.session.loaded", actor: "system", state, login, admin: false, scopesPlain: null
+  }).isPersisted.promise
+  await identity("signed-in", "alice")
+  const seam = createRepositoriesSeam({ baseUrl: backend.url.origin, store, dispatch: store.dispatch,
+    http: (path, init) => fetch(path, init), actor: () => "user", nextOrdinal: () => 0 })
+  const pending = seam.loadRepositories()
+  try {
+    await arrived.promise
+    if (change !== "replacement") await identity("signed-out", null)
+    if (change !== "sign-out") await identity("signed-in", change === "replacement" ? "bob" : "alice")
+    release.resolve()
+    await pending
+    expect(repos(store)).toEqual([])
+    expect(copies(store)).toEqual([])
+    owner = "bob"
+    await identity("signed-in", owner)
+    await seam.loadRepositories()
+    expect(repos(store).map(repo => repo.id)).toEqual(["bob/private-project"])
+    expect(reads).toBe(2)
+  } finally {
+    release.resolve()
+    await pending.catch(() => undefined)
+    await store.dispose?.()
+    await backend.stop(true)
+  }
 })
