@@ -1,27 +1,19 @@
 /** Color screenshots of contributed UI: `bun e2e/extensions-shots.ts [out dir]` (default ~/Desktop/tui-custom-ui). */
-import { spawnSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { claim } from "../test/scratch.ts"
+import { screenshot } from "./screenshot.ts"
 import { key, Tui } from "./tmux.ts"
 
 const out = resolve(process.argv[2] ?? join(homedir(), "Desktop", "tui-custom-ui"))
 mkdirSync(out, { recursive: true })
-// Scratch repos, session folders, Chrome profiles and daemons go when the script exits.
+// Scratch repos, session folders, Chromium browsers and daemons go when the script exits.
 claim()
 const app = resolve(import.meta.dir, "..")
-const chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 const shoot = async (tui: Tui, name: string) => {
   const html = join(out, `${name}.html`)
-  writeFileSync(html, await tui.html())
-  spawnSync(chrome, [
-    "--headless=new",
-    `--user-data-dir=${mkdtempSync(join(tmpdir(), "chrome-"))}`,
-    `--screenshot=${join(out, `${name}.png`)}`,
-    `--window-size=${tui.cols * 8 + 40},${tui.rows * 17 + 24}`,
-    `file://${html}`
-  ], { timeout: 15_000 })
+  await screenshot(html, join(out, `${name}.png`), await tui.html(), tui.cols * 8 + 40, tui.rows * 17 + 24, 15_000)
 }
 const reviewFlow = [
   "---",
