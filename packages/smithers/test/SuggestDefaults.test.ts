@@ -1,23 +1,9 @@
-/**
- * What `smthrs suggest` does when a case injects nothing.
- *
- * `test/Suggest.test.ts` replaces every seam the verb has: the credential
- * reader, the `--json` emitter, and the implementing step. That is what makes
- * its cases a table, and it is also what leaves the defaults behind those
- * seams unexercised — the reader that opens `auth.json`, the emitter that
- * writes to stdout, and the composition that runs the bundled flow on this
- * host. Each of those is a promise the verb makes to an operator who passes
- * no options at all, so each is asserted here through the same public
- * surface, with the seams left where they are.
- *
- * The default implementing step is reached with a seat this machine has no
- * credential for, so the composition is built and the seat is resolved for
- * real and the refusal arrives before any request is signed. Nothing here
- * reaches a model or a network.
+/** Public seat selection, default rendering, and owned vendor-CLI login boundaries.
+ * Controlled Codex children do not qualify an external account or provider.
  */
 import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { Effect, Option } from "effect"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Writable } from "node:stream"
@@ -81,27 +67,22 @@ const sink = (): Sink => {
   return { stream, text: () => chunks.join("") }
 }
 
-let signedIn: string
+let selectedHome: string
 let signedOut: string
 let root: string
 
 beforeAll(() => {
-  signedIn = mkdtempSync(join(tmpdir(), "smthrs-suggest-in-"))
+  selectedHome = mkdtempSync(join(tmpdir(), "smthrs-suggest-in-"))
   signedOut = mkdtempSync(join(tmpdir(), "smthrs-suggest-out-"))
   root = mkdtempSync(join(tmpdir(), "smthrs-suggest-root-"))
-  mkdirSync(join(signedIn, ".codex"), { recursive: true })
-  writeFileSync(
-    join(signedIn, ".codex", "auth.json"),
-    JSON.stringify({ tokens: { access_token: "access", refresh_token: "refresh" } })
-  )
 })
 
 afterAll(() => {
-  for (const directory of [signedIn, signedOut, root]) rmSync(directory, { recursive: true, force: true })
+  for (const directory of [selectedHome, signedOut, root]) rmSync(directory, { recursive: true, force: true })
 })
 
-describe("the credential store, read off disk when no reader is injected", () => {
-  it("detects the Codex subscription from the auth.json the home directory holds", async () => {
+describe("the explicit Codex subscription selection", () => {
+  it("selects the external Codex seat without reading a credential file", async () => {
     const documents: Array<string> = []
 
     const outcome = await Effect.runPromise(
@@ -110,32 +91,33 @@ describe("the credential store, read off disk when no reader is injected", () =>
         // The Codex login is opt-in (#1677); the opt-in names no credential.
         environment: { SMITHERS_OPENAI_AUTH: "chatgpt" },
         json: true,
-        homeDirectory: signedIn,
+        homeDirectory: selectedHome,
         emit: (line) => void documents.push(line)
       })
     )
 
-    // Nothing but the file on disk makes this seat available: the
-    // environment holds only the opt-in and no reader was passed.
-    expect(outcome.seat).toBe("openai:gpt-6-sol")
+    // The opt-in selects the vendor seat; it does not claim a logged-in
+    // vendor account, and this selection reads no credential file.
+    expect(outcome.seat).toBe("codex:sol")
     expect(JSON.parse(documents.at(-2)!)).toEqual({
       document: "seat",
-      seat: "openai:gpt-6-sol",
+      seat: "codex:sol",
       source: "codex-subscription",
       label: "Codex subscription"
     })
   })
 
-  it("names the file it looked for when the home directory has none", async () => {
+  it("names the supported Codex login opt-in when no seat is configured", async () => {
     const error = await Effect.runPromise(
       Effect.flip(Suggest.run({ ...base, json: true, homeDirectory: signedOut, emit: () => {} }))
     )
 
     expect(error).toBeInstanceOf(CliError.UnsupportedError)
     expect(CliError.exitCode(error)).toBe(1)
-    // A file that cannot be opened is reported as an absent one, by path, so
-    // the operator knows which store to sign in against.
-    expect(error.message).toContain(`no ${join(signedOut, ".codex", "auth.json")}`)
+    // Selection names the supported login mechanism without opening the
+    // vendor's credential file or exposing a private local path.
+    expect(error.message).toContain("Codex subscription (codex:sol): set SMITHERS_OPENAI_AUTH=chatgpt to use Codex")
+    expect(error.message).not.toContain(join(signedOut, ".codex", "auth.json"))
   })
 })
 
@@ -242,7 +224,7 @@ describe("the pick", () => {
 
 describe("the implementing step, defaulted to the bundled flow on this host", () => {
   it.each([undefined, "must-not-spend-this-key"])(
-    "asks for the detected Codex session, never OPENAI_API_KEY, when that key is %s",
+    "checks the vendor login with metered keys excluded, when that key is %s",
     async (apiKey) => {
       const terminal = sink()
       const service: Ui.Service = {
@@ -251,28 +233,55 @@ describe("the implementing step, defaulted to the bundled flow on this host", ()
         pickSuggestion: (items) => Effect.succeed(Option.fromUndefinedOr(items[0])),
         confirm: () => Effect.succeed(false)
       }
-      // Detection sees a session that has disappeared by execution time. The
-      // real resolver must ask for that session, even if a metered key exists.
+      // An owned CLI fixture exercises the vendor login boundary; it is not
+      // evidence of an external Codex account or a model completion.
+      const bin = join(signedOut, apiKey === undefined ? "without-key" : "with-key")
+      mkdirSync(bin)
+      const executable = join(bin, "codex")
+      const receipt = join(bin, "request.json")
+      writeFileSync(
+        executable,
+        `#!${process.execPath}\nrequire("node:fs").writeFileSync(${
+          JSON.stringify(receipt)
+        }, JSON.stringify({ argv: process.argv.slice(2), apiKeyPresent: process.env.OPENAI_API_KEY !== undefined, home: process.env.HOME, codexHome: process.env.CODEX_HOME })); console.error("Not logged in"); process.exit(1)\n`
+      )
+      chmodSync(executable, 0o755)
       const error = await Effect.runPromise(Effect.flip(
         Suggest.run({
           ...base,
           root,
-          environment: { CODEX_HOME: signedOut, OPENAI_API_KEY: apiKey, SMITHERS_OPENAI_AUTH: "chatgpt" },
-          readFile: () => JSON.stringify({ tokens: { access_token: "test-access", refresh_token: "test-refresh" } })
+          environment: {
+            PATH: bin,
+            HOME: signedOut,
+            CODEX_HOME: signedOut,
+            OPENAI_API_KEY: apiKey,
+            SMITHERS_OPENAI_AUTH: "chatgpt"
+          },
+          readFile: () => {
+            throw new Error("Credential files must stay vendor-owned")
+          }
         }).pipe(Effect.provideService(Ui.Ui, service))
       ))
-      expect(error.message).toContain("no ChatGPT credentials")
+      expect(error).toMatchObject({ code: "suggest_implementation_failed", fault: "dependency" })
+      expect(JSON.parse(readFileSync(receipt, "utf8"))).toEqual({
+        argv: ["login", "status"],
+        apiKeyPresent: false,
+        home: signedOut,
+        codexHome: signedOut
+      })
+      expect(terminal.text()).toContain("codex:sol")
+      expect(error.message + terminal.text()).not.toContain("must-not-spend-this-key")
       expect(error.message).not.toContain("Set OPENAI_API_KEY")
     }
   )
 
-  // An operator who set `SMITHERS_OPENAI_AUTH=api-key` keeps it: a signed-in
-  // Codex file beside it neither becomes the seat nor overrides that mode.
+  // An explicit metered mode remains separate from a subscription opt-in;
+  // no vendor credential file is consulted in either selection branch.
   it.each([
     [undefined, undefined],
     ["metered-key", "openai"]
   ])(
-    "keeps an ambient api-key auth mode beside a signed-in Codex file when OPENAI_API_KEY is %s",
+    "keeps an explicit api-key auth mode without reading vendor credentials when OPENAI_API_KEY is %s",
     async (apiKey, source) => {
       const documents: Array<string> = []
       const outcome = await Effect.runPromise(Effect.result(
@@ -280,7 +289,9 @@ describe("the implementing step, defaulted to the bundled flow on this host", ()
           ...base,
           json: true,
           environment: { OPENAI_API_KEY: apiKey, SMITHERS_OPENAI_AUTH: "api-key" },
-          readFile: () => JSON.stringify({ tokens: { access_token: "test-access", refresh_token: "test-refresh" } }),
+          readFile: () => {
+            throw new Error("Credential files must stay vendor-owned")
+          },
           emit: (line) => void documents.push(line)
         })
       ))
@@ -291,7 +302,7 @@ describe("the implementing step, defaulted to the bundled flow on this host", ()
       if (source === undefined) {
         expect(outcome._tag).toBe("Failure")
         expect(outcome._tag === "Failure" && outcome.failure.message).toContain(
-          "set SMITHERS_OPENAI_AUTH=chatgpt to use this Codex login"
+          "set SMITHERS_OPENAI_AUTH=chatgpt to use Codex"
         )
         expect(seats).toEqual([])
       } else {
