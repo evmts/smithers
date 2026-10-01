@@ -164,7 +164,7 @@ test("keyboard selection reads every filtered named-view page and survives reloa
     expect(pages[0]!.cursor).toBeNull()
     expect(pages[0]!.link).toContain("rel=\"next\"")
     expect(pages[1]!.cursor).toBeTruthy()
-    expect(pages[1]!.link).toBeNull()
+    expect(pages[1]!.link).toBe(`</api/repos/${repo}/issues?limit=100&view=bugs>; rel="first"`)
     await page.reload()
     const restored = page.getByTestId("issue-list").last()
     await browserExpect(restored.getByRole("button", { name: "Open bugs", exact: true })).toHaveAttribute(
