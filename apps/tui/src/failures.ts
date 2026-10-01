@@ -12,6 +12,7 @@
  */
 import type * as Permission from "@smthrs/capability/Permission"
 import type { Refused as CliRefused } from "@smthrs/cli/CliError"
+import type { HistoryRefused } from "@smthrs/gateway/RunHistory"
 import type * as Cell from "@smthrs/harness/Cell"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import type * as FailureCopy from "@smthrs/model/FailureCopy"
@@ -40,6 +41,7 @@ export type Known =
   | AgentDepthExceeded
   | Refusal
   | FactoryRefusal
+  | HistoryRefused
   | FlowError
   | FlowDiscoveryFailed
   | TabError
@@ -60,6 +62,7 @@ export type Act =
   | "flow"
   | "fork"
   | "harness"
+  | "history"
   | "issue-views"
   | "issues"
   | "land"
@@ -88,6 +91,7 @@ const unknownSentence: Readonly<Record<Act, string>> = {
   flow: "The flow could not start.",
   fork: "This conversation could not be forked.",
   harness: "The workspace could not be reached.",
+  history: "Run history could not be read.",
   "issue-views": "Issue views could not be read.",
   issues: "Issues could not be read.",
   land: "The landing could not start.",
@@ -112,6 +116,60 @@ const copy = (fault: PlueFault, sentence: string): UserFailureCopy => ({
   sentence,
   actions: fault === "user" ? [] : ["retry"]
 })
+
+/** History's open wire code stays diagnostic unless this presenter knows it. */
+const history = (failure: HistoryRefused): UserFailureCopy => {
+  switch (failure.code) {
+    case "history_missing":
+      return copy("user", "No recorded history for this run.")
+    case "history_frame_missing":
+      return copy("user", "That history frame is unavailable.")
+    case "history_unsupported_run":
+      return copy("user", "This run does not support history changes.")
+    case "run_active":
+    case "busy":
+    case "live_parent":
+    case "live_child":
+      return copy("infra", "Wait for the run and its children to stop before changing history.")
+    case "plan_not_approved":
+      return copy("policy", "Approve the run's plan before changing history.")
+    case "fork_unavailable":
+      return copy("user", "The fork's workspace is unavailable.")
+    case "not_found":
+    case "run_not_found":
+      return copy("user", "That run or history frame is unavailable.")
+    case "invalid":
+    case "invalid_input":
+      return copy("user", "The history request is invalid.")
+    case "already_crossed":
+    case "irreversible":
+      return copy("policy", "This history includes an action that cannot be undone.")
+    case "rate_limited":
+      return copy("infra", "Too many history requests; try again later.")
+    case "limit_exceeded":
+      return copy("user", "This run exceeds the history limit.")
+    case "fence_lost":
+      return copy("infra", "The run's owner changed; retry the history request.")
+    case "compensation_failed":
+      return copy("infra", "An action could not be undone.")
+    case "verify_timeout":
+      return copy("infra", "History verification timed out.")
+    case "verify_cleanup_failed":
+      return copy("infra", "History verification could not clean up its copies.")
+    case "verify_schema_too_long":
+      return copy("user", "Shorten the configured database schema name before verifying.")
+    case "run_divergent":
+      return copy("user", "The recorded run and its replay differ.")
+    case "unauthorized":
+    case "/control/Unauthorized":
+      return copy("user", "Sign in with access to this run.")
+    case "unavailable":
+    case "/control/Unavailable":
+      return copy("infra", "Run history is unavailable here.")
+    default:
+      return copy("bug", unknownSentence.history)
+  }
+}
 
 const agent = (failure: AgentError): UserFailureCopy => {
   const name = failure.subject
@@ -204,6 +262,7 @@ const search: Readonly<Record<SearchFailed["reason"], UserFailureCopy>> = {
 
 export const registry: UserFailureRegistry<Known> = {
   "/cli/Refused": (failure) => copy(failure.fault, unknownSentence.command),
+  "@smthrs/gateway/HistoryRefused": history,
   "@smthrs/capability/GrantStoreError": (failure) => grant[failure.code],
   AgentError: agent,
   AgentDepthExceeded: copy("user", "Workers can delegate three levels deep."),
