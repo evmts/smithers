@@ -2635,6 +2635,13 @@ export function App(props: AppProps) {
     runs: flowRuns,
     search,
     issueViews: issueViewsPending,
+    issueViewsFailure: surface === `ui:${IssueViews.id}`
+      ? undefined
+      : issueViewsState.phase === "failed"
+      ? issueViewsState.detail
+      : issueViewsState.phase === "ready" && issueViewsState.selected?.phase === "failed"
+      ? issueViewsState.selected.detail
+      : undefined,
     undoing,
     toast,
     now,
