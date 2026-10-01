@@ -2,8 +2,10 @@ import type { Page } from "@playwright/test"
 import { SIGNUP_PROFILE_PATH, SignupProfileSchema, type SignupProfile } from "../../src/mainview/state/Signup"
 
 /** Controlled HTTP fixture for the selected test account's canonical saved profile. */
-export async function signupProfile(page: Page) {
-  let profile: SignupProfile | null = null
+export async function signupProfile(page: Page, initialProfile: SignupProfile | null = null) {
+  let profile: SignupProfile | null = initialProfile === null
+    ? null
+    : structuredClone(SignupProfileSchema.strict().parse(initialProfile))
   const writes: SignupProfile[] = []
   const reads: Array<SignupProfile | null> = []
   await page.route(`**${SIGNUP_PROFILE_PATH}`, async route => {
