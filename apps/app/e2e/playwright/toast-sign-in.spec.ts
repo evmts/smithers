@@ -1,5 +1,5 @@
 import { controlTabKey, expect, test } from "./browserTest"
-import { signedOutVisitor } from "./identity"
+import { signedOutVisitor, skipSignup } from "./identity"
 import { fillComposer } from "./composer"
 import { APPLICATION_SIGN_IN_PATH } from "@smthrs/rpc/ApplicationAuth"
 
@@ -14,6 +14,17 @@ for (const path of ["/", "/smithersai/smithers/"]) {
       } }))
       await page.route("**/api/auth/github**", route => route.fulfill({ contentType: "text/html", body: "Sign-in started" }))
       await page.goto(path)
+      await skipSignup(page)
+      await page.reload()
+      await expect(page.getByTestId("signup")).toHaveCount(0)
+      await expect(page.getByTestId("chrome-sign-in")).toBeVisible()
+      const anonymous = await page.evaluate(async () => {
+        const response = await fetch("/api/user")
+        return { status: response.status, body: await response.json() }
+      })
+      expect(anonymous).toEqual({
+        status: 401, body: { code: "unauthorized", fault: "user", message: "authentication required" }
+      })
       let input = page.getByTestId("composer-input")
       // A seam that refuses for sign-in offers GitHub through the real
       // flow-failure toast, independently of embedded repository read failures.
