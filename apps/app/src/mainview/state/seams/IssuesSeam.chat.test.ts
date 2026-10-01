@@ -1,4 +1,5 @@
 import { signupProfileFetch } from "../TestFixtures"
+import { SIGNUP_PROFILE_PATH } from "../Signup"
 import type { StorageApi } from "@tanstack/db"
 import { afterEach, describe, expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
@@ -276,7 +277,9 @@ describe("a conversation on the chat = issues contract", () => {
       const store = await open()
       controller = createAppController(store, unavailableAgent, { fetchImpl: (input, init) => {
         const raw = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
-        emptySignupProfileRead(input, init) // Validate its credentialed-read contract without bypassing HTTP.
+        if (new URL(raw, "https://app.test").pathname === SIGNUP_PROFILE_PATH) {
+          expect(init?.credentials).toBe("include") // Keep the real profile read credentialed.
+        }
         return observe(fetch(new URL(new URL(raw, "https://app.test").pathname, server.url), init).then(trackResponse))
       } })
       await signedIn(store)

@@ -390,7 +390,7 @@ for (const retirement of ["account", "sign-out", "dispose"] as const) for (const
     const reply = heldResponse()
     const entered = Promise.withResolvers<void>()
     const hits: string[] = []
-    const { store, controller } = await heldController({ fetchImpl: signupProfileFetch(async (input, init) => {
+    const { store, controller } = await heldController({ fetchImpl: signupProfileFetch(async (input) => {
 
       hits.push(String(input)); entered.resolve(); return reply.promise
     }).fetchImpl })
