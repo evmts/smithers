@@ -507,12 +507,32 @@ describe("host parity — the web and native catalogs against the servers' own c
     expect(productCapabilities.length).toBeGreaterThan(0)
     const everything = new Set<RuntimeCapability>([
       ...productCapabilities,
-      ...cloudCapabilities({ identity: true, cloud: true, agent: true, checkout: true, terminal: true, browser: true }),
-      ...localCapabilities({ agent: true, identity: true, cloud: true, browser: true, nativeShell: true })
+      ...cloudCapabilities({ identity: true, cloud: true, agent: true, checkout: true, terminal: true, browser: true, recommend: true }),
+      ...localCapabilities({ agent: true, identity: true, cloud: true, browser: true, nativeShell: true, recommend: true })
     ])
     /* Every capability the schema names is emitted by some host; an orphan fails here. */
     const orphans = RuntimeCapabilitySchema.options.filter((capability) => !everything.has(capability))
     expect(orphans).toEqual([])
+  })
+
+  test("command selection and recommendations are advertised only by enabled hosts", () => {
+    const cloud = { identity: true, cloud: true, agent: true, checkout: true, terminal: true }
+    const local = { agent: true, identity: true, cloud: true }
+    for (const capabilities of [
+      cloudCapabilities(cloud), localCapabilities(local),
+      cloudCapabilities({ ...cloud, recommend: false }), localCapabilities({ ...local, recommend: false }),
+    ]) {
+      expect(capabilities).not.toContain("recommend")
+      expect(capabilities).not.toContain("commands.select")
+    }
+    for (const capabilities of [
+      cloudCapabilities({ ...cloud, recommend: true }), localCapabilities({ ...local, recommend: true }),
+    ]) {
+      expect(capabilities).toContain("recommend")
+      expect(capabilities).toContain("commands.select")
+      expect(capabilities.filter(capability => capability === "recommend" || capability === "commands.select"))
+        .toEqual(["recommend", "commands.select"])
+    }
   })
 
   test("the web host never claims a native door", () => {
