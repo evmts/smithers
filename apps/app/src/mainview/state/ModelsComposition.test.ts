@@ -4,9 +4,15 @@
  * launched again after identity loads, so boot cannot supersede its result.
  */
 import { afterEach, expect, test } from "bun:test"
+import { Database } from "bun:sqlite"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { APP_SCHEMA_VERSION } from "../chain/SchemaVersion"
+import { openSqliteRowStorage, ROW_TABLE_NAME } from "../chain/SqliteRowStorage"
 import { MODEL_CATALOG_PATH, MODEL_TEST_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import type { ConfiguredModel, ModelCatalog, ModelTestResult } from "@smthrs/rpc/ConfiguredModel"
-import { createAppStore } from "./AppStore"
+import { createAppStore, PERSISTED_COLLECTION_SPECS } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
 import { MODELS_CARD_ID } from "./controller/models"
 import { memoryStorage, unavailableAgent, waitFor } from "./TestFixtures"
@@ -102,3 +108,94 @@ test("chrome commands and the card's own history keep a maximized card in place"
   await controller.dispose()
   await store.dispose?.()
 })
+
+test.each(["maximize", "minimize", "maximize-minimize-maximize"] as const)(
+  "model edit completion preserves the later %s gesture",
+  async (gesture) => {
+    const directory = mkdtempSync(join(tmpdir(), "smithers-model-order-"))
+    const db = new Database(join(directory, "app.sqlite"))
+    const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
+    let hold = false, modelWrite = false
+    const adapter = await openSqliteRowStorage({
+      execute: async <Row>(sql: string, params: ReadonlyArray<unknown> = []) => {
+        if (
+          hold && /^\s*INSERT\b/i.test(sql) && params[0] === "app-cards" && typeof params[3] === "string"
+          && JSON.parse(params[3]).kind === "flow-form" && JSON.parse(params[3]).payload.submitting === true
+        ) modelWrite = true
+        if (hold && modelWrite && /^\s*COMMIT\b/i.test(sql)) {
+          hold = false
+          entered.resolve()
+          await release.promise
+        }
+        const statement = db.query(sql)
+        if (/^\s*(SELECT|PRAGMA)/i.test(sql)) return statement.all(...params as []) as ReadonlyArray<Row>
+        statement.run(...params as [])
+        return []
+      },
+      close: () => db.close(),
+    }, { collections: PERSISTED_COLLECTION_SPECS, schemaVersion: APP_SCHEMA_VERSION })
+    const store = await createAppStore({
+      kind: "opfs",
+      ...adapter,
+      storageEventApi: { addEventListener: () => {}, removeEventListener: () => {} },
+    })
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(request) {
+        const path = new URL(request.url).pathname
+        if (path === MODEL_CATALOG_PATH) {
+          return Response.json({
+            models: [],
+            seats: [],
+            credentials: [{ name: "LOOPBACK", present: true, origins: ["http://127.0.0.1:1"] }],
+          })
+        }
+        if (path === "/api/user") return Response.json({ id: 1, username: "owner", is_admin: false })
+        return new Response(null, { status: 404 })
+      },
+    })
+    const controller = createAppController(store, unavailableAgent, { baseUrl: server.url.origin, fetchImpl: fetch })
+    try {
+      await controller.commands.run(
+        "model.save",
+        "--name mine --protocol openai-chat --model original --credential LOOPBACK --url http://127.0.0.1:1",
+      )
+      await store.settled?.()
+      await controller.commands.run("model.edit", "mine")
+      const formId = "form-model.save"
+      await controller.setFormField(formId, "modelId", "revised")
+      hold = true
+      const submission = controller.commands.run("form.submit", formId)
+      await entered.promise
+      controller.maximizeCard("models")
+      if (gesture !== "maximize") controller.minimizeCard()
+      if (gesture === "maximize-minimize-maximize") controller.maximizeCard("models")
+      const expectedPane = gesture === "minimize" ? null : "models"
+      expect(store.session().maximizedCardId).toBe(expectedPane)
+      release.resolve()
+      await submission
+      await store.settled?.()
+      expect(store.collections.cards.get(formId)?.status).toBe("acted")
+      expect(store.collections.models.get("mine")?.modelId).toBe("revised")
+      const saved = db.query(`SELECT value FROM ${ROW_TABLE_NAME} WHERE collection_id = ?`).all("app-models") as Array<
+        { value: string }
+      >
+      expect(saved.map(row => JSON.parse(row.value)).find(row => row.id === "mine")?.modelId).toBe("revised")
+      expect(store.session().maximizedCardId).toBe(expectedPane)
+    } finally {
+      release.resolve()
+      try {
+        await controller.dispose()
+      } finally {
+        try {
+          await store.dispose?.()
+        } finally {
+          await server.stop(true)
+          rmSync(directory, { recursive: true, force: true })
+        }
+      }
+    }
+  },
+  10000,
+)
