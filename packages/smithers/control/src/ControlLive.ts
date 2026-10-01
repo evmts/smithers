@@ -147,7 +147,6 @@ const terminalOrAccepted = (
  * delivered.
  */
 const withoutStampedPrincipal = (input: unknown): unknown => {
-  /* v8 ignore next -- every caller passes a mutation the boundary already decoded into a struct; the guard keeps the helper total for a reader */
   if (input === null || typeof input !== "object") return input
   const { principal: _principal, ...rest } = input as Record<string, unknown>
   const message = rest["message"]
@@ -224,11 +223,9 @@ const validIdempotencyKey = (value: string): boolean => {
     const unit = value.charCodeAt(index)
     if (unit >= 0xd800 && unit <= 0xdbff) {
       const low = value.charCodeAt(++index)
-      /* v8 ignore next -- an unpaired high surrogate is refused by the mutation boundary first */
       if (!(low >= 0xdc00 && low <= 0xdfff)) return false
       continue
     }
-    /* v8 ignore next -- a lone low surrogate is refused by the mutation boundary first */
     if (unit >= 0xdc00 && unit <= 0xdfff) return false
   }
   return true
