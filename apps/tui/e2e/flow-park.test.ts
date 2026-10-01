@@ -58,7 +58,7 @@ it("shows a real durable park and question without claiming the run is still exe
     await tui.until((screen) => screen.includes("Still here."), 10_000, "chat while parked")
     await tui.press(key.ctrlBracket + key.ctrlBracket)
     await tui.until((screen) => screen.includes("Which branch?"), 10_000, "parked question")
-    expect(tui.screen()).toContain("r Resume")
+    expect(tui.screen()).toContain("c Continue")
     expect(tui.screen()).toContain("x Stop")
     await tui.type("x")
     await tui.until(
