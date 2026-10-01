@@ -1203,7 +1203,9 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
         }
       },
       takeover: { terminalSessionId: "pty-1" },
-      codingChangeId: "qupxosqw"
+      codingChangeId: "qupxosqw",
+      burndown: { filter: "working", item: 19 },
+      signalRequest: { name: "approval", state: "failed", afterSeq: 42, error: "Signal refused." }
     }
   },
   "workflow-list": {
@@ -3364,14 +3366,33 @@ describe("run agent binding metadata excludes secret values", () => {
   }
 })
 
-
 test("browser input refusal survives persisted JSON without arbitrary upstream fields", () => {
-  const row = { ...base, kind: "browser", payload: { ...FIXTURES.browser.minimal,
-    error: "That page couldn't be read.", refusal: { status: 400, code: "request_invalid", fault: "user", origin: "local", message: "That page couldn't be read.", upstreamSecret: "never retained" } } }
+  const row = {
+    ...base,
+    kind: "browser",
+    payload: {
+      ...FIXTURES.browser.minimal,
+      error: "That page couldn't be read.",
+      refusal: {
+        status: 400,
+        code: "request_invalid",
+        fault: "user",
+        origin: "local",
+        message: "That page couldn't be read.",
+        upstreamSecret: "never retained"
+      }
+    }
+  }
   const parsed = CardSchema.parse(JSON.parse(JSON.stringify(row)))
   expect(parsed.kind).toBe("browser")
   if (parsed.kind !== "browser") throw new Error("Missing browser card")
-  expect(parsed.payload.refusal).toEqual({ status: 400, code: "request_invalid", fault: "user", origin: "local", message: "That page couldn't be read." })
+  expect(parsed.payload.refusal).toEqual({
+    status: 400,
+    code: "request_invalid",
+    fault: "user",
+    origin: "local",
+    message: "That page couldn't be read."
+  })
   expect(JSON.stringify(parsed)).not.toContain("never retained")
 })
 
