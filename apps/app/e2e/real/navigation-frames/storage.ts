@@ -88,13 +88,13 @@ const runWorkerSql = async (
  * through another instance of the package's shipped worker. Lock handoff is
  * retried because a closing document may briefly retain an OPFS access handle.
  */
-export const takeDatabaseControl = async (page: Page, context: BrowserContext): Promise<DatabaseControl> => {
+export const takeDatabaseControl = async (page: Page, context: BrowserContext, capturedWorkerUrl?: string): Promise<DatabaseControl> => {
   const appUrl = page.url()
   const production = process.env.SMITHERS_REAL_E2E_HOST === "production"
   if (production && !await page.evaluate(() => crossOriginIsolated)) {
     throw new Error("Production OPFS preflight failed: the real app document is not cross-origin isolated.")
   }
-  const workerUrl = await databaseWorkerUrl(page)
+  const workerUrl = capturedWorkerUrl ?? await databaseWorkerUrl(page)
   const controlPage = await context.newPage()
   const controlUrl = new URL(production ? "/api/bootstrap" : "/api/health", appUrl).toString()
   const control = await controlPage.goto(controlUrl)
