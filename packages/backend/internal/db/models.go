@@ -650,6 +650,20 @@ type EmailVerificationToken struct {
 	UsedAt    pgtype.Timestamptz `json:"used_at"`
 }
 
+type FactoryIssueClaim struct {
+	ID             string             `json:"id"`
+	RepositoryID   int64              `json:"repository_id"`
+	IssueNumber    int64              `json:"issue_number"`
+	OwnerKind      string             `json:"owner_kind"`
+	OwnerID        string             `json:"owner_id"`
+	ApprovedDigest string             `json:"approved_digest"`
+	Authority      json.RawMessage    `json:"authority"`
+	OperationID    pgtype.UUID        `json:"operation_id"`
+	ClaimedAt      time.Time          `json:"claimed_at"`
+	ReleasedAt     pgtype.Timestamptz `json:"released_at"`
+	ReleaseReason  string             `json:"release_reason"`
+}
+
 type FileDraft struct {
 	ID           string             `json:"id"`
 	RepositoryID int64              `json:"repository_id"`
@@ -689,20 +703,6 @@ type FindingFeedback struct {
 	Useful    bool        `json:"useful"`
 	Note      pgtype.Text `json:"note"`
 	CreatedAt time.Time   `json:"created_at"`
-}
-
-type FactoryIssueClaim struct {
-	ID             string             `json:"id"`
-	RepositoryID   int64              `json:"repository_id"`
-	IssueNumber    int64              `json:"issue_number"`
-	OwnerKind      string             `json:"owner_kind"`
-	OwnerID        string             `json:"owner_id"`
-	ApprovedDigest string             `json:"approved_digest"`
-	Authority      json.RawMessage    `json:"authority"`
-	OperationID    pgtype.UUID        `json:"operation_id"`
-	ClaimedAt      time.Time          `json:"claimed_at"`
-	ReleasedAt     pgtype.Timestamptz `json:"released_at"`
-	ReleaseReason  string             `json:"release_reason"`
 }
 
 type FlowRuntimeHostBinding struct {
