@@ -1,8 +1,8 @@
 /** Real frontmatter discovery, HTTP refusal, fallback, and durable completion. */
 import { expect, it } from "bun:test"
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join, resolve } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import { key, Tui } from "./tmux.ts"
 
 it("runs the next declared model after context overflow", async () => {
@@ -44,6 +44,15 @@ it("runs the next declared model after context overflow", async () => {
     const requests = readFileSync(log, "utf8").trim().split("\n")
     expect(requests.slice(0, 2)).toEqual(["first", "second"])
     expect(tui.screen()).not.toContain("Failed.")
+  } catch (error) {
+    // Preserve actual requests and the production-redacted log before scratch cleanup.
+    const evidence = mkdtempSync(join(dirname(root), "..", "tui-fallback-evidence-"))
+    for (const [name, path] of [["requests.log", log], ["tui.log", join(root, "sessions", "tui.log")]] as const) {
+      if (existsSync(path)) writeFileSync(join(evidence, name), readFileSync(path))
+    }
+    if (tui !== undefined) writeFileSync(join(evidence, "screen.txt"), tui.screen())
+    console.error(`Fallback failure evidence: ${evidence}`)
+    throw error
   } finally {
     await tui?.stop()
     rmSync(root, { recursive: true, force: true })
