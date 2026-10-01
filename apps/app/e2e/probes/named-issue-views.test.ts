@@ -7,6 +7,10 @@ import { join, resolve } from "node:path"
 import { startNativeRendererServer } from "../../src/bun/NativeRendererServer"
 import { startFullBackend } from "../fixtures/full-backend"
 
+// Same boot boundary as e2e/real/support; keep this Bun probe independent of its Playwright fixture extension.
+const BOOTED_SELECTOR =
+  ":is([data-testid=\"transcript\"][aria-busy=\"false\"], [data-testid^=\"tab-body-\"]:not([hidden]))"
+
 // Actual self-hosted first owner, Git repository, Go/PostgreSQL and renderer.
 // No response interception, external account or configured model is involved.
 test("keyboard selection reads every filtered named-view page and survives reload", async () => {
@@ -106,7 +110,8 @@ test("keyboard selection reads every filtered named-view page and survives reloa
       labels: ["Bug"]
     })
     await api(`/api/repos/${repo}/issues/${closed.number}`, "PATCH", { state: "closed" })
-    renderer = startNativeRendererServer(dist, backend.origin, backend.token)
+    renderer = startNativeRendererServer(dist, backend.origin)
+    await backend.signIn(renderer.origin)
     browser = await chromium.launch({ headless: true })
     const page = await browser.newPage()
     const pages: Array<
@@ -131,8 +136,10 @@ test("keyboard selection reads every filtered named-view page and survives reloa
       }
     })
     await page.goto(`${renderer.origin}/${repo}`)
+    await browserExpect(page.locator(BOOTED_SELECTOR).first()).toBeAttached()
     const input = page.getByTestId("composer-input")
-    if (!await input.isVisible()) await page.keyboard.press("Control+k")
+    if (!await input.isVisible()) await page.keyboard.press("ControlOrMeta+k")
+    await browserExpect(input).toBeVisible()
     await input.fill(`/issues.list all ${repo}`)
     await input.press("Enter")
     const card = page.getByTestId("issue-list").last()
@@ -166,6 +173,7 @@ test("keyboard selection reads every filtered named-view page and survives reloa
     expect(pages[1]!.cursor).toBeTruthy()
     expect(pages[1]!.link).toBe(`</api/repos/${repo}/issues?limit=100&view=bugs>; rel="first"`)
     await page.reload()
+    await browserExpect(page.locator(BOOTED_SELECTOR).first()).toBeAttached()
     const restored = page.getByTestId("issue-list").last()
     await browserExpect(restored.getByRole("button", { name: "Open bugs", exact: true })).toHaveAttribute(
       "aria-pressed",
