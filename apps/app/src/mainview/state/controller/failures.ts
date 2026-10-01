@@ -372,6 +372,7 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
      */
     if (outcome.refusal !== undefined) {
       switch (outcome.refusal.kind) {
+        case "sign-in-required":
         case "unknown-flag":
           ctx.store.dispatch({ type: "message.appended", actor: "system", text: outcome.error })
           return

@@ -18,6 +18,8 @@ export type AppTaggedFailure =
   | RepositorySignInRequired
   | SweepRequestTooLargeError
 
+export const SIGN_IN_REQUIRED_COPY = { fault: "user", sentence: "Sign in to continue.", actions: ["sign-in"] } satisfies UserFailureCopy
+
 const REFUSAL_ACTIONS: ReadonlySet<string> = new Set<UserFailureAction>(["retry", "sign-in"])
 
 /*
@@ -29,7 +31,7 @@ const clientRefusalCopy = (failure: ApplicationClientError): UserFailureCopy => 
   const signIn = failure.code === "auth-missing" || failure.code === "unauthenticated"
   return {
     fault: failure.refusal.fault,
-    sentence: signIn ? "Sign in to continue." : copy.lead,
+    sentence: signIn ? SIGN_IN_REQUIRED_COPY.sentence : copy.lead,
     actions: signIn ? ["sign-in"] : copy.doors.filter((door): door is RefusalDoor & UserFailureAction => REFUSAL_ACTIONS.has(door))
   }
 }
@@ -37,7 +39,7 @@ const clientRefusalCopy = (failure: ApplicationClientError): UserFailureCopy => 
 export const APP_FAILURE_COPY: UserFailureRegistry<AppTaggedFailure> = {
   ...STATE_FAILURE_COPY,
   ApplicationClientError: clientRefusalCopy,
-  RepositorySignInRequired: { fault: "user", sentence: "Sign in to continue.", actions: ["sign-in"] },
+  RepositorySignInRequired: SIGN_IN_REQUIRED_COPY,
   SweepRequestTooLargeError: {
     fault: "user",
     sentence: "This conversation is too large to summarize. Nothing was cleared.",

@@ -10,6 +10,7 @@
  * nowhere stays `unknown-command`.
  */
 import { createCommandRegistry } from "./Commands"
+import { RepositorySignInRequired } from "../state/seams/SeamContext"
 import { lostActRefusal } from "../state/BrowserWriteFailure"
 import type { CommandActions } from "./Flows"
 import { Effect } from "effect"
@@ -189,6 +190,34 @@ test("app flows publish returned refusals, and a thrown host error's class but n
   const full = await invokeStartupRecovery(make(() => { throw Object.assign(new Error("The quota has been exceeded."), { name: "QuotaExceededError" }) }))
   expect(full.message).toBe(`Flow test failed: ${lostActRefusal(Object.assign(new Error("x"), { name: "QuotaExceededError" }))}`)
   expect(JSON.stringify(full)).not.toContain("quota")
+})
+
+test("Wiki permission identity survives the app binding, while spoofed and unknown failures stay opaque and retry can succeed", async () => {
+  let failure: unknown = new RepositorySignInRequired("PRIVATE_PERMISSION_DETAIL")
+  let calls = 0
+  const actions = {
+    repositoryFlows: () => undefined,
+    knownRepositories: () => new Set(["owner/repo"]),
+    snapshot: () => ({ surface: "chat", typing: false, hasConnectors: true, admin: false, signedOut: false }),
+    noteCommandRun: () => {},
+    traceFlow: () => {},
+    refreshWiki: async () => { calls++; if (failure !== undefined) throw failure; return { value: "Requested" } }
+  } satisfies Partial<CommandActions>
+  const commands = createCommandRegistry(actions as unknown as CommandActions)
+  expect(await commands.run("wiki.create", "owner/repo")).toEqual({
+    status: "failed", error: "Sign in to continue.", refusal: { kind: "sign-in-required" }
+  })
+  for (const cause of [new Error("PRIVATE_HOST_DETAIL"), { _tag: "RepositorySignInRequired", message: "PRIVATE_HOST_DETAIL" }]) {
+    failure = cause
+    const result = await commands.run("wiki.create", "owner/repo")
+    expect(result.status).toBe("failed")
+    expect(result).not.toHaveProperty("refusal")
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_HOST_DETAIL")
+    expect(JSON.stringify(result)).not.toContain("Sign in to continue.")
+  }
+  failure = undefined
+  expect(await commands.run("wiki.create", "owner/repo")).toEqual({ status: "executed", value: "Requested" })
+  expect(calls).toBe(4)
 })
 
 test("app flows retain thrown causes for host error inspection", async () => {
