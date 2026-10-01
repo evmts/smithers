@@ -10,6 +10,7 @@ import { admitSourceRevision } from "../e2e/real/coverage/revision"
 import { MODEL_CREDENTIAL_ENV_PREFIX, MODEL_CREDENTIAL_ORIGIN_SUFFIX, MODEL_TEST_DEADLINE_MS } from "@smthrs/rpc/ConfiguredModel"
 import { sourceRevision } from "./mode-matrix/source-revision"
 import { productionBuild } from "./production-preflight"
+import { realHostCredentialOptions, startRealChatBackend } from "../e2e/real/support/chat-backend"
 
 const appDir = fileURLToPath(new URL("../", import.meta.url))
 const args = process.argv.slice(2)
@@ -28,8 +29,6 @@ const serve = async (): Promise<never> => {
     if (build !== 0) process.exit(build)
   }
   const { startLocalServer } = await import("../src/bun/server")
-  const { darwinKeychain } = await import("../src/bun/CloudAuth")
-  const { MODEL_KEYCHAIN_SERVICE, modelKeychainAccount } = await import("../src/bun/ModelCredentials")
 
   const port = Number(process.env.SMITHERS_REAL_PORT ?? "47321")
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`Invalid SMITHERS_REAL_PORT: ${process.env.SMITHERS_REAL_PORT}`)
@@ -40,27 +39,50 @@ const serve = async (): Promise<never> => {
   await mkdir(join(appDir, "test-results"), { recursive: true })
   await writeFile(logPath, "")
   let server: Awaited<ReturnType<typeof startLocalServer>> | undefined
-  try {
+  let backend: Awaited<ReturnType<typeof startRealChatBackend>> | undefined
+  let requestedStop = false
+  let stopping: Promise<void> | undefined
+  const starting = (async () => {
+    backend = await startRealChatBackend()
+    if (requestedStop) return
+    const credentials = realHostCredentialOptions()
     server = await startLocalServer({
+      env: credentials.env,
+      cloudKeychain: credentials.cloudKeychain,
+      modelKeychain: credentials.modelKeychain,
       port,
       distDir: join(appDir, "dist"),
       home,
       stateDir: join(root, "state"),
       cloudMode: "hybrid",
+      chatBackend: { origin: backend.origin, token: backend.token },
       log: line => { appendFileSync(logPath, `${line}\n`); console.log(line) }
     })
-  } catch (error) {
-    await rm(root, { recursive: true, force: true })
-    throw error
+  })()
+  const stop = (): Promise<void> => {
+    requestedStop = true
+    return stopping ??= (async () => {
+      await starting.catch(() => {})
+      const failures: unknown[] = []
+      for (const release of [
+        () => server?.stop(),
+        () => backend?.stop(),
+        () => rm(root, { recursive: true, force: true })
+      ]) {
+        try { await release() } catch (error) { failures.push(error) }
+      }
+      if (failures.length) throw new AggregateError(failures, "Real host cleanup failed")
+    })()
   }
-
-  let stopping: Promise<void> | undefined
-  const stop = (): Promise<void> => stopping ??= server!.stop().then(async () => {
-    await darwinKeychain().remove(MODEL_KEYCHAIN_SERVICE, modelKeychainAccount(join(root, "state")))
-    await rm(root, { recursive: true, force: true })
-  })
   process.on("SIGINT", () => { void stop().then(() => process.exit(0), () => process.exit(1)) })
   process.on("SIGTERM", () => { void stop().then(() => process.exit(0), () => process.exit(1)) })
+  try { await starting }
+  catch (error) {
+    try { await stop() }
+    catch (cleanup) { throw new AggregateError([error, cleanup], "Real host startup and cleanup failed") }
+    throw error
+  }
+  if (requestedStop) { await stop(); return await new Promise<never>(() => {}) }
   console.log(`[real-e2e] isolated real host listening at http://127.0.0.1:${port}`)
   return await new Promise<never>(() => {})
 }
