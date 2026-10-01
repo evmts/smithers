@@ -1,5 +1,5 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
-import { afterAll, describe, expect, jest, test } from "bun:test"
+import { afterAll, describe, expect, jest, spyOn, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import { pillStatus } from "./CardRenderers"
@@ -104,7 +104,7 @@ describe("the frame pill of a sync-ops card", () => {
   test("a null run state (nothing has answered yet) is never done, and a wire word is never renamed", () => {
     /* Review finding 3: null fell into "done", so a sync that had just started wore a finished pill. */
     expect(pillStatus(syncOpsCard({ runState: null, trigger: "sync started · run 41" }))).toBe("pending")
-    
+
     expect(pillStatus(syncOpsCard({ runState: "pending" }))).toBe("pending")
     expect(pillStatus(syncOpsCard({ runState: "running" }))).toBe("running")
     expect(pillStatus(syncOpsCard({ runState: "completed" }))).toBe("completed")
@@ -142,50 +142,77 @@ describe("ConnectorSetupCardBody — the GitHub card", () => {
   })
 
   test("the rate-limit line follows the ADR: a reset ahead reads as time ahead, never as an age", () => {
-    /* Review finding 2: the age label clamped a future reset to "resets just now". */
-    const ahead = renderSetup(
-      setupCard({ connector: "github", steps: [], rateLimit: { limit: 5000, remaining: 0, resetAt: minutesFromNow(12) } })
-    )
-    expect(ahead.host.textContent).toContain("GitHub rate limit reached · 0 of 5,000 · resets in 12 min · Retry after")
-    expect(ahead.host.textContent).not.toContain("just now")
+    const clock = spyOn(Date, "now").mockReturnValue(new Date(2026, 8, 30, 12, 0).getTime())
+    try {
+      /* Review finding 2: the age label clamped a future reset to "resets just now". */
+      const ahead = renderSetup(
+        setupCard({ connector: "github", steps: [], rateLimit: { limit: 5000, remaining: 0, resetAt: minutesFromNow(12) } })
+      )
+      expect(ahead.host.textContent).toContain("GitHub rate limit reached · 0 of 5,000 · resets in 12 min · Retry after")
+      expect(ahead.host.textContent).not.toContain("just now")
 
-    const later = renderSetup(
-      setupCard({ connector: "github", steps: [], rateLimit: { limit: 5000, remaining: 0, resetAt: minutesFromNow(90) } })
-    )
-    expect(later.host.textContent).toMatch(/resets at \d{1,2}:\d{2}/)
+      const later = renderSetup(
+        setupCard({ connector: "github", steps: [], rateLimit: { limit: 5000, remaining: 0, resetAt: minutesFromNow(90) } })
+      )
+      expect(later.host.textContent).toMatch(/resets at \d{1,2}:\d{2}/)
 
-    const behind = renderSetup(
-      setupCard({ connector: "github", steps: [], rateLimit: { limit: 5000, remaining: 0, resetAt: minutesFromNow(-4) } })
-    )
-    expect(behind.host.textContent).toContain("reset 4 min ago")
+      const behind = renderSetup(
+        setupCard({ connector: "github", steps: [], rateLimit: { limit: 5000, remaining: 0, resetAt: minutesFromNow(-4) } })
+      )
+      expect(behind.host.textContent).toContain("reset 4 min ago")
+    } finally {
+      clock.mockRestore()
+    }
+  })
+
+  test("a reset after midnight names the next day and clock", () => {
+    const clock = spyOn(Date, "now").mockReturnValue(new Date(2026, 8, 30, 23, 0).getTime())
+    try {
+      const resetAt = minutesFromNow(90)
+      const reset = new Date(resetAt)
+      const later = renderSetup(
+        setupCard({ connector: "github", steps: [], rateLimit: { limit: 5000, remaining: 0, resetAt } })
+      )
+      const day = reset.toLocaleDateString([], { month: "short", day: "numeric" })
+      const time = reset.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+      expect(later.host.textContent).toContain(`resets at ${day} ${time} · Retry after`)
+      expect(later.host.textContent).not.toContain(`resets at ${time} · Retry after`)
+    } finally {
+      clock.mockRestore()
+    }
   })
 
   test("a refused call holds Re-check and Reconcile until the reset, with the time on them", () => {
-    /* Review finding 5: every retry stayed clickable through the window, re-posting and re-failing. */
-    const resetAt = minutesFromNow(12)
-    const held = renderSetup(
-      setupCard({ connector: "github", steps: [], rateLimit: { limit: 5000, remaining: 0, resetAt }, error: "GitHub rate limit exhausted" })
-    )
-    const clock = new Date(resetAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
-    const recheck = buttonNamed(held.host, "Re-check")
-    const reconcile = buttonNamed(held.host, "Reconcile")
-    expect(recheck.disabled).toBe(true)
-    expect(reconcile.disabled).toBe(true)
-    expect(recheck.textContent).toContain(`Re-check after ${clock}`)
-    expect(reconcile.textContent).toContain(`Reconcile after ${clock}`)
-    flushSync(() => recheck.click())
-    expect(held.commands).toEqual([])
+    const now = spyOn(Date, "now").mockReturnValue(new Date(2026, 8, 30, 12, 0).getTime())
+    try {
+      /* Review finding 5: every retry stayed clickable through the window, re-posting and re-failing. */
+      const resetAt = minutesFromNow(12)
+      const held = renderSetup(
+        setupCard({ connector: "github", steps: [], rateLimit: { limit: 5000, remaining: 0, resetAt }, error: "GitHub rate limit exhausted" })
+      )
+      const clock = new Date(resetAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+      const recheck = buttonNamed(held.host, "Re-check")
+      const reconcile = buttonNamed(held.host, "Reconcile")
+      expect(recheck.disabled).toBe(true)
+      expect(reconcile.disabled).toBe(true)
+      expect(recheck.textContent).toContain(`Re-check after ${clock}`)
+      expect(reconcile.textContent).toContain(`Reconcile after ${clock}`)
+      flushSync(() => recheck.click())
+      expect(held.commands).toEqual([])
 
-    /* A low-but-positive budget shows the line and holds nothing; a reset behind us holds nothing. */
-    const low = renderSetup(
-      setupCard({ connector: "github", steps: [], rateLimit: { limit: 5000, remaining: 40, resetAt } })
-    )
-    expect(buttonNamed(low.host, "Re-check").disabled).toBe(false)
-    const passed = renderSetup(
-      setupCard({ connector: "github", steps: [], rateLimit: { limit: 5000, remaining: 0, resetAt: minutesFromNow(-1) } })
-    )
-    expect(buttonNamed(passed.host, "Re-check").disabled).toBe(false)
-    expect(rateLimitHeldUntil({ limit: 5000, remaining: 0, resetAt: null })).toBeNull()
+      /* A low-but-positive budget shows the line and holds nothing; a reset behind us holds nothing. */
+      const low = renderSetup(
+        setupCard({ connector: "github", steps: [], rateLimit: { limit: 5000, remaining: 40, resetAt } })
+      )
+      expect(buttonNamed(low.host, "Re-check").disabled).toBe(false)
+      const passed = renderSetup(
+        setupCard({ connector: "github", steps: [], rateLimit: { limit: 5000, remaining: 0, resetAt: minutesFromNow(-1) } })
+      )
+      expect(buttonNamed(passed.host, "Re-check").disabled).toBe(false)
+      expect(rateLimitHeldUntil({ limit: 5000, remaining: 0, resetAt: null })).toBeNull()
+    } finally {
+      now.mockRestore()
+    }
   })
 })
 
@@ -359,36 +386,41 @@ test("a completed import without a workspace receipt still offers the next repos
 
 describe("RepoImportCardBody — the rate-limited retry", () => {
   test("a structured 429 holds Try again until the reset, with the time on it", () => {
-    const resetAt = minutesFromNow(12)
-    const commands: Array<{ name: string; args?: string }> = []
-    const { host } = render(
-      <RepoImportCardBody
-        card={{
-          id: "repo-import-will/flows",
-          kind: "repo-import",
-          title: "Import · will/flows",
-          status: "error",
-          createdAt: 0,
-          ordinal: 0,
-          payload: {
-            repo: "will/flows",
-            jobId: null,
-            phase: "failed",
-            detail: "GitHub rate limit exhausted",
-            rateLimit: { limit: 5000, remaining: 0, resetAt }
-          }
-        }}
-        onRunCommand={(name, args) => commands.push({ name, args })}
-      />
-    )
+    const now = spyOn(Date, "now").mockReturnValue(new Date(2026, 8, 30, 12, 0).getTime())
+    try {
+      const resetAt = minutesFromNow(12)
+      const commands: Array<{ name: string; args?: string }> = []
+      const { host } = render(
+        <RepoImportCardBody
+          card={{
+            id: "repo-import-will/flows",
+            kind: "repo-import",
+            title: "Import · will/flows",
+            status: "error",
+            createdAt: 0,
+            ordinal: 0,
+            payload: {
+              repo: "will/flows",
+              jobId: null,
+              phase: "failed",
+              detail: "GitHub rate limit exhausted",
+              rateLimit: { limit: 5000, remaining: 0, resetAt }
+            }
+          }}
+          onRunCommand={(name, args) => commands.push({ name, args })}
+        />
+      )
 
-    const clock = new Date(resetAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
-    const retry = buttonNamed(host, "Try again")
-    expect(retry.disabled).toBe(true)
-    expect(retry.textContent).toContain(`Try again after ${clock}`)
-    expect(host.textContent).toContain("resets in 12 min")
-    flushSync(() => retry.click())
-    expect(commands).toEqual([])
+      const clock = new Date(resetAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+      const retry = buttonNamed(host, "Try again")
+      expect(retry.disabled).toBe(true)
+      expect(retry.textContent).toContain(`Try again after ${clock}`)
+      expect(host.textContent).toContain("resets in 12 min")
+      flushSync(() => retry.click())
+      expect(commands).toEqual([])
+    } finally {
+      now.mockRestore()
+    }
   })
 })
 
@@ -553,7 +585,7 @@ describe("SyncOpsCardBody", () => {
     /* ADR 0005's header line, with the count plue now states. */
     expect(host.textContent).toContain("behind GitHub · 3 refs · 1 failed")
     expect(host.textContent).toContain("remote rejected: non-fast-forward")
-    
+
     click(host, "Retry")
     expect(commands).toEqual([{ name: "github.mirror.retry-ref", args: '{"ref":"refs/heads/wip","repo":"will/smithers"}' }])
   })
