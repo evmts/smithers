@@ -207,9 +207,9 @@ authenticatedTest("workspace.rename persists the local session name across reloa
   await finishFirstVisit(page)
   await enableVerboseEvidence(page)
   const name = `Workspace ${Date.now()}`
-  await command(page, `/workspace.rename ${JSON.stringify(name)}`)
+  await command(page, `/workspace.rename ${name}`)
   await closeComposer(page)
-  await expectFlowOutcome(page, "workspace.rename", JSON.stringify(name), "executed")
+  await expectFlowOutcome(page, "workspace.rename", name, "executed")
   const first = await takeDatabaseControl(page, context)
   let after: Awaited<ReturnType<typeof takeDatabaseControl>> | undefined
   try {
@@ -249,9 +249,14 @@ authenticatedTest("box.list reports the exact owned box without changing reposit
       await enableVerboseEvidence(appPage)
       const read = await realApi(appPage, request, "GET", `${repo.path}/workspaces`)
       expect(read.status()).toBe(200)
-      const rows = await read.json() as ReadonlyArray<{ id: string; name: string; status: string; repo_full_name: string; target_bookmark: string | null }>
+      const repository = await realApi(appPage, request, "GET", repo.path)
+      expect(repository.status()).toBe(200)
+      const repositoryRow = await repository.json() as { id: number; full_name: string }
+      expect(repositoryRow.full_name).toBe(repo.fullName)
+      expect(repositoryRow.id).toBeGreaterThan(0)
+      const rows = await read.json() as ReadonlyArray<{ id: string; name: string; status: string; repository_id: number; target_bookmark: string | null }>
       expect(rows).toHaveLength(1)
-      expect(rows[0]).toMatchObject({ id, status: "running", repo_full_name: repo.fullName })
+      expect(rows[0]).toMatchObject({ id, status: "running", repository_id: repositoryRow.id })
       const row = rows[0]!
       expect(row.name).not.toBe("")
       const listing = `${row.name} (${id}) · ${row.status} · ${repo.fullName}${row.target_bookmark === null ? "" : `@${row.target_bookmark}`}`
@@ -264,7 +269,7 @@ authenticatedTest("box.list reports the exact owned box without changing reposit
       const independent = await realApi(appPage, request, "GET", `${repo.path}/workspaces/${encodeURIComponent(id)}`)
       expect(independent.status()).toBe(200)
       expect(await independent.json()).toMatchObject(row)
-      await attachJson(testInfo, "owned-box-public-list", { repo: repo.fullName, rows, listing, originalUrl })
+      await attachJson(testInfo, "owned-box-public-list", { repo: repo.fullName, repositoryRow, rows, listing, originalUrl })
       control = await takeDatabaseControl(appPage, context)
       const sessions = await control.execute("SELECT json_extract(value, '$.activeRepoKey') AS selectedRepo FROM smithers_collection_rows WHERE collection_id = 'app-sessions' AND row_key = 's:main'")
       expect(sessions).toEqual([{ selectedRepo: repo.fullName }])
