@@ -17,7 +17,7 @@ export async function prepareNativeProbeAssets() {
   const root = mkdtempSync(join(tmpdir(), "smithers-native-probe-assets-"))
   const buildEnv = { PATH: process.env.PATH, HOME: process.env.HOME, GOTELEMETRY: "off" }
   const run = async (args: string[]) => {
-    const child = Bun.spawn(args, { cwd: repository, env: buildEnv, stdout: "pipe", stderr: "pipe" })
+    const child = Bun.spawn(args, { cwd: repository, env: { ...buildEnv, ...(args[0] === "go" ? { SDKROOT: process.env.SDKROOT } : {}) }, stdout: "pipe", stderr: "pipe" })
     const [stdout, stderr, code] = await Promise.all([
       new Response(child.stdout).text(),
       new Response(child.stderr).text(),
