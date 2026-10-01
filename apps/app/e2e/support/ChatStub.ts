@@ -1,3 +1,4 @@
+import { fixtureProtocolId } from "../real/support/values"
 import type { StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import type { CloudAgent } from "../../src/bun/CloudAgent"
@@ -37,7 +38,8 @@ const toolCall = (request: StartAgentTurnRequest): AgentTurnFrame | undefined =>
   const match = STUB_TOOL.exec(lastUserMessage(request).trim())
   if (match === null) return undefined
   const [, name, args] = match
-  return { runId: request.runId, type: "tool_call", call_id: `stub-call-${request.runId}`, name: "commands",
+  const callId = fixtureProtocolId(`stub-call-${request.runId}`)
+  return { runId: request.runId, type: "tool_call", call_id: callId, name: "commands",
     arguments: JSON.stringify({ action: "execute", name, ...(args === undefined ? {} : { args }) }) }
 }
 
