@@ -1,3 +1,4 @@
+import { pageText, paginationCursor, paginationLimits } from "@smthrs/kernel/HttpPagination"
 import { invalidatePreparedViews,preparedView,type ViewAction,type ViewResult } from "../PreparedView"
 import { readRepositoryDetail } from "../RepositoryReadReceipts"
 import { readRepositoryListError,repositoryListRead,type RepositoryForm } from "./RepositoryListSeam"
@@ -615,17 +616,21 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     const repo = target.repo
     // A saved view carries its own state and addresses Smithers' own tracker (the API refuses view with state).
     const named = view === undefined || view === "" ? undefined : view
-    return { id: `issues-${repo}`, title: `Issues · ${repo}`, key: JSON.stringify(["issues", repo, filter, kind, named ?? null]), pane: repo, read: async (): Promise<ViewResult> => {
+    return { id: `issues-${repo}`, title: `Issues · ${repo}`, key: JSON.stringify(["issues", repo, filter, kind, named ?? null]), pane: repo, read: async (current): Promise<ViewResult> => {
       // Plue 422s unknown states ("all" included) — omit the param to list every state.
       const search = new URLSearchParams()
-      if (named !== undefined) search.set("view", named)
+      if (named !== undefined) { search.set("view", named); search.set("limit", "100") }
       else if (filter !== "all") search.set("state", filter)
       // Conversations are owner-private and excluded from the plain list; ask for them by kind (chat = issues contract; #2111).
       if (kind === "conversation") search.set("kind", "chat")
       const query = search.size === 0 ? "" : `?${search}`
+      const ownerCurrent = captureCloudOwner(ctx, false)
+      const requestUrl = `${issuesPath(repo)}${query}`
+      const requestAuthority = new URL(ctx.baseUrl || "/", globalThis.location?.origin ?? "https://pagination.invalid")
+      const currentUrl = new URL(requestUrl, requestAuthority)
       let response: Response
       try {
-        response = await ctx.http(`${issuesPath(repo)}${query}`)
+        response = await ctx.http(requestUrl)
       } catch (error) {
         return unreachable(`list issues for ${repo}`, error)
       }
@@ -638,9 +643,40 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
         if (response.status === 401) ctx.dispatch({ type: "card.removed", actor: ctx.actor(), id: `issues-${repo}` })
         return readRepositoryListError(response, `Listing issues for ${repo} failed (${response.status})`)
       }
-      const body: unknown = await response.json().catch(() => null)
+      let bytes = 0
+      const readPage = async (response: Response): Promise<unknown> => {
+        const page = await pageText(response, paginationLimits.bytes - bytes)
+        bytes += page.bytes
+        return JSON.parse(page.text) as unknown
+      }
+      let body: unknown
+      try { body = named === undefined ? await response.json() : await readPage(response) }
+      catch (error) { return unreachable(`list issues for ${repo}`, error) }
       if (!Array.isArray(body)) {
         return `The backend answered issues for ${repo} with an unreadable payload`
+      }
+      if (named !== undefined) {
+        const seen = new Set<string>()
+        let page = 1
+        try {
+          while (true) {
+            if (!ownerCurrent() || !current()) return "Loading was interrupted. Open this view again to retry."
+            if (body.length > paginationLimits.items || bytes > paginationLimits.bytes) throw new Error("Issue view exceeds the collection limit")
+            const cursor = paginationCursor(response.headers, currentUrl, { preserveQuery: true })
+            if (cursor === "") break
+            if (page >= paginationLimits.pages || seen.has(cursor)) throw new Error("Issue view pagination did not finish")
+            seen.add(cursor)
+            const next = new URLSearchParams(search)
+            next.set("cursor", cursor)
+            response = await ctx.http(`${issuesPath(repo)}?${next}`)
+            if (!ownerCurrent() || !current()) return "Loading was interrupted. Open this view again to retry."
+            if (!response.ok) return readRepositoryListError(response, `Listing the ${named} view of ${repo} failed (${response.status})`)
+            const rows = await readPage(response)
+            if (!Array.isArray(rows)) throw new Error("Issue view returned an unreadable page")
+            body.push(...rows)
+            page += 1
+          }
+        } catch (error) { return unreachable(`list issues for ${repo}`, error) }
       }
       const native = body.flatMap((entry) => {
         const parsed = parseListRow(entry)
