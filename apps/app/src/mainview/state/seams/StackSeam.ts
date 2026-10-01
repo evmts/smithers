@@ -36,7 +36,7 @@ import { resolveTargetRepo } from "../RepoContext"
 import type { CloudFailure } from "./CloudClient"
 import { CloudAnswerUnusable, cloudFailure, cloudUnreachable, createCloudClient } from "./CloudClient"
 import type { SeamContext } from "./SeamContext"
-import { readResult } from "./SeamContext"
+import { readResult, RepositorySignInRequired } from "./SeamContext"
 
 type StackCard = Extract<Card, { kind: "stack" }>
 type Failure = NonNullable<StackCard["payload"]["failure"]>
@@ -423,7 +423,7 @@ export const createStackSeam = (
   /* ---- the acts ---- */
 
   const target = (repoArg?: string): { readonly repo: string } | { readonly error: string } => {
-    if (login() === null) return { error: "Sign in to see the history." }
+    if (login() === null) throw new RepositorySignInRequired()
     return resolveTargetRepo(ctx.store, repoArg)
   }
   const summary = (stack: MythicalStack): string => {
