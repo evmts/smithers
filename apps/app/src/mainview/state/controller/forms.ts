@@ -707,7 +707,10 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
      */
     const yielded = claimSpokenLine(collections, error, saidBefore, claimedLines)
     forgetVanishedClaims(collections, claimedLines)
-    await patch(current, yielded ? { ...settledPayload, submitting: false } : { ...settledPayload, submitting: false, error, errorKind: "run" }, "error")
+    await patch(current, yielded ? { ...settledPayload, submitting: false } : {
+      ...settledPayload, submitting: false, error,
+      ...(outcome.status === "failed" && outcome.refusal !== undefined ? {} : { errorKind: "run" as const })
+    }, "error")
     // The card carries the refusal for the human; the agent reads it as its result.
     return actor === "smithers" ? error : undefined
   }
