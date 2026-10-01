@@ -7,9 +7,10 @@ import {
   type CorpusCase,
   DETERMINISTIC,
   DETERMINISTIC_TOTAL,
-  fit,
   type Fit,
+  fit,
   LANGUAGES,
+  normalize,
   projectSimplex,
   split
 } from "../register-repository/calibration/fit.ts"
@@ -69,10 +70,15 @@ test("fitted anchors reproduce the labels on held-out cases", () => {
   const score = (entry: CorpusCase) =>
     DETERMINISTIC.reduce((sum, id) => {
       const anchor = (artifact.strata[`${entry.language}/${entry.band}`] ?? artifact.pooled)[id]
-      return sum + artifact.weights[id] * Math.min(1, entry.values[id] / anchor)
+      const value = entry.values[id]
+      assert.ok(value !== null, `synthetic ${entry.id} ${id} must be measured`)
+      return sum + artifact.weights[id] * Math.min(1, value / anchor)
     }, 0)
   const recomputed = auroc(
-    heldOut.filter((entry) => entry.label !== "hybrid").map((entry) => ({ score: score(entry), positive: entry.label === "agent" }))
+    heldOut.filter((entry) => entry.label !== "hybrid").map((entry) => ({
+      score: score(entry),
+      positive: entry.label === "agent"
+    }))
   )
   assert.ok(Math.abs(recomputed - artifact.auroc.heldOut) <= TOLERANCE)
 })
@@ -93,4 +99,64 @@ test("helpers: simplex projection, AUROC ties and split", () => {
   const { train, heldOut } = split(corpus.cases)
   assert.equal(train.length + heldOut.length, corpus.cases.length)
   assert.ok(heldOut.every((entry) => !train.includes(entry)))
+})
+
+test("normalization keeps zero-anchor, missing and positive measurements finite", () => {
+  const pooled = { duplicates: 0, churn: 2, lexicon: 0, stubs: 0, "dead-code": 0 }
+  const entry: CorpusCase = {
+    id: "zero-boundary",
+    language: "go",
+    band: "medium",
+    label: "agent",
+    values: {
+      duplicates: 0,
+      churn: 1,
+      lexicon: null,
+      stubs: 0,
+      "dead-code": null
+    }
+  }
+  assert.deepEqual(normalize(entry, {}, pooled), [0, 0.5, 0, 0, 0])
+  assert.deepEqual(
+    normalize({ ...entry, values: { ...entry.values, duplicates: 2, churn: 4, stubs: 1 } }, {}, pooled),
+    [1, 1, 0, 1, 0]
+  )
+  const stratum = { ...pooled, duplicates: 4, stubs: 2 }
+  assert.deepEqual(
+    normalize({ ...entry, values: { ...entry.values, duplicates: 2, stubs: 1 } }, { "go/medium": stratum }, pooled),
+    [0.5, 0.5, 0, 0.5, 0]
+  )
+})
+
+test("zero human anchors yield a finite fitted simplex and lossless JSON artifact", () => {
+  const cases: CorpusCase[] = []
+  for (const label of ["human", "agent", "hybrid"] as const) {
+    for (let index = 0; index < 6; index++) {
+      const value = label === "human" ? 0 : label === "agent" ? 1 : 0.5
+      cases.push({
+        id: `go-small-${label}-${index}`,
+        language: "go",
+        band: "small",
+        label,
+        values: {
+          duplicates: value,
+          churn: value,
+          lexicon: value,
+          stubs: value,
+          "dead-code": null
+        }
+      })
+    }
+  }
+  const fitted = fit(cases)
+  for (const id of DETERMINISTIC) {
+    assert.equal(Number.isFinite(fitted.weights[id]), true, id)
+    assert.ok(fitted.weights[id] >= 0, id)
+  }
+  assert.ok(
+    Math.abs(Object.values(fitted.weights).reduce((sum, value) => sum + value, 0) - DETERMINISTIC_TOTAL) <= TOLERANCE
+  )
+  assert.equal(Number.isFinite(fitted.scale), true)
+  assert.equal(Number.isFinite(fitted.bias), true)
+  assert.deepEqual(JSON.parse(JSON.stringify(fitted)), fitted)
 })
