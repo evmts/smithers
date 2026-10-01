@@ -7,6 +7,7 @@
  * `Projection.Snapshot` request streams once it is sent over the socket.
  */
 import * as Fs from "node:fs"
+import { createRequire } from "node:module"
 import * as Path from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
@@ -93,8 +94,18 @@ const srcSources = (): ReadonlyArray<string> =>
     .map((file) => Path.join("src", file))
 
 describe("the package manifest and source references", () => {
-  it("installs a runtime dependency only when src imports it", () => {
-    const manifest = JSON.parse(read("package.json")) as { readonly dependencies: Record<string, string> }
+  it("installs exactly source imports and pinned private-adapter runtime dependencies", () => {
+    type Manifest = {
+      readonly name: string
+      readonly version: string
+      readonly dependencies?: Record<string, string>
+      readonly devDependencies?: Record<string, string>
+      readonly peerDependencies?: Record<string, string>
+      readonly optionalDependencies?: Record<string, string>
+      readonly peerDependenciesMeta?: Record<string, { readonly optional?: boolean }>
+      readonly smthrs?: { readonly privateEffectAdapters?: ReadonlyArray<string> }
+    }
+    const manifest = JSON.parse(read("package.json")) as Manifest
     // A type-only import is erased at build time and needs no installed package.
     const imported = new Set(
       srcSources().flatMap((file) =>
@@ -105,7 +116,48 @@ describe("the package manifest and source references", () => {
         ].map((match) => match[1] as string)
       )
     )
-    expect(Object.keys(manifest.dependencies).filter((name) => !imported.has(name))).toEqual([])
+    const adapters = ["@effect/platform-bun", "@effect/platform-node", "@effect/platform-node-shared"]
+    const effectVersion = "4.0.0-rc.115"
+    const runtime = { undici: "8.10.2", redis: "6.2.1", "@types/ws": "8.18.1", ws: "8.21.3" }
+    expect(manifest.smthrs?.privateEffectAdapters).toEqual(adapters)
+    expect(manifest.peerDependencies?.effect).toBe(effectVersion)
+    expect(manifest.dependencies?.effect).toBeUndefined()
+
+    // The bundled adapters still use these ordinary installed packages. Read
+    // their real manifests independently of the build helper, and pin the
+    // whole closure so an extra package or a version range cannot pass.
+    const require = createRequire(Path.join(packageRoot, "package.json"))
+    const externals = new Map<string, string>()
+    for (const name of adapters) {
+      expect(manifest.dependencies?.[name]).toBeUndefined()
+      expect(manifest.peerDependencies?.[name]).toBeUndefined()
+      expect(manifest.optionalDependencies?.[name]).toBeUndefined()
+      expect(manifest.devDependencies?.[name]).toBe(effectVersion)
+      const adapterPath = require.resolve(`${name}/package.json`)
+      const adapter = require(adapterPath) as Manifest
+      expect(adapter.name).toBe(name)
+      expect(adapter.version).toBe(effectVersion)
+      const own = createRequire(adapterPath)
+      for (const dependency of Object.keys({ ...adapter.dependencies, ...adapter.peerDependencies })) {
+        if (
+          adapters.includes(dependency) || dependency === "effect" ||
+          adapter.peerDependenciesMeta?.[dependency]?.optional === true
+        ) continue
+        const selected = own(`${dependency}/package.json`) as Manifest
+        expect((require(`${dependency}/package.json`) as Manifest).version).toBe(selected.version)
+        externals.set(dependency, selected.version)
+      }
+    }
+    expect(Object.fromEntries(externals)).toEqual(runtime)
+    for (const [name, version] of Object.entries(runtime)) {
+      expect(manifest.dependencies?.[name]).toBe(version)
+    }
+    const direct = [...imported].filter((name) =>
+      !adapters.includes(name) &&
+      manifest.peerDependencies?.[name] === undefined
+    )
+    expect(Object.keys(manifest.dependencies ?? {}).sort()).toEqual([...direct, ...Object.keys(runtime)].sort())
+    for (const name of direct) expect(manifest.dependencies?.[name]).toBe(manifest.version)
   })
 
   it("cites only docs files that exist", () => {
