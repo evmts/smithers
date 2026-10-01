@@ -13152,6 +13152,8 @@ The Cloud CI bootstrap keeps an installed Node release when its full version mee
 
 `CiToolchain.Postgres` puts `initdb` and `pg_ctl` on `PATH`: PGDG `postgresql-18` on Linux and Homebrew `postgresql@18` on macOS. Windows uses the runner image's own server when it is PostgreSQL 17 or later.
 
+`CiToolchain.PlaywrightChromium({ cwd: "apps/tui" })` provisions Chromium from that package's pinned Playwright CLI. Add it as `Needs({ playwrightChromium })` to install after the frozen pnpm workspace and before CI gates. It accepts only a relative package directory, requires pnpm outside Nix, and needs permission to install missing system libraries.
+
 `cachePackageStore` defaults to `true`. Node setup restores the pnpm store when the workspace declares pnpm. For Bun workspaces, Node setup omits the package-store cache because `actions/setup-node` does not cache Bun. Set `cachePackageStore: false` to disable package-store caching.
 
 ```ts
