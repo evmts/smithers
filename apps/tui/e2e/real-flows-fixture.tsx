@@ -1,9 +1,7 @@
 /**
- * PTY host whose flow port is the real one: `FlowControl.make` over the
- * working directory's `flows/`, launching durable runs on the native control
- * plane. Only the network edges are local: a subscription pool that
- * answers every prompt flow with one cell, and a judge that passes the
- * completion. Chat is a fixed reply, since chat is not under test here.
+ * Real production worker host and flow control over the project's flows.
+ * The loopback provider returns declared cells and typed judge answers.
+ * Coordinator chat stays fixed so it remains independently usable.
  */
 import { createCliRenderer } from "@opentui/core"
 import { createRoot } from "@opentui/react"
@@ -66,7 +64,8 @@ Object.assign(process.env, {
   NO_PROXY: "*"
 })
 const environment = { ...process.env } as Record<string, string>
-const approvals = Host.make({ cwd: process.cwd(), environment, approvals: "all" }).approvals!
+const workerHost = Host.make({ cwd: process.cwd(), environment, approvals: "all" })
+const approvals = workerHost.approvals!
 const flows = FlowControl.make({ cwd: process.cwd(), environment, approvals })
 const host: Host.Host = {
   cwd: process.cwd(),
@@ -74,9 +73,11 @@ const host: Host.Host = {
   approvals,
   dispose: async () => {
     await flows.dispose()
+    await workerHost.dispose()
     model.stop()
   },
   run: (input) => {
+    if (input.role === "worker") return workerHost.run(input)
     queueMicrotask(() =>
       input.onEvent(
         {
