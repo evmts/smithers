@@ -1,0 +1,8 @@
+import { readFileSync } from "node:fs";
+import { recordRepository } from "/private/tmp/smithers-registration-inventory-3071/flows/register-repository/calibration/record.ts";
+
+const manifest = JSON.parse(readFileSync("/private/tmp/smithers-registration-inventory-3071/flows/register-repository/calibration/manifest.json", "utf8"));
+const entry = manifest.entries.find((row) => row.id === process.argv[2]);
+if (!entry) throw new Error("Unknown manifest row");
+const result = await recordRepository(entry, process.argv[3]);
+process.stdout.write(JSON.stringify(result) + "\n");
