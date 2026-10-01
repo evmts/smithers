@@ -54,8 +54,7 @@ recording. The PR browser tier runs the same cases without recording.
 ## The real tier (`real/`)
 
 The real tier has no doubles. `scripts/run-real-e2e.ts` builds the SPA, boots
-an isolated local host in hybrid mode with `SMITHERS_CHAT_STUB=0` (chat turns
-run on the backend's `/api/agent/turn` as the signed-in Cloud user), drives it
+an isolated local host in hybrid mode with `SMITHERS_CHAT_STUB=0`, drives it
 with Chromium through `playwright.real.config.ts`, and then runs the coverage
 gate (`scripts/check-real-e2e.ts`). `real/coverage/README.md` holds the
 scenario contract the gate enforces. Arguments pass through:
@@ -64,6 +63,21 @@ scenario contract the gate enforces. Arguments pass through:
 pnpm --filter smithers-app test:e2e:real --grep models
 bun apps/app/scripts/check-real-e2e.ts   # the structural gate alone, no browser
 ```
+
+Recorded chat always uses the canonical Go backend. An explicitly supplied
+`SMITHERS_CLOUD_TOKEN` selects `SMITHERS_CLOUD_API` (or the existing Cloud
+origin); this selection does not read a stored login or enroll test credentials
+in Cloud. Without that token, the runner owns the full public backend,
+PostgreSQL and production TypeScript model host for configured-model scenarios.
+This requires `SMITHERS_POSTGRES_TEST_BIN` and a source-built
+`SMITHERS_FFI_LIBRARY_PATH`, as in the native backend tests. It enrolls only the
+runner's named, origin-pinned provider credentials through the public API.
+Both local test hosts keep their login and model vaults in per-host memory;
+they do not read or write the operator's OS keychain or unrelated model keys.
+No default model or canned chat answer is installed. Grounded and tool-using
+Cloud chat still require real model configuration and admission; a passing
+configured-model scenario does not qualify them. The fault host's passthrough
+uses the same selected authority, including its durable turn endpoints.
 
 `SMITHERS_REAL_PORT` moves the host off 47321, `SMITHERS_SKIP_SPA_BUILD=1`
 reuses `dist/`, and `SMITHERS_REAL_BASE_URL` points the suite at a deployed
