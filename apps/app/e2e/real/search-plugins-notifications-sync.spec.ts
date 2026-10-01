@@ -1,11 +1,20 @@
 import type { Page } from "@playwright/test"
 import { scenario } from "./coverage/types"
-import { awaitBoot, closeComposer, command, expect, openApp, openComposer, test } from "./support/test"
+import { awaitBoot, closeComposer, command, expect, openApp, openComposer, realApi, test } from "./support/test"
 
 const boot = async (page: Page): Promise<void> => {
   const startedAt = performance.now()
   await openApp(page)
   await awaitBoot(page, "navigate", startedAt)
+  const signup = page.getByTestId("signup")
+  if (await signup.isVisible()) {
+    const identity = await realApi(page, page.request, "GET", "/api/user")
+    await command(page, "/signup.finish")
+    await expect(signup).toHaveCount(0)
+    if (identity.status() === 401) {
+      expect((await realApi(page, page.request, "GET", "/api/user")).status()).toBe(401)
+    }
+  }
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
 }
 
