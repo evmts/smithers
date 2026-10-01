@@ -34,7 +34,7 @@ export const chatFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
     args: "<text>",
     input: Schema.Struct({ text: Schema.String }),
     handler: ({ text }: { readonly text: string }, _signal: AbortSignal, _call: unknown, gesture?: CommandGesture) => {
-      actions.send(text, undefined, gesture?.composerDraftCurrent)
+      actions.send(text, undefined, gesture?.composerDraftCurrent, gesture?.presentationCurrent)
     }
   }
   /*
