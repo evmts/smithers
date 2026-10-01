@@ -12,6 +12,8 @@ test("real HTTP pool discovery permits only served routes and actual TUI startup
   let routes: string[] = ["chatgpt"], status = 200, modelCalls = 0, judgeCalls = 0
   let cancelled = false
   const requests: string[] = []
+  const judgeSeats: string[] = [], executionSeats: string[] = []
+  const judgments = new Set<string>()
   const server = createServer(async (request, response) => {
     expect(request.headers.authorization).toBe("Bearer fixture-pool-key")
     requests.push(request.url!)
@@ -32,16 +34,42 @@ test("real HTTP pool discovery permits only served routes and actual TUI startup
     let text = "```cell\nctx.done(\"Pool answer.\");\n```"
     if (body.instructions?.startsWith("Judge the supplied evidence")) {
       judgeCalls++
+      judgeSeats.push(body.model)
       const { questions } = JSON.parse(body.input.find((row: { role: string }) => row.role === "user").content[0].text)
       text = JSON.stringify({
         answers: Object.fromEntries(
-          Object.keys(questions).map((id) => [id, {
-            type: "boolean",
-            probability: ["on_target", "complete"].includes(id) ? 0.99 : 0.01
-          }])
+          Object.entries(questions).map(([id, value]) => {
+            const question = value as { type: string; criteria?: Record<string, string> }
+            judgments.add(`${id}:${question.type}`)
+            if (question.type === "boolean") {
+              return [id, {
+                type: "boolean",
+                probability: ["on_target", "complete"].includes(id) ? 0.99 : 0.01
+              }]
+            }
+            // The served task is a clear, trivial reply, not workspace work.
+            const choices: Record<string, string> = {
+              clarity: "clear",
+              phase: "other",
+              size: "trivial",
+              system: "answer"
+            }
+            expect(question.type).toBe("choice")
+            expect(question.criteria).toHaveProperty(choices[id]!)
+            return [id, {
+              type: "choice",
+              choice: choices[id],
+              probabilities: Object.fromEntries(
+                Object.keys(question.criteria!).map((key) => [key, key === choices[id] ? 1 : 0])
+              )
+            }]
+          })
         )
       })
-    } else modelCalls++
+    } else {
+      modelCalls++
+      executionSeats.push(body.model)
+    }
     response.writeHead(200, { "Content-Type": "text/event-stream" })
     response.end(
       [
@@ -103,6 +131,10 @@ test("real HTTP pool discovery permits only served routes and actual TUI startup
     expect(answer.stdout.trim()).toBe("Pool answer.")
     expect(modelCalls).toBeGreaterThan(0)
     expect(judgeCalls).toBeGreaterThan(0)
+    expect(judgeSeats.every((model) => model === "gpt-6-luna")).toBe(true)
+    expect(executionSeats.every((model) => model === "gpt-6.1-sol")).toBe(true)
+    expect(judgments.has("phase:choice")).toBe(true)
+    expect(judgments.has("system:choice")).toBe(true)
     routes = []
     const empty = await start()
     expect(empty.code).toBe(1)
