@@ -15,6 +15,7 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
+import * as Session from "../src/session.ts"
 import { key, Tui } from "./tmux.ts"
 
 const app = resolve(import.meta.dir, "..")
@@ -66,6 +67,14 @@ for (const runtime of ["node", "compiled"] as const) {
         join(cli, `out/tui-binaries/tui-${process.platform}-${process.arch}/bin/smithers-tui`),
         join(installation, "smithers-tui")
       )}
+    const saved = () =>
+      readdirSync(join(root, "sessions"), { withFileTypes: true })
+        .filter((entry) => entry.isDirectory()).flatMap((directory) => {
+          const folder = join(root, "sessions", directory.name)
+          return readdirSync(folder).filter((name) => name.endsWith(".jsonl")).flatMap((name) =>
+            Session.load(join(folder, name))
+          )
+        })
     const project = join(root, "project")
     cpSync(join(app, "test/fixtures/flows-project"), project, {
       recursive: true,
@@ -117,7 +126,11 @@ for (const runtime of ["node", "compiled"] as const) {
       }
       await tui.press(key.enter)
       await tui.until(
-        (screen) => /pong/i.test(screen) && screen.includes("Done") && !screen.includes("esc Interrupt"),
+        (screen) =>
+          /^\s*pong\s*$/m.test(screen) && screen.includes("Done") && !screen.includes("esc Interrupt") &&
+          saved().some((record) =>
+            record.type === "outcome" && record.outcome._tag === "done" && record.outcome.answer === "pong"
+          ),
         30_000,
         `${runtime} chat`
       )
@@ -146,7 +159,12 @@ for (const runtime of ["node", "compiled"] as const) {
         "composed flow outcome"
       )
       expect(composed).toContain("composed action callback output")
-      expect(composed).toContain("composed · done")
+      expect(composed).toContain("✓ composed")
+      expect(
+        saved().some((record) =>
+          record.type === "flow" && record.run.flow === "composed" && record.run.status === "done"
+        )
+      ).toBe(true)
       expect(composed).not.toContain("does not drive")
       expect(composed).not.toContain("✗ composed")
     } catch (error) {
