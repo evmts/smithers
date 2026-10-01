@@ -426,6 +426,12 @@ durable run on the control plane, which runs the flow's prompt itself.
 `examples/custom-ui` is a repository that adds a key, a status item and a live
 card.
 
+In a Cloud repository, `/smithers` → **Issue views** lists the factory's named
+views. Enter selects a view; Up/Down and Page Up/Page Down navigate its issues.
+Reads continue in the background. Reopen Issue views to refresh, or select a
+failed view again to retry. Results appear only after every page succeeds;
+views exceeding the panel's 500-row capacity are refused, never truncated.
+
 ## Flows
 
 `/flows` is the one catalog of the directory's flows and agents
