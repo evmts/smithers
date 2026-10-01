@@ -4,6 +4,7 @@
  */
 
 import * as Redaction from "@smthrs/journal/Redaction"
+import { pageText, paginationCursor as readPaginationCursor, paginationLimits } from "@smthrs/kernel/HttpPagination"
 import * as Data from "effect/Data"
 import { homedir } from "node:os"
 import { createInterface } from "node:readline/promises"
@@ -71,70 +72,18 @@ export const positive = (value: unknown, label = "id"): number => {
   return n
 }
 /** Bounds on one `--all` collection: pages requested and items held. */
-const maximumPages = 100
-const maximumItems = 10_000
+const maximumPages = paginationLimits.pages
+const maximumItems = paginationLimits.items
 /**
  * Reads cursor metadata without trusting a backend-provided destination.
  * @private
  * @since 1.0.0
  */
-export const paginationCursor = (headers: Headers, current: URL): string => {
-  const invalid = () =>
-    new Refused({ fault: "infra", code: "backend_protocol", message: "API returned invalid pagination" })
-  const link = headers.get("link") || ""
-  const entries: Array<string> = []
-  let start = 0, quoted = false, angle = false, escaped = false
-  for (let index = 0; index < link.length; index++) {
-    const char = link[index]
-    if (escaped) escaped = false
-    else if (quoted && char === "\\") escaped = true
-    else if (!angle && char === "\"") quoted = !quoted
-    else if (!quoted && char === "<") angle = true
-    else if (!quoted && char === ">") angle = false
-    else if (!quoted && !angle && char === ",") {
-      entries.push(link.slice(start, index))
-      start = index + 1
-    }
-  }
-  if (quoted || angle || escaped) throw invalid()
-  if (link) entries.push(link.slice(start))
-  let next: string | undefined
-  for (const entry of entries) {
-    const parsed = /^\s*<([^<>]+)>\s*(.*)$/.exec(entry)
-    if (!parsed) throw invalid()
-    const rel = /(?:^|;)\s*rel\s*=\s*(?:"([^"]*)"|([^;\s]+))/i.exec(parsed[2]!)
-    if (!(rel?.[1] ?? rel?.[2] ?? "").split(/\s+/).includes("next")) continue
-    if (next !== undefined) throw invalid()
-    let url: URL
-    try {
-      url = new URL(parsed[1]!, current)
-    } catch {
-      throw invalid()
-    }
-    if (
-      url.origin !== current.origin || url.pathname !== current.pathname || url.username || url.password || url.hash ||
-      url.searchParams.getAll("cursor").length !== 1
-    ) throw invalid()
-    next = url.searchParams.get("cursor")!
-    if (!next) throw invalid()
-  }
-  // X-Next-Cursor is percent-encoded so a path cursor keeps its edge whitespace.
-  const header = headers.get("x-next-cursor")
-  let legacy: string | null = null
-  if (header !== null) {
-    try {
-      legacy = decodeURIComponent(header)
-    } catch {
-      throw invalid()
-    }
-  }
-  if (next !== undefined && legacy !== null && legacy !== next) throw invalid()
-  const cursor = next ?? legacy ?? ""
-  // C0/DEL control characters never belong in a cursor; spaces may, as in a path.
-  const control = [...cursor].some((char) => char <= "\u001f" || char === "\u007f")
-  if (cursor.length > 4096 || control) throw invalid()
-  return cursor
-}
+export const paginationCursor = (headers: Headers, current: URL): string =>
+  readPaginationCursor(headers, current, {
+    invalid: () => new Refused({ fault: "infra", code: "backend_protocol", message: "API returned invalid pagination" })
+  })
+
 /**
  * @private
  * @since 1.0.0
@@ -453,18 +402,12 @@ export class Client {
     return response
   }
   async text(response: Response, maximum = 4 * 1024 * 1024): Promise<string> {
-    const chunks: Array<Uint8Array> = []
-    let size = 0
-    if (response.body) {
-      for await (const chunk of chunksOf(response.body)) {
-        size += chunk.length
-        if (size > maximum) {
-          throw new Refused({ fault: "infra", code: "backend_protocol", message: "API response exceeds maximum size" })
-        }
-        chunks.push(chunk)
-      }
-    }
-    return Buffer.concat(chunks).toString("utf8")
+    return (await pageText(response, maximum, () =>
+      new Refused({
+        fault: "infra",
+        code: "backend_protocol",
+        message: "API response exceeds maximum size"
+      }), { preserveBOM: true })).text
   }
   async request(
     method: string,

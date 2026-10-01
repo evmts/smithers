@@ -29,7 +29,8 @@ export const panel = (
   /** The flows this directory discovers: an app row runs only one of these. */
   discovered: ReadonlySet<string>,
   /** The issue list, or `signed-out` when the repository is known but no Cloud session is. */
-  input?: Factory | "signed-out"
+  input?: Factory | "signed-out",
+  issueViews = false
 ): Panels.Panel => {
   const factory = input === "signed-out" ? undefined : input
   return {
@@ -42,6 +43,14 @@ export const panel = (
       ? "Factory"
       : `${apps.length} apps`,
     rows: [
+      ...(issueViews
+        ? [{
+          id: "issue-views",
+          label: "Issue views",
+          details: [],
+          action: { label: "Issue views", action: { kind: "open" as const, surface: "ui:issue-views" } }
+        }]
+        : []),
       ...input === "signed-out" ? [signIn] : factory === undefined ? [] : [fileTodo, ...factory.rows],
       // The apps the homepage declares (home.ts): the same list the app home shows as tiles. A row runs its flow when this directory discovers it.
       ...apps.map((app) => ({
