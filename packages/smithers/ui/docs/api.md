@@ -674,6 +674,11 @@ handler does not compile. A user-only operation is never offered to a model
 or a robot; a consequential one sets `confirm` instead, so a model may ask and
 the human confirms.
 
+`@smthrs/ui/app-operations/account` exports `accountOperations`, the Account
+read in registration order. `account.show` takes no input and requires the
+host's identity capability. It permits signed-out invocation so the host can
+present its sign-in door instead of an empty account.
+
 `@smthrs/ui/app-operations/wiki` exports `wikiSurfaceOperations` and
 `wikiOperations`, the Wiki acts in registration order, with
 `WIKI_DISPLAY_NAME` and the user-only reasons they quote.
