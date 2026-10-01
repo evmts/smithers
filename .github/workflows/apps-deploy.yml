@@ -88,6 +88,8 @@ jobs:
         run: pnpm exec smthrs test '//apps/app:conformance' --verbose
       - name: UI browser end-to-end suite
         run: pnpm exec smthrs test '//apps/app:browserE2e' --verbose
+      - name: Install pinned Playwright Chromium
+        run: pnpm --dir apps/tui exec playwright install --with-deps chromium
       - name: TUI typecheck and tests
         run: pnpm exec smthrs ci '//apps/tui/...' --verbose
       - name: TUI end-to-end suite

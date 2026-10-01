@@ -13,9 +13,13 @@ cargo build --locked --release -p smithers-ffi --bin smithers-jj-export
 interactive external-editor cases; those cases explicitly skip without it.
 The test runner's `PATH` must select the pinned Node for packaged-runtime tests.
 
-From `apps/tui`:
+Screenshots use the Chromium revision selected by the package's pinned Playwright.
+Provision it before the terminal suite; tests do not install browsers or use a
+personal Chrome profile. If the test driver changes `HOME`, set the same absolute
+`PLAYWRIGHT_BROWSERS_PATH` for provisioning and execution. From `apps/tui`:
 
 ```bash
+pnpm exec playwright install --with-deps chromium
 bun test ./test
 bun test ./e2e
 pnpm run typecheck
@@ -25,6 +29,8 @@ pnpm run lint
 The workspace runner exposes the same suites as `//apps/tui:unitTests` and
 `//apps/tui:e2eTests`. From the repository root, run
 `pnpm exec smthrs test '//apps/tui:e2eTests'` with the prerequisites above.
+The workspace runner preserves `HOME` and uses its default browser cache; a
+custom `PLAYWRIGHT_BROWSERS_PATH` applies to the direct Bun commands above.
 
 The tmux suite runs the production renderer in private servers with an empty
 configuration, explicit child environments, disposable projects, and private
