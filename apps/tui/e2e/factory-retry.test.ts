@@ -121,7 +121,17 @@ it("the Retry row action stays responsive through real Cloud responses", async (
     await tui.until((screen) => /↑\S+ ↓\S+/.test(screen), 25_000, "production first draw")
     await send("/smithers")
     await tui.until((screen) => screen.includes("#2431 Issue 2431 · blocked"), 10_000, "retryable factory row")
-    await tui.press(key.down + key.down)
+    const selectionDeadline = Date.now() + 5_000
+    while (!/›[^\n]*#2431 Issue 2431 · blocked/.test(tui.screen())) {
+      if (Date.now() >= selectionDeadline) throw new Error(`Factory issue selection timed out:\n${tui.screen()}`)
+      const before = tui.screen()
+      await tui.press(key.down)
+      await tui.until(
+        (screen) => screen !== before,
+        Math.max(1, selectionDeadline - Date.now()),
+        "keyboard selection moves"
+      )
+    }
     await tui.until((screen) => screen.includes("a Retry"), 5_000, "selected row Retry action")
     expect(seen).toHaveLength(1)
     expect(notes(sessions).some((record) => record.type === "note" && record.text === "Retry #2431 requested"))
