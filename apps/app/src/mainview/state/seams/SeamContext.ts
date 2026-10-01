@@ -92,7 +92,7 @@ export const captureCloudOwner = (ctx: SeamContext, requireCloudSignIn = true): 
 }
 
 /**
- * The one sentence for a failed seam response, bounded and fallback-safe.
+ * The typed refusal for a failed seam response, with bounded, fallback-safe words.
  *
  * A message the upstream addressed to a person (the `message` or `error`
  * field of a JSON body) is shown only on a refusal the person can act on
@@ -101,10 +101,14 @@ export const captureCloudOwner = (ctx: SeamContext, requireCloudSignIn = true): 
  * stack is plumbing with no contract with this product (§28.5), so the
  * caller's fallback names what failed and the lead says whose fault it was.
  */
-export const readErrorMessage = async (response: Response, fallback: string): Promise<string> => {
+export const readRefusal = async (response: Response, fallback: string): Promise<Refusal> => {
   const body: unknown = await response.json().catch(() => null)
-  return refusalLine(refusalOf({ body, status: response.status, message: refusalWords(body, fallback, response.status) }), fallback)
+  return refusalOf({ body, status: response.status, message: refusalWords(body, fallback, response.status) })
 }
+
+/** The same refusal as one sentence for callers that do not persist its metadata. */
+export const readErrorMessage = async (response: Response, fallback: string): Promise<string> =>
+  refusalLine(await readRefusal(response, fallback), fallback)
 
 /**
  * A request that threw before anything answered it: offline, DNS, TLS, a
