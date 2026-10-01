@@ -114,6 +114,7 @@ on the [API reference](https://kernel.smithers.sh/reference/api/).
 | `HostServices`        | The closed list of five host slots, and the aggregate layer that decorates all of them in place.             |
 | `FileSystem`          | The guarded filesystem, its canonical resources, and the confinement a host attaches at its boundary.        |
 | `HttpClient`          | The guarded HTTP client: `net:get`, `net:post`, `model:call`, and every redirect hop rechecked.              |
+| `HttpPagination`      | Same-route cursor validation and bounded response reads for authenticated collections.                       |
 | `ChildProcessSpawner` | The guarded spawner over Effect's own tag.                                                                   |
 | `ContainedSpawner`    | A `SIGTERM`-then-`SIGKILL` deadline on every child, and a ledger entry released when its scope closes.       |
 | `ProcessConfinement`  | Host confinement for approved processes, derived conservatively from effective grants and ceilings.          |

@@ -18,13 +18,13 @@ interface ViewPlan {
   readonly pane?: string
   /** An already-open surface whose explicit navigation should replace it in place. */
   readonly target?: Card
-  readonly read: () => Promise<ViewResult>
+  readonly read: (current: () => boolean) => Promise<ViewResult>
   readonly before?: () => Promise<string | void | true>
   readonly after?: () => void | Promise<void>
 }
 
 const scopes = new WeakMap<SeamContext["store"], {
-  cache: Map<string, { promise: Promise<ViewResult>; expires: number; settled: boolean }>
+  cache: Map<string, { promise: Promise<ViewResult>; expires: number; settled: boolean; current: (() => boolean) | undefined }>
   active: Map<string, symbol>
 }>()
 const stateFor = (ctx: SeamContext) => {
@@ -60,13 +60,18 @@ export function invalidatePreparedViews(store: SeamContext["store"]) {
 export function preparedView<A extends unknown[]>(ctx: SeamContext, resolve: (...args: A) => ViewPlan | DirectView | string): ViewAction<A> & { readonly preload: (...args: A) => Promise<void> } {
   const state = stateFor(ctx)
   const live = () => scopes.get(ctx.store) === state && ctx.isDisposed?.() !== true
-  const request = (plan: ViewPlan, scope: string) => {
+  const request = (plan: ViewPlan, scope: string, current?: () => boolean) => {
     const key = JSON.stringify([scope, plan.key ?? plan.id])
     const existing = state.cache.get(key)
-    if (existing && (!existing.settled || existing.expires > Date.now())) return existing.promise
-    const promise = Promise.resolve().then(plan.read)
+    if (existing && (!existing.settled || existing.expires > Date.now())) {
+      if (current !== undefined) existing.current = current
+      return existing.promise
+    }
+    const promise: Promise<ViewResult> = Promise.resolve().then(() => plan.read(() =>
+      live() && state.cache.get(key) === entry && (entry.current?.() ?? scopeOf(ctx) === scope)
+    ))
+    const entry = { promise, expires: Date.now() + 15_000, settled: false, current }
     {
-      const entry = { promise, expires: Date.now() + 15_000, settled: false }
       state.cache.delete(key)
       state.cache.set(key, entry)
       while (state.cache.size > 30) state.cache.delete(state.cache.keys().next().value!)
@@ -103,7 +108,7 @@ export function preparedView<A extends unknown[]>(ctx: SeamContext, resolve: (..
     activeScope = scopeOf(ctx)
     try {
       const ready = await plan.before?.()
-      const result = typeof ready === "string" ? ready : await request(plan, scope)
+      const result = typeof ready === "string" ? ready : await request(plan, scope, current)
       if (!valid()) return
       if (typeof result === "string") {
         const navigation = ctx.store.collections.cards.get(id)?.navigation

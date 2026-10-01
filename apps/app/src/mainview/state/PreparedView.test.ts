@@ -242,3 +242,53 @@ test("same-owner session refresh preserves a held prepared view", async () => {
   await pending
   expect(store.collections.cards.get("private")?.title).toBe("private")
 })
+
+test("activation adopts a preloaded read's ownership and later navigation or disposal fences it", async () => {
+  const { ctx, store } = await setup()
+  const home: Card = {
+    id: "home",
+    kind: "issue-list",
+    title: "Issues",
+    status: "active",
+    ordinal: 1,
+    createdAt: 1,
+    payload: { repo: "will/demo", filter: "open", issues: [] }
+  }
+  await store.dispatch({ type: "card.upsert", actor: "user", card: home }).isPersisted.promise
+  const first = deferred<ViewResult>(data("first")), second = deferred<ViewResult>(data("second"))
+  const secondEntered = Promise.withResolvers<void>()
+  const owners = new Map<string, () => boolean>()
+  const calls: string[] = []
+  const open = preparedView(ctx, (id: string) => ({
+    id,
+    title: id,
+    pane: "will/demo",
+    read: (current) => {
+      owners.set(id, current)
+      calls.push(id)
+      if (id === "second") secondEntered.resolve()
+      return id === "first" ? first.promise : second.promise
+    }
+  }))
+  const warming = tracked(open.preload("first"))
+  await Promise.resolve()
+  expect(owners.get("first")?.()).toBe(true)
+  const active = tracked(open("first"))
+  expect(calls).toEqual(["first"])
+  expect(owners.get("first")?.()).toBe(true)
+  const newer = tracked(open("second"))
+  await secondEntered.promise
+  expect(calls).toEqual(["first", "second"])
+  expect(owners.get("first")?.()).toBe(false)
+  expect(owners.get("second")?.()).toBe(true)
+  first.resolve(data("first"))
+  await Promise.all([warming, active])
+  expect(store.collections.cards.get("home")?.title).toBe("second")
+  disposePreparedViews(store)
+  expect(owners.get("first")?.()).toBe(false)
+  expect(owners.get("second")?.()).toBe(false)
+  second.resolve(data("late-result"))
+  await newer
+  expect(store.collections.cards.get("home")?.title).toBe("second")
+  expect(store.collections.cards.get("home")?.loading).toBe(true)
+})
