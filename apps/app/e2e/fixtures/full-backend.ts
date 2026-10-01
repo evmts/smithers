@@ -4,8 +4,8 @@ import { createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 
-/** Full public backend and production model host; only owner/provider inputs are fixtures. */
-export async function startFullBackend() {
+/** Full public backend and model host with explicit owner/provider/operator fixture inputs. */
+export async function startFullBackend(options: { readonly labels?: boolean } = {}) {
   const postgres = process.env.SMITHERS_POSTGRES_TEST_BIN
   if (!postgres) throw new Error("Set SMITHERS_POSTGRES_TEST_BIN to PostgreSQL 18 bin")
   const node = Bun.which("node")
@@ -93,7 +93,8 @@ export async function startFullBackend() {
         SMITHERS_MODEL_HOST_BUNDLE: join(hosts, "smithers-model-host"),
         SMITHERS_NODE_BINARY: node,
         SMITHERS_AUTH_BOOTSTRAP_TOKEN: bootstrap,
-        SMITHERS_FFI_LIBRARY_PATH: ffi
+        SMITHERS_FFI_LIBRARY_PATH: ffi,
+        ...(options.labels === true ? { SMITHERS_FEATURE_FLAGS_LABELS: "true" } : {})
       },
       stdout: "inherit",
       stderr: "inherit"
