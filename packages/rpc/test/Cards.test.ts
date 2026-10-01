@@ -1079,7 +1079,8 @@ const FIXTURES: Record<Card["kind"], KindFixtures> = {
       status: 200,
       frameable: false,
       blockReason: "x-frame-options: deny",
-      error: "the fetch failed (503)"
+      error: "the fetch failed (503)",
+      refusal: { status: 503, code: "unavailable", message: "Safe fallback", fault: "infra", origin: "local" }
     }
   },
   "run-trace": {
@@ -3331,4 +3332,15 @@ describe("run agent binding metadata excludes secret values", () => {
       ).toBe(false)
     })
   }
+})
+
+
+test("browser input refusal survives persisted JSON without arbitrary upstream fields", () => {
+  const row = { ...base, kind: "browser", payload: { ...FIXTURES.browser.minimal,
+    error: "That page couldn't be read.", refusal: { status: 400, code: "request_invalid", fault: "user", origin: "local", message: "That page couldn't be read.", upstreamSecret: "never retained" } } }
+  const parsed = CardSchema.parse(JSON.parse(JSON.stringify(row)))
+  expect(parsed.kind).toBe("browser")
+  if (parsed.kind !== "browser") throw new Error("Missing browser card")
+  expect(parsed.payload.refusal).toEqual({ status: 400, code: "request_invalid", fault: "user", origin: "local", message: "That page couldn't be read." })
+  expect(JSON.stringify(parsed)).not.toContain("never retained")
 })
