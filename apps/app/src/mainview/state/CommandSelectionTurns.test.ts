@@ -213,23 +213,42 @@ describe("the web turn path (HTTP journal)", () => {
   }
 
   test("the first leg waits for selection; a failure interrupts the attempt with no POST", async () => {
-    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const storage = memoryStorage()
+    const store = await createAppStore({ kind: "localStorage", storage })
     let fail = false
-    const { selector } = fakeSelector(() => fail ? new CommandSelectError("credit") : [{ name: "appearance.dark-mode", probability: 0.99 }])
+    const { selector, asked } = fakeSelector(() => fail ? new CommandSelectError("credit") : [{ name: "appearance.dark-mode", probability: 0.99 }])
     const remote = journalAgent()
     const controller = createAppController(store, remote.agent, { commandSelector: selector })
-    controller.send("switch to dark mode")
+    await controller.send("switch to dark mode")
     await until(() => remote.starts.length === 1)
     expect(remote.starts[0]!.instructions).toContain(DARK_LINE)
     expect(userMessage(store)?.disclosed).toEqual(["appearance.dark-mode"])
     await controller.commands.run("chat.stop")
     await until(() => store.session().phase === "idle")
 
+    const priorAttempts = new Set([...store.collections.httpTurns.keys()])
     fail = true
-    controller.send("and light mode later")
-    await until(() => store.session().phase === "idle")
+    await controller.send("and light mode later")
+    const next = [...store.collections.httpTurns.values()].find(turn => !priorAttempts.has(turn.id))
+    expect(next).toBeDefined()
+    expect(store.collections.messages.get(`message-${next!.turnId}-user`)?.text).toBe("and light mode later")
+    await until(() => store.collections.httpTurns.get(next!.id)?.status === "failed")
+    await store.settled?.()
+    expect(asked.map(request => request.message)).toEqual(["switch to dark mode", "and light mode later"])
     expect(remote.starts).toHaveLength(1)
-    const failed = [...store.collections.messages.values()].filter(message => message.role === "smithers").at(-1)
+    const failed = store.collections.messages.get(`message-${next!.turnId}-smithers`)
     expect(failed?.text ?? failed?.statusDetail ?? "").toContain("your balance is spent")
+    expect(store.session().phase).toBe("idle")
+    expect([...store.collections.httpTurns.values()].find(turn => turn.turnId === remote.starts[0]!.runId)?.status).toBe("cancelled")
+    await controller.dispose()
+    const reloaded = await createAppStore({ kind: "localStorage", storage })
+    try {
+      expect(reloaded.collections.httpTurns.get(next!.id)?.status).toBe("failed")
+      expect(reloaded.collections.messages.get(`message-${next!.turnId}-user`)?.text).toBe("and light mode later")
+      const savedFailure = reloaded.collections.messages.get(`message-${next!.turnId}-smithers`)
+      expect(savedFailure?.text ?? savedFailure?.statusDetail ?? "").toContain("your balance is spent")
+    } finally {
+      await reloaded.dispose?.()
+    }
   })
 })
