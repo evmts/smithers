@@ -16,21 +16,15 @@ Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
 - One copy of `effect` in the resolved tree. A second copy makes a `Layer`
   built against one fail to satisfy a requirement declared against the other.
 
-`effect` is a required peer pinned to `4.0.0-rc.115`.
-`@effect/platform-node` is an optional peer at the same exact version, needed
-by `node/NodeGateway`. The root and protocol subpaths do not install the Node
-adapter. A Node gateway host selects it explicitly:
+`effect` is a required peer pinned to `4.0.0-rc.115`. The Node and Bun hosts
+use the package's bundled, pinned platform adapters:
 
 ```bash
-pnpm add effect@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115
+pnpm add effect@4.0.0-rc.115
 ```
 
-For Bun, add the optional `@effect/platform-bun@4.0.0-rc.115` peer and import
-`@smthrs/gateway/bun/BunGateway`. Pin
-`@effect/platform-node-shared@4.0.0-rc.115` with either adapter: both depend on
-that shared implementation through a caret, which otherwise resolves to a later
-release candidate whose own `effect` peer this release does not satisfy. The
-root and protocol subpaths need neither native adapter.
+Import `@smthrs/gateway/node/NodeGateway` for Node or
+`@smthrs/gateway/bun/BunGateway` for Bun.
 
 Two packages install with it as ordinary dependencies:
 [`@smthrs/control`](/api/control) and [`@smthrs/sync`](/api/smithers-sync).
