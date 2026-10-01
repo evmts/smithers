@@ -1,12 +1,8 @@
 # @smthrs/gateway
 
-This package declares `effect`, `@effect/platform-node`,
-`@effect/platform-node-shared`, and `@effect/platform-bun` as exact
-`4.0.0-rc.115` peers; `@effect/platform-node` is optional for the Node host,
-`@effect/platform-bun` is optional for the Bun host, and
-`@effect/platform-node-shared` is optional beside them, since it is the sibling
-both of those adapters pull in. Keep the application on that version so all
-Smithers packages share one Effect runtime.
+This package declares `effect` at `4.0.0-rc.115` as a required peer and bundles its
+pinned Node and Bun platform adapters privately. Keep the application on that
+Effect version so all Smithers packages share one runtime.
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
@@ -23,16 +19,12 @@ The mounts, the bind and credential policy, the projections and their rows, the 
 Not on npm yet; see [Installation](https://smithers.sh/docs/installation/#use-the-libraries).
 
 Node 26.4.0 or later is required. `effect@4.0.0-rc.115` is a required peer.
-The root and protocol subpaths install no native adapter. The optional peer
-`@effect/platform-node@4.0.0-rc.115` is required by `node/NodeGateway`,
-including the hosting example below. The Bun host at `bun/BunGateway` instead
-requires `@effect/platform-bun@4.0.0-rc.115`:
+The `node/NodeGateway` and `bun/BunGateway` subpaths use the package's bundled
+platform adapters:
 
 ```sh
-pnpm add effect@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115
+pnpm add effect@4.0.0-rc.115
 ```
-
-Pin `@effect/platform-node-shared@4.0.0-rc.115` with either adapter: both depend on that shared implementation through a caret, which otherwise resolves to a later release candidate whose own `effect` peer this release does not satisfy.
 
 ## Public API
 
