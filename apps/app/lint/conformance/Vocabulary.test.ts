@@ -29,6 +29,7 @@ import {
   CONFORMANCE,
   declaredFlowNames,
   emittedDataAttributes,
+  dataAttributesFromSource,
   GATEWAY_LIBRARY,
   idVocabularySegments,
   productDottedIdentifiers,
@@ -190,4 +191,44 @@ test("React Flow's own wrapper attributes resolve; an attribute nothing renders 
   expect(vocabularies.dataAttributes.has("data-id")).toBe(true)
   expect(vocabularies.dataAttributes.has("data-forest")).toBe(true)
   expect(vocabularies.dataAttributes.has("data-retired-marker")).toBe(false)
+})
+
+
+test("the site transition's emitted attribute resolves without excusing an unrendered name", () => {
+  const owner = readFileSync(new URL("../../../site/src/pages/index.astro", import.meta.url), "utf8")
+  expect(owner).toContain("headline.dataset.arrived = \"\"")
+  const attributes = emittedDataAttributes()
+  expect(attributes.has("data-arrived")).toBe(true)
+  const literals = extractLiterals(
+    "landing.ts",
+    "await expect(headline).toHaveAttribute(\"data-arrived\", \"\"); await expect(headline).toHaveAttribute(\"data-unrendered-site-marker\", \"\")"
+  )
+  const reports = literals.flatMap((literal) => violationsOf(literal, { ...vocabularies, dataAttributes: attributes }))
+  expect(reports.filter((report) => report.rule === "data-attribute").map((report) => report.value)).toEqual([
+    "data-unrendered-site-marker"
+  ])
+})
+
+test("Astro runtime scripts share emission recognition without treating prose or comments as DOM", () => {
+  const source = `---
+const prose = '<script>element.dataset.frontmatterOnly = ""</script>'
+---
+<div>element.dataset.markupOnly = ""</div>
+<!-- <script>element.dataset.commentOnly = ""</script> -->
+<script src="external.js"></script>
+<script>
+// element.dataset.scriptCommentOnly = ""
+element.dataset.transitionReady = ""
+element.setAttribute("data-runtime-state", "ready")
+element.toggleAttribute("data-enabled", true)
+const prose = 'element.dataset.stringOnly = ""'
+</script>
+<script type="module">element.dataset.secondScript = ""</script>`
+  expect([...dataAttributesFromSource("page.astro", source)].sort()).toEqual([
+    "data-enabled",
+    "data-runtime-state",
+    "data-second-script",
+    "data-transition-ready"
+  ])
+  expect([...dataAttributesFromSource("component.tsx", "<h1 data-rendered=\"\" />")]).toEqual(["data-rendered"])
 })
