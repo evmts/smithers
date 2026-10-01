@@ -440,6 +440,7 @@ describe("unified control dispatch", () => {
     const output = JSON.parse(result.stdout)
     expect(output).toEqual({
       ...run,
+      health: { health: "awaiting-human", attention: "awaiting-approval", reason: "awaiting-reply" },
       // The last recorded event is newer than the row, and the run is live,
       // so its diagnosis has no end yet.
       updatedAt: 3,
