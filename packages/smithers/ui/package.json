@@ -108,6 +108,11 @@
       "types": "./src/notification-policy.ts",
       "import": "./src/notification-policy.ts",
       "default": "./src/notification-policy.ts"
+    },
+    "./account-controller": {
+      "types": "./src/account-controller.ts",
+      "import": "./src/account-controller.ts",
+      "default": "./src/account-controller.ts"
     }
   },
   "files": [
@@ -130,7 +135,8 @@
     "d3-force": "3.0.0",
     "radix-ui": "^1.6.7",
     "recharts": "^3.10.1",
-    "effect": "4.0.0-rc.115"
+    "effect": "4.0.0-rc.115",
+    "@smthrs/control": "1.0.0-rc.1"
   },
   "peerDependencies": {
     "react": "^19.2.8",

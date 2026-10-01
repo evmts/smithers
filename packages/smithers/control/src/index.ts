@@ -186,3 +186,15 @@ export * as JevSessionChecker from "./JevSessionChecker.ts"
 
 /** Versioned control lifecycle producer and projection contract. */
 export * as ControlFacts from "./ControlFacts.ts"
+
+/** Account read lifecycle and shared operation declaration.
+ * @since 1.0.0
+ * @category exports
+ */
+export * as Account from "./Account.ts"
+
+/** Host-neutral operation declarations.
+ * @since 1.0.0
+ * @category exports
+ */
+export * as Operation from "./Operation.ts"

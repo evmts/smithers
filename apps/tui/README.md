@@ -105,6 +105,11 @@ usage; an admitted call can consume more than its estimate. The daily total is
 the append-only `spend/<UTC day>.jsonl` under `~/.smithers/tui`
 (`SMITHERS_TUI_SESSION_DIR` moves it).
 
+`/account.show` shows the selected backend account in Chat. Account requests
+use the same login as `smthrs auth login`. The conversation retains only an
+origin-bound request receipt; reopening refetches account facts under that
+same selected login. Repeating the command retries a failed read.
+
 ## Keys
 
 Queue operations and worker action eligibility are shared with the GUI through

@@ -6642,6 +6642,9 @@ importers:
       '@pierre/diffs':
         specifier: ^1.3.6
         version: 1.3.6(@shikijs/themes@4.4.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@smthrs/control':
+        specifier: 1.0.0-rc.1
+        version: link:../control
       '@smthrs/ui-styleguide':
         specifier: workspace:*
         version: link:ui-styleguide

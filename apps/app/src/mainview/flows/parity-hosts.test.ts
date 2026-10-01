@@ -1,4 +1,5 @@
 /* The web and native catalogs follow the shared bootstrap capabilities. */
+import { operationSources } from "../../../scripts/operation-sources"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import type { StorageApi } from "@tanstack/db"
 import { afterAll, describe, expect, test } from "bun:test"
@@ -159,7 +160,7 @@ const registrySources = (): string => {
   return [
     read("./Flows.ts"),
     ...readdirSync(entries).sort().map((file) => read(`./entries/${file}`)),
-    ...readdirSync(shared).sort().map((file) => readFileSync(`${shared}${file}`, "utf8"))
+    ...operationSources(shared).map(({ source }) => source)
   ].join("\n")
 }
 

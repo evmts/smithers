@@ -49,6 +49,8 @@ export const rows = (input: {
   readonly tabs: ReadonlyArray<Tab>
   readonly runs: ReadonlyArray<Run>
   readonly search: TextSearch | undefined
+  readonly account?: number
+  readonly accountFailure?: string
   readonly issueViews?: number
   readonly issueViewsFailure?: string
   /** When a running undo started. */
@@ -80,6 +82,12 @@ export const rows = (input: {
     ...(search?.status === "running" && now - search.startedAt >= WORK_NOTICE_DELAY_MS
       ? [{ id: "search", text: `${tick} text: ${search.query}`, tone: "info" as const }]
       : []),
+    ...(input.account !== undefined && now - input.account >= WORK_NOTICE_DELAY_MS
+      ? [{ id: "account", text: `${tick} Account`, tone: "info" as const }] :
+      []),
+    ...(input.account === undefined && input.accountFailure !== undefined
+      ? [{ id: "account", text: input.accountFailure, tone: "danger" as const }] :
+      []),
     ...(input.issueViews !== undefined && now - input.issueViews >= WORK_NOTICE_DELAY_MS
       ? [{ id: "issue-views", text: `${tick} Issue views`, tone: "info" as const }]
       : []),
