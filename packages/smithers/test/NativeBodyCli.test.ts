@@ -29,10 +29,18 @@ const count = (cwd: string, file: string, table: string): number => {
   }
 }
 describe("native body CLI refusal", () => {
-  it.each(["default", "legacy verbose", "canonical verbose"])(
-    "preserves the typed helper remedy with %s and no admission",
-    (mode) => {
-      const cwd = realpathSync(mkdtempSync(join(tmpdir(), "smithers-native-body-")))
+  it.each(
+    ["default", "legacy verbose", "canonical verbose"].flatMap((mode) =>
+      [false, true].map((longPath) => ({ mode, longPath }))
+    )
+  )(
+    "preserves privacy and no admission with $mode (long path: $longPath)",
+    ({ mode, longPath }) => {
+      const owned = realpathSync(
+        mkdtempSync(join(process.platform === "darwin" ? "/private/tmp" : tmpdir(), "n-"))
+      )
+      const cwd = longPath ? join(owned, "long-owned-path-" + "x".repeat(180)) : owned
+      mkdirSync(cwd, { recursive: true })
       try {
         mkdirSync(join(cwd, "flows/native"), { recursive: true })
         writeFileSync(join(cwd, "flows/native/flow.ts"), source)
@@ -52,7 +60,7 @@ describe("native body CLI refusal", () => {
           env: {
             HOME: cwd,
             PATH: process.env.PATH,
-            TMPDIR: process.env.TMPDIR,
+            TMPDIR: owned,
             SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: missing
           }
         })
@@ -68,12 +76,12 @@ describe("native body CLI refusal", () => {
         expect(message).toContain("smithers-jj-export is unusable")
         expect(message).toContain("SMITHERS_WORKSPACE_JJ_EXPORT_BINARY=")
         expect(message).not.toContain("body cannot be read")
-        expect(message).toContain("[REDACTED]")
+        if (!longPath) expect(message).toContain("[REDACTED]")
         expect(result.stdout + result.stderr).not.toContain("synthetic3196")
         expect(count(cwd, "control.db", "control_plans")).toBe(0)
         expect(count(cwd, "engine.db", "flows_runs")).toBe(0)
       } finally {
-        rmSync(cwd, { recursive: true, force: true })
+        rmSync(owned, { recursive: true, force: true })
       }
     },
     240_000
