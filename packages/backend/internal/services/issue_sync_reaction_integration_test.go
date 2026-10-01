@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -177,10 +178,58 @@ func TestIssueSyncTelegramTopicReactionResolvesByMessage(t *testing.T) {
 	reactions, err := svc.IssueReactions(ctx, &actor, actor.Username, repo, number, comment.ID)
 	require.NoError(t, err)
 	require.Equal(t, []IssueReaction{{Name: "+1", Actor: "telegram:123:42", Active: true}}, reactions)
+	require.Empty(t, reactions[0].Username)
+	wire, err := json.Marshal(reactions)
+	require.NoError(t, err)
+	require.NotContains(t, string(wire), "username", "external actors are not native-account ownership metadata")
 	got, err := ingest("r2", "", "21", "reaction_remove", "+1")
 	require.NoError(t, err)
 	require.Equal(t, topicIssue, got)
 	reactions, err = svc.IssueReactions(ctx, &actor, actor.Username, repo, number, comment.ID)
 	require.NoError(t, err)
 	require.Empty(t, reactions)
+}
+
+func TestIssueReactionNativeOwnershipReadbackAndSpoofedRemoval(t *testing.T) {
+	pool := newProductTestPool(t)
+	ctx := context.Background()
+	owner, repo := issueCovSeedUserRepo(t, pool)
+	other, _ := issueCovSeedUserRepo(t, pool)
+	_, err := pool.Exec(ctx, `INSERT INTO collaborators(repository_id,user_id,permission) VALUES($1,$2,'write')`, issueTxRepoID(t, pool, repo), other.ID)
+	require.NoError(t, err)
+	svc := NewIssueService(db.New(pool))
+	issue, err := svc.CreateIssue(ctx, &owner, owner.Username, repo, CreateIssueInput{Title: "reaction identity"})
+	require.NoError(t, err)
+	comment, err := svc.CreateIssueComment(ctx, &owner, owner.Username, repo, issue.Number, CreateIssueCommentInput{Body: "message"})
+	require.NoError(t, err)
+	owned := IssueReaction{Name: "thumbsup", Actor: fmt.Sprintf("user:%d", owner.ID), Username: owner.Username, Active: true}
+	otherOwned := IssueReaction{Name: "thumbsup", Actor: fmt.Sprintf("user:%d", other.ID), Username: other.Username, Active: true}
+	// The authenticated principal, never caller-supplied identity fields, owns the write.
+	rows, err := svc.SetIssueReaction(ctx, &owner, owner.Username, repo, issue.Number, comment.ID, IssueReaction{Name: "thumbsup", Actor: otherOwned.Actor, Username: other.Username, Active: true})
+	require.NoError(t, err)
+	require.Equal(t, []IssueReaction{owned}, rows)
+	rows, err = NewIssueService(db.New(pool)).IssueReactions(ctx, &other, owner.Username, repo, issue.Number, comment.ID)
+	require.NoError(t, err)
+	require.Equal(t, []IssueReaction{owned}, rows)
+	rows, err = svc.SetIssueReaction(ctx, &other, owner.Username, repo, issue.Number, comment.ID, IssueReaction{Name: "thumbsup", Actor: owned.Actor, Username: owner.Username, Active: false})
+	require.NoError(t, err)
+	require.Equal(t, []IssueReaction{owned}, rows, "a collaborator cannot remove the owner's reaction by spoofing metadata")
+	rows, err = svc.SetIssueReaction(ctx, &other, owner.Username, repo, issue.Number, comment.ID, IssueReaction{Name: "thumbsup", Active: true})
+	require.NoError(t, err)
+	require.Equal(t, []IssueReaction{owned, otherOwned}, rows)
+	rows, err = svc.SetIssueReaction(ctx, &owner, owner.Username, repo, issue.Number, comment.ID, IssueReaction{Name: "thumbsup", Active: true})
+	require.NoError(t, err)
+	require.Equal(t, []IssueReaction{owned, otherOwned}, rows)
+	var events int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM issue_events WHERE issue_id=$1 AND event_type='comment.reaction'`, issue.ID).Scan(&events))
+	require.Equal(t, 2, events, "desired-state replay and spoofed removal emit no extra durable changes")
+	rows, err = svc.SetIssueReaction(ctx, &other, owner.Username, repo, issue.Number, comment.ID, IssueReaction{Name: "thumbsup", Active: false})
+	require.NoError(t, err)
+	require.Equal(t, []IssueReaction{owned}, rows)
+	rows, err = svc.SetIssueReaction(ctx, &owner, owner.Username, repo, issue.Number, comment.ID, IssueReaction{Name: "thumbsup", Active: false})
+	require.NoError(t, err)
+	require.Empty(t, rows)
+	rows, err = NewIssueService(db.New(pool)).IssueReactions(ctx, &owner, owner.Username, repo, issue.Number, comment.ID)
+	require.NoError(t, err)
+	require.Empty(t, rows)
 }

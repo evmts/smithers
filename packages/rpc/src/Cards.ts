@@ -1588,7 +1588,14 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
           author: z.string().nullable(),
           id: z.number().int().optional(),
           idempotencyKey: z.string().optional(),
-          reactions: z.array(z.object({ name: z.string(), actor: z.string(), active: z.boolean() })).optional(),
+          reactions: z.array(
+            z.object({
+              name: z.string(),
+              actor: z.string(),
+              active: z.boolean(),
+              username: z.string().min(1).optional()
+            })
+          ).optional(),
           persona: z.object({
             username: z.string(),
             iconEmoji: z.string().optional(),
