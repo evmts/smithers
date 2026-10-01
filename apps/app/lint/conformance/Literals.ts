@@ -128,14 +128,17 @@ const isDirectory = (path: string): boolean => {
   }
 }
 
-/** Every TypeScript source file under `directory`, recursively, sorted. */
-export const sourceFiles = (directory: string): ReadonlyArray<string> => {
+/** Matching source files recursively, sorted; TypeScript remains the default corpus. */
+export const sourceFiles = (
+  directory: string,
+  extensions: ReadonlyArray<string> = SOURCE_EXTENSIONS
+): ReadonlyArray<string> => {
   if (!isDirectory(directory)) return []
   const entries = readdirSync(directory, { withFileTypes: true })
   const found = entries.flatMap((entry) => {
     const path = join(directory, entry.name)
-    if (entry.isDirectory()) return [...sourceFiles(path)]
-    return SOURCE_EXTENSIONS.some((extension) => entry.name.endsWith(extension)) ? [path] : []
+    if (entry.isDirectory()) return [...sourceFiles(path, extensions)]
+    return extensions.some((extension) => entry.name.endsWith(extension)) ? [path] : []
   })
   return found.sort()
 }
