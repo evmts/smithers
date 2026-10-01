@@ -147,12 +147,21 @@ const terminalOrAccepted = (
  * `principal` collided under one key and the second payload was never
  * delivered.
  */
-const withoutStampedPrincipal = (input: unknown): unknown => {
-  if (input === null || typeof input !== "object") return input
-  const { principal: _principal, ...rest } = input as Record<string, unknown>
-  const message = rest["message"]
-  if (message === null || typeof message !== "object") return rest
-  const { principal: _messagePrincipal, ...messageRest } = message as Record<string, unknown>
+type DecodedMutation =
+  & (
+    | typeof AttributedApprovalInput.Type
+    | typeof AttributedReasonedMutationInput.Type
+    | typeof AttributedResumeInput.Type
+    | typeof AttributedRunInput.Type
+    | typeof AttributedSignalInput.Type
+    | typeof SteerInputSchema.Type
+  )
+  & { readonly principal?: typeof Principal.Type | undefined }
+
+const withoutStampedPrincipal = (input: DecodedMutation): unknown => {
+  const { principal: _principal, ...rest } = input
+  if (!("message" in rest)) return rest
+  const { principal: _messagePrincipal, ...messageRest } = rest.message
   return { ...rest, message: messageRest }
 }
 
@@ -163,7 +172,7 @@ const withoutStampedPrincipal = (input: unknown): unknown => {
  * and kind remain in the document while its server clock is omitted, and the
  * canonical bytes are reduced to one fixed-size durable digest.
  */
-const fingerprint = (operation: string, principal: typeof Principal.Type, input: unknown): string =>
+const fingerprint = (operation: string, principal: typeof Principal.Type, input: DecodedMutation): string =>
   `control-mutation:v2:${
     Sha256.digestSync(canonical({
       operation,
@@ -213,24 +222,10 @@ const AttributedSignalInput = Schema.Struct({
   principal: Schema.optional(Principal)
 })
 
-// The surrogate scan restates, at the point the DURABLE KEY is formed, what
-// `MutationBoundary.admit` already refused: a lone surrogate is not a string
-// SQLite and JSON round-trip identically, and this value is a primary key. The
-// two refusing arms are therefore unreachable through every caller, and stay
-// as the local invariant rather than as a check somebody may delete upstream.
-const validIdempotencyKey = (value: string): boolean => {
-  if (value.length === 0 || value.length > 1024 || value.includes("\0")) return false
-  for (let index = 0; index < value.length; index++) {
-    const unit = value.charCodeAt(index)
-    if (unit >= 0xd800 && unit <= 0xdbff) {
-      const low = value.charCodeAt(++index)
-      if (!(low >= 0xdc00 && low <= 0xdfff)) return false
-      continue
-    }
-    if (unit >= 0xdc00 && unit <= 0xdfff) return false
-  }
-  return true
-}
+// MutationBoundary already admits only well-formed text. This key adds its
+// own storage constraints after that canonical boundary.
+const validIdempotencyKey = (value: string): boolean =>
+  value.length > 0 && value.length <= 1024 && !value.includes("\0")
 
 /** Admits, schema-decodes, and detaches one mutation before its first wait. */
 const snapshotMutation = <A extends { readonly idempotencyKey: string }>(
