@@ -4,7 +4,7 @@ import { expect, test } from 'bun:test'
 // Erased by Bun, but keeps the isolated fixture inside the app's typecheck.
 import type {} from '../../e2e/fixtures/unit-entrypoints/Serve.child.test'
 
-const cases = [['signal'], ['backend-failure'], ['stop-error'], ['missing-origin'], ['plue-origin']] as const
+const cases = [['readiness-signal'], ['signal'], ['backend-failure'], ['stop-error'], ['missing-origin'], ['plue-origin']] as const
 const child = fileURLToPath(new URL('../../e2e/fixtures/unit-entrypoints/Serve.child.test.ts', import.meta.url))
 
 test.each(cases)('serve entrypoint %s lifecycle runs in an isolated process', (scenario) => {
@@ -25,10 +25,21 @@ test.each(cases)('serve entrypoint %s lifecycle runs in an isolated process', (s
   expect(result.stderr).toContain('0 fail')
 })
 
-test('the real serve module reaches selected-backend readiness without loading the retired test host', async () => {
+test('the real serve module handles OS termination exactly when it publishes readiness', async () => {
   const origin = 'http://127.0.0.1:49191'
   const serve = fileURLToPath(new URL('./serve.ts', import.meta.url))
-  const childProcess = Bun.spawn([Bun.which('bun')!, serve], {
+  const probe = `
+    const log = console.log;
+    console.log = (...args) => {
+      log(...args);
+      if (typeof args[0] === "string" && args[0].startsWith("SMITHERS_LOCAL_ORIGIN=")) {
+        console.error(JSON.stringify({ term: process.listenerCount("SIGTERM"), interrupt: process.listenerCount("SIGINT") }));
+        process.kill(process.pid, "SIGTERM");
+      }
+    };
+    await import(${JSON.stringify(serve)});
+  `
+  const childProcess = Bun.spawn([Bun.which('bun')!, '--eval', probe], {
     env: { ...process.env, SMITHERS_BACKEND_MODE: 'plue', SMITHERS_API_ORIGIN: origin, SMITHERS_LOCAL_STATE_DIR: '/private/tmp/smithers-serve-import-smoke' },
     stdin: 'ignore', stdout: 'pipe', stderr: 'pipe'
   })
@@ -38,9 +49,8 @@ test('the real serve module reaches selected-backend readiness without loading t
     expect(first.done).toBe(false)
     expect(new TextDecoder().decode(first.value)).toBe(`SMITHERS_LOCAL_ORIGIN=${origin}\n`)
     reader.releaseLock()
-    childProcess.kill('SIGTERM')
     expect(await childProcess.exited).toBe(0)
-    expect(await new Response(childProcess.stderr).text()).toBe('')
+    expect(JSON.parse(await new Response(childProcess.stderr).text())).toEqual({ term: 1, interrupt: 1 })
   } finally {
     if (childProcess.exitCode === null) childProcess.kill('SIGKILL')
     await childProcess.exited

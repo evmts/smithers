@@ -14,7 +14,15 @@ const originalError = console.error
 console.log = (value: unknown) => {
   const line = String(value)
   logs.push(line)
-  if (line.startsWith('SMITHERS_LOCAL_ORIGIN=')) started.resolve(line)
+  if (line.startsWith('SMITHERS_LOCAL_ORIGIN=')) {
+    if (scenario === 'readiness-signal') {
+      expect(process.listenerCount('SIGTERM')).toBe(1)
+      expect(process.listenerCount('SIGINT')).toBe(1)
+      process.emit('SIGTERM')
+      process.emit('SIGINT')
+    }
+    started.resolve(line)
+  }
 }
 console.error = (value: unknown) => { errors.push(String(value)) }
 
@@ -27,7 +35,7 @@ mock.module('../../../src/bun/NativeBackendProcess', () => ({
       failure: failure.promise,
       stop: () => {
         stopCalls++
-        return scenario === 'signal' ? stopped.promise
+        return scenario === 'signal' || scenario === 'readiness-signal' ? stopped.promise
           : scenario === 'stop-error' ? Promise.reject(new Error('stop failed'))
             : Promise.resolve()
       }
@@ -64,12 +72,16 @@ test('headless serve entrypoint handles its lifecycle', async () => {
       ? 'SMITHERS_LOCAL_ORIGIN=https://plue.example'
       : 'SMITHERS_LOCAL_ORIGIN=http://127.0.0.1:4185')
     expect(calls).toEqual([{ stateDir: scenario === 'plue-origin' ? '/configured' : '/state/headless', webRoot: '/web' }])
-    expect(stopCalls).toBe(0)
+    expect(stopCalls).toBe(scenario === 'readiness-signal' ? 1 : 0)
 
-    if (scenario === 'signal') {
+    if (scenario === 'signal' || scenario === 'readiness-signal') {
       process.emit('SIGTERM')
       process.emit('SIGINT')
       expect(stopCalls).toBe(1)
+      let settled = false
+      void entry.then(() => { settled = true })
+      await new Promise<void>(resolve => setImmediate(resolve))
+      expect(settled).toBe(false)
       stopped.resolve()
       await within(entry)
       expect(errors).toEqual([])
