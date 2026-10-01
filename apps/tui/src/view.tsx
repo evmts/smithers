@@ -980,10 +980,10 @@ export function ToastStack(
       stickyStart="bottom"
       scrollX={false}
       style={{
-        height: Math.min(props.height, props.rows.length * (props.compact ? 1 : 2)),
+        maxHeight: props.height,
         flexShrink: 0,
         scrollbarOptions: { visible: false },
-        contentOptions: { alignItems: "flex-end" }
+        contentOptions: { alignItems: "flex-end", minHeight: 0 }
       }}
     >
       {props.rows.map((row) => (
@@ -994,7 +994,11 @@ export function ToastStack(
           customBorderChars={bar}
         >
           <box style={{ flexDirection: "row", paddingLeft: 1, paddingRight: 2 }} backgroundColor={color.element}>
-            <text fg={color.text}>{row.text}</text>
+            <box style={{ flexShrink: 1 }}>
+              {row.text.split("\n").map((line, index) => (
+                <text key={index} fg={color.text} wrapMode="word" style={{ flexShrink: 0 }}>{line}</text>
+              ))}
+            </box>
             {row.worker?.actions.map((action) => (
               <text
                 key={action.id}
