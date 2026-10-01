@@ -37,6 +37,7 @@ import { selectFirstRunRepository } from "./FirstRunRepository"
 import type { InputMode } from "./InputMode"
 import { knowledgeCardAvailable } from "./KnowledgeFeatures"
 import { disposePreparedViews,invalidatePreparedViews } from "./PreparedView"
+import { canonicalStoredJsonValue } from "./EventValue"
 import type { KnownRepositories } from "./RepoContext"
 import { activeCatalogRepositoryId,activeRepositoryId,knownRepositories,resolveTargetRepo } from "./RepoContext"
 import type { StorageRecoveryAction,StorageRecoveryHost } from "./StorageRecoveryAction"
@@ -2084,8 +2085,17 @@ export const createAppController = (
   ctx.commands = commands
   if (typeof document !== "undefined") ctx.onDispose(bindFlowPreloading(document, commands.preload!))
   ctx.onDispose(() => disposePreparedViews(store))
+  // Re-observing unchanged data does not invalidate the read warmed by focus.
+  // Keep ownership, permissions and content; only receipt metadata is ignored.
+  const preparedSource = (row: object, identity: boolean) => canonicalStoredJsonValue(Object.fromEntries(
+    Object.entries(row).filter(([key]) => key !== "updatedAt" && key !== "revision" && (!identity || key !== "sessionObservation"))
+  ))
   for (const collection of [store.collections.identitySessions, store.collections.cloudWorkspaces, store.collections.changes, store.collections.repositories]) {
-    const subscription = collection.subscribeChanges(() => invalidatePreparedViews(store))
+    const identity = collection === store.collections.identitySessions
+    const subscription = collection.subscribeChanges(changes => {
+      if (changes.some(change => change.type !== "update" || change.previousValue === undefined ||
+        preparedSource(change.previousValue, identity) !== preparedSource(change.value, identity))) invalidatePreparedViews(store)
+    })
     ctx.onDispose(() => subscription.unsubscribe())
   }
   for (const card of store.collections.cards.values()) {
