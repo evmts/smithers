@@ -363,6 +363,7 @@ describe("issues seam — the list", () => {
       "GET /api/user/github-repos/will/flows/issues": json(401, { message: "GitHub connection required" }),
       "GET /api/user": json(200, { id: 1, username: "will", is_admin: false })
     }, calls))
+    await controller.loadSession()
     const outcome = await controller.commands.run("issues.list")
     expect(outcome.status).toBe("executed")
     await settled()
