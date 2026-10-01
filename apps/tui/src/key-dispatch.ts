@@ -431,6 +431,8 @@ export const panelKey = (key: KeyEvent, panel: Panels.Panel, state: {
   readonly worker: Tab | undefined
   readonly flow: { readonly retry: boolean; readonly continue: boolean; readonly stop: boolean }
 }, act: {
+  /** A built-in row may activate on Enter or its normal action key. */
+  readonly activate?: (row: Panels.Row) => boolean
   /** Back to the chat. */
   readonly close: () => void
   /** Keys back to the composer, the panel still shown. */
@@ -474,6 +476,11 @@ export const panelKey = (key: KeyEvent, panel: Panels.Panel, state: {
     if (key.name === "pageup" || key.name === "pagedown") return act.scroll(key.name === "pageup" ? -1 : 1)
     return
   }
+  const selected = panel.rows[Math.min(navigation.selected, panel.rows.length - 1)]
+  if (
+    (key.name === "return" || key.name === "kpenter" || key.name === "a") && selected !== undefined &&
+    act.activate?.(selected)
+  ) return
   if (key.name === "a") {
     const action = panel.rows[Math.min(navigation.selected, panel.rows.length - 1)]?.action
     if (action === undefined) return

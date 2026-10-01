@@ -1,4 +1,7 @@
+import * as CloudSession from "@smthrs/cli/CloudSession"
+import * as Factory from "./factory.ts"
 import * as Failures from "./failures.ts"
+import * as IssueViews from "./issue-views.ts"
 import * as Log from "./log.ts"
 /**
  * smithers-tui [directory] [--model provider:id] [-c | -r] [-p "prompt"] [--approve ask|all|deny] [--budget-tokens n]
@@ -107,6 +110,7 @@ if (values.print !== undefined) {
 }
 
 // Help and print mode never initialize the terminal's native library.
+let issueViews: ReturnType<typeof IssueViews.controller> | undefined
 let flows: ReturnType<typeof FlowControl.make> | undefined
 try {
   await import("./native.ts")
@@ -131,10 +135,16 @@ try {
   const branch = spawnSync("git", ["branch", "--show-current"], { cwd, encoding: "utf8" }).stdout?.trim()
   const renderer = await createCliRenderer({ exitOnCtrlC: false, targetFps: 30 })
   applyColorMode(renderer, colorModeOf(process.env))
+  const repository = Factory.repository(cwd, process.env)
+  if (repository !== undefined) {
+    issueViews = IssueViews.controller(() => CloudSession.signedIn(process.env), repository)
+    renderer.once("destroy", () => issueViews?.dispose())
+  }
   Log.install()
   createRoot(renderer).render(
     createElement(App, {
       host,
+      issueViews,
       seat,
       workerSeat: replay === undefined ? available.workerSeat ?? seat : seat,
       models: available.models,
@@ -148,6 +158,7 @@ try {
     })
   )
 } catch (error) {
+  issueViews?.dispose()
   await flows?.dispose()
   await host.dispose()
   console.error(Failures.line("startup", error, `Details: ${Log.path()}`))

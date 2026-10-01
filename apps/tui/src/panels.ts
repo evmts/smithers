@@ -57,13 +57,14 @@ export const Row = Schema.Struct({
   ]))
 })
 export type Row = typeof Row.Type
+export const rowLimit = 500
 export const Panel = Schema.Struct({
   id: short,
   title: short,
   summary: short.check(Schema.isPattern(/^[^\r\n]+$/)),
   placement: Schema.optional(Schema.Literals(["tab", "main"])),
   bind: Schema.optional(Schema.Struct({ tree: short })),
-  rows: Schema.Array(Row).check(Schema.isMaxLength(500))
+  rows: Schema.Array(Row).check(Schema.isMaxLength(rowLimit))
 })
 export type Panel = typeof Panel.Type
 /** Custom views a session keeps. */

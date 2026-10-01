@@ -48,6 +48,7 @@
     "./HostError": "./src/HostError.ts",
     "./HostServices": "./src/HostServices.ts",
     "./HttpClient": "./src/HttpClient.ts",
+    "./HttpPagination": "./src/HttpPagination.ts",
     "./Jj": "./src/Jj.ts",
     "./JournalGrantStore": "./src/JournalGrantStore.ts",
     "./Path": "./src/Path.ts",
@@ -197,6 +198,16 @@
         "require": {
           "types": "./dist/cjs/HttpClient.d.ts",
           "default": "./dist/cjs/HttpClient.js"
+        }
+      },
+      "./HttpPagination": {
+        "import": {
+          "types": "./dist/esm/HttpPagination.d.ts",
+          "default": "./dist/esm/HttpPagination.js"
+        },
+        "require": {
+          "types": "./dist/cjs/HttpPagination.d.ts",
+          "default": "./dist/cjs/HttpPagination.js"
         }
       },
       "./Jj": {
