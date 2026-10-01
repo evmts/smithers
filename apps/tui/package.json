@@ -52,6 +52,7 @@
     "eslint-import-resolver-typescript": "4.4.5",
     "eslint-plugin-import": "2.32.0",
     "eslint-plugin-unicorn": "65.0.0",
+    "playwright": "1.62.1",
     "typescript": "~5.9.3",
     "typescript-eslint": "8.69.0"
   }
