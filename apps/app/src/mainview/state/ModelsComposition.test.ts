@@ -199,3 +199,119 @@ test.each(["maximize", "minimize", "maximize-minimize-maximize"] as const)(
   },
   10000,
 )
+
+test.each([
+  { actor: "user", barrier: "none", gesture: "none" },
+  { actor: "agent", barrier: "none", gesture: "none" },
+  { actor: "automatic", barrier: "none", gesture: "none" },
+  { actor: "user", barrier: "none", gesture: "invalid" },
+  ...(["outer", "inner"] as const).flatMap(barrier =>
+    (["same-maximize", "minimize", "away-and-back", "new-form"] as const).map(gesture => ({ actor: "user" as const, barrier, gesture }))),
+] as const)(
+  "file form $actor submission preserves $gesture during $barrier admission",
+  async ({ actor, barrier, gesture }) => {
+    const directory = mkdtempSync(join(tmpdir(), "smithers-form-result-"))
+    const db = new Database(join(directory, "app.sqlite"))
+    const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
+    let hold = false, submissionWrite = false
+    const adapter = await openSqliteRowStorage({
+      execute: async <Row>(sql: string, params: ReadonlyArray<unknown> = []) => {
+        if (hold && /^\s*INSERT\b/i.test(sql) && typeof params[3] === "string") {
+          const row = JSON.parse(params[3])
+          if ((barrier === "outer" && params[0] === "app-command-intents" && row.name === "form.submit") ||
+            (barrier === "inner" && params[0] === "app-cards" && row.kind === "flow-form" && row.payload.submitting === true)) submissionWrite = true
+        }
+        if (hold && submissionWrite && /^\s*COMMIT\b/i.test(sql)) {
+          hold = false
+          entered.resolve()
+          await release.promise
+        }
+        const statement = db.query(sql)
+        if (/^\s*(SELECT|PRAGMA)/i.test(sql)) return statement.all(...params as []) as ReadonlyArray<Row>
+        statement.run(...params as [])
+        return []
+      },
+      close: () => db.close(),
+    }, { collections: PERSISTED_COLLECTION_SPECS, schemaVersion: APP_SCHEMA_VERSION })
+    const store = await createAppStore({
+      kind: "opfs", ...adapter,
+      storageEventApi: { addEventListener: () => {}, removeEventListener: () => {} },
+    })
+    const reads: Array<{ method: string; path: string }> = []
+    const server = Bun.serve({
+      hostname: "127.0.0.1", port: 0,
+      fetch(request) {
+        const path = new URL(request.url).pathname
+        if (path === "/api/user") return Response.json({ id: 1, username: "owner", is_admin: false })
+        if (path === "/api/repos/owner/repo/contents/README.md") {
+          reads.push({ method: request.method, path })
+          return Response.json({ path: "README.md", type: "file", encoding: "utf-8", content: "# Owned file\n" })
+        }
+        return new Response(null, { status: 404 })
+      },
+    })
+    const controller = createAppController(store, unavailableAgent, { baseUrl: server.url.origin, fetchImpl: fetch })
+    try {
+      await controller.loadSession()
+      const formId = "form-files.read"
+      expect(controller.renderFlowForm({ name: "files.read", args: undefined, via: "user" })).toBeDefined()
+      await controller.setFormField(formId, "repo", "owner/repo")
+      if (gesture !== "invalid") await controller.setFormField(formId, "path", "README.md")
+      await controller.commands.run("card.maximize", formId)
+      expect(store.session().maximizedCardId).toBe(formId)
+      hold = barrier !== "none"
+      const submission = actor === "automatic"
+        ? controller.commands.run("form.submit", formId, "automatic", formId)
+        : controller.commands.submit({ name: "form.submit", payload: { cardId: formId }, actor, originCardId: formId })
+      let expectedPane: string | null = actor === "user" ? null : formId
+      if (barrier !== "none") {
+        await entered.promise
+        expect(reads).toEqual([])
+        if (gesture === "same-maximize") controller.maximizeCard(formId)
+        if (gesture === "minimize") controller.minimizeCard()
+        if (gesture === "away-and-back") {
+          controller.minimizeCard()
+          controller.maximizeCard(formId)
+        }
+        if (gesture === "new-form") {
+          const rendered = controller.renderFlowForm({ name: "files.list", args: undefined, via: "user" })
+          expect(rendered).toBeDefined()
+          controller.maximizeCard("form-files.list")
+        }
+        expectedPane = gesture === "minimize" ? null : gesture === "new-form" ? "form-files.list" : formId
+        expect(store.session().maximizedCardId).toBe(expectedPane)
+        release.resolve()
+      }
+      const outcome = await submission
+      if (gesture === "invalid") {
+        expect(outcome).toMatchObject({ status: "failed", error: "The form still needs: Path." })
+        expect(reads).toEqual([])
+        expect(store.session().maximizedCardId).toBe(formId)
+        expect(store.collections.cards.get(formId)?.status).not.toBe("acted")
+        return
+      }
+      expect(outcome).toMatchObject({ status: "executed" })
+      await store.settled?.()
+      expect(reads).toEqual([{ method: "GET", path: "/api/repos/owner/repo/contents/README.md" }])
+      expect(store.collections.cards.get(formId)?.status).toBe("acted")
+      const result = store.collections.cards.get("file-owner/repo-README.md")
+      expect(result).toMatchObject({ kind: "file", payload: { repo: "owner/repo", path: "README.md", content: "# Owned file\n" } })
+      const saved = db.query(`SELECT value FROM ${ROW_TABLE_NAME} WHERE collection_id = ?`).all("app-cards") as Array<{ value: string }>
+      expect(saved.map(row => JSON.parse(row.value)).find(row => row.id === result?.id)).toMatchObject({ kind: "file", payload: { content: "# Owned file\n" } })
+      expect(store.session().maximizedCardId).toBe(expectedPane)
+    } finally {
+      release.resolve()
+      try {
+        await controller.dispose()
+      } finally {
+        try {
+          await store.dispose?.()
+        } finally {
+          await server.stop(true)
+          rmSync(directory, { recursive: true, force: true })
+        }
+      }
+    }
+  },
+  10000,
+)
