@@ -20,7 +20,18 @@ const passing = new Set(["on_target", "complete"])
 const model = Bun.serve({
   port: 0,
   fetch: async (request) => {
-    if (new URL(request.url).pathname === "/routes") return Response.json({ routes: ["chatgpt"] })
+    if (new URL(request.url).pathname === "/routes") {
+      const observe = (event: Record<string, string | number>) => {
+        const path = process.env.TUI_ROUTE_DIAGNOSTIC_LOG
+        if (!path) return
+        try { appendFileSync(path, JSON.stringify({ time: Date.now(), ...event }) + "\n") } catch {}
+      }
+      observe({ event: "arrival", method: request.method })
+      request.signal.addEventListener("abort", () => observe({ event: "request-aborted" }), { once: true })
+      const response = Response.json({ routes: ["chatgpt"] })
+      observe({ event: "response-constructed", status: response.status })
+      return response
+    }
     const body = await request.json() as {
       model: string
       instructions?: string

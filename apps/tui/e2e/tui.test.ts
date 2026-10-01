@@ -3012,6 +3012,7 @@ describe("extensions", () => {
       cols: 120,
       command: `bun ${join(app, "e2e", "real-flows-fixture.tsx")}`,
       env: {
+        TUI_ROUTE_DIAGNOSTIC_LOG: process.env.TUI_ROUTE_DIAGNOSTIC_LOG ?? "",
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",
         SMITHERS_TUI_SESSION_DIR: mkdtempSync(join(tmpdir(), "tui-extensions-sessions-")),
