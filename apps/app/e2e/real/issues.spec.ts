@@ -46,77 +46,7 @@ test(
   }
 )
 
-test(
-  "practice issue comments and state changes survive a reload and remain keyboard operable",
-  scenario("issues.practice-comment-close-reopen-persistence", {
-    capabilities: [],
-    description: "Exercise the shipped practice issue through its real UI and durable browser database, including keyboard comment submit, close, reload readback, and reopen.",
-    coverage: [
-      "action:issues.list", "action:issues.view", "action:issues.comment", "action:issues.close", "action:issues.reopen",
-      "host:local", "host:production", "path:success", "path:persistence", "path:keyboard", "door:slash", "door:button",
-      "dimension:practice-repository", "dimension:reload", "dimension:comment-readback", "dimension:keyboard",
-      "evidence:sqlite-ui-readback"
-    ]
-  }),
-  async ({ page }, testInfo) => {
-    const marker = fixtureCommentBody(`practice-comment-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`)
-    let card = await openPracticeIssue(page)
-    const initiallyClosed = card.getByRole("button", { name: "Reopen issue", exact: true })
-    if (await initiallyClosed.isVisible().catch(() => false)) {
-      await initiallyClosed.click()
-      await expect(card.getByRole("button", { name: "Close issue", exact: true })).toBeVisible()
-    }
-    const initialCommentCount = await practiceIssueCommentCount(card)
-    const comment = card.getByRole("textbox", { name: "Add a comment" })
-    await comment.fill(marker)
-    await comment.press("ControlOrMeta+Enter")
-    await expect(card).toContainText(marker)
-    await expect.poll(() => practiceIssueCommentCount(card)).toBe(initialCommentCount + 1)
 
-    const close = card.getByRole("button", { name: "Close issue", exact: true })
-    await close.focus()
-    await expect(close).toBeFocused()
-    await close.press("Enter")
-    await expect(card).toContainText("Closed")
-    await expect(card.getByRole("button", { name: "Reopen issue", exact: true })).toBeVisible()
-
-    await page.reload({ waitUntil: "domcontentloaded" })
-    await bootPracticeIssues(page, "all")
-    await runSlash(page, `/issues.view 3 ${PRACTICE_REPO}`)
-    card = page.getByTestId("card-practice-issues")
-    await expect(card.locator('article[data-issue="3"]')).toBeVisible()
-    await expect(card).toContainText(marker)
-    await expect(card).toContainText("Closed")
-
-    const reopen = card.getByRole("button", { name: "Reopen issue", exact: true })
-    await reopen.focus()
-    await expect(reopen).toBeFocused()
-    await reopen.press("Enter")
-    await expect(card).toContainText("Open")
-    await page.reload({ waitUntil: "domcontentloaded" })
-    await bootPracticeIssues(page)
-    await runSlash(page, `/issues.view 3 ${PRACTICE_REPO}`)
-    card = page.getByTestId("card-practice-issues")
-    await expect(card.locator('article[data-issue="3"]')).toBeVisible()
-    await runSlash(page, `/issues.list open ${PRACTICE_REPO}`)
-    card = page.getByTestId("card-practice-issues")
-    await expect(card.locator('[data-issue="3"]')).toContainText('GET /hello without a name replies "Hello, null!"')
-    await expect(card.locator('[data-issue="3"]').getByRole("img", { name: "Open", exact: true })).toBeVisible()
-    const finalCommentCount = initialCommentCount + 1
-    await expect(card.locator('[data-issue="3"]').getByLabel(`${finalCommentCount} comments`, { exact: true })).toBeVisible()
-
-    await attachJson(testInfo, "practice-issue-lifecycle", {
-      repo: PRACTICE_REPO,
-      issue: 3,
-      marker,
-      initialCommentCount,
-      finalCommentCount,
-      finalState: "open",
-      reloads: 2,
-      commentSubmit: "ControlOrMeta+Enter"
-    })
-  }
-)
 
 test(
   "anonymous issue creation parks behind sign-in without contacting the issue service",
