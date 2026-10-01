@@ -293,19 +293,24 @@ test("terminal keyboard reads every owned named-view page and refreshes after re
       title: "Closed control", body: "", labels: ["Bug"]
     })
     await api(`${repoPath}/issues/${closed.number}`, "PATCH", { state: "closed" })
-    const readView = async () => {
+    const readView = async (expectedLastPage: number) => {
       const numbers: number[] = []
       let url = new URL(`${repoPath}/issues?view=bugs&limit=100`, backend.origin)
       let pages = 0
       while (true) {
         const response = await fetch(url, { headers: { authorization: `token ${token}` } })
         expect(response.status).toBe(200)
-        numbers.push(...(await response.json() as Array<{ number: number }>).map(issue => issue.number))
+        const page = await response.json() as Array<{ number: number }>
+        expect(page).toHaveLength(pages === 0 ? 100 : expectedLastPage)
+        numbers.push(...page.map(issue => issue.number))
         pages++
         const link = response.headers.get("link")
-        if (!link) break
-        const next = /<([^>]+)>;\s*rel="next"/.exec(link)
-        expect(next).not.toBeNull()
+        expect(link).not.toBeNull()
+        const next = /<([^>]+)>;\s*rel="next"/.exec(link!)
+        if (!next) {
+          expect(link).toBe(`</api/repos/${repo}/issues?limit=100&view=bugs>; rel="first"`)
+          break
+        }
         url = new URL(next![1]!, url)
         expect(url.origin).toBe(backend.origin)
         expect(url.pathname).toBe(`${repoPath}/issues`)
@@ -316,7 +321,7 @@ test("terminal keyboard reads every owned named-view page and refreshes after re
       expect(new Set(numbers).size).toBe(numbers.length)
       return numbers
     }
-    expect(await readView()).toEqual([...matching].reverse())
+    expect(await readView(5)).toEqual([...matching].reverse())
     const start = async () => {
       tui = await Tui.start({
         cwd: checkout, cols: 110, rows: 40,
@@ -380,7 +385,7 @@ test("terminal keyboard reads every owned named-view page and refreshes after re
     await tui!.press(key.ctrlA)
     await tui!.press(key.backspace)
     await api(`${repoPath}/issues/${matching[0]!}`, "PATCH", { state: "closed" })
-    expect(await readView()).toEqual(matching.slice(1).reverse())
+    expect(await readView(4)).toEqual(matching.slice(1).reverse())
     await open(104)
     await readTerminal(matching.slice(1).reverse())
     await tui!.press(key.escape)
@@ -393,7 +398,7 @@ test("terminal keyboard reads every owned named-view page and refreshes after re
     await start()
     await open(104) // Normal reselect; automatic selection restoration is not claimed.
     await readTerminal(matching.slice(1).reverse())
-    expect(await readView()).toEqual(matching.slice(1).reverse())
+    expect(await readView(4)).toEqual(matching.slice(1).reverse())
     expect(await api(`${repoPath}/issues/${unrelated.number}`)).toMatchObject({ state: "open" })
     expect(await api(`${repoPath}/issues/${closed.number}`)).toMatchObject({ state: "closed" })
     expect(await api(`/api/repos/${other.full_name}/issues`)).toMatchObject([{ title: "Other repository control", state: "open" }])
