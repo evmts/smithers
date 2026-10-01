@@ -314,7 +314,10 @@ const page = <A>(
   return next < values.length ? { items, nextCursor: String(next) } : { items }
 }
 
-const eventFromEntry = (entry: JournalEvent.Entry): ControlEvent => ({
+/** Every watch row comes from a committed journal partition, including derived members. */
+type JournalControlEvent = ControlEvent & { readonly runId: JournalEvent.RunId }
+
+const eventFromEntry = (entry: JournalEvent.Entry): JournalControlEvent => ({
   sequence: entry.seq,
   kind: entry.eventType,
   runId: entry.runId,
@@ -1248,7 +1251,7 @@ export const layer: Layer.Layer<
     const streamForRun = (
       runId: RunId,
       filter: WatchFilter
-    ): Stream.Stream<ControlEvent, ControlError> =>
+    ): Stream.Stream<JournalControlEvent, ControlError> =>
       journal.stream({
         runId: JournalEvent.RunId.make(runId),
         ...(filter.afterSequence === undefined
@@ -1317,7 +1320,7 @@ export const layer: Layer.Layer<
       runId: RunId,
       filter: WatchFilter,
       highWater: JournalEvent.Seq | undefined
-    ): Stream.Stream<ControlEvent, ControlError> => {
+    ): Stream.Stream<JournalControlEvent, ControlError> => {
       const journalRunId = JournalEvent.RunId.make(runId)
       const initialAfter = filter.afterSequence === undefined
         ? undefined
@@ -1346,7 +1349,7 @@ export const layer: Layer.Layer<
     const snapshotForRun = (
       runId: RunId,
       filter: WatchFilter
-    ): Stream.Stream<ControlEvent, ControlError> =>
+    ): Stream.Stream<JournalControlEvent, ControlError> =>
       Stream.unwrap(
         Effect.map(
           snapshotHighWater(JournalEvent.RunId.make(runId)),
@@ -1388,14 +1391,14 @@ export const layer: Layer.Layer<
       inventory(runtime.pageRunIds)
     )
 
-    const snapshot = (filter: WatchFilter): Stream.Stream<ControlEvent, ControlError> =>
+    const snapshot = (filter: WatchFilter): Stream.Stream<JournalControlEvent, ControlError> =>
       filter.runId !== undefined
         ? snapshotForRun(filter.runId, filter)
         : Stream.flatMap(journalPartitions, (partition) => snapshotForRun(partition, filter), {
           concurrency: snapshotPartitionConcurrency
         })
 
-    const entries = (filter: WatchFilter): Stream.Stream<ControlEvent, ControlError> =>
+    const entries = (filter: WatchFilter): Stream.Stream<JournalControlEvent, ControlError> =>
       filter.follow === false
         ? snapshot(filter)
         : filter.runId !== undefined
@@ -1562,7 +1565,6 @@ export const layer: Layer.Layer<
         ),
         Stream.filterEffect((event) => {
           const partition = event.runId
-          if (partition === undefined) return Effect.succeed(false)
           const known = decided.get(partition)
           if (known !== undefined) return Effect.succeed(known)
           return Effect.tap(
@@ -1574,7 +1576,7 @@ export const layer: Layer.Layer<
     }
 
     /** Expands each source row in stable order and checkpoints individual members. */
-    const watchAll = (filter: WatchFilter): Stream.Stream<ControlEvent, ControlError> => {
+    const watchAll = (filter: WatchFilter): Stream.Stream<JournalControlEvent, ControlError> => {
       if (filter.afterSequence !== undefined && filter.runId === undefined) {
         return Stream.fail(invalid("afterSequence: a watch cursor resumes one run, so it requires runId"))
       }
@@ -1603,11 +1605,12 @@ export const layer: Layer.Layer<
         ...filter,
         afterSequence
       }).pipe(
-        Stream.map((event): ReadonlyArray<ControlEvent> => {
+        Stream.map((event): ReadonlyArray<JournalControlEvent> => {
           const lineage = Lineage.derive(event)
           const expanded = [event, ...(lineage === undefined ? [] : [lineage]), ...Steering.derive(event)]
-          const checkpointed = expanded.map((member, offset): ControlEvent => ({
+          const checkpointed = expanded.map((member, offset): JournalControlEvent => ({
             ...member,
+            runId: event.runId,
             cursor: offset === expanded.length - 1 ? { sequence: event.sequence } : { sequence: event.sequence, offset }
           }))
           return cursor?.offset !== undefined && event.sequence === cursor.sequence

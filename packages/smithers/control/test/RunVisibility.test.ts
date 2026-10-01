@@ -188,21 +188,24 @@ describe("run visibility per principal", () => {
         })
         if (started._tag !== "Accepted" || started.runId === undefined) return yield* Effect.die("expected a run")
         const local = started.runId
+        const refused = <A, E, R>(mutation: Effect.Effect<A, E, R>) =>
+          Effect.map(Effect.flip(mutation), (error) => error instanceof RunNotFound && error.runId)
         const mutations = (rpc: Client, runId: string) => ({
-          steer: rpc.Steer({
+          steer: refused(rpc.Steer({
             runId,
             message: { messageId: `steer:${runId}`, runId, principal: bob, createdAt: 1, body: "take over" },
             idempotencyKey: `steer:${runId}`
-          }),
-          signal: rpc.Signal({ runId, signal: { name: "ready", payload: null }, idempotencyKey: `signal:${runId}` }),
-          cancel: rpc.Cancel({ runId, reason: "hijack", idempotencyKey: `cancel:${runId}` }),
-          resume: rpc.Resume({ runId, reason: "hijack", idempotencyKey: `resume:${runId}` })
+          })),
+          signal: refused(
+            rpc.Signal({ runId, signal: { name: "ready", payload: null }, idempotencyKey: `signal:${runId}` })
+          ),
+          cancel: refused(rpc.Cancel({ runId, reason: "hijack", idempotencyKey: `cancel:${runId}` })),
+          resume: refused(rpc.Resume({ runId, reason: "hijack", idempotencyKey: `resume:${runId}` }))
         })
         const refusals = (rpc: Client, runId: string) =>
           Effect.forEach(
             Object.entries(mutations(rpc, runId)),
-            ([name, mutation]) =>
-              Effect.map(Effect.flip(mutation), (error) => [name, error instanceof RunNotFound && error.runId] as const)
+            ([name, mutation]) => Effect.map(mutation, (refusedRun) => [name, refusedRun] as const)
           )
         const asBob = yield* as(bob)
         const others = yield* refusals(asBob, a)
