@@ -38,9 +38,9 @@ export interface ModelsController {
   /** `model.show <name>`: the card's selected row. */
   readonly showModel: (id: string) => CommandResult
   /** `model.new`: the `model.save` form, empty. */
-  readonly newModel: () => CommandResult
+  readonly newModel: (presentationCurrent?: () => boolean) => CommandResult
   /** `model.edit <name>`: the `model.save` form, prefilled. A host row is refused. */
-  readonly editModel: (id: string) => CommandResult
+  readonly editModel: (id: string, presentationCurrent?: () => boolean) => CommandResult
   readonly saveModel: (input: SaveModelInput) => Promise<CommandResult>
   readonly removeModel: (id: string) => Promise<CommandResult>
   /** `model.test <name>`: requested at once; the call, its toast and its result are background work. */
@@ -307,26 +307,26 @@ export const createModelsController = (ctx: ControllerContext, deps: ModelsContr
     render(ctx.commandActor, card() === undefined, unresolved(), id)
   }
 
-  const openForm = (args: string | undefined): CommandResult => {
-    const form = deps.renderFlowForm({ name: "model.save", args, via: ctx.commandActor === "smithers" ? "agent" : "user" })
+  const openForm = (args: string | undefined, presentationCurrent?: () => boolean): CommandResult => {
+    const form = deps.renderFlowForm({ name: "model.save", args, via: ctx.commandActor === "smithers" ? "agent" : "user", presentationCurrent })
     if (form === undefined) return "The model form is unavailable."
     // The form is a card in the transcript; the pane would cover it. Presentation is the user's, so an agent's form waits behind it.
-    if (ctx.commandActor !== "smithers" && store.session().maximizedCardId === MODELS_CARD_ID) deps.minimizeCard()
+    if (ctx.commandActor !== "smithers" && presentationCurrent?.() !== false && store.session().maximizedCardId === MODELS_CARD_ID) deps.minimizeCard()
     return { value: formRenderedText(form.missing) }
   }
 
-  const newModel: ModelsController["newModel"] = () => {
+  const newModel: ModelsController["newModel"] = (presentationCurrent) => {
     if (shared.catalog === undefined) void refreshCatalog(false)
-    return openForm(undefined)
+    return openForm(undefined, presentationCurrent)
   }
 
-  const editModel: ModelsController["editModel"] = (id) => {
+  const editModel: ModelsController["editModel"] = (id, presentationCurrent) => {
     const record = collections.models.get(id)
     if (record === undefined) return missing(id)
     if (record.builtin === true) return `${id} is the host's. Save a copy under another name.`
     const given = { ...record, name: record.id }
     return openForm(line(flag(given, "name"), flag(given, "protocol"), flag(given, "modelId", "model"), flag(given, "credential"),
-      flag(given, "baseUrl", "url"), flag(given, "path")))
+      flag(given, "baseUrl", "url"), flag(given, "path")), presentationCurrent)
   }
 
   const saveModel: ModelsController["saveModel"] = async (input) => {
