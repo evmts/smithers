@@ -46,6 +46,43 @@ describe("parse", () => {
 })
 
 describe("rows", () => {
+  it("retains every curated command before Account and selects Account without consuming a file", () => {
+    expect(rows("/").map((row) => row.value)).toEqual(
+      [
+        "model",
+        "theme",
+        "thinking",
+        "new",
+        "resume",
+        "fork",
+        "conversation",
+        "compact",
+        "name",
+        "copy",
+        "summary",
+        "chat",
+        "filter",
+        "grep",
+        "smithers",
+        "todo",
+        "retry",
+        "devtools",
+        "flows",
+        "flow",
+        "quit",
+        "account.show"
+      ].map((name) => ({ kind: "command", name }))
+    )
+    expect(rows("/").filter((row) => row.value.kind === "command" && row.value.name === "account.show")).toHaveLength(1)
+    expect(rows("/acc")).toEqual([{
+      key: "command:account.show",
+      label: "/account.show",
+      detail: "Show account",
+      value: { kind: "command", name: "account.show" }
+    }])
+    expect(rows("/model")[0]?.value).toEqual({ kind: "command", name: "model" })
+  })
+
   it("lists commands before files, ranks files by name, and caps files", () => {
     const all = rows("")
     expect(all[0]).toMatchObject({ label: "/model", value: { kind: "command", name: "model" } })

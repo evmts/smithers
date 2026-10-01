@@ -27,6 +27,48 @@ describe("fuzzy", () => {
 })
 
 describe("slash completion", () => {
+  it("preserves the curated command order while Account remains a single selectable command", () => {
+    const all = Complete.complete("/", 1, sources)!
+    expect(all.items.map((item) => item.label)).toEqual(
+      [
+        "model",
+        "theme",
+        "thinking",
+        "new",
+        "resume",
+        "fork",
+        "conversation",
+        "compact",
+        "name",
+        "copy",
+        "summary",
+        "chat",
+        "filter",
+        "grep",
+        "smithers",
+        "todo",
+        "retry",
+        "devtools",
+        "flows",
+        "flow",
+        "quit",
+        "account.show"
+      ].map((name) => `/${name}`)
+    )
+    expect(all.items.filter((item) => item.label === "/account.show")).toHaveLength(1)
+    expect(all.items[0]?.submit).toBe(true)
+    expect(Complete.apply("/", all, all.items[0]!)).toEqual({ text: "/model", cursor: 6 })
+    const completion = Complete.complete("/acc", 4, sources)!
+    expect(completion.items).toEqual([{
+      label: "/account.show",
+      detail: "Show account",
+      insert: "/account.show",
+      submit: true
+    }])
+    expect(Complete.apply("/acc", completion, completion.items[0]!)).toEqual({ text: "/account.show", cursor: 13 })
+    expect(Complete.complete("/mo", 3, sources)!.items[0]).toMatchObject({ label: "/model", submit: true })
+  })
+
   it("opens on / at the start and fuzzy-matches command names", () => {
     expect(labels(Complete.complete("/", 1, sources))?.[0]).toBe("/model")
     expect(labels(Complete.complete("/rsm", 4, sources))).toEqual(["/resume"])
