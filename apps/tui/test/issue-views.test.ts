@@ -408,7 +408,7 @@ for (const status of [401, 403, 503]) {
         expect(panel.rows).toEqual([])
       } else {
         expect(panel.rows.at(-1)?.label).toBe(
-          `${boundary === "refresh" ? "Issue views" : "Issues"} could not be read. Details: /conversation`
+          "That command could not run. Details: /conversation"
         )
         const appended = readFileSync(Log.path(), "utf8").slice(offset)
         expect(appended).toContain("HTTP 503")
