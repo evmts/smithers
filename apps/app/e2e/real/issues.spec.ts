@@ -71,10 +71,10 @@ test(
     })
     const marker = `sol12-denied-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
     await runSlash(page, `/issues.create ${marker} codeplanesmithers/canary-sandbox`)
-    // The refusal includes the flow's current summary. Bind the sign-in door
-    // to this command's message, so the permanent chrome cannot satisfy it.
+    // The public sign-in step uses canonical copy, not the registry summary.
+    // Bind its action to the command message, excluding permanent chrome.
     const refusal = page.locator(".smithers-chat-message").filter({
-      has: page.getByText(/^Sign in(?: with GitHub)? to create an issue(?:[.,]|$)/)
+      has: page.getByText(/^Sign in with GitHub to continue\.$/)
     }).last()
     const signIn = refusal.locator('button[data-flow="auth.sign-in"]')
     await expect(refusal).toBeVisible()
