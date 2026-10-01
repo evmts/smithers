@@ -15,10 +15,8 @@ const program = Effect.gen(function*() {
 }).pipe(Effect.provide(BunHost.layer))
 ```
 
-`@effect/platform-bun` is a required peer at exactly `4.0.0-rc.115` because
-this barrel and `BunHost` import it at module load. It is installed alongside
-the package by package managers that resolve required peers. The Effect Node
-platform packages and `effect` are also exact peers at `4.0.0-rc.115`.
+The required peers are `effect` at `4.0.0-rc.115` and `@smthrs/platform-node`
+at `1.0.0-rc.1`. The package bundles its pinned Effect platform adapters privately.
 
 :::warning
 This entry point is Node-only in the browser-bundle sense: it falls back to the
