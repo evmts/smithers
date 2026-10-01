@@ -870,6 +870,7 @@ describe("turns", () => {
     async (cols) => {
       const started = await start({ cols, cwd: repository({ git: true }), replay: codingReplay() })
       const { tui, cwd } = started
+      await tui.press(key.ctrlO)
       await tui.type("node check.mjs fails. Fix it and show it passes.")
       await tui.press(key.enter)
       await tui.until((screen) => /[▾▸⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] +\d+  /.test(screen), 20_000, "first cell")
@@ -924,8 +925,8 @@ describe("turns", () => {
     await tui.press(key.enter)
     await successfulAnswer(started, "Printed")
     const folded = tui.screen()
-    expect(folded).toMatch(/… \d+ more lines/)
-    expect(folded).toMatch(/printed \d+ lines · ctrl\+o/)
+    expect(folded).not.toContain("console.log")
+    expect(folded).not.toMatch(/printed \d+ lines · ctrl\+o/)
     expect(folded).not.toContain("output to a specific file")
     await tui.press(key.ctrlO)
     await tui.until((screen) => screen.includes("output to a specific file"), 5_000, "expanded output")
@@ -1326,7 +1327,7 @@ describe("timeline scrubber", () => {
       "settled scrubber"
     )
     const rows = screen.split("\n")
-    const row = rows.findIndex((line) => line.includes("approvals.ts") && !line.includes("┃"))
+    const row = rows.findLastIndex((line) => line.includes("approvals.ts") && !line.includes("┃"))
     const column = rows[row]!.indexOf("approvals.ts")
     await tui.press(`\x1b[<0;${column + 2};${row + 1}M\x1b[<0;${column + 2};${row + 1}m`)
     // Step 10 can already be on screen at the live end; the playhead pausing is the jump.
@@ -2276,7 +2277,7 @@ describe("flows", () => {
   }
 
   it("runs a flow from /flows through its form without blocking chat", async () => {
-    const { tui } = await open()
+    const { tui, sessions } = await open()
     await tui.type("/flows")
     await tui.press(key.enter)
     await tui.until((screen) => screen.includes("Review a change"), 5_000, "flows dialog")
@@ -2294,10 +2295,14 @@ describe("flows", () => {
     await tui.until((screen) => !screen.includes("r Resume") && screen.includes("x Stop"), 5_000, "flow tab footer")
     await tui.type("x")
     await tui.until(
-      (screen) => screen.includes("review · cancelled") && screen.includes("■ review"),
+      (screen) => screen.includes("stopped") && screen.includes("■ review"),
       5_000,
       "settled from the watch"
     )
+    const records = readdirSync(sessionFolder(sessions)).filter((name) => name.endsWith(".jsonl")).flatMap((name) =>
+      Session.load(join(sessionFolder(sessions), name))
+    )
+    expect(records.some((record) => record.type === "flow" && record.run.status === "cancelled")).toBe(true)
   }, 60_000)
 
   it("a flow form yields to chat: Esc and Ctrl+Right close it and the run stays parked", async () => {
@@ -2870,6 +2875,7 @@ describe("extensions", () => {
     mkdirSync(join(cwd, "flows", "review"), { recursive: true })
     const mdx = join(cwd, "flows", "review", "flow.mdx")
     writeFileSync(mdx, reviewFlow)
+    const sessions = mkdtempSync(join(tmpdir(), "tui-extensions-sessions-"))
     tui = await Tui.start({
       cwd,
       cols: 120,
@@ -2877,13 +2883,13 @@ describe("extensions", () => {
       env: {
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",
-        SMITHERS_TUI_SESSION_DIR: mkdtempSync(join(tmpdir(), "tui-extensions-sessions-")),
+        SMITHERS_TUI_SESSION_DIR: sessions,
         SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY ??
           join(process.env.HOME ?? "", "smithers", "target", "release", "smithers-jj-export")
       }
     })
     await tui.until(drawn, 20_000, "first draw")
-    return { tui, mdx }
+    return { tui, mdx, sessions }
   }
 
   it(
@@ -2893,7 +2899,7 @@ describe("extensions", () => {
       await tui.until((screen) => screen.includes("alt+r Review"), 10_000, "contributed key hint")
       await tui.press(altR)
       await tui.until(
-        (screen) => screen.includes("◌ review") && screen.includes("review · Running."),
+        (screen) => screen.includes("◌ review") && screen.includes("review · running"),
         5_000,
         "tab and card"
       )
@@ -2917,7 +2923,7 @@ describe("extensions", () => {
   )
 
   it("a cell's card and status item show in place, and a row action runs from its view", async () => {
-    const { tui } = await open()
+    const { tui, sessions } = await open()
     await tui.type("plan release")
     await tui.press(key.enter)
     await tui.until(
@@ -2932,7 +2938,18 @@ describe("extensions", () => {
     await tui.press(key.down)
     await tui.until((screen) => screen.includes("a Publish"), 5_000, "the row's action")
     await tui.type("a")
-    await tui.until((screen) => screen.includes("review · running"), 5_000, "row action requested the flow")
+    await tui.until((screen) => screen.includes("◌ review"), 5_000, "row action requested the flow")
+    expect(tui.screen()).toContain("Release plan")
+    await tui.click("Chat")
+    await tui.until((screen) => screen.includes("review · running"), 5_000, "running progress remains visible in Chat")
+    const records = readdirSync(sessionFolder(sessions)).filter((name) => name.endsWith(".jsonl")).flatMap((name) =>
+      Session.load(join(sessionFolder(sessions), name))
+    )
+    expect(
+      records.some((record) =>
+        record.type === "flow" && record.run.flow === "review" && record.run.status === "running"
+      )
+    ).toBe(true)
   }, 60_000)
 
   it("tab focuses the newest card from an empty composer and enter opens its view", async () => {
