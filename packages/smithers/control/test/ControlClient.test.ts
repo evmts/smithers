@@ -5,7 +5,8 @@ import { Journal } from "@smthrs/journal"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Cause, Effect, Fiber, Layer, Schema, Stream } from "effect"
 import { HttpClient, HttpRouter, HttpServer } from "effect/unstable/http"
-import { RpcSerialization } from "effect/unstable/rpc"
+import { HttpClientErrorSchema } from "effect/unstable/http/HttpClientError"
+import { RpcClientError, RpcSerialization } from "effect/unstable/rpc"
 import { Socket } from "effect/unstable/socket"
 import { readFileSync } from "node:fs"
 import { createServer, request as httpRequest } from "node:http"
@@ -605,6 +606,90 @@ describe("ControlClient", () => {
     expect(undecodableFailure.retryable).toBe(false)
     expect(undecodableFailure.message).toBe("The control response could not be decoded.")
     expect(undecodableFailure.message).not.toContain("7")
+  })
+
+  // A custom host transport may throw a serializable RPC wrapper without a
+  // concrete HTTP response. This unit boundary deliberately supplies that
+  // public wrapper; real HTTP status/refusal behavior is exercised above.
+  for (
+    const scenario of [
+      { name: "absent cause", cause: undefined, retryable: false },
+      { name: "null cause", cause: null, retryable: false },
+      { name: "missing response", cause: { private: "transport-private-marker" }, retryable: false },
+      { name: "null response", cause: { response: null }, retryable: false },
+      { name: "nonobject response", cause: { response: "transport-private-marker" }, retryable: false },
+      { name: "missing status", cause: { response: {} }, retryable: false },
+      { name: "nonnumeric status", cause: { response: { status: "503" } }, retryable: false },
+      { name: "below server range", cause: { response: { status: 499 } }, retryable: false },
+      { name: "first server status", cause: { response: { status: 500 } }, retryable: true },
+      { name: "last server status", cause: { response: { status: 599 } }, retryable: true },
+      { name: "above server range", cause: { response: { status: 600 } }, retryable: false }
+    ]
+  ) {
+    it(`classifies the public HTTP error wrapper: ${scenario.name}`, async () => {
+      const wrapper = new RpcClientError.RpcClientError({
+        reason: new HttpClientErrorSchema({ kind: "StatusCodeError", cause: scenario.cause })
+      })
+      let calls = 0
+      const custom = ControlClient.layer({ url: "http://127.0.0.1:1/rpc" }).pipe(
+        Layer.provide([
+          Layer.succeed(
+            HttpClient.HttpClient,
+            HttpClient.make(() => {
+              calls++
+              return Effect.die(wrapper)
+            })
+          ),
+          NodeSocket.layerWebSocket("ws://127.0.0.1:1/rpc/ws"),
+          RpcSerialization.layerNdjson
+        ])
+      )
+      const exit = await Effect.runPromiseExit(
+        Effect.gen(function*() {
+          const control = yield* Control
+          return yield* control.list({ _tag: "flows" })
+        }).pipe(Effect.provide(custom), Effect.scoped)
+      )
+      if (exit._tag === "Success") throw new Error("expected the host transport to fail")
+      const failure = transport(Cause.squash(exit.cause))
+      expect(failure.retryable).toBe(scenario.retryable)
+      expect(failure.message).toBe(
+        scenario.retryable
+          ? "The control server failed while handling the HTTP request."
+          : "The control server rejected the HTTP request."
+      )
+      expect(failure.message).not.toContain("transport-private-marker")
+      expect(failure.cause).toBe(wrapper)
+      expect(calls).toBe(1)
+    })
+  }
+
+  it("preserves cancellation raised inside the selected HTTP transport", async () => {
+    let calls = 0
+    const interrupted = ControlClient.layer({ url: "http://127.0.0.1:1/rpc" }).pipe(
+      Layer.provide([
+        Layer.succeed(
+          HttpClient.HttpClient,
+          HttpClient.make(() => {
+            calls++
+            return Effect.interrupt
+          })
+        ),
+        NodeSocket.layerWebSocket("ws://127.0.0.1:1/rpc/ws"),
+        RpcSerialization.layerNdjson
+      ])
+    )
+    const exit = await Effect.runPromiseExit(
+      Effect.gen(function*() {
+        const control = yield* Control
+        return yield* control.list({ _tag: "flows" })
+      }).pipe(Effect.provide(interrupted), Effect.scoped)
+    )
+    if (exit._tag === "Success") throw new Error("expected the transport interruption")
+    expect(Cause.hasInterruptsOnly(exit.cause)).toBe(true)
+    expect(Cause.hasFails(exit.cause)).toBe(false)
+    expect(Cause.hasDies(exit.cause)).toBe(false)
+    expect(calls).toBe(1)
   })
 
   it("leaves an interrupted call interrupted rather than reporting a transport failure", async () => {

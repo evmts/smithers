@@ -163,6 +163,47 @@ describe("shared Account authority", () => {
     }
   })
 
+  it("isolates default read ownership while deduplicating each host's held admission", async () => {
+    const first = fixture(authority(), true)
+    const second = fixture(authority(), true)
+    const left = Account.createAccountController(first.host)
+    const right = Account.createAccountController(second.host)
+    const admissions = [left.showAccount(), left.showAccount(), right.showAccount(), right.showAccount()]
+    try {
+      await settle()
+      expect(first.admissions).toHaveLength(1)
+      expect(second.admissions).toHaveLength(1)
+      expect(first.reads).toEqual([])
+      expect(second.reads).toEqual([])
+      first.commit.resolve(undefined)
+      expect(await admissions[0]).toEqual({ value: "Requested" })
+      expect(await admissions[1]).toEqual({ value: "Requested" })
+      expect(first.reads).toHaveLength(1)
+      expect(second.reads).toEqual([])
+      second.commit.resolve(undefined)
+      expect(await admissions[2]).toEqual({ value: "Requested" })
+      expect(await admissions[3]).toEqual({ value: "Requested" })
+      expect(second.reads).toHaveLength(1)
+      left.dispose()
+      expect(first.reads[0]!.signal.aborted).toBe(true)
+      expect(second.reads[0]!.signal.aborted).toBe(false)
+      first.reads[0]!.answer.resolve({ facts: { login: "stale-first", scopes: [], boxes: [] } })
+      second.reads[0]!.answer.resolve({ facts: { login: "current-second", scopes: [], boxes: [] } })
+      await Promise.all([...first.jobs, ...second.jobs])
+      expect(first.completed).toEqual([])
+      expect(second.completed).toEqual([{ facts: { login: "current-second", scopes: [], boxes: [] } }])
+    } finally {
+      left.dispose()
+      right.dispose()
+      try {
+        await first.close()
+      } finally {
+        await second.close()
+        await Promise.allSettled(admissions)
+      }
+    }
+  })
+
   it("shares a held durable admission across actors, then acknowledges before the read finishes", async () => {
     const t = fixture(authority(), true)
     const other = Account.createAccountController(t.host, t.shared)
