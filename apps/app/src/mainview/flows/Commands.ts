@@ -18,6 +18,8 @@ import { Authorize } from "@smthrs/chain"
 import { canonicalCommandName } from "@smthrs/ui/command-line"
 import { FlowCancellation } from "./FlowCancellation"
 import { commandFailureSentence } from "./CommandFailureCopy"
+import { signInRequired } from "../state/seams/SeamContext"
+import { SIGN_IN_REQUIRED_COPY } from "../state/controller/AppFailure"
 import type { AgentInvocation } from "./AgentInvocation"
 import { formFlows } from "./entries/form"
 import * as Cell from "@smthrs/harness/Cell"
@@ -94,21 +96,13 @@ export type CommandOutcome =
    */
   | { readonly status: "form"; readonly flow: string; readonly cardId: string; readonly fields: ReadonlyArray<string> }
 
-/**
- * A refusal the app itself decided about a typed line, before any flow ran.
- *
- * It carries the door and the thing refused, never a rendered sentence: the
- * fault is the PERSON'S INPUT — nothing failed, nothing is retryable, and the
- * way on is to type it differently — which is a different thing from a seam
- * that refused, and the surfaces have to be able to tell them apart without
- * reading English.
- */
+/** A typed user refusal, retained across dispatch so surfaces never infer blame from prose. */
 export type CommandRefusal = {
   /** A `--flag` the door never declared. */
   readonly kind: "unknown-flag"
   readonly flow: string
   readonly flag: string
-}
+} | { readonly kind: "sign-in-required" }
 
 /**
  * The one sentence each refusal gets. Exhaustive over the union, so a refusal
@@ -117,6 +111,8 @@ export type CommandRefusal = {
  */
 export const refusalSentence = (refusal: CommandRefusal): string => {
   switch (refusal.kind) {
+    case "sign-in-required":
+      return SIGN_IN_REQUIRED_COPY.sentence
     case "unknown-flag":
       return `/${refusal.flow} takes no --${refusal.flag} — nothing ran. Send /${refusal.flow} without it.`
   }
@@ -376,6 +372,10 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
       { signal: entry.cooperativeCancellation === true ? undefined : invocation?.signal }
     )
     if (settled._tag === "Failure") {
+      if (settled.failure.code === "suspended" && signInRequired(settled.failure.cause)) {
+        const refusal: CommandRefusal = { kind: "sign-in-required" }
+        return { status: "failed", error: refusalSentence(refusal), refusal }
+      }
       // A permission park or an assembly failure is not the human's business
       // to catch; surfaced honestly, it is still a failed invocation.
       return { status: "failed", error: commandFailureSentence(name, settled.failure) }
@@ -769,7 +769,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
      * model at the prompt flow that renders that button instead.
      */
     const outcome: CommandOutcome = invoker === "agent" && settledOutcome.status === "failed"
-      ? { status: "failed", error: agentFailureText(settledOutcome.error) }
+      ? { ...settledOutcome, error: agentFailureText(settledOutcome.error) }
       : settledOutcome
     // A successful, user-invoked, LISTED flow feeds the slash menu's recency
     // ranking; hidden id-scoped acts never rank.

@@ -10,6 +10,7 @@ import { recommendedNames } from "../flows/registry"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
 import { smithersInstructions } from "./Instructions"
+import { RepositorySignInRequired } from "./seams/SeamContext"
 import { knowledgeCardAvailable } from "./KnowledgeFeatures"
 import { parseRecommendation } from "./Recommend"
 import { json, memoryStorage, silentAgent } from "./TestFixtures"
@@ -45,8 +46,35 @@ describe("the Wiki is core", () => {
       expect(await controller.runWorkflow(name, "owner/repo")).toBe("Sign in with GitHub first: flows run on your own workspace.")
     }
     // Creating the mythical history and refreshing the Wiki ask the server for its stack (#1760).
-    expect(await controller.bootstrapStack("owner/repo")).toBe("Sign in to see the history.")
-    expect(await controller.refreshWiki("owner/repo")).toBe("Sign in to see the history.")
+    await expect(controller.bootstrapStack("owner/repo")).rejects.toBeInstanceOf(RepositorySignInRequired)
+    await expect(controller.refreshWiki("owner/repo")).rejects.toBeInstanceOf(RepositorySignInRequired)
+    expect(calls).toEqual([])
+  })
+
+  test("unknown identity preserves Wiki refusal through slash, form and confirmed agent doors without requests", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const calls: string[] = []
+    const controller = createAppController(store, silentAgent, {
+      fetchImpl: async input => { calls.push(String(input)); throw new Error("unexpected network") }
+    })
+    const refusal = { status: "failed", error: "Sign in to continue.", refusal: { kind: "sign-in-required" } } as const
+    expect(await controller.commands.run("wiki.create", "owner/repo")).toEqual(refusal)
+    expect(await controller.commands.runAsAgent("history.show", "owner/repo")).toEqual(refusal)
+    expect(await controller.commands.run("wiki.create")).toMatchObject({ status: "form", cardId: "form-wiki.create" })
+    await controller.commands.run("form.set", "form-wiki.create repo owner/repo")
+    await controller.commands.run("form.submit", "form-wiki.create")
+    const card = store.collections.cards.get("form-wiki.create")
+    if (card?.kind !== "flow-form") throw new Error("Wiki form missing")
+    expect(card.status).toBe("error")
+    expect(card.payload.error).toBe("Sign in to continue.")
+    expect(card.payload.errorKind).toBeUndefined()
+    expect(await controller.commands.runAsAgent("wiki.create", "owner/repo")).toMatchObject({
+      status: "executed", value: expect.stringContaining("nothing has happened yet")
+    })
+    const confirmation = [...store.collections.messages.values()].find(message => message.action?.flow === "wiki.create")
+    expect(confirmation?.action?.args).toBe("owner/repo")
+    expect(calls).toEqual([])
+    expect(await controller.commands.run(confirmation!.action!.flow, confirmation!.action!.args)).toEqual(refusal)
     expect(calls).toEqual([])
   })
 
