@@ -1,8 +1,8 @@
 import { expect, it } from "bun:test"
-import { spawnSync } from "node:child_process"
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs"
+import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { screenshot } from "./screenshot.ts"
 import { key, Tui } from "./tmux.ts"
 
 for (const [cols, rows] of [[160, 50], [100, 40], [80, 30]] as const) {
@@ -38,19 +38,7 @@ for (const [cols, rows] of [[160, 50], [100, 40], [80, 30]] as const) {
       expect(screen).not.toContain("Recursive reviewRecursive review")
       const html = join(cwd, "main-view.html")
       const png = join(cwd, "main-view.png")
-      const chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-      if (existsSync(chrome)) {
-        writeFileSync(html, await tui.html())
-        const result = spawnSync(chrome, [
-          "--headless",
-          "--disable-gpu",
-          "--no-sandbox",
-          `--window-size=2100,1000`,
-          `--screenshot=${png}`,
-          `file://${html}`
-        ], { encoding: "utf8" })
-        expect(result.status).toBe(0)
-      }
+      await screenshot(html, png, await tui.html(), 2100, 1000, 30_000)
       await tui.press(key.ctrlBackslash)
       await tui.until((screen) => screen.includes("Chat") && !screen.includes("Review in progress."))
       await tui.type("again")

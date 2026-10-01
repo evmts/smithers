@@ -681,6 +681,8 @@ run_gate() {
       ;;
     tui-e2e)
       # Exclusive, so the tui gate's wildcard omits it.
+      # Required system libraries must be supplied by the runner image or setup privileges.
+      pnpm --dir apps/tui exec playwright install --with-deps chromium
       native_jj_export
       pnpm exec smthrs test '//apps/tui:e2eTests' --known-red '.github/ci-known-red.json' --verbose
       ;;

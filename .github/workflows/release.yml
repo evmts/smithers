@@ -557,6 +557,8 @@ jobs:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Install pinned Playwright Chromium
+        run: pnpm --dir apps/tui exec playwright install --with-deps chromium
       - name: TUI typecheck, lint and tests
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: pnpm exec smthrs ci '//apps/tui/...' --verbose
@@ -571,8 +573,6 @@ jobs:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Install Playwright Chromium
-        run: pnpm --filter smithers-app exec playwright install --with-deps chromium
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install
       - name: Install PostgreSQL 18 for the owned local mode
