@@ -76,7 +76,8 @@ const installation = (root: string, dependencies: boolean) => {
         }
       } else symlinkSync(realpathSync(from), join(modules, entry))
     }
-    cpSync(join(cli, "dist/tui"), join(directory, "tui"), { recursive: true })
+    cpSync(join(cli, "dist/tui"), join(installed, "dist/tui"), { recursive: true })
+    cpSync(join(cli, "dist/vendor"), join(installed, "dist/vendor"), { recursive: true })
   }
   return { directory, installed, library: join(installed, "vendor/opentui-native", target, artifact.file) }
 }
@@ -117,7 +118,7 @@ for (const runtime of ["node", "bun"] as const) {
       const probeFile = join(install.directory, "probe.mjs")
       writeFileSync(probeFile, probe)
       expect(run(runtime, [probeFile], install.directory).status).not.toBe(0)
-      const entry = join(install.directory, "tui/main.js")
+      const entry = join(install.installed, "dist/tui/main.js")
       const prefix = runtime === "node" ? ["--experimental-ffi", "--disable-warning=ExperimentalWarning"] : []
       const help = run(runtime, [...prefix, entry, "--help"], install.directory)
       expect(help.status, help.stderr).toBe(0)

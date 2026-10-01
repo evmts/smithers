@@ -50,6 +50,7 @@ for (const runtime of ["node", "compiled"] as const) {
       cpSync(join(cli, "package.json"), join(installedCli, "package.json"))
       cpSync(join(cli, "vendor"), join(installedCli, "vendor"), { recursive: true })
       cpSync(join(cli, "dist/tui"), join(installedCli, "dist/tui"), { recursive: true })
+      cpSync(join(cli, "dist/vendor"), join(installedCli, "dist/vendor"), { recursive: true })
       // The platform package has only its published helper, with no checkout
       // target directory available to repair a missing release file.
       const native = join(modules, "@smthrs/platform-node")
