@@ -198,7 +198,7 @@ export interface CommandRegistry {
   readonly slashTree: (needle: string) => Array<SlashRow<CatalogItem>>
   readonly recommended: () => CatalogItem
   readonly preload?: (name: string, args?: string) => Promise<void>
-  readonly run: (name: string, args?: string, source?: "automatic", originCardId?: string) => Promise<CommandOutcome>
+  readonly run: (name: string, args?: string, source?: "automatic", originCardId?: string, presentation?: FlowSubmission["presentation"] | (() => boolean)) => Promise<CommandOutcome>
   /**
    * `run` at the agent boundary (requirement axis): an unmet requirement is an
    * honest failure carrying the reason — never a deferral, because a model must
@@ -458,7 +458,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     httpCall?: AgentToolCall["httpCall"],
     inheritedGesture?: CommandGesture,
     originCardId?: string,
-    presentation?: FlowSubmission["presentation"]
+    presentation?: FlowSubmission["presentation"] | (() => boolean)
   ): Promise<CommandOutcome> => {
     invocation?.signal?.throwIfAborted()
     const request = { name, actor: invoker === "agent" ? "smithers" as const : invoker,
@@ -477,16 +477,20 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
         ? lifecycle?.reserveGesture?.(request, args, named, inherited) ?? inherited
         : inherited
       : invoker === "user" && find(name) !== undefined ? lifecycle?.reserveGesture?.(request, args, named) : undefined
+    const presentationCurrent = presentation === "continue" ? () => false
+      : presentation ?? (name === "chat.send" ? gesture?.presentationCurrent : undefined)
     // A new human command is a return to the transcript. A stale maximized
     // card from an earlier session must not hide the card this command renders.
     // Commands raised by a maximized card itself keep that presentation until
     // their own frame or card handler decides where to go. Chrome commands
     // render no card: Chat opens over the card and closes back to it.
+    // The composer transports either a command or a prompt. Its existing
+    // submit parser decides which after admission, without minimizing twice.
     const maximizedCardId = actions.snapshot().maximizedCardId
     const staysInMaximizedCard = (originCardId !== undefined && originCardId === maximizedCardId) ||
       name === "card.maximize" || name === "card.minimize" || name.startsWith("card.history.") ||
       name.startsWith("frame.") || OVER_MAXIMIZED_CARD.has(name)
-    if (invoker === "user" && presentation !== "continue" && maximizedCardId != null && !staysInMaximizedCard) actions.minimizeCard()
+    if (invoker === "user" && name !== "chat.send" && presentationCurrent?.() !== false && maximizedCardId != null && !staysInMaximizedCard) actions.minimizeCard()
     // Only the human's local field edit has a synchronous recovery preparation.
     // Agent input waits for capability authorization in settle before dispatch.
     let pendingFieldInput: PendingFieldInput | PendingFormInput | undefined
@@ -525,7 +529,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     } }
     const canPublish = (): boolean => acceptance === undefined || lifecycle?.canPublish?.(acceptance.receipt, request) !== false
     let outcome: CommandOutcome
-    try { outcome = await settle(invoker, name, args, seen, startedAt, scopedInvocation, named, gesture, execution, canPublish) }
+    try { outcome = await settle(invoker, name, args, seen, startedAt, scopedInvocation, named, gesture, execution, canPublish, presentationCurrent) }
     catch { outcome = { status: "failed", error: "The command did not finish. Check its result before trying again." } }
     const retryableAuthorization = authorizationRefused && (!execution.invoked || name === "form.submit")
     if (acceptance !== undefined && lifecycle !== undefined && !await lifecycle.settle(acceptance.receipt, outcome, retryableAuthorization)) {
@@ -566,7 +570,8 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     named?: Record<string, unknown>,
     gesture?: CommandGesture,
     execution?: { invoked: boolean },
-    canPublish: () => boolean = () => true
+    canPublish: () => boolean = () => true,
+    presentationCurrent?: () => boolean
   ): Promise<CommandOutcome> => {
     const entry = find(name)
     if (entry === undefined) {
@@ -683,7 +688,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
       actions.deferCommand(nameOf(target), args ?? null, unmet.id)
       // The deferral is its own trace; the fulfilling flow traces itself below.
       if (canPublish()) trace(invoker, name, args, startedAt, "deferred", `waits on ${unmet.id}`)
-      return runAs(invoker, unmet.fulfill, undefined, new Set([...seen, unmet.fulfill]))
+      return runAs(invoker, unmet.fulfill, undefined, new Set([...seen, unmet.fulfill]), undefined, undefined, undefined, undefined, undefined, presentationCurrent)
     }
     // JSON can parse successfully while omitting a required schema field.
     // Let the form collect it before the binding can produce an input error.
@@ -699,13 +704,14 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
        * fields to ask for (none today).
        */
       // A form is a new transcript card: a maximized card must not hide it.
-      if (invoker === "user" && actions.snapshot().maximizedCardId != null) actions.minimizeCard()
+      if (invoker === "user" && presentationCurrent?.() !== false && actions.snapshot().maximizedCardId != null) actions.minimizeCard()
       const rendered = acting.renderFlowForm({
         name: nameOf(target),
         args,
         via: invoker === "agent" ? "agent" : "user",
         invocation: invocation === undefined ? undefined : { ...invocation, authorized: undefined, signal: undefined },
         input: target.input,
+        presentationCurrent,
         ...(target.metadata.form === undefined ? {} : { hints: target.metadata.form })
       })
       if (rendered === undefined) return { status: "failed", error: "error" in parsed ? parsed.error : "Required input is missing" }
@@ -769,7 +775,14 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     }
     invocation?.signal?.throwIfAborted()
     if (execution !== undefined) execution.invoked = true
-    const settledOutcome = await invoke(target, parsed.payload, invocation, gesture)
+    const invocationGesture = presentationCurrent === undefined ? gesture : {
+      ...gesture,
+      name: gesture?.name ?? name,
+      presentationCurrent,
+      // The surrounding command owns the reservation; this only carries its frame fence.
+      release: () => {}
+    }
+    const settledOutcome = await invoke(target, parsed.payload, invocation, invocationGesture)
     /*
      * The agent reads a refusal as its next act: a handler that points the
      * human at a slash the model cannot run (`/cloud.sign-in`) points the
@@ -786,8 +799,8 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     return outcome
   }
 
-  const run: CommandRegistry["run"] = (name, args, source, originCardId) =>
-    runAs(source === "automatic" ? "system" : "user", name, args, new Set(), undefined, undefined, undefined, undefined, originCardId)
+  const run: CommandRegistry["run"] = (name, args, source, originCardId, presentation) =>
+    runAs(source === "automatic" ? "system" : "user", name, args, new Set(), undefined, undefined, undefined, undefined, originCardId, presentation)
 
   const callable = (): ReadonlyArray<FlowEntry> => entries().filter(modelInvocable)
 
