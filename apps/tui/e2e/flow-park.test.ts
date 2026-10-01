@@ -1,12 +1,20 @@
 /** A real attended flow parks, stays visible, leaves chat usable, and stops. */
 import { Database } from "bun:sqlite"
 import { expect, it } from "bun:test"
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { key, Tui } from "./tmux.ts"
 
 const app = resolve(import.meta.dir, "..")
+const retainFailure = async (root: string, tui: Tui | undefined) => {
+  if (process.env.TUI_PARK_EVIDENCE_DIR === undefined) return
+  const saved = join(process.env.TUI_PARK_EVIDENCE_DIR, String(Date.now()))
+  mkdirSync(saved, { recursive: true })
+  writeFileSync(join(saved, "screen.txt"), tui?.screen() ?? "No terminal")
+  await tui?.stop()
+  cpSync(root, join(saved, "state"), { recursive: true })
+}
 it("parks a canonical file flow and completes its durable wait through a public signal", async () => {
   const root = mkdtempSync(join(tmpdir(), "tui-file-park-"))
   const project = join(root, "project")
@@ -83,9 +91,9 @@ finally { await runtime.dispose(); }
       child.exited
     ])
     expect({ exit, stderr }).toEqual({ exit: 0, stderr: "" })
-    const receipt = stdout.split("\n").find((line) => line.startsWith("signal-receipt:"))
-    expect(receipt).toBeDefined()
-    expect(JSON.parse(receipt!.slice("signal-receipt:".length))).toMatchObject({ _tag: "Accepted", runId })
+    const receipts = stdout.split("\n").filter((line) => line.startsWith("signal-receipt:"))
+    expect(receipts).toHaveLength(1)
+    expect(JSON.parse(receipts[0]!.slice("signal-receipt:".length))).toMatchObject({ _tag: "Accepted", runId })
     await tui.until((screen) => /✓ ask.*feature/.test(screen), 15_000, "durable signal completion")
     expect(tui.screen()).not.toContain("⏸ ask")
     const committed = new Database(join(project, ".flows/control.db"), { readonly: true })
@@ -113,15 +121,86 @@ finally { await runtime.dispose(); }
     await tui.type("/flow ask")
     await tui.press(key.enter)
     await tui.until((screen) => screen.includes("⏸ ask"), 30_000, "second durable wait")
-    await tui.click("⏸ ask")
-    await tui.until((screen) => screen.includes("x Stop"), 5_000, "parked stop action")
-    await tui.press("x")
-    await tui.until(
-      (screen) => screen.includes("stopped") && !screen.includes("x Stop"),
-      15_000,
-      "cancelled wait receipt"
-    )
+    const stoppedStore = new Database(join(project, ".flows/control.db"), { readonly: true })
+    try {
+      let secondRunId: string | undefined
+      const recorded = (kind: string) =>
+        (stoppedStore.query(
+          "select payload_json from flows_journal_events where event_type = ?"
+        ).all(kind) as Array<{ payload_json: string }>).map((row) => JSON.parse(row.payload_json))
+      await tui.until(
+        () => {
+          secondRunId = recorded("control.run.parked").find((event) => event.runId !== runId)?.runId
+          return secondRunId !== undefined
+        },
+        5_000,
+        "second committed park identity"
+      )
+      expect(secondRunId).not.toBe(runId)
+      await tui.click("⏸ ask")
+      await tui.until((screen) => screen.includes("x Stop"), 5_000, "parked stop action")
+      await tui.press("x")
+      await tui.until(
+        (screen) => screen.includes("stopped") && !screen.includes("x Stop"),
+        15_000,
+        "cancelled wait receipt"
+      )
+      await tui.until(
+        () =>
+          recorded("control.run.cancelled").some((event) =>
+            event.runId === secondRunId && event.status === "cancelled"
+          ),
+        5_000,
+        "independent committed cancellation"
+      )
+      expect(
+        recorded("control.run.cancelled").some((event) => event.runId === secondRunId && event.status === "cancelled")
+      ).toBe(true)
+      expect(tui.screen()).toContain("r Resume")
+      await tui.press("r")
+      await tui.until(
+        (screen) => screen.includes("⏸ ask") && screen.includes("x Stop"),
+        30_000,
+        "resumed file flow waits again"
+      )
+      let recoveredRunId: string | undefined
+      await tui.until(
+        () => {
+          recoveredRunId = recorded("control.run.parked").find((event) =>
+            event.runId !== runId && event.runId !== secondRunId
+          )?.runId
+          return recoveredRunId !== undefined
+        },
+        5_000,
+        "recovery has its own durable run"
+      )
+      expect(recoveredRunId).not.toBe(secondRunId)
+      await tui.press("x")
+      await tui.until(
+        () =>
+          recorded("control.run.cancelled").some((event) =>
+            event.runId === recoveredRunId && event.status === "cancelled"
+          ),
+        15_000,
+        "recovered run can stop durably"
+      )
+      if (process.env.TUI_PARK_EVIDENCE_DIR !== undefined) {
+        writeFileSync(
+          join(process.env.TUI_PARK_EVIDENCE_DIR, "durable-cancellations.json"),
+          JSON.stringify(
+            { firstRunId: runId, secondRunId, recoveredRunId, cancelled: recorded("control.run.cancelled") },
+            null,
+            2
+          ) + "\n"
+        )
+      }
+    } finally {
+      stoppedStore.close()
+    }
     expect(tui.screen()).not.toContain("ask · running")
+  } catch (error) {
+    await retainFailure(root, tui)
+    throw error
   } finally {
     await tui?.stop()
     rmSync(root, { recursive: true, force: true })
@@ -164,6 +243,9 @@ it("answers an actual custom agent's ask while coordinator Chat remains usable",
     await tui.until((screen) => screen.includes("Done 1") && !screen.includes("Needs you"), 5_000, "answered")
     await tui.press(" ")
     await tui.until((screen) => screen.includes("Using: feature"), 5_000, "actual agent received answer")
+  } catch (error) {
+    await retainFailure(root, tui)
+    throw error
   } finally {
     await tui?.stop()
     rmSync(root, { recursive: true, force: true })
