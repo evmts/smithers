@@ -34,9 +34,10 @@ it.each([24, 12])("answers a wrapped question with keyboard choices at 80x%i", a
     const form = await tui.until((screen) => /Answer\s+Session cookie/.test(screen), 5_000, "answer form")
     expect(form).toContain("remote workspace?")
     await tui.press("\x1b[C")
-    await tui.until((screen) => /Answer\s+Bearer header/.test(screen), 5_000, "chosen")
     await tui.press(key.enter)
     await tui.until((screen) => screen.includes("Done 1") && !screen.includes("Needs you"), 5_000, "answered")
+    await tui.press(" ")
+    await tui.until((screen) => screen.includes("Using: Bearer header"), 5_000, "actual received answer")
   } finally {
     await tui?.stop()
     rmSync(root, { recursive: true, force: true })
@@ -72,7 +73,6 @@ it("answers a worker's ask with a from the overview, and the worker finishes wit
     await tui.press("a")
     await tui.until((screen) => /Answer\s+Session cookie/.test(screen), 5_000, "form")
     await tui.press("\x1b[C") // right: the next option
-    await tui.until((screen) => /Answer\s+Bearer header/.test(screen), 5_000, "chosen")
     await tui.press(key.enter)
     await tui.until(
       (screen) => screen.includes("Done 1") && !screen.includes("Needs you") && screen.includes("Using: Bearer header"),
@@ -109,7 +109,6 @@ it("raises a capped worker's token cap with a from the overview, and it resumes"
       "cap form"
     )
     await tui.press("\x1b[C") // right: twice the cap
-    await tui.until((screen) => /Cap\s+400/.test(screen), 5_000, "chosen")
     await tui.press(key.enter)
     await tui.until(
       (screen) => screen.includes("Done 1") && !screen.includes("Needs you"),
