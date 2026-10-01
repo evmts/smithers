@@ -327,6 +327,25 @@ test("every gate in ci.yml also runs in release.yml", () => {
   assert.doesNotMatch(workflow("release.yml"), /--known-red/)
 })
 
+test("release Chromium prerequisite completes before setup admits independent gates", () => {
+  const steps = parse(workflow("release.yml")).jobs.publish.steps
+  const install = steps.findIndex((step) => step.run === "pnpm install --frozen-lockfile --ignore-scripts")
+  const browser = steps.findIndex((step) => step.run === "pnpm --dir apps/tui exec playwright install --with-deps chromium")
+  const setup = steps.findIndex((step) => step.id === "setup")
+  assert.ok(install >= 0, "release installs its frozen package dependencies")
+  assert.ok(browser > install, "Chromium uses the installed package-local CLI")
+  assert.ok(setup > browser, "failed Chromium provisioning must prevent setup success")
+  assert.equal(steps[browser].if, undefined, "prerequisite uses the normal prior-success condition")
+  assert.equal(steps[setup].if, undefined, "setup cannot succeed after a failed prerequisite")
+  const gates = steps.map((step, index) => ({ step, index }))
+    .filter(({ step }) => step.if?.includes("steps.setup.conclusion"))
+  assert.ok(gates.length > 15, "independently conditioned release gates remain declared")
+  for (const { step, index } of gates) {
+    assert.ok(index > setup, `${step.name} follows the complete prerequisite barrier`)
+    assert.equal(step.if, "${{ !cancelled() && steps.setup.conclusion == 'success' }}")
+  }
+})
+
 test("release.yml's publish job names every step once", () => {
   // release-rehearsal.test.mjs looks steps up by name and the rehearsal
   // driver selects them by `--only` and `--skip` fragments, so a duplicated
