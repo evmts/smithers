@@ -6,6 +6,7 @@ import { attachJson } from "./issues/local"
 import { withOwnedRepository, type OwnedRepository } from "./portable/owned-repository"
 import { awaitBoot, closeComposer, command, expect, productUrl, realApi, reloadApp } from "./support/test"
 import { finishFirstVisit } from "./support/first-visit"
+import { enableVerboseEvidence, expectFlowOutcome } from "./repositories-github/local"
 
 authenticatedTest.setTimeout(240_000)
 
@@ -60,7 +61,7 @@ authenticatedTest("search.issues filters real listed issues and opens the select
     await button.focus()
     await expect(button).toBeFocused()
     await button.press("Enter")
-    const thread = page.locator(`article.ghc-detail[data-issue="${open}"]`)
+    const thread = page.getByRole("region", { name: `Issue #${open} · ${repo.fullName}`, exact: true }).locator(`article.ghc-detail[data-issue="${open}"]`)
     await expect(thread).toContainText(`${marker} open`)
     await reloadApp(page)
     await expect(thread).toContainText(`${marker} open`)
@@ -85,7 +86,7 @@ authenticatedTest("issues.set persists priority and due date without changing an
     const before = await read(page, request, repo, untouched)
     await boot(page, repo)
     await slash(page, `/issues.view ${target} ${repo.fullName}`)
-    const thread = page.locator(`article.ghc-detail[data-issue="${target}"]`)
+    const thread = page.getByTestId(`card-issue-${repo.fullName}-${target}`).locator(`article.ghc-detail[data-issue="${target}"]`)
     await expect(thread).toBeVisible()
     const writes: Array<unknown> = []
     page.on("request", (outgoing) => {
@@ -142,7 +143,7 @@ authenticatedTest("issues.comment.react records one reaction and its keyboard re
     expect(await reactions()).toEqual([])
     await boot(page, repo)
     await slash(page, `/issues.view ${number} ${repo.fullName}`)
-    const thread = page.getByTestId(`conversation-${number}`)
+    const thread = page.getByTestId(`card-issue-${repo.fullName}-${number}`).getByTestId(`conversation-${number}`)
     await expect(thread.locator(`[data-message="${comment.id}"]`)).toBeVisible()
     const identity = await realApi(page, request, "GET", "/api/user")
     expect(identity.status()).toBe(200)
@@ -185,8 +186,10 @@ authenticatedTest("owned issue comments, close and reopen survive reload through
     const other = await seed(page, request, repo, `untouched-${randomUUID()}`)
     const untouched = await read(page, request, repo, other)
     await boot(page, repo)
+    await enableVerboseEvidence(page)
+    await closeComposer(page)
     await slash(page, `/issues.view ${number} ${repo.fullName}`)
-    const issue = page.locator(`article.ghc-detail[data-issue="${number}"]`)
+    const issue = page.getByTestId(`card-issue-${repo.fullName}-${number}`).locator(`article.ghc-detail[data-issue="${number}"]`)
     const commentsPath = `${repo.path}/issues/${number}/comments`
     const readComments = async () => {
       const response = await realApi(page, request, "GET", commentsPath)
@@ -210,20 +213,28 @@ authenticatedTest("owned issue comments, close and reopen survive reload through
     const close = issue.getByRole("button", { name: "Close issue", exact: true })
     await close.focus()
     await expect(close).toBeFocused()
+    const closeArgs = await close.getAttribute("data-flow-args")
+    expect(closeArgs).toBe(`${number} ${repo.fullName}`)
     const closed = page.waitForResponse(response => response.request().method() === "PATCH" && new URL(response.url()).pathname === `${repo.path}/issues/${number}`)
     await close.press("Enter")
     expect((await closed).status()).toBe(200)
     expect((await read(page, request, repo, number)).state).toBe("closed")
+    await expectFlowOutcome(page, "issues.close", closeArgs!, "executed")
+    await expect(issue).toHaveAttribute("data-state", "closed")
     await reloadApp(page)
     await expect(issue).toHaveAttribute("data-state", "closed")
     await expect(issue).toContainText(marker)
     const reopen = issue.getByRole("button", { name: "Reopen issue", exact: true })
     await reopen.focus()
     await expect(reopen).toBeFocused()
+    const reopenArgs = await reopen.getAttribute("data-flow-args")
+    expect(reopenArgs).toBe(`${number} ${repo.fullName}`)
     const reopened = page.waitForResponse(response => response.request().method() === "PATCH" && new URL(response.url()).pathname === `${repo.path}/issues/${number}`)
     await reopen.press("Enter")
     expect((await reopened).status()).toBe(200)
     expect((await read(page, request, repo, number)).state).toBe("open")
+    await expectFlowOutcome(page, "issues.reopen", reopenArgs!, "executed")
+    await expect(issue).toHaveAttribute("data-state", "open")
     await reloadApp(page)
     await expect(issue).toHaveAttribute("data-state", "open")
     await expect(issue).toContainText(marker)
@@ -247,7 +258,7 @@ authenticatedTest("issues.fix records the actual fixer and refuses self verifica
     const viewer = await viewerResponse.json() as { id: number; username: string }
     await boot(page, repo)
     await slash(page, `/issues.view ${number} ${repo.fullName}`)
-    const issue = page.locator(`article.ghc-detail[data-issue="${number}"]`)
+    const issue = page.getByTestId(`card-issue-${repo.fullName}-${number}`).locator(`article.ghc-detail[data-issue="${number}"]`)
     const fixedResponse = page.waitForResponse(response => response.request().method() === "PATCH" && new URL(response.url()).pathname === `${repo.path}/issues/${number}`)
     await slash(page, `/issues.fix ${number} ${repo.fullName}`)
     expect((await fixedResponse).status()).toBe(200)
