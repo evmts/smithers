@@ -1738,7 +1738,13 @@ console.log("reverted");`,
     await tui.until(drawn, 20_000, "first draw")
     await tui.type("delegate fix")
     await tui.press(key.enter)
-    await tui.until((screen) => screen.includes("Fixer finished"), 10_000, "worker done")
+    await tui.until(
+      (screen) =>
+        screen.includes("Fixer done") && /Done \d+s · worker/.test(screen) &&
+        readFileSync(join(cwd, "math.js"), "utf8").includes("a + b"),
+      10_000,
+      "worker done"
+    )
     await tui.press(key.tab)
     await tui.until((screen) => screen.includes("d Diff  u Undo  enter Open"), 5_000, "card focused")
     await tui.type("d")
@@ -1785,7 +1791,13 @@ console.log("reverted");`,
     await tui.until(drawn, 20_000, "first draw")
     await tui.type("delegate fix")
     await tui.press(key.enter)
-    await tui.until((screen) => screen.includes("Fixer finished"), 10_000, "worker done")
+    await tui.until(
+      (screen) =>
+        screen.includes("Fixer done") && /Done \d+s · worker/.test(screen) &&
+        readFileSync(join(cwd, "math.js"), "utf8").includes("a + b"),
+      10_000,
+      "worker done"
+    )
     await tui.press(key.ctrlK)
     await tui.type("diff fixer")
     await tui.until((screen) => /Diff\s+d\s+Fixer/.test(screen), 5_000, "worker diff action")
