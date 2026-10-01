@@ -469,3 +469,54 @@ test("the model stream refuses a response that outgrows the stream byte ceiling"
   expect(response.status).toBe(502)
   expect(await response.json()).toEqual({ status: "error", code: "stream_failed" })
 })
+
+test("authenticated oversized retained output refuses without leaking frames and a later safe turn recovers", async () => {
+  let oversized = true
+  const handler = createModelTurnHandler({
+    authorization: "host-token",
+    callbackBaseUrl: "http://callback.test",
+    resolve: () => {
+      const events: ReadonlyArray<ModelEvent.ModelEvent> = [
+        { type: "text-delta", id: "text", text: oversized ? "a".repeat(16 * 1024 * 1024 + 1) : "ordinary answer" },
+        { type: "settle", stopReason: "stop" }
+      ]
+      return Effect.succeed({
+        model: Model.make({ stream: () => Stream.fromIterable(events) }),
+        options: { modelId: "fixture", credential: "ab" }
+      })
+    }
+  })
+  const request = { runId: "bounded-output", instructions: "answer", messages: [{ role: "user", content: "hi" }] }
+  const refused = await handler(streamPost(request))
+  expect(refused.status).toBe(502)
+  expect(await refused.json()).toEqual({ status: "error", code: "stream_failed" })
+  oversized = false
+  const recovered = await handler(streamPost({ ...request, runId: "safe-output" }))
+  expect(recovered.status).toBe(200)
+  const frames = (await recovered.text()).trim().split("\n").map((line) => JSON.parse(line))
+  expect(frames).toEqual([
+    { runId: "safe-output", type: "delta", kind: "text", text: "ordinary answer" },
+    { runId: "safe-output", type: "done", reason: "stop" }
+  ])
+})
+
+test("serialized JSON framing still refuses a raw reply below the provider byte cap", async () => {
+  const events: ReadonlyArray<ModelEvent.ModelEvent> = [
+    { type: "text-delta", id: "text", text: "\"".repeat(9 * 1024 * 1024) },
+    { type: "settle", stopReason: "stop" }
+  ]
+  const handler = createModelTurnHandler({
+    authorization: "host-token",
+    callbackBaseUrl: "http://callback.test",
+    resolve: () =>
+      Effect.succeed({
+        model: Model.make({ stream: () => Stream.fromIterable(events) }),
+        options: { modelId: "fixture" }
+      })
+  })
+  const response = await handler(
+    streamPost({ runId: "escaped-output", instructions: "answer", messages: [{ role: "user", content: "hi" }] })
+  )
+  expect(response.status).toBe(502)
+  expect(await response.json()).toEqual({ status: "error", code: "stream_failed" })
+})
