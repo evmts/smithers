@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
 import { once } from "node:events"
 import { createPlanner, requestPlan } from "../ci-planner.mjs"
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { existsSync, globSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { basename, dirname, join } from "node:path"
 import { test } from "node:test"
@@ -12,6 +12,14 @@ import * as Target from "@smthrs/targets/Target"
 import * as Exec from "@smthrs/targets/Exec"
 import { parseWorkflow } from "../release-rehearsal.mjs"
 import * as PackageExec from "@smthrs/build-cli/PackageExec"
+
+test("TUI measurement roster retains every current owner and no deleted source", () => {
+  const tui = join(root, "apps/tui")
+  const roster = JSON.parse(readFileSync(join(tui, "coverage-roster.json"), "utf8"))
+  const owners = globSync("src/**/*.{ts,tsx}", { cwd: tui }).sort()
+  assert.deepEqual(roster, owners)
+  assert.equal(new Set(roster).size, roster.length)
+})
 
 test("CI command discovery retains diagnostic options and refuses unknown selection syntax", () => {
   for (const options of ["--jobs 2 --verbose", "--verbose --jobs 2"]) {
