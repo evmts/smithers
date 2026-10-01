@@ -1,3 +1,10 @@
+import { Database } from "bun:sqlite"
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { APP_SCHEMA_VERSION } from "../chain/SchemaVersion"
+import { openSqliteRowStorage } from "../chain/SqliteRowStorage"
+import { PERSISTED_COLLECTION_SPECS } from "./AppStore"
 import { Authorize } from "@smthrs/chain"
 import type { StorageApi } from "@tanstack/db"
 import { afterEach,describe,expect,test } from "bun:test"
@@ -445,3 +452,272 @@ describe("durable command intent at the active shared door", () => {
     expect(JSON.stringify(await store.eventHistory())).not.toContain(accepted.receipt.id)
   })
 })
+
+
+for (
+  const { creationHeld, repeated, boundary } of [
+    ...[true, false].flatMap((creationHeld) =>
+      [false, true].map((repeated) => ({ creationHeld, repeated, boundary: "pending" as const }))
+    ),
+    ...["deleted", "replacement", "settled", "retired", "account"].map((boundary) => ({
+      creationHeld: true,
+      repeated: true,
+      boundary
+    }))
+  ]
+) {
+  test(`a human edit recovers its base form with SQLite creation held=${creationHeld}, repeated=${repeated}, boundary=${boundary}`, async () => {
+    const directory = mkdtempSync(join(tmpdir(), "smithers-base-form-recovery-"))
+    const path = join(directory, "app.sqlite"), crashPath = join(directory, "crash.sqlite")
+    const recoveryValues = new Map<string, string>()
+    const storageFor = (values: Map<string, string>): StorageApi => ({
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => {
+        values.set(key, value)
+      },
+      removeItem: (key) => {
+        values.delete(key)
+      }
+    })
+    const priorWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
+    const host = Object.assign(new EventTarget(), {
+      localStorage: storageFor(recoveryValues),
+      location: new URL("https://example.invalid/"),
+      matchMedia: () => ({ matches: false })
+    })
+    Object.defineProperty(globalThis, "window", { configurable: true, value: host })
+    const entered = deferred(), release = deferred(), staged = deferred(), stagedAgain = deferred()
+    let stagedCount = 0
+    let holdCreation = false, baseCardWrite = false
+    let controller: AppController | undefined, store: AppStore | undefined, restored: AppStore | undefined
+    const pending: Promise<unknown>[] = []
+    const db = new Database(path)
+    db.query("PRAGMA journal_mode = WAL").run()
+    const openSqlite = async (connection: Database, holding: boolean) => {
+      const adapter = await openSqliteRowStorage({
+        execute: async <Row>(sql: string, params: ReadonlyArray<unknown> = []) => {
+          if (
+            holding && holdCreation && /^\s*INSERT\b/i.test(sql) && params[0] === "app-cards" &&
+            typeof params[3] === "string" && JSON.parse(params[3]).id === "form-tab.card"
+          ) baseCardWrite = true
+          if (holding && holdCreation && baseCardWrite && /^\s*COMMIT\b/i.test(sql)) {
+            holdCreation = false
+            entered.resolve()
+            await release.promise
+          }
+          const statement = connection.query(sql)
+          if (/^\s*(SELECT|PRAGMA)/i.test(sql)) return statement.all(...params as []) as ReadonlyArray<Row>
+          statement.run(...params as [])
+          return []
+        },
+        close: () => connection.close()
+      }, { collections: PERSISTED_COLLECTION_SPECS, schemaVersion: APP_SCHEMA_VERSION })
+      return createAppStore({
+        kind: "opfs",
+        ...adapter,
+        storageEventApi: { addEventListener: () => {}, removeEventListener: () => {} }
+      })
+    }
+    try {
+      store = await openSqlite(db, true)
+      if (boundary === "account") {
+        await store.dispatch({
+          type: "identity.session.loaded",
+          actor: "system",
+          state: "signed-in",
+          login: "initial-owner",
+          provider: "local",
+          admin: false,
+          scopesPlain: null
+        }).isPersisted.promise
+      }
+      const realStage = store.stagePendingCardInput
+      controller = controllerFor({
+        ...store,
+        stagePendingCardInput: (...args) => {
+          const result = realStage(...args)
+          if (result !== undefined) {
+            stagedCount++
+            ;(stagedCount === 1 ? staged : stagedAgain).resolve()
+          }
+          return result
+        }
+      })
+      await store.settled?.()
+      holdCreation = creationHeld
+      const opening = controller.commands.run("tab.card")
+      pending.push(opening)
+      if (creationHeld) await entered.promise
+      else {
+        await opening
+        await store.settled?.()
+      }
+      expect(store.collections.cards.get("form-tab.card")).toMatchObject({
+        kind: "flow-form",
+        payload: { flow: "tab.card" }
+      })
+      const beforeInput = readEntityRecoveries(host.localStorage)
+      expect(beforeInput).toHaveLength(creationHeld ? 1 : 0)
+      if (creationHeld) expect(beforeInput[0]?.preparedCommandId).toBeUndefined()
+      if (boundary === "pending") {
+        pending.push(
+          controller.commands.run(
+            "form.set",
+            `form-tab.card cardId ${repeated ? "first-recovered-card" : "exact-recovered-card"}`
+          )
+        )
+        await staged.promise
+        if (repeated) {
+          pending.push(controller.commands.run("form.set", "form-tab.card cardId exact-recovered-card"))
+          await stagedAgain.promise
+        }
+      } else {
+        const form = store.collections.cards.get("form-tab.card")
+        if (form?.kind !== "flow-form") throw new Error("Fixture form was not published")
+        expect(
+          store.stagePendingCardInput(
+            form.id,
+            { ...form, payload: { ...form.payload, draft: { cardId: "exact-recovered-card" } } },
+            "still-pending-edit",
+            "cardId"
+          )
+        ).toBeDefined()
+        expect(store.collections.commandIntents.get("still-pending-edit")).toBeUndefined()
+      }
+      const afterInput = readEntityRecoveries(host.localStorage)
+      expect(afterInput).toHaveLength(1)
+      expect(afterInput[0]?.preparedCommandId).toBeString()
+      if (creationHeld) {
+        expect(afterInput[0]?.pendingCard).toMatchObject({
+          revision: beforeInput[0]?.revision,
+          authority: beforeInput[0]?.authority
+        })
+      } else expect(afterInput[0]?.pendingCard).toBeUndefined()
+      expect(afterInput[0]?.value).toMatchObject({
+        kind: "card",
+        card: { payload: { draft: { cardId: "exact-recovered-card" } } }
+      })
+      const frozenRecovery = new Map(recoveryValues)
+      const reader = new Database(path, { readonly: true })
+      try {
+        expect(
+          reader.query(
+            "SELECT json_extract(value, '$.id') AS id FROM smithers_collection_rows WHERE collection_id = 'app-cards' AND json_extract(value, '$.id') = ?"
+          ).all("form-tab.card")
+        ).toEqual(creationHeld ? [] : [{ id: "form-tab.card" }])
+        expect(
+          reader.query("SELECT value FROM smithers_collection_rows WHERE collection_id = 'app-command-intents'").all()
+            .some((row) => JSON.parse((row as { value: string }).value).name === "tab.card")
+        ).toBe(true)
+        writeFileSync(crashPath, reader.serialize())
+      } finally {
+        reader.close()
+      }
+      // Drain only the old owner; the reopened store receives the frozen committed database and recovery bytes.
+      release.resolve()
+      await Promise.all(pending)
+      if (boundary !== "pending") {
+        const form = store.collections.cards.get("form-tab.card")
+        if (boundary === "deleted") {
+          await store.dispatch({ type: "card.removed", actor: "user", id: "form-tab.card" }).isPersisted.promise
+        }
+        if (boundary === "replacement" && form?.kind === "flow-form") {
+          await store.dispatch({
+            type: "card.upsert",
+            actor: "user",
+            card: {
+              ...form,
+              payload: {
+                ...form.payload,
+                given: { cardId: "replacement-given" },
+                draft: { cardId: "replacement-value" }
+              }
+            }
+          }).isPersisted.promise
+        }
+        if (boundary === "settled") {
+          await store.dispatch({
+            type: "command.intent.accepted",
+            actor: "user",
+            id: "still-pending-edit",
+            name: "form.set",
+            source: "command"
+          }).isPersisted.promise
+          await store.dispatch({
+            type: "command.intent.settled",
+            actor: "user",
+            id: "still-pending-edit",
+            outcome: "failed"
+          }).isPersisted.promise
+          expect(store.collections.commandIntents.get("still-pending-edit")?.status).toBe("settled")
+        } else expect(store.collections.commandIntents.get("still-pending-edit")).toBeUndefined()
+        if (boundary === "settled" && form?.kind === "flow-form") {
+          await store.dispatch({
+            type: "card.updated",
+            actor: "user",
+            id: form.id,
+            patch: { payload: { ...form.payload, draft: { cardId: "newer-accepted-value" } } }
+          }).isPersisted.promise
+        }
+        if (boundary === "retired") await store.dispatch({ type: "app.reset", actor: "user" }).isPersisted.promise
+        if (boundary === "account") {
+          await store.dispatch({
+            type: "identity.session.loaded",
+            actor: "system",
+            state: "signed-in",
+            login: "different-owner",
+            provider: "local",
+            admin: false,
+            scopesPlain: null
+          }).isPersisted.promise
+        }
+        await store.settled?.()
+        const currentReader = new Database(path, { readonly: true })
+        try {
+          writeFileSync(crashPath, currentReader.serialize())
+        } finally {
+          currentReader.close()
+        }
+      }
+      await controller.dispose()
+      await store.dispose?.()
+      host.localStorage = storageFor(frozenRecovery)
+      restored = await openSqlite(new Database(crashPath), false)
+      const recovered = restored.collections.cards.get("form-tab.card")
+      if (["deleted", "retired", "account"].includes(boundary)) expect(recovered).toBeUndefined()
+      else {expect(recovered).toMatchObject({
+          kind: "flow-form",
+          payload: {
+            flow: "tab.card",
+            draft: {
+              cardId: boundary === "replacement"
+                ? "replacement-value"
+                : boundary === "settled"
+                ? "newer-accepted-value"
+                : "exact-recovered-card"
+            }
+          }
+        })}
+      expect(readEntityRecoveries(host.localStorage)).toEqual([])
+      expect((await restored.verifyState()).valid).toBe(true)
+    } finally {
+      release.resolve()
+      await Promise.allSettled(pending)
+      try {
+        await controller?.dispose()
+      } finally {
+        try {
+          await restored?.dispose?.()
+        } finally {
+          try {
+            await store?.dispose?.()
+          } finally {
+            if (priorWindow === undefined) Reflect.deleteProperty(globalThis, "window")
+            else Object.defineProperty(globalThis, "window", priorWindow)
+            rmSync(directory, { recursive: true, force: true })
+          }
+        }
+      }
+    }
+  })
+}
