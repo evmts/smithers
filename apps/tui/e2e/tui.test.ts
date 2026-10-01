@@ -1921,7 +1921,13 @@ console.log("reverted");`,
     await tui.type("/flow review title=x")
     await tui.press(key.enter)
     await tui.until((screen) => /◌ review · \d+m?s/.test(screen))
-    await tui.type("/tabs")
+    await tui.press(key.ctrlK)
+    await tui.type("tab:fixer")
+    await tui.until(
+      (screen) => /Fixer\s+worker/.test(screen) && screen.includes("tab:fixer"),
+      5_000,
+      "worker tab action"
+    )
     await tui.press(key.enter)
     await tui.until(
       (screen) => screen.includes("d Diff  esc Chat") && !screen.includes("u Undo"),
