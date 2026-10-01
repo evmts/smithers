@@ -230,3 +230,132 @@ it("keeps declared-view failures safe and retries explicitly after transport and
     rmSync(root, { recursive: true, force: true })
   }
 }, 45_000)
+
+it("keeps a background issue-view failure visible in Chat and recovers through the existing door", async () => {
+  const root = mkdtempSync(join(tmpdir(), "tui-view-background-"))
+  let reads = 0
+  let release!: () => void
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let entered!: () => void
+  const requested = new Promise<void>((resolve) => {
+    entered = resolve
+  })
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const url = new URL(request.url)
+      if (url.pathname.endsWith("/mythical")) {
+        return Response.json({
+          repository: "o/r",
+          state: "active",
+          generation: 1,
+          mainBehind: false,
+          changes: [],
+          items: [],
+          lanes: [],
+          limits: { maxParallel: 3 }
+        })
+      }
+      if (url.pathname.endsWith("/issue-views")) {
+        return Response.json([{ id: "bugs", title: "Open bugs", state: "open", labels: ["bug"] }])
+      }
+      if (url.pathname.endsWith("/issues") && url.searchParams.get("view") === "bugs") {
+        reads++
+        if (reads === 1) {
+          entered()
+          await held
+          return Response.json({ message: "PRIVATE_BACKGROUND_FAILURE" }, { status: 503 })
+        }
+        return Response.json([{ number: 620, title: "Recovered background issue", state: "open" }])
+      }
+      return new Response("unexpected", { status: 404 })
+    }
+  })
+  let tui: Tui | undefined
+  try {
+    tui = await Tui.start({
+      cwd: root,
+      cols: 110,
+      rows: 40,
+      command: `bun ${resolve(import.meta.dir, "../src/main.tsx")}`,
+      env: {
+        PATH: process.env.PATH ?? "",
+        HOME: root,
+        XDG_CONFIG_HOME: root,
+        SMITHERS_TUI_SESSION_DIR: join(root, "sessions"),
+        SMITHERS_TUI_REPLAY: resolve(import.meta.dir, "../test/fixtures/pong.jsonl"),
+        SMITHERS_TOKEN: "tok_views_background",
+        SMITHERS_REPO: "o/r",
+        SMITHERS_API_ORIGIN: `http://127.0.0.1:${server.port}`
+      }
+    })
+    await tui.until((screen) => /↑\S+ ↓\S+/.test(screen), 20_000, "production startup")
+    await tui.type("/smithers")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Issue views"), 5_000, "existing issue-view door")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Open bugs"), 5_000, "declared view list")
+    await tui.press(key.enter)
+    let deadline: ReturnType<typeof setTimeout> | undefined
+    try {
+      await Promise.race([
+        requested,
+        new Promise<never>((_, reject) => {
+          deadline = setTimeout(() => reject(new Error("Missing held public issue request")), 5000)
+        })
+      ])
+    } finally {
+      clearTimeout(deadline)
+    }
+    await tui.press(key.escape)
+    await tui.type("keep Chat usable during background issue read")
+    await tui.press(key.enter)
+    const outcome = () => {
+      const folders = readdirSync(join(root, "sessions"), { withFileTypes: true }).filter((entry) =>
+        entry.isDirectory()
+      )
+      if (folders.length !== 1) return undefined
+      const folder = join(root, "sessions", folders[0]!.name)
+      const journal = readdirSync(folder).find((name) => name.endsWith(".jsonl"))
+      return journal === undefined
+        ? undefined
+        : Session.load(join(folder, journal)).findLast((record) => record.type === "outcome")
+    }
+    await tui.until(() => outcome() !== undefined, 10_000, "durable Chat completion while view unresolved")
+    expect(outcome()).toMatchObject({ type: "outcome", outcome: { _tag: "done", answer: "pong" } })
+    release()
+    await tui.until(
+      (screen) => screen.includes("That command could not run.") && screen.includes("Details: /conversation"),
+      5_000,
+      "background failure diagnostic in Chat"
+    )
+    expect(tui.screen()).not.toContain("PRIVATE_BACKGROUND_FAILURE")
+    expect(reads).toBe(1)
+    await tui.type("/smithers")
+    await tui.press(key.enter)
+    await tui.press(key.up)
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Open bugs"), 5_000, "existing view reopened after failure")
+    await tui.press(key.enter)
+    await tui.until(
+      (screen) => screen.includes("#620 Recovered background issue"),
+      5_000,
+      "successful background read retry"
+    )
+    expect(reads).toBe(2)
+    await tui.press(key.escape)
+    await tui.until(
+      (screen) => !screen.includes("That command could not run."),
+      5_000,
+      "settled failure notice cleared"
+    )
+  } finally {
+    release()
+    await tui?.stop()
+    server.stop(true)
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 45_000)
