@@ -3,6 +3,7 @@ import { useClock } from "@smthrs/ui/clock"
 import { parseArgs } from "@smthrs/ui/flow-arguments"
 import { NOTICE_SETTLE_MS } from "@smthrs/ui/notification-policy"
 import * as Failures from "./failures.ts"
+import * as IssueViews from "./issue-views.ts"
 import * as Log from "./log.ts"
 /**
  * The terminal UI: a transcript of cells above a composer.
@@ -19,7 +20,7 @@ import { Schema } from "effect"
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { basename, join } from "node:path"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import stringWidth from "string-width"
 import { ActivityView } from "./activity-view.tsx"
 import * as Agents from "./agents.ts"
@@ -89,6 +90,7 @@ import { seats, type Snapshot, type Tab, Workspace } from "./workspace.ts"
 const columnWidth = 120
 
 export interface AppProps {
+  readonly issueViews?: ReturnType<typeof IssueViews.controller>
   readonly host: Host.Host
   readonly seat: string
   readonly workerSeat?: string
@@ -123,7 +125,16 @@ const askForm = "ask:"
 /** A form's id prefix when it raises a capped worker's token cap. */
 const capForm = "cap:"
 
+const idleIssueViews: IssueViews.State = { phase: "idle" }
+const noIssueViews = () => idleIssueViews
+const noIssueSubscription = () => () => {}
+
 export function App(props: AppProps) {
+  const issueViewsState = useSyncExternalStore(
+    props.issueViews?.subscribe ?? noIssueSubscription,
+    props.issueViews?.state ?? noIssueViews
+  )
+  const issueViewsPending = props.issueViews?.pending()
   const renderer = useRenderer()
   const [, refreshTheme] = useState(0)
   useState(() => setTheme(loadTheme()))
@@ -496,7 +507,8 @@ export function App(props: AppProps) {
   const { search, parsed: parsedPalette } = Pickers.useSearch({ picker, setPicker, cwd: props.host.cwd, setStatus })
   // One shared clock drives foreground and background progress through settlement.
   const sampledAt = Date.now()
-  const clockRunning = turn !== undefined || shell !== undefined || undoing !== undefined || workspace.busy ||
+  const clockRunning = issueViewsPending !== undefined || turn !== undefined || shell !== undefined ||
+    undoing !== undefined || workspace.busy ||
     runs.busy || flowRuns.some((run) => run.endedAt !== undefined && sampledAt - run.endedAt < NOTICE_SETTLE_MS) ||
     search?.status === "running" ||
     snapshot.tabs.some((tab) => tab.endedAt !== undefined && sampledAt - tab.endedAt < NOTICE_SETTLE_MS)
@@ -550,6 +562,7 @@ export function App(props: AppProps) {
   }
   /** `ui:<id>` views: runtime tabs, plugin panels, the problems view, and any card while it is open. */
   const uiPanels: ReadonlyArray<Panels.Panel> = [
+    ...(props.issueViews !== undefined && surface === `ui:${IssueViews.id}` ? [IssueViews.panel(issueViewsState)] : []),
     ...snapshot.panels.filter((each) => !cardIds.has(each.id) || surface === `ui:${each.id}`),
     ...extensions.panels.filter((each) => each.placement === "tab" || surface === `ui:${each.panel.id}`).map((each) =>
       each.panel
@@ -625,7 +638,7 @@ export function App(props: AppProps) {
   }, [smithersShown, factoryRepo])
   const smithersPanel = homeApps.length === 0 && factoryRepo === undefined
     ? undefined
-    : Smithers.panel(homeApps, new Set(runs.listed().map((flow) => flow.name)), factory)
+    : Smithers.panel(homeApps, new Set(runs.listed().map((flow) => flow.name)), factory, props.issueViews !== undefined)
   const smithersKey = smithersPanel === undefined ? "" : JSON.stringify(smithersPanel)
   useEffect(() => {
     contributions.plugin(
@@ -1838,6 +1851,11 @@ export function App(props: AppProps) {
         return
       case "open": {
         const target = action.surface === "smithers" ? `ui:${Smithers.id}` : action.surface
+        if (target === `ui:${IssueViews.id}` && props.issueViews !== undefined) {
+          if (props.issueViews.pending() === undefined) void props.issueViews.refresh()
+          if (liveForm.current !== undefined) changeForm(undefined)
+          return showTab(target)
+        }
         const card = target.startsWith("ui:") && cardIds.has(target.slice(3))
         if (target !== "chat" && !card && !surfaces.some((each) => each.id === target)) {
           return setStatus(`No view ${target}`, "warning")
@@ -2369,6 +2387,18 @@ export function App(props: AppProps) {
     }
     if (panelFocus && panel !== undefined && open === undefined && !key.ctrl && !key.meta && !key.option) {
       return Dispatch.panelKey(key, panel, { surface, navigation, worker: workerTab, flow: selectedFlowActions }, {
+        activate: (row) => {
+          if (surface === `ui:${Smithers.id}` && row.id === IssueViews.id) {
+            perform({ kind: "open", surface: `ui:${IssueViews.id}` })
+            return true
+          }
+          if (surface !== `ui:${IssueViews.id}` || props.issueViews === undefined) return false
+          const view = IssueViews.viewOf(row.id)
+          if (view !== undefined) void props.issueViews.select(view)
+          else if (row.id === "issue-views:failed") void props.issueViews.refresh()
+          else return false
+          return true
+        },
         close: () =>
           flushSync(() => {
             setSurface("chat")
@@ -2604,6 +2634,7 @@ export function App(props: AppProps) {
     tabs: snapshot.tabs,
     runs: flowRuns,
     search,
+    issueViews: issueViewsPending,
     undoing,
     toast,
     now,

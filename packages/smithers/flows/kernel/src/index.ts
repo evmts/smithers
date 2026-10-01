@@ -179,3 +179,10 @@ export * as ProcessConfinement from "./ProcessConfinement.ts"
  * @since 1.0.0
  */
 export * as Unreachable from "./Unreachable.ts"
+
+/**
+ * Authenticated collection continuation and bounded response reads.
+ * @category namespace exports
+ * @since 1.0.0
+ */
+export * as HttpPagination from "./HttpPagination.ts"

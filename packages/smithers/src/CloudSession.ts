@@ -8,6 +8,7 @@
  * @since 1.0.0
  */
 
+import { pageText, paginationCursor } from "@smthrs/kernel/HttpPagination"
 import * as CliError from "./CliError.ts"
 import { processHost, resolveRepo } from "./commands/Open.ts"
 import { Session } from "./internal/backend/Session.ts"
@@ -27,6 +28,11 @@ export interface Cloud {
   readonly origin: string
   /** GETs `path` (starting `/api/`) as the signed-in person; resolves the parsed JSON body. */
   readonly get: (path: string, signal?: AbortSignal) => Promise<unknown>
+  /** Reads the same JSON body with validated, same-query keyset continuation. */
+  readonly getPage: (
+    path: string,
+    signal?: AbortSignal
+  ) => Promise<{ readonly body: unknown; readonly nextCursor: string; readonly bytes: number }>
   /** POSTs the JSON `body` to `path` (starting `/api/`) as the signed-in person; resolves the parsed JSON body. */
   readonly post: (path: string, body: unknown, signal?: AbortSignal) => Promise<unknown>
 }
@@ -47,7 +53,12 @@ export const signedIn = async (env: Readonly<Record<string, string | undefined>>
   }
   if (resolved === undefined) return undefined
   const { api_url: origin, token } = resolved
-  const call = async (method: "GET" | "POST", path: string, body: unknown, signal?: AbortSignal): Promise<unknown> => {
+  const call = async (
+    method: "GET" | "POST",
+    path: string,
+    body: unknown,
+    signal?: AbortSignal
+  ): Promise<{ readonly body: unknown; readonly headers: Headers; readonly bytes: number }> => {
     // Only a path on this origin: the token never goes to another host.
     if (!path.startsWith("/") || path.startsWith("//")) {
       throw new CliError.Refused({
@@ -75,16 +86,14 @@ export const signedIn = async (env: Readonly<Record<string, string | undefined>>
         message: `${path}: HTTP ${response.status}`
       })
     }
-    const text = await response.text()
-    if (text.length > maxBytes) {
-      throw new CliError.Refused({
+    const { text, bytes } = await pageText(response, maxBytes, () =>
+      new CliError.Refused({
         fault: "infra",
         code: "cloud_response_too_large",
         message: `${path}: the response is larger than ${maxBytes} bytes`
-      })
-    }
+      }))
     try {
-      return JSON.parse(text) as unknown
+      return { body: JSON.parse(text) as unknown, headers: response.headers, bytes }
     } catch {
       throw new CliError.Refused({
         fault: "infra",
@@ -95,8 +104,24 @@ export const signedIn = async (env: Readonly<Record<string, string | undefined>>
   }
   return {
     origin,
-    get: (path, signal) => call("GET", path, undefined, signal),
-    post: (path, body, signal) => call("POST", path, body, signal)
+    get: async (path, signal) => (await call("GET", path, undefined, signal)).body,
+    getPage: async (path, signal) => {
+      const result = await call("GET", path, undefined, signal)
+      return {
+        body: result.body,
+        bytes: result.bytes,
+        nextCursor: paginationCursor(result.headers, new URL(path, origin), {
+          preserveQuery: true,
+          invalid: () =>
+            new CliError.Refused({
+              fault: "infra",
+              code: "backend_protocol",
+              message: "Cloud returned invalid pagination"
+            })
+        })
+      }
+    },
+    post: async (path, body, signal) => (await call("POST", path, body, signal)).body
   }
 }
 
