@@ -402,8 +402,14 @@ test("terminal keyboard reads every owned named-view page and refreshes after re
     expect(await api(`${repoPath}/issues/${unrelated.number}`)).toMatchObject({ state: "open" })
     expect(await api(`${repoPath}/issues/${closed.number}`)).toMatchObject({ state: "closed" })
     expect(await api(`/api/repos/${other.full_name}/issues`)).toMatchObject([{ title: "Other repository control", state: "open" }])
-    const journals = (await readdir(join(root, "sessions"), { recursive: true })).filter(path => path.endsWith(".jsonl"))
-    expect(journals.length).toBeGreaterThan(0)
+    let sessionDirectoryExists = true
+    const journals = (await readdir(join(root, "sessions"), { recursive: true }).catch((error: unknown) => {
+      if (typeof error !== "object" || error === null || !("code" in error) || error.code !== "ENOENT") throw error
+      sessionDirectoryExists = false
+      return []
+    })).filter(path => path.endsWith(".jsonl"))
+    // Session.create is lazy: navigation and an unsent draft append no Chat records.
+    expect(journals).toEqual([])
     const records: unknown[] = (await Promise.all(journals.map(async path =>
       (await readFile(join(root!, "sessions", path), "utf8")).split("\n").filter(Boolean).map(line => JSON.parse(line))
     ))).flat()
@@ -418,7 +424,8 @@ test("terminal keyboard reads every owned named-view page and refreshes after re
       repo, actor: { username, is_admin: true }, before: matching.slice().reverse(), after: matching.slice(1).reverse(),
       namedView: "bugs", pages: 2, exclusions: [unrelated.number, closed.number], otherRepository: other.full_name,
       restart: "same profile; normal keyboard reselect", automaticSelectionRestorationClaimed: false,
-      modelRequestCount: modelRequests.length
+      persistedModelRequestCount: modelRequests.length, sessionArtifactCount: journals.length, sessionDirectoryExists,
+      lazyJournalBoundary: "No submitted Chat; zero persisted markers is not a live provider observer"
     }, null, 2) + "\n")
   } catch (error) {
     const evidence = process.env.SMITHERS_TUI_REAL_EVIDENCE_PATH
