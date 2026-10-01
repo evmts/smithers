@@ -1,3 +1,4 @@
+import { NoInput } from "../src/app-operations"
 import { expect, test } from "bun:test"
 import { fileURLToPath } from "node:url"
 import { Schema } from "effect"
@@ -192,4 +193,18 @@ test("displayLine names the withheld fields after the line", () => {
   expect(displayLine({ args: "run-1", withheld: [] })).toBe("run-1")
   expect(displayLine({ args: "run-1", withheld: ["note", "tag"] })).toBe("run-1 (+note, tag)")
   expect(displayLine({ args: "", withheld: ["note"] })).toBe("(+note)")
+})
+
+
+test("no-input operation forms produce an empty object and reject undeclared payload", () => {
+  const fields = formFieldsFor(NoInput)
+  expect(fields).toEqual([])
+  expect(draftFrom(fields, {})).toEqual({})
+  expect(assembleArgs(fields, undefined, {})).toBe("")
+  expect(positionalRead(fields, undefined, "").payload).toEqual({})
+  expect(submissionPayload(NoInput, fields, {}, {})).toEqual({ payload: {} })
+  expect(fileSubmission(NoInput, fields, {}, {})).toEqual({ payload: {} })
+  const extra = submissionPayload(NoInput, fields, { unexpected: 1 }, {})
+  expect(extra).toEqual({ payload: { unexpected: 1 } })
+  if ("payload" in extra) expect(() => Schema.decodeUnknownSync(NoInput)(extra.payload)).toThrow()
 })

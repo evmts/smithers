@@ -1,3 +1,5 @@
+import { Schema } from "effect"
+import { flow } from "./entries/Declare"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import type { StorageApi } from "@tanstack/db"
 import { describe,expect,test } from "bun:test"
@@ -11,6 +13,7 @@ import { visibleItems } from "./Commands"
 import type { CommandState } from "./registry"
 import {
 matches,
+itemOf,
 namespaceOf,
 namespacesOf,
 parseSubmit,
@@ -56,6 +59,17 @@ const chatState: CommandState = {
 }
 
 describe("command registry pure model", () => {
+  test("only inhabited index signatures advertise input arguments", () => {
+    const none = flow({ name: "probe.none", summary: "Probe", input: Schema.Record(Schema.String, Schema.Never), handler: () => {} })
+    const values = flow({ name: "probe.values", summary: "Probe", input: Schema.Record(Schema.String, Schema.String), handler: () => {} })
+    const fields = flow({ name: "probe.field", summary: "Probe", input: Schema.Struct({ value: Schema.String }), handler: () => {} })
+    expect(itemOf(none).acceptsArgs).toBe(false)
+    expect(itemOf(values).acceptsArgs).toBe(true)
+    expect(itemOf(fields).acceptsArgs).toBe(true)
+    expect(parseSubmit("/probe.none surprise", [itemOf(none)])).toEqual({ kind: "prompt", text: "/probe.none surprise" })
+    expect(parseSubmit("/probe.values hello", [itemOf(values)])).toEqual({ kind: "command", name: "probe.values", args: "hello" })
+  })
+
   test("connect leads the recommendations until work is connected", () => {
     expect(recommendedNames(chatState)[0]).toBe("connect")
     expect(recommendedNames({ ...chatState, hasConnectors: true })[0]).toBe("wiki")
@@ -506,6 +520,25 @@ describe("billing plans are available to every signed-in account", () => {
 })
 
 describe("command registry bindings", () => {
+  test("no-input navigation accepts a bare command and rejects payload before changing the surface", async () => {
+    const { controller, store } = await freshController()
+    try {
+      for (const name of ["world", "chat"]) {
+        const entry = controller.commands.all().find((command) => command.name === name)
+        expect(entry?.acceptsArgs).toBe(false)
+        expect(parseSubmit(`/${name}`, controller.commands.all())).toEqual({ kind: "command", name })
+        expect((await controller.commands.run(name)).status).toBe("executed")
+        const before = store.session().surface
+        const invalid = await controller.commands.submit({ name, payload: { unexpected: true }, actor: "user" })
+        expect(invalid.status).toBe("failed")
+        expect(store.session().surface).toBe(before)
+      }
+    } finally {
+      await controller.dispose()
+      await store.dispose?.()
+    }
+  })
+
   test("bootstrap capabilities are the single registration gate", async () => {
     const local = await freshController({
       apiVersion: 1,
