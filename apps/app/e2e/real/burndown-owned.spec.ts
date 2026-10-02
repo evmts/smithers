@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import type { APIRequestContext, Locator, Page, Request } from "@playwright/test"
 import { scenario } from "./coverage/types"
 import { authenticatedTest } from "./auth-permissions/profile"
@@ -10,7 +11,7 @@ import { enableVerboseEvidence, expectFlowOutcome } from "./repositories-github/
 import { pushMainFiles, runningWorkspace, withOwnedRepository } from "./portable/owned-repository"
 
 // Controlled SUBJECT, genuine host/engine/journal/browser tier. No issue automation or model call.
-const subject = readFileSync(new URL("./burndown/issue-sweep.flow.fixture.ts", import.meta.url), "utf8")
+const subject = readFileSync(join(__dirname, "burndown/issue-sweep.flow.fixture.ts"), "utf8")
 const diagnostic = "Synthetic diagnostic <em data-fixture-marker>private</em>\nsecond line"
 const expectedItems = [
   { id: "101", number: 101, title: "Synthetic landed item" },
