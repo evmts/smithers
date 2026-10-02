@@ -239,7 +239,13 @@ test("an offline host without a backend refuses recorded and unrecorded turns wi
     ) {
       const response = await post(host, TURN_PATH, body)
       expect(response.status).toBe(503)
-      expect(await response.json()).toMatchObject({ code: "agent_unavailable" })
+      expect(await response.json()).toEqual({
+        status: "error",
+        code: "native_agent_unavailable",
+        origin: "local",
+        message: "No agent provider is configured in local-only mode.",
+        error: { code: "agent_unavailable", message: "No agent provider is configured in local-only mode." }
+      })
     }
   } finally {
     await cleanupOwned(() => host?.stop(), () => rm(root, { recursive: true, force: true }))
