@@ -6,7 +6,7 @@ import type {} from '../../e2e/fixtures/unit-entrypoints/NativeProduction.child.
 
 const cases = [['normal'], ['own-ambient-token'], ['config-error'], ['startup-renderer-stop-error'], ['renderer-error'],
   ['startup-backend-stop-error'], ['backend-failure'], ['duplicate-shutdown'],
-  ['shutdown-renderer-stop-error'], ['shutdown-bridge-stop-error-stub'],
+  ['shutdown-renderer-stop-error'], ['shutdown-bridge-stop-error'], ['shutdown-bridge-stop-error-stub'],
   ['window-start-error'], ['bridge-start-error'], ['bridge-window-close-error'], ['bridge-rollback-backend-failure']] as const
 const child = fileURLToPath(new URL('../../e2e/fixtures/unit-entrypoints/NativeProduction.child.test.ts', import.meta.url))
 

@@ -76,8 +76,8 @@ test("a hybrid host's chat is a backend turn as the signed-in Cloud user, and re
   cleanup.push(() => signedOut.stop())
   const turns = seen.length
   const recorded = JSON.stringify({ ...JSON.parse(body), journal: { version: 1, legId: "signed-out-leg", token: "signed_out_private_capability_1234567890" } })
-  // Unrecorded turns require sign-in; recorded turns require canonical storage first.
-  for (const [turn, status, refusal] of [[body, 401, { error: { code: "cloud_sign_in_required" } }], [recorded, 503, { status: "error", code: "storage_failed" }]] as const) {
+  // Both request shapes authenticate at the same backend relay before any upstream call.
+  for (const [turn, status, refusal] of [[body, 401, { error: { code: "cloud_sign_in_required" } }], [recorded, 401, { error: { code: "cloud_sign_in_required" } }]] as const) {
     const refused = await fetch(`${signedOut.origin}/api/agent/turn`, { method: "POST", headers: { [LOCAL_SESSION_HEADER]: signedOut.sessionToken, "content-type": "application/json" }, body: turn })
     expect(refused.status).toBe(status)
     expect(await refused.json()).toMatchObject(refusal)
@@ -87,6 +87,7 @@ test("a hybrid host's chat is a backend turn as the signed-in Cloud user, and re
   const noCloud = await startLocalServer({ distDir: await directory(), cloudMode: "hybrid", cloudApi: null, identityUpstream: null, log: () => {} })
   cleanup.push(() => noCloud.stop())
   const unavailable = await fetch(`${noCloud.origin}/api/agent/turn`, { method: "POST", headers: { [LOCAL_SESSION_HEADER]: noCloud.sessionToken, "content-type": "application/json" }, body })
+  expect(unavailable.status).toBe(503)
   expect(await unavailable.json()).toMatchObject({ error: { code: "agent_unavailable" } })
 })
 
