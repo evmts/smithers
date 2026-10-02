@@ -45,7 +45,13 @@ test("owned named-model output is committed, independently replayable, private, 
       const refusal = await fetch(absent.origin + "/api/agent/turn", { method: "POST", headers: { [LOCAL_SESSION_HEADER]: absent.sessionToken, "content-type": "application/json" },
         body: JSON.stringify({ runId: randomUUID(), journal: { version: 1, legId: randomUUID(), token: randomBytes(32).toString("base64url") }, messages: [], instructions: "Boundary" }) })
       expect(refusal.status).toBe(503)
-      expect(await refusal.json()).toMatchObject({ status: "error", code: "storage_failed" })
+      expect(await refusal.json()).toEqual({
+        status: "error",
+        code: "native_agent_unavailable",
+        origin: "local",
+        message: "No agent provider is configured in local-only mode.",
+        error: { code: "agent_unavailable", message: "No agent provider is configured in local-only mode." }
+      })
     } finally { await absent.stop() }
     const ownedCredentials = realHostCredentialOptions({})
     local = await startLocalServer({ distDir: dist, home: dist, cloudMode: "offline", chatBackend: backend, env: ownedCredentials.env, cloudKeychain: ownedCredentials.cloudKeychain, modelKeychain: ownedCredentials.modelKeychain })
