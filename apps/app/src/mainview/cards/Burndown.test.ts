@@ -397,6 +397,41 @@ describe("each state rule", () => {
     expect(burndownOf([decision(child, "running"), decision(child, "cancelled")]).items[0]).toMatchObject({ state: "failed", reason: "cancelled" })
   })
 
+  test("canonical tagged detail retains stack and cause without changing failed-account observation", () => {
+    const message = "codex-5 on issue-sweep:o/r#7: no change: owned diagnostic\nsecond line"
+    const events = [
+      decision(child, "running"),
+      scheduled(child, "issue-sweep/fix"),
+      settled(child, "issue-sweep/work", "failed", {
+        _tag: "issue-sweep/AgentFailed",
+        message,
+        stack: "owned trace",
+        cause: { _tag: "Cause", message: "underlying failure" }
+      }),
+      decision(child, "failed")
+    ]
+    expect(burndownOf(events).items[0]).toMatchObject({
+      state: "failed",
+      account: "codex-5",
+      reason: message + "\nowned trace\nCaused by: underlying failure"
+    })
+    expect(burndownOf(events).items[0]?.agent).toBeUndefined()
+  })
+
+  test("noncanonical failure retains JSON as detail rather than losing its unknown diagnostic", () => {
+    const value = { code: "external-failure", message: "untyped diagnostic", evidence: "preserved" }
+    const events = [
+      decision(child, "running"),
+      scheduled(child, "issue-sweep/fix"),
+      settled(child, "issue-sweep/work", "failed", value),
+      decision(child, "failed")
+    ]
+    expect(burndownOf(events).items[0]).toMatchObject({
+      state: "failed",
+      reason: "{\"code\":\"external-failure\",\"message\":\"untyped diagnostic\",\"evidence\":\"preserved\"}"
+    })
+  })
+
   describe("a failure's account", () => {
     const accountOf = (value: Record<string, unknown>) => burndownOf([decision(child, "running"), scheduled(child, "issue-sweep/fix"),
       settled(child, "issue-sweep/work", "failed", { _tag: "issue-sweep/AgentFailed", ...value }), decision(child, "failed")]).items[0]?.account

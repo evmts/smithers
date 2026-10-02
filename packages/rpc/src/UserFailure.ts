@@ -141,7 +141,8 @@ const causeOf = (value: unknown): unknown => {
 
 /**
  * The raw text of any thrown value: its stack, or its name and message, or its
- * string form. Never throws.
+ * string form. Serialized tagged failures keep their own message, stack and
+ * bounded cause chain without evaluating diagnostic metadata getters. Never throws.
  *
  * @since 1.0.0
  * @category utils
@@ -158,6 +159,20 @@ export const failureDetail = (error: unknown, depth = 0): string => {
         : `${text}\nCaused by: ${failureDetail(cause, depth + 1)}`
     }
     if (typeof error === "string") return error
+    if (typeof error === "object" && error !== null && !Array.isArray(error)) {
+      const tag: unknown = Object.getOwnPropertyDescriptor(error, "_tag")?.value
+      const message: unknown = Object.getOwnPropertyDescriptor(error, "message")?.value
+      if (typeof tag === "string" && typeof message === "string") {
+        const stack: unknown = Object.getOwnPropertyDescriptor(error, "stack")?.value
+        const text = typeof stack === "string" && stack.length > 0 && stack !== message
+          ? `${message}\n${stack}`
+          : message
+        const cause: unknown = Object.getOwnPropertyDescriptor(error, "cause")?.value
+        return cause === undefined || depth + 1 >= MAX_CAUSE_DEPTH
+          ? text
+          : `${text}\nCaused by: ${failureDetail(cause, depth + 1)}`
+      }
+    }
     const json = JSON.stringify(error)
     return json === undefined ? String(error) : json
   } catch {

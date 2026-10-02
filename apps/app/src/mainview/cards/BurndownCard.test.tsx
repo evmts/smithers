@@ -251,6 +251,90 @@ describe("a request this card sent", () => {
 })
 
 describe("an issue's failure", () => {
+  for (
+    const [name, value, expected] of [
+      ["tagged", {
+        _tag: "issue-sweep/AgentFailed",
+        message: "owned-card-diagnostic <tag> & details",
+        stack: "trace",
+        cause: { _tag: "Cause", message: "underlying" }
+      }, "owned-card-diagnostic <tag> & details\ntrace\nCaused by: underlying"],
+      [
+        "noncanonical",
+        { code: "unknown", message: "owned-card-diagnostic <untyped> & details", evidence: "complete" },
+        "{\"code\":\"unknown\",\"message\":\"owned-card-diagnostic <untyped> & details\",\"evidence\":\"complete\"}"
+      ]
+    ] as const
+  ) {
+    test(`a ${name} diagnostic is confined to the selected issue's detail`, () => {
+      const preview = JSON.stringify(value)
+      const recorded: Journal = {
+        input: {},
+        events: [
+          {
+            sequence: 1,
+            kind: "control.engine.event",
+            runId: "r",
+            occurredAt: 1,
+            payload: {
+              version: 1,
+              executionId: "issue-sweep/42/attempt-1",
+              eventType: "flows.engine.node-settled",
+              meta: {},
+              payload: {
+                action: "issue-sweep/work",
+                nodeId: "work",
+                outcome: "failed",
+                result: { bytes: preview.length, preview, truncated: false }
+              }
+            }
+          },
+          {
+            sequence: 2,
+            kind: "control.engine.event",
+            runId: "r",
+            occurredAt: 2,
+            payload: {
+              version: 1,
+              executionId: "issue-sweep/42/attempt-1",
+              eventType: "flows.engine.run-decision",
+              meta: {},
+              payload: {
+                decision: "transitioned",
+                executionFact: {
+                  observation: {
+                    executionId: "issue-sweep/42/attempt-1",
+                    flowName: "issue-sweep/work",
+                    status: "failed",
+                    createdAtMs: 1,
+                    startedAtMs: 1,
+                    finishedAtMs: 2
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+      const collapsed = render(card("running", recorded))
+      expect(collapsed).not.toContain("owned-card-diagnostic")
+      expect(collapsed).not.toContain("complete")
+      expect(has(collapsed, "burndown-reason")).toBe(false)
+      const selected = render(card("running", recorded, { burndown: { item: 42 } }))
+      const text = /<pre[^>]*data-testid="burndown-reason"[^>]*>([^]*?)<\/pre>/.exec(selected)?.[1]
+      expect(
+        text?.replace(/&quot;/g, "\"").replace(/&#x27;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(
+          /&amp;/g,
+          "&"
+        )
+      ).toBe(expected)
+      expect(selected).not.toContain("<tag>")
+      expect(selected).not.toContain("<untyped>")
+      expect(selected.match(/owned-card-diagnostic/g)).toHaveLength(1)
+      expect(selected.match(/aria-[a-z-]+="[^"]*"/g)?.join(" ") ?? "").not.toContain("owned-card-diagnostic")
+    })
+  }
+
   test("the parsed diagnostic is absent until its persisted issue is selected, then appears only as escaped detail text", () => {
     const diagnostic = `owned-detail <script>alert("x")</script> & 'quoted'\ncomplete diagnostic tail`
     const escaped =

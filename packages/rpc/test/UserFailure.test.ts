@@ -129,3 +129,150 @@ describe("failureDetail", () => {
     expect(failureDetail(stackless)).toBe("Error: no stack")
   })
 })
+
+describe("serialized tagged diagnostic detail", () => {
+  test("retains the complete own-data message verbatim, bypasses toJSON and omits unrelated metadata", () => {
+    let calls = 0
+    const message = `first line <script>alert("x")</script> & 'quoted'\nlast line`
+    const error = {
+      _tag: "AgentFailed",
+      message,
+      token: "omitted-private-field",
+      toJSON: () => {
+        calls++
+        throw new Error("must not serialize")
+      }
+    }
+    expect(failureDetail(error)).toBe(message)
+    expect(calls).toBe(0)
+    expect(failureDetail({ _tag: "", message: "" })).toBe("")
+  })
+
+  for (
+    const [name, stack, expected] of [
+      ["distinct", "trace line\nsecond trace", "message\ntrace line\nsecond trace"],
+      ["same", "message", "message"],
+      ["empty", "", "message"],
+      ["non-string", 42, "message"]
+    ] as const
+  ) {
+    test(`an own-data ${name} stack follows the message only when distinct and nonempty`, () => {
+      expect(failureDetail({ _tag: "AgentFailed", message: "message", stack })).toBe(expected)
+    })
+  }
+
+  test("never invokes recognized stack, cause, toJSON or unrelated getters", () => {
+    const reads: string[] = []
+    const error = { _tag: "AgentFailed", message: "owned diagnostic" }
+    for (const field of ["stack", "cause", "toJSON", "privateMetadata"]) {
+      Object.defineProperty(error, field, {
+        enumerable: true,
+        get: () => {
+          reads.push(field)
+          throw new Error("getter invoked")
+        }
+      })
+    }
+    expect(failureDetail(error)).toBe("owned diagnostic")
+    expect(reads).toEqual([])
+  })
+
+  test("does not consume inherited optional metadata", () => {
+    const prototype = { stack: "inherited trace", cause: "inherited cause" }
+    const error = Object.assign(Object.create(prototype), { _tag: "AgentFailed", message: "own message" })
+    expect(failureDetail(error)).toBe("own message")
+  })
+
+  test("appends defined own-data causes, including null, and ignores undefined", () => {
+    expect(failureDetail({ _tag: "AgentFailed", message: "outer", cause: { _tag: "Cause", message: "inner" } })).toBe(
+      "outer\nCaused by: inner"
+    )
+    expect(failureDetail({ _tag: "AgentFailed", message: "outer", cause: null })).toBe("outer\nCaused by: null")
+    expect(failureDetail({ _tag: "AgentFailed", message: "outer", cause: undefined })).toBe("outer")
+  })
+
+  test("bounds serialized chains and cycles to eight messages", () => {
+    let chain: unknown = { _tag: "Cause", message: "9" }
+    for (let index = 8; index >= 0; index--) chain = { _tag: "Cause", message: String(index), cause: chain }
+    expect(failureDetail(chain)).toBe(
+      "0\nCaused by: 1\nCaused by: 2\nCaused by: 3\nCaused by: 4\nCaused by: 5\nCaused by: 6\nCaused by: 7"
+    )
+    const cycle: { _tag: string; message: string; cause?: unknown } = { _tag: "Cause", message: "cycle" }
+    cycle.cause = cycle
+    expect(failureDetail(cycle)).toBe(
+      "cycle\nCaused by: cycle\nCaused by: cycle\nCaused by: cycle\nCaused by: cycle\nCaused by: cycle\nCaused by: cycle\nCaused by: cycle"
+    )
+    expect(failureDetail(chain, 7)).toBe("0")
+  })
+
+  test("preserves native Error and string rendering independently of serialized recognition", () => {
+    const native = new Error("native", { cause: "native cause" })
+    native.stack = "trace native"
+    expect(failureDetail(native)).toBe("trace native\nCaused by: native cause")
+    expect(failureDetail("plain\ntext")).toBe("plain\ntext")
+  })
+
+  test("preserves JSON fallback for arrays, malformed and inherited required fields", () => {
+    const values = [
+      [Object.assign([1, 2], { _tag: "AgentFailed", message: "array message" }), "[1,2]"],
+      [{ _tag: "AgentFailed", message: 1 }, "{\"_tag\":\"AgentFailed\",\"message\":1}"],
+      [{ _tag: 1, message: "text" }, "{\"_tag\":1,\"message\":\"text\"}"],
+      [{ message: "plain JSON" }, "{\"message\":\"plain JSON\"}"],
+      [Object.assign(Object.create({ _tag: "Inherited" }), { message: "own" }), "{\"message\":\"own\"}"],
+      [Object.assign(Object.create({ message: "inherited" }), { _tag: "Own" }), "{\"_tag\":\"Own\"}"]
+    ]
+    for (const [value, expected] of values) expect(failureDetail(value)).toBe(expected)
+    let reads = 0
+    const accessor = { message: "own" }
+    Object.defineProperty(accessor, "_tag", {
+      enumerable: true,
+      get: () => {
+        reads++
+        return "Accessor"
+      }
+    })
+    expect(failureDetail(accessor)).toBe("{\"message\":\"own\",\"_tag\":\"Accessor\"}")
+    expect(reads).toBe(1)
+    let messageReads = 0
+    const accessorMessage = { _tag: "Accessor" }
+    Object.defineProperty(accessorMessage, "message", {
+      enumerable: true,
+      get: () => {
+        messageReads++
+        return "legacy getter"
+      }
+    })
+    expect(failureDetail(accessorMessage)).toBe("{\"_tag\":\"Accessor\",\"message\":\"legacy getter\"}")
+    expect(messageReads).toBe(1)
+    expect(failureDetail({ toJSON: () => "legacy JSON" })).toBe("\"legacy JSON\"")
+  })
+
+  test("combines native and serialized causes without changing native stack text", () => {
+    const native = new Error("native inner")
+    native.stack = "native inner trace"
+    expect(failureDetail({ _tag: "Serialized", message: "outer", cause: native })).toBe(
+      "outer\nCaused by: native inner trace"
+    )
+    const outer = new Error("native outer", { cause: { _tag: "Serialized", message: "inner" } })
+    outer.stack = "native outer trace"
+    expect(failureDetail(outer)).toBe("native outer trace\nCaused by: inner")
+  })
+
+  test("known and unknown presenters keep their safe sentence separate from full serialized detail", () => {
+    const known = presentUserFailure(registry, { _tag: "Gone", message: "private diagnostic\nsecond line" })
+    expect(known.sentence).toBe("Sign in again.")
+    expect(known.detail).toBe("private diagnostic\nsecond line")
+    const reported: unknown[] = []
+    const error = { _tag: "Unregistered", message: "private unknown diagnostic", token: "omit-me" }
+    const unknown = presentUserFailure(registry, error, {
+      onUnknown: (value) => {
+        reported.push(value)
+      }
+    })
+    expect(unknown.sentence).toBe("Something went wrong on our side. Not your fault.")
+    expect(unknown.detail).toBe("private unknown diagnostic")
+    expect(unknown.tag).toBeNull()
+    expect(reported).toEqual([error])
+    expect([known.sentence, unknown.sentence].join(" ")).not.toContain("private")
+  })
+})
