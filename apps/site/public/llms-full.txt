@@ -10338,6 +10338,15 @@ Registers one class for the whole tag, or one per value of `field` (default `cod
 
 Reads the error and up to 15 `cause` links beneath it and answers the innermost registered tag, because a wrapper names where a failure surfaced and its cause names why. Anything unregistered is `{ class: "bug", tag: "unregistered" }`.
 
+### `Fault.retryTransient`
+
+- **Signature:** `retryTransient<A, E, R>(effect: Effect<A, E, R>): Effect<A, E, R>`
+
+Retries plain effects only while `Fault.of(error).class` is `infra`, using
+`RetryPolicy.transient`: 5 seconds doubling to 5 minutes, expiring after 2 hours.
+The caller guarantees the effect is safe to repeat. The final typed failure is
+preserved, including its class. Defects and interruption are not retried.
+
 ### `Fault.respond`
 
 - **Signature:** `respond(fault: Fault, state: State): Response`
@@ -11241,6 +11250,14 @@ A retry policy as plain data, so the next delay is derived from a persisted atte
 
 Creates a policy after checking every numeric bound, and throws a `RangeError` naming the field that is wrong: `initialMs` finite and greater than zero, `factor` finite and positive, `maxMs` finite and not below `initialMs`, `maxAttempts` a safe integer of at least one, `expirationMs` finite and positive, and `jitterRatio` finite and within zero and one inclusive. `initialMs: 0` is refused rather than read as an immediate retry, because every computed delay would be zero and `nextDelay` would report the policy exhausted on the first failure; use `initialMs: 1` for a near-immediate retry. `jitterRatio: 0` disables jitter. The `nonRetryable` array is copied and frozen, so a later mutation of the caller's array cannot change what a parked policy means.
 
+### `RetryPolicy.transient`
+
+- **Type:** `RetryPolicy`
+
+Frozen infrastructure policy: `initialMs: 5000`, `factor: 2`, `maxMs: 300000`,
+`expirationMs: 7200000`. Dispatch uses it by default for repeat-safe typed
+infrastructure failures; `Fault.retryTransient` uses it for plain effects.
+
 ### `RetryPolicy.defaultRetryPolicy`
 
 - **Type:** `RetryPolicy`
@@ -11695,7 +11712,7 @@ The refusal raised when a flow operation names a declaration this engine has not
 
 ### `FlowEngine.ExecutionIdentityConflict`
 
-- **Type:** `class ExecutionIdentityConflict extends Schema.TaggedError<ExecutionIdentityConflict>()("@smthrs/engine/ExecutionIdentityConflict", { code, executionId, field, expected, actual, message })`
+- **Type:** `class ExecutionIdentityConflict extends Schema.TaggedError<ExecutionIdentityConflict>()("@smthrs/engine/ExecutionIdentityConflict", { code, executionId, field, expected, actual, status, message })`
 - **Since:** `1.0.0`
 
 The refusal raised when a caller reuses an execution id for different persisted run identity. `field` is `"flow"`, `"payload"`, `"lineage"`, `"round"`, or `"parent"`. Answering would attach the caller to a run or trampoline round it did not name. `layerMemory` raises it as a defect on `execute` and on a `deferredDone` addressed to the wrong flow; the durable driver also raises it when an existing run row disagrees with the requested flow, encoded payload, lineage, round, or predecessor.
@@ -20901,23 +20918,29 @@ requirements, actor rules, and host-bound form hints; they carry no UI imports.
 
 ## Account
 
-`accountOperations` declares `account.show` with `NoInput` and the `identity`
-capability. `createAccountController` binds its lifecycle to `AccountHost`:
-persist admission before reading, share pending work, and publish only while
-the authority and request still match. `accountReads` creates the flight slot
-shared by human and agent adapters. Disposal cancels that slot.
+`accountOperations` declares `account.show` with strict `NoInput` and the
+`identity` capability. `Identity`, `RequestReceipt`, `RequestOutcome`, and
+`RequestHistory` are the canonical wire schemas. `accountTransport` validates
+Dispatch, Read, History, and Cancel through the authenticated
+`/api/workflow/rpc` owner. The backend's existing jobs store owns admission,
+deduplication, replay, cancellation, and completion.
 
-`AccountAuthority` binds owner, origin, and epoch. `AccountRequest`,
-`AccountAnswer`, `AccountRead`, `AccountReads`, and `AccountFacts` describe the
-request and its verified result. `identityFacts` projects the backend username;
-`readAccountPermissions` decodes the existing permission response. Neither
-function invents identity, permissions, or boxes.
+`createAccountController` persists a request pointer before acknowledging,
+then observes admission and execution in the background. Accepted and running
+receipts remain pending. Only a server terminal receipt settles presentation.
+Reload reads the same operation; interrupted admission repeats its request ID.
+`AccountAuthority` binds owner, source, and epoch, fencing stale publication.
+Disposal stops local observation; explicit cancellation calls server Cancel.
+
+Hosts supply authenticated transport, pointer persistence, and presentation.
+The verified server actor remains separate from command provenance. CLI and TUI
+history retain request identity, never credentials or account facts. GUI scopes
+and boxes are supplementary card observations; `readAccountPermissions` decodes
+permission answers without completing the identity operation. The wider GUI
+card and GUI/TUI user cancellation controls are outside this identity slice.
 
 `ACCOUNT_CARD_ID`, `SIGNED_OUT_VALUE`, and `IDENTITY_PENDING_TEXT` preserve the
-existing Account presentation contract. `NoInput` is re-exported from
-`Operation`. Hosts own storage, credentials, and presentation. The CLI waits
-for its ordinary read; this module does not create a CLI run or operation
-history. API operation dispatch is not supplied by this module.
+existing Account presentation contract. `NoInput` is re-exported from `Operation`.
 
 ## Control
 
@@ -21116,11 +21139,14 @@ port. A host without one refuses both with `InvalidInput` whose issue is
 
 | Member           | Fields                                                              |
 | ---------------- | ------------------------------------------------------------------- |
-| `Accepted`       | `{ receiptId: string; runId?: RunId }`                              |
+| `Accepted`       | `{ receiptId: string; runId?: RunId; handedTo?: RunHost }`          |
 | `AlreadyApplied` | `{ receiptId: string; runId?: RunId }`                              |
 | `Parked`         | `{ receiptId: string; planId: string; status: "waiting-approval" }` |
 | `Conflict`       | `{ message: string }`                                               |
 | `Terminal`       | `{ runId: RunId; status: RunStatus }`                               |
+
+`RunHost` is `{ hostId: string; pid: number }`. An `Accepted` resume with
+`handedTo` names the live host that parked the run and now drives it.
 
 ### RPC request schemas
 
@@ -21137,25 +21163,25 @@ alias of it, so cancellation's public contract stays explicit.
 Every stable failure the plane emits. Each class carries a constant `code` a
 client may branch on.
 
-| Class                | `code`                                                                      | Fields                                   | Meaning                                                                               |
-| -------------------- | --------------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------- |
-| `RunNotFound`        | `run_not_found`                                                             | `runId`                                  | No run with this id exists.                                                           |
-| `PlanNotFound`       | `plan_not_found`                                                            | `planId`                                 | No plan with this id. Carries an operator-facing `message`.                           |
-| `PlanDenied`         | `plan_denied`                                                               | `planId`                                 | The plan was denied. Carries an operator-facing `message`.                            |
-| `FlowNotFound`       | `flow_not_found`                                                            | `flowId`                                 | No flow with this id is registered.                                                   |
-| `PlanDigestMismatch` | `plan_digest_mismatch`                                                      | `planId`, `expected`, `actual`           | The submitted plan does not hash to the declared digest.                              |
-| `EnvelopeMismatch`   | `envelope_mismatch`                                                         | `planId`, `expected`, `actual`           | The plan's effect envelope differs from the declared one.                             |
-| `ClaimLost`          | `claim_lost`                                                                | `runId`                                  | The caller's claim lapsed or was fenced by a newer owner.                             |
-| `AlreadyResolved`    | `already_resolved`                                                          | `requestId`                              | This request was already answered.                                                    |
-| `InvalidInput`       | `invalid_input`                                                             | `issue`                                  | The request missed its schema or a stated precondition.                               |
-| `Unauthorized`       | `unauthorized`                                                              | `message`                                | No usable credential for this operation.                                              |
-| `Unavailable`        | `unavailable`                                                               | `feature`, `ticket`                      | Not implemented in this deployment.                                                   |
-| `TransportError`     | `transport_error`                                                           | `message`, `retryable`, `cause?`         | The request failed before a declared response arrived.                                |
-| `PersistenceError`   | `persistence_failed`                                                        | `operation`, `message`, `cause?`         | A store operation failed.                                                             |
-| `LaunchFailed`       | `launch_failed`                                                             | `runId`, `message`, `cause?`             | The executor refused or could not start the run.                                      |
-| `NoMatchingWait`     | `no_matching_wait`                                                          | `runId`, `waitName`                      | A signal named a wait point the run does not have open.                               |
-| `CredentialConflict` | `credential_conflict`                                                       | `id`, `expectedVersion`, `actualVersion` | A credential write lost a compare-and-set race.                                       |
-| `NotificationError`  | `notification_closed`, `notification_full`, and existing notification codes | `message`, `notificationId?`, `path?`    | Existing notification error class, now preserved by steering locally and through RPC. |
+| Class                | `code`                                                                      | Fields                                   | Meaning                                                                                  |
+| -------------------- | --------------------------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `RunNotFound`        | `run_not_found`                                                             | `runId`                                  | No run with this id exists.                                                              |
+| `PlanNotFound`       | `plan_not_found`                                                            | `planId`                                 | No plan with this id. Carries an operator-facing `message`.                              |
+| `PlanDenied`         | `plan_denied`                                                               | `planId`                                 | The plan was denied. Carries an operator-facing `message`.                               |
+| `FlowNotFound`       | `flow_not_found`                                                            | `flowId`                                 | No flow with this id is registered.                                                      |
+| `PlanDigestMismatch` | `plan_digest_mismatch`                                                      | `planId`, `expected`, `actual`           | The submitted plan does not hash to the declared digest.                                 |
+| `EnvelopeMismatch`   | `envelope_mismatch`                                                         | `planId`, `expected`, `actual`           | The plan's effect envelope differs from the declared one.                                |
+| `ClaimLost`          | `claim_lost`                                                                | `runId`, `reason?`, `parkedBy?`          | The caller's claim lapsed or was fenced by a newer owner, or a live host parked the run. |
+| `AlreadyResolved`    | `already_resolved`                                                          | `requestId`                              | This request was already answered.                                                       |
+| `InvalidInput`       | `invalid_input`                                                             | `issue`                                  | The request missed its schema or a stated precondition.                                  |
+| `Unauthorized`       | `unauthorized`                                                              | `message`                                | No usable credential for this operation.                                                 |
+| `Unavailable`        | `unavailable`                                                               | `feature`, `ticket`                      | Not implemented in this deployment.                                                      |
+| `TransportError`     | `transport_error`                                                           | `message`, `retryable`, `cause?`         | The request failed before a declared response arrived.                                   |
+| `PersistenceError`   | `persistence_failed`                                                        | `operation`, `message`, `cause?`         | A store operation failed.                                                                |
+| `LaunchFailed`       | `launch_failed`                                                             | `runId`, `message`, `cause?`             | The executor refused or could not start the run.                                         |
+| `NoMatchingWait`     | `no_matching_wait`                                                          | `runId`, `waitName`                      | A signal named a wait point the run does not have open.                                  |
+| `CredentialConflict` | `credential_conflict`                                                       | `id`, `expectedVersion`, `actualVersion` | A credential write lost a compare-and-set race.                                          |
+| `NotificationError`  | `notification_closed`, `notification_full`, and existing notification codes | `message`, `notificationId?`, `path?`    | Existing notification error class, now preserved by steering locally and through RPC.    |
 
 | Export               | Kind   | Meaning                                                                                                              |
 | -------------------- | ------ | -------------------------------------------------------------------------------------------------------------------- |
@@ -21280,9 +21306,15 @@ runtime capability for hosts that can drive the claimed execution.
 An owned non-terminal run is joined without replacing its fence, including
 `accepted`; a run released by `releasePending` can be claimed again.
 
-Explicit resume journals `control.run.resume` and does not call `requestResume`
-or `ControlExecutor.resumeRun`. A caller or journal subscriber must drive the
-execution; polling `pendingResumes` does not take up explicit resumes.
+Explicit resume journals `control.run.resume` and never calls
+`ControlExecutor.resumeRun`. A caller or journal subscriber must drive the
+execution; polling `pendingResumes` does not take up a resume the caller
+claimed. A run a live host parked fails the claim with `ClaimLost` naming the
+host in `parkedBy`. `Control.resume` then hands it to that host: it records
+`requestResume(runId, { consent })`, where `consent` is the journal sequence of
+its `control.run.resume`, and answers `Accepted` with `handedTo`.
+`pendingResumes` reports that `consent`, and the parking host records the
+per-release retry permission under it before it re-drives the run.
 A suspended engine-created run stays unclaimed and receives an `Accepted`
 receipt for the journal intent. A live peer's owned run fails with `ClaimLost`.
 A running engine-created run outside the launch index also fails with
@@ -25132,7 +25164,7 @@ Explicit deletion of finished run state. Nothing schedules any of it.
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `RetainOptions`           | `olderThanMs` (a duration: how long a run must have been finished), `limit?`, `dryRun?`. A negative `olderThanMs` is read as zero; a `limit` that is not a non-negative safe integer is read as zero.                                                      |
 | `RetainReport`            | `cutoffMs`, `runIds`, `retainedForLiveDescendants`, `retainedForLiveAncestors`, `runs`, `attempts`, `clockDeadlines`, `deferredCompletions`, `journalEntries`, `journalCheckpoints`, `journalIdentities`, `archiveEntries`, `timeTravelReceipts`, `dryRun` |
-| `Options` (for `collect`) | `olderThanMs` (an absolute epoch millisecond threshold), `dryRun?`, `database?`, `limit?`                                                                                                                                                                  |
+| `Options` (for `collect`) | `olderThanMs` (an absolute epoch millisecond threshold), `dryRun?`, `database?`, `limit?`, `pins?`                                                                                                                                                                  |
 | `Report` (from `collect`) | `database`, `olderThanMs`, `runs`, `deleted` (empty under a dry run), `dryRun`                                                                                                                                                                             |
 
 A run is a candidate only when its status is terminal and it finished before the
@@ -25148,6 +25180,11 @@ than `limit` still loses at least one run every pass.
 `collect` is the pass [`smthrs gc`](/docs/reference/cli/gc/) runs over one database file.
 
 Full guide: [Delete old run history](https://engine-store.smithers.sh/guides/delete-old-run-history/).
+
+The host-facing `collect` also accepts `pins`, a list of run IDs required by
+live ancestry in another store. Pinned runs and their continuation ancestors
+are excluded before the bounded candidate window, so protected history cannot
+starve collection of unrelated terminal runs.
 
 ## ExecutionSnapshot
 
@@ -31685,6 +31722,7 @@ the lease lives and how the fence is checked at commit time.
 | `Service.claim`                                                                                 | `(runId, claimant: OwnerId, nowMs) => Effect<ClaimOutcome, ConsensusError>`                                                                    |
 | `Service.activate`                                                                              | `(runId, owner: OwnerId, grantedAtMs, nowMs) => Effect<ActivateOutcome, ConsensusError>`                                                       |
 | `Service.heartbeat`                                                                             | `(runId, owner: OwnerId, nowMs) => Effect<HeartbeatOutcome, ConsensusError>`                                                                   |
+| `Service.reconfirm`                                                                             | `(runId, owner: OwnerId, nowMs) => Effect<HeartbeatOutcome, ConsensusError>`; renews only while the owner matches and no claim is pending      |
 | `Service.release`                                                                               | `(runId, owner: OwnerId) => Effect<void, ConsensusError>`                                                                                      |
 | `Service.steal`                                                                                 | `(runId, claimant: OwnerId, nowMs, evidence: LivenessEvidence) => Effect<ClaimOutcome, ConsensusError>`                                        |
 | `Service.recover`                                                                               | `(runId, staleClaimant: OwnerId, grantedAtMs, observer: OwnerId, nowMs, evidence: LivenessEvidence) => Effect<RecoverOutcome, ConsensusError>` |
@@ -33612,6 +33650,16 @@ that require unchanged filters set `preserveQuery: true`. It returns only the
 opaque cursor, so callers retain authority over the next request's URL.
 `pageText` bounds UTF-8 response bytes before decoding and cancels the reader
 on overflow. Callers can supply their existing typed refusal constructors.
+
+## Unreachable
+
+`Unreachable.Unreachable({ message, cause? })` is a schema-backed infrastructure
+failure. `Unreachable.classifyExit(stderr)` returns it for known DNS and transport
+signatures, including `EAI_AGAIN`, `ENOTFOUND`, HTTP 429 and HTTP 5xx; it returns
+`undefined` for other command failures. Pass stderr from a failed command only.
+The message retains the diagnostic and the optional cause retains the source.
+Import from `@smthrs/kernel` or `@smthrs/kernel/Unreachable`. The fault registry
+classifies this tag as `infra`.
 
 ---
 
@@ -38875,15 +38923,17 @@ length of a backlog that no plan knows when it is built.
 | `layer(action, options)`              | Implements that action with `round`                                                                           |
 | `child(flow, payload)`                | Builds a `work` member that runs `flow.execute(payload, { executionId })` under the derived id                |
 | `signal(name?)`                       | The `WaitFor` deferred an operator completes to resume an exhausted burndown                                  |
+| `Stop`                                | The typed failure that stops a round and releases its open claims                                             |
 | `Held`                                | The typed failure a `claim` raises when another owner holds the item                                          |
 | `available`, `waitUntil`, `exhausted` | `Capacity` answers: launch at most `slots`, sleep until an epoch-millisecond instant, or park for an operator |
 | `ours`, `skip(detail)`                | `Selection` answers                                                                                           |
 
 `make({ discover, dispatch, capacity?, maxRounds, deadline?, signal? })`
-settles to `{ rows, rounds, stopped }`. Each row is `{ id, status, detail }`
+settles to `{ rows, rounds, stopped }`. Each row is `{ id, status, detail, requeues? }`
 with `status` one of `landed`, `held`, `failed`, `skipped`, or `requeued`. A round that
 launched at least one item hands off to the next round, which rediscovers the
-backlog; a round that launched nothing settles the lineage as `drained`.
+backlog; a round that launched nothing settles the lineage as `drained`,
+unless its selection erred, when the round's `Stop` fails the lineage.
 `maxRounds` bounds every round the lineage opens, parks included, and
 settles it as `max_rounds`. `deadline` is the lineage deadline `Flow.make`
 enforces. `make` throws an `invalid_decorator` `PatternError` for a
@@ -38901,15 +38951,20 @@ schema is a defect.
 `round` leaves alone the ids in `settled`, so a `held` or `failed` item is
 never retried within a lineage, while a `skipped` or `requeued` item is
 reconsidered every round. Only the exact `ours` selection launches an item; a malformed or failed
-selection skips it. Of the items that are ours, the first `slots` launch in
+selection skips it. An answered `skip` is a policy decision; a failed or
+malformed selection is an error. When no item is ours and none was requeued
+but a selection erred, `round` fails with `Stop` before any claim, naming how
+many selections failed and the first three causes. Of the items that are ours, the first `slots` launch in
 discovery order, at most `slots` at a time. When an item finishes working, its
 slot asks the round's `capacity` member, when there is one, and admits the next
 item that is ours only on an `Available` answer with more slots than the work
 still in flight. The items never admitted count as `deferred`; without a round
 `capacity` member that is every item past `slots`. A `claim` that fails with
-`Held` settles the item `held` and is not released. Any other claim, work, or
-landing failure settles the item `failed` on its own row and never cancels
-the items beside it. A worked item enters the landing queue at once: `land`
+`Held` settles the item `held` and is not released. A typed claim, work, or landing failure classified by `Fault.of` as `infra`
+requeues its item up to `maxRequeues` (default 3), then fails it. The count
+is persisted in `row.requeues`; pass the carried `rows` to `round`.
+`make` passes these rows through `DispatchPayload`, and `layer` forwards them.
+Other failures settle only their own item as `failed`. A worked item enters the landing queue at once: `land`
 runs one item at a time, in the order work finished, while other items still
 work, and a failed landing does not stop the next; without `land`, a worked
 item counts as landed. `release` runs once for every successful claim, as soon
@@ -38917,9 +38972,11 @@ as the item settles, with its final status. Interrupted work settles its item
 `failed` with `work: interrupted` only when the optional `cancelled` member
 answers `true` for a recorded operator cancel; any other interruption, such as
 a child released because its host's lease lapsed, gets a `requeued` row and a
-`requeued` release, and a later round works the item again. When a member
-dies, a release already running finishes and every claim not yet released is
-released with status `failed` and `round died`. When the round itself is
+`requeued` release, and a later round works the item again. A member defect settles only its item as `failed`, including the
+`Fault.of(defect)` class and tag in its detail; siblings continue. This also
+applies to thrown selection, detail, landing, and release callbacks.
+Only typed `Stop({ message })` stops the round; open claims are released.
+A defect containing a `Stop` is still an item defect. When the round itself is
 interrupted, each open claim is released the same way if `cancelled` answers
 `true`, and otherwise with status `requeued` and `round interrupted`. A release failure is appended to the row's detail. Rows keep
 discovery order. `round` fails with `PatternError` before any member runs for a
@@ -42218,7 +42275,7 @@ https://smithers.sh/docs/reference/api/registry/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/registry/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/registry/docs/api.md) · [package docs](https://registry.smithers.sh)
 
-> **Related APIs:** [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/plan`](/docs/reference/api/plan/)
+> **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/plan`](/docs/reference/api/plan/)
 
 `@smthrs/registry` exports nine modules from its root entry point, and each is
 also importable from `@smthrs/registry/<Module>`:
@@ -42238,17 +42295,18 @@ and interpreters, see the [`@smthrs/flow` reference](/docs/reference/api/flow/).
 declaration values a discovered body carries, see the
 [`@smthrs/core` reference](/docs/reference/api/core/).
 
-| Module                            | What it owns                                                              |
-| --------------------------------- | ------------------------------------------------------------------------- |
-| [`Descriptor`](#descriptor)       | The serializable `FlowDescriptor` and every value it is built from.       |
-| [`Discovery`](#discovery)         | The service that walks one source root and returns a `SourceScan`.        |
-| [`MarkdownFlow`](#markdownflow)   | Markdown and Agent Skills compatibility.                                  |
-| [`Registry`](#registry)           | The refreshable, first-found-wins catalog and its layers.                 |
-| [`Disclosure`](#disclosure)       | The compact projections a model and an autocomplete list are shown.       |
-| [`Executable`](#executable)       | Turning a descriptor into a runnable `@smthrs/flow` value.                |
-| [`Pack`](#pack)                   | Manifests, content addresses, compatibility ranges, and merge precedence. |
-| [`RegistryError`](#registryerror) | The typed failures and their constructors.                                |
-| [`Prompt`](#prompt)               | Compiles typed MDX prompts to Markdown text components.                   |
+| Module                                    | What it owns                                                              |
+| ----------------------------------------- | ------------------------------------------------------------------------- |
+| [`Descriptor`](#descriptor)               | The serializable `FlowDescriptor` and every value it is built from.       |
+| [`Discovery`](#discovery)                 | The service that walks one source root and returns a `SourceScan`.        |
+| [`MarkdownFlow`](#markdownflow)           | Markdown and Agent Skills compatibility.                                  |
+| [`Registry`](#registry)                   | The refreshable, first-found-wins catalog and its layers.                 |
+| [`Disclosure`](#disclosure)               | The compact projections a model and an autocomplete list are shown.       |
+| [`Executable`](#executable)               | Turning a descriptor into a runnable `@smthrs/flow` value.                |
+| [`ExecutionSnapshot`](#executionsnapshot) | Durable admitted source closures and approved descriptor restoration.     |
+| [`Pack`](#pack)                           | Manifests, content addresses, compatibility ranges, and merge precedence. |
+| [`RegistryError`](#registryerror)         | The typed failures and their constructors.                                |
+| [`Prompt`](#prompt)                       | Compiles typed MDX prompts to Markdown text components.                   |
 
 ## Example
 
@@ -42338,8 +42396,8 @@ The repository host also binds its own policy identity to reserved job
 descriptors. In source mode it measures every TypeScript file in
 `flows/repository`, including the semantic judge and its helpers, together with
 the other host sources and prompt bodies. A change to those bytes changes the
-job's execution digest; `Registry.loadBody` refuses a previously approved digest
-with `execution_changed`. A compiled host uses its bundled artifact digest.
+job's execution digest; without an admitted source snapshot, `Registry.loadBody`
+refuses a previously approved digest with `execution_changed`. A compiled host uses its bundled artifact digest.
 
 ### Descriptor.declarationDigest
 
@@ -42857,6 +42915,7 @@ The refreshable, first-found-wins catalog a host consumes.
 
 ```ts
 interface Registry {
+  readonly snapshots?: ExecutionSnapshot.Service | undefined
   readonly list: () => Effect.Effect<ReadonlyArray<FlowDescriptor>>
   readonly visible: () => Effect.Effect<ReadonlyArray<FlowDescriptor>>
   readonly get: (name: string) => Effect.Effect<FlowDescriptor, RegistryError>
@@ -42901,15 +42960,17 @@ rescan leaves the previous complete snapshot serving reads.
 `loadBody` and `runPrompt` are the only two members that touch the filesystem.
 
 Pass the plan's `executionDigest` to `loadBody` when loading an approved flow.
-A descriptor that no longer matches it fails with `execution_changed`, before
-body loading. A markdown file changed after discovery fails with
-`body_unavailable`. Refreshing the registry does not authorize the new work;
-create and approve a new plan.
+With `snapshots`, an admitted approved descriptor and its verified bytes can be
+restored after a live edit, deletion, or restart. A missing or invalid snapshot
+or changed project lockfile refuses restoration. Without snapshots, a descriptor
+that no longer matches fails with `execution_changed`; a changed markdown file
+fails with `body_unavailable`. Refreshing does not authorize new work.
 
 ### Registry.Config and Registry.PackConfig
 
 ```ts
 interface Config {
+  readonly snapshots?: ExecutionSnapshot.Service | undefined
   readonly sources: ReadonlyArray<Descriptor.Source>
   readonly packs?: PackConfig | undefined
 }
@@ -43090,6 +43151,8 @@ Turning a discovered descriptor into something the durable engine runs.
 
 ```ts
 interface Executable {
+  readonly quiesce?: ((executionIds: Iterable<string>) => Effect.Effect<void>) | undefined
+  readonly source?: VerifiedSource | undefined
   readonly descriptor: Descriptor.FlowDescriptor
   readonly delegate: string | undefined
   readonly lowered: Lowered
@@ -43115,6 +43178,8 @@ that entry imports from beside itself.
 
 ```ts
 interface Options {
+  readonly adapterExecutionDigest?: ((descriptor: Descriptor.FlowDescriptor) => string | undefined) | undefined
+  readonly snapshots?: ExecutionSnapshot.Service | undefined
   readonly sourceRoot?: { readonly identity: string; readonly workspace: string } | undefined
   readonly delegates: ReadonlyArray<Delegate>
   readonly agent?: string | undefined
@@ -43158,6 +43223,18 @@ cache, and deferred calls can outlive sibling cleanup. Installed packages
 without project mappings and Node/Bun builtins retain host trust and use the
 normal host loader.
 
+`executable.quiesce(executionIds)` blocks and joins this module's local
+registered handlers for the specified native executions before explicit code
+adoption retires the registration. It preserves durable receipts and does not
+request cancellation. Other executions remain usable. A replacement executable
+owns a fresh registration and may resume the same execution IDs.
+
+`adapterExecutionDigest` lets a host retain the original plan's adapter
+registration name when explicitly adopting new code. It changes the registration
+name only; the descriptor, source verification, and approved executable digest
+still identify the adopted bytes. Without it, the adapter uses the descriptor's
+execution digest.
+
 `sourceRoot` is a host-owned retained checkout of the same project. Approved
 locators and executable digests stay under `identity`; entry bytes, schema
 exports, imported helpers and markdown resources load under `workspace`.
@@ -43166,10 +43243,12 @@ closure are refused. The host still verifies committed workspace routing and
 run approval before recovery; relocation grants no execution authority.
 
 `loadTimeoutMs` bounds each `catalog` entry, including custom loaders, and
-defaults to 30,000 milliseconds. Supply a positive finite number. Expiry becomes
-`ExecutableError { code: "body_unavailable" }` naming the flow, source path,
+defaults to `SMITHERS_FLOW_LOAD_TIMEOUT_MS`, or 30000 milliseconds when unset
+or invalid. Supply a positive finite number. Expiry becomes
+`ExecutableError { code: "load_timeout" }` naming the flow, source path,
 and deadline. The catalog logs the refusal immediately and proceeds to the
-next entry. Direct `fromDescriptor` and `fromRegistry` calls have no deadline.
+next entry. Direct `fromDescriptor` and `fromRegistry` calls have no deadline
+and log progress every 30 seconds.
 Native imports cannot be cancelled: the deadline stops waiting and cleans up
 temporary files, but cannot stop initialization resources or synchronous code
 that blocks the event loop. Hosts needing termination must supply an isolated,
@@ -43311,6 +43390,9 @@ before the flow exists: a missing delegate, an undecidable one, an unreadable
 or changed body, a module that exports something else. A flow either function
 returns is one the engine can drive.
 
+Direct loads have no deadline and log progress every 30 seconds. A native
+start or resume remains bounded by its admission window.
+
 The delegate is resolved before the body is loaded. Both refusals are real, but
 only one of them is about this host, and an operator reading "could not load"
 would go looking in the wrong place.
@@ -43321,6 +43403,10 @@ would go looking in the wrong place.
 interface Catalog {
   readonly executables: ReadonlyArray<Executable>
   readonly refused: ReadonlyArray<ExecutableError>
+  readonly load?: (name: string) => Effect.Effect<
+    Executable,
+    ExecutableError | RegistryError | DiscoveryError
+  >
 }
 
 const Catalog: Context.Service<Catalog, Catalog>
@@ -43337,7 +43423,16 @@ flows directory is a mixed set: some entries delegate to a flow this host
 registered, others name a delegate only another host has, and one may simply be
 broken. None of those is a reason to withhold the rest, so every refusal is
 reported in `refused` carrying its code rather than raised. Each refusal is
-logged before loading the next entry. Each entry has the `loadTimeoutMs` deadline.
+logged before loading the next entry. Each entry has a catalog deadline:
+`Options.loadTimeoutMs`, then `SMITHERS_FLOW_LOAD_TIMEOUT_MS`, then 30000 ms.
+The environment setting must be positive and finite; invalid values use the
+default. A timeout is `load_timeout`, separate from `body_unavailable`.
+
+The live catalog provided by `layer` or `layerRefreshable` exposes `load(name)`.
+It returns an already loaded executable or retries a `load_timeout` through
+the direct path, registers the recovered body, and removes its refusal.
+Concurrent first uses share the recovered executable. Other refusals remain
+typed failures; retry does not adopt edited source bytes.
 
 The service tag is provided by `layer`, so a command that lists or diagnoses
 flows reads the same refusals the registration phase acted on instead of
@@ -43464,6 +43559,7 @@ class ExecutableError {
   readonly code:
     | "missing_delegate"
     | "ambiguous_delegate"
+    | "load_timeout"
     | "body_unavailable"
     | "invalid_module"
     | "invalid_layer"
@@ -43792,6 +43888,27 @@ The constructors. Each formats `message` as
 whether a caller prints the message or branches on the fields. `module`
 defaults to `Discovery` and `Registry` respectively.
 
+## ExecutionSnapshot
+
+`makeFileSystem({ root, store? })` and `layerFileSystem({ root, store? })` require
+`FileSystem`, `Path`, and `Crypto`. The service captures those dependencies. By
+default, blobs live in `.flows/objects` and atomic manifest indexes live in
+`.flows/executions/<executionDigest>.json`.
+
+`pin(executable)` persists its verified `source` at first admission. Merely
+discovering or loading a catalog does not pin it. `descriptor(digest)` recovers
+the approved metadata; `restore(digest)` returns that descriptor, entry path,
+entry bytes, and the complete source module map including compiled source and
+static import links. Both verify the manifest and project lockfile identity.
+
+`roots(digests)` returns manifest and source blob addresses for nonterminal
+executions. Lockfile drift does not remove these roots. Missing or corrupt
+snapshots remain typed failures. `ExecutionSnapshotError.code` is `missing`,
+`corrupt`, `lockfile_changed`, or `unavailable`.
+
+The manifest pins project source, while installed workspace packages remain
+host code. Run the host from a pinned checkout.
+
 ---
 
 # @smthrs/run-store
@@ -44036,6 +44153,7 @@ because the store issued it.
 
 ```ts
 const heartbeat: (runId: string, owner: OwnerId, nowMs: number) => Effect<HeartbeatOutcome, RunStoreError>
+const reconfirm: (runId: string, owner: OwnerId, nowMs: number) => Effect<HeartbeatOutcome, RunStoreError>
 ```
 
 Renews the owner's lease. The write is `MAX(heartbeat_at_ms, nowMs)`, so a
@@ -44567,9 +44685,17 @@ the `Consensus` strategy's lease through `RunStore.heartbeat`, and interrupts
 itself when the fence is gone, so race it against the owned work with
 `Effect.raceFirst`. A heartbeat outcome other than `Updated` is durable evidence
 and interrupts immediately. An independent deadline bounds failing or stalled
-writes by `heartbeatWriteTolerance` and interrupts the pending write at expiry.
+writes by `heartbeatWriteTolerance`. At expiry it tries `RunStore.reconfirm`
+and its `onReconfirm` receipt for at most one `heartbeatInterval`: the same
+owner with no pending claim renews the lease and continues after the receipt
+finishes; loss, error, or timeout interrupts.
 Successful pulses re-arm that deadline from the timestamp supplied to the store,
 not their completion time.
+
+`RunStore.reconfirm` uses `Consensus.reconfirm` and mirrors the heartbeat
+transactionally, with the same input validation and outcome type as `heartbeat`.
+`options.onReconfirm(unconfirmedMs)` records each successful reconfirmation;
+it leaves the owner and generation unchanged.
 
 `options.onLapse(unconfirmedMs)` runs once when the lease lapses, before the
 self-interrupt, with how long the lease went unconfirmed. A lost fence does not
@@ -44748,6 +44874,11 @@ Every namespace is also its own subpath, and `./internal/*` is null mapped.
 
 Provider acquisition is tied to the layer scope: interrupting an execution or a stream consumer closes that scope and therefore runs the finalizer installed by `Provider.open`. No `AbortSignal` crosses this seam.
 
+The fault registry classifies provider `unavailable` and `timeout` failures as
+`infra`; `spawn_error`, `not_found`, `unknown` and `aborted` are `bug`. A nested
+registered cause retains its own classification. Repeat-safe actions without a
+declared retry policy use the engine's bounded transient infrastructure policy.
+
 A provider may add SDK details to `ProviderError.cause`, but it cannot create new host-visible failure kinds. The code set is closed, and one shared table normalizes each code onto the `PlatformError` reason that already means it: `timeout` becomes `TimedOut`, `unavailable` and `not_found` become `NotFound`, everything else becomes `Unknown`, under the `ChildProcess` module the sibling spawners name. `not_found` and `unavailable` stay apart in the provider vocabulary, where "absent" and "broken" are different facts; they say the same thing to a caller of a spawner, which is to try somewhere else, and a caller that needs the distinction reads the `ProviderError` back off `PlatformError.cause`. `Sandbox.fileSystem` is the one deliberate exception: there `unavailable` stays `Unknown`, because a filesystem's `NotFound` is load bearing (`exists` turns it into `false`) and a broken session must not read as an absent path.
 
 `Provider.kill` and `Provider.ping` are optional, because a transport that can only post a command line has neither. A provider that implements them buys two things it cannot otherwise have: one command can be stopped without tearing down the session that runs it, and the session's liveness can be supervised. When `kill` is present the adapter maps `ChildProcessHandle.kill` onto it and signals a still-running command when its scope closes, ahead of the provider's own release finalizer; a process this side has already seen exit is left alone. When `kill` is absent the adapter refuses with a `BadArgument` `PlatformError` rather than pretending to have delivered a signal.
@@ -44863,7 +44994,9 @@ const useMachine = Effect.scoped(
 )
 ```
 
-`Provider.acquire(key)` is scoped. Acquisition registers teardown as a finalizer of that scope; closing the scope is the only lifecycle end exposed to the caller. The stable key lets an implementation deterministically name and reattach a crash-left machine when it can. Image, memory, network policy, and other machine shape belong to provider construction, not `acquire`.
+`Provider.acquire(key)` is scoped. Ephemeral providers register machine teardown as a scope finalizer. Retained providers advertise `retained: true`, leave the machine running, supply attach-only `attach(identity)`, and end it through explicit idempotent `destroy(identity)`. A missing or uncertain machine is never provisioned by `attach`. The stable key names crash-left machines; image, memory, and network policy belong to provider construction.
+
+`Sandbox.job(provider, { command, files, capture, jobDirectory? })` adapts a retained provider to start, status, collect, and cancel. `JobHandle` and `JobResult` are its durable schemas. Collect requires a shared durable Effect `KeyValueStore` and stores output plus `Work` before destroying the machine. See [retained jobs](https://sandbox.smithers.sh/guides/retained-jobs/) for process fencing, replay, cleanup, and executed host-death evidence.
 
 Vercel, Daytona, Cloudflare, AWS, and Microsandbox tolerate teardown failures and log Warn records containing only the adapter's provider name, operation, and error code. Error messages and SDK causes are omitted. For teardown diagnostics, explicitly instrument the injected SDK's release method and redact captured errors before emitting a record.
 
