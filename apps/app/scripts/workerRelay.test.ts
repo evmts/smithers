@@ -249,14 +249,14 @@ test("a refusal with an already-broken HTTP body keeps its status and drops priv
   // Hold the real HTTP response until its stream has errored. This timing
   // adapter makes the socket-close-before-cancel ordering deterministic;
   // the upstream, Response, stream and cancellation remain real.
-  const fetchGate = spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+  const fetchGate = spyOn(globalThis, "fetch").mockImplementation(Object.assign(async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
     const response = await nativeFetch(input, init)
     const reader = response.body!.getReader()
     try { while (!(await reader.read()).done) {} }
     catch { /* The real socket closed before its response finished. */ }
     finally { reader.releaseLock() }
     return response
-  })
+  }, { preconnect: nativeFetch.preconnect }))
   try {
     const address = server.address()
     if (address === null || typeof address === "string") throw new Error("Missing HTTP address")
@@ -286,7 +286,7 @@ for (const [status, body, headers, expected] of [
       const response = await fetch(`http://127.0.0.1:${address.port}`)
       expect(response.status).toBe(status)
       for (const [name, value] of Object.entries(headers)) expect(response.headers.get(name)).toBe(value)
-      expect(Array.from(new Uint8Array(await response.arrayBuffer()))).toEqual(expected)
+      expect(Array.from(new Uint8Array(await response.arrayBuffer()))).toEqual(Array.from(expected))
     } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())) }
   })
 }
@@ -328,6 +328,6 @@ test("a gateway connection cut after headers returns a safe incomplete-answer re
     if (address === null || typeof address === "string") throw new Error("Missing owned gateway address")
     const response = await relayRpc(request(valid), `http://127.0.0.1:${address.port}`, "fixture-credential")
     expect(response.status).toBe(502)
-    expect(await response.json()).toEqual({ status: "error", code: "upstream_unreachable", message: "The workspace answer broke off before it ended." })
+    expect(await response.json()).toEqual({ status: "error", code: "upstream_unreachable", message: "The workspace answer broke off before it ended.", origin: "local" })
   } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())) }
 })
