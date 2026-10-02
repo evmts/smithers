@@ -1815,7 +1815,7 @@ describe("an attached launch's exit status", processBudget, () => {
       expect(refusalWarnings, launched.stderr).toHaveLength(1)
       for (const warning of warnings.filter((line) => !refusalWarnings.includes(line))) {
         expect(warning, launched.stderr).toMatch(
-          /^\[[^\]\r\n]+\] WARN \(#\d+\): FlowEngine\.actionExecute: no durable retry origin for "[^"\r\n]+"; the expirationMs budget restarts from the current clock \{$/
+          /^\[[^\]\r\n]+\] WARN \(#\d+\): FlowEngine\.actionExecute: no durable retry origin for "[^"\r\n]+"; the expirationMs budget restarts from the current clock \{(?: runId: '[A-Za-z0-9_:./-]+' \})?$/
         )
       }
       expect(refusalWarnings[0]).toContain("An agent run failed")
@@ -1844,7 +1844,7 @@ describe("an attached launch's exit status", processBudget, () => {
       expect(refusalWarnings, launched.stderr).toHaveLength(1)
       for (const warning of warnings.filter((line) => !refusalWarnings.includes(line))) {
         expect(warning, launched.stderr).toMatch(
-          /^\[[^\]\r\n]+\] WARN \(#\d+\): FlowEngine\.actionExecute: no durable retry origin for "[^"\r\n]+"; the expirationMs budget restarts from the current clock \{$/
+          /^\[[^\]\r\n]+\] WARN \(#\d+\): FlowEngine\.actionExecute: no durable retry origin for "[^"\r\n]+"; the expirationMs budget restarts from the current clock \{(?: runId: '[A-Za-z0-9_:./-]+' \})?$/
         )
       }
       expect(refusalWarnings[0]).toContain("An agent run failed")
