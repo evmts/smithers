@@ -19,6 +19,8 @@
  * Nothing here is inferred beyond what the journal says.
  */
 
+import { failureDetail } from "@smthrs/rpc/UserFailure"
+
 /** Every state an issue passes through, in board order. */
 export const BURNDOWN_STATES = ["skip", "ours", "claimed", "working", "adopting", "landing", "landed", "held", "failed"] as const
 
@@ -417,7 +419,7 @@ export const burndownOf = (
     const remoteAnswer = record(builtOf(remote)?.result)
     const failure = conflicted ? readoptFailure
       : [work, adopt, remote, fix].map(failedOf).find((each) => each !== undefined)
-    const message = str(failure?.message)
+    const message = failure === undefined ? undefined : failureDetail(failure)
     let state: BurndownState
     let reason: string | undefined
     let commit: string | undefined
