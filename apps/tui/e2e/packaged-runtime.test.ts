@@ -17,6 +17,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import * as Session from "../src/session.ts"
 import { key, Tui } from "./tmux.ts"
+import { awaitVimBuffer } from "./vimScreen.ts"
 
 const app = resolve(import.meta.dir, "..")
 const cli = resolve(app, "../../packages/smithers")
@@ -103,16 +104,14 @@ for (const runtime of ["node", "compiled"] as const) {
         }
       })
       await tui.until((screen) => /↑\S+ ↓\S+/.test(screen), 20_000, `${runtime} first draw`)
+      const editorSeed = `${runtime}-original-draft`
+      if (interactiveEditor) await tui.type(editorSeed)
       await tui.press("\x07")
       if (interactiveEditor) {
-        await tui.until(
-          (screen) => screen.includes("prompt.md") && !/↑\S+ ↓\S+/.test(screen),
-          5_000,
-          `${runtime} Vim foreground`
-        )
+        await awaitVimBuffer(tui, editorSeed, (screen) => /↑\S+ ↓\S+/.test(screen), `${runtime} Vim foreground`)
         await tui.resize(80, 20)
         await tui.press(key.ctrlC)
-        await tui.press(`i${runtime}-editor-prompt`)
+        await tui.press(`gg0C${runtime}-editor-prompt`)
         await tui.press(key.escape)
         await tui.press(":wq" + key.enter)
       }
@@ -122,6 +121,7 @@ for (const runtime of ["node", "compiled"] as const) {
         `external editor under ${runtime}`
       )
       if (interactiveEditor) {
+        expect(tui.screen()).not.toContain(editorSeed)
         await tui.until((screen) => /↑\S+ ↓\S+/.test(screen.split("\n")[19] ?? ""), 5_000, `${runtime} editor resize`)
         await tui.resize(110, 40)
       }
@@ -135,6 +135,9 @@ for (const runtime of ["node", "compiled"] as const) {
         30_000,
         `${runtime} chat`
       )
+      expect(saved().flatMap((record) => record.type === "user" ? [record.text] : [])).toEqual([
+        `${runtime}-editor-prompt`
+      ])
       await tui.type(`/flow echo text="${runtime} dynamic flow result"`)
       await tui.press(key.enter)
       await tui.until((screen) => screen.includes("✓ echo"), 30_000, "dynamic flow completed")

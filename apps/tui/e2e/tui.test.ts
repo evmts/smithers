@@ -24,6 +24,7 @@ import { join, resolve } from "node:path"
 import * as Approvals from "../src/approvals.ts"
 import * as Session from "../src/session.ts"
 import { key, Tui } from "./tmux.ts"
+import { awaitVimBuffer, vimEditable } from "./vimScreen.ts"
 
 /** What the screen says when the disk refuses a session record (`Failures` registry). */
 const unsavedSentence = "The conversation is not being saved; check the disk."
@@ -681,7 +682,7 @@ describe("esc", () => {
       const { tui } = await start({ editor: "vim -u NONE -U NONE -i NONE -n" })
       await tui.type("original draft")
       await tui.press("\x07")
-      await tui.until((screen) => screen.includes("prompt.md") && !drawn(screen), 5_000, "Vim foreground")
+      await awaitVimBuffer(tui, "original draft", drawn, "Vim foreground")
       await tui.press(key.ctrlC)
       await tui.press("gg0Cedited 中文 🦉")
       await tui.press(key.escape)
@@ -693,7 +694,7 @@ describe("esc", () => {
       )
       expect(screen).not.toContain("original draft")
       await tui.press("\x07")
-      await tui.until((screen) => screen.includes("prompt.md") && !drawn(screen), 5_000, "Vim reopened")
+      await awaitVimBuffer(tui, "edited 中文 🦉", drawn, "Vim reopened")
       await tui.press(":cq" + key.enter)
       await tui.until((screen) => drawn(screen) && screen.includes("edited 中文 🦉"), 5_000, "cancel preserves draft")
     },
@@ -706,7 +707,7 @@ describe("esc", () => {
     const { tui } = await start({ cwd, editor: "sh ./edit-vim.sh" })
     await tui.type("keep draft")
     await tui.press("\x07")
-    await tui.until((screen) => screen.includes("prompt.md") && !drawn(screen), 5_000, "Vim foreground")
+    await awaitVimBuffer(tui, "keep draft", drawn, "Vim foreground")
     const pid = Number(readFileSync(join(cwd, "vim.pid"), "utf8"))
     try {
       await tui.press("\x1a")
@@ -724,21 +725,32 @@ describe("esc", () => {
     "adopts terminal resizing while an external editor owns the foreground",
     async () => {
       const { tui } = await start({ cols: 80, rows: 20, editor: "vim -u NONE -U NONE -i NONE -n" })
+      const marker = "resize-draft-中文-🦉"
+      await tui.type(marker)
       await tui.press("\x07")
-      await tui.until((screen) => screen.includes("prompt.md") && !drawn(screen), 5_000, "Vim foreground")
+      await awaitVimBuffer(tui, marker, drawn, "Vim foreground")
       await tui.resize(110, 40)
+      await tui.press("gg0Cunsaved resize 中文 🦉")
+      await tui.press(key.escape)
+      await tui.until(
+        (screen) => vimEditable(screen, "unsaved resize 中文 🦉", drawn(screen)),
+        5_000,
+        "resized Vim edited buffer"
+      )
       await tui.press(":q!" + key.enter)
       await tui.until(
-        (screen) => drawn(screen) && /↑\S+ ↓\S+/.test(screen.split("\n")[39] ?? ""),
+        (screen) =>
+          drawn(screen) && screen.includes(marker) && !screen.includes("unsaved resize") &&
+          /↑\S+ ↓\S+/.test(screen.split("\n")[39] ?? ""),
         5_000,
         "footer at resized bottom"
       )
       await tui.press("\x07")
-      await tui.until((screen) => screen.includes("prompt.md") && !drawn(screen), 5_000, "Vim reopened")
+      await awaitVimBuffer(tui, marker, drawn, "Vim reopened")
       await tui.resize(60, 12)
       await tui.press(":q!" + key.enter)
       await tui.until(
-        (screen) => drawn(screen) && /↑\S+ ↓\S+/.test(screen.split("\n")[11] ?? ""),
+        (screen) => drawn(screen) && screen.includes(marker) && /↑\S+ ↓\S+/.test(screen.split("\n")[11] ?? ""),
         5_000,
         "footer after shrinking"
       )
