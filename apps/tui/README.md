@@ -2,7 +2,7 @@
 
 A minimal terminal coding agent over the Smithers cell harness.
 
-[User guide](https://smithers.sh/docs/tui/) · [Recordings](docs/README.md) · [Playground](../tui-docs/README.md)
+[Recordings](docs/README.md) · [Playground](../tui-docs/README.md)
 
 The agent has no tools. Each model turn writes a JavaScript cell that calls
 flows through `ctx.call`. The TUI shows what each cell did, one row per flow
@@ -161,6 +161,16 @@ the only help key.
 | `!cmd`                                                | Run a shell command; its output joins the next turn's context                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `!!cmd`                                               | Run a shell command and keep it out of context                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
+### Additional key spellings
+
+| Key | Action (context) |
+| --- | --- |
+| `linefeed` | New line (composer) |
+| `ctrl+shift+p` | Previous model (composer) |
+| `ctrl+n` | Move (picker) |
+| `shift+right` | Milestone (selection) |
+| `ctrl+n` | Move (completion) |
+
 ## Commands
 
 The `?` key popup scrolls with PageUp/PageDown or the mouse wheel.
@@ -168,7 +178,7 @@ The `?` key popup scrolls with PageUp/PageDown or the mouse wheel.
 `/model [query]`, `/new`, `/resume`, `/conversation`, `/compact`,
 `/name <name>`, `/copy`, `/summary`, `/chat`, `/filter`,
 `/grep [text]`, `/smithers`, `/retry #<issue>`, `/flows`, `/flow <name> [json|key=value|prompt]`,
-`/quit`, `/exit`. After `/model` and `/flow`
+`/devtools [id] [node]`, `/quit`, `/exit`. After `/model` and `/flow`
 the menu completes the argument, and the `/` menu lists the directory's flows.
 An unknown command keeps its line in the composer and names the nearest
 command (`Unknown command /flwo. Try /flow.`). Stopping, resuming and steering

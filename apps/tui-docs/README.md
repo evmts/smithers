@@ -3,9 +3,9 @@
 Two things live here:
 
 - **The playground** at tui.smithers.sh: the production agent on a two-file
-  browser sandbox. Every former TUI guide URL redirects to its page on
-  smithers.sh, where the TUI docs now live (`apps/site/src/content/docs/docs/tui/`
-  and the TUI tabs of `docs/learn/`).
+  browser sandbox. Former product guide URLs redirect to the Mac install page;
+  source and maintainer notes remain in `apps/tui/`.
+
 - **The recorder** that turns the scripts in `apps/tui/docs/recordings/` into
   the TUI GIFs on smithers.sh.
 

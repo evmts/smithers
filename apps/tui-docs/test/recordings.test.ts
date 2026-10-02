@@ -16,7 +16,6 @@ import { tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
-import { docsText } from "../../site/scripts/docs-text.mjs"
 import { launchOptions } from "../scripts/browser.mjs"
 import { runtimeInputs, tracked, trackedPath, walk } from "../scripts/inputs.mjs"
 import { providerFixture } from "../scripts/provider-fixture.mjs"
@@ -67,47 +66,18 @@ test("monitor recording uses HTTP judge", async () => {
   }
 })
 
-test("installation page on noexec temp", () => {
-  const site = new URL("../../site/", import.meta.url)
-  const read = (path: string) => readFileSync(new URL(path, site), "utf8")
-  const versions = JSON.parse(read("src/data/versions.json"))
-  const installation = docsText(read("src/content/docs/docs/installation.mdx"), { versions })
-  const tuiCli = docsText(read("src/content/docs/docs/tui/cli.mdx"), { versions })
-  const cliHelp = docsText(read("src/content/docs/docs/reference/cli/tui.mdx"), {
-    raw: { help0: read("src/data/help/tui.txt") },
-    versions
-  })
-
-  assert.match(cliHelp, /--help/)
-  assert.match(cliHelp, /--print/)
-  assert.ok(
-    /writable[^\n]*executable[^\n]*TMPDIR/i.test(installation),
-    "installation names a writable, executable TMPDIR"
-  )
-  const directory = installation.match(/mkdir -p\s+(["']?)([^\s"']+)\1/)
-  assert.ok(directory, "installation gives a command to create an executable writable temp directory")
-  assert.ok(
-    installation.includes(`export TMPDIR=${directory[1]}${directory[2]}${directory[1]}`),
-    "installation exports the directory it created as TMPDIR"
-  )
-  assert.ok(/noexec/i.test(installation), "installation identifies a noexec temp mount")
-  const openTuiFailure = /OpenTUI[\s\S]{0,200}Operation not permitted|Operation not permitted[\s\S]{0,200}OpenTUI/i
-  assert.ok(openTuiFailure.test(installation), "installation maps the OpenTUI error to noexec temp")
-  assert.ok(/noexec/i.test(tuiCli), "TUI CLI docs identify a noexec temp mount")
-  assert.ok(openTuiFailure.test(tuiCli), "TUI CLI docs map the OpenTUI error to noexec temp")
-  const runtime = tuiCli.split("## Runtime\n")[1]?.split("\n## ")[0] ?? ""
-  assert.ok(
-    /--help[\s\S]{0,300}--print|--print[\s\S]{0,300}--help/.test(runtime),
-    "runtime explains both help and print"
-  )
-  assert.ok(
-    /(?:--help|--print)[\s\S]{0,300}(?:without|does not|do not)[\s\S]{0,120}(?:interactive|OpenTUI)/i.test(runtime),
-    "runtime says help and print avoid interactive startup"
-  )
-  assert.ok(
-    /interactive[\s\S]{0,200}(?:starts|loads|initializes)[\s\S]{0,120}OpenTUI/i.test(runtime),
-    "runtime says interactive startup loads OpenTUI"
-  )
+test("package installation explains noexec temp and the noninteractive startup boundary", () => {
+  const installation = readFileSync(new URL("../../../packages/smithers/docs/installation.md", import.meta.url), "utf8")
+  const tui = readFileSync(new URL("../../tui/README.md", import.meta.url), "utf8")
+  for (const document of [installation, tui]) {
+    assert.match(document, /writable[^\n]*executable[^\n]*TMPDIR/i)
+    assert.match(document, /noexec/i)
+    assert.match(document, /OpenTUI[\s\S]{0,200}Operation not permitted/i)
+    assert.match(document, /--help[\s\S]{0,100}--print[\s\S]{0,100}do not load OpenTUI/)
+    const directory = document.match(/mkdir -p\s+(["']?)([^\s"']+)\1/)
+    assert.ok(directory, "create an executable writable temp directory")
+    assert.ok(document.includes(`export TMPDIR=${directory[1]}${directory[2]}${directory[1]}`))
+  }
 })
 
 test("Markdown grammar rejects unsupported instructions and escaping recording IDs", () => {

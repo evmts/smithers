@@ -1,6 +1,6 @@
 # TUI recordings
 
-The files in `recordings/` hold the scripts behind every TUI GIF on [smithers.sh](https://smithers.sh/docs/tui/). A `tui-script` fence names a scenario and drives the actual TUI in a private PTY. Model responses are deterministic fixtures; cells, file changes, session writes, controls, and checks execute for real.
+The files in `recordings/` hold the scripts behind every TUI GIF on [the recordings playground](../../tui-docs/README.md). A `tui-script` fence names a scenario and drives the actual TUI in a private PTY. Model responses are deterministic fixtures; cells, file changes, session writes, controls, and checks execute for real.
 
 ```tui-script recording-example
 Use "basic"

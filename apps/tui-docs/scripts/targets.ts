@@ -13,14 +13,11 @@ const inputs = [
   Smithers.file("//scripts/workspace-packages.mjs")
 ]
 export const sourceFiles = Smithers.Filegroup({ srcs: inputs, cwd })
-/** The smithers.sh pages the coverage test checks against the TUI registries. */
+/** Package installation references and recording inputs checked by the tests. */
 const sitePages = Smithers.Filegroup({
   srcs: [
-    Smithers.file("//apps/site/src/content/docs/docs/tui/commands.mdx"),
-    Smithers.file("//apps/site/src/content/docs/docs/tui/keys.mdx"),
-    Smithers.file("//apps/site/src/content/docs/docs/installation.mdx"),
-    Smithers.file("//apps/site/src/content/docs/docs/tui/cli.mdx"),
-    Smithers.file("//apps/site/src/content/docs/docs/reference/cli/tui.mdx"),
+    Smithers.file("//packages/smithers/docs/installation.md"),
+    Smithers.file("//apps/tui/README.md"),
     Smithers.file("//apps/site/src/data/versions.json"),
     Smithers.file("//apps/site/src/data/help/tui.txt"),
     Smithers.file("//apps/site/scripts/docs-text.mjs"),

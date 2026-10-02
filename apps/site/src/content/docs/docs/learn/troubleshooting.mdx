@@ -20,11 +20,11 @@ Start with the error on the card, row, or output. It names what failed and what 
 | You see | Do |
 | --- | --- |
 | A sign-in prompt | Sign in with GitHub. |
-| Your repository isn't there | [Register it](/docs/learn/open-a-repository/#register-your-repository); we review it. |
-| No flows or boxes | Check the selected repository, then [open a box](/docs/learn/boxes/). |
+| Your repository isn't there | [Register it](/docs/installation/); we review it. |
+| No flows or boxes | Check the selected repository, then [open a box](/docs/installation/). |
 | A notification over a control | Select **Dismiss**, then retry. |
 | An unknown slash command | Type `/` and pick from the menu. |
-| An empty Wiki or History | [Generate the wiki](/docs/learn/wiki/) or [turn on the stack](/docs/learn/issue-to-main/). |
+| An empty Wiki or History | [Generate the wiki](/docs/learn/wiki/) or [turn on the stack](/docs/installation/). |
 | A waiting or failed run | [Answer its approval](/docs/learn/approvals/), or fix the error and retry. |
 
 </TabItem>
@@ -34,8 +34,8 @@ Start with the error on the card, row, or output. It names what failed and what 
 
 | You see | Do |
 | --- | --- |
-| OpenTUI fails to load with `Operation not permitted` | If `/tmp` is mounted `noexec`, [set a writable, executable `TMPDIR`](/docs/tui/cli/#startup-on-a-noexec-temporary-filesystem) and retry interactive startup. |
-| No model available | Set a provider key and restart. See [Configuration](/docs/tui/configuration/). |
+| OpenTUI fails to load with `Operation not permitted` | If `/tmp` is mounted `noexec`, [set a writable, executable `TMPDIR`](/docs/installation/) and retry interactive startup. |
+| No model available | Set a provider key and restart. See [Configuration](/docs/installation/). |
 | Worker parked | Wait for its reset, or press `r` to retry now. A failed worker offers `m` to choose another model. |
 | Worker failed | Press `r` to retry. |
 | `Stop running work first` | Stop or finish running work before switching conversations or undoing. |
