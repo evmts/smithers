@@ -31,13 +31,23 @@ const review = {
 describe("the projected .smithers/factory.json of this repository", () => {
   test("parses, features the five repository flows first, and declares the day-one rules", () => {
     const projection = FactoryProjectionSchema.parse(JSON.parse(Fs.readFileSync(repositoryProjection, "utf8")))
-    expect(featuredFlows(projection).map((flow) => flow.id)).toEqual([
-      "review",
-      "lint",
-      "pr-triage",
-      "issue-triage",
-      "release-notes"
-    ])
+    const legacy = ["review", "lint", "pr-triage", "issue-triage", "release-notes"]
+    expect(legacy).toHaveLength(5)
+    const featured = featuredFlows(projection)
+    expect(featured.slice(0, 5).map((flow) => flow.id)).toEqual(legacy)
+    expect(featured.map((flow) => flow.id)).toEqual([...legacy, "issue-sweep"])
+    expect(featured).toHaveLength(6)
+    expect(projection.flows?.filter((flow) => flow.id === "issue-sweep")).toHaveLength(1)
+    expect(projection.flows?.find((flow) => flow.id === "issue-sweep")).toMatchObject({
+      id: "issue-sweep",
+      path: "flows/issue-sweep/flow.ts",
+      kind: "ts",
+      description: "Work every open GitHub issue that no other machine holds.",
+      summary: "Work every open GitHub issue that no other machine holds.",
+      featured: true,
+      model: null,
+      modelInvocable: false
+    })
     expect(projection.on.map((rule) => rule.event)).toContain("issue.labeled:todo")
     expect(projection.github?.mirror).toBeDefined()
   })
