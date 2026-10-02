@@ -1,5 +1,7 @@
 import { scenario } from "./coverage/types"
-import type { BrowserContext, Page } from "@playwright/test"
+import { Invocation, RequestOutcome, RequestReceipt, RequestReference } from "@smthrs/control/Account"
+import { Schema } from "effect"
+import type { BrowserContext, Page, Response } from "@playwright/test"
 import { appEntryPath, appReady, awaitBoot, command, expect, openApp, openComposer, realApi, reloadApp, test } from "./support/test"
 import {
   authenticatedTest,
@@ -55,16 +57,94 @@ authenticatedTest("the selected mode retains its authenticated session through d
   expect(await readAuthenticatedSession(page)).toEqual(expected)
   expect((await context.cookies(origin)).map(({ name }) => name).sort()).toEqual(beforeCookies)
 
+  const accountRequest = (response: Response, procedure: "Operation.Dispatch" | "Operation.Read") => {
+    if (new URL(response.url()).origin !== origin || new URL(response.url()).pathname !== "/api/workflow/rpc") {
+      return undefined
+    }
+    const wire = response.request().postDataJSON()
+    if (wire?.procedure !== procedure || wire?.payload?.name !== "account.show") return undefined
+    return procedure === "Operation.Dispatch"
+      ? Schema.decodeUnknownSync(Invocation)(wire.payload)
+      : Schema.decodeUnknownSync(RequestReference)(wire.payload)
+  }
+  let dispatchedRequestId: string | undefined
+  const dispatchResponse = page.waitForResponse((response) => {
+    const invocation = accountRequest(response, "Operation.Dispatch")
+    if (invocation === undefined) return false
+    dispatchedRequestId = invocation.requestId
+    return true
+  })
+  const completedResponse = page.waitForResponse(async (response) => {
+    const reference = accountRequest(response, "Operation.Read")
+    return dispatchedRequestId !== undefined && reference?.requestId === dispatchedRequestId && response.ok() &&
+      Schema.decodeUnknownSync(RequestOutcome)(await response.json()).state === "completed"
+  })
   await openComposer(page)
   await command(page, "/account.show")
-  await expect(page.locator('.smithers-card[data-kind="account"]').last().getByTestId("account-login"))
+  const admitted = await dispatchResponse
+  expect(admitted.status()).toBe(200)
+  const invocation = accountRequest(admitted, "Operation.Dispatch")
+  expect(invocation).toBeDefined()
+  if (invocation === undefined) throw new Error("Account Dispatch has no canonical request")
+  const receipt = Schema.decodeUnknownSync(RequestReceipt)(await admitted.json())
+  expect(receipt.requestId).toBe(invocation.requestId)
+  expect(receipt.operationId).not.toBe("")
+  const completed = await completedResponse
+  expect(accountRequest(completed, "Operation.Read")).toEqual({ name: "account.show", requestId: receipt.requestId })
+  const outcome = Schema.decodeUnknownSync(RequestOutcome)(await completed.json())
+  expect(outcome).toMatchObject({
+    requestId: receipt.requestId,
+    operationId: receipt.operationId,
+    state: "completed",
+    result: { login: expected!.login }
+  })
+
+  await expect(page.locator(".smithers-card[data-kind=\"account\"]").last().getByTestId("account-login"))
     .toContainText(`@${expected!.login}`)
 
-  await reloadApp(page)
-  expect(await readAuthenticatedSession(page)).toEqual(expected)
-  expect((await context.cookies(origin)).map(({ name }) => name).sort()).toEqual(beforeCookies)
+  const reconnectDispatches: string[] = []
+  const recordDispatch = (response: Response) => {
+    const request = accountRequest(response, "Operation.Dispatch")
+    if (request !== undefined) reconnectDispatches.push(request.requestId)
+  }
+  page.on("response", recordDispatch)
+  const restoredResponse = page.waitForResponse(async (response) => {
+    const reference = accountRequest(response, "Operation.Read")
+    return reference?.requestId === receipt.requestId && response.ok() &&
+      Schema.decodeUnknownSync(RequestOutcome)(await response.json()).state === "completed"
+  })
+  try {
+    await reloadApp(page)
+    const restored = await restoredResponse
+    expect(Schema.decodeUnknownSync(RequestOutcome)(await restored.json())).toMatchObject({
+      requestId: receipt.requestId,
+      operationId: receipt.operationId,
+      state: "completed",
+      result: { login: expected!.login }
+    })
+    expect(await readAuthenticatedSession(page)).toEqual(expected)
+    expect((await context.cookies(origin)).map(({ name }) => name).sort()).toEqual(beforeCookies)
+    // Observe the entire authenticated reload boundary before excluding redispatch.
+    expect(reconnectDispatches).toEqual([])
+  } finally {
+    page.off("response", recordDispatch)
+  }
   await testInfo.attach("mode-auth-session", {
-    body: Buffer.from(JSON.stringify({ login: expected?.login, cookieNames: beforeCookies, host: bootstrapBody.host }, null, 2)),
+    body: Buffer.from(
+      JSON.stringify(
+        {
+          login: expected?.login,
+          cookieNames: beforeCookies,
+          host: bootstrapBody.host,
+          accountRequestId: receipt.requestId,
+          accountOperationId: receipt.operationId,
+          accountActor: outcome.actor,
+          accountState: outcome.state
+        },
+        null,
+        2
+      )
+    ),
     contentType: "application/json"
   })
 })
