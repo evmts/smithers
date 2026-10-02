@@ -679,7 +679,7 @@ describe("esc", () => {
   it.skipIf(Bun.which("vim") === null)(
     "hands the real terminal to Vim and restores its edited Unicode draft",
     async () => {
-      const { tui } = await start({ editor: "vim -u NONE -U NONE -i NONE -n" })
+      const { tui } = await start({ editor: "vim -u NONE -U NONE -i NONE -n --cmd 'set encoding=utf-8'" })
       await tui.type("original draft")
       await tui.press("\x07")
       await awaitVimBuffer(tui, "original draft", drawn, "Vim foreground")
@@ -703,7 +703,10 @@ describe("esc", () => {
 
   it.skipIf(Bun.which("vim") === null)("cleans up a suspended external editor before restoring the draft", async () => {
     const cwd = repository()
-    writeFileSync(join(cwd, "edit-vim.sh"), "echo $$ > vim.pid\nexec vim -u NONE -U NONE -i NONE -n \"$1\"\n")
+    writeFileSync(
+      join(cwd, "edit-vim.sh"),
+      "echo $$ > vim.pid\nexec vim -u NONE -U NONE -i NONE -n --cmd 'set encoding=utf-8' \"$1\"\n"
+    )
     const { tui } = await start({ cwd, editor: "sh ./edit-vim.sh" })
     await tui.type("keep draft")
     await tui.press("\x07")
@@ -724,7 +727,11 @@ describe("esc", () => {
   it.skipIf(Bun.which("vim") === null)(
     "adopts terminal resizing while an external editor owns the foreground",
     async () => {
-      const { tui } = await start({ cols: 80, rows: 20, editor: "vim -u NONE -U NONE -i NONE -n" })
+      const { tui } = await start({
+        cols: 80,
+        rows: 20,
+        editor: "vim -u NONE -U NONE -i NONE -n --cmd 'set encoding=utf-8'"
+      })
       const marker = "resize-draft-中文-🦉"
       await tui.type(marker)
       await tui.press("\x07")

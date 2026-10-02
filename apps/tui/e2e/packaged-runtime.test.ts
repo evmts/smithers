@@ -84,7 +84,9 @@ for (const runtime of ["node", "compiled"] as const) {
     })
     symlinkSync(join(app, "node_modules"), join(project, "node_modules"), "dir")
     const interactiveEditor = Bun.which("vim") !== null
-    const editor = interactiveEditor ? "vim -u NONE -U NONE -i NONE -n" : `printf ${runtime}-editor-prompt >`
+    const editor = interactiveEditor
+      ? "vim -u NONE -U NONE -i NONE -n --cmd 'set encoding=utf-8'"
+      : `printf ${runtime}-editor-prompt >`
     let tui: Tui | undefined
     try {
       tui = await Tui.start({
