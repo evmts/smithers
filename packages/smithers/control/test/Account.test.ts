@@ -141,6 +141,51 @@ const fixture = (initial = authority(), defaultWait = false) => {
   }
 }
 describe("shared Account authority", () => {
+  it.each(["owner replacement", "origin replacement", "host disposal", "observation disposal"] as const)(
+    "does not persist a superseded request before deferred admission: %s",
+    async (boundary) => {
+      const t = fixture()
+      try {
+        const answer = t.core.showAccount()
+        if (boundary === "owner replacement") t.select(authority({ owner: "replacement" }))
+        else if (boundary === "origin replacement") t.select(authority({ origin: "https://replacement.test" }))
+        else if (boundary === "host disposal") await t.close()
+        else t.core.dispose()
+        expect(await answer).toEqual({ value: "Account request is no longer current." })
+        expect(t.calls).toEqual([])
+        expect(t.saved).toEqual([])
+        expect(t.reports).toEqual([])
+        expect(t.failures).toEqual([])
+      } finally {
+        await t.close()
+      }
+    }
+  )
+  it("keeps the replacement slot and persists only its intent before deferred admission", async () => {
+    const t = fixture()
+    try {
+      const first = t.core.showAccount()
+      const prior = t.shared.flight
+      if (prior === undefined) throw new Error("Expected original observation slot")
+      t.select(authority({ owner: "replacement", origin: "https://replacement.test", epoch: 2 }))
+      const second = t.core.showAccount()
+      const replacement = t.shared.flight
+      if (replacement === undefined) throw new Error("Expected replacement observation slot")
+      expect(replacement.id).not.toBe(prior.id)
+      expect(await first).toEqual({ value: "Account request is no longer current." })
+      expect(t.shared.flight).toBe(replacement)
+      expect(await second).toEqual({ value: "Requested" })
+      expect(t.shared.flight).toBe(replacement)
+      expect(t.calls).toEqual([{
+        procedure: "Operation.Dispatch",
+        payload: { name: "account.show", requestId: replacement.id, input: {} }
+      }])
+      expect(t.saved).toHaveLength(1)
+      expect(t.saved[0]?.id).toBe(replacement.id)
+    } finally {
+      await t.close()
+    }
+  })
   it("requires real completion evidence and keeps private facts outside the identity wire contract", () => {
     const decode = Schema.decodeUnknownSync(Account.RequestOutcome, { onExcessProperty: "error" })
     expect(decode({ operationId: "operation-1", requestId: "request-1", actor: "api", state: "accepted" })).toEqual({

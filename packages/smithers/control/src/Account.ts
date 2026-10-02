@@ -385,7 +385,12 @@ export const createAccountController = (host: AccountHost, reads = accountReads(
       persisted: false
     }
     reads.flight = flight
-    flight.admission = Promise.resolve().then(() => host.admit(flight)).then(() => {
+    flight.admission = Promise.resolve().then(async () => {
+      if (!owns(flight)) {
+        release(flight)
+        return superseded()
+      }
+      await host.admit(flight)
       flight.persisted = true
       if (!owns(flight) || !host.current(flight)) {
         release(flight)
