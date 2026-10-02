@@ -251,6 +251,101 @@ describe("a request this card sent", () => {
 })
 
 describe("an issue's failure", () => {
+  test("the parsed diagnostic is absent until its persisted issue is selected, then appears only as escaped detail text", () => {
+    const diagnostic = `owned-detail <script>alert("x")</script> & 'quoted'\ncomplete diagnostic tail`
+    const escaped =
+      `owned-detail &lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &#x27;quoted&#x27;\ncomplete diagnostic tail`
+    const result = JSON.stringify({ _tag: "issue-sweep/AgentFailed", message: diagnostic })
+    const listed = JSON.stringify([{ id: "42", number: 42, title: "Failed issue", labels: [] }])
+    const events: Journal["events"] = [
+      {
+        sequence: 1,
+        kind: "control.engine.event",
+        runId: "r",
+        occurredAt: 1,
+        payload: {
+          version: 1,
+          executionId: "rounds",
+          eventType: "flows.engine.node-settled",
+          meta: {},
+          payload: {
+            action: "issue-sweep/list-issues",
+            nodeId: "list",
+            outcome: "built",
+            result: { bytes: listed.length, preview: listed, truncated: false }
+          }
+        }
+      },
+      {
+        sequence: 2,
+        kind: "control.engine.event",
+        runId: "r",
+        occurredAt: 2,
+        payload: {
+          version: 1,
+          executionId: "issue-sweep/42/attempt-1",
+          eventType: "flows.engine.node-settled",
+          meta: {},
+          payload: {
+            action: "issue-sweep/work",
+            nodeId: "work",
+            outcome: "failed",
+            result: { bytes: result.length, preview: result, truncated: false }
+          }
+        }
+      },
+      {
+        sequence: 3,
+        kind: "control.engine.event",
+        runId: "r",
+        occurredAt: 3,
+        payload: {
+          version: 1,
+          executionId: "issue-sweep/42/attempt-1",
+          eventType: "flows.engine.run-decision",
+          meta: {},
+          payload: {
+            decision: "transitioned",
+            executionFact: {
+              observation: {
+                executionId: "issue-sweep/42/attempt-1",
+                flowName: "issue-sweep/work",
+                status: "failed",
+                createdAtMs: 1,
+                startedAtMs: 1,
+                finishedAtMs: 3
+              }
+            }
+          }
+        }
+      }
+    ]
+    const recorded = { input: {}, events }
+    expect(burndownOf(events).items.find((item) => item.number === 42)?.reason).toBe(diagnostic)
+    const selections: ReadonlyArray<Payload["burndown"]> = [undefined, { filter: "failed" }, { item: 43 }]
+    for (const burndown of selections) {
+      const markup = render(card("running", recorded, burndown === undefined ? {} : { burndown }))
+      expect(markup).not.toContain("owned-detail")
+      expect(markup).not.toContain("complete diagnostic tail")
+      expect(has(markup, "burndown-reason")).toBe(false)
+      expect(has(markup, "burndown-detail")).toBe(false)
+      const row = /<button[^>]*data-issue="42"[^>]*>/.exec(markup)?.[0]
+      expect(row).toContain("aria-label=\"#42 Failed issue, Failed\"")
+      expect(row).toContain("aria-expanded=\"false\"")
+    }
+    // A serialized card payload is the rendering boundary; no component-local selection is involved.
+    const selected = card("running", recorded, { burndown: { item: 42 } })
+    const restored = JSON.parse(JSON.stringify(selected))
+    const markup = render(restored)
+    expect(has(markup, "burndown-detail")).toBe(true)
+    expect(/<button[^>]*data-issue="42"[^>]*>/.exec(markup)?.[0]).toContain("aria-expanded=\"true\"")
+    expect(/<pre[^>]*data-testid="burndown-reason"[^>]*>([^]*?)<\/pre>/.exec(markup)?.[1]).toBe(escaped)
+    expect(markup).not.toContain("<script>")
+    expect(markup.match(/owned-detail/g)).toHaveLength(1)
+    expect(markup.match(/aria-[a-z-]+="[^"]*"/g)?.join(" ") ?? "").not.toContain("owned-detail")
+    expect(render(card("running", recorded))).not.toContain("owned-detail")
+  })
+
   test("the row carries its state as a mark and in its name; the detail shows the reason whole", () => {
     const failedIssue = burndownOf(run3.events).items.find((item) => item.state === "failed" && (item.reason ?? "").length > 200)!
     const markup = render(card("running", run3, { burndown: { filter: "failed", item: failedIssue.number } }))
