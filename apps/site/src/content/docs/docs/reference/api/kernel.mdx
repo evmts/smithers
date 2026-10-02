@@ -1536,3 +1536,13 @@ that require unchanged filters set `preserveQuery: true`. It returns only the
 opaque cursor, so callers retain authority over the next request's URL.
 `pageText` bounds UTF-8 response bytes before decoding and cancels the reader
 on overflow. Callers can supply their existing typed refusal constructors.
+
+## Unreachable
+
+`Unreachable.Unreachable({ message, cause? })` is a schema-backed infrastructure
+failure. `Unreachable.classifyExit(stderr)` returns it for known DNS and transport
+signatures, including `EAI_AGAIN`, `ENOTFOUND`, HTTP 429 and HTTP 5xx; it returns
+`undefined` for other command failures. Pass stderr from a failed command only.
+The message retains the diagnostic and the optional cause retains the source.
+Import from `@smthrs/kernel` or `@smthrs/kernel/Unreachable`. The fault registry
+classifies this tag as `infra`.

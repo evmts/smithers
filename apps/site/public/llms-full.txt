@@ -10338,6 +10338,15 @@ Registers one class for the whole tag, or one per value of `field` (default `cod
 
 Reads the error and up to 15 `cause` links beneath it and answers the innermost registered tag, because a wrapper names where a failure surfaced and its cause names why. Anything unregistered is `{ class: "bug", tag: "unregistered" }`.
 
+### `Fault.retryTransient`
+
+- **Signature:** `retryTransient<A, E, R>(effect: Effect<A, E, R>): Effect<A, E, R>`
+
+Retries plain effects only while `Fault.of(error).class` is `infra`, using
+`RetryPolicy.transient`: 5 seconds doubling to 5 minutes, expiring after 2 hours.
+The caller guarantees the effect is safe to repeat. The final typed failure is
+preserved, including its class. Defects and interruption are not retried.
+
 ### `Fault.respond`
 
 - **Signature:** `respond(fault: Fault, state: State): Response`
@@ -11240,6 +11249,14 @@ A retry policy as plain data, so the next delay is derived from a persisted atte
 - **Since:** `0.1.0`
 
 Creates a policy after checking every numeric bound, and throws a `RangeError` naming the field that is wrong: `initialMs` finite and greater than zero, `factor` finite and positive, `maxMs` finite and not below `initialMs`, `maxAttempts` a safe integer of at least one, `expirationMs` finite and positive, and `jitterRatio` finite and within zero and one inclusive. `initialMs: 0` is refused rather than read as an immediate retry, because every computed delay would be zero and `nextDelay` would report the policy exhausted on the first failure; use `initialMs: 1` for a near-immediate retry. `jitterRatio: 0` disables jitter. The `nonRetryable` array is copied and frozen, so a later mutation of the caller's array cannot change what a parked policy means.
+
+### `RetryPolicy.transient`
+
+- **Type:** `RetryPolicy`
+
+Frozen infrastructure policy: `initialMs: 5000`, `factor: 2`, `maxMs: 300000`,
+`expirationMs: 7200000`. Dispatch uses it by default for repeat-safe typed
+infrastructure failures; `Fault.retryTransient` uses it for plain effects.
 
 ### `RetryPolicy.defaultRetryPolicy`
 
@@ -20901,23 +20918,29 @@ requirements, actor rules, and host-bound form hints; they carry no UI imports.
 
 ## Account
 
-`accountOperations` declares `account.show` with `NoInput` and the `identity`
-capability. `createAccountController` binds its lifecycle to `AccountHost`:
-persist admission before reading, share pending work, and publish only while
-the authority and request still match. `accountReads` creates the flight slot
-shared by human and agent adapters. Disposal cancels that slot.
+`accountOperations` declares `account.show` with strict `NoInput` and the
+`identity` capability. `Identity`, `RequestReceipt`, `RequestOutcome`, and
+`RequestHistory` are the canonical wire schemas. `accountTransport` validates
+Dispatch, Read, History, and Cancel through the authenticated
+`/api/workflow/rpc` owner. The backend's existing jobs store owns admission,
+deduplication, replay, cancellation, and completion.
 
-`AccountAuthority` binds owner, origin, and epoch. `AccountRequest`,
-`AccountAnswer`, `AccountRead`, `AccountReads`, and `AccountFacts` describe the
-request and its verified result. `identityFacts` projects the backend username;
-`readAccountPermissions` decodes the existing permission response. Neither
-function invents identity, permissions, or boxes.
+`createAccountController` persists a request pointer before acknowledging,
+then observes admission and execution in the background. Accepted and running
+receipts remain pending. Only a server terminal receipt settles presentation.
+Reload reads the same operation; interrupted admission repeats its request ID.
+`AccountAuthority` binds owner, source, and epoch, fencing stale publication.
+Disposal stops local observation; explicit cancellation calls server Cancel.
+
+Hosts supply authenticated transport, pointer persistence, and presentation.
+The verified server actor remains separate from command provenance. CLI and TUI
+history retain request identity, never credentials or account facts. GUI scopes
+and boxes are supplementary card observations; `readAccountPermissions` decodes
+permission answers without completing the identity operation. The wider GUI
+card and GUI/TUI user cancellation controls are outside this identity slice.
 
 `ACCOUNT_CARD_ID`, `SIGNED_OUT_VALUE`, and `IDENTITY_PENDING_TEXT` preserve the
-existing Account presentation contract. `NoInput` is re-exported from
-`Operation`. Hosts own storage, credentials, and presentation. The CLI waits
-for its ordinary read; this module does not create a CLI run or operation
-history. API operation dispatch is not supplied by this module.
+existing Account presentation contract. `NoInput` is re-exported from `Operation`.
 
 ## Control
 
@@ -31685,6 +31708,7 @@ the lease lives and how the fence is checked at commit time.
 | `Service.claim`                                                                                 | `(runId, claimant: OwnerId, nowMs) => Effect<ClaimOutcome, ConsensusError>`                                                                    |
 | `Service.activate`                                                                              | `(runId, owner: OwnerId, grantedAtMs, nowMs) => Effect<ActivateOutcome, ConsensusError>`                                                       |
 | `Service.heartbeat`                                                                             | `(runId, owner: OwnerId, nowMs) => Effect<HeartbeatOutcome, ConsensusError>`                                                                   |
+| `Service.reconfirm`                                                                             | `(runId, owner: OwnerId, nowMs) => Effect<HeartbeatOutcome, ConsensusError>`; renews only while the owner matches and no claim is pending      |
 | `Service.release`                                                                               | `(runId, owner: OwnerId) => Effect<void, ConsensusError>`                                                                                      |
 | `Service.steal`                                                                                 | `(runId, claimant: OwnerId, nowMs, evidence: LivenessEvidence) => Effect<ClaimOutcome, ConsensusError>`                                        |
 | `Service.recover`                                                                               | `(runId, staleClaimant: OwnerId, grantedAtMs, observer: OwnerId, nowMs, evidence: LivenessEvidence) => Effect<RecoverOutcome, ConsensusError>` |
@@ -33612,6 +33636,16 @@ that require unchanged filters set `preserveQuery: true`. It returns only the
 opaque cursor, so callers retain authority over the next request's URL.
 `pageText` bounds UTF-8 response bytes before decoding and cancels the reader
 on overflow. Callers can supply their existing typed refusal constructors.
+
+## Unreachable
+
+`Unreachable.Unreachable({ message, cause? })` is a schema-backed infrastructure
+failure. `Unreachable.classifyExit(stderr)` returns it for known DNS and transport
+signatures, including `EAI_AGAIN`, `ENOTFOUND`, HTTP 429 and HTTP 5xx; it returns
+`undefined` for other command failures. Pass stderr from a failed command only.
+The message retains the diagnostic and the optional cause retains the source.
+Import from `@smthrs/kernel` or `@smthrs/kernel/Unreachable`. The fault registry
+classifies this tag as `infra`.
 
 ---
 
@@ -43166,10 +43200,12 @@ closure are refused. The host still verifies committed workspace routing and
 run approval before recovery; relocation grants no execution authority.
 
 `loadTimeoutMs` bounds each `catalog` entry, including custom loaders, and
-defaults to 30,000 milliseconds. Supply a positive finite number. Expiry becomes
-`ExecutableError { code: "body_unavailable" }` naming the flow, source path,
+defaults to `SMITHERS_FLOW_LOAD_TIMEOUT_MS`, or 30000 milliseconds when unset
+or invalid. Supply a positive finite number. Expiry becomes
+`ExecutableError { code: "load_timeout" }` naming the flow, source path,
 and deadline. The catalog logs the refusal immediately and proceeds to the
-next entry. Direct `fromDescriptor` and `fromRegistry` calls have no deadline.
+next entry. Direct `fromDescriptor` and `fromRegistry` calls have no deadline
+and log progress every 30 seconds.
 Native imports cannot be cancelled: the deadline stops waiting and cleans up
 temporary files, but cannot stop initialization resources or synchronous code
 that blocks the event loop. Hosts needing termination must supply an isolated,
@@ -43311,6 +43347,9 @@ before the flow exists: a missing delegate, an undecidable one, an unreadable
 or changed body, a module that exports something else. A flow either function
 returns is one the engine can drive.
 
+Direct loads have no deadline and log progress every 30 seconds. A native
+start or resume remains bounded by its admission window.
+
 The delegate is resolved before the body is loaded. Both refusals are real, but
 only one of them is about this host, and an operator reading "could not load"
 would go looking in the wrong place.
@@ -43321,6 +43360,10 @@ would go looking in the wrong place.
 interface Catalog {
   readonly executables: ReadonlyArray<Executable>
   readonly refused: ReadonlyArray<ExecutableError>
+  readonly load?: (name: string) => Effect.Effect<
+    Executable,
+    ExecutableError | RegistryError | DiscoveryError
+  >
 }
 
 const Catalog: Context.Service<Catalog, Catalog>
@@ -43337,7 +43380,16 @@ flows directory is a mixed set: some entries delegate to a flow this host
 registered, others name a delegate only another host has, and one may simply be
 broken. None of those is a reason to withhold the rest, so every refusal is
 reported in `refused` carrying its code rather than raised. Each refusal is
-logged before loading the next entry. Each entry has the `loadTimeoutMs` deadline.
+logged before loading the next entry. Each entry has a catalog deadline:
+`Options.loadTimeoutMs`, then `SMITHERS_FLOW_LOAD_TIMEOUT_MS`, then 30000 ms.
+The environment setting must be positive and finite; invalid values use the
+default. A timeout is `load_timeout`, separate from `body_unavailable`.
+
+The live catalog provided by `layer` or `layerRefreshable` exposes `load(name)`.
+It returns an already loaded executable or retries a `load_timeout` through
+the direct path, registers the recovered body, and removes its refusal.
+Concurrent first uses share the recovered executable. Other refusals remain
+typed failures; retry does not adopt edited source bytes.
 
 The service tag is provided by `layer`, so a command that lists or diagnoses
 flows reads the same refusals the registration phase acted on instead of
@@ -43464,6 +43516,7 @@ class ExecutableError {
   readonly code:
     | "missing_delegate"
     | "ambiguous_delegate"
+    | "load_timeout"
     | "body_unavailable"
     | "invalid_module"
     | "invalid_layer"
@@ -44036,6 +44089,7 @@ because the store issued it.
 
 ```ts
 const heartbeat: (runId: string, owner: OwnerId, nowMs: number) => Effect<HeartbeatOutcome, RunStoreError>
+const reconfirm: (runId: string, owner: OwnerId, nowMs: number) => Effect<HeartbeatOutcome, RunStoreError>
 ```
 
 Renews the owner's lease. The write is `MAX(heartbeat_at_ms, nowMs)`, so a
@@ -44567,9 +44621,17 @@ the `Consensus` strategy's lease through `RunStore.heartbeat`, and interrupts
 itself when the fence is gone, so race it against the owned work with
 `Effect.raceFirst`. A heartbeat outcome other than `Updated` is durable evidence
 and interrupts immediately. An independent deadline bounds failing or stalled
-writes by `heartbeatWriteTolerance` and interrupts the pending write at expiry.
+writes by `heartbeatWriteTolerance`. At expiry it tries `RunStore.reconfirm`
+and its `onReconfirm` receipt for at most one `heartbeatInterval`: the same
+owner with no pending claim renews the lease and continues after the receipt
+finishes; loss, error, or timeout interrupts.
 Successful pulses re-arm that deadline from the timestamp supplied to the store,
 not their completion time.
+
+`RunStore.reconfirm` uses `Consensus.reconfirm` and mirrors the heartbeat
+transactionally, with the same input validation and outcome type as `heartbeat`.
+`options.onReconfirm(unconfirmedMs)` records each successful reconfirmation;
+it leaves the owner and generation unchanged.
 
 `options.onLapse(unconfirmedMs)` runs once when the lease lapses, before the
 self-interrupt, with how long the lease went unconfirmed. A lost fence does not
@@ -44747,6 +44809,11 @@ Every namespace is also its own subpath, and `./internal/*` is null mapped.
 ## RemoteChildProcessSpawner
 
 Provider acquisition is tied to the layer scope: interrupting an execution or a stream consumer closes that scope and therefore runs the finalizer installed by `Provider.open`. No `AbortSignal` crosses this seam.
+
+The fault registry classifies provider `unavailable` and `timeout` failures as
+`infra`; `spawn_error`, `not_found`, `unknown` and `aborted` are `bug`. A nested
+registered cause retains its own classification. Repeat-safe actions without a
+declared retry policy use the engine's bounded transient infrastructure policy.
 
 A provider may add SDK details to `ProviderError.cause`, but it cannot create new host-visible failure kinds. The code set is closed, and one shared table normalizes each code onto the `PlatformError` reason that already means it: `timeout` becomes `TimedOut`, `unavailable` and `not_found` become `NotFound`, everything else becomes `Unknown`, under the `ChildProcess` module the sibling spawners name. `not_found` and `unavailable` stay apart in the provider vocabulary, where "absent" and "broken" are different facts; they say the same thing to a caller of a spawner, which is to try somewhere else, and a caller that needs the distinction reads the `ProviderError` back off `PlatformError.cause`. `Sandbox.fileSystem` is the one deliberate exception: there `unavailable` stays `Unknown`, because a filesystem's `NotFound` is load bearing (`exists` turns it into `false`) and a broken session must not read as an absent path.
 
