@@ -94,7 +94,7 @@ mock.module('../../../src/bun/NativeBackendProcess', () => ({
       stop: () => {
         calls.push('backend:stop')
         backendStopStarted.resolve()
-        return scenario === 'duplicate-shutdown' || scenario === 'shutdown-renderer-stop-error' || scenario === 'shutdown-bridge-stop-error-stub' || scenario === 'bridge-rollback-backend-failure' ? releaseStop.promise
+        return scenario === 'duplicate-shutdown' || scenario === 'shutdown-renderer-stop-error' || scenario === 'shutdown-bridge-stop-error' || scenario === 'bridge-rollback-backend-failure' ? releaseStop.promise
           : scenario === 'startup-backend-stop-error' ? Promise.reject(cleanupFault)
             : Promise.resolve()
       }
@@ -124,8 +124,22 @@ if (scenario !== 'bridge-start-error' && scenario !== 'bridge-window-close-error
   encodeRgbaPng: () => new Uint8Array(),
   startPackagedE2EBridge: () => ({ stop: () => {
     calls.push('bridge:stop')
-    if (scenario === 'shutdown-bridge-stop-error-stub') throw bridgeStopFault
+    if (scenario === 'shutdown-bridge-stop-error' || scenario === 'shutdown-bridge-stop-error-stub') throw bridgeStopFault
   } })
+}))
+if (scenario === 'shutdown-bridge-stop-error-stub') mock.module('../../../src/bun/server', () => ({
+  startLocalServer: async (options: { cloudMode: string; nativeShell: boolean; agent: unknown; fixtureJournal: unknown }) => {
+    expect(options.cloudMode).toBe('offline')
+    expect(options.nativeShell).toBe(true)
+    expect(typeof options.agent).toBe('function')
+    expect(options.fixtureJournal).toBeDefined()
+    calls.push('test-server:start')
+    return { origin: 'http://127.0.0.1:4921', stop: () => {
+      calls.push('test-server:stop')
+      backendStopStarted.resolve()
+      return releaseStop.promise
+    } }
+  }
 }))
 if (scenario === 'config-error' || scenario === 'startup-renderer-stop-error') mock.module('../../../src/bun/NativeBackendConfig', () => ({
   nativeBackendConfig: () => { throw configFault }
@@ -221,13 +235,15 @@ const exercise = async () => {
     }
 
     await within(entry)
-    if (scenario === 'shutdown-renderer-stop-error' || scenario === 'shutdown-bridge-stop-error-stub') {
+    if (scenario === 'shutdown-renderer-stop-error' || scenario === 'shutdown-bridge-stop-error' || scenario === 'shutdown-bridge-stop-error-stub') {
       const quitEvent: { response?: { allow: boolean } } = {}
       for (const handler of events.get('before-quit') ?? []) handler(quitEvent)
       process.emit('SIGINT')
       process.emit('SIGTERM')
-      expect(calls).toContain('backend:start')
-      expect(calls).not.toContain('test-server:start')
+      const stub = scenario === 'shutdown-bridge-stop-error-stub'
+      expect(calls.filter((call) => call === 'backend:start')).toHaveLength(stub ? 0 : 1)
+      expect(calls.filter((call) => call === 'test-server:start')).toHaveLength(stub ? 1 : 0)
+      expect(windows).toEqual([{ url: stub ? 'http://127.0.0.1:4921/' : 'http://127.0.0.1:4920/' }])
       const cleanupStarted = backendStopStarted.promise
       expect(await within(Promise.race([
         cleanupStarted.then(() => 'resource-stopping'), exited.promise.then(() => 'exited')
@@ -235,8 +251,9 @@ const exercise = async () => {
       expect(quitEvent.response).toEqual({ allow: false })
       expect(calls.filter((call) => call.startsWith('exit:'))).toEqual([])
       expect(calls.filter((call) => call === 'bridge:stop')).toHaveLength(1)
-      expect(calls.filter((call) => call === 'renderer:stop')).toHaveLength(1)
-      expect(calls.filter((call) => call === 'backend:stop')).toHaveLength(1)
+      expect(calls.filter((call) => call === 'renderer:stop')).toHaveLength(stub ? 0 : 1)
+      expect(calls.filter((call) => call === 'backend:stop')).toHaveLength(stub ? 0 : 1)
+      expect(calls.filter((call) => call === 'test-server:stop')).toHaveLength(stub ? 1 : 0)
       releaseStop.resolve()
       expect(await within(exited.promise)).toBe(1)
       expect(errors).toEqual(['Shutdown failed: Native runtime shutdown failed.'])
