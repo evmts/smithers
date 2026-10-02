@@ -32,6 +32,7 @@ import * as ChildProcess from "effect/unstable/process/ChildProcess"
 import * as NodeFs from "node:fs"
 import * as NodeOs from "node:os"
 import * as NodePath from "node:path"
+import { outsideWorkspace, resolveConfiguredExecutable } from "./internal/AtomicFileSystemExecutable.ts"
 import * as ProcessSandbox from "./ProcessSandbox.ts"
 
 /**
@@ -52,6 +53,15 @@ export interface Options {
   readonly host?: ProcessSandbox.Host | undefined
   /** Where each run's private temporary directory is created; defaults to the OS temporary directory. */
   readonly temporaryDirectory?: string | undefined
+  /**
+   * Host-selected native workspace helper; snapshotted before any command can run.
+   * Invalid configuration throws during construction. Its selected command
+   * requires confinement even when ordinary commands allow an unconfined fallback.
+   */
+  readonly nativeHelper?: {
+    readonly executable: string
+    readonly workspaceRoot: string
+  } | undefined
 }
 
 const shellLine = (command: ChildProcess.StandardCommand): string => [command.command, ...command.args].join(" ")
@@ -152,10 +162,23 @@ export const make = (options: Options = {}): KernelProcessConfinement.Service =>
   const hostFacts = options.host ?? ProcessSandbox.host()
   const temporaryRoot = options.temporaryDirectory ?? NodeOs.tmpdir()
   const unavailable = options.unavailable ?? "refuse"
+  const helper = options.nativeHelper === undefined ? undefined : (() => {
+    const root = NodeFs.realpathSync(options.nativeHelper.workspaceRoot)
+    const executable = resolveConfiguredExecutable(options.nativeHelper.executable, root)
+    return {
+      command: options.nativeHelper.executable,
+      root,
+      pinned: outsideWorkspace(executable, root)
+    }
+  })()
   const confine = Effect.fn("ProcessConfinement.confine")(function*(
     command: ChildProcess.StandardCommand,
     profile: KernelProcessConfinement.Profile
   ): Effect.fn.Return<ChildProcess.StandardCommand, PlatformError.PlatformError, Scope.Scope> {
+    const selectedHelper = helper !== undefined && command.command === helper.command &&
+        (command.options.shell === undefined || command.options.shell === false)
+      ? helper
+      : undefined
     const request: ProcessSandbox.Request = {
       network: profile.network,
       unixSockets: false,
@@ -166,7 +189,7 @@ export const make = (options: Options = {}): KernelProcessConfinement.Service =>
     }
     const selected = ProcessSandbox.select(request, hostFacts)
     if (ProcessSandbox.isUnenforceable(selected)) {
-      if (unavailable === "refuse") {
+      if (unavailable === "refuse" || selectedHelper !== undefined) {
         return yield* failure(
           "NotFound",
           command,
@@ -244,6 +267,12 @@ export const make = (options: Options = {}): KernelProcessConfinement.Service =>
     }
     // A workspace link does not grant authority to its target on the host.
     const confinement: ProcessSandbox.Plan = { ...planned, externalReads: [] }
+    // Only the host's selected helper receives its already pinned executable.
+    // The kernel authorized the original complete command before this seam;
+    // arguments and every other process option retain that same decision.
+    const admittedHelper = selectedHelper !== undefined && canonical.root === selectedHelper.root
+      ? selectedHelper.pinned
+      : undefined
     yield* Effect.try({
       try: () => {
         ProcessSandbox.validateWrites(confinement, hostFacts)
@@ -294,10 +323,22 @@ export const make = (options: Options = {}): KernelProcessConfinement.Service =>
       },
       catch: (cause) => failure("PermissionDenied", command, messageOf(cause), cause)
     })
-    const targetArgv = ["/usr/bin/env", "-i", "/bin/sh", script, ...argvOf(command)]
+    const target = argvOf(command)
+    const targetArgv = [
+      "/usr/bin/env",
+      "-i",
+      "/bin/sh",
+      script,
+      ...(admittedHelper === undefined ? target : [admittedHelper, ...command.args])
+    ]
     const wrapped = yield* Effect.try({
       try: () =>
-        ProcessSandbox.wrap({ ...confinement, externalReads: [script] }, targetArgv, targetEnvironment, hostFacts),
+        ProcessSandbox.wrap(
+          { ...confinement, externalReads: [script, ...(admittedHelper === undefined ? [] : [admittedHelper])] },
+          targetArgv,
+          targetEnvironment,
+          hostFacts
+        ),
       catch: (cause) => failure("Unknown", command, `could not render the confinement: ${messageOf(cause)}`, cause)
     })
     let [executable, ...args] = wrapped.argv

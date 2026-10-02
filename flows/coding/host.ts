@@ -43,6 +43,7 @@ import { correctionLayers, SelectRepair } from "./correction.ts"
 import { dispatchModels } from "./dispatch.ts"
 import { dispatchRegistration } from "./dispatch/flow.ts"
 import * as CodingFileSystem from "./filesystem.ts"
+import { helperPath } from "./helper.ts"
 import { atomFlows } from "./implementation/flow.ts"
 import { jevCheckDelegate, jevCheckLayers } from "./jev-check.ts"
 import type { Landing } from "./landing.ts"
@@ -682,6 +683,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
             stateRoot,
             credential: options.credential,
             expectedSourceRevision: options.runtimeSourceRevision,
+            nativeHelper: helperPath(options),
             approvalChannel: true,
             approvalAuthority: options.approvalAuthority ?? native.gatewayApprovalAuthority
           },

@@ -3,7 +3,7 @@ import * as NodeChildProcessSpawner from "@effect/platform-node/NodeChildProcess
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodeEffectPath from "@effect/platform-node/NodePath"
 import type { Profile } from "@smthrs/kernel/ProcessConfinement"
-import { Effect, Layer, Stream } from "effect"
+import { Deferred, Effect, Fiber, Layer, Stream } from "effect"
 import * as ChildProcess from "effect/unstable/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import * as NodeChildProcess from "node:child_process"
@@ -52,7 +52,7 @@ const fixture = () => {
         return yield* spawn(wrapped)
       })).pipe(Effect.provide(spawnerLayer), Effect.timeout("10 seconds"))
     )
-  return { workspaceRoot, temporaryDirectory, execute }
+  return { base, profile, workspaceRoot, temporaryDirectory, execute }
 }
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -60,6 +60,101 @@ afterEach(() => {
 })
 
 describe.skipIf(!available)("native ProcessConfinement enforcement", () => {
+  it("executes admitted bytes after replacement without admitting a neighboring host file", async () => {
+    const f = fixture()
+    vi.stubEnv("TMPDIR", f.base)
+    vi.stubEnv("HOME", f.base)
+    const executable = NodePath.join(f.base, "selected-cat")
+    const neighbor = NodePath.join(f.base, "neighbor.txt")
+    NodeFs.copyFileSync("/bin/cat", executable)
+    NodeFs.chmodSync(executable, 0o700)
+    NodeFs.writeFileSync(neighbor, "private neighbor must not be readable")
+    const service = ProcessConfinement.make({
+      temporaryDirectory: f.temporaryDirectory,
+      nativeHelper: { executable, workspaceRoot: f.workspaceRoot }
+    })
+    NodeFs.copyFileSync("/bin/echo", executable)
+    let admittedExecutable: string | undefined
+    const execute = (args: ReadonlyArray<string>, input: string) =>
+      Effect.runPromise(
+        Effect.scoped(Effect.gen(function*() {
+          const command = ChildProcess.make(executable, args, {
+            cwd: f.workspaceRoot,
+            stdin: Stream.succeed(new TextEncoder().encode(input)),
+            stdout: "pipe",
+            stderr: "pipe"
+          })
+          const wrapped = yield* service.confine(command, f.profile)
+          admittedExecutable = wrapped.args[wrapped.args.length - args.length - 1]
+          return yield* spawn(wrapped)
+        })).pipe(Effect.provide(spawnerLayer), Effect.timeout("10 seconds"))
+      )
+    const admitted = await execute(["-"], "exact stdin 中文 🦉\n")
+    expect(admitted).toEqual({ code: 0, stdout: "exact stdin 中文 🦉\n", stderr: "" })
+    const denied = await execute([neighbor], "")
+    expect(denied.code).not.toBe(0)
+    expect(denied.stdout).toBe("")
+    expect(denied.stderr).not.toContain("private neighbor must not be readable")
+    expect(admittedExecutable).toBeDefined()
+    if (admittedExecutable === undefined) throw new Error("selected executable missing")
+    const pinnedBytes = NodeFs.readFileSync(admittedExecutable)
+    for (const destination of [neighbor, admittedExecutable]) {
+      const write = await Effect.runPromise(
+        Effect.scoped(Effect.gen(function*() {
+          const wrapped = yield* service.confine(
+            ChildProcess.make("/bin/sh", [
+              "-c",
+              "printf 'unexpected replacement' > \"$1\"",
+              "--",
+              destination
+            ], { cwd: f.workspaceRoot, stdout: "pipe", stderr: "pipe" }),
+            f.profile
+          )
+          return yield* spawn(wrapped)
+        })).pipe(Effect.provide(spawnerLayer), Effect.timeout("10 seconds"))
+      )
+      expect(write.code).not.toBe(0)
+      expect(write.stdout).toBe("")
+    }
+    expect(NodeFs.readFileSync(neighbor, "utf8")).toBe("private neighbor must not be readable")
+    expect(NodeFs.readFileSync(admittedExecutable)).toEqual(pinnedBytes)
+    expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
+  })
+
+  it("interrupts the admitted helper and removes its private confinement directory", async () => {
+    const f = fixture()
+    vi.stubEnv("TMPDIR", f.base)
+    vi.stubEnv("HOME", f.base)
+    const executable = NodePath.join(f.base, "selected-sleep")
+    NodeFs.copyFileSync("/bin/sleep", executable)
+    NodeFs.chmodSync(executable, 0o700)
+    const service = ProcessConfinement.make({
+      temporaryDirectory: f.temporaryDirectory,
+      nativeHelper: { executable, workspaceRoot: f.workspaceRoot }
+    })
+    const pid = await Effect.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const started = yield* Deferred.make<number>()
+        const child = yield* Effect.forkChild(Effect.scoped(Effect.gen(function*() {
+          const spawner = yield* ChildProcessSpawner
+          const wrapped = yield* service.confine(
+            ChildProcess.make(executable, ["60"], { cwd: f.workspaceRoot }),
+            f.profile
+          )
+          const handle = yield* spawner.spawn(wrapped)
+          yield* Deferred.succeed(started, Number(handle.pid))
+          return yield* Effect.never
+        })))
+        const observed = yield* Deferred.await(started)
+        expect(() => process.kill(observed, 0)).not.toThrow()
+        yield* Fiber.interrupt(child)
+        return observed
+      })).pipe(Effect.provide(spawnerLayer), Effect.timeout("10 seconds"))
+    )
+    expect(() => process.kill(pid, 0)).toThrow(expect.objectContaining({ code: "ESRCH" }))
+    expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
+  })
+
   it.skipIf(process.platform !== "linux")(
     "denies datagram and raw socketpair access to host abstract Unix endpoints",
     async () => {

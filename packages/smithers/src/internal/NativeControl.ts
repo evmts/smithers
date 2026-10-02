@@ -268,6 +268,8 @@ export type ModuleRegistration = Layer.Layer<
  * @private
  */
 export interface ExecutorOptions {
+  /** Host-selected workspace helper admitted as one pinned executable, never a directory. */
+  readonly nativeHelper?: string | undefined
   /** Product-host binding: require this exact catalog snapshot before admission. */
   readonly expectedSourceRevision?: string | undefined
   /** An explicit host judge, including an evidence-based offline script. */
@@ -1259,7 +1261,15 @@ export const make = (
         KernelPath.layer,
         KernelHttpClient.layer.pipe(Layer.provide(native.httpClient(environment)))
       ).pipe(
-        Layer.provide([grants, Workspace.layer(workspaceRoot), ProcessConfinement.layer()]),
+        Layer.provide([
+          grants,
+          Workspace.layer(workspaceRoot),
+          ProcessConfinement.layer({
+            ...(options.nativeHelper === undefined ? {} : {
+              nativeHelper: { executable: options.nativeHelper, workspaceRoot }
+            })
+          })
+        ]),
         Layer.provideMerge(spawner)
       )
     const guarded = guard(contained)
@@ -1827,7 +1837,9 @@ export const make = (
   }
 
   const layerControlFromEngine = (
-    config: Application.Config & Pick<ExecutorOptions, "expectedSourceRevision" | "approvalChannel" | "plansFlows">,
+    config:
+      & Application.Config
+      & Pick<ExecutorOptions, "expectedSourceRevision" | "approvalChannel" | "plansFlows" | "nativeHelper">,
     registry: Layer.Layer<Registry.Registry>,
     engine: EngineDurable,
     modules?: ModuleRegistration
@@ -1842,6 +1854,7 @@ export const make = (
         startsRuns: config.startsRuns,
         plansFlows: config.plansFlows,
         expectedSourceRevision: config.expectedSourceRevision,
+        nativeHelper: config.nativeHelper,
         approvalChannel: config.approvalChannel,
         mcpServers: config.mcpServers ?? [],
         executionRoot: config.executionRoot ?? root,
@@ -1937,7 +1950,7 @@ export const make = (
       MemoryStore.layer.pipe(Layer.provide([engine.stores, native.crypto]), Layer.orDie)
     )
   const layerHost = (
-    config: Application.Config & Pick<ExecutorOptions, "expectedSourceRevision" | "approvalChannel">,
+    config: Application.Config & Pick<ExecutorOptions, "expectedSourceRevision" | "approvalChannel" | "nativeHelper">,
     modules?: ModuleRegistration,
     suppliedRegistry?: Layer.Layer<Registry.Registry>
   ) => {

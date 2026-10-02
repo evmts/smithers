@@ -7,6 +7,7 @@ import { syncBuiltinESMExports } from "node:module"
 import * as NodeOs from "node:os"
 import * as NodePath from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { AtomicHelperError } from "../src/internal/AtomicHelperError.ts"
 import * as ProcessConfinement from "../src/ProcessConfinement.ts"
 import * as ProcessSandbox from "../src/ProcessSandbox.ts"
 
@@ -39,6 +40,131 @@ afterEach(() => {
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>) => Effect.runPromise(Effect.scoped(effect))
 
 describe("native ProcessConfinement", () => {
+  const selectedHelper = () => {
+    const f = fixture()
+    vi.stubEnv("TMPDIR", f.base)
+    vi.stubEnv("HOME", f.base)
+    const executable = NodePath.join(f.base, "host-helper")
+    const original = `#!/bin/sh\n# ${NodePath.basename(f.base)}\nprintf 'admitted-helper\\n'\n`
+    NodeFs.writeFileSync(executable, original, { mode: 0o700 })
+    const nativeHelper = { executable, workspaceRoot: f.workspaceRoot }
+    return { ...f, executable, original, nativeHelper }
+  }
+
+  it.each([undefined, false] as const)(
+    "pins the selected helper before source replacement, shell=%s",
+    async (shell) => {
+      const f = selectedHelper()
+      const service = ProcessConfinement.make(f)
+      NodeFs.writeFileSync(f.executable, "#!/bin/sh\nprintf 'replacement-helper\\n'\n")
+      const stdin = Stream.succeed(new TextEncoder().encode("independent input"))
+      const args = ["--operation", "literal argument", "--", "-not-an-option"]
+      const command = ChildProcess.make(f.executable, args, { cwd: f.workspaceRoot, shell, stdin, stdout: "pipe" })
+      await run(Effect.gen(function*() {
+        const wrapped = yield* service.confine(command, f.profile)
+        const pinned = wrapped.args[wrapped.args.length - args.length - 1]
+        expect(pinned).toBeDefined()
+        if (pinned === undefined) throw new Error("selected executable missing")
+        expect(pinned).not.toBe(f.executable)
+        expect(NodeFs.readFileSync(pinned, "utf8")).toBe(f.original)
+        expect(wrapped.args.slice(-args.length)).toEqual(args)
+        expect(wrapped.options.stdin).toBe(stdin)
+        expect(wrapped.options.stdout).toBe("pipe")
+        expect(wrapped.command).toBe("/usr/bin/sandbox-exec")
+        const policy = wrapped.args[1]
+        expect(policy).toContain(pinned)
+        expect(policy).not.toContain(NodePath.join(f.base, "neighbor.txt"))
+        expect(policy).not.toContain(`(subpath "${NodePath.dirname(pinned)}")`)
+      }))
+      expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
+    }
+  )
+
+  it.each(["different-command", "shell", "different-workspace"] as const)(
+    "does not grant selected-helper admission to %s",
+    async (kind) => {
+      const f = selectedHelper()
+      const service = ProcessConfinement.make(f)
+      const other = NodePath.join(f.base, "other-workspace")
+      NodeFs.mkdirSync(other)
+      const command = ChildProcess.make(kind === "different-command" ? "/bin/echo" : f.executable, ["ordinary"], {
+        cwd: kind === "different-workspace" ? other : f.workspaceRoot,
+        shell: kind === "shell" ? true : false
+      })
+      const profile = { ...f.profile, workspaceRoot: kind === "different-workspace" ? other : f.workspaceRoot }
+      await run(Effect.gen(function*() {
+        const selected = yield* service.confine(
+          ChildProcess.make(f.executable, [], { cwd: f.workspaceRoot }),
+          f.profile
+        )
+        const pinned = selected.args.at(-1)
+        expect(pinned).toBeDefined()
+        if (pinned === undefined) throw new Error("selected executable missing")
+        const wrapped = yield* service.confine(command, profile)
+        expect(wrapped.args.at(-1)).toBe(kind === "shell" ? `${f.executable} ordinary` : "ordinary")
+        expect(wrapped.args).not.toContain(pinned)
+        expect(wrapped.args[1]).not.toContain(pinned)
+      }))
+    }
+  )
+
+  it("refuses missing confinement for a configured helper even with the ordinary fallback enabled", async () => {
+    const f = selectedHelper()
+    const service = ProcessConfinement.make({
+      ...f,
+      unavailable: "unconfined",
+      host: { ...f.host, executable: () => undefined }
+    })
+    const failure = await run(
+      Effect.flip(service.confine(ChildProcess.make(f.executable, [], { cwd: f.workspaceRoot }), f.profile))
+    )
+    expect(failure).toMatchObject({ reason: { _tag: "NotFound" } })
+    expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
+  })
+
+  it("keeps explicitly enabled unconfined fallback for an unrelated command when a helper is configured", async () => {
+    const f = selectedHelper()
+    const service = ProcessConfinement.make({
+      ...f,
+      unavailable: "unconfined",
+      host: { ...f.host, executable: () => undefined }
+    })
+    const command = ChildProcess.make("ordinary-command", ["literal"], { cwd: f.workspaceRoot })
+    const logs: Array<unknown> = []
+    const logger = Logger.make((event) => logs.push(event.message))
+    const result = await run(
+      service.confine(command, f.profile).pipe(Effect.provideService(Logger.CurrentLoggers, new Set([logger])))
+    )
+    expect(result).toBe(command)
+    expect(JSON.stringify(logs)).toContain("Running unconfined")
+    expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
+  })
+
+  it.each(["missing", "directory", "not-executable", "workspace", "workspace-link"] as const)(
+    "refuses %s helper configuration before any command is admitted",
+    (kind) => {
+      const f = selectedHelper()
+      let executable = NodePath.join(f.base, "invalid")
+      if (kind === "directory") NodeFs.mkdirSync(executable)
+      if (kind === "not-executable") NodeFs.writeFileSync(executable, "fixture", { mode: 0o600 })
+      if (kind === "workspace" || kind === "workspace-link") {
+        const inside = NodePath.join(f.workspaceRoot, "untrusted-helper")
+        NodeFs.writeFileSync(inside, f.original, { mode: 0o700 })
+        if (kind === "workspace") executable = inside
+        else NodeFs.symlinkSync(inside, executable)
+      }
+      let failure: unknown
+      try {
+        ProcessConfinement.make({ ...f, nativeHelper: { executable, workspaceRoot: f.workspaceRoot } })
+      } catch (error) {
+        failure = error
+      }
+      expect(failure).toBeInstanceOf(AtomicHelperError)
+      expect(failure).toMatchObject({ code: "helper_unusable" })
+      expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
+    }
+  )
+
   it.each([undefined, "refuse"] as const)(
     "refuses missing mechanisms with unavailable=%s before any spawn",
     async (unavailable) => {
