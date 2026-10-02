@@ -1811,8 +1811,14 @@ describe("an attached launch's exit status", processBudget, () => {
       expect(launched.status).toBe(1)
       const warnings = launched.stderr.split("\n").filter((line) => line.includes("WARN"))
 
-      expect(warnings).toHaveLength(1)
-      expect(warnings[0]).toContain("An agent run failed")
+      const refusalWarnings = warnings.filter((line) => /: An agent run failed(?: \{|$)/.test(line))
+      expect(refusalWarnings, launched.stderr).toHaveLength(1)
+      for (const warning of warnings.filter((line) => !refusalWarnings.includes(line))) {
+        expect(warning, launched.stderr).toMatch(
+          /^\[[^\]\r\n]+\] WARN \(#\d+\): FlowEngine\.actionExecute: no durable retry origin for "[^"\r\n]+"; the expirationMs budget restarts from the current clock \{$/
+        )
+      }
+      expect(refusalWarnings[0]).toContain("An agent run failed")
       expect(launched.stderr).not.toContain("could not be encoded through its own codec")
     } finally {
       rmSync(cwd, { recursive: true, force: true })
@@ -1834,8 +1840,14 @@ describe("an attached launch's exit status", processBudget, () => {
       expect(launched.error).toBeUndefined()
       expect(launched.status, launched.stderr).toBe(1)
       const warnings = launched.stderr.split("\n").filter((line) => line.includes("WARN"))
-      expect(warnings, launched.stderr).toHaveLength(1)
-      expect(warnings[0]).toContain("An agent run failed")
+      const refusalWarnings = warnings.filter((line) => /: An agent run failed(?: \{|$)/.test(line))
+      expect(refusalWarnings, launched.stderr).toHaveLength(1)
+      for (const warning of warnings.filter((line) => !refusalWarnings.includes(line))) {
+        expect(warning, launched.stderr).toMatch(
+          /^\[[^\]\r\n]+\] WARN \(#\d+\): FlowEngine\.actionExecute: no durable retry origin for "[^"\r\n]+"; the expirationMs budget restarts from the current clock \{$/
+        )
+      }
+      expect(refusalWarnings[0]).toContain("An agent run failed")
       expect(launched.stderr).not.toContain("which is not registered in this process")
       expect(launched.stderr).not.toContain("could not start on the engine")
       expect(launched.stderr).not.toContain("A terminal control status could not be written")
