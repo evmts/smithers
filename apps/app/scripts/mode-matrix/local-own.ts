@@ -143,6 +143,8 @@ export const startLocalOwn = async (rootDir: string, revision: string, outputDir
       SMITHERS_MODEL_HOST_BUNDLE: join(hostDir, "smithers-model-host"),
       SMITHERS_NODE_BINARY: nodeBinary,
       AI_GATEWAY_API_KEY: gatewayApiKey,
+      // Declare the fixture model for catalog startup; deterministic flows do not call it.
+      SMITHERS_WORKSPACE_CODING_DEFAULT_MODEL: "openai:scripted",
       SMITHERS_FFI_LIBRARY_PATH: ffiLibrary,
       SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: join(dirname(ffiLibrary), "smithers-jj-export"),
       SMITHERS_AUTH_BOOTSTRAP_TOKEN: bootstrapToken,
