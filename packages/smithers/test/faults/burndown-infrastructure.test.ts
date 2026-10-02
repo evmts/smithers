@@ -26,6 +26,7 @@ import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
 import { afterAll, afterEach, describe, expect, it } from "vitest"
 import { assertRecovery } from "./fixtures/burndown/recovery.ts"
+import { materializeFlowTemplate } from "./materializeFlowTemplate.ts"
 
 const fixture = fileURLToPath(new URL("./fixtures/burndown", import.meta.url))
 const bin = fileURLToPath(new URL("../../src/bin.ts", import.meta.url))
@@ -91,6 +92,7 @@ const make = (name: string) => {
   const keep = new Set(["burndown", ...(name === "identity" ? ["reuse"] : name === "source" ? ["live"] : [])])
   for (const name of readdirSync(join(root, "flows"))) {
     if (!keep.has(name)) rmSync(join(root, "flows", name), { recursive: true })
+    else materializeFlowTemplate(join(root, "flows", name))
   }
   copyOwner(root, "host.ts", join(root, "flows", "burndown", "host.ts"))
   mkdirSync(join(root, ".flows"))
@@ -798,6 +800,7 @@ it.skipIf(process.platform !== "darwin")(
     cpSync(fileURLToPath(new URL("./fixtures/disk-flow", import.meta.url)), join(root, "flows", "disk"), {
       recursive: true
     })
+    materializeFlowTemplate(join(root, "flows", "disk"))
     // Current owning closure: vm-pool is imported by vm; vm-options travels alongside placement.
     for (const name of ["vm.ts", "vm-pool.ts", "vm-options.ts", "msb-nice.sh"]) {
       copyOwner(root, name, join(root, "flows", "disk", name))
