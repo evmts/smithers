@@ -11,6 +11,8 @@ is fenced on the run you own.
 
 ## The identity
 
+**Available now**
+
 An attempt is addressed by three fields:
 
 ```ts
@@ -24,6 +26,8 @@ shares no row, and a retry of the same step increments `attempt` rather than
 overwriting the previous try. All three are the table's primary key.
 
 ## Start it
+
+**Available now**
 
 `put` inserts the row, and the insert only lands while the run is `running` and
 owned by the caller:
@@ -50,7 +54,7 @@ const start = (id: AttemptId, owner: OwnerId) =>
 store carries it unchanged across every later state change. `state` is a name
 you choose, and the store only cares whether it is in `inProgressStates`.
 
-Five outcomes are possible, and only one is a defect:
+`put` reports these outcomes as success values:
 
 | Outcome        | Meaning                                                                                                                 |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------- |
@@ -65,6 +69,8 @@ Five outcomes are possible, and only one is a defect:
 writers disagree about what this attempt is, which is a bug in the caller.
 
 ## Checkpoint it
+
+**Available now**
 
 `heartbeat` proves the attempt is still moving and optionally saves the value it
 would resume from:
@@ -96,6 +102,8 @@ progress, so something already finished it.
 
 ## Finish it
 
+**Available now**
+
 `finish` moves the attempt to a terminal state and records how it ended:
 
 ```ts
@@ -125,6 +133,8 @@ row.
 
 ## Annotate it without touching its lifecycle
 
+**Available now**
+
 `patch` rewrites the opaque fields and nothing else. It never moves `state`,
 `startedAtMs`, or `finishedAtMs`, so it works on running and terminal rows
 alike:
@@ -149,6 +159,8 @@ reports `FenceLost` from then on. Patch before you settle the run.
 
 ## Read it back
 
+**Available now**
+
 ```ts
 const read = (id: AttemptId) =>
   Effect.gen(function*() {
@@ -163,6 +175,8 @@ value is re-validated on the way out, so a row corrupted outside these stores
 fails with `decode_failed` instead of being handed back as state.
 
 ## Next steps
+
+**Available now**
 
 - [Durable values](../concepts/durable-values.md): what the admission boundary
   accepts, and the limits on checkpoints.

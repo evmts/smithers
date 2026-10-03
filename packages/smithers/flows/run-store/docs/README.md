@@ -12,6 +12,8 @@ and `AttemptStore`, plus the ownership arbitration that decides who holds a run.
 
 ## What it solves
 
+**Available now**
+
 A process that owns a long job can die at any moment. Two things then go wrong.
 The work is stranded, because nothing else knows the job existed or how far it
 got. And picking the job back up is dangerous, because the process you assume is
@@ -24,8 +26,8 @@ This package handles both in the database rather than in your code:
   executable state a resume re-enters. A restarted process reads that row
   instead of replaying a log to work out where it was.
 - **Every owned write carries a fence.** An owner identity is
-  `{ hostId, pid, nonce }`, and all three fields are compared inside the same
-  SQL statement as the mutation they guard. There is no window between checking
+  `{ hostId, pid, nonce }`. The `Consensus` strategy checks that identity
+  inside the same serialized write transaction as the mutation it guards. There is no window between checking
   ownership and using it, so two processes cannot both win.
 - **Competition is a value, not an error.** Losing a race returns
   `AlreadyClaimed`, `HeartbeatFresh`, or `FenceLost` as an ordinary success
@@ -36,22 +38,29 @@ This package handles both in the database rather than in your code:
   refuses every write from a process that no longer owns the run.
 
 The stores carry no database of their own. They are written against the
-driver-neutral [`@smthrs/database`](/api/database) contract, so the same code
+driver-neutral [`@smthrs/database`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/api.md) contract, so the same code
 runs over a local SQLite file, over a server, or over an in-memory database in a
 test.
 
 ## Install
 
-Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
+**Available now**
+
+Not on npm yet; see [Installation](installation.md).
 
 Node.js 26.4.0 or later. [Installation](./installation.md) covers the import
 forms and the two services a composition has to supply.
 
 ## Take a run, do the work, settle it
 
+**Available now**
+
 This program creates a run, claims ownership of it, and finishes it. The stores
 are the production ones. `TestRunStore.layer` provides them over a migrated
 in-memory database, so the file runs with no configuration:
+
+`TestRunStore.layer` uses in-memory SQLite unless `SMITHERS_TEST_PG_URL`
+selects an isolated PostgreSQL schema. Migrations run before the stores are exposed.
 
 ```ts
 import { RunStore } from "@smthrs/run-store"
@@ -106,8 +115,10 @@ ownership unchanged. The example then returns before calling `transitionOwned`.
 
 ## How this relates to @smthrs/flows
 
+**Available now**
+
 `@smthrs/run-store` is one of the storage services inside
-[`@smthrs/flows`](/api/flows), the package that carries the whole Smithers
+[`@smthrs/flows`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/api.md), the package that carries the whole Smithers
 durable flow engine in a single dependency. When you write a flow with
 `@smthrs/flows` and run it on a Node host, this package is the code deciding
 which process owns your run and what a restart re-enters. Flow authors never
@@ -117,15 +128,17 @@ Reach for `@smthrs/run-store` directly when you are building the host rather
 than the flow: a scheduler, a worker pool, or any service that hands durable
 work between processes and needs ownership arbitration it can trust. Most hosts
 do not wire it by hand even then.
-[`@smthrs/engine-store`](/api/engine-store) already composes these stores with
+[`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md) already composes these stores with
 the journal, the step cache, and the engine's own state into one storage ladder,
 and `@smthrs/flows/NodeRuntime` builds that ladder over a single SQLite file.
 
-Above all of it sits [`smithers`](/api/cli), the command line that plans, runs,
+Above all of it sits [`smthrs`](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/api.md), the command line that plans, runs,
 and inspects durable flows without your writing a host at all. Start there if
 you want to run flows rather than build the machinery underneath them.
 
 ## Where to go next
+
+**Available now**
 
 - [Quickstart](./quickstart.md) drives one run through its whole lifecycle,
   including a step attempt, against an in-memory database.

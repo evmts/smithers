@@ -22,12 +22,16 @@ nested `*/index` are blocked in the export map and are not public API.
 Services and tags are Effect constructs: a `Layer` provides a service, and an
 effect reads it from context. `RunStore.layer` and `AttemptStore.layer` each
 require a `SqlClient` and a `DurableWriter` from
-[`@smthrs/database`](https://database.smithers.sh/reference/api/).
+[`@smthrs/database`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/api.md).
 
 ## Example
 
+**Available now**
+
 ```ts
 import { RunStore } from "@smthrs/run-store"
+import * as Effect from "effect/Effect"
+
 const owner = { hostId: "worker-1", pid: process.pid, nonce: "9c31-af02" }
 const program = Effect.gen(function*() {
   const runs = yield* RunStore.RunStore
@@ -44,8 +48,10 @@ const program = Effect.gen(function*() {
 
 ## Entry points
 
-| Import                                | Source                                                                                                                                  | Platform |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+**Available now**
+
+| Import                                | Source                                                  | Platform |
+| ------------------------------------- | ------------------------------------------------------- | -------- |
 | `@smthrs/run-store`                   | [src/index.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/run-store/src/index.ts)                         | any      |
 | `@smthrs/run-store/Heartbeat`         | [src/Heartbeat.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/run-store/src/Heartbeat.ts)                 | any      |
 | `@smthrs/run-store/test/TestRunStore` | [src/test/TestRunStore.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/run-store/src/test/TestRunStore.ts) | Node     |
@@ -54,6 +60,8 @@ The root is driver-neutral and browser-bundleable: nothing under it imports a
 `node:` built-in.
 
 ## RunStore
+
+**Available now**
 
 One row per durable run: its status, its owner, its heartbeat, its cancellation
 intent, and the executable state a resume re-enters.
@@ -68,7 +76,7 @@ The service tag. The identity string equals the defining module path.
 
 ### RunStore.Service
 
-Fourteen operations. Every one validates its input first and fails with
+Every operation validates its input first and fails with
 `RunStoreError` on a defect; competition is reported as a success value.
 
 #### create
@@ -263,7 +271,7 @@ the state. `suspended` clears the owner, the heartbeat, and the claim and leaves
 `finished_at_ms` null. `completed`, `failed`, and `cancelled` clear the same
 columns and stamp `finished_at_ms`. `pending` fails with `invalid_run`. An
 omitted `stateJson` leaves the column as recorded; a supplied one replaces it
-whole. The guard is compiled into the same `UPDATE` as the ownership fence.
+whole. The guard is evaluated in the same serialized write transaction as the ownership fence check.
 
 #### steal
 
@@ -364,8 +372,8 @@ const TransitionGuard: Schema.Struct<{ cancelRequested: Schema.optional<Schema.L
 type TransitionGuard = { readonly cancelRequested?: "absent" | "present" }
 ```
 
-An extra compare-and-swap predicate over first-class run metadata, compiled into
-the transition's own `UPDATE`.
+An extra predicate over first-class run metadata, evaluated in the same
+serialized write transaction as the ownership fence check and transition.
 
 ### RunStore outcomes
 
@@ -447,17 +455,24 @@ by position never sees one. They are recorded when the caller runs with a
 ### RunStore constructors and layers
 
 ```ts
-const make: Effect<Service, never, DurableWriter | SqlClient.SqlClient>
+const make: Effect<Service, never, Consensus | DurableWriter | SqlClient.SqlClient>
 const makeNoop: (overrides?: Partial<Service>) => Service
 const layer: Layer<RunStore, never, DurableWriter | SqlClient.SqlClient>
+const layerWith: Layer<RunStore, never, Consensus | DurableWriter | SqlClient.SqlClient>
 const layerNoop: (overrides?: Partial<Service>) => Layer<RunStore>
 ```
+
+`layer` supplies `SqlConsensus`. `make` and `layerWith` use the injected
+`Consensus` from `@smthrs/journal`; provide the same strategy instance that
+`SqlJournal.layerWith` uses.
 
 `makeNoop` is an explicit absence: `create` and `get` fail with
 `persistence_failed`, and every compare-and-swap reports a loss, `NotFound` or
 `ClaimLost` for `activate` and `abandonClaim`.
 
 ## AttemptStore
+
+**Available now**
 
 One row per step attempt, addressed by `(runId, stepKeyDigest, attempt)`. Every
 write is fenced on the run being `running` under the caller's owner; there is no
@@ -664,6 +679,8 @@ const layerNoop: (overrides?: Partial<Service>) => Layer<AttemptStore>
 
 ## Ownership
 
+**Available now**
+
 Liveness evidence, the checks that produce it, and the heartbeat supervision loop.
 
 ### OwnerId
@@ -676,10 +693,10 @@ interface OwnerId {
 }
 ```
 
-Defined by [`@smthrs/journal`](https://journal.smithers.sh/reference/api/), because it is the same token the
+Defined by [`@smthrs/journal`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/api.md), because it is the same token the
 journal accepts on durable appends, and re-exported here so ownership callers
-read one vocabulary. All three fields are compared in the same SQL statement as
-every owned mutation.
+read one vocabulary. Owned mutations check the full identity through `Consensus.guard` and the run
+row inside the same serialized write transaction as the mutation.
 
 ### LivenessEvidence
 
@@ -697,7 +714,7 @@ const LivenessEvidence: Schema.Struct<{
 | `cross-host-unreachable-stale` | The hosts differ.                                                                  |
 | `lease-expired`                | Any host. The strategy verifies this claim itself against the persisted heartbeat. |
 
-Defined by [`@smthrs/journal`](https://journal.smithers.sh/reference/api/)'s `Consensus`, because steal
+Defined by [`@smthrs/journal`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/api.md)'s `Consensus`, because steal
 requires staleness plus liveness evidence in every strategy, and re-exported
 here. `checkedAtMs` must equal the consuming call's `nowMs` exactly, so a probe
 cannot be replayed into a later decision.
@@ -796,6 +813,8 @@ call it. The engine's run driver uses it to record a `lease-lapsed` release caus
 
 ## RunStoreMetrics
 
+**Available now**
+
 Metric handles only; `RunStore` updates them as it decides each outcome, and the
 counters appear in whatever registry the composition provides.
 
@@ -823,10 +842,12 @@ Each view carries `outcome` in snake case, and the `claims` views also carry `op
 (`claim`, `claim_and_own`, `activate`, `abandon_claim`, `recover_claim`,
 `steal`). `RunStore` adds the `to` attribute to a transition at the update site,
 because the target status is call input. A terminal transition also advances
-`runThroughput` from [`@smthrs/observability`](https://observability.smithers.sh/reference/api/). See
+`runThroughput` from [`@smthrs/observability`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/docs/api.md). See
 [Observe store outcomes](/guides/observe-outcomes/).
 
 ## Migrations
+
+**Available now**
 
 ```ts
 const set: DatabaseMigrations.MigrationSet
@@ -837,11 +858,11 @@ const layer: Layer<never, MigrationError | SqlError, SqlClient.SqlClient>
 `set` owns `flows_runs`, `flows_attempts`, `flows_run_source`, and
 `flows_run_changes` under the namespace `run-store` and
 reserves migration id block 1000, so its ids can never collide with another
-package's. `run` and `layer` install [`@smthrs/journal`](https://journal.smithers.sh/reference/api/)'s set
+package's. `run` and `layer` install [`@smthrs/journal`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/api.md)'s set
 ahead of it, because the SQL `RunStore` arbitrates ownership through the
 journal's `SqlConsensus` and its `flows_consensus_leases` table. Compose `set`
 with the other storage packages' sets and run them in one pass rather than
-layering several migrators; [`@smthrs/engine-store`](https://engine-store.smithers.sh/reference/api/)
+layering several migrators; [`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md)
 already does.
 
 The schema enforces the ownership invariants as SQL `CHECK` constraints, so no
@@ -860,8 +881,10 @@ human tasks use it to publish the prompt, answer kind, and attempt budget.
 
 ## Heartbeat
 
+**Available now**
+
 `@smthrs/run-store/Heartbeat` is a leaf module re-exporting the four lease
-durations from [`@smthrs/journal`](https://journal.smithers.sh/reference/api/)'s `Consensus`, where every
+durations from [`@smthrs/journal`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/api.md)'s `Consensus`, where every
 strategy judges staleness against them. `RunStore` needs the staleness cutoff
 and `Ownership` needs all four, and `Ownership` imports `RunStore`, so neither
 could own them without the other restating them.
@@ -880,6 +903,8 @@ interrupts itself before a peer may steal the run. See
 
 ## TestRunStore
 
+**Available now**
+
 The module exports one layer, which provides both services at once:
 
 ```ts
@@ -890,13 +915,16 @@ const tested = program.pipe(Effect.provide(TestRunStore.layer), Effect.scoped)
 ```
 
 `@smthrs/run-store/test/TestRunStore` provides the production run and attempt
-stores over a fresh in-memory SQLite database, with the migrations applied before
+stores over a fresh in-memory SQLite database by default, or an isolated
+PostgreSQL schema when `SMITHERS_TEST_PG_URL` is set. Migrations run before
 either service is exposed. Node only, and scoped: the database closes with the
 scope. See [Test against the real stores](/guides/testing/).
 
 ## Related reading
 
+**Available now**
+
 - [Fencing and ownership](/concepts/fencing/) for why competition is a value.
 - [Durable values](/concepts/durable-values/) for the admission boundary.
-- [`@smthrs/journal`](https://journal.smithers.sh/reference/api/) for the history half of durability, and
-  [`@smthrs/engine-store`](https://engine-store.smithers.sh/reference/api/) for the composed storage ladder.
+- [`@smthrs/journal`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/api.md) for the history half of durability, and
+  [`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md) for the composed storage ladder.

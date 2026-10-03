@@ -12,6 +12,8 @@ that the store can check before it admits a takeover.
 
 ## Three kinds, three scopes
 
+**Available now**
+
 `Ownership.LivenessEvidence` carries the owner it is about, the instant it was
 observed, and what kind of claim it is:
 
@@ -43,6 +45,8 @@ probes a process or a network itself. It validates what it is handed.
 
 ## Evidence binds to one instant
 
+**Available now**
+
 `evidence.checkedAtMs` must equal the `nowMs` of the call that consumes it,
 exactly. A probe taken at T is refused by a call made at T plus one
 millisecond, and the caller has to build fresh evidence.
@@ -59,6 +63,8 @@ lost to a row that moved. A caller can tell "I was not allowed to try" from "I
 tried and lost".
 
 ## A check answers, a probe produces
+
+**Available now**
 
 Two types sit either side of the store, and they answer different questions.
 
@@ -84,7 +90,7 @@ compositions keep it, because a tab has no process table to ask.
 
 `Ownership.sameHostPidProbe` asks the operating system instead. It is what a
 Node host hands the engine, so this snippet also installs
-[`@smthrs/flows`](https://flows.smithers.sh/reference/api/):
+[`@smthrs/flows`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/api.md):
 
 ```ts
 import type * as NodeRuntime from "@smthrs/flows/NodeRuntime"
@@ -105,6 +111,8 @@ or a disk that blocked too long. The probe answers the question the lease is
 standing in for.
 
 ## Every unknown answer is life
+
+**Available now**
 
 `sameHostPidProbe` sends no signal. `process.kill(pid, 0)` performs only the
 delivery checks, and exactly three answers matter:

@@ -12,6 +12,8 @@ related rather than independently chosen.
 
 ## The four durations
 
+**Available now**
+
 They live in `@smthrs/run-store/Heartbeat` and are re-exported from
 `Ownership`. All four are `Duration` values:
 
@@ -37,6 +39,8 @@ the constants without the other restating them, and a restated constant is a
 constant that drifts.
 
 ## The supervision loop
+
+**Available now**
 
 `Ownership.heartbeatLoop` is the owner's half of the exchange. It pulses
 forever and interrupts itself when the fence is gone, so race it against the
@@ -91,6 +95,8 @@ begins.
 
 ## Heartbeats only move forward
 
+**Available now**
+
 `heartbeat` writes `MAX(heartbeat_at_ms, :nowMs)`. A pulse that arrives after a
 newer one from the same owner still reports `Updated`, because the fence held
 and the write proved liveness, but it does not move the stamp backwards and
@@ -98,6 +104,8 @@ make a live run look stale to a peer's cutoff. The same rule applies to attempt
 heartbeats.
 
 ## Two clocks stamp one row
+
+**Available now**
 
 A run row carries readings from two different sources, and the split is
 deliberate.
@@ -117,6 +125,8 @@ sources the same reading. In practice that means taking `nowMs` from
 makes the whole store driveable under `TestClock`.
 
 ## The skew allowance is enforced
+
+**Available now**
 
 Every `nowMs` is validated as a non-negative safe integer. The lease operations
 (`claim`, `claimAndOwn`, `steal`, `heartbeat`, `reconfirm`, and `recoverClaim`) then bound it
@@ -141,6 +151,8 @@ a local SQLite file whose caller can issue raw SQL anyway, and it must not
 cross a trust boundary.
 
 ## What the lease does not promise
+
+**Available now**
 
 Beyond `heartbeatSkewAllowance` of clock offset between two hosts, a peer can
 be admitted while the previous owner is still running. Durable writes stay safe

@@ -20,6 +20,8 @@ never the value that failed. Every code and outcome is listed in the
 
 ## invalid_run and invalid_attempt
 
+**Available now**
+
 **What happened.** An input did not meet the durable contract, and nothing was
 written. The cause names the field and what was wrong with it. The common ones:
 
@@ -32,7 +34,7 @@ written. The cause names the field and what was wrong with it. The common ones:
 - **A timestamp that is not a non-negative safe integer.** Every `nowMs`,
   `claimedAtMs`, `startedAtMs`, and `finishedAtMs` is checked on its own.
 - **A lease reading ahead of the store's clock.** `claim`, `claimAndOwn`,
-  `steal`, `heartbeat`, and `recoverClaim` refuse a `nowMs` more than
+  `steal`, `heartbeat`, `reconfirm`, and `recoverClaim` refuse a `nowMs` more than
   `heartbeatSkewAllowance` ahead of the injected `Clock`, with the detail "runs
   ahead of the store clock by more than the heartbeat skew allowance".
 - **An identifier that is not durable text.** Run ids, step key digests, lineage
@@ -61,6 +63,8 @@ when the first bad value does. See [Durable values](./concepts/durable-values.md
 
 ## decode_failed
 
+**Available now**
+
 **What happened.** A row came back that these stores could not have written. The
 cause distinguishes two cases: "could not decode flows_runs row" is a schema
 mismatch, and "flows_runs row violates durable invariants" is a row whose
@@ -75,6 +79,8 @@ as executable state.
 
 ## constraint
 
+**Available now**
+
 **What happened.** The database refused the write. The usual cause is
 `create` with a `parentRunId` or a foreign key that names a run that does not
 exist, since `flows_runs.parent_run_id` and `flows_attempts.run_id` are both
@@ -85,6 +91,8 @@ option. A lineage is ordinary metadata; the ancestry edge is not.
 
 ## not_found_row
 
+**Available now**
+
 **What happened.** `RunStore.get` was called for a run id with no row. It is the
 one read that fails rather than reporting absence, because callers use it to
 follow a fence they already believe in.
@@ -94,6 +102,8 @@ Every compare-and-swap reports `NotFound` as a value instead, and
 `AttemptStore.get` returns `Option.none()`.
 
 ## persistence_failed
+
+**Available now**
 
 **What happened.** Either the database operation failed, or the composition is
 running `RunStore.layerNoop()`, whose `create` and `get` fail with the message
@@ -108,6 +118,8 @@ stub, provide a real store, or override the one operation the test needs.
 
 ## unknown
 
+**Available now**
+
 **What happened.** `AttemptStore.layerNoop()` is in the composition. Every
 operation fails with "the store is unavailable in this environment".
 
@@ -115,6 +127,8 @@ operation fails with "the store is unavailable in this environment".
 override that supplies the outcome your test wants.
 
 ## Every attempt write reports FenceLost after the run settles
+
+**Available now**
 
 **What happened.** `AttemptStore` carries no ownership of its own. `put`,
 `heartbeat`, `finish`, and `patch` each require that the run is `running` and
@@ -128,6 +142,8 @@ rewriting the winning row. See
 
 ## GuardFailed instead of Transitioned
 
+**Available now**
+
 **What happened.** You still own the run, and the guard predicate refused the
 write. `{ cancelRequested: "absent" }` means a cancellation was requested;
 `{ cancelRequested: "present" }` means none was.
@@ -138,6 +154,8 @@ checked first, so this is never a fence problem: `FenceLost` would have been
 reported for that. See [Cancel a run](./guides/cancel-a-run.md).
 
 ## FenceLost while you believe you own the run
+
+**Available now**
 
 **What happened.** Another owner holds the row, or the run is no longer
 `running`. The fence is the complete `(hostId, pid, nonce)` triple, so an
@@ -150,6 +168,8 @@ lost fence interrupts the work. See [The heartbeat lease](./concepts/leases.md).
 
 ## EvidenceRequired from claimAndOwn
 
+**Available now**
+
 **What happened.** Your snapshot is still current, the row's different owner has
 a stale heartbeat, and you supplied no matching `LivenessEvidence`. No
 compare-and-swap ran.
@@ -161,6 +181,8 @@ satisfy that predicate. See
 [Take over a stalled run](./guides/recover-a-stalled-run.md).
 
 ## LivenessUnconfirmed rather than SnapshotChanged
+
+**Available now**
 
 **What happened.** The evidence did not match the recorded owner, the host
 relation its `kind` requires, or the call's `nowMs`, so the store refused before
@@ -176,6 +198,8 @@ and `cross-host-unreachable-stale` only from a different one. See
 
 ## HeartbeatFresh for an owner you know is dead
 
+**Available now**
+
 **What happened.** The persisted heartbeat is still inside
 `heartbeatStaleAfter`. The store judges the row, not the process, and no evidence
 overrides that cutoff.
@@ -189,6 +213,8 @@ so an embedded host that re-creates its engine in the same process should keep
 
 ## AlreadyClaimed that never clears
 
+**Available now**
+
 **What happened.** A claimant wrote the claim columns and never activated. The
 row is not owned and not claimable, and `claim` reports `AlreadyClaimed` for
 everyone.
@@ -201,6 +227,8 @@ claim still inside the window reports `ClaimFresh`.
 
 ## Conflict from a replayed put
 
+**Available now**
+
 **What happened.** An attempt row already exists at `(runId, stepKeyDigest,
 attempt)` with different content, and the store is first-writer-wins.
 
@@ -212,6 +240,8 @@ what you want. A terminal attempt stays immutable in both modes.
 
 ## StateChanged from heartbeat or finish
 
+**Available now**
+
 **What happened.** You still own the run, and the attempt's `state` is no longer
 one of the store's `inProgressStates`. Something already finished it, and a
 second `finish` reports the same thing rather than overwriting the winning row.
@@ -221,6 +251,8 @@ one running state, declare them all in `inProgressStates` when you build the
 store.
 
 ## requestCancel reports Terminal or AlreadyRequested
+
+**Available now**
 
 **What happened.** `Terminal` means the run settled before the request could be
 recorded, and its `status` says which ending it lost to. `AlreadyRequested` means
@@ -233,6 +265,8 @@ terminal run records nothing, because it has no owner left to observe the intent
 
 ## heartbeat reports Updated but the stamp did not move
 
+**Available now**
+
 **What happened.** Heartbeats are monotonic. The write is
 `MAX(heartbeat_at_ms, :nowMs)`, so a pulse delayed past a newer one from the same
 owner still reports `Updated`: the fence held and the write proved liveness, but
@@ -243,6 +277,8 @@ peer.
 backwards. That is the sign of a caller mixing clock sources.
 
 ## Two clocks in one row
+
+**Available now**
 
 **What happened.** Lifecycle stamps come from the injected Effect `Clock`, and
 `nowMs` comes from the caller. A composition that reads `Date.now()` for `nowMs`

@@ -14,6 +14,8 @@ run" becomes a query rather than a grep.
 
 ## The three counters
 
+**Available now**
+
 `RunStoreMetrics` defines the handles, and `RunStore` updates them as it decides
 each outcome. Every driver that writes through the store lands in the same
 counters.
@@ -47,10 +49,10 @@ Four of those series are the ones worth alerting on:
   to take runs from each other.
 
 A terminal transition also advances `runThroughput` from
-[`@smthrs/observability`](https://observability.smithers.sh/reference/api/), published as
+[`@smthrs/observability`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/docs/api.md), published as
 `flows_run_throughput`, so finished runs are counted in the same place as the
 rest of the runtime. See
-[Read the runtime metrics](https://observability.smithers.sh/guides/read-runtime-metrics/).
+[Read the runtime metrics](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/docs/guides/read-runtime-metrics.md).
 
 Throughput advances only after the outermost managed `DurableWriter.write`
 commits. Rolled-back savepoints and retried transactions do not count; the
@@ -58,6 +60,8 @@ final committed transition counts once. Use the shared writer for this metric:
 raw SQL transactions do not provide a managed commit notification.
 
 ## Wire an exporter
+
+**Available now**
 
 This package ships no exporter. It defines counters and updates them, so they
 appear in whatever registry the composition provides:
@@ -74,6 +78,8 @@ counters to leave the process. Nothing about the stores changes either way: an
 unprovided registry costs a map write and is dropped.
 
 ## Read a counter directly
+
+**Available now**
 
 Each exported record maps an outcome tag to an attributed view of its counter, so
 reading one is a lookup rather than a filter:
@@ -107,6 +113,8 @@ const completedTransitions = Metric.value(
 
 ## Read the spans
 
+**Available now**
+
 Every store operation runs inside a span named after it, `RunStore.claim`,
 `AttemptStore.finish`, and so on. Each span carries the identity it operated
 on, the acting host when the call is owner or claimant fenced, and an `outcome`
@@ -131,6 +139,7 @@ are validated, so a call rejected as invalid input closes with `outcome` alone.
 | `RunStore.abandonClaim`         | `runId`                             | `claimantHostId` | abandon-claim tag                                                                  |
 | `RunStore.recoverClaim`         | `runId`                             | `observerHostId` | recover-claim tag                                                                  |
 | `RunStore.heartbeat`            | `runId`                             | `ownerHostId`    | heartbeat tag                                                                      |
+| `RunStore.reconfirm`            | `runId`                             | `ownerHostId`    | heartbeat tag                                                                      |
 | `RunStore.transitionOwned`      | `runId`, `to`                       | `ownerHostId`    | transition tag                                                                     |
 | `RunStore.steal`                | `runId`                             | `claimantHostId` | steal tag                                                                          |
 | `AttemptStore.put`              | `runId`, `stepKeyDigest`, `attempt` | `ownerHostId`    | `inserted`, `upserted`, `existing_same`, `conflict`, `fence_lost`, `run_not_found` |
@@ -152,6 +161,8 @@ names, lengths, and validity flags and never the value that failed. A
 state. See [Durable values](/concepts/durable-values/).
 
 ## Assert on a counter in a test
+
+**Available now**
 
 Provide a registry, run the work, and read the count:
 
@@ -177,6 +188,8 @@ takeover test that asserts one `steal` `claimed` and one `heartbeat`
 `fence_lost` has pinned both halves of the exchange.
 
 ## Next steps
+
+**Available now**
 
 - [Test against the real stores](/guides/testing/): the layer used here.
 - [Troubleshooting](/troubleshooting/): what each outcome means when it is

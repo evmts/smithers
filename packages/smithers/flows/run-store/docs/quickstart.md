@@ -14,14 +14,21 @@ normal run, and read back the row a restart would have found.
 
 ## Prerequisites
 
+**Available now**
+
 - Node.js 26.4.0 or later.
-- The package installed. Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
+- The package installed. Not on npm yet; see [Installation](installation.md).
 
 ## Name the owner
 
+**Available now**
+
 An owner identity is the fence on every write this process makes. It is three
-fields, and all three are compared in the same SQL statement as the mutation
-they guard:
+fields. The `Consensus` strategy checks that identity in the same serialized
+write transaction as the mutation it guards:
+
+`TestRunStore.layer` uses in-memory SQLite unless `SMITHERS_TEST_PG_URL`
+selects an isolated PostgreSQL schema. Migrations run before the stores are exposed.
 
 ```ts
 import type { OwnerId } from "@smthrs/run-store/Ownership"
@@ -31,10 +38,12 @@ const owner: OwnerId = { hostId: "quickstart-host", pid: 4102, nonce: "3f9c-8b21
 
 `hostId` says which machine, `pid` says which process, and `nonce` distinguishes
 one incarnation of that process from the next. A production host mints this
-through `OwnerIdentity` in [`@smthrs/engine-store`](/api/engine-store) rather
+through `OwnerIdentity` in [`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md) rather
 than writing it down.
 
 ## Create the run and claim it
+
+**Available now**
 
 `create` inserts a `pending` row whose `stateJson` is the executable state a
 resume would re-enter. Claiming is two phase: `claim` reserves the row, and
@@ -66,12 +75,14 @@ const claimRun = Effect.gen(function*() {
 })
 ```
 
-`expected` is the row you just read, restated as the three fields a claim
+`expected` is the row you read, restated as the three fields a claim
 guards. The compare-and-swap admits the write only while the row still matches,
 so a peer that claimed the run between your read and your write loses the race
 instead of overwriting it.
 
 ## Record a step attempt
+
+**Available now**
 
 An attempt is addressed by `(runId, stepKeyDigest, attempt)` and is fenced on
 the run you own. `put` starts it, `heartbeat` proves it is still moving and
@@ -121,6 +132,8 @@ method is refused rather than persisted. See
 
 ## Settle the run
 
+**Available now**
+
 `transitionOwned` is the only way to move a run you own. A terminal target
 clears the owner, the heartbeat, and any claim, and stamps `finished_at_ms`:
 
@@ -140,8 +153,11 @@ const settleRun = Effect.gen(function*() {
 
 ## Run it
 
-`TestRunStore.layer` provides both stores over a fresh in-memory SQLite
-database with the migrations already applied:
+**Available now**
+
+`TestRunStore.layer` provides both stores over in-memory SQLite by default, or
+an isolated PostgreSQL schema when `SMITHERS_TEST_PG_URL` is set, with the
+migrations already applied:
 
 ```ts
 import * as TestRunStore from "@smthrs/run-store/test/TestRunStore"
@@ -178,13 +194,15 @@ cleared and both lifecycle stamps written:
 }
 ```
 
-## What just happened
+## What happened
+
+**Available now**
 
 The run row moved `pending` to `running` to `completed`, and every write on the
 way was admitted only because the full `(hostId, pid, nonce)` fence still
 matched the row. Had a second process taken the run over between your
 `activate` and your `transitionOwned`, the transition would have reported
-`FenceLost` and changed nothing: the fence is compared in the same statement as
+`FenceLost` and changed nothing: the fence is checked in the same serialized write transaction as
 the mutation, so there is no window between the check and the write.
 
 The `stateJson` you passed to `transitionOwned` is what a restart would
@@ -192,6 +210,8 @@ re-enter. It is stored and returned byte for byte, with nothing rewritten in
 between.
 
 ## Next steps
+
+**Available now**
 
 - [Claim a run and finish it](./guides/claim-and-finish-a-run.md): the same
   lifecycle with heartbeat supervision and the atomic single-call form.

@@ -13,7 +13,9 @@ what this package is for.
 
 ## The fence is an identity, not a lock
 
-`OwnerId` is three fields, defined by [`@smthrs/journal`](https://journal.smithers.sh/reference/api/) and
+**Available now**
+
+`OwnerId` is three fields, defined by [`@smthrs/journal`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/api.md) and
 re-exported from `Ownership` because it is the same token the journal accepts
 on durable appends:
 
@@ -48,6 +50,8 @@ run.
 
 ## The snapshot is the compare-and-swap
 
+**Available now**
+
 `RunSnapshot` is the exact triple a claim guards: `status`, `owner`, and
 `heartbeatAtMs`. You read the row, restate those three fields, and hand them
 back with your write. The store admits the write only while the row still
@@ -72,6 +76,8 @@ including one issuing raw SQL, can leave a half-owned row behind.
 
 ## Two ways to take a run
 
+**Available now**
+
 Claiming is deliberately two phase for the engine's path, and atomic for the
 control plane's.
 
@@ -94,13 +100,15 @@ successful steal writes the claim columns of a stale running row, and the
 caller follows with `activate`. That is why the takeover path and the ordinary
 claim path converge on the same second step.
 
-Every transition the strategy grants — `claimed`, `activated`, `released`,
-`stolen`, `expired` — is appended as a `flows.consensus.*` fact on the run's
+Every transition the strategy grants, `claimed`, `activated`, `released`,
+`stolen`, `expired`, is appended as a `flows.consensus.*` fact on the run's
 `run-store` companion journal stream in the same transaction, beside the run's
 own stream rather than in it. Heartbeats renew the strategy's lease and never
 enter the journal.
 
 ## Competition is a value, failure is an error
+
+**Available now**
 
 Every operation splits its answers into two channels, and the split is the
 contract:
@@ -120,6 +128,8 @@ listed in [Troubleshooting](/troubleshooting/).
 
 ## Leaving a run
 
+**Available now**
+
 `transitionOwned` is the only way to move a run you own, and the target decides
 what happens to the ownership columns:
 
@@ -138,6 +148,8 @@ expressed inside the serialized transaction rather than as a read-then-write
 race. See [Cancel a run](/guides/cancel-a-run/).
 
 ## Attempts inherit the run's fence
+
+**Available now**
 
 `AttemptStore` never carries its own ownership. `put`, `heartbeat`, `finish`,
 and `patch` each embed an `EXISTS` subquery over `flows_runs` requiring that

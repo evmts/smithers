@@ -12,6 +12,8 @@ page.
 
 ## Values are copied inert before anything can yield
 
+**Available now**
+
 A JavaScript object handed to a store is not trusted to hold still. Before
 persistence can yield, the boundary walks the value and builds a detached copy,
 reading only own enumerable data properties. What it refuses:
@@ -32,6 +34,8 @@ stores fails with `decode_failed` rather than being handed back as state.
 
 ## The bounds are on shape, not on size
 
+**Available now**
+
 Run state, metadata, errors, and outcomes have no byte ceiling, on purpose.
 These rows are what a resume re-enters, so a multi-megabyte state a flow
 legitimately produced has to persist or the run cannot continue. What is
@@ -50,8 +54,10 @@ bound the work one admission can cost. A value past either is refused with
 
 ## The one byte ceiling is the checkpoint
 
+**Available now**
+
 A checkpoint is the exception, because it is a convenience rather than a
-requirement: a step that cannot checkpoint still runs, it just restarts from
+requirement: a step that cannot checkpoint still runs, it restarts from
 the beginning. So it takes a policy:
 
 ```ts
@@ -67,12 +73,16 @@ arrives.
 
 ## Identifiers are bounded durable text
 
+**Available now**
+
 Run ids, step key digests, lineage ids, owner host ids and nonces, and attempt
 state names are all validated the same way: non-empty, at most 1,024 UTF-16
 units, no NUL, and no lone surrogate. `U+FFFD` is ordinary text and is
 accepted; an astral character round-trips byte for byte.
 
 ## Timestamps are checked independently
+
+**Available now**
 
 Every timestamp must be a non-negative safe integer, and each is range-checked
 on its own. None is compared against another. An attempt whose `finishedAtMs`
@@ -84,6 +94,8 @@ Heartbeats are monotonic, and lease readings are bounded by the skew allowance.
 Both are covered in [The heartbeat lease](./leases.md).
 
 ## Nothing is redacted
+
+**Available now**
 
 The stores rewrite no field on the way through. A redactor here would silently
 change what the flow re-reads on resume, which corrupts the run rather than

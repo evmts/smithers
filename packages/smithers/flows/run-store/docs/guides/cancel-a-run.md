@@ -12,6 +12,8 @@ intent, and the owner decides where its flow can stop cleanly.
 
 ## Record the request
 
+**Available now**
+
 For a logical run that can hand off, use `requestCancelLineage`: a completed
 round is not necessarily a completed job. It resolves every round and records
 intent atomically, including a successor that exists when the transaction wins.
@@ -61,6 +63,8 @@ that it must be a non-negative safe integer. See
 
 ## Read the request as the owner
 
+**Available now**
+
 The request is a column on the run row, so the owner reads it with `get`:
 
 ```ts
@@ -78,8 +82,10 @@ polls exactly this column and cleans up its children before it settles.
 
 ## Settle under a guard
 
-A `TransitionGuard` is an extra predicate compiled into the same `UPDATE` as the
-ownership fence, so a request that arrives while you are deciding cannot slip
+**Available now**
+
+A `TransitionGuard` is an extra predicate evaluated in the same serialized write
+transaction as the ownership fence check, so a request that arrives while you are deciding cannot slip
 between a check and a terminal write.
 
 ```ts
@@ -118,6 +124,8 @@ row you genuinely own.
 
 ## Let the guard tell you
 
+**Available now**
+
 A guard on the mid-flight progress write turns the next checkpoint into the
 notification:
 
@@ -137,6 +145,8 @@ without a separate read.
 
 ## What a cancellation does not do
 
+**Available now**
+
 - It does not interrupt the owner. A request is a row, not a signal, and an
   owner that never reads it runs to completion.
 - It does not clear the column. `transitionOwned` clears the owner, the
@@ -147,6 +157,8 @@ without a separate read.
   request reports `Terminal`.
 
 ## Next steps
+
+**Available now**
 
 - [Claim a run and finish it](./claim-and-finish-a-run.md): the transition this
   guard rides on.

@@ -12,8 +12,10 @@ the production code.
 
 ## Run the production stores in memory
 
+**Available now**
+
 `@smthrs/run-store/test/TestRunStore` provides `RunStore` and `AttemptStore` over
-a fresh in-memory SQLite database with the migrations already applied. The stores
+a fresh in-memory SQLite database by default with the migrations already applied. The stores
 are the real ones; only the file is gone.
 
 ```ts
@@ -26,13 +28,16 @@ const withStores = <A, E>(
 ) => effect.pipe(Effect.provide(TestRunStore.layer), Effect.scoped)
 ```
 
-The layer is Node only, because it binds `node:sqlite`. Nothing else in the
+The layer is Node only. It uses in-memory SQLite by default;
+`SMITHERS_TEST_PG_URL` selects an isolated PostgreSQL schema instead. Nothing else in the
 package is: the root entry point names no driver and bundles for the browser.
 
 Each provision gets its own database, so tests do not share rows. `Effect.scoped`
 is required: the database is a scoped resource and closes with the scope.
 
 ## Drive every lease rule with TestClock
+
+**Available now**
 
 The lease is the part most worth testing and the part you must never wait for in
 wall time. Both the store's own stamps and `Ownership.heartbeatLoop` read the
@@ -53,7 +58,7 @@ const withTestClock = <A, E>(effect: Effect.Effect<A, E, RunStore.RunStore>) =>
   )
 ```
 
-`TestDatabase` comes from [`@smthrs/database`](/api/database), which this
+`TestDatabase` comes from [`@smthrs/database`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/api.md), which this
 package depends on but does not re-export, so add it to your dev dependencies
 for that import to resolve.
 
@@ -80,6 +85,8 @@ so the fiber's exit is an interrupt rather than a failure.
 
 ## Assert on outcomes, not on rows
 
+**Available now**
+
 Every operation answers with a tagged value, so the assertion is the contract:
 
 ```ts
@@ -97,6 +104,8 @@ outcomes proves the other half; see
 [Observe store outcomes](./observe-outcomes.md).
 
 ## Use the noop layers for compositions that must not persist
+
+**Available now**
 
 Both services ship an explicit absence, so a test that is not about persistence
 provides the smallest thing that type-checks:
@@ -121,10 +130,12 @@ clock arithmetic.
 
 ## When a real file is the only honest test
 
+**Available now**
+
 The in-memory database lives in one process, so it cannot prove anything about
 two processes contending for one run. Cross-process fencing needs a real SQLite
 file and two real Node processes, which is what
-[`test/RunStoreFileFence.integration.test.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/run-store/test/RunStoreFileFence.integration.test.ts)
+[`test/RunStoreFileFence.integration.test.ts`](../../test/RunStoreFileFence.integration.test.ts)
 does: it spawns two children over one temporary database and steps them through a
 takeover from the parent.
 
@@ -133,6 +144,8 @@ other rule in this package, the fence, the guards, the admission boundary, the
 lease arithmetic, is fully decided inside one process.
 
 ## Next steps
+
+**Available now**
 
 - [Compose the stores into a host](./compose-the-stores.md): the production
   layer order the test layer stands in for.

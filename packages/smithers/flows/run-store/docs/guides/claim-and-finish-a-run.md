@@ -10,6 +10,8 @@ is a compare-and-swap you can lose, and losing is normal.
 
 ## Read the row and choose the snapshot
 
+**Available now**
+
 Every claim guards three fields. Read the row; you can restate those three as
 the `expected` snapshot:
 
@@ -29,6 +31,8 @@ fields; extra own data fields are ignored. Missing or inherited required fields,
 enumerable accessors on any key, and non-plain prototypes are refused.
 
 ## Claim, then activate
+
+**Available now**
 
 `claim` reserves a `pending` or `suspended` row and hands back the
 `claimedAtMs` that is your fence token for the second step. `activate` trades
@@ -70,6 +74,8 @@ claim nobody is using would block the next sweeper until it went stale.
 
 ## Or take it in one call
 
+**Available now**
+
 When there is nothing to do between reserving and owning, `claimAndOwn` is one
 compare-and-swap:
 
@@ -93,6 +99,8 @@ cannot make progress from there; see
 
 ## Keep the lease alive
 
+**Available now**
+
 An owner that stops writing `heartbeat_at_ms` is stealable after
 `heartbeatStaleAfter`. `Ownership.heartbeatLoop` pulses until the fence is lost
 and then interrupts itself, so racing it against the work makes losing
@@ -114,6 +122,8 @@ side, interruption included.
 
 ## Record progress without giving up ownership
 
+**Available now**
+
 `transitionOwned` with the target `running` keeps the owner and rewrites only
 the executable state. It is how a mid-flight run persists what a resume would
 re-enter:
@@ -130,6 +140,8 @@ Omit the state argument to change status alone. Passing it rewrites
 `state_json`; the column is never partially merged.
 
 ## Settle it
+
+**Available now**
 
 A terminal transition clears the owner, the heartbeat, and any claim, and
 stamps `finished_at_ms`:
@@ -149,7 +161,8 @@ const finish = (runId: string, owner: OwnerId, state: unknown) =>
   })
 ```
 
-The guard is optional and is compiled into the same `UPDATE`, so a cancellation
+The optional guard is evaluated in the same serialized write transaction as the
+ownership fence check, so a cancellation
 request that arrives while you are deciding cannot slip between a check and a
 terminal write. `GuardFailed` means you still own the run and the guard refused
 it, which is a different situation from `FenceLost`.
@@ -158,6 +171,8 @@ it, which is a different situation from `FenceLost`.
 `finished_at_ms`, parking the run so any host may claim it again.
 
 ## The outcomes you have to handle
+
+**Available now**
 
 | Outcome            | Which call                      | What it means                                                          |
 | ------------------ | ------------------------------- | ---------------------------------------------------------------------- |

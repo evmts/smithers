@@ -6,7 +6,7 @@ This package declares `effect` as an exact
 `4.0.0-rc.115` peer dependency. Keep the application on that version so
 all Smithers packages share one Effect runtime.
 
-**Documentation:** https://run-store.smithers.sh
+**Documentation:** [Package docs](docs/README.md)
 
 Durable run state and fenced ownership for long-running jobs, as
 [Effect](https://effect.website) services. `@smthrs/run-store` keeps one SQL row
@@ -16,19 +16,21 @@ so a process that comes back from the dead cannot overwrite the one that
 replaced it.
 
 Two services, `RunStore` and `AttemptStore`, plus the `Ownership` liveness
-checks and heartbeat supervision. Arbitration itself — who holds the claim,
-who holds the lease, whether a fence still stands — is delegated to
-[`@smthrs/journal`](https://journal.smithers.sh)'s injectable `Consensus`
+checks and heartbeat supervision. Arbitration itself, who holds the claim,
+who holds the lease, whether a fence still stands, is delegated to
+[`@smthrs/journal`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/)'s injectable `Consensus`
 strategy, the same one the journal fences its durable channel through; the
 run row mirrors the strategy's answer in the same transaction. They carry no
 database of their own: both are written against the driver-neutral
-[`@smthrs/database`](https://database.smithers.sh) contract, so the same code
+[`@smthrs/database`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/) contract, so the same code
 runs over a local SQLite file, over a server, or over an in-memory database in a
 test.
 
 ## Install
 
-Not on npm yet; see [Installation](https://smithers.sh/docs/installation/#use-the-libraries).
+**Available now**
+
+Not on npm yet; see [Installation](docs/installation.md).
 
 `effect` is a peer dependency at exactly `4.0.0-rc.115`. Two copies of `effect` in
 one program are two sets of service tags, so a store layer built against one
@@ -41,9 +43,14 @@ browser.
 
 ## Take a run, do the work, settle it
 
+**Available now**
+
 This program creates a run, claims ownership of it, and finishes it. The stores
 are the production ones; `TestRunStore.layer` provides them over a migrated
 in-memory database, so the file runs with no configuration.
+
+`TestRunStore.layer` uses in-memory SQLite unless `SMITHERS_TEST_PG_URL`
+selects an isolated PostgreSQL schema. Migrations run before the stores are exposed.
 
 ```ts
 import { RunStore } from "@smthrs/run-store"
@@ -98,6 +105,8 @@ ownership unchanged.
 
 ## What the stores guarantee
 
+**Available now**
+
 - **One row is the authority.** A restarted process reads the run row for its
   status, owner, heartbeat, cancellation request, and the executable state to
   re-enter, instead of replaying a log to work out where it was.
@@ -110,7 +119,7 @@ ownership unchanged.
   `AlreadyClaimed`, `HeartbeatFresh`, or `FenceLost` as an ordinary success
   value you branch on. The error channel is reserved for real defects: invalid
   input, a corrupt row, a constraint violation, a database failure.
-- **A takeover needs evidence, not just a timeout.** An expired lease says the
+- **A takeover needs evidence, not a timeout.** An expired lease says the
   owner stopped writing, not that it stopped working. `steal` and `recoverClaim`
   additionally require `LivenessEvidence` about the recorded owner, bound to the
   exact instant it is spent, and every unknown probe answer is read as life.
@@ -124,9 +133,11 @@ ownership unchanged.
 
 ## Public API
 
+**Available now**
+
 The root exports each module as a namespace, and each is also importable from
 the matching `@smthrs/run-store/*` subpath. The
-[API reference](https://run-store.smithers.sh/reference/api/) lists every export.
+[API reference](docs/api.md) lists every export.
 
 | Namespace         | What it holds                                                                                                                                                                    |
 | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -149,46 +160,50 @@ the migration set is the contract, not the numbered files inside it.
 
 ## Where the run store sits
 
+**Available now**
+
 `@smthrs/run-store` is one of the storage services inside
-[`@smthrs/flows`](https://flows.smithers.sh), the package that carries the whole
+[`@smthrs/flows`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/), the package that carries the whole
 Smithers durable flow engine in a single dependency. Flow authors never call it.
 
 Reach for it directly when you are building the host rather than the flow: a
 scheduler, a worker pool, or any service that hands durable work between
 processes and needs ownership arbitration it can trust. Most hosts do not wire
 it by hand even then.
-[`@smthrs/engine-store`](https://engine-store.smithers.sh) already composes
+[`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/) already composes
 these stores with the journal, the step cache, and the engine's own state into
 one storage ladder.
 
 The stores hold executable state. History lives in
-[`@smthrs/journal`](https://journal.smithers.sh), and the two halves stay
+[`@smthrs/journal`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/), and the two halves stay
 consistent because both write through the same `@smthrs/database`
 `DurableWriter`: `Journal.transact` commits a state projection and its durable
 events in one transaction.
 
 ## Documentation
 
-Full documentation is at
-[run-store.smithers.sh](https://run-store.smithers.sh):
+**Available now**
 
-- [Installation](https://run-store.smithers.sh/installation/)
-- [Quickstart](https://run-store.smithers.sh/quickstart/): one run through its
+Full documentation is at
+[the package docs](docs/README.md):
+
+- [Installation](docs/installation.md)
+- [Quickstart](docs/quickstart.md): one run through its
   whole lifecycle, including a step attempt.
-- [Fencing and ownership](https://run-store.smithers.sh/concepts/fencing/): the
+- [Fencing and ownership](docs/concepts/fencing.md): the
   compare-and-swap every write goes through.
-- [The heartbeat lease](https://run-store.smithers.sh/concepts/leases/): the
+- [The heartbeat lease](docs/concepts/leases.md): the
   four durations, the two clocks that stamp one row, and what a wall-clock lease
   cannot promise.
-- [Liveness evidence](https://run-store.smithers.sh/concepts/liveness-evidence/):
+- [Liveness evidence](docs/concepts/liveness-evidence.md):
   what admits a takeover.
-- [Durable values](https://run-store.smithers.sh/concepts/durable-values/): the
+- [Durable values](docs/concepts/durable-values.md): the
   persistence boundary and its shape limits.
-- [Execution revisions](https://run-store.smithers.sh/concepts/execution-revisions/):
+- [Execution revisions](docs/concepts/execution-revisions.md):
   database identity, monotonic changes, retained tombstones and cancellation acknowledgement.
-- [API reference](https://run-store.smithers.sh/reference/api/): every public
+- [API reference](docs/api.md): every public
   export.
-- [Troubleshooting](https://run-store.smithers.sh/troubleshooting/): each
+- [Troubleshooting](docs/troubleshooting.md): each
   refused outcome and typed error, and what to change.
 
 ## License

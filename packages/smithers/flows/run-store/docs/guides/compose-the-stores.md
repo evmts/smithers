@@ -10,15 +10,19 @@ tables to exist. This guide builds that composition from the bottom up.
 
 ## Check whether you need to build it
 
+**Available now**
+
 If you are running the Smithers engine, the composition already exists and
 building a second one over the same database is a way to get two engines
-fighting over one set of rows. [`@smthrs/engine-store`](/api/engine-store)
+fighting over one set of rows. [`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md)
 composes these stores with the journal, the step cache, and the durable engine
 state, and `@smthrs/flows/NodeRuntime` builds that ladder over one SQLite file.
 Reach for the layers here when you are writing a host, an adapter, or a sweeper
 that has to agree with the engine about ownership.
 
 ## The layer order
+
+**Available now**
 
 Migrations must finish before either store is exposed, and both stores need the
 writer and the client:
@@ -55,6 +59,8 @@ included.
 
 ## Compose the migration set, do not run it twice
 
+**Available now**
+
 `Migrations.layer` installs this package's tables and nothing else. A host that
 also runs the journal, the step cache, or the engine state should compose the
 migration sets instead, so one migrator applies them in one pass:
@@ -70,6 +76,8 @@ const runAll = DatabaseMigrations.run([Migrations.set /* , the other packages' s
 another package's. `@smthrs/engine-store` already composes the full set list.
 
 ## Choose the attempt-store policy
+
+**Available now**
 
 `AttemptStore.layer` takes the defaults: only `running` counts as in progress,
 checkpoints cap at 1 MiB, and `put` is first-writer-wins. `layerWith` takes a
@@ -98,6 +106,8 @@ invalid policy fails at composition time with `AttemptStoreError`.
 
 ## Stubs for compositions that must not persist
 
+**Available now**
+
 Both services ship an explicit absence, so a composition that cannot reach a
 database still type-checks and still says so out loud:
 
@@ -120,6 +130,8 @@ const alwaysFenced = RunStore.layerNoop({
 
 ## Verify the composition
 
+**Available now**
+
 Read a run back through the layer you built. If migrations did not run, `get`
 fails with `persistence_failed` rather than returning nothing:
 
@@ -135,6 +147,8 @@ const check = Effect.gen(function*() {
 ```
 
 ## Next steps
+
+**Available now**
 
 - [Claim a run and finish it](./claim-and-finish-a-run.md): what to do with the
   composed services.

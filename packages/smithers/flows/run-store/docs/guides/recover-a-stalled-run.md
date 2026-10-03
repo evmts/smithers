@@ -21,6 +21,8 @@ Neither alone is enough.
 
 ## Build evidence at the instant you spend it
 
+**Available now**
+
 `evidence.checkedAtMs` must equal the `nowMs` of the call that consumes it,
 exactly, so evidence cannot be probed once and replayed later. Build it from a
 [`LivenessCheck`](../concepts/liveness-evidence.md) inside the same effect that
@@ -54,6 +56,8 @@ owner's own machine. `Ownership.sameHostPidProbe` is the check to pass on a Node
 host; `Ownership.leaseLiveness()` is the floor every host can give.
 
 ## Steal a stale running row, then activate it
+
+**Available now**
 
 ```ts
 import { RunStore } from "@smthrs/run-store"
@@ -96,6 +100,8 @@ says you were not allowed to try, the second says you tried and lost.
 
 ## Recover a claim nobody activated
 
+**Available now**
+
 `recoverClaim` clears an exact stale claim so the row becomes claimable again.
 It takes the claimant it is displacing, that claimant's `claimedAtMs` as a fence
 token, your own identity as the observer, and evidence about the dead claimant:
@@ -133,6 +139,8 @@ loses. `recoverClaim` is for the claimant that will never come back.
 
 ## The two cutoffs are the same number
 
+**Available now**
+
 `steal` refuses any row whose `heartbeat_at_ms` is within `heartbeatStaleAfter`
 of your `nowMs`, and `recoverClaim` refuses any claim whose `claimed_at_ms` is
 within the same window. Both compare against the `nowMs` you passed, and both
@@ -142,8 +150,10 @@ reporting a later time.
 
 ## Let the engine do it
 
+**Available now**
+
 If you are running the Smithers engine, this sweep already exists. Its
-`NodeRuntime`, from [`@smthrs/flows`](/api/flows) rather than this package,
+`NodeRuntime`, from [`@smthrs/flows`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/api.md) rather than this package,
 requires an `isAlive` check precisely so it can run the sweep, and it takes no
 default: a check that answers "gone" without asking steals runs out of live
 processes.
@@ -164,6 +174,8 @@ Write the sweep yourself only for a host, an adapter, or an operator tool that
 has to agree with the engine about who owns what.
 
 ## Next steps
+
+**Available now**
 
 - [Liveness evidence](../concepts/liveness-evidence.md): the three kinds, and
   why every unknown probe answer is read as life.
