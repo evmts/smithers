@@ -1315,7 +1315,7 @@ test("Diff supplied hunks serialize exact modified, added, deleted and renamed p
   expect(unifiedPatch({ ...diffs.item_base.model, path: 'x.ts', hunks: [{ old_start: 0, new_start: 1, lines: [{ op: '+', text: 'one' }] }, { old_start: 4, new_start: 5, lines: [{ op: ' ', text: 'same' }, { op: '-', text: 'old' }] }] })).toBe('diff --git a/x.ts b/x.ts\n--- a/x.ts\n+++ b/x.ts\n@@ -0,0 +1,1 @@\n+one\n@@ -4,2 +5,1 @@\n same\n-old\n')
 })
 test("File sizes and supplied GitHub links have no editor", () => {
-  for (const [fixture, bytes, literal] of [[files.binary, 1_200_000, "Binary file · 1.2 MB"], [files.too_large, 4_100_000, "Too large to show · 4.1 MB"]] as const) {
+  for (const [fixture, bytes, literal] of [[files.binary, 1_200_000, "Binary file · 1.2 MB"], [files.too_large, 4_100_000, "Too large to co-edit · 4.1 MB"]] as const) {
     const host = render(<CodeEditorView {...fixture} model={{ ...fixture.model, content: fixture.model.content.kind === "binary" ? { kind: "binary", bytes } : { kind: "too_large", bytes, text: "hidden" } }} onAction={() => {}} onView={() => {}} />)
     expect(host.getAttribute('data-digest') ?? host.querySelector('[data-digest]')!.getAttribute('data-digest')).toBe('sha256:9f2c41')
     expect(host.querySelector('[data-mode]')!.getAttribute('data-mode')).toBe('read_only')
@@ -1545,4 +1545,37 @@ test("unchanged acceptance is silent for empty entries and embedded newlines", (
   }
 })
 
+})
+
+// T-UI-19: durable save acknowledgments and supplied recovery controls.
+test("File live save states and recovery bind supplied actions", () => {
+  const calls: unknown[] = []
+  const host = render(<CodeEditorView {...files.live} onAction={() => {}} onView={() => {}} />)
+  expect(host.textContent).toContain("Saving…")
+  expect(host.querySelectorAll(".code-live-head .mvp-avatar").length).toBe(2)
+  expect(host.querySelector('.cm-content')!.getAttribute('aria-readonly')).toBe('true')
+  act(() => root!.render(<CodeEditorView {...files.saved} onAction={() => {}} onView={() => {}} />))
+  expect(host.textContent).toContain("Saved to the machine")
+  act(() => root!.render(<CodeEditorView {...files.unsaved} onAction={(...args) => calls.push(args)} onView={() => {}} />))
+  expect(host.textContent).toContain("3 edits weren't saved")
+  expect(host.querySelector('.code-recovery pre')!.textContent).toBe('  description: "Build",\n')
+  act(() => host.querySelector<HTMLButtonElement>('[data-flow="file.reapply"]')!.click())
+  expect(calls).toEqual([["file.reapply", { path: "flows/todo/flow.ts" }]])
+  act(() => root!.render(<CodeEditorView {...files.unsaved} actions={[]} onAction={() => {}} onView={() => {}} />))
+  expect(host.querySelector('[data-flow="file.reapply"]')).toBeNull()
+  expect(host.querySelector('.code-recovery button')!.textContent).toBe('Copy')
+})
+import { authorRanges, coEditing } from "./CoEditing"
+import { EditorState } from "@codemirror/state"
+import { EditorView } from "@codemirror/view"
+test("File binding renders author ranges and combined person/agent flags", () => {
+  const host = document.createElement('div')
+  document.body.append(host)
+  const editor = new EditorView({ parent: host, state: EditorState.create({ doc: 'hello world', extensions: [authorRanges.of([{ from: 0, to: 5, author: 0 }, { from: 6, to: 11, author: 1 }, { from: 1, to: 1, author: 0 }, { from: 0, to: 5, author: 9 }]), coEditing(files.live.model)] }) })
+  expect(host.querySelectorAll('.code-author-range').length).toBe(2)
+  expect(host.querySelector('.code-author-range')!.getAttribute('title')).toBe('Ben')
+  expect(host.querySelector('.code-name-flag')!.textContent).toBe('Ben+1')
+  expect(host.querySelector('.code-name-flag')!.getAttribute('title')).toBe('Ben, Claude Code for Ben')
+  expect(host.querySelector('.cm-ySelection')).toBeNull()
+  editor.destroy()
 })

@@ -15,8 +15,10 @@ import { lintGutter, setDiagnostics } from "@codemirror/lint"
 export interface EditorPosition { readonly line: number; readonly col?: number }
 /** Supplied controls, with no command discovery or authorization in the editor. */
 export interface EditorGesture<Tag extends string> { readonly tag: Tag; readonly label: string; readonly args?: Record<string, string>; readonly disabled?: { readonly reason: string } }
-/** Read-only editor inputs. Live bindings are reserved for T-APP-14. */
+/** Editor inputs; live document bindings arrive as extensions. */
 export interface CodeEditorViewProps<Tag extends string = string> {
+  readonly extensions?: Extension
+  readonly live?: boolean
   readonly path: string
   readonly text: string
   readonly language: string
@@ -81,13 +83,13 @@ const tip = (state: EditorState, hover: NonNullable<CodeEditorViewProps["hover"]
   },
 })
 
-/** Production CodeMirror 6 surface, retained across prop updates and always read-only. */
+/** Production CodeMirror 6 surface, retained across prop updates; editable only with a live binding. */
 export function CodeEditorView<Tag extends string>(props: CodeEditorViewProps<Tag>) {
   const host = useRef<HTMLDivElement>(null)
   const editor = useRef<EditorView | null>(null)
   const latest = useRef(props)
   latest.current = props
-  const compartments = useRef({ language: new Compartment(), hover: new Compartment(), attributes: new Compartment() })
+  const compartments = useRef({ language: new Compartment(), hover: new Compartment(), attributes: new Compartment(), live: new Compartment(), visual: new Compartment() })
   useLayoutEffect(() => {
     const send = (kind: "hover" | "definition", view: EditorView, pos = view.state.selection.main.head) => {
       const action = latest.current.gestures?.[kind]
@@ -100,8 +102,9 @@ export function CodeEditorView<Tag extends string>(props: CodeEditorViewProps<Ta
     const view = new EditorView({
       parent: host.current!,
       state: EditorState.create({ doc: latest.current.text, extensions: [
-        EditorState.readOnly.of(true), EditorView.editable.of(false),
-        compartments.current.attributes.of(EditorView.contentAttributes.of({ tabindex: "0", role: "textbox", "aria-readonly": "true", "aria-label": latest.current.path })),
+        compartments.current.live.of([EditorState.readOnly.of(!latest.current.live), EditorView.editable.of(!!latest.current.live)]),
+        compartments.current.visual.of(latest.current.extensions ?? []),
+        compartments.current.attributes.of(EditorView.contentAttributes.of({ tabindex: "0", role: "textbox", "aria-readonly": String(!latest.current.live), "aria-label": latest.current.path })),
         lineNumbers(), highlightActiveLine(), highlightActiveLineGutter(), lintGutter(), paper,
         syntaxHighlighting(highlight), compartments.current.language.of(languageExtension(latest.current.language)), compartments.current.hover.of([]),
         keymap.of([{ key: "Ctrl-Space", run: view => send("hover", view) }, { key: "F12", run: view => send("definition", view) }, ...defaultKeymap]),
@@ -126,17 +129,17 @@ export function CodeEditorView<Tag extends string>(props: CodeEditorViewProps<Ta
     const view = editor.current!
     const before = view.state.doc.toString()
     const after = view.state.toText(props.text).toString()
-    if (before !== after) {
+    if (!props.live && before !== after) {
       const top = view.scrollDOM.scrollTop, left = view.scrollDOM.scrollLeft
       view.dispatch({ changes: minimalChange(before, after) })
       view.scrollDOM.scrollTop = top; view.scrollDOM.scrollLeft = left
     }
-    view.dispatch({ effects: [compartments.current.attributes.reconfigure(EditorView.contentAttributes.of({ tabindex: "0", role: "textbox", "aria-readonly": "true", "aria-label": props.path })), compartments.current.language.reconfigure(languageExtension(props.language)), compartments.current.hover.reconfigure(props.hover ? showTooltip.of(tip(view.state, props.hover)) : [])] })
+    view.dispatch({ effects: [compartments.current.live.reconfigure([EditorState.readOnly.of(!props.live), EditorView.editable.of(!!props.live)]), compartments.current.visual.reconfigure(props.extensions ?? []), compartments.current.attributes.reconfigure(EditorView.contentAttributes.of({ tabindex: "0", role: "textbox", "aria-readonly": String(!props.live), "aria-label": props.path })), compartments.current.language.reconfigure(languageExtension(props.language)), compartments.current.hover.reconfigure(props.hover ? showTooltip.of(tip(view.state, props.hover)) : [])] })
     view.dispatch(setDiagnostics(view.state, props.diagnostics.map(diagnostic => {
       const from = position(view.state, diagnostic)
       return { from, to: Math.min(view.state.doc.length, from + 1), severity: diagnostic.severity, message: diagnostic.message }
     })))
-  }, [props.text, props.language, props.diagnostics, props.hover, props.path])
+  }, [props.text, props.language, props.diagnostics, props.hover, props.path, props.live, props.extensions])
   useLayoutEffect(() => {
     if (!props.reveal) return
     const view = editor.current!, from = position(view.state, props.reveal)

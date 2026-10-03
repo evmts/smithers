@@ -577,3 +577,15 @@ type TodoRepairSlots = { conflictTerminal?: React.ReactNode } // rendered by the
 ```
 
 **Merge blocker tones (design G12, 2026-10-02).** A failed required check is ember (`failed`). Gold (`attention`) is only for blockers where a person must act (`review_required`, a question, an approval). System or order waits (`order`, `machine`, `rebase`, `merging`) are neutral (`quiet`).
+
+### T-UI-19 Co-editing visuals (File S3)
+
+`CodeEditorViewProps<Extension>` adds `binding?: EditorBinding<Extension>` outside the serialized File model.
+The container passes the binding's CodeMirror `extensions`. The binding publishes `authorRanges` through
+`cards/views/CoEditing.ts`: `{from, to, author}` uses UTF-16 offsets and an index into `model.authors`.
+Design supplies tint/underline decorations and gutter name flags from `editors` (remote actors only).
+The container omits the viewer from awareness. No selections or remote carets render.
+`mode: live` becomes editable only with a binding. The binding owns document updates; prop text does not
+replace its live document. `saved` renders Saving… or Saved to the machine from durable acknowledgments.
+`unsaved` renders its count/text with Copy; Reapply is supplied in `actions`, in their given order.
+Outside changes are neutral; recovery is attention. Text over one MiB remains read-only.

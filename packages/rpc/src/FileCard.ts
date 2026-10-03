@@ -92,12 +92,26 @@ export interface FileView {
 
 /**
  * The code editor View's props. Gestures: `hover` and `definition` raise `onAction(tag, { path, line, col })`.
- * In live mode the Container also passes `binding`, the `EditorBinding` CodeMirror extensions from T-APP-15's seam
- * module (`packages/smithers/ui/src/adapters/code-editor/seam.ts`); it is not data, so this package declares no type.
+ * In live mode the Container also passes `binding`, the `EditorBinding` CodeMirror extensions.
+ * The binding is not serialized with the File model; T-APP-14 supplies it.
  * @since 1.0.0
  * @category models
  */
-export type CodeEditorViewProps = CardProps<FileCard, FileView, "hover" | "definition">
+export interface AuthorRange {
+  readonly from: number
+  readonly to: number
+  /** Index in FileCard.authors. Positions count UTF-16 units. */
+  readonly author: number
+}
+
+/** Non-serializable binding supplied by the live-document container. */
+export interface EditorBinding<Extension = unknown> {
+  readonly extensions: readonly Extension[]
+}
+
+export type CodeEditorViewProps<Extension = unknown> = CardProps<FileCard, FileView, "hover" | "definition"> & {
+  readonly binding?: EditorBinding<Extension>
+}
 
 /**
  * Typed catalog callbacks for File.

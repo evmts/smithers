@@ -78,7 +78,7 @@ export const fixtures = {
       mode: "live",
       last_writer: person,
       authors: [person, claude_code],
-      editors: [{ actor: person, line: 1 }, { actor: claude_code, line: 2 }],
+      editors: [{ actor: person, line: 1 }, { actor: claude_code, line: 1 }],
       saved: "saving"
     },
     { view: { maximized: true, line: 1 }, expect: [path] }
@@ -89,7 +89,7 @@ export const fixtures = {
   unsaved: file(
     "A recovered document lost edits",
     { ...base, mode: "live", authors: [person], unsaved: { count: 3, text: "  description: \"Build\",\n" } },
-    { expect: ["  description: \"Build\","] }
+    { actions: [{ tag: "file.reapply", label: "Reapply", args: { path }, primary: true }], expect: ["  description: \"Build\","] }
   ),
   deleted: file(
     "Deleted by Ben",
