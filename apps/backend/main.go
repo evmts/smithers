@@ -24,6 +24,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/operator"
 	"github.com/smithersai/smithers/packages/backend/ports"
 	"github.com/smithersai/smithers/packages/backend/postgres"
+	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
 )
 
 func main() {
@@ -100,9 +101,6 @@ func run(ctx context.Context, args []string, testFlowHostConfigs ...flowhost.Wor
 		if err != nil {
 			return err
 		}
-		if err := requireExternalBootstrapToken(os.Getenv("SMITHERS_DATA_ROOT")); err != nil {
-			return err
-		}
 	}
 
 	local, err := localbootstrap.Prepare(os.Getenv("SMITHERS_DATA_ROOT"))
@@ -164,11 +162,12 @@ func run(ctx context.Context, args []string, testFlowHostConfigs ...flowhost.Wor
 		}
 	}
 
+	repositoryRuntime, repositoryHosts := installRepositoryPorts(workspaceRuntime, &registry, testFlowHostConfig)
 	appConfig := app.Config{
 		Args:             args,
 		Repository:       local.Client(),
-		Workspace:        workspaceRuntime,
-		FlowHostRegistry: &registry,
+		Workspace:        repositoryRuntime,
+		FlowHostRegistry: repositoryHosts,
 		FlowHostConfig:   testFlowHostConfig,
 		ChatHost:         chatHost,
 		Recommender:      recommender,
@@ -220,23 +219,6 @@ func externalDatabaseURL() (string, error) {
 	return databaseURL, nil
 }
 
-func requireExternalBootstrapToken(dataRoot string) error {
-	if strings.TrimSpace(os.Getenv("SMITHERS_AUTH_BOOTSTRAP_TOKEN")) != "" {
-		return nil
-	}
-	if strings.TrimSpace(dataRoot) == "" {
-		dataRoot = localbootstrap.DefaultDataRoot
-	}
-	secretsPath := filepath.Join(dataRoot, "config", "secrets.json")
-	if _, err := os.Stat(secretsPath); err == nil {
-		// Existing installations reopen their protected, durable setup secret.
-		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("inspect local secrets: %w", err)
-	}
-	return errors.New("SMITHERS_AUTH_BOOTSTRAP_TOKEN is required for first setup with external PostgreSQL")
-}
-
 // platformModelKeys opens SMITHERS_PLATFORM_MODEL_KEYS_FILE, the keys the
 // install pays for. Every call on them is metered in the credit ledger and
 // each key is read from the file per call. Nil when unset.
@@ -249,4 +231,14 @@ func platformModelKeys() (*modelproxy.FileKeys, error) {
 		return nil, fmt.Errorf("set the AI Gateway key as \"vercel\" in %s instead of AI_GATEWAY_API_KEY", modelproxy.KeysFileEnv)
 	}
 	return modelproxy.OpenKeysFile(path)
+}
+
+// The process runtime can run trusted model code during setup, but it cannot
+// execute repository code. Keep those ports absent at the real install door;
+// existing programmatic integration tests retain their explicit exception.
+func installRepositoryPorts(runtime ports.WorkspaceRuntime, registry *flowmanifest.Registry, tests flowhost.WorkspaceLauncherConfig) (ports.WorkspaceRuntime, *flowmanifest.Registry) {
+	if runtime.Isolation() == workspaceapi.IsolationTrustedProcess && !tests.AllowTrustedProcessForTests {
+		return nil, nil
+	}
+	return runtime, registry
 }
