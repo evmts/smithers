@@ -17,7 +17,8 @@ const makeProgram = (options: Parameters<typeof BrowserServices.layer>[0]) =>
 Both backends are arguments, not imports: neither `@zenfs/core` nor `just-bash`
 is a dependency here. The page owns which ZenFS backend is mounted (IndexedDB,
 OPFS, memory) and which just-bash instance is wired to it, and the signature
-says so. The package's own dependencies are `effect`, `@smthrs/kernel`, whose
+says so. `effect` is an exact `4.0.0-rc.115` peer dependency. The runtime dependencies
+are `@smthrs/kernel`, whose
 `CommandLine.render` produces the line the interpreter runs and whose
 `withIsolatedFileSystem` marks the mounted volume as confined, and `@smthrs/jj`,
 whose wasm-backed `Jj` service the `BrowserHost` bundle composes.
@@ -55,7 +56,7 @@ Because the slices are structural, Node's own `node:fs/promises` satisfies
 rather than a double. See [Testing](./testing.md).
 
 `BrowserFileSystem.layer` carries one further claim. The service it provides is
-marked, for [`@smthrs/kernel`](/api/kernel), as a volume that cannot address any
+marked, for [`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md), as a volume that cannot address any
 path outside itself, which is what lets the guarded surface resolve paths
 directly rather than through descriptor-relative operations. A mounted ZenFS
 volume satisfies that only when its workspace occupies the whole mount, so the
@@ -187,12 +188,11 @@ built-in, `BrowserHost` included, because its `HttpClient` is Effect's `fetch`
 client rather than a Node transport, so a browser-mode bundle of the root entry
 point needs no polyfill and no `node:` shim. `BrowserHost.layer` is that
 module's only factory, and `Crypto` is not among the five tags it provides: a
-page that hashes artifacts adds `BrowserCrypto.layer` from
-`@effect/platform-browser`. [The closed Host surface](./concepts/host-bundle.md)
+page that hashes artifacts supplies an Effect `Crypto` layer separately. [The closed Host surface](./concepts/host-bundle.md)
 covers what each tag is backed by and how the fetch client answers a redirect.
 
-See [platform support](/docs/reference/api/#platform-support), which limits
+See [platform support](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md), which limits
 browser coverage to bundling rather than durable execution, the
-[`@smthrs/kernel` reference](/api/kernel), whose closed service list this
+[`@smthrs/kernel` reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md), whose closed service list this
 package's `BrowserHost` bundle fills, and
-[Capabilities and the host kernel](/docs/concepts/kernel/).
+[Capabilities and the host kernel](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md).

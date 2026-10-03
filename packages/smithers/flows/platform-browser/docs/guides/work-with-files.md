@@ -1,6 +1,6 @@
 ---
 title: "Read and write files on a mounted volume"
-description: "Which FileSystem operations a ZenFS-shaped volume serves, which options are honoured rather than dropped, how backend errors are tagged, and what the fifteen refused operations do instead."
+description: "Which FileSystem operations a ZenFS-shaped volume serves, which options are honoured rather than dropped, how backend errors are tagged, and what the refused operations do instead."
 sidebar:
   order: 3
 ---
@@ -96,7 +96,8 @@ branch on: `exists` has to tell "not there" from "could not look".
 
 A tab has no working directory, so a relative path handed to `realPath` resolves
 against the volume root rather than an ambient `process.cwd()` that does not
-exist. `..` above the root is dropped, the way a POSIX resolver drops it.
+exist. The backend decides how `..` resolves; this adapter prefixes `/`
+without collapsing path segments.
 `realPath` resolves through the backend's own `realpath`, and a backend without
 one fails it with `PermissionDenied` rather than normalizing the path lexically.
 

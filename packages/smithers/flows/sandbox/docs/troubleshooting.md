@@ -58,7 +58,8 @@ have the command read it, which is what the refusal says.
 
 **What to change.** Close the command's scope, which ends it. To stop one
 command without tearing down the session, use a provider that declares `kill`:
-`DirectorySandbox`, `ContainerSandbox`, `KubernetesSandbox`, or `AwsSandbox`.
+`DirectorySandbox`, `CommandSandbox`, `ContainerSandbox`, `KubernetesSandbox`,
+`MicrosandboxSandbox`, or `AwsSandbox`.
 
 ## "a remote session cannot ..." for descriptors, shells, and routing
 

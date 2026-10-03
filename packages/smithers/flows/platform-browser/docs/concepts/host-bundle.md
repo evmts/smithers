@@ -14,7 +14,7 @@ flow portable between a server and a page.
 | `FileSystem`          | `BrowserFileSystem.layer`, over the mounted volume.                        |
 | `Path`                | Effect's own `Path.layer`, which needs no platform.                        |
 | `ChildProcessSpawner` | `BrowserChildProcessSpawner.layer`, over the in-page interpreter.          |
-| `Jj`                  | [`@smthrs/jj`](/api/jj)'s `BrowserJj.layer`, over jj-lib compiled to wasm. |
+| `Jj`                  | [`@smthrs/jj`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/jj/docs/api.md)'s `BrowserJj.layer`, over jj-lib compiled to wasm. |
 | `HttpClient`          | Effect's `FetchHttpClient.layer`, configured for manual redirects.         |
 
 `ChildProcessSpawner` and `HttpClient` are Effect's own tags. Smithers provides
@@ -29,7 +29,7 @@ wants Effect's platform services and nothing else.
 
 `BrowserHost.layer({ bash, fs, jj })` provides all five. It is what the Smithers
 runtime needs, and it is the direct counterpart of
-[`NodeHost`](/api/platform-node) and [`BunHost`](/api/platform-bun). In a tab
+[`NodeHost`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/api.md) and [`BunHost`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-bun/docs/api.md). In a tab
 that runtime is the memory engine and the capability kernel: durable execution
 also needs the Node-only `SqlClient` and `NodeRuntime`, which no Host tag
 supplies.
@@ -37,7 +37,7 @@ supplies.
 `BrowserHost.layer` is the module's only factory. Every backend arrives as an
 argument, so there is no `layerAt` or contained-host variant. `Crypto` is not
 one of the five tags, so a page that hashes artifacts supplies
-`BrowserCrypto.layer` from `@effect/platform-browser` alongside the bundle.
+an Effect `Crypto` layer alongside the bundle.
 
 ## jj runs in the tab, or says it does not
 
@@ -80,7 +80,7 @@ never contacts the second origin on its own.
 
 ## Related reading
 
-- [Capabilities and the host kernel](/docs/concepts/kernel/), for what a grant
+- [Capabilities and the host kernel](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md), for what a grant
   covers.
 - [Injected backends](./injected-backends.md), for the one-mount rule the jj
   slice participates in.

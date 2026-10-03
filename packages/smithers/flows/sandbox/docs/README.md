@@ -32,7 +32,7 @@ provider contracts, and everything else derives from it:
   `stdin: "inherit"`, extra file descriptors, or `kill` on a provider that
   declares none each fail before anything starts.
 
-Nine providers ship with the package: `DirectorySandbox`, `JustBashSandbox`,
+The bundled providers are `DirectorySandbox`, `JustBashSandbox`, `CommandSandbox`,
 `ContainerSandbox`, `KubernetesSandbox`, `MicrosandboxSandbox`,
 `VercelSandbox`, `DaytonaSandbox`, `AwsSandbox`, and `CloudflareSandbox`. None
 of them costs the package a vendor dependency: an SDK arrives as an injected
@@ -47,7 +47,7 @@ place code you do not trust.
 
 ## Install
 
-Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
+Not on npm yet; see [Installation](installation.md).
 
 Node.js 26.4.0 or later. `@smthrs/platform-node` supplies the contained host
 services `DirectorySandbox` requires. A raw spawner or a wrapper with only a
@@ -113,26 +113,27 @@ teardown finalizer, which removes the directory and the file in it. Swap
 ## How this relates to @smthrs/flows
 
 `@smthrs/sandbox` stands alone: it shares its `effect` peer with the host and
-depends on [`@smthrs/kernel`](/api/kernel) for command-line rendering and the containment contract, and you
-can use it in any Effect program without adopting anything else.
+depends on [`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md) for command-line rendering and the containment contract
+and on `@smthrs/jj` for the host adapter loaded by `SandboxMerge`. You can use
+it in any Effect program.
 
 It also supplies the machines that Smithers flows run on.
-[`@smthrs/flows`](/api/flows) is the durable flow engine: it records each step
+[`@smthrs/flows`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/api.md) is the durable flow engine: it records each step
 of a long-running job in a journal so a crashed run resumes where it stopped.
 Its `SandboxedFlow` module runs a child flow's own code inside a provisioned
 machine, and the provider it runs that code on is one of the providers
 documented here. The seam between them is `Sandbox.Provider`, so a flow author
 chooses a backend by name and never writes against a vendor SDK.
 
-Two package names are one letter apart. [`@smthrs/flows`](/api/flows), plural,
-is the whole engine in one install; [`@smthrs/flow`](/api/flow), singular, is
+Two package names are one letter apart. [`@smthrs/flows`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/api.md), plural,
+is the whole engine in one install; [`@smthrs/flow`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/api.md), singular, is
 the authoring model inside it, which is where `Action`, `Flow`, and
 `Interpreter` are defined. `@smthrs/flows` re-exports those names, so
 installing the plural package is enough for the guides here.
 
-Both packages sit under the `smithers` command-line tool, which is where you
+Both packages sit under the `smthrs` command-line tool, which is where you
 start a run, watch it, and resume it: see the
-[CLI reference](/api/cli). If you came here to place a flow's work on another
+[CLI reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/api.md). If you came here to place a flow's work on another
 machine, read
 [Place a flow body on a machine](./guides/place-a-flow-body-on-a-machine.md)
 next.

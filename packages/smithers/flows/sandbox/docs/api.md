@@ -23,7 +23,7 @@ const program = Effect.gen(function*() {
 }).pipe(Effect.provide(RemoteChildProcessSpawner.layer(provider)))
 ```
 
-The package depends on `@smthrs/kernel`, for `CommandLine` rendering and quoting alone, and on no other Smithers package: a sandbox is one way to satisfy Effect's `ChildProcessSpawner`, not a new host interface a caller has to learn. It bundles for the browser because host access arrives through a provider or through injected host services.
+The runtime dependencies are `@smthrs/kernel`, for command rendering and containment, and `@smthrs/jj`, whose host adapter is loaded by `SandboxMerge`. `effect` is an exact `4.0.0-rc.115` peer dependency. A sandbox satisfies Effect's `ChildProcessSpawner`. It bundles for the browser because host access arrives through a provider or through injected host services.
 
 ## Entry points
 
@@ -148,7 +148,7 @@ The checks run through `RemoteChildProcessSpawner.layer`, because a provider tha
 
 ## Sandbox
 
-`Session` is a machine contract, not just a command transport. Its file operations and spawned commands must see the same tree.
+`Session` is a machine contract, with file and process operations. Its file operations and spawned commands must see the same tree.
 
 | Obligation        | Required behavior                                                                                                                               |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -209,7 +209,7 @@ What `layerHost` deliberately does not do is what `SandboxSupervision` does for 
 const children = Sandbox.fanOut(session, { count: 16 }) // Effect<ReadonlyArray<Session>, ProviderError, Scope>
 ```
 
-`fanOut(session, { count, concurrency? })` forks `count` children, 1 to `maxFanOut` (128), from a session that declares `fork`. Each run is a new batch: it forks one base from the session, then every child from that base, so the children share one starting tree while the session keeps changing. Children are keyed `<session id>/<batch>/child-<n>`, start without the session's credentials, and are released with the base when the acquiring scope closes, so a fan-out inside the parent's scope never outlives the parent. A count outside the bound throws a `RangeError`; a machine without `fork` fails with `unavailable`; one failed fork fails the fan-out, and machines already forked are released with the scope. `DirectorySandbox` forks by copying the session directory without vendor sign-ins (`.claude/.credentials.json`, `.claude.json`, `.codex/auth.json`, `.config/anthropic`); `TestSession` forks its in-memory tree and leaves behind the paths named in `credentials`.
+`fanOut(session, { count, concurrency? })` forks `count` children, 1 to `maxFanOut` (128), from a session that declares `fork`. Each run is a new batch: it forks one base from the session, then every child from that base, so the children share one starting tree while the session keeps changing. Children are keyed `<session id>/<batch>/child-<n>`, start without the session's credentials, and are released with the base when the acquiring scope closes, so a fan-out inside the parent's scope never outlives the parent. A count outside the bound throws a `RangeError`; a machine without `fork` fails with `unavailable`; one failed fork fails the fan-out, and machines already forked are released with the scope. `DirectorySandbox` forks by copying the session directory without vendor sign-ins (`.claude/.credentials.json`, `.claude.json`, `.claude.json.backup`, `.codex/auth.json`, `.config/anthropic`); `TestSession` forks its in-memory tree and leaves behind the paths named in `credentials`.
 
 ### Return work from a session
 
@@ -311,7 +311,13 @@ const violations = yield* SandboxConformance.check(provider, {
 })
 ```
 
-Each check acquires a fresh session. The file checks verify binary, empty, and 64 KiB byte round-trips, `not_found`, parent creation, the default workdir and a relative `cwd`, environment delivery, standard input delivery (verified through `readFile`, so a pseudo-terminal transport is not penalized for its output), standard error arriving on one of the two streams, and a working release-then-reacquire cycle. Two checks deliberately cross surfaces: `files-reach-processes` writes through `writeFile` and measures the file with `wc -c` in a process, and `processes-reach-files` has a process produce a file that `readFile` must return, so a session serving files from anywhere but the machine its processes run on cannot pass. The suite then projects the provider through `Sandbox.commandProvider` and delegates spawn, exit, stdin, ping, and process-stop checks to `ProviderConformance`, whose kill check also runs the fixture's `survivor` probe: after a kill, a command that can still be found running on the machine is a violation even though its wrapper exited. Assert that the returned array is empty.
+Each check acquires a fresh session. The file checks verify binary, empty, and 64 KiB byte round-trips, `not_found`, parent creation, the default workdir and a relative `cwd`, environment delivery, standard input delivery (verified through `readFile`, so a pseudo-terminal transport is not penalized for its output), standard error arriving on one of the two streams, and a working release-then-reacquire cycle. Two checks deliberately cross surfaces: `files-reach-processes` writes through `writeFile` and measures the file with `wc -c` in a process, and `processes-reach-files` has a process produce a file that `readFile` must return, so a session serving files from anywhere but the machine its processes run on cannot pass. The suite then projects the provider through `Sandbox.commandProvider` and delegates spawn, exit, stdin, ping, and process-stop checks to `ProviderConformance`, whose kill check also runs the fixture's `survivor` probe: after a kill, a command that can still be found running on the machine is a violation even though its wrapper exited. `deletes-inherited-environment-or-refuses` also checks that an inherited guest
+variable is removed or rejected with a typed spawn failure. Declare
+`provides.interrupt: true` to check `interrupts-a-running-command`, including
+background children, and `provides.ephemeral: true` to check
+`releases-ephemeral-state` after release and reacquisition.
+
+Assert that the returned array is empty.
 
 `CheckOptions.work` adds `captures-its-work` and `captures-no-work`, which run `resolveBase` and `capture` in the guest against a `WorkSeed`: a `git bundle` and the commit id `base` whose tree holds `workSeedFiles`. The guest needs `git`; the suite runs no host `git`.
 
@@ -350,7 +356,13 @@ const provider = DirectorySandbox.make({
 
 Acquisition creates the deterministic scratch directory, commands run there by default, and native host file operations serve it. Explicit `kill` and every spawn-scope finalizer delegate to the contained handle's `kill({ killSignal })`, including after the target's exit was observed. Cleanup failure fails scope release. The provider never signals a numeric handle pid itself: on POSIX that pid names the supervisor, while the exit code belongs to the target.
 
-The supplied POSIX lifecycle cleans up the owned process group even after a natural target exit, including a background child that keeps output open. Explicit stopping while the target is still alive also attempts to stop descendants that escaped into another process group. That extra ancestry sweep uses revalidated positive PIDs and is best effort; automatic cleanup after natural exit does not promise to recover deliberately escaped sessions. Closing the session removes its scratch directory after process cleanup.
+The supplied POSIX lifecycle cleans up the owned process group even after a natural target exit, including a background child that keeps output open. Explicit stopping while the target is still alive also attempts to stop descendants that escaped into another process group. That extra ancestry sweep uses revalidated positive PIDs and is best effort; automatic cleanup after natural exit does not promise to recover deliberately escaped sessions. Closing an ephemeral session removes its scratch directory after process cleanup.
+`persistence: "sticky"` retains the directory and exposes `retained: true`,
+`attach`, and idempotent `destroy` for [retained jobs](./guides/retained-jobs.md).
+`attach` requires the directory to exist and validates its identity against the
+session key; `destroy` validates the same identity before removal.
+`make` throws for `network: "none"`, a network allowlist, or any `limits`
+ceiling because local host processes have no provider-owned boundary.
 
 Each child receives only the host's `PATH`, `HOME`, `USER`, `LANG`, `LC_*`,
 `TERM`, `TMPDIR`, and `SHELL`, plus names explicitly declared in the spawn's
@@ -372,11 +384,11 @@ const box = CommandSandbox.make({
 })
 ```
 
-The machine is whatever `prefix` reaches, and every guest argv follows it: `[]` is this machine, `["ssh", ...]` a remote host, `["docker", "exec", "-i", name]` a running container. A prefix whose program is `ssh` joins the guest argv into one quoted command line, because `ssh` hands its arguments to the remote login shell as one string; set `joinsArguments` for another transport that does the same. `prefix` may be an effect, asked again for every command, so a transport whose credential expires, such as a Smithers Cloud workspace SSH grant, stays fresh; its `ProviderError` is the command's failure.
+The machine is whatever `prefix` reaches, and every guest argv follows it: `[]` is this machine, `["ssh", ...]` a remote host, `["docker", "exec", "-i", name]` a running container. A prefix whose program is `ssh` joins the guest argv into one quoted command line, because `ssh` hands its arguments to the remote login shell as one string; set `joinsArguments` for another transport that does the same. `prefix` may be an effect, asked again for every command, so a transport whose credential expires, such as an expiring SSH grant, stays fresh; its `ProviderError` is the command's failure.
 
 Shell programs cross the transport as a single base64 line on stdin, read by a short `/bin/sh` bootstrap before the environment envelope and original command input. Script size therefore does not expand local transport argv. The kernel still authorizes the complete transport command, including every prefix argument; an oversized or denied prefix remains refused. A CommandSandbox grant authorizes this transport, including its ability to receive guest shell programs on stdin; it does not authorize individual guest programs. The guest needs `base64`, and prefixes must forward stdin. Guest shell programs still obey the guest operating system's per-argument size limit.
 
-The provider does not create or remove the machine. `acquire` prepares `workdir` and a pidfile directory private to the session key, so several sessions can share one machine, and closing the scope signals only that session's unfinished commands. File bytes cross the prefix as base64 text, commands run under the guest's absolute `/bin/sh`, and signals use the same pidfile and `/proc` walk as `ContainerSandbox`. An unreachable machine fails `acquire` or the command with `unavailable`. A transport can outlive its machine: a Smithers Cloud gateway keeps an SSH channel open after the workspace behind it stopped, so the exit never arrives. Every command therefore runs beside a `heartbeat` (default 15 seconds) that reads the machine's boot id; a probe that fails, answers another boot, or takes twice the heartbeat ends the command with `unavailable`. Heartbeat deadlines cover the probe response; process-scope cleanup after a completed response does not count as a failed probe. Closing the scope removes the session's pidfile directory, and failures never carry the prefix's argv, which may hold a credential.
+The provider does not create or remove the machine. `acquire` prepares `workdir` and a pidfile directory private to the session key, so several sessions can share one machine, and closing the scope signals only that session's unfinished commands. File bytes cross the prefix as base64 text, commands run under the guest's absolute `/bin/sh`, and signals use the same pidfile and `/proc` walk as `ContainerSandbox`. An unreachable machine fails `acquire` or the command with `unavailable`. A transport can outlive its machine: an SSH channel can stay open after the machine behind it stops, so the exit never arrives. Every command therefore runs beside a `heartbeat` (default 15 seconds) that reads the machine's boot id; a probe that fails, answers another boot, or takes twice the heartbeat ends the command with `unavailable`. Heartbeat deadlines cover the probe response; process-scope cleanup after a completed response does not count as a failed probe. Closing the scope removes the session's pidfile directory, and failures never carry the prefix's argv, which may hold a credential.
 
 ### ContainerSandbox
 
@@ -610,4 +622,4 @@ is in [the two provider seams](./concepts/seams.md),
 [what a sandbox does and does not prevent](./concepts/isolation.md), and
 [how a remote command differs from a local one](./concepts/remote-commands.md).
 
-[`@smthrs/kernel`](/api/kernel) renders the command line a provider receives, and its `proc:spawn` capability check is written against that same string. [`@smthrs/run-store`](/api/run-store) tracks whether a run's engine is still alive, which is a different question from whether its sandbox is. See also [Capabilities and the host kernel](/docs/concepts/kernel/) and [Retries and interruption](/docs/concepts/retries/).
+[`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md) renders the command line a provider receives, and its `proc:spawn` capability check is written against that same string. [`@smthrs/run-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/run-store/docs/api.md) tracks whether a run's engine is still alive, which is a different question from whether its sandbox is. See also [Capabilities and the host kernel](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md) and [Retries and interruption](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/concepts/retries.md).

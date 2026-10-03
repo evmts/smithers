@@ -54,6 +54,8 @@ guest tree itself, keyed by the exact absolute path, so the relative
 | `inputs`   | the standard input each command received, in the same order |
 | `files`    | the guest tree, as a `Map<string, Uint8Array>`              |
 | `released` | how many sessions have been released                        |
+| `forked` | every forked child session key, in fork order |
+| `children` | the guest tree of each live forked child, keyed by session key |
 
 Options cover the cases a test needs: `scripts` for exact command lines,
 `script` as a resolver for anything the record does not name, `files` for the

@@ -48,7 +48,7 @@ the finalizer does:
 
 | Provider              | Reattach on the same key                                        | What a normal release leaves                                         |
 | --------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `DirectorySandbox`    | the recursive create finds a crash-left directory and its files | nothing; the directory is removed                                    |
+| `DirectorySandbox`    | the recursive create finds a crash-left directory and its files | nothing for `ephemeral` (the default); a `sticky` directory remains                                    |
 | `ContainerSandbox`    | a refused create whose name `container inspect` finds           | nothing; `rm --force` ends the container                             |
 | `KubernetesSandbox`   | an `AlreadyExists` Pod sealed under the same `reattachKey`      | nothing; the Pod is force deleted                                    |
 | `MicrosandboxSandbox` | `sandboxAlreadyExists` connects or restarts                     | nothing for `ephemeral`; a `sticky` machine stays running on purpose |
@@ -56,11 +56,12 @@ the finalizer does:
 | `DaytonaSandbox`      | `get(name)` before `create`                                     | nothing; teardown deletes the sandbox                                |
 | `AwsSandbox`          | `ListTasks` by the `startedBy` tag adopts a leftover            | nothing; `StopTask` runs on the scope                                |
 | `CloudflareSandbox`   | the Durable Object id is derived from the key                   | nothing; the object is destroyed                                     |
-| `JustBashSandbox`     | not applicable, the session is in process                       | nothing; the directory is removed                                    |
+| `JustBashSandbox`     | not applicable, the session is in process                       | nothing for `ephemeral` (the default); a `sticky` directory remains                                    |
 
-Read the middle column as crash recovery, not as storage. Only
-`MicrosandboxSandbox` with `persistence: "sticky"` and `VercelSandbox` are
-designed to be there after a clean release, and only the first is running.
+Read the middle column as crash recovery, not as storage. `DirectorySandbox` and
+`MicrosandboxSandbox` with `persistence: "sticky"`, and `VercelSandbox`, retain
+state after a clean release. The sticky microVM stays running; a sticky
+directory retains files, while its scoped commands still end.
 
 To keep what a body changed in a checkout, capture it before release:
 `Sandbox.run` returns it as `Work`, which an action journals and
@@ -70,8 +71,8 @@ To keep what a body changed in a checkout, capture it before release:
 ## The scope is the lifetime
 
 Acquisition registers teardown as a finalizer of the acquiring scope. Closing
-that scope is the only lifecycle end exposed to the caller: no `destroy` method
-to forget, and no `AbortSignal` threaded through the call graph. Interrupting
+that scope releases the held session. Retained providers also expose `destroy`
+for explicit removal of retained state, and no `AbortSignal` threaded through the call graph. Interrupting
 an execution closes the scope and therefore runs the provider's cancellation
 finalizer. Container, Kubernetes, Vercel, Daytona, Cloudflare, and AWS provider
 cleanup operations each have a five-second wall-clock bound. A timeout logs a

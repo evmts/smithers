@@ -44,18 +44,15 @@ then counts its lines with `wc`, which runs in the tab:
 
 ```ts
 import { BrowserServices } from "@smthrs/platform-browser"
-import { configureSingle, fs } from "@zenfs/core"
-import { IndexedDB } from "@zenfs/dom"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as ChildProcess from "effect/unstable/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
-import { Bash } from "just-bash"
 
-await configureSingle({ backend: IndexedDB })
 
-/** Two views of one volume: the interpreter's, and the promises API the adapter reads. */
-const layer = BrowserServices.layer({ bash: new Bash({ fs }), fs: fs.promises })
+// Supply the initialized interpreter and promises API of the same mount.
+declare const mounted: Parameters<typeof BrowserServices.layer>[0]
+const layer = BrowserServices.layer(mounted)
 
 const program = Effect.gen(function*() {
   const fileSystem = yield* FileSystem.FileSystem
@@ -74,8 +71,8 @@ console.log(await Effect.runPromise(program.pipe(Effect.provide(layer), Effect.o
 
 The program itself names nothing from this package. It asks for
 `FileSystem.FileSystem` and `ChildProcessSpawner`, so the same code runs under
-[`@smthrs/platform-node`](/api/platform-node) or
-[`@smthrs/platform-bun`](/api/platform-bun) unchanged.
+[`@smthrs/platform-node`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/api.md) or
+[`@smthrs/platform-bun`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-bun/docs/api.md) unchanged.
 
 The one rule the design turns on is visible in the layer line: `bash` and `fs`
 are two views of a single mount. Build them over different mounts and nothing
@@ -86,7 +83,7 @@ end to end.
 
 ## How this fits with @smthrs/flows
 
-[`@smthrs/flows`](/api/flows) is the durable flow engine these adapters were
+[`@smthrs/flows`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/api.md) is the durable flow engine these adapters were
 built for. A flow runs on a **host**, which is a closed set of five service
 tags: `FileSystem`, `Path`, `ChildProcessSpawner`, `Jj`, and `HttpClient`.
 Provide those five and a flow runs; where it runs is a composition detail the
@@ -107,7 +104,7 @@ You need none of that to use the two adapters on their own.
 `BrowserServices.layer` is an ordinary Effect platform layer, and a page that
 wants a filesystem and a shell can stop there.
 
-Above `@smthrs/flows` sits [`@smthrs/cli`](/api/cli), the `smthrs` command that
+Above `@smthrs/flows` sits [`@smthrs/cli`](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/api.md), the `smthrs` command that
 finds flows in a project, plans them, runs them, and reads their events back.
 It runs flows on a machine rather than in a tab, so it composes the Node host;
 this package is what the same engine uses when the page is the machine.

@@ -11,7 +11,7 @@ this package can be composed under the capability kernel at all.
 
 ## What the kernel needs from a host filesystem
 
-[`@smthrs/kernel`](/api/kernel) guards every filesystem operation against a
+[`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md) guards every filesystem operation against a
 grant. Between checking a path and using it, a symlink can be swapped for one
 pointing somewhere else, so a native host has to close that window with
 descriptor-relative operations: open the workspace root once, then traverse from
@@ -63,11 +63,6 @@ Passing `node:fs/promises` is a test-time convenience for a process that is
 itself the sandbox. It is never a production composition. When you want the
 Effect service in a host process without the claim, use `make`.
 
-The attestation is also refused rather than silently applied: if the filesystem
-already carries a descriptor-relative executor, `withIsolatedFileSystem` throws
-at composition time, because replacing the stronger guarantee with a
-path-delegating one would reopen the window it closed.
-
 ## `realPath` is the boundary
 
 Under the attestation the kernel resolves a guarded path through the host's own
@@ -88,7 +83,7 @@ link before it checks a grant.
 
 ## Related reading
 
-- [Capabilities and the host kernel](/docs/concepts/kernel/) on smithers.sh, for
+- [Capabilities and the host kernel](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md), for
   what a grant is and how it is checked.
 - [Injected backends](./injected-backends.md), for the optional slice members
   this page depends on.

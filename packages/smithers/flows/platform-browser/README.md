@@ -6,7 +6,7 @@ This package declares `effect` as an exact
 `4.0.0-rc.115` peer dependency. Keep the application on that version so
 all Smithers packages share one Effect runtime.
 
-**Documentation:** https://platform-browser.smithers.sh
+**Documentation:** [Documentation](docs/README.md)
 
 Two Effect platform services a browser tab otherwise cannot have: `FileSystem`,
 over a virtual filesystem the page mounts, and `ChildProcessSpawner`, over a
@@ -23,13 +23,17 @@ no vendor code this package picked for you.
 
 ## Install
 
-Not on npm yet; see [Installation](https://smithers.sh/docs/installation/#use-the-libraries).
+Not on npm yet; see [Installation](docs/installation.md).
 
 `effect` is a peer dependency pinned at exactly `4.0.0-rc.115`. The services
 these adapters implement live in Effect 4, so Effect 3 does not satisfy it, and
 two copies of `effect` in one program are two sets of service tags.
 
-The backends are yours to install and to wire together:
+The backends are yours to install and to wire together. A just-bash interpreter
+needs an `IFileSystem` adapter over the same mount; a ZenFS `fs` object alone
+is not that adapter. See [Injected backends](docs/concepts/injected-backends.md).
+
+Vendor packages:
 
 ```sh
 npm install @zenfs/core @zenfs/dom just-bash
@@ -39,18 +43,15 @@ npm install @zenfs/core @zenfs/dom just-bash
 
 ```ts
 import { BrowserServices } from "@smthrs/platform-browser"
-import { configureSingle, fs } from "@zenfs/core"
-import { IndexedDB } from "@zenfs/dom"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as ChildProcess from "effect/unstable/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
-import { Bash } from "just-bash"
 
-await configureSingle({ backend: IndexedDB })
 
-// Two views of one volume: the interpreter's, and the promises API the adapter reads.
-const layer = BrowserServices.layer({ bash: new Bash({ fs }), fs: fs.promises })
+// Supply the initialized interpreter and promises API of the same mount.
+declare const mounted: Parameters<typeof BrowserServices.layer>[0]
+const layer = BrowserServices.layer(mounted)
 
 const program = Effect.gen(function*() {
   const fileSystem = yield* FileSystem.FileSystem
@@ -99,7 +100,7 @@ when the workspace occupies the whole mount, so the layer refuses any
 `RequestInit { redirect: "manual" }`, so a redirect comes back to you and the
 second origin is never contacted on its own. There is no Smithers wrapper around
 `fetch`. `Crypto` is not one of the five Host tags, so a page that hashes
-artifacts adds `BrowserCrypto.layer` from `@effect/platform-browser`.
+artifacts supplies an Effect `Crypto` layer separately.
 
 ## What a tab cannot do
 
@@ -134,10 +135,10 @@ forwards `mode`, `writeFile` forwards `flag` and `mode`, `access` answers from
 the reported mode bits, `stream` honours its bounds and refuses fractional ones,
 and `realPath` canonicalizes through the backend's own `realpath` when it has
 one. Without `realpath`, `realPath` fails with a `PermissionDenied` `PlatformError`;
-there is no fallback. The full statement is at https://platform-browser.smithers.sh/contract/,
+there is no fallback. The full statement is at [contract](docs/contract.md),
 each option and backend error tag is tabled at
-https://platform-browser.smithers.sh/reference/api/, and every refusal with its
-fix is at https://platform-browser.smithers.sh/troubleshooting/.
+[reference api](docs/api.md), and every refusal with its
+fix is at [troubleshooting](docs/troubleshooting.md).
 
 ## Runtimes
 
@@ -154,4 +155,4 @@ durable engine does not run there: its `SqlClient` uses `node:sqlite`, and
 Because both backend slices are structural, a test satisfies them without either
 vendor package: Node's own `node:fs/promises` satisfies `ZenFsPromisesLike`, and
 `JustBashLike` is one function. See
-https://platform-browser.smithers.sh/testing/.
+[testing](docs/testing.md).

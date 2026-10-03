@@ -12,25 +12,23 @@ volume.
 
 ## Prerequisites
 
-- A bundler that can serve a page, and a browser that supports IndexedDB.
-- The package and the two backends. Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
+- A browser bundle with an isolated filesystem mount and a wired interpreter.
+- Backends satisfying `ZenFsPromisesLike` and `JustBashLike`.
+- The package and the two backends. Not on npm yet; see [Installation](installation.md).
 
 ## Mount one volume and wire the interpreter
 
-Create `quickstart.ts` in your page's bundle. The mount happens first, because
-both views are taken from it:
+Create `quickstart.ts` in your page's bundle after supplying a mounted
+filesystem and an interpreter wired to it. This package does not construct
+the backends:
 
 ```ts
 import { BrowserServices } from "@smthrs/platform-browser"
-import { configureSingle, fs } from "@zenfs/core"
-import { IndexedDB } from "@zenfs/dom"
-import { Bash } from "just-bash"
 
-await configureSingle({ backend: IndexedDB })
 
-/** Two views of one volume: the interpreter, and the promises API the adapter reads. */
-const bash = new Bash({ fs })
-const layer = BrowserServices.layer({ bash, fs: fs.promises })
+// Supply the initialized interpreter and promises API of the same mount.
+declare const mounted: Parameters<typeof BrowserServices.layer>[0]
+const layer = BrowserServices.layer(mounted)
 ```
 
 `BrowserServices.layer` provides three services from that pair:
@@ -41,8 +39,8 @@ make visible.
 ## Write the program against the tags
 
 Nothing in the program names this package. It asks for Effect's service tags,
-so the same code runs under [`NodeHost`](/api/platform-node) or
-[`BunHost`](/api/platform-bun) unchanged:
+so the same code runs under [`NodeHost`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/api.md) or
+[`BunHost`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-bun/docs/api.md) unchanged:
 
 ```ts
 import * as Effect from "effect/Effect"

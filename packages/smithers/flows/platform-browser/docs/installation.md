@@ -7,7 +7,8 @@ sidebar:
 
 ## Install the package
 
-Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
+Use version `1.0.0-rc.1` and the peer version below.
+Install from a prepared source checkout until the release is published.
 
 `effect` is a peer dependency declared at exactly `4.0.0-rc.115`, so install it
 yourself at that version. The services these adapters implement live in Effect 4
@@ -22,8 +23,8 @@ dependencies install with it:
 
 | Dependency                      | Why it is here                                                                                                |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| [`@smthrs/kernel`](/api/kernel) | `CommandLine.render`, which produces the line the interpreter runs, and the filesystem isolation attestation. |
-| [`@smthrs/jj`](/api/jj)         | The wasm-backed `Jj` service the `BrowserHost` bundle composes.                                               |
+| [`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md) | `CommandLine.render`, which produces the line the interpreter runs, and the filesystem isolation attestation. |
+| [`@smthrs/jj`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/jj/docs/api.md)         | The wasm-backed `Jj` service the `BrowserHost` bundle composes.                                               |
 
 ## What you supply
 
@@ -34,8 +35,8 @@ list stays short. Install the ones your composition needs:
 | You supply                         | Where it comes from                                                                                           | Needed by                    |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------- |
 | A `node:fs/promises`-shaped object | [`@zenfs/core`](https://www.npmjs.com/package/@zenfs/core)'s `fs.promises`, over a backend from `@zenfs/dom`. | `BrowserFileSystem`          |
-| A bash interpreter instance        | [`just-bash`](https://www.npmjs.com/package/just-bash)'s `Bash` class (`new Bash({ fs })`).                   | `BrowserChildProcessSpawner` |
-| The `flows_jj.wasm` reactor        | [`@smthrs/jj`](/api/jj)'s `wasm/flows_jj.wasm`, served by your bundler.                                       | `BrowserHost` only           |
+| A bash interpreter instance        | [`just-bash`](https://www.npmjs.com/package/just-bash)'s `Bash` class, with a caller-supplied `IFileSystem` adapter over the mount.                   | `BrowserChildProcessSpawner` |
+| The `flows_jj.wasm` reactor        | [`@smthrs/jj`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/jj/docs/api.md)'s `wasm/flows_jj.wasm`, served by your bundler.                                       | `BrowserHost` only           |
 
 ```bash
 pnpm add @zenfs/core @zenfs/dom just-bash

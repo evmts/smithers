@@ -19,14 +19,20 @@ the adapter calls, under the names the real backend uses.
 
 | Slice               | Satisfied by                                                      | Members                                                                                      |
 | ------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `ZenFsPromisesLike` | `@zenfs/core`'s `fs.promises`, and Node's own `node:fs/promises`. | `open`, `readFile`, `writeFile`, `mkdir`, `readdir`, `stat`, `rm`, and two optional members. |
-| `JustBashLike`      | just-bash's `Bash` class (`new Bash({ fs })`).                    | `exec(commandLine, options?)`.                                                               |
+| `ZenFsPromisesLike` | `@zenfs/core`'s `fs.promises`, and Node's own `node:fs/promises`. | `open`, `readFile`, `writeFile`, `mkdir`, `readdir`, `stat`, `rm`, and optional `lstat`, `realpath`, `rename`, and `utimes`. |
+| `JustBashLike`      | just-bash 3.2.0's `Bash` instance, wired to an `IFileSystem` adapter.                    | `exec(commandLine, options?)`.                                                               |
 
 Taking the instance rather than the package buys three things. The page decides
 which ZenFS backend is mounted, and when. The bundle carries no vendor code this
 package chose for it. And a test satisfies either slice with an object literal,
 or runs the filesystem against a real directory by passing Node's own
 `node:fs/promises`.
+
+`Bash` 3.2.0 requires its own `IFileSystem` interface, including
+`readFileBuffer`, `appendFile`, and `exists`. A raw ZenFS `fs` object is not
+a drop-in implementation. Supply a bridge over your mount before creating
+the interpreter. This package accepts the resulting `exec` slice and does
+not ship that bridge. The examples take initialized backends as inputs.
 
 ## The one-mount rule
 

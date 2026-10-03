@@ -11,13 +11,15 @@ advertise `retained: true`, connect through `attach` without creating or restart
 machines, and support idempotent `destroy`. Ephemeral providers are refused.
 
 Use `MicrosandboxSandbox.make({ persistence: "sticky", ... })` for detached
-microVMs. `CloudSandbox.make({ persistence: "sticky", ... })` leaves its workspace
-running on scope closure, creates a client lease, and renews it on every attach.
-Cloud's default lease is 900 seconds; configure a longer lease than the maximum
-probe interval. Configure the workspace idle limit to outlast the job, since
-renewal alone does not establish that idle suspension counts as activity.
+microVMs, or `DirectorySandbox.make({ persistence: "sticky", ... })` for a
+retained local directory with a contained host spawner.
 
 ```ts
+import { Sandbox } from "@smthrs/sandbox"
+
+declare const provider: Sandbox.Provider
+declare const brief: string
+
 const adapter = Sandbox.job(provider, {
   command: "agent --brief brief.txt",
   files: { "brief.txt": new TextEncoder().encode(brief) },
@@ -28,9 +30,8 @@ const adapter = Sandbox.job(provider, {
 Files use absolute guest paths or paths relative to the session workdir.
 The command runs in `capture.checkout` when supplied, otherwise the workdir.
 Job metadata defaults to `/var/lib/smthrs-jobs`, outside the checkout and the
-transient process directory. Cloud supplies the developer-owned default
-`/home/developer/.local/state/smthrs-jobs`; `jobDirectory` overrides either
-location. An overlap with the captured checkout is refused.
+transient process directory. Set `jobDirectory` to override that location;
+for a local directory, choose a writable absolute path outside the checkout. An overlap with the captured checkout is refused.
 
 ## Recovery and cleanup
 
@@ -55,8 +56,7 @@ complete before starting another generation.
 
 Microsandbox labels retained machines with `smithers.execution` derived from the
 job execution key. Supply `MicrosandboxSandbox.reap`'s `retain(labels)` hook to
-preserve machines whose executions remain live. Cloud's API does not expose
-workspace labels; its client lease is the cleanup backstop.
+preserve machines whose executions remain live.
 
 ## Executed spike
 
@@ -71,7 +71,7 @@ The guarded `RealSandboxJob.integration.test.ts` also executed successfully:
 cleared transient pids without losing the job, collection returned the guest
 patch, a reconstructed filesystem receipt replayed after destruction, and status
 then reported Lost. These observations establish local exec and SSH survival;
-hosted Cloud execution was not measured.
+hosted execution was not measured.
 
 Reproduce with `python3 test/fixtures/job-survival-spike.py` from this package.
 The image must already be cached. The script prints transport receipts and

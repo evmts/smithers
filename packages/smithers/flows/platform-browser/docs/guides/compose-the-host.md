@@ -15,25 +15,23 @@ Both filesystem shapes come from one isolated mount. The FileSystem isolation
 root is `/`; create the repository directory inside it before jj opens it:
 
 ```ts
-import { configureSingle, fs } from "@zenfs/core"
-import { IndexedDB } from "@zenfs/dom"
+import * as BrowserHost from "@smthrs/platform-browser/BrowserHost"
 
-await configureSingle({ backend: IndexedDB })
-await fs.promises.mkdir("/repo", { recursive: true })
+// Supplied by the page, all viewing one isolated mount.
+declare const mounted: Parameters<typeof BrowserHost.layer>[0]
+await mounted.fs.mkdir("/repo", { recursive: true })
 ```
 
-`fs` is the synchronous API jj mounts through WASI. `fs.promises` is the
-asynchronous one `BrowserFileSystem` adapts. They are two shapes of the same
-volume, which is what the bundle requires.
+The promises API is `mounted.fs`; `mounted.jj.fs` is the synchronous API jj
+mounts through WASI. The interpreter needs its own filesystem bridge over that
+same volume. See [Injected backends](../concepts/injected-backends.md).
 
-## Load the wasm and build the interpreter
+## Load the wasm
 
 ```ts
-import { Bash } from "just-bash"
-
-// wasmUrl: however your bundler serves @smthrs/jj's wasm/flows_jj.wasm.
+// The URL at which your bundler serves @smthrs/jj's wasm/flows_jj.wasm.
+declare const wasmUrl: string
 const wasm = await WebAssembly.compileStreaming(fetch(wasmUrl))
-const bash = new Bash({ fs })
 ```
 
 The layer never fetches. Handing it an already-compiled `WebAssembly.Module`
@@ -42,12 +40,10 @@ lets a page share one module across layers, and raw bytes work too.
 ## Compose the bundle
 
 ```ts
-import * as BrowserHost from "@smthrs/platform-browser/BrowserHost"
-
 const layer = BrowserHost.layer({
-  bash,
-  fs: fs.promises,
-  jj: { wasm, fs, root: "/repo" }
+  bash: mounted.bash,
+  fs: mounted.fs,
+  jj: { wasm, fs: mounted.jj.fs, root: "/repo" }
 })
 ```
 
@@ -62,7 +58,7 @@ repository's `.jj` inside that directory. It must already exist in the mount.
 The FileSystem isolation root stays `/`, regardless of `jj.root`.
 The full option semantics, including which fields are read once and which is
 read at the first operation, are in
-[`@smthrs/jj`](/pkg/jj/guides/run-jj-in-a-browser).
+[`@smthrs/jj`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/jj/docs/guides/run-jj-in-a-browser.md).
 
 ## Sync the mount after writes that must persist
 

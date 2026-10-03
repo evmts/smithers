@@ -3,8 +3,8 @@ title: "Troubleshooting"
 description: "The failures @smthrs/platform-browser reports: a split mount, writes lost on reload, the spawner's refused options, the operations a mounted volume cannot serve, a stalled interpreter, and an opaque redirect returned with status 0."
 ---
 
-Find the symptom, read the cause, apply the fix. Every failure on this page is
-one this package actually produces, and the signatures behind them are on the
+Find the symptom, read the cause, apply the fix. These symptoms include adapter
+failures and backend configuration problems. The signatures are on the
 [API reference](./api.md).
 
 A `PlatformError` prints its parts, so the tag, the module, the method, the
@@ -28,14 +28,11 @@ objects are valid, and they answer about different filesystems.
 
 ```ts
 import { BrowserServices } from "@smthrs/platform-browser"
-import { configureSingle, fs } from "@zenfs/core"
-import { IndexedDB } from "@zenfs/dom"
-import { Bash } from "just-bash"
 
-await configureSingle({ backend: IndexedDB })
 
-const bash = new Bash({ fs })
-const layer = BrowserServices.layer({ bash, fs: fs.promises })
+// Supply the initialized interpreter and promises API of the same mount.
+declare const mounted: Parameters<typeof BrowserServices.layer>[0]
+const layer = BrowserServices.layer(mounted)
 ```
 
 `BrowserHost.layer` adds a third view, `jj.fs`, which is the synchronous slice
@@ -129,9 +126,8 @@ Unknown: ChildProcess.spawn: no interpreter mounted
 failed runs rather than defects in this adapter, so both are wrapped as a system
 `PlatformError` with the original kept as the `cause`.
 
-**Fix.** Read `error.reason.cause` for the interpreter's own error. A throw
-before the promise usually means the interpreter was constructed over a mount
-that is not configured yet: call `configureSingle` before `new Bash({ fs })`.
+**Fix.** Read `error.reason.cause` for the interpreter's own error. One possible cause is an interpreter constructed before its backend is
+ready. Check backend initialization; the adapter does not diagnose that cause.
 
 ## Every command after the first one hangs
 
@@ -276,7 +272,7 @@ anything above to follow.
 
 **Fix.** This is the browser failing closed, and it is the intended behaviour.
 Request the final URL, or follow the hop through
-[`@smthrs/kernel`](/api/kernel)'s guarded `HttpClient.layer`, which rechecks
+[`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md)'s guarded `HttpClient.layer`, which rechecks
 every hop against the grant. The same bundle under Node or Bun sees the ordinary
 3xx instead, so a test that reproduces this outside a browser sees a status and a
 `location` rather than the opaque response. See
@@ -296,25 +292,6 @@ module, as in
 [Compose the browser host bundle](./guides/compose-the-host.md). If the page
 genuinely cannot serve the wasm, `not_installed` on every operation is the
 stated outcome rather than a fault.
-
-## Error: filesystem already carries a descriptor-relative executor
-
-**Symptom.** Composition throws before the program runs:
-
-```text
-Error: filesystem already carries a descriptor-relative executor; attesting whole-filesystem isolation would replace it
-```
-
-**Cause.** `BrowserFileSystem.layer` applies
-[`@smthrs/kernel`](/api/kernel)'s `withIsolatedFileSystem`, and the service it
-was handed already carries the stronger, descriptor-relative guarantee. Applying
-the attestation would replace it with a path-delegating one, so the kernel
-refuses instead.
-
-**Fix.** Compose one host filesystem. A browser composition provides
-`BrowserFileSystem.layer` over the mount and nothing else; a native one provides
-[`@smthrs/platform-node`](/api/platform-node) or
-[`@smthrs/platform-bun`](/api/platform-bun).
 
 ## The spawner layer will not compose
 

@@ -155,15 +155,6 @@ refresh; that commit existed only in the guest, so every apply failed with
 `Revision <id> doesn't exist`. Pass `base` only to name another revision the
 host can fetch.
 
-## Prior art
-
-In 0.x, the `<Sandbox>` component's provider returned a `diffBundle`, and
-`applyDiffBundle` (`packages/engine/src/effect/diff-bundle.js` at `v0.35.0`)
-wrote it into the parent's tree with `git apply`. Commit `2716e98` removed it
-with the JSX executor. `SandboxMerge` keeps the provider-neutral diff and lands
-it as a jj change, so a conflict is recorded instead of failing the apply or
-overwriting files.
-
 ## Read next
 
 - [Place a flow body on a machine](./place-a-flow-body-on-a-machine.md).

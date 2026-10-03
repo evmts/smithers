@@ -42,6 +42,15 @@ cannot decide the next. The checks are:
 | `files-reach-processes`                | let a process measure a file written with `writeFile`  |
 | `processes-reach-files`                | let `readFile` return a file a process produced        |
 | `reacquires-its-session`               | serve a working session after release and reacquire    |
+| `deletes-inherited-environment-or-refuses` | remove an inherited guest variable or reject deletion |
+| `interrupts-a-running-command` | stop the command and its children when `provides.interrupt` is true |
+| `releases-ephemeral-state` | discard session files when `provides.ephemeral` is true |
+
+`deletes-inherited-environment-or-refuses` also checks that an inherited guest
+variable is removed or rejected with a typed spawn failure. Declare
+`provides.interrupt: true` to check `interrupts-a-running-command`, including
+background children, and `provides.ephemeral: true` to check
+`releases-ephemeral-state` after release and reacquisition.
 
 `files-reach-processes` and `processes-reach-files` cross surfaces on
 purpose. A session serving files from anywhere but the machine its processes

@@ -81,7 +81,7 @@ interpreter was never called.
 ## Assert the rendered command line
 
 The line the interpreter receives is
-[`@smthrs/kernel`](/api/kernel)'s `CommandLine.render`, which is the same
+[`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md)'s `CommandLine.render`, which is the same
 renderer a `proc:spawn` grant is checked against. Assert against the renderer
 rather than against a string literal, and a grant can never authorize a line
 different from the one that runs:
@@ -146,7 +146,7 @@ it. Count the calls in flight if the assertion is about concurrency.
 ## Choose layer or make
 
 `BrowserFileSystem.layer(fs)` attests whole-filesystem isolation to
-[`@smthrs/kernel`](/api/kernel); `BrowserFileSystem.make(fs)` builds the same
+[`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md); `BrowserFileSystem.make(fs)` builds the same
 service without the claim. Passing `node:fs/promises` to `layer` is a test-time
 convenience for a process that is itself the sandbox, and never a production
 composition. When a test wants Effect's `FileSystem` with no kernel claim
@@ -158,7 +158,7 @@ attached, use `make`. See
 Test your own code's use of these services, not the adapters underneath them.
 Everything these pages state as behaviour is fixed by the package: the options
 each filesystem operation honours, which backend error becomes which
-`PlatformError` tag, the fifteen operations that refuse, the rendered command
+`PlatformError` tag, the operations that refuse, the rendered command
 line, and the one-run-at-a-time abort boundary. A test that re-asserts one of
 those is testing this package rather than your program.
 

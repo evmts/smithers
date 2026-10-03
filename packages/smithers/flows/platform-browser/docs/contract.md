@@ -4,7 +4,7 @@ description: "What BrowserHost guarantees where it diverges from NodeHost: the f
 ---
 
 The governing statement for `@smthrs/platform-browser`: what a program gets when
-it runs on `BrowserHost` instead of [`NodeHost`](/api/platform-node), what you
+it runs on `BrowserHost` instead of [`NodeHost`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/api.md), what you
 have to supply for those promises to hold, and where they stop. Every service
 here is an adapter over a backend the page passes in, so each guarantee below is
 about the adapter, and the parts a backend owns are named as such.
@@ -39,7 +39,7 @@ wants Effect's platform services and nothing more.
 - **`realPath` canonicalizes.** Symlinks are followed when the backend has
   `realpath`, and a `..` after a link names the parent of the link's target
   rather than being collapsed lexically first. This is the boundary
-  [`@smthrs/kernel`](/api/kernel) resolves a guarded path through before it
+  [`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md) resolves a guarded path through before it
   checks the grant. Without `realpath`, `realPath` fails with a `PermissionDenied`
   `PlatformError`; there is no fallback.
 - **A refusal is typed, never silent.** The operations a promises-shaped volume
@@ -66,7 +66,7 @@ wants Effect's platform services and nothing more.
   the caller's fiber.
 - **The command line is the one a grant is checked against.** A command is
   rendered by `@smthrs/kernel`'s `CommandLine.render` before the interpreter sees
-  it, POSIX single-quoted without `shell` so argv semantics survive, and joined
+  it, POSIX quoted where needed without `shell` so argv semantics survive, and joined
   verbatim with `shell`.
 - **A redirect is never followed here.** The bundle's `HttpClient` is Effect's
   fetch client with `RequestInit { redirect: "manual" }`, so the host client

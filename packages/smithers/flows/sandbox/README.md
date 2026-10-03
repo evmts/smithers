@@ -6,7 +6,7 @@ This package declares `effect` as an exact
 `4.0.0-rc.115` peer dependency. Keep the application on that version so
 all Smithers packages share one Effect runtime.
 
-**Documentation:** https://sandbox.smithers.sh
+**Documentation:** [Documentation](docs/README.md)
 
 Provisioned machines, provider-neutral remote process execution, and sandbox
 liveness for flows. A provider adapts its SDK session to one of two seams:
@@ -18,9 +18,9 @@ them.
 
 It implements no isolation of its own. What a sandbox does and does not prevent
 differs per provider and is documented at
-https://sandbox.smithers.sh/concepts/isolation/.
+[concepts isolation](docs/concepts/isolation.md).
 
-Not on npm yet; see [Installation](https://smithers.sh/docs/installation/#use-the-libraries).
+Not on npm yet; see [Installation](docs/installation.md).
 
 ## Public API
 
@@ -111,7 +111,7 @@ tools use these operations to replace files while preserving their metadata.
 result with the `Work` its checkout gained, a git diff from a base the host can
 fetch. `SandboxMerge.apply` lands that work in a host jj repository as one
 change, recording conflicts the way `jj rebase` does. See
-[Return work from a sandbox](https://sandbox.smithers.sh/guides/return-work-from-a-sandbox/).
+[Return work from a sandbox](docs/guides/return-work-from-a-sandbox.md).
 
 A provider that can be pinged can also be supervised. `SandboxSupervision`
 probes the open session on a cadence and retires it when the probe says it is
@@ -155,8 +155,8 @@ turn a host directory into a filesystem, user, or network security boundary.
 
 ## Limits
 
-See [Limits](https://sandbox.smithers.sh/limits/) for operation bounds,
+See [Limits](docs/limits.md) for operation bounds,
 buffering, and provider-specific byte fidelity.
 
-See the [API reference](https://sandbox.smithers.sh/reference/api/) and the
-[kernel reference](https://kernel.smithers.sh/reference/api/).
+See the [API reference](docs/api.md) and the
+[kernel reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs).

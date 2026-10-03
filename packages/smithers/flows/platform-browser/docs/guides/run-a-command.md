@@ -1,6 +1,6 @@
 ---
 title: "Run a command in a tab"
-description: "Spawn a command through the in-page bash interpreter: working directories, environment, buffered output, cancellation, and the eight things this spawner refuses rather than fakes."
+description: "Spawn a command through the in-page bash interpreter: working directories, environment, buffered output, cancellation, and the spawn-time refusals and the handle operations rather than fakes."
 sidebar:
   order: 2
 ---
@@ -107,8 +107,8 @@ after the abort.
 
 ## What the spawner refuses
 
-Each refusal is a typed `PlatformError` raised before anything runs, except the
-two marked otherwise:
+The first six rows are spawn-time refusals with a typed `PlatformError`.
+The remaining rows describe operations on an acquired handle:
 
 | Input                              | Why                                                                                                            |
 | ---------------------------------- | -------------------------------------------------------------------------------------------------------------- |
@@ -117,8 +117,8 @@ two marked otherwise:
 | `additionalFds`                    | just-bash cannot configure extra file descriptors.                                                             |
 | `shell: "/bin/zsh"` or any string  | `shell: true` means the in-page interpreter; another shell cannot be selected.                                 |
 | `detached: true`                   | Nothing can outlive the tab.                                                                                   |
-| `forceKillAfter`                   | Refused on the command and on `kill(options)`, because `CommandOptions` extends `KillOptions`.                 |
-| `handle.stdin`                     | A `Sink` that fails, for the same reason a stdin `Stream` is refused at spawn.                                 |
+| `forceKillAfter`                   | Refused at spawn on the command, and later on `kill(options)`, because `CommandOptions` extends `KillOptions`.                 |
+| `handle.stdin`                     | A `Sink` that fails when consumed, for the same reason a stdin `Stream` is refused at spawn.                                 |
 | `handle.getInputFd`, `getOutputFd` | Answer `Sink.drain` and `Stream.empty`, which is what Node answers for a descriptor that was never configured. |
 
 `pid` is a per-layer counter rather than an OS process id, and `unref` is a
@@ -130,8 +130,8 @@ The error messages, and what to change for each, are in
 ## How the command line is built
 
 A `StandardCommand` is rendered to a command line by
-[`@smthrs/kernel`](/api/kernel)'s `CommandLine.render`, which is the same
+[`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md)'s `CommandLine.render`, which is the same
 renderer the kernel grants against. Without `shell`, the command and its
-arguments are POSIX single-quoted, so a spawn keeps argv semantics and a hostile
+arguments are POSIX quoted where a token needs it, so a spawn keeps argv semantics and a hostile
 token cannot become syntax. With `shell`, they are joined verbatim, mirroring
 how Node hands `sh -c` an unquoted line.

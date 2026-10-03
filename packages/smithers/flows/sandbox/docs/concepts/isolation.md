@@ -51,7 +51,8 @@ crossed the seam.
 
 ## Resource limits
 
-`limits` is the same option on every provider. `cpus` is a CPU count,
+The providers in the table below accept `limits`. `CommandSandbox` has no
+`limits` option; its ceilings belong to the machine the prefix reaches. `cpus` is a CPU count,
 `memoryMib` a memory ceiling in MiB, and `timeoutSecs` the machine's maximum
 lifetime in seconds from creation. An idle timeout is not a lifetime and never
 stands in for `timeoutSecs`. A provider that cannot enforce a ceiling throws
@@ -113,7 +114,7 @@ and neither becomes one by being wrapped in `Sandbox.layerHost`.
 
 ## Network policy
 
-Every provider takes the neutral option
+The providers in the table below take the neutral option
 `network: "none" | "open" | { allow: string[] }`. `"none"` gives the guest no
 network. `"open"` asks for the provider's unrestricted network; a provider that
 cannot restrict the network accepts only `"open"`. `MicrosandboxSandbox` and
@@ -134,7 +135,10 @@ is called, before any machine exists.
 | `DaytonaSandbox`      | `networkBlockAll: true`   | the runner's iptables `domainAllowList`                                          | the policy is updated before any guest command runs |
 | `MicrosandboxSandbox` | boots without networking  | deny ingress; deny egress, DNS included, but the hosts                           | refused unless it was created with the same policy  |
 | `ContainerSandbox`    | `--network none`          | refused: an engine network mode is not a host firewall                           | the network mode is part of the fingerprint         |
-| every other provider  | refused                   | refused                                                                          | not applicable                                      |
+| `AwsSandbox`, `CloudflareSandbox`, `DirectorySandbox`, `JustBashSandbox`, `KubernetesSandbox` | refused                   | refused                                                                          | not applicable                                      |
+
+`CommandSandbox` has no `network` option; configure networking on the machine
+its prefix reaches.
 
 `ContainerSandbox` also accepts a raw engine network mode string, which opts
 into that mode's egress. `MicrosandboxSandbox` also accepts `networkPolicy` in
@@ -176,8 +180,8 @@ machine, so one body can read and overwrite another's files, and the first
 scope to close ends the machine under the other. See
 [Sessions and their keys](./sessions.md).
 
-**Resource ceilings are opt-in, and disk has none.** Every provider takes the
-neutral `limits: { cpus, memoryMib, timeoutSecs }` option and either enforces
+**Resource ceilings are opt-in, and disk has none.** Providers other than
+`CommandSandbox` take the neutral `limits: { cpus, memoryMib, timeoutSecs }` option and either enforces
 each ceiling or throws from `make`; see [Resource limits](#resource-limits).
 Without `limits`, a machine gets the provider's defaults. No provider bounds
 disk through this option, and a body that fills the disk of a
@@ -198,6 +202,14 @@ is judged against:
   means the probe could not run, and the check reports egress as unproven.
 
 ```ts
+import { mkdtempSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { Sandbox, SandboxConformance } from "@smthrs/sandbox"
+import * as Effect from "effect/Effect"
+
+declare const provider: Sandbox.Provider
+
 // A path created on the host for this run, so no guest image can hold it too.
 const sentinel = join(mkdtempSync(join(tmpdir(), "sentinel-")), "host-only")
 writeFileSync(sentinel, "")

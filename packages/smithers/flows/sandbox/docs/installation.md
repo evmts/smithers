@@ -7,15 +7,16 @@ sidebar:
 
 ## Install the package
 
-Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
+Use version `1.0.0-rc.1` and the peer version below.
+Install from a prepared source checkout until the release is published.
 
 The package requires Node.js 26.4.0 or later and ships as ESM and CommonJS
-with TypeScript declarations. It has two runtime dependencies,
-[`effect`](https://effect.website) and
-[`@smthrs/kernel`](/api/kernel), and the second is used only for command line
-rendering and POSIX quoting. Nothing else is required: a sandbox is one way to
-satisfy Effect's `ChildProcessSpawner` rather than a new host interface you
-have to adopt.
+with TypeScript declarations. Its runtime dependencies are
+[`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md), for command rendering and containment, and
+[`@smthrs/jj`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/jj/docs/api.md), whose host adapter is loaded by `SandboxMerge`.
+[`effect`](https://effect.website) is an exact `4.0.0-rc.115` peer dependency.
+Host adapters such as `@smthrs/platform-node` are development dependencies of
+this package; supply the adapter your application uses.
 
 ## Import forms
 
@@ -39,8 +40,7 @@ Two subpath forms are blocked in the export map:
 
 ## What a runnable composition adds
 
-Four of the bundled providers are built from Effect's own host services,
-which a platform package supplies.
+Providers accept injected host services, supplied by a platform package.
 
 `NodeHost.layerContained()` provides the filesystem, path, and lifecycle-backed
 spawner `DirectorySandbox` requires. Provide a `ProcessLedger` underneath it,
@@ -48,7 +48,8 @@ as the [quickstart](./quickstart.md) does. A raw `NodeServices.layer` spawner or
 a wrapper with only a kill deadline is refused before a workspace is created.
 
 `ContainerSandbox`, `KubernetesSandbox`, and `AwsSandbox` accept host services
-for their local transports; their machines and guest cleanup are managed by
+for their local transports. `CommandSandbox` also takes an injected spawner.
+The machines and guest cleanup of the lifecycle providers are managed by
 the respective providers. `JustBashSandbox` takes a `FileSystem` mounted over
 its interpreter's tree. The remaining prerequisites are listed per provider.
 
@@ -73,8 +74,8 @@ backend needs.
 | `CloudflareSandbox`   | The `@cloudflare/sandbox` `getSandbox` function and a Worker binding to a deployed Durable Object namespace.                  | The Worker.                                                                         |
 
 Because the SDK slices are structural, you can satisfy them with a test double
-instead of the vendor package, which is how the package's own suite proves
-seven of the ten providers. See
+instead of the vendor package. The [provider evidence table](./api.md#providers)
+distinguishes real-host tests from tests against doubles. See
 [Test against a scripted machine](./guides/testing.md).
 
 ## Browser bundles

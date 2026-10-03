@@ -43,8 +43,8 @@ body written against Effect's ordinary services runs unchanged.
 
 The action's declaration says nothing about where it runs. Only the
 implementation layer does. `Action`, `Flow`, and `Interpreter` come from
-[`@smthrs/flow`](/api/flow), the authoring model, which
-[`@smthrs/flows`](/api/flows) also re-exports if you installed the whole
+[`@smthrs/flow`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/api.md), the authoring model, which
+[`@smthrs/flows`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/api.md) also re-exports if you installed the whole
 engine:
 
 ```ts
