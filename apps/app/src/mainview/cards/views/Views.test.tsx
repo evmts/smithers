@@ -1249,3 +1249,43 @@ test("Terminal gives the working agent its own avatar and acting-for label", asy
     expect(item.host.querySelector('.mvp-avatar[data-kind="agent"]')!.hasAttribute("data-live")).toBe(true)
   } finally { await item.close() }
 })
+// T-UI-16: live updates retain the surface; gone states retain their snapshot.
+import { FileCardSurface } from "../CodeSurface"
+import { fixtures as liveFileFixtures } from "@smthrs/rpc/fixtures/File"
+test("File live notices, snapshot and Compare use supplied data", async () => {
+  const host = document.createElement("div"); document.body.append(host)
+  const root = createRoot(host)
+  const onAction = mock(() => {}), onView = mock(() => {})
+  const render = async (fixture: typeof liveFileFixtures.text) => act(async () => root.render(<FileCardSurface {...fixture} onAction={onAction} onView={onView} />))
+  try {
+    await render(liveFileFixtures.deleted)
+    expect(host.querySelector(".code-file-notice > span")!.textContent).toBe("Deleted by Ben")
+    expect(host.querySelector(".code-snapshot-cap")!.textContent).toBe("Snapshot")
+    expect(host.querySelector(".cm-content")!.textContent).toContain("Complete one TODO")
+    await act(async () => host.querySelector<HTMLButtonElement>("button[data-flow]")!.click())
+    expect(onAction.mock.calls).toEqual([["file.restore-deleted", { path: "flows/todo/flow.ts" }]])
+    await render(liveFileFixtures.renamed)
+    expect(host.querySelector(".code-file-notice > span")!.textContent).toBe("Renamed to flows/todo-next/flow.ts by Ben")
+    await act(async () => host.querySelector<HTMLButtonElement>("button[data-flow]")!.click())
+    expect(onAction.mock.calls[1]).toEqual(["file.follow-rename", { path: "flows/todo/flow.ts" }])
+    await render(liveFileFixtures.comparing)
+    expect(host.querySelector(".code-file-notice > span")!.textContent).toBe("Changed outside Smithers")
+    expect(host.querySelector(".code-compare")!.textContent).toContain("Outsidegit:7d1e0c2")
+    expect(host.querySelector(".code-snapshot-cap")).toBeNull()
+    await act(async () => host.querySelector<HTMLButtonElement>("button[data-flow]")!.click())
+    expect(onAction.mock.calls[2]).toEqual(["file.compare", { path: "flows/todo/flow.ts" }])
+    await render({ ...liveFileFixtures.comparing, model: { ...liveFileFixtures.comparing.model, gone: liveFileFixtures.deleted.model.gone }, actions: [] })
+    expect(host.querySelector(".code-compare")).toBeNull()
+    expect(host.querySelector("button[data-flow]")).toBeNull()
+    expect(host.querySelector(".code-file-notice > span")!.textContent).toBe("Deleted by Ben")
+    const editor = host.querySelector(".cm-editor")!
+    const scroller = host.querySelector(".cm-scroller")!; scroller.scrollTop = 40
+    await render({ ...liveFileFixtures.text, model: { ...liveFileFixtures.text.model, digest: "sha256:next", content: { kind: "text", text: "export const updated = true\n" } } })
+    expect(host.querySelector(".cm-editor")).toBe(editor)
+    expect(host.querySelector(".cm-scroller")).toBe(scroller)
+    expect(scroller.scrollTop).toBe(40)
+    expect(host.querySelector(".cm-content")!.textContent).toContain("export const updated = true")
+    expect(host.querySelector(".code-compare")).toBeNull()
+    expect(onView).toHaveBeenCalledTimes(0)
+  } finally { await act(async () => root.unmount()); host.remove() }
+})
