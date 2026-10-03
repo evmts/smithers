@@ -11,6 +11,8 @@ count.
 
 ## One table, two derived things
 
+Available now
+
 `smithersErrorDefinitions` is the runtime source of truth. Everything else in
 the module reads from it:
 
@@ -32,6 +34,8 @@ module load. A consumer cannot add a sixth code by assigning to the table.
 
 ## What closure buys the caller
 
+Available now
+
 A closed union permits an explicit exhaustiveness check in a `switch` over
 `error.code`. A default branch that assigns the remaining code to `never`
 fails type checking when a new code lacks a case. A returning fallback alone
@@ -49,6 +53,8 @@ literal typed at a throw site. That is the intended friction:
 [Add an error code](../guides/add-an-error-code.md) is the procedure.
 
 ## Why five and not one hundred and eighty
+
+Available now
 
 Smithers 0.x carried a registry of 180 codes for an orchestrator engine that no
 longer exists. Under the 1.0 release policy the registry was trimmed to the
@@ -74,6 +80,8 @@ integration adapter raises it. Everything else gets a tagged error in the
 package that owns the failure.
 
 ## The definition record
+
+Available now
 
 Each row of the table is a `SmithersErrorDefinition`:
 

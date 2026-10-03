@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-`@smthrs/errors` exports eleven names from two modules. Both are importable
+The `SmithersError` and `ErrorCode` modules are importable
 from the root entry point and from their own subpath:
 
 ```ts
@@ -20,6 +20,8 @@ import { SmithersError } from "@smthrs/errors/SmithersError"
 
 ## Example
 
+Available now
+
 ```ts
 import { isSmithersError, SmithersError } from "@smthrs/errors"
 
@@ -32,6 +34,8 @@ try {
 ```
 
 ## SmithersError
+
+Available now
 
 The error class the integration adapters raise, and the only class in the
 package.
@@ -151,6 +155,8 @@ that sets the same four fields.
 
 ## ErrorCode
 
+Available now
+
 The code table, the type derived from it, and the lookups over it.
 
 ### ERROR_REFERENCE_URL
@@ -204,7 +210,9 @@ const smithersErrorDefinitions: {
 Every known code with the condition that raises it. This table is the runtime
 source of truth: `SmithersErrorCode` and `smithersErrorCodes` are both derived
 from its keys. The table and each definition inside it are frozen at module
-load. The expanded form, with raise sites, is the
+load. Its description strings still mention retired Telegram operations;
+those strings do not establish current adapter availability. Current raise sites
+and retained codes are described in the
 [Error code reference](./reference/error-codes.md).
 
 ### smithersErrorCodes
@@ -239,9 +247,11 @@ Returns the frozen table entry itself, not a copy.
 
 ## Related
 
+Available now
+
 - [Error code reference](./reference/error-codes.md): every code with its raise
   sites and the caller's move.
 - [The shape of a SmithersError](./concepts/error-shape.md): the guarantee
   behind each field.
-- [`@smthrs/integrations`](/api/integrations): the only consumer, and the source
+- [`@smthrs/integrations`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/api.md): the only consumer, and the source
   of the `IntegrationError` subclass.

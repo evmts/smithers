@@ -1,24 +1,28 @@
 ---
 title: "Quickstart"
-description: "Run the mandatory engine conformance suite against the engine that ships: nine black-box pins covering identity, interruption, replay, and race, in fifteen lines of test."
+description: "Run the mandatory engine conformance suite against the engine that ships: black-box pins covering identity, interruption, replay, and race, in a test suite."
 sidebar:
   order: 2
 ---
 
-This quickstart certifies an engine. You register the nine mandatory
+This quickstart certifies an engine. You register the mandatory
 conformance pins as vitest cases, point them at the in-memory implementation of
 the production engine, and watch identity, interruption, replay, and race run
 against it. Nothing is stubbed but the storage.
 
 ## Prerequisites
 
+Available now
+
 - Node.js 26.4.0 or later.
-- A package with the test dependencies installed. Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
+- The test dependencies listed in [Installation](./installation.md).
 
 Both `effect` packages are exact peer pins. [Installation](./installation.md)
 says why.
 
 ## Register the suite
+
+Available now
 
 Create `engine.test.ts`. A conformance case is a value with a `name` and a
 `run`, so registering the suite is a loop:
@@ -53,10 +57,12 @@ engine. A subject shared across cases would let one pin's journal answer
 another pin's question.
 
 `FlowEngineLike.layerMemory` is one expression, and it is the only line that
-names an implementation. Swapping it is how the same nine cases certify a
+names an implementation. Swapping it is how the same cases certify a
 different engine.
 
 ## Run it
+
+Available now
 
 ```bash
 pnpm vitest run engine.test.ts
@@ -79,6 +85,8 @@ pnpm vitest run engine.test.ts
 
 ## What each pin proved
 
+Available now
+
 | Pin                                | The claim it holds the engine to                                                                             |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | `identity/distinct-executions`     | Two runs of one flow and payload, with no idempotency key, are two independent executions.                   |
@@ -92,6 +100,8 @@ pnpm vitest run engine.test.ts
 | `race/recorded-loser-interruption` | The loser's recorded interruption replays as recorded rather than being re-raced.                            |
 
 ## Run the suite against your own engine
+
+Available now
 
 `FlowEngineLike.layerMemory` is one binding of a port. Any implementation of
 `EngineSubject` runs the identical case list, and the port is five methods
@@ -109,6 +119,8 @@ wide:
 a real implementation.
 
 ## Next steps
+
+Available now
 
 - [Certify an engine](./guides/certify-an-engine.md): filtering the suite,
   restart and hard-kill subjects, and what conformance does not cover.

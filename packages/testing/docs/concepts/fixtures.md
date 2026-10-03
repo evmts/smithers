@@ -14,6 +14,8 @@ Because a fixture is executable state, the rules around it are strict.
 
 ## File persistence and recovery
 
+Available now
+
 `FixtureStore.makeFile(path)` reads the JSON fixture and recovers completed
 records from `path.journal`. Each `append` asynchronously writes one numbered
 call followed by a newline to that journal. It does not rewrite earlier calls
@@ -61,6 +63,8 @@ file and whose `cause` retains the underlying error.
 
 ## Identity is the canonical encoding, not a hash
 
+Available now
+
 `Fixture.canonicalRequestDigest` sorts object keys recursively, retains array
 order, and rejects anything that is not JSON with a typed
 `FixtureEncodingError` naming the path of the offending value. It returns the
@@ -97,6 +101,8 @@ rather than overflowing the stack.
 
 ## A recorder copies, and copies at the right moment
 
+Available now
+
 `RecordingModel` projects the request when the stream is **acquired**, not
 after the exchange ends, and snapshots each event as it is emitted.
 `Fixture.recordedRequest` deep-copies every collection it stores, tool
@@ -120,6 +126,8 @@ use.
 
 ## Two calls are never recorded
 
+Available now
+
 **An interrupted call, one that died, or one the consumer abandoned.** A
 truncated stream has no `settle` event and would replay as an aborted turn,
 poisoning any cache built from the same fixture. The recorder flushes only when
@@ -135,6 +143,8 @@ provider refusal the provider never made. The failure still reaches the caller
 unchanged.
 
 ## A credential is never recorded
+
+Available now
 
 A fixture is meant to be committed, and a recorded call holds the system
 prompt, every message, tool arguments and results, and the provider's error
@@ -155,6 +165,8 @@ has the digest its replay looks up. Remove the credential from the request,
 tool output, or provider response, then record again.
 
 ## Two doubles, two questions
+
+Available now
 
 `CachedModel` and `RecordedModel` both replay, and they answer different
 questions.
@@ -177,6 +189,8 @@ recorded against the model now asking?".
 
 ## The doubles die rather than fail
 
+Available now
+
 `UnscriptedModelError` and `ReplayHarnessMismatchError` are raised as defects,
 not as typed failures, and they are deliberately absent from
 `ModelLike.ModelLikeError`.
@@ -194,6 +208,8 @@ fails the test at the call that has no recording. That is the intended
 behavior.
 
 ## The package reads no environment
+
+Available now
 
 `CachedModel` records whatever the fixture is missing, so how a consumer
 decides to record is the consumer's business: an environment flag such as

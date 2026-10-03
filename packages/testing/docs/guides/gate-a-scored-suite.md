@@ -10,6 +10,8 @@ harness from reporting itself as a red.
 
 ## Gate a fixed sample set
 
+Available now
+
 A `ScoreSample` names its `case`, its `stepKey`, and its `scorer`. It is either
 a `score` with a value in `[0, 1]` or an `inconclusive` with a reason:
 
@@ -41,6 +43,8 @@ channel is reserved for misuse of the gate itself: a threshold or a score
 outside `[0, 1]`.
 
 ## Run a whole suite
+
+Available now
 
 `ScoreGate.suite` runs each case through a caller-supplied runner, collects
 every sample, applies the declared gates over the samples that exist, and
@@ -82,6 +86,8 @@ it no longer cancels the gates the finished cases can still be judged by.
 
 ## Grade it for CI
 
+Available now
+
 `ScoreGate.suite` returns an Effect. Run it with `Effect.runPromise`, as above,
 or yield it inside `Effect.gen` before passing the completed report to
 `ScoreGate.ciGrade`.
@@ -97,6 +103,8 @@ the fix is to repair the harness rather than to lower a threshold.
 
 ## Validate samples you built yourself
 
+Available now
+
 `ScoreGate.expectScores` validates its own samples. A caller that constructs
 samples elsewhere, a suite runner or a reporter, should validate them too:
 
@@ -110,7 +118,9 @@ ten bad scorers is diagnosed in one pass.
 
 ## Related
 
+Available now
+
 - [Scored suites](../concepts/scored-suites.md): why a finding and an
   undecidable run are different outcomes.
-- [`@smthrs/evals`](/api/evals) builds its CI gate on this module; see
-  [its guide](/pkg/evals/guides/gate-a-run-in-ci).
+- [`@smthrs/evals`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/evals/docs/api.md) builds its CI gate on this module; see
+  [its guide](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/evals/docs/guides/gate-a-run-in-ci.md).

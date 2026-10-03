@@ -5,12 +5,14 @@ sidebar:
   order: 1
 ---
 
-The public `SmithersErrorCode` union keeps five codes. The GitHub adapter uses
+The public `SmithersErrorCode` union retains historical codes. The GitHub adapter uses
 `INTEGRATION_ERROR`; the two Telegram codes remain readable in historical
 failures after the adapter's MVP retirement. They do not expose a current
 Telegram client.
 
 ## Summary
+
+Available now
 
 | Code                         | Meaning                                                | Caller action                                           |
 | ---------------------------- | ------------------------------------------------------ | ------------------------------------------------------- |
@@ -18,7 +20,7 @@ Telegram client.
 | `INTEGRATION_ERROR`          | A provider call, webhook or listener operation failed. | Inspect `reason` and the delivery outcome.              |
 | `TELEGRAM_API_ERROR`         | Historical Telegram transport or API failure.          | Retain the receipt; the retired adapter is unavailable. |
 | `TELEGRAM_INIT_DATA_INVALID` | Historical Telegram authentication refusal.            | Treat it as an authentication refusal.                  |
-| `UNSUPPORTED`                | The runtime lacks a required primitive.                | Supply a compatible runtime.                            |
+| `UNSUPPORTED` | Retained runtime-primitive failure; no current integration raise site. | Inspect the originating adapter and runtime. |
 
 [`smithersErrorDefinitions`](../api.md#smitherserrordefinitions) exports the
 runtime definition table. Keeping an old code does not imply its original
@@ -26,13 +28,18 @@ provider remains supported.
 
 ## INVALID_INPUT
 
-The call is invalid. A helper may attach the offending field to `details`.
-Correct the argument; retrying the same input cannot fix it. Custom adapters
-can raise this code without importing a provider implementation.
+Available now
+
+`Core.SignalName.eventName(service, event)` trims each segment and rejects
+an empty segment or one containing a colon. It attaches `{ service: value }`
+or `{ event: value }` to `details`. Correct the segment before retrying.
+Custom adapters can also raise this code.
 
 ## INTEGRATION_ERROR
 
-[`Core.IntegrationError`](/api/integrations) carries `reason` and a safe details
+Available now
+
+[`Core.IntegrationError`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/api.md) raises `INTEGRATION_ERROR` and carries `reason` and a safe details
 record. Current reasons are `invalid-config`, `invalid-signature`,
 `decode-failed`, `poll-failed`, `delivery-failed`, `credentials-missing`,
 `permission-denied`, `listener-conflict`, and `rate-limited`.
@@ -55,6 +62,8 @@ defect in the converter.
 
 ## TELEGRAM_API_ERROR
 
+Available now
+
 Retained for historical decoding. Old receipts may include `errorCode`,
 `retryAfterSeconds`, `deliveredMessageIds` and `outcomeUnknown`. Preserve that
 evidence: missing a response never proves a write did not happen. The current
@@ -62,12 +71,16 @@ MVP has no Telegram client or conversion helper.
 
 ## TELEGRAM_INIT_DATA_INVALID
 
+Available now
+
 Retained for historical authentication failures. Do not reinterpret a stored
 refusal as success or retry it through another provider. The current MVP has
 no Telegram Mini App verifier.
 
 ## UNSUPPORTED
 
-A required runtime primitive is unavailable. Correct the runtime or adapter
-configuration. The error code remains part of the public API even when a
-particular provider that used it has been retired.
+Available now
+
+No current integration raise site uses this code. It remains part of the
+public API for decoding failures from adapters that required an unavailable
+runtime primitive.

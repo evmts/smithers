@@ -11,6 +11,8 @@ its keep.
 
 ## Pick the code first
 
+Available now
+
 The code is the only part of the error a caller branches on, so choose it by
 what the caller must do, not by where the failure happened:
 
@@ -28,6 +30,8 @@ that can fail, which is what every other Smithers package does. See
 [The closed code vocabulary](../concepts/error-codes.md).
 
 ## Construct it
+
+Available now
 
 ```ts
 import { SmithersError } from "@smthrs/errors/SmithersError"
@@ -49,6 +53,8 @@ line never prints `details: undefined`.
 
 ## Redact before you construct, not after
 
+Available now
+
 The class stores `details` and `cause` verbatim. Anything you attach is
 anything a log will hold.
 
@@ -67,6 +73,8 @@ Keep verification failures coarse. Report that a signature did not match, never
 which bytes differed: a more specific message is a verification oracle.
 
 ## Attach a cause without an undefined key
+
+Available now
 
 Pass `cause` straight through from your options. A `cause` of `undefined` is
 treated as no cause, so the instance gets no own `cause` property and
@@ -88,8 +96,10 @@ conditional spread at every call site.
 
 ## Subclass when you have typed fields
 
+Available now
+
 Subclass `SmithersError` when your adapter has fields a caller reads by name.
-`Core.IntegrationError` in [`@smthrs/integrations`](/api/integrations) adds
+`Core.IntegrationError` in [`@smthrs/integrations`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/api.md) adds
 `reason` and merges it into `details` so the schema form and the class agree.
 
 Two rules make a subclass behave:
@@ -104,6 +114,8 @@ Two rules make a subclass behave:
    transpiled target.
 
 ## Ship a refinement with the subclass
+
+Available now
 
 `instanceof` fails across a module-instance boundary, and a `name` check alone
 is forgeable. Export a refinement that checks both, plus every field your
@@ -140,6 +152,8 @@ For the reasoning behind the two refinements, see
 [Detect an error across module copies](./detect-an-error-across-module-copies.md).
 
 ## Convert at the durable boundary
+
+Available now
 
 An error class cannot cross a journal write. If your adapter's failure can end
 an action, ship a schema form of it too, and a total conversion in both

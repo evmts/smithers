@@ -7,6 +7,8 @@ Each entry names the symptom, the cause in the source, and the fix.
 
 ## isSmithersError returns false for an error you know is one
 
+Available now
+
 **Symptom.** A `catch` block skips an error that plainly came from a Smithers
 integration adapter, and `isSmithersError(error)` is `false`.
 
@@ -31,6 +33,8 @@ structural check when errors cross between these entry points.
 
 ## Reading error.details throws a TypeError
 
+Available now
+
 **Symptom.** `error.details["reason"]` fails with "Cannot read properties of
 undefined".
 
@@ -43,6 +47,8 @@ it keeps `details: undefined` out of every log line and JSON payload.
 under `strict` before it is a runtime one.
 
 ## Mutating the record I passed does not change error.details
+
+Available now
 
 **Symptom.** You built a details record, constructed the error, then updated
 the record, and the error still reports the old values.
@@ -61,6 +67,8 @@ again.
 
 ## Assigning to error.details or error.name is a type error
 
+Available now
+
 **Symptom.** `error.name = "MyError"` fails to compile.
 
 **Cause.** Both fields are readonly, and the package pins that with a type test
@@ -70,6 +78,8 @@ so it cannot regress.
 details, { name: "MyError" })`. A subclass does the same through `super`.
 
 ## The message has no documentation URL
+
+Available now
 
 **Symptom.** `error.message` equals `error.summary`, with no
 `See https://github.com/smithersai/smithers/blob/main/packages/errors/docs/reference/error-codes.md` at the end.
@@ -84,6 +94,8 @@ test, match on `summary` instead: it is the field that does not move.
 
 ## The message has the URL twice
 
+Available now
+
 **Symptom.** A message ends with the pointer repeated.
 
 **Cause.** Not the constructor. Before appending, it strips every trailing copy
@@ -96,6 +108,8 @@ alone.
 **Fix.** Never write the URL into a summary. The constructor appends it.
 
 ## A string will not type check as a code
+
+Available now
 
 **Symptom.** `new SmithersError(code, summary)` fails with "Argument of type
 'string' is not assignable to parameter of type 'SmithersErrorCode'".
@@ -119,6 +133,8 @@ If you meant to add a code rather than accept an arbitrary one, see
 [Add an error code](./guides/add-an-error-code.md).
 
 ## Looking up a definition returns undefined for a name that exists on Object
+
+Available now
 
 **Symptom.** You expected `getSmithersErrorDefinition("toString")` to find
 something, or you are surprised that `isSmithersErrorCode("constructor")` is

@@ -15,6 +15,8 @@ import { describe, expect, it } from "@smthrs/testing/Vitest"
 
 ## Register a body with no requirements
 
+Available now
+
 `it` is the Effect-aware registrar, with `scoped` aliased onto `it.effect`:
 
 ```ts
@@ -34,6 +36,8 @@ on the real clock. Both wrap the body in `Effect.scoped`, so a body that
 acquires a scoped resource needs no extra ceremony.
 
 ## Register a body that needs services
+
+Available now
 
 `testEffect(layer)` returns registrars that carry the layer's requirements, and
 builds a **fresh** environment for every case:
@@ -70,6 +74,8 @@ real clock.
 
 ## Pick the right clock
 
+Available now
+
 Reach for `.live` only when the body must observe real elapsed time: a socket
 round trip, a subprocess, a real timer. Everything else belongs on `.effect`,
 including anything that touches this package's conformance pins.
@@ -81,6 +87,8 @@ hangs until vitest's own timeout. That symptom and its fix are in
 
 ## Cancellation
 
+Available now
+
 Vitest cancellation is converted to fiber interruption at this boundary: the
 body runs as a forked fiber and the runner's `AbortSignal` triggers
 `Fiber.interrupt`. The signal itself never crosses into Effect code, so a body
@@ -88,6 +96,8 @@ never receives one and never has to thread one through. A scoped resource's
 finalizer runs on cancellation exactly as it does on failure.
 
 ## Why `it` is a proxy, and why that matters to you
+
+Available now
 
 The module's `it` is a fresh callable over `@effect/vitest`'s, built as a
 `Proxy` rather than by writing into it.

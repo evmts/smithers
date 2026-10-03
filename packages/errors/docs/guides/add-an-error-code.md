@@ -1,6 +1,6 @@
 ---
 title: "Add an error code"
-description: "The procedure for adding a sixth code: decide whether it belongs here at all, add the row, update the tests and the reference page, then verify."
+description: "The procedure for adding a code: decide whether it belongs here at all, add the row, update the tests and the reference page, then verify."
 sidebar:
   order: 4
 ---
@@ -12,8 +12,10 @@ step is deciding not to.
 
 ## Decide whether the code belongs here
 
+Available now
+
 Add a code only when an integration adapter in
-[`@smthrs/integrations`](/api/integrations) raises it. That is the entire
+[`@smthrs/integrations`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/api.md) raises it. That is the entire
 membership rule.
 
 If the failure belongs to any other package, state it as a `Schema.TaggedError`
@@ -27,6 +29,8 @@ same way as `INVALID_INPUT` does not need a code of its own; it needs a better
 summary and, where there is a field to name, a `details` key.
 
 ## Add the row
+
+Available now
 
 `smithersErrorDefinitions` in [`src/ErrorCode.ts`](../../src/ErrorCode.ts) is
 the runtime source of truth. Add one row:
@@ -49,6 +53,8 @@ page, where there is room for it.
 
 ## Update the tests
 
+Available now
+
 Three tests in [`SmithersError.test.ts`](../../test/SmithersError.test.ts) pin
 the vocabulary:
 
@@ -64,24 +70,25 @@ assertion for it next to the two that already pin `INVALID_INPUT` and
 
 ## Update the documentation
 
-The code list is hand-maintained in three places, and none of them derives from
+Available now
+
+The overview and reference code lists are hand-maintained; none derives from
 the runtime table:
 
 - [Error code reference](../reference/error-codes.md): add a summary row and a
   section with the meaning, every raise site, the `details` each attaches, and
   what the caller should do.
-- [Overview](../README.md): add the code to its list of five.
+- [Overview](../README.md): add the code to its code list.
 - The [package README](../../README.md), which is what npm renders: add a row
   to its code table.
-
-Each page on this site carries an "Edit this page" link to its source file on
-GitHub.
 
 The reference section is the one that earns its length. A caller who has caught
 your code needs to know which call produced it and what to do next, and
 `when` alone cannot carry that.
 
 ## Verify
+
+Available now
 
 The repository is a pnpm workspace. From `packages/errors` in a clone of
 [smithersai/smithers](https://github.com/smithersai/smithers):

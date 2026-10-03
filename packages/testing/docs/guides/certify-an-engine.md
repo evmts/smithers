@@ -6,11 +6,13 @@ sidebar:
 ---
 
 Certifying an engine means running `Conformance.coreSuite()` against an
-implementation of `EngineSubject`. The suite is nine black-box pins covering
+implementation of `EngineSubject`. The suite is black-box pins covering
 identity, interruption, replay, and race, and it is the whole conformance
 vocabulary.
 
 ## Register the suite
+
+Available now
 
 ```ts
 import { Conformance, EngineSubject, FlowEngineLike } from "@smthrs/testing"
@@ -36,7 +38,9 @@ The subject is provided inside the body, so every case builds its own engine.
 
 ## Bind a runtime
 
-`FlowEngineLike` adapts the real engine from [`@smthrs/engine`](/api/engine) to
+Available now
+
+`FlowEngineLike` adapts the real engine from [`@smthrs/engine`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/api.md) to
 the conformance port, and it reads the runtime out of the ambient service
 rather than naming an implementation:
 
@@ -47,7 +51,7 @@ rather than naming an implementation:
 | `FlowEngineLike.layer()`       | The subject alone, for a composition that already provides `FlowRuntime` and `Crypto`. |
 
 The durable runtime is `EngineStore.layer({ owner, journalSource })` from
-[`@smthrs/engine-store`](/api/engine-store). `@smthrs/testing` does not depend
+[`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md). `@smthrs/testing` does not depend
 on that package, so you install it and pass the layer yourself. Supplying the
 layer is the whole connection: the case list does not change.
 
@@ -56,6 +60,8 @@ memory, so it certifies semantics and not durability. "Replay" under it means
 the runtime replaying a recorded result inside one process.
 
 ## Or implement the port yourself
+
+Available now
 
 `EngineSubject` is five methods. `EngineSubject.layer` provides an
 implementation, and `EngineSubject.makeNoop` builds one that fails every
@@ -95,6 +101,8 @@ describe("MemoryEngine conformance", () => {
 
 ## Narrow the suite for a partial subject
 
+Available now
+
 `coreSuite({ filter })` returns a frozen subset. Filter on the case name, whose
 prefix is the family:
 
@@ -114,6 +122,8 @@ Narrowing is a statement about the subject, not a way to make a red go green. A
 pin that runs must either assert behavior or fail with `conformance_skipped`.
 
 ## Certify the restart boundaries
+
+Available now
 
 `RestartableEngine` holds one persistent store and swaps the live engine over
 it, which is how a suite reaches the state a lease-based reclaim recovers from:
@@ -154,15 +164,19 @@ closes, so a killed instance leaks nothing past the test.
 
 ## What conformance does not answer
 
+Available now
+
 The suite is black box. It says nothing about throughput, about storage
 layout, or about what happens to a real process that dies. For that last one,
 see [Inject a real process fault](./inject-a-process-fault.md).
 
 ## Related
 
+Available now
+
 - [The engine subject seam](../concepts/engine-subject.md): the port, step
   identity, and race semantics.
 - [Conformance suites](../concepts/conformance.md): why the registry is frozen
   and how parity is accounted for.
-- [`@smthrs/engine`](/api/engine) and its
-  [in-memory testing guide](/pkg/engine/guides/test-in-memory).
+- [`@smthrs/engine`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/api.md) and its
+  [in-memory testing guide](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/guides/test-in-memory.md).

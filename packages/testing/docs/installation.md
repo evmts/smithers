@@ -7,7 +7,10 @@ sidebar:
 
 ## Install the package
 
-Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
+Available now
+
+The repository version is `1.0.0-rc.1`. Use this package as a development
+dependency.
 
 [`effect`](https://effect.website) is a required peer dependency at exactly
 `4.0.0-rc.115`. Two copies of `effect` in one program are two sets of service
@@ -15,16 +18,19 @@ tags, so the version is pinned rather than ranged.
 
 The package requires Node.js 26.4.0 or later and ships as both ESM and
 CommonJS with TypeScript declarations. The `@smthrs/*` packages the assertions
-read install with it: [`@smthrs/core`](/api/core),
-[`@smthrs/engine`](/api/engine), [`@smthrs/flow`](/api/flow),
-[`@smthrs/jj`](/api/jj), [`@smthrs/journal`](/api/journal),
-[`@smthrs/kernel`](/api/kernel), [`@smthrs/model`](/api/model), and
-[`@smthrs/plan`](/api/plan). The grading facade also installs
-[`@smthrs/scorers`](/api/scorers), which owns the runner-neutral `ScoreGate`
+read install with it: [`@smthrs/core`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/core/docs/api.md),
+[`@smthrs/engine`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/api.md), [`@smthrs/flow`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/api.md),
+[`@smthrs/jj`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/jj/docs/api.md), [`@smthrs/journal`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/api.md),
+[`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md), [`@smthrs/model`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/model/docs/api.md), and
+[`@smthrs/plan`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/docs/api.md), [`@smthrs/platform-browser`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/docs/api.md),
+and [`@smthrs/canonical`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/canonical/docs/api.md). The grading facade also installs
+[`@smthrs/scorers`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/scorers/docs/api.md), which owns the runner-neutral `ScoreGate`
 implementation. Evals consumes scorers directly and needs no testing facade
 in production.
 
 ## Install the vitest peers only if you use the adapter
+
+Available now
 
 `vitest` and `@effect/vitest` are optional peer dependencies. Only the
 `Vitest` module imports them, and `@effect/vitest` is pinned the same way
@@ -38,6 +44,8 @@ Every other module works under any runner, because an assertion is an ordinary
 `Effect` and a conformance case is a plain value.
 
 ## Import forms
+
+Available now
 
 The root entry point re-exports every module as a namespace:
 
@@ -53,7 +61,9 @@ import * as JournalAssertions from "@smthrs/testing/JournalAssertions"
 import * as TestLayers from "@smthrs/testing/TestLayers"
 ```
 
-## Four modules stay off the root barrel
+## Modules stay off the root barrel
+
+Available now
 
 `TestHost` is the deterministic host bundle: an in-memory filesystem, scripted
 interpreter, `TestClock`, and seeded PRNG. Each layer build starts with a fresh
@@ -94,7 +104,7 @@ by subpath keeps that decision visible at the import site:
 import { killProcess, waitForReparent } from "@smthrs/testing/Faults"
 ```
 
-`ProcessTable` is absent because it spawns `ps` through `node:child_process`,
+`ProcessTable` is absent because it spawns `ps` or `pwsh` through `node:child_process`,
 which browser test hosts cannot load:
 
 ```ts
@@ -103,10 +113,14 @@ import * as ProcessTable from "@smthrs/testing/ProcessTable"
 
 ## What is not public
 
+Available now
+
 `@smthrs/testing/internal/*` and `@smthrs/testing/*/index` are blocked in the
 package's export map. `@smthrs/testing/package.json` is exported.
 
 ## Next step
+
+Available now
 
 Certify an engine against the mandatory conformance suite in the
 [Quickstart](./quickstart.md).

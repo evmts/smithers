@@ -11,6 +11,8 @@ a path service, a shell, `Jj`, an HTTP client, a clock, and randomness.
 
 ## Declare the profile
 
+Available now
+
 Every capability in the closed list must be declared. Omission is not an
 admission mechanism, and the profile is where a bundle says what it does not
 implement:
@@ -36,6 +38,8 @@ is reported through the typed `expectedCode` and `actualCode` fields of
 `CapabilityContractError` rather than encoded into a message.
 
 ## Run the suite
+
+Available now
 
 Each case is a value with a `name` and a `run`, so registration is a loop:
 
@@ -65,6 +69,8 @@ package. Plain `vitest` is enough.
 
 ## Probe HTTP explicitly
 
+Available now
+
 A supported HTTP capability requires an explicit target, so the shared suite
 never invents a live network call:
 
@@ -79,6 +85,8 @@ const httpTransport = {
 ```
 
 ## Where the scratch directory goes
+
+Available now
 
 The filesystem case creates a scratch directory, writes a probe file inside,
 reads it back, and removes the directory. Nonrecursive directory creation
@@ -102,6 +110,8 @@ in one directory race on one file.
 
 ## Probe process cleanup
 
+Available now
+
 A supported `shell` must supply `interruptCommand`, a command that stays
 running until cancelled. Configure the bundle to run that command. The
 TestHost example scripts it as pending; a real host can use a long-running
@@ -117,12 +127,16 @@ code and makes no cleanup claim.
 
 ## Clock and randomness are checked behaviorally
 
+Available now
+
 `Clock` and `Random` are `Context.Reference`s with ambient defaults, so they
 cannot appear in a bundle's output type and the compiler cannot demand them.
 The suite runs those two cases over a poisoned base instead, so a bundle that
 supplies neither fails loudly rather than silently using the Effect defaults.
 
 ## What the error channel carries
+
+Available now
 
 `HostSuite.HostSuiteError` is the typed contract violation plus the incidental
 host failures a supported capability's own probe can produce: a
@@ -134,6 +148,8 @@ runner can tell "this host violates the contract" from "the scratch write
 failed because the disk is full".
 
 ## Related
+
+Available now
 
 - [Conformance suites](../concepts/conformance.md): why an unsupported
   capability is a declared outcome.

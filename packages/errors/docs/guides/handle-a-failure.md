@@ -11,6 +11,8 @@ what is safe to write down.
 
 ## Narrow before you branch
 
+Available now
+
 Integration helpers throw, so wrap the call and refuse to guess about anything
 you did not recognize:
 
@@ -34,6 +36,8 @@ instead of `isSmithersError`. See
 
 ## Branch on the code, never on the message
 
+Available now
+
 ```ts
 switch (error.code) {
   case "INVALID_INPUT":
@@ -48,8 +52,9 @@ switch (error.code) {
 }
 ```
 
-The union is closed, so this `switch` is exhaustive and the compiler will find
-it again the day a sixth code is added. A message is prose an adapter may
+This switch handles the current code union. Add an explicit `never` check
+when a new code must fail type checking; see
+[Check exhaustiveness explicitly](../quickstart.md#check-exhaustiveness-explicitly). A message is prose an adapter may
 reword between releases; a code is a checked literal.
 
 `INVALID_INPUT`, `TELEGRAM_INIT_DATA_INVALID`, and `UNSUPPORTED` are all
@@ -58,11 +63,13 @@ and gets the same answer.
 
 ## Read the reason on a provider failure
 
+Available now
+
 Current provider failures use `INTEGRATION_ERROR`. Its code alone does not
 authorize retrying a write: inspect the reason and any unknown outcome.
 
 For `INTEGRATION_ERROR`, use the refinement and the helpers that
-[`@smthrs/integrations`](/api/integrations) exports rather than reading
+[`@smthrs/integrations`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/api.md) exports rather than reading
 `details` by hand:
 
 ```ts
@@ -87,6 +94,8 @@ adapter is outside the MVP; new GitHub calls report `INTEGRATION_ERROR` directly
 
 ## Fail an action, do not throw inside one
 
+Available now
+
 Inside a durable action the failure has to survive a restart, so it cannot be a
 class. Convert at the boundary:
 
@@ -103,6 +112,8 @@ rather than a defect. `toIntegrationError` converts back when a caller wants
 the class again.
 
 ## Log the summary and the details
+
+Available now
 
 ```ts
 logger.warn("integration call failed", {
@@ -125,6 +136,8 @@ Attach `cause` only where you control what is in it. A `cause` from a provider
 library can quote a URL that carries a credential.
 
 ## Show a person the summary
+
+Available now
 
 `summary` is the message with the documentation URL removed, which is what you
 want in a chat reply, a form field, or an approval prompt:

@@ -11,6 +11,8 @@ constructor enforces.
 
 ## The fields
 
+Available now
+
 | Field     | Type                                               | Guarantee                                                                                                   |
 | --------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | `code`    | `SmithersErrorCode`                                | One of five string literals; any other value throws a `TypeError`. The classification a caller branches on. |
@@ -23,6 +25,8 @@ constructor enforces.
 the documentation URL; `cause` is present only when the caller supplied one.
 
 ## message, summary, and the documentation URL
+
+Available now
 
 The constructor appends `" See https://github.com/smithersai/smithers/blob/main/packages/errors/docs/reference/error-codes.md"` to the
 summary and stores the un-suffixed text as `summary`.
@@ -50,12 +54,14 @@ Two cases suppress the URL:
 - `{ includeDocsUrl: false }` leaves it out, and still strips a suffix the
   summary already carried.
 - A summary that is empty or entirely whitespace gets no suffix, because a
-  message of just a URL tells a reader nothing.
+  message containing only a URL tells a reader nothing.
 
 Use `summary` when you render a failure somewhere the URL is noise. Use
 `message` in a log or a stack trace, where the pointer is the point.
 
 ## details is copied, frozen, and shallow
+
+Available now
 
 `details` is caller-supplied context. The constructor copies the top-level
 record and freezes the copy:
@@ -79,6 +85,8 @@ property at all. That is why `util.inspect` and `JSON.stringify` never print
 
 ## cause is stored verbatim, and absent when undefined
 
+Available now
+
 A `cause` of `undefined` is treated as no cause, so the instance has no own
 `cause` property and inspection prints no `[cause]` line. A subclass can
 therefore always spell the key and let the caller decide:
@@ -98,6 +106,8 @@ A supplied cause is stored as given. Non-`Error` causes are kept as-is, and a
 cause chain is preserved unchanged.
 
 ## The redaction contract
+
+Available now
 
 `SmithersError` never redacts. It copies `details`, it stores `cause`, and it
 inspects neither. The obligation sits with the constructor caller, and it is
@@ -121,6 +131,8 @@ constructed yourself is only as safe as you made it.
 
 ## Subclasses keep working
 
+Available now
+
 The constructor restores the subclass prototype through `new.target`, so
 `instanceof` holds for a subclass even under a transpiled target, where `Error`
 would otherwise reset it:
@@ -140,6 +152,8 @@ non-enumerable, so it never shows up in `Object.keys` or `JSON.stringify`.
 
 ## The tag is the name
 
+Available now
+
 `SmithersError` is an Effect tagged error. Its `_tag` is the reported `name`,
 installed as a non-enumerable own property, so `Effect.catchTag` routes each
 adapter's failures to their own handler:
@@ -157,4 +171,4 @@ A subclass passes its tag as the type argument and the same string as
 `SmithersError` alone still means any instance, subclasses included.
 
 [Raise a SmithersError from an adapter](../guides/raise-an-error.md) shows the
-two real subclasses and what they add.
+current `IntegrationError` subclass and what it adds.

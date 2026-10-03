@@ -21,6 +21,8 @@ nothing at all.
 
 ## The core suite is a frozen registry
 
+Available now
+
 `Conformance.coreSuite()` returns the mandatory black-box suite every
 `EngineSubject` must pass: identity, interruption, replay, and race. The
 returned array is a frozen copy, and each case record is frozen too.
@@ -40,6 +42,8 @@ same cases would read as a superset that does not exist.
 part of it, and the filtered array is frozen as well.
 
 ## The host suite is parameterized by a declaration
+
+Available now
 
 `HostSuite.hostSuite(bundle, profile)` runs one shared suite against a complete
 Host bundle. The profile is a closed list, and **every** capability in it must
@@ -93,6 +97,8 @@ Three details keep the suite honest about the things a layer type cannot express
 
 ## What conformance does not cover
 
+Available now
+
 The applied suites in this package bind `FlowEngine.layerMemory`, which keeps
 every execution, action, and journal entry in process memory. Nothing there
 survives a restart, so "replay" in those runs means the runtime replaying a
@@ -101,6 +107,6 @@ recorded result inside one process.
 Durability is a different question, answered by a different binding.
 `FlowEngineLike.layerOver` takes any `Layer<FlowRuntime>`, and the durable one
 is `EngineStore.layer({ owner, journalSource })` from
-[`@smthrs/engine-store`](/api/engine-store). `@smthrs/testing` does not depend
+[`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md). `@smthrs/testing` does not depend
 on that package, so you install it and pass the layer yourself. Supplying the
 layer is the whole connection.

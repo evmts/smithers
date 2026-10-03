@@ -14,6 +14,8 @@ import { hasSmithersErrorShape, isSmithersError } from "@smthrs/errors"
 
 ## Use isSmithersError by default
 
+Available now
+
 `isSmithersError` is `value instanceof SmithersError` and nothing else. It is
 exact, it accepts every subclass, and it cannot be forged by an object that
 merely looks right:
@@ -33,6 +35,8 @@ Use it when the error was raised by code that resolves the same copy of
 case inside one build.
 
 ## Use hasSmithersErrorShape across a boundary
+
+Available now
 
 `instanceof` compares prototypes, so it answers `false` for an error built by a
 second copy of the package: a duplicated dependency, a bundled build beside a
@@ -80,6 +84,8 @@ came from outside.
 
 ## What the structural check still refuses
 
+Available now
+
 The check is stricter than a `name` comparison, which is the point:
 
 ```ts
@@ -118,6 +124,8 @@ values from a module boundary you trust, not on values from a network.
 
 ## Build the same pair for your subclass
 
+Available now
+
 A subclass refinement combines both, because neither is sufficient alone:
 `instanceof` misses the cross-copy instance, and a `name` check accepts a
 forgery. Check the class or the name, then the structure, then the extra
@@ -125,6 +133,6 @@ fields your own conversions read. Wrap the whole refinement in a `try` the way
 `hasSmithersErrorShape` does, because the extra fields you read are caller code
 too and an inspection that throws must answer `false`.
 `Core.IntegrationError.isIntegrationError` in
-[`@smthrs/integrations`](/api/integrations) is the worked example, and
+[`@smthrs/integrations`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/api.md) is the worked example, and
 [Raise a SmithersError from an adapter](./raise-an-error.md#ship-a-refinement-with-the-subclass)
 walks through it.

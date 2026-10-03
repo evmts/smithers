@@ -14,9 +14,11 @@ Three tiers exist, and they differ only in what they provide.
 
 ## The unit tier
 
+Available now
+
 `TestLayers.unit(engine)` bundles the deterministic Host from
 `@smthrs/testing/TestHost`, an in-memory Journal from
-[`@smthrs/journal`](/api/journal), the engine subject under test, and the
+[`@smthrs/journal`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/api.md), the engine subject under test, and the
 **real** permission kernel:
 
 ```ts
@@ -27,11 +29,13 @@ const layer = TestLayers.unit(EngineSubject.layerNoop())
 
 The kernel is real on purpose. A permission decision a test stubs out is a
 decision the test no longer covers, so `GrantStore` from
-[`@smthrs/kernel`](/api/kernel) runs here exactly as it
+[`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md) runs here exactly as it
 runs in production, with one difference: it is built unattended, so a sealing
 violation fails typed instead of parking on an approval nobody will answer.
 
 ## The plan-time tier
+
+Available now
 
 Plan-time computation must never touch the host, the model, the clock, or
 randomness. `TestLayers.poisoned` proves it by providing services that reject
@@ -73,6 +77,8 @@ loudly instead of silently using the Effect default.
 
 ## The fault tier
 
+Available now
+
 `@smthrs/testing/Faults` is the opposite of a double. `killProcess` sends a
 real signal to a real pid and waits for the operating system to reap it;
 `parentPid` and `waitForReparent` read the orphan a kill leaves behind; and
@@ -91,6 +97,8 @@ a process another suite owns is not.
 See [Inject a real process fault](../guides/inject-a-process-fault.md).
 
 ## The runner boundary
+
+Available now
 
 `Vitest` is the only module in this package that imports a test runner, and
 that boundary is the only sanctioned `AbortSignal` touch: runner cancellation

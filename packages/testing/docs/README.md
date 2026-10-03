@@ -15,6 +15,8 @@ vitest adapter ships alongside for the runner most projects already use.
 
 ## Why you would reach for it
 
+Available now
+
 A durable flow is hard to test with a return value. The claims that matter are
 about the shape of the run: that a repeated idempotency key returns the first
 execution instead of starting a second, that a resume replays the completed
@@ -30,16 +32,21 @@ same answer twice.
 
 ## Install
 
-Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
+Available now
+
+Use version `1.0.0-rc.1` as a development dependency. See
+[Installation](./installation.md) for requirements and imports.
 
 `vitest` and
 `@effect/vitest` are optional peers, needed only by the `Vitest` adapter.
 Node.js 26.4.0 or later is required. [Installation](./installation.md) has the
 rest.
 
-## Certify an engine in fifteen lines
+## Certify an engine
 
-`Conformance.coreSuite()` is nine black-box pins covering identity,
+Available now
+
+`Conformance.coreSuite()` is black-box pins covering identity,
 interruption, replay, and race. Point them at an implementation and they run:
 
 ```ts
@@ -60,7 +67,7 @@ describe("engine conformance", () => {
 ```
 
 `FlowEngineLike.layerMemory` is the only line naming an implementation.
-Swapping it is how the same nine cases certify a different engine. Use
+Swapping it is how the same cases certify a different engine. Use
 `it.scoped` or `it.effect`, not `it.live`: the race and interrupt pins advance
 a `TestClock`, so under the real clock they wait on a clock nothing is moving.
 
@@ -68,6 +75,8 @@ The [Quickstart](./quickstart.md) walks the same file and shows what each pin
 proved.
 
 ## What is in the box
+
+Available now
 
 - **Assertions** over the artifacts a flow produces: `PlanAssertions` for a
   built plan, `JournalAssertions` for a journal, `Divergence` for the first
@@ -87,6 +96,8 @@ proved.
 
 ## Where this sits
 
+Available now
+
 `@smthrs/testing` has no parent package. It sits beside the runtime it tests
 rather than inside it, which is why nothing in the Smithers runtime depends on
 it: you install it as a dev dependency and it reads the same public types your
@@ -97,27 +108,29 @@ packages documents the types the assertions read:
 
 | To test                                               | Use                                                                                      |
 | ----------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| An engine, or your own runtime binding                | `Conformance`, `EngineSubject`, `FlowEngineLike`, over [`@smthrs/engine`](/api/engine)   |
-| A durable engine binding rather than an in-memory one | `FlowEngineLike.layerOver`, over [`@smthrs/engine-store`](/api/engine-store)             |
-| The plan a flow builds before anything runs           | `PlanAssertions`, over [`@smthrs/plan`](/api/plan) and [`@smthrs/flow`](/api/flow)       |
-| The history a run wrote                               | `JournalAssertions` and `Divergence`, over [`@smthrs/journal`](/api/journal)             |
-| A capability-gated host bundle                        | `HostSuite`, over [`@smthrs/kernel`](/api/kernel)                                        |
-| A step that calls a model provider                    | `CachedModel`, `RecordedModel`, and `RecordingModel`, over [`@smthrs/model`](/api/model) |
-| A graded eval suite                                   | `ScoreGate`, alongside [`@smthrs/evals`](/api/evals)                                     |
+| An engine, or your own runtime binding                | `Conformance`, `EngineSubject`, `FlowEngineLike`, over [`@smthrs/engine`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/api.md)   |
+| A durable engine binding rather than an in-memory one | `FlowEngineLike.layerOver`, over [`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md)             |
+| The plan a flow builds before anything runs           | `PlanAssertions`, over [`@smthrs/plan`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/docs/api.md) and [`@smthrs/flow`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/api.md)       |
+| The history a run wrote                               | `JournalAssertions` and `Divergence`, over [`@smthrs/journal`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/api.md)             |
+| A capability-gated host bundle                        | `HostSuite`, over [`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md)                                        |
+| A step that calls a model provider                    | `CachedModel`, `RecordedModel`, and `RecordingModel`, over [`@smthrs/model`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/model/docs/api.md) |
+| A graded eval suite                                   | `ScoreGate`, alongside [`@smthrs/evals`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/evals/docs/api.md)                                     |
 
 `@smthrs/testing/TestHost` supplies the deterministic host services a run
-needs, while [`@smthrs/journal`](/api/journal) supplies `TestJournal`. This
+needs, while [`@smthrs/journal`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/api.md) supplies `TestJournal`. This
 package also supplies what a test says about the run those services produced.
 
 If you arrived here without knowing what a flow is, start at the top of the
-tree: [`@smthrs/cli`](/api/cli) is the `smithers` command line, and
-[`@smthrs/flow`](/api/flow) is the authoring model everything else executes.
+tree: [`@smthrs/cli`](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/api.md) is the `smthrs` command line, and
+[`@smthrs/flow`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/api.md) is the authoring model everything else executes.
 
 ## Next steps
 
+Available now
+
 - [Installation](./installation.md): the import forms, the optional peers, and
-  the four modules that stay off the root barrel.
-- [Quickstart](./quickstart.md): run the nine conformance pins and read what
+  the modules that stay off the root barrel.
+- [Quickstart](./quickstart.md): run the conformance pins and read what
   each one proved.
 - [Test tiers](./concepts/test-tiers.md): why a harness here is a layer set
   rather than a class.

@@ -39,6 +39,8 @@ remember which family spells its codes differently.
 
 ## No unknown channel on a conformance seam
 
+Available now
+
 A subject that laundered a foreign cause into `unknown` could not be matched on
 by the pin that reports it, so every conformance seam names the closed union its
 cases actually produce. `Conformance.ConformanceCase` fails with
@@ -52,6 +54,8 @@ runner has to tell "this host violates the contract" from "the scratch write
 failed because the disk is full", and it cannot do that against `unknown`.
 
 ## No host errors escaping
+
+Available now
 
 A `TypeError` or a `RangeError` thrown out of an operation declared to fail
 with a typed error is a contract break. Two consequences run through the
@@ -69,6 +73,8 @@ package:
 
 ## No unbounded payloads
 
+Available now
+
 An error a runner prints in full must carry a bounded identity, not the input
 that produced it. `UnscriptedModelError` names the `modelId`, the
 `messageCount`, and the `toolNames`, and nothing else. Carrying the whole
@@ -84,6 +90,8 @@ renderings of the conflicting flow or payload, never the payloads themselves.
 printing the samples.
 
 ## A wrong code is a typed field, not a message
+
+Available now
 
 When a conformance case observes the wrong stable code, the expectation and the
 observation travel as the typed `expectedCode` and `actualCode` fields of

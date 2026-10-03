@@ -11,6 +11,8 @@ list of `JournalEntryLike` entries and answers about them.
 
 ## Assert on one journal
 
+Available now
+
 ```ts
 import { JournalAssertions } from "@smthrs/testing"
 import * as Effect from "effect/Effect"
@@ -44,6 +46,8 @@ cover.
 
 ## Assert on a journaled external effect
 
+Available now
+
 `journal.effect(key)` answers about journaled **effect** entries only. An
 ordinary step entry that happens to share the key never satisfies them: it
 fails with `effect_kind_mismatch`.
@@ -71,6 +75,8 @@ different one.
 
 ## Exactly-once always fails, on purpose
 
+Available now
+
 ```ts
 yield * journal.effect("publish").exactlyOnce()
 // Effect.fail(ExactlyOnceUnsupportedError)
@@ -82,6 +88,8 @@ kept failing so the test vocabulary cannot claim a guarantee the engine does
 not provide.
 
 ## Attribute a difference between two journals
+
+Available now
 
 `Divergence` answers "where did these two runs first differ?", which is the
 question a replay or a fixture regression actually asks.
@@ -118,7 +126,9 @@ evidence.
 
 ## Related
 
+Available now
+
 - [The engine subject seam](../concepts/engine-subject.md) describes the entry
   shape and why `index` is carried explicitly.
-- [`@smthrs/journal`](/api/journal) owns the production journal and its
-  `TestJournal` double; see [its testing page](/pkg/journal/guides/testing).
+- [`@smthrs/journal`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/api.md) owns the production journal and its
+  `TestJournal` double; see [its testing page](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/guides/testing.md).

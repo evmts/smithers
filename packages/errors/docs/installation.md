@@ -3,24 +3,30 @@ title: "Installation"
 description: "Install @smthrs/errors and import it from the root entry point or a module subpath."
 ---
 
-`@smthrs/errors` is Effect-independent and adds no runtime dependencies.
+`SmithersError` extends `effect/Data.Error`. The package has no runtime
+dependencies and requires the `effect` peer at `4.0.0-rc.115`.
 
 ## Add the dependency
 
-Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
+Available now
+
+The repository version is `1.0.0-rc.1`. Its dependency declaration is:
 
 ```json
 {
   "dependencies": {
-    "@smthrs/errors": "1.0.0-rc.1"
+    "@smthrs/errors": "1.0.0-rc.1",
+    "effect": "4.0.0-rc.115"
   }
 }
 ```
 
-The package has no runtime dependencies. Its only requirement is Node.js
-26.4.0 or later, declared in `engines`.
+Node.js 26.4.0 or later is required by `engines`. The `effect` entry is a
+peer dependency, also installed for package development.
 
 ## Import it
+
+Available now
 
 The root entry point exports everything:
 
@@ -62,6 +68,8 @@ boundary. See
 
 ## Choose this package or a tagged error
 
+Available now
+
 Reach for `SmithersError` only when you are writing an integration adapter that
 talks to a third-party API. Everywhere else in Smithers, state a failure as a
 `Schema.TaggedError` class on the effect that can fail. There is no single
@@ -69,6 +77,8 @@ error registry, and [The closed code vocabulary](./concepts/error-codes.md)
 explains the reasoning.
 
 ## Verify the install
+
+Available now
 
 Import the code table and print it. The five codes and their order are fixed,
 so this output is the same on every install:

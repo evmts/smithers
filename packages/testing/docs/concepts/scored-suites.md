@@ -37,6 +37,8 @@ reported a pass for a gate it never evaluated is worse.
 
 ## A fault never eats a decision
 
+Available now
+
 A fault observed **beside** a decidable gate travels in `inconclusive`
 alongside the verdict, never instead of it. Three consequences follow:
 
@@ -55,6 +57,8 @@ and grade the suite `Inconclusive`, even when other samples contain scores.
 They remain unresolved faults and CI exits 5.
 
 ## The gate is over a fixed sample array
+
+Available now
 
 A gate is evaluated only over a caller-owned, fixed sample array. Live
 production observations never enter it. A `ScoreSample` names its `case`, its
@@ -78,6 +82,8 @@ because the report has to survive it.
 not an argument spread.
 
 ## Three exit codes
+
+Available now
 
 `ScoreGate.grade` maps a verdict onto the shared CI convention:
 

@@ -1,15 +1,16 @@
 ---
 title: "@smthrs/errors"
-description: "One error class and five closed codes for the Smithers integration adapters: classify a failure by code, show a person a summary, and log context that carries no credential."
+description: "Classify integration failures with SmithersError and its closed code vocabulary."
 ---
 
 `@smthrs/errors` is a single error class, `SmithersError`, and a closed
-vocabulary of five codes. Smithers is a durable-execution engine for agent
-workflows. Its GitHub adapter raises `SmithersError` when
+vocabulary of codes. The GitHub adapter raises `SmithersError` when
 an integration call fails, and a caller decides what to do by reading
 `error.code` rather than by matching on message text.
 
 ## Why you would reach for it
+
+Available now
 
 One integration failure has three readers, and each needs something different
 from it:
@@ -43,16 +44,19 @@ draws that line.
 
 ## Install
 
-At `1.0.0-rc.0` this package is not on npm. It ships inside the Smithers
-repository, where `@smthrs/integrations` is its only consumer. Handling a
-`SmithersError` you caught needs no install: every field, code, and raise site
-is on this site, and the source is
+Available now
+
+This repository contains version `1.0.0-rc.1`. The integration package
+consumes it, and the source is
 [on GitHub](https://github.com/smithersai/smithers/tree/main/packages/errors).
 [Installation](./installation.md) has the dependency declaration, the root
 entry point, the two module subpaths, and the paths the exports map refuses.
-The package has no runtime dependencies and needs Node.js 26.4.0 or later.
+The package has no runtime dependencies, requires the `effect` peer at
+`4.0.0-rc.115`, and needs Node.js 26.4.0 or later.
 
 ## A small example
+
+Available now
 
 A helper refuses an argument, and the caller classifies the refusal without
 reading a word of prose:
@@ -89,40 +93,48 @@ fallback or [check exhaustiveness explicitly](./quickstart.md#check-exhaustivene
 [Quickstart](./quickstart.md) shows both forms and runs the same failure the
 whole way through, from the raise site to a log line.
 
-## The five codes
+## Codes
+
+Available now
 
 `smithersErrorDefinitions` is the runtime table every code is derived from, and
 nothing widens it at runtime:
 
-- `INVALID_INPUT`: the call is wrong, and no retry makes it right.
+- `INVALID_INPUT`: a signal service or event segment is empty or contains a colon.
+  Correct the segment before retrying.
 - `INTEGRATION_ERROR`: a provider call, a webhook read, or a listener
-  reconciliation failed. `details.reason` says which, and whether to retry.
+  reconciliation failed. `details.reason` says which; `details.retryable`
+  says whether to retry.
 - `TELEGRAM_API_ERROR` and `TELEGRAM_INIT_DATA_INVALID`: retained for
   historical failure decoding. The Telegram adapter is outside the MVP.
-- `UNSUPPORTED`: the runtime lacks a primitive the call needs, such as Web
-  Crypto.
+- `UNSUPPORTED`: retained in the public vocabulary; no current integration
+  raise site uses it.
 
 [Error code reference](./reference/error-codes.md) names every raise site, the
 `details` each one attaches, and the caller's move.
 
 ## Where this sits in Smithers
 
-`@smthrs/errors` is the bottom of its own dependency tree. It imports nothing
-from Smithers and nothing from npm, so it is a root you can read on its own.
+Available now
+
+`@smthrs/errors` imports `effect/Data` through its pinned `effect` peer. It
+has no runtime dependency on another Smithers package.
 The packages built on top of it are how you get from here into the rest of the
 system:
 
-- [`@smthrs/integrations`](/api/integrations) is the only package that depends
+- [`@smthrs/integrations`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/api.md) is the only package that depends
   on this one. Its `Core.IntegrationError` carries a classified `reason`.
   Historical error codes remain readable after their adapters are retired.
 - Those adapters answer webhooks through the Smithers control plane,
-  [`@smthrs/control`](/api/control), and expose their provider calls as durable
-  actions built with [`@smthrs/flow`](/api/flow). A durable action is the
+  [`@smthrs/control`](https://github.com/smithersai/smithers/blob/main/packages/smithers/control/docs/api.md), and expose their provider calls as durable
+  actions built with [`@smthrs/flow`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/api.md). A durable action is the
   boundary where an error class has to become a schema the journal can store.
-- [`@smthrs/cli`](/api/cli) is the `smithers` command line at the top of that
+- [`@smthrs/cli`](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/api.md) is the `smthrs` command line at the top of that
   tree, and the entry point most people meet Smithers through.
 
 ## Where to go next
+
+Available now
 
 - [Quickstart](./quickstart.md): raise, catch, classify, and log one failure.
 - [Handle a failed integration call](./guides/handle-a-failure.md): the

@@ -3,7 +3,7 @@ title: "API reference"
 description: "Every public export of @smthrs/testing: the tier layers, plan and journal assertions, the engine subject port and its conformance suite, the host suite, the record-and-replay model doubles, score gates, typed failures, and the process fault primitives."
 ---
 
-`@smthrs/testing` exports twenty modules from its root entry point, and each is
+The root entry point exports module namespaces, and each is
 also importable from `@smthrs/testing/<Module>`:
 
 ```ts
@@ -12,14 +12,14 @@ import { Conformance, EngineSubject, TestLayers } from "@smthrs/testing"
 import * as TestLayers from "@smthrs/testing/TestLayers"
 ```
 
-Four modules are reachable only by subpath. `TestHost` is the deterministic
+These modules are reachable only by subpath. `TestHost` is the deterministic
 host bundle and stays explicit at `@smthrs/testing/TestHost`. `Vitest` is ESM only, because
 `vitest` refuses to load through `require()` and a barrel that carried it would
 break `require("@smthrs/testing")` for every CommonJS consumer of the assertion
 helpers. `Faults` is a set of real, machine-global process primitives rather
 than a double, and keeping it off the barrel keeps that visible at the import
 site.
-`ProcessTable` spawns `ps` through `node:child_process`, which browser test
+`ProcessTable` spawns `ps` or `pwsh` through `node:child_process`, which browser test
 hosts cannot load, so it lives at `@smthrs/testing/ProcessTable`.
 
 `@smthrs/testing/internal/*` and `@smthrs/testing/*/index` are not public.
@@ -32,9 +32,13 @@ test body reads it from context.
 
 ## Example
 
+Available now
+
 ```ts
 import { Conformance, EngineSubject, FlowEngineLike } from "@smthrs/testing"
 import { describe, it } from "@smthrs/testing/Vitest"
+import * as Effect from "effect/Effect"
+
 describe("engine conformance", () => {
   for (const c of Conformance.coreSuite()) {
     it.scoped(
@@ -46,6 +50,8 @@ describe("engine conformance", () => {
 ```
 
 ## Vitest
+
+Available now
 
 The Vitest adapter for scoped Effect test bodies, and the only module here that
 imports a test runner. The runner boundary is also the only sanctioned
@@ -107,7 +113,90 @@ runs each body in its own `Scope`, so no state, including the deterministic
 variant's `TestClock`, is shared between tests and no test can depend on
 registration order.
 
+## TestHost
+
+Available now
+
+The deterministic host bundle, imported through its own subpath:
+
+```ts
+import * as TestHost from "@smthrs/testing/TestHost"
+```
+
+### TestHost.layer and TestHost.TestHost
+
+```ts
+interface CommandResponse {
+  stdout?: string
+  stderr?: string
+  exitCode?: number
+  delayMs?: number
+  pending?: boolean
+}
+
+const layer: (options?: {
+  readonly files?: Readonly<Record<string, string>>
+  readonly commands?: Readonly<Record<string, CommandResponse>>
+  readonly seed?: number
+}) => Layer.Layer<TestHost>
+
+const TestHost: Layer.Layer<TestHost>
+
+type TestHost =
+  | FileSystem.FileSystem
+  | Path.Path
+  | ChildProcessSpawner
+  | Jj
+  | EffectHttpClient
+  | ProcessConfinement.ProcessConfinement
+```
+
+`CommandResponse` names the inline response shape here; it is not an exported
+package type. `TestHost` is also the name of the zero-config layer, equivalent
+to `layer()`: a fresh filesystem containing `/tmp`, no scripted commands and
+seed `42`. Each build starts fresh, even when tests reuse the layer value.
+
+The bundle supplies POSIX paths, a scripted interpreter, `TestClock`, seeded
+randomness, a noop HTTP client and process confinement, and the unsupported
+browser jj layer. It provides no real shell or disk access.
+
+### TestHost.makeMemoryFs
+
+```ts
+const makeMemoryFs: (
+  initial?: Readonly<Record<string, string>>
+) => BrowserFileSystem.ZenFsPromisesLike
+```
+
+Builds a fresh in-memory volume containing `/` and `/tmp`. Initial file entries
+create their parent directories. See the
+[filesystem behavior](./installation.md#modules-stay-off-the-root-barrel).
+
+### TestHost.makeStubBash
+
+```ts
+const makeStubBash: (
+  responses?: Readonly<Record<string, CommandResponse>>
+) => BrowserChildProcessSpawner.JustBashLike
+```
+
+Matches commands by exact own-property lookup. An unlisted command returns
+exit code `127` and `command not found: <command>\n` on stderr. A scripted
+response defaults to empty stdout and stderr and exit code `0`; `delayMs`
+delays completion, and `pending` waits for cancellation.
+
+### TestHost.layerSeededRandom
+
+```ts
+const layerSeededRandom: (seed?: number) => Layer.Layer<never>
+```
+
+Defaults to seed `42` and resets the PRNG per layer build. `Random` is a context
+reference, so its override does not appear in the layer's output type.
+
 ## TestLayers
+
+Available now
 
 Deterministic test layer bundles. A tier is a layer set, not a class; see
 [Test tiers](./concepts/test-tiers.md).
@@ -172,6 +261,8 @@ randomness access fails loudly instead of silently using the Effect defaults.
 
 ## PlanLike
 
+Available now
+
 Read-only plan introspection types. These are the shapes the plan assertions
 read, so a caller can project any planner onto them.
 
@@ -201,7 +292,7 @@ interface PlanNodeLike {
 }
 ```
 
-The fields mirror what [`@smthrs/flow`](/api/flow)'s `Graph.GraphNode` carries.
+The fields mirror what [`@smthrs/flow`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/api.md)'s `Graph.GraphNode` carries.
 `mode` is the boundary mode of the node's own effect declaration (`hard` or
 `expected`), omitted when the node declared none. `tier` is the tier the node
 is keyed under (`sealed`, `compensable`, or `irreversible`), and every node has
@@ -226,6 +317,8 @@ A serializable projection of a node's placement directive: the placement tag
 plus its option payload.
 
 ## Plan
+
+Available now
 
 Pure projection and presentation helpers for built plans. Plan projection never
 touches Host, Model, or Clock, and is expected to succeed under
@@ -252,7 +345,7 @@ Building and projecting are pure, so this fails only on schema decoding.
 const fromGraph: (graph: Graph.Graph, options?: FromGraphOptions) => PlanLike
 ```
 
-Projects [`@smthrs/flow`](/api/flow)'s graph introspection API into a
+Projects [`@smthrs/flow`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/api.md)'s graph introspection API into a
 `PlanLike`. Keys come from each node's draft material by default; the `key`
 resolver in the options is a test-only override for fixtures that need
 synthetic keys.
@@ -339,6 +432,8 @@ interface PlanOfOptions extends FromGraphOptions {
 ```
 
 ## PlanAssertions
+
+Available now
 
 Pure assertions for already-built plan graphs. Every assertion is an
 `Effect.Effect<void, PlanAssertionError>`.
@@ -458,6 +553,8 @@ A bare tag, or a tag whose `options` is omitted, compares only the tag.
 
 ## JournalAssertions
 
+Available now
+
 Effect-valued assertions over a flow journal.
 
 ### JournalAssertions.expectJournal
@@ -522,6 +619,8 @@ type TerminalStatus = "completed" | "aborted" | "failed" | "suspended"
 
 ## Divergence
 
+Available now
+
 Deterministic journal divergence attribution.
 
 ### Divergence.firstDivergence
@@ -573,12 +672,14 @@ interface Divergence {
 
 ## EngineSubject
 
+Available now
+
 The black-box engine **subject** seam used by conformance pins. A pin drives an
 arbitrary engine implementation through it and asserts on the journal it
 produced.
 
 It is deliberately distinct from the production harness port `EngineLike` in
-[`@smthrs/harness`](/api/harness), whose members are `sealStep`, `splice`, and
+[`@smthrs/harness`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/api.md), whose members include `sealStep`, `splice`, and
 `suspend`. That port is the seam the built-in harness consumes; this one is the
 seam a test drives. The two are never interchangeable.
 
@@ -674,6 +775,8 @@ comparison.
 
 ## Conformance
 
+Available now
+
 Runner-independent conformance cases for flow engine implementations.
 
 ### Conformance.coreSuite
@@ -725,6 +828,8 @@ matched on by the runner that reports it.
 
 ## MemoryEngine
 
+Available now
+
 The reference in-memory flow engine, with an externally owned replay store.
 
 ### MemoryEngine.makeStore
@@ -765,6 +870,8 @@ are opaque; construct one with `makeStore` and pass it to `make` or `layer`.
 
 ## RestartableEngine
 
+Available now
+
 A stable engine facade over one persistent `MemoryEngine` store, with controls
 for replacing the live instance.
 
@@ -804,8 +911,10 @@ the fresh instance. Only `killAndResume` produces the hard-kill state.
 
 ## FlowEngineLike
 
+Available now
+
 The `EngineSubject` adapter over the real engine from
-[`@smthrs/engine`](/api/engine). This is the authoritative subject for the core
+[`@smthrs/engine`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/api.md). This is the authoritative subject for the core
 conformance operations: identity, replay, race, and interruption run against
 the production engine rather than a test-only model.
 
@@ -853,7 +962,7 @@ and never names an implementation, so the same case list runs against whichever
 runtime is provided here.
 
 The durable runtime is `EngineStore.layer({ owner, journalSource })` from
-[`@smthrs/engine-store`](/api/engine-store), which this package does not depend
+[`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md), which this package does not depend
 on and must not. Supplying that layer is the whole connection.
 
 ### FlowEngineLike.layerMemory
@@ -866,6 +975,8 @@ const layerMemory: Layer.Layer<EngineSubject | Crypto.Crypto>
 ready to certify with no configuration.
 
 ## HostSuite
+
+Available now
 
 The shared Host capability conformance suite, parameterized by a declared
 profile.
@@ -974,8 +1085,10 @@ scratch write failed because the disk is full".
 
 ## ModelLike
 
+Available now
+
 The provider-neutral model seam a test drives, copied structurally from
-[`@smthrs/model`](/api/model) so a fixture stores plain data and a third-party
+[`@smthrs/model`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/model/docs/api.md) so a fixture stores plain data and a third-party
 subject need not adopt that package's classes.
 
 ### ModelLike.ModelLike
@@ -1032,6 +1145,7 @@ interface ModelErrorLike {
     | "authentication"
     | "rate_limited"
     | "quota_exceeded"
+    | "out_of_credit"
     | "content_policy"
     | "provider_internal"
     | "transport"
@@ -1086,6 +1200,8 @@ then retry against a fixture that will never match. The doubles die on both
 instead.
 
 ## Fixture
+
+Available now
 
 The recorded-model fixture format and its replay identity.
 
@@ -1178,7 +1294,7 @@ and a fixture the caller still owns is re-encoded per fixture.
 ### Fixture.recordedRequest
 
 ```ts
-const recordedRequest: (request: ModelRequestLike) => ModelRequestLike
+const recordedRequest: (request: ModelRequestLike) => RecordedRequestLike
 ```
 
 Projects a request onto the plain JSON data a fixture stores, deep-copying
@@ -1192,6 +1308,8 @@ any value that is not a plain object. This copy keeps the recorded request, the
 decoded fixture, and the digest input the same value.
 
 ## FixtureStore
+
+Available now
 
 Loads and records a recorded-model fixture.
 
@@ -1240,6 +1358,8 @@ fail with a path-naming defect. See [file persistence and recovery](concepts/fix
 
 ## RecordingModel
 
+Available now
+
 Wraps a live model so each call is written to a sink when its stream ends.
 
 ```ts
@@ -1267,6 +1387,8 @@ request or its own event objects mid-exchange does not change what was
 recorded.
 
 ## RecordedModel
+
+Available now
 
 The strict replay double.
 
@@ -1317,6 +1439,8 @@ is how a test asserts that exactly the recorded calls happened.
 
 ## CachedModel
 
+Available now
+
 A model that replays a fixture hit and records a miss.
 
 ```ts
@@ -1340,6 +1464,8 @@ test only needs its calls to be free and deterministic; use `RecordedModel`
 when the test must assert that exactly the recorded calls happened.
 
 ## ScoreGate
+
+Available now
 
 `@smthrs/testing/ScoreGate` re-exports the pure grading contract from
 `@smthrs/scorers/ScoreGate` and adds the fixed-suite runner and `ciGrade`
@@ -1507,6 +1633,8 @@ behind a clean pass.
 
 ## TestingError
 
+Available now
+
 Every typed failure this package raises, and the closed unions of stable codes
 they carry. Consumers match on codes, never on message prose. Every literal is
 `snake_case`.
@@ -1622,13 +1750,15 @@ Every typed failure an engine subject, or one of its optional capabilities, may
 raise. The conformance seam never carries an `unknown` error channel.
 
 `FlowCycleDetected` and `CancelRequestFailed` come from
-[`@smthrs/flow`](/api/flow) and are re-declared here because they are part of
+[`@smthrs/flow`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/api.md) and are re-declared here because they are part of
 the engine's typed `execute` and interrupt contracts: pins must be able to
 match on the cycle `path` rather than on a stringified dump. `Code` includes
 their upstream code schemas: `flow_cycle_detected`, `cancel_request_failed`,
 and `unsafe_interrupt_unsupported`.
 
 ## Faults
+
+Available now
 
 Real, machine-global process fault primitives, imported by subpath:
 
@@ -1727,7 +1857,9 @@ the global clock. Restoring any live handle reinstalls the Date constructor and
 
 ## ProcessTable
 
-Bounded, explicit-column POSIX process probes for real-process tests, imported
+Available now
+
+Bounded, explicit-column process probes for POSIX and Windows hosts, imported
 by subpath:
 
 ```ts
@@ -1743,21 +1875,64 @@ interface Query {
   readonly columns: readonly [Column, ...Array<Column>]
   readonly pid?: number
   readonly timeoutMs?: number
+  readonly platform?: NodeJS.Platform
 }
 
 const query: (query: Query, spawn?: Spawn) => string
 ```
 
-Runs `ps -ww -o <columns>` for the whole table, or for `pid` when given, with a
+Defaults `platform` to `process.platform` and delegates to `queryWindows` on
+`win32`. On other platforms it runs `ps -ww -o <columns>` for the whole table,
+or for `pid` when given, with a
 64 MiB output buffer, `LC_ALL=C`, and `PATH=/usr/bin:/bin`. Returns the raw
 header-less text. Use `comm` for executable names and `args` when a script
 marker must be distinguished from its interpreter. A selected `pid` that does
 not exist returns empty text. Every other failure throws: a spawn error, a
 timeout, a buffer overflow, or a non-zero exit, so a failed probe cannot pass
 for a clean process table. `Spawn` has the signature of `spawnSync` and is the
-injection point for tests of the probe itself.
+injection point for tests of the probe itself. A selected PID must be a
+positive integer; invalid values throw before either transport runs.
+
+### ProcessTable.queryWindows
+
+```ts
+const queryWindows: (query: Query, spawn?: Spawn) => string
+```
+
+Runs `pwsh -NoProfile -NonInteractive -Command` with a `Get-CimInstance
+Win32_Process` query and the inherited process environment. It returns requested
+columns without a header, with the same 64 MiB ceiling and optional timeout.
+`rss` is working-set size rounded up to KiB; `stat` is always `S`.
+`pgid` throws because Windows has no POSIX process groups. A missing selected
+PID returns empty text; spawn errors and non-zero exits throw.
+
+## Conformance pin subpaths
+
+Available now
+
+Each pin module exports `cases: ReadonlyArray<ConformanceCase>`. Import a subset
+through its explicit subpath:
+
+```ts
+import * as Identity from "@smthrs/testing/pins/Identity"
+import * as Interrupt from "@smthrs/testing/pins/Interrupt"
+import * as Race from "@smthrs/testing/pins/Race"
+import * as Replay from "@smthrs/testing/pins/Replay"
+```
+
+| Subpath | Assertions |
+| --- | --- |
+| `pins/Identity` | Distinct execution identities, idempotency keys and sealed step-key stability |
+| `pins/Interrupt` | In-flight interruption and its journal outcome |
+| `pins/Replay` | Completed-prefix and suspended-frontier replay |
+| `pins/Race` | Losing-branch interruption, recorded-winner replay and recorded-loser replay |
+
+`Conformance.coreSuite()` composes these groups. Register race and interruption
+pins under the test clock through `it.effect` or `it.scoped`.
 
 ## Documented limits
+
+Available now
 
 | Limit                                                                   | Behavior at the limit                                                   |
 | ----------------------------------------------------------------------- | ----------------------------------------------------------------------- |

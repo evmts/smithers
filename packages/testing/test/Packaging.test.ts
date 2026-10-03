@@ -136,9 +136,9 @@ describe("the subpath-only modules", () => {
   })
 
   it.each([
-    ["docs/api.md", "Four modules are reachable only by subpath."],
-    ["docs/installation.md", "## Four modules stay off the root barrel"],
-    ["README.md", "## Four modules stay off the root barrel"]
+    ["docs/api.md", "These modules are reachable only by subpath."],
+    ["docs/installation.md", "## Modules stay off the root barrel"],
+    ["README.md", "## Modules stay off the root barrel"]
   ])("are each named where %s lists them", (path, heading) => {
     const listed = section(page(path), heading)
     for (const name of subpathOnly) expect(listed, `${path}: ${name}`).toContain(`\`${name}\``)
@@ -146,7 +146,7 @@ describe("the subpath-only modules", () => {
 
   it("each have an API reference section", () => {
     const api = page("docs/api.md")
-    for (const name of subpathOnly.filter((name) => name !== "TestHost")) {
+    for (const name of subpathOnly) {
       expect(api, name).toContain(`\n## ${name}\n`)
     }
   })

@@ -6,7 +6,7 @@ This package declares `effect` as an exact
 `4.0.0-rc.115` peer dependency. Keep the application on that version so
 all Smithers packages share one Effect runtime.
 
-**Documentation:** https://testing.smithers.sh
+**Documentation:** [Package docs](./docs/README.md)
 
 Testing and conformance library for Smithers flows. It provides layered engine
 and model doubles, pure plan and journal assertions, restart and parity suites,
@@ -21,7 +21,10 @@ constructor identity, tags, fields, and existing test imports are preserved.
 
 ## Install
 
-Not on npm yet; see [Installation](https://smithers.sh/docs/installation/#use-the-libraries).
+Available now
+
+[Installation](./docs/installation.md) lists version `1.0.0-rc.1` requirements
+and import forms.
 
 `effect` is a required peer at exactly `4.0.0-rc.115`. `vitest` and
 `@effect/vitest` are optional peers, needed only by the `Vitest` adapter.
@@ -30,6 +33,8 @@ Everything else runs under any runner, because an assertion is an ordinary
 required.
 
 ## What is in it
+
+Available now
 
 - **Assertions** over the artifacts a flow produces: `PlanAssertions` for a
   built plan, `JournalAssertions` for a journal, `Divergence` for the first
@@ -51,18 +56,23 @@ supplies what a test says about the run those services produced and the doubles
 the run executes against.
 
 Every module, every export, and the contract of each is at
-<https://testing.smithers.sh/reference/api/>.
+[API reference](./docs/api.md).
 
 ## Inspect real processes
 
-`@smthrs/testing/ProcessTable` queries explicit POSIX `ps` columns with a
-64 MiB buffer. Select a PID for resident-size and state probes, or scan the
+Available now
+
+`@smthrs/testing/ProcessTable` queries explicit columns through POSIX `ps`
+or Windows PowerShell, selected by `Query.platform` (default: `process.platform`),
+with a 64 MiB buffer. Select a PID for resident-size and state probes, or scan the
 table for containment checks. Use `comm` for executable names and `args`
 when a script marker must be distinguished from its interpreter. Spawn
 failures throw; an absent selected PID returns empty text. This Node-only
 helper stays off the main barrel so browser test hosts remain portable.
 
-## Certify an engine in fifteen lines
+## Certify an engine
+
+Available now
 
 ```ts
 import { Conformance, EngineSubject, FlowEngineLike } from "@smthrs/testing"
@@ -81,29 +91,30 @@ describe("engine conformance", () => {
 })
 ```
 
-Nine black-box pins run: identity, interruption, replay, and race. The race and
+Black-box pins run: identity, interruption, replay, and race. The race and
 interrupt cases advance a `TestClock`, which is why they are registered through
 `it.scoped` rather than `it.live`.
 
 ## Record, then replay
+
+Available now
 
 A model test runs the same code twice. The first run has no fixture, so it
 calls the provider and writes what came back. Every run after it reads that file
 and never touches the network. `CachedModel` is both halves.
 
 ```ts
+import type * as Model from "@smthrs/model/Model"
 import { CachedModel, FixtureStore } from "@smthrs/testing"
 import { Effect, Layer } from "effect"
 import { fileURLToPath } from "node:url"
 
 const fixture = fileURLToPath(new URL("./fixtures/balance.json", import.meta.url))
 
-const modelLayer = Layer.unwrap(
-  Effect.map(
-    Effect.acquireRelease(FixtureStore.makeFile(fixture), (store) => store.flush()),
-    (store) => CachedModel.layer({ live: liveModel(), fixture: store })
-  )
-)
+const modelLayer = (live: Model.Model) =>
+  Layer.unwrap(
+    Effect.map(FixtureStore.FixtureStore, (store) => CachedModel.layer({ live, fixture: store }))
+  ).pipe(Layer.provide(FixtureStore.layerFile(fixture)))
 ```
 
 The package reads no environment variable, so how a suite decides to record
@@ -117,11 +128,12 @@ it.
 matches by request shape with `modelId` erased, and dies on a request the
 fixture does not describe.
 
-## Four modules stay off the root barrel
+## Modules stay off the root barrel
+
+Available now
 
 The root entry point exports one namespace per module, and each is also
-importable from `@smthrs/testing/<Module>`. Four are reachable only by
-subpath.
+importable from `@smthrs/testing/<Module>`. `TestHost`, `Vitest`, `Faults` and `ProcessTable` are reachable only by subpath.
 
 `TestHost` is the deterministic host bundle: an in-memory filesystem, scripted
 interpreter, `TestClock`, and seeded PRNG. It remains a subpath so importing
@@ -148,7 +160,7 @@ Pids, process groups, and ports are machine global, so give a suite that uses
 `Faults` its own tree and its own runner config: `fileParallelism: false`, a
 finite timeout, and coverage off.
 
-`ProcessTable` spawns `ps` through `node:child_process`, which browser test
+`ProcessTable` spawns `ps` or `pwsh` through `node:child_process`, which browser test
 hosts cannot load, so it stays at `@smthrs/testing/ProcessTable`. See
 [Inspect real processes](#inspect-real-processes).
 

@@ -12,6 +12,8 @@ the assertions here are ordinary `Effect`s that fail with a typed
 
 ## Build the plan
 
+Available now
+
 `Plan.planOf` decodes the flow's input through its declared schema, then builds
 and projects the plan. Un-defaulted input cannot reach a plan: the schema's
 defaults are applied by construction before planning sees the value.
@@ -41,9 +43,11 @@ can separate "the plan called `FileSystem.readFile`" from "the plan called
 `Jj.status`" from "the input schema failed to decode".
 
 Building on its own is available too: `Plan.fromGraph` projects a
-[`@smthrs/flow`](/api/flow) graph, and `Plan.keys` derives just the step keys.
+[`@smthrs/flow`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/api.md) graph, and `Plan.keys` derives the step keys.
 
 ## Assert on the graph
+
+Available now
 
 `PlanAssertions.expectPlan(plan)` returns a fluent set of Effect-valued
 assertions:
@@ -55,14 +59,15 @@ yield * planned.nodeCount(4)
 yield * planned.contains("lint")
 yield * planned.edges([["read-pr", "lint"], ["read-pr", "test"]])
 yield * planned.keys({ "read-pr": "key1_0f3c..." })
-yield * planned.placement("lint", { tag: "sandbox", options: { profile: "lane-3" } })
+yield * planned.placement("lint", { tag: "flows/core/Placement/Sandbox", options: { profile: "lane-3" } })
 yield * planned.declaresEffects("test", ["read:workspace/input", "write:workspace/output"])
-yield * planned.envelope({ deny: ["proc:spawn"], may: ["fs:read ./"] })
+
 ```
 
 The effect assertion assumes the `test` node declares these paths:
 
 ```ts
+import * as Action from "@smthrs/flow/Action"
 import * as Flow from "@smthrs/flow/Flow"
 
 const Test = Action.make("review/test", { payload, success }).annotate(Flow.EffectsDeclaration, {
@@ -77,7 +82,10 @@ const Test = Action.make("review/test", { payload, success }).annotate(Flow.Effe
 `fs:read` or `proc:spawn`. A node that declares no effects has an empty effect
 list.
 
-Three of those have behavior worth knowing:
+For a projected envelope assertion, supply `options.envelope` to `Plan.planOf`
+or `Plan.fromGraph`; it is not derived from the flow declaration.
+
+These assertions have behavior worth knowing:
 
 - `edges` asserts the pairs are **present**. Pass `{ exact: true }` to also
   refuse any edge outside the expected set. It accepts either tuple form
@@ -99,6 +107,8 @@ checks a declaration against: a declaration outside it fails the build with
 
 ## Snapshot the whole plan
 
+Available now
+
 `Plan.render` produces a stable, line-oriented canonical string: nodes and
 edges in deterministic order, object payloads with sorted keys, byte-identical
 output for semantically identical plans.
@@ -110,6 +120,8 @@ yield * PlanAssertions.expectPlan(plan).matchesSnapshot(expectedRendering)
 A mismatch reports a line diff rather than two blobs.
 
 ## Pin the key digests
+
+Available now
 
 Step keys are cache identity. A key that changes silently is a cache-identity
 break, so goldens get their own assertion and their own code:
@@ -127,6 +139,8 @@ what it is.
 
 ## Assert coverage across a suite of plans
 
+Available now
+
 `expectPlans` answers one question across many built plans: did the suite's
 inputs reach every node you expect to be reachable?
 
@@ -142,8 +156,10 @@ not expected to reach.
 
 ## Related
 
+Available now
+
 - [Test tiers](../concepts/test-tiers.md) explains why the poisoned services
   throw rather than fail.
-- [`@smthrs/plan`](/api/plan) owns the key compiler these assertions read, and
-  [its own testing page](/pkg/plan/testing) lists what that package already
+- [`@smthrs/plan`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/docs/api.md) owns the key compiler these assertions read, and
+  [its own testing page](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/docs/testing.md) lists what that package already
   pins.

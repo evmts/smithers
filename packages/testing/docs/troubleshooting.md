@@ -8,6 +8,8 @@ symptom, the cause, and the fix.
 
 ## A conformance case hangs until the vitest timeout
 
+Available now
+
 **Symptom.** A `race/*` or `interrupt/fiber-abort` case never finishes and the
 runner kills it at its own timeout. No assertion failed.
 
@@ -19,6 +21,8 @@ alias, or through `it.effect` and `it.scoped`. Both supply a `TestClock`.
 `.live` does not.
 
 ## The model died with UnscriptedModelError
+
+Available now
 
 **Symptom.** A test fails with a defect naming a `modelId`, a `messageCount`,
 and a list of `toolNames`. `Effect.catchTag` did not catch it, and a retry
@@ -38,6 +42,8 @@ run actually asked, log the request at the call site.
 
 ## The model died with ReplayHarnessMismatchError
 
+Available now
+
 **Symptom.** A defect carrying `expected` and `actual` model ids.
 
 **Cause.** The request shape matched a recorded call, but that call was
@@ -50,6 +56,8 @@ keys on the whole request including `modelId` and records the new model as an
 ordinary miss.
 
 ## A recording run produced an empty or short fixture
+
+Available now
 
 **Symptom.** The fixture file exists but has no `calls`, or fewer than the run
 made.
@@ -66,6 +74,8 @@ the failure still reaches the caller.
 
 ## A replay reads a stale set of calls
 
+Available now
+
 **Symptom.** A call recorded during the run is not found by the next identical
 call.
 
@@ -78,6 +88,8 @@ reads the old index.
 **Fix.** Append through a `FixtureStore` rather than mutating `fixture.calls`.
 
 ## FixtureEncodingError with reason non-plain-object
+
+Available now
 
 **Symptom.** A recording fails with a `path` such as `$.tools[0].parameters` and
 the reason `non-plain-object`.
@@ -93,6 +105,8 @@ or digesting it. The other reasons name their own problem: `cycle`,
 than 128 levels of nesting.
 
 ## A pure plan assertion fails with purity_violation
+
+Available now
 
 **Symptom.** `PlanAssertions.expectPure` fails with `purity_violation` and the
 `actual` field holds a `CapabilityContractError`.
@@ -111,6 +125,8 @@ plan was ever built.
 
 ## A plan assertion fails with key_golden_mismatch
 
+Available now
+
 **Symptom.** `expectKeyGoldens` reports that a `key1_` digest changed.
 
 **Cause.** Canonical key serialization drifted. Step keys are cache identity,
@@ -121,6 +137,8 @@ what changed in the key material before updating the golden file: a key change
 invalidates every cached result recorded under the old one.
 
 ## A journal assertion fails with effect_kind_mismatch
+
+Available now
 
 **Symptom.** `journal.effect(key).atLeastOnce()` or `.journaledAtMostOnce()`
 fails, and the message lists the kinds actually found.
@@ -135,6 +153,8 @@ effect, or the assertion should be `journal.executed(key)` instead.
 
 ## exactlyOnce always fails
 
+Available now
+
 **Symptom.** `journal.effect(key).exactlyOnce()` fails with
 `ExactlyOnceUnsupportedError` no matter what the journal says.
 
@@ -148,6 +168,8 @@ the test vocabulary cannot claim a guarantee that does not exist.
 
 ## An engine subject fails everything with engine_unavailable
 
+Available now
+
 **Symptom.** Every operation fails with `EngineUnavailableError` and a message
 naming the operation.
 
@@ -158,6 +180,8 @@ overrides do not cover the operation the case reached.
 a partial subject can declare exactly what it supports.
 
 ## A run fails with execution_conflict
+
+Available now
 
 **Symptom.** `run` fails with `ExecutionConflictError` naming an
 `executionId` and a `field` of `flow` or `payload`.
@@ -170,6 +194,8 @@ silently running the original flow on the original payload, because that would
 give the caller no signal that its arguments were ignored.
 
 ## The host suite fails on the scratch path
+
+Available now
 
 **Symptom.** The `FileSystem round-trips` case fails with a
 `CapabilityContractError` naming `FileSystem` and `scratchPath`.
@@ -185,6 +211,8 @@ under `/tmp` from the bundle's own `Path` and `Random`.
 
 ## The host suite fails on process cleanup
 
+Available now
+
 **Symptom.** The cleanup case reports `Scope/interrupt_running` or
 `Scope/interrupt_cleanup`.
 
@@ -198,6 +226,8 @@ shell is checked for its refusal code and does not certify cleanup.
 
 ## The host suite fails on clock or random
 
+Available now
+
 **Symptom.** `Clock is monotonic` or `Random produces a valid value` fails with
 a `CapabilityContractError`, even though the bundle type-checks.
 
@@ -209,6 +239,8 @@ supplies neither fails loudly instead of silently using the Effect defaults.
 **Fix.** Have the bundle provide its own `Clock` and `Random`.
 
 ## killProcess reports the pid was already dead
+
+Available now
 
 **Symptom.** `killProcess: pid 4821 was already dead, so SIGKILL injected
 nothing`.
@@ -222,6 +254,8 @@ would otherwise report green over a fault it never caused.
 
 ## CI exits 5 rather than 0 or 1
 
+Available now
+
 **Symptom.** `ScoreGate.ciGrade` returns exit code 5 and a summary beginning
 `inconclusive:` or `passed every gate with unresolved:`.
 
@@ -233,6 +267,8 @@ unavailable, or a suite gated nothing at all.
 the suite owes an answer it could not give. The reasons list names each fault.
 
 ## A permission failure in a test that stubs nothing
+
+Available now
 
 **Symptom.** A test under `TestLayers.unit` fails typed on a permission
 decision rather than parking on an approval.

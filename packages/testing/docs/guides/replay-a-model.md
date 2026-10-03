@@ -11,11 +11,14 @@ file and never touches the network.
 
 ## Record, then replay
 
+Available now
+
 `CachedModel` is both halves. A request whose canonical digest is already in
 the fixture replays from it; a request that is not runs against the live model
 and is appended.
 
 ```ts
+import type * as Model from "@smthrs/model/Model"
 import { CachedModel, FixtureStore } from "@smthrs/testing"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -23,12 +26,10 @@ import { fileURLToPath } from "node:url"
 
 const fixture = fileURLToPath(new URL("./fixtures/balance.json", import.meta.url))
 
-const modelLayer = Layer.unwrap(
-  Effect.map(
-    Effect.acquireRelease(FixtureStore.makeFile(fixture), (store) => store.flush()),
-    (store) => CachedModel.layer({ live: liveModel(), fixture: store })
-  )
-)
+const modelLayer = (live: Model.Model) =>
+  Layer.unwrap(
+    Effect.map(FixtureStore.FixtureStore, (store) => CachedModel.layer({ live, fixture: store }))
+  ).pipe(Layer.provide(FixtureStore.layerFile(fixture)))
 ```
 
 The first run records:
@@ -56,6 +57,8 @@ call is a hit for the next identical call inside the same run.
 
 ## Decide how to record
 
+Available now
+
 The package exposes the layers and nothing else. It reads no environment
 variable and has no opinion about how a suite decides to record. Three shapes
 are common:
@@ -66,6 +69,8 @@ are common:
 - Deleting the fixture file and re-running.
 
 ## Pick a fixture store
+
+Available now
 
 | Constructor                      | Behavior                                                                                  |
 | -------------------------------- | ----------------------------------------------------------------------------------------- |
@@ -90,6 +95,8 @@ Recorded model failures retain the optional `quotaScope` value (`model` or
 `account`) through fixture decoding and replay.
 
 ## Replay strictly
+
+Available now
 
 `RecordedModel` is the strict double. It matches by request shape with
 `modelId` erased, claims each recorded call once, dies on a request the fixture
@@ -123,6 +130,8 @@ recorded calls happened.
 
 ## Record without a cache
 
+Available now
+
 `RecordingModel` is the recorder on its own, for a test that wants the calls in
 memory rather than in a file:
 
@@ -145,6 +154,8 @@ its stream's error channel or its requirements.
 
 ## What a recorder refuses to record
 
+Available now
+
 Two calls never reach a fixture, and both refusals protect the replay:
 
 - **An interrupted call, or one that died.** A truncated stream has no `settle`
@@ -154,6 +165,8 @@ Two calls never reach a fixture, and both refusals protect the replay:
   is no exchange to record. The failure still reaches the caller unchanged.
 
 ## Related
+
+Available now
 
 - [Fixtures and replay identity](../concepts/fixtures.md) explains the
   canonical digest, the memoized index, and why the doubles die rather than

@@ -9,6 +9,8 @@ It needs no network and no credentials.
 
 ## Raise the error
 
+Available now
+
 This example helper validates a chunk size and throws a typed refusal. It uses
 only `@smthrs/errors`; no provider adapter is needed.
 
@@ -34,6 +36,8 @@ person can read, and an optional `details` record. Everything else is optional
 and lives in a fourth options argument.
 
 ## Catch it and branch on the code
+
+Available now
 
 Classify by `code`. Never match on message text: a message is prose an adapter
 may reword, and a code is a string literal the type system checks.
@@ -71,6 +75,8 @@ wherever the URL would be noise, such as a form field or a chat reply.
 
 ## Check exhaustiveness explicitly
 
+Available now
+
 A closed union makes an explicit exhaustiveness check possible. Handle every
 code and assign the remaining value to `never` in the default branch:
 
@@ -105,6 +111,8 @@ closed union alone does not.
 
 ## Log it without leaking a credential
 
+Available now
+
 `SmithersError` serializes to its own enumerable fields, and `name` is not one
 of them:
 
@@ -138,6 +146,8 @@ error, not after. See
 
 ## Look up what a code means at runtime
 
+Available now
+
 The definitions table is exported, so a diagnostic command can print the
 meaning of a code it received:
 
@@ -153,6 +163,8 @@ for (const code of smithersErrorCodes) {
 codes, including inherited property names such as `toString`.
 
 ## Next
+
+Available now
 
 - [Handle a failed integration call](./guides/handle-a-failure.md) covers
   retries, the `IntegrationError` subclass, and the durable action boundary.

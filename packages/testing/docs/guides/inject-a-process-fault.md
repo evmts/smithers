@@ -18,6 +18,8 @@ import { isAlive, killProcess, waitFor, waitForReparent } from "@smthrs/testing/
 
 ## Kill a process and prove it died
 
+Available now
+
 ```ts
 await killProcess(engine.process)
 ```
@@ -33,6 +35,8 @@ non-finite pids reject with `killProcess: invalid pid` before any signal is sent
 
 ## Wait for the state you are asserting on
 
+Available now
+
 A fault landing is asynchronous. `waitFor` polls a predicate until it holds, or
 fails with a message naming what it waited for. Poll evidence the process under
 test wrote down, such as an append-only marker file it opens on boot:
@@ -46,9 +50,11 @@ const markers = () => fs.existsSync(markerLog) ? fs.readFileSync(markerLog, "utf
 await waitFor(() => markers().includes("second-started"), "the second action to start", 60_000)
 ```
 
-Every helper takes an optional timeout as its last argument.
+Every helper that waits takes an optional timeout as its last argument.
 
 ## Read the orphan a kill leaves behind
+
+Available now
 
 Containment claims have to be measured, not assumed. A child whose parent was
 killed is reparented, and on macOS and Linux the new parent is pid 1 or a
@@ -76,6 +82,8 @@ without signalling.
 
 ## Skew the wall clock
 
+Available now
+
 A durable timer is measured against the wall clock, and a test that has to
 cross a deadline should move the clock rather than wait:
 
@@ -101,6 +109,8 @@ order. `restore` is idempotent and does not resume an earlier skew. Use
 
 ## Where a fault suite has to live
 
+Available now
+
 Pids, process groups, ports, and the durable database under a fixture are
 machine global. A fault suite therefore gets its own tier:
 
@@ -115,6 +125,8 @@ suite, so it is safe to leave in the default tree. A case that kills a process
 another suite owns is not: it belongs with the code that owns that process.
 
 ## Admit the run before you claim anything
+
+Available now
 
 A kill proves something only if the thing it killed was really running. Boot
 the real process, wait until it reaches the state you are about to disturb,
@@ -144,6 +156,8 @@ not have rewritten, and out of the run's own journal. Anything read from the
 killed process is a claim about a process that is gone.
 
 ## Related
+
+Available now
 
 - [Test tiers](../concepts/test-tiers.md): why this is a separate tier rather
   than a slower unit test.
