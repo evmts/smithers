@@ -577,3 +577,16 @@ type TodoRepairSlots = { conflictTerminal?: React.ReactNode } // rendered by the
 ```
 
 **Merge blocker tones (design G12, 2026-10-02).** A failed required check is ember (`failed`). Gold (`attention`) is only for blockers where a person must act (`review_required`, a question, an approval). System or order waits (`order`, `machine`, `rebase`, `merging`) are neutral (`quiet`).
+
+### T-UI-16 File live states (S2)
+
+`FileCardSurface` in `cards/CodeSurface.tsx` reuses `FileProps` from `@smthrs/rpc/FileCard`.
+The existing `gone` union carries deleted `{by}` or renamed `{to, by}`;
+`outside` carries `{version, at}`. Gone keeps the last content with a Snapshot
+caption; Restore and Follow are supplied actions. Outside shows Changed outside
+Smithers with the supplied Compare action. `view.compare` shows the current
+content and the supplied outside version reference. The contract has no outside
+bytes or comparison hunks; rendering the full content comparison needs an
+engineering contract decision. `DiffCardSurface` in `cards/DiffSurface.tsx`
+continues to render supplied hunks and burst Restore actions. Both surfaces remain
+unmounted pending T-APP-11 / T-APP-15.

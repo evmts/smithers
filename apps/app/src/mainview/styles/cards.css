@@ -3180,3 +3180,23 @@ from main down to the last item. */
 .mvp-timeline li[data-tone="live"] .mvp-tl-node, .mvp-tl-edge li[data-tone="live"] .mvp-tl-node { animation:mvp-shell-live 1.8s ease-in-out infinite; }
 @keyframes mvp-shell-live { 50% { opacity:.4; } }
 @media (prefers-reduced-motion:reduce) { .mvp-timeline .mvp-tl-node, .mvp-tl-edge .mvp-tl-node { animation:none !important; } }
+
+/* FileCardSurface (T-UI-16): live file notices, snapshots and outside comparison. */
+.code-file-view .code-file-state { display: flex; align-items: center; gap: 5px; color: var(--text-muted); font-size: var(--fs-caption); }
+.code-file-view .code-file-notice { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); padding: 6px 10px; border: 1px solid var(--attention-border); border-radius: var(--r-1); background: var(--attention-wash); color: var(--attention-text); font-size: var(--fs-small); font-weight: 500; }
+.code-file-view .code-file-notice > svg { flex-shrink: 0; }
+.code-file-view .code-file-notice > span { min-width: 0; overflow-wrap: anywhere; }
+.code-file-view .code-file-notice code { font-family: var(--font-mono); font-size: 12px; }
+.code-file-view .code-file-notice[data-tone="outside"] { border-color: var(--border-strong); background: var(--surface-2); color: var(--text); }
+.code-file-view .code-snapshot-cap { display: flex; align-items: center; gap: 5px; margin: 0 0 4px 2px; color: var(--text-muted); font-size: var(--fs-caption); font-weight: 500; }
+.code-file-view .code-actions { margin-bottom: var(--sp-2); }
+.code-file-view .code-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: var(--sp-2); }
+.code-file-view .code-compare > div { display: flex; min-width: 0; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-1); background: var(--surface); }
+.code-file-view .code-compare span { color: var(--text-muted); font-size: var(--fs-caption); font-weight: 600; }
+.code-file-view .code-compare code { overflow-x: auto; font-family: var(--font-mono); font-size: 12px; white-space: pre; }
+@media (max-width: 480px) { .code-file-view .code-compare { grid-template-columns: 1fr; } }
+
+.code-file-view .code-file-notice .code-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 0 auto; flex-shrink: 0; }
+@media (max-width: 480px) { .code-file-view .code-file-notice { flex-wrap: wrap; } }
+
+.code-file-view .code-compare code:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }

@@ -117,3 +117,30 @@ export const CodeSurface = ({
     </div>
   )
 }
+
+import { formatBytes } from "./views/formatBytes"
+import type { CodeEditorViewProps } from "@smthrs/rpc/FileCard"
+import { Editor } from "./views/Editor"
+import { ActorChip, actorName } from "./views/ActorChip"
+import { DiffAction } from "./views/DiffAction"
+import { FileX, FileSymlink, FolderSync, History, TriangleAlert } from "lucide-react"
+
+export function FileCardSurface({ model, actions, view, gestures, onAction, onView }: CodeEditorViewProps) {
+  const controls = actions.length ? <div className="code-actions">{actions.map((action, index) => <DiffAction key={index} action={action} onAction={onAction} />)}</div> : null
+  return <section className="smithers-card code-file-view" data-kind="file" data-keyboard-pane="File" data-digest={model.digest} data-mode={model.mode} aria-label={model.path}>
+    <header className="smithers-card-header"><h2 className="smithers-card-title">{model.path}</h2><span className="mvp-branch-chip">{model.branch}</span>
+      {model.last_writer ? <span className="code-writer" title={actorName(model.last_writer)}><ActorChip actor={model.last_writer} size="s" /></span> : null}
+      {model.gone ? <span className="code-file-state">{model.gone.kind === "deleted" ? <FileX size={13} aria-hidden="true" /> : <FileSymlink size={13} aria-hidden="true" />}{model.gone.kind === "deleted" ? "Deleted" : "Renamed"}</span> : null}
+    </header>
+    <div className="smithers-card-body">
+      {model.gone ? <>
+        <div className="code-file-notice"><TriangleAlert size={14} aria-hidden="true" /><span>{model.gone.kind === "deleted" ? <>Deleted by {actorName(model.gone.by)}</> : <>Renamed to <code>{model.gone.to}</code> by {actorName(model.gone.by)}</>}</span>{controls}</div>
+        <div className="code-snapshot-cap"><History size={12} aria-hidden="true" />Snapshot</div>
+      </> : model.outside ? <div className="code-file-notice" data-tone="outside"><FolderSync size={14} aria-hidden="true" /><span>Changed outside Smithers</span>{controls}</div> : null}
+      {!model.gone && !model.outside ? controls : null}
+      {!model.gone && model.outside && view.compare ? <div className="code-compare" role="group" aria-label="Live and outside versions"><div><span>Live</span><code tabIndex={0} aria-label="Live version">{model.content.kind === "text" ? model.content.text : model.digest}</code></div><div><span>Outside</span><code tabIndex={0} aria-label="Outside version">{model.outside.version}</code></div></div> : null}
+      {model.content.kind === "text" ? <Editor path={model.path} text={model.content.text} language={model.language} diagnostics={model.diagnostics} hover={model.hover} reveal={model.reveal} gestures={gestures} onAction={onAction} onView={onView} /> : <p className="code-file-size">{model.content.kind === "binary" ? "Binary file" : "Too large to show"} · {formatBytes(model.content.bytes, "decimal")} {model.github_url ? <a href={model.github_url} target="_blank" rel="noreferrer">on GitHub ↗</a> : null}</p>}
+      {model.diagnostics.length ? <ul className="code-diagnostics">{model.diagnostics.map((diagnostic, index) => <li key={index} data-severity={diagnostic.severity}>{diagnostic.message}</li>)}</ul> : null}
+    </div>
+  </section>
+}

@@ -5,6 +5,11 @@ import type { ViewStory } from "./stories"
 // T-UI-11 S1 fixtures; S2/S3 live/gone/outside stories belong to T-UI-16/19.
 export const fileStories = {
   one_mib: { ...fixtures.text, expect: ["0123456789ab"], model: { ...fixtures.text.model, content: { kind: "text" as const, text: "// 0123456789ab\n".repeat(65_536) } } },
+  deleted: fixtures.deleted, renamed: fixtures.renamed, outside: fixtures.outside, comparing: fixtures.comparing,
+  deleted_readonly: { ...fixtures.deleted, actions: [] },
+  renamed_readonly: { ...fixtures.renamed, actions: [] },
+  outside_readonly: { ...fixtures.outside, actions: [] },
+  restore_disabled: { ...fixtures.deleted, actions: fixtures.deleted.actions.map(action => ({ ...action, disabled: { reason: "Waiting for a machine" } })) },
   text: fixtures.text, diagnostics: fixtures.diagnostics, hover: fixtures.hover, reveal: fixtures.reveal,
   too_large: fixtures.too_large, binary: fixtures.binary,
   binary_mb: { ...fixtures.binary, expect: ["Binary file · 1.2 MB", "on GitHub ↗"], model: { ...fixtures.binary.model, content: { kind: "binary" as const, bytes: 1_200_000 } } },
@@ -26,5 +31,5 @@ export const stories: ViewStory[] = Object.entries(fileStories).map(([name, stor
     selector: ".code-file-view", gesture, event: "keydown" as const,
     key: gesture === "hover" ? " " : "F12", action: null,
   })),
-  render: callbacks => <CodeEditorView {...story} {...callbacks} />,
+  render: (callbacks, actions = story.actions) => <CodeEditorView {...story} actions={actions} {...callbacks} />,
 }))

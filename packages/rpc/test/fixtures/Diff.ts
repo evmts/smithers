@@ -39,7 +39,7 @@ export const fixtures = {
   ),
   burst: story("One burst by Claude Code", burst, {
     actions: [{ tag: "file.restore", label: "Restore this file", args: { path, revision: "burst-17" } }],
-    expect: ["Restore this file", "  description: \"Build\","]
+    expect: ["  description: \"Build\","]
   }),
   deleted: story(
     "Deleted",

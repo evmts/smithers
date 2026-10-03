@@ -114,3 +114,6 @@ export type FileCardCallbacks = CardCallbacks<
   | "code.hover"
   | "code.definition"
 >
+
+/** Props-only File surface; the existing editor props name remains compatible. */
+export type FileProps = CodeEditorViewProps
