@@ -13,6 +13,8 @@ verb is `evict`, and it answers whether a row was deleted.
 
 ## Fence the delete on the provenance you observed
 
+**Available now**
+
 Name the `(runId, eventSeq)` pair the entry you inspected was recorded by, and
 the delete becomes a compare-and-swap:
 
@@ -40,6 +42,8 @@ numbers are per run and collide across runs routinely.
 
 ## Delete unconditionally only when you own the digest
 
+**Available now**
+
 ```ts
 const dropEverything = Effect.gen(function*() {
   const cache = yield* CacheStore.CacheStore
@@ -52,6 +56,8 @@ tool clearing a cache file it owns, and wrong for a running engine, where the
 row you meant to drop may no longer be the row you delete.
 
 ## The head carries the first writer's provenance
+
+**Available now**
 
 `put` never overwrites a head row. A second run recording the same result under
 its own provenance answers `ExistingSame` and leaves the row, including its
@@ -75,6 +81,8 @@ const dropWhatIRead = Effect.gen(function*() {
 
 ## What eviction leaves behind
 
+**Available now**
+
 The append-only ledger row. `evict` removes the reusable head and nothing else,
 so a replay that reads through
 [the provenance fence](/guides/read-a-recorded-result/) still reads the bytes its
@@ -82,7 +90,7 @@ own event recorded, poison included. That is the point:
 [the head and the ledger](/concepts/head-and-ledger/) explains why a past
 run's projection must stay a function of what that run recorded.
 
-Two consequences follow for the digest you just evicted.
+Two consequences follow for the digest you evicted.
 
 - A later `put` under the same provenance and the same bytes restores the head
   and answers `Inserted`. The ledger row that survived the eviction is the
@@ -96,6 +104,8 @@ Two consequences follow for the digest you just evicted.
 
 ## A malformed fence is a caller mistake
 
+**Available now**
+
 A fence naming an empty run id, a fractional sequence number, or a negative one
 is a compare-and-swap no row could satisfy. `evict` fails with `invalid_cache`
 before any `DELETE` is issued rather than reporting the mistake as an ordinary
@@ -103,6 +113,8 @@ before any `DELETE` is issued rather than reporting the mistake as an ordinary
 an adapter that implements this contract elsewhere.
 
 ## Against a shared tier
+
+**Available now**
 
 `CombinedCacheStore.evict` never reaches across. One host's observation that a
 result is poison does not generalize to a tier where another machine may still
@@ -122,6 +134,8 @@ The client cannot detect it. Fenced evictions need a conforming server: see
 :::
 
 ## Where to go next
+
+**Available now**
 
 - [Expire cached results](/guides/expire-cached-results/): reclaiming a whole age
   band rather than one named row.

@@ -16,6 +16,8 @@ the thing being shared.
 
 ## Authenticate and authorize every request
 
+**Available now**
+
 The tier is a trust boundary. Every host that reads from it writes a hit back
 into its local store and replays it as the step's own output, so any caller
 that can `PUT` can inject results into other machines' runs, and any caller
@@ -36,6 +38,8 @@ that a writer publishes under the correct address.
 
 ## The three requests
 
+**Available now**
+
 Every path resolves beneath the configured endpoint, and a trailing slash on
 the endpoint is ignored.
 
@@ -54,6 +58,8 @@ Do not answer `409` from a `DELETE`, and do not answer `404` from a `PUT`. Each
 would be read as a transport failure rather than as the outcome you meant.
 
 ## Decide 201 from 409 in two stages
+
+**Available now**
 
 This is the rule that makes first-writer-wins decidable over dumb HTTP. Your
 tier holds the same two things the SQL tier holds: an immutable record per
@@ -80,6 +86,8 @@ key orders arrive as identical bytes on every host.
 
 ## Answer the provenance query parameters
 
+**Available now**
+
 Both extensions are query parameters, `recordedRunId` and `recordedEventSeq`,
 and plain Bazel HTTP defines neither.
 
@@ -97,6 +105,8 @@ an entry recorded under different provenance is the documented fallback.
 :::
 
 ## Refuse exactly what the client refuses
+
+**Available now**
 
 The boundary checks are exported, so your service can run the same ones rather
 than reimplementing them. Run them after the caller is authenticated and
@@ -178,6 +188,8 @@ signatures are on the [API reference](/reference/api/).
 
 ## What the client already does
 
+**Available now**
+
 Knowing this saves you from defending against problems the client handles, and
 from assuming defenses it does not have.
 
@@ -203,6 +215,8 @@ from assuming defenses it does not have.
 
 ## Retention is yours
 
+**Available now**
+
 `RemoteCacheStore.sweepExpired` validates its argument, issues no request, and
 answers `0`. A client that swept your tier would delete rows other machines are
 still replaying from. Collect on your own schedule, and remember that a
@@ -210,6 +224,8 @@ provenance record is the evidence a replay reads: reclaim it with the run it
 belongs to, not by age alone.
 
 ## Where to go next
+
+**Available now**
 
 - [Share results across machines](/guides/share-results-across-machines/): the
   client side of this contract.

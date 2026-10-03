@@ -7,7 +7,9 @@ sidebar:
 
 ## Get the package
 
-`@smthrs/step-cache` is not on npm at 1.0.0-rc.0. It ships as a member of the
+**Available now**
+
+`@smthrs/step-cache` is not on npm at 1.0.0-rc.1. It ships as a member of the
 [smithers repository](https://github.com/smithersai/smithers) workspace, so
 using it today means working from a checkout:
 
@@ -24,25 +26,30 @@ specifier:
 ```json
 {
   "dependencies": {
-    "@smthrs/step-cache": "workspace:*"
+    "@smthrs/step-cache": "workspace:*",
+    "effect": "4.0.0-rc.115"
   }
 }
 ```
 
 ## Requirements
 
+**Available now**
+
 - Node.js 26.4.0 or later.
-- [`effect`](https://effect.website) 4.0.0-rc.115, which supplies the `Effect`,
+- [`effect`](https://effect.website), an exact 4.0.0-rc.115 peer dependency, which supplies the `Effect`,
   `Schema`, `Layer`, `Metric`, and SQL client types this package's signatures
   use.
-- [`@smthrs/canonical`](/api/canonical) for RFC 8785 JSON and
-  [`@smthrs/database`](/api/database) for the driver-neutral write boundary.
+- [`@smthrs/canonical`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/canonical/docs/api.md) for RFC 8785 JSON and
+  [`@smthrs/database`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/api.md) for the driver-neutral write boundary.
   Both resolve with the package. Declare `@smthrs/database` yourself only when
   you import a driver from it, as a durable composition does below.
 
 The build ships both ESM and CommonJS with TypeScript declarations.
 
 ## Import forms
+
+**Available now**
 
 The root entry point re-exports every module as a namespace:
 
@@ -66,19 +73,23 @@ purpose: only `Migrations.set` composes them.
 
 ## Node and the browser
 
+**Available now**
+
 The root entry point is written against the `@smthrs/database` service contract
 and names no driver, so it bundles for the browser. Only two things bind a
 platform:
 
-- `@smthrs/step-cache/test/TestCacheStore` binds a Node SQLite database, which
+- `@smthrs/step-cache/test/TestCacheStore` uses Node database adapters, which
   is why it lives at its own subpath rather than in the root namespace set.
 - A production composition supplies its own driver layer, and that layer
   chooses the platform.
 
 ## What a runnable composition adds
 
+**Available now**
+
 `CacheStore.layer` requires two services from
-[`@smthrs/database`](/api/database): Effect's `SqlClient` and the
+[`@smthrs/database`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/api.md): Effect's `SqlClient` and the
 `DurableWriter` write boundary. Building them means importing that package
 directly, so declare it too:
 
@@ -112,10 +123,12 @@ implementation, which `RemoteCacheStore` requires. `FetchHttpClient.layer` from
 `effect/unstable/http/FetchHttpClient` is the usual one.
 
 Most hosts never build this composition by hand.
-[`@smthrs/engine-store`](/api/engine-store) already composes the step cache,
+[`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md) already composes the step cache,
 the journal, and the run store into one durable engine, and
 `Migrations.sets` there installs every table in dependency order.
 
 ## Next step
+
+**Available now**
 
 Record a result and read it back in the [Quickstart](./quickstart.md).

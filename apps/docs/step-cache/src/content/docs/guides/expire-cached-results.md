@@ -13,6 +13,8 @@ read again. They are separate on purpose.
 
 ## Refuse an old row on read
 
+**Available now**
+
 `maxAgeMs` measures the entry's `createdAtMs` against the current clock reading
 and answers a miss when the row is older than the bound:
 
@@ -41,6 +43,8 @@ rather than reading as a miss.
 
 ## Reclaim what nothing will read
 
+**Available now**
+
 `sweepExpired` is the collection half. It deletes head rows recorded strictly
 before the floor and answers how many it deleted:
 
@@ -64,9 +68,11 @@ request.
 
 ## Keep a declared TTL out of the store
 
+**Available now**
+
 A caller-facing `CachePolicy` annotation, `{ ttlMs?, scope? }`, is declared by
-[`@smthrs/flow`](https://flow.smithers.sh/reference/api/) and [`@smthrs/patterns`](https://smithers-patterns.smithers.sh/reference/api/), and read at
-dispatch by [`@smthrs/engine-store`](https://engine-store.smithers.sh/reference/api/), which owns what it
+[`@smthrs/flow`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/api.md) and [`@smthrs/patterns`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/patterns/docs/api.md), and read at
+dispatch by [`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md), which owns what it
 means and journals the decision it takes. Those packages are the contract for
 it.
 
@@ -83,6 +89,8 @@ and retained lineage history. These are engine decisions; the generic store's
 `maxAgeMs` and retention APIs remain independent read and collection policies.
 
 ## Where to go next
+
+**Available now**
 
 - [Evict a poisoned entry](/guides/evict-a-poisoned-entry/): removing one named
   row rather than a whole age band.

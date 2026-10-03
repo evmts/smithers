@@ -12,9 +12,13 @@ For the model behind the two tables, see
 
 ## Example
 
+**Available now**
+
 ```ts
 import * as CacheStore from "@smthrs/step-cache/CacheStore"
 import * as TestCacheStore from "@smthrs/step-cache/test/TestCacheStore"
+import * as Effect from "effect/Effect"
+
 const cached = Effect.gen(function*() {
   const cache = yield* CacheStore.CacheStore
   yield* cache.put({
@@ -31,6 +35,8 @@ const cached = Effect.gen(function*() {
 
 ## Entry points
 
+**Available now**
+
 | Import                                   | Exports                                                                                                 | Platform |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------- | -------- |
 | `@smthrs/step-cache`                     | `CacheStore`, `CacheStoreMetrics`, `CombinedCacheStore`, `Migrations`, `RemoteCacheStore` as namespaces | any      |
@@ -42,13 +48,15 @@ const cached = Effect.gen(function*() {
 | `@smthrs/step-cache/test/TestCacheStore` | the migrated in-memory store                                                                            | Node     |
 
 The root is written against the driver-neutral
-[`@smthrs/database`](https://database.smithers.sh/reference/api/) contract and bundles for the browser. The
-test double binds a Node SQLite database, so it lives at its own subpath.
+[`@smthrs/database`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/api.md) contract and bundles for the browser. The
+test helper uses Node database adapters, so it lives at its own subpath.
 `@smthrs/step-cache/internal/*`, `@smthrs/step-cache/migrations/*`, and
 `@smthrs/step-cache/*/index` are blocked by the export map. See
-[platform support](https://smithers.sh/docs/reference/api/#platform-support).
+[platform support](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md#runtime-and-dependency-support).
 
 ## CacheStore
+
+**Available now**
 
 Durable content-addressed step result storage. The store receives digests and
 results that a caller already computed; it never interprets a step layer, a
@@ -259,7 +267,7 @@ type CacheStoreErrorCode = typeof CacheStoreErrorCode.Type
 | `constraint`         | The database refused the write with a constraint or unique violation.                                                                                       |
 | `decode_failed`      | A stored row, or a shared tier's response, could not be decoded back into a `CacheEntry`.                                                                   |
 | `persistence_failed` | The database or the shared tier failed: a transport refusal, an unexpected HTTP status, an oversized body, or a request that passed its deadline.           |
-| `unknown`            | A row the store had just written was missing inside its own transaction, or a `makeNoop` method no test supplied was called.                                |
+| `unknown`            | A row the store had written was missing inside its own transaction, or a `makeNoop` method no test supplied was called.                                     |
 
 See [troubleshooting](/troubleshooting/) for the message text each one
 carries and what to change.
@@ -383,7 +391,7 @@ const encodeCanonical: (value: unknown, field: string) => Effect.Effect<string, 
 ```
 
 Admits `value` under the JSON budget and encodes it as RFC 8785 canonical JSON
-through [`@smthrs/canonical`](https://canonical.smithers.sh/reference/api/), failing `invalid_cache` with
+through [`@smthrs/canonical`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/canonical/docs/api.md), failing `invalid_cache` with
 `field` named in the message. Canonical form is what makes `put`'s text
 comparison a structural one: two results built in different key orders encode
 identically.
@@ -463,9 +471,11 @@ nested `result` and `meta` trees must be plain.
 
 ## CacheStoreMetrics
 
+**Available now**
+
 The metric handles the SQL store updates. This module defines them and nothing
 else; no exporter ships here. Provide one, for example
-[`@smthrs/observability`](https://observability.smithers.sh/reference/api/), and the counters appear in it.
+[`@smthrs/observability`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/docs/api.md), and the counters appear in it.
 See [observe cache outcomes](/guides/observe-cache-outcomes/).
 
 ### lookups
@@ -538,6 +548,8 @@ Read its `get` and `put` views; the bare handle always reads zero.
 
 ## CombinedCacheStore
 
+**Available now**
+
 Two tiers composed into one `CacheStore.Service`: local first, shared second,
 with write-back into the local store. The shape is Bazel's
 `CombinedCache.downloadActionResult`. See
@@ -590,6 +602,8 @@ effects rather than layers because they inhabit the same tag: merging two
 `Layer<CacheStore>` values would shadow one with the other.
 
 ## RemoteCacheStore
+
+**Available now**
 
 The same `CacheStore.Service` contract spoken over HTTP: `GET`, `PUT`, and
 `DELETE` on `/ac/{keyDigest}` carrying the `CacheEntry` JSON. This is the
@@ -687,6 +701,8 @@ intended production shape is `CombinedCacheStore` with this as its remote tier.
 
 ## Migrations
 
+**Available now**
+
 This package owns two tables and nothing else: the mutable `flows_step_cache`
 head and the append-only `flows_step_cache_recorded` ledger. Migration
 `0002_created_at_index` indexes `created_at_ms` on both, so `sweepExpired`
@@ -700,7 +716,7 @@ const set: DatabaseMigrations.MigrationSet
 
 The namespaced migration set, namespace `step-cache`, reserving migration id
 block `2000` so its ids can never collide with the journal's or the run
-store's. [`@smthrs/engine-store`](https://engine-store.smithers.sh/reference/api/) composes it with the other
+store's. [`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md) composes it with the other
 storage sets in dependency order.
 
 ### run
@@ -726,10 +742,13 @@ Compose it beneath `CacheStore.layer`.
 
 ## TestCacheStore
 
+**Available now**
+
 ```ts
 const layer: Layer.Layer<CacheStore.CacheStore, SqlError | Migrator.MigrationError, never>
 ```
 
-Imported from `@smthrs/step-cache/test/TestCacheStore`. The production SQLite
-store over an in-memory database, with migrations already run. Node only. It is
-the store the [quickstart](/quickstart/) uses.
+Imported from `@smthrs/step-cache/test/TestCacheStore`. The production SQL
+store over in-memory SQLite by default, or an isolated PostgreSQL schema when
+`SMITHERS_TEST_PG_URL` is set. Migrations run before it is exposed. Node only. It
+is the store the [quickstart](/quickstart/) uses.

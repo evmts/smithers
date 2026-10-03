@@ -8,10 +8,12 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flo
 
 `CacheStore.layer` requires two services and one precondition: Effect's
 `SqlClient`, the `DurableWriter` write boundary from
-[`@smthrs/database`](https://database.smithers.sh/reference/api/), and the two tables already created. This
+[`@smthrs/database`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/api.md), and the two tables already created. This
 guide composes all three.
 
 ## Build the database pair
+
+**Available now**
 
 `NodeDatabase.layer` provides the SQL client and nothing else.
 `DurableWriter.layer` adds the write policy above it, and it accepts any Effect
@@ -30,6 +32,8 @@ const database = Layer.provideMerge(
 ```
 
 ## Run the migrations beneath the store
+
+**Available now**
 
 `Migrations.layer` creates `flows_step_cache` and
 `flows_step_cache_recorded`. Compose it under the store so the tables exist
@@ -55,6 +59,8 @@ and the run store's without collision.
 
 ## Use the store
 
+**Available now**
+
 ```ts
 import * as Effect from "effect/Effect"
 
@@ -70,8 +76,10 @@ The database layer is scoped, so the program is run under `Effect.scoped`.
 
 ## Prefer the engine's composition
 
+**Available now**
+
 A host that runs flows rarely builds this by hand.
-[`@smthrs/engine-store`](https://engine-store.smithers.sh/reference/api/) already composes the step cache
+[`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md) already composes the step cache
 with the journal and the run store. The database loader runs migrations
 sorted by migration id regardless of the order the sets are supplied in.
 Its single high-water mark does not prevent appending to an installed lower
@@ -82,9 +90,11 @@ under a custom engine.
 
 ## Where to go next
 
+**Available now**
+
 - [Share results across machines](/guides/share-results-across-machines/): put a
   shared HTTP tier behind this local one.
 - [Test against the step cache](/guides/test-with-the-cache/): the same store over
   an in-memory database.
 - [The head and the ledger](/concepts/head-and-ledger/): what the two
-  tables you just created are for.
+  tables you created are for.

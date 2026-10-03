@@ -12,9 +12,14 @@ each have a seam this package ships.
 
 ## Use the real store over an in-memory database
 
-`@smthrs/step-cache/test/TestCacheStore` is the production SQLite store with
+**Available now**
+
+`@smthrs/step-cache/test/TestCacheStore` is the production SQL store with
 migrations already run, over a database that is never written to disk. Nothing
 is stubbed, so a test proves the behavior production has:
+
+`TestCacheStore.layer` uses in-memory SQLite unless `SMITHERS_TEST_PG_URL`
+selects an isolated PostgreSQL schema. Migrations run before the stores are exposed.
 
 ```ts
 import { describe, expect, it } from "@effect/vitest"
@@ -42,15 +47,17 @@ describe("the step under test", () => {
 })
 ```
 
-The layer binds a Node SQLite database, which is why it lives at its own
+The layer uses Node database adapters, which is why it lives at its own
 subpath instead of in the root namespace set. It is Node only.
 
 When a test also needs the `SqlClient` itself, to assert on rows directly,
 compose the pieces rather than the bundle: `CacheStore.layer` over
 `Migrations.layer` over `TestDatabase.layer` from
-[`@smthrs/database`](https://database.smithers.sh/reference/api/) leaves the client in scope.
+[`@smthrs/database`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/api.md) leaves the client in scope.
 
 ## Control the clock for age bounds
+
+**Available now**
 
 `maxAgeMs` and `sweepExpired` both read the injected clock, so a test states
 the passage of time outright and never waits:
@@ -75,6 +82,8 @@ the floor survives the sweep.
 
 ## Refuse the operations a unit should never reach
 
+**Available now**
+
 `CacheStore.layerNoop` provides a store whose every operation fails with
 `unknown` and a message naming the method. A test that reaches an operation it
 did not supply is told which one, instead of reading a silent miss that makes
@@ -96,7 +105,9 @@ a value, for a composition that wants the service rather than the layer.
 
 ## Stub a shared tier
 
-The shared tier is just another `CacheStore.Service`, so a two-tier test needs
+**Available now**
+
+The shared tier is another `CacheStore.Service`, so a two-tier test needs
 no HTTP at all:
 
 ```ts
@@ -125,6 +136,8 @@ is how this package tests its own status mapping, its body bounds, and its
 query parameters.
 
 ## Assert on the counters
+
+**Available now**
 
 Provide an isolated registry so counts from other tests in the same process do
 not leak in, then read the attributed views:
@@ -155,6 +168,8 @@ unattributed handles read zero. See
 [observe cache outcomes](/guides/observe-cache-outcomes/).
 
 ## Where to go next
+
+**Available now**
 
 - [Compose a durable step cache](/guides/compose-a-store/): the same store over a
   real file.

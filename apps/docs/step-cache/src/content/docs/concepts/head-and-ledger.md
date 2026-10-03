@@ -22,6 +22,8 @@ takes the next write.
 
 ## Why the head may be a cache and the ledger may not
 
+**Available now**
+
 Evicting the head is a judgement about the future: this host observed this
 result to be poison, so no later execution should reuse it. Deleting a ledger
 row would be a claim about the past, and a past run's projection is a function
@@ -36,6 +38,8 @@ sharing its parent's keys, or a shared-tier write-back.
 
 ## The head is rebuildable
 
+**Available now**
+
 Every head the engine inserts is journalled: an `admitted` provenance entry
 commits with the inserting `put`, and each engine eviction is journalled before
 its fenced `evict`. `@smthrs/engine-store`'s `StepCacheFold.rebuild` folds those
@@ -43,6 +47,8 @@ entries and `rebuildHeads` copies the surviving ledger rows back into the head.
 The ledger stays the content store, so results never enter the journal.
 
 ## The two stages of a recording
+
+**Available now**
 
 `put` decides its answer in two stages, and both matter.
 
@@ -67,20 +73,24 @@ acts on, and reporting it where it has not happened fails a run over a
 divergence that does not exist.
 
 Whether an insert conflicted, and whether a fenced delete hit, are read through
-`affectedRows` from [`@smthrs/database`](https://database.smithers.sh/reference/api/) rather than a
+`affectedRows` from [`@smthrs/database`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/api.md) rather than a
 driver-specific `changes` cast, so the outcomes hold on every backend.
 
 ## Why canonical form is load bearing
+
+**Available now**
 
 The head stage compares stored text. `JSON.stringify` output depends on key
 insertion order, so two structurally equal results built in different orders
 compared unequal and produced a `Conflict` that named a divergence that had not
 happened. The store canonicalizes `result` and `meta` on the way in, through
-[`@smthrs/canonical`](https://canonical.smithers.sh/reference/api/), which makes the text comparison a
+[`@smthrs/canonical`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/canonical/docs/api.md), which makes the text comparison a
 structural one. The HTTP tier encodes the same way before it puts an entry on
 the wire, so a value with no JSON form is refused identically by both tiers.
 
 ## First writer wins, across connections
+
+**Available now**
 
 Two connections putting different results under one digest at the same moment
 produce exactly one `Inserted` and one `Conflict`, and the surviving row is one
@@ -90,8 +100,10 @@ entries or nothing: there is no torn row and no `decode_failed`.
 
 ## What reclaims a ledger row
 
+**Available now**
+
 By default, whole-run reclamation belongs to
-[`@smthrs/engine-store`](https://engine-store.smithers.sh/reference/api/), whose retention pass erases a
+[`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md), whose retention pass erases a
 terminal run's ledger rows by `recorded_run_id` together with its journal.
 
 Remote write-back preserves the original provenance because local frames can
@@ -108,9 +120,11 @@ for the policy contract and coordination requirements.
 
 ## Related
 
+**Available now**
+
 - [Read the result one event recorded](/guides/read-a-recorded-result/):
   the provenance fence as a task.
 - [Expire cached results](/guides/expire-cached-results/): the head's
   retention and optional ledger collection.
-- [Content addressing](https://smithers.sh/docs/concepts/content-addressing/): where a
+- [Step keys](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/docs/concepts/step-keys.md): where a
   `keyDigest` comes from.

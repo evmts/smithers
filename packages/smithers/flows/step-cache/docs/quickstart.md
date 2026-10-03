@@ -6,12 +6,14 @@ sidebar:
 ---
 
 This quickstart runs one whole cache cycle end to end. The store is the
-production SQLite implementation over an in-memory database, so nothing here is
+production SQL implementation over an in-memory database, so nothing here is
 a stub and no file is written. By the end you will have recorded a result, read
 it back two different ways, seen a bound refuse a stale row, and evicted a row
 under a fence.
 
 ## Prerequisites
+
+**Available now**
 
 - Node.js 26.4.0 or later.
 - A package that depends on `@smthrs/step-cache`, as
@@ -19,9 +21,14 @@ under a fence.
 
 ## Record a result
 
+**Available now**
+
 Create `quickstart.ts`. A recording is one `CacheEntry`: the content digest,
 the result, its metadata, when it was recorded, and the journal event that
 recorded it.
+
+`TestCacheStore.layer` uses in-memory SQLite unless `SMITHERS_TEST_PG_URL`
+selects an isolated PostgreSQL schema. Migrations run before the stores are exposed.
 
 ```ts
 import * as CacheStore from "@smthrs/step-cache/CacheStore"
@@ -52,6 +59,8 @@ digest. Nothing overwrites: the first writer wins.
 
 ## Read it back, and watch the head move
 
+**Available now**
+
 One `put` writes two rows in one transaction: the mutable head that an ordinary
 lookup serves, and an immutable ledger row keyed by `(keyDigest, recordedRunId,
 recordedEventSeq)`. Evicting the head and recording a different result under a
@@ -80,8 +89,8 @@ const cycle = Effect.gen(function*() {
   const recorded = yield* cache.get(digest, { recordedBy: { runId: "run-a", eventSeq: 7 } })
 
   return {
-    head: Option.map(head, (entry) => entry.result),
-    recorded: Option.map(recorded, (entry) => entry.result)
+    head: Option.getOrNull(Option.map(head, (entry) => entry.result)),
+    recorded: Option.getOrNull(Option.map(recorded, (entry) => entry.result))
   }
 })
 ```
@@ -90,6 +99,8 @@ That is the fence a replay reads through. An old frame's projection stays a
 function of durable state, however the head has moved since.
 
 ## Refuse a stale entry
+
+**Available now**
 
 A caller that declared a time to live passes `maxAgeMs`. The store measures the
 age from `createdAtMs` against the current clock reading and answers a miss
@@ -116,6 +127,8 @@ next caller declaring a longer bound still reads it. Removing rows is
 
 ## Evict only what you named
 
+**Available now**
+
 An eviction is a judgement about one row: this host observed this result to be
 poison. Naming the provenance makes the delete a compare-and-swap, so a fresher
 row another process recorded in the meantime is never dropped with it:
@@ -131,6 +144,8 @@ const evictions = Effect.gen(function*() {
 ```
 
 ## Run it
+
+**Available now**
 
 Provide the in-memory store and print each stage:
 
@@ -152,14 +167,16 @@ Run the file with your TypeScript runner. The output is:
 ```text
 put: Inserted
 cycle: {
-  head: { _id: 'Option', _tag: 'Some', value: { artifact: 'dist/server.mjs' } },
-  recorded: { _id: 'Option', _tag: 'Some', value: { artifact: 'dist/server.js' } }
+  head: { artifact: 'dist/server.mjs' },
+  recorded: { artifact: 'dist/server.js' }
 }
 bounded: { fresh: true, stale: false }
 evictions: { stale: false, current: true }
 ```
 
-## What just happened
+## What happened
+
+**Available now**
 
 One digest carried two recordings. The head answered whichever result was
 recorded most recently, and the ledger answered each event its own bytes. The
@@ -168,11 +185,13 @@ eviction deleted only the row whose provenance the caller named.
 
 Two things this quickstart did not do belong to the composition around the
 store, not to the store: deriving the digest, which is the
-[content-addressing contract](/docs/concepts/content-addressing/), and deciding what a declared
+[step-key contract](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/docs/concepts/step-keys.md), and deciding what a declared
 `ttlMs` means, which is
-[`@smthrs/engine-store`](/api/engine-store)'s to journal.
+[`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md)'s to journal.
 
 ## Next steps
+
+**Available now**
 
 - [Compose a durable step cache](./guides/compose-a-store.md): the same store
   over a real SQLite file.

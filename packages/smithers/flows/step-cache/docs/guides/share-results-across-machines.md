@@ -12,6 +12,8 @@ network is involved.
 
 ## Before you start
 
+**Available now**
+
 - A cache endpoint that speaks the action-cache protocol. It must be HTTPS,
   unless its host is loopback, and it may carry no userinfo, query, or
   fragment. A path prefix is fine and a trailing slash is ignored. To stand one
@@ -31,6 +33,8 @@ also authenticate every request and limit writes to trusted callers; see
 :::
 
 ## 1. Build the shared tier
+
+**Available now**
 
 `RemoteCacheStore.make` validates its options and answers a
 `CacheStore.Service` that speaks `GET`, `PUT`, and `DELETE` on
@@ -67,6 +71,8 @@ so a rejected `https://user:secret@host` cannot leak its credential into a log
 line.
 
 ## 2. Compose the two tiers as one service
+
+**Available now**
 
 Both tiers inhabit the `CacheStore` tag, so `CombinedCacheStore.layer` takes
 them as effects. Merging two `Layer<CacheStore>` values would shadow one with
@@ -106,6 +112,8 @@ are two tiers.
 
 ## 3. Choose when the shared copy is written
 
+**Available now**
+
 | Mode         | What `put` does                                                                  |
 | ------------ | -------------------------------------------------------------------------------- |
 | `"inline"`   | Writes both tiers before returning. The default.                                 |
@@ -125,12 +133,14 @@ transaction holds a network round trip in it and blocks every other writer for
 its duration.
 :::
 
-That caller is [`@smthrs/engine-store`](/api/engine-store). It composes this
+That caller is [`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md). It composes this
 store in `"deferred"` mode and publishes through its own `CacheSync` seam once
 the transaction has committed. If you are running flows rather than building an
 engine, prefer that composition to this one.
 
 ## What you get
+
+**Available now**
 
 A lookup tries the local tier, falls through to the shared tier on a miss, and
 writes a shared hit back into the local store before the caller sees it. Your
@@ -158,15 +168,18 @@ the entry. See [observe cache outcomes](./observe-cache-outcomes.md).
 
 ## Publish artifacts before entries
 
+**Available now**
+
 A cache entry must never be observable in the shared tier while an artifact it
 references is missing from the shared artifact tier. This store cannot enforce
 that: it does not know what an entry references.
-[`@smthrs/engine-store`](/api/engine-store)'s `ArtifactSync` enforces it around
-`put`, over a shared [`@smthrs/artifacts`](/api/artifacts) tier. See
-[share artifacts across machines](/pkg/artifacts/guides/share-artifacts-across-machines)
-and [share results with artifacts and the step cache](/docs/guides/artifacts-cache/).
+[`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md)'s `ArtifactSync` enforces it around
+`put`, over a shared [`@smthrs/artifacts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/artifacts/docs/api.md) tier. See
+[share artifacts across machines](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/artifacts/docs/guides/share-artifacts-across-machines.md).
 
 ## Where to go next
+
+**Available now**
 
 - [Local and shared tiers](../concepts/tiers.md): read-through, write-back, and
   what the composition decides in each race.

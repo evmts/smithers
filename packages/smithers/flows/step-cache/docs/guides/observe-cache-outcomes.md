@@ -12,6 +12,8 @@ because the store already held different bytes.
 
 ## The counters
 
+**Available now**
+
 | Metric                     | Attribute                  | Counts                                             |
 | -------------------------- | -------------------------- | -------------------------------------------------- |
 | `flows_step_cache_lookups` | `outcome: "hit"`           | A row existed and the caller's bounds accepted it  |
@@ -32,13 +34,17 @@ metric name with its attribute in your exporter.
 
 ## Get them into an exporter
 
+**Available now**
+
 This module defines the handles and nothing else. No exporter ships here.
-Provide one, for example [`@smthrs/observability`](/api/observability), and the
+Provide one, for example [`@smthrs/observability`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/docs/api.md), and the
 counters appear in it under the names above. Nothing in the store needs
 configuring: the metric updates happen whether or not anything is collecting
 them.
 
 ## Read a counter in process
+
+**Available now**
 
 `Metric.value` answers the counter's state, and a test or a health check reads
 `state.count`:
@@ -65,20 +71,27 @@ tests in the same process do not leak in. See
 
 ## The spans
 
+**Available now**
+
 Every operation of every tier opens a span named for the method it implements,
 so a trace shows which tier answered:
 
-| Span                             | Annotations |
-| -------------------------------- | ----------- |
-| `CacheStore.get`, `put`, `evict` | `keyDigest` |
-| `CacheStore.sweepExpired`        | `floorMs`   |
-| `CombinedCacheStore.*`           | `keyDigest` |
-| `RemoteCacheStore.*`             | `keyDigest` |
+| Span                                     | Annotations |
+| ---------------------------------------- | ----------- |
+| `CacheStore.get`, `put`, `evict`         | `keyDigest` |
+| `CacheStore.sweepExpired`                | `floorMs`   |
+| `CombinedCacheStore.get`, `put`, `evict` | `keyDigest` |
+| `RemoteCacheStore.get`, `put`, `evict`   | `keyDigest` |
+
+`CombinedCacheStore.sweepExpired` and `RemoteCacheStore.sweepExpired` open
+spans without annotations.
 
 A remote lookup nests inside the combined one, so the shared tier's latency is
 visible as its own child rather than folded into the local read.
 
 ## Interpreting a two-tier hit rate
+
+**Available now**
 
 `RemoteCacheStore` updates no counters. A lookup that `CombinedCacheStore`
 serves from the shared tier therefore registers one `miss`, for the local tier
@@ -105,6 +118,8 @@ the composition.
 
 ## Treat conflict as an alarm
 
+**Available now**
+
 `inserted` and `existing_same` are ordinary. A `conflict` is not: the store
 refused to overwrite bytes it already held, either because one provenance was
 re-recorded with a different `result`, `meta`, or `createdAtMs`, or because
@@ -117,6 +132,8 @@ inconsistency receiver whose default verdict fails the run. Alert on the
 counter moving at all, not on a rate.
 
 ## Where to go next
+
+**Available now**
 
 - [Local and shared tiers](../concepts/tiers.md): why the numbers read the way
   they do once there are two tiers.

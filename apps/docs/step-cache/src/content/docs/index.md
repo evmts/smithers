@@ -12,6 +12,8 @@ cache other machines share, and a two-tier composition of the two.
 
 ## The problem it solves
 
+**Available now**
+
 A long job that crashes, retries, or reruns on a fresh checkout starts over.
 The steps that already produced an answer should not be paid for twice: a
 compile that took 90 seconds, a model call that cost money, a test suite that
@@ -43,7 +45,9 @@ caller as real executable state.
 
 ## Get the package
 
-`@smthrs/step-cache` is not on npm at 1.0.0-rc.0. It ships as a member of the
+**Available now**
+
+`@smthrs/step-cache` is not on npm at 1.0.0-rc.1. It ships as a member of the
 [smithers repository](https://github.com/smithersai/smithers) workspace, so
 using it today means working from a checkout.
 [Installation](/installation/) has the clone, the workspace specifier, and
@@ -51,9 +55,14 @@ the runtime requirements.
 
 ## Reuse a result instead of recomputing it
 
+**Available now**
+
 This program runs the expensive work once, records it, and reads it back on the
 second call. `TestCacheStore` is the production SQL store over an in-memory
 database, so the example runs with no file and no setup:
+
+`TestCacheStore.layer` uses in-memory SQLite unless `SMITHERS_TEST_PG_URL`
+selects an isolated PostgreSQL schema. Migrations run before the stores are exposed.
 
 ```ts
 import * as CacheStore from "@smthrs/step-cache/CacheStore"
@@ -106,13 +115,15 @@ use it.
 
 ## How this fits the Smithers engine
 
+**Available now**
+
 This package is one seam of the Smithers durable flow engine, and most people
 reach it through the engine rather than directly.
-[`@smthrs/flows`](https://flows.smithers.sh/reference/api/) is the single dependency that carries that whole
+[`@smthrs/flows`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/api.md) is the single dependency that carries that whole
 engine: it re-exports this package as its `StepCache` namespace, and its
 `NodeRuntime` composes `CacheStore.layer` into a durable host, so a flow author
 gets step reuse without ever naming this package. Above that sits the
-[`smithers` command line](https://cli.smithers.sh/reference/api/), which runs and resumes those flows from a
+[`smthrs` command line](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/api.md), which runs and resumes those flows from a
 terminal.
 
 Depend on `@smthrs/step-cache` on its own when you want the store without the
@@ -120,6 +131,8 @@ engine: memoizing your own pipeline, standing up a shared cache for a fleet, or
 composing a host by hand.
 
 ## Next steps
+
+**Available now**
 
 - [Installation](/installation/): import forms, runtime requirements, and
   what a runnable composition adds.

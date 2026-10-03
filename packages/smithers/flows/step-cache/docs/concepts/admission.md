@@ -16,6 +16,8 @@ accepted by the other.
 
 ## The rules
 
+**Available now**
+
 | Rule                              | Value                                                                                            |
 | --------------------------------- | ------------------------------------------------------------------------------------------------ |
 | `keyDigest` grammar               | `[A-Za-z0-9_-]`, 1 to `maximumKeyDigestLength` (256) characters                                  |
@@ -27,6 +29,8 @@ accepted by the other.
 
 ## Why the key grammar is that narrow
 
+**Available now**
+
 The cache key is accepted at two boundaries: it becomes a bound SQL parameter,
 and it becomes a URL path segment under a shared tier's `/ac/` namespace.
 Restricting it to URL-safe letters, digits, underscores, and hyphens makes `.`,
@@ -37,6 +41,8 @@ grammar is the reason rather than an escaping pass that has to be right
 everywhere.
 
 ## Bounded, inert JSON
+
+**Available now**
 
 Admission copies each `result` and `meta` tree rather than trusting the object
 it was handed. The copy invokes no getter and no `toJSON` hook, walks property
@@ -79,6 +85,8 @@ of charging both fields against one shared budget.
 
 ## Selectors are decoded, not copied
 
+**Available now**
+
 `recordedBy`, `ifRecordedBy`, and the age bounds take the other path. Each
 operation schema-decodes its selector once and then reads only the value that
 decoding returned, so a caller-owned accessor runs at most one time and cannot
@@ -87,6 +95,8 @@ no read. Provenance schemas are decoded the same way, which is why
 `validateRecordedBy` returns the detached copy rather than a `void`.
 
 ## Cached results are never redacted
+
+**Available now**
 
 Journal payloads are redacted; the stores that hold resumable state are not. A
 redactor that replaced a field because its name ended in `token` or `secret`
@@ -101,6 +111,8 @@ results contain secrets must not be cached on a shared tier.
 
 ## Reusing the boundary
 
+**Available now**
+
 The checks are exported, so an adapter implementing this contract elsewhere,
 for example a shared-tier server, refuses exactly what the store refuses:
 `validateKey`, `validateRecordedBy`, `validateFence`, `validateAge`,
@@ -109,6 +121,8 @@ for example a shared-tier server, refuses exactly what the store refuses:
 signatures are on the [API reference](../api.md).
 
 ## Related
+
+**Available now**
 
 - [The head and the ledger](./head-and-ledger.md): why canonical form decides a
   recording's outcome.

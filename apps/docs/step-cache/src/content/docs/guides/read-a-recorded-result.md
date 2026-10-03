@@ -28,6 +28,8 @@ const replayRead = Effect.gen(function*() {
 
 ## What the fence does
 
+**Available now**
+
 The store reads `flows_step_cache_recorded` for that exact
 `(keyDigest, runId, eventSeq)` triple. If it holds a row, that row is the
 answer. If it holds none, the lookup falls back to the mutable head.
@@ -36,6 +38,8 @@ Both halves of the pair are load bearing. Sequence numbers are per run and
 collide across runs routinely, so `eventSeq` alone names many events.
 
 ## When the fallback is right, and when it is not
+
+**Available now**
 
 The head fallback exists for entries recorded under some other provenance: a
 fork sharing its parent's keys, or a write-back from a shared tier. In those
@@ -62,6 +66,8 @@ caller asked to read.
 
 ## Validate before you reach the store
 
+**Available now**
+
 A malformed selector fails with `invalid_cache` before any statement is issued,
 naming the provenance contract, rather than reading as an ordinary miss. An
 empty `runId`, a fractional `eventSeq`, or a negative one is a caller mistake,
@@ -69,6 +75,8 @@ and the store reports it as one. The same check is exported as
 `CacheStore.validateRecordedBy` if you need it in an adapter.
 
 ## Against a shared tier
+
+**Available now**
 
 `RemoteCacheStore` carries the fence as the `recordedRunId` and
 `recordedEventSeq` query parameters, and a conforming tier answers the recorded
@@ -84,6 +92,8 @@ reads need a conforming server. See
 :::
 
 ## Where to go next
+
+**Available now**
 
 - [The head and the ledger](/concepts/head-and-ledger/): why the ledger row
   is immutable.

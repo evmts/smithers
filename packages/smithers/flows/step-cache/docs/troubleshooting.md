@@ -13,6 +13,8 @@ which rule was violated and not what the value was.
 
 ## invalid_cache: keyDigest violates the cache-key contract
 
+**Available now**
+
 **What happened.** A key was empty, longer than 256 characters, or contained
 something outside `[A-Za-z0-9_-]`: a dot, a path separator, a control
 character, or ill-formed Unicode. The check runs before any statement or
@@ -26,6 +28,8 @@ human label does not. See
 [what the cache admits](./concepts/admission.md).
 
 ## invalid_cache: a provenance selector or fence
+
+**Available now**
 
 **Messages.** `recordedBy violates the provenance contract`, or
 `eviction fence violates the provenance contract`.
@@ -42,6 +46,8 @@ an ordinary "nothing matched". `CacheStore.validateRecordedBy` and
 
 ## invalid_cache: an age bound
 
+**Available now**
+
 **Messages.** `maxAgeMs must be a non-negative safe integer`, or
 `olderThanMs must be a non-negative safe integer`.
 
@@ -53,6 +59,8 @@ row recorded at or after this instant". A duration in seconds is the usual
 cause.
 
 ## invalid_cache: result or meta the store cannot admit
+
+**Available now**
 
 **Message.** `result <complaint>` or `meta <complaint>`, where the complaint
 names the rule.
@@ -92,6 +100,8 @@ same way.
 
 ## invalid_cache: the entry shell
 
+**Available now**
+
 **Messages.** `cache entry cannot be inspected as inert data`, or
 `cache entry violates the persistence contract`.
 
@@ -111,6 +121,8 @@ reads each field through its property descriptor precisely so a hostile or
 merely mutable argument cannot change value between validation and the write.
 
 ## invalid_cache: the shared tier's configuration
+
+**Available now**
 
 **Message.** `remote cache <field> is invalid`, raised while building
 `RemoteCacheStore`, before any request.
@@ -132,6 +144,8 @@ message names only the violated rule, so a rejected
 
 ## constraint or persistence_failed: cache persistence failed
 
+**Available now**
+
 **What happened.** The database refused a statement. The code is `constraint`
 for a constraint or unique violation and `persistence_failed` for everything
 else. The driver's own error is on the `cause` field.
@@ -142,12 +156,14 @@ else. The driver's own error is on the `cause` field.
   Compose `Migrations.layer` beneath `CacheStore.layer`, as in
   [compose a durable step cache](./guides/compose-a-store.md). In a durable
   engine, `Migrations.sets` in
-  [`@smthrs/engine-store`](/api/engine-store) installs every set in dependency
+  [`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md) installs every set in dependency
   order.
 - A locked or unwritable database file. That is a composition or a filesystem
-  problem, not a cache one. See [`@smthrs/database`](/api/database).
+  problem, not a cache one. See [`@smthrs/database`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/api.md).
 
 ## decode_failed: a stored row
+
+**Available now**
 
 **Messages.** `could not decode flows_step_cache row`,
 `could not decode result_json`, `result_json exceeds the 4194304-byte limit`,
@@ -174,6 +190,8 @@ for coordinated ledger cleanup.
 
 ## persistence_failed: the shared tier
 
+**Available now**
+
 | Message                                                                     | Cause                                                                   |
 | --------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | `the remote cache tier refused a lookup`                                    | The transport failed: DNS, TLS, a connection reset                      |
@@ -197,6 +215,8 @@ round trip outside a database write transaction.
 
 ## decode_failed: the shared tier's answer
 
+**Available now**
+
 **Messages.** `the remote cache tier returned an entry that is not a bounded CacheEntry`,
 or `the remote cache tier answered <requested> with an entry for <returned>`.
 
@@ -212,10 +232,12 @@ apply the same admission rules the client does.
 
 ## unknown: a row disappeared during put
 
+**Available now**
+
 **Messages.** `cache provenance disappeared during put`, or
 `cache entry disappeared during put`.
 
-**What happened.** A row that had just blocked an insert was gone when the same
+**What happened.** A row that had blocked an insert was gone when the same
 transaction read it back. Inside a serialized write transaction that cannot
 happen.
 
@@ -224,6 +246,8 @@ happen.
 second process writing the same file outside it.
 
 ## unknown: get is unavailable
+
+**Available now**
 
 **What happened.** A test composed `CacheStore.layerNoop` or
 `CacheStore.makeNoop` and the code under test reached a method the test did not
@@ -235,6 +259,8 @@ purpose: a silent miss would make the test pass for the wrong reason. See
 [test against the step cache](./guides/test-with-the-cache.md).
 
 ## A recording answers Conflict and you expected ExistingSame
+
+**Available now**
 
 `Conflict` means the store is refusing to overwrite bytes it already holds. It
 arrives from either of two stages, and only the second one involves two runs.
@@ -262,12 +288,14 @@ never a conflict, because the store canonicalizes before it compares.
 
 ## A step runs again even though its result was recorded
 
+**Available now**
+
 Work through these in order.
 
 1. **The digest changed.** Content addressing is upstream of this store: a
    changed input, tool version, or step definition is a new key and therefore a
    genuine miss. See
-   [content addressing](/docs/concepts/content-addressing/).
+   [step keys](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/docs/concepts/step-keys.md).
 2. **An age bound refused it.** A lookup carrying `maxAgeMs` answers a miss for
    a row older than the bound, and leaves the row on disk. See
    [expire cached results](./guides/expire-cached-results.md).
@@ -279,6 +307,8 @@ Work through these in order.
    naming one it does hold is bounded by `maxAgeMs` without falling through.
 
 ## A fenced read or eviction behaves as if unfenced
+
+**Available now**
 
 Against a shared tier only, and with no error. A server that ignores the
 `recordedRunId` and `recordedEventSeq` query parameters turns a fenced lookup
@@ -292,6 +322,8 @@ in [implement a shared cache server](./guides/implement-a-shared-tier.md).
 
 ## sweepExpired answers 0 in a two-tier composition
 
+**Available now**
+
 Correct behavior. `CombinedCacheStore.sweepExpired` sweeps the local tier only,
 and `RemoteCacheStore.sweepExpired` validates its argument, issues no request,
 and answers `0`. One host's retention says nothing about what a sibling machine
@@ -299,6 +331,8 @@ still needs, so the shared tier owns its own collection policy. The same is
 true of `evict`.
 
 ## The hit rate reads low on a machine with a shared tier
+
+**Available now**
 
 Also correct behavior. `RemoteCacheStore` updates no counters, so a lookup
 served from the shared tier registers one local `miss` plus the write-back's
@@ -308,8 +342,10 @@ not how often a result was reused. See
 
 ## flows_step_cache_recorded grows and nothing reclaims it
 
+**Available now**
+
 By default, `sweepExpired` preserves the ledger. Whole-run reclamation belongs
-to [`@smthrs/engine-store`](/api/engine-store), whose retention pass erases a
+to [`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md), whose retention pass erases a
 terminal run's ledger rows by `recorded_run_id` together with its journal.
 That pass cannot match a write-back recorded by a run on another host.
 

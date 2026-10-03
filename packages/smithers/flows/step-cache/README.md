@@ -6,7 +6,7 @@ This package declares `effect` as an exact
 `4.0.0-rc.115` peer dependency. Keep the application on that version so
 all Smithers packages share one Effect runtime.
 
-**Documentation:** https://step-cache.smithers.sh
+**Documentation:** [Package docs](docs/README.md)
 
 Content-addressed storage for finished step results. Record a result under a
 digest of its inputs, and the next run that computes the same digest reads the
@@ -20,7 +20,9 @@ that fence still sees the bytes its own event recorded.
 
 ## Install
 
-`@smthrs/step-cache` is not on npm at 1.0.0-rc.0. It ships as a member of the
+**Available now**
+
+`@smthrs/step-cache` is not on npm at 1.0.0-rc.1. It ships as a member of the
 [smithers repository](https://github.com/smithersai/smithers) workspace, so
 using it today means working from a checkout:
 
@@ -43,12 +45,15 @@ workspace specifier:
 
 It needs Node.js 26.4.0 or later and `effect` 4.0.0-rc.115. The import forms
 and the driver layers a durable composition adds are on the
-[installation page](https://step-cache.smithers.sh/installation/).
+[installation page](docs/installation.md).
 
 ## Reuse a result instead of recomputing it
 
-`TestCacheStore` is the production SQLite store over an in-memory database, so
-this runs with no file and no setup:
+**Available now**
+
+`TestCacheStore.layer` provides the production store over in-memory SQLite by
+default, or an isolated PostgreSQL schema when `SMITHERS_TEST_PG_URL` is set.
+Migrations run before the cache is exposed:
 
 ```ts
 import * as CacheStore from "@smthrs/step-cache/CacheStore"
@@ -94,6 +99,8 @@ compute: this store receives one and never inspects what it names.
 
 ## What it does that a dictionary does not
 
+**Available now**
+
 - **Recording is first-writer-wins.** `put` answers `Inserted`,
   `ExistingSame`, or `Conflict`, and never silently replaces a result two
   callers disagree about. `Conflict` means the store refuses to overwrite bytes
@@ -119,10 +126,12 @@ compute: this store receives one and never inspects what it names.
 
 ## Public API
 
+**Available now**
+
 The root entry point exports these namespaces, and each is also importable from
 `@smthrs/step-cache/<Module>`. Every export, with its signature and its
 guarantees, is on the
-[API reference](https://step-cache.smithers.sh/reference/api/).
+[API reference](docs/api.md).
 
 | Namespace            | What it is                                                                                              |
 | -------------------- | ------------------------------------------------------------------------------------------------------- |
@@ -134,7 +143,7 @@ guarantees, is on the
 
 The root names no database driver, so it bundles for the browser. Only
 `@smthrs/step-cache/test/TestCacheStore`, the migrated in-memory store for
-tests, binds Node SQLite, which is why it lives at its own subpath.
+tests, uses Node database adapters, which is why it lives at its own subpath.
 
 The shared tier is an accelerator, not a run dependency. A refused remote
 lookup degrades to a miss, and a refused inline publication preserves the
@@ -143,12 +152,14 @@ local `put` outcome. Both increment `flows_step_cache_remote_failures` with an
 
 ## Documentation
 
-- [Overview](https://step-cache.smithers.sh)
-- [Quickstart](https://step-cache.smithers.sh/quickstart/)
-- [The head and the ledger](https://step-cache.smithers.sh/concepts/head-and-ledger/)
-- [What the cache admits](https://step-cache.smithers.sh/concepts/admission/)
-- [Share results across machines](https://step-cache.smithers.sh/guides/share-results-across-machines/)
-- [Troubleshooting](https://step-cache.smithers.sh/troubleshooting/), which
+**Available now**
+
+- [Overview](docs)
+- [Quickstart](docs/quickstart.md)
+- [The head and the ledger](docs/concepts/head-and-ledger.md)
+- [What the cache admits](docs/concepts/admission.md)
+- [Share results across machines](docs/guides/share-results-across-machines.md)
+- [Troubleshooting](docs/troubleshooting.md), which
   lists every failure message, what causes it, and what to change.
 
 ## License
