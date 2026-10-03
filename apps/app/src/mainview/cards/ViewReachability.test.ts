@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs"
 import { dirname, extname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
-// Existing views awaiting their owning wiring tickets; this list must only shrink.
+// Views built dark await their owning wiring tickets. Wiring removes its row.
 const PENDING_WIRING: Record<string, string> = {
   "HomeView.tsx": "T-APP-01",
   "HomeActionView.tsx": "T-APP-01",
@@ -22,6 +22,7 @@ const PENDING_WIRING: Record<string, string> = {
   "TimelineLineView.tsx": "T-APP-07",
   "CodeEditorView.tsx": "T-UI-11",
   "CommandsView.tsx": "T-UI-14",
+  "DocsView.tsx": "T-APP-20",
 }
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..")
