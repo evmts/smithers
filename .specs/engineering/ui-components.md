@@ -577,3 +577,15 @@ type TodoRepairSlots = { conflictTerminal?: React.ReactNode } // rendered by the
 ```
 
 **Merge blocker tones (design G12, 2026-10-02).** A failed required check is ember (`failed`). Gold (`attention`) is only for blockers where a person must act (`review_required`, a question, an approval). System or order waits (`order`, `machine`, `rebase`, `merging`) are neutral (`quiet`).
+
+### T-UI-15 Branch (S2)
+
+`BranchViewProps = CardProps<BranchCard>` from `@smthrs/rpc/BranchCard`.
+The existing Branch boundary decoder and fixtures are retained. §14.3 defines
+machine, item/scratch, rebase, moved-off, presence, terminals, activity,
+changed_files and ssh_line. `view.tab` selects activity, files or terminals.
+Buttons render supplied actions in order; activity actions retain burst ids.
+Scratch Done carries conflict_change and onto_revision in its supplied args
+(§8.5.2b). Sleep/Wake/Retry use the retained box.suspend/box.resume controls.
+Copy SSH uses the shared clipboard helper. Presence has no local state.
+BranchView is pending T-APP-10/T-COL-05/T-REL-02 and remains unmounted.
