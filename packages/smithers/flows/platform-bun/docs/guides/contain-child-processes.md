@@ -12,6 +12,8 @@ cleanup that a later host must reconcile.
 
 ## What containment adds
 
+Available now.
+
 **A live owner and deadline.** Every pipeline leg gets a prepared POSIX
 supervisor. Its lifetime is independent of the native target, so cleanup can
 stop the owned group even after the target exits. The default policy is
@@ -33,7 +35,7 @@ process group. Keep credentials out of argv anyway, in the environment or on
 stdin: while a child runs, its arguments are readable through `ps`.
 
 **A sweep on the way up.** While the layer is built,
-[`@smthrs/platform-node`](/api/platform-node)'s `ProcessReaper` reads the
+[`@smthrs/platform-node`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/api.md)'s `ProcessReaper` reads the
 records a previous incarnation of the same `hostId` left behind and signals the
 groups they name after checking their identities. The lifecycle and reaper
 live in the Node package and support ordinary Node and Bun runtimes.
@@ -50,6 +52,8 @@ refused before activation because the supervisor needs a runtime eval entry
 point.
 
 ## Compose it
+
+Available now.
 
 The ledger is a layer requirement rather than a built-in default, because only
 your program knows whether it has a durable one:
@@ -72,11 +76,13 @@ contains the process groups it owns, including when the host connection closes,
 but it inherits nothing from a previous incarnation, so the reaper has nothing
 to sweep. Use it in tests and in short-lived programs.
 
-`ProcessLedger.layer` writes through a [`@smthrs/journal`](/api/journal)
+`ProcessLedger.layer` writes through a [`@smthrs/journal`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/api.md)
 `Journal`, which is what makes the durable half real. Give two incarnations the
 same `hostId` and the second inherits the first's unreleased records.
 
 ## The options both contained factories take
+
+Available now.
 
 `BunHost.ContainedOptions` is the containment configuration plus the reaper's:
 
@@ -92,6 +98,8 @@ by the other. Mutating the object you passed afterwards changes neither layer.
 
 ## Why there is no `platform` option
 
+Available now.
+
 `ContainedSpawner.Options` has a `platform` field. `ContainedOptions` omits it,
 deliberately.
 
@@ -101,13 +109,14 @@ must agree: a caller cannot describe a Windows record for an owner that
 actually leads a POSIX group. Casting `platform: "win32"` past the type does
 not override the running platform.
 
-For a smaller Bun composition, use `ProcessReaper.layerSpawner` with a ledger
-and an underlying runtime spawner. It includes the prepared native adapter
+For a smaller Bun composition, use `ProcessReaper.layerSpawner` with a ledger. It includes the prepared native adapter
 whose pipe error listeners remain alive through cancellation. Keep the kernel
 permission decorator above it to authorize the caller's command before
 preparation.
 
 ## `jj` is contained too
+
+Available now.
 
 Under `BunHost.layer`, the `Jj` slot spawns the jj CLI through
 `node:child_process` directly. A jj child therefore leads no group the host
@@ -157,6 +166,8 @@ Timeout and interruption allow a later construction to retry the probe.
 
 ## What the reaper refuses to kill
 
+Available now.
+
 A record is not a licence to signal. `ProcessReaper.reap` re-checks each
 inherited record and declines when the numbers do not clearly name an
 abandoned process: the owning incarnation is still alive, the record names this
@@ -170,6 +181,8 @@ could not ask, or that has no business signalling, must not be the one that
 closes the question. A later incarnation that can ask gets the chance.
 
 ## Related
+
+Available now.
 
 - [Bind the host to a repository root](./bind-a-repository-root.md): what
   `layerContainedAt` adds beyond containment, and the refusal it throws.

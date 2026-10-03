@@ -10,6 +10,8 @@ sidebar:
 
 ## The race it closes
 
+Available now.
+
 A capability check names a path. A path-based operation resolves that path
 again when it runs. Between the two, anything with write access to the
 workspace can replace a component of the path with a symlink, and the operation
@@ -31,6 +33,8 @@ An ancestor symlink swap or replacement of the root by another directory fails
 ordinary operations with `PermissionDenied` before any content is read or changed.
 
 ## What the helper refuses
+
+Available now.
 
 The confinement rules are strict, and two of them surprise people:
 
@@ -62,13 +66,14 @@ writing over it, and a non-recursive `makeDirectory` on it stay refused.
 
 ## Which operations it covers
 
-Fifteen operations can be expressed as one descriptor-relative request, and
-those are the ones the adapter implements:
+Available now.
+
+The atomic extension accepts these descriptor-relative requests:
 
 ```text
 readFile  readFileString  writeFile  writeFileString  exists  stat
 readLink  realPath  makeDirectory  readDirectory  remove  rename  glob
-chmod  chown
+chmod  chown  resolve  batch
 ```
 
 `chmod` and `chown` change metadata through the descriptor of the resolved
@@ -91,6 +96,8 @@ atomic extension for the kernel to call.
 
 ## How the helper is started
 
+Available now.
+
 The helper is `smithers-jj-export --atomic-fs`, a Rust binary shipped with the
 package. Three properties of how it is started are load-bearing:
 
@@ -111,6 +118,8 @@ limit. See
 for the ceilings and how to change them.
 
 ## What it costs
+
+Available now.
 
 An ordinary operation starts one helper. The guarded filesystem also
 offers `FileSystem.batch(fs)` from `@smthrs/kernel/FileSystem`: one helper
@@ -162,6 +171,8 @@ Elapsed timings from `scripts/observation-bench.ts` are local measurements and
 do not establish a production speed claim.
 
 ## Errors
+
+Available now.
 
 Errno is normalized to the same reasons `@effect/platform-node` reports, so a
 caller reads the same typed reason it would get from the native filesystem,

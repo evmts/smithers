@@ -13,6 +13,8 @@ one run twice.
 
 ## Wire the probe
 
+Available now.
+
 ```ts
 import { HostLiveness } from "@smthrs/platform-node"
 
@@ -21,13 +23,15 @@ const isAlive = HostLiveness.isAlive({ hostId: "engine-1" })
 
 `isAlive` returns a function from an owner to `Effect<boolean>`. The owner type
 is structural: `{ hostId: string, pid: number }`, which is exactly the shape of
-[`@smthrs/journal`](/api/journal)'s `OwnerId` minus its nonce, so an `OwnerId`
+[`@smthrs/journal`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/api.md)'s `OwnerId` minus its nonce, so an `OwnerId`
 is accepted without this package depending on the journal to name a type.
 
 `@smthrs/flows`' `NodeRuntime` defaults to this function, so a program that
 composes the runtime gets it without asking.
 
 ## The rule
+
+Available now.
 
 The rule is asymmetric on purpose:
 
@@ -45,6 +49,8 @@ live owner.
 
 ## The residual risk
 
+Available now.
+
 Pid reuse. An owner whose pid was recycled by an unrelated program reads as
 alive, and its run waits for an operator.
 
@@ -54,11 +60,15 @@ way is two hosts executing one run.
 
 ## Substitute a better answer where you have one
 
+Available now.
+
 A multi-process deployment with a supervisor or a lease system knows better
 than any pid probe, and should answer from that instead. `isAlive` is one
 implementation of a slot, not a fixed policy.
 
 ## Know where the sibling disagrees
+
+Available now.
 
 `@smthrs/run-store`'s `Ownership.sameHostPidProbe` fills the same
 `LivenessCheck`. Both probes use the same `ESRCH`-only death rule.
@@ -79,7 +89,7 @@ foreign host, so runs on a permanently dead host wait for an operator.
 
 Which answer a deployment gets depends on the entry point it used:
 `@smthrs/flows`' `NodeRuntime` defaults to this function, while
-[`@smthrs/cli`](/api/cli)'s `NodeControl` passes `sameHostPidProbe`.
+[`@smthrs/cli`](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/api.md)'s `NodeControl` passes `sameHostPidProbe`.
 
 `HostLiveness.isAlive` compares with its configured `hostId` and ignores the
 `context` argument of `Ownership.LivenessCheck`. `sameHostPidProbe` compares

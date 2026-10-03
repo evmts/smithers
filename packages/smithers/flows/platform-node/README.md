@@ -2,12 +2,13 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-**Documentation:** https://platform-node.smithers.sh
+**Documentation:** [Package docs](./docs/README.md)
 
 The Node.js Host bundle for Smithers. One layer, `NodeHost.layer`, provides the
 five services a program runs its side effects through: a filesystem, a path
 helper, a child-process spawner, a [Jujutsu](https://jj-vcs.github.io/jj/)
-adapter, and an HTTP client.
+adapter, and an HTTP client. Every bundle also supplies the kernel's native
+`ProcessConfinement` service.
 
 `@effect/platform-node` already ships Node implementations of most of those, and
 this package uses them where they fit. Three guarantees are not ones a
@@ -28,9 +29,11 @@ general-purpose adapter makes, so this package implements them itself:
 
 ## Availability
 
-`@smthrs/platform-node` is not on npm at 1.0.0-rc.0. Its source lives in the
+Available now.
+
+The `1.0.0-rc.1` candidate source lives in the
 [smithers repository](https://github.com/smithersai/smithers), and the
-[installation page](https://platform-node.smithers.sh/installation/) covers how
+[installation page](./docs/installation.md) covers how
 to depend on it from a checkout and the `effect` version it pins.
 
 On POSIX, filesystem confinement requires Node.js 26.4.0 or later and the
@@ -47,6 +50,8 @@ installation can set `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` to its absolute path.
 A missing helper refuses confined operations, including MCP flow discovery.
 
 ## Run a command through the host
+
+Available now.
 
 ```ts
 import { NodeHost } from "@smthrs/platform-node"
@@ -67,6 +72,8 @@ also provided the `FileSystem`, `Path`, `Jj`, and `HttpClient` that program did
 not ask for.
 
 ## Layers
+
+Available now.
 
 | Layer                              | What it adds                                                      |
 | ---------------------------------- | ----------------------------------------------------------------- |
@@ -103,8 +110,10 @@ Complete host bundles require jj 0.39.0 or newer. Construction probes the binary
 
 ## Modules
 
-The barrel exports four namespaces: `NodeHost`, `HostLiveness`,
-`ProcessReaper`, and `ScopedProcess`. `AtomicFileSystem` is deliberately not among them; it is reached
+Available now.
+
+The barrel exports `NodeHost`, `EgressHttpClient`, `HostLiveness`,
+`ProcessReaper`, `ScopedProcess`, `ProcessConfinement`, and `ProcessSandbox`. `AtomicFileSystem` is deliberately not among them; it is reached
 as `NodeHost.AtomicFileSystem` or through the
 `@smthrs/platform-node/AtomicFileSystem` subpath.
 
@@ -112,6 +121,9 @@ as `NodeHost.AtomicFileSystem` or through the
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `NodeHost`         | the complete closed Host bundle, plus re-exports of `AtomicFileSystem`, `ProcessReaper`, `NodeCrypto`, and Effect's raw `NodeFileSystem`, spawner, and `HttpClient`                  |
 | `AtomicFileSystem` | the descriptor-relative, no-follow filesystem layer and its options, ceilings, and glob grammar                                                                                      |
+| `EgressHttpClient` | proxy routing and pinned web connections |
+| `ProcessConfinement` | native confinement of approved commands |
+| `ProcessSandbox` | shared operating-system sandbox mechanisms |
 | `HostLiveness`     | whether a recorded run owner is still alive: `isAlive`, `Owner`, `Options`                                                                                                           |
 | `ProcessReaper`    | live containment and restart reconciliation: `layerSpawner`, `SpawnerOptions`, `processLifecycle`, `reap`, `layer`, `System`, `Refusal`, `posixSystem`, `windowsSystem`, `systemFor` |
 | `ScopedProcess`    | transient scoped commands with the same lifecycle: `Options`, `Handle`, `spawn`, `Status`, `status`                                                                                  |
@@ -123,15 +135,17 @@ not need a second dependency for the digest.
 
 ## What the bundle does not provide
 
+Available now.
+
 **There is no shell service.** Running a command is Effect's `ChildProcess` and
 `ChildProcessSpawner`, so a wall-clock budget is `Effect.timeout` around the
 effect and cancellation is fiber interruption, not an `AbortSignal`.
 
 **There is no HTTP service.** An outgoing request is Effect's `HttpClient`,
-provided here as `NodeHttpClient.layerUndici`. Undici installs no redirect
+provided here as `EgressHttpClient.layer(process.env)`. Undici installs no redirect
 interceptor, so every hop stays a separate, checkable request.
 
-Both are what lets [`@smthrs/kernel`](https://kernel.smithers.sh) check
+Both are what lets [`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/README.md) check
 `proc:spawn` against the rendered command line before any process starts, and
 `net:get` / `net:post` against the host of every URL a request reaches,
 redirect targets included. Wrap the bundle in its `HostServices.layer` to get
@@ -139,7 +153,9 @@ that permission-aware projection.
 
 ## Where this sits
 
-[`@smthrs/flows`](https://flows.smithers.sh) is the durable flow engine: flows,
+Available now.
+
+[`@smthrs/flows`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/README.md) is the durable flow engine: flows,
 actions, the journal, and the runtime that replays a crashed run from where it
 stopped. It deliberately re-exports no `@smthrs/platform-*` package, for the
 same reason `effect`'s own index does not re-export `@effect/platform-node`:
@@ -150,14 +166,16 @@ and its `NodeRuntime` composes `NodeHost.layerContainedAt` plus
 
 ## Read next
 
-The documentation site covers the rest: [the host bundle](https://platform-node.smithers.sh/concepts/host-bundle/), [the descriptor-relative filesystem](https://platform-node.smithers.sh/concepts/descriptor-relative-filesystem/)
-and everything it refuses, [process containment](https://platform-node.smithers.sh/concepts/process-containment/)
-and every guard checked before a reap, the [API reference](https://platform-node.smithers.sh/reference/api/), and
-[troubleshooting](https://platform-node.smithers.sh/troubleshooting/).
+Available now.
+
+The package docs cover the rest: [the host bundle](./docs/concepts/host-bundle.md), [the descriptor-relative filesystem](./docs/concepts/descriptor-relative-filesystem.md)
+and everything it refuses, [process containment](./docs/concepts/process-containment.md)
+and every guard checked before a reap, the [API reference](./docs/api.md), and
+[troubleshooting](./docs/troubleshooting.md).
 
 For a different runtime, the sibling bundles are
-[`@smthrs/platform-bun`](https://platform-bun.smithers.sh) and
-[`@smthrs/platform-browser`](https://platform-browser.smithers.sh).
+[`@smthrs/platform-bun`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-bun/docs/README.md) and
+[`@smthrs/platform-browser`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/docs/README.md).
 
 The host exports `implementationIds` for its five service slots. Its rooted
 factories reject invalid roots before constructing a layer, using the host's

@@ -4,7 +4,7 @@ description: "The glob grammar AtomicFileSystem implements, how exclusions prune
 ---
 
 Use this when a program needs to select files under the workspace. `glob` is
-one of the fifteen operations the atomic adapter implements, so it costs one
+one of the atomic adapter's operations, so it costs one
 helper process for the whole tree rather than one per entry.
 
 ```ts
@@ -25,6 +25,8 @@ That has three consequences you need to know: what the grammar supports, what
 it refuses, and where it deliberately answers differently.
 
 ## The grammar
+
+Available now.
 
 | Construct      | Meaning                                         |
 | -------------- | ----------------------------------------------- |
@@ -59,6 +61,8 @@ engine exponential backtracking.
 
 ## Exclusions prune the walk
 
+Available now.
+
 An exclusion is not a filter applied to the results. Excluding a directory
 excludes everything below it, and nothing under an excluded directory is
 listed, counted against the 100000-entry ceiling, or charged against the
@@ -79,6 +83,8 @@ case-sensitive on every host, and a lookup on a case-insensitive filesystem
 would answer for a name the pattern did not spell.
 
 ## Patterns the adapter refuses
+
+Available now.
 
 Five inputs fail as a typed `BadArgument` before filesystem walking. The byte
 limit is checked before brace expansion, which stops at its alternative limit.
@@ -106,6 +112,8 @@ selector containing one matches nothing.
 
 ## Three answers pinned against Node
 
+Available now.
+
 Every other row of the grammar is asserted against `@effect/platform-node`'s
 own globber in a parity suite. Three answers are pinned instead, because the
 native globber gives no single answer to copy.
@@ -131,17 +139,15 @@ but not that anchor: with `exclude: ["**/"]`, `**` keeps the root and its files
 while pruning every directory. Node empties the answer instead.
 
 **A dotted segment after a globstar matches dotfiles, but a globstar never
-spans a hidden directory.** Node 22 matched nothing for `**/.hidden`; Node 24
-and later match the dotfiles. This adapter matches the dotfiles on every
-version. Node 24 and later also walk into a hidden directory when the segment
-after `**` matches it, so with `.hidden/.secret` and `.hidden/.nested/.wanted`
-present, `**/.*` returns `.hidden`, `.hidden/.secret`, `.hidden/.nested` and
-`.hidden/.nested/.wanted`, and `**/.*/**` returns `.hidden` and
-`.hidden/.nested`. This adapter returns `.hidden` alone for both, because only a
-segment that names a hidden directory may enter it: `.hidden/.*` returns
-`.hidden/.nested` and `.hidden/.secret`.
+spans a hidden directory.** With `.hidden/.secret` and
+`.hidden/.nested/.wanted` present, the adapter returns `.hidden` alone for
+both `**/.*` and `**/.*/**`. Only a segment that names the hidden directory
+enters it: `.hidden/.*` returns `.hidden/.nested` and `.hidden/.secret`.
+These answers are pinned by the adapter's tests.
 
 ## Keep the cost down
+
+Available now.
 
 One `glob` is one fork, so prefer a single pattern with an `exclude` list to
 several calls you merge yourself. Prune with exclusions rather than filtering

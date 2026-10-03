@@ -9,10 +9,12 @@ several answers that look like bugs are the safe choice.
 
 ## A filesystem call fails with `ENOTSUP`
 
+Available now.
+
 **Symptom.** An atomic operation fails with:
 
 ```text
-atomic operation is unsupported
+unsupported atomic operation
 ```
 
 **Cause.** The helper was asked for an operation it does not implement. Every
@@ -25,10 +27,13 @@ a different route.
 
 ## A glob fails with `EFBIG`
 
+Available now.
+
 **Symptom.**
 
 ```text
-glob result exceeds the response limit
+glob listing exceeds response limit
+glob result too large
 ```
 
 **Cause.** The match set was larger than the helper's response limit. The
@@ -38,17 +43,18 @@ fails fast instead of buffering without bound.
 **Fix.** Narrow the pattern, or root it at a deeper directory. See
 [match files with a glob pattern](./guides/match-files-with-glob.md).
 
-## Every filesystem call fails on Windows
+## Windows confinement is unsupported
 
-**Cause.** This is intended. Windows is an unsupported platform, and
-`AtomicFileSystem` fails every filesystem call closed there rather than
-half-working.
+Available now.
 
-**Fix.** Run the durable engine on a supported platform. There is no flag to
-enable a partial Windows path: a filesystem that confines some operations and
-not others is worse than one that says it confines none.
+The native helper includes a Windows filesystem implementation. That does not
+establish the supported confinement contract described for POSIX hosts. Run
+work that requires that contract on a supported platform; see the
+[library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
 ## A run's owner reads as alive when the process is gone
+
+Available now.
 
 **Cause.** The liveness probe fails safe. Only `ESRCH` from a signal-0 probe
 counts as gone. `EPERM` means the pid exists and belongs to another user,
@@ -65,6 +71,8 @@ owner record rather than weakening the probe. See
 [answer whether a run owner is alive](./guides/answer-run-ownership.md).
 
 ## The liveness probes disagree on a foreign host
+
+Available now.
 
 **Cause.** Both probes use the same `ESRCH`-only death rule.
 `EPERM`, `EINVAL`, and unknown signal errors preserve liveness.
@@ -84,6 +92,8 @@ leaves foreign-host recovery to an operator or another liveness source;
 
 ## The reaper answers `failed` and keeps the record
 
+Available now.
+
 **Cause.** `failed` means the signal was refused and the record must be tried
 again later. The reaper refuses a target rather than signalling something it
 cannot prove it owns. On POSIX it refuses when:
@@ -100,6 +110,8 @@ would signal a group this host does not own. See
 
 ## The reaper answers `unknown` rather than `dead`
 
+Available now.
+
 **Cause.** `unknown` is not `dead`. `ESRCH` is the only answer that means
 gone; a pid this host may not signal answers `EPERM`, and that is not
 evidence of death.
@@ -108,6 +120,8 @@ evidence of death.
 record describing a live process.
 
 ## A pid start-time lookup is `unavailable` rather than `gone`
+
+Available now.
 
 **Cause.** The three negative answers are distinct because they authorize
 different decisions. `gone` is evidence: the pid does not exist, so the record
@@ -118,6 +132,8 @@ evidence: `ps` is missing, unanswerable, or printed something unrecognized.
 without `ps` would retire every record it holds.
 
 ## Reaping on Windows is weaker
+
+Available now.
 
 **Cause.** Windows has no process groups and no `lstart`, so two guards cannot
 be answered: the identity check falls back to boot-time comparison alone, and

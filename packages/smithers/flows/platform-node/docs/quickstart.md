@@ -12,6 +12,8 @@ which layer is responsible for each.
 
 ## Prerequisites
 
+Available now.
+
 - Node.js 26.4.0 or later, on a POSIX host.
 - The `smithers-jj-export` helper. From a source checkout, run
   `cargo build --locked --release -p smithers-ffi --bin smithers-jj-export`.
@@ -19,11 +21,13 @@ which layer is responsible for each.
   `NodeHost` layer checks jj at construction, including this quickstart's
   filesystem and process examples. For applications that do not need jj, see
   [Individual services without jj](./installation.md#individual-services-without-jj).
-- `@smthrs/platform-node`, [`@smthrs/kernel`](/api/kernel), and their `effect`
+- `@smthrs/platform-node`, [`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md), and their `effect`
   peers resolvable from the file you are about to write.
   [Installation](./installation.md) has the workspace form.
 
 ## Run a command through the raw host
+
+Available now.
 
 Create `quickstart.ts`. `NodeHost.layer` provides all five host tags, so a
 program that asks for `ChildProcessSpawner` gets Effect's Node spawner:
@@ -53,6 +57,8 @@ cancelling a command is fiber interruption.
 
 ## Build a workspace with an escape in it
 
+Available now.
+
 The filesystem is where this bundle differs from Effect's Node adapter, so give
 it something to refuse. Create a workspace directory with one ordinary file
 inside it, and one symlink pointing at a file outside it:
@@ -74,14 +80,16 @@ symlinkSync(secret, join(workspace, "escape.txt"))
 
 ## Compose the guarded host
 
-`HostServices.layer` from [`@smthrs/kernel`](/api/kernel) decorates every one
+Available now.
+
+`HostServices.layer` from [`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md) decorates every one
 of the five tags with a capability check. It needs the workspace root that
 bounds the filesystem, and a grant store that answers the permission
 questions. For this local trial, use the allow-all store, so that the only
 thing left refusing anything is the confinement itself. `GrantStore.layerNoop`
 is a seam for tests and boot paths, not a production policy; a real host
 answers with rules, as
-[Write a capability policy](https://kernel.smithers.sh/guides/write-a-capability-policy/)
+[Write a capability policy](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/guides/write-a-capability-policy.md)
 shows:
 
 ```ts
@@ -98,6 +106,8 @@ const guarded = HostServices.layer.pipe(
 ```
 
 ## Read both files
+
+Available now.
 
 Read the ordinary file, then read through the symlink and keep the failure
 instead of the success:
@@ -119,7 +129,9 @@ console.log(await Effect.runPromise(Effect.provide(readBoth, guarded)))
 { inside: 'confined', refusedWith: 'PermissionDenied' }
 ```
 
-## What just happened
+## How the reads differ
+
+Available now.
 
 The first read walked the workspace with directory descriptors and opened a
 regular file. The second read reached a symlink, and the walk refuses to
@@ -134,6 +146,8 @@ the operation relative to a pinned descriptor closes it. See
 for how the helper does it and what else it refuses.
 
 ## Next steps
+
+Available now.
 
 - [Contain child processes](./guides/contain-child-processes.md): give every
   spawned process a kill deadline and a durable record, so a crashed host

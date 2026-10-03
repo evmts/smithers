@@ -15,17 +15,15 @@ const program = Effect.gen(function*() {
 }).pipe(Effect.provide(BunHost.layer))
 ```
 
-`@effect/platform-bun` is a required peer at exactly `4.0.0-rc.115` because
-this barrel and `BunHost` import it at module load. It is installed alongside
-the package by package managers that resolve required peers. The Effect Node
-platform packages and `effect` are also exact peers at `4.0.0-rc.115`.
+The peers are `effect` at `4.0.0-rc.115` and `@smthrs/platform-node` at
+`1.0.0-rc.1`. The build vendors the private Effect platform adapters into
+`dist/vendor`; consumers do not install them as peers.
 
 :::warning
-This entry point is Node-only in the browser-bundle sense: it falls back to the
-`@effect/platform-node` adapters off Bun, so it resolves `node:fs` and the other
-`node:` built-ins. It runs on Bun and on Node. What it does not do is bundle for
+The Bun platform adapters re-export Node-shared implementations, so this
+entry point resolves `node:fs` and the other `node:` built-ins. It runs on Bun and on Node. What it does not do is bundle for
 a browser; a page composes
-[`@smthrs/platform-browser`](/api/platform-browser) instead.
+[`@smthrs/platform-browser`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/docs/api.md) instead.
 :::
 
 The complete host bundles require jj 0.39.0 or newer. Each bundle checks its jj
@@ -38,11 +36,13 @@ spawners share a result only within the same spawner instance.
 
 ## Entry points
 
+Available now.
+
 | Import                               | Source                                                                                                                             | Platform  |
 | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- | --------- |
-| `@smthrs/platform-bun`               | [src/index.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-bun/src/index.ts)                 | Bun, Node |
-| `@smthrs/platform-bun/BunHost`       | [src/BunHost.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-bun/src/BunHost.ts)             | Bun, Node |
-| `@smthrs/platform-bun/BunFileSystem` | [src/BunFileSystem.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-bun/src/BunFileSystem.ts) | Bun, Node |
+| `@smthrs/platform-bun`               | [src/index.ts](../src/index.ts)                 | Bun, Node |
+| `@smthrs/platform-bun/BunHost`       | [src/BunHost.ts](../src/BunHost.ts)             | Bun, Node |
+| `@smthrs/platform-bun/BunFileSystem` | [src/BunFileSystem.ts](../src/BunFileSystem.ts) | Bun, Node |
 
 The root entry point exports exactly two names, `BunHost` and `BunFileSystem`,
 each the namespace of the module above. `@smthrs/platform-bun/internal/*` and
@@ -53,10 +53,14 @@ Supported runtimes are Bun >=1.4.0 and Node.js >=26.4.0.
 
 ## BunHost
 
+Available now.
+
 The complete closed Host bundle: layers, construction errors, models,
 implementation identities, and platform module re-exports.
 
 ### Layers
+
+Available now.
 
 | Export             | Signature                                                                                                     |
 | ------------------ | ------------------------------------------------------------------------------------------------------------- |
@@ -66,8 +70,8 @@ implementation identities, and platform module re-exports.
 | `layerContainedAt` | `(root: string, options?: ContainedOptions) => Layer.Layer<BunHost \| Crypto.Crypto, JjError, ProcessLedger>` |
 | `layerHttpClient`  | `Layer.Layer<HttpClient>`                                                                                     |
 
-`layer` provides all five Host services, including the runtime-independent
-`Path`. `Jj` is bound to the process working directory.
+`layer` provides the five Host slots, native `ProcessConfinement`, and
+`Crypto`, including the runtime-independent `Path`. `Jj` is bound to the process working directory.
 
 `layerAt` is `layer` with `Jj` bound to `root` instead. `root` must be an
 absolute path; see [BunHostError](#bunhosterror).
@@ -106,6 +110,8 @@ contacted. Following a redirect is `@smthrs/kernel`'s guarded
 
 ### BunHostError
 
+Available now.
+
 ```ts
 class BunHostError extends Schema.TaggedError<BunHostError>()("@smthrs/platform-bun/BunHostError", {
   code: Schema.Literal("invalid_repository_root"),
@@ -132,6 +138,8 @@ its true length, so a root taken from input cannot flood a log line. Branch on
 
 ### Models
 
+Available now.
+
 | Export              | Type                                                                                  | Meaning                                                        |
 | ------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | `BunHost`           | `FileSystem \| Path \| ChildProcessSpawner \| Jj \| HttpClient \| ProcessConfinement` | The Host services and native confinement this bundle provides. |
@@ -140,7 +148,7 @@ its true length, so a root taken from input cannot flood a log line. Branch on
 | `implementationIds` | `Readonly<Record<HostServiceIds[number], string>>`                                    | The module behind each raw bundle Host slot.                   |
 
 All four factories supply the shared native
-[`ProcessConfinement.layer()`](/api/platform-node#processconfinement).
+[`ProcessConfinement.layer()`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/api.md#processconfinement).
 Guarded commands use the same OS confinement on Node and Bun.
 
 `ContainedOptions` carries three fields:
@@ -155,7 +163,8 @@ Guarded commands use the same OS confinement on Node and Bun.
 `process.platform`, so the native process-group behavior and recorded identity
 agree. A caller cannot describe a Windows record for an owner that actually
 leads a POSIX group. For a smaller Bun composition, use
-`ProcessReaper.layerSpawner` with a ledger and an underlying runtime spawner.
+`ProcessReaper.layerSpawner` with a ledger. The factory builds its native
+spawner internally.
 
 Each factory reads its options when it is called and splits them into the
 spawner half and the reaper half, so a field meant for one can never be read by
@@ -177,17 +186,19 @@ describe that substitution:
 }
 ```
 
-A key is the slot's stable identity in [`@smthrs/kernel`](/api/kernel)'s closed
+A key is the slot's stable identity in [`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md)'s closed
 list, which is not always the specifier the tag is imported from: the spawner
 slot is `effect/process/ChildProcessSpawner` while its tag comes from
 `effect/unstable/process/ChildProcessSpawner`. The keys are written as literals
 rather than positions in that list, so reordering it cannot silently pair a slot
 with another slot's implementation. Nothing digests the record yet:
-[`@smthrs/plan`](/api/plan)'s step key carries a `layers` component these values
+[`@smthrs/plan`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/docs/api.md)'s step key carries a `layers` component these values
 are meant to feed, but no planner derives it from a host bundle today, so
 changing one invalidates no cached step.
 
 ### Re-exports
+
+Available now.
 
 `BunHost` re-exports these modules so a program that should reach only part of
 the host has one place to take it from:
@@ -196,18 +207,18 @@ the host has one place to take it from:
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `AtomicFileSystem`       | `@smthrs/platform-node/AtomicFileSystem`, the filesystem implementation itself.                                                                                           |
 | `BunChildProcessSpawner` | `@effect/platform-bun/BunChildProcessSpawner`.                                                                                                                            |
-| `BunCrypto`              | `@effect/platform-bun/BunCrypto`, the [Effect Crypto service](https://github.com/Effect-TS/effect/blob/main/packages/platform/bun/src/BunCrypto.ts) layer.                |
+| `BunCrypto`              | `@effect/platform-bun/BunCrypto`, the Effect `Crypto` service layer.                |
 | `BunFileSystem`          | This package's `BunFileSystem` module.                                                                                                                                    |
-| `HostLiveness`           | `@smthrs/platform-node/HostLiveness`, the [host liveness probe](/api/platform-node#liveness-and-reaping).                                                                 |
-| `ProcessReaper`          | `@smthrs/platform-node/ProcessReaper`, the [contained spawner](/api/platform-node#processreaperlayerspawner) and [orphan sweep](/api/platform-node#liveness-and-reaping). |
+| `HostLiveness`           | `@smthrs/platform-node/HostLiveness`, the [host liveness probe](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/api.md#liveness-and-reaping).                                                                 |
+| `ProcessReaper`          | `@smthrs/platform-node/ProcessReaper`, the [contained spawner](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/api.md#processreaperlayerspawner) and [orphan sweep](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/api.md#liveness-and-reaping). |
 
 `AtomicFileSystem` is in the set for the same reason `NodeHost` re-exports it:
 it owns the only configuration escape hatch the filesystem slot has, and a Bun
 program whose helper is elsewhere must reach
 `AtomicFileSystem.layerWith` without adding
-[`@smthrs/platform-node`](/api/platform-node) as a second dependency.
+[`@smthrs/platform-node`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/api.md) as a second dependency.
 
-`BunJj` is deliberately absent. It belongs to [`@smthrs/jj`](/api/jj) and is
+`BunJj` is deliberately absent. It belongs to [`@smthrs/jj`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/jj/docs/api.md) and is
 imported from there, never re-exported here.
 
 `@effect/platform-bun/BunHttpClient` is deliberately absent too: its `layer`
@@ -215,6 +226,8 @@ follows redirects to origins the capability kernel never authorized. Take the
 network slot on its own from `layerHttpClient`.
 
 ## BunFileSystem
+
+Available now.
 
 The filesystem slot on its own.
 
@@ -227,7 +240,7 @@ The filesystem slot on its own.
 `layer` is `@smthrs/platform-node`'s `AtomicFileSystem.layer`, the same value
 behind `NodeHost`'s filesystem slot, by identity and not by resemblance. It
 carries the kernel's atomic host extension, so under
-[@smthrs/kernel](/api/kernel)'s `FileSystem.layer` a guarded path operation runs
+[@smthrs/kernel](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md)'s `FileSystem.layer` a guarded path operation runs
 descriptor-relative and no-follow instead of failing closed, and a symlink
 swapped in after authorization cannot redirect it.
 
@@ -243,6 +256,8 @@ built.
 
 ## Two services the bundle does not wrap
 
+Available now.
+
 There is no shell service, and no runtime detection either, because Bun's
 spawner _is_ the Node one. Running a command is Effect's `ChildProcess` and
 `ChildProcessSpawner`, and there is nothing for a detection branch to choose
@@ -250,14 +265,16 @@ between.
 
 There is no HTTP service either. `BunHost` provides the shared `EgressHttpClient.layer(process.env)`, so the
 runtime never walks to a second origin behind the capability kernel's back.
-Following a redirect is [@smthrs/kernel](/api/kernel)'s guarded
+Following a redirect is [@smthrs/kernel](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md)'s guarded
 `HttpClient.layer`, which rechecks the capability on every hop.
 
 ## Reading next
 
-[@smthrs/kernel](/api/kernel) owns the closed list and decorates these same tags
-with capability checks. [@smthrs/platform-node](/api/platform-node) and
-[@smthrs/platform-browser](/api/platform-browser) are the sibling bundles.
+Available now.
+
+[@smthrs/kernel](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md) owns the closed list and decorates these same tags
+with capability checks. [@smthrs/platform-node](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/api.md) and
+[@smthrs/platform-browser](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/docs/api.md) are the sibling bundles.
 [The Host surface on Bun](./concepts/host-surface.md) explains what each slot
 buys, [Runtime parity with Node](./concepts/runtime-parity.md) explains how far
 the two runtimes are interchangeable, and

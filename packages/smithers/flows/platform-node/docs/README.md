@@ -6,21 +6,25 @@ description: "The Node.js host bundle for Smithers flows: Effect's Node platform
 `@smthrs/platform-node` provides the five services a program on Node.js runs
 its side effects through: a filesystem, a path helper, a child-process spawner,
 a [Jujutsu](https://jj-vcs.github.io/jj/) adapter, and an HTTP client. One
-layer, `NodeHost.layer`, provides all five.
+layer, `NodeHost.layer`, provides all five plus native `ProcessConfinement`.
 
-That set is the host surface of [Smithers](https://smithers.sh/docs/), a durable
+That set is the host surface of Smithers, a durable
 engine for long-running agent work whose packages carry the `@smthrs` scope.
 This package is the Node.js machine a Smithers flow runs on, and it is usable
 on its own by any Effect program that wants the same guarantees.
 
 ## Availability
 
-`@smthrs/platform-node` is not on npm at 1.0.0-rc.0. Its source lives in the
+Available now.
+
+The `1.0.0-rc.1` candidate source lives in the
 [smithers repository](https://github.com/smithersai/smithers), and
 [Installation](./installation.md) covers how to depend on it from a checkout
 and which `effect` version it pins.
 
 ## What it solves
+
+Available now.
 
 Effect already ships Node implementations of most of those services, and this
 package uses them where they fit. Three guarantees are not ones a
@@ -50,6 +54,8 @@ something, so the rule resolves ambiguity toward alive: stranding a run is
 cheaper than running it twice.
 
 ## Run something through the host
+
+Available now.
 
 Provide `NodeHost.layer` to any program that asks for a host service. This one
 asks for the spawner:
@@ -84,7 +90,9 @@ Effect peers your project pins.
 
 ## How this relates to @smthrs/flows
 
-[`@smthrs/flows`](/api/flows) is the single dependency that carries the whole
+Available now.
+
+[`@smthrs/flows`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/api.md) is the single dependency that carries the whole
 Smithers durable flow engine: flows, actions, the journal, and the runtime that
 replays a crashed run from where it stopped. It deliberately does not
 re-export any `@smthrs/platform-*` package, for the same reason `effect`'s own
@@ -94,21 +102,23 @@ its platform, not the library it depends on. So a Node program installs
 
 Once both are installed, `@smthrs/flows`' `NodeRuntime` module builds the whole
 durable composition from one options object, and what it composes from here is
-`NodeHost.layerContainedAt` plus `HostLiveness.isAlive`. Read this site when
+`NodeHost.layerContainedAt` plus `HostLiveness.isAlive`. Read these docs when
 you want to know what those layers guarantee, configure the filesystem helper,
 or diagnose a refusal. Reach for this package on its own when you want the host
 services without the engine.
 
-Above both sits the `smithers` command-line tool,
-[`@smthrs/cli`](/api/cli), which runs flows without you composing anything.
+Above both sits the `smthrs` command-line tool,
+[`@smthrs/cli`](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/api.md), which runs flows without you composing anything.
 For a different runtime, the sibling bundles are
-[`@smthrs/platform-bun`](/api/platform-bun) and
-[`@smthrs/platform-browser`](/api/platform-browser).
-[`@smthrs/kernel`](/api/kernel) owns the closed list of five host tags and
+[`@smthrs/platform-bun`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-bun/docs/api.md) and
+[`@smthrs/platform-browser`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/docs/api.md).
+[`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md) owns the closed list of five host tags and
 wraps each one with the capability check that makes the confinement above
 enforceable.
 
 ## Where to go next
+
+Available now.
 
 - [Installation](./installation.md): peers, host prerequisites, import forms,
   and what a capability-checked composition adds.

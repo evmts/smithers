@@ -12,6 +12,8 @@ appear in, and disappear from, the process ledger.
 
 ## Prerequisites
 
+Available now.
+
 - Bun 1.4.0 or later, or Node.js 26.4.0 or later.
 - The `smithers-jj-export` helper. See
   [Installation](./installation.md#install-the-filesystem-helper).
@@ -21,9 +23,11 @@ appear in, and disappear from, the process ledger.
   before the program body runs when it is missing. See
   [Installation](./installation.md) for `SMITHERS_JJ_PATH` and for composing
   service layers without jj.
-- A package with the dependencies installed. Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
+- A package with the dependencies installed. See [Installation](./installation.md) for the candidate source and prerequisites.
 
 ## Run a file operation and a command
+
+Available now.
 
 Create `quickstart.ts`. The program asks for two of the five host services by
 tag, and names Bun nowhere:
@@ -67,6 +71,8 @@ other three were built and never asked for, and building `Jj` is where the
 jj version probe ran.
 
 ## Turn containment on
+
+Available now.
 
 The plain bundle signals its target when the scope closes. A target that exits
 first can leave background descendants holding output open, and a crashed
@@ -143,11 +149,13 @@ it, and it is gone after verified scope cleanup. See
 the `detached: false`, escaped-session, and unsupported-platform boundaries.
 
 Give it a durable half by swapping `ProcessLedger.makeMemory` for
-`ProcessLedger.layer`, which writes through a [`@smthrs/journal`](/api/journal)
+`ProcessLedger.layer`, which writes through a [`@smthrs/journal`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/api.md)
 `Journal`. Then a crashed host's records survive, and the next incarnation
 kills what the last one abandoned while its layer is built.
 
 ## Where to go next
+
+Available now.
 
 - [Contain and reap child processes](./guides/contain-child-processes.md):
   the escalation deadline, the reaper, and the options both contained

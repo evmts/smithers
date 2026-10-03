@@ -13,6 +13,8 @@ records whose cleanup was not confirmed.
 
 ## Incarnations
 
+Available now.
+
 A **host** has a durable `hostId`. Each time a process starts under that id, it
 is a new **incarnation**, identified by its pid. The ledger records which
 incarnation started each process, so a later incarnation can tell its own live
@@ -24,8 +26,10 @@ operating system reuses pid numbers.
 
 ## The live half: the contained spawner
 
+Available now.
+
 `NodeHost.layerContained` uses `ProcessReaper.layerSpawner` to compose
-[`@smthrs/kernel`](/api/kernel)'s `ContainedSpawner` with a native process
+[`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md)'s `ContainedSpawner` with a native process
 adapter and `ProcessReaper.processLifecycle`:
 
 - Preparation creates an owner without executing the target. The kernel
@@ -76,6 +80,8 @@ it.
 
 ## The durable half: the sweep
 
+Available now.
+
 `ProcessReaper.reap` runs once while the contained layer is built. It reads the
 records a previous incarnation of the same `hostId` left behind and kills the
 process groups they name. Standing a host up is therefore also what cleans up
@@ -106,9 +112,11 @@ these holds:
 
 ## No evidence never authorizes a kill
 
-Two of those guards are questions put to `ps`: this process's own group, and
-when the recorded pid started. Either can go unanswered on a host with no
-usable `ps`.
+Available now.
+
+Two guards ask the operating system for this process's own group and the
+recorded pid's start time. Linux reads `/proc`; other POSIX hosts use `ps`.
+Unreadable process data or an unavailable `ps` leaves these guards unanswered.
 
 An unanswered guard refuses. A guard that did not run is not a guard that
 passed, so a record whose identity could not be verified is kept rather than
@@ -122,7 +130,8 @@ Live cleanup on Linux instead reads group membership, start times, and zombie
 state directly from `/proc`, so it works without `procps`. Missing processes
 are skipped; unreadable or malformed data leaves cleanup unverified. Other
 POSIX hosts use `/bin/ps` for live cleanup with the same timezone and parsing.
-The crash-recovery sweep still uses the `ps` probes described here.
+The crash-recovery sweep uses `procSystem` on Linux and `posixSystem` on other
+POSIX hosts, selected by `systemFor(process.platform)`.
 The probe reads the
 `pgid` column as one run of decimal digits and nothing else: `Number.parseInt`
 reads a prefix, so `"12 34"`, `"12abc"`, and `"0x10"` would each become a
@@ -130,6 +139,8 @@ number that is not this host's group, silently pass the own-group comparison,
 and suppress the refusal that exists to say the comparison could not be made.
 
 ## Refusals, and which ones are final
+
+Available now.
 
 Every refusal also decides whether the record is retired. Retiring says in the
 journal that nothing was signalled, which stops every later incarnation
@@ -156,6 +167,8 @@ the host down for a bookkeeping write.
 
 ## The one deliberate leak
 
+Available now.
+
 `identityToleranceMs` is 2000. It covers two gaps at once: `ps` reports
 `lstart` with one-second granularity, and `uptime` places the boot instant to
 the nearest second.
@@ -169,6 +182,8 @@ the nearest second.
 
 ## Windows
 
+Available now.
+
 Windows has no `lstart` and no process groups, so two guards cannot be answered
 there: the identity check falls back to the boot-time comparison alone, and
 there is no own-group refusal to make. `taskkill /T /F` walks the tree down
@@ -176,6 +191,8 @@ from the recorded pid instead. This is a documented weaker guarantee on an
 unsupported platform, not an oversight.
 
 ## Next
+
+Available now.
 
 [Contain child processes](../guides/contain-child-processes.md) is the
 task-shaped version of this page: the layers to compose, the ledger to choose,

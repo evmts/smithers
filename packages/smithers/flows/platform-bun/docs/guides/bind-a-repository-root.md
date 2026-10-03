@@ -14,6 +14,8 @@ be current.
 
 ## Bind the root
 
+Available now.
+
 ```ts
 import { Jj } from "@smthrs/jj"
 import { BunHost } from "@smthrs/platform-bun"
@@ -41,6 +43,8 @@ BunHost.layerContainedAt("/srv/repositories/app", { graceMs: 2_000 })
 ```
 
 ## Pass an absolute root
+
+Available now.
 
 Both factories require an absolute path. A relative root, and the empty string,
 are refused:
@@ -85,6 +89,8 @@ try {
 
 ## Roots that come from input
 
+Available now.
+
 A root read from an environment variable, a request, or a configuration file is
 untrusted text, and it lands in a log line the moment it is refused. The whole
 message stays under 256 UTF-16 code units for a root of any content and any
@@ -102,8 +108,10 @@ or an escape, and the excerpt is always one valid JSON string.
 
 ## Related
 
+Available now.
+
 - [Contain and reap child processes](./contain-child-processes.md): what
   `layerContainedAt` adds on top of the root binding, including why `jj` runs
   through the contained spawner.
-- [`@smthrs/jj`](/api/jj): the `Jj` contract itself, its failure codes, and
+- [`@smthrs/jj`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/jj/docs/api.md): the `Jj` contract itself, its failure codes, and
   choosing which `jj` binary runs.

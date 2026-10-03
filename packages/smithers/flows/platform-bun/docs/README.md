@@ -7,9 +7,12 @@ description: "The Bun host bundle for Smithers: one Effect layer that fills the 
 as durable flows: each step is recorded, so a restart resumes what did not
 finish instead of starting over. `BunHost.layer` is a single Effect layer that
 fills the five services a program reaches the outside world through: the
-filesystem, path handling, child processes, version control, and HTTP.
+filesystem, path handling, child processes, version control, and HTTP. Every
+bundle also supplies native `ProcessConfinement` and `Crypto`.
 
 ## What it solves
+
+Available now.
 
 A program that calls `node:fs`, `Bun.spawn`, or a global `fetch` directly cannot
 be permission checked, denied, audited, or replayed, because nothing sits
@@ -21,8 +24,8 @@ Composing the same five slots by hand costs you two properties this bundle
 already has:
 
 - **A filesystem that survives a symlink race.** The filesystem slot carries
-  [`@smthrs/platform-node`](/api/platform-node)'s `AtomicFileSystem`, so under
-  [`@smthrs/kernel`](/api/kernel)'s guard an authorized path operation runs
+  [`@smthrs/platform-node`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/api.md)'s `AtomicFileSystem`, so under
+  [`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md)'s guard an authorized path operation runs
   against file descriptors and refuses to follow a link, rather than failing
   closed. A symlink swapped in after authorization cannot redirect the write.
 - **An HTTP client that stops at a redirect.** The bundle configures Effect's
@@ -37,15 +40,19 @@ is Effect's Node spawner re-exported; contained POSIX variants use
 
 ## Install
 
-Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
+Available now.
 
-`@effect/platform-bun` is a required peer at exactly `4.0.0-rc.115`. Package
-managers install it with the other required Effect peers. The filesystem slot
-also needs the `smithers-jj-export` helper, and every complete bundle needs
+See [Installation](./installation.md) for the candidate source and prerequisites.
+
+The required peers are `effect` at `4.0.0-rc.115` and
+`@smthrs/platform-node` at `1.0.0-rc.1`. The Effect platform adapters are
+private vendored build dependencies. The filesystem slot also needs the `smithers-jj-export` helper, and every complete bundle needs
 jj 0.39.0 or later because it probes jj while the layer is built.
-[Installation](./installation.md) covers all three and the import forms.
+[Installation](./installation.md) covers the peers, prerequisites, and import forms.
 
 ## Run a command and a file operation through the host
+
+Available now.
 
 This program names Bun nowhere. It asks for two service tags, and the layer
 decides what fills them:
@@ -69,7 +76,7 @@ Effect.runPromise(Effect.provide(program, BunHost.layer)).then(console.log)
 ```
 
 Replace `BunHost.layer` with `NodeHost.layer` from
-[`@smthrs/platform-node`](/api/platform-node) and the program above does not
+[`@smthrs/platform-node`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/api.md) and the program above does not
 change a character. That portability is what the five tags buy.
 
 Two variants change one slot each. `BunHost.layerAt(root)` binds version control
@@ -85,7 +92,9 @@ retained records.
 
 ## How this relates to @smthrs/flows
 
-[`@smthrs/flows`](/api/flows) is the durable flow engine: it records each step of
+Available now.
+
+[`@smthrs/flows`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/api.md) is the durable flow engine: it records each step of
 a long job in a journal, so a restart replays what finished and resumes at what
 did not. Steps still have to read files and spawn processes, and this package is
 one of the three bundles that let them.
@@ -96,16 +105,18 @@ chosen by the program that runs, not by the library it depends on. Its
 `NodeRuntime` helper builds a Node host for you, so a program that calls
 `NodeRuntime.layerHost` never imports a platform package. A program that runs on
 Bun composes this package instead and provides `BunHost.layer` itself.
-[`@smthrs/platform-node`](/api/platform-node) and
-[`@smthrs/platform-browser`](/api/platform-browser) are the sibling bundles that
+[`@smthrs/platform-node`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/api.md) and
+[`@smthrs/platform-browser`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/docs/api.md) are the sibling bundles that
 fill the same five slots on their own runtimes.
 
-Above both sits [`@smthrs/cli`](/api/cli), the `smithers` command that finds the
+Above both sits [`@smthrs/cli`](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/api.md), the `smthrs` command that finds the
 flows in a project, plans them, runs them, and reads their events back. Install
 the CLI to run flows from a shell or a CI job, `@smthrs/flows` when the program
 that runs them is yours, and this package when that program runs on Bun.
 
 ## Where to go next
+
+Available now.
 
 - [Installation](./installation.md): the peer dependency, the
   `smithers-jj-export` helper, the supported runtimes, and the import forms.

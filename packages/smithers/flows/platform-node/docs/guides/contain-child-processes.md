@@ -10,6 +10,8 @@ outright abandons everything it started.
 
 ## Choose a ledger
 
+Available now.
+
 `NodeHost.layerContained` requires a `ProcessLedger` and does not default one,
 because the durable half of containment is only as good as the journal
 underneath it. The choice belongs to the program that knows which it has.
@@ -20,12 +22,14 @@ underneath it. The choice belongs to the program that knows which it has.
 | `ProcessLedger.layerMemory` | no                                         | nothing   |
 
 `layerMemory` still supplies the live supervisor lifecycle and kill deadline.
-It simply inherits nothing, so the sweep always finds an empty orphan set.
+It inherits nothing, so the sweep always finds an empty orphan set.
 
 Both take the same options: `hostId`, the durable identity two incarnations
 share, and `ownerPid`, the process id of this one.
 
 ## Compose the host
+
+Available now.
 
 ```ts
 import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
@@ -40,7 +44,7 @@ const host = NodeHost.layerContained({ graceMs: 2000 }).pipe(
 `host` is a `Layer<NodeHost, JjError>`: the same five services `NodeHost.layer` hands
 out, spawning through the contained spawner. Swap `layerMemory` for
 `ProcessLedger.layer` to get the durable ledger, and provide a `Journal` from
-[`@smthrs/journal`](/api/journal) underneath it.
+[`@smthrs/journal`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/api.md) underneath it.
 
 To pin the repository root as well, use `layerContainedAt`:
 
@@ -51,6 +55,8 @@ const rooted = NodeHost.layerContainedAt("/absolute/repository", { graceMs: 2000
 ```
 
 ## What building the layer does
+
+Available now.
 
 Two things happen while the layer is built, in this order:
 
@@ -69,14 +75,15 @@ cleans up its owned group; use the handle's `kill`, never an external signal
 to its numeric pid. Failed or unverified cleanup fails close and retains the
 record.
 
-A smaller host composition can use `ProcessReaper.layerSpawner` with a ledger
-and an underlying runtime spawner. This factory includes the native adapter
+A smaller host composition can use `ProcessReaper.layerSpawner` with a ledger. This factory includes the native adapter
 whose pipe listeners remain alive through cancellation. Custom platform
 authors can pass a lifecycle to `ContainedSpawner.layer` directly. Compose
 the permission decorator above containment so it checks the original command
 before preparation.
 
 ## Set the options
+
+Available now.
 
 `NodeHost.ContainedOptions` has three fields, all optional:
 
@@ -96,8 +103,10 @@ for an owner that actually leads a POSIX group.
 
 ## Read what the sweep decided
 
-`layerContained` runs the sweep and discards its report. To log the decisions,
-call `ProcessReaper.reap` yourself:
+Available now.
+
+`layerContained` runs the sweep and logs its summary and refusal counts. To
+inspect individual decisions, call `ProcessReaper.reap` yourself:
 
 ```ts
 import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
@@ -125,6 +134,8 @@ incarnation to try again: `owner-alive`, `identity-unverified`,
 means and why the split falls where it does.
 
 ## Verify it
+
+Available now.
 
 Use a UUID-marked fixture that installs its signal handler before reporting
 readiness. Check both cancellation and natural target exit, including a child

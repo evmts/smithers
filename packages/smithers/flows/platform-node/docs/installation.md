@@ -7,9 +7,10 @@ sidebar:
 
 ## Get the package
 
-`@smthrs/platform-node` is not on npm at 1.0.0-rc.0. It ships as a member of
-the [smithers repository](https://github.com/smithersai/smithers) workspace, so
-using it today means working from a checkout:
+Available now.
+
+The `1.0.0-rc.1` candidate is a member of the [smithers repository](https://github.com/smithersai/smithers) workspace, so
+use it from a checkout:
 
 ```bash
 git clone https://github.com/smithersai/smithers.git
@@ -30,35 +31,38 @@ or one you add, and depends on it with a workspace specifier:
 
 ## Peers
 
-`@effect/platform-node`, `@effect/platform-node-shared`, and `effect` are peer
-dependencies, so your project pins their versions rather than inheriting a
-second copy. `@smthrs/platform-node` declares `4.0.0-rc.115` for all three:
+Available now.
+
+`effect` at exactly `4.0.0-rc.115` is the only peer dependency. Pin it in
+an application that consumes this package:
 
 ```bash
-pnpm add @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115 effect@4.0.0-rc.115
+pnpm add effect@4.0.0-rc.115
 ```
 
-The shared adapter peer keeps the Node implementation on the same Effect
-release candidate. The upstream Node adapter uses a caret for that dependency,
-which otherwise permits a later shared adapter with an incompatible Effect peer.
-Package managers that install peers automatically resolve the exact version
-from this package's manifest.
+`@effect/platform-node` and `@effect/platform-node-shared` are development
+dependencies. The build vendors these private adapters into `dist/vendor`;
+consumers do not install them as peers.
 
-Its own runtime dependencies, [`@smthrs/jj`](/api/jj) and
-[`@smthrs/kernel`](/api/kernel), resolve from the same workspace.
+Runtime dependencies are `@smthrs/jj`, `@smthrs/kernel`, `undici`, `redis`,
+`@types/ws`, and `ws`. The Smithers dependencies use `1.0.0-rc.1`.
 
 The package ships ESM, CommonJS, and TypeScript declarations.
 
 ## Host requirements
 
+Available now.
+
 | Requirement                     | Why it is needed                                                      |
 | ------------------------------- | --------------------------------------------------------------------- |
 | Node.js 26.4.0 or later         | the minimum this package's `engines` field declares                   |
-| a POSIX host                    | Windows has none of the primitives below and is unsupported           |
+| a POSIX host                    | Windows confinement is unsupported           |
 | the `smithers-jj-export` helper | `AtomicFileSystem` runs every guarded filesystem operation through it |
 | `jj` 0.39.0 or newer on `PATH`  | required at construction by every complete `NodeHost` layer           |
 
 ### jj is checked at construction
+
+Available now.
 
 Every complete host bundle, `NodeHost.layer`, `NodeHost.layerAt`,
 `NodeHost.layerContained`, and `NodeHost.layerContainedAt`, builds a
@@ -68,10 +72,12 @@ spawner. Check the installed version with `jj --version`.
 
 If the executable is missing, bundle construction fails with a typed `JjError`
 whose code is `not_installed`. An older version fails with
-`unsupported_version`. The version probe runs outside the host process ledger;
-repository commands use the selected process runner.
+`unsupported_version`. The version probe and repository commands use the selected process runner.
+Contained bundles record and retire the probe in their process ledger.
 
 ### The filesystem helper
+
+Available now.
 
 From a source checkout, build it with:
 
@@ -87,13 +93,15 @@ re-validated on every request rather than once at construction, because the
 file a path names can be replaced while a host runs, and a check that happened
 only at boot would be a check about a file that is no longer there.
 
-The consequence is that on `node:22-slim`, `node:22-alpine`, or a distroless
+The consequence is that on `node:26-slim`, `node:26-alpine`, or a distroless
 image the layer builds, the run starts, and the first guarded filesystem call
 inside a flow body fails with `PermissionDenied`. For the search order and
 `layerWith`, see
 [Configure the filesystem helper](./guides/configure-the-filesystem-helper.md).
 
 ## Individual services without jj
+
+Available now.
 
 Applications that do not need `Jj` can provide individual service layers.
 This composition supplies the bundle's filesystem, path, process spawner, and
@@ -125,10 +133,12 @@ and cannot satisfy consumers that require the complete five-tag host.
 
 ## Import forms
 
-The root entry point re-exports three modules as namespaces:
+Available now.
+
+The root entry point re-exports these namespaces:
 
 ```ts
-import { HostLiveness, NodeHost, ProcessReaper, ScopedProcess } from "@smthrs/platform-node"
+import { EgressHttpClient, HostLiveness, NodeHost, ProcessConfinement, ProcessReaper, ProcessSandbox, ScopedProcess } from "@smthrs/platform-node"
 ```
 
 Each module is also importable from its own subpath, which is the form the
@@ -156,24 +166,31 @@ Two subpath shapes are blocked in the export map:
 
 ## Entry points
 
+Available now.
+
 | Import                                   | Source                                                                                                                                    |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `@smthrs/platform-node`                  | [src/index.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/index.ts)                       |
-| `@smthrs/platform-node/NodeHost`         | [src/NodeHost.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/NodeHost.ts)                 |
-| `@smthrs/platform-node/AtomicFileSystem` | [src/AtomicFileSystem.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/AtomicFileSystem.ts) |
-| `@smthrs/platform-node/HostLiveness`     | [src/HostLiveness.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/HostLiveness.ts)         |
-| `@smthrs/platform-node/ProcessReaper`    | [src/ProcessReaper.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/ProcessReaper.ts)       |
-| `@smthrs/platform-node/ScopedProcess`    | [src/ScopedProcess.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/ScopedProcess.ts)       |
+| `@smthrs/platform-node`                  | [src/index.ts](../src/index.ts)                       |
+| `@smthrs/platform-node/NodeHost`         | [src/NodeHost.ts](../src/NodeHost.ts)                 |
+| `@smthrs/platform-node/AtomicFileSystem` | [src/AtomicFileSystem.ts](../src/AtomicFileSystem.ts) |
+| `@smthrs/platform-node/EgressHttpClient` | [src/EgressHttpClient.ts](../src/EgressHttpClient.ts) |
+| `@smthrs/platform-node/ProcessConfinement` | [src/ProcessConfinement.ts](../src/ProcessConfinement.ts) |
+| `@smthrs/platform-node/ProcessSandbox` | [src/ProcessSandbox.ts](../src/ProcessSandbox.ts) |
+| `@smthrs/platform-node/HostLiveness`     | [src/HostLiveness.ts](../src/HostLiveness.ts)         |
+| `@smthrs/platform-node/ProcessReaper`    | [src/ProcessReaper.ts](../src/ProcessReaper.ts)       |
+| `@smthrs/platform-node/ScopedProcess`    | [src/ScopedProcess.ts](../src/ScopedProcess.ts)       |
 
 Every entry point is Node-only by construction: the bundle resolves
 `node:child_process` and its siblings, and a build check keeps it that way. For a
-browser host, use [`@smthrs/platform-browser`](/api/platform-browser); for Bun,
-[`@smthrs/platform-bun`](/api/platform-bun).
+browser host, use [`@smthrs/platform-browser`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/docs/api.md); for Bun,
+[`@smthrs/platform-bun`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-bun/docs/api.md).
 
 ## What a real composition adds
 
+Available now.
+
 This package provides raw host services. A composition that enforces
-capabilities wraps them in [`@smthrs/kernel`](/api/kernel)'s decorators, which
+capabilities wraps them in [`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md)'s decorators, which
 need a workspace root and a grant store. Add that package to your own
 dependencies with the same workspace specifier, then compose:
 
@@ -194,7 +211,7 @@ const guarded = HostServices.layer.pipe(
 `GrantStore.layerNoop` allows every operation inside the workspace. It is a
 seam for tests and boot paths, not a production policy. Replace it with a
 rule-based store before running untrusted work; see
-[Write a capability policy](https://kernel.smithers.sh/guides/write-a-capability-policy/).
+[Write a capability policy](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/guides/write-a-capability-policy.md).
 
 Turning on process containment adds a `ProcessLedger`, which the journal backs.
 See [Contain child processes](./guides/contain-child-processes.md).

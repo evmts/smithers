@@ -47,7 +47,7 @@ describe("NodeHost prerequisite documentation", () => {
     for (const page of [installation, quickstart]) {
       expect(page).toContain("Layer.provide(GrantStore.layerNoop)")
       expect(page).toContain("not a production policy")
-      expect(page).toContain("https://kernel.smithers.sh/guides/write-a-capability-policy/")
+      expect(page).toContain("https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/guides/write-a-capability-policy.md")
     }
   })
 })

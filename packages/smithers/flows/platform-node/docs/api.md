@@ -4,7 +4,8 @@ description: "Every export of @smthrs/platform-node: the NodeHost layers, the At
 ---
 
 `@smthrs/platform-node` composes the closed five-tag Host surface for Node.
-`NodeHost.layer` provides all of it:
+Every bundle also supplies the kernel's `ProcessConfinement` service.
+`NodeHost.layer` provides this union:
 
 ```ts
 import { NodeHost } from "@smthrs/platform-node"
@@ -20,8 +21,8 @@ const program = Effect.gen(function*() {
 
 :::warning
 These adapters require host APIs such as `node:child_process`; they cannot run
-in a browser. Use [@smthrs/platform-browser](/api/platform-browser) for a browser
-host and [@smthrs/platform-bun](/api/platform-bun) for the Bun host bundle.
+in a browser. Use [@smthrs/platform-browser](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/docs/api.md) for a browser
+host and [@smthrs/platform-bun](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-bun/docs/api.md) for the Bun host bundle.
 `ScopedProcess` supports ordinary Node and Bun runtime executables.
 :::
 
@@ -33,43 +34,48 @@ here as `EgressHttpClient.layer(environment)`. That layer is Undici through the 
 `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` name, and the plain
 `NodeHttpClient.layerUndici` pool when they name none. Undici installs no
 redirect interceptor either way, so every hop stays visible to
-[@smthrs/kernel](/api/kernel).
+[@smthrs/kernel](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md).
 
 The complete host bundles require jj 0.39.0 or newer. Each bundle builds its jj
 layer with one version probe; construction can fail with `JjError`, including
-`not_installed` or `unsupported_version`. The version probe runs outside the host process ledger; repository commands
-use the selected process runner.
+`not_installed` or `unsupported_version`. The version probe and repository commands use the selected process runner.
+Contained bundles record and retire the probe in their process ledger.
 
 ## Requirements
+
+Available now.
 
 | Requirement                     | Why                                                                   |
 | ------------------------------- | --------------------------------------------------------------------- |
 | Node.js >=26.4.0                | the minimum this package's `engines` field declares                   |
 | the `smithers-jj-export` helper | `AtomicFileSystem` runs every guarded filesystem operation through it |
-| a POSIX host                    | Windows has none of those primitives and is unsupported               |
+| a POSIX host                    | Windows confinement is unsupported               |
 
 The helper is a real prerequisite, not a soft one, and it fails LATE by
 design. `NodeHost.layer` builds cleanly on a host without it, because the
 executable is re-validated per request rather than once at construction: the
 file a path names can be replaced while a host runs, and a check that happened
 only at boot would be a check about a file that is no longer there. The
-consequence is that on `node:22-slim`, `node:22-alpine`, or a distroless image
+consequence is that on `node:26-slim`, `node:26-alpine`, or a distroless image
 the layer builds, the run starts, and the first guarded filesystem call inside a
 flow body fails `PermissionDenied`. Build or install the helper, or point the
 adapter at it; see [Configure the filesystem helper](./guides/configure-the-filesystem-helper.md).
 
 ## Entry points
 
+Available now.
+
 | Import                                     | Source                                                                                                                                        | Platform   |
 | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| `@smthrs/platform-node`                    | [src/index.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/index.ts)                           | Node       |
-| `@smthrs/platform-node/NodeHost`           | [src/NodeHost.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/NodeHost.ts)                     | Node       |
-| `@smthrs/platform-node/AtomicFileSystem`   | [src/AtomicFileSystem.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/AtomicFileSystem.ts)     | Node       |
-| `@smthrs/platform-node/HostLiveness`       | [src/HostLiveness.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/HostLiveness.ts)             | Node       |
-| `@smthrs/platform-node/ProcessReaper`      | [src/ProcessReaper.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/ProcessReaper.ts)           | Node       |
-| `@smthrs/platform-node/ScopedProcess`      | [src/ScopedProcess.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/ScopedProcess.ts)           | Node / Bun |
-| `@smthrs/platform-node/ProcessConfinement` | [src/ProcessConfinement.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/ProcessConfinement.ts) | Node / Bun |
-| `@smthrs/platform-node/ProcessSandbox`     | [src/ProcessSandbox.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/src/ProcessSandbox.ts)         | Node / Bun |
+| `@smthrs/platform-node`                    | [src/index.ts](../src/index.ts)                           | Node       |
+| `@smthrs/platform-node/NodeHost`           | [src/NodeHost.ts](../src/NodeHost.ts)                     | Node       |
+| `@smthrs/platform-node/AtomicFileSystem`   | [src/AtomicFileSystem.ts](../src/AtomicFileSystem.ts)     | Node       |
+| `@smthrs/platform-node/EgressHttpClient` | [src/EgressHttpClient.ts](../src/EgressHttpClient.ts) | Node / Bun |
+| `@smthrs/platform-node/HostLiveness`       | [src/HostLiveness.ts](../src/HostLiveness.ts)             | Node       |
+| `@smthrs/platform-node/ProcessReaper`      | [src/ProcessReaper.ts](../src/ProcessReaper.ts)           | Node       |
+| `@smthrs/platform-node/ScopedProcess`      | [src/ScopedProcess.ts](../src/ScopedProcess.ts)           | Node / Bun |
+| `@smthrs/platform-node/ProcessConfinement` | [src/ProcessConfinement.ts](../src/ProcessConfinement.ts) | Node / Bun |
+| `@smthrs/platform-node/ProcessSandbox`     | [src/ProcessSandbox.ts](../src/ProcessSandbox.ts)         | Node / Bun |
 
 The barrel exports `NodeHost`, `EgressHttpClient`, `HostLiveness`, `ProcessReaper`,
 `ScopedProcess`, `ProcessConfinement`, and `ProcessSandbox`.
@@ -82,6 +88,7 @@ slot rather than the whole bundle needs no second dependency:
 | Re-export                          | What it is                                                       |
 | ---------------------------------- | ---------------------------------------------------------------- |
 | `NodeHost.AtomicFileSystem`        | this package's descriptor-relative filesystem, the bundle's slot |
+| `NodeHost.EgressHttpClient` | proxy-aware and destination-pinned HTTP client |
 | `NodeHost.ProcessReaper`           | this package's containment sweep                                 |
 | `NodeHost.NodeCrypto`              | Effect's Node `Crypto`                                           |
 | `NodeHost.NodeFileSystem`          | Effect's raw Node filesystem, which carries NO atomic extension  |
@@ -100,6 +107,8 @@ implementations. Contained factories replace the process runner with
 that substitution.
 
 ## Layers
+
+Available now.
 
 | Layer                                       | Jj bound to           | Containment |
 | ------------------------------------------- | --------------------- | ----------- |
@@ -123,6 +132,8 @@ and recorded identity agree. A caller cannot describe a Windows record for an
 owner that actually leads a POSIX group.
 
 ## ScopedProcess
+
+Available now.
 
 A small scoped process API for transient CLI commands. It uses the same POSIX
 supervisor lifecycle as the contained hosts without requiring a filesystem,
@@ -174,19 +185,21 @@ requests cleanup on host loss. This API has no durable ledger; use
 
 ## ProcessReaper.layerSpawner
 
+Available now.
+
 ```ts
 type SpawnerOptions = Omit<ContainedSpawner.Options, "platform">
 
 const layerSpawner: (
   options?: SpawnerOptions
-) => Layer.Layer<ChildProcessSpawner, never, ChildProcessSpawner | ProcessLedger>
+) => Layer.Layer<ChildProcessSpawner, never, ProcessLedger>
 ```
 
 Provides a contained spawner without the complete Node or Bun host. Supply a
-`ProcessLedger` and the underlying runtime spawner. On POSIX this factory uses
+`ProcessLedger`; the factory builds its native spawner internally. On POSIX this factory uses
 the platform's prepared native adapter, whose pipe error listeners live until
 their descriptors close, including writes interrupted by owner loss. On
-Windows it retains the supplied raw runtime spawner. The platform always comes
+Windows owners join a native job before activation. The platform always comes
 from `process.platform`; `graceMs` defaults to 2,000 milliseconds.
 
 The adapter supports the standard command's stdin/stdout/stderr options and
@@ -201,6 +214,8 @@ use this factory. It records new owners; `ProcessReaper.layer` separately
 reconciles records inherited from a previous incarnation.
 
 ## ProcessReaper.processLifecycle
+
+Available now.
 
 ```ts
 const processLifecycle: ContainedSpawner.Lifecycle
@@ -235,11 +250,13 @@ execution because they do not implement the runtime's eval entry point.
 
 ## Filesystem
 
+Available now.
+
 `AtomicFileSystem.layer` is `NodeHost`'s filesystem slot, and it is not Effect's
 `NodeFileSystem`. Node exposes no `openat(2)` or `renameat(2)`, so the adapter
 delegates each operation to a POSIX helper that opens the workspace root once,
 walks every component with `O_NOFOLLOW`, and performs the final syscall relative
-to a pinned parent descriptor. Under [@smthrs/kernel](/api/kernel)'s
+to a pinned parent descriptor. Under [@smthrs/kernel](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md)'s
 `FileSystem.layer` that is what makes a symlink swapped in after authorization
 unable to redirect the operation, and it is why the bundle returns
 `PermissionDenied` for an out-of-root path, a hard link, a symlink, or a special
@@ -256,7 +273,7 @@ and replacement of the pinned root retain the same refusal checks.
 | `AtomicFileSystem.layer`              | the adapter with every default                                        |
 | `AtomicFileSystem.layerWith(options)` | the same, with the helper and the ceilings configured                 |
 | `AtomicFileSystem.defaultExecutable`  | `/usr/local/bin/smithers-jj-export`, the last path searched           |
-| `AtomicFileSystem.defaultLimits`      | 16 MiB content, 24 MiB request, 24 MiB response, 64 KiB helper stderr |
+| `AtomicFileSystem.defaultLimits`      | 16 MiB content, 24 MiB request, 24 MiB response, 64 KiB helper stderr, 128 batch members, 24 MiB per batch member |
 | `AtomicFileSystem.defaultConcurrency` | `os.availableParallelism()`                                           |
 | `AtomicFileSystem.defaultTimeoutMs`   | 300000                                                                |
 | `AtomicFileSystem.AtomicHelperError`  | the tagged configuration failure, below                               |
@@ -374,15 +391,12 @@ single answer to copy.
    directories below its own anchor but not that anchor: with `exclude: ["**/"]`,
    `**` keeps the root and its files while pruning every directory.
    Node empties the answer instead.
-3. **A dotted segment after `**`.** Node 22 matched nothing for `**/.hidden`;
-   Node 24 and later match the dotfiles. The adapter follows the newer reading
-   for the dotfiles themselves, but a `**` never spans a hidden directory, so
-   Node's further step of walking into a hidden directory that the next segment
-   matches is refused. With `.hidden/.secret` and `.hidden/.nested/.wanted`
-   present, Node returns `.hidden/.secret` for `**/.*` and `.hidden/.nested` for
-   `**/.*/**`; the adapter returns `.hidden` alone for both. Only a segment that
-   names the hidden directory enters it: `.hidden/.*` returns `.hidden/.nested`
-   and `.hidden/.secret`.
+3. **A dotted segment after a globstar matches dotfiles, but a globstar never
+spans a hidden directory.** With `.hidden/.secret` and
+`.hidden/.nested/.wanted` present, the adapter returns `.hidden` alone for
+both `**/.*` and `**/.*/**`. Only a segment that names the hidden directory
+enters it: `.hidden/.*` returns `.hidden/.nested` and `.hidden/.secret`.
+These answers are pinned by the adapter's tests.
 
 **Removal.** `remove(path, { recursive: true })` walks iteratively with an
 explicit descriptor stack: depth is bounded at 512 levels and the total number
@@ -395,6 +409,8 @@ refusal, since entries already unlinked stay unlinked. `force: true` succeeds
 for a path whose ancestors do not exist, exactly as `fs.rm` does.
 
 ## Liveness and reaping
+
+Available now.
 
 `ProcessReaper.groupSnapshotFor(platform)` selects the live cleanup probe,
 returning `(pgid) => { ownGroup, members } | undefined`. Each member carries
@@ -453,16 +469,18 @@ a later incarnation cannot answer differently is final.
 | `identity-mismatch`   | yes     |
 | `kill-failed`         | no      |
 
-Windows reaping is unsupported best-effort. Windows is an unsupported platform
-and `AtomicFileSystem` fails every operation closed there, but
+Windows reaping is unsupported best-effort. The native helper has a Windows
+implementation, but Windows confinement is unsupported. The reaper's
 `systemFor("win32")` still reaches `taskkill /T /F` through the sweep rather than
 retiring every record unsignalled, because a feature that appears to work
 partially is worse than one that says what it does.
 
 ## Conformance
 
+Available now.
+
 The package runs the shared suite from
-[`@smthrs/kernel/test/contract`](/api/kernel) twice: once with explicit
+[`@smthrs/kernel/test/contract`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/test/contract/HostContract.ts) twice: once with explicit
 expectations, and once taking every default the suite offers, against a loopback
 HTTP server so the `HttpClient` success path is actually asserted rather than
 only its refusal. On top of that, the atomic
@@ -473,11 +491,15 @@ expectation. Containment is driven over real detached process groups.
 
 ## Reading next
 
-[@smthrs/kernel](/api/kernel) owns the closed list and decorates these same tags
-with capability checks. [@smthrs/platform-bun](/api/platform-bun) and
-[@smthrs/platform-browser](/api/platform-browser) are the sibling bundles.
+Available now.
+
+[@smthrs/kernel](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md) owns the closed list and decorates these same tags
+with capability checks. [@smthrs/platform-bun](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-bun/docs/api.md) and
+[@smthrs/platform-browser](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/docs/api.md) are the sibling bundles.
 
 ## Pinned web connections
+
+Available now.
 
 `EgressHttpClient.layer(environment)` supplies the kernel destination-pinning
 contract. Web requests get a fresh dispatcher using only their authorized IP
@@ -499,6 +521,8 @@ fail closed. The transport sets Host from the URL and discards caller-supplied
 proxy authorization and connection framing headers.
 
 ## ProcessConfinement
+
+Available now.
 
 `ProcessConfinement.layer(options?)` provides the kernel's process confinement.
 Compose it as an input to `@smthrs/kernel/ChildProcessSpawner.layer`, alongside
@@ -537,6 +561,8 @@ reads of their external targets. This boundary does not isolate trusted host
 JavaScript or supply a remote sandbox provider.
 
 ## ProcessSandbox
+
+Available now.
 
 The build graph and `ProcessConfinement` share this mechanism implementation.
 `select(request, host)`, `plan(request, location, host)`, and `wrap(plan, argv,

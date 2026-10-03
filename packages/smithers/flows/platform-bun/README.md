@@ -2,18 +2,18 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect`, `@effect/platform-node`,
-`@effect/platform-node-shared`, and `@effect/platform-bun` as exact
-`4.0.0-rc.115` peer dependencies. Keep the application on that version so
-all Smithers packages share one Effect runtime.
+This package requires `effect` at `4.0.0-rc.115` and
+`@smthrs/platform-node` at `1.0.0-rc.1` as peers. Effect's platform adapters
+ship inside the package as private vendored code.
 
-**Documentation:** https://platform-bun.smithers.sh
+**Documentation:** [Package docs](./docs/README.md)
 
 The Bun host bundle for Smithers, which runs long jobs as durable flows: each
 step is recorded, so a restart resumes what did not finish instead of starting
 over. `BunHost.layer` is a single Effect layer that fills the five services a
 program reaches the outside world through: the filesystem, path handling, child
-processes, version control, and HTTP.
+processes, version control, and HTTP. Every bundle also supplies native
+`ProcessConfinement` and `Crypto`.
 
 A program that calls `node:fs`, `Bun.spawn`, or a global `fetch` directly cannot
 be permission checked, denied, audited, or replayed, because nothing sits
@@ -23,13 +23,12 @@ package is that object for a process running on Bun.
 
 ## Install
 
-Not on npm yet; see [Installation](https://smithers.sh/docs/installation/#use-the-libraries).
+Available now.
 
-`@smthrs/platform-node`, `@effect/platform-node`,
-`@effect/platform-node-shared`, `@effect/platform-bun`, and `effect` are
-required peers, exactly as `package.json` declares them. Package managers that
-resolve required peers install all five automatically; all Effect versions are
-exact.
+See [Installation](./docs/installation.md) for the candidate source and prerequisites.
+
+The required peers are `@smthrs/platform-node` and `effect`. Their exact
+versions are listed in [Installation](./docs/installation.md).
 
 The filesystem slot spawns the `smithers-jj-export` native helper. From a
 source checkout, build it with:
@@ -43,6 +42,8 @@ build the layer with `BunFileSystem.layerWith({ executable })`. `PATH` is never
 searched. Windows is unsupported.
 
 ## Example
+
+Available now.
 
 ```ts
 import { BunHost } from "@smthrs/platform-bun"
@@ -71,9 +72,11 @@ path and runner, with a separate cache for each spawner instance.
 
 ## Modules
 
+Available now.
+
 | Module          | What it provides                                                                                                                                                                                                                                                                        |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BunHost`       | The closed Host bundle: `layer`, `layerAt`, `layerContained`, `layerContainedAt`, and the `BunHostError` those two root-bound factories throw; `layerHttpClient`, the network slot with redirects stopped; re-exports `AtomicFileSystem`, `BunChildProcessSpawner`, and `BunFileSystem` |
+| `BunHost`       | The closed Host bundle: `layer`, `layerAt`, `layerContained`, `layerContainedAt`, and the `BunHostError` those two root-bound factories throw; `layerHttpClient`, the network slot with redirects stopped; re-exports `AtomicFileSystem`, `BunChildProcessSpawner`, `BunCrypto`, `BunFileSystem`, `HostLiveness`, and `ProcessReaper` |
 | `BunFileSystem` | `@smthrs/platform-node`'s atomic `FileSystem`, plus `layerWith` for a host whose helper lives elsewhere                                                                                                                                                                                 |
 
 Three variants change one slot each. `BunHost.layerAt(root)` binds version
@@ -97,10 +100,11 @@ shared egress client without automatic redirects, so a
 
 ## Runtimes
 
+Partly available: preview host; verify your runtime and OS.
+
 Bun >=1.4.0 and Node.js >=26.4.0. The raw bundle's child-process spawner is
 Effect's Node spawner re-exported. Contained POSIX bundles use the prepared
-native adapter from `@smthrs/platform-node/ProcessReaper`. The bundle falls back to the
-`@effect/platform-node` adapters off Bun and so resolves `node:` built-ins,
+native adapter from `@smthrs/platform-node/ProcessReaper`. The Bun adapters re-export Node-shared implementations that resolve `node:` built-ins,
 which is what stops it bundling for a browser. A page composes
 `@smthrs/platform-browser` instead.
 

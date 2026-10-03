@@ -12,6 +12,8 @@ and cleanup.
 
 ## Bun and Node run the same modules here
 
+Available now.
+
 Three of the raw bundle's five slots use shared implementations:
 
 - `@effect/platform-bun/BunChildProcessSpawner` is
@@ -22,7 +24,7 @@ Three of the raw bundle's five slots use shared implementations:
   the same error classification and the same interruption finalizer by
   construction, not by agreement.
 - The filesystem slot is `@smthrs/platform-node`'s `AtomicFileSystem.layer`
-  itself, the same value [`@smthrs/platform-node`](/api/platform-node) puts in
+  itself, the same value [`@smthrs/platform-node`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/api.md) puts in
   its own slot.
 
 `effect/Path` is runtime independent, and the network slot is the shared Undici egress client, including the same
@@ -33,10 +35,12 @@ the shared native process adapter with a supervisor started by the current
 Node or Bun runtime. Preparation records the supervisor before executing the
 target. Compiled Bun executables and Node single-executable applications are
 refused before activation because they do not supply the runtime eval entry
-point. Windows retains the raw runtime spawner and remains unsupported best
-effort for containment.
+point. Windows owners join a native job before activation. Windows containment
+remains unsupported best effort.
 
 ## Two consequences you can rely on
+
+Available now.
 
 **The bundle runs unchanged under Node.** Nothing in it requires the Bun
 runtime, so a program composed on `BunHost.layer` executes on Node 26.4.0 or later as well. That is not a compatibility shim; it is what "the same modules"
@@ -49,17 +53,21 @@ does not prove that a new native command has identical behavior on both hosts.
 
 ## Node-only in the browser-bundle sense
 
+Available now.
+
 The same property that makes the bundle portable between Bun and Node is what
-stops it reaching a browser. Falling back to the `@effect/platform-node`
-adapters means resolving `node:` built-ins, so a browser bundler asked to
+stops it reaching a browser. The Bun adapters re-export Node-shared
+implementations that resolve `node:` built-ins, so a browser bundler asked to
 resolve `@smthrs/platform-bun` stops at `node:fs`. That is the intended
 resolution, not a packaging defect to work around with an alias.
 
 It runs on Bun and it runs on Node. What it does not do is bundle for a page.
-That is [`@smthrs/platform-browser`](/api/platform-browser), which fills the
+That is [`@smthrs/platform-browser`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/docs/api.md), which fills the
 same five slots from browser primitives.
 
 ## Where the parity stops
+
+Available now.
 
 The package's `test` target runs conformance under Node with V8 coverage.
 The `bunTest` target imports Vitest's JavaScript entry under Bun and asserts

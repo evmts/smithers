@@ -24,6 +24,8 @@ have used the default.
 
 ## Choose the helper
 
+Available now.
+
 The adapter runs `smithers-jj-export --atomic-fs` and uses the first of:
 
 1. `executable` from `layerWith`.
@@ -66,6 +68,8 @@ from a flow.
 
 ## Set the byte ceilings
 
+Available now.
+
 `limits` accepts a partial `Limits`; the fields you omit keep their defaults.
 
 | Field        | Default | What it bounds                                                                           |
@@ -104,6 +108,8 @@ errno.
 
 ## Set the process and time ceilings
 
+Available now.
+
 The two ceilings that decide whether the host survives a wide fan-out are not
 byte ceilings.
 
@@ -129,6 +135,8 @@ deadline is killed and the operation fails closed.
 
 ## Ceilings are read once
 
+Available now.
+
 Every field except `executable` is read once, when the layer value is
 constructed. `Options` is a plain object the caller still holds, and a byte
 ceiling that changes under a running host is not a ceiling.
@@ -138,6 +146,8 @@ layer value enforce the same ceilings and share one process semaphore. Building
 the layer twice does not double the concurrency budget.
 
 ## Check the defaults from code
+
+Available now.
 
 The defaults are exported, so a program that reports its own configuration does
 not have to restate them:

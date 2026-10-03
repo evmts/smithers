@@ -14,26 +14,35 @@ Effect service tags, and a host bundle is the thing that fills them:
 | Filesystem      | `effect/FileSystem`                           |
 | Path            | `effect/Path`                                 |
 | Child processes | `effect/unstable/process/ChildProcessSpawner` |
-| Version control | `Jj`, from [`@smthrs/jj`](/api/jj)            |
+| Version control | `Jj`, from [`@smthrs/jj`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/jj/docs/api.md)            |
 | Network         | `effect/unstable/http/HttpClient`             |
 
 The list is closed for one reason, owned by
-[`@smthrs/kernel`](/api/kernel): a service that is not on it cannot be
+[`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md): a service that is not on it cannot be
 attenuated, denied, or audited, so it must not exist.
 
 Closing the list does not make the platform implementations part of a step's
-identity. [`@smthrs/plan`](/api/plan)'s step key digests only the `layers` its
+identity. [`@smthrs/plan`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/docs/api.md)'s step key digests only the `layers` its
 caller passes it, so "which platform implementations were in scope" is an
 explicit input a caller supplies, not something this bundle contributes. The
 identity table below is data to pass; nothing reads it for you.
 
-`BunHost.layer` provides all five, and `BunHost` is the type union of them:
+`BunHost.layer` provides the five slots plus native `ProcessConfinement`.
+The `BunHost` type includes that supporting service:
 
 ```ts
-export type BunHost = FileSystem | Path.Path | ChildProcessSpawner | Jj | HttpClient
+export type BunHost =
+  | FileSystem
+  | Path.Path
+  | ChildProcessSpawner
+  | Jj
+  | HttpClient
+  | KernelProcessConfinement.ProcessConfinement
 ```
 
 ## What fills each slot, and whose code it is
+
+Available now.
 
 `BunHost.implementationIds` is this mapping as data, so a swapped
 implementation is a visible change to a public value rather than a comment
@@ -61,11 +70,13 @@ specifier the tag comes from: the spawner key is
 `effect/process/ChildProcessSpawner` while its tag is imported from
 `effect/unstable/process/ChildProcessSpawner`.
 
-Nothing digests these values today. [`@smthrs/plan`](/api/plan)'s step key
+Nothing digests these values today. [`@smthrs/plan`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/docs/api.md)'s step key
 carries a `layers` component they are meant to feed, but no planner derives it
 from a host bundle yet, so changing one invalidates no cached step.
 
 ## Three slots the bundle does not implement
+
+Available now.
 
 **Path** is runtime independent. `effect/Path`'s own layer goes in the slot
 unchanged, and the kernel keeps `Path` on the closed list as an explicit
@@ -87,6 +98,8 @@ and connection pinning for web tools.
 
 ## Redirects and connection pinning
 
+Available now.
+
 ```ts
 const layerHttpClient: Layer.Layer<HttpClient> = EgressHttpClient.layer(process.env)
 ```
@@ -99,17 +112,19 @@ never authorized. Following a redirect is the kernel's guarded
 
 ## Two slots the bundle composes from Smithers packages
 
+Available now.
+
 **Version control** is `Jj`, the service whose methods make a step reversible:
 snapshot, restore, diff, workspace lanes. It runs the `jj` command from
 [Jujutsu](https://jj-vcs.github.io), a version-control system that works on a
 Git repository, so the slot needs that binary on the host. Bun's adapter is
 `@smthrs/jj/bun/BunJj`, which is the Node adapter under another name because
 Bun implements the child-process API it uses. The adapter is imported from
-[`@smthrs/jj`](/api/jj) and deliberately not re-exported here: it belongs to
+[`@smthrs/jj`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/jj/docs/api.md) and deliberately not re-exported here: it belongs to
 that package.
 
 **The filesystem** is `@smthrs/platform-node`'s `AtomicFileSystem`, byte for
-byte the layer [`@smthrs/platform-node`](/api/platform-node) puts in its own
+byte the layer [`@smthrs/platform-node`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/api.md) puts in its own
 filesystem slot. It carries the kernel's atomic host extension, which is what
 lets the kernel's guarded `FileSystem.layer` perform a guarded path operation
 descriptor-relative and no-follow instead of failing closed. With the
@@ -124,6 +139,8 @@ rather than in-process, which is why the host needs that helper. See
 [Configure the filesystem helper](../guides/configure-the-filesystem-helper.md).
 
 ## Taking one service without the other four
+
+Available now.
 
 `BunHost` re-exports the single-slot modules, so a program that should
 reach only part of the host has one import to take it from:
@@ -144,7 +161,7 @@ redirects, which is the escape the section above closes.
 configuration escape hatch the filesystem slot has, and a Bun program whose
 helper is elsewhere must be able to reach
 `AtomicFileSystem.layerWith` without adding
-[`@smthrs/platform-node`](/api/platform-node) as a second dependency.
+[`@smthrs/platform-node`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/api.md) as a second dependency.
 
 Composing individual slots yourself means you own the closure. `BunHost.layer`
 is the only thing that guarantees all five are present and consistent; a

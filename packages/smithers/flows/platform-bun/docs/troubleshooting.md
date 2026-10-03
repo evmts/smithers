@@ -1,34 +1,15 @@
 ---
 title: "Troubleshooting"
-description: "The failures @smthrs/platform-bun produces: a missing required peer, a refused repository root, a filesystem guard that fails closed, an unfollowed redirect, a missing process ledger, and a browser bundle that will not resolve."
+description: "The failures @smthrs/platform-bun produces: a refused repository root, a filesystem guard that fails closed, an unfollowed redirect, a missing process ledger, and a browser bundle that will not resolve."
 ---
 
 Find the symptom, read the cause, apply the fix. Every failure here is one this
 package or its slots actually produce; the signatures behind them are on the
 [API reference](./api.md).
 
-## ERR_MODULE_NOT_FOUND for @effect/platform-bun/BunChildProcessSpawner
-
-**Symptom.** The first `import { BunHost } from "@smthrs/platform-bun"`, or
-`import * as BunHost from "@smthrs/platform-bun/BunHost"`, throws
-`ERR_MODULE_NOT_FOUND` before any of your code runs.
-
-**Cause.** The install is missing the required `@effect/platform-bun` peer,
-which both the root entry point and `BunHost` import at module load. This can
-happen with an older package version that marked it optional, or when peer
-installation was disabled.
-
-**Fix.** Install it yourself, at the version your composition's `effect` is
-built against:
-
-```bash
-pnpm add @effect/platform-bun@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115
-```
-
-`@smthrs/platform-bun/BunFileSystem` is the one entry point that resolves
-without it, because it imports nothing from `@effect/platform-bun`.
-
 ## BunHostError: requires an absolute repository root
+
+Available now.
 
 **Symptom.** `BunHost.layerAt` or `BunHost.layerContainedAt` throws while your
 program is still composing its layers:
@@ -48,13 +29,15 @@ of the root, so a root taken from input cannot flood a log line. See
 
 ## PermissionDenied: descriptor-relative filesystem isolation failed closed
 
+Available now.
+
 **Symptom.** A guarded filesystem operation fails, naming the helper it
 could not find:
 
 ```text
 PlatformError: PermissionDenied: AtomicFileSystem.writeFileString (/tmp/work/x.txt):
 descriptor-relative filesystem isolation failed closed:
-Error: smithers-jj-export is missing; install @smthrs/platform-node with its native helper, ...
+AtomicHelperError: smithers-jj-export is missing; ...
 ```
 
 **Cause.** The filesystem slot's no-follow extension executes its syscalls
@@ -69,17 +52,19 @@ absolute helper path. See
 [Configure the filesystem helper](./guides/configure-the-filesystem-helper.md).
 
 This failure is unguarded-path-safe: it appears only under
-[`@smthrs/kernel`](/api/kernel)'s `FileSystem.layer`. A program that uses
+[`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md)'s `FileSystem.layer`. A program that uses
 `BunFileSystem.layer` without the kernel's guard never starts the helper, so a
 missing helper goes unnoticed until the guard is composed.
 
 ## BadResource: Not a directory, on a path that exists
 
+Available now.
+
 **Symptom.** Reading a file through a directory symlink fails with a
 `BadResource` reason, and the same path opens fine from a shell:
 
 ```text
-{ "_tag": "BadResource", "syscall": "open", "description": "[Errno 20] Not a directory: 'escape'" }
+{ "_tag": "BadResource" }
 ```
 
 **Cause.** This is the guard working. The component named a symlink pointing
@@ -93,6 +78,8 @@ than reaching it through a link.
 
 ## A 302 comes back instead of the redirected response
 
+Available now.
+
 **Symptom.** `HttpClient.execute` returns status `302` with a `location`
 header, and the destination never receives a request.
 
@@ -100,12 +87,14 @@ header, and the destination never receives a request.
 redirect on its own reaches a second origin the capability kernel never
 authorized.
 
-**Fix.** Compose [`@smthrs/kernel`](/api/kernel)'s guarded `HttpClient.layer`,
+**Fix.** Compose [`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md)'s guarded `HttpClient.layer`,
 which follows redirects and rechecks the capability on every hop. Handling the
 `302` yourself is the other option, and it puts the authorization decision in
 your code.
 
 ## layerContained will not compose without a ProcessLedger
+
+Available now.
 
 **Symptom.** `BunHost.layerContained(...)` does not satisfy a
 `Layer.Layer<BunHost>`, and the type error names
@@ -120,11 +109,13 @@ one.
 
 **Fix.** Provide a ledger. `ProcessLedger.layerMemory({ hostId, ownerPid })`
 contains this incarnation's children and inherits nothing;
-`ProcessLedger.layer` writes through a [`@smthrs/journal`](/api/journal)
+`ProcessLedger.layer` writes through a [`@smthrs/journal`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/api.md)
 `Journal` and is what makes the cross-incarnation sweep real. See
 [Contain and reap child processes](./guides/contain-child-processes.md).
 
 ## A contained child outlives the host
+
+Available now.
 
 **Symptom.** After a crash, a `sleep`, a `jj`, or a build tool the host started
 is still running, and the next incarnation does not kill it.
@@ -140,8 +131,9 @@ is still running, and the next incarnation does not kill it.
    whose numbers do not clearly name an abandoned process: the owning
    incarnation is alive, the pid is gone, the pid exists but did not start when
    the record says it did, the record predates the machine's boot, or the
-   record names this host's own group. Three of those refusals leave the record
-   inherited so a later incarnation can try again.
+   record names this host's own group. The retained refusals are `owner-alive`,
+   `identity-unverified`, `own-group-unknown`, and `kill-failed`, so a later
+   incarnation can try again.
 4. **The child was started around the host.** A process spawned with
    `node:child_process` directly, rather than through the host's
    `ChildProcessSpawner`, is in no ledger and no reaper can find it. Under
@@ -150,19 +142,23 @@ is still running, and the next incarnation does not kill it.
 
 ## A bundler cannot resolve node:fs
 
+Available now.
+
 **Symptom.** Bundling for a browser fails on `node:fs`, `node:path`, or
 `node:child_process` reached from `@smthrs/platform-bun`.
 
-**Cause.** The bundle falls back to the `@effect/platform-node` adapters off
-Bun, so it resolves `node:` built-ins by design. That is what makes one bundle
+**Cause.** The Bun adapters re-export Node-shared implementations that
+resolve `node:` built-ins. That is what makes one bundle
 run on both runtimes, and it is exactly what a browser bundler cannot resolve.
 
-**Fix.** Compose [`@smthrs/platform-browser`](/api/platform-browser) in the
+**Fix.** Compose [`@smthrs/platform-browser`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/docs/api.md) in the
 page. It fills the same five slots from browser primitives, so the program
 between them does not change. See
 [Runtime parity with Node](./concepts/runtime-parity.md).
 
 ## Jj fails with not_installed
+
+Available now.
 
 **Symptom.** Building any complete bundle fails with a `JjError` whose code
 is `not_installed` or `unsupported_version` before the program body runs,
@@ -175,4 +171,4 @@ nothing on your behalf.
 
 **Fix.** Install [Jujutsu](https://jj-vcs.github.io), which provides the `jj`
 command, or set `SMITHERS_JJ_PATH` to the executable you want spawned.
-[`@smthrs/jj`](/api/jj) documents the resolution order and the failure codes.
+[`@smthrs/jj`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/jj/docs/api.md) documents the resolution order and the failure codes.

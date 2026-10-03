@@ -16,6 +16,8 @@ the package's `bin/<platform>-<arch>/smithers-jj-export`, a source checkout's
 
 ## Build or name the helper
 
+Available now.
+
 In a source checkout:
 
 ```bash
@@ -42,6 +44,8 @@ runs.
 
 ## Use it as the whole host's filesystem slot
 
+Available now.
+
 `BunHost.layer` builds its filesystem slot from `BunFileSystem.layer`, which
 uses the default search. Merge your configured layer over the bundle so it
 shadows that slot, and put it last: for a duplicate tag, the later layer in a
@@ -65,19 +69,21 @@ The spawner inside the bundle keeps the default filesystem layer it was built
 with for resolving executables and working directories; that path is unguarded
 and does not use the helper.
 
-Prefer this over hand-composing the five slots. Rebuilding them yourself means
-rebuilding the `HttpClient` slot too, and its `redirect: "manual"` wiring is
-internal, so a hand-composed bundle quietly gains redirect following.
+A hand-composed host uses `BunHost.layerHttpClient` for the network slot. Its
+shared egress client installs no redirect interceptor, so each redirect remains
+a separate request for the kernel to authorize.
 
 `BunHost` also re-exports `AtomicFileSystem` itself, so you can reach the
 implementation and its full option set without adding
-[`@smthrs/platform-node`](/api/platform-node) as a second dependency:
+[`@smthrs/platform-node`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/api.md) as a second dependency:
 
 ```ts
 BunHost.AtomicFileSystem.layerWith({ executable, concurrency, timeoutMs })
 ```
 
 ## The other options
+
+Available now.
 
 `BunFileSystem.Options` is `AtomicFileSystem.Options`:
 
@@ -97,13 +103,17 @@ host would not be a ceiling.
 
 ## Windows
 
-The extension is unsupported on Windows. A guarded path operation there fails
-closed.
+Available now.
+
+The helper includes a Windows implementation, but Windows confinement is
+unsupported. Use a supported POSIX host when you need this contract.
 
 ## Related
+
+Available now.
 
 - [The Host surface on Bun](../concepts/host-surface.md): why the filesystem
   slot is the Node package's implementation, and what the extension buys under
   the kernel's guard.
-- [`@smthrs/platform-node`](/api/platform-node): the `AtomicFileSystem` adapter
+- [`@smthrs/platform-node`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/api.md): the `AtomicFileSystem` adapter
   itself, its full option set, and its refusal matrix.
