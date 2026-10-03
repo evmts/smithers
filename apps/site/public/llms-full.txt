@@ -48,7 +48,7 @@ Smithers maintains your codebase. It turns issues into reviewed, tested changes 
 
 - An Apple Silicon Mac running macOS and Homebrew.
 - A GitHub repository with squash merging enabled.
-- A coding-model provider key and an AI Gateway key for Jev.
+- A coding-model provider key or ChatGPT sign-in, and an AI Gateway key for Jev.
 
 Once the package ships, run on your Mac:
 
@@ -58,7 +58,7 @@ brew install smithersai/tap/smithers
 
 ## Start the install
 
-**Planned.** These commands are not in the current CLI. The release will ask for administrator authorization once and print a setup URL for the Mac and each configured public address.
+**Planned.** These commands are not in the current CLI. The release may ask for administrator authorization once and will print a setup URL for the Mac and each configured public address.
 
 | Access | Run on the Mac | Open the browser on | Example setup URL |
 | --- | --- | --- | --- |
@@ -84,7 +84,7 @@ Create a flow that lives with your code, give it a small prompt, and inspect the
 
 Use Node.js 26.4.0 or later and connect a ChatGPT subscription, directly or through the account pool. Flow completions use the same subscription judge as the native host. Missing subscriptions and invalid judgments fail closed.
 
-The 1.0 release candidate is not published to npm yet. Follow the [source-checkout installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx), including its PATH setting, then verify:
+The 1.0 release candidate is not published to npm yet. Follow the [source-checkout installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli), including its PATH setting, then verify:
 
 ```bash
 smthrs --version
@@ -176,7 +176,7 @@ In this tutorial you'll build the smallest complete Smithers program: one action
 
 ## 1. Set up the project
 
-Create a `first-flow` directory and link the libraries into it as described in [Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx). Every program here runs with `node <file>.ts`.
+Create a `first-flow` directory and link the libraries into it as described in [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries). Every program here runs with `node <file>.ts`.
 
 ## 2. Declare the action
 
@@ -877,7 +877,7 @@ Fork copies a run's history up to one frame so the copy can diverge from its par
 
 - Node.js 26.4.0 or later.
 - A fresh directory for the tutorial files.
-- The libraries, linked into that directory as described in [Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx).
+- The libraries, linked into that directory as described in [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
 
 You need no provider key: every step here is a plain action, and no model is called.
 
@@ -1284,7 +1284,7 @@ Give a model-backed step real file tools and run the code it writes inside a san
 ## Before you begin
 
 - Node.js 26.4.0 or later, and Jujutsu (`jj`) on your PATH.
-- The libraries, linked as described in [Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx).
+- The libraries, linked as described in [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
 
 ## Declare the step
 
@@ -1855,7 +1855,7 @@ A memory policy decides which banks a flow tree reads and writes, whether recall
 
 - The Smithers CLI and a project: run `smthrs init notes` in a fresh directory. The project gives you the `.flows/` state directory this tutorial's facts live in.
 - Node.js 26.4.0 or later.
-- The libraries, linked as described in [Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx).
+- The libraries, linked as described in [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
 
 You need no provider key: both the model and the completion judge are scripted, so the runs are deterministic. A live host must choose its own seat and completion judge before opening resources.
 
@@ -2154,7 +2154,7 @@ https://smithers.sh/docs/tutorials/first-target/
 
 Build a small target graph and observe its cache behavior. You will run a JavaScript program, reuse its result, and then change a declared input to make it run again. This tutorial does not call a model.
 
-You need the [Smithers CLI](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx) and Git.
+You need the [Smithers CLI](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli) and Git.
 
 ## Create the workspace
 
@@ -2392,7 +2392,7 @@ A markdown flow is one `flows/<name>/flow.mdx` file: frontmatter declares the ru
 
 ## Before you start
 
-- The Smithers CLI ([Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx)).
+- The Smithers CLI ([Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli)).
 - Set a provider credential. `smthrs doctor` lists the keys it reads: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `MOONSHOT_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`, `CEREBRAS_API_KEY`.
 
 ## 1. Scaffold the flow
@@ -2572,7 +2572,7 @@ For a prompt-driven agent run, use [Markdown flows](/docs/guides/markdown-flows/
 
 ## Install the dependencies
 
-Link `@smthrs/flow`, `@smthrs/engine`, and `@smthrs/platform-node` into the project as described in [Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx).
+Link `@smthrs/flow`, `@smthrs/engine`, and `@smthrs/platform-node` into the project as described in [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
 
 ## Define and run the flow
 
@@ -2688,7 +2688,7 @@ A Smithers project is `flows/**` sources plus `.flows/` run state. This guide or
 
 ## Before you start
 
-- The Smithers CLI ([Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx)).
+- The Smithers CLI ([Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli)).
 - Scaffold once with [`smthrs init`](/docs/reference/cli/init/), which writes the first flow and ignores `.flows/`.
 
 ## 1. Lay out the project
@@ -2768,7 +2768,7 @@ Review a flow's plan before launching it. If you already trust the plan and want
 
 ## Before you start
 
-- Install the [CLI](/docs/installation/) and work from your project's root.
+- Install the [CLI](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli) and work from your project's root.
 - Run `smthrs flow list` to find a flow ID. The examples below use `deploy/status`; replace it with your flow's ID.
 - Configure any [model seat](/docs/guides/model-seats/) the flow needs.
 - Install `jq` if you want to save the approval payload with the shell command below.
@@ -2860,7 +2860,7 @@ A detached launch returns the durable run ID and log path after the child acknow
 
 Use `smthrs runs show <run-id>` to read the run's `status` and diagnosis. A local attached launch exits `0` for completion, `1` for failure, `3` for waiting on approval, or `130` for cancellation.
 
-Continue with [Inspect runs](/docs/guides/inspecting-runs/) to read events and outputs, or [Run flows in CI](/docs/installation/) to choose how a pipeline handles a parked run.
+Continue with [Inspect runs](/docs/guides/inspecting-runs/) to read events and outputs.
 
 ---
 
@@ -3013,7 +3013,7 @@ The reserved node `result` names the final assistant output. Other node IDs iden
 | A provider refusal | [Check the model seat and credentials](/docs/troubleshooting/doctor-provider/). |
 | A completed run needs historical inspection | [Inspect or replay a frame](/docs/concepts/time-travel/). |
 
-For agent access to the same run state, see the [MCP tools reference](/docs/reference/mcp-tools/). For pipeline exit handling, see [Run flows in CI](/docs/installation/).
+For agent access to the same run state, see the [MCP tools reference](/docs/reference/mcp-tools/).
 
 ---
 
@@ -3024,7 +3024,7 @@ A seat is one `provider:model` string that decides which model serves a flow's a
 
 ## Before you start
 
-- The Smithers CLI ([Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx)).
+- The Smithers CLI ([Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli)).
 - A Smithers project. `smthrs init` scaffolds one.
 - An API key for the selected provider, or a supported subscription session for an OpenAI seat.
 
@@ -3273,9 +3273,9 @@ A tool in Smithers is an ordinary flow: a declaration carrying a name, schemas, 
 
 ## Before you start
 
-- The Smithers CLI ([Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx)).
+- The Smithers CLI ([Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli)).
 - A Smithers project. `smthrs init` scaffolds one.
-- For step 1, `@smthrs/std` and `@smthrs/flow` ([Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx)).
+- For step 1, `@smthrs/std` and `@smthrs/flow` ([Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries)).
 
 ## 1. Call the std tools from a module flow
 
@@ -3428,7 +3428,7 @@ This is the server direction: an external agent calls Smithers. To give a Smithe
 
 ## Before you start
 
-- Install the [Smithers CLI](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx).
+- Install the [Smithers CLI](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli).
 - Choose the project the agent should operate. Verify it with `smthrs flow list --root <project>`.
 - Use an agent client that supports stdio MCP servers.
 
@@ -3581,7 +3581,7 @@ Place an action body, or a whole child flow, on a provisioned machine while the 
 
 ## Before you start
 
-- `@smthrs/sandbox` and `@smthrs/flow` ([Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx)).
+- `@smthrs/sandbox` and `@smthrs/flow` ([Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries)).
 - A durable engine composition to provide the sandbox layers into. The examples below compose one over a local SQLite file.
 - Node.js 26.4.0 or later.
 
@@ -3722,7 +3722,7 @@ Wait inside a flow without holding a process open: the wait is recorded, the run
 
 ## Before you start
 
-- `@smthrs/flow` ([Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx)).
+- `@smthrs/flow` ([Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries)).
 - You know the journal is what makes a wait survive a crash. [Durable execution](/docs/concepts/durable-execution/) covers the mechanism; this page covers choosing and composing the primitives.
 
 ## 1. Pick the primitive
@@ -3840,7 +3840,7 @@ Run one flow from inside another as a separate durable run, join the results, an
 
 ## Before you start
 
-- `@smthrs/flow` and `@smthrs/plan`; the detached-children half also uses `@smthrs/agent` ([Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx)).
+- `@smthrs/flow` and `@smthrs/plan`; the detached-children half also uses `@smthrs/agent` ([Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries)).
 - The `durable-layer.ts` composition from [the first-flow tutorial](/docs/tutorials/first-flow/). The examples below use a local SQLite file.
 
 ## 1. Choose the boundary
@@ -4042,7 +4042,7 @@ Undo work a run already did when the run later fails: inside one execution with 
 
 ## Before you start
 
-- `@smthrs/flow`; rewind-time handlers come from `@smthrs/time-travel` ([Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx)).
+- `@smthrs/flow`; rewind-time handlers come from `@smthrs/time-travel` ([Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries)).
 - A `Jj` implementation in the composition for compensable actions. The engine calls `snapshot` before each attempt and `restore` before a retry; if neither does anything, nothing is compensated.
 - The tier vocabulary in one clause: reads are `sealed`, undoable writes are `compensable`, and the rest are `irreversible`. [Time travel](/docs/concepts/time-travel/) defines compensation as a protocol over the journal a run wrote.
 
@@ -4149,7 +4149,7 @@ A step's large outputs belong in the content-addressed artifact store, and a sea
 
 ## Before you start
 
-- `@smthrs/artifacts`, `@smthrs/step-cache`, `@smthrs/engine-store`, and `@smthrs/flow` ([Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx)).
+- `@smthrs/artifacts`, `@smthrs/step-cache`, `@smthrs/engine-store`, and `@smthrs/flow` ([Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries)).
 
 - You know what a content address buys: [Content addressing](/docs/concepts/content-addressing/) covers key derivation, and this page only composes stores.
 - For the shared tiers, an HTTP cache endpoint. The step-cache tier requires HTTPS unless the endpoint is loopback, so plain HTTP on localhost works for a trial; the artifact tier refuses a non-HTTPS endpoint everywhere.
@@ -4299,7 +4299,7 @@ Serve this project's control plane with `smthrs serve` so other terminals can pl
 ## Before you start
 
 - You have a Smithers project: `flows/**` sources plus a `.flows/` state directory. [Project layout](/docs/reference/project-layout/) names every file in it.
-- You have the `smthrs` CLI ([Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx)).
+- You have the `smthrs` CLI ([Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli)).
 
 ## 1. Serve the project
 
@@ -4400,7 +4400,7 @@ A follower is a process that replicates journal entries over the read-only sync 
 ## Before you start
 
 - You have a source to follow: a control plane serving `/sync` (see [Operate the control plane](/docs/guides/control-plane/)), or an in-process `SyncServer` over the project's journal.
-- You have `@smthrs/sync` and `@smthrs/journal` ([Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx)).
+- You have `@smthrs/sync` and `@smthrs/journal` ([Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries)).
 - You have a run id to follow. `smthrs runs list` lists the project's runs.
 
 ## 1. Follow one run's journal
@@ -4510,7 +4510,7 @@ Attach the OTLP exporter to a durable run so its spans, logs, and metric series 
 
 - You have a program that runs flows on the durable engine (`@smthrs/engine-store`).
 - You have an OTLP collector that accepts HTTP at a base URL, for example `http://localhost:4318`.
-- You have `@smthrs/observability` ([Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx)).
+- You have `@smthrs/observability` ([Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries)).
 
 ## 1. Attach the OTLP layer
 
@@ -4610,7 +4610,7 @@ Back up a project's state without corrupting it, and bound how much run history 
 ## Before you start
 
 - You have a project with a `.flows/` directory. [Project layout](/docs/reference/project-layout/) names every file in it.
-- You have the `smthrs` CLI for the gc pass, and `@smthrs/engine-store` plus `@smthrs/artifacts` for the programmatic knobs ([Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx)).
+- You have the `smthrs` CLI for the gc pass, and `@smthrs/engine-store` plus `@smthrs/artifacts` for the programmatic knobs ([Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli)).
 
 ## 1. Know what lives in `.flows/`
 
@@ -4691,7 +4691,7 @@ The store itself (facts, threads, notes, and recall) is a concept; [Memory](/doc
 ## Before you start
 
 - You have a project with a `.flows/control.db`, the control database the memory store lives in.
-- You have facts to inspect, for example written by a flow that ran `Flows.remember`. For the maintenance step, `@smthrs/memory` ([Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx)).
+- You have facts to inspect, for example written by a flow that ran `Flows.remember`. For the maintenance step, `@smthrs/memory` ([Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries)).
 
 ## 1. Inspect and edit facts
 
@@ -4762,7 +4762,7 @@ Exercise a flow in a test runner the way the shipped examples do: on the in-memo
 ## Before you start
 
 - Node.js 26.4.0 or later, or Bun 1.4 or later.
-- `@smthrs/flow`, `@smthrs/engine`, `@smthrs/platform-node`, `@smthrs/testing`, `vitest`, and `@effect/vitest` ([Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx)).
+- `@smthrs/flow`, `@smthrs/engine`, `@smthrs/platform-node`, `@smthrs/testing`, `vitest`, and `@effect/vitest` ([Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries)).
 
 `@smthrs/testing/Vitest` is ESM-only and deliberately absent from the root barrel, so import the adapter from its subpath.
 
@@ -5612,7 +5612,7 @@ Smithers vendors Effect's workflow surface and extends it with explicit executio
 
 ## Related
 
-- [Installation](/docs/installation/): the pinned install line and repair commands.
+- [Library installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries): link the checkout's pinned dependencies.
 - [Durable execution](/docs/concepts/durable-execution/): what the journaled program buys you.
 - [Module flows](/docs/guides/module-flows/): the authoring surface these layers serve.
 
@@ -5691,7 +5691,7 @@ The Smithers library is a roster of `@smthrs/*` packages, each with one referenc
 
 ## Install
 
-The packages are not on npm yet. See [Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx).
+The packages are not on npm yet. See [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
 
 ## Reading these pages
 
@@ -6076,7 +6076,7 @@ https://smithers.sh/docs/reference/cli/runs/
 | `runs list [--flow <id>] [--status <status>]` | Matching durable runs. |
 | `runs show <run>` | Current run state and an event-derived diagnosis. |
 | `runs output <run> [node]` | Recorded node outputs; `result` selects the final assistant output. |
-| `runs devtools <run> [node]` | The run's node tree with state and timings, and one node's inputs, outputs and journal frames; see [Inspect a run with DevTools](https://github.com/smithersai/smithers/blob/main/apps/site/src/content/docs/docs/guides/inspecting-runs.mdx). |
+| `runs devtools <run> [node]` | The run's node tree with state and timings, and one node's inputs, outputs and journal frames. |
 | `runs logs <run>` | Recorded events, optionally followed live. |
 
 A successful read does not imply that the run succeeded. Read its status field. `runs show` prints a diagnosis card: `Verdict`, `Run`, `Activity`, `Tokens`, up to three `Refusals`, then `Cause`, `Output`, and `Unblock` when they apply, and a `Next` line. Use `--format json` for structured state and `--format jsonl` for event streams.
@@ -6245,7 +6245,7 @@ https://smithers.sh/docs/reference/api/flow/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/flow/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/reference/flow.md)
 
-Install the package with its exact `effect` peer. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx).
+Install the package with its exact `effect` peer. Not on npm yet; see [Installation](https://flow.smithers.sh/installation/#use-the-libraries).
 
 ## Entry points
 
@@ -8085,7 +8085,7 @@ This page is the long form: one entry per export, with the full type and every f
 
 ## Install
 
-Install the engine beside the flow package it runs. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx).
+Install the engine beside the flow package it runs. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
 
 ## Entry points
 
@@ -9799,7 +9799,7 @@ https://smithers.sh/docs/reference/api/targets/
 ## Install
 
 Install it with the build CLI; a `PACKAGE.ts` or `WORKSPACE.ts` file then
-imports it directly. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx).
+imports it directly. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli).
 
 ```json
 {
@@ -26452,8 +26452,9 @@ Repository operations are fenced as a unit, including `status`, which can
 snapshot. Each holds workspace and shared-store permits, with exclusive
 `.jj/smithers.lock` and store `smithers.lock` owner directories across
 processes. `root(from)` fences its actual directory, preserving its exemption
-from the layer's bound root. The default 120-second deadline includes permit
-waits and execution; cancellation releases both permits. A caller
+from the layer's bound root. The default 120-second deadline bounds acquisition of both fences only.
+Once acquired, execution can outlast the deadline; caller cancellation and
+operation failure release both permits. A caller
 records lock owners as `hostname-pid-random` and reclaims only an owner on the
 same host whose process is dead. Permission-denied probes count as alive;
 foreign-host and legacy owner markers require operator cleanup.
@@ -26469,15 +26470,18 @@ or completes before the add runs.
 
 `withRepositoryMutation(method, from, effect)` exposes this coordination to
 host adoption. `RepositoryMutationTimeoutMs` is a Context reference with a
-default of `120000`. The protected effect must not call another fenced
+default of `120000`, bounding acquisition only. The protected effect must not call another fenced
 operation on the same store; internal compound operations use their raw
 command runner while holding the outer permits.
 
-`retryGitIndexLock(effect)` retries only confirmed shared Git `index.lock`
-acquisition failures: at most 1,200 retries with 100 ms waits, independently
-for each execution. It preserves permanent errors, private-index errors and
-the final exhausted error, and never removes an active Git lock. Use it inside
-`withRepositoryMutation` to bound acquisition, execution and retry waits.
+`retryGitIndexLock(effect)` retries confirmed shared Git `index.lock`
+acquisition failures and ref-lock contention: at most 1,200 retries with 100 ms
+waits, independently for each execution. It preserves permanent errors, private-index errors and
+the final exhausted error, and never removes an active Git lock. Its retry
+waits are independent of the repository fence acquisition deadline. A stuck
+`index.lock` holds both acquired fences for the full bounded retry (about two
+minutes), because the deadline bounds acquisition only. Ref-lock retries let
+unfenced fetches recover from concurrent fetch or fenced export contention.
 
 Snapshot messages are opaque strings on both browser and CLI layers, including
 empty strings, leading `-`, quotes, and newlines. Node and Bun never pass them
@@ -32400,9 +32404,11 @@ with their existing subscription resolver and reject malformed verdicts.
 HTTP evaluation protocol. It reads no environment configuration and is never
 selected by a flow host or used as a subscription fallback.
 
-`EvaluatorBackup.withFallback(primary, backup)` retains the backup's failure
-when both evaluators fail. An active backup's timeout or transport outage
-remains transient even if the primary is unconfigured. A primary 429 still
+`EvaluatorBackup.withFallback(primary, backup)` asks the backup only when the
+primary is unreachable, times out, or refuses with a 5xx or 429. An
+unconfigured primary (for example, no `AI_GATEWAY_API_KEY`) fails with its own
+typed `unconfigured` error and never falls back. When both evaluators fail,
+the backup's failure is retained. A primary 429 still
 takes precedence over a backup transport or configuration failure, while
 retaining the backup's actual paid usage. A primary failure carrying paid
 usage never calls the backup, avoiding a second paid reading.
@@ -39246,6 +39252,10 @@ executions. Lockfile drift does not remove these roots. Missing or corrupt
 snapshots remain typed failures. `ExecutionSnapshotError.code` is `missing`,
 `corrupt`, `lockfile_changed`, or `unavailable`.
 
+When the filesystem snapshot index is absent, `indexMissing` is `true`.
+Source loading retains its original typed refusal in this case. A missing blob
+behind an existing index retains the snapshot recovery diagnostic.
+
 The manifest pins project source, while installed workspace packages remain
 host code. Run the host from a pinned checkout.
 
@@ -40431,15 +40441,20 @@ const outcome = yield* SandboxMerge.apply(work, {
 `apply` is idempotent per key: applying a key again answers the existing change's outcome. It never reads or writes a working copy (`jj --ignore-working-copy`). The commit is built with git plumbing through a private index in the repository's git store and imported through a temporary `smithers-sandbox/<change>` bookmark, deleted after the rebase. An apply interrupted between import and rebase finishes on the next call.
 
 Host import and rebase share the Node/Bun jj workspace and store fences. Their
-default 120-second deadline includes permit waits, commands and retries of
-confirmed shared Git `index.lock` acquisition failures. Cancellation and
-timeout preserve captured work and any pending imported change for the next
-call. An active Git lock is never removed; permanent VCS failures, private
+default 120-second deadline bounds acquisition of both fences only. Commands
+and confirmed shared Git `index.lock` retries run beyond that deadline once
+the fences are acquired. Missing-base fetches run before acquisition, with base
+presence checked again inside the fences. Cancellation and acquisition timeout
+preserve captured work and any pending imported change for the next call. An active Git lock is never removed; permanent VCS failures, private
 index errors and source conflicts retain their existing behavior.
 
 Conflict strategies run after the import/rebase fence is released, so a
 resolver can use ordinary fenced jj operations without nested acquisition.
-The core mutation deadline does not bound a custom resolver's effects.
+The acquisition deadline does not bound a custom resolver's effects.
+
+`MergeError.cause` optionally retains the original failure. Fence errors keep
+the full `JjError`, including its code and nested `lock_timeout` cause. Host
+adapter loading is lazy and shared through one memoized, typed loader.
 
 | `MergeError.reason`   | Cause                                                                     |
 | --------------------- | ------------------------------------------------------------------------- |
@@ -40448,7 +40463,7 @@ The core mutation deadline does not bound a custom resolver's effects.
 | `patch_rejected`      | the patch does not apply to its own base                                  |
 | `conflict`            | `failOnConflict` met a conflict; `paths` names it                         |
 | `resolution_rejected` | a resolver's answer still has conflicts or does not descend from `onto`   |
-| `vcs_failed`          | `jj` or `git` failed on the host                                          |
+| `vcs_failed`          | `jj`, `git`, fence acquisition or host adapter loading failed             |
 
 A `Strategy<E, R>` has one method, `onConflict(conflicted, repository)`, answering `Merged`, `Conflicted`, or a failure. `apply` lands the change before calling it.
 
@@ -40463,6 +40478,9 @@ A `Strategy<E, R>` has one method, `onConflict(conflicted, repository)`, answeri
 See [Return work from a sandbox](https://sandbox.smithers.sh/guides/return-work-from-a-sandbox/) for the two steps as flow actions.
 
 ## SandboxConformance
+
+Conformance fixture scripts that exit unsuccessfully report a typed
+`ProviderError` with code `unknown` and the exit status and stderr in its message.
 
 ```ts
 import { SandboxConformance } from "@smthrs/sandbox"
@@ -46414,7 +46432,7 @@ Variables an operator exports to steer the CLI.
 | `SMITHERS_MEMORY_DB` | operator | Moves the memory store to its own SQLite file, shared by runs of one repository in separate workspaces. | none |
 | `SMITHERS_MODEL_PROXY_URL` | operator | Base URL of a model proxy that fronts the provider routes. | none |
 | `SMITHERS_ACCOUNT_POOL_URL` | operator | Smithers account pool of connected ChatGPT sign-ins and Anthropic API keys that signs `openai:` and `anthropic:` seats; with `SMITHERS_ACCOUNT_POOL_KEY` and `SMITHERS_ACCOUNT_POOL_PROVIDERS`. | none |
-| `SMITHERS_TUI_BIN` | operator | The executable `smthrs tui` runs. See [TUI configuration](/docs/installation/) for chat, worker, approval, budget, and conversation settings. | none |
+| `SMITHERS_TUI_BIN` | operator | The executable `smthrs tui` runs. See [TUI reference](https://github.com/smithersai/smithers/blob/main/apps/tui/README.md) for chat, worker, approval, budget, and conversation settings. | none |
 | `SMITHERS_DETACHED_ADMISSION_TIMEOUT_MS` | operator | How long a detached flow launch waits for the detached run's admission line. A value that is not a positive integer is ignored. | none |
 | `SMITHERS_TEST_COMMAND` | operator | The command the `test` flow runs. | none |
 | `SMITHERS_TEST_CONTAINER` | operator | The container the `test` flow runs in. | none |
@@ -53835,7 +53853,7 @@ submits a previously approved plan. `runs resume` re-drives a parked run.
 | --- | --- |
 | [`memory`](/docs/reference/cli/memory/) | `list/get/set/rm`, `recall`, `notes list/get/add/status/supersede`, `threads list/create/show/rm`, `messages list/add`, `compact`. |
 | [`credentials`](/docs/reference/cli/credentials/) | `list/add/rotate/revoke`; only references appear in output. |
-| [`triggers`](/docs/installation/) | `list/show/register/enable/disable/fire/serve`; `fire` queues an occurrence for a running scheduler. |
+| [`triggers`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/triggers/docs/README.md) | `list/show/register/enable/disable/fire/serve`; `fire` queues an occurrence for a running scheduler. |
 | [`integrations`](/docs/reference/cli/integrations/) | `list` and `doctor [--offline]`. |
 | [`eval`](/docs/reference/cli/eval/) | `list/run/baseline/compare` for modules under `evals/**/*.eval.ts`. |
 
@@ -54033,7 +54051,7 @@ The default scope on `approvals approve` is `once`; the command above chooses `r
 
 Check that you selected the same project or remote host, the same run, and the current request. Read the command's refusal before retrying. A stale or already-resolved request must not be treated as a new approval.
 
-For the full admission sequence, see [Plan, approve, and run](/docs/guides/plan-approve-run/). In CI, a parked run needs state that outlives the runner; see [Run flows in CI](/docs/installation/).
+For the full admission sequence, see [Plan, approve, and run](/docs/guides/plan-approve-run/).
 
 ---
 
@@ -54149,7 +54167,7 @@ Flows written for 1.0 run on:
 
 - Node.js 26.4.0 or later.
 - Effect exactly `4.0.0-rc.115`. The pin is exact, not a range; the platform package enforces it through peer dependencies.
-- The `@smthrs/flow`, `@smthrs/engine`, and `@smthrs/control` packages; see [Installation](https://github.com/smithersai/smithers/blob/main/apps/site/docs/installation.mdx).
+- The `@smthrs/flow`, `@smthrs/engine`, and `@smthrs/control` packages; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
 
 ## See also
 
