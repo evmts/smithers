@@ -29,7 +29,7 @@
  */
 import { memoryWords, type RunInputs } from "./RunInputs"
 import { Suspense, useContext } from "react"
-import { CodeSurface } from "../ViewModules"
+import { FileCodeSurface } from "./FileCards"
 import { ControllerContext } from "../ControllerContext"
 import { ViewSkeleton } from "../ViewSkeleton"
 import { describedFailure, FailureNotice } from "../FailureNotice"
@@ -520,7 +520,7 @@ const DrawerCode = ({ file, line, onRunCommand }: {
   return (
     <div className="flow-graph-code-file" data-line={line}>
       <Suspense fallback={<ViewSkeleton />}>
-        <CodeSurface payload={{ ...file, line }} codeIntel={codeIntel} onRunCommand={onRunCommand} />
+        <FileCodeSurface payload={{ ...file, line }} codeIntel={codeIntel} onRunCommand={onRunCommand} />
       </Suspense>
     </div>
   )
