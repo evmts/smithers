@@ -1255,7 +1255,7 @@ import { fixtures as liveFileFixtures } from "@smthrs/rpc/fixtures/File"
 test("File live notices, snapshot and Compare use supplied data", async () => {
   const host = document.createElement("div"); document.body.append(host)
   const root = createRoot(host)
-  const onAction = mock((_tag: string, _args: Record<string, string>) => {}), onView = mock(() => {})
+  const onAction = mock((_tag: string, _args?: Record<string, string>) => {}), onView = mock(() => {})
   const render = async (fixture: typeof liveFileFixtures.text) => act(async () => root.render(<FileCardSurface {...fixture} onAction={onAction} onView={onView} />))
   try {
     await render(liveFileFixtures.deleted)
