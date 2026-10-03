@@ -2,7 +2,7 @@ import type { DiffCard, DiffViewProps } from "@smthrs/rpc/DiffCard"
 import { DiffAction } from "./DiffAction"
 import { PierreDiffView } from "@smthrs/ui/adapters/pierre-diff-view"
 import { ActorChip, actorName } from "./ActorChip"
-import { fileSize } from "./CodeEditorView"
+const fileSize = (bytes: number) => bytes >= 1_000_000 ? `${(bytes / 1_000_000).toFixed(1)} MB` : bytes >= 1_000 ? `${(bytes / 1_000).toFixed(1)} kB` : `${bytes} B`
 
 // Git quotes special path bytes; newline-containing paths cannot inject patch headers.
 const gitPath = (path: string) => /[\s"\\]/.test(path) ? JSON.stringify(path) : path
