@@ -43,8 +43,9 @@ const temporary = async (t: TestContext) => {
   return root
 }
 const failure = (code: string) => (error: unknown) => error instanceof BenchmarkFailed && error.code === code
-const command = async (program: string, args: string[], cwd: string, env: NodeJS.ProcessEnv) => {
-  const child = spawn(program, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"], timeout: 30_000 })
+const command = async (program: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, input = "") => {
+  const child = spawn(program, args, { cwd, env, stdio: ["pipe", "pipe", "pipe"], timeout: 30_000 })
+  child.stdin.end(input)
   let stdout = "", stderr = ""
   child.stdout.on("data", (chunk) => stdout += chunk)
   child.stderr.on("data", (chunk) => stderr += chunk)
@@ -295,7 +296,7 @@ process.stdout.write(JSON.stringify(argv[0] === "token" ? {token: "smithers_fixt
     await writeFile(path, script)
     await chmod(path, 0o700)
   }
-  const run = (extra: string[] = []) =>
+  const run = (extra: string[] = [], env: NodeJS.ProcessEnv = {}, input = "") =>
     command(
       "python3",
       [
@@ -313,13 +314,20 @@ process.stdout.write(JSON.stringify(argv[0] === "token" ? {token: "smithers_fixt
         SMITHERS_TOKEN: "host-root-token-fixture",
         FIXTURE_LOG: log,
         FIXTURE_FAIL: fail,
-        RR_POOL: "benchmark"
-      }
+        RR_POOL: "benchmark",
+        ...env
+      },
+      input
     )
-  const calls = async () =>
-    (await readFile(log, "utf8")).trim().split("\n").map((line) =>
+  const calls = async () => {
+    const contents = await readFile(log, "utf8").catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return ""
+      throw error
+    })
+    return contents.trim().split("\n").filter(Boolean).map((line) =>
       JSON.parse(line) as { argv: string[]; digest: string; bytes: number }
     )
+  }
   return { home, run, calls }
 }
 
@@ -336,7 +344,7 @@ test("seed operator sends secrets only on stdin and cools every account before c
   ])
   for (const call of calls.slice(4)) {
     assert.equal(call.argv.includes("--body-stdin"), true)
-    assert.equal(call.argv.includes("--main-only"), true)
+    assert.equal(call.argv.includes("--main-only"), false)
     assert.equal(call.bytes > 0, true)
   }
   assert.deepEqual(
@@ -373,4 +381,110 @@ test("cooldown failure stops before minting and before any bundle is seeded", as
   assert.deepEqual((await f.calls()).map((call) => call.argv), [["cool", "codex-1", "180"], ["cool", "codex-3", "180"]])
   assert.equal(result.stdout, "")
   assert.equal(result.stderr.includes("smithers_fixture-minted-token"), false)
+})
+
+test("existing scoped token env and stdin modes preserve real expiry and never mint", async (t) => {
+  const expiry = "2030-01-01T03:00:00+03:00", token = "smithers_existing-scoped-token-fixture"
+  for (const source of ["env", "stdin"]) {
+    const f = await seedFixture(t)
+    const result = await f.run(
+      [source === "env" ? "--existing-token" : "--token-stdin", "--expires-at", expiry, "--models"],
+      source === "env" ? { BENCHMARK_SMITHERS_TOKEN: token } : {},
+      source === "stdin" ? `${token}\n` : ""
+    )
+    assert.equal(result.code, 0, result.stderr)
+    const calls = await f.calls()
+    assert.deepEqual(calls.slice(0, 3).map((call) => call.argv), accounts.map((account) => ["cool", account, "180"]))
+    assert.deepEqual(calls.slice(3).map((call) => call.argv.slice(0, 3)), [
+      ["secret", "set", "BENCHMARK_SMITHERS_TOKEN"],
+      ["secret", "set", "BENCHMARK_TOKEN_EXPIRES_AT"],
+      ["secret", "set", "BENCHMARK_CODEX_AUTH_BUNDLES"]
+    ])
+    assert.deepEqual(
+      calls.slice(3).map((call) => call.digest),
+      [token, expiry, JSON.stringify(bundles)].map((value) => createHash("sha256").update(value).digest("hex"))
+    )
+    for (const call of calls.slice(3)) {
+      assert.equal(call.argv.includes("--body-stdin"), true)
+      assert.equal(call.argv.includes("--main-only"), false)
+    }
+    assert.deepEqual(JSON.parse(result.stdout), {
+      repo: "owner/repo",
+      expiresAt: expiry,
+      accounts: [...accounts],
+      tokenId: null
+    })
+    for (const secret of [token, "host-root-token-fixture", ...secretValues(environment())]) {
+      assert.equal(
+        (JSON.stringify(calls.map((call) => call.argv)) + result.stdout + result.stderr).includes(secret),
+        false
+      )
+    }
+  }
+})
+
+test("existing token expiry and source errors fail before cooldown, mint or secret writes", async (t) => {
+  const token = "smithers_existing-invalid-case-fixture", future = "2030-01-01T00:00:00Z"
+  const cases: { args: string[]; env?: NodeJS.ProcessEnv; input?: string }[] = [
+    { args: ["--existing-token"] },
+    ...["", "invalid", "2030-02-30T00:00:00Z", "2030-01-01", "2030-01-01T00:00:00", "2000-01-01T00:00:00Z"]
+      .map((expiry) => ({ args: ["--existing-token", "--expires-at", expiry] })),
+    { args: ["--existing-token", "--expires-at", future], env: { BENCHMARK_SMITHERS_TOKEN: "" } },
+    { args: ["--existing-token", "--expires-at", future], env: { BENCHMARK_SMITHERS_TOKEN: undefined } },
+    { args: ["--existing-token", "--expires-at", future], env: { BENCHMARK_SMITHERS_TOKEN: "bad token\nvalue" } },
+    { args: ["--token-stdin", "--expires-at", future], input: "" },
+    { args: ["--existing-token", "--expires-at", future, "--ttl", "3h"] },
+    { args: ["--expires-at", future] }
+  ]
+  for (const row of cases) {
+    const f = await seedFixture(t)
+    const result = await f.run([...row.args, "--models"], { BENCHMARK_SMITHERS_TOKEN: token, ...row.env }, row.input)
+    assert.notEqual(result.code, 0)
+    assert.deepEqual(await f.calls(), [])
+    assert.equal(result.stdout, "")
+    assert.equal(result.stderr.includes(token), false)
+    assert.equal(result.stderr.includes("host-root-token-fixture"), false)
+  }
+})
+
+test("operator cutoff seeds the existing PAT unchanged and labels the deadline without minting", async (t) => {
+  const f = await seedFixture(t), token = "smithers_nonexpiring-pat-fixture", cutoff = "2030-01-02T00:00:00Z"
+  const result = await f.run(["--existing-token", "--cutoff", cutoff], { BENCHMARK_SMITHERS_TOKEN: token })
+  assert.equal(result.code, 0, result.stderr)
+  assert.deepEqual(JSON.parse(result.stdout), {
+    repo: "owner/repo",
+    expiresAt: cutoff,
+    accounts: [],
+    tokenId: null,
+    expiryKind: "operator-cutoff"
+  })
+  const calls = await f.calls()
+  assert.deepEqual(calls.map((call) => call.argv.slice(0, 3)), [
+    ["secret", "set", "BENCHMARK_SMITHERS_TOKEN"],
+    ["secret", "set", "BENCHMARK_TOKEN_EXPIRES_AT"]
+  ])
+  assert.deepEqual(
+    calls.map((call) => call.digest),
+    [token, cutoff].map((value) => createHash("sha256").update(value).digest("hex"))
+  )
+  assert.equal((JSON.stringify(calls.map((call) => call.argv)) + result.stdout + result.stderr).includes(token), false)
+})
+
+test("operator cutoff rejects missing, invalid, elapsed and contradictory deadlines before writes", async (t) => {
+  for (
+    const args of [
+      ["--existing-token", "--cutoff", ""],
+      ["--token-stdin", "--cutoff", "invalid"],
+      ["--existing-token", "--cutoff", "2000-01-01T00:00:00Z"],
+      ["--existing-token", "--cutoff", "2030-01-01T00:00:00Z", "--ttl", "3h"],
+      ["--existing-token", "--cutoff", "2030-01-01T00:00:00Z", "--expires-at", "2030-01-01T00:00:00Z"],
+      ["--cutoff", "2030-01-01T00:00:00Z"]
+    ]
+  ) {
+    const f = await seedFixture(t)
+    const result = await f.run([...args, "--models"], { BENCHMARK_SMITHERS_TOKEN: cloudToken }, cloudToken)
+    assert.notEqual(result.code, 0)
+    assert.deepEqual(await f.calls(), [])
+    assert.equal((result.stdout + result.stderr).includes(cloudToken), false)
+  }
 })

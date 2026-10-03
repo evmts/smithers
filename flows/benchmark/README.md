@@ -47,13 +47,48 @@ python3 flows/benchmark/seed.py --repo smithers-canary/bench --ttl 3h
 
 This invokes `smthrs token mint --cloud --scope write:repository --scope
 write:workspace --ttl 3h`, then pipes the token and its expiry directly to
-`smthrs secret set --body-stdin --main-only`. It emits only metadata. The default
+`smthrs secret set --body-stdin`. It emits only metadata. Seed only a dedicated,
+private benchmark repository: file-flow `/invoke` excludes main-only secrets,
+and repository secrets are available to its admitted flows. The default
 gateway token from `smthrs token mint` authenticates gateway procedures; Cloud
 REST, Git, and workspace operations require the `--cloud` token. Cloud permission
 scopes are checked by the backend; this token is not confined to one repository.
 Use a dedicated canary account containing only benchmark repositories.
-The credential minting the token must also hold `write:user`; a repository-only
-credential cannot create access tokens and receives HTTP 403.
+The minting PAT must hold `write:user` and both requested scopes; repository-only
+credentials receive HTTP 403. Third-party OAuth2 access tokens cannot manage
+Smithers credentials, even with those scopes. These backend checks stay intact.
+
+To reuse an already scoped Cloud token, export `BENCHMARK_SMITHERS_TOKEN` securely
+and provide its actual expiry from the creation receipt or access-token metadata:
+
+```sh
+python3 flows/benchmark/seed.py --repo smithers-canary/bench \
+  --existing-token --expires-at "$BENCHMARK_TOKEN_EXPIRES_AT"
+```
+
+Alternatively, use `--token-stdin --expires-at "$BENCHMARK_TOKEN_EXPIRES_AT"` with
+the token supplied on stdin. Neither mode mints a token or accepts `--ttl`.
+Missing, invalid, or elapsed deadlines fail before cooldown or secret writes.
+`SMITHERS_TOKEN` still authenticates repository-secret writes. Repository and
+ordinary workspace operations use `write:repository`; workspace children need
+`write:workspace`. The helper does not establish permissions or discover expiry.
+`GET /api/user/tokens` returns expiry metadata
+under first-party authentication with `read:user`; a repository-only token cannot
+read that list. Never describe an operator cutoff as a backend token expiry.
+
+If the existing PAT has no backend expiry, provide an explicit benchmark cutoff:
+
+```sh
+python3 flows/benchmark/seed.py --repo smithers-canary/bench \
+  --existing-token --cutoff "$BENCHMARK_CUTOFF"
+```
+
+The receipt reports `expiryKind: "operator-cutoff"`. The cutoff is stored as
+`BENCHMARK_TOKEN_EXPIRES_AT` and bounds benchmark credential admission; it does
+not expire or revoke the PAT. Remove the seeded repository secrets after the
+run, and cancel any work still running at the cutoff. Preserve the original PAT
+when other canaries use it. Record this distinction in evidence; only mint mode
+or a known server expiry proves an expiring backend grant.
 
 Before a model run, refresh these accounts **locally**, then seed their bundles:
 

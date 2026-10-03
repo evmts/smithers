@@ -19,7 +19,7 @@ export function cloudEnvironment(environment?: NodeJS.ProcessEnv): NodeJS.Proces
   if (!Number.isFinite(expires) || expires <= Date.now()) {
     throw new BenchmarkFailed({
       code: "credentials",
-      message: "Seed a future BENCHMARK_TOKEN_EXPIRES_AT with the expiring Cloud token"
+      message: "Seed the scoped Cloud token and a future BENCHMARK_TOKEN_EXPIRES_AT credential deadline"
     })
   }
   const origin = environment.SMITHERS_API_ORIGIN ?? "https://api.jjhub.tech"
