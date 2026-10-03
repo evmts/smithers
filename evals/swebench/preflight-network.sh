@@ -65,6 +65,8 @@
 # through `SWB_PREFLIGHT_IMAGE_CMD` and `SWB_PREFLIGHT_TEST_CMD`.
 set -uo pipefail
 S="$(cd "$(dirname "$0")" && pwd)"
+source "$S/lib/remote.sh"
+swb_remote_required || exit $?
 
 # The three probes. Pinned by name rather than sampled, because a probe that
 # moved between runs would make two preflights incomparable — and because the

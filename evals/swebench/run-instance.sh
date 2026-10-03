@@ -26,8 +26,17 @@
 # scorecard can never attribute an instance to a subject it did not run.
 set -euo pipefail
 S="$(cd "$(dirname "$0")" && pwd)"
+source "$S/lib/remote.sh"
+swb_remote_required || exit $?
+if [ -z "${SMITHERS_CLI:-}" ] || [ ! -f "$SMITHERS_CLI" ]; then
+  echo 'SWEbench: set SMITHERS_CLI to the remote Smithers executable.' >&2; exit 2
+fi
 INSTANCE="${1:-}"
-SEAT="${2:-openai:gpt-6-sol}"
+SEAT="${2:-openai:gpt-6.1-sol}"
+case "${SWB_FLOWS_EFFORT:-max}" in
+  minimal|low|medium|high|xhigh|max) ;;
+  *) echo "run-instance.sh: invalid SWB_FLOWS_EFFORT" >&2; exit 2 ;;
+esac
 BUDGET="${3:-1200}"
 INDEX="${4:-}"
 DATASET="${SWB_DATASET:-$S/swb-verified.json}"
@@ -127,6 +136,15 @@ if [ "$(dirname "$WORK")" != "$WORK_ROOT" ]; then
   echo "[$RUN_ID] resolved work path escaped $WORK_ROOT"; exit 2
 fi
 
+# Subscription model calls use the same per-instance benchmark wheel as the
+# stock arm; an inherited host login never selects the Smithers account.
+ACCOUNT="api-key"
+if [ "$OPENAI_AUTH" = "chatgpt" ] && [ "${SWB_SKIP_AGENT:-0}" != "1" ]; then
+  source "$S/lib/codex-auth.sh"
+  SWB_CODEX_AUTH=chatgpt swb_codex_auth || exit $?
+  ACCOUNT="$SWB_CODEX_ACCOUNT"
+fi
+
 # The extraction lock is released by owner, never by whoever happens to be
 # exiting: this trap is installed before the lock is taken, and `rmdir` here
 # used to hand another lane's live extraction to a third one.
@@ -166,6 +184,7 @@ if [ "$TRANSPORT" = "plue" ]; then
   # and the journal; the checkout the agent edits is the guest's /testbed.
   UP="$("$S/lib/plue.py" up "$RUN_ID" "$IMAGE" --holder $$)" || {
     echo "[$RUN_ID] WORKSPACE START FAILED"; exit 1; }
+  printf '%s\n' "$UP" > "$LOG_PREFIX.workspace.json"
   WS="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).id)' "$UP")"
   WS_KEY="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).key)' "$UP")"
   CONTAINER="$WS"
@@ -380,8 +399,8 @@ else
   # is the condition declared above; a report that pools a memory-on run with
   # the independent-instance score reads it. Whether the supervisor delivered
   # is the run's own `discipline-armed.judged`.
-  printf '{\n  "instance_id": "%s",\n  "run_id": "%s",\n  "runIndex": "%s",\n  "seat": "%s",\n  "openaiAuth": "%s",\n  "subject": "%s",\n  "budgetSeconds": %s,\n  "transport": "%s",\n  "testbedNetwork": "%s",\n  "testbedNetworkObserved": "%s",\n  "hostShell": "%s",\n  "memory": "%s",\n  "startedAt": %s,\n  "endedAt": %s,\n  "wallClockSeconds": %s,\n  "exitStatus": %s,\n  "timedOut": %s\n}\n' \
-    "$INSTANCE" "$RUN_ID" "$RUN_INDEX" "$SEAT" "$OPENAI_AUTH" "$SUBJECT" "$BUDGET" "$TRANSPORT" \
+  printf '{\n  "instance_id": "%s",\n  "run_id": "%s",\n  "runIndex": "%s",\n  "seat": "%s",\n  "openaiAuth": "%s",\n  "account": "%s",\n  "model": "%s",\n  "subject": "%s",\n  "budgetSeconds": %s,\n  "transport": "%s",\n  "testbedNetwork": "%s",\n  "testbedNetworkObserved": "%s",\n  "hostShell": "%s",\n  "memory": "%s",\n  "startedAt": %s,\n  "endedAt": %s,\n  "wallClockSeconds": %s,\n  "exitStatus": %s,\n  "timedOut": %s\n}\n' \
+    "$INSTANCE" "$RUN_ID" "$RUN_INDEX" "$SEAT" "$OPENAI_AUTH" "$ACCOUNT" "$SEAT" "$SUBJECT" "$BUDGET" "$TRANSPORT" \
     "$TESTBED_NETWORK" "$TESTBED_OBSERVED" "$HOST_SHELL" "$MEMORY" "$((START*1000))" "$((END*1000))" "$((END-START))" \
     "$RUN_STATUS" "$([ "$RUN_STATUS" -eq 124 ] && printf true || printf false)" \
     > "$TIMINGS"

@@ -20,7 +20,7 @@ HERE = Path(__file__).resolve().parent
 REPORT = HERE.parent / "report.py"
 SMITHERS = "evals.harbor.smithers_agent:SmithersAgent"
 BASELINE = "evals.harbor.codex_pool:PooledCodex"
-MODEL = "openai/gpt-6-sol"
+MODEL = "openai/gpt-6.1-sol"
 ENVIRONMENT = "evals.harbor.plue_env:PlueEnvironment"
 DDL = """CREATE TABLE flows_journal_events (
   run_id TEXT NOT NULL, seq INTEGER NOT NULL, event_id TEXT NOT NULL UNIQUE,
@@ -81,8 +81,16 @@ class ReportCLI(unittest.TestCase):
             "config": trial_config,
             "agent_result": {
                 "n_input_tokens": tokens[0], "n_cache_tokens": tokens[1], "n_output_tokens": tokens[2],
-                "metadata": {"container_commands": reached,
-                             **({"harness_revision": "abc123"} if arm == "smithers" else {})},
+                "metadata": {"container_commands": reached, "model": MODEL,
+                             "account": "codex-1" if arm == "smithers" else "codex-3",
+                             **({"harness_revision": "abc123", "benchmark_seal": {
+                                 "asserted": True, "web_tools": False, "network_tools": [],
+                                 "container": "ws-1", "network": {"mode": "none", "allow": []}}}
+                                if arm == "smithers" else {"benchmark_seal": {
+                                    "sealed": True, "sealed_by": "codex-sandbox", "sandbox_probe": {
+                                        "command": "curl --noproxy '*' --connect-timeout 5 --max-time 10 https://example.com",
+                                        "exit_code": 7, "denied": True, "source": "codex-shell-tool",
+                                        "output": "curl: (7) Operation not permitted"}}})},
             },
             "verifier_result": {"rewards": {"reward": reward}} if reward is not None else None,
             "exception_info": {"exception_type": exception, "exception_message": "x"} if exception else None,
@@ -166,6 +174,122 @@ class ReportCLI(unittest.TestCase):
         self.assertEqual(first["smithers"]["trajectories"], [f"{first['smithers']['trials'][0]}/agent/trajectory.json"])
         again_text, again = self.run_report(0)
         self.assertEqual((again_text, again), (text, report), "the report is deterministic")
+
+    def test_both_arms_receive_api_equivalent_prices_and_account_labels(self) -> None:
+        self.paired(1)
+        text, report = self.run_report(0, "--min-tasks", "1")
+        for arm, account in (("smithers", "codex-1"), ("baseline", "codex-3")):
+            result = report["results"][arm]
+            # 200 uncached at $2/M, 800 cached at $0.2/M, 50 output at $10/M.
+            self.assertAlmostEqual(result["apiEquivalentUsd"], 0.00106)
+            self.assertEqual(result["accounts"], [account])
+            self.assertFalse(result["requestUsageRetained"])
+        self.assertIn("API-equivalent", text)
+        self.assertIn("Subscription billing is not per token", text)
+
+    def test_price_each_retained_request_at_its_context_tier(self) -> None:
+        for arm in ("smithers", "baseline"):
+            trial = self.trial(arm, "tiered", tokens=(272001, 0, 2))
+            result = json.loads((trial / "result.json").read_text())
+            result["agent_result"]["metadata"]["request_usage"] = [
+                {"input": 271999, "cached": 0, "output": 1},
+                {"input": 2, "cached": 0, "output": 1}]
+            (trial / "result.json").write_text(json.dumps(result))
+        _, report = self.run_report(0, "--min-tasks", "1")
+        for arm in ("smithers", "baseline"):
+            self.assertAlmostEqual(report["results"][arm]["apiEquivalentUsd"], 0.544022)
+            self.assertTrue(report["results"][arm]["requestUsageRetained"])
+
+    def test_invalid_retained_usage_is_refused(self) -> None:
+        self.paired(1)
+        trial = next(p for p in self.jobs["baseline"].iterdir() if p.is_dir())
+        result = json.loads((trial / "result.json").read_text())
+        result["agent_result"]["metadata"]["request_usage"] = [{"input": 5, "cached": 6, "output": 1}]
+        (trial / "result.json").write_text(json.dumps(result))
+        _, report = self.run_report(3, "--min-tasks", "1")
+        self.assertIn(f"baseline: {trial.name} cannot be priced: cached tokens exceed input", report["refusals"])
+
+    def test_malformed_request_usage_records_refuse_publication(self) -> None:
+        self.paired(1)
+        trial = next(p for p in self.jobs["baseline"].iterdir() if p.is_dir())
+        original = json.loads((trial / "result.json").read_text())
+        for record in (None, "malformed"):
+            with self.subTest(record=record):
+                result = json.loads(json.dumps(original))
+                result["agent_result"]["metadata"]["request_usage"] = [record]
+                (trial / "result.json").write_text(json.dumps(result))
+                _, report = self.run_report(3, "--min-tasks", "1")
+                self.assertIsNone(report["results"])
+                self.assertIn(f"baseline: {trial.name} cannot be priced: missing request token counts", report["refusals"])
+
+    def test_incomplete_metering_is_never_reported_as_exact(self) -> None:
+        self.paired(1)
+        trial = next(p for p in self.jobs["baseline"].iterdir() if p.is_dir())
+        original = json.loads((trial / "result.json").read_text())
+        for aggregate, request in ((False, True), (True, False), (True, "yes")):
+            with self.subTest(aggregate=aggregate, request=request):
+                result = json.loads(json.dumps(original))
+                result["agent_result"]["metadata"].update({
+                    "metering_complete": aggregate,
+                    "request_usage": [{"input": 1000, "cached": 800, "output": 50,
+                                       "metering_complete": request}]})
+                (trial / "result.json").write_text(json.dumps(result))
+                _, report = self.run_report(0, "--min-tasks", "1")
+                self.assertFalse(report["results"]["baseline"]["requestUsageRetained"])
+                self.assertAlmostEqual(report["results"]["baseline"]["apiEquivalentUsd"], 0.00106)
+
+    def test_missing_or_unverified_model_tool_seal_is_refused(self) -> None:
+        self.paired(1)
+        trial = next(p for p in self.jobs["smithers"].iterdir() if p.is_dir())
+        original = json.loads((trial / "result.json").read_text())
+        for seal in (None, {}, {"asserted": False, "web_tools": False, "network_tools": []},
+                     {"asserted": True, "web_tools": True, "network_tools": []},
+                     {"asserted": True, "web_tools": False, "network_tools": ["web"]}):
+            with self.subTest(seal=seal):
+                result = json.loads(json.dumps(original))
+                result["agent_result"]["metadata"]["benchmark_seal"] = seal
+                (trial / "result.json").write_text(json.dumps(result))
+                _, report = self.run_report(3, "--min-tasks", "1")
+                self.assertIsNone(report["results"])
+                self.assertIn(f"smithers: {trial.name} is not sealed: no verified model tool seal", report["refusals"])
+
+    def test_stock_sandbox_requires_retained_denied_connect_proof(self) -> None:
+        self.paired(1)
+        trial = next(p for p in self.jobs["baseline"].iterdir() if p.is_dir())
+        original = json.loads((trial / "result.json").read_text())
+        good = original["agent_result"]["metadata"]["benchmark_seal"]
+        for seal in (None, {}, {**good, "sealed": False}, {**good, "sealed": "true"},
+                     {**good, "sealed_by": "proxy"}, {**good, "sandbox_probe": None},
+                     *({**good, "sandbox_probe": {**good["sandbox_probe"], key: value}}
+                       for key, value in (("exit_code", 0), ("exit_code", True), ("exit_code", None),
+                                          ("denied", False), ("source", "config"),
+                                          ("output", None), ("output", "Could not resolve host: example.com"),
+                                          ("command", "echo curl https://example.com"),
+                                          ("command", "curl 'unterminated"),
+                                          ("command", "curl https://other.example"), ("command", None)))):
+            with self.subTest(seal=seal):
+                result = json.loads(json.dumps(original))
+                result["agent_result"]["metadata"]["benchmark_seal"] = seal
+                (trial / "result.json").write_text(json.dumps(result))
+                _, report = self.run_report(3, "--min-tasks", "1")
+                self.assertIsNone(report["results"])
+                self.assertIn(f"baseline: {trial.name} is not sealed: no verified Codex sandbox denied-connect proof",
+                              report["refusals"])
+
+    def test_stock_sandbox_receipt_can_be_retained_in_account_artifact(self) -> None:
+        self.paired(1)
+        trial = next(p for p in self.jobs["baseline"].iterdir() if p.is_dir())
+        result = json.loads((trial / "result.json").read_text())
+        seal = result["agent_result"]["metadata"].pop("benchmark_seal")
+        (trial / "result.json").write_text(json.dumps(result))
+        for command in (seal["sandbox_probe"]["command"],
+                        '/bin/bash -lc "curl --noproxy \'*\' --connect-timeout 5 --max-time 10 https://example.com"',
+                        '/bin/zsh -lc "curl --noproxy \'*\' --connect-timeout 5 --max-time 10 https://example.com"'):
+            with self.subTest(command=command):
+                seal["sandbox_probe"]["command"] = command
+                (trial / "agent" / "codex-account.json").write_text(json.dumps({"benchmark_seal": seal}))
+                _, report = self.run_report(0, "--min-tasks", "1")
+                self.assertIsNotNone(report["results"])
 
     def test_forty_nine_paired_tasks_are_refused_and_min_tasks_is_a_parameter(self) -> None:
         self.paired(49)
@@ -258,7 +382,7 @@ class ReportCLI(unittest.TestCase):
         config["agents"][0]["model_name"] = "openai/gpt-6-luna"
         (self.jobs["baseline"] / "config.json").write_text(json.dumps(config))
         report = self.assert_refused(
-            "arms differ in model: openai/gpt-6-sol vs openai/gpt-6-luna",
+            f"arms differ in model: {MODEL} vs openai/gpt-6-luna",
             "arms differ in attempts: 1 vs 5",
         )
         for field in ("datasetSpec", "environmentSpec"):

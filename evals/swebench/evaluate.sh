@@ -81,6 +81,10 @@
 # kept on disk, never how a patch is graded.
 set -u
 S="$(cd "$(dirname "$0")" && pwd)"
+if [ "${SWB_PREDS_ONLY:-0}" != 1 ]; then
+  source "$S/lib/remote.sh"
+  swb_remote_required || exit $?
+fi
 RUN_ID="$1"; shift
 HARNESS="${HARNESS:-flows}"
 WORKERS="${SWB_EVAL_WORKERS:-1}"

@@ -24,8 +24,10 @@
 # dataset.
 set -eu
 S="$(cd "$(dirname "$0")" && pwd)"
+source "$S/lib/remote.sh"
+swb_remote_required || exit $?
 SEAT="${1:-openai:gpt-6-sol}"
-WORK="$S/work-liveness"
+WORK="$SWB_ARTIFACT_ROOT/work-liveness"
 CAP="${SWB_READ_ONLY_CAP:-12}"
 
 [ -f "$S/.subject.json" ] || { echo "readonly-liveness.sh: no subject pinned; run ./preflight.sh" >&2; exit 1; }

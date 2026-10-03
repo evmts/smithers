@@ -26,6 +26,8 @@
 # This needs docker and the official images. It spends no model tokens.
 set -u
 S="$(cd "$(dirname "$0")" && pwd)"
+source "$S/lib/remote.sh"
+swb_remote_required || exit $?
 PREFIX="${1:-}"
 GROUP="${2:-all}"
 COUNT="${3:-5}"

@@ -1,10 +1,11 @@
 """Round-robin over logged-in Codex subscriptions, one account per trial, and
 the line between an infrastructure failure and a model failure.
 
-A benchmark spends more than one subscription's usage limit, so trials are
-spread across every Codex login the host holds: `~/.codex/auth.json` (label
-`default`) and `~/.smithers/accounts/codex-*/auth.json` (label = the directory
-name). An account that hits its usage limit is taken out of the rotation with
+A benchmark spends more than one subscription's usage limit, so trials rotate
+over `codex-1,codex-3,codex-acct-1` under `SMITHERS_CODEX_ACCOUNTS_DIR`.
+`SMITHERS_CODEX_POOL` may narrow that set, including to an empty pool, but
+cannot include another account. Missing logins never cause a fallback.
+An account that hits its usage limit is taken out of the rotation with
 the reset time the message names, and comes back once that time has passed.
 
 An infrastructure failure is never a score. A trial whose seat ran dry is
@@ -16,13 +17,14 @@ default six hours) for a reset or a new login before it raises `NoSeatLeft`,
 so a job blocks instead of burning tasks.
 
 The rotation state is one JSON file shared by every runner process on the host
-(`SMITHERS_CODEX_POOL_STATE`, default `~/.smithers/accounts/pool.json`),
+(`SMITHERS_CODEX_POOL_STATE`, default `pool.json` in the configured accounts directory),
 updated under an exclusive `flock`, so two Harbor jobs (one per arm) draw from
-the same wheel. New `codex-*` directories are picked up on the next lease.
+the same wheel. New allowed logins are picked up on the next lease.
 """
 
 from __future__ import annotations
 
+import asyncio
 import fcntl
 import json
 import os
@@ -34,6 +36,9 @@ from pathlib import Path
 from typing import Callable
 
 STATE_VARIABLE = "SMITHERS_CODEX_POOL_STATE"
+ALLOWLIST_VARIABLE = "SMITHERS_CODEX_POOL"
+ACCOUNTS_DIR_VARIABLE = "SMITHERS_CODEX_ACCOUNTS_DIR"
+BENCHMARK_POOL = "codex-1,codex-3,codex-acct-1"
 WAIT_VARIABLE = "SMITHERS_CODEX_POOL_WAIT_SEC"
 DEFAULT_LABEL = "default"
 DEFAULT_WAIT_SEC = 6 * 3600
@@ -104,19 +109,35 @@ class NoSeatLeft(Exception):
     """Every account is out of rotation and the pause wait ran out."""
 
 
-def discover(home: Path | None = None, accounts_dir: Path | None = None) -> list[Account]:
+def discover(home: Path | None = None, accounts_dir: Path | None = None,
+             allowed_labels: frozenset[str] | None = None, *, include_default: bool = True) -> list[Account]:
     """Every Codex login on the host, `default` first, then `codex-*` sorted."""
     home = home or Path.home()
     accounts_dir = accounts_dir or home / ".smithers" / "accounts"
     found: list[Account] = []
     default = Account(DEFAULT_LABEL, home / ".codex")
-    if default.auth.is_file():
+    if include_default and default.auth.is_file():
         found.append(default)
     if accounts_dir.is_dir():
         for entry in sorted(accounts_dir.iterdir()):
             if entry.name.startswith("codex-") and (entry / "auth.json").is_file():
                 found.append(Account(entry.name, entry))
-    return found
+    return [account for account in found if allowed_labels is None or account.label in allowed_labels]
+
+
+def allowlist(environ: dict[str, str]) -> frozenset[str] | None:
+    """An absent setting allows discovery; an empty setting allows no seats.
+
+    Validate labels rather than accepting paths or silently dropping typos.
+    Missing logins remain missing: discovery never substitutes another seat.
+    """
+    if ALLOWLIST_VARIABLE not in environ:
+        return None
+    labels = frozenset(label.strip() for label in environ[ALLOWLIST_VARIABLE].split(",") if label.strip())
+    for label in labels:
+        if label != DEFAULT_LABEL and not re.fullmatch(r"codex-[A-Za-z0-9_-]+", label):
+            raise ValueError(f"invalid {ALLOWLIST_VARIABLE} account label: {label!r}")
+    return labels
 
 
 def mentions_usage_limit(text: str) -> bool:
@@ -182,9 +203,22 @@ class Pool:
     @classmethod
     def from_environment(cls, environ: dict[str, str] | None = None) -> "Pool":
         environ = os.environ if environ is None else environ
-        state = Path(environ.get(STATE_VARIABLE) or Path.home() / ".smithers" / "accounts" / "pool.json")
+        configured_dir = environ.get(ACCOUNTS_DIR_VARIABLE)
+        if configured_dir is None or not configured_dir.strip():
+            raise ValueError(f"{ACCOUNTS_DIR_VARIABLE} must name the benchmark accounts directory")
+        accounts_dir = Path(configured_dir).expanduser()
+        state = Path(environ.get(STATE_VARIABLE) or accounts_dir / "pool.json")
         wait = float(environ.get(WAIT_VARIABLE) or DEFAULT_WAIT_SEC)
-        return cls(discover(), state, wait_sec=wait, rediscover=discover)
+        allowed = allowlist(environ)
+        benchmark_labels = frozenset(BENCHMARK_POOL.split(","))
+        if allowed is None:
+            allowed = benchmark_labels
+        forbidden = allowed - benchmark_labels
+        if forbidden:
+            raise ValueError(f"{ALLOWLIST_VARIABLE} contains non-benchmark accounts: {', '.join(sorted(forbidden))}")
+        def rediscover() -> list[Account]:
+            return discover(accounts_dir=accounts_dir, allowed_labels=allowed, include_default=False)
+        return cls(rediscover(), state, wait_sec=wait, rediscover=rediscover)
 
     def _load(self) -> dict:
         try:
@@ -253,6 +287,22 @@ class Pool:
             if self.clock() >= deadline:
                 raise NoSeatLeft(f"no Codex account in rotation for {self.wait_sec:.0f}s: {self.disabled()}")
             self.sleep(POLL_SEC)
+
+    async def lease_async(self, trial: str = "") -> Account:
+        """Lease with cancellable waits, without parking an executor thread.
+
+        Only the short locked state transaction runs in a thread. A paused
+        pool waits in asyncio, so canceling agent setup stops further polls.
+        """
+        deadline = self.clock() + self.wait_sec
+        while True:
+            account = await asyncio.to_thread(self._try_lease, trial)
+            if account is not None:
+                return account
+            remaining = deadline - self.clock()
+            if remaining <= 0:
+                raise NoSeatLeft(f"no Codex account in rotation for {self.wait_sec:.0f}s: {self.disabled()}")
+            await asyncio.sleep(min(POLL_SEC, remaining))
 
     def disable(self, label: str, reason: str, reset_at: str | None = None) -> None:
         lock = self._locked()

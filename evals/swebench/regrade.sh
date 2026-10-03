@@ -46,6 +46,8 @@
 # image is not already local.
 set -u
 S="$(cd "$(dirname "$0")" && pwd)"
+source "$S/lib/remote.sh"
+swb_remote_required || exit $?
 FB="${FB_DIR:-$S/fullbench}"
 HARNESS="${HARNESS:-flows}"
 MIN_FREE_MIB="${SWB_REGRADE_MIN_FREE_MIB:-8192}"

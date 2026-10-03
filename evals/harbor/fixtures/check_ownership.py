@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from cli_contract import write_fake_cli
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -27,7 +28,7 @@ def check_unrelated_dead_workspace_survives() -> None:
         cli = root / "smithers"
         state.write_text(json.dumps({"rows": [
             {"id": "foreign", "name": "trial-one-env", "status": "failed"}], "calls": []}))
-        cli.write_text("#!/usr/bin/env python3\n"
+        write_fake_cli(cli, "#!/usr/bin/env python3\n"
                        "import json, os, sys\n"
                        "from pathlib import Path\n"
                        "p = Path(os.environ['TEST_CLI_STATE'])\n"
@@ -57,7 +58,7 @@ def check_recorded_cleanup() -> None:
         root = Path(directory)
         state = root / "state.json"
         cli = root / "smithers"
-        cli.write_text("#!/usr/bin/env python3\n"
+        write_fake_cli(cli, "#!/usr/bin/env python3\n"
                        "import json, os, sys\n"
                        "from pathlib import Path\n"
                        "p = Path(os.environ['TEST_CLI_STATE'])\n"
@@ -126,7 +127,7 @@ def check_dead_cleanup() -> None:
         root = Path(directory)
         state = root / "state.json"
         cli = root / "smithers"
-        cli.write_text("#!/usr/bin/env python3\n"
+        write_fake_cli(cli, "#!/usr/bin/env python3\n"
                        "import json, os, sys\n"
                        "from pathlib import Path\n"
                        "p = Path(os.environ['TEST_CLI_STATE']); s = json.loads(p.read_text()); a = sys.argv[1:]\n"
@@ -171,7 +172,7 @@ def check_partial_start_keeps_id_for_recovery() -> None:
         root = Path(directory)
         state = root / "state.json"
         cli = root / "smithers"
-        cli.write_text("#!/usr/bin/env python3\n"
+        write_fake_cli(cli, "#!/usr/bin/env python3\n"
                        "import json, os, sys\n"
                        "from pathlib import Path\n"
                        "p = Path(os.environ['TEST_CLI_STATE']); s = json.loads(p.read_text()); a = sys.argv[1:]\n"
@@ -193,7 +194,7 @@ def check_partial_start_keeps_id_for_recovery() -> None:
         start = invoke("import asyncio, logging, types, plue_env; "
                        "o=plue_env._PlueOps(); o.logger=logging.getLogger('test'); "
                        "o.session_id='trial__one__env'; o.task_env_config=types.SimpleNamespace(); "
-                       "o._plue_image='image'; o._plue_network=lambda: ('none', []); "
+                       "o._plue_image='image'; o._plue_network=lambda: 'none'; "
                        "asyncio.run(o._plue_create())", env)
         assert start.returncode != 0 and "is failed" in start.stderr, start.stderr
         calls = json.loads(state.read_text())["calls"]
@@ -214,7 +215,7 @@ def check_wrong_repo_refuses_selected_receipts() -> None:
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         cli = root / "smithers"
-        cli.write_text("#!/bin/sh\nexit 2\n")
+        write_fake_cli(cli, "#!/bin/sh\nexit 2\n")
         cli.chmod(0o755)
         env = {**os.environ, "PLUE_WORKSPACE_LEDGER": str(root / "ledger.json"),
                "SMITHERS_CLI": str(cli), "PLUE_REPO": "wrong/repo"}
@@ -236,7 +237,7 @@ def check_missing_create_id_logs_ambiguous_resource() -> None:
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         cli = root / "smithers"
-        cli.write_text("#!/bin/sh\nprintf '%s' '{\"status\":\"starting\"}'\n")
+        write_fake_cli(cli, "#!/bin/sh\nprintf '%s' '{\"status\":\"starting\"}'\n")
         cli.chmod(0o755)
         leak_log = root / "leaks.log"
         env = {**os.environ, "SMITHERS_CLI": str(cli), "PLUE_REPO": "acme/bench",
@@ -244,7 +245,7 @@ def check_missing_create_id_logs_ambiguous_resource() -> None:
         result = invoke("import asyncio, logging, types, plue_env; "
                         "o=plue_env._PlueOps(); o.logger=logging.getLogger('test'); "
                         "o.session_id='trial__one__env'; o.task_env_config=types.SimpleNamespace(cpus=2); "
-                        "o._plue_image='image'; o._plue_network=lambda: ('none', []); "
+                        "o._plue_image='image'; o._plue_network=lambda: 'none'; "
                         "o._plue_reserved=False; o._plue_ledger=lambda: None; "
                         "o._plue_heir=lambda: (_ for _ in ()).throw(AssertionError('failed boot cannot hand off')); "
                         "asyncio.run(o._plue_reserve())", env)
@@ -258,7 +259,7 @@ def check_async_capacity_failure_retries_after_owned_delete() -> None:
         root = Path(directory)
         state = root / "state.json"
         cli = root / "smithers"
-        cli.write_text("#!/usr/bin/env python3\n"
+        write_fake_cli(cli, "#!/usr/bin/env python3\n"
                        "import json, os, sys\n"
                        "from pathlib import Path\n"
                        "p=Path(os.environ['TEST_CLI_STATE']); s=json.loads(p.read_text()); a=sys.argv[1:]\n"
@@ -282,7 +283,7 @@ def check_async_capacity_failure_retries_after_owned_delete() -> None:
                         "plue_env._CAPACITY_POLL_SEC=0; "
                         "o=plue_env._PlueOps(); o.logger=logging.getLogger('test'); "
                         "o.session_id='trial__one__env'; o.task_env_config=types.SimpleNamespace(); "
-                        "o._plue_image='image'; o._plue_network=lambda: ('none', []); "
+                        "o._plue_image='image'; o._plue_network=lambda: 'none'; "
                         "asyncio.run(o._plue_create()); assert o._workspace_id == 'owned-2'", env)
         assert result.returncode == 0, result.stderr
         calls = json.loads(state.read_text())["calls"]
@@ -299,7 +300,7 @@ def check_delete_not_found_releases_receipt() -> None:
         root = Path(directory)
         cli = root / "smithers"
         calls = root / "calls"
-        cli.write_text("#!/usr/bin/env python3\n"
+        write_fake_cli(cli, "#!/usr/bin/env python3\n"
                        "import json, os, sys\n"
                        "from pathlib import Path\n"
                        "a=sys.argv[1:]; p=Path(os.environ['TEST_CLI_CALLS'])\n"
@@ -333,7 +334,7 @@ def check_reserve_reclaims_failed_boot() -> None:
         root = Path(directory)
         state = root / "state.json"
         cli = root / "smithers"
-        cli.write_text("#!/usr/bin/env python3\n"
+        write_fake_cli(cli, "#!/usr/bin/env python3\n"
                        "import json, os, sys\n"
                        "from pathlib import Path\n"
                        "p=Path(os.environ['TEST_CLI_STATE']); s=json.loads(p.read_text()); a=sys.argv[1:]\n"
@@ -354,7 +355,7 @@ def check_reserve_reclaims_failed_boot() -> None:
         result = invoke("import asyncio, logging, types, plue_env; "
                         "o=plue_env._PlueOps(); o.logger=logging.getLogger('test'); "
                         "o.session_id='trial__one__env'; o.task_env_config=types.SimpleNamespace(cpus=2); "
-                        "o._plue_image='image'; o._plue_network=lambda: ('none', []); "
+                        "o._plue_image='image'; o._plue_network=lambda: 'none'; "
                         "o._plue_reserved=False; o._plue_ledger=lambda: None; "
                         "asyncio.run(o._plue_reserve())", env)
         assert result.returncode != 0 and "failed" in result.stderr, result.stderr
@@ -371,14 +372,14 @@ def check_corrupt_ledger_prevents_create() -> None:
         ledger.write_text("not json")
         cli = root / "smithers"
         marker = root / "called"
-        cli.write_text("#!/bin/sh\ntouch \"$TEST_CLI_MARKER\"\nprintf '%s' '{\"id\":\"unexpected\"}'\n")
+        write_fake_cli(cli, "#!/bin/sh\ntouch \"$TEST_CLI_MARKER\"\nprintf '%s' '{\"id\":\"unexpected\"}'\n")
         cli.chmod(0o755)
         env = {**os.environ, "SMITHERS_CLI": str(cli), "PLUE_REPO": "acme/bench",
                "PLUE_WORKSPACE_LEDGER": str(ledger), "TEST_CLI_MARKER": str(marker)}
         result = invoke("import asyncio, logging, types, plue_env; "
                         "o=plue_env._PlueOps(); o.logger=logging.getLogger('test'); "
                         "o.session_id='trial__one__env'; o.task_env_config=types.SimpleNamespace(); "
-                        "o._plue_image='image'; o._plue_network=lambda: ('none', []); "
+                        "o._plue_image='image'; o._plue_network=lambda: 'none'; "
                         "asyncio.run(o._plue_create())", env)
         assert result.returncode != 0 and "ownership ledger" in result.stderr, result.stderr
         assert not marker.exists(), "invalid ownership state must stop before create"

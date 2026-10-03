@@ -141,8 +141,8 @@ class Testbed(plue_env._PlueOps):
         self._plue_copies, self._plue_chmods = [], []
         self._workspace_id = workspace
 
-    def _plue_network(self) -> tuple[str, list[str]]:
-        return "none", []
+    def _plue_network(self) -> str:
+        return "none"
 
     def up(self, holder: int) -> dict:
         """Hold a ledger slot for `holder`, create the workspace, run the prelude."""
@@ -163,13 +163,17 @@ class Testbed(plue_env._PlueOps):
             self._plue_ledger_key = key
         try:
             asyncio.run(self._plue_create())
+            record = self.view()
+            if record["image"]["ref"] != self._plue_image or (record["network"]["mode"] != "none" or record["network"].get("allow", [])):
+                raise PlueError("workspace image or network differs from admission request", "workspace_contract")
             out, err, code = self.exec(SETUP, timeout=120, cwd="/")
             if code != 0:
                 raise PlueError(f"guest prelude exited {code}: {err.strip()[-300:]}", "prelude")
         except BaseException:
             asyncio.run(self._plue_stop())
             raise
-        return {"id": self._workspace_id, "key": key, "bootId": (out.strip().splitlines() or [""])[-1]}
+        return {"id": self._workspace_id, "key": key, "bootId": (out.strip().splitlines() or [""])[-1],
+                "image": record["image"], "network": record["network"]}
 
     def exec(self, command: str, timeout: int = 3600, cwd: str | None = None) -> tuple[str, str, int]:
         return asyncio.run(self._plue_exec(command, cwd=cwd, timeout_sec=timeout, user="root"))
@@ -180,12 +184,28 @@ class Testbed(plue_env._PlueOps):
     def download(self, source: str, target: str) -> None:
         asyncio.run(self._plue_download(source, target))
 
-    def network(self) -> str:
-        """`none` when plue records the workspace as `none` and the guest
-        cannot open a connection out; `unsealed` otherwise."""
+    def view(self) -> dict:
+        """Read the current workspace contract, refusing incomplete receipts."""
         result = asyncio.run(self._run("workspace", "view", *self._ws("--format", "json"), timeout=120))
-        record = plue_env._envelope(result.stdout.decode(errors="replace"))
-        mode = str(((record.get("data", record) or {}).get("network") or {}).get("mode", ""))
+        envelope = plue_env._envelope(result.stdout.decode(errors="replace"))
+        record = envelope.get("data", envelope)
+        image = record.get("image") if isinstance(record, dict) else None
+        network = record.get("network") if isinstance(record, dict) else None
+        if (not isinstance(record, dict) or record.get("id") != self._workspace_id
+                or not isinstance(image, dict) or not isinstance(image.get("ref"), str)
+                or not image["ref"] or not isinstance(image.get("digest"), str)
+                or not re.fullmatch(r"sha256:[0-9a-f]{64}", image["digest"])
+                or not isinstance(network, dict) or network.get("mode") not in ("none", "proxy")
+                or not isinstance(network.get("allow", []), list)
+                or any(not isinstance(host, str) or not host for host in network.get("allow", []))):
+            raise PlueError("workspace view lacks the current image/network receipt", "workspace_contract")
+        return record
+
+    def network(self) -> str:
+        """`none` when the workspace records no egress and the guest agrees."""
+        record = self.view()
+        network = record["network"]
+        mode = network["mode"] if not network.get("allow", []) else "unsealed"
         out, err, code = self.exec(NET_PROBE, timeout=60, cwd="/")
         if code != 0:
             raise PlueError(f"the guest's egress probe exited {code}: {err.strip()[-300:]}", "network")
@@ -363,6 +383,8 @@ def main(argv: list[str]) -> int:
     down.add_argument("--key", default="")
     args = parser.parse_args(argv)
     try:
+        if os.environ.get("BENCH_REMOTE_HOST") != "1" or not os.environ.get("SWB_ARTIFACT_ROOT"):
+            raise PlueError("use BENCH_REMOTE_HOST=1 and SWB_ARTIFACT_ROOT on the authorized remote host", "remote_required")
         if args.verb == "up":
             name = testbed_name("swb", args.holder, args.label)
             print(json.dumps(Testbed(name, image=args.image).up(args.holder)))

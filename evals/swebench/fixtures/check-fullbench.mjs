@@ -120,6 +120,8 @@ if [ "$ARCHIVE_MODE" = publish-fail ]; then exit 1; fi
       PATH: `${bin}:${process.env.PATH}`,
       RIG: rig,
       ARCHIVE_MODE: mode,
+      BENCH_REMOTE_HOST: "1",
+      SWB_ARTIFACT_ROOT: rig,
       FB_DIR: fb,
       SWB_RUN_CMD: join(bin, "run"),
       SWB_GRADE_CMD: join(bin, "grade"),

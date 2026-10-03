@@ -156,6 +156,7 @@ node "$S/fixtures/check-cli-path.mjs"
 echo "== the environment the lane hands that CLI"
 node "$S/fixtures/check-env-names.mjs"
 "$S/fixtures/check-codex-auth.sh"
+python3 "$S/fixtures/check-codex-seal.py"
 
 echo "== the read-only liveness reading"
 node "$S/fixtures/check-liveness-report.mjs"
@@ -223,6 +224,7 @@ echo "== the sealed testbed"
 node "$S/fixtures/check-testbed-network.mjs"
 
 echo "== the plue transport: Smithers Cloud workspaces as testbed and grader"
+python3 "$S/fixtures/check-plue-contract.py"
 python3 "$S/fixtures/check-plue-transport.py"
 
 echo "== one lane's seal, either arm"

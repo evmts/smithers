@@ -12,7 +12,12 @@ const offline = Smithers.Shell.Test({
   script: Smithers.file("verify.sh"),
   data: [
     Smithers.glob("//evals/harbor/*.{py,md,sh}"),
-    Smithers.glob("//evals/harbor/fixtures/**")
+    Smithers.glob("//evals/harbor/fixtures/**"),
+    Smithers.file("//packages/smithers/src/internal/backend/Definitions.ts"),
+    Smithers.file("//packages/smithers/src/cli/Argv.ts"),
+    Smithers.file("//packages/smithers/src/cli/ControlCommands.ts"),
+    Smithers.file("//packages/smithers/src/internal/NativeControl.ts"),
+    Smithers.file("//packages/smithers/agent/model/src/internal/prices.generated.ts")
   ],
   timeout: "5m"
 })

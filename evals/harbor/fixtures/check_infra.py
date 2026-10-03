@@ -35,6 +35,7 @@ import os
 import sys
 import tempfile
 import types
+from cli_contract import validate, write_fake_cli
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -165,7 +166,7 @@ def fake_ops(cli: Path, workspace: str = "ws-1") -> "plue_env._PlueOps":
 def check_transport_and_containment() -> None:
     with tempfile.TemporaryDirectory() as directory:
         cli = Path(directory) / "smithers"
-        cli.write_text("#!/bin/sh\n"
+        write_fake_cli(cli, "#!/bin/sh\n"
                        "case \"$*\" in\n"
                        "  *connectfail*) printf '%s' '{\"data\":{\"stdout\":\"\",\"stderr\":\"ssh: connect to host ssh.jjhub.tech port 22: Operation timed out\\r\\n\",\"exit_code\":255}}'; exit 255;;\n"
                        "  *dropped*) printf '%s' '{\"data\":{\"stdout\":\"half\",\"stderr\":\"\",\"exit_code\":255}}'; printf 'Connection to ssh.jjhub.tech closed by remote host.\\r\\n' >&2; exit 255;;\n"
@@ -231,7 +232,7 @@ def check_image_tmp() -> None:
     with tempfile.TemporaryDirectory() as directory:
         calls = Path(directory) / "calls"
         cli = Path(directory) / "smithers"
-        cli.write_text("#!/bin/sh\n"
+        write_fake_cli(cli, "#!/bin/sh\n"
                        f"printf '%s\\n' \"$*\" >> {calls}\n"
                        "printf '%s' '{\"data\":{\"stdout\":\"\",\"stderr\":\"\",\"exit_code\":0}}'\n")
         cli.chmod(0o755)
@@ -333,7 +334,7 @@ def check_durable_exec_and_workdir() -> None:
         calls, count = Path(directory) / "calls", Path(directory) / "count"
         cli = Path(directory) / "smithers"
         # 1st exec call: transport lost; 2nd: reattached result. `vmgone`: 409.
-        cli.write_text("#!/bin/sh\n"
+        write_fake_cli(cli, "#!/bin/sh\n"
                        f"printf '%s\\n' \"$*\" >> {calls}\n"
                        f"n=$(cat {count} 2>/dev/null || echo 0); n=$((n+1)); echo $n > {count}\n"
                        "case \"$*\" in\n"
@@ -408,7 +409,7 @@ def check_shim_durable_exec() -> None:
     with tempfile.TemporaryDirectory() as directory:
         calls, count = Path(directory) / "calls", Path(directory) / "count"
         cli = Path(directory) / "smithers"
-        cli.write_text("#!/bin/sh\n"
+        write_fake_cli(cli, "#!/bin/sh\n"
                        f"printf '%s\\n' \"$*\" >> {calls}\n"
                        f"n=$(cat {count} 2>/dev/null || echo 0); n=$((n+1)); echo $n > {count}\n"
                        "if [ $n = 1 ]; then printf 'ssh: connect to host ssh.jjhub.tech port 22: Operation timed out\\r\\n' >&2; exit 255; fi\n"
@@ -439,7 +440,7 @@ def check_shim_durable_exec() -> None:
         # An SSH gateway denial is waited out, not handed to the agent.
         calls.write_text("")
         count.write_text("0")
-        cli.write_text("#!/bin/sh\n"
+        write_fake_cli(cli, "#!/bin/sh\n"
                        f"printf '%s\\n' \"$*\" >> {calls}\n"
                        f"n=$(cat {count} 2>/dev/null || echo 0); n=$((n+1)); echo $n > {count}\n"
                        "if [ $n -le 2 ]; then echo 'x@ssh.jjhub.tech: Permission denied (password,publickey).' >&2; exit 1; fi\n"
@@ -488,11 +489,12 @@ def check_disk_request_preservation() -> None:
         ops.task_env_config = types.SimpleNamespace(cpus=4, storage_mb=51200)
         ops._plue_reserved = False
         ops._plue_image = "task-image"
-        ops._plue_network = lambda: ("none", [])
+        ops._plue_network = lambda: "none"
         ops._plue_ledger = lambda: None
         calls = []
 
         async def capture(*args, **kwargs):
+            validate(args)
             calls.append(args)
             return types.SimpleNamespace(stdout=b'{"id":"ws-1","status":"running"}')
 
@@ -500,7 +502,8 @@ def check_disk_request_preservation() -> None:
         asyncio.run(ops._plue_reserve())
         assert len(calls) == 1, calls
         args = calls[0]
-        assert args[:2] == ("workspace", "create") and args[args.index("--disk") + 1] == "51200", args
+        assert args[:2] == ("workspace", "create") and args[args.index("--disk") + 1] == "50", args
+        assert "--idle-timeout" not in args, args
         assert ops._workspace_id == "ws-1", ops._workspace_id
 
         ops._plue_reserved = False
@@ -568,7 +571,7 @@ def check_guest_restart_watchdog() -> None:
     import time as _time
     with tempfile.TemporaryDirectory() as directory:
         cli = Path(directory) / "smithers"
-        cli.write_text("#!/bin/sh\n"
+        write_fake_cli(cli, "#!/bin/sh\n"
                        "case \"$*\" in\n"
                        "  *boot_id*) printf '%s' '{\"exit_code\":0,\"stdout\":\"boot-2\\n\",\"stderr\":\"\"}';;\n"
                        "  *) sleep 30; printf '%s' '{\"exit_code\":0,\"stdout\":\"late\",\"stderr\":\"\"}';;\n"
@@ -607,10 +610,10 @@ def check_auth_denial_waits() -> None:
     with tempfile.TemporaryDirectory() as directory:
         count = Path(directory) / "count"
         cli = Path(directory) / "smithers"
-        cli.write_text("#!/bin/sh\n"
+        write_fake_cli(cli, "#!/bin/sh\n"
                        f"n=$(cat {count} 2>/dev/null || echo 0); n=$((n+1)); echo $n > {count}\n"
                        "if [ $n -le 3 ]; then echo 'msb_1+root:tok@ssh.jjhub.tech: Permission denied (password,publickey).' >&2; exit 1; fi\n"
-                       "case \"$*\" in *\" cp \"*|cp\ *) printf '%s' '{\"ok\":true}';; *) printf '%s' '{\"exit_code\":0,\"stdout\":\"in\",\"stderr\":\"\"}';; esac\n")
+                       "case \"$*\" in *\" cp \"*|cp\\ *) printf '%s' '{\"ok\":true}';; *) printf '%s' '{\"exit_code\":0,\"stdout\":\"in\",\"stderr\":\"\"}';; esac\n")
         cli.chmod(0o755)
         saved = (plue_env._AUTH_WAIT_SEC, plue_env._AUTH_POLL_SEC)
         plue_env._AUTH_WAIT_SEC, plue_env._AUTH_POLL_SEC = 30, 0.05

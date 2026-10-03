@@ -50,8 +50,11 @@ const container = "flowsbench-stub--prompt-1"
 const testCommand = "./tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1"
 const interpreter = "/opt/miniconda3/envs/testbed/bin/python3.10"
 
-const write = (script, args) => {
-  const result = spawnSync(process.execPath, [join(root, "lib", script), ...args], { encoding: "utf8" })
+const write = (script, args, environment = {}) => {
+  const result = spawnSync(process.execPath, [join(root, "lib", script), ...args], {
+    encoding: "utf8",
+    env: { ...process.env, SWB_FLOWS_EFFORT: "max", ...environment }
+  })
   return result
 }
 
@@ -68,6 +71,32 @@ try {
     interpreter
   ])
   assert.equal(flowsRun.status, 0, flowsRun.stderr)
+  assert.ok(flowsRun.stdout.includes("\neffort: max\n"), "current flows explicitly pin max effort")
+  for (const effort of ["medium", "high", "xhigh"]) {
+    const historical = write("write-flow.mjs", [
+      dataset,
+      instance.instance_id,
+      "openai:gpt-5.6-sol",
+      container,
+      testCommand
+    ], { SWB_FLOWS_EFFORT: effort })
+    assert.equal(historical.status, 0, historical.stderr)
+    assert.ok(
+      historical.stdout.includes(`\neffort: ${effort}\n`),
+      "historical comparisons retain their explicit effort"
+    )
+  }
+  for (const effort of ["", "MAX", "max\n---\nmalformed:"]) {
+    const refused = write("write-flow.mjs", [
+      dataset,
+      instance.instance_id,
+      "openai:gpt-5.6-sol",
+      container,
+      testCommand
+    ], { SWB_FLOWS_EFFORT: effort })
+    assert.equal(refused.status, 2, refused.stdout + refused.stderr)
+    assert.equal(refused.stdout, "", "invalid effort cannot inject generated frontmatter")
+  }
   const codexRun = write("write-prompt-codex.mjs", [
     dataset,
     instance.instance_id,
@@ -166,10 +195,11 @@ try {
     "---",
     "description: Resolve a reported issue in this repository.",
     "model: openai:gpt-5.6-sol",
+    "effort: max",
     "---",
     // The same sentence, wrapped one word differently because the flows side
     // names the `bash` flow where the codex side says "shell".
-    "Your `bash` flow runs on a macOS host with BSD userland. The repository's own",
+    "Your `bash` flow runs on a execution host. The repository's own",
     "Linux environment and Python interpreter are in a container that has this exact",
     // The container transport: flows names the container in the call and the
     // harness builds the argv, where codex composes the `docker exec` line.
@@ -200,7 +230,7 @@ try {
     "change you made."
   ]
   const codexOnly = [
-    "Your shell runs on a macOS host with BSD userland. The repository's own Linux",
+    "Your shell runs on a execution host. The repository's own Linux",
     "environment and Python interpreter are in a container that has this exact",
     "  container:",
     codexExample,
@@ -262,7 +292,13 @@ try {
   // confine it; it can refuse to start an agent until the lane says so, and
   // stamp that condition beside `testbedNetwork` so no report assumes it away.
   const runInstance = (hostShell) => {
-    const env = { ...process.env, SWB_DATASET: dataset }
+    const env = {
+      ...process.env,
+      SWB_DATASET: dataset,
+      BENCH_REMOTE_HOST: "1",
+      SWB_ARTIFACT_ROOT: temporary,
+      SMITHERS_CLI: process.execPath
+    }
     delete env.SWB_FLOWS_HOST_SHELL
     delete env.SWB_SKIP_AGENT
     if (hostShell !== undefined) env.SWB_FLOWS_HOST_SHELL = hostShell
@@ -276,13 +312,21 @@ try {
   // The codex arm defaults to `sealed` and refuses any condition it does not
   // know; `on` needs SWB_CODEX_UNCONFINED=allowed (`check-codex-lanes.mjs`).
   for (const network of ["bypass", "ON", "unconfined"]) {
-    const env = { ...process.env, SWB_DATASET: dataset, SWB_TRANSPORT: "docker", SWB_CODEX_NETWORK: network }
+    const env = {
+      ...process.env,
+      SWB_DATASET: dataset,
+      SWB_TRANSPORT: "docker",
+      SWB_CODEX_NETWORK: network,
+      BENCH_REMOTE_HOST: "1",
+      SWB_ARTIFACT_ROOT: temporary,
+      SWB_CODEX_CLI: process.execPath
+    }
     const refused = spawnSync("bash", [join(root, "run-instance-codex.sh"), instance.instance_id], {
       env,
       encoding: "utf8"
     })
     assert.equal(refused.status, 2, `run-instance-codex.sh refuses SWB_CODEX_NETWORK=${JSON.stringify(network)}`)
-    assert.match(refused.stderr, /SWB_CODEX_NETWORK must be on, sealed or off/u)
+    assert.match(refused.stderr, /stock Codex requires workspace-write/u)
   }
   const flowsRunner = readFileSync(join(root, "run-instance.sh"), "utf8")
   assert.match(flowsRunner, /"hostShell": "%s"/u, "run-instance.sh stamps the host-shell condition into its timings")

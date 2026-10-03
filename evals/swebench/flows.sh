@@ -32,7 +32,15 @@
 set -u
 S="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$S/../.." && pwd)"
-BIN="$ROOT/packages/smithers/bin/smithers.mjs"
+BIN="${SMITHERS_CLI:-}"
+if [ -z "$BIN" ]; then
+  echo 'flows.sh: set SMITHERS_CLI to this remote checkout’s shipped executable.' >&2
+  exit 1
+fi
+if [ ! "$BIN" -ef "$ROOT/packages/smithers/bin/smithers.mjs" ]; then
+  echo 'flows.sh: SMITHERS_CLI differs from this checkout’s pinned executable.' >&2
+  exit 1
+fi
 BUILT="$ROOT/packages/smithers/dist/esm/bin.js"
 
 if [ "${SWB_SUBJECT_UNPINNED:-0}" != "1" ]; then

@@ -5,14 +5,33 @@ identical SWE-bench Verified instances, with the same model, on three
 dimensions: **quality** (resolved rate), **speed** (wall clock), and **cost**
 (tokens and USD).
 
-This is an **operator-run** benchmark. It spends real API tokens, it needs
-docker and multi-gigabyte official images, and one instance takes minutes to
-tens of minutes. It is **not** part of any CI gate and must not become one: a
-gate that needs a funded API key, a warm docker cache, and a nondeterministic
-model cannot hold a tree, and a red it produces would say nothing about the
-commit under test. Two things here are safe to run unattended: `./verify.sh`,
-which checks the rig's own arithmetic offline, and `./fullbench-dryrun.sh`,
-which proves the full-benchmark driver against real docker and a stubbed agent.
+This is an **operator-run** benchmark on an authorized remote execution host.
+Do not run a benchmark, Docker dry run, or VM trial on the development Mac.
+`./verify.sh --offline` uses temporary fixtures and fake executables; it spends
+no model tokens and starts no Docker/VM resources. Docker dry runs require the
+same remote admission as a model trial and are outside CI.
+
+Before setup or execution on the remote host, configure portable paths:
+
+```sh
+export BENCH_REMOTE_HOST=1
+export SWB_ARTIFACT_ROOT=/absolute/remote/jobs
+export SMITHERS_CLI=/absolute/remote/checkout/packages/smithers/bin/smithers.mjs
+export SWB_CODEX_CLI=/absolute/remote/bin/codex
+export SMITHERS_CODEX_ACCOUNTS_DIR=/absolute/remote/benchmark-accounts
+export SMITHERS_CODEX_POOL=codex-1,codex-3,codex-acct-1
+mkdir -p "$SWB_ARTIFACT_ROOT"
+```
+
+`BENCH_REMOTE_HOST=1` acknowledges the selected remote host; it is not an OS or
+hostname check. Resource runners reject its absence and require an existing
+absolute jobs directory. `SMITHERS_CLI` must name this checkout’s shipped CLI.
+The stock executable must report `codex-cli 0.160.0`. Account homes and their
+`auth.json` files live beneath `SMITHERS_CODEX_ACCOUNTS_DIR`; unset, empty or
+missing account directories fail closed. `SMITHERS_CODEX_POOL_STATE` optionally
+selects the shared pool state file (default: the account directory’s `pool.json`).
+List/status commands, artifact readers, and fixtures with explicit fake runner
+commands remain usable offline.
 
 The rig lives in the repository so it cannot be lost again. It previously lived
 in a session scratchpad, which was wiped, taking the dataset, the sample, the
@@ -173,7 +192,7 @@ so it survives the next wave), `patches/<id>.patch`,
 `patches/<id>.patch.untracked`, `timings/<id>.json`, and
 `logs-agent/<id>.run.log`.
 
-The codex baseline runs the same shape with its own isolated `CODEX_HOME`, the
+The codex baseline leases one benchmark subscription account per instance, with the
 same prompt content — including the repository's own test runner, which
 `lib/test-command.py` derives for both sides — and the same budget:
 
@@ -181,21 +200,43 @@ same prompt content — including the repository's own test runner, which
 SWB_CODEX_NETWORK=sealed ./run-instance-codex.sh django__django-16612 1500
 ```
 
-`SWB_CODEX_NETWORK` defaults to `sealed`. The problem statement comes from a
-public issue tracker, so the prompt is untrusted. `on` runs codex with
-`--dangerously-bypass-approvals-and-sandbox` and the network open: a
-prompt-steered shell on this host with the docker socket, `CODEX_HOME` and the
-web in reach. The runner refuses `on` unless `SWB_CODEX_UNCONFINED=allowed` is
-also set, and prints a warning when it is. `sealed` keeps the same bypass so
-codex can reach the docker socket, with child proxies dead and web search off.
-`run-sample.sh codex` and `run-matrix.sh codex` apply the same check once,
-before the first instance, through `lib/codex-network.sh`.
-See [Lanes, and the sealed one](#lanes-and-the-sealed-one).
+Stock Codex always uses `--sandbox workspace-write`,
+`sandbox_workspace_write.network_access=false`, and disabled web search.
+Historical `sealed` and `off` labels select this same execution policy. `on` is
+refused, including with the historical `SWB_CODEX_UNCONFINED=allowed` setting.
 
-For a ChatGPT-subscription control, set `SWB_CODEX_AUTH=chatgpt` and
-`SWB_CODEX_HOME=$HOME/.codex`. The runner checks that `codex login status`
-actually reports a ChatGPT login before pulling an image; the default remains
-the rig's isolated API-key home for historical lanes. Set
+A current stock trial must retain completed JSON shell-tool receipts from its
+own session for the direct command
+`curl --noproxy '*' --max-time 5 https://example.com`, with a nonzero exit and
+recognized sandbox denial, and a successful `docker exec <container> bash -lc
+'exit 0'`. The timing record’s `benchmark_seal` names `sealed_by: codex-sandbox`
+and retains the denial’s command, exit code, output, and source. Model text,
+missing receipts, DNS errors and ordinary connection failures do not prove a
+sandbox denial. The testbed must also be observed with network `none`; a guest with egress
+cannot earn a seal from a host denial. Without these proofs the receipt has
+`sealed: false`, the runner
+exits 125, and it publishes no patch for grading.
+
+**Host Docker limitation:** a correct Codex sandbox may deny the Docker socket.
+That makes this host-checkout transport unsupported for stock comparison; it
+does not justify a sandbox bypass. Remote Cloud stock trials use the Harbor/Pier
+entrypoint rather than pretending this SWE-bench Docker seam is compatible.
+
+ChatGPT subscription auth is the default. Set
+`SMITHERS_CODEX_POOL=codex-1,codex-3,codex-acct-1` (also the driver default)
+to use the shared Harbor account wheel. A smaller subset is allowed; other
+accounts and `SWB_CODEX_HOME` are refused. The driver leases once per instance
+and verifies the ChatGPT login before pulling an image. Smithers instances
+using `SWB_FLOWS_OPENAI_AUTH=chatgpt` lease from the same pool and ignore an
+inherited `CODEX_HOME`. Both arms record account and model in timings; the stock
+arm also records its CLI version. Historical API-key controls can explicitly select
+`SWB_CODEX_AUTH=api-key` and an isolated `SWB_CODEX_HOME`.
+
+Use stock `codex-cli 0.160.0`; the driver refuses other versions before pulling
+an image. Install with `npm install -g @openai/codex@0.160.0`. Earlier transcript
+measurements retain their original version/effort disclosures and are not
+recreated by relaxing this admission check. Current default model is
+`gpt-6.1-sol` (`openai:gpt-6.1-sol` for flows), with effort `max` on both arms. Set
 `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` to an executable `smithers-jj-export`
 for the flows arm when overriding the CLI's packaged/checkout resolver. Its
 guarded filesystem needs the helper even for `plan`, and the rig rejects a
@@ -249,7 +290,7 @@ in the rig that starts a testbed:
 
 ```sh
 SWB_TESTBED_NETWORK=none   ./run-instance.sh django__django-16612   # the default
-SWB_TESTBED_NETWORK=bridge SWB_CODEX_NETWORK=on SWB_CODEX_UNCONFINED=allowed ./run-instance-codex.sh django__django-16612 1500
+# Historical bridge/network-on stock conditions are refused by current runners.
 ```
 
 The knob exists because the seal the codex lanes claimed was a seal on the
@@ -546,9 +587,12 @@ image, extracts no testbed, and has no disk gate to wait at. It is the seam
 `plue_docker.py`), through the public `smithers` CLI; `lib/plue.py` adds only
 what a SWE-bench testbed needs beyond a Harbor trial. `docker` stays the
 default and remains the transport for a self-hoster without Smithers Cloud.
+The instance logs retain `*.workspace.json` with the admitted image reference,
+resolved digest, and network readback.
 
 ```sh
-. ~/smithers-bench-env/env.sh   # SMITHERS_CLI, PLUE_REPO, SMITHERS_TOKEN, PLUE_SLOTS, …
+# Configure the remote paths above and the remote Cloud credentials:
+export PLUE_REPO=owner/repository SMITHERS_TOKEN=... PLUE_SLOTS=2
 export SWB_TRANSPORT=plue SWB_ARTIFACT_ROOT=/path/outside/the/repo
 ./preflight.sh
 SWB_FLOWS_OPENAI_AUTH=chatgpt ./run-instance.sh django__django-16612 openai:gpt-6-luna 1200
@@ -662,19 +706,18 @@ for Django, `tox` for Sphinx, `pytest -rA` elsewhere.
 ## Reasoning effort
 
 **Reasoning effort is a benchmark condition and both arms state theirs.**
-`SWB_CODEX_EFFORT` pins the codex side and defaults to **`high`**;
+`SWB_CODEX_EFFORT` pins the codex side and defaults to **`max`**;
 `run-instance-codex.sh` passes it as `-c model_reasoning_effort=<value>`, writes
 it into `timings-codex/<id>.json`, and codex echoes it into the first lines of
 its own transcript (`reasoning effort: <value>`), so a run's effort is readable
 off the artifact and never inferred. The accepted values are `minimal`, `low`,
-`medium`, `high` and `xhigh`; anything else is refused before the image is
+`medium`, `high`, `xhigh` and `max`; anything else is refused before the image is
 pulled.
 
-The flows arm has no equivalent knob in the rig because it has no equivalent
-choice: `effortFor` in `packages/smithers/agent/src/AgentSession.ts` returns the flow's
-`effort:` frontmatter, then the host's option, then `high`, and
-`lib/write-flow.mjs` writes no `effort:` line. Every flows wave has therefore run
-at high.
+The flows arm writes `effort: max` into its generated flow by default.
+`SWB_FLOWS_EFFORT` can pin an older comparison; historical lanes must explicitly
+pin both arms' effort. Before this change, generated flows declared no effort,
+so the host default of `high` applied to those recorded waves.
 
 > **Disclosure — every codex number before 2026-08-23 is effort-confounded.**
 > The codex side was pinned to the literal `medium` from 2026-08-19, under a
@@ -1979,12 +2022,17 @@ split, and the bundle says so instead of printing one.
 | `SWB_CODEX_BACKFILL_MIN_FREE_MIB` | 8192 | the disk gate |
 | `SWB_CODEX_BACKFILL_SLOT_TIMEOUT` | 21600 | how long an invocation waits for a slot |
 | `SWB_CODEX_LANE` | `net` | the lane, and with it the five rows below it |
-| `SWB_CODEX_NETWORK` | the lane's | `on`, `sealed` or `off`; see the sealed lane |
-| `SWB_CODEX_UNCONFINED` | unset | `allowed` opts a `net` lane into `SWB_CODEX_NETWORK=on`; nothing else is accepted |
-| `SWB_CODEX_EFFORT` | the lane's | `minimal`, `low`, `medium`, `high` or `xhigh`; see [Reasoning effort](#reasoning-effort) |
-| `SWB_CODEX_MODEL` | `gpt-6-sol` | the model, which must be the one the flows side ran |
+| `SWB_CODEX_NETWORK` | the lane's | historic label; current stock permits `sealed`/`off` and refuses `on` |
+| `SWB_CODEX_UNCONFINED` | unset | historic metadata only; cannot bypass the current sandbox |
+| `SWB_CODEX_EFFORT` | the lane's | `minimal`, `low`, `medium`, `high`, `xhigh` or `max`; see [Reasoning effort](#reasoning-effort) |
+| `SWB_CODEX_MODEL` | `gpt-6.1-sol` | the model, which must be the one the flows side ran |
 
 ### Lanes, and the sealed one
+
+The following lane receipts describe historical experiments, including their
+proxy-only limitations. They do not establish a current `codex-sandbox` seal.
+Current stock admission and unsupported Docker behavior are specified above;
+network-on archived lanes remain readable but cannot be rerun by this driver.
 
 A lane is one measurement of the population under one condition, and it moves
 four things at once — the archive, the ledger, the run index and the evaluator
@@ -2038,7 +2086,7 @@ that no amount of arithmetic removes: it ran with network egress and used it.
 merged pull request — and `pytest-dev__pytest-6197` was the same shape on
 2026-08-19. Our harness made no network call on either.
 
-**What "sealed" denies, and what it does not.** `SWB_CODEX_NETWORK=sealed` keeps
+**Historical proxy condition (superseded).** The archived `SWB_CODEX_NETWORK=sealed` condition kept
 codex's approval/sandbox bypass, so the run is the `net` lane's run in every
 respect except two, which are the two ways out of the machine:
 
@@ -2075,7 +2123,7 @@ gave it, so test behaviour does not change with the condition. **A lane that
 claims a seal therefore has to read its own traces back**, and a sealed report
 owes the count: how many of its runs attempted egress, and whether any succeeded.
 
-**Why not codex's own sandbox.** `SWB_CODEX_NETWORK=off` runs
+**Historical Docker-socket limitation.** The archived `SWB_CODEX_NETWORK=off` condition ran
 `codex exec --sandbox workspace-write`, whose seatbelt policy denies egress
 completely — and denies it to the docker daemon's unix socket along with
 everything else. Measured the same day and build: a child command cannot reach

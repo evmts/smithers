@@ -43,6 +43,8 @@
 # Spends no model tokens. Needs docker and about 10 MB of pulls.
 set -eu
 S="$(cd "$(dirname "$0")" && pwd)"
+source "$S/lib/remote.sh"
+swb_remote_required || exit $?
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/flows-codex-backfill-dryrun-XXXXXX")"
 FB="$TMP/fullbench"
 FBC="$FB/codex"
@@ -209,6 +211,9 @@ export SWB_SAMPLE="$TMP/sample.json"
 export SWB_IMAGE_MAP="$TMP/images.json"
 export SWB_CODEX_RUN_CMD="$TMP/codex-dryrun-run.sh"
 export SWB_GRADE_CMD="$TMP/codex-dryrun-grade.sh"
+# This fixture proves the historical API-key lane; subscription pooling is
+# independently checked by fixtures/check-codex-auth.sh.
+export SWB_CODEX_AUTH=api-key
 export SWB_CODEX_AUTH_CMD="$TMP/auth-ok.sh"
 export SWB_EVAL_LOG_ROOT="$TMP/eval-logs"
 export SWB_CODEX_BACKFILL_SLOT_POLL=1

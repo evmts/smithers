@@ -70,7 +70,10 @@ export const prices: Record<string, Price> = Object.fromEntries(
   }])
 )
 for (const [id, price] of Object.entries(table)) {
-  if (price.provider === "openai") prices[`openai:${id}`] = prices[id]!
+  if (price.provider === "openai") {
+    prices[`openai:${id}`] = prices[id]!
+    prices[`openai/${id}`] = prices[id]!
+  }
 }
 /**
  * Computes USD for one run's token counts.
@@ -92,7 +95,7 @@ export const usd = (
     readonly cacheWriteTokens?: number
   }
 ): { readonly usd: number | undefined; readonly source: string } => {
-  const id = model?.replace(/^openai:/, "")
+  const id = model?.replace(/^openai[:/]/, "")
   const initial = id === undefined ? undefined : table[id]
   if (initial === undefined) {
     return { usd: undefined, source: `unpriced: no committed price for ${model ?? "an unrecorded model"}` }

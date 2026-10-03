@@ -72,7 +72,14 @@ try {
 
   const traversal = spawnSync(join(root, "run-instance.sh"), ["../escape"], {
     encoding: "utf8",
-    env: { ...process.env, SWB_DATASET: dataset }
+    env: {
+      ...process.env,
+      SWB_DATASET: dataset,
+      BENCH_REMOTE_HOST: "1",
+      SWB_ARTIFACT_ROOT: temporary,
+      SMITHERS_CLI: process.execPath,
+      SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: ""
+    }
   })
   assert.equal(traversal.status, 2)
   assert.match(traversal.stderr, /instance id must match/)

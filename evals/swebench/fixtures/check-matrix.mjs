@@ -297,13 +297,14 @@ exit 0
   chmodSync(refusedStub, 0o755)
   for (
     const [network, optIn, message] of [
-      ["on", undefined, /run-matrix\.sh: SWB_CODEX_NETWORK=on .*set SWB_CODEX_UNCONFINED=allowed to opt in/u],
-      ["bogus", "allowed", /run-matrix\.sh: SWB_CODEX_NETWORK must be on, sealed or off, got 'bogus'/u]
+      ["on", undefined, /run-matrix\.sh: stock Codex requires workspace-write/u],
+      ["bogus", "allowed", /run-matrix\.sh: stock Codex requires workspace-write/u]
     ]
   ) {
     const env = {
       ...process.env,
       SWB_ARTIFACT_ROOT: temporary,
+      BENCH_REMOTE_HOST: "1",
       SWB_RUN_CMD: refusedStub,
       SWB_SAMPLE: join(temporary, "sample.json"),
       SWB_DATASET: join(temporary, "dataset.json"),

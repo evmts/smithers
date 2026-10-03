@@ -1,10 +1,10 @@
 """The Smithers flows harness as a Harbor (and Pier) external agent.
 
-    harbor run -p <tasks> -a evals.harbor.smithers_agent:SmithersAgent -m openai/gpt-6-sol
-    pier run -p <tasks> --agent-import-path evals.harbor.smithers_agent:SmithersAgent -m openai/gpt-6-sol
+    harbor run -p <tasks> -a evals.harbor.smithers_agent:SmithersAgent -m openai/gpt-6.1-sol
+    pier run -p <tasks> --agent-import-path evals.harbor.smithers_agent:SmithersAgent -m openai/gpt-6.1-sol
 
 Harbor starts the task's container and hands this class the instruction. The
-agent runs OUR harness on the host, the `smthrs` CLI out of this checkout, with
+agent runs OUR harness on the host, the CLI named by `SMITHERS_CLI`, with
 the instruction as the flow's whole task and the task container as the only
 thing its `bash` flow may touch: every command is delivered by `docker exec`
 (`packages/smithers/agent/std/src/Container.ts`), which is the same seam the
@@ -25,7 +25,7 @@ What every trial records under its Harbor logs directory:
     smithers-run.log    the CLI's own stdout and stderr
     workspace/          the flow file and `.flows/control.db`, the journal itself
 
-The chatgpt route is proven, not assumed: when the seat authenticates through
+The adapter records the chatgpt route: when the seat authenticates through
 the ChatGPT subscription the CLI is started with `OPENAI_API_KEY` removed from
 its environment, so an api-key fallback cannot succeed silently, and the
 journal's `model-requested` binding is copied into `smithers-run.json`.
@@ -36,18 +36,19 @@ prompt names is then the workspace id, and `plue_docker.py` is placed first on
 the CLI's PATH under the name `docker`, so the same `docker exec` seam reaches
 the workspace through the public `smithers workspace exec` command.
 
-The ChatGPT seat is drawn per trial from `accounts.Pool`: every logged-in
-Codex subscription on the host in round-robin (`CODEX_HOME` of the CLI), the
+The ChatGPT seat is drawn per trial from `accounts.Pool`: the configured
+benchmark subscriptions in round-robin (`CODEX_HOME` of the CLI), the
 label recorded in `smithers-run.json`, and an account that reports a usage
 limit taken out of rotation.
 
 Environment:
 
-    SMITHERS_ROOT          the Smithers checkout to run; default: this file's
+    SMITHERS_ROOT          required checkout for source verification
     SMITHERS_OPENAI_AUTH   `chatgpt` (default for openai seats) or `api-key`
     SMITHERS_BENCH_DOCKER  the docker CLI; default `docker`
-    SMITHERS_CLI, PLUE_REPO, SMITHERS_TOKEN, XDG_CONFIG_HOME
-                           the plue CLI and its account, on Smithers Cloud
+    SMITHERS_CLI           required executable or JavaScript CLI path
+    PLUE_REPO, SMITHERS_TOKEN, XDG_CONFIG_HOME
+                           repository and account on Smithers Cloud
 
 Agent kwargs (`--ak key=value`):
 
@@ -75,10 +76,11 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from . import accounts, plue_docker
+    from . import accounts, plue_docker, plue_env
 except ImportError:  # imported by file path (fixtures)
     import accounts  # type: ignore[no-redef]
     import plue_docker  # type: ignore[no-redef]
+    import plue_env  # type: ignore[no-redef]
 
 # Pier ships Harbor as a dependency, so under Pier both import; the runner
 # that calls `install_spec()` and `network_allowlist()` is Pier's, and its
@@ -117,9 +119,9 @@ HERE = Path(__file__).resolve().parent
 PROMPT_PATH = HERE / "prompt.md"
 PLUE_SHIM = plue_docker.SHIM
 CLI_RELATIVE = Path("packages/smithers/bin/smithers.mjs")
-BUILT_RELATIVE = Path("packages/smithers/dist/esm/bin.js")
 SUBJECT_RELATIVE = Path("evals/swebench/lib/subject.mjs")
 FLOW_NAME = "task"
+DEFAULT_MODEL = "openai/gpt-6.1-sol"
 
 COMMIT_PARAGRAPH = """
 - The task directory is a git repository, and only committed work counts:
@@ -144,9 +146,9 @@ def compose_project_name(session_id: str) -> str:
 
 
 def seat_of(model_name: str | None) -> str:
-    """`openai/gpt-6-sol` (Harbor's spelling) to `openai:gpt-6-sol` (the CLI's)."""
+    """`openai/gpt-6.1-sol` (Harbor's spelling) to `openai:gpt-6.1-sol` (the CLI's)."""
     if not model_name:
-        raise ValueError("SmithersAgent needs a model, e.g. -m openai/gpt-6-sol")
+        raise ValueError("SmithersAgent needs a model, e.g. -m openai/gpt-6.1-sol")
     if "/" in model_name:
         provider, model = model_name.split("/", 1)
         return f"{provider}:{model}"
@@ -189,6 +191,25 @@ def helper_binary(root: Path, base: dict[str, str]) -> Path | None:
             return candidate
     return None
 
+
+
+def cli_prefix(base: dict[str, str]) -> list[str]:
+    """Resolve the explicit executable/JS path without a host-specific fallback."""
+    configured = base.get("SMITHERS_CLI", "").strip()
+    if not configured:
+        raise RuntimeError("SMITHERS_CLI is required for a benchmark run")
+    candidate = Path(configured).expanduser()
+    if not candidate.is_file():
+        located = shutil.which(configured, path=base.get("PATH"))
+        if located is None:
+            raise RuntimeError(f"SMITHERS_CLI {configured!r} does not resolve to a CLI file")
+        candidate = Path(located)
+    candidate = candidate.resolve()
+    if candidate.suffix in (".mjs", ".js", ".cjs"):
+        return ["node", str(candidate)]
+    if not os.access(candidate, os.X_OK):
+        raise RuntimeError(f"SMITHERS_CLI {configured!r} is not executable")
+    return [str(candidate)]
 
 # The shim's configuration and directory belong to the shim (`plue_docker.py`),
 # which the SWE-bench rig's plue transport writes the same way.
@@ -256,6 +277,11 @@ def cli_environment(base: dict[str, str], *, auth_mode: str, helper: Path | None
     the same way by running inside the container.
     """
     env = dict(base)
+    # A benchmark has one local executor and no operator-installed network
+    # tools. Never inherit a remote gateway or MCP configuration from a shell.
+    for name in ("SMITHERS_REMOTE", "SMITHERS_MCP_CONFIG", "SMITHERS_ACCOUNT_POOL_URL",
+                 "SMITHERS_ACCOUNT_POOL_PROVIDERS", "SMITHERS_ACCOUNT_POOL_KEY"):
+        env.pop(name, None)
     for name in ("SMITHERS_TEST_COMMAND", "SMITHERS_TEST_CONTAINER", "SMITHERS_TEST_CWD", "SMITHERS_TEST_TIMEOUT_MS"):
         env.pop(name, None)
     env["SMITHERS_OPENAI_AUTH"] = auth_mode
@@ -273,6 +299,79 @@ def cli_environment(base: dict[str, str], *, auth_mode: str, helper: Path | None
     else:
         env.pop("SMITHERS_BASH_CONTAINER", None)
     return env
+
+
+def benchmark_tools(root: Path, prompt: str, env: dict[str, str], container: str) -> dict[str, Any]:
+    """Refuse an unsealed host before the first model call.
+
+    The checked source is part of the recorded harness revision. NativeControl
+    does not set serverTools on its AgentAction host; the flow declares only
+    bash, and the two lifecycle flows are pinned by that host. A future host
+    adding provider tools needs an explicit benchmark implementation first.
+    """
+    frontmatter = re.match(r"\A---\r?\n(.*?)\r?\n---(?:\r?\n|\Z)", prompt, re.S)
+    fields: dict[str, str] = {}
+    if frontmatter is not None:
+        for line in frontmatter.group(1).splitlines():
+            match = re.fullmatch(r"([A-Za-z][A-Za-z0-9_]*):\s*(.+)", line)
+            if match is None or match.group(1) in fields:
+                raise accounts.ModelRouteError("benchmark flow frontmatter must have unique declared fields")
+            fields[match.group(1)] = match.group(2).strip()
+    if set(fields) != {"description", "model", "effort", "flows"} or fields.get("flows") != '["bash"]' or \
+            fields.get("effort") != "max":
+        raise accounts.ModelRouteError("benchmark flow must offer only bash at effort max")
+    if env.get("SMITHERS_BASH_CONTAINER") != container or not container:
+        raise accounts.ModelRouteError("benchmark commands are not sealed to the task container")
+    if env.get("SMITHERS_REMOTE") or env.get("SMITHERS_MCP_CONFIG"):
+        raise accounts.ModelRouteError("benchmark executor exposes a remote or MCP tool")
+    source = (root / "packages/smithers/src/internal/NativeControl.ts").read_text()
+    match = re.search(r"const actionHost = AgentAction\.makeHost\(\{(.*?)\n        \}\)", source, re.S)
+    if match is None or "serverTools" in match.group(1):
+        raise accounts.ModelRouteError("benchmark host's provider tool configuration is unverified")
+    return {"asserted": True, "web_tools": False, "network_tools": [],
+            "flows": ["bash", "wait", "ask"], "container": container}
+
+
+async def benchmark_network(environment: Any, docker: str, container: str, plue: bool) -> dict[str, Any]:
+    """Read the actual task seal; only task-owned Internet permission relaxes it."""
+    cfg = getattr(environment, "task_env_config", None)
+    policy = getattr(environment, "network_policy", None)
+    try:
+        expected = plue_env.workspace_network(cfg, policy)
+    except plue_env.PlueUnplaceable as error:
+        raise accounts.ModelRouteError(str(error)) from error
+    internet = expected == "proxy"
+    if plue:
+        result = await environment._run("workspace", "view", *environment._ws("--format", "json"), timeout=120)
+        record = plue_docker.envelope(result.stdout.decode(errors="replace"))
+        record = record.get("data", record)
+        network, image = record.get("network"), record.get("image")
+        if not isinstance(network, dict) or not isinstance(image, dict) or not image.get("digest"):
+            raise accounts.ModelRouteError("workspace view lacks image/network admission receipts")
+        mode = network.get("mode")
+        if mode != expected or network.get("allow"):
+            raise accounts.ModelRouteError("task workspace network differs from its task policy")
+        return {"network": network, "image": image, "task_allows_internet": internet}
+    result = await asyncio.to_thread(subprocess.run,
+        [docker, "inspect", "--format", "{{.HostConfig.NetworkMode}}", container],
+        capture_output=True, text=True, timeout=60, check=True)
+    mode = result.stdout.strip()
+    if not internet and mode != "none":
+        raise accounts.ModelRouteError(f"task container network is {mode!r}, expected none")
+    return {"network": {"mode": mode}, "task_allows_internet": internet}
+
+
+def assert_journal_seal(events: list[dict[str, Any]], container: str) -> None:
+    """Reject a recorded provider tool or any command outside the task."""
+    for event in events:
+        payload = event["payload"]
+        if event["type"] == "control.agent.model-requested" and payload.get("toolCount", 0) != 0:
+            raise accounts.ModelRouteError("benchmark model request offered a provider tool")
+        if event["type"] == "control.agent.cell-call-started":
+            name = payload.get("flowName")
+            given = payload.get("input") or {}
+            if name not in ("bash", "wait", "ask") or (name == "bash" and given.get("container") != container):
+                raise accounts.ModelRouteError("benchmark journal records a tool outside the task seal")
 
 
 JOURNAL_FILES = ("control.db", "engine.db")
@@ -640,12 +739,13 @@ class SmithersAgent(BaseAgent):
         # opens them, which is how it stays blind to tests/ and solution/.
         kwargs.pop("task_dir", None)
         kwargs.pop("trial_paths", None)
-        super().__init__(logs_dir=logs_dir, model_name=model_name, **kwargs)
+        super().__init__(logs_dir=logs_dir, model_name=model_name or DEFAULT_MODEL, **kwargs)
         self._agent_timeout_sec = agent_timeout_sec
         self._commit = _truthy(commit) if commit is not None else FRAMEWORK == "pier"
         self._cwd_override = cwd
         self._budget_sec = float(budget_sec) if budget_sec is not None else None
-        self.root = Path(os.environ.get("SMITHERS_ROOT") or HERE.parent.parent).resolve()
+        configured_root = os.environ.get("SMITHERS_ROOT", "").strip()
+        self.root = Path(configured_root).expanduser().resolve() if configured_root else None
         self.docker = os.environ.get("SMITHERS_BENCH_DOCKER", "docker")
         self.seat = seat_of(self.model_name)
         provider = self.seat.split(":", 1)[0]
@@ -662,6 +762,8 @@ class SmithersAgent(BaseAgent):
         return "smithers"
 
     def version(self) -> str | None:
+        if self.root is None:
+            return None
         manifest = self.root / "packages/smithers/package.json"
         try:
             return str(json.loads(manifest.read_text())["version"])
@@ -676,23 +778,25 @@ class SmithersAgent(BaseAgent):
         return NetworkAllowlist()
 
     async def setup(self, environment: BaseEnvironment) -> None:
-        built = self.root / BUILT_RELATIVE
-        if not built.is_file():
-            raise RuntimeError(
-                f"{built} is missing: build the CLI first (cd {self.root} && pnpm --filter @smthrs/cli build)"
-            )
+        if self.root is None:
+            raise RuntimeError("SMITHERS_ROOT is required for benchmark source verification")
+        prefix = cli_prefix(dict(os.environ))
+        cli = Path(prefix[1] if prefix[0] == "node" else prefix[0])
+        if not cli.is_file():
+            raise RuntimeError(f"{cli} is missing: configure SMITHERS_CLI or SMITHERS_ROOT")
         if helper_binary(self.root, dict(os.environ)) is None:
             raise RuntimeError(
                 f"no atomic filesystem helper: build it with (cd {self.root} && cargo build --release "
                 f"-p smithers-ffi --bin smithers-jj-export) or set {HELPER_VARIABLE}"
             )
         if self.auth_mode == "chatgpt":
-            self._pool = accounts.Pool.from_environment()
-            if self._pool.accounts:
-                # Waits here while the pool is paused, before any agent work.
-                self._account = await asyncio.to_thread(self._pool.lease, self.logs_dir.parent.name)
-            store = (self._account.auth if self._account
-                     else Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex") / "auth.json")
+            pool_environment = dict(os.environ)
+            pool_environment.setdefault("SMITHERS_CODEX_POOL", accounts.BENCHMARK_POOL)
+            self._pool = accounts.Pool.from_environment(pool_environment)
+            # Always lease, including an empty allowlist. Falling back to the
+            # shell's CODEX_HOME would spend an account reserved for the MVP.
+            self._account = await self._pool.lease_async(self.logs_dir.parent.name)
+            store = self._account.auth
             if not store.is_file():
                 raise RuntimeError(f"SMITHERS_OPENAI_AUTH=chatgpt but {store} does not exist; run `codex login`")
 
@@ -729,6 +833,7 @@ class SmithersAgent(BaseAgent):
     async def run(self, instruction: str, environment: BaseEnvironment, context: AgentContext) -> None:
         container = self.container_of(environment)
         cwd = self.container_cwd(environment)
+        network = await benchmark_network(environment, self.docker, container, self._plue)
         budget = self._budget_sec
         if budget is None:
             budget = max(60.0, self._agent_timeout_sec - 60.0) if self._agent_timeout_sec else 3600.0
@@ -751,21 +856,37 @@ class SmithersAgent(BaseAgent):
             # the repository's own `.smithers`. It is moved under the trial's
             # logs when the attempt is over.
             workspace = Path(tempfile.mkdtemp(prefix="smithers-bench-"))
-            flow_dir = workspace / "flows" / FLOW_NAME
-            flow_dir.mkdir(parents=True)
-            (flow_dir / "flow.mdx").write_text(
-                render_prompt(instruction, seat=self.seat, container=container, cwd=cwd, commit=self._commit),
-                encoding="utf-8",
-            )
-            shim_home = Path(tempfile.mkdtemp(prefix="smithers-shim-")) if self._plue else None
-            shim = shim_directory(shim_home, shim_config(dict(os.environ), getattr(environment, "_plue_workdir", None))) \
-                if shim_home else None
-            env = cli_environment(dict(os.environ), auth_mode=self.auth_mode, helper=helper, shim=shim,
-                                  codex_home=self._account.home if self._account else None,
-                                  container=container)
+            shim_home = None
+            try:
+                flow_dir = workspace / "flows" / FLOW_NAME
+                flow_dir.mkdir(parents=True)
+                prompt = render_prompt(instruction, seat=self.seat, container=container, cwd=cwd, commit=self._commit)
+                (flow_dir / "flow.mdx").write_text(
+                    prompt,
+                    encoding="utf-8",
+                )
+                shim_home = Path(tempfile.mkdtemp(prefix="smithers-shim-")) if self._plue else None
+                shim = shim_directory(shim_home, shim_config(dict(os.environ), getattr(environment, "_plue_workdir", None))) \
+                    if shim_home else None
+                env = cli_environment(dict(os.environ), auth_mode=self.auth_mode, helper=helper, shim=shim,
+                                      codex_home=self._account.home if self._account else None,
+                                      container=container)
+                seal = {**benchmark_tools(self.root, prompt, env, container), **network}
+            except BaseException as error:
+                shutil.rmtree(workspace, ignore_errors=True)
+                if shim_home is not None:
+                    shutil.rmtree(shim_home, ignore_errors=True)
+                (self.logs_dir / "smithers-run.json").write_text(json.dumps({
+                    "model": self.model_name, "account": self._account.label if self._account else None,
+                    "attempt": attempt, "phase": "seal", "benchmarkSeal": {"asserted": False},
+                    "exception": {"type": type(error).__name__, "message": str(error)},
+                }, indent=2))
+                raise
             record: dict[str, Any] = {
                 "framework": FRAMEWORK,
                 "seat": self.seat,
+                "model": self.model_name,
+                "benchmarkSeal": seal,
                 "authMode": self.auth_mode,
                 "account": self._account.label if self._account else None,
                 "attempt": attempt,
@@ -788,6 +909,14 @@ class SmithersAgent(BaseAgent):
             started = time.monotonic()
             try:
                 exit_status, phase = await asyncio.to_thread(self._drive, workspace, env, budget)
+            except Exception as error:
+                # Keep the attempted flow and its journal alongside a truthful
+                # failure receipt instead of leaking an untracked scratch dir.
+                shutil.move(str(workspace), str(kept))
+                record.update({"phase": "drive", "exitStatus": None,
+                               "exception": {"type": type(error).__name__, "message": str(error)}})
+                (self.logs_dir / "smithers-run.json").write_text(json.dumps(record, indent=2))
+                raise
             finally:
                 if shim_home is not None:
                     shutil.rmtree(shim_home, ignore_errors=True)
@@ -798,6 +927,7 @@ class SmithersAgent(BaseAgent):
             journal = journal_path(workspace / ".flows")
             events = read_journal(journal) if journal is not None else []
             summary = summarize(events)
+            assert_journal_seal(events, container)
             try:
                 log_text = (self.logs_dir / "smithers-run.log").read_text(errors="replace")
             except OSError:
@@ -827,7 +957,7 @@ class SmithersAgent(BaseAgent):
                     log.write(f"{_iso(int(time.time() * 1000))} attempt {attempt} on {previous} ended in a usage limit"
                               f" (resets {reset_at or 'unknown'}): {cause}\n")
                 # Waits while the pool is paused; raises NoSeatLeft after the wait.
-                self._account = await asyncio.to_thread(self._pool.lease, trial)
+                self._account = await self._pool.lease_async(trial)
                 self._requeues.append({"attempt": attempt, "from": previous, "to": self._account.label,
                                        "cause": cause, "resetAt": reset_at})
                 with (self.logs_dir / "requeue.log").open("a", encoding="utf-8") as log:
@@ -859,6 +989,15 @@ class SmithersAgent(BaseAgent):
         context.cost_usd = None
         context.metadata = {
             "seat": self.seat,
+            "model": self.model_name,
+            "benchmark_seal": record["benchmarkSeal"],
+            "request_usage": [
+                {"input": event["payload"]["usage"].get("inputTokens"),
+                 "cached": event["payload"]["usage"].get("cachedInputTokens"),
+                 "output": event["payload"]["usage"].get("outputTokens")}
+                for event in events if event["type"] == "control.agent.model-settled"
+                and isinstance(event["payload"].get("usage"), dict)
+            ],
             "auth_mode": self.auth_mode,
             "account": record["account"],
             "attempt": attempt,
@@ -896,31 +1035,45 @@ class SmithersAgent(BaseAgent):
             raise accounts.ContainerUnreachable(f"task container {container} gone after the run: {lost}")
 
     def _cli(self, *args: str) -> list[str]:
-        return ["node", str(self.root / CLI_RELATIVE), "--json", *args]
+        return [*cli_prefix(dict(os.environ)), *args, "--format", "json"]
 
     def _drive(self, workspace: Path, env: dict[str, str], budget: float) -> tuple[int, str]:
-        """plan, approve, run; the same three verbs the SWE-bench lane uses."""
+        """Use the advertised plan/approval/execution lifecycle."""
         log = (self.logs_dir / "smithers-run.log").open("a", encoding="utf-8")
         try:
-            plan = subprocess.run(self._cli("plan", FLOW_NAME), cwd=workspace, env=env,
-                                  capture_output=True, text=True, timeout=300)
+            try:
+                plan = subprocess.run(self._cli("flow", "plan", FLOW_NAME), cwd=workspace, env=env,
+                                      capture_output=True, text=True, timeout=300)
+            except subprocess.TimeoutExpired:
+                log.write("smithers_agent: plan exceeded its 300s timeout\n")
+                return 124, "plan"
             log.write(plan.stderr)
             if plan.returncode != 0:
                 log.write(plan.stdout)
                 return plan.returncode, "plan"
             try:
-                approval = json.dumps(json.loads(plan.stdout)["approval"])
+                value = json.loads(plan.stdout)
+                if not isinstance(value, dict):
+                    raise ValueError("plan receipt is not an object")
+                value = value.get("data", value)
+                if not isinstance(value, dict) or not isinstance(value.get("approval"), dict) or not value["approval"]:
+                    raise ValueError("plan receipt lacks a nonempty approval object")
+                approval = json.dumps(value["approval"])
             except (ValueError, KeyError):
                 log.write(plan.stdout)
                 return 1, "plan"
-            approve = subprocess.run(self._cli("approve", approval, "--scope", "run"), cwd=workspace, env=env,
-                                     capture_output=True, text=True, timeout=300)
+            try:
+                approve = subprocess.run(self._cli("approvals", "approve", approval, "--scope", "run"), cwd=workspace, env=env,
+                                         capture_output=True, text=True, timeout=300)
+            except subprocess.TimeoutExpired:
+                log.write("smithers_agent: approve exceeded its 300s timeout\n")
+                return 124, "approve"
             log.write(approve.stderr)
             if approve.returncode != 0:
                 log.write(approve.stdout)
                 return approve.returncode, "approve"
             try:
-                run = subprocess.run(self._cli("run", approval), cwd=workspace, env=env,
+                run = subprocess.run(self._cli("flow", "execute", approval), cwd=workspace, env=env,
                                      stdout=log, stderr=subprocess.STDOUT, text=True, timeout=budget)
             except subprocess.TimeoutExpired:
                 log.write(f"\nsmithers_agent: run exceeded its {budget:.0f}s budget and was killed\n")

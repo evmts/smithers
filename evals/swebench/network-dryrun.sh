@@ -39,6 +39,8 @@
 # Spends no model tokens. Needs docker and about 8 MB of pulls.
 set -eu
 S="$(cd "$(dirname "$0")" && pwd)"
+source "$S/lib/remote.sh"
+swb_remote_required || exit $?
 case "${1:-}" in
   ''|--offline) ;;
   *) echo "usage: network-dryrun.sh [--offline]" >&2; exit 2 ;;

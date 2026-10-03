@@ -73,7 +73,7 @@ try {
   mkdirSync(bin, { recursive: true })
   mkdirSync(join(preflightRoot, "lib"))
   copyFileSync(join(root, "preflight-network.sh"), join(preflightRoot, "preflight-network.sh"))
-  for (const name of ["excluded.mjs", "fullbench-row.mjs", "testbed-network.sh"]) {
+  for (const name of ["excluded.mjs", "fullbench-row.mjs", "testbed-network.sh", "remote.sh"]) {
     copyFileSync(join(root, "lib", name), join(preflightRoot, "lib", name))
   }
   const executable = (path, text) => writeFileSync(path, text, { mode: 0o755 })
@@ -153,6 +153,8 @@ if [ "$3" = "${fixture.name.slice("unknown-".length)}" ]; then echo unknown; els
         ...process.env,
         PATH: `${bin}:${process.env.PATH}`,
         PREFLIGHT_CASE: fixture.name,
+        BENCH_REMOTE_HOST: "1",
+        SWB_ARTIFACT_ROOT: preflightRoot,
         SWB_PREFLIGHT_INSTANCES: fixture.instances ?? "probe__probe-1",
         SWB_PREFLIGHT_IMAGE_CMD: join(bin, "image"),
         SWB_PREFLIGHT_TEST_CMD: join(bin, "testcmd"),

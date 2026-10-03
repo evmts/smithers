@@ -52,7 +52,7 @@ try {
 
   const unbuilt = spawnSync("bash", [join(temporary, "evals/swebench/flows.sh"), "--help"], {
     encoding: "utf8",
-    env: { ...process.env, SWB_SUBJECT_UNPINNED: "1" }
+    env: { ...process.env, SWB_SUBJECT_UNPINNED: "1", SMITHERS_CLI: join(temporary, executable) }
   })
   assert.equal(unbuilt.status, 1, "a checkout with no CLI build is refused, not run against source")
   assert.match(unbuilt.stderr, /would fall back to src\/bin\.ts/)
@@ -67,7 +67,7 @@ console.log(JSON.stringify({ executable: process.argv[1], args: process.argv.sli
   writeFileSync(join(temporary, "packages/smithers/dist/esm/bin.js"), "\n")
   const built = spawnSync("bash", [join(temporary, "evals/swebench/flows.sh"), "--help"], {
     encoding: "utf8",
-    env: { ...process.env, SWB_SUBJECT_UNPINNED: "1" }
+    env: { ...process.env, SWB_SUBJECT_UNPINNED: "1", SMITHERS_CLI: join(temporary, executable) }
   })
   assert.equal(built.status, 0, built.stderr)
   assert.deepEqual(JSON.parse(built.stdout), {

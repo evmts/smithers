@@ -129,7 +129,13 @@ try {
     const result = spawnSync(join(root, dryRun), [], {
       encoding: "utf8",
       timeout: 60_000,
-      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, TMPDIR: temporary }
+      env: {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH}`,
+        TMPDIR: temporary,
+        BENCH_REMOTE_HOST: "1",
+        SWB_ARTIFACT_ROOT: temporary
+      }
     })
     assert.equal(result.status, 1, `${dryRun}: ${result.stdout}${result.stderr}`)
     assert.match(result.stdout, /dryrun: could not pull alpine/)

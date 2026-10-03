@@ -253,6 +253,8 @@ def _install_plue_transport() -> None:
 
 
 def main() -> None:
+    if os.environ.get("BENCH_REMOTE_HOST") != "1" or not os.environ.get("SWB_ARTIFACT_ROOT"):
+        raise RuntimeError("run grading on the authorized remote host with BENCH_REMOTE_HOST=1 and SWB_ARTIFACT_ROOT")
     # Only the evaluator's image selection reads this; the containers it starts
     # report their own architecture from inside, unaffected.
     platform.machine = lambda: "x86_64"  # type: ignore[assignment]

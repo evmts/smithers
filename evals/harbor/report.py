@@ -32,6 +32,7 @@ same files writes the same bytes.
 from __future__ import annotations
 
 import json
+import shlex
 import sys
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,7 @@ sys.path.insert(0, str(HERE))
 
 import audit_host_calls  # noqa: E402
 import outcome  # noqa: E402
+import pricing  # noqa: E402
 
 MIN_TASKS = 50
 SMITHERS_AGENT = "evals.harbor.smithers_agent:SmithersAgent"
@@ -66,6 +68,18 @@ def _load(path: Path) -> dict:
 
 def _is_count(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _is_codex_probe(command: Any) -> bool:
+    if not isinstance(command, str):
+        return False
+    try:
+        argv = shlex.split(command)
+        if len(argv) == 3 and Path(argv[0]).name in ("bash", "sh", "zsh") and argv[1] in ("-c", "-lc"):
+            argv = shlex.split(argv[2])
+    except ValueError:
+        return False
+    return argv == ["curl", "--noproxy", "*", "--connect-timeout", "5", "--max-time", "10", "https://example.com"]
 
 
 def overrides(config: dict) -> list[str]:
@@ -96,9 +110,31 @@ def seal(trial: Path, config: dict, result: dict, smithers: bool) -> list[str]:
     if not isinstance(reached, dict) or not reached.get("succeeded"):
         broken.append("no command exited 0 in the task container")
     if smithers:
+        metadata = (result.get("agent_result") or {}).get("metadata") or {}
+        seal_record = metadata.get("benchmark_seal") or _load(trial / "agent" / "smithers-run.json").get("benchmarkSeal")
+        if not isinstance(seal_record, dict) or seal_record.get("asserted") is not True or \
+                seal_record.get("web_tools") is not False or seal_record.get("network_tools") != []:
+            broken.append("no verified model tool seal")
         audit = audit_host_calls.audit_trial(trial, {})
         if audit["verdict"] != "clean":
             broken.append(f"host-call audit {audit['verdict']}")
+    else:
+        metadata = (result.get("agent_result") or {}).get("metadata") or {}
+        seal_record = metadata.get("benchmark_seal")
+        if seal_record is None:
+            seal_record = _load(trial / "agent" / "codex-account.json").get("benchmark_seal")
+        probe = seal_record.get("sandbox_probe") if isinstance(seal_record, dict) else None
+        exit_code = probe.get("exit_code") if isinstance(probe, dict) else None
+        probe_output = probe.get("output") if isinstance(probe, dict) else None
+        if not isinstance(seal_record, dict) or seal_record.get("sealed") is not True or \
+                seal_record.get("sealed_by") != "codex-sandbox" or not isinstance(probe, dict) or \
+                probe.get("denied") is not True or probe.get("source") != "codex-shell-tool" or \
+                not isinstance(exit_code, int) or isinstance(exit_code, bool) or exit_code == 0 or \
+                not _is_codex_probe(probe.get("command")) or not isinstance(probe_output, str) or \
+                not any(signal in probe_output.lower() for signal in (
+                    "operation not permitted", "permission denied", "network access is disabled",
+                    "network is disabled", "denied by sandbox", "sandbox denied")):
+            broken.append("no verified Codex sandbox denied-connect proof")
     return broken
 
 
@@ -112,6 +148,17 @@ def read_trials(job: Path, smithers: bool) -> list[dict]:
         kind = outcome.classify(result)
         agent_result = result.get("agent_result") or {}
         tokens = {name: agent_result.get(name) for name in TOKENS}
+        metadata = agent_result.get("metadata") or {}
+        request_usage = metadata.get("request_usage")
+        retained = isinstance(request_usage, list) and bool(request_usage)
+        exact = retained and metadata.get("metering_complete", True) is True and \
+            all(isinstance(row, dict) and row.get("metering_complete", True) is True for row in request_usage)
+        if not retained:
+            request_usage = [{"input": tokens["n_input_tokens"], "cached": tokens["n_cache_tokens"],
+                              "output": tokens["n_output_tokens"]}]
+        cost = pricing.estimate((config.get("agent") or {}).get("model_name") or "", request_usage,
+                                result.get("finished_at"))
+        cost["request_usage_retained"] = exact
         rows.append({
             "trial": trial.name,
             "task": result.get("task_name") or audit_host_calls.task_name(trial),
@@ -120,6 +167,8 @@ def read_trials(job: Path, smithers: bool) -> list[dict]:
             "exception": (result.get("exception_info") or {}).get("exception_type"),
             "reward": ((result.get("verifier_result") or {}).get("rewards") or {}).get("reward"),
             "tokens": tokens,
+            "apiEquivalentCost": cost,
+            "account": metadata.get("account"),
             "overrides": overrides(config),
             "identity": {"agent": agent_identity(config.get("agent") or {}),
                          "model": (config.get("agent") or {}).get("model_name"),
@@ -236,6 +285,8 @@ def build(smithers_job: Path, baseline_job: Path, min_tasks: int = MIN_TASKS) ->
             missing = [name for name, value in row["tokens"].items() if not _is_count(value)]
             if missing:
                 refusals.append(f"{arm}: {row['trial']} reports no {', '.join(missing)}")
+            if row["apiEquivalentCost"]["usd"] is None:
+                refusals.append(f"{arm}: {row['trial']} cannot be priced: {row['apiEquivalentCost'].get('reason')}")
             for reason in row["seal"]:
                 refusals.append(f"{arm}: {row['trial']} is not sealed: {reason}")
 
@@ -251,6 +302,9 @@ def build(smithers_job: Path, baseline_job: Path, min_tasks: int = MIN_TASKS) ->
             "tokens": {"input": totals["n_input_tokens"], "cached": totals["n_cache_tokens"],
                        "output": totals["n_output_tokens"]},
             "harnessRevisions": sorted({r["harnessRevision"] for r in rows if r["harnessRevision"]}),
+            "accounts": sorted({r["account"] for r in rows if r["account"]}),
+            "apiEquivalentUsd": round(sum(r["apiEquivalentCost"]["usd"] or 0 for r in rows), 8),
+            "requestUsageRetained": all(r["apiEquivalentCost"]["request_usage_retained"] for r in rows),
         }
     stamps = sorted(s for rows in trials.values() for r in rows for s in (r["startedAt"], r["finishedAt"]) if s)
     return {
@@ -305,7 +359,9 @@ def render(report: dict) -> str:
         lines.append(f"- {len(report['unplaceable'])} tasks could not be placed and are excluded from both arms: "
                      f"{', '.join(report['unplaceable'])}.")
     lines += ["- Infrastructure failures were re-run, not scored.",
-              "- Subscription seats: token counts, no dollar cost.",
+              f"- API-equivalent list-price estimate: Smithers ${report['results']['smithers']['apiEquivalentUsd']:.6f}; "
+              f"baseline ${report['results']['baseline']['apiEquivalentUsd']:.6f}. Subscription billing is not per token.",
+              "- Without retained request usage, pricing uses aggregate trial tokens; context tiers are then an estimate.",
               "", "## Tasks", "", "| Task | Smithers | Baseline |", "| --- | --- | --- |"]
     for row in report["tasks"]:
         lines.append(f"| {row['task']} | {' '.join(str(r) for r in row['smithers']['rewards'])} | "

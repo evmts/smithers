@@ -55,7 +55,7 @@ Resolve the issue below by editing the repository's source files.
 
 ## Your environment
 
-Your shell runs on a macOS host with BSD userland. The repository's own Linux
+Your shell runs on a execution host. The repository's own Linux
 environment and Python interpreter are in a container that has this exact
 directory mounted at /testbed, so a file you change here changes there
 immediately, and vice versa.
@@ -66,7 +66,7 @@ immediately, and vice versa.
       docker exec ${container} bash -lc 'cd /testbed && <command>'
 
   GNU grep, GNU sed, and the project's dependencies are all available there.
-  \`sed -i\` on the host is BSD sed and will not behave like GNU sed; run it
+  Host tools may differ from the container’s GNU tools; run project commands
   through docker exec, or avoid it.${interpreterBullet}
 - This repository runs its tests with \`${testCommand}\`, which takes the test
   paths to run as trailing arguments. It is the runner this project actually

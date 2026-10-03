@@ -13,6 +13,8 @@
 # the one image they need, on demand.
 set -u
 S="$(cd "$(dirname "$0")" && pwd)"
+source "$S/lib/remote.sh"
+swb_remote_required || exit $?
 SIZE="${1:-8}"
 VENV="$S/.venv-swb"
 DATASET="$S/swb-verified.json"

@@ -152,24 +152,11 @@ for (const lane of declared) {
   )
 }
 
-// The sealed lane's condition is the one `run-instance-codex.sh` implements.
+// Historical lanes remain evidence, but current stock runs use the real sandbox.
 const runner = readFileSync(join(root, "run-instance-codex.sh"), "utf8")
-for (const condition of declared.map((lane) => lane.network)) {
-  assert.match(
-    runner,
-    new RegExp(`^\\s{2}${condition}\\)$`, "mu"),
-    `run-instance-codex.sh implements the '${condition}' network condition`
-  )
-}
-assert.ok(
-  runner.includes("shell_environment_policy.set.${PROXY_VAR}") && runner.includes("HTTPS_PROXY"),
-  "the sealed condition poisons every child command's HTTP proxy"
-)
-assert.ok(runner.includes("--sandbox workspace-write"), "the off condition uses codex's own sandbox")
-// The seal has two surfaces, and the second one is the one that was got wrong:
-// `tools.web_search=false` is ignored by codex-cli 0.149.0 and the model went on
-// searching the web through the first r90s lane. `web_search=disabled` is the
-// key that works, and the wrong one must not come back.
+assert.ok(!runner.includes("--dangerously-bypass-approvals-and-sandbox"), "no stock sandbox bypass")
+assert.ok(runner.includes("--sandbox workspace-write"), "stock uses Codex sandbox")
+assert.ok(runner.includes("sandbox_workspace_write.network_access=false"), "spawned network is off")
 assert.ok(runner.includes("web_search=disabled"), "the sealed condition disables codex's own web-search tool")
 assert.ok(
   !runner.split("\n").some((line) => !line.trimStart().startsWith("#") && line.includes("tools.web_search")),
@@ -183,11 +170,11 @@ assert.ok(
 // Effort is the second condition, and the one that was wrong: the codex arm was
 // pinned to a literal `medium` while every flows wave ran at the `high` its own
 // default gives, so the two older lanes measure medium codex against high flows.
-// The runner takes it from the environment now, defaults to high, and every lane
+// The runner takes it from the environment now, defaults to max, and every lane
 // pins its own — which is what lets the older lanes keep reproducing.
 assert.ok(
-  runner.includes("EFFORT=\"${SWB_CODEX_EFFORT:-high}\""),
-  "run-instance-codex.sh takes its effort from SWB_CODEX_EFFORT and defaults to high"
+  runner.includes("EFFORT=\"${SWB_CODEX_EFFORT:-max}\""),
+  "run-instance-codex.sh takes its effort from SWB_CODEX_EFFORT and defaults to max"
 )
 assert.ok(
   runner.includes("-c model_reasoning_effort=\"$EFFORT\""),
@@ -238,6 +225,9 @@ function runnerFixture(harness, scenario, check, overrideEnvironment = {}) {
         "lib/run-paths.sh",
         "lib/lock.sh",
         "lib/codex-auth.sh",
+        "lib/codex-account.py",
+        "lib/codex-seal.py",
+        "lib/remote.sh",
         "lib/transport.sh",
         "lib/codex-network.sh",
         "lib/run-with-timeout.py"
@@ -245,10 +235,16 @@ function runnerFixture(harness, scenario, check, overrideEnvironment = {}) {
     ) {
       copyFileSync(join(root, path), join(dir, path))
     }
+    const accountHome = join(dir, "home/.smithers/accounts/codex-1")
+    mkdirSync(accountHome, { recursive: true })
+    writeFileSync(join(accountHome, "auth.json"), "{}")
     put("swb-verified.json", "[]")
     put("bin/smithers-jj-export", "#!/bin/sh\nexit 0\n")
     // A GNU timeout on the fixture host must not hide the macOS failure.
-    put("bin/timeout", "#!/bin/sh\nexit 127\n")
+    put("bin/timeout", "#!/bin/sh\nif [ \"$FIXTURE_SUCCESS_FLOW\" = 1 ]; then shift; exec \"$@\"; fi\nexit 127\n")
+    put("bin/jj", "#!/bin/sh\nexit 0\n")
+    put("flows.sh", "#!/bin/sh\necho \"{\\\"approval\\\":{}}\"\n")
+    put("lib/write-flow.mjs", "console.log(\"fixture flow\")")
     put(".subject.json", "{\"stamp\":\"fixture\"}")
     put("lib/validate-instance.mjs", "console.log(\"base\")")
     put("lib/write-prompt-codex.mjs", "console.log(\"fix the bug\")")
@@ -259,7 +255,7 @@ function runnerFixture(harness, scenario, check, overrideEnvironment = {}) {
       "lib/testbed-network.sh",
       `#!/bin/bash
 if [ "$1" = assert ] && [ "$FIXTURE_SCENARIO" = network-failure ]; then exit 7; fi
-echo none
+echo "\${SWB_TESTBED_NETWORK:-none}"
 `
     )
     put(
@@ -277,13 +273,56 @@ esac
     put(
       "bin/codex",
       `#!/bin/bash
-if [ "$1" = login ] && [ "$2" = status ]; then echo 'Logged in using an API key'; exit 0; fi
+if [ "$1" = --version ]; then echo "codex-cli \${FAKE_CODEX_VERSION:-0.160.0}"; exit 0; fi
+if [ "$1" = login ] && [ "$2" = status ]; then
+  printf '%s' "$CODEX_HOME" > "$FIXTURE_DIR/codex.home"
+  echo "\${FAKE_CODEX_LOGIN_STATUS:-Logged in using an API key}"
+  exit 0
+fi
 if [ "$1" = login ]; then exit 0; fi
 printf '%s\\n' "$@" > "$FIXTURE_DIR/codex.args"
 while [ "$#" -gt 0 ]; do
   if [ "$1" = -C ]; then printf 'paid edits\\n' > "$2/edited.txt"; break; fi
   shift
 done
+if [ "$FIXTURE_SCENARIO" = dns-only ]; then
+  printf '%s\\n' '${
+        JSON.stringify({
+          type: "item.completed",
+          item: {
+            type: "command_execution",
+            command: "curl --noproxy \"*\" --max-time 5 https://example.com",
+            exit_code: 7,
+            aggregated_output: "curl: (6) Could not resolve host"
+          }
+        })
+      }'
+elif [ "$FIXTURE_SCENARIO" != missing-proof ]; then
+  printf '%s\\n' '${
+        JSON.stringify({
+          type: "item.completed",
+          item: {
+            type: "command_execution",
+            command: "curl --noproxy \"*\" --max-time 5 https://example.com",
+            exit_code: 7,
+            aggregated_output: "curl: (7) Operation not permitted"
+          }
+        })
+      }'
+fi
+if [ "$FIXTURE_SCENARIO" != unsupported-guest ]; then
+  printf '%s\\n' '${
+        JSON.stringify({
+          type: "item.completed",
+          item: {
+            type: "command_execution",
+            command: "docker exec codexbench-a--a-1-r1 bash -lc \"exit 0\"",
+            exit_code: 0,
+            aggregated_output: ""
+          }
+        })
+      }'
+fi
 if [ "$FIXTURE_SCENARIO" = agent-timeout ]; then exit 124; fi
 if [ "$FIXTURE_SCENARIO" = wall-timeout ]; then sleep 3; fi
 `
@@ -311,6 +350,7 @@ switch (args[0]) {
   case "cp":
     if (scenario === "term-extraction") signal()
     if (scenario === "copy-failure") process.exit(9)
+    fs.mkdirSync(path.join(args[2], ".git/info"), { recursive: true })
     fs.writeFileSync(path.join(args[2], "checkout.txt"), "image checkout")
     break
   case "rm": fs.rmSync(active(args.at(-1)), { force: true }); break
@@ -326,7 +366,19 @@ switch (args[0]) {
       ...process.env,
       PATH: `${join(dir, "bin")}:${process.env.PATH}`,
       SWB_DATASET: join(dir, "swb-verified.json"),
+      BENCH_REMOTE_HOST: "1",
+      SWB_ARTIFACT_ROOT: dir,
+      SWB_CODEX_CLI: join(dir, "bin/codex"),
+      SMITHERS_CLI: join(dir, "flows.sh"),
+      SMITHERS_CODEX_ACCOUNTS_DIR: join(dir, "home/.smithers/accounts"),
+      HOME: join(dir, "home"),
+      PYTHONPATH: join(root, "../harbor"),
+      CODEX_HOME: "/forbidden/inherited/home",
+      SMITHERS_CODEX_POOL: "codex-1",
+      SMITHERS_CODEX_POOL_STATE: join(dir, "pool.json"),
+      SMITHERS_CODEX_POOL_WAIT_SEC: "0",
       SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: join(dir, "bin/smithers-jj-export"),
+      SWB_CODEX_AUTH: "api-key",
       SWB_CODEX_NETWORK: "sealed",
       SWB_CODEX_EFFORT: "high",
       SWB_FLOWS_OPENAI_AUTH: "api-key",
@@ -380,6 +432,54 @@ test("flows refuses a missing native helper before pulling an image", () => {
 
 // GHSA-6gr2-7qgm-27qh: the prompt is a public tracker's problem statement, so
 // the unconfined condition is never what a lane gets by leaving a knob unset.
+test("Smithers subscription instances lease the allowed pool and record the account/model", () => {
+  runnerFixture("flows", "success", ({ dir, result }) => {
+    assert.equal(result.status, 0, result.stdout + result.stderr)
+    const receipt = JSON.parse(readFileSync(join(dir, "timings/a__a-1-r1.json")))
+    assert.equal(receipt.account, "codex-1")
+    assert.equal(receipt.model, "fixture-seat")
+    assert.equal(receipt.openaiAuth, "chatgpt")
+    assert.equal(readFileSync(join(dir, "codex.home"), "utf8"), join(dir, "home/.smithers/accounts/codex-1"))
+    const state = JSON.parse(readFileSync(join(dir, "pool.json")))
+    assert.deepEqual(state.leases.map(({ label, trial }) => [label, trial]), [["codex-1", "a__a-1-r1"]])
+  }, {
+    SWB_FLOWS_OPENAI_AUTH: "chatgpt",
+    FAKE_CODEX_LOGIN_STATUS: "Logged in using ChatGPT",
+    FIXTURE_SUCCESS_FLOW: "1"
+  })
+})
+
+test("Smithers refuses MVP subscription accounts before any image operation", () => {
+  runnerFixture("flows", "success", ({ dir, result }) => {
+    assert.equal(result.status, 1, result.stdout + result.stderr)
+    assert.match(result.stderr, /only benchmark accounts/u)
+    assert.ok(!existsSync(join(dir, "docker.log")), "invalid pool cannot acquire containers")
+    assert.ok(!existsSync(join(dir, "pool.json")), "invalid pool cannot lease an account")
+  }, { SWB_FLOWS_OPENAI_AUTH: "chatgpt", SMITHERS_CODEX_POOL: "codex-2" })
+})
+
+test("codex refuses a CLI version mismatch before any image operation", () => {
+  runnerFixture("codex", "success", ({ dir, result }) => {
+    assert.equal(result.status, 1, result.stdout + result.stderr)
+    assert.match(result.stderr, /expected codex-cli 0.160.0/u)
+    assert.ok(!existsSync(join(dir, "docker.log")), "version failure cannot pull images")
+    assert.ok(!existsSync(join(dir, "codex.args")), "version failure cannot launch a model")
+  }, { FAKE_CODEX_VERSION: "0.149.0" })
+})
+
+test("codex defaults to max effort and records CLI/account identity", () => {
+  runnerFixture("codex", "success", ({ dir, result }) => {
+    assert.equal(result.status, 0, result.stdout + result.stderr)
+    const receipt = JSON.parse(readFileSync(join(dir, "timings-codex/a__a-1-r1.json")))
+    assert.equal(receipt.effort, "max")
+    assert.equal(receipt.codexVersion, "0.160.0")
+    assert.equal(receipt.account, "api-key")
+    assert.equal(receipt.benchmark_seal.sealed, true)
+    assert.equal(receipt.benchmark_seal.sandbox_probe.source, "codex-shell-tool")
+    assert.ok(readFileSync(join(dir, "codex.args"), "utf8").includes("model_reasoning_effort=max"))
+  }, { SWB_CODEX_EFFORT: undefined })
+})
+
 test("codex defaults to the sealed network condition", () => {
   runnerFixture("codex", "success", ({ dir, result }) => {
     assert.equal(result.status, 0, result.stdout + result.stderr)
@@ -387,8 +487,8 @@ test("codex defaults to the sealed network condition", () => {
     const args = readFileSync(join(dir, "codex.args"), "utf8").split("\n")
     assert.ok(args.includes("web_search=disabled"), "the default run disables codex's web search")
     assert.ok(
-      args.includes("shell_environment_policy.set.HTTPS_PROXY=http://127.0.0.1:1"),
-      "the default run points every child command's proxy at a dead port"
+      args.includes("sandbox_workspace_write.network_access=false"),
+      "the default disables spawned network in the real sandbox"
     )
     assert.doesNotMatch(result.stderr, /WARNING/u)
   }, { SWB_CODEX_NETWORK: undefined, SWB_CODEX_UNCONFINED: undefined })
@@ -398,23 +498,34 @@ for (const optIn of [undefined, "", "yes", "1", "ALLOWED"]) {
   test(`codex refuses network=on without SWB_CODEX_UNCONFINED=allowed (${JSON.stringify(optIn)})`, () => {
     runnerFixture("codex", "success", ({ dir, result }) => {
       assert.equal(result.status, 2, result.stdout + result.stderr)
-      assert.match(result.stderr, /set SWB_CODEX_UNCONFINED=allowed to opt in/u)
+      assert.match(result.stderr, /stock Codex requires workspace-write/u)
       assert.ok(!existsSync(join(dir, "docker.log")), "no image operation started")
       assert.ok(!existsSync(join(dir, "codex.args")), "codex never started")
     }, { SWB_CODEX_NETWORK: "on", SWB_CODEX_UNCONFINED: optIn })
   })
 }
 
-test("codex network=on with the explicit opt-in warns and runs unconfined", () => {
+test("codex cannot bypass the sandbox with the historical opt-in", () => {
   runnerFixture("codex", "success", ({ dir, result }) => {
-    assert.equal(result.status, 0, result.stdout + result.stderr)
-    assert.match(result.stderr, /WARNING: SWB_CODEX_NETWORK=on runs codex unconfined/u)
-    assert.equal(JSON.parse(readFileSync(join(dir, "timings-codex/a__a-1-r1.json"))).network, "on")
-    const args = readFileSync(join(dir, "codex.args"), "utf8").split("\n")
-    assert.ok(args.includes("--dangerously-bypass-approvals-and-sandbox"))
-    assert.ok(!args.includes("web_search=disabled"))
+    assert.equal(result.status, 2, result.stdout + result.stderr)
+    assert.match(result.stderr, /stock Codex requires workspace-write/u)
+    assert.ok(!existsSync(join(dir, "codex.args")))
+    assert.ok(!existsSync(join(dir, "docker.log")))
   }, { SWB_CODEX_NETWORK: "on", SWB_CODEX_UNCONFINED: "allowed" })
 })
+
+for (const scenario of ["missing-proof", "dns-only", "unsupported-guest", "guest-egress"]) {
+  test(`codex ${scenario} cannot publish a patch or a seal claim`, () => {
+    runnerFixture("codex", scenario, ({ dir, result }) => {
+      assert.equal(result.status, 125, result.stdout + result.stderr)
+      const receipt = JSON.parse(readFileSync(join(dir, "timings-codex/a__a-1-r1.json")))
+      assert.equal(receipt.benchmark_seal.sealed, false)
+      assert.equal(receipt.benchmark_seal.sealed_by, "codex-sandbox")
+      assert.ok(!existsSync(join(dir, "patches-codex/a__a-1-r1.patch")), "unproven run cannot be graded")
+      if (scenario === "guest-egress") assert.equal(receipt.benchmark_seal.reason, "guest_network_unsealed")
+    }, { SWB_TESTBED_NETWORK: scenario === "guest-egress" ? "bridge" : "none" })
+  })
+}
 
 for (const scenario of ["capture-failure", "missing-patch"]) {
   test(`codex ${scenario} preserves paid edits and reports failure`, () => {

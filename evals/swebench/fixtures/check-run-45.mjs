@@ -105,6 +105,7 @@ try {
       "#!/bin/bash",
       "set -eu",
       "ID=\"$1\"",
+      "test \"${SWB_FLOWS_EFFORT}\" = high",
       `printf 'start %s\\n' "$ID" >> ${JSON.stringify(trace)}`,
       "if [ \"${SWB_STUB_FAIL:-0}\" = 1 ]; then exit 1; fi",
       "sleep 0.4",
@@ -141,6 +142,7 @@ try {
         SWB_RERUN_BASELINE: baseline,
         SWB_RERUN_INSTANCE_CMD: stub,
         SWB_RERUN_POLL_SECONDS: "1",
+        SWB_FLOWS_EFFORT: "",
         ...env
       }
     })

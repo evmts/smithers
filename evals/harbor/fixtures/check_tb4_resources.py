@@ -14,6 +14,7 @@ import os
 import sys
 import tempfile
 import types
+from cli_contract import validate, write_fake_cli
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -36,7 +37,7 @@ def check_tb4_8_vcpu_request_preservation() -> None:
             calls = root / "calls.json"
             ledger = root / "ownership.json"
             cli = root / "smithers"
-            cli.write_text(
+            write_fake_cli(cli,
                 f"#!{sys.executable}\n"
                 "import json, os, sys\n"
                 "from pathlib import Path\n"
@@ -74,7 +75,7 @@ def check_tb4_8_vcpu_request_preservation() -> None:
                 ops.logger = logging.getLogger("check_tb4_resources")
                 ops.session_id = "tb4__eight_cpu__env"
                 ops._plue_image = "registry.example/tb4:original"
-                ops._plue_network = lambda: ("none", [])
+                ops._plue_network = lambda: "none"
                 ops._workspace_id = ""
                 ops._plue_reserved = False
                 ops._plue_ledger_key = ""
@@ -103,10 +104,12 @@ def check_tb4_8_vcpu_request_preservation() -> None:
                 args = captured[0]
                 assert args[:2] == ["workspace", "create"], args
                 for flag, value in (
-                    ("--cpus", "8"), ("--memory", "32768"), ("--disk", "51200"),
+                    ("--cpus", "8"), ("--memory", "32768"), ("--disk", "50"),
                     ("--image", "registry.example/tb4:original"), ("--repo", "acme/tb4"),
                 ):
                     assert args.count(flag) == 1 and args[args.index(flag) + 1] == value, args
+                assert "--idle-timeout" not in args and "--allow" not in args, args
+                assert args[args.index("--network") + 1] == "none", args
                 assert ops._workspace_id == "tb4-workspace" and ops._plue_reserved
                 expected = [{"repo": "acme/tb4", "session": ops.session_id,
                              "id": "tb4-workspace"}]
@@ -116,7 +119,39 @@ def check_tb4_8_vcpu_request_preservation() -> None:
                 assert workspace_ownership.records() == expected
 
 
+def check_disk_gib_ceiling() -> None:
+    """MiB boundaries preserve requested capacity after rounding up to GiB."""
+    for storage_mb, disk_gib in ((1, 1), (1023, 1), (1024, 1), (1025, 2),
+                                 (10240, 10), (51200, 50), (51201, 51)):
+        with tempfile.TemporaryDirectory(prefix="disk-gib-") as directory:
+            env = {"PLUE_REPO": "acme/tb4", "PLUE_SLOTS": "0",
+                   "PLUE_MAX_STORAGE_MB": "65536", "PLUE_WORKSPACE_LEDGER": str(Path(directory) / "ledger")}
+            with patch.dict(os.environ, env, clear=True):
+                ops = plue_env._PlueOps()
+                ops.logger = logging.getLogger("check_disk_gib")
+                ops.session_id = f"disk-{storage_mb}"
+                ops.task_env_config = types.SimpleNamespace(storage_mb=storage_mb)
+                ops._plue_image = "registry.example/tb4:original"
+                ops._plue_network = lambda: "proxy"
+                ops._plue_ledger = lambda: None
+                calls = []
+
+                async def capture(*args, **kwargs):
+                    validate(args)
+                    calls.append(args)
+                    return types.SimpleNamespace(stdout=b'{"id":"disk-workspace","status":"running"}')
+
+                ops._run = capture
+                asyncio.run(ops._plue_reserve())
+                assert len(calls) == 1, calls
+                args = calls[0]
+                assert args[args.index("--disk") + 1] == str(disk_gib), (storage_mb, args)
+                assert "--idle-timeout" not in args and "--allow" not in args, args
+                assert args[args.index("--network") + 1] == "proxy", args
+
+
 if __name__ == "__main__":
     check_tb4_8_vcpu_request_preservation()
+    check_disk_gib_ceiling()
     boundary = "Harbor public reserve()" if EnvironmentConfig is not None else "adapter _plue_reserve() (Harbor unavailable)"
     print(f"TB4 8-vCPU request preservation: limits 8/16 pass; limit 7 refuses; repeated reserve deduplicates (offline; {boundary})")

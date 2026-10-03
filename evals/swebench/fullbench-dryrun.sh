@@ -55,6 +55,8 @@
 # Spends no model tokens. Needs docker and about 10 MB of pulls.
 set -eu
 S="$(cd "$(dirname "$0")" && pwd)"
+source "$S/lib/remote.sh"
+swb_remote_required || exit $?
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/flows-fullbench-dryrun-XXXXXX")"
 FB="$TMP/fullbench"
 FB2="$TMP/fullbench2"

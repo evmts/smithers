@@ -202,6 +202,10 @@ case "$MODE" in
 esac
 
 # ---------------------------------------------------------------------------
+if [ -z "${SWB_RERUN_INSTANCE_CMD:-}" ]; then
+  source "$S/lib/remote.sh"
+  swb_remote_required || exit $?
+fi
 # Refusals, before anything is spent.
 # ---------------------------------------------------------------------------
 # The index every artifact carries goes through `lib/run-paths.sh`, which
@@ -285,6 +289,8 @@ export SWB_FULLBENCH_BUDGET="$INSTANCE_BUDGET"
 export SWB_MODEL_NAME="$MODEL_NAME"
 export SWB_SEAT="$SEAT"
 export SWB_FLOWS_OPENAI_AUTH="$OPENAI_AUTH"
+# This reproduces the recorded high-effort flows lane; current runs default max.
+export SWB_FLOWS_EFFORT="${SWB_FLOWS_EFFORT:-high}"
 # Handed down rather than left to default, for the same reason effort is: a
 # condition a child derives is a condition that moves when the default moves.
 export SWB_TESTBED_NETWORK="$TESTBED_NETWORK"

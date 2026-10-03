@@ -38,6 +38,10 @@
 # This spends real API tokens and needs docker. See README.md, "Best-of-n".
 set -u
 S="$(cd "$(dirname "$0")" && pwd)"
+if [ -z "${SWB_RUN_CMD:-}" ]; then
+  source "$S/lib/remote.sh"
+  swb_remote_required || exit $?
+fi
 HARNESS="${1:-flows}"
 COUNT="${2:-5}"
 JOBS="${3:-3}"
@@ -103,9 +107,9 @@ run_one() {
   if [ -n "${SWB_RUN_CMD:-}" ]; then
     "$SWB_RUN_CMD" "$ID" "${BUDGET:-}" "" "$INDEX"
   elif [ "$HARNESS" = "codex" ]; then
-    "$S/run-instance-codex.sh" "$ID" "${BUDGET:-1500}" "${SWB_CODEX_MODEL:-gpt-6-sol}" "$INDEX"
+    "$S/run-instance-codex.sh" "$ID" "${BUDGET:-1500}" "${SWB_CODEX_MODEL:-gpt-6.1-sol}" "$INDEX"
   else
-    "$S/run-instance.sh" "$ID" "${SWB_SEAT:-openai:gpt-6-sol}" "${BUDGET:-1200}" "$INDEX"
+    "$S/run-instance.sh" "$ID" "${SWB_SEAT:-openai:gpt-6.1-sol}" "${BUDGET:-1200}" "$INDEX"
   fi
   CODE=$?
   END=$(date +%s)

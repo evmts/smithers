@@ -25576,6 +25576,26 @@
         "kind": "glob",
         "pattern": "evals/harbor/fixtures/**",
         "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/backend/Definitions.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/cli/Argv.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/cli/ControlCommands.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/NativeControl.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/model/src/internal/prices.generated.ts"
       }
     ],
     "outputs": [],
@@ -26226,6 +26246,18 @@
       },
       {
         "kind": "file",
+        "path": "evals/harbor/fixtures/cli_contract.py"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/backend/Definitions.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/cli/Argv.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/harness/test/fixtures/wave10Journals.json"
       },
       {
@@ -26294,6 +26326,18 @@
         "kind": "glob",
         "pattern": "evals/harbor/*.py",
         "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "evals/harbor/fixtures/cli_contract.py"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/backend/Definitions.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/cli/Argv.ts"
       },
       {
         "kind": "file",

@@ -71,7 +71,9 @@ def shim_config(base: dict[str, str], workdir: str | None = None) -> dict:
     repo = base.get("PLUE_REPO", "").strip()
     if "/" not in repo:
         raise RuntimeError("PLUE_REPO must be owner/name for a plue run")
-    name = base.get("SMITHERS_CLI", "smithers")
+    name = base.get("SMITHERS_CLI", "").strip()
+    if not name:
+        raise RuntimeError("SMITHERS_CLI is required for a benchmark shim")
     cli = shutil.which(name, path=base.get("PATH"))
     if cli is None:
         raise RuntimeError(f"SMITHERS_CLI {name!r} does not resolve to an executable")

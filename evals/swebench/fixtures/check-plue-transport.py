@@ -45,6 +45,9 @@ FAKE_CLI = r'''#!/usr/bin/env python3
 import json, os, re, shutil, subprocess, sys
 root, calls = os.environ["FAKE_ROOT"], os.environ["FAKE_CALLS"]
 argv = sys.argv[1:]
+sys.path.insert(0, os.environ["CLI_CONTRACT_DIR"])
+from cli_contract import validate
+validate(argv)
 with open(calls, "a") as log:
     log.write(json.dumps(argv) + "\n")
 def guest(text):
@@ -56,6 +59,7 @@ if verb == "create":
     counter = os.path.join(root, ".ids")
     n = int(open(counter).read()) + 1 if os.path.exists(counter) else 1
     open(counter, "w").write(str(n))
+    open(os.path.join(root, ".image"), "w").write(opt("--image"))
     print(json.dumps({"id": f"ws-{n}", "status": "running"}))
 elif verb == "exec":
     command = opt("--command")
@@ -84,7 +88,10 @@ elif verb == "cp":
         shutil.copy(source, target)
     print("{}")
 elif verb == "view":
-    print(json.dumps({"id": argv[2], "network": {"mode": os.environ.get("FAKE_MODE", "none"), "allow": []}}))
+    record = {"id": argv[2], "image": {"ref": open(os.path.join(root, ".image")).read(), "digest": "sha256:" + "a" * 64},
+              "network": {"mode": os.environ.get("FAKE_MODE", "none"), "allow": []}}
+    record.update(json.loads(os.environ.get("FAKE_VIEW", "{}")))
+    print(json.dumps({"data": record} if os.environ.get("FAKE_ENVELOPE") else record))
 elif verb == "delete":
     print("{}")
 elif verb == "list":
@@ -124,8 +131,11 @@ def check_up_and_down(env: dict, directory: Path) -> None:
         assert ledger["holders"][up["key"]]["pid"] == holder.pid, "the slot is held in the run script's name"
         create = next(c for c in calls(env) if c[1] == "create")
         for flag, value in (("--image", "swebench/sweb.eval.x86_64.django_1776_django-1:latest"), ("--network", "none"),
-                            ("--idle-timeout", "0"), ("--cpus", "2.0"), ("--name", name), ("--repo", "acme/bench")):
+                            ("--cpus", "2.0"), ("--name", name), ("--repo", "acme/bench")):
             assert create[create.index(flag) + 1] == value, (flag, create)
+        assert "--idle-timeout" not in create, "idle policy is not a create flag"
+        assert up["image"]["digest"] == "sha256:" + "a" * 64 and up["network"] == {"mode": "none", "allow": []}
+        assert all(c[c.index("--user") + 1] == "root" for c in calls(env) if c[1] == "exec")
         assert "--disk" not in create and "--memory" not in create, "plue's defaults unless asked"
         cli(env, "down", up["id"], "--key", up["key"])
         delete = [c for c in calls(env) if c[1] == "delete"]
@@ -141,6 +151,14 @@ def check_network(env: dict) -> None:
     assert plue.observed("none", "open 1.1.1.1/80\n") == "unsealed", "a connection that opens is a breach"
     assert plue.observed("proxy", "") == "unsealed", "the platform's record must say none"
     assert cli(env, "network", "ws-1").stdout.strip() == "none"
+    assert cli({**env, "FAKE_ENVELOPE": "1"}, "network", "ws-1").stdout.strip() == "none"
+    for malformed in ({"image": None}, {"image": {"ref": "image", "digest": "latest"}},
+                      {"network": {"mode": "none"}}, {"network": "none"},
+                      {"network": {"mode": "none", "allow": [1]}}, {"id": "some-other-workspace"}):
+        reply = cli({**env, "FAKE_VIEW": json.dumps(malformed)}, "network", "ws-1", check=False)
+        assert reply.returncode == 125 and "workspace_contract" in reply.stderr, (malformed, reply)
+    assert cli({**env, "FAKE_VIEW": json.dumps({"network": {"mode": "none", "allow": ["example.com"]}})},
+               "network", "ws-1").stdout.strip() == "unsealed"
     shell = {**env, "SWB_TRANSPORT": "plue"}
     sealed = subprocess.run([str(RIG / "lib" / "testbed-network.sh"), "assert", "ws-1", "none"],
                             env=shell, capture_output=True, text=True)
@@ -296,8 +314,8 @@ def check_prompt(directory: Path) -> None:
                             capture_output=True, text=True, check=True).stdout
     sealed = subprocess.run(args, env={**os.environ, "SWB_TRANSPORT": "plue"},
                             capture_output=True, text=True, check=True).stdout
-    assert "macOS host" in docker and "act on this directory directly" in docker
-    assert "macOS host" not in sealed and "There are no file flows" in sealed
+    assert "execution host" in docker and "act on this directory directly" in docker
+    assert "execution host" not in sealed and "There are no file flows" in sealed
     assert 'container: "ws-9", cwd: "/testbed"' in sealed and "The container has no network" in sealed
     for shared in ("./tests/runtests.py", "/opt/miniconda3/envs/testbed/bin/python", "## How to work", "It breaks."):
         assert shared in docker and shared in sealed, shared
@@ -313,11 +331,13 @@ def main() -> None:
         fake.write_text(FAKE_CLI)
         fake.chmod(0o755)
         env = {**os.environ, "SMITHERS_CLI": str(fake), "PLUE_REPO": "acme/bench", "SMITHERS_TOKEN": "t",
+               "BENCH_REMOTE_HOST": "1", "SWB_ARTIFACT_ROOT": str(directory), "SWB_CODEX_CLI": sys.executable,
                "PLUE_SLOTS": "6", "PLUE_SLOT_LEDGER": str(directory / "slots.json"),
-               "PLUE_LEAK_LOG": str(directory / "leaks.log"), "FAKE_ROOT": str(root),
+               "PLUE_LEAK_LOG": str(directory / "leaks.log"),
+               "CLI_CONTRACT_DIR": str(RIG.parent / "harbor" / "fixtures"), "FAKE_ROOT": str(root),
                "FAKE_CALLS": str(directory / "calls.jsonl"), "FAKE_ROWS": str(directory / "rows.json")}
         env.pop("SWB_TRANSPORT", None)
-        for name in ("FAKE_OPEN", "FAKE_MODE"):
+        for name in ("FAKE_OPEN", "FAKE_MODE", "FAKE_VIEW", "FAKE_ENVELOPE"):
             env.pop(name, None)
         check_up_and_down(env, directory)
         check_network(env)

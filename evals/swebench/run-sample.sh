@@ -21,6 +21,8 @@
 # comparable across a wave but not directly against a sequential baseline.
 set -u
 S="$(cd "$(dirname "$0")" && pwd)"
+source "$S/lib/remote.sh"
+swb_remote_required || exit $?
 HARNESS="${1:-flows}"
 COUNT="${2:-5}"
 BUDGET="${3:-}"
@@ -66,7 +68,7 @@ run_one() {
   if [ "$HARNESS" = "codex" ]; then
     "$S/run-instance-codex.sh" "$ID" ${BUDGET:+"$BUDGET"}
   else
-    "$S/run-instance.sh" "$ID" "${SWB_SEAT:-openai:gpt-6-sol}" ${BUDGET:+"$BUDGET"}
+    "$S/run-instance.sh" "$ID" "${SWB_SEAT:-openai:gpt-6.1-sol}" ${BUDGET:+"$BUDGET"}
   fi
 }
 

@@ -8,7 +8,7 @@ Configuration (environment variables of the harness host):
 
     SMITHERS_TOKEN   personal access token of a normal account (CLI auth)
     PLUE_REPO        owner/name of the repository workspaces are created in
-    SMITHERS_CLI     path to the smithers binary (default: "smithers" on PATH)
+    SMITHERS_CLI     required path to the Smithers CLI executable
     PLUE_WAIT_SEC    workspace boot wait (default 900)
     PLUE_CAPACITY_WAIT_SEC  how long a create waits for a slot (cluster
                      capacity or the plan's concurrent-workspace cap) before
@@ -92,9 +92,10 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 try:
-    from . import image_config, outcome, workspace_ownership
+    from . import codex_install, image_config, outcome, workspace_ownership
 except ImportError:  # run as a top-level module (fixtures)
     import image_config  # type: ignore[no-redef]
+    import codex_install  # type: ignore[no-redef]
     import outcome  # type: ignore[no-redef]
     import workspace_ownership  # type: ignore[no-redef]
 
@@ -381,6 +382,18 @@ class SlotLedger:
                    int(os.environ.get("PLUE_HOSTS", "0") or 0), float(os.environ.get("PLUE_HOST_CPUS", "0") or 0))
 
 
+
+def workspace_network(task_config, policy=None, *, stock_codex=False) -> str:
+    """Only none/proxy exist; Codex needs proxy for its in-guest model calls."""
+    if stock_codex:
+        return "proxy"
+    requested = getattr(policy, "network_mode", None)
+    requested = getattr(requested, "value", requested)
+    if requested not in (None, "no-network", "public") or getattr(policy, "allowed_hosts", None):
+        raise PlueUnplaceable("workspace egress supports only none or proxy", "network")
+    internet = requested == "public" if requested is not None else bool(getattr(task_config, "allow_internet", False))
+    return "proxy" if internet else "none"
+
 def install_untimed_reserve(trial_cls) -> None:
     """Make Harbor await `environment.reserve()` before its timed start.
 
@@ -394,7 +407,11 @@ def install_untimed_reserve(trial_cls) -> None:
         return
 
     async def _start_agent_environment(self) -> None:
-        reserve = getattr(self.agent_environment, "reserve", None)
+        environment = self.agent_environment
+        if isinstance(environment, _PlueOps):
+            name = getattr(getattr(self, "agent", None), "name", None)
+            environment._plue_stock_codex = callable(name) and name() == "codex"
+        reserve = getattr(environment, "reserve", None)
         if reserve is not None:
             await reserve()
         await original(self)
@@ -651,7 +668,7 @@ class _PlueOps:
 
     Subclasses provide: self.environment_dir, self.session_id,
     self.task_env_config (docker_image, cpus, memory_mb, storage_mb, workdir),
-    self.logger, self._plue_network() -> (mode, allow), and a result factory
+    self.logger, self._plue_network() -> none|proxy, and a result factory
     `_exec_result(stdout, stderr, return_code)`.
     """
 
@@ -666,7 +683,10 @@ class _PlueOps:
 
     @staticmethod
     def _cli() -> str:
-        return os.environ.get("SMITHERS_CLI", "smithers")
+        configured = os.environ.get("SMITHERS_CLI", "").strip()
+        if not configured:
+            raise PlueError("SMITHERS_CLI is required for a benchmark workspace", "cli_unavailable")
+        return configured
 
     @staticmethod
     def _repo() -> str:
@@ -856,14 +876,15 @@ class _PlueOps:
         except (OSError, ValueError) as error:
             raise PlueError(f"cannot read workspace ownership ledger: {error}", "ownership_unavailable") from error
         cfg = self.task_env_config
-        mode, allow = self._plue_network()
+        mode = self._plue_network()
+        if mode not in ("none", "proxy"):
+            raise PlueUnplaceable(f"unsupported workspace network mode: {mode}", "network")
         args = [
             "workspace", "create",
             "--repo", self._repo(),
             "--name", _sanitize_name(self.session_id),
             "--image", self._plue_image,
             "--network", mode,
-            "--idle-timeout", "0",
             "--format", "json",
         ]
         if getattr(cfg, "cpus", None):
@@ -871,9 +892,7 @@ class _PlueOps:
         if getattr(cfg, "memory_mb", None):
             args += ["--memory", str(cfg.memory_mb)]
         if getattr(cfg, "storage_mb", None):
-            args += ["--disk", str(cfg.storage_mb)]
-        for host in allow:
-            args += ["--allow", host]
+            args += ["--disk", str(math.ceil(float(cfg.storage_mb) / 1024))]
         capacity_deadline = asyncio.get_event_loop().time() + float(os.environ.get("PLUE_CAPACITY_WAIT_SEC", _DEFAULT_CAPACITY_WAIT_SEC))
         while True:
             try:
@@ -922,6 +941,9 @@ class _PlueOps:
                 raise PlueError("invalid workspace view while waiting for boot") from error
             if data.get("status") not in ("running", "failed", "error", "stopped", "suspended", "deleted"):
                 await asyncio.sleep(min(2, max(0, deadline - asyncio.get_event_loop().time())))
+        # Keep admission/view receipts, never infer a digest from a mutable tag.
+        self._plue_image_receipt = data.get("image")
+        self._plue_network_receipt = data.get("network")
 
     async def _plue_stop(self, *, handoff: bool = True) -> None:
         """Delete the workspace and free the slot. Never raises: a workspace
@@ -1197,20 +1219,11 @@ def _harbor_classes():
 
         @property
         def capabilities(self) -> EnvironmentCapabilities:
-            return EnvironmentCapabilities(
-                disable_internet=True,
-                network_allowlist=True,
-                network_allowlist_hostnames=True,
-                network_allowlist_wildcard_hostnames=True,
-            )
+            return EnvironmentCapabilities(disable_internet=True)
 
-        def _plue_network(self) -> tuple[str, list[str]]:
-            policy = self.network_policy
-            if policy.network_mode == NetworkMode.NO_NETWORK:
-                return "none", []
-            if policy.network_mode == NetworkMode.ALLOWLIST:
-                return "allowlist", list(policy.allowed_hosts)
-            return "proxy", []
+        def _plue_network(self) -> str:
+            return workspace_network(self.task_env_config, self.network_policy,
+                                     stock_codex=getattr(self, "_plue_stock_codex", False))
 
         @contained
         async def reserve(self) -> None:
@@ -1275,19 +1288,43 @@ def _pier_classes():
 
         @property
         def capabilities(self) -> EnvironmentCapabilities:
-            return EnvironmentCapabilities(disable_internet=True, filtered_egress=True)
+            return EnvironmentCapabilities(disable_internet=True, preinstall_agents=True)
 
-        def _plue_network(self) -> tuple[str, list[str]]:
-            allow = [d.lstrip(".") if not d.startswith(".") else "*" + d for d in self.network_allowlist.domains]
-            if getattr(self.task_env_config, "allow_internet", False):
-                return "proxy", []
-            if allow:
-                return "allowlist", allow
-            return "none", []
+        def _plue_network(self) -> str:
+            spec = self.agent_install_spec
+            return workspace_network(self.task_env_config,
+                                     stock_codex=spec is not None and spec.agent_name == "codex")
 
         @contained
         async def start(self, force_build: bool) -> None:
             await self._plue_start()
+            spec = self.agent_install_spec
+            if spec is not None:
+                if spec.agent_name != "codex" or spec.version != codex_install.VERSION:
+                    raise PlueUnplaceable("Cloud preinstall supports only Codex 0.160.0", "agent_preinstall")
+                # Pier's stock installer uses apt/npm/nvm. Stage its exact
+                # platform binaries on the host instead. The guest uses proxy
+                # egress for inference; Codex's own sandbox seals shell tools.
+                arch, stderr, code = await self._plue_exec("uname -m", user="root", timeout_sec=60)
+                if code != 0:
+                    raise PlueError(f"cannot identify Codex guest architecture: {stderr}", "agent_preinstall")
+                with tempfile.TemporaryDirectory(prefix="smithers-codex-install-") as directory:
+                    staged = await asyncio.to_thread(codex_install.stage, Path(directory), arch.strip())
+                    prefix = "/opt/smithers-codex"
+                    _, stderr, code = await self._plue_exec(f"mkdir -p {prefix}/bin", user="root", timeout_sec=60)
+                    if code != 0:
+                        raise PlueError(f"cannot stage Codex binaries: {stderr}", "agent_preinstall")
+                    for name in ("codex", "rg"):
+                        await self._plue_upload(staged[name], f"{prefix}/bin/{name}")
+                    wrapper = Path(directory) / "launcher"
+                    wrapper.write_text(f'#!/bin/sh\nexport PATH={prefix}/bin:$PATH\nexec {prefix}/bin/codex "$@"\n')
+                    await self._plue_upload(str(wrapper), "/usr/local/bin/codex")
+                    stdout, stderr, code = await self._plue_exec(
+                        f"chmod 755 {prefix}/bin/codex {prefix}/bin/rg /usr/local/bin/codex; codex --version",
+                        user="root", timeout_sec=60)
+                    if code != 0 or stdout.strip() != f"codex-cli {codex_install.VERSION}":
+                        raise PlueError(f"Codex preinstall verification failed: {stdout} {stderr}", "agent_preinstall")
+                    self._plue_agent_install_receipt = {key: staged[key] for key in ("version", "integrity", "package")}
 
         async def stop(self, delete: bool):
             await self._plue_stop()  # never raises

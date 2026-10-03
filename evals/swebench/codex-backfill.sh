@@ -141,7 +141,7 @@ SWB_CODEX_NETWORK="${SWB_CODEX_NETWORK:-$LANE_NETWORK}"
 SWB_CODEX_EFFORT="${SWB_CODEX_EFFORT:-$LANE_EFFORT}"
 SWB_TESTBED_NETWORK="${SWB_TESTBED_NETWORK:-$LANE_TESTBED}"
 export SWB_CODEX_NETWORK SWB_CODEX_EFFORT SWB_TESTBED_NETWORK
-MODEL="${SWB_CODEX_MODEL:-gpt-6-sol}"
+MODEL="${SWB_CODEX_MODEL:-gpt-6.1-sol}"
 MODEL_NAME="${SWB_MODEL_NAME:-codex-cli}"
 # The same per-instance budget the flows side was given by the full benchmark.
 # A baseline run under a different clock is not a baseline.
@@ -211,25 +211,27 @@ check_auth() {
     "$SWB_CODEX_AUTH_CMD" >/dev/null 2>&1
     return $?
   fi
-  swb_codex_auth
+  swb_codex_version && swb_codex_auth --check
 }
 
 require_auth() {
+  if [ -z "${SWB_CODEX_RUN_CMD:-}" ]; then
+    source "$S/lib/remote.sh"
+    swb_remote_required || exit $?
+  fi
+
   if check_auth; then
-    log backfill "codex auth ok (${SWB_CODEX_AUTH:-api-key}, ${CODEX_HOME:-stubbed check})"
+    log backfill "codex auth ok (${SWB_CODEX_AUTH:-chatgpt}, ${CODEX_HOME:-stubbed check})"
     return 0
   fi
-  echo "codex-backfill.sh: the requested Codex auth is unavailable (${SWB_CODEX_AUTH:-api-key}, home ${SWB_CODEX_HOME:-${CODEX_HOME:-default}})" >&2
+  echo "codex-backfill.sh: the requested Codex auth is unavailable (${SWB_CODEX_AUTH:-chatgpt}, home ${SWB_CODEX_HOME:-${CODEX_HOME:-default}})" >&2
   exit 1
 }
 
-# The `net` lane runs codex with SWB_CODEX_NETWORK=on, which the runner refuses
-# without SWB_CODEX_UNCONFINED=allowed (GHSA-6gr2-7qgm-27qh). Checked once up
-# front for the same reason as auth; a stub run command starts no codex.
+# Historical network-on lanes remain readable, but stock execution refuses them.
 require_network_opt_in() {
-  if [ "$SWB_CODEX_NETWORK" = "on" ] && [ -z "${SWB_CODEX_RUN_CMD:-}" ] \
-    && [ "${SWB_CODEX_UNCONFINED:-}" != "allowed" ]; then
-    echo "codex-backfill.sh: lane $LANE runs codex unconfined with network on; set SWB_CODEX_UNCONFINED=allowed to opt in" >&2
+  if [ "$SWB_CODEX_NETWORK" = "on" ] && [ -z "${SWB_CODEX_RUN_CMD:-}" ]; then
+    echo "codex-backfill.sh: stock Codex requires workspace-write with spawned network disabled; the historical network-on lane cannot run" >&2
     exit 2
   fi
 }

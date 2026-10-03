@@ -26,6 +26,11 @@ if (testCommand === undefined || testCommand.trim() === "") {
   console.error("write-flow.mjs: no test command given; see lib/test-command.py")
   process.exit(1)
 }
+const effort = process.env.SWB_FLOWS_EFFORT ?? "max"
+if (!["minimal", "low", "medium", "high", "xhigh", "max"].includes(effort)) {
+  console.error(`write-flow.mjs: invalid SWB_FLOWS_EFFORT ${effort}`)
+  process.exit(2)
+}
 const transport = process.env.SWB_TRANSPORT ?? "docker"
 if (transport !== "docker" && transport !== "plue") {
   console.error(`write-flow.mjs: SWB_TRANSPORT must be docker or plue, got ${transport}`)
@@ -48,7 +53,7 @@ const interpreterBullet = interpreter === undefined || interpreter.trim() === ""
   \`python\` or \`python3\` resolves to a different one, and importing the
   project with it fails.`
 
-const dockerEnvironment = `Your \`bash\` flow runs on a macOS host with BSD userland. The repository's own
+const dockerEnvironment = `Your \`bash\` flow runs on a execution host. The repository's own
 Linux environment and Python interpreter are in a container that has this exact
 directory mounted at /testbed, so a file you change here changes there
 immediately, and vice versa.
@@ -63,7 +68,7 @@ immediately, and vice versa.
   reaches the interpreter on standard input as data, so nothing quotes it,
   escapes it, or terminates it with a heredoc marker.
   GNU grep, GNU sed, and the project's dependencies are all available there.
-  \`sed -i\` on the host is BSD sed and will not behave like GNU sed; run it
+  Host tools may differ from the container’s GNU tools; run project commands
   in the container, or avoid it.${interpreterBullet}
 - This repository runs its tests with \`${testCommand}\`, which takes the test
   paths to run as trailing arguments. It is the runner this project actually
@@ -116,6 +121,7 @@ const rootLine = transport === "plue"
 const body = `---
 description: Resolve a reported issue in this repository.
 model: ${seat}
+effort: ${effort}
 ---
 You are working in a checkout of ${instance.repo} at commit ${instance.base_commit}.
 ${rootLine}

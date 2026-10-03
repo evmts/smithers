@@ -56,6 +56,8 @@
 # benchmark measuring something — so it is a success here.
 set -u
 S="$(cd "$(dirname "$0")/.." && pwd)"
+source "$S/lib/remote.sh"
+swb_remote_required || exit $?
 ID="${1:-}"
 FB="${FB_DIR:-$S/fullbench}"
 INDEX="${SWB_FULLBENCH_INDEX:-r90}"
@@ -68,7 +70,7 @@ MIN_FREE_MIB="${SWB_FULLBENCH_MIN_FREE_MIB:-8192}"
 DISK_WAIT_MAX="${SWB_FULLBENCH_DISK_WAIT_MAX:-3600}"
 DISK_INTERVAL="${SWB_FULLBENCH_DISK_INTERVAL:-60}"
 PINNED="${SWB_FULLBENCH_PINNED:-}"
-SEAT="${SWB_SEAT:-openai:gpt-6-sol}"
+SEAT="${SWB_SEAT:-openai:gpt-6.1-sol}"
 BUDGET="${SWB_FULLBENCH_BUDGET:-1200}"
 MODEL="${SWB_MODEL_NAME:-flows-cell-harness}"
 DATASET="${SWB_DATASET:-$S/swb-verified.json}"

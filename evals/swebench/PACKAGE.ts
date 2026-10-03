@@ -69,6 +69,9 @@ const fixtureInputs = [
   Smithers.glob("//evals/swebench/baseline/**"),
   // lib/plue.py drives Smithers Cloud through the Harbor adapter's seam.
   Smithers.glob("//evals/harbor/*.py"),
+  Smithers.file("//evals/harbor/fixtures/cli_contract.py"),
+  Smithers.file("//packages/smithers/src/internal/backend/Definitions.ts"),
+  Smithers.file("//packages/smithers/src/cli/Argv.ts"),
   Smithers.ImportClosure({
     entries: [
       Smithers.glob("*.ts"),

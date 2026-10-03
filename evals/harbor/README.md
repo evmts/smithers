@@ -10,9 +10,9 @@ seam the SWE-bench rig uses (`packages/smithers/agent/std/src/Container.ts`).
 The model is called from the host, so the container keeps the task's
 `no-network` seal.
 
-This is an **operator-run** benchmark. It spends a model seat, needs docker and
-the task images, and is not a CI gate. `./verify.sh` is the offline check of the
-adapter's own logic and is the only thing here CI runs.
+This is an **operator-run** benchmark. Run trials only on the remote Mac mini
+over SSH or on Smithers Cloud, never on the operator's laptop. `./verify.sh`
+checks the adapter offline, without a model, Docker, or task images.
 
 ## Layout
 
@@ -23,8 +23,8 @@ adapter's own logic and is the only thing here CI runs.
 | `outcome.py`              | Which finished trials are scored (graded, agent outcome) and which are infra, re-run                              |
 | `health.py`, `requeue.py` | Mid-run health rule; move infra trials aside for `harbor jobs resume`                                             |
 | `plue_docker.py`          | The `docker` the harness calls on Smithers Cloud: `exec` becomes `smithers workspace exec`                        |
-| `accounts.py`             | Round-robin over every logged-in Codex subscription, one per trial                                                |
-| `codex_pool.py`           | Harbor's stock Codex CLI agent drawing its `auth.json` from that pool                                             |
+| `accounts.py`             | Allowlisted Codex subscriptions, one per trial                                                |
+| `codex_pool.py`           | Harbor/Pier stock Codex CLI agent with per-trial accounts and session token metering                                             |
 | `prompt.md`               | The one flow file every task runs; the instruction is pasted verbatim                                             |
 | `audit_host_calls.py`     | Per-trial audit of `bash` calls that ran on the host, not the task container: clean / host-calls-benign / TAINTED |
 | `report.py`               | The publishable paired report of two finished jobs; refuses an unsealed, unfinished or under-50-task run          |
@@ -33,8 +33,10 @@ adapter's own logic and is the only thing here CI runs.
 
 ## Prerequisites
 
-1. Build the CLI: `pnpm --filter @smthrs/cli build`. The adapter refuses to
-   run against `src/bin.ts`, for the reason `evals/swebench/flows.sh` gives.
+1. Install the current checkout dependencies with the shared pnpm store.
+   `packages/smithers/bin/smithers.mjs` intentionally runs `src/bin.ts` in a
+   checkout. The adapter uses `flow plan`, `approvals approve`, and
+   `flow execute --format json`, without the hidden legacy aliases.
 2. Build the atomic filesystem helper the CLI shells out to:
    `cargo build --release -p smithers-ffi --bin smithers-jj-export`
    (cargo uses the toolchain `rust-toolchain.toml` pins). The CLI
@@ -57,17 +59,45 @@ Terminal-Bench 4.0, two tasks, one attempt each, one at a time:
 cd <checkout>
 PYTHONPATH=$PWD harbor run -d terminal-bench/terminal-bench@4.0.0 \
   -i terminal-bench/wal-recovery-ordering -i terminal-bench/sound-change-cascade \
-  -a evals.harbor.smithers_agent:SmithersAgent -m openai/gpt-6-sol \
-  -k 1 -n 1 -o "$PWD/evals/harbor/jobs" --job-name smithers-smoke -y
+  -a evals.harbor.smithers_agent:SmithersAgent -m openai/gpt-6.1-sol \
+  -k 1 -n 1 -o "$BENCH_JOBS" --job-name smithers-smoke -y
 ```
 
-The oracle arm proves the sandbox and the verifier (`--agent oracle`); the
-stock Codex CLI arm is `-a codex -m openai/gpt-6-sol` with
-`--ae CODEX_FORCE_AUTH_JSON=1` to use the ChatGPT login instead of an API key.
+The oracle arm proves the sandbox and verifier (`--agent oracle`). The
+stock arm is `-a evals.harbor.codex_pool:PooledCodex -m openai/gpt-6.1-sol
+--ak version=0.160.0 --ak reasoning_effort=max`. Both adapters default to
+`openai/gpt-6.1-sol` at effort `max`. Codex 0.160.0 is pinned to keep CLI
+behavior, session events, and tool configuration reproducible across arms;
+older versions require a separately documented historical comparison.
 Every task runs at `effort: max` (`prompt.md`), the top of the OpenAI scale
 and what the Terminal-Bench leaderboard's Codex entries ran at; the journal's
 `model-requested` params say which effort each call was really made at and
 `smithers-run.json` folds them into `run.efforts`.
+
+### Current environment
+
+Set these variables on the machine running the harness. Paths belong to that
+machine; the CLI may be an executable or the current checkout's `.mjs` shim:
+
+```sh
+export SMITHERS_ROOT="/path/to/smithers-bench-l2"
+export SMITHERS_CLI="$SMITHERS_ROOT/packages/smithers/bin/smithers.mjs"
+export SMITHERS_CODEX_ACCOUNTS_DIR=/absolute/path/to/accounts
+export SMITHERS_CODEX_POOL_STATE=/absolute/path/to/pool.json
+export PYTHONPATH="$SMITHERS_ROOT"
+export SMITHERS_OPENAI_AUTH=chatgpt
+export SMITHERS_CODEX_POOL=codex-1,codex-3,codex-acct-1
+export RR_POOL=benchmark
+export PLUE_REPO=smithersai/smithers
+export BENCH_JOBS=/absolute/path/outside/any/repository/jobs
+```
+
+Use the existing configured Cloud token for `https://api.jjhub.tech`, and
+provide `AI_GATEWAY_API_KEY` for Jev. Do not place secrets in job metadata.
+The accounts directory contains the allowed labels, each with its existing
+`auth.json`. Both arms lease from it; inherited `CODEX_HOME` does not select a
+benchmark account. Keep the jobs directory outside every repository. The
+orchestrator runs the smoke trial remotely and retains its completion receipts.
 
 ### On Smithers Cloud
 
@@ -89,6 +119,15 @@ CLI's credential never reaches the task container.
 `plue_docker.shim_config` and `shim_directory` write both; the SWE-bench rig's
 plue transport (`evals/swebench/lib/plue.py`, `SWB_TRANSPORT=plue`) runs its
 agent through the same shim and its workspaces through `plue_env`.
+
+Workspace creation uses `--image`, `--network none|proxy`, vCPU and MiB memory,
+and **GiB disk rounded up from the task's
+MiB request** (10,240 MiB becomes 10 GiB; 10,241 becomes 11). It sends no
+idle-timeout. Commands retain `--user root`; copying retains root too.
+Workspace view must return `image: {ref, digest}` and `network: {mode, allow}`.
+The strict fake CLI reads flag declarations directly from `Definitions.ts`;
+its gate fails while the real CLI lacks a required flag. It proves argv and
+response handling, without claiming a Cloud allocation.
 
 Waiting for capacity is not building the environment, so it happens before
 Harbor's environment-start timer: importing `PlueEnvironment` makes Harbor
@@ -122,12 +161,15 @@ not delete goes to `PLUE_LEAK_LOG`. A task that needs a GPU, more than
 is one guest with no network to other workspaces, and running a sidecar in
 it would hand the agent the sidecar's files.
 
-Both arms draw one Codex login per trial from `accounts.py`: `~/.codex`
-(label `default`) and `~/.smithers/accounts/codex-*` in round robin, state in
-`SMITHERS_CODEX_POOL_STATE` shared across runner processes. The label is
+Both arms lease one Codex login per trial from `accounts.py`. Set
+`SMITHERS_CODEX_POOL=codex-1,codex-3,codex-acct-1`; an empty or unavailable
+allowlist pauses the pool and never falls back to `~/.codex` or another account.
+`SMITHERS_CODEX_POOL_STATE` shares round-robin state across runner processes.
+The SWE-bench driver uses the same pool once per instance. Benchmarks must
+never spend codex-2, codex-4, or codex-5. The label is
 recorded per trial (`smithers-run.json` `account`, `codex-account.json` for
 the stock arm). The stock arm is
-`-a evals.harbor.codex_pool:PooledCodex --ak version=0.155.1 --ak reasoning_effort=max`.
+`-a evals.harbor.codex_pool:PooledCodex --ak version=0.160.0 --ak reasoning_effort=max`.
 
 **An infrastructure failure is never a score.** Both agents apply one policy:
 
@@ -187,8 +229,40 @@ harbor dataset download datacurve/deep-swe-1-1 -o <deep-swe>
 PYTHONPATH=$PWD pier run -p <deep-swe>/deep-swe-1-1/<task> \
   --environment-import-path evals.harbor.plue_env:PluePierEnvironment \
   --agent-import-path evals.harbor.smithers_agent:SmithersAgent \
-  -m openai/gpt-6-sol -k 1 -n 1 -o "$PWD/evals/harbor/jobs"
+  -m openai/gpt-6.1-sol -k 1 -n 1 -o "$BENCH_JOBS"
 ```
+
+The DeepSWE stock arm uses
+`--agent-import-path evals.harbor.codex_pool:PooledCodex` with the same model,
+version, and effort. `PluePierEnvironment` stages the pinned official Linux
+Codex and ripgrep binaries on the host, verifies the npm SHA-512 integrity,
+uploads them, and checks `codex --version` before agent setup. It does not
+run apt, npm, or nvm against the task network.
+
+Codex's workspace uses `network proxy` for its model connection. Codex 0.160.0's
+subscription route uses `chatgpt.com/backend-api/codex`, and OAuth refresh uses
+`auth.openai.com`. The pinned upstream sources are
+[model-provider-info](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/model-provider-info/src/lib.rs)
+and [auth manager](https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/login/src/auth/manager.rs).
+Optional telemetry, update checks, and server-side web search must be disabled;
+[OpenAI's configuration reference](https://developers.openai.com/codex/config-reference/)
+documents these controls. Workspace proxy policy is not a provider allowlist.
+The stock arm seals spawned commands using `--sandbox workspace-write` with
+`sandbox_workspace_write.network_access=false`. Its prompt requires a
+`curl https://example.com` shell-tool probe. Results record
+`benchmark_seal.sealed_by: codex-sandbox` and the completed tool's denied-connect
+receipt. Without that receipt, or when the guest kernel cannot enforce the
+sandbox, `sealed` is false and publication refuses the arm. The remote smoke
+must establish this behavior; offline fixtures do not prove guest enforcement.
+
+The Smithers arm records `benchmark_seal` in `result.json`: no web or network
+tool, only bash and the wait/ask lifecycle flows, commands confined to its task
+container, and the observed workspace image/network receipt. Inherited remote
+and MCP settings are removed, the source host's server-tool configuration is
+checked before the first call, and journaled tools are checked afterwards.
+A task with no Internet permission requires `network none`; a task permitting
+Internet uses `proxy`. Task-specific allowlists are unsupported and refused.
+Publication requires the tool seal and a clean host-call audit.
 
 DeepSWE grades `git diff <base>..HEAD`, so under Pier the prompt tells the
 model to commit and the adapter commits whatever is left afterwards
@@ -201,15 +275,18 @@ Under the trial's `agent/` directory:
 | File                | Contents                                                                                                                       |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `smithers-run.json` | seat, auth mode, route bindings off the journal, harness revision, subject fingerprint, wall clock, tokens, exit status, phase |
+| `codex-account.json` | stock CLI version/model/account, cumulative session token counts, first/last primary usage percent and reset time |
 | `trajectory.json`   | ATIF-v1.8 trajectory folded from the harness journal; Harbor reads the token totals off it                                     |
 | `smithers-run.log`  | the CLI's stdout and stderr                                                                                                    |
 | `workspace/`        | the flow file and `.flows/engine.db`, the journal itself                                                                       |
 
-Runs on the ChatGPT subscription are subscription-billed: `cost_usd` is left
-unset rather than priced. `evals/swebench/prices.ts` carries the API list
-price for `gpt-6-sol` ($2 in, $0.20 cached, $10 out per 1M tokens, standard
-tier, short context) for the api-key arm; quote it against a subscription run
-only as what the tokens would have cost.
+Runs on ChatGPT are subscription-billed, so `cost_usd` stays unset.
+`report.py` prices both arms as API-equivalent estimates from the same generated
+rate card as the harness: `gpt-6.1-sol` is $2 input, $0.20 cached input, and
+$10 output per million tokens at the short-context tier. Requests at 272,000
+input tokens use the committed long-context rates. Cached input is part of
+input and reasoning is part of output; neither is counted twice. Without
+retained request usage the report labels aggregate pricing as an estimate.
 
 ## What the smoke showed, and what is not yet right
 

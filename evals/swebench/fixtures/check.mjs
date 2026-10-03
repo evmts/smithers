@@ -20,7 +20,7 @@ import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
 import { jevCaller, jevCellQuestionsOf, jevUsageOf } from "../jev-usage.ts"
 import { readCost } from "../lib/run-cost.mjs"
-import { jevModel, usd } from "../prices.ts"
+import { jevModel, prices, usd } from "../prices.ts"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const mode = process.argv[2]
@@ -30,6 +30,41 @@ const failures = []
 const check = (label, actual, expected) => {
   if (actual !== expected) failures.push(`${label}: expected ${expected}, got ${actual}`)
 }
+
+// Both arm spellings and the gateway spelling must price the same current
+// model, including cached input, cache writes and the long-context boundary.
+for (const model of ["gpt-6.1-sol", "openai:gpt-6.1-sol", "openai/gpt-6.1-sol"]) {
+  check(`${model} committed price alias`, prices[model], prices["gpt-6.1-sol"])
+  check(
+    `${model} standard token bill`,
+    usd(model, {
+      inputTokens: 100_000,
+      cachedInputTokens: 40_000,
+      cacheWriteTokens: 20_000,
+      outputTokens: 10_000
+    }).usd,
+    0.278
+  )
+  check(
+    `${model} long-context boundary`,
+    usd(model, {
+      inputTokens: 252_000,
+      cachedInputTokens: 40_000,
+      cacheWriteTokens: 20_000,
+      outputTokens: 10_000
+    }).usd,
+    1.114
+  )
+}
+check(
+  "unknown model cannot borrow current price",
+  usd("openai/gpt-6.1-sol-unknown", {
+    inputTokens: 100_000,
+    cachedInputTokens: 0,
+    outputTokens: 10_000
+  }).usd,
+  undefined
+)
 
 // ---------------------------------------------------------------------------
 // Jev, split by caller

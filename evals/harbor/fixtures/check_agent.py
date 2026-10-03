@@ -31,6 +31,7 @@ import os
 import sqlite3
 import sys
 import tempfile
+from cli_contract import write_fake_cli
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -287,7 +288,7 @@ def check_shim_reaches_cli(root: Path) -> None:
     import subprocess
     fake = root / "plue"
     record = root / "argv.json"
-    fake.write_text("#!/usr/bin/env python3\nimport json, os, sys\n"
+    write_fake_cli(fake, "#!/usr/bin/env python3\nimport json, os, sys\n"
                     f"open({str(record)!r}, 'w').write(json.dumps({{'argv': sys.argv[1:], "
                     "'token': os.environ.get('SMITHERS_TOKEN'), 'xdg': os.environ.get('XDG_CONFIG_HOME')}))\n"
                     "print(json.dumps({'data': {'exit_code': 0, 'stdout': 'reached\\n', 'stderr': ''}}))\n")
@@ -620,7 +621,7 @@ def check_plue_env() -> None:
         # A fake CLI: `exec` prints the gateway's transport error, or a
         # plain failing command, as the CLI's JSON envelope.
         cli = Path(directory) / "smithers"
-        cli.write_text("#!/bin/sh\n"
+        write_fake_cli(cli, "#!/bin/sh\n"
                        "case \"$*\" in\n"
                        "  *lost*) printf '%s' '{\"data\":{\"stdout\":\"partial\",\"stderr\":\"ERROR: workspace SSH session failed\\n\",\"exit_code\":1}}'; exit 1;;\n"
                        "  *) printf '%s' '{\"data\":{\"stdout\":\"\",\"stderr\":\"grep: no match\\n\",\"exit_code\":1}}'; exit 1;;\n"
