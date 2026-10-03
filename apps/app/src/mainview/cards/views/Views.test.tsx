@@ -1566,8 +1566,8 @@ test("File live save states and recovery bind supplied actions", () => {
   expect(host.querySelector('.code-recovery button')!.textContent).toBe('Copy')
 })
 import { authorRanges, coEditing } from "./CoEditing"
-import { EditorState } from "@codemirror/state"
-import { EditorView } from "@codemirror/view"
+import { EditorState } from "@smthrs/ui/adapters/code-editor"
+import { EditorView } from "@smthrs/ui/adapters/code-editor"
 test("File binding renders author ranges and combined person/agent flags", () => {
   const host = document.createElement('div')
   document.body.append(host)
@@ -1578,4 +1578,20 @@ test("File binding renders author ranges and combined person/agent flags", () =>
   expect(host.querySelector('.code-name-flag')!.getAttribute('title')).toBe('Ben, Claude Code for Ben')
   expect(host.querySelector('.cm-ySelection')).toBeNull()
   editor.destroy()
+})
+test("File live binding keeps typing through save and presence projections", () => {
+  const edits: string[] = []
+  const binding = { extensions: [EditorView.updateListener.of(update => { if (update.docChanged) edits.push(update.state.doc.toString()) })] }
+  const host = render(<CodeEditorView {...files.saved} binding={binding} onAction={() => {}} onView={() => {}} />)
+  const dom = host.querySelector<HTMLElement>('.cm-editor')!
+  const editor = EditorView.findFromDOM(dom)!
+  expect(host.querySelector('.cm-content')!.getAttribute('aria-readonly')).toBe('false')
+  act(() => editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: 'const typed = true' } }))
+  act(() => root!.render(<CodeEditorView {...files.live} binding={binding} onAction={() => {}} onView={() => {}} />))
+  expect(host.querySelector('.cm-editor')).toBe(dom)
+  expect(editor.state.doc.toString()).toBe('const typed = true')
+  expect(edits).toEqual(['const typed = true'])
+  act(() => root!.render(<CodeEditorView {...files.text} binding={binding} onAction={() => {}} onView={() => {}} />))
+  expect(host.querySelector('.cm-content')!.getAttribute('aria-readonly')).toBe('true')
+  expect(editor.state.doc.toString()).toBe('export default Flow.make("todo", { description: "Complete one TODO" })\n')
 })

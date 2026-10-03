@@ -1,5 +1,5 @@
-import { Facet, type Extension } from "@codemirror/state"
-import { Decoration, EditorView, GutterMarker, gutter } from "@codemirror/view"
+import { Facet, Prec, type Extension } from "@smthrs/ui/adapters/code-editor"
+import { Decoration, EditorView, GutterMarker, gutter } from "@smthrs/ui/adapters/code-editor"
 import type { Actor } from "@smthrs/rpc/CardPrimitives"
 import type { AuthorRange, FileCard } from "@smthrs/rpc/FileCard"
 import { actorName } from "./actorName"
@@ -35,10 +35,10 @@ export function coEditing(model: Pick<FileCard, "authors" | "editors">): Extensi
       const from = Math.max(0, range.from), to = Math.min(state.doc.length, range.to)
       return actor && from < to ? [Decoration.mark({ class: "code-author-range", attributes: { style: `--who: ${colour(actor)}`, title: actorName(actor) } }).range(from, to)] : []
     }), true)),
-    gutter({ class: "code-name-gutter", lineMarker: (view, line) => {
+    Prec.high(gutter({ class: "code-name-gutter", lineMarker: (view, line) => {
       const number = view.state.doc.lineAt(line.from).number
       const actors = model.editors.filter(editor => editor.line === number).map(editor => editor.actor)
       return actors.length ? new NameFlag(actors) : null
-    } }),
+    } })),
   ]
 }

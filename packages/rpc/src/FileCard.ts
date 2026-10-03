@@ -123,6 +123,7 @@ export type FileCardCallbacks = CardCallbacks<
   | "diff"
   | "file.restore"
   | "file.compare"
+  | "file.reapply"
   | "file.restore-deleted"
   | "file.follow-rename"
   | "code.hover"

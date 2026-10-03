@@ -148,3 +148,7 @@ export function CodeEditorView<Tag extends string>(props: CodeEditorViewProps<Ta
   }, [props.reveal?.line, props.reveal?.col, props.reveal?.to_line])
   return <div className="code-editor" ref={host} data-flow={props.gestures?.hover?.tag} data-definition-flow={props.gestures?.definition?.tag} />
 }
+
+// The app composes design extensions through the restored editor dependency boundary.
+export { Facet, Prec, EditorState, type Extension } from "@codemirror/state"
+export { Decoration, EditorView, GutterMarker, gutter } from "@codemirror/view"

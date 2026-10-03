@@ -3184,7 +3184,7 @@ from main down to the last item. */
 /* CodeEditorView (T-UI-19): live authors, flags and save recovery. */
 .code-file-view .smithers-card-header { flex-wrap: wrap; }
 .code-file-view .code-live-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
-.code-file-view .code-saved { font-size: var(--fs-caption); color: var(--text-muted); }
+.code-file-view .code-saved { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-caption); color: var(--text-muted); }
 .code-file-view .code-saved[data-saving] { color: var(--brand); }
 .code-file-view .code-name-gutter { width: 120px; background: var(--surface); }
 .code-file-view .code-name-gutter .cm-gutterElement { display: flex; align-items: center; justify-content: flex-end; padding-left: 4px; }
@@ -3192,12 +3192,15 @@ from main down to the last item. */
 .code-file-view .code-name-flag > span { overflow: hidden; text-overflow: ellipsis; }
 .code-file-view .code-author-range { border-radius: 2px; background: color-mix(in srgb, var(--who) 18%, transparent); box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--who) 80%, transparent); }
 .code-file-view .code-notice, .code-file-view .code-recovery { padding: 8px 10px; margin-bottom: 8px; font-size: var(--fs-caption); }
-.code-file-view .code-notice { background: var(--surface-2); color: var(--text-muted); }
+.code-file-view .code-notice { display: flex; align-items: center; gap: 6px; background: var(--surface-2); color: var(--text-muted); }
 .code-file-view .code-recovery { background: var(--attention-wash); border-left: 2px solid var(--attention); }
 .code-file-view .code-recovery pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); }
 .code-file-view .code-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 .code-file-view .code-actions > span { display: flex; align-items: center; gap: 6px; }
 .code-file-view .code-actions small { color: var(--text-muted); }
 .code-file-view button { padding: 4px 10px; border: 1px solid var(--border-strong); border-radius: var(--r-1); background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
-.code-file-view button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.code-file-view button:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }
 .code-file-view button:disabled { cursor: default; opacity: .6; }
+
+.code-file-view .code-saving-mark { width: 5px; height: 5px; border-radius: 50%; background: var(--brand); }
+.code-file-view .code-recovery > span { display: flex; align-items: center; gap: 6px; }

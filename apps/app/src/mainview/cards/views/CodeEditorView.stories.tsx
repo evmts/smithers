@@ -1,13 +1,15 @@
-import type { Extension } from "@codemirror/state"
+import type { Extension } from "@smthrs/ui/adapters/code-editor"
 import { authorRanges } from "./CoEditing"
 import type { CodeEditorViewProps } from "@smthrs/rpc/FileCard"
 import { fixtures } from "@smthrs/rpc/fixtures/File"
 import { CodeEditorView } from "./CodeEditorView"
 import type { ViewStory } from "./stories"
-// T-UI-11 S1 fixtures; S2/S3 live/gone/outside stories belong to T-UI-16/19.
+// T-UI-11 S1 and T-UI-19 S3 visual fixtures; no product mount.
 export const fileStories = {
   one_mib: { ...fixtures.text, expect: ["0123456789ab"], model: { ...fixtures.text.model, content: { kind: "text" as const, text: "// 0123456789ab\n".repeat(65_536) } } },
   live: { ...fixtures.live, binding: { extensions: [authorRanges.of([{ from: 0, to: 14, author: 0 }, { from: 15, to: 24, author: 1 }])] } },
+  live_separate: { ...fixtures.live_separate, binding: { extensions: [authorRanges.of([{ from: 6, to: 9, author: 0 }, { from: 20, to: 23, author: 1 }, { from: 34, to: 39, author: 2 }])] } },
+  unsaved_one: fixtures.unsaved_one,
   saved: { ...fixtures.saved, binding: { extensions: [] } },
   unsaved: { ...fixtures.unsaved, binding: { extensions: [] } },
   outside: fixtures.outside,
@@ -27,12 +29,15 @@ export const fileStories = {
 } satisfies Record<string, Omit<CodeEditorViewProps<Extension>, "onAction" | "onView"> & { expect: readonly string[] }>
 export const stories: ViewStory[] = Object.entries(fileStories).map(([name, story]) => ({
   name, expect: story.expect, actions: story.actions, gestures: story.gestures,
-  interactions: story.model.content.kind === "text" ? [
+  interactions: [
+    ...(story.model.unsaved ? [{ selector: ".code-recovery button", action: null }] : []),
+    ...(story.model.content.kind === "text" ? [
     ...(("hover" in story.gestures && story.gestures.hover) ? [{ selector: ".cm-content", gesture: "hover", event: "keydown" as const, key: " ", action: { tag: "code.hover", args: { path: "flows/todo/flow.ts", line: "1", col: name === "reveal" ? "70" : "0" } } }] : []),
     ...(("definition" in story.gestures && story.gestures.definition) ? [{ selector: ".cm-content", gesture: "definition", event: "keydown" as const, key: "F12", action: { tag: "code.definition", args: { path: "flows/todo/flow.ts", line: "1", col: name === "reveal" ? "70" : "0" } } }] : []),
   ] : Object.keys(story.gestures).map(gesture => ({
     selector: ".code-file-view", gesture, event: "keydown" as const,
     key: gesture === "hover" ? " " : "F12", action: null,
-  })),
+  }))),
+  ],
   render: (callbacks, actions) => <CodeEditorView {...story} actions={actions ?? story.actions} {...callbacks} />,
 }))
