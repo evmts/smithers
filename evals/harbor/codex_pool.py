@@ -29,16 +29,17 @@ from typing import Any
 
 import toml
 
-try:
+from .framework import selected
+
+FRAMEWORK = selected()
+if FRAMEWORK == "pier":
     from pier.agents.installed.codex import Codex
     from pier.environments.base import BaseEnvironment
     from pier.models.agent.context import AgentContext
-    FRAMEWORK = "pier"
-except ImportError:
+else:
     from harbor.agents.installed.codex import Codex
     from harbor.environments.base import BaseEnvironment
     from harbor.models.agent.context import AgentContext
-    FRAMEWORK = "harbor"
 
 from . import accounts
 
@@ -342,6 +343,8 @@ class PooledCodex(Codex):
         return "codex"
 
     def network_allowlist(self):
+        if FRAMEWORK != "pier":
+            return None
         try:
             from pier.models.agent.network import NetworkAllowlist
         except ImportError:

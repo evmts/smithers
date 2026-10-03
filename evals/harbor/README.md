@@ -50,6 +50,11 @@ checks the adapter offline, without a model, Docker, or task images.
 4. `uv tool install harbor` and, for DeepSWE, `uv tool install datacurve-pier`.
    Both import the adapter by module path, so run them with
    `PYTHONPATH=<this checkout>` from the checkout root.
+   Runner selection follows the `harbor` or `pier` executable, including when
+   both packages are installed. Embedded callers must set
+   `SMITHERS_BENCH_FRAMEWORK=harbor|pier` before importing an adapter; otherwise
+   Harbor is selected when available. Each runner retains its own agent,
+   context, and result types.
 
 ## Running
 
@@ -89,6 +94,7 @@ export SMITHERS_OPENAI_AUTH=chatgpt
 export SMITHERS_CODEX_POOL=codex-1,codex-3,codex-acct-1
 export RR_POOL=benchmark
 export PLUE_REPO=smithersai/smithers
+export SMITHERS_API_ORIGIN=https://api.jjhub.tech
 export BENCH_JOBS=/absolute/path/outside/any/repository/jobs
 ```
 

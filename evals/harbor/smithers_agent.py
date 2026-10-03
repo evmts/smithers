@@ -76,44 +76,37 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from . import accounts, plue_docker, plue_env
+    from . import accounts, framework, plue_docker, plue_env
 except ImportError:  # imported by file path (fixtures)
     import accounts  # type: ignore[no-redef]
+    import framework  # type: ignore[no-redef]
     import plue_docker  # type: ignore[no-redef]
     import plue_env  # type: ignore[no-redef]
 
-# Pier ships Harbor as a dependency, so under Pier both import; the runner
-# that calls `install_spec()` and `network_allowlist()` is Pier's, and its
-# `BaseAgent` is the one to subclass there. Harbor alone has no `pier`.
-try:
+FRAMEWORK = framework.selected()
+if FRAMEWORK == "pier":
     from pier.agents.base import BaseAgent  # type: ignore[import-not-found]
     from pier.environments.base import BaseEnvironment  # type: ignore[import-not-found]
     from pier.models.agent.context import AgentContext  # type: ignore[import-not-found]
 
     AgentCapabilities = None
-    FRAMEWORK = "pier"
-except ImportError:
-    try:
-        from harbor.agents.base import BaseAgent  # type: ignore[no-redef]
-        from harbor.agents.capabilities import AgentCapabilities  # type: ignore[no-redef]
-        from harbor.environments.base import BaseEnvironment  # type: ignore[no-redef]
-        from harbor.models.agent.context import AgentContext  # type: ignore[no-redef]
+elif FRAMEWORK == "harbor":
+    from harbor.agents.base import BaseAgent  # type: ignore[no-redef]
+    from harbor.agents.capabilities import AgentCapabilities  # type: ignore[no-redef]
+    from harbor.environments.base import BaseEnvironment  # type: ignore[no-redef]
+    from harbor.models.agent.context import AgentContext  # type: ignore[no-redef]
+else:
+    # Neither runner is installed: retain the standalone offline fixtures.
+    from abc import ABC
 
-        FRAMEWORK = "harbor"
-    except ImportError:
-        # Neither runner is installed: the module still imports so the offline
-        # fixtures can exercise the prompt, the journal fold and the trajectory.
-        from abc import ABC
+    class BaseAgent(ABC):  # type: ignore[no-redef]
+        def __init__(self, logs_dir: "Path", model_name: "str | None" = None, **kwargs: "Any") -> None:
+            self.logs_dir = logs_dir
+            self.model_name = model_name
 
-        class BaseAgent(ABC):  # type: ignore[no-redef]
-            def __init__(self, logs_dir: "Path", model_name: "str | None" = None, **kwargs: "Any") -> None:
-                self.logs_dir = logs_dir
-                self.model_name = model_name
-
-        AgentCapabilities = None
-        BaseEnvironment = Any  # type: ignore[assignment,misc]
-        AgentContext = Any  # type: ignore[assignment,misc]
-        FRAMEWORK = "none"
+    AgentCapabilities = None
+    BaseEnvironment = Any  # type: ignore[assignment,misc]
+    AgentContext = Any  # type: ignore[assignment,misc]
 
 HERE = Path(__file__).resolve().parent
 PROMPT_PATH = HERE / "prompt.md"
@@ -771,6 +764,8 @@ class SmithersAgent(BaseAgent):
             return None
 
     def network_allowlist(self):  # Pier: the container needs no egress, the model is called from the host
+        if FRAMEWORK != "pier":
+            return None
         try:
             from pier.models.agent.network import NetworkAllowlist  # type: ignore[import-not-found]
         except ImportError:

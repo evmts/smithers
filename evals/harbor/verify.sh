@@ -12,6 +12,7 @@ set -eu
 S="$(cd "$(dirname "$0")" && pwd)"
 PY="${HARBOR_PYTHON:-python3}"
 "$PY" "$S/fixtures/check_cli_contract.py"
+"$PY" "$S/fixtures/check_framework.py"
 "$PY" "$S/fixtures/check_codex_pool.py"
 "$PY" "$S/fixtures/check_codex_install.py"
 "$PY" "$S/fixtures/check_seal.py"

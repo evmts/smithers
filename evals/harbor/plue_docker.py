@@ -56,7 +56,7 @@ EGRESS_PREFIX = plue_env.EGRESS_PREFIX
 
 
 # What the plue CLI itself needs from the harness host's environment.
-SHIM_ENV_NAMES = ("SMITHERS_TOKEN", "XDG_CONFIG_HOME", "HOME")
+SHIM_ENV_NAMES = ("SMITHERS_TOKEN", "SMITHERS_API_ORIGIN", "XDG_CONFIG_HOME", "HOME")
 # Of those, the ones a `-e KEY` never copies from the host into the task
 # container, where the model under test would read them.
 CLI_CREDENTIALS = frozenset({"SMITHERS_TOKEN"})
