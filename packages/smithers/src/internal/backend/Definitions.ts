@@ -1299,11 +1299,10 @@ export const definitions = {
     options: z.object({ "repo": z.string().describe("Repository (OWNER/REPO)").optional() })
   },
   "workflow run": {
-    description: "Run a workflow by name",
-    args: z.object({ "workflow": z.string().describe("Workflow name") }),
+    description: "Start a repository file flow",
+    args: z.object({ "workflow": z.string().describe("Flow name or flows/<name>/flow.ts") }),
     options: z.object({
-      "input": z.array(z.string()).describe("Input key=value pairs (can be repeated)").default([]),
-      "ref": z.string().describe("Git ref to run against").default("main"),
+      "payload": z.string().describe("Flow payload as a JSON object").optional(),
       "repo": z.string().describe("Repository (OWNER/REPO)").optional()
     })
   },

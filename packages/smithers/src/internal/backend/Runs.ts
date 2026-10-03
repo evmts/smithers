@@ -3,7 +3,7 @@
  * @since 0.1.0
  */
 
-import { Refused } from "../../CliError.ts"
+import { UsageError } from "../../CliError.ts"
 import { list, object, positive, str } from "./Client.ts"
 import type { Handler } from "./Resources.ts"
 /**
@@ -12,29 +12,33 @@ import type { Handler } from "./Resources.ts"
  */
 export const runs: Record<string, Handler> = {}
 runs["workflow list"] = (c, _a, o) => c.request("GET", c.repoPath(o.repo) + "/workflows")
-for (const action of ["dispatch", "run"]) {
-  runs[`workflow ${action}`] = async (c, a, o) => {
-    const base = c.repoPath(o.repo)
-    let id = a.id
-    if (action === "run") {
-      const response = object(await c.request("GET", base + "/workflows"))
-      id = list(response.workflows).map(object).find((flow) =>
-        str(flow.name).trim().toLowerCase() === str(a.workflow).trim().toLowerCase()
-      )?.id
-      if (!id) throw new Refused({ fault: "user", code: "not_found", message: `Flow ${str(a.workflow)} not found` })
+runs["workflow run"] = async (c, a, o) => {
+  let input: unknown = {}
+  if (o.payload !== undefined) {
+    try {
+      input = JSON.parse(str(o.payload))
+    } catch {
+      throw new UsageError({ message: "--payload must contain one valid JSON object" })
     }
-    const inputs = Object.fromEntries(
-      list(o.input).map(str).filter((value) => value.includes("=")).map((value) => {
-        const i = value.indexOf("=")
-        return [value.slice(0, i).trim(), value.slice(i + 1)]
-      }).filter(([key]) => key)
-    )
-    const result = await c.request("POST", `${base}/workflows/${positive(id)}/dispatches`, {
-      ref: o.ref || "main",
-      ...(Object.keys(inputs).length ? { inputs } : {})
-    })
-    return result ?? { status: "dispatched" }
+    if (input === null || typeof input !== "object" || Array.isArray(input)) {
+      throw new UsageError({ message: "--payload must contain one valid JSON object" })
+    }
   }
+  return c.request("POST", c.repoPath(o.repo) + "/invoke", { flow: str(a.workflow), input })
+}
+runs["workflow dispatch"] = async (c, a, o) => {
+  const base = c.repoPath(o.repo)
+  const inputs = Object.fromEntries(
+    list(o.input).map(str).filter((value) => value.includes("=")).map((value) => {
+      const i = value.indexOf("=")
+      return [value.slice(0, i).trim(), value.slice(i + 1)]
+    }).filter(([key]) => key)
+  )
+  const result = await c.request("POST", `${base}/workflows/${positive(a.id)}/dispatches`, {
+    ref: o.ref || "main",
+    ...(Object.keys(inputs).length ? { inputs } : {})
+  })
+  return result ?? { status: "dispatched" }
 }
 runs["run list"] = (c, _a, o) => c.request("GET", c.repoPath(o.repo) + "/runs")
 for (const action of ["view", "rerun", "cancel"]) {

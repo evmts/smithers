@@ -185,18 +185,45 @@ describe("raw API and backend flows", () => {
       await expect(misc.api!(c, { endpoint: "/api/path" }, o)).rejects.toThrow()
     }
   )
-  it("finds a flow by name and forwards inputs with equals signs", async () => {
+  it("dispatches numeric CI workflows and forwards inputs with equals signs", async () => {
     const { c, request } = await fixture()
-    request.mockResolvedValueOnce({ workflows: [{ id: 7, name: "Build" }] }).mockResolvedValueOnce(null)
+    request.mockResolvedValueOnce(null)
     expect(
-      await runs["workflow run"]!(c, { workflow: " build " }, { ...options, input: ["value=a=b", "bad", "=missing"] })
+      await runs["workflow dispatch"]!(c, { id: 7 }, { ...options, input: ["value=a=b", "bad", "=missing"] })
     ).toEqual({ status: "dispatched" })
     expect(request).toHaveBeenLastCalledWith("POST", "/api/repos/owner/repo/workflows/7/dispatches", {
       ref: "main",
       inputs: { value: "a=b" }
     })
-    await expect(runs["workflow run"]!(c, { workflow: "missing" }, options)).rejects.toThrow("not found")
   })
+  it("invokes file flows directly with typed payloads and returns the durable receipt", async () => {
+    const { c, request } = await fixture()
+    const input = { count: 2, cache: false, tasks: ["a", { sample: 3 }], empty: null }
+    const receipt = { id: 7, run_id: 7, status: "queued" }
+    request.mockResolvedValue(receipt)
+    expect(
+      await runs["workflow run"]!(c, { workflow: "benchmark" }, {
+        ...options,
+        payload: JSON.stringify(input)
+      })
+    ).toEqual(receipt)
+    expect(request.mock.calls).toEqual([["POST", "/api/repos/owner/repo/invoke", { flow: "benchmark", input }]])
+    request.mockClear()
+    await runs["workflow run"]!(c, { workflow: "flows/benchmark/flow.ts" }, options)
+    expect(request.mock.calls).toEqual([["POST", "/api/repos/owner/repo/invoke", {
+      flow: "flows/benchmark/flow.ts",
+      input: {}
+    }]])
+  })
+  it.each(["{", "", "[]", "null", "true", "17", "\"text\""])(
+    "refuses invalid payload %j before HTTP",
+    async (payload) => {
+      const { c, request } = await fixture()
+      await expect(runs["workflow run"]!(c, { workflow: "benchmark" }, { ...options, payload }))
+        .rejects.toMatchObject({ _tag: "/cli/UsageError", message: "--payload must contain one valid JSON object" })
+      expect(request).not.toHaveBeenCalled()
+    }
+  )
   it.each(["success", "failed", "cancelled"])("does not watch a terminal run (%s)", async (status) => {
     const { c, request } = await fixture()
     request.mockResolvedValue({ status })
