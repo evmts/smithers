@@ -12,7 +12,7 @@ import type { CommandActions } from "./Declare"
 export const namespace: Namespace = { id: "billing", label: "Billing", summary: "Balance and plan" }
 
 /** The balance read remains available beside plan and sandbox usage. */
-export const billingBalanceFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
+export const billingBalanceFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => actions.bootstrap?.capabilities.includes("billing.balance") ? [
   flow({
     name: "billing.balance",
     summary: "Show your balance",
@@ -21,10 +21,10 @@ export const billingBalanceFlows = (actions: CommandActions): ReadonlyArray<Flow
     input: NoPayload,
     handler: () => actions.showBalance()
   })
-]
+] : []
 
 /** Plan reads and human billing doors only where their routes exist. */
-export const billingPlanFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
+export const billingPlanFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => actions.bootstrap?.capabilities.some(capability => ["billing.plans", "billing.checkout", "billing.portal"].includes(capability)) ? [
   flow({
     name: "billing.plans", summary: "Show plans and sandbox usage", runtime: ["identity", "billing.plans"],
     requires: ["signed-in"], input: NoPayload, handler: () => actions.showBillingPlans()
@@ -50,4 +50,4 @@ export const billingPlanFlows = (actions: CommandActions): ReadonlyArray<FlowEnt
     input: NoPayload,
     handler: () => actions.openBillingPortal()
   })
-]
+] : []

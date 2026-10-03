@@ -17,7 +17,7 @@ import { nameOf } from "./registry"
 
 /** Every controller call answers with nothing: registration never invokes a handler. */
 const inertActions = new Proxy({}, {
-  get: (_, key) => key === "snapshot" ? () => ({}) : () => undefined
+  get: (_, key) => key === "bootstrap" ? undefined : key === "snapshot" ? () => ({}) : () => undefined
 }) as CommandActions
 
 /** baseFlows at the split, in registration order. */
@@ -68,10 +68,6 @@ const PRE_SPLIT_BASE: ReadonlyArray<string> = [
   "cloud.prompt",
   "cloud.sign-out",
   "toast.dismiss",
-  "billing.balance",
-  "billing.plans",
-  "billing.upgrade",
-  "billing.portal",
   "repos.import",
   "issues.list",
   "issues.view",

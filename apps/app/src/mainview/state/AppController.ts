@@ -87,8 +87,8 @@ import { createWorkflowPumpController } from "./controller/workflow-pump"
 import { createWorkflowController,type WorkflowController } from "./controller/workflows"
 import type { WikiEditorHandle } from "./controller/world"
 import { createWorldController } from "./controller/world"
-import type { BillingSeam } from "./seams/BillingSeam"
-import { createBillingSeam } from "./seams/BillingSeam"
+import type { BillingSeam } from "./seams/HostedBilling"
+import { createBillingSeam, showHostedBalance } from "./seams/HostedBilling"
 import type { BookmarksSeam } from "./seams/BookmarksSeam"
 import { createBookmarksSeam } from "./seams/BookmarksSeam"
 import type { ChangeSeam } from "./seams/ChangeSeam"
@@ -498,7 +498,7 @@ export interface AppController extends IssueFlowsController {
   readonly codeHover: CodeIntelSeam["hover"]
   readonly codeDefinition: CodeIntelSeam["definition"]
   readonly codeDiagnostics: CodeIntelSeam["diagnostics"]
-  
+
   readonly showMoreSyncOps: (cardId: string) => Promise<string | void>
   readonly githubApp: GitHubSeam["app"]
   readonly githubChooseInstallation: GitHubSeam["chooseInstallation"]
@@ -773,7 +773,7 @@ export const createAppController = (
     promptSignIn: (summary) => promptSignIn(true, { summary }),
     promptCloudSignIn: () => promptCloudSignIn(true),
     report: (subject, error) => ctx.failures.report("seam.failure", error, subject),
-    checkout: services.bootstrap?.capabilities.includes("billing.checkout") ?? true
+    checkout: services.bootstrap?.capabilities.includes("billing.checkout") ?? false
   }
   const installSeam = actors.pair(seamCtx, context => createInstallSeam(context, withToast, { topic: services.installTopic, present: services.presentInstallCard }))
   ctx.onDispose(installSeam.dispose)
@@ -809,10 +809,10 @@ export const createAppController = (
     }
   }))
   const billingSeam = actors.pair(seamCtx, context => createBillingSeam(context, {
-    overview: services.bootstrap?.capabilities.includes("billing.overview") ?? true,
-    plans: services.bootstrap?.capabilities.includes("billing.plans") ?? true,
-    checkout: services.bootstrap?.capabilities.includes("billing.checkout") ?? true,
-    portal: services.bootstrap?.capabilities.includes("billing.portal") ?? true
+    overview: services.bootstrap?.capabilities.includes("billing.overview") ?? false,
+    plans: services.bootstrap?.capabilities.includes("billing.plans") ?? false,
+    checkout: services.bootstrap?.capabilities.includes("billing.checkout") ?? false,
+    portal: services.bootstrap?.capabilities.includes("billing.portal") ?? false
   }, () => ctx.disposed))
   const repositoryUpdate = actors.pair(seamCtx, context => createRepositoryUpdate(context, () => ctx.disposed))
   const environmentSeam = actors.pair(seamCtx, (context) => createEnvironmentSeam(context))
@@ -830,7 +830,7 @@ export const createAppController = (
   const diffFilesSeam = actors.pair(seamCtx, createDiffFilesSeam)
   const filesSeam = actors.pair(seamCtx, (context) => createFilesSeam(context))
   const repoTreeSeam = actors.pair(seamCtx, (context) => createRepoTreeSeam(context))
-  
+
   const gitHubSeam = actors.pair(seamCtx, (context) => createGitHubSeam(context, {
     ...(services.openExternal === undefined ? {} : { openExternal: services.openExternal })
   }))
@@ -862,7 +862,7 @@ export const createAppController = (
     if (store.collections.cloudSessions.get("cloud")?.state === "signed-in") {
       void repositoriesSeam.loadRepositories()
       void workspaceSeam.refreshWorkspaces()
-      
+
     }
   }
   const loadCloudSession = async (): Promise<void> => {
@@ -886,12 +886,10 @@ export const createAppController = (
     signIn,
     signOut,
     refreshBalance,
-    showBalance,
     settleTurnBilling,
     watchIdentityAcrossTabs
   } = actors.pair(ctx, (context) => createAuthBillingController(
     context,
-    store.nextOrdinal,
     applicationIdentity === undefined
       ? undefined
       : {
@@ -1666,7 +1664,7 @@ export const createAppController = (
     unrequestChangeReview: changeSeam.unrequestReview,
     dismissToast,
     refreshBalance,
-    showBalance,
+    showBalance: () => showHostedBalance(store, refreshBalance, services.bootstrap?.capabilities.includes("billing.balance") === true),
     snapshot: (repo, path) => {
       const identity = store.collections.identitySessions.get("identity")
       const signedIn = identity?.state === "signed-in"
