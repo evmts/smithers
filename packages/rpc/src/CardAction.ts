@@ -184,6 +184,7 @@ export interface CardCommandInput {
   readonly "code.hover": { readonly path: string; readonly line: number; readonly col: number }
   readonly "code.definition": { readonly path: string; readonly line: number; readonly col: number }
   readonly "draft.discard": z.infer<typeof DraftDiscardInputSchema>
+  readonly "confirm.approve": { readonly confirmation: string; readonly revision: string; readonly subject: { readonly kind: "todo" | "branch" | "flow" | "agent" | "wiki"; readonly ref: string } }
   readonly "confirm.cancel": z.infer<typeof ConfirmCancelInputSchema>
   readonly "settings.model.set": z.infer<typeof SettingsModelSetInputSchema>
 }
