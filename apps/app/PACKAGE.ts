@@ -9,6 +9,8 @@
  */
 import { Smithers } from "@smthrs/targets"
 import { Package as rpcPackage } from "../../packages/rpc/PACKAGE.ts"
+import { Package as cliPackage } from "../../packages/smithers/PACKAGE.ts"
+import { Package as buildCliPackage } from "../../packages/smithers/build/build-cli/PACKAGE.ts"
 import { Package as harnessDetectPackage } from "../../packages/smithers/agent/harness-detect/PACKAGE.ts"
 import { Package as gatewayPackage } from "../../packages/smithers/gateway/PACKAGE.ts"
 import { Package as componentPackage } from "../../packages/smithers/ui/PACKAGE.ts"
@@ -95,6 +97,8 @@ const unitTests = Smithers.NodeTest({
     sources,
     componentSources,
     styleSources,
+    Smithers.glob("//apps/app/src/docs/pages/*.md"),
+    Smithers.file("//.specs/engineering/checks/C-UI-02.md"),
     contractSources,
     harnessSources,
     suiteSources,
@@ -111,7 +115,8 @@ const unitTests = Smithers.NodeTest({
     Smithers.file("//packages/rpc/fixtures/force/plan-typeCheck.json")
   ],
   // Globs cannot cross PACKAGE.ts boundaries; dependency keys carry these sources.
-  deps: [rpcPackage.check, componentPackage.check, gatewayPackage.check, harnessDetectPackage.check],
+  deps: [rpcPackage.check, componentPackage.check, gatewayPackage.check, harnessDetectPackage.check,
+    cliPackage.check, buildCliPackage.check],
   cwd
 })
 

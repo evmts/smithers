@@ -3,19 +3,23 @@ title: "Flows reference"
 summary: "Find an app command and run it from Chat."
 ---
 
-Enter `/chat.commands` in Chat to list the app's visible commands.
-
 ## Find a command
 
-Type `/` in the composer, then part of a command's name or description to filter the menu. Select a command to open it.
+Select a command to run it. Select a group to see its commands.
+
+| Input in Chat | Result |
+| --- | --- |
+| Type `/` | Show commands and groups. |
+| Type `/chat.` | Show the Chat group's commands. |
+| Type `/commands` | Filter by name or description; `/chat.commands` is a match. |
+| Type `/chat.commands`, then press Enter | List registered commands that aren't hidden, with descriptions, in the conversation. |
+
+Filtered commands show at most 8 matches. Type more letters to narrow the menu.
 
 ```text
-You -> Chat -> /chat.commands -> Command list
+Group             Command                       Result
+/chat.    ->      /chat.commands      ->        Command list
+          select                     run
 ```
-
-| Command | Result |
-| --- | --- |
-| `/chat.commands` | List visible commands in the conversation. |
-| `/chat.open` | Open Chat. |
 
 See [Quickstart](quickstart.md#open-the-command-list) for the first steps.

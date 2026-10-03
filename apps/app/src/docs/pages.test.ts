@@ -1,36 +1,14 @@
-/** Bundled docs describe this build; resolve commands from source, never an installed CLI. */
+/** Resolve documented commands through the source CLI and the app's member-visible registry. */
 import { describe, expect, test } from "bun:test"
-import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { createRequire } from "node:module"
 import { makeCli } from "../../../../packages/smithers/src/Cli.ts"
 import { surplus } from "../../../../packages/smithers/build/build-cli/src/Positionals.ts"
-import { baseFlows } from "../mainview/flows/Flows"
+import { createCommandRegistry } from "../mainview/flows/Commands"
 import type { CommandActions } from "../mainview/flows/entries/Declare"
-import { nameOf } from "../mainview/flows/registry"
+import { slashTree, unmetRequirements, visible, type CommandState } from "../mainview/flows/registry"
+import { checkCliContent, readPages, slashReferences } from "./pageChecks.ts"
 
-const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8")
-const directory = new URL("./pages/", import.meta.url)
-const pages = new Map(readdirSync(directory).filter(name => name.endsWith(".md"))
-  .map(name => [name, read(`./pages/${name}`)]))
-const quickstart = pages.get("quickstart.md") ?? ""
-const body = (markdown: string) => markdown.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "")
-const withoutFences = (markdown: string) => markdown.replace(/^\s*(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\s*\1\s*$/gm, "")
-const prose = (markdown: string) => withoutFences(markdown).replace(/(`+)[^`\n]*\1/g, "")
-const code = (markdown: string) => [
-  ...[...markdown.matchAll(/^\s*(`{3,}|~{3,})[^\n]*\n([\s\S]*?)^\s*\1\s*$/gm)].map(match => match[2]!),
-  ...[...withoutFences(markdown).matchAll(/(`+)([^`\n]+)\1/g)].map(match => match[2]!)
-]
-const slug = (text: string) => text.toLowerCase().replace(/[`*_]/g, "")
-  .replace(/[^\p{L}\p{N}\s-]/gu, "").trim().replace(/\s/g, "-")
-const anchors = (markdown: string) => {
-  const counts = new Map<string, number>()
-  return new Set([...withoutFences(body(markdown)).matchAll(/^#{2,6}\s+(.+)$/gm)].map(match => {
-    const name = slug(match[1]!), count = counts.get(name) ?? 0
-    counts.set(name, count + 1)
-    return count === 0 ? name : `${name}-${count}`
-  }))
-}
-
+const pages = readPages()
 // Resolve Incur from the CLI package, which owns this dependency (the app doesn't).
 interface Schema {
   readonly shape: Record<string, Field>
@@ -105,126 +83,63 @@ const resolveCli = (line: string) => {
   const extra = surplus(cli, rest, path)
   if (extra !== undefined && extra.length > 0) throw new Error(`Surplus arguments: ${line}`)
 }
-const cliLines = (markdown: string) => code(markdown).flatMap(span =>
-  [...span.matchAll(/\bsmthrs\s+[^\n]+/g)].map(match => match[0].trim()))
 
-const catalogPath = new URL("../../../../packages/rpc/src/catalog/catalog.mvp.json", import.meta.url)
-const slashNames = (): Set<string> => {
-  if (!existsSync(catalogPath)) {
-    // T-CAT-01 hasn't landed. Read the same declarations the current app registers.
-    // Handlers are never called: only their declared names are inspected.
-    const actions = new Proxy({}, { get: () => () => undefined }) as CommandActions
-    return new Set(baseFlows(actions).map(nameOf))
-  }
-  const names = new Set<string>()
-  const visit = (value: unknown): void => {
-    if (Array.isArray(value)) { value.forEach(visit); return }
-    if (value === null || typeof value !== "object") return
-    const row = value as Record<string, unknown>
-    if (typeof row.slash === "string") {
-      const name = row.slash.match(/^\/?([a-z0-9_-]+(?:\.[a-z0-9_-]+)*)/)?.[1]
-      if (name !== undefined) names.add(name)
-    }
-    Object.values(row).forEach(visit)
-  }
-  visit(JSON.parse(readFileSync(catalogPath, "utf8")))
-  return names
+// Only discovery seams are supplied. No handler, network request or flow is executed.
+const member: CommandState = {
+  surface: "chat", typing: false, hasConnectors: false, admin: false, signedOut: false
+}
+const discovery = {
+  bootstrap: { apiVersion: 1, host: "cloud", version: "docs-test", buildSha: "docs-test",
+    capabilities: [], authFlow: "none", sandbox: null },
+  snapshot: () => member,
+  repositoryFlows: () => undefined
+}
+const actions = new Proxy(discovery, {
+  get: (target, key) => Reflect.has(target, key) ? Reflect.get(target, key) : () => undefined
+}) as unknown as CommandActions
+const registry = createCommandRegistry(actions)
+const commands = visible(registry.all()).filter(command => unmetRequirements(command, member).length === 0)
+const names = new Set(commands.map(command => command.name))
+
+const resolvesSlash = (query: string): boolean => {
+  if (query.includes(".") && !query.endsWith(".")) return names.has(query)
+  // Bare fragments and trailing dots are menu queries, not flow invocations.
+  return slashTree(member, query, commands).some(row => row.kind === "flow" || row.kind === "namespace")
 }
 
-const bannedLine = read("../../../../.specs/engineering/checks/C-UI-02.md").split("\n")
-  .find(line => line.startsWith("- The banned-term list, exactly"))
-const bannedTerms = bannedLine?.match(/: (.+)\.$/)?.[1]?.split(", ") ?? []
-
-describe("bundled Quickstart and Flows pages", () => {
-  test("contains exactly the two product pages with title and one-line summary", () => {
-    expect([...pages.keys()].sort()).toEqual(["flows.md", "quickstart.md"])
-    expect([...pages.values()].map(markdown => markdown.match(/^---\n([\s\S]*?)\n---/)?.[1]
-      ?.match(/^title: "([^"]+)"$/m)?.[1]).sort()).toEqual(["Flows reference", "Quickstart"])
-    for (const [name, markdown] of pages) {
-      const frontmatter = markdown.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? ""
-      expect(frontmatter.split("\n").map(line => line.split(":")[0]).sort()).toEqual(["summary", "title"])
-      expect(frontmatter).toMatch(/^summary: "[^"\n]+"$/m)
-      expect(body(markdown)).not.toMatch(/^# /m)
-      expect(prose(markdown)).not.toMatch(/Availability:|\bPlanned\b|coming soon/i)
-      for (const match of markdown.matchAll(/^\s*(`{3,}|~{3,})([^\n]*)$/gm)) {
-        // A bare fence is a closing fence only while a block is open.
-        expect(match[2]!.trim() === "" || /^[a-z][a-z0-9_-]*$/i.test(match[2]!.trim())).toBe(true)
-      }
-      const openingFences = [...markdown.matchAll(/^\s*(`{3,}|~{3,})([^\n]*)$/gm)]
-      expect(openingFences.length % 2).toBe(0)
-      openingFences.forEach((match, index) => {
-        if (index % 2 === 0) expect(match[2]!.trim().length).toBeGreaterThan(0)
-      })
-      expect(name).toMatch(/^[a-z-]+\.md$/)
-    }
-  })
-
-  test("resolves every CLI command and flag against source makeCli, with no planned exceptions", () => {
+describe("bundled docs source commands", () => {
+  test("resolves documented CLI invocations, or explicitly checks that there are none", () => {
     expect(tree.size).toBeGreaterThan(0)
-    for (const markdown of pages.values()) for (const invocation of cliLines(markdown)) resolveCli(invocation)
+    let total = 0
+    for (const markdown of pages.values()) total += checkCliContent(markdown, resolveCli)
+    if ([...pages.values()].some(markdown => /\bsmthrs[ \t]+\S+/.test(markdown))) expect(total).toBeGreaterThan(0)
+    else expect(total).toBe(0)
   })
 
-  test("rejects ghost commands and flags even when help would return root help", () => {
+  test("resolves tutorial and reference CLI fixtures and rejects ghost commands and flags", () => {
+    expect(checkCliContent("Type `smthrs login`.", resolveCli)).toBe(1)
+    expect(checkCliContent("| Command | Result |\n| `smthrs doctor --help` | Show help. |", resolveCli)).toBe(1)
     expect(() => resolveCli("smthrs __docs_nonexistent__ --help")).toThrow("Unresolved command")
     expect(() => resolveCli("smthrs doctor --__docs_nonexistent__")).toThrow("Undeclared flag")
-    expect(() => resolveCli("smthrs login")).not.toThrow()
   })
 
-  test("resolves inline slash commands against the app's current catalog", () => {
-    const catalog = slashNames()
-    expect(catalog.size).toBeGreaterThan(0)
-    for (const markdown of pages.values()) {
-      for (const match of withoutFences(markdown).matchAll(/`\/([a-z0-9_-]+(?:\.[a-z0-9_-]+)*)\b[^`]*`/g)) {
-        expect(catalog.has(match[1]!)).toBe(true)
-      }
-      expect(code(markdown).filter(span => span.includes("\n")).join("\n")).not.toMatch(/^\/[a-z]/m)
-    }
+  test("resolves inline and fenced slash references using only visible, member-reachable flows", () => {
+    expect(names.size).toBeGreaterThan(0)
+    const references = [...pages.values()].flatMap(slashReferences)
+    expect(references.length).toBeGreaterThan(0)
+    for (const query of references) expect(resolvesSlash(query)).toBe(true)
   })
 
-  test("uses C-UI-02 product words in prose", () => {
-    expect(bannedTerms).toHaveLength(11)
-    for (const markdown of pages.values()) for (const term of bannedTerms) {
-      expect(prose(markdown)).not.toMatch(new RegExp(`\\b${term}s?\\b`, "i"))
+  test("rejects hidden and unavailable flows and distinguishes menu queries from commands", () => {
+    expect(registry.all().find(command => command.name === "chat.queue.edit")?.hidden).toBe(true)
+    for (const query of ["chat.queue.edit", "flow.list", "__docs_nonexistent__", "chat.__docs_nonexistent__"]) {
+      expect(resolvesSlash(query)).toBe(false)
     }
-  })
-
-  test("links once to installation and resolves every relative page and heading", () => {
-    expect([...quickstart.matchAll(/https:\/\/smithers\.sh\/docs\/installation\//g)]).toHaveLength(1)
-    for (const [name, markdown] of pages) {
-      const text = withoutFences(body(markdown))
-      for (const match of text.matchAll(/!?\[[^\]]*\]\(([^)\s]+)\)/g)) {
-        const href = match[1]!
-        if (/^https?:\/\//.test(href)) {
-          const url = new URL(href)
-          if (url.hostname === "smithers.sh") expect(url.pathname).toBe("/docs/installation/")
-          else if (url.hostname === "github.com" && url.pathname.startsWith("/smithersai/smithers/blob/main/")) {
-            const path = url.pathname.slice("/smithersai/smithers/blob/main/".length)
-            expect(existsSync(new URL(`../../../../${path}`, import.meta.url))).toBe(true)
-          }
-          continue
-        }
-        const [target, anchor] = href.split("#")
-        expect(target === "" || /^[a-z-]+\.md$/.test(target!)).toBe(true)
-        const linked = pages.get(target || name)
-        expect(linked).toBeDefined()
-        if (anchor !== undefined) expect(anchors(linked!).has(decodeURIComponent(anchor))).toBe(true)
-      }
-    }
-  })
-
-  test("keeps the fixed HTTPS anchor whenever HTTPS instructions are bundled", () => {
-    if (/\b(?:HTTPS|Tailscale|Caddy)\b/.test(body(quickstart))) {
-      expect(quickstart).toMatch(/^## Put HTTPS in front$/m)
-      expect(anchors(quickstart).has("put-https-in-front")).toBe(true)
-      const section = body(quickstart).split("## Put HTTPS in front\n")[1]?.split(/\n## /)[0] ?? ""
-      expect(section).toContain("tailscale serve")
-      expect(section).toContain("reverse_proxy")
-    }
-    for (const [name, markdown] of pages) {
-      if (!markdown.includes("Tailscale")) continue
-      expect(name).toBe("quickstart.md")
-      const outside = body(markdown).replace(/## Put HTTPS in front\n[\s\S]*?(?=\n## |$)/, "")
-      expect(outside).not.toContain("Tailscale")
-    }
+    expect(names.has("chat.open")).toBe(true) // A user-only gesture is still reachable by a member.
+    expect(names.has("chat.commands")).toBe(true)
+    expect(names.has("commands")).toBe(false)
+    expect(slashTree(member, "commands", commands).some(row => row.kind === "flow" && row.flow.name === "chat.commands")).toBe(true)
+    expect(slashTree(member, "chat.", commands).some(row => row.kind === "flow" && row.flow.name === "chat.commands")).toBe(true)
+    expect(resolvesSlash("")).toBe(true)
   })
 })
