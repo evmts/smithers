@@ -3204,3 +3204,4 @@ from main down to the last item. */
 
 .code-file-view .code-saving-mark { width: 5px; height: 5px; border-radius: 50%; background: var(--brand); }
 .code-file-view .code-recovery > span { display: flex; align-items: center; gap: 6px; }
+.code-file-view .code-author-range, .code-file-view .code-author-range span { color: var(--code-text); }

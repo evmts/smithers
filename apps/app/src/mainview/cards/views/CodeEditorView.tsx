@@ -1,7 +1,7 @@
 import { Check, FolderSync, TriangleAlert } from "lucide-react"
 import { useMemo } from "react"
 import type { Extension } from "@smthrs/ui/adapters/code-editor"
-import { copyText } from "@smthrs/ui"
+import { copyText } from "@smthrs/ui/copy"
 import { coEditing } from "./CoEditing"
 import { formatBytes } from "./formatBytes"
 import type { CodeEditorViewProps } from "@smthrs/rpc/FileCard"
