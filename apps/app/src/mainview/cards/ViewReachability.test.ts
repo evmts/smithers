@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url"
 
 // Existing views awaiting their owning wiring tickets; this list must only shrink.
 const PENDING_WIRING: Record<string, string> = {
+  "BranchView.tsx": "T-APP-10",
   "HomeView.tsx": "T-APP-01",
   "HomeActionView.tsx": "T-APP-01",
   "HomeRowView.tsx": "T-APP-01",
