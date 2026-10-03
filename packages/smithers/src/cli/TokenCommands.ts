@@ -1,6 +1,6 @@
 /**
  * `smthrs token mint`: a scoped, expiring gateway token signed under
- * `SMITHERS_TOKEN`.
+ * `SMITHERS_TOKEN`, or a backend access token with `--cloud`.
  *
  * The gateway verifies the token with the same credential it serves under
  * (`@smthrs/control` `ScopedToken`), so minting needs no running gateway and
@@ -17,6 +17,7 @@ import { Cli, z } from "incur"
 import type * as Bridge from "../cli/ControlBridge.ts"
 import * as CliError from "../CliError.ts"
 import { duration } from "../Gc.ts"
+import { Client, object, str } from "../internal/backend/Client.ts"
 import * as Presentation from "./Presentation.ts"
 
 /**
@@ -29,10 +30,12 @@ import * as Presentation from "./Presentation.ts"
 export interface MintedToken {
   readonly token: string
   readonly expiresAt: string
-  readonly scopes: ReadonlyArray<ScopedToken.Scope>
+  readonly scopes: ReadonlyArray<string>
   readonly procedures: ReadonlyArray<string>
   readonly runId?: string | undefined
   readonly flowId?: string | undefined
+  readonly id?: number | undefined
+  readonly name?: string | undefined
 }
 
 /**
@@ -78,6 +81,84 @@ export const mint = (
     }
   })
 
+// Permission scopes from backend middleware.TokenScope. Repository, workspace,
+// and run bindings are server-owned constraints, never permission scope names.
+const cloudScopeNames = [
+  "all",
+  "admin",
+  "read:admin",
+  "write:admin",
+  "read:repository",
+  "write:repository",
+  "read:organization",
+  "write:organization",
+  "read:user",
+  "write:user",
+  "read:workspace",
+  "write:workspace",
+  "read:approval",
+  "write:approval",
+  "read:agent",
+  "write:agent"
+] as const
+
+const mintCloud = async (
+  options: {
+    scope: ReadonlyArray<string>
+    ttl: string
+    name?: string | undefined
+    run?: string | undefined
+    flow?: string | undefined
+  },
+  runtime: Bridge.Runtime
+): Promise<MintedToken> => {
+  if (options.run !== undefined || options.flow !== undefined) {
+    throw new CliError.UsageError({ message: "--run and --flow are unavailable for Cloud access tokens" })
+  }
+  if (options.scope.some((scope) => !cloudScopeNames.includes(scope as typeof cloudScopeNames[number]))) {
+    throw new CliError.UsageError({ message: "--cloud requires backend access-token scopes" })
+  }
+  const ttlMillis = duration(options.ttl), expires = Date.now() + (ttlMillis ?? 0)
+  if (ttlMillis === undefined || !Number.isSafeInteger(ttlMillis) || expires > 8.64e15) {
+    throw new CliError.UsageError({ message: "--ttl must be a positive duration such as 30s, 15m, 1h, or 2d" })
+  }
+  const name = options.name?.trim() ?? "smthrs"
+  if (!name) throw new CliError.UsageError({ message: "--name must not be empty" })
+  const client = new Client(runtime)
+  try {
+    const result = object(
+      await client.request("POST", "/api/user/tokens", {
+        name,
+        scopes: [...new Set(options.scope)],
+        expires_at: new Date(expires).toISOString()
+      })
+    )
+    const grantedExpiry = Date.parse(str(result.expires_at))
+    if (
+      !str(result.token) || !Number.isSafeInteger(result.id) || Number(result.id) <= 0 ||
+      !Array.isArray(result.scopes) || result.scopes.some((scope) => !options.scope.includes(scope)) ||
+      new Set(result.scopes).size !== new Set(options.scope).size ||
+      !Number.isFinite(grantedExpiry) || grantedExpiry <= Date.now() || grantedExpiry > expires
+    ) {
+      throw new CliError.Refused({ fault: "infra", code: "backend_protocol", message: "Token response was incomplete" })
+    }
+    // Mint is the one intentional token-output boundary. Never redact its new
+    // token; only failures pass through the credential-aware backend redactor.
+    return {
+      token: str(result.token),
+      expiresAt: str(result.expires_at),
+      scopes: result.scopes,
+      procedures: [],
+      id: Number(result.id),
+      name: str(result.name)
+    }
+  } catch (error) {
+    throw client.failure(error)
+  } finally {
+    client.flushOutput()
+  }
+}
+
 /**
  * Builds the `token` command group.
  *
@@ -85,13 +166,15 @@ export const mint = (
  * @since 1.0.0
  */
 export const createTokenCli = (config: Bridge.Runtime = {}) =>
-  Cli.create("token", { description: "Mint scoped, expiring gateway tokens from SMITHERS_TOKEN" })
+  Cli.create("token", { description: "Mint scoped, expiring gateway or Cloud access tokens" })
     .command("mint", {
       description: "Mint a token limited to the named scopes, an optional run or flow, and a lifetime",
       mcp: false,
       options: z.object({
-        scope: z.array(z.enum(ScopedToken.scopeNames as [ScopedToken.Scope, ...Array<ScopedToken.Scope>])).min(1)
-          .describe("Repeatable: read:runs, write:runs, or approve:runs"),
+        scope: z.array(z.enum([...cloudScopeNames, ...ScopedToken.scopeNames] as const)).min(1)
+          .describe("Repeatable: gateway scopes, or backend scopes with --cloud"),
+        cloud: z.boolean().default(false).describe("Mint a backend access token using the Cloud login"),
+        name: z.string().optional().describe("Cloud access-token name (default smthrs)"),
         ttl: z.string().default("1h").describe("Lifetime such as 30s, 15m, 1h, or 2d"),
         run: z.string().optional().describe("Confine every call to this run id"),
         flow: z.string().optional().describe("Confine every call to this flow id")
@@ -99,7 +182,21 @@ export const createTokenCli = (config: Bridge.Runtime = {}) =>
       run: (context) =>
         Presentation.guard(
           context,
-          () => Effect.runPromise(mint(context.options, config.environment ?? process.env)),
+          () => {
+            if (context.options.cloud) return mintCloud(context.options, config)
+            if (context.options.name !== undefined) {
+              throw new CliError.UsageError({ message: "--name requires --cloud" })
+            }
+            if (context.options.scope.some((scope) => !ScopedToken.scopeNames.includes(scope as ScopedToken.Scope))) {
+              throw new CliError.UsageError({ message: "Gateway scopes are read:runs, write:runs, and approve:runs" })
+            }
+            return Effect.runPromise(
+              mint(
+                { ...context.options, scope: context.options.scope as Array<ScopedToken.Scope> },
+                config.environment ?? process.env
+              )
+            )
+          },
           { render: (minted) => ({ human: minted.token }) }
         )
     })
