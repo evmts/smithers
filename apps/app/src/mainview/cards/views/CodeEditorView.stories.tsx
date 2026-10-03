@@ -31,5 +31,5 @@ export const stories: ViewStory[] = Object.entries(fileStories).map(([name, stor
     selector: ".code-file-view", gesture, event: "keydown" as const,
     key: gesture === "hover" ? " " : "F12", action: null,
   })),
-  render: (callbacks, actions = story.actions) => <CodeEditorView {...story} actions={actions} {...callbacks} />,
+  render: (callbacks, actions = story.actions) => <CodeEditorView {...story} actions={actions as CodeEditorViewProps["actions"]} {...callbacks} />,
 }))
