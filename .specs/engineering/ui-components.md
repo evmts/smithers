@@ -577,3 +577,9 @@ type TodoRepairSlots = { conflictTerminal?: React.ReactNode } // rendered by the
 ```
 
 **Merge blocker tones (design G12, 2026-10-02).** A failed required check is ember (`failed`). Gold (`attention`) is only for blockers where a person must act (`review_required`, a question, an approval). System or order waits (`order`, `machine`, `rebase`, `merging`) are neutral (`quiet`).
+
+### T-UI-20 Proposal and lessons receipt
+
+`ProposalCard.ts` restores the evidence/ref projection: `{id, title, evidence: string[], refs: {label, url}[], state: open | accepted | dismissed, todo?: {n, title}}`. `ProposalViewProps` uses `CardProps<ProposalCard, {}, "todo">`; the optional TODO gesture opens the accepted TODO. Supplied actions render in order (Make TODO, Dismiss). Evidence starts expanded for open proposals, collapsed otherwise.
+
+`LessonsReceipt` is `{todo: number, lessons: {title, ref}[]}`. `LessonsReceiptViewProps` uses `CardProps<LessonsReceipt, {}, string>`; gestures keyed by lesson ref open wiki pages or proposals. Without a gesture the title is plain text. The receipt does not alter the merged TODO state (M-15). Retained zod schemas preserve existing boundary validation tests; Views use their TypeScript types only.
