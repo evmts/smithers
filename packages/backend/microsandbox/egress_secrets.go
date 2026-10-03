@@ -49,6 +49,9 @@ func (r *Runtime) BindEgressSecrets(ctx context.Context, workspaceID string, sec
 	if err != nil {
 		return workspaceapi.EgressSecretBinding{}, err
 	}
+	if ws.Network != nil && ws.Network.Mode == "none" {
+		return workspaceapi.EgressSecretBinding{}, workspaceapi.ErrEgressSecretsUnsupported
+	}
 	if port := relayPort(relay); ws.RelayPort != port {
 		return workspaceapi.EgressSecretBinding{}, fmt.Errorf("%w: workspace %s machine was built without a route to the egress relay on port %d; reclaim its disk to rebuild it",
 			workspaceapi.ErrEgressSecretsUnsupported, ws.ID, port)

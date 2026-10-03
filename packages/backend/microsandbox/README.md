@@ -36,8 +36,9 @@ the only thing `msb exec` runs:
 - `fs` confines paths to the root in the guest with the process adapter's
   rules; `relay` carries a byte stream to a guest loopback port (managed-host
   HTTP clients, `DialWorkspacePort`, previews); `bridge` exposes the backend's
-  own port at guest `127.0.0.1`, the only destination the VM's network policy
-  (`--no-net --net-rule allow@host:tcp:<port>`) allows.
+  own port at guest `127.0.0.1`, when the workspace network policy allows it.
+  Every machine starts with `--no-net`; only permitted host ports receive
+  an `allow@host:tcp:<port>` rule.
 
 A managed host's program and every environment value naming a file under a
 `Config.Artifacts` directory (the packaged Flow host bundle and its Linux
@@ -56,6 +57,28 @@ proxy environment holding each secret's placeholder and a revocable relay
 credential; the relay substitutes values only toward the bound hosts and
 masks them out of responses. Stop and delete revoke the binding. A machine
 built before the relay route refuses bindings until its disk is reclaimed.
+
+## Caller images and network
+
+`WorkspaceSpec.Image` carries the admitted public OCI reference and SHA-256
+manifest digest. The runtime boots the pinned reference and skips prepared
+environment layers. The image must include `sh`, `python3`, `sha256sum` and
+user-management tools required by the guest helper. Image, network and guest
+resources persist through restart, disk reclamation and cold snapshot forks.
+`WorkspaceImageReceipt` reads the booted image from `msb list` and refuses a
+missing or mismatched digest.
+
+Network modes are `proxy` (default) and `none`. `proxy` retains the existing
+backend ports and scoped secret-relay bindings. `none` installs no host routes
+or bridges, including backend and relay ports, and refuses secret bindings.
+Root commands use the optional `WorkspaceUserExecution` facet and retain the
+same cgroup, cancellation and exit-receipt protocol. The product authorizes
+workspace ownership and the server feature flag for root SSH. Callers of the
+native execution facet must supply their own authorization.
+
+Custom images honor requested CPU, memory and disk. Snapshot boots retain the
+source disk; changing its size is refused. Prepared environment layers do not
+declare support for a caller-selected disk size.
 
 ## Environment layers
 
@@ -130,3 +153,19 @@ SMITHERS_MICROVM_LAYER_ROOT=/path/to/state SMITHERS_MICROVM_SCREENSHOT=/tmp/app.
 Each test removes every machine and snapshot its owner created.
 The fresh repository layer tests use an isolated state root and its installation
 owner to scope workspace, prepare and verify machine names.
+
+
+The custom-image proof requires a pinned Python image and a host whose
+one-minute load is below 50. Use the native `msb` executable; the npm wrapper
+needs Node outside the runtime's restricted command environment.
+
+```sh
+SMITHERS_MICROSANDBOX_BIN=/path/to/msb \
+  SMITHERS_MICROVM_CUSTOM_IMAGE=python@sha256:<digest> \
+  GOMAXPROCS=2 nice -n 10 go test -p 2 ./packages/backend/microsandbox \
+  -run '^TestRealMicroVMCustomImageRootAndNetworkNone$' -v -count=1 -timeout 10m
+```
+
+It records root identity, guest OS, denied external/backend connections, and
+image receipts after create, fork and reclaimed restart.
+

@@ -28,8 +28,14 @@ const workspaceRootSSHUser = "root"
 // workspace offers: the configured workspace user (the default) and root.
 func (s *WorkspaceService) resolveWorkspaceSSHUser(requested string) (string, error) {
 	requested = strings.TrimSpace(requested)
+	if requested == "" {
+		requested = s.workspaceSSHUsername
+	}
+	if requested == workspaceRootSSHUser && !s.customImagesEnabled {
+		return "", workspaceCustomImagesDisabled()
+	}
 	switch requested {
-	case "", s.workspaceSSHUsername:
+	case s.workspaceSSHUsername:
 		return s.workspaceSSHUsername, nil
 	case workspaceRootSSHUser:
 		return workspaceRootSSHUser, nil
@@ -75,6 +81,9 @@ func (s *WorkspaceService) GetWorkspaceSSHConnectionInfoAs(ctx context.Context, 
 
 // GetSSHConnectionInfo returns tokenized SSH connection details for a workspace session.
 func (s *WorkspaceService) GetSSHConnectionInfo(ctx context.Context, sessionID string, repositoryID, userID int64) (WorkspaceSSHConnectionInfo, error) {
+	if _, err := s.resolveWorkspaceSSHUser(""); err != nil {
+		return WorkspaceSSHConnectionInfo{}, err
+	}
 	if s.q == nil {
 		return WorkspaceSSHConnectionInfo{}, pkgerrors.Internal("workspace store unavailable")
 	}
@@ -231,6 +240,10 @@ func (s *WorkspaceService) buildWorkspaceSSHConnectionInfo(ctx context.Context, 
 // buildWorkspaceSSHConnectionInfoAs mints a grant bound to guestUser and
 // returns the connection details for it.
 func (s *WorkspaceService) buildWorkspaceSSHConnectionInfoAs(ctx context.Context, workspace db.Workspace, guestUser string) (WorkspaceSSHConnectionInfo, error) {
+	guestUser, resolveErr := s.resolveWorkspaceSSHUser(guestUser)
+	if resolveErr != nil {
+		return WorkspaceSSHConnectionInfo{}, resolveErr
+	}
 	var (
 		identity sandbox.Identity
 		err      error

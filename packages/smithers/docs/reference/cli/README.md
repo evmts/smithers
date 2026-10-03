@@ -367,15 +367,30 @@ running; run the same command with the same `--exec-id` to reattach.
 Output is available at completion and is bounded; `output_truncated` reports
 truncation. Nonzero exit codes propagate to the CLI.
 
-`--timeout SECONDS` requests cancellation when the limit expires; Ctrl-C also
+`--timeout SECONDS` requests cancellation of developer commands when the limit expires; Ctrl-C also
 requests cancellation and waits for confirmation. The default has no client
 timeout; the backend stops commands after 60 minutes. A lost execution lease
 produces an unknown outcome and never automatically reruns the command.
-Use `workspace ssh` or `workspace shell` for interactive input and guest-user
-selection. The former SSH log-file runner and its `--stdin`/`--user` exec options
-are removed.
+`--user developer` is the default. `--user root` runs through the authenticated
+workspace SSH endpoint and returns `exit_code`, `stdout` and `stderr` in JSON.
+Root execution has no durable receipt and refuses `--detach` and `--exec-id`.
+`--timeout 0` imposes no client limit; a positive root timeout stops the local
+SSH connection. Use `workspace ssh` or `workspace shell` for interactive input.
 
 `smthrs workspace create --repo OWNER/REPO --name sized --cpus 4 --memory 8192 --disk 40`
 requests 4 vCPUs, 8192 MiB memory and 40 GiB writable disk. The server persists
 this size for recovery and fork and returns `workspace_resources_exceeded`
 when a requested resource exceeds its configured cap.
+
+`smthrs workspace create --repo OWNER/REPO --image python:3.13-slim --network none --wait --format json`
+boots a caller-selected OCI image with no guest egress. Admission resolves image
+tags to a digest. `--network proxy` is the default; `none` disables egress.
+`workspace view --format json` includes `image: {ref, digest}` and
+`network: {mode}`. Plans own idle policy; create has no `--idle-timeout`
+or `--service` flag.
+
+Image selection, explicit network modes and root execution require the server's
+`SMITHERS_FEATURE_FLAGS_WORKSPACE_CUSTOM_IMAGES` flag, which defaults to false.
+Hosted operators enable it. With it disabled, those requests return
+`workspace_custom_images_disabled`; omitted image and network options retain the
+server's defaults.

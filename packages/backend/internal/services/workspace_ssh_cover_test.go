@@ -30,7 +30,7 @@ func TestWorkspaceSSH_Cov_TouchSessionActivityBranches(t *testing.T) {
 
 func TestWorkspaceSSH_Cov_BuildConnectionInfoRootRestrictsAllowedUsers(t *testing.T) {
 	var grantReq sandbox.GrantAccessRequest
-	svc := newWorkspaceServiceForTests(&mockWorkspaceQuerier{},
+	svc := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceCustomImagesEnabled(true),
 		WithWorkspaceSandboxClient(&mockWorkspaceSandboxVMClient{
 			grantVMPermissionFn: func(_ context.Context, _, _ string, req sandbox.GrantAccessRequest) (sandbox.AccessGrant, error) {
 				grantReq = req

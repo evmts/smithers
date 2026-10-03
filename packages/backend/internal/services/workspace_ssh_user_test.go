@@ -27,7 +27,7 @@ func TestWorkspaceService_GetWorkspaceSSHConnectionInfoAs_BindsGrantToRequestedU
 	}
 	var granted []string
 	grants := 0
-	svc := newWorkspaceServiceForTests(q,
+	svc := newWorkspaceServiceForTests(q, WithWorkspaceCustomImagesEnabled(true),
 		WithWorkspaceSandboxClient(&mockWorkspaceSandboxVMClient{
 			grantVMPermissionFn: func(ctx context.Context, identityID, vmID string, req sandbox.GrantAccessRequest) (sandbox.AccessGrant, error) {
 				granted = req.AllowedUsers
@@ -56,4 +56,47 @@ func TestWorkspaceService_GetWorkspaceSSHConnectionInfoAs_BindsGrantToRequestedU
 	require.ErrorAs(t, err, &apiErr)
 	assert.Equal(t, pkgerrors.CodeWorkspaceSSHUserInvalid, apiErr.Code)
 	assert.Equal(t, 2, grants, "no grant is minted for a refused user")
+}
+
+func TestWorkspaceRootSSHFeatureFlagRefusesBeforeStoreOrProvider(t *testing.T) {
+	for _, tc := range []struct{ configured, requested string }{
+		{"developer", "root"}, {"root", "root"}, {"root", ""},
+	} {
+		t.Run(tc.configured+":"+tc.requested, func(t *testing.T) {
+			q := &mockWorkspaceQuerier{getWorkspaceByRepoFn: func(context.Context, db.GetWorkspaceByRepoParams) (db.Workspace, error) {
+				t.Fatal("flag-off root reached persistence")
+				return db.Workspace{}, nil
+			}}
+			s := newWorkspaceServiceForTests(q, WithWorkspaceSandboxClient(sandboxUntouched(t)))
+			s.workspaceSSHUsername = tc.configured
+			_, err := s.GetWorkspaceSSHConnectionInfoAs(context.Background(), "workspace", 101, 1, tc.requested)
+			var api *pkgerrors.APIError
+			require.ErrorAs(t, err, &api)
+			require.Equal(t, pkgerrors.CodeWorkspaceCustomImagesDisabled, api.Code)
+			require.Equal(t, 403, api.Status)
+			require.Contains(t, api.Message, "SMITHERS_FEATURE_FLAGS_WORKSPACE_CUSTOM_IMAGES")
+		})
+	}
+}
+
+func TestWorkspaceRootSSHFeatureFlagCoversInternalAndSessionEntrypoints(t *testing.T) {
+	s := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceSandboxClient(sandboxUntouched(t)))
+	for _, call := range []func() (WorkspaceSSHConnectionInfo, error){
+		func() (WorkspaceSSHConnectionInfo, error) {
+			return s.buildWorkspaceSSHConnectionInfoAs(context.Background(), sampleDBWorkspace("workspace"), "root")
+		},
+		func() (WorkspaceSSHConnectionInfo, error) {
+			s.workspaceSSHUsername = "root"
+			return s.buildWorkspaceSSHConnectionInfo(context.Background(), sampleDBWorkspace("workspace"))
+		},
+		func() (WorkspaceSSHConnectionInfo, error) {
+			s.workspaceSSHUsername = "root"
+			return s.GetSSHConnectionInfo(context.Background(), "session", 101, 1)
+		},
+	} {
+		_, err := call()
+		var api *pkgerrors.APIError
+		require.ErrorAs(t, err, &api)
+		require.Equal(t, pkgerrors.CodeWorkspaceCustomImagesDisabled, api.Code)
+	}
 }

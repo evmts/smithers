@@ -744,6 +744,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	workspaceService := services.NewWorkspaceService(runtimeStores.Workspaces,
 		services.WithWorkspaceCommandJobs(commandJobs, webhookSecretCodec),
 		services.WithWorkspaceRuntime(options.Workspace),
+		services.WithWorkspaceCustomImagesEnabled(cfg.FeatureFlags.WorkspaceCustomImages),
 		services.WithWorkspaceTransactions(pool),
 		services.WithWorkspaceBillingPolicy(billingPolicy),
 		services.WithWorkspaceAuditService(auditService),

@@ -15,13 +15,16 @@ import (
 )
 
 type coldSnapshot struct {
-	Version           int      `json:"version"`
-	ID                string   `json:"id"`
-	SourceWorkspaceID string   `json:"sourceWorkspaceId"`
-	Name              string   `json:"name"`
-	LayerKey          string   `json:"layerKey,omitempty"`
-	Link              []string `json:"link,omitempty"`
-	CreatedAt         string   `json:"createdAt"`
+	Version           int                              `json:"version"`
+	Image             *workspaceapi.WorkspaceImage     `json:"image,omitempty"`
+	Network           *workspaceapi.WorkspaceNetwork   `json:"network,omitempty"`
+	Resources         *workspaceapi.WorkspaceResources `json:"resources,omitempty"`
+	ID                string                           `json:"id"`
+	SourceWorkspaceID string                           `json:"sourceWorkspaceId"`
+	Name              string                           `json:"name"`
+	LayerKey          string                           `json:"layerKey,omitempty"`
+	Link              []string                         `json:"link,omitempty"`
+	CreatedAt         string                           `json:"createdAt"`
 }
 
 // coldSnapshotPrefix begins every cold snapshot name.
@@ -53,11 +56,13 @@ func (r *Runtime) CreateColdSnapshot(ctx context.Context, workspaceID string, sp
 		return workspaceapi.ColdSnapshot{}, fmt.Errorf("workspace must be stopped before a cold snapshot (it is %s)", ws.State)
 	}
 	machine, layerKey, link := ws.Machine, ws.LayerKey, append([]string(nil), ws.Link...)
+	image, network := cloneImage(ws.Image), cloneNetwork(ws.Network)
+	resources := cloneResources(ws.Resources)
 	r.mu.Unlock()
 	if _, err := os.Stat(r.snapshotPath(id)); err == nil {
 		return workspaceapi.ColdSnapshot{}, fmt.Errorf("snapshot %q already exists", id)
 	}
-	record := coldSnapshot{Version: 1, ID: id, SourceWorkspaceID: ws.ID, Name: r.snapshotName(id), LayerKey: layerKey, Link: link,
+	record := coldSnapshot{Image: image, Network: network, Resources: resources, Version: 1, ID: id, SourceWorkspaceID: ws.ID, Name: r.snapshotName(id), LayerKey: layerKey, Link: link,
 		CreatedAt: time.Now().UTC().Format(time.RFC3339)}
 	args := []string{"snapshot", "create", record.Name, "--from", machine, "-q",
 		"--label", providerLabel + "=" + providerName, "--label", ownerLabel + "=" + r.owner, "--label", layerLabel + "=cold"}
@@ -91,6 +96,29 @@ func (r *Runtime) ForkColdSnapshot(ctx context.Context, snapshotID string, spec 
 	record, err := r.readSnapshot(snapshotID)
 	if err != nil {
 		return workspaceapi.Workspace{}, err
+	}
+	spec.Image, spec.Network = cloneImage(record.Image), cloneNetwork(record.Network)
+	if spec.Resources == nil {
+		spec.Resources = cloneResources(record.Resources)
+	} else {
+		requested := cloneResources(spec.Resources)
+		if record.Resources == nil {
+			if requested.DiskMB != 0 {
+				return workspaceapi.Workspace{}, errors.New("snapshot disk size is unknown; a fork cannot override its disk")
+			}
+		} else {
+			if requested.DiskMB != 0 && requested.DiskMB != record.Resources.DiskMB {
+				return workspaceapi.Workspace{}, errors.New("a snapshot fork keeps its source disk size")
+			}
+			requested.DiskMB = record.Resources.DiskMB
+			if requested.VCPUCount == 0 {
+				requested.VCPUCount = record.Resources.VCPUCount
+			}
+			if requested.MemoryMB == 0 {
+				requested.MemoryMB = record.Resources.MemoryMB
+			}
+		}
+		spec.Resources = requested
 	}
 	return r.createFrom(ctx, spec, Layer{Snapshot: record.Name, Key: record.LayerKey, Link: record.Link})
 }

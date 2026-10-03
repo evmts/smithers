@@ -41,6 +41,9 @@ type workspaceProvisioningStageQuerier interface {
 // wrapper is the final file written, owns a cleanup trap, and is also removed
 // and absence-checked by a second exec before this method can succeed.
 func (s *WorkspaceService) runWorkspaceAgentEnvironmentSetup(ctx context.Context, workspace db.Workspace, vmID string, prepared ...*workspaceProviderBinding) error {
+	if s != nil && (workspace.ImageRef.String != "" || workspace.NetworkMode.String == "none") {
+		return nil
+	}
 	if s == nil || (s.agentEnvironment == nil && s.providerConnections == nil && !s.providerBootstrap) {
 		return nil
 	}

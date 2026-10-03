@@ -68,6 +68,12 @@ func (s *WorkspaceService) adoptRuntimeWorkspaceRepository(ctx context.Context, 
 }
 
 func (s *WorkspaceService) ensureRuntimeWorkspaceRepositoryWithReceipt(ctx context.Context, row db.Workspace, requesterID int64, allowReceiptRebind bool) error {
+	if row.NetworkMode.String == "none" {
+		return nil
+	}
+	if row.ImageRef.String != "" {
+		return s.ensureCustomRuntimeWorkspaceRepository(ctx, row, requesterID)
+	}
 	capabilities := s.runtime.Capabilities()
 	if !capabilities.PersistentFiles || !capabilities.Execution || !capabilities.FileOperations {
 		return &workspaceRepositoryPreparationFailure{err: pkgerrors.Internal("workspace runtime cannot initialize persistent repositories")}

@@ -62,7 +62,7 @@ func (s *WorkspaceService) createUserRefWorkspace(ctx context.Context, input Cre
 	}
 	metadata = normalizeWorkspaceCreateMetadata(metadata)
 	vcpu, memory, disk := workspaceResourceColumns(metadata.resources)
-	workspace, err := s.createWorkspaceRow(ctx, db.CreateWorkspaceParams{
+	params := db.CreateWorkspaceParams{
 		VcpuCount: vcpu, MemoryMb: memory, DiskMb: disk,
 		ID: pgtype.UUID{Bytes: id, Valid: true}, SourceCommit: retained.CommitID,
 		RepositoryID: input.RepositoryID, UserID: input.UserID, Name: strings.TrimSpace(input.Name), IsFork: true,
@@ -70,7 +70,9 @@ func (s *WorkspaceService) createUserRefWorkspace(ctx context.Context, input Cre
 		EnvironmentSource:      metadata.environment.Source,
 		EnvironmentRevision:    metadata.environment.Revision,
 		EnvironmentClosureHash: metadata.environment.ClosureHash, Status: "starting",
-	})
+	}
+	applyWorkspaceAdmission(&params, metadata)
+	workspace, err := s.createWorkspaceRow(ctx, params)
 	if err != nil {
 		return db.Workspace{}, mapWorkspaceCreateError(err, "create pushed-ref workspace")
 	}

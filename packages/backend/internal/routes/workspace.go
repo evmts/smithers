@@ -3,6 +3,7 @@ package routes
 import (
 	"context"
 	"encoding/json"
+	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -134,13 +135,15 @@ type createWorkspaceSessionRequest struct {
 }
 
 type createWorkspaceRequest struct {
-	Name           string                        `json:"name"`
-	SnapshotID     string                        `json:"snapshot_id"`
-	SourceBookmark string                        `json:"source_bookmark,omitempty"`
-	SourceRef      string                        `json:"source_ref,omitempty"` // a pushed ref of the caller (#1968)
-	Kind           string                        `json:"kind,omitempty"`
-	Environment    services.WorkspaceEnvironment `json:"environment,omitempty"`
-	Resources      services.WorkspaceResources   `json:"resources,omitempty"`
+	Name           string                         `json:"name"`
+	SnapshotID     string                         `json:"snapshot_id"`
+	SourceBookmark string                         `json:"source_bookmark,omitempty"`
+	SourceRef      string                         `json:"source_ref,omitempty"` // a pushed ref of the caller (#1968)
+	Kind           string                         `json:"kind,omitempty"`
+	Environment    services.WorkspaceEnvironment  `json:"environment,omitempty"`
+	Resources      services.WorkspaceResources    `json:"resources,omitempty"`
+	Image          *string                        `json:"image,omitempty"`
+	Network        *workspaceapi.WorkspaceNetwork `json:"network,omitempty"`
 	// ClientLeaseSeconds leases the workspace to this client; renew it with
 	// POST .../workspaces/{id}/lease or the workspace is reclaimed (#2457).
 	ClientLeaseSeconds int32 `json:"client_lease_seconds,omitempty"`
@@ -364,8 +367,7 @@ func (h *WorkspaceHandler) CreateWorkspace(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Strict: a setting this route does not store (resources, image, network,
-	// idle timeout, services) is refused before provisioning, never dropped (#2939).
+	// Strict: unsupported settings are refused before provisioning (#2939).
 	var req createWorkspaceRequest
 	if !decodeStrictJSONBody(w, r, &req) {
 		return
@@ -383,8 +385,13 @@ func (h *WorkspaceHandler) CreateWorkspace(w http.ResponseWriter, r *http.Reques
 		Kind:           req.Kind,
 		Environment:    req.Environment,
 		Resources:      req.Resources,
+		ImageRequested: req.Image != nil,
+		Network:        req.Network,
 		// A lease is optional; zero leaves the workspace unleased.
 		ClientLeaseSeconds: req.ClientLeaseSeconds,
+	}
+	if req.Image != nil {
+		input.Image = *req.Image
 	}
 	status := http.StatusCreated
 	var workspace services.WorkspaceResponse

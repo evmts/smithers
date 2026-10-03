@@ -165,6 +165,9 @@ type FeatureFlagsConfig struct {
 	Search bool `mapstructure:"search"`
 	// Workspaces gates the standalone workspaces routes (separate from Sandboxes). Default true.
 	Workspaces bool `mapstructure:"workspaces"`
+	// WorkspaceCustomImages gates caller-selected images, network modes and root SSH.
+	// Default false. Env: SMITHERS_FEATURE_FLAGS_WORKSPACE_CUSTOM_IMAGES.
+	WorkspaceCustomImages bool `mapstructure:"workspace_custom_images"`
 	// Agents gates the agent sessions / messages REST surface. Default false.
 	Agents bool `mapstructure:"agents"`
 	// WebDashboard gates the web dashboard read-out surface. Default false.
@@ -628,6 +631,7 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("feature_flags.agents", false)
 	v.SetDefault("feature_flags.web_dashboard", false)
 	v.SetDefault("feature_flags.subscription_connections", false)
+	v.SetDefault("feature_flags.workspace_custom_images", false)
 	v.SetDefault("feature_flags.protected_bookmarks", false)
 	v.SetDefault("feature_flags.notifications", false)
 	v.SetDefault("feature_flags.wiki", false)
@@ -768,6 +772,7 @@ func Load(configFile string) (*Config, error) {
 		{"feature_flags.agents", "SMITHERS_FEATURE_FLAGS_AGENTS"},
 		{"feature_flags.web_dashboard", "SMITHERS_FEATURE_FLAGS_WEB_DASHBOARD"},
 		{"feature_flags.subscription_connections", "SMITHERS_FEATURE_FLAGS_SUBSCRIPTION_CONNECTIONS"},
+		{"feature_flags.workspace_custom_images", "SMITHERS_FEATURE_FLAGS_WORKSPACE_CUSTOM_IMAGES"},
 		{"feature_flags.protected_bookmarks", "SMITHERS_FEATURE_FLAGS_PROTECTED_BOOKMARKS"},
 		{"feature_flags.notifications", "SMITHERS_FEATURE_FLAGS_NOTIFICATIONS"},
 		{"feature_flags.wiki", "SMITHERS_FEATURE_FLAGS_WIKI"},

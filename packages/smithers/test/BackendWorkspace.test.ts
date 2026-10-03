@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { Refused } from "../src/CliError.ts"
 import { APIError, Client } from "../src/internal/backend/Client.ts"
 import { remote } from "../src/internal/backend/SSH.ts"
 import { claudeScript, workspaces, workspaceSSH } from "../src/internal/backend/Workspaces.ts"
@@ -100,6 +101,98 @@ const fixture = async (environment: Record<string, string> = {}) => {
 }
 const options = { repo: "owner/repo" }
 describe("box remote execution", () => {
+  it("runs root via the authenticated SSH user endpoint and returns all output and the exit code", async () => {
+    const { c, request, exit } = await fixture()
+    request.mockResolvedValue({ ssh_command: "ssh root@guest", host_keys: [hostKey] })
+    vi.mocked(remote).mockResolvedValue({ code: 23, stdout: Buffer.from("0\n"), stderr: Buffer.from("diagnostic\n") })
+    const result = await workspaces["workspace exec"]!(c, { id: "box" }, {
+      ...options,
+      user: "root",
+      command: "id -u; exit 23",
+      timeout: 0
+    })
+    expect(request).toHaveBeenCalledExactlyOnceWith("GET", "/api/repos/owner/repo/workspaces/box/ssh?user=root")
+    expect(remote).toHaveBeenCalledWith(c, { command: "ssh root@guest", hostKeys: [key] }, expect.any(String), 0)
+    expect(result).toEqual({ workspace_id: "box", exit_code: 23, stdout: "0\n", stderr: "diagnostic\n" })
+    expect(exit).toHaveBeenCalledExactlyOnceWith(23)
+  })
+  it("preserves a root transport timeout without suggesting durable reattachment", async () => {
+    const { c, request, exit } = await fixture()
+    request.mockResolvedValue({ ssh_command: "ssh root@guest", host_keys: [hostKey] })
+    const error = new Refused({ fault: "user", code: "timed_out", message: "Workspace exec timed out" })
+    vi.mocked(remote).mockRejectedValue(error)
+    await expect(workspaces["workspace exec"]!(c, { id: "box" }, {
+      ...options,
+      user: "root",
+      command: "sleep 100",
+      timeout: 0.01
+    })).rejects.toBe(error)
+    expect(remote).toHaveBeenCalledWith(c, expect.any(Object), expect.any(String), 10)
+    expect(exit).not.toHaveBeenCalled()
+  })
+  it("preserves root authorization refusals without launching SSH", async () => {
+    const { c, request } = await fixture()
+    const error = new APIError(403, {}, "GET", "/ssh", new Headers())
+    request.mockRejectedValue(error)
+    await expect(workspaces["workspace exec"]!(c, { id: "box" }, {
+      ...options,
+      user: "root",
+      command: "id -u"
+    })).rejects.toBe(error)
+    expect(remote).not.toHaveBeenCalled()
+  })
+  it("seeds requested Claude API credentials on the root endpoint before execution", async () => {
+    const { c, request } = await fixture({ ANTHROPIC_API_KEY: "sk-ant-api03-key" })
+    request.mockResolvedValue({ ssh_command: "ssh root@guest", host_keys: [hostKey] })
+    await workspaces["workspace exec"]!(c, { id: "box" }, {
+      ...options,
+      user: "root",
+      command: "true",
+      seedAgentAuth: "claude"
+    })
+    expect(request).toHaveBeenCalledExactlyOnceWith("GET", "/api/repos/owner/repo/workspaces/box/ssh?user=root")
+    expect(remote).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(remote).mock.calls[0]!.slice(0, 4)).toEqual([
+      c,
+      { command: "ssh root@guest", hostKeys: [key] },
+      "bash -s",
+      120_000
+    ])
+    let script = ""
+    for await (const chunk of vi.mocked(remote).mock.calls[0]![4]!) script += chunk
+    expect(script).toContain("chmod 600")
+    expect(vi.mocked(remote).mock.calls[1]![2]).toContain("/bin/bash -c")
+  })
+  it("emits root output once and omits it from the live receipt", async () => {
+    const { c, exit } = await fixture()
+    const client = new Client(c.runtime, true)
+    vi.spyOn(client, "request").mockResolvedValue({ ssh_command: "ssh root@guest", host_keys: [hostKey] })
+    const output = vi.spyOn(client, "output").mockImplementation(() => {})
+    vi.mocked(remote).mockResolvedValue({ code: 7, stdout: Buffer.from("out"), stderr: Buffer.from("err") })
+    expect(
+      await workspaces["workspace exec"]!(client, { id: "box" }, {
+        ...options,
+        user: "root",
+        command: "true"
+      })
+    ).toEqual({ workspace_id: "box", exit_code: 7 })
+    expect(output).toHaveBeenCalledExactlyOnceWith(Buffer.from("out"), Buffer.from("err"))
+    expect(exit).toHaveBeenCalledExactlyOnceWith(7)
+  })
+  it.each([{ detach: true }, { "exec-id": "root-run" }])(
+    "refuses unsupported root durability %j before requests",
+    async (extra) => {
+      const { c, request } = await fixture()
+      await expect(workspaces["workspace exec"]!(c, { id: "box" }, {
+        ...options,
+        command: "true",
+        user: "root",
+        ...extra
+      })).rejects.toMatchObject({ fault: "user", code: "root_exec_not_durable" })
+      expect(request).not.toHaveBeenCalled()
+      expect(remote).not.toHaveBeenCalled()
+    }
+  )
   it("polls transient SSH errors and preserves requested user", async () => {
     const { c, request } = await fixture({ SMITHERS_WORKSPACE_SSH_POLL_TIMEOUT_MS: "1000" })
     request.mockRejectedValueOnce(new APIError(503, {}, "GET", "/ssh", new Headers())).mockResolvedValueOnce({
@@ -391,7 +484,10 @@ describe("box remote execution", () => {
       request.mock.calls.filter(([method, path]) => method === "POST" && path.endsWith("/command-runs/recover/cancel"))
     ).toHaveLength(1)
   })
-  it.each([{ command: "" }, { command: "true", timeout: -1 }, { command: "true", env: ["bad-key=value"] }])(
+  it.each([{ command: "" }, { command: "true", timeout: -1 }, { command: "true", env: ["bad-key=value"] }, {
+    command: "true",
+    user: "admin"
+  }, { command: "true", stdin: true }])(
     "rejects invalid exec options %j before admission",
     async (o) => {
       const { c, request } = await fixture()

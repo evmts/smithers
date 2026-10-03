@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "digest": "sha256:ea18e05bd1ebb3fab740b155dcf833bfc11f607243e556c776e950345aa8d6d3",
+  "digest": "sha256:fa3b5ae448c6c26642a6097f76d3e0859878ed61a9530ad63d9b7e7195c95f58",
   "faults": [
     "user",
     "wait",
@@ -852,11 +852,25 @@
       "doc": "The worker's registration conflicts with a live one under the same id."
     },
     {
+      "code": "workspace_custom_images_disabled",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "Caller-selected workspace images, network modes and root access require SMITHERS_FEATURE_FLAGS_WORKSPACE_CUSTOM_IMAGES."
+    },
+    {
       "code": "workspace_failed",
       "fault": "user",
       "status": 409,
       "retry_after": 0,
       "doc": "The workspace failed to provision and runs nothing; its failure is on the workspace. Create a new workspace."
+    },
+    {
+      "code": "workspace_image_unresolvable",
+      "fault": "user",
+      "status": 400,
+      "retry_after": 0,
+      "doc": "The requested public OCI image cannot be resolved to a verified manifest digest."
     },
     {
       "code": "workspace_rebuild_required",

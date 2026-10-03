@@ -649,7 +649,10 @@ type CreateResult struct {
 
 // Sandbox reports current sandbox state.
 type Sandbox struct {
-	ID                  string    `json:"id"`
+	ID string `json:"id"`
+	// Image is the provider-observed boot image, never the caller's request.
+	// Older providers omit it; omission is not a boot receipt.
+	Image               string    `json:"image,omitempty"`
 	RuntimeID           string    `json:"runtimeId,omitempty"`
 	LastNetworkActivity time.Time `json:"lastNetworkActivity,omitempty"`
 	State               State     `json:"state,omitempty"`

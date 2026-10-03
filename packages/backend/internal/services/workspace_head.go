@@ -286,6 +286,9 @@ func (s *WorkspaceService) revokeWorkspaceHeadToken(ctx context.Context, workspa
 // parent's unit and token on disk, and both must be replaced before the
 // child's first jj operation lands on the parent's head ref.
 func (s *WorkspaceService) installWorkspaceHeadReporter(ctx context.Context, workspace db.Workspace, vmID string) (db.Workspace, error) {
+	if workspace.ImageRef.String != "" || workspaceNetworkOf(workspace).Mode == "none" {
+		return workspace, nil
+	}
 	vmID = strings.TrimSpace(vmID)
 	if s.q == nil || s.sandbox == nil || vmID == "" {
 		return workspace, nil
@@ -426,6 +429,9 @@ type workspaceHeadSwapStore interface {
 // revoked, expiring or superseded publisher. Failures degrade head visibility
 // and repository access; they never block the workspace from running.
 func (s *WorkspaceService) ensureRuntimeWorkspaceHeadReporter(ctx context.Context, row db.Workspace, requesterID int64, observed workspaceapi.Workspace) db.Workspace {
+	if row.ImageRef.String != "" || workspaceNetworkOf(row).Mode == "none" {
+		return row
+	}
 	store, ok := s.q.(workspaceHeadSwapStore)
 	if !ok || !s.runtime.Capabilities().ManagedServices || strings.TrimSpace(observed.Home) == "" || strings.TrimSpace(observed.Root) == "" {
 		return row
@@ -630,6 +636,9 @@ func buildWorkspaceCodingInstallCommand(workspace db.Workspace, user, baseURL, s
 // reboot even when the workspace and provider still report running. No token
 // value is returned by the probe or written to guest storage.
 func (s *WorkspaceService) ensureWorkspaceHeadReporter(ctx context.Context, workspace db.Workspace) (db.Workspace, error) {
+	if workspace.ImageRef.String != "" || workspaceNetworkOf(workspace).Mode == "none" {
+		return workspace, nil
+	}
 	if s.runtime != nil {
 		return s.repairRuntimeWorkspaceHeadReporter(ctx, workspace)
 	}

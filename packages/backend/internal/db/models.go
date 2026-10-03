@@ -2932,6 +2932,10 @@ type Workspace struct {
 	VcpuCount               pgtype.Int4        `json:"vcpu_count"`
 	MemoryMb                pgtype.Int4        `json:"memory_mb"`
 	DiskMb                  pgtype.Int4        `json:"disk_mb"`
+	ImageRef                pgtype.Text        `json:"image_ref"`
+	ImageDigest             pgtype.Text        `json:"image_digest"`
+	BootedImageDigest       pgtype.Text        `json:"booted_image_digest"`
+	NetworkMode             pgtype.Text        `json:"network_mode"`
 }
 
 type WorkspaceChild struct {

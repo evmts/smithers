@@ -18,6 +18,9 @@ import (
 // the shared artifact installer; readiness is evidence from the guest, not
 // merely a running VM. Trusted process runtimes use the operator's toolchain.
 func (s *WorkspaceService) ensureRuntimeWorkspaceArtifacts(ctx context.Context, row db.Workspace, requesterID int64) error {
+	if row.ImageRef.String != "" {
+		return nil
+	}
 	// Without a compute provider, the isolated runtime owns its toolchain
 	// (the single-owner microVM adapter stages its packaged host itself).
 	if s.sandbox == nil {

@@ -67,12 +67,21 @@ shared filesystem execution service for arbitrary replicas.
 
 ## CLI and agents
 
-`smthrs workspace exec` uses these endpoints for both human and agent callers.
+`smthrs workspace exec --user developer` (the default) uses these endpoints for both human and agent callers.
 `--exec-id` supplies the retry identity. `--detach` returns the receipt after
 admission and leaves the command running; the same command and ID reattach.
 Ctrl-C and `--timeout` request cancellation; network errors preserve the ID for
 reattachment. Interactive
 input uses `workspace ssh` or `workspace shell`.
 
-The synchronous `/commands` endpoint and SSH log-file command runner are
-removed. API clients must use admission followed by polling.
+`--user root` obtains the existing owner-authorized `/ssh?user=root` grant and
+executes through SSH. It returns `exit_code`, `stdout` and `stderr` in JSON.
+It requires `SMITHERS_FEATURE_FLAGS_WORKSPACE_CUSTOM_IMAGES=true`; the default
+returns HTTP 403 `workspace_custom_images_disabled` before issuing a root grant.
+`--timeout 0` places no client deadline on the command. Root execution refuses
+`--detach` and `--exec-id` because SSH execution has no durable command receipt.
+The root restriction introduced during the durable-command migration reflected
+the supported execution path; the microVM remains the isolation boundary.
+
+The synchronous `/commands` endpoint is removed. API clients use admission
+followed by polling for durable developer commands.

@@ -114,14 +114,17 @@ type Layer struct {
 }
 
 type metadata struct {
-	Version   int      `json:"version"`
-	ID        string   `json:"id"`
-	Machine   string   `json:"machine"`
-	State     string   `json:"state"`
-	Snapshot  string   `json:"snapshot,omitempty"`
-	LayerKey  string   `json:"layerKey,omitempty"`
-	Link      []string `json:"link,omitempty"`
-	CreatedAt string   `json:"createdAt"`
+	Version   int                              `json:"version"`
+	Image     *workspaceapi.WorkspaceImage     `json:"image,omitempty"`
+	Network   *workspaceapi.WorkspaceNetwork   `json:"network,omitempty"`
+	Resources *workspaceapi.WorkspaceResources `json:"resources,omitempty"`
+	ID        string                           `json:"id"`
+	Machine   string                           `json:"machine"`
+	State     string                           `json:"state"`
+	Snapshot  string                           `json:"snapshot,omitempty"`
+	LayerKey  string                           `json:"layerKey,omitempty"`
+	Link      []string                         `json:"link,omitempty"`
+	CreatedAt string                           `json:"createdAt"`
 	// Reclaimed marks a stopped workspace whose machine and disk were
 	// removed; its next start boots a fresh machine (see ReclaimWorkspaceDisk).
 	Reclaimed bool `json:"reclaimed,omitempty"`
@@ -319,6 +322,21 @@ func (r *Runtime) load() error {
 		if err := json.Unmarshal(contents, &stored); err != nil || stored.Version != metadataVersion || stored.ID == "" || digest(stored.ID) != entry.Name() {
 			return fmt.Errorf("invalid microsandbox workspace metadata %s", entry.Name())
 		}
+		network, err := normalizeNetwork(stored.Network)
+		if err != nil {
+			return fmt.Errorf("invalid persisted network: %w", err)
+		}
+		stored.Network = network
+		resources, err := r.resourcesFor(stored.Resources)
+		if err != nil {
+			return fmt.Errorf("invalid persisted resources: %w", err)
+		}
+		stored.Resources = resources
+		if stored.Image != nil {
+			if err := validateImage(*stored.Image); err != nil {
+				return err
+			}
+		}
 		r.workspaces[stored.ID] = newWorkspace(stored, directory)
 	}
 	return nil
@@ -406,7 +424,7 @@ func (r *Runtime) Capabilities() workspaceapi.WorkspaceCapabilities {
 	return workspaceapi.WorkspaceCapabilities{
 		PersistentFiles: true, Execution: true, ManagedServices: true, ManagedHTTPHosts: true,
 		SourceRevision: true, Terminal: true, LoopbackPreview: true, FileOperations: true, ColdSnapshots: true,
-		EgressSecrets: r.config.EgressRelay != nil,
+		EgressSecrets: r.config.EgressRelay != nil, CustomImages: true, NetworkPolicy: true, Resources: true, ResourcesDisk: r.environments == nil, CustomImageResourcesDisk: true,
 	}
 }
 
@@ -430,7 +448,7 @@ var _ workspaceapi.WorkspaceConversationEgress = (*Runtime)(nil)
 
 func describe(ws *workspace) workspaceapi.Workspace {
 	return workspaceapi.Workspace{ID: ws.ID, Root: guestRoot, Home: guestHome, StateDir: guestStateDir, TempDir: guestTempDir,
-		State: workspaceapi.WorkspaceState(ws.State)}
+		State: workspaceapi.WorkspaceState(ws.State), Image: cloneImage(ws.Image), Network: cloneNetwork(ws.Network), Resources: cloneResources(ws.Resources)}
 }
 
 // WorkspaceIDs lists every workspace this runtime owns.
@@ -458,9 +476,27 @@ func validWorkspaceID(id string) (string, error) {
 // crash mid-create is reconciled rather than leaked.
 func (r *Runtime) CreateWorkspace(ctx context.Context, spec workspaceapi.WorkspaceSpec) (workspaceapi.Workspace, error) {
 	if existing, err := r.InspectWorkspace(ctx, spec.ID); err == nil {
+		if err := r.checkExistingPolicy(existing, spec); err != nil {
+			return workspaceapi.Workspace{}, err
+		}
 		return existing, nil
 	}
-	if r.environments != nil {
+	resources, err := r.resourcesFor(spec.Resources)
+	if err != nil {
+		return workspaceapi.Workspace{}, err
+	}
+	spec.Resources = resources
+	network, err := normalizeNetwork(spec.Network)
+	if err != nil {
+		return workspaceapi.Workspace{}, err
+	}
+	spec.Network = network
+	if spec.Image != nil {
+		if err := validateImage(*spec.Image); err != nil {
+			return workspaceapi.Workspace{}, err
+		}
+	}
+	if r.environments != nil && spec.Image == nil {
 		if err := r.environments.admit(ctx); err != nil {
 			return workspaceapi.Workspace{}, err
 		}
@@ -474,6 +510,19 @@ func (r *Runtime) CreateWorkspace(ctx context.Context, spec workspaceapi.Workspa
 }
 
 func (r *Runtime) createFrom(ctx context.Context, spec workspaceapi.WorkspaceSpec, layer Layer) (workspaceapi.Workspace, error) {
+	resources, err := r.resourcesFor(spec.Resources)
+	if err != nil {
+		return workspaceapi.Workspace{}, err
+	}
+	network, err := normalizeNetwork(spec.Network)
+	if err != nil {
+		return workspaceapi.Workspace{}, err
+	}
+	if spec.Image != nil {
+		if err := validateImage(*spec.Image); err != nil {
+			return workspaceapi.Workspace{}, err
+		}
+	}
 	id, err := validWorkspaceID(spec.ID)
 	if err != nil {
 		return workspaceapi.Workspace{}, err
@@ -497,7 +546,7 @@ func (r *Runtime) createFrom(ctx context.Context, spec workspaceapi.WorkspaceSpe
 		return workspaceapi.Workspace{}, fmt.Errorf("create microsandbox workspace state: %w", err)
 	}
 	ws := newWorkspace(metadata{Version: metadataVersion, ID: id, Machine: r.machineName(id),
-		State: string(workspaceapi.WorkspaceStarting), Snapshot: layer.Snapshot, LayerKey: layer.Key, Link: layer.Link,
+		Image: cloneImage(spec.Image), Network: network, Resources: resources, State: string(workspaceapi.WorkspaceStarting), Snapshot: layer.Snapshot, LayerKey: layer.Key, Link: layer.Link,
 		CreatedAt: time.Now().UTC().Format(time.RFC3339)}, directory)
 	r.workspaces[id] = ws
 	r.mu.Unlock()
@@ -547,10 +596,18 @@ func (r *Runtime) admitRunningLocked() error {
 }
 
 func (r *Runtime) machineFlags(workspaceID string) []string {
-	args := []string{"-n", r.machineName(workspaceID), "-c", strconv.Itoa(r.config.CPUs), "-m", strconv.Itoa(r.config.MemoryMiB) + "M", "-q",
+	return r.machineFlagsFor(workspaceID, nil)
+}
+
+func (r *Runtime) machineFlagsFor(workspaceID string, network *workspaceapi.WorkspaceNetwork) []string {
+	return r.machineFlagsSized(workspaceID, network, &workspaceapi.WorkspaceResources{VCPUCount: int32(r.config.CPUs), MemoryMB: int32(r.config.MemoryMiB), DiskMB: int32(r.config.DiskMiB)})
+}
+
+func (r *Runtime) machineFlagsSized(workspaceID string, network *workspaceapi.WorkspaceNetwork, resources *workspaceapi.WorkspaceResources) []string {
+	args := []string{"-n", r.machineName(workspaceID), "-c", strconv.Itoa(int(resources.VCPUCount)), "-m", strconv.Itoa(int(resources.MemoryMB)) + "M", "-q",
 		// Deny every destination but the backend's own loopback listener.
 		"--no-net"}
-	for _, port := range r.config.HostPorts {
+	for _, port := range r.hostPorts(network) {
 		args = append(args, "--net-rule", fmt.Sprintf("allow@host:tcp:%d", port))
 	}
 	labels := r.ownership(workspaceID)
@@ -566,12 +623,24 @@ func (r *Runtime) machineFlags(workspaceID string) []string {
 }
 
 func (r *Runtime) createMachine(ctx context.Context, ws *workspace) error {
+	resources, err := r.resourcesFor(ws.Resources)
+	if err != nil {
+		return err
+	}
+	ws.Resources = resources
 	ws.RelayPort = relayPort(r.config.EgressRelay)
+	if ws.Network != nil && ws.Network.Mode == "none" {
+		ws.RelayPort = 0
+	}
 	var args []string
 	if ws.Snapshot != "" {
-		args = append([]string{"run", "--from-snapshot", ws.Snapshot, "-d"}, r.machineFlags(ws.ID)...)
+		args = append([]string{"run", "--from-snapshot", ws.Snapshot, "-d"}, r.machineFlagsSized(ws.ID, ws.Network, resources)...)
 	} else {
-		args = append([]string{"create", r.config.Image, "--pull", "if-missing", "--root-disk", strconv.Itoa(r.config.DiskMiB) + "M"}, r.machineFlags(ws.ID)...)
+		image := r.config.Image
+		if ws.Image != nil {
+			image = ws.Image.PinnedReference()
+		}
+		args = append([]string{"create", image, "--pull", "if-missing", "--root-disk", strconv.Itoa(int(resources.DiskMB)) + "M"}, r.machineFlagsSized(ws.ID, ws.Network, resources)...)
 	}
 	createCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
@@ -735,7 +804,7 @@ func (r *Runtime) startMachine(ctx context.Context, ws *workspace) error {
 // environment layer, or the base image, with an empty root. A partial boot is
 // removed so the workspace stays reclaimed and startable.
 func (r *Runtime) recreateMachine(ctx context.Context, ws *workspace) error {
-	if r.environments != nil {
+	if r.environments != nil && ws.Image == nil {
 		if err := r.environments.admit(ctx); err != nil {
 			return err
 		}

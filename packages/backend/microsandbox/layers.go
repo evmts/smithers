@@ -213,7 +213,7 @@ func (e *environments) records() ([]layerRecord, error) {
 // ResolveWorkspaceLayer returns the dependency layer for the workspace's
 // source, building its toolchain and dependency layers when missing.
 func (r *Runtime) ResolveWorkspaceLayer(ctx context.Context, spec workspaceapi.WorkspaceSpec) (Layer, error) {
-	if r.environments == nil || spec.Source == nil {
+	if spec.Image != nil || r.environments == nil || spec.Source == nil {
 		return Layer{}, nil
 	}
 	return r.environments.resolve(ctx, *spec.Source, nil)

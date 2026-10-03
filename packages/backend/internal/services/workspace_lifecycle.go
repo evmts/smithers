@@ -717,6 +717,7 @@ func (s *WorkspaceService) resumeWorkspaceVM(ctx context.Context, workspace db.W
 			return workspace, err
 		}
 	}
+	egress = workspaceSandboxEgress(workspace, egress)
 	resumeStartedAt := time.Now()
 	// Readiness is a first-boot contract. Resume returns when the controller
 	// reports the sandbox running; it must not wait for a one-shot boot signal.
@@ -733,12 +734,14 @@ func (s *WorkspaceService) resumeWorkspaceVM(ctx context.Context, workspace db.W
 	if err := s.waitForWorkspaceGuestActivation(startCtx, workspace); err != nil {
 		return workspace, err
 	}
-	if err := finishWorkspaceArtifacts(resumeCtx, s.sandbox, workspace.VmID, workspaceBootstrapScriptForKind(workspace.Kind)); err != nil {
-		return workspace, err
-	}
-	if client, ok := s.sandbox.(workspaceArtifactClient); ok {
-		if err := waitForWorkspaceArtifactBootstrap(resumeCtx, client, workspace.VmID); err != nil {
+	if workspace.ImageRef.String == "" {
+		if err := finishWorkspaceArtifacts(resumeCtx, s.sandbox, workspace.VmID, workspaceBootstrapScriptForKind(workspace.Kind)); err != nil {
 			return workspace, err
+		}
+		if client, ok := s.sandbox.(workspaceArtifactClient); ok {
+			if err := waitForWorkspaceArtifactBootstrap(resumeCtx, client, workspace.VmID); err != nil {
+				return workspace, err
+			}
 		}
 	}
 	if binding != nil {

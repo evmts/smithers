@@ -263,6 +263,15 @@ func (r *Runtime) acquire(ctx context.Context) error {
 var ErrCommandRunaway = errors.New("command exceeded the runaway time guard")
 
 func (r *Runtime) ExecuteCommand(ctx context.Context, workspaceID string, command workspaceapi.Command) (workspaceapi.CommandResult, error) {
+	return r.ExecuteCommandAsUser(ctx, workspaceID, "developer", command)
+}
+
+// ExecuteCommandAsUser uses the same guest cgroup, cancellation and result
+// protocol for developer and root; the VM remains the execution boundary.
+func (r *Runtime) ExecuteCommandAsUser(ctx context.Context, workspaceID, user string, command workspaceapi.Command) (workspaceapi.CommandResult, error) {
+	if user != "developer" && user != "root" {
+		return workspaceapi.CommandResult{}, errors.New("workspace user must be developer or root")
+	}
 	if err := r.acquire(ctx); err != nil {
 		return workspaceapi.CommandResult{}, errors.Join(err, workspaceapi.ErrCommandCancelled)
 	}
@@ -274,6 +283,11 @@ func (r *Runtime) ExecuteCommand(ctx context.Context, workspaceID string, comman
 	request, err := r.request(command)
 	if err != nil {
 		return workspaceapi.CommandResult{}, err
+	}
+	if user == "root" {
+		request.User = "root"
+		request.Env["HOME"], request.Env["USER"] = "/root", "root"
+		request.Env["XDG_CONFIG_HOME"], request.Env["XDG_CACHE_HOME"], request.Env["XDG_DATA_HOME"] = "/root/.config", "/root/.cache", "/root/.local/share"
 	}
 	started, err := r.start(ws, request)
 	if err != nil {
@@ -642,3 +656,5 @@ func (r *Runtime) OpenWorkspaceTerminal(ctx context.Context, workspaceID string,
 	}()
 	return result, nil
 }
+
+var _ workspaceapi.WorkspaceUserExecution = (*Runtime)(nil)

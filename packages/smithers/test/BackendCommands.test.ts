@@ -49,7 +49,8 @@ const apiError = (status: number) => new APIError(status, { message: "failed" },
 const options = { repo: "owner/repo" }
 
 const homeFixture = async (
-  handler: (req: IncomingMessage, res: ServerResponse) => void
+  handler: (req: IncomingMessage, res: ServerResponse) => void,
+  extraEnvironment: Record<string, string> = {}
 ) => {
   const home = await mkdtemp(join(tmpdir(), "one-cli-home-"))
   dirs.push(home)
@@ -65,7 +66,8 @@ const homeFixture = async (
     SMITHERS_API_ORIGIN: origin,
     SMITHERS_AUTH_FILE: join(home, "auth.json"),
     SMITHERS_DISABLE_SYSTEM_KEYRING: "1",
-    SMITHERS_AUDIENCE: "human"
+    SMITHERS_AUDIENCE: "human",
+    ...extraEnvironment
   }
   await writeFile(
     environment.SMITHERS_AUTH_FILE,
@@ -949,7 +951,9 @@ describe("workspace create over local HTTP (#2939)", () => {
     "kind",
     "environment",
     "client_lease_seconds",
-    "resources"
+    "resources",
+    "image",
+    "network"
   ])
   const createServer = async () => {
     const bodies: Array<Record<string, unknown>> = []
@@ -1009,23 +1013,36 @@ describe("workspace create over local HTTP (#2939)", () => {
     }
   })
   it.each([
-    [["--image", "docker.io/library/python:3.13-slim"], "image"],
-    [["--allow", "github.com"], "network"],
-    [["--idle-timeout", "1800"], "idle_timeout_seconds"],
-    [["--service", "web=npm start"], "services"]
-  ])("passes %j through and exits non-zero with the backend refusal", async (flags, field) => {
+    { flags: ["--image", "docker.io/library/python:3.13-slim"], body: { image: "docker.io/library/python:3.13-slim" } },
+    { flags: ["--network", "none"], body: { network: { mode: "none" } } },
+    { flags: ["--network", "proxy"], body: { network: { mode: "proxy" } } }
+  ])("sends custom image and network flags through HTTP: $flags", async ({ flags, body }) => {
     const fixture = await createServer()
     try {
-      const result = await fixture.run(["workspace", "create", "--repo", "owner/repo", ...flags])
-      expect(fixture.bodies).toHaveLength(1)
-      expect(fixture.bodies[0]).toHaveProperty(field)
-      expect(result.code).not.toBe(0)
-      expect(result.output + result.error).toContain("code: request_refused")
-      expect(result.output + result.error).toContain(`unknown field \\"${field}\\"`)
+      const result = await fixture.run(["workspace", "create", "--repo", "owner/repo", ...flags, "--format", "json"])
+      expect(result.code, result.error).toBe(0)
+      expect(fixture.bodies).toEqual([{ name: "", ...body }])
+      expect(JSON.parse(result.output)).toMatchObject({ id: "box", status: "pending" })
     } finally {
       await fixture.close()
     }
   })
+  it.each([["--idle-timeout", "1800"], ["--service", "web=npm start"], ["--network", "invalid"], [
+    "--network",
+    "allowlist"
+  ], ["--allow", "github.com"]])(
+    "refuses removed or invalid create flags %j before HTTP",
+    async (...flags) => {
+      const fixture = await createServer()
+      try {
+        const result = await fixture.run(["workspace", "create", "--repo", "owner/repo", ...flags])
+        expect(result.code).not.toBe(0)
+        expect(fixture.bodies).toEqual([])
+      } finally {
+        await fixture.close()
+      }
+    }
+  )
   it("refuses an unknown kind before any request", async () => {
     const fixture = await createServer()
     try {
@@ -1034,6 +1051,129 @@ describe("workspace create over local HTTP (#2939)", () => {
       expect(fixture.bodies).toEqual([])
     } finally {
       await fixture.close()
+    }
+  })
+})
+
+describe("workspace image and root execution public CLI", () => {
+  it.each([
+    { name: "image", args: ["workspace", "create", "--repo", "owner/repo", "--image", "python:3.13-slim"] },
+    { name: "network", args: ["workspace", "create", "--repo", "owner/repo", "--network", "none"] },
+    { name: "root", args: ["workspace", "exec", "box", "--repo", "owner/repo", "--user", "root", "--command", "id -u"] }
+  ])("preserves the default-off server refusal for $name", async ({ args }) => {
+    const requests: string[] = []
+    const f = await homeFixture((req, res) => {
+      requests.push(`${req.method} ${req.url}`)
+      req.resume()
+      res.writeHead(403, { "Content-Type": "application/json" })
+      res.end(JSON.stringify({
+        code: "workspace_custom_images_disabled",
+        fault: "user",
+        message: "Enable SMITHERS_FEATURE_FLAGS_WORKSPACE_CUSTOM_IMAGES to use custom workspace capabilities"
+      }))
+    })
+    try {
+      const result = await f.run([...args, "--format", "json"])
+      expect(result.code).not.toBe(0)
+      const failure = JSON.parse(result.output || result.error)
+      expect(failure).toMatchObject({ code: "workspace_custom_images_disabled" })
+      expect(failure.message).toContain("SMITHERS_FEATURE_FLAGS_WORKSPACE_CUSTOM_IMAGES")
+      expect(requests).toHaveLength(1)
+      if (args[1] === "exec") expect(requests[0]).toBe("GET /api/repos/owner/repo/workspaces/box/ssh?user=root")
+    } finally {
+      await f.close()
+    }
+  })
+  it("retains admitted image and network receipts in JSON view", async () => {
+    const image = { ref: "python:3.13-slim", digest: `sha256:${"a".repeat(64)}` }
+    const network = { mode: "none" }
+    const requests: string[] = []
+    const f = await homeFixture((req, res) => {
+      requests.push(`${req.method} ${req.url}`)
+      res.setHeader("Content-Type", "application/json")
+      res.end(JSON.stringify({ id: "box", status: "pending", image, network }))
+    })
+    try {
+      const result = await f.run(["workspace", "view", "box", "--repo", "owner/repo", "--format", "json"])
+      expect(result.code, result.output + result.error).toBe(0)
+      expect(JSON.parse(result.output)).toMatchObject({ id: "box", image, network })
+      expect(requests).toEqual(["GET /api/repos/owner/repo/workspaces/box"])
+    } finally {
+      await f.close()
+    }
+  })
+  it("runs --user root --timeout 0 and returns JSON stdout, stderr and child status", async () => {
+    // There is no remote SSH guest in the CLI unit tier. Keep real HTTP,
+    // argument parsing, SSH validation, process spawning and JSON presentation;
+    // replace only the SSH executable at the unavailable network boundary.
+    const bin = await mkdtemp(join(tmpdir(), "one-cli-root-bin-"))
+    dirs.push(bin)
+    await writeFile(
+      join(bin, "ssh"),
+      `#!${process.execPath}\nprocess.stdout.write("0\\n"); process.stderr.write("warning\\n"); process.exit(23)\n`,
+      { mode: 0o700 }
+    )
+    const requests: string[] = []
+    const f = await homeFixture((req, res) => {
+      requests.push(`${req.method} ${req.url}`)
+      res.setHeader("Content-Type", "application/json")
+      res.end(
+        JSON.stringify({ ssh_command: "ssh root@guest", host_keys: [{ algorithm: "ssh-ed25519", public_key: "AAAA" }] })
+      )
+    }, { PATH: `${bin}:/usr/bin:/bin` })
+    try {
+      const result = await f.run([
+        "workspace",
+        "exec",
+        "box",
+        "--repo",
+        "owner/repo",
+        "--user",
+        "root",
+        "--command",
+        "id -u",
+        "--timeout",
+        "0",
+        "--format",
+        "json"
+      ])
+      expect(result.code, result.output + result.error).toBe(23)
+      expect(JSON.parse(result.output)).toEqual({
+        workspace_id: "box",
+        exit_code: 23,
+        stdout: "0\n",
+        stderr: "warning\n"
+      })
+      expect(requests).toEqual(["GET /api/repos/owner/repo/workspaces/box/ssh?user=root"])
+    } finally {
+      await f.close()
+    }
+  })
+  it.each(["--detach", "--exec-id", "--user"])("refuses unsupported root option %s before HTTP", async (flag) => {
+    const requests: string[] = []
+    const f = await homeFixture((req, res) => {
+      requests.push(String(req.url))
+      res.end("{}")
+    })
+    try {
+      const args = flag === "--detach" ? [flag] : [flag, flag === "--user" ? "admin" : "root-run"]
+      const result = await f.run([
+        "workspace",
+        "exec",
+        "box",
+        "--repo",
+        "owner/repo",
+        "--user",
+        "root",
+        "--command",
+        "true",
+        ...args
+      ])
+      expect(result.code).not.toBe(0)
+      expect(requests).toEqual([])
+      if (flag !== "--user") expect(result.output + result.error).toContain("root_exec_not_durable")
+    } finally {
+      await f.close()
     }
   })
 })

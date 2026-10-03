@@ -80,7 +80,7 @@ case "$3" in "$TEST_GUEST"/*) exit 0 ;; *) exit 1 ;; esac
   // The unavailable remote command service executes its exact submitted argv
   // locally and returns a durable receipt; the shell/process boundary is real.
   const request = vi.spyOn(c, "request").mockImplementation(async (method, path, body) => {
-    if (method === "GET" && path.endsWith("/ssh")) {
+    if (method === "GET" && (path.endsWith("/ssh") || path.endsWith("/ssh?user=root"))) {
       return { ssh_command: "ssh guest", host_keys: [{ algorithm: "ssh-ed25519", public_key: "AAAA" }] }
     }
     if (method === "POST" && path.endsWith("/command-runs")) {
@@ -104,6 +104,42 @@ case "$3" in "$TEST_GUEST"/*) exit 0 ;; *) exit 1 ;; esac
 }
 
 describe("workspace shell execution (#1865)", () => {
+  it("runs root commands through SSH with literal environment values, multiline Bash and cwd", async () => {
+    const { c, home, request, exit } = await fixture()
+    const directory = join(home, "root 'working directory")
+    await mkdir(directory)
+    const literal = "quote' and $(touch should-not-exist)\nsecond line"
+    const result = await workspaces["workspace exec"]!(c, { id: "box" }, {
+      repo: "owner/repo",
+      user: "root",
+      cwd: directory,
+      env: [`LITERAL=${literal}`],
+      timeout: 0,
+      command:
+        "values=(first 'second line')\nprintf '%s\\n' \"${values[@]}\"\nprintf '%s\\n' \"$LITERAL\"\npwd\nprintf diagnostic >&2\nexit 23"
+    })
+    expect(result).toEqual({
+      workspace_id: "box",
+      exit_code: 23,
+      stdout: `first\nsecond line\n${literal}\n${directory}\n`,
+      stderr: "diagnostic"
+    })
+    expect(existsSync(join(directory, "should-not-exist"))).toBe(false)
+    expect(request).toHaveBeenCalledExactlyOnceWith("GET", "/api/repos/owner/repo/workspaces/box/ssh?user=root")
+    expect(exit).toHaveBeenCalledExactlyOnceWith(23)
+  })
+
+  it("stops the root SSH process when the client timeout expires", async () => {
+    const { c, request, exit } = await fixture()
+    await expect(workspaces["workspace exec"]!(c, { id: "box" }, {
+      repo: "owner/repo",
+      user: "root",
+      command: "sleep 30",
+      timeout: 0.02
+    })).rejects.toMatchObject({ fault: "user", code: "timed_out" })
+    expect(request).toHaveBeenCalledExactlyOnceWith("GET", "/api/repos/owner/repo/workspaces/box/ssh?user=root")
+    expect(exit).not.toHaveBeenCalled()
+  })
   it("preserves command exit codes without running login logout hooks (plue#785)", async () => {
     const { c, home, exit } = await fixture()
     const logout = join(home, "logout.log")
@@ -119,16 +155,19 @@ describe("workspace shell execution (#1865)", () => {
     expect(await readFile(logout, "utf8")).toBe("logout")
     await rm(logout)
 
-    for (const test of [
-      { body: "printf done", code: 0, stdout: "done" },
-      { body: "exit 0", code: 0, stdout: "" },
-      { body: trap + "true", code: 0, stdout: "EXIT=0\n" },
-      { body: "exit 23", code: 23, stdout: "" },
-      { body: trap + "exit 7", code: 7, stdout: "EXIT=7\n" }
-    ]) {
+    for (
+      const test of [
+        { body: "printf done", code: 0, stdout: "done" },
+        { body: "exit 0", code: 0, stdout: "" },
+        { body: trap + "true", code: 0, stdout: "EXIT=0\n" },
+        { body: "exit 23", code: 23, stdout: "" },
+        { body: trap + "exit 7", code: 7, stdout: "EXIT=7\n" }
+      ]
+    ) {
       exit.mockClear()
       const response = await workspaces["workspace exec"]!(c, { id: "box" }, {
-        repo: "owner/repo", command: prelude + test.body
+        repo: "owner/repo",
+        command: prelude + test.body
       })
       expect(response).toMatchObject({ exit_code: test.code, stdout: test.stdout, stderr: "" })
       expect(exit).toHaveBeenCalledExactlyOnceWith(test.code)

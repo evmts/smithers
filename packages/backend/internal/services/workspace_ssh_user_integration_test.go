@@ -36,7 +36,7 @@ func TestWorkspaceSSHUserGrantUsesOwnedProductWorkspace(t *testing.T) {
 			return sandbox.AccessGrant{ID: "grant"}, nil
 		},
 	}
-	svc := NewWorkspaceService(q, WithWorkspaceSandboxClient(provider), WithWorkspaceSSHHost("ssh.example.test"))
+	svc := NewWorkspaceService(q, WithWorkspaceCustomImagesEnabled(true), WithWorkspaceSandboxClient(provider), WithWorkspaceSSHHost("ssh.example.test"))
 	for _, tc := range []struct{ requested, want string }{{"root", "root"}, {"", "developer"}, {"developer", "developer"}} {
 		info, err := svc.GetWorkspaceSSHConnectionInfoAs(ctx, workspaceID, repo.ID, owner.ID, tc.requested)
 		require.NoError(t, err)

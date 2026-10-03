@@ -177,6 +177,7 @@ var allEnvKeys = []string{
 	"SMITHERS_FEATURE_FLAGS_ISSUES",
 	"SMITHERS_FEATURE_FLAGS_SEARCH",
 	"SMITHERS_FEATURE_FLAGS_WORKSPACES",
+	"SMITHERS_FEATURE_FLAGS_WORKSPACE_CUSTOM_IMAGES",
 	"SMITHERS_FEATURE_FLAGS_AGENTS",
 	"SMITHERS_FEATURE_FLAGS_WEB_DASHBOARD",
 	"SMITHERS_FEATURE_FLAGS_SUBSCRIPTION_CONNECTIONS",
@@ -208,8 +209,47 @@ var allEnvKeys = []string{
 	"SMITHERS_CHAT_LEASE_SECONDS",
 }
 
-// clearConfigEnv unsets all SMITHERS_ env vars that config.Load() reads,
-// and restores them after the test via t.Cleanup.
+func TestLoad_WorkspaceCustomImagesDefaultsAndOverrides(t *testing.T) {
+	const key = "SMITHERS_FEATURE_FLAGS_WORKSPACE_CUSTOM_IMAGES"
+	for _, test := range []struct {
+		name, yaml, environment string
+		want                    bool
+	}{
+		{name: "default disabled"},
+		{name: "yaml enabled", yaml: "feature_flags:\n  workspace_custom_images: true\n", want: true},
+		{name: "yaml disabled", yaml: "feature_flags:\n  workspace_custom_images: false\n"},
+		{name: "environment enabled", environment: "true", want: true},
+		{name: "environment disables yaml", yaml: "feature_flags:\n  workspace_custom_images: true\n", environment: "false"},
+		{name: "environment enables yaml", yaml: "feature_flags:\n  workspace_custom_images: false\n", environment: "true", want: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			clearConfigEnv(t)
+			path := ""
+			if test.yaml != "" {
+				path = t.TempDir() + "/config.yaml"
+				require.NoError(t, os.WriteFile(path, []byte(test.yaml), 0600))
+			}
+			if test.environment != "" {
+				t.Setenv(key, test.environment)
+			}
+			cfg, err := Load(path)
+			require.NoError(t, err)
+			assert.Equal(t, test.want, cfg.FeatureFlags.WorkspaceCustomImages)
+		})
+	}
+	t.Run("false resets earlier enable", func(t *testing.T) {
+		clearConfigEnv(t)
+		t.Setenv(key, "true")
+		cfg, err := Load("")
+		require.NoError(t, err)
+		require.True(t, cfg.FeatureFlags.WorkspaceCustomImages)
+		t.Setenv(key, "false")
+		cfg, err = Load("")
+		require.NoError(t, err)
+		require.False(t, cfg.FeatureFlags.WorkspaceCustomImages)
+	})
+}
+
 func TestLoad_GitHubSyncWebhookDefaultsAndEnvironment(t *testing.T) {
 	clearConfigEnv(t)
 	cfg, err := Load("")
@@ -224,6 +264,8 @@ func TestLoad_GitHubSyncWebhookDefaultsAndEnvironment(t *testing.T) {
 	assert.Equal(t, "integration-signing-key", cfg.Webhook.GitHubSyncSecret)
 }
 
+// clearConfigEnv unsets all SMITHERS_ env vars that config.Load() reads,
+// and restores them after the test via t.Cleanup.
 func clearConfigEnv(t *testing.T) {
 	t.Helper()
 	for _, key := range allEnvKeys {

@@ -89,33 +89,12 @@ export const workspaceBody = (o: Values) => {
     if (o[key!] !== undefined) resources[field!] = positive(o[key!], key)
   }
   if (Object.keys(resources).length) body.resources = resources
-  const allow = list(o.allow).flatMap((value) => str(value).split(",")).map((value) => value.trim()).filter(Boolean)
-  const mode = str(o.network || (allow.length ? "allowlist" : "")).toLowerCase()
+  const mode = str(o.network || "").toLowerCase()
   if (mode) {
-    if (!["proxy", "allowlist", "none"].includes(mode) || (allow.length && mode !== "allowlist")) {
+    if (!["proxy", "none"].includes(mode)) {
       throw new UsageError({ message: "Invalid workspace network options" })
     }
-    body.network = { mode, ...(allow.length ? { allow } : {}) }
-  }
-  if (o.idleTimeout !== undefined) {
-    if (!Number.isInteger(o.idleTimeout) || Number(o.idleTimeout) < 0) {
-      throw new UsageError({ message: "Idle timeout must be >= 0" })
-    }
-    body.idle_timeout_seconds = o.idleTimeout
-  }
-  const seen = new Set<string>()
-  if (list(o.service).length) {
-    body.services = list(o.service).map((value) => {
-      const raw = str(value),
-        index = raw.indexOf("="),
-        name = raw.slice(0, index).trim(),
-        command = raw.slice(index + 1).trim()
-      if (index < 1 || !name || !command || /[ /\\]/.test(name) || seen.has(name)) {
-        throw new UsageError({ message: "Services must have unique NAME=COMMAND values" })
-      }
-      seen.add(name)
-      return { name, mode: "service", exec: ["/bin/sh", "-lc", command] }
-    })
+    body.network = { mode }
   }
   return body
 }
@@ -177,8 +156,7 @@ workspaces["workspace view"] = async (c, a, o) => {
       ? minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${minutes}m`
       : null,
     persistence: ws.persistence || "persistent",
-    snapshot_id: ws.snapshot_id ?? null,
-    idle_timeout_seconds: ws.idle_timeout_seconds ?? 1800
+    snapshot_id: ws.snapshot_id ?? null
   }
 }
 workspaces["workspace delete"] = async (c, a, o) => {
@@ -245,9 +223,20 @@ workspaces["workspace exec"] = async (c, a, o) => {
   if (!str(o.command).trim() || !Number.isFinite(timeout) || timeout < 0) {
     throw new UsageError({ message: "A command and non-negative timeout are required" })
   }
-  if (o.stdin || (o.user && o.user !== "developer")) {
+  if (o.stdin) {
     throw new UsageError({
-      message: "Use workspace ssh or workspace shell for interactive input or another guest user"
+      message: "Use workspace ssh or workspace shell for interactive input"
+    })
+  }
+  const user = o.user ?? "developer"
+  if (!["developer", "root"].includes(str(user))) {
+    throw new UsageError({ message: "Guest user must be developer or root" })
+  }
+  if (user === "root" && (o.detach || o["exec-id"] !== undefined)) {
+    throw new Refused({
+      fault: "user",
+      code: "root_exec_not_durable",
+      message: "Root execution does not support --detach or --exec-id"
     })
   }
   if (o.detach && timeout > 0) throw new UsageError({ message: "--detach cannot be combined with --timeout" })
@@ -262,6 +251,27 @@ workspaces["workspace exec"] = async (c, a, o) => {
   if (requestID.length > 128 || !requestID.trim()) throw new UsageError({ message: "Invalid exec id" })
   const credential = o.seedAgentAuth === undefined ? undefined : seedCredential(c, str(o.seedAgentAuth).split(","))
   const id = await resolveID(c, a, o), path = base(c, o) + `/${esc(id)}/command-runs`
+  if (user === "root") {
+    const ssh = await sshInfo(c, base(c, o) + `/${esc(id)}`, user)
+    if (credential !== undefined) await seed(c, ssh, credential)
+    const script = [
+      "if [ -r /etc/smithers/egress.env ]; then . /etc/smithers/egress.env; fi",
+      o.cwd
+        ? `cd -- ${quote(str(o.cwd))} || exit $?`
+        : "cd -- /workspace 2>/dev/null || cd -- /home/developer/workspace 2>/dev/null || cd ~",
+      ...Object.entries(environment).map(([key, value]) => `export ${key}=${quote(value)}`),
+      `exec /bin/bash -c ${quote(str(o.command))}`
+    ].join("\n")
+    const result = await remote(c, ssh, `/bin/bash -c ${quote(script)}`, timeout * 1000)
+    c.output(result.stdout, result.stderr)
+    c.flushOutput()
+    c.runtime.exit?.(result.code)
+    return {
+      workspace_id: id,
+      exit_code: result.code,
+      ...(c.live ? {} : { stdout: result.stdout.toString("utf8"), stderr: result.stderr.toString("utf8") })
+    }
+  }
   if (credential !== undefined) {
     const ssh = await sshInfo(c, base(c, o) + `/${esc(id)}`, "developer")
     await seed(c, ssh, credential)

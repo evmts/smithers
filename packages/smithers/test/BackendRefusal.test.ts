@@ -45,6 +45,32 @@ const apiError = (status: number, message?: string) =>
 describe("backend HTTP failures become refusals", () => {
   it.each(
     [
+      [403, "workspace_custom_images_disabled", "workspace_custom_images_disabled"],
+      [400, "workspace_custom_images_disabled", "request_refused"],
+      [400, "workspace_image_unresolvable", "workspace_image_unresolvable"],
+      [403, "workspace_image_unresolvable", "forbidden"],
+      [400, "arbitrary_backend_code", "request_refused"],
+      [403, "arbitrary_backend_code", "forbidden"]
+    ] as const
+  )("preserves only the recognized workspace refusal at HTTP %i", async (status, backendCode, code) => {
+    const { c } = await fixture()
+    const error = new APIError(
+      status,
+      { code: backendCode, message: "SMITHERS_FEATURE_FLAGS_WORKSPACE_CUSTOM_IMAGES is disabled" },
+      "GET",
+      "/ssh?user=root",
+      new Headers()
+    )
+    const failure = c.failure(error)
+    expect(failure).toMatchObject({
+      fault: "user",
+      code,
+      message: "SMITHERS_FEATURE_FLAGS_WORKSPACE_CUSTOM_IMAGES is disabled"
+    })
+    expect((failure as Error & { cause?: unknown }).cause).toBe(error)
+  })
+  it.each(
+    [
       [401, "user", "not_signed_in"],
       [403, "user", "forbidden"],
       [404, "user", "not_found"],

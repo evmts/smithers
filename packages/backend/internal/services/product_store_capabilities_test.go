@@ -75,6 +75,9 @@ var productStoreCapabilities = map[string]func(any) bool{
 	"interface{SetWorkspaceIdleTimeout}": storeImplements[interface {
 		SetWorkspaceIdleTimeout(context.Context, db.SetWorkspaceIdleTimeoutParams) (db.Workspace, error)
 	}],
+	"interface{SetWorkspaceImageReceipt}": storeImplements[interface {
+		SetWorkspaceImageReceipt(context.Context, db.SetWorkspaceImageReceiptParams) (db.Workspace, error)
+	}],
 	"interface{StopWorkspaceRetainingRow}": storeImplements[interface {
 		StopWorkspaceRetainingRow(context.Context, string) (db.StopWorkspaceRetainingRowRow, error)
 	}],

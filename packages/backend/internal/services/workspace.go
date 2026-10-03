@@ -192,22 +192,24 @@ type WorkspaceHead struct {
 
 // WorkspaceResponse is the API representation of a first-class workspace.
 type WorkspaceResponse struct {
-	ID             string                      `json:"id"`
-	RepositoryID   int64                       `json:"repository_id"`
-	UserID         int64                       `json:"user_id"`
-	Name           string                      `json:"name"`
-	Slug           string                      `json:"slug,omitempty"`
-	Branch         string                      `json:"branch,omitempty"`
-	TargetBookmark string                      `json:"target_bookmark"`
-	RepoFullName   string                      `json:"repo_full_name,omitempty"`
-	HTMLURL        string                      `json:"html_url,omitempty"`
-	Status         string                      `json:"status"`
-	Isolation      workspaceapi.IsolationLevel `json:"isolation,omitempty"`
-	FailureCode    string                      `json:"failure_code,omitempty"`
-	FailureMessage string                      `json:"failure_message,omitempty"`
-	Kind           string                      `json:"kind"`
-	Environment    WorkspaceEnvironment        `json:"environment"`
-	Resources      WorkspaceResources          `json:"resources"`
+	ID             string                        `json:"id"`
+	RepositoryID   int64                         `json:"repository_id"`
+	UserID         int64                         `json:"user_id"`
+	Name           string                        `json:"name"`
+	Slug           string                        `json:"slug,omitempty"`
+	Branch         string                        `json:"branch,omitempty"`
+	TargetBookmark string                        `json:"target_bookmark"`
+	RepoFullName   string                        `json:"repo_full_name,omitempty"`
+	HTMLURL        string                        `json:"html_url,omitempty"`
+	Status         string                        `json:"status"`
+	Isolation      workspaceapi.IsolationLevel   `json:"isolation,omitempty"`
+	FailureCode    string                        `json:"failure_code,omitempty"`
+	FailureMessage string                        `json:"failure_message,omitempty"`
+	Kind           string                        `json:"kind"`
+	Environment    WorkspaceEnvironment          `json:"environment"`
+	Resources      WorkspaceResources            `json:"resources"`
+	Image          WorkspaceImage                `json:"image"`
+	Network        workspaceapi.WorkspaceNetwork `json:"network"`
 	// SourceCommit is the pushed-ref commit the workspace checked out, empty
 	// when it started from its bookmark (#1968).
 	SourceCommit string `json:"source_commit,omitempty"`
@@ -428,10 +430,14 @@ type CreateWorkspaceInput struct {
 	// SourceRef names one of the caller's pushed refs
 	// (refs/smithers/users/<id>/<name>); the new workspace checks out its
 	// commit instead of the bookmark (#1968).
-	SourceRef   string
-	Kind        string
-	Environment WorkspaceEnvironment
-	Resources   WorkspaceResources
+	SourceRef      string
+	Kind           string
+	Environment    WorkspaceEnvironment
+	Resources      WorkspaceResources
+	Image          string
+	ImageRequested bool
+	Network        *workspaceapi.WorkspaceNetwork
+	admittedImage  *workspaceapi.WorkspaceImage
 	// ClientLeaseSeconds, when positive, leases the workspace to a client that
 	// renews it; a lapsed lease lets the abandon reaper reclaim it (#2457).
 	ClientLeaseSeconds int32
@@ -573,6 +579,8 @@ type WorkspaceService struct {
 	transactions                 RepositoryJobTransactions
 	sandbox                      SandboxVMClient
 	runtime                      workspaceapi.WorkspaceRuntime
+	imageResolver                WorkspaceImageResolver
+	customImagesEnabled          bool
 	runtimeIdentity              WorkspaceRuntimeIdentityResolver
 	runtimeLocks                 *workspaceRuntimeLockRegistry
 	sandboxMetrics               SandboxMetricsRecorder
@@ -649,6 +657,16 @@ type WorkspaceRuntimeIdentityResolver func(context.Context, db.Workspace, int64)
 // adapters enter WorkspaceService through this option.
 func WithWorkspaceRuntime(runtime workspaceapi.WorkspaceRuntime) WorkspaceServiceOption {
 	return func(s *WorkspaceService) { s.runtime = runtime }
+}
+
+// WithWorkspaceCustomImagesEnabled opts into caller-selected images, network
+// modes and root SSH. Self-hosted installations leave this disabled by default.
+func WithWorkspaceCustomImagesEnabled(enabled bool) WorkspaceServiceOption {
+	return func(s *WorkspaceService) { s.customImagesEnabled = enabled }
+}
+
+func workspaceCustomImagesDisabled() error {
+	return pkgerrors.New(pkgerrors.CodeWorkspaceCustomImagesDisabled, "Requires SMITHERS_FEATURE_FLAGS_WORKSPACE_CUSTOM_IMAGES=true")
 }
 
 func WithWorkspaceRuntimeIdentityResolver(resolver WorkspaceRuntimeIdentityResolver) WorkspaceServiceOption {
@@ -1029,7 +1047,36 @@ func (s *WorkspaceService) GetWorkspace(ctx context.Context, workspaceID string,
 		return WorkspaceResponse{}, err
 	}
 
-	return s.toWorkspaceResponse(workspace), nil
+	response := s.toWorkspaceResponse(workspace)
+	if workspace.Status == "running" && s.runtime == nil {
+		digest, err := s.observeSandboxWorkspaceImage(ctx, workspace)
+		if err != nil {
+			return WorkspaceResponse{}, err
+		}
+		if digest != "" {
+			response.Image.BootedDigest = digest
+		}
+	}
+	if workspace.Status == "running" && s.runtime != nil && workspace.ImageRef.String != "" {
+		if reporter, ok := s.runtime.(workspaceapi.WorkspaceImageReporter); ok {
+			operationCtx, err := s.workspaceRuntimeContext(ctx, workspace, userID, workspaceLifecycleOperation(workspace, "image-receipt"))
+			if err != nil {
+				return WorkspaceResponse{}, err
+			}
+			image, err := reporter.WorkspaceImageReceipt(operationCtx, workspace.ID)
+			if err != nil {
+				return WorkspaceResponse{}, runtimeOperationError("observe workspace image", err)
+			}
+			if !imageDigestPattern.MatchString(image.Digest) || (workspace.ImageDigest.String != "" && image.Digest != workspace.ImageDigest.String) {
+				return WorkspaceResponse{}, pkgerrors.Internal("workspace runtime image digest mismatch")
+			}
+			response.Image.BootedDigest = image.Digest
+			if response.Image.Ref == "" {
+				response.Image.Ref, response.Image.Digest = image.Ref, image.Digest
+			}
+		}
+	}
+	return response, nil
 }
 
 // ListWorkspaces returns paginated workspaces for a repository.
@@ -1196,6 +1243,8 @@ func (s *WorkspaceService) toWorkspaceResponse(workspace db.Workspace) Workspace
 		SourceCommit:       workspace.SourceCommit,
 		Head:               WorkspaceHead{ChangeID: workspace.HeadChangeID, CommitID: workspace.HeadCommitID},
 		Resources:          workspaceResourcesResponse(workspace),
+		Image:              WorkspaceImage{Ref: workspace.ImageRef.String, Digest: workspace.ImageDigest.String, BootedDigest: workspace.BootedImageDigest.String},
+		Network:            workspaceNetworkOf(workspace),
 		Ahead:              workspace.Ahead,
 		Behind:             workspace.Behind,
 		AgentSessionID:     UUIDString(workspace.AgentSessionID),
@@ -1295,6 +1344,8 @@ type workspaceCreateMetadata struct {
 	kind        string
 	environment WorkspaceEnvironment
 	resources   WorkspaceResources
+	image       *workspaceapi.WorkspaceImage
+	network     *workspaceapi.WorkspaceNetwork
 }
 
 func normalizeWorkspaceCreateMetadata(metadata workspaceCreateMetadata) workspaceCreateMetadata {

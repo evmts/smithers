@@ -177,6 +177,7 @@ type Product interface {
 	SetWorkspaceEnvironmentImage(ctx context.Context, arg db.SetWorkspaceEnvironmentImageParams) error
 	SetWorkspaceHeadPushTokenID(ctx context.Context, arg db.SetWorkspaceHeadPushTokenIDParams) error
 	SetWorkspaceIdleTimeout(ctx context.Context, arg db.SetWorkspaceIdleTimeoutParams) (db.Workspace, error)
+	SetWorkspaceImageReceipt(ctx context.Context, arg db.SetWorkspaceImageReceiptParams) (db.Workspace, error)
 	SetWorkspaceServicePublic(ctx context.Context, arg db.SetWorkspaceServicePublicParams) error
 	SkipBlockedWorkflowTask(ctx context.Context, id int64) error
 	SoftDeleteWorkspace(ctx context.Context, id string) (db.Workspace, error)

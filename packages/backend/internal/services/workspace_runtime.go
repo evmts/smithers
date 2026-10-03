@@ -210,7 +210,7 @@ func (s *WorkspaceService) runtimeWorkspaceSpec(ctx context.Context, row db.Work
 	if err != nil {
 		return workspaceapi.WorkspaceSpec{ID: row.ID}, err
 	}
-	spec := workspaceapi.WorkspaceSpec{ID: row.ID, Resources: resources}
+	spec := workspaceapi.WorkspaceSpec{ID: row.ID, Resources: resources, Image: workspaceImageOf(row), Network: networkPointer(row)}
 	if kind := sandboxKindForWorkspace(row.Kind); kind != "container" {
 		if !s.runtime.Capabilities().EnvironmentImages {
 			return spec, pkgerrors.EnvironmentImageUnavailable("this workspace runtime cannot boot a NixOS environment image")
@@ -364,6 +364,10 @@ func (s *WorkspaceService) ensureRuntimeWorkspaceRunningLocked(ctx context.Conte
 	if observed.State != workspaceapi.WorkspaceRunning {
 		return row, pkgerrors.Conflict("workspace runtime is " + string(observed.State))
 	}
+	row, err = s.recordRuntimeWorkspaceImage(operationCtx, row)
+	if err != nil {
+		return row, err
+	}
 	// Repository materialization is part of the common product transition to
 	// running. Both trusted process and isolated runtimes execute the same
 	// authorized, receipt-backed checkout before the durable row is activated.
@@ -448,7 +452,7 @@ func (s *WorkspaceService) restoreRuntimeWorkspaceSnapshot(ctx context.Context, 
 	if err != nil {
 		return row, err
 	}
-	observed, err := snapshots.ForkColdSnapshot(operationCtx, snapshot.SnapshotID, workspaceapi.WorkspaceSpec{ID: row.ID, Resources: resources})
+	observed, err := snapshots.ForkColdSnapshot(operationCtx, snapshot.SnapshotID, workspaceapi.WorkspaceSpec{ID: row.ID, Resources: resources, Image: workspaceImageOf(row), Network: networkPointer(row)})
 	if err != nil {
 		if errors.Is(err, workspaceapi.ErrWorkspaceNotFound) {
 			return row, unavailableWorkspaceSnapshot(row, err)
@@ -482,6 +486,10 @@ func (s *WorkspaceService) restoreRuntimeWorkspaceSnapshot(ctx context.Context, 
 	}
 	if observed.State != workspaceapi.WorkspaceRunning {
 		return row, pkgerrors.Conflict("restored workspace runtime is " + string(observed.State))
+	}
+	row, err = s.recordRuntimeWorkspaceImage(operationCtx, row)
+	if err != nil {
+		return row, err
 	}
 	if err := s.adoptRuntimeWorkspaceRepository(ctx, row, requesterID); err != nil {
 		return row, err
@@ -541,9 +549,10 @@ func (s *WorkspaceService) forkRuntimeWorkspaceAuthorized(ctx context.Context, i
 		EnvironmentRevision:    source.EnvironmentRevision,
 		EnvironmentClosureHash: source.EnvironmentClosureHash,
 		Status:                 "starting",
-		VcpuCount:              source.VcpuCount,
-		MemoryMb:               source.MemoryMb,
-		DiskMb:                 source.DiskMb,
+		ImageRef:               source.ImageRef, ImageDigest: source.ImageDigest, NetworkMode: source.NetworkMode,
+		VcpuCount: source.VcpuCount,
+		MemoryMb:  source.MemoryMb,
+		DiskMb:    source.DiskMb,
 	})
 	if err != nil {
 		return WorkspaceResponse{}, mapWorkspaceCreateError(err, "create fork workspace")
@@ -614,7 +623,7 @@ func (s *WorkspaceService) forkRuntimeWorkspaceAuthorized(ctx context.Context, i
 		s.markWorkspaceProvisionFailed(ctx, created, err)
 		return WorkspaceResponse{}, err
 	}
-	observed, err := snapshots.ForkColdSnapshot(forkCtx, temporarySnapshotID, workspaceapi.WorkspaceSpec{ID: created.ID, Resources: forkResources})
+	observed, err := snapshots.ForkColdSnapshot(forkCtx, temporarySnapshotID, workspaceapi.WorkspaceSpec{ID: created.ID, Resources: forkResources, Image: workspaceImageOf(created), Network: networkPointer(created)})
 	if err != nil {
 		err = runtimeOperationError("fork workspace runtime", err)
 		s.markWorkspaceProvisionFailed(ctx, created, err)
@@ -660,6 +669,11 @@ func (s *WorkspaceService) forkRuntimeWorkspaceAuthorized(ctx context.Context, i
 	}
 	// A fork starts signed out of the source's vendor logins (#2805).
 	if err := s.scrubRuntimeWorkspaceLogins(ctx, created, input.UserID); err != nil {
+		s.markWorkspaceProvisionFailed(ctx, created, err)
+		return WorkspaceResponse{}, err
+	}
+	created, err = s.recordRuntimeWorkspaceImage(forkCtx, created)
+	if err != nil {
 		s.markWorkspaceProvisionFailed(ctx, created, err)
 		return WorkspaceResponse{}, err
 	}

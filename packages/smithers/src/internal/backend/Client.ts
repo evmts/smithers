@@ -197,7 +197,7 @@ export const withCause = <E extends Error>(error: E, cause: unknown): E => {
 
 /**
  * The refusal an operator reads for one backend HTTP failure: the fault and
- * code its status names (or the known workspace sizing refusal), and the
+ * code its status names (or a recognized workspace refusal), and the
  * backend's own sentence, redacted and made inert for a terminal. The method,
  * path, and request id stay on the
  * `APIError`, which rides along as `cause`.
@@ -206,8 +206,14 @@ export const withCause = <E extends Error>(error: E, cause: unknown): E => {
  */
 export const refusalOf = (error: APIError, redact: (value: unknown) => unknown = Redaction.redact): Refused => {
   const refusal = statusRefusal(error.status)
-  if (error.status === 400 && error.detail.code === "workspace_resources_exceeded") {
-    refusal.code = "workspace_resources_exceeded"
+  if (
+    error.status === 400 &&
+    (error.detail.code === "workspace_resources_exceeded" || error.detail.code === "workspace_image_unresolvable")
+  ) {
+    refusal.code = error.detail.code
+  }
+  if (error.status === 403 && error.detail.code === "workspace_custom_images_disabled") {
+    refusal.code = "workspace_custom_images_disabled"
   }
   const stated = Failure.terminalSafe(str(redact(str(error.detail.message)))).trim()
   return withCause(new Refused({ ...refusal, message: stated || refusal.message }), error)

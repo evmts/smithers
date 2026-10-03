@@ -20,7 +20,10 @@ INSERT INTO workspaces (
     idle_timeout_secs,
     vcpu_count,
     memory_mb,
-    disk_mb
+    disk_mb,
+    image_ref,
+    image_digest,
+    network_mode
 )
 VALUES (
     COALESCE(sqlc.narg(id)::uuid, gen_random_uuid()),
@@ -37,8 +40,18 @@ VALUES (
     COALESCE(sqlc.narg(idle_timeout_secs)::integer, 1800),
     sqlc.narg(vcpu_count)::integer,
     sqlc.narg(memory_mb)::integer,
-    sqlc.narg(disk_mb)::integer
+    sqlc.narg(disk_mb)::integer,
+    sqlc.narg(image_ref)::text,
+    sqlc.narg(image_digest)::text,
+    sqlc.narg(network_mode)::text
 )
+RETURNING *;
+
+-- name: SetWorkspaceImageReceipt :one
+-- Only runtime-observed image identity is a boot receipt. Admission is separate.
+UPDATE workspaces
+SET booted_image_digest = sqlc.arg(booted_image_digest)::text
+WHERE id = sqlc.arg(id)::uuid AND deleted_at IS NULL
 RETURNING *;
 
 

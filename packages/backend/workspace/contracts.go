@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/smithersai/smithers/packages/backend/sandbox"
@@ -99,6 +100,10 @@ type WorkspaceCapabilities struct {
 	// image exactly. The product never sends an environment to an adapter
 	// without it.
 	EnvironmentImages bool
+	// CustomImages boots the caller's digest-pinned OCI image.
+	CustomImages bool
+	// NetworkPolicy enforces the caller's durable egress mode.
+	NetworkPolicy bool
 	// EgressSecrets: the runtime implements WorkspaceEgressSecrets.
 	EgressSecrets bool
 	// Resources: CreateWorkspace and ForkColdSnapshot honor requested CPU
@@ -107,12 +112,16 @@ type WorkspaceCapabilities struct {
 	// ResourcesDisk: every create, recovery and fork honors requested disk
 	// sizing. Prepared environment snapshots may prevent this capability.
 	ResourcesDisk bool
+	// CustomImageResourcesDisk honors disk requests when a caller image skips prepared layers.
+	CustomImageResourcesDisk bool
 }
 
 // WorkspaceSpec carries only durable execution identity. Authentication,
 // admission, repository ownership, and receipts remain common product policy.
 type WorkspaceSpec struct {
-	ID string
+	ID      string
+	Image   *WorkspaceImage
+	Network *WorkspaceNetwork
 	// Source names the repository revision the product will check out, when
 	// it knows it. An isolated adapter uses it only to choose a prepared
 	// environment; it confers no repository authority.
@@ -124,6 +133,37 @@ type WorkspaceSpec struct {
 	// Resources is the guest size the workspace requested, when it requested
 	// one. Zero fields keep the adapter's size.
 	Resources *WorkspaceResources
+}
+
+// WorkspaceImage names a caller-selected OCI image and its admitted digest.
+type WorkspaceImage struct {
+	Ref    string `json:"ref"`
+	Digest string `json:"digest"`
+}
+
+// PinnedReference removes a mutable tag or existing digest before pinning.
+func (image WorkspaceImage) PinnedReference() string {
+	ref := strings.SplitN(image.Ref, "@", 2)[0]
+	if colon := strings.LastIndex(ref, ":"); colon > strings.LastIndex(ref, "/") {
+		ref = ref[:colon]
+	}
+	return ref + "@" + image.Digest
+}
+
+// WorkspaceNetwork is a durable guest egress policy. Empty mode means proxy.
+type WorkspaceNetwork struct {
+	Mode string `json:"mode"`
+}
+
+// WorkspaceUserExecution executes as developer or root within the same
+// workspace boundary. The product authorizes ownership before calling it.
+type WorkspaceUserExecution interface {
+	ExecuteCommandAsUser(ctx context.Context, workspaceID, user string, command Command) (CommandResult, error)
+}
+
+// WorkspaceImageReporter observes the booted image through the runtime.
+type WorkspaceImageReporter interface {
+	WorkspaceImageReceipt(ctx context.Context, workspaceID string) (WorkspaceImage, error)
 }
 
 // WorkspaceResources is a requested guest size: vCPUs, memory and writable
@@ -235,12 +275,15 @@ type WorkspaceEnvironmentLinker interface {
 // these paths are visible in the backend process; they are host paths for the
 // process adapter and guest paths for an isolated remote adapter.
 type Workspace struct {
-	ID       string
-	Root     string
-	Home     string
-	StateDir string
-	TempDir  string
-	State    WorkspaceState
+	ID        string
+	Root      string
+	Home      string
+	StateDir  string
+	TempDir   string
+	State     WorkspaceState
+	Image     *WorkspaceImage
+	Network   *WorkspaceNetwork
+	Resources *WorkspaceResources
 }
 
 // ColdSnapshot is disk state captured from a stopped workspace. It carries no

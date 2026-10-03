@@ -133,6 +133,9 @@ func workspaceJJExport() string {
 // post-boot apt would only slow the boot back down. A requested disk boots the
 // bare image: a snapshot boot keeps the snapshot's disk.
 func (s *WorkspaceService) freshWorkspaceVMRequest(ctx context.Context, workspace db.Workspace) (sandbox.CreateRequest, error) {
+	if workspace.ImageRef.String != "" {
+		return s.customImageWorkspaceVMRequest(ctx, workspace)
+	}
 	snapshotID := s.goldenSnapshots.Current(ctx)
 	if sandboxKindForWorkspace(workspace.Kind) != "container" {
 		// Non-empty means "use the closure's golden snapshot if ready"; the
@@ -197,7 +200,7 @@ func (s *WorkspaceService) forkWorkspaceSandbox(ctx context.Context, sourceVMID 
 			Priority: &s.workspacePersistencePriority,
 		},
 		Workdir:     defaultWorkspaceClonePath,
-		EgressProxy: egress,
+		EgressProxy: workspaceSandboxEgress(workspace, egress),
 		MemSizeMB:   memoryMB,
 		VCPUCount:   vcpuCount,
 		Kind:        sandboxKindForWorkspace(kind),
@@ -211,6 +214,9 @@ func (s *WorkspaceService) forkWorkspaceSandbox(ctx context.Context, sourceVMID 
 	// Inherited credentials must be gone before artifact bootstrap can run.
 	if err := s.scrubSandboxWorkspaceLogins(forkCtx, vm.ID); err != nil {
 		return vm, err
+	}
+	if workspace.ImageRef.String != "" {
+		return vm, nil
 	}
 	client, ok := s.sandbox.(workspaceArtifactClient)
 	if !ok {
@@ -285,6 +291,7 @@ func (s *WorkspaceService) createFreshWorkspaceVM(ctx context.Context, workspace
 	if len(bindings) > 0 {
 		bindings[0].apply(&req)
 	}
+	applyWorkspaceSandboxNetwork(&req, workspace)
 	attempt := "bare"
 	if strings.TrimSpace(req.SnapshotID) != "" {
 		attempt = "golden-" + req.SnapshotID
@@ -311,6 +318,7 @@ func (s *WorkspaceService) createFreshWorkspaceVM(ctx context.Context, workspace
 	if len(bindings) > 0 {
 		bindings[0].apply(&bareReq)
 	}
+	applyWorkspaceSandboxNetwork(&bareReq, workspace)
 	bareVM, bareErr := s.createWorkspaceVMAttempt(bareCtx, bareReq)
 	if bareErr != nil {
 		return bareVM, bareErr // both failed → sandbox provider problem, do not invalidate
@@ -639,6 +647,9 @@ func (s *WorkspaceService) CreateWorkspace(ctx context.Context, input CreateWork
 	if err := validateWorkspaceCreateMetadata(input); err != nil {
 		return WorkspaceResponse{}, err
 	}
+	if err := s.admitWorkspaceImage(ctx, &input); err != nil {
+		return WorkspaceResponse{}, err
+	}
 	if input.Resources.requested() {
 		input.Resources = s.resolveWorkspaceResources(input.Resources)
 	}
@@ -656,13 +667,16 @@ func (s *WorkspaceService) CreateWorkspace(ctx context.Context, input CreateWork
 
 	if strings.TrimSpace(input.SnapshotID) == "" {
 		if input.SourceRef != "" {
-			workspace, err = s.createUserRefWorkspace(ctx, input, bookmark, workspaceCreateMetadata{kind: kind, environment: environment, resources: input.Resources})
+			workspace, err = s.createUserRefWorkspace(ctx, input, bookmark, workspaceCreateMetadata{kind: kind, environment: environment, resources: input.Resources, image: input.admittedImage, network: input.Network})
 		} else if bookmark == defaultBookmark {
-			workspace, err = s.findOrCreatePrimaryWorkspace(ctx, input.RepositoryID, input.UserID, strings.TrimSpace(input.Name), bookmark, workspaceCreateMetadata{kind: kind, environment: environment, resources: input.Resources})
+			workspace, err = s.findOrCreatePrimaryWorkspace(ctx, input.RepositoryID, input.UserID, strings.TrimSpace(input.Name), bookmark, workspaceCreateMetadata{kind: kind, environment: environment, resources: input.Resources, image: input.admittedImage, network: input.Network})
 		} else {
-			workspace, err = s.findOrCreateDerivedWorkspaceForBookmark(ctx, input.RepositoryID, input.UserID, strings.TrimSpace(input.Name), bookmark, workspaceCreateMetadata{kind: kind, environment: environment, resources: input.Resources})
+			workspace, err = s.findOrCreateDerivedWorkspaceForBookmark(ctx, input.RepositoryID, input.UserID, strings.TrimSpace(input.Name), bookmark, workspaceCreateMetadata{kind: kind, environment: environment, resources: input.Resources, image: input.admittedImage, network: input.Network})
 		}
 		if err != nil {
+			return WorkspaceResponse{}, err
+		}
+		if err := refuseWorkspaceAdmissionMismatch(workspace, workspaceCreateMetadata{image: input.admittedImage, network: input.Network}); err != nil {
 			return WorkspaceResponse{}, err
 		}
 		if err := s.refuseWorkspaceResourceMismatch(workspace, input.Resources); err != nil {
@@ -709,6 +723,7 @@ func (s *WorkspaceService) CreateWorkspace(ctx context.Context, input CreateWork
 	}
 	workspace, err = s.createWorkspaceRow(ctx, db.CreateWorkspaceParams{
 		VcpuCount: snapshotSource.VcpuCount, MemoryMb: snapshotSource.MemoryMb, DiskMb: snapshotSource.DiskMb,
+		ImageRef: snapshotSource.ImageRef, ImageDigest: snapshotSource.ImageDigest, NetworkMode: snapshotSource.NetworkMode,
 		RepositoryID:           input.RepositoryID,
 		UserID:                 input.UserID,
 		Name:                   strings.TrimSpace(input.Name),
@@ -761,6 +776,9 @@ func (s *WorkspaceService) CreateWorkspaceAsync(ctx context.Context, input Creat
 	if err := validateWorkspaceCreateMetadata(input); err != nil {
 		return WorkspaceResponse{}, err
 	}
+	if err := s.admitWorkspaceImage(ctx, &input); err != nil {
+		return WorkspaceResponse{}, err
+	}
 	if input.Resources.requested() {
 		input.Resources = s.resolveWorkspaceResources(input.Resources)
 	}
@@ -778,13 +796,16 @@ func (s *WorkspaceService) CreateWorkspaceAsync(ctx context.Context, input Creat
 
 	if strings.TrimSpace(input.SnapshotID) == "" {
 		if input.SourceRef != "" {
-			workspace, err = s.createUserRefWorkspace(ctx, input, bookmark, workspaceCreateMetadata{kind: kind, environment: environment, resources: input.Resources})
+			workspace, err = s.createUserRefWorkspace(ctx, input, bookmark, workspaceCreateMetadata{kind: kind, environment: environment, resources: input.Resources, image: input.admittedImage, network: input.Network})
 		} else if bookmark == defaultBookmark {
-			workspace, err = s.findOrCreatePrimaryWorkspace(ctx, input.RepositoryID, input.UserID, strings.TrimSpace(input.Name), bookmark, workspaceCreateMetadata{kind: kind, environment: environment, resources: input.Resources})
+			workspace, err = s.findOrCreatePrimaryWorkspace(ctx, input.RepositoryID, input.UserID, strings.TrimSpace(input.Name), bookmark, workspaceCreateMetadata{kind: kind, environment: environment, resources: input.Resources, image: input.admittedImage, network: input.Network})
 		} else {
-			workspace, err = s.findOrCreateDerivedWorkspaceForBookmark(ctx, input.RepositoryID, input.UserID, strings.TrimSpace(input.Name), bookmark, workspaceCreateMetadata{kind: kind, environment: environment, resources: input.Resources})
+			workspace, err = s.findOrCreateDerivedWorkspaceForBookmark(ctx, input.RepositoryID, input.UserID, strings.TrimSpace(input.Name), bookmark, workspaceCreateMetadata{kind: kind, environment: environment, resources: input.Resources, image: input.admittedImage, network: input.Network})
 		}
 		if err != nil {
+			return WorkspaceResponse{}, err
+		}
+		if err := refuseWorkspaceAdmissionMismatch(workspace, workspaceCreateMetadata{image: input.admittedImage, network: input.Network}); err != nil {
 			return WorkspaceResponse{}, err
 		}
 		if err := s.refuseWorkspaceResourceMismatch(workspace, input.Resources); err != nil {
@@ -826,6 +847,7 @@ func (s *WorkspaceService) CreateWorkspaceAsync(ctx context.Context, input Creat
 	}
 	workspace, err = s.createWorkspaceRow(ctx, db.CreateWorkspaceParams{
 		VcpuCount: snapshotSource.VcpuCount, MemoryMb: snapshotSource.MemoryMb, DiskMb: snapshotSource.DiskMb,
+		ImageRef: snapshotSource.ImageRef, ImageDigest: snapshotSource.ImageDigest, NetworkMode: snapshotSource.NetworkMode,
 		RepositoryID:           input.RepositoryID,
 		UserID:                 input.UserID,
 		Name:                   strings.TrimSpace(input.Name),
@@ -902,9 +924,10 @@ func (s *WorkspaceService) forkSandboxWorkspace(ctx context.Context, input ForkW
 		EnvironmentRevision:    source.EnvironmentRevision,
 		EnvironmentClosureHash: source.EnvironmentClosureHash,
 		Status:                 "starting",
-		VcpuCount:              source.VcpuCount,
-		MemoryMb:               source.MemoryMb,
-		DiskMb:                 source.DiskMb,
+		ImageRef:               source.ImageRef, ImageDigest: source.ImageDigest, NetworkMode: source.NetworkMode,
+		VcpuCount: source.VcpuCount,
+		MemoryMb:  source.MemoryMb,
+		DiskMb:    source.DiskMb,
 	})
 	if err != nil {
 		return WorkspaceResponse{}, mapWorkspaceCreateError(err, "create fork workspace")
@@ -1135,6 +1158,9 @@ func (s *WorkspaceService) findOrCreateWorkspaceByIdentity(ctx context.Context, 
 	identity := workspaceIdentity(repositoryID, userID, name, targetBookmark, metadata.kind)
 	workspace, err := s.q.GetActiveWorkspaceForIdentity(ctx, identity)
 	if err == nil {
+		if err := refuseWorkspaceAdmissionMismatch(workspace, metadata); err != nil {
+			return db.Workspace{}, err
+		}
 		if err := s.refuseWorkspaceResourceMismatch(workspace, metadata.resources); err != nil {
 			return db.Workspace{}, err
 		}
@@ -1186,6 +1212,7 @@ func (s *WorkspaceService) createBookmarkWorkspace(ctx context.Context, reposito
 		EnvironmentClosureHash: metadata.environment.ClosureHash, Status: "starting",
 	}
 	params.VcpuCount, params.MemoryMb, params.DiskMb = workspaceResourceColumns(metadata.resources)
+	applyWorkspaceAdmission(&params, metadata)
 	action := "create workspace"
 	if isFork {
 		action = "create branch workspace"
@@ -1663,7 +1690,7 @@ func (s *WorkspaceService) provisionWorkspaceVM(ctx context.Context, workspace d
 		cloneURL       string
 		tempCloneToken temporaryRepoCloneToken
 	)
-	if !workspace.SourceSnapshotID.Valid && strings.TrimSpace(input.RepoOwner) != "" && strings.TrimSpace(input.RepoName) != "" {
+	if workspace.ImageRef.String == "" && workspace.NetworkMode.String != "none" && !workspace.SourceSnapshotID.Valid && strings.TrimSpace(input.RepoOwner) != "" && strings.TrimSpace(input.RepoName) != "" {
 		issued, err := issueTemporaryRepoCloneToken(ctx, s.q, input.UserID, "sandbox-workspace-clone")
 		if err != nil {
 			s.markWorkspaceProvisionFailed(ctx, workspace, err)
@@ -1690,8 +1717,10 @@ func (s *WorkspaceService) provisionWorkspaceVM(ctx context.Context, workspace d
 	if vm.ID == "" {
 		vm, err = s.createFreshWorkspaceVM(ctx, workspace, binding)
 	} else {
-		err = finishWorkspaceArtifacts(ctx, s.sandbox, vm.ID, workspaceBootstrapScriptForKind(workspace.Kind))
-		if err == nil {
+		if workspace.ImageRef.String == "" {
+			err = finishWorkspaceArtifacts(ctx, s.sandbox, vm.ID, workspaceBootstrapScriptForKind(workspace.Kind))
+		}
+		if err == nil && workspace.ImageRef.String == "" {
 			if client, ok := s.sandbox.(workspaceArtifactClient); ok {
 				err = waitForWorkspaceArtifactBootstrap(ctx, client, vm.ID)
 			}
@@ -1734,7 +1763,11 @@ func (s *WorkspaceService) provisionWorkspaceVM(ctx context.Context, workspace d
 	workspace = registered
 	s.recordResolvedWorkspaceEnvironment(ctx, workspace)
 
-	if strings.TrimSpace(cloneURL) != "" {
+	if workspace.ImageRef.String != "" {
+		if err := s.prepareCustomSandboxRepository(ctx, workspace, vm.ID, input); err != nil {
+			return workspace, err
+		}
+	} else if strings.TrimSpace(cloneURL) != "" && workspace.NetworkMode.String != "none" {
 		if err := s.cloneWorkspaceRepository(ctx, vm.ID, cloneURL, tempCloneToken.Plaintext, input.SourceBookmark, s.workspaceCloneDepth(ctx, workspace.RepositoryID), workspaceCloneSourceOf(workspace)); err != nil {
 			s.deleteOrphanedWorkspaceVM(ctx, vm.ID)
 			s.markWorkspaceProvisionFailed(ctx, workspace, err)
@@ -1752,7 +1785,9 @@ func (s *WorkspaceService) provisionWorkspaceVM(ctx context.Context, workspace d
 		return workspace, workspaceProvisioningError("", err)
 	}
 
-	workspace = s.installWorkspaceHeadReporterBestEffort(ctx, workspace, vm.ID)
+	if workspace.ImageRef.String == "" && workspace.NetworkMode.String != "none" {
+		workspace = s.installWorkspaceHeadReporterBestEffort(ctx, workspace, vm.ID)
+	}
 	updated, err := s.q.UpdateWorkspaceExecutionInfo(ctx, db.UpdateWorkspaceExecutionInfoParams{
 		ID:     workspace.ID,
 		VmID:   vm.ID,
@@ -1868,6 +1903,9 @@ func (s *WorkspaceService) provisionSnapshotWorkspaceAsync(ctx context.Context, 
 // the cold create+clone path. It never leaves the workspace worse than the
 // cold path would.
 func (s *WorkspaceService) tryForkDerivedFromPrimary(ctx context.Context, workspace db.Workspace, input CreateWorkspaceSessionInput) (db.Workspace, bool) {
+	if workspace.ImageRef.String != "" || (workspace.NetworkMode.String != "" && workspace.NetworkMode.String != "proxy") {
+		return workspace, false
+	}
 	// Only derived workspaces fork; the primary IS the repo's source of truth
 	// and must clone. A fork also needs the bookmark to switch onto and repo
 	// identity for the fetch auth.
@@ -1898,7 +1936,8 @@ func (s *WorkspaceService) tryForkDerivedFromPrimary(ctx context.Context, worksp
 		Kind:         workspace.Kind,
 	})
 	if err != nil || strings.TrimSpace(source.VmID) == "" || source.ID == workspace.ID ||
-		!workspaceKindForksCleanly(source.Kind) || s.outsiderFork(ctx, workspace, source) {
+		!workspaceKindForksCleanly(source.Kind) || source.ImageRef.String != "" ||
+		workspaceNetworkOf(source).Mode != "proxy" || s.outsiderFork(ctx, workspace, source) {
 		return workspace, false // no forkable primary → cold path
 	}
 
@@ -2169,7 +2208,14 @@ func (s *WorkspaceService) createWorkspaceVMFromSnapshot(ctx context.Context, wo
 	defer func() { s.observeWorkspaceLifecycle("start", retErr) }()
 	startedAt := time.Now()
 	createCtx := sandboxProvisionContext(ctx, "create", "workspace", workspace.ID, workspaceProvisionAttempt(workspace.ProvisioningGeneration, "resume-snapshot-"+snapshot.ID))
-	req, err := s.buildWorkspaceVMRequest(ctx, snapshot.SnapshotID, nil, workspace.RepositoryID, workspace.ID, workspace.Kind)
+	var req sandbox.CreateRequest
+	var err error
+	if workspace.ImageRef.String != "" {
+		req, err = s.customImageWorkspaceVMRequest(ctx, workspace)
+		req.SnapshotID = snapshot.SnapshotID
+	} else {
+		req, err = s.buildWorkspaceVMRequest(ctx, snapshot.SnapshotID, nil, workspace.RepositoryID, workspace.ID, workspace.Kind)
+	}
 	if err != nil {
 		s.markWorkspaceProvisionFailed(ctx, workspace, err)
 		return workspace, workspaceProvisioningError("", err)
@@ -2181,6 +2227,7 @@ func (s *WorkspaceService) createWorkspaceVMFromSnapshot(ctx context.Context, wo
 	}
 	applyWorkspaceResources(&req, workspace)
 	binding.apply(&req)
+	applyWorkspaceSandboxNetwork(&req, workspace)
 	vm, err := s.sandbox.CreateSandbox(createCtx, workspaceSandboxBootRequest(req))
 	duration := time.Since(startedAt)
 	if s.sandboxMetrics != nil {

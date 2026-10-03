@@ -124,7 +124,7 @@ func (r *Runtime) httpClient(workspaceID string, port uint16) *http.Client {
 // startBridges lets the guest reach the backend's own loopback listeners at
 // their unchanged 127.0.0.1 URLs. The VM's network policy allows nothing else.
 func (r *Runtime) startBridges(ctx context.Context, ws *workspace) error {
-	for _, port := range r.config.HostPorts {
+	for _, port := range r.hostPorts(ws.Network) {
 		name := "smithers-host-bridge-" + strconv.Itoa(int(port))
 		spec := workspaceapi.ServiceSpec{
 			Name:         name,

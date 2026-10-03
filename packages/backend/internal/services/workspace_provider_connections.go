@@ -21,6 +21,15 @@ type workspaceProviderBinding struct {
 
 func (s *WorkspaceService) resolveWorkspaceProviderBindings(ctx context.Context, workspace db.Workspace) (*workspaceProviderBinding, error) {
 	binding := &workspaceProviderBinding{}
+	if workspace.ImageRef.String != "" || workspace.NetworkMode.String == "none" {
+		var base *sandbox.EgressProxyPolicy
+		var err error
+		if workspace.NetworkMode.String != "none" {
+			base, err = s.workspaceEgressProxy(ctx, workspace.RepositoryID, workspace.ID)
+		}
+		binding.egress = workspaceSandboxEgress(workspace, base)
+		return binding, err
+	}
 	var err error
 	binding.egress, err = s.workspaceEgressProxy(ctx, workspace.RepositoryID, workspace.ID)
 	if err != nil {

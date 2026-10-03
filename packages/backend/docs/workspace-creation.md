@@ -6,11 +6,11 @@ description: Create and reuse named repository workspaces.
 ## Named workspaces
 
 `POST /api/repos/{owner}/{repo}/workspaces` accepts `name`, optional
-`source_bookmark`, and optional `kind` (`container`, `vm`, or `desktop`).
+`source_bookmark`, and optional `kind` (`container` or `vm`).
 An omitted bookmark uses the repository default. An omitted kind uses
 `container`. Optional `resources` requests CPU, memory and writable disk.
-Unsupported fields, such as `image`, `network`,
-`idle_timeout_seconds` or `services`, is refused with `400 unknown field`
+Optional `image` selects a public OCI image; `network` selects guest egress.
+Unsupported fields, such as `idle_timeout_seconds` or `services`, are refused with `400 unknown field`
 before provisioning. The route never drops a setting silently.
 
 ```json
@@ -75,3 +75,59 @@ with the field, minimum, maximum and requested value, before creating a row or V
 
 A create with the same name and a different resolved size returns `409 conflict`;
 choose a different name or delete the existing workspace.
+
+## OCI images and egress
+
+Caller-selected images, network modes and root SSH require
+`SMITHERS_FEATURE_FLAGS_WORKSPACE_CUSTOM_IMAGES=true`. The server defaults to
+false. A create carrying `image` or `network`, or a root SSH request, returns
+HTTP 403 `workspace_custom_images_disabled` when disabled. Omitted settings
+keep the existing workspace behavior. Hosted operators opt in explicitly.
+
+```json
+{"name":"trial","image":"python:3.13-slim","network":{"mode":"none"}}
+```
+
+`image` requires `kind: "container"` (the default). Docker Hub,
+`public.ecr.aws`, and `ghcr.io` are resolved anonymously at admission. The
+server downloads the manifest, verifies its SHA-256 digest, and persists the
+requested reference and digest before creating a guest. Inaccessible images,
+invalid references, and invalid manifests return HTTP 400 with user fault
+`workspace_image_unresolvable`. No image layers are downloaded by admission.
+Tags are pinned; subsequent boots use the admitted digest.
+
+Custom images bypass repository environment layers and coding toolchain
+installation. The repository clone uses plain Git when present and is
+best-effort. A guest without Git or an unavailable Git host can still run.
+The local microVM adapter requires `/bin/sh` and Python 3 for its guest helper;
+commands using Bash require `/bin/bash` in the image.
+
+`network` accepts `mode` only:
+
+- `proxy` is the default and uses the runtime's egress proxy.
+- `none` permits no outbound traffic, including the proxy and backend listeners.
+  Repository cloning is skipped.
+
+The image and network policy survive restart and recovery. Forks and snapshot
+restores inherit the source policy; a restore refuses image/network overrides.
+Repeating a named create with a different admitted image or network returns
+HTTP 409. A moved tag cannot silently change an existing workspace.
+
+Create, list and view responses include `image: {ref, digest}` and
+`network: {mode}`. `image.booted_digest` is present only after runtime
+observation of the actual booted image. The local adapter checks the
+Microsandbox inventory and refuses missing or mismatched digest receipts.
+An admission digest alone is not a boot receipt.
+Existing rows retain nullable settings without a backfill; omitted settings use
+the existing runtime defaults. Host filtering is deferred to a separate change.
+
+```sh
+smthrs workspace create --repo owner/repo --name trial \
+  --image python:3.13-slim --network none --cpus 2 --memory 2048 --disk 8 \
+  --wait --format json
+smthrs workspace exec trial --repo owner/repo --user root \
+  --command 'cat /etc/os-release; id -u' --timeout 0 --format json
+```
+
+Plans own idle policy. Workspace creation exposes no `--idle-timeout` or
+`--service` flag; start services through the workspace service commands.

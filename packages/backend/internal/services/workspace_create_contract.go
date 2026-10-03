@@ -67,7 +67,7 @@ func (s *WorkspaceService) validateWorkspaceResources(input CreateWorkspaceInput
 	if s.runtime != nil && !s.runtime.Capabilities().Resources {
 		return pkgerrors.BadRequest("this workspace runtime does not accept resources")
 	}
-	if s.runtime != nil && resources.DiskGiB != nil && !s.runtime.Capabilities().ResourcesDisk {
+	if s.runtime != nil && resources.DiskGiB != nil && !s.runtime.Capabilities().ResourcesDisk && !(input.Image != "" && s.runtime.Capabilities().CustomImageResourcesDisk) {
 		return pkgerrors.BadRequest("this workspace runtime does not accept resources.disk_gib")
 	}
 	kind := normalizeWorkspaceKind(input.Kind)
@@ -185,7 +185,7 @@ func (s *WorkspaceService) runtimeWorkspaceResources(workspace db.Workspace) (*w
 	if !s.runtime.Capabilities().Resources {
 		return nil, pkgerrors.BadRequest("this workspace runtime does not accept resources")
 	}
-	if workspace.DiskMb.Valid && !s.runtime.Capabilities().ResourcesDisk {
+	if workspace.DiskMb.Valid && !s.runtime.Capabilities().ResourcesDisk && !(workspace.ImageRef.String != "" && s.runtime.Capabilities().CustomImageResourcesDisk) {
 		return nil, pkgerrors.BadRequest("this workspace runtime does not accept resources.disk_gib")
 	}
 	return &workspaceapi.WorkspaceResources{VCPUCount: workspace.VcpuCount.Int32, MemoryMB: workspace.MemoryMb.Int32, DiskMB: workspace.DiskMb.Int32}, nil
