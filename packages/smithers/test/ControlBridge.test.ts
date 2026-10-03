@@ -135,6 +135,31 @@ afterEach(() => {
 })
 
 describe("control bridge configuration and routing", () => {
+  it.each(["--payload", "--data"])("local flow start preserves typed input through %s", async (flag) => {
+    mkdirSync(join(directory, "flows"), { recursive: true })
+    const payload = JSON.stringify({ suite: "noop", environment: "docker", job: "mini-proof", k: 2 })
+    let code = 0
+    await makeCli(runtime).serve(["flow", "start", "benchmark", "--root", directory, flag, payload, "--format", "json"], {
+      stdout: () => {},
+      exit: (value) => { code = value }
+    })
+    expect(code).toBe(0)
+    expect(receivedArguments).toContain("--data")
+    expect(receivedArguments[receivedArguments.indexOf("--data") + 1]).toBe(payload)
+    expect(receivedArguments).not.toContain("--payload")
+  })
+
+  it("refuses conflicting local payload spellings before admission", async () => {
+    let output = "", code = 0
+    await makeCli(runtime).serve(["flow", "start", "benchmark", "--root", directory, "--payload", "{}", "--data", "{}", "--format", "json"], {
+      stdout: (value) => { output += value },
+      exit: (value) => { code = value }
+    })
+    expect(code).toBe(2)
+    expect(output).toContain("Use one of --payload or --data")
+    expect(ports.runWith).not.toHaveBeenCalled()
+  })
+
   it("has records only over a remote plane or an existing local control store", () => {
     const root = mkdtempSync(join(tmpdir(), "smthrs-bridge-records-"))
     try {

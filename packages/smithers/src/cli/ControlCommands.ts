@@ -259,6 +259,7 @@ export const createFlowCli = (runtime: Bridge.Runtime = {}) =>
       mcp: false,
       args: flowArgs,
       options: options.extend({
+        payload: z.string().optional().describe("Flow payload as JSON; --data is also accepted"),
         data: z.string().optional(),
         detached: z.boolean().default(false),
         wait: z.boolean().default(false).describe("Wait for the run's status before exiting"),
@@ -273,6 +274,9 @@ export const createFlowCli = (runtime: Bridge.Runtime = {}) =>
       alias: { detached: "d" },
       run: (c) =>
         guard(c, async () => {
+          if (c.options.payload !== undefined && c.options.data !== undefined) {
+            throw new CliError.UsageError({ message: "Use one of --payload or --data" })
+          }
           if (c.options.wait && c.options.detached) {
             throw new CliError.UsageError({ message: "--wait and --detached cannot be combined" })
           }
@@ -286,7 +290,7 @@ export const createFlowCli = (runtime: Bridge.Runtime = {}) =>
             [
               "up",
               c.args.flow,
-              ...dataArgs(c.options.data),
+              ...dataArgs(c.options.payload ?? c.options.data),
               ...(c.options.wait ? ["--wait"] : []),
               ...(c.options.detached ? ["--detached"] : []),
               ...(c.options.budgetTokens === undefined ? [] : ["--budget-tokens", String(c.options.budgetTokens)]),
