@@ -31431,6 +31431,30 @@
       },
       {
         "kind": "file",
+        "path": "flows/test/benchmark-meter.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/benchmark-credentials.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/benchmark-meter-runtime.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/benchmark-runtime.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/benchmark-flow.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/benchmark-sink.test.ts"
+      },
+      {
+        "kind": "file",
         "path": "flows/test/notes.test.ts"
       },
       {

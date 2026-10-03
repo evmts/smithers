@@ -190,6 +190,40 @@
       "flows": []
     },
     {
+      "id": "benchmark",
+      "description": "Run benchmark trials on Cloud and retain their logs and LFS artifacts.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/benchmark/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:*",
+        "net:*:**"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "benchmark-meter",
+      "description": "Measure weekly Codex usage against benchmark token records.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/benchmark-meter/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:git *",
+        "net:*:**"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
       "id": "checks/affected-lint",
       "description": "Lint every target the Change's written files affect; a known red does not fail it.",
       "summary": null,

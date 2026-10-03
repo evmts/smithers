@@ -39,6 +39,12 @@ const suite = Smithers.NodeTest({
     Smithers.file("//flows/test/workflows.test.ts"),
     Smithers.file("//flows/test/rollout.test.ts"),
     Smithers.file("//flows/test/worker-rollout.test.ts"),
+    Smithers.file("//flows/test/benchmark-meter.test.ts"),
+    Smithers.file("//flows/test/benchmark-credentials.test.ts"),
+    Smithers.file("//flows/test/benchmark-meter-runtime.test.ts"),
+    Smithers.file("//flows/test/benchmark-runtime.test.ts"),
+    Smithers.file("//flows/test/benchmark-flow.test.ts"),
+    Smithers.file("//flows/test/benchmark-sink.test.ts"),
     Smithers.file("//flows/test/notes.test.ts")
   ]),
   srcs: [

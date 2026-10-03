@@ -608,7 +608,7 @@ describe("discovery over the project flows directory", () => {
     // Every module declaration under flows/. Each one but `checks/wiki` IS its
     // own `@smthrs/flow` flow: one file, no `flows:` list, and no delegate name
     // registered on a host to join a second declaration to it.
-    const modules = ["coding", "coding/dispatch", "coding/implementation", "coding/prototype", "coding/request", "coding/verify", "coding/vibe", "coding/wiki", "issue-sweep", "issue-sweep/work", "memory/calibrate", "memory/mine", "register-repository", "register-repository/setup", "release", "release-content", "review", "rollout", "wiki", "wrapped"];
+    const modules = ["benchmark", "benchmark-meter", "coding", "coding/dispatch", "coding/implementation", "coding/prototype", "coding/request", "coding/verify", "coding/vibe", "coding/wiki", "issue-sweep", "issue-sweep/work", "memory/calibrate", "memory/mine", "register-repository", "register-repository/setup", "release", "release-content", "review", "rollout", "wiki", "wrapped"];
     // `checks/wiki` still delegates, and its own file says why: the host binds
     // its reviewer policy to a descriptor by the `flows:` list, and the capture
     // action requires that descriptor's delegate to be the flow this host
@@ -624,11 +624,11 @@ describe("discovery over the project flows directory", () => {
     };
     // The runners, schedules and registration steps are the host's to start,
     // never a model's tool.
-    const hiddenModules = ["issue-sweep", "issue-sweep/work", "memory/mine", "register-repository", "register-repository/setup", "rollout"];
+    const hiddenModules = ["benchmark", "benchmark-meter", "issue-sweep", "issue-sweep/work", "memory/mine", "register-repository", "register-repository/setup", "rollout"];
     // These named payloads cannot be safely reduced to a static document.
     // Keep this inventory independent of discovery's emitted warning list.
     const unavailablePayloads = [
-      "coding", "coding/dispatch", "coding/implementation", "coding/prototype",
+      "benchmark", "benchmark-meter", "coding", "coding/dispatch", "coding/implementation", "coding/prototype",
       "coding/request", "coding/verify", "coding/vibe", "coding/wiki",
       "issue-sweep", "issue-sweep/work", "memory/calibrate", "memory/mine",
       "register-repository", "register-repository/setup", "release-content",
@@ -641,7 +641,7 @@ describe("discovery over the project flows directory", () => {
       assert.equal(descriptor.input.path, descriptor.body.path);
       assert.equal(Descriptor.inputDocument(descriptor.input), undefined);
     }
-    for (const name of ["issue-sweep", "issue-sweep/work"]) {
+    for (const name of ["benchmark", "benchmark-meter", "issue-sweep", "issue-sweep/work"]) {
       const descriptor = scan.entries.find((entry) => entry.name === name);
       assert.equal(descriptor.effects.tier, "irreversible");
     }
