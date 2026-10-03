@@ -16,9 +16,11 @@ services it needs, so you decide what `read` reads from and where `bash` runs.
 Reach for this package directly when you are building your own host, your own
 tool registry, or a tool surface for a model you drive yourself. If you want the
 agent loop that already offers all seventeen, use
-[`@smthrs/agent`](/api/agent), the parent package, instead.
+[`@smthrs/agent`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/docs/api.md), the parent package, instead.
 
 ## Why reach for this
+
+Available now
 
 Any host can write `read` and `grep` in an afternoon. The cost arrives later, in
 the details that decide whether a model gets its next step right:
@@ -42,7 +44,9 @@ the details that decide whether a model gets its next step right:
 
 ## Install
 
-Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
+Available now
+
+Use a [source checkout](./installation.md).
 
 The handlers
 ask the host for services such as `FileSystem`, `Path`, and
@@ -50,6 +54,8 @@ ask the host for services such as `FileSystem`, `Path`, and
 [Installation](./installation.md).
 
 ## Read a file, bounded and disclosed
+
+Available now
 
 ```ts
 import { NodeServices } from "@effect/platform-node"
@@ -72,6 +78,8 @@ every line of `page.content` can be pasted back into `edit` as an anchor.
 
 ## What the library covers
 
+Available now
+
 | Area              | Flows                                         |
 | ----------------- | --------------------------------------------- |
 | Files             | `read`, `write`, `edit`, `apply_patch`, `ls`  |
@@ -90,20 +98,24 @@ and not write. Every field of every flow is in the
 
 ## How this fits with the Smithers agent
 
+Available now
+
 `@smthrs/std` is the tool half of a coding agent, and it knows nothing about
 models, prompts, or loops: it declares tools and it runs them. The loop lives in
-[`@smthrs/agent`](/api/agent), the parent package. Its `StandardFlows` module
+[`@smthrs/agent`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/docs/api.md), the parent package. Its `StandardFlows` module
 pairs each declaration here with its handler here, so the JavaScript a model
 emits on each turn reaches a file through `ctx.call("read", input)` rather than
 through a bespoke tool surface.
 
-See [Give a run capabilities](/pkg/agent/guides/capabilities) for how a run
+See [Give a run capabilities](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/docs/guides/capabilities.md) for how a run
 binds these flows and gates the calls a cell makes into them. Both packages sit
 under the `smithers` command line tool,
-[`@smthrs/cli`](/api/cli), which composes the agent, the durable engine, and a
+[`@smthrs/cli`](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/api.md), which composes the agent, the durable engine, and a
 control plane into something you run in a terminal.
 
 ## Where to go next
+
+Available now
 
 - [Quickstart](./quickstart.md) searches a real directory and reads the
   definition a hit sits in, with no external binary and no API key.

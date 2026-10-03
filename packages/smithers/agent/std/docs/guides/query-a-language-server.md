@@ -10,8 +10,10 @@ cannot: where a symbol is defined, who calls it, what type it has.
 
 ## Spawn a server
 
+Available now
+
 `NodeLanguageServer` speaks framed JSON-RPC over ordinary stdio pipes, spawned
-through [`@smthrs/kernel`](/api/kernel)'s `ChildProcessSpawner`. No terminal is
+through [`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md)'s `ChildProcessSpawner`. No terminal is
 involved.
 
 ```ts
@@ -97,6 +99,8 @@ const servers = NodeLanguageServer.layer([
 
 ## Edits reach the server
 
+Available now
+
 With a `LanguageServer` bound, `edit`, `write` and `apply_patch` send each file
 they write to its server: `textDocument/didOpen` the first time, then
 `textDocument/didChange` with the full text. A file `apply_patch` deletes or
@@ -172,6 +176,8 @@ measured. The raw JSON is written by the script and is not checked in.
 
 ## Run a query
 
+Available now
+
 ```ts
 import * as Lsp from "@smthrs/std/Lsp"
 
@@ -215,12 +221,16 @@ failure.
 
 ## The result is not a schema
 
+Available now
+
 `Output` is `{ result: unknown }`. The server's answer is passed through in the
 server's own shape, because LSP responses vary by server and by version, and
 narrowing them here would be a second, staler schema. Decode it on the caller's
 side against what the server you bound actually returns.
 
 ## Bounds a server cannot exceed
+
+Available now
 
 The client refuses a malformed or oversized stream rather than growing without
 limit:
@@ -244,6 +254,8 @@ bounds that data. The main error message also includes the server message.
 at most 64 KiB. Initialization failures and exits retain this diagnostic context.
 
 ## Bring your own server
+
+Available now
 
 `LanguageServer` is an ordinary service interface: ten query methods, each
 taking a `Position` (`path`, `line`, `character`) or a string, plus

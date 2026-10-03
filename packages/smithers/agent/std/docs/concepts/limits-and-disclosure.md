@@ -24,6 +24,8 @@ Three disclosure shapes cover the library:
 
 ## The caps
 
+Available now
+
 These values are fixed in the package and are not exported. They are what the
 handlers apply:
 
@@ -58,6 +60,8 @@ lower what it passes:
 
 ## A page ends on a whole line
 
+Available now
+
 A byte budget cuts mid-line, and a partial line reads like an anchor and is not
 one. So a `read` page truncated by bytes ends at the last whole line it could
 afford, and `endLine` counts only the lines it actually returned. A line clipped
@@ -65,6 +69,8 @@ by the 2,000-character display cap is called out in the notice by name, because
 such a line cannot be used as an `edit` anchor either.
 
 ## A limit counts matches, not rows
+
+Available now
 
 `grep` returns match-centric results, which is how `rg --json` groups its own
 output. `limit` counts matches, each match carries the context lines that belong
@@ -74,6 +80,8 @@ that shows the lines around a match and not the match.
 
 ## A listing is ordered before it is paged
 
+Available now
+
 `ls` describes every entry before it cuts the page, because the order it
 promises is directories first and a kind costs a stat. Ordering inside the page
 instead would make `offset` address a different listing at every page size, so a
@@ -81,9 +89,11 @@ caller paging a large directory could see one entry twice and another never.
 
 ## Truncation flags are a wire contract
 
+Available now
+
 `stdoutTruncated`, `stderrTruncated`, and `tailTruncated` are not display
 details. A truncated capture is a fragment of what the process printed, and
-[`@smthrs/harness`](/api/harness) reads these flags to refuse a later write of
+[`@smthrs/harness`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/api.md) reads these flags to refuse a later write of
 those exact bytes: writing a captured tail over a file replaces the file with
 the end of a log. Read the flag before writing captured output anywhere, and set
 it in your own handler whenever you cut a capture: a consumer that cannot tell a

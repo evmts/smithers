@@ -12,6 +12,8 @@ decide whether it may run at all.
 
 ## The envelope
 
+Available now
+
 An envelope has four parts:
 
 - `tier` is how reversible the effect is: `sealed` (observes only),
@@ -32,7 +34,7 @@ Here is what each flow declares at registry time, before any input is known:
 | `grep`          | `sealed`       | `hermetic` | reads `/**`               | `fs:read:/**`                 |
 | `explore`       | `sealed`       | `hermetic` | reads `/**`               | `fs:read:/**`                 |
 | `lsp`           | `sealed`       | `hermetic` | reads `/**`               | `fs:read:/**`                 |
-| `write`         | `compensable`  | `hermetic` | writes `/**`              | `fs:write:/**`                |
+| `write`         | `compensable`  | `hermetic` | reads and writes `/**` | `fs:read:/**`, `fs:write:/**`                |
 | `edit`          | `compensable`  | `hermetic` | reads and writes `/**`    | `fs:read:/**`, `fs:write:/**` |
 | `apply_patch`   | `compensable`  | `hermetic` | reads and writes `/**`    | `fs:read:/**`, `fs:write:/**` |
 | `update_plan`   | `sealed`       | `hermetic` | nothing                   | none                          |
@@ -49,6 +51,8 @@ leaves no durable state behind. `http-post` is `irreversible` because the
 remote side may already have acted.
 
 ## Narrowing to one call
+
+Available now
 
 The declared envelope is the registry-time worst case. It has to be, because the
 declaration exists before any input does. `effectsFor` is the other half: hand
@@ -68,10 +72,10 @@ smaller than their declaration:
 | Flow           | What the narrowing says                                                                                                     |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `read`, `ls`   | reads the one `path` the input names                                                                                        |
-| `write`        | writes the one `path` the input names                                                                                       |
+| `write`        | reads and writes the one `path` the input names                                                                                       |
 | `edit`         | reads and writes the one `path` the input names                                                                             |
 | `glob`, `grep` | reads the `root` subtree, or `/**` when no root is given                                                                    |
-| `bash`         | in `hermetic` mode, `compensable` with the caller's own `reads` and `writes`; in `unhermetic` mode, the declared worst case |
+| `bash`         | in `hermetic` mode, still `irreversible` with the caller's own `reads` and `writes`; in `unhermetic` mode, the declared worst case |
 
 The other ten return their static envelope, and each says why in its own doc
 comment. `apply_patch` is the interesting one: a patch names its files inside
@@ -89,13 +93,15 @@ const narrow = Manifest.effectsFor["read"]
 
 ## Capabilities
 
+Available now
+
 A capability is an `action:resource` string on the declaration, and the
 permission kernel decides whether the call is allowed to hold it. This package
 uses five:
 
 | Capability     | Flows                                                                 |
 | -------------- | --------------------------------------------------------------------- |
-| `fs:read:/**`  | `read`, `ls`, `glob`, `grep`, `edit`, `apply_patch`, `explore`, `lsp` |
+| `fs:read:/**`  | `read`, `ls`, `glob`, `grep`, `write`, `edit`, `apply_patch`, `explore`, `lsp` |
 | `fs:write:/**` | `write`, `edit`, `apply_patch`                                        |
 | `proc:spawn:*` | `bash`, `test`, `shell_command`                                       |
 | `net:get:*`    | `fetch`, `webfetch`                                                   |
@@ -106,6 +112,8 @@ from, sorted and deduplicated, so a model offered `explore` is offered exactly
 the authority its readers need.
 
 ## Hermetic mode is a pre-check, not a sandbox
+
+Available now
 
 `bash` accepts `mode: "hermetic"` with explicit `reads` and `writes`, and the
 handler checks the command against them before spawning anything. Read what the

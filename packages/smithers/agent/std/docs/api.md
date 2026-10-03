@@ -5,12 +5,12 @@ sidebar:
   order: 1
 ---
 
-The package exports 32 modules. Each is reachable from the root entry point as a
+The package exports the modules listed below. Each is reachable from the root entry point as a
 namespace and from its own subpath:
 
 ```ts
 import { Read } from "@smthrs/std"
-import * as Read from "@smthrs/std/Read"
+// Or: import * as Read from "@smthrs/std/Read"
 ```
 
 `@smthrs/std/internal/*` and `@smthrs/std/<Module>/index` are not public.
@@ -26,9 +26,12 @@ surface.
 
 ## Example
 
+Available now
+
 ```ts
 import { NodeServices } from "@effect/platform-node"
 import * as Read from "@smthrs/std/Read"
+import { Effect } from "effect"
 
 const page = await Effect.runPromise(
   Effect.provide(Read.run({ path: "./README.md", limit: 20 }), NodeServices.layer)
@@ -37,6 +40,8 @@ console.log(page.content, page.totalLines, page.truncated)
 ```
 
 ## The flow modules
+
+Available now
 
 Seventeen modules declare a flow. Every one of them exports the same names:
 
@@ -77,6 +82,8 @@ The runner wrapper uses `bash -c` and does not execute host login profiles.
 
 ## Manifest
 
+Available now
+
 The whole library keyed by registry name. Every registry is frozen.
 
 | Export       | Type                                 | Meaning                                    |
@@ -95,6 +102,8 @@ Manifest.readOnly // ["read", "ls", "glob", "grep", "fetch", "explore", "webfetc
 ```
 
 ## StdError
+
+Available now
 
 The single typed failure every handler uses.
 
@@ -121,6 +130,8 @@ every handler failure.
 
 ## Probe
 
+Available now
+
 Telling an invalid probe from a failing check. A non-zero exit is a runner's
 verdict about the code it ran, not about the command it was handed.
 
@@ -145,7 +156,7 @@ const attribution = yield * Probe.classify({ command: "pytest tests/x.py::nope",
 
 The attribution is Jev's: `classify` asks `probeAttribution`, the exported
 `probe/attribution` declaration, through the `Evaluator` service of
-[`@smthrs/model`](/api/model), so a host needs a bound evaluator on a
+[`@smthrs/model`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/model/docs/api.md), so a host needs a bound evaluator on a
 subscription seat. A zero exit is attributed to the tree without the judge. All non-zero exits,
 including 126 and 127, need attribution: a runner can choose those codes after
 executing a check. An answer below
@@ -154,6 +165,8 @@ intact. There is no third path: when the judge does not answer, `unjudged`
 turns its failure into the caller's typed failure rather than a guess.
 
 ## Search
+
+Available now
 
 The implementation seam behind `grep` and `glob`.
 
@@ -169,13 +182,15 @@ The implementation seam behind `grep` and `glob`.
 | `GrepMatch`   | interface                           | One hit with its `before`, `after`, and `symbol`.                            |
 | `ContextLine` | interface                           | `line`, `text`.                                                              |
 | `Symbol`      | interface                           | `kind`, `name`, `startLine`, `endLine`.                                      |
-| `GlobInput`   | interface                           | `pattern`, `root`, `hidden`, `limit`.                                        |
+| `GlobInput`   | interface                           | `pattern`, `root`, `hidden`, `limit`, optional `noIgnore`.                                        |
 | `GlobOutput`  | interface                           | `paths`, `total`, `truncated`, `notice`.                                     |
 
 Both operations return `Effect<_, StdError>` with no requirement, so a peer
 resolves its own services when it is built.
 
 ## PortableSearch
+
+Available now
 
 The in-process peer. Walks the injected `FileSystem`, so it needs no external
 binary and is browser-safe.
@@ -186,6 +201,8 @@ binary and is browser-safe.
 | `layer` | `Layer<Search.Search, never, FileSystem \| Path>`          |
 
 ## NativeSearch
+
+Available now
 
 The peer that drives the `rg` executable through the permission-aware spawner.
 
@@ -203,6 +220,8 @@ argument; those names override the allowlist.
 
 ## SearchContract
 
+Available now
+
 The validation and matching rules both peers build on, exported so a third peer
 cannot drift on what a pattern means.
 
@@ -214,10 +233,12 @@ cannot drift on what a pattern means.
 | `matchesGlob`         | `(pattern: string, relative: string, basename: string) => boolean`                    | One glob against one candidate.                  |
 | `includedByGlobs`     | `(globs: ReadonlyArray<string>, relative: string, basename: string) => boolean`       | Ordered include and exclude.                     |
 | `expression`          | `(pattern: string, fixedStrings: boolean, insensitive: boolean) => RegExp`            | Compiles a validated pattern.                    |
-| `unsatisfiableNotice` | `(options: { fileSystem, path, root, globs, hidden }) => Effect<string \| undefined>` | Explains globs no file under the root can match. |
+| `unsatisfiableNotice` | `(options: { fileSystem, path, root, globs, hidden, noIgnore?, ignored? }) => Effect<string \| undefined>` | Explains globs no file under the root can match. |
 | `isContractRejection` | `(error: StdError) => boolean`                                                        | Whether this contract wrote the rejection.       |
 
 ## SearchConformance
+
+Available now
 
 A differential kit that reports where two `Search` peers disagree.
 
@@ -232,6 +253,8 @@ A differential kit that reports where two `Search` peers disagree.
 | `report`        | `(divergences: ReadonlyArray<Divergence>) => string`                           | Renders them as a failing run's output.                                        |
 
 ## Container
+
+Available now
 
 The host's route into a named container, as an injected transport. Nothing here
 spawns: it only decides an argv, which `bash` then spawns through the same
@@ -266,6 +289,8 @@ image. Custom transports return any host process environment overrides in
 
 ## TreeFingerprint
 
+Available now
+
 The identity of one directory tree, measured where the tree is. The host's
 workspace walk cannot see a container's filesystem, so `bash` runs this
 script through the container transport before and after a containerised
@@ -291,6 +316,8 @@ reports no `mutated` at all.
 
 ## TestRunner
 
+Available now
+
 How the project under test runs its suite, declared once by the host.
 
 | Export        | Type                                    | Meaning                                                                                         |
@@ -304,6 +331,8 @@ How the project under test runs its suite, declared once by the host.
 | `layerNoop`   | `Layer<TestRunner>`                     |                                                                                                 |
 
 ## Checkpoints
+
+Available now
 
 Pinned trees, and the scratch checkouts a call runs against.
 
@@ -367,6 +396,8 @@ keeps outside the mount.
 
 ## Relocate
 
+Available now
+
 What can be pointed at a checkpoint, and what cannot.
 
 | Export       | Type                                                                    | Meaning                                                        |
@@ -380,6 +411,8 @@ flow answers `UnsupportedFlow`. Both names are re-exported from `Checkpoints`,
 which is how the harness reaches them.
 
 ## LanguageServer
+
+Available now
 
 The code-intelligence seam.
 
@@ -400,6 +433,8 @@ from disk, resending changed ones and closing deleted ones.
 
 ## NodeLanguageServer
 
+Available now
+
 A host LSP client over the permission-checked process spawner, speaking framed
 JSON-RPC on ordinary stdio pipes.
 
@@ -408,10 +443,10 @@ JSON-RPC on ordinary stdio pipes.
 | `Config`               | interface                                                                            | `command`, `args?`, `cwd`, `extensions?`, `environment?`, `initializationOptions?`, `timeoutMs?`, `settleMs?`, `quietMs?`. |
 | `MAX_QUEUED_FRAMES`    | `256`                                                                                | Frames buffered for the server's standard input.                                                                           |
 | `MAX_PENDING_REQUESTS` | `512`                                                                                | Concurrent in-flight requests.                                                                                             |
-| `make`                 | `(config: Config) => Effect<LanguageServer, StdError, ChildProcessSpawner \| Scope>` |                                                                                                                            |
-| `makeLazy`             | `(config: Config) => Effect<LanguageServer, StdError, ChildProcessSpawner \| Scope>` | Starts each server on the first request for one of its files.                                                              |
-| `layer`                | `(config: Config) => Layer<LanguageServer, StdError, ChildProcessSpawner>`           |                                                                                                                            |
-| `layerLazy`            | `(config: Config) => Layer<LanguageServer, StdError, ChildProcessSpawner>`           | Provides `makeLazy`.                                                                                                       |
+| `make`                 | `(config: Config \| ReadonlyArray<Config>) => Effect<LanguageServer, StdError, ChildProcessSpawner \| Scope>` |                                                                                                                            |
+| `makeLazy`             | `(config: Config \| ReadonlyArray<Config>) => Effect<LanguageServer, StdError, ChildProcessSpawner \| Scope>` | Starts each server on the first request for one of its files.                                                              |
+| `layer`                | `(config: Config \| ReadonlyArray<Config>) => Layer<LanguageServer, StdError, ChildProcessSpawner>`           |                                                                                                                            |
+| `layerLazy`            | `(config: Config \| ReadonlyArray<Config>) => Layer<LanguageServer, StdError, ChildProcessSpawner>`           | Provides `makeLazy`.                                                                                                       |
 
 `make` sends `initialize` with `cwd` as the root URI and then `initialized`, so
 the service is ready when it resolves. `timeoutMs` defaults to 30,000 and bounds
@@ -445,6 +480,8 @@ most 64 KiB. On stdout closure or process exit, draining stderr gets a bounded
 
 ## ExaWebSearch
 
+Available now
+
 A `WebSearch` provider backed by the Exa API.
 
 | Export  | Type                                                                                    |
@@ -452,11 +489,13 @@ A `WebSearch` provider backed by the Exa API.
 | `layer` | `(credentialId: string) => Layer<WebSearch.WebSearch, never, Credential \| HttpClient>` |
 
 The key is read from the named credential through
-[`@smthrs/control`](/api/control) rather than from the environment. See
+[`@smthrs/control`](https://github.com/smithersai/smithers/blob/main/packages/smithers/control/docs/api.md) rather than from the environment. See
 [Reach the network](./guides/reach-the-network.md#search-the-web) for the status
 mapping.
 
 ## Runtime notes
+
+Available now
 
 The root entry point is Node-only: it re-exports `NodeLanguageServer`, which
 imports `node:url`. The four browser-safe subpaths are `@smthrs/std/Grep`,

@@ -9,6 +9,8 @@ the message and read the matching section. The full code list is in the
 
 ## provider_unavailable: No search implementation is configured
 
+Available now
+
 **What happened.** `grep` or `glob` ran with `Search.layerNoop` bound, or with no
 `Search` layer at all in a composition that defaulted to the refusal.
 
@@ -18,6 +20,8 @@ the message and read the matching section. The full code list is in the
 [Bind the standard flows into a host](./guides/bind-the-standard-flows.md).
 
 ## A glob matches nothing, and the notice says why
+
+Available now
 
 **What happened.** A positive glob that no file under the root can match. The
 most common cause is an absolute pattern: `/workspace/tests/**` against a root
@@ -32,6 +36,8 @@ with `hidden` left false.
 
 ## A search found nothing because ignore files excluded paths
 
+Available now
+
 **What happened.** Both flows apply `.gitignore` rules from the search root and
 nested directories, even outside Git repositories. `noIgnore` is an optional
 boolean defaulting to `false`; explicit `false` is accepted and keeps those rules.
@@ -40,6 +46,8 @@ boolean defaulting to `false`; explicit `false` is accepted and keeps those rule
 and fixed directory skips still apply; use `hidden: true` for dot files.
 
 ## A search found nothing, and the result says retriedAsLiteral
+
+Available now
 
 **What happened.** The pattern contained regex metacharacters, matched nothing as
 a regular expression, and matched something when re-run literally. The results
@@ -52,6 +60,8 @@ you think they are.
 
 ## invalid_input: Invalid ripgrep options
 
+Available now
+
 **What happened.** One of the option combinations v1 refuses rather than guesses
 at: `ignoreCase` with `smartCase`, `context` with `beforeContext` or
 `afterContext`, or `maxCount` below 1.
@@ -61,6 +71,8 @@ option or raise `maxCount` to at least 1. File-type registries are unsupported;
 there is no `types` field.
 
 ## invalid_pattern: Unsupported ripgrep pattern
+
+Available now
 
 **What happened.** The pattern is outside Smithers Ripgrep ASCII v1. The message
 names the construct: lookaround and special groups, backreferences and shorthand
@@ -83,6 +95,8 @@ compile it the same way.
 
 ## no_match: oldString does not occur in the file
 
+Available now
+
 **What happened.** The `edit` anchor is not in the file byte for byte. There is
 no fuzzy apply, because a match that is not your bytes is an edit nobody
 inspected.
@@ -97,6 +111,8 @@ line copied out of one is an anchor as it stands.
 
 ## invalid_input: oldString occurs N times
 
+Available now
+
 **What happened.** The anchor is not unique, and `edit` refuses rather than
 silently changing the first occurrence.
 
@@ -106,6 +122,8 @@ pass `replaceAll: true` if you mean all of them.
 
 ## no_match: lines do not hold expect
 
+Available now
+
 **What happened.** A line-range anchor whose `expect` does not match what those
 lines currently hold. The file moved under the line numbers you anchored on.
 
@@ -113,6 +131,8 @@ lines currently hold. The file moved under the line numbers you anchored on.
 the lines actually hold, raw.
 
 ## is_directory, binary_file, offset_out_of_range
+
+Available now
 
 **What happened.** `read` was aimed at a directory, at a file holding a NUL byte
 or invalid UTF-8, or past the end of the file.
@@ -124,6 +144,8 @@ overshoot.
 
 ## permission_denied: Permission denied
 
+Available now
+
 **What happened.** The host refused the path, or the capability kernel did: a
 symlink that escapes the workspace, a hard-linked file, or a missing grant. The
 file exists; searching for it elsewhere will not help.
@@ -133,6 +155,8 @@ permissions on the host.
 
 ## response_too_large on read
 
+Available now
+
 **What happened.** The file is larger than 64 MiB. `read` decodes the whole
 file to count its lines, so it refuses before loading one that large.
 
@@ -140,6 +164,8 @@ file to count its lines, so it refuses before loading one that large.
 need with `bash`.
 
 ## outside_declared_reads or outside_declared_writes
+
+Available now
 
 **What happened.** A hermetic `bash` call named an explicit path token that is
 not covered by its own `reads` or `writes`. The message names the resolved path.
@@ -150,6 +176,8 @@ check is lexical and fail-closed: it reads the tokens in the command line, not
 what the process will actually touch.
 
 ## invalid_input: a hermetic call that names a container
+
+Available now
 
 **What happened.** `mode: "hermetic"` together with `container`. A container has
 its own filesystem, so host paths in `reads` and `writes` cannot describe it.
@@ -162,6 +190,8 @@ unhermetically, or express it as shell.
 
 ## provider_unavailable: this host has no container transport
 
+Available now
+
 **What happened.** A call named a `container` and no `Container` service was
 bound, or `Container.layerNoop` was.
 
@@ -169,6 +199,8 @@ bound, or `Container.layerNoop` was.
 CLI, or drop the `container` field and run the command on the host.
 
 ## provider_unavailable: no test runner is declared
+
+Available now
 
 **What happened.** `test` ran with `TestRunner.layerNoop` bound.
 
@@ -178,6 +210,8 @@ command the project's documentation gives, which is what the refusal message
 says.
 
 ## not_found: no pristine base to compare against
+
+Available now
 
 **What happened.** `against: "base"` could not resolve a base commit. Either the
 declared `baseRef` does not resolve, or neither `refs/flows/capture-base` nor
@@ -189,6 +223,8 @@ question wrong. Fix the ref, or run `against: "workspace"`.
 
 ## invalid_input: the declared runner names no repository directory
 
+Available now
+
 **What happened.** `against: "base"` needs somewhere to check the base tree out,
 and the runner declared neither `root` nor `cwd`.
 
@@ -197,6 +233,8 @@ and the runner declared neither `root` nor `cwd`.
 the container's view of the same directory and `root` is the host's.
 
 ## A test run passes before and after a fix, or fails identically
+
+Available now
 
 **What happened.** Check `invalidProbe` on the result. A command that names a
 test, a file, a module, an environment, or a program that does not exist never
@@ -212,6 +250,8 @@ attributed.
 
 ## command_failed: rg exceeded the capture cap
 
+Available now
+
 **What happened.** One `rg` invocation produced more than
 `NativeSearch.MAX_CAPTURE_BYTES` on a stream. The native peer refuses partial
 output rather than returning an answer that could differ from the portable peer.
@@ -220,6 +260,8 @@ output rather than returning an answer that could differ from the portable peer.
 `limit`. A refusal to start `rg` at all is `provider_unavailable` instead.
 
 ## unsupported_content_type, response_too_large, timeout on webfetch
+
+Available now
 
 **What happened.** In order: a response that is not `text/*` and carries neither
 `json` nor `xml`; a body above 5 MiB, checked against `content-length` first and
@@ -230,6 +272,8 @@ seconds, defaults to 30, and is capped at 120, so a value above that is silently
 lowered rather than honoured. For a raw body without HTML rendering, use `fetch`.
 
 ## unsupported: language server support is unavailable
+
+Available now
 
 **What happened.** `lsp` ran with `LanguageServer.layerNoop` bound.
 
@@ -244,6 +288,8 @@ filesystem denies fails with `permission_denied`.
 
 ## permission_denied: Language server program is inside the workspace
 
+Available now
+
 **What happened.** `NodeLanguageServer.make` resolved `command` to a file under
 `cwd` (a `./` path, a `PATH` entry such as `node_modules/.bin`, or a symlink
 there), an argument named a file under `cwd`, or `command` was a launcher
@@ -257,16 +303,20 @@ absolute path, not a launcher. For typescript-language-server, also pin
 
 ## A write of captured output replaced a file with a log tail
 
+Available now
+
 **What happened.** A truncated `stdout`, `stderr`, or `tail` was written to a
 file. Those fields are fragments: the capture keeps the tail of what the process
 printed, not the whole of it.
 
 **What to change.** Check `stdoutTruncated`, `stderrTruncated`, or
 `tailTruncated` before writing captured output anywhere.
-[`@smthrs/harness`](/api/harness) reads the same flags and refuses the write for
+[`@smthrs/harness`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/api.md) reads the same flags and refuses the write for
 you when it is the host running these tools.
 
 ## A browser bundle pulls in node:url
+
+Available now
 
 **What happened.** Importing `@smthrs/std` from a browser bundle. The root entry
 point re-exports `NodeLanguageServer`, which imports `node:url`.
@@ -277,6 +327,8 @@ point re-exports `NodeLanguageServer`, which imports `node:url`.
 
 ## invalid_input: at most one step can be in_progress
 
+Available now
+
 **What happened.** An `update_plan` call whose plan names two running steps. The
 rule is enforced at decode time by the `Plan` schema and again in the handler,
 because a host that calls the handler directly never decodes.
@@ -285,6 +337,8 @@ because a host that calls the handler directly never decodes.
 `completed`.
 
 ## invalid_input: a patch names one file twice
+
+Available now
 
 **What happened.** An `apply_patch` input with two sections for the same path.
 Every update hunk is derived from the file as it is on disk, so the second

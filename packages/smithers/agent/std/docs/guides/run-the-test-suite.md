@@ -11,6 +11,8 @@ code at all.
 
 ## Declare the runner once
 
+Available now
+
 A caller of `test` selects **which** tests, never **how** to run them. The
 invocation is a host declaration, bound through the `TestRunner` service:
 
@@ -47,6 +49,8 @@ A host with no runner binds `TestRunner.layerNoop`. The flow then fails with
 project's own documentation gives.
 
 ## Run a selection
+
+Available now
 
 ```ts
 import * as TestRun from "@smthrs/std/TestRun"
@@ -86,6 +90,8 @@ both supported. Missing failure ids or unknown unittest summary fields leave
 
 ## Who the failure belongs to
 
+Available now
+
 A non-zero exit is a runner's verdict about the code it ran, not about the
 command it was handed. A run that names a test, a file, a module, an
 environment, or a program that does not exist never reaches any code and still
@@ -95,7 +101,7 @@ that closed list and a `message` saying what the result does and does not
 prove.
 
 Jev makes that attribution. The flow asks the `probe/attribution` classifier
-through the `Evaluator` service of [`@smthrs/model`](/api/model), so a host
+through the `Evaluator` service of [`@smthrs/model`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/model/docs/api.md), so a host
 binds an evaluator on a subscription seat. Only a zero exit is attributed without a judge. Exit codes 126 and 127
 also go through attribution: a runner can return them after executing tests.
 A judge that cannot
@@ -104,6 +110,8 @@ with `provider_unavailable`, `timeout`, or `request_failed`, because a guess at
 whether a reproduction reproduced is worth less than no answer at all.
 
 ## Attribute a failure to your own edit
+
+Available now
 
 The native CLI supports workspace tests. Baseline comparison refuses before any
 command starts; isolated staging is tracked in
@@ -146,6 +154,8 @@ when the call ends, however it ends. It is written from a temporary shadow
 nor `cwd` fails with `invalid_input`.
 
 ## Bound the run
+
+Available now
 
 `timeoutMs` on the call overrides the runner's own, which overrides
 `TestRun.DEFAULT_TIMEOUT_MS` (ten minutes). The run holds at most

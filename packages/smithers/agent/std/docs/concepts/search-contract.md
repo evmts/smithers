@@ -19,6 +19,8 @@ whichever one the host provided. Neither module knows which peer is in play.
 
 ## What v1 supports
 
+Available now
+
 `grep` corresponds to a bounded subset of ripgrep's flags:
 
 | Input field                                | Ripgrep flag                              |
@@ -48,6 +50,8 @@ because ripgrep's own precedence for those combinations is not a thing two peers
 should each guess at.
 
 ## The pattern grammar
+
+Available now
 
 Smithers Ripgrep ASCII v1 is deliberately the intersection of Rust's regex crate
 and JavaScript's `RegExp`, so both peers compile the same pattern to the same
@@ -84,6 +88,8 @@ still includes the current line and, with `symbols: true`, one retained hit's
 source file; `limit` is a result budget, not a byte limit on that source.
 
 ## Globs are relative to the root, never absolute
+
+Available now
 
 This is the rule that most often surprises a caller, and getting it wrong is
 silent: an absolute pattern matches nothing at all, forever.
@@ -123,6 +129,8 @@ says, because `rg` searches a path given on its command line without consulting
 
 ## What a walk skips
 
+Available now
+
 Repository internals, dependency trees, caches, and worktrees are never
 descended into. This includes `.artifacts`, `.backend-go-modcache`,
 `.pnpm-store`, `.worktrees`, and `worktrees`. Skipping applies to descent and
@@ -139,6 +147,8 @@ in a searched file is replacement-decoded rather than refused.
 
 ## Two properties that belong to the contract, not to a peer
 
+Available now
+
 Both are computed in shared code, so neither peer can drift on them:
 
 - **Each hit carries its enclosing definition.** A line number is not a read
@@ -154,6 +164,8 @@ Both are computed in shared code, so neither peer can drift on them:
   common way a search lies.
 
 ## Proving a third peer
+
+Available now
 
 `Search` is a public seam: a host may bind its own implementation. Two modules
 exist so that a new peer can be held to the same contract as the shipped ones.

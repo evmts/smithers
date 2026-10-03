@@ -6,7 +6,7 @@ sidebar:
 ---
 
 Four flows leave the machine, and they differ in what they promise. All of them
-go through [`@smthrs/kernel`](/api/kernel)'s `HttpClient`, so the permission
+go through [`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md)'s `HttpClient`, so the permission
 kernel sees the request.
 
 | Flow        | Tier           | Capability   | Use it for                                            |
@@ -24,6 +24,8 @@ also need an exact `net:private` action grant for the normalized URL origin.
 See [HTTP destination permissions](../reference/flows.md#http-destination-permissions).
 
 ## Get a URL
+
+Available now
 
 ```ts
 import * as Fetch from "@smthrs/std/Fetch"
@@ -46,6 +48,8 @@ bytes, head first, and says so through `truncated` and `notice`.
 
 ## Post a body
 
+Available now
+
 ```ts
 import * as HttpPost from "@smthrs/std/HttpPost"
 
@@ -63,6 +67,8 @@ This is the one network flow declared `irreversible`, which is what makes a
 scheduler treat it as a real side effect rather than a retrievable read.
 
 ## Render a page
+
+Available now
 
 `webfetch` is for reading documentation rather than consuming an API:
 
@@ -97,6 +103,8 @@ Five behaviors are worth knowing:
 
 ## Search the web
 
+Available now
+
 `websearch` has no built-in provider. It calls the `WebSearch` service, so the
 host decides who answers:
 
@@ -123,8 +131,8 @@ import * as ExaWebSearch from "@smthrs/std/ExaWebSearch"
 const provider = ExaWebSearch.layer("exa-api-key")
 ```
 
-It needs [`@smthrs/control`](/api/control)'s `Credential` service and
-[`@smthrs/kernel`](/api/kernel)'s `HttpClient`. It maps provider outcomes onto
+It needs [`@smthrs/control`](https://github.com/smithersai/smithers/blob/main/packages/smithers/control/docs/api.md)'s `Credential` service and
+[`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md)'s `HttpClient`. It maps provider outcomes onto
 the standard codes: a 429 or a refusal carrying `Retry-After` becomes
 `rate_limited` with the advice in the message, a 401 or 403 becomes
 `provider_unavailable`, a 5xx becomes `provider_unavailable` naming the status,

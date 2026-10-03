@@ -10,6 +10,8 @@ payload is parsed.
 
 ## A command line
 
+Available now
+
 ```ts
 import * as Bash from "@smthrs/std/Bash"
 
@@ -25,6 +27,8 @@ The line goes to the platform shell exactly as written, and it carries its own
 arguments.
 
 ## A script, delivered as data
+
+Available now
 
 ```ts
 const result = Bash.run({
@@ -43,15 +47,16 @@ failure that eats a quote out of
 script as arguments rather than as interpolated text.
 
 `interpreter` defaults to `bash`. `bash`, `zsh`, `sh`, and `dash` are told to
-read the program with `-s`; `python` and `python3` with `-`; `node`, `ruby`,
-`perl`, and anything else are given no file, which is how they read a program
-from standard input.
+read the program with `-s --`; `python`, `python3`, `node`, `ruby`, and
+`perl` receive `-`. Other interpreters receive no stdin selector arguments.
 
 Six input combinations are refused with `invalid_input`, each naming the fix:
 `command` with `script`, neither of the two, `script` with `stdin`, `command`
 with `args`, `command` with `interpreter`, and a hermetic containerised call.
 
 ## Declare the environment
+
+Available now
 
 Host commands inherit a bootstrap allowlist, not the whole Smithers process
 environment: `PATH`, `HOME`, `USER`, `LANG`, every `LC_*` locale variable,
@@ -70,6 +75,8 @@ process. An `env` name that is not a POSIX shell name is `invalid_input`. Timeou
 container transport arguments.
 
 ## Route it into a container
+
+Available now
 
 ```ts
 const result = Bash.run({
@@ -99,6 +106,8 @@ answer: this host has no container route.
 
 ## Declare a hermetic envelope
 
+Available now
+
 `mode: "hermetic"` requires explicit `reads` and `writes`, and the handler
 checks the command's explicit path tokens against them before spawning:
 
@@ -113,14 +122,15 @@ const result = Bash.run({
 
 A token outside the declaration fails with `outside_declared_reads` or
 `outside_declared_writes` before anything runs, and the narrowed envelope makes
-the call `compensable` instead of `irreversible`, so a scheduler can run it
-beside work that touches other paths.
+the caller's declared paths explicit. Its tier remains `irreversible`.
 
 Read [Hermetic mode is a pre-check, not a sandbox](../concepts/effects-and-capabilities.md#hermetic-mode-is-a-pre-check-not-a-sandbox)
 before you rely on this. The check is lexical: it bounds what the caller
 declared it would do, not what the process can do.
 
 ## Confine approved commands
+
+Available now
 
 The CLI and native flow hosts use bubblewrap on Linux and seatbelt on macOS.
 Approval to start a command does not open filesystem writes or networking.
@@ -137,12 +147,14 @@ keep networking closed. Host Unix sockets stay closed with open IP networking,
 except the fixed macOS system DNS resolver endpoint. Commands also receive private temporary storage.
 
 `NodeHost` and `BunHost` supply confinement. A custom native host provides
-[`ProcessConfinement.layer()`](/api/platform-node#processconfinement) to the
+[`ProcessConfinement.layer()`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/api.md#processconfinement) to the
 kernel spawner. A missing confinement service refuses execution.
 `mode: "hermetic"` continues to check declarations before execution; it does
 not grant additional OS access.
 
 ## Read the result
+
+Available now
 
 A non-zero exit code is an ordinary value, not a failure. Only a timeout, a
 spawn failure, a permission refusal, and the hermetic pre-check use the error
@@ -164,6 +176,8 @@ the end of a log, not the content it came from. `@smthrs/harness` reads the
 `timeoutMs` defaults to `Bash.DEFAULT_TIMEOUT_MS`, ten minutes.
 
 ## The invalid-probe flag
+
+Available now
 
 A non-zero exit is a runner's verdict about the code it ran. It is not a verdict
 about the command it was handed. When a command names a test, a file, a module,
@@ -190,6 +204,8 @@ code under test or an unresolved name. See
 [Run the test suite](./run-the-test-suite.md#who-the-failure-belongs-to).
 
 ## The Codex-shaped alternative
+
+Available now
 
 `shell_command` is a clone of the Codex CLI tool of the same name, for a model
 trained on that shape. It takes `command`, `workdir`, and `timeout_ms`, and it

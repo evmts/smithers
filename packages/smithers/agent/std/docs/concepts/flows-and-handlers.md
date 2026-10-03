@@ -18,6 +18,8 @@ actually reads from.
 
 ## The module shape
 
+Available now
+
 Every flow module exports the same names, which is what lets a host treat all 17
 uniformly:
 
@@ -38,23 +40,39 @@ composed from other flows rather than a handler.
 
 ## Naming a declaration from another flow
 
+Available now
+
 Because the declaration is data, a larger flow can name it and inherit both its
-capabilities and its effect envelope, without importing the handler at all:
+capabilities and its effect envelope, by declaring an action with the standard schemas and binding its handler:
 
 ```ts
-import * as Flow from "@smthrs/core/Flow"
-import * as Read from "@smthrs/std/Read"
+import { Action, Flow } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { Read, StdError } from "@smthrs/std"
 import * as Schema from "effect/Schema"
 
-/** A step that reads a file. It declares what `read` declares. */
-export const ReadTarget = Flow.make({
-  name: "read-target",
-  input: Schema.Struct({ path: Schema.String }),
-  output: Read.Output,
+const ReadFile = Action.make("read-target/read", {
+  payload: Read.Input,
+  success: Read.Output,
+  error: StdError.StdError,
+  capabilities: Read.capabilities,
+  effects: Read.effects
+})
+
+export const ReadTarget = Flow.make("read-target", {
+  description: "Read a file.",
+  payload: Schema.Struct({ path: Schema.String }),
+  success: Read.Output,
+  error: StdError.StdError,
   capabilities: Read.capabilities,
   effects: Read.effects,
-  flows: [Read.flow]
+  body: Node.capture(
+    { action: ReadFile.name, implementationVersion: "read/v1" },
+    (payload) => ReadFile.call(payload)
+  )
 })
+
+export const layer = ReadFile.toLayer(Read.run)
 ```
 
 A planner reading `ReadTarget` can see that the step reads and does not write,
@@ -62,6 +80,8 @@ before anything runs. That is the same property a review gate or an approval
 prompt needs.
 
 ## The registries
+
+Available now
 
 `Manifest` is the whole library keyed by name, so a host binds all of it without
 writing 17 imports:
@@ -87,6 +107,8 @@ taxonomy, so it cannot ride in a read-only tool surface.
 
 ## The services a host binds
 
+Available now
+
 Most handlers ask only for platform services such as `FileSystem` or
 `ChildProcessSpawner`. Six ask for a service this package defines, because the
 answer is a host decision rather than a platform one:
@@ -107,6 +129,8 @@ is the contract: a flow that appears to work while doing nothing costs a model
 the frames it takes to notice.
 
 ## What stays in the success channel
+
+Available now
 
 A handler fails only when a model must see a failure. A non-zero exit code, an
 empty match set, and an HTTP 500 are all ordinary values, returned in the

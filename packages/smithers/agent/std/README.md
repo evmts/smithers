@@ -6,13 +6,15 @@ This package declares `effect` as an exact
 `4.0.0-rc.115` peer dependency. Keep the application on that version so
 all Smithers packages share one Effect runtime.
 
-**Documentation:** https://std.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/std/docs
 
 The standard flows tool library for filesystem, search, HTTP, shell, language-server, and Jev judgment work. Each callable tool is an ordinary `@smthrs/core` flow declaration with explicit capabilities and effects, plus an injectable handler where execution is host-owned.
 
-Not on npm yet; see [Installation](https://smithers.sh/docs/installation/#use-the-libraries).
+Use a [source checkout](./docs/installation.md).
 
 ## Public API
+
+Available now
 
 The root entry point exports these namespaces; each is also importable from `@smthrs/std/<Module>`.
 
@@ -36,7 +38,7 @@ The root entry point exports these namespaces; each is also importable from `@sm
 | `NativeSearch`       | `MAX_CAPTURE_BYTES`, `make`, `layer`                                                                                                                                                                    | Implements Search through the ripgrep binary.                                  |
 | `NodeLanguageServer` | `Config`, `MAX_QUEUED_FRAMES`, `MAX_PENDING_REQUESTS`, `make`, `makeLazy`, `layer`, `layerLazy`                                                                                                         | Implements LanguageServer with Node child processes, routed by extension.      |
 | `PortableSearch`     | `make`, `layer`                                                                                                                                                                                         | Implements Search by walking the kernel filesystem in process.                 |
-| `Probe`              | `key`, `Reason`, `InvalidProbe`, `Attribution`, `CONFIDENCE_FLOOR`, `MAX_OUTPUT_BYTES`, `posix`, `probeAttribution`, `classify`, `unjudged`                                                             | Attributes a non-zero exit to the command or to the tree, with Jev.            |
+| `Probe`              | `key`, `Reason`, `InvalidProbe`, `Attribution`, `CONFIDENCE_FLOOR`, `MAX_OUTPUT_BYTES`, `probeAttribution`, `classify`, `unjudged`                                                             | Attributes a non-zero exit to the command or to the tree, with Jev.            |
 | `Read`               | `name`, `description`, `Input`, `Output`, `effects`, `effectsFor`, `capabilities`, `flow`, `run`, `activity`, `presentation`, `MAX_READ_FILE_BYTES`                                                     | Declares and runs bounded file reads.                                          |
 | `Relocate`           | `Relocation`, `relocate`                                                                                                                                                                                | Rewrites a call's input so the call runs against a materialized checkpoint.    |
 | `Search`             | `GrepInput`, `GrepLine`, `ContextLine`, `Symbol`, `GrepMatch`, `GrepOutput`, `GlobInput`, `GlobOutput`, `Search`, `make`, `makeNoop`, `layerNoop`                                                       | Defines the search service both peers implement.                               |
@@ -70,6 +72,8 @@ The root entry point is Node-only: `NodeLanguageServer` pulls in `node:url`. The
 
 ## Child process environment
 
+Available now
+
 Commands started by `bash`, `shell_command`, `test`, and the package's internal
 process helpers do not inherit the full Smithers process environment. They
 receive only `PATH`, `HOME`, `USER`, `LANG`, `LC_*`, `TERM`, `TMPDIR`, and
@@ -79,6 +83,8 @@ withheld; an explicitly declared name is intentional and is delivered even
 when its name looks sensitive.
 
 ## Limits
+
+Available now
 
 Every limit is a display budget disclosed to the caller, never a silent cut. A capped result says so in its own output: `truncated`, `<stream>Truncated`, or a `notice` line naming what was shown and what there was. Rows named by prose are fixed in the package and not exported; the rest are the constants named.
 
@@ -103,9 +109,11 @@ Every limit is a display budget disclosed to the caller, never a silent cut. A c
 | `NodeLanguageServer.MAX_QUEUED_FRAMES`    | 256         | frames buffered for one language server's stdin                 |
 | `NodeLanguageServer.MAX_PENDING_REQUESTS` | 512         | concurrent in-flight JSON-RPC requests to one server            |
 
-Shell capture is bounded where it is read rather than after: a command that prints gigabytes costs the bound, not the whole of what it printed, and the `<stream>DroppedBytes` fields count what the process actually produced. Every caller-supplied command (`bash`, `test`, `shell_command`) passes a bound. The internal `git` plumbing calls behind `Checkpoints` and `TestRun`'s baseline do not, because a listing read for its content is useless with its head missing. Those fields and the `<stream>Truncated` flags beside them are a wire convention: [`@smthrs/harness`](https://harness.smithers.sh) reads them to refuse a later write of those exact bytes, so check the flag before writing captured output anywhere.
+Shell capture is bounded where it is read rather than after: a command that prints gigabytes costs the bound, not the whole of what it printed, and the `<stream>DroppedBytes` fields count what the process actually produced. Every caller-supplied command (`bash`, `test`, `shell_command`) passes a bound. The internal `git` plumbing calls behind `Checkpoints` and `TestRun`'s baseline do not, because a listing read for its content is useless with its head missing. Those fields and the `<stream>Truncated` flags beside them are a wire convention: [`@smthrs/harness`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs) reads them to refuse a later write of those exact bytes, so check the flag before writing captured output anywhere.
 
 ## Failures
+
+Available now
 
 Handlers keep ordinary outcomes in the success channel: a non-zero exit code, an empty match set and a 500 response are all values. `StdError` is reserved for failures a model must see as failures, and its `code` is a closed, stable list carried with the offending `path` where one exists.
 
@@ -123,6 +131,7 @@ Handlers keep ordinary outcomes in the success channel: a non-zero exit code, an
 | `not_modified`             | The write would leave the file exactly as it was.             |
 | `permission_denied`        | The host or the capability kernel refused access to the path. |
 | `outside_declared_reads`   | A hermetic path token is outside the declared read set.       |
+| `outside_container` | The call did not name the container the handler is sealed to. |
 | `outside_declared_writes`  | A hermetic path token is outside the declared write set.      |
 | `command_failed`           | The process could not start, or a host operation failed.      |
 | `request_failed`           | The HTTP or language-server request failed.                   |
@@ -133,21 +142,25 @@ Handlers keep ordinary outcomes in the success channel: a non-zero exit code, an
 | `unsupported_content_type` | The response is not a type this flow renders.                 |
 | `response_too_large`       | The response or file exceeded the byte cap before decoding.   |
 
-Six services are injected, and a flow whose service a host has not bound gets a `makeNoop` refusal rather than a silent success: `Search` for `grep` and `glob`, `Container` for a containerised `bash` or `test`, `TestRunner` for `test`, `Checkpoints` for agent-side pinning, `WebSearch` for `websearch`, and `LanguageServer` for `lsp`. Refusing loudly is the contract, because a flow that appears to work while doing nothing costs a model the frames it takes to notice.
+Hosts bind these services, or explicitly bind their refusal layers: `Search` for `grep` and `glob`, `Container` for a containerised `bash` or `test`, `TestRunner` for `test`, `Checkpoints` for agent-side pinning, `WebSearch` for `websearch`, and `LanguageServer` for `lsp`. Refusing loudly is the contract, because a flow that appears to work while doing nothing costs a model the frames it takes to notice.
 
 `NativeSearch` and `PortableSearch` are two implementations of one contract. `SearchContract` exports the matcher both build on, so an external peer binding its own `Search` cannot drift on what a pattern means. `SearchConformance` is how a peer proves it: it generates a tree and a batch of calls from a seed, runs them through two implementations, and reports every answer that differs. It found two drifts between the peers shipped here, one in how `maxCount` interacts with context lines and one in how `ignoreCase` and `smartCase` combine.
 
 ## Hermetic mode is a pre-check, not a sandbox
 
+Available now
+
 `Bash` retains `mode: "hermetic"` as effect-contract vocabulary, but the handler is not an operating-system sandbox. It performs a fail-closed lexical pre-check of the explicit path tokens in the command against `reads` and `writes`, resolving every token and every declaration to a canonical absolute path before comparing, and treating each physical line of a script as its own command. The host spawner runs the command under its configured confinement. Shell expansion, subprocess access, and paths computed at runtime are not observed, so the check bounds what a caller declared it would do rather than what the process can do. The CLI and native flow hosts supply OS confinement from the grants in force. The lexical check alone cannot prove hermetic execution.
 
 ## Documentation
 
-The full documentation is at [std.smithers.sh](https://std.smithers.sh):
+Available now
 
-- [Quickstart](https://std.smithers.sh/quickstart/): search a tree and read the definition a hit sits in.
-- [Flows and handlers](https://std.smithers.sh/concepts/flows-and-handlers/): the model behind the two halves.
-- [The search contract](https://std.smithers.sh/concepts/search-contract/): Smithers Ripgrep Subset v1 and its two peers.
-- [Flow reference](https://std.smithers.sh/reference/flows/): every flow's input and output fields.
-- [API reference](https://std.smithers.sh/reference/api/): every module and every public export.
-- [Troubleshooting](https://std.smithers.sh/troubleshooting/): the failures this package produces and what to change.
+The full documentation is at [std.smithers.sh](docs/README.md):
+
+- [Quickstart](docs/quickstart.md): search a tree and read the definition a hit sits in.
+- [Flows and handlers](docs/concepts/flows-and-handlers.md): the model behind the two halves.
+- [The search contract](docs/concepts/search-contract.md): Smithers Ripgrep Subset v1 and its two peers.
+- [Flow reference](docs/reference/flows.md): every flow's input and output fields.
+- [API reference](docs/api.md): every module and every public export.
+- [Troubleshooting](docs/troubleshooting.md): the failures this package produces and what to change.

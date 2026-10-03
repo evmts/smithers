@@ -11,6 +11,8 @@ composition both halves need.
 
 ## Compose the host layer
 
+Available now
+
 Start with a platform layer, then add one layer per service a flow needs:
 
 ```ts
@@ -55,6 +57,8 @@ const unavailable = Layer.mergeAll(
 
 ## Run one handler
 
+Available now
+
 A handler is an ordinary Effect. Provide the composed host and run it:
 
 ```ts
@@ -68,6 +72,8 @@ const hits = Effect.provide(
 ```
 
 ## Offer the declarations
+
+Available now
 
 `Manifest.flows` is the declaration registry, keyed by the same names a model
 calls. Offering all 17 is one expression:
@@ -91,6 +97,8 @@ const readOnly = Manifest.readOnly.map((name) => Manifest.flows[name])
 
 ## Narrow the envelope for one call
 
+Available now
+
 When a call arrives, narrow its declared envelope to what that input actually
 touches before scheduling it. `Manifest.effectsFor` reaches the narrowing by
 name:
@@ -105,10 +113,12 @@ Without this, two reads of two different files serialize against each other. See
 
 ## The production path
 
-[`@smthrs/agent`](/api/agent) already does all of this. Its `StandardFlows`
+Available now
+
+[`@smthrs/agent`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/docs/api.md) already does all of this. Its `StandardFlows`
 module pairs each declaration with its handler through
-[`@smthrs/harness`](/api/harness)'s `FlowBinding` contract, and groups them by
+[`@smthrs/harness`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/api.md)'s `FlowBinding` contract, and groups them by
 the slice of host services they need: `filesystem` binds `read`, `write`,
 `edit`, `apply_patch`, `ls`, `glob`, and `grep`; `shell` binds `bash`; `tests`
 binds `test`. If you are building an agent rather than a tool host, start there:
-[Give a run capabilities](/pkg/agent/guides/capabilities).
+[Give a run capabilities](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/docs/guides/capabilities.md).

@@ -12,6 +12,8 @@ is about filling that seam without drifting from what a pattern means.
 
 ## The interface
 
+Available now
+
 Two methods, both taking normalized input:
 
 ```ts
@@ -45,6 +47,8 @@ for a missing root, `invalid_pattern` for a pattern it cannot compile, and
 
 ## Reuse the shared matcher
 
+Available now
+
 Do not reimplement pattern or glob semantics. `SearchContract` exports exactly
 the functions both shipped peers build on:
 
@@ -57,7 +61,7 @@ SearchContract.canonicalGlob("./src/**/*.ts ") // "/src/**/*.ts"
 SearchContract.expression(pattern, fixedStrings, insensitive) // a RegExp
 SearchContract.matchesGlob("*.ts", "src/widen.ts", "widen.ts") // true
 SearchContract.includedByGlobs(globs, relative, basename) // ordered include and exclude
-SearchContract.unsatisfiableNotice({ fileSystem, path, root, globs, hidden })
+SearchContract.unsatisfiableNotice({ fileSystem, path, root, globs, hidden, noIgnore, ignored })
 ```
 
 `matchesGlob` and `includedByGlobs` take a candidate's path **relative to the
@@ -69,6 +73,8 @@ in [The search contract](../concepts/search-contract.md).
 "this pattern can never match" stay distinguishable.
 
 ## Prove it agrees
+
+Available now
 
 `SearchConformance` generates a tree and a batch of calls from a seed, runs them
 through two implementations, and reports every answer that differs. It knows
@@ -120,6 +126,8 @@ one that refuses where the other answers has diverged.
 `PortableSearch` is the obvious reference, because it needs no external binary.
 
 ## What the generator will not tell you
+
+Available now
 
 The generator deliberately stays inside the ground both peers claim to share: no
 symlinks, no unreadable directories, no CRLF, no NUL bytes, no filename a shell

@@ -7,18 +7,28 @@ sidebar:
 
 ## Install the package
 
-Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
+Available now
+
+Use a source checkout and write your program in a package that depends on
+`@smthrs/std`:
+
+```bash
+git clone https://github.com/smithersai/smithers.git
+cd smithers
+corepack pnpm install --frozen-lockfile
+```
 
 It requires
 Node.js 26.4.0 or later and ships as both ESM and CommonJS with TypeScript
-declarations. Its runtime dependencies install with it:
-[`effect`](https://effect.website), plus [`@smthrs/core`](/api/core) for the
-flow declaration type, [`@smthrs/kernel`](/api/kernel) for the permission-aware
-host services, [`@smthrs/capability`](/api/capability) for the capability
-vocabulary, and [`@smthrs/control`](/api/control) for the credential seam
-`ExaWebSearch` reads its API key through.
+declarations. Install its exact peer, `effect@4.0.0-rc.115`, in your application. Its runtime dependencies are [`@smthrs/core`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/core/docs/api.md) for the
+flow declaration type, [`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md) for the permission-aware
+host services, [`@smthrs/capability`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/capability/docs/api.md) for the capability
+vocabulary, and [`@smthrs/control`](https://github.com/smithersai/smithers/blob/main/packages/smithers/control/docs/api.md) for the credential seam
+`ExaWebSearch` reads its API key through, plus [`@smthrs/model`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/model/docs/api.md) for Jev evaluation.
 
 ## Import forms
+
+Available now
 
 The root entry point re-exports every module as a namespace:
 
@@ -40,6 +50,8 @@ promise. `@smthrs/std/package.json` is exported.
 
 ## The browser-safe subset
 
+Available now
+
 The root entry point is Node-only. It re-exports `NodeLanguageServer`, which
 imports `node:url`, so importing `@smthrs/std` in a browser bundle pulls a Node
 built-in in with it.
@@ -58,6 +70,8 @@ binary.
 
 ## What a runnable host adds
 
+Available now
+
 The declarations run nowhere on their own. Handlers ask for host services
 through Effect's context, so a composition adds a platform package that provides
 them:
@@ -70,7 +84,7 @@ pnpm add @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-r
 and `ChildProcessSpawner`, which is everything the filesystem, search, and shell
 handlers require. A host that wants the permission kernel's capability checks in
 front of those services builds them through
-[`@smthrs/kernel`](/api/kernel)'s `HostServices` instead, which is what the
+[`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md)'s `HostServices` instead, which is what the
 Smithers CLI does.
 
 | Handler                                     | Services it requires                                                           |
@@ -79,18 +93,20 @@ Smithers CLI does.
 | `Write.run`, `Ls.run`, `ApplyPatch.run`     | `FileSystem`, `Path`                                                           |
 | `Grep.run`, `Glob.run`                      | `Search`                                                                       |
 | `Bash.run`                                  | `ChildProcessSpawner`, `Path`, and `Container` when a call names one           |
-| `TestRun.run`                               | `ChildProcessSpawner`, `TestRunner`, and `Container` when the runner names one |
+| `TestRun.run`                               | `ChildProcessSpawner`, `Evaluator`, `TestRunner`; optional `Container` |
 | `ShellCommand.run`                          | `ChildProcessSpawner`                                                          |
 | `Fetch.run`, `HttpPost.run`, `WebFetch.run` | `HttpClient`, `GrantStore`                                                     |
 | `WebSearch.run`                             | `WebSearch`                                                                    |
-| `Lsp.run`                                   | `LanguageServer`                                                               |
+| `Lsp.run`                                   | `LanguageServer`, `FileSystem`                                                               |
 | `UpdatePlan.run`                            | none                                                                           |
 
 ## The six injected services
 
+Available now
+
 Six flows reach the host through a service rather than through a platform layer.
-Each one has a refusal layer for a host that cannot serve it, so a flow whose
-service is missing says so instead of succeeding quietly.
+Each one has a refusal layer a host can bind explicitly. An unbound required
+service is a missing-service error; it does not install its refusal layer automatically.
 
 | Service          | Refusal layer              | Working layer                                   |
 | ---------------- | -------------------------- | ----------------------------------------------- |
@@ -104,8 +120,8 @@ service is missing says so instead of succeeding quietly.
 `NativeSearch.layer` drives the `rg` executable, so a host that binds it needs
 ripgrep on the path. `PortableSearch.layer` needs nothing beyond `FileSystem`
 and `Path`. `ExaWebSearch.layer` additionally requires
-[`@smthrs/control`](/api/control)'s `Credential` service and
-[`@smthrs/kernel`](/api/kernel)'s `HttpClient`.
+[`@smthrs/control`](https://github.com/smithersai/smithers/blob/main/packages/smithers/control/docs/api.md)'s `Credential` service and
+[`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md)'s `HttpClient`.
 
 Composing these is one job, covered in
 [Bind the standard flows into a host](./guides/bind-the-standard-flows.md).

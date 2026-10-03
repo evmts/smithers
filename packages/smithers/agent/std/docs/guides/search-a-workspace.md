@@ -12,6 +12,8 @@ first. The semantics are identical; see
 
 ## Choose the search root
 
+Available now
+
 `root` defaults to `.`, resolved by the host filesystem. A guarded agent host
 resolves it inside its workspace. Pass a root to search another directory:
 
@@ -45,6 +47,8 @@ global ignore files do not apply. Hidden-file and fixed directory skips still
 apply when `noIgnore` is true.
 
 ## Search contents
+
+Available now
 
 ```ts
 import * as Grep from "@smthrs/std/Grep"
@@ -88,6 +92,8 @@ belongs to.
 
 ## Read the definition a hit sits in
 
+Available now
+
 Each hit carries the definition enclosing it, when the file's shape says so
 plainly. That is a read window, so the follow-up read is exact rather than a
 guess at `line - 10`:
@@ -110,6 +116,8 @@ heuristic answers nothing rather than guessing a window.
 
 ## When a regular expression finds nothing
 
+Available now
+
 A pattern full of metacharacters that finds nothing is the most common way a
 search lies. If a pattern containing metacharacters produces no matches and no
 files, the search runs again with `fixedStrings: true`, and if the literal
@@ -121,6 +129,8 @@ To search a literal on purpose, pass `fixedStrings: true` yourself and skip the
 regular expression grammar entirely.
 
 ## What is refused
+
+Available now
 
 These are `invalid_input` rather than a best guess, because two peer
 implementations must not each pick their own reading:
@@ -136,7 +146,9 @@ construct. A `root` that does not exist is `not_found`.
 
 ## What a walk never enters
 
-Twelve directory names are skipped during descent, including `.git`,
+Available now
+
+The fixed repository-directory list is skipped during descent, including `.git`,
 `node_modules`, `__pycache__`, and `.venv`. Skipping applies to descent only, so
 naming one of them as the `root` searches it. An entry the process cannot read
 is skipped and the walk continues.

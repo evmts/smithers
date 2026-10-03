@@ -25,7 +25,7 @@ and capabilities in one table, see
 | `glob`          | `Glob`         | `Search`                                                  |
 | `grep`          | `Grep`         | `Search`                                                  |
 | `bash`          | `Bash`         | `ChildProcessSpawner`, `Path`, optional `Container`       |
-| `test`          | `TestRun`      | `ChildProcessSpawner`, `TestRunner`, optional `Container` |
+| `test`          | `TestRun`      | `ChildProcessSpawner`, `Evaluator`, `TestRunner`, optional `Container` |
 | `shell_command` | `ShellCommand` | `ChildProcessSpawner`                                     |
 | `apply_patch`   | `ApplyPatch`   | `FileSystem`, `Path`                                      |
 | `update_plan`   | `UpdatePlan`   | none                                                      |
@@ -34,9 +34,11 @@ and capabilities in one table, see
 | `explore`       | `Explore`      | no handler                                                |
 | `webfetch`      | `WebFetch`     | `HttpClient`, `GrantStore`                                |
 | `websearch`     | `WebSearch`    | `WebSearch`                                               |
-| `lsp`           | `Lsp`          | `LanguageServer`                                          |
+| `lsp`           | `Lsp`          | `LanguageServer`, `FileSystem`                                          |
 
 ## read
+
+Available now
 
 Reads a text file by 1-based offset and limit.
 
@@ -69,6 +71,8 @@ An absolute path, or one that climbs out with `..`, gets no listing.
 
 ## write
 
+Available now
+
 Writes UTF-8 text to a path, replacing any existing file. Parent directories are
 created, and the file's mode is preserved.
 
@@ -89,6 +93,8 @@ successful write.
 
 ## edit
 
+Available now
+
 Replaces text anchored by exact bytes or by a prior hit's line range.
 
 | Input        | Type                          | Meaning                                  |
@@ -108,6 +114,7 @@ Replaces text anchored by exact bytes or by a prior hit's line range.
 | `startLine`    | number | First 1-based line of the returned hunk.                                 |
 | `endLine`      | number | Last 1-based line of the returned hunk.                                  |
 | `hunk`         | string | The edited region as it now stands, plus two lines of context each side. |
+| `errors` | array of `{ line, character, message }`, optional | Up to 20 error diagnostics at 1-based positions after the edit; absent when no language server answered. |
 
 Fails with `invalid_input` for a contradictory anchor or a non-unique
 `oldString`, `no_match` for an anchor that is not in the file or an `expect`
@@ -115,6 +122,8 @@ that does not hold, `offset_out_of_range` for a line range past the end,
 `not_found`, `binary_file`, or `command_failed`.
 
 ## ls
+
+Available now
 
 Lists a directory with directories first, a trailing `/` on directory names, and
 locale-independent UTF-16 code-unit ordering.
@@ -137,6 +146,8 @@ listing, so one dangling symlink does not cost the whole directory. Fails with
 `not_found`, `not_a_directory`, or `offset_out_of_range`.
 
 ## glob
+
+Available now
 
 Finds files through the Smithers Ripgrep Subset v1 contract, corresponding to
 `rg --files -g`. By default, `.gitignore` rules from the search root and nested
@@ -165,6 +176,8 @@ root, `command_failed` when the root exists but the host cannot inspect it
 (`command_failed`, `provider_unavailable`, `request_failed`).
 
 ## grep
+
+Available now
 
 Searches file contents through the same contract. Results are match-centric:
 `limit` counts matches, and each match carries the context that belongs to it.
@@ -212,6 +225,8 @@ when the root exists but the host cannot inspect it, or a peer failure.
 
 ## bash
 
+Available now
+
 Runs a shell command line, or a script delivered to an interpreter as data.
 `Input` is a union on `mode`. An omitted `mode` decodes as `"unhermetic"`, the
 envelope `bash` declares for every call.
@@ -238,6 +253,7 @@ envelope `bash` declares for every call.
 | `stdoutTruncated`, `stderrTruncated`       | boolean                        | Whether that stream is a fragment.                                                 |
 | `stdoutDroppedBytes`, `stderrDroppedBytes` | number                         | Bytes omitted from the start.                                                      |
 | `invalidProbe`                             | `Probe.InvalidProbe`, optional | Reserved for independently confirmed launch failures; not inferred from exit code. |
+| `mutated` | boolean, optional | Whether a container working tree changed between measurements. Absent when not measured. |
 
 `Bash.Input` and `Bash.Output` are also exported as TypeScript types alongside
 the schemas. Fails with `invalid_input`, `outside_declared_reads`,
@@ -250,6 +266,8 @@ is spawned. A host that must stay out of the cell's reach binds it
 (`StandardFlows.shell(services, transport, { sealedTo })`).
 
 ## test
+
+Available now
 
 Runs the declared test runner and returns a reading rather than a log.
 
@@ -293,6 +311,8 @@ no repository directory, `not_found` when the base ref does not resolve,
 
 ## shell_command
 
+Available now
+
 A clone of the Codex CLI tool of the same name.
 
 | Input        | Type             | Meaning                                   |
@@ -310,6 +330,8 @@ A timeout is a successful value, not a failure. Fails with `command_failed` when
 the process could not start.
 
 ## apply_patch
+
+Available now
 
 A clone of the Codex CLI freeform patch tool: the V4A grammar
 (`*** Begin Patch`, `*** Add File:`, `*** Update File:`, `*** Delete File:`,
@@ -337,6 +359,8 @@ the call asks for everything the flow declares instead.
 
 ## update_plan
 
+Available now
+
 Acknowledges a plan update. Pure: it touches nothing, and the harness observes
 plan updates through the journal.
 
@@ -358,6 +382,8 @@ a host calling it directly never decodes.
 Fails with `invalid_input`.
 
 ## HTTP destination permissions
+
+Available now
 
 `fetch`, `http-post`, and `webfetch` resolve every destination before sending,
 including redirect destinations, after checking the ordinary request grant. Loopback, private, link-local, shared,
@@ -391,6 +417,8 @@ set the web destination policy and keep their ordinary host transport.
 
 ## fetch
 
+Available now
+
 | Input     | Type                            | Meaning                                                                  |
 | --------- | ------------------------------- | ------------------------------------------------------------------------ |
 | `url`     | string                          | Absolute `http` or `https` URL.                                          |
@@ -411,6 +439,8 @@ budget expires. Interruption aborts the request and closes the body reader.
 
 ## http-post
 
+Available now
+
 | Input         | Type                            | Meaning                                                                  |
 | ------------- | ------------------------------- | ------------------------------------------------------------------------ |
 | `url`         | string                          | Absolute `http` or `https` URL.                                          |
@@ -423,6 +453,8 @@ budget expires. Interruption aborts the request and closes the body reader.
 because the remote side may already have acted.
 
 ## explore
+
+Available now
 
 A declaration with no handler: a dynamic flow composed from `read`, `ls`,
 `glob`, and `grep`, whose prompt is its own description.
@@ -441,6 +473,8 @@ A declaration with no handler: a dynamic flow composed from `read`, `ls`,
 it composes.
 
 ## webfetch
+
+Available now
 
 | Input     | Type                                          | Meaning                                                  |
 | --------- | --------------------------------------------- | -------------------------------------------------------- |
@@ -465,6 +499,8 @@ redirect limit is exceeded.
 
 ## websearch
 
+Available now
+
 | Input        | Type                                                | Meaning                          |
 | ------------ | --------------------------------------------------- | -------------------------------- |
 | `query`      | non-empty string                                    | The search query.                |
@@ -483,6 +519,8 @@ the retry delay in seconds when `Retry-After` supplies a valid delay or date.
 `timeout` is reserved for an elapsed request or response body budget.
 
 ## lsp
+
+Available now
 
 | Input       | Type                          | Meaning                                                               |
 | ----------- | ----------------------------- | --------------------------------------------------------------------- |
@@ -506,6 +544,8 @@ from the refusal implementation, or `timeout`, `request_failed`, and
 `command_failed` from `NodeLanguageServer`.
 
 ## Failures
+
+Available now
 
 `StdError` is the one error type every handler uses, with a `code` from a closed
 list and the offending `path` where one exists. Ordinary outcomes stay in the

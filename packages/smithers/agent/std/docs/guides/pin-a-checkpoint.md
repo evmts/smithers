@@ -11,12 +11,14 @@ is the whole of what it buys: before it existed, the only way to answer "did
 this fail before my change" was to undo the change, which means reverting the
 very work the reading was meant to prove.
 
-This module is the host half of [`@smthrs/harness`](/api/harness)'s
+This module is the host half of [`@smthrs/harness`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/api.md)'s
 `ctx.checkpoint()` and `ctx.call(flow, input, { at })`. The harness owns the
 surface, the identity, the bound, and the refusals; this owns the two host
 operations that need a real tree.
 
 ## Bind the git store
+
+Available now
 
 ```ts
 import * as Checkpoints from "@smthrs/std/Checkpoints"
@@ -33,6 +35,8 @@ const store = Checkpoints.layerGit({
 instead.
 
 ## Capture and materialize
+
+Available now
 
 ```ts
 import * as Effect from "effect/Effect"
@@ -66,6 +70,8 @@ does not resolve is `not_found`. Otherwise it tries `TestRunner.captureBase`
 and then `HEAD`, matching `test`.
 
 ## What the git binding does, and does not do
+
+Available now
 
 `layerGit` records with `git stash create`, which is the one git command that
 records the working tree and changes nothing else: it does not move the
@@ -105,6 +111,8 @@ Inside the workspace is the only placement that works, for the same reason the
 and a scratch checkout anywhere else on the host is not visible to it.
 
 ## Point a call at a checkpoint
+
+Available now
 
 `relocate` rewrites one call's input so the call runs against a materialized
 checkpoint. It is a closed table, not a per-flow hook:

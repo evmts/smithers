@@ -11,6 +11,8 @@ without losing the anchor in between.
 
 ## Read a page
 
+Available now
+
 ```ts
 import * as Read from "@smthrs/std/Read"
 
@@ -50,6 +52,8 @@ and `totalLines: 0`. Only an `offset` past the end is
 or invalid UTF-8 is `binary_file`.
 
 ## Edit by exact text
+
+Available now
 
 The first anchor form is the file's own bytes:
 
@@ -91,6 +95,8 @@ rather than re-reading, re-guessing, and missing again.
 
 ## Edit by line range
 
+Available now
+
 The second anchor form reuses a hit you already have from `read` or `grep`,
 instead of retyping the text:
 
@@ -123,6 +129,8 @@ A range past the end of the file is `offset_out_of_range`.
 
 ## Read the hunk back
 
+Available now
+
 Every successful edit returns the region it wrote, raw, with two lines of
 context on each side:
 
@@ -135,6 +143,8 @@ context on each side:
 A mis-indented edit costs one glance at `hunk` instead of an investigation.
 
 ## Concurrent changes
+
+Available now
 
 `edit`, `write`, and `apply_patch` hold exclusive sibling directory locks from
 before reading until their mutation finishes. Existing symlink aliases share
@@ -160,6 +170,8 @@ add operations intentionally replace contents; use an anchored edit when a
 previously read version must still match.
 
 ## Write a whole file
+
+Available now
 
 `write` replaces a file, creating parent directories:
 
@@ -187,6 +199,8 @@ across a whole patch or a promise of persistence after power loss. No `fsync` is
 performed. Timestamps and extended metadata such as ACLs are not copied.
 
 ## Apply a patch instead
+
+Available now
 
 `apply_patch` accepts Codex's V4A patch text as one string, so a model trained on
 that tool can use the shape it knows:

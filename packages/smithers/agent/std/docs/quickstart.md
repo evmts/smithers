@@ -13,10 +13,14 @@ without an external binary and without an API key.
 
 ## Prerequisites
 
+Available now
+
 - Node.js 26.4.0 or later.
-- A package with the dependencies installed. Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
+- A package with the dependencies installed. Use a [source checkout](./installation.md).
 
 ## Make a tree to search
+
+Available now
 
 Two files, so the glob filter has something to exclude:
 
@@ -27,6 +31,8 @@ printf 'widen is defined in src/widen.ts\n' > /tmp/std-quickstart/README.md
 ```
 
 ## Compose the host
+
+Available now
 
 `Grep.run` asks for the `Search` service; `Read.run` asks for `FileSystem`.
 `PortableSearch` is the in-process implementation of `Search`, so the whole
@@ -51,6 +57,8 @@ through the `rg` executable instead. Nothing else in this file changes, which is
 the point of the seam. See [The search contract](./concepts/search-contract.md).
 
 ## Search, then read what you found
+
+Available now
 
 Each returned hit carries the definition it sits inside, when the file's shape
 says so plainly. That is a line range, so it is a read window rather than a
@@ -101,7 +109,9 @@ export function widen(value: number): number {
 without a `/` matches a basename at any depth, so `*.ts` reaches
 `src/widen.ts` without naming the directory.
 
-## What just happened
+## What ran
+
+Available now
 
 - `page.content` is raw file text. The line numbers came back as the sibling
   fields `startLine`, `endLine`, and `totalLines`, never as a gutter inside the
@@ -116,6 +126,8 @@ without a `/` matches a basename at any depth, so `*.ts` reaches
   [Limits are disclosed, never silent](./concepts/limits-and-disclosure.md).
 
 ## Next steps
+
+Available now
 
 - [Search a workspace](./guides/search-a-workspace.md) for globs, context lines,
   case rules, and the literal retry.
