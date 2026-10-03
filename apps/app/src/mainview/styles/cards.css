@@ -3182,6 +3182,7 @@ from main down to the last item. */
 @media (prefers-reduced-motion:reduce) { .mvp-timeline .mvp-tl-node, .mvp-tl-edge .mvp-tl-node { animation:none !important; } }
 
 /* TerminalView (T-UI-17): personal terminal, participants and watch-only state. */
+.terminal-view { box-sizing: border-box; min-width: 0; }
 .terminal-view .smithers-card-header { flex-wrap: wrap; gap: 8px; }
 .terminal-view .terminal-branch { color: var(--text-muted); font: 11px var(--font-mono); overflow-wrap: anywhere; }
 .terminal-view .terminal-people { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
