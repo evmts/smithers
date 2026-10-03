@@ -108,7 +108,7 @@ export const CodeSurface = ({
   )
 }
 
-export function FileCardSurface({ model, actions, view, gestures, onAction, onView }: CodeEditorViewProps) {
+export function FileCardSurface({ model, actions, gestures, onAction, onView }: CodeEditorViewProps) {
   const controls = actions.length ? <div className="code-actions">{actions.map((action, index) => <DiffAction key={index} action={action} onAction={onAction} />)}</div> : null
   return <section className="smithers-card code-file-view" data-kind="file" data-keyboard-pane="File" data-digest={model.digest} data-mode={model.mode} aria-label={model.path}>
     <header className="smithers-card-header"><h2 className="smithers-card-title">{model.path}</h2><span className="mvp-branch-chip">{model.branch}</span>

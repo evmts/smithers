@@ -1,4 +1,4 @@
-import { Button } from "@smthrs/ui"
+import { Button } from "@smthrs/ui/button"
 import type { Action } from "@smthrs/rpc/CardAction"
 import type { DiffViewProps } from "@smthrs/rpc/DiffCard"
 export function DiffAction({ action, onAction }: { action: Action; onAction: DiffViewProps["onAction"] }) {
