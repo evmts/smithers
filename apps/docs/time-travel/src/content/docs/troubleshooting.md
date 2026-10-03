@@ -10,18 +10,22 @@ so the code is the fastest way into this page. The full code table is in the
 
 ## not_found: "lineage ... is not present in ..."
 
+**Available now**
+
 **What happened.** The fold read the run's journal at or below the frame and
 found no record on the lineage the frame names.
 
 **What to change.** Two causes, in order of likelihood. The lineage id was
 assembled by hand: it is a versioned encoding, not a path, and the encoding has
 already changed once, so a hand-written string addresses no record. Mint it
-with `FlowEngine.Lineage.root(runId)` from [`@smthrs/engine`](https://engine.smithers.sh/reference/api/), or
+with `FlowEngine.Lineage.root(runId)` from [`@smthrs/engine`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/api.md), or
 read `meta.lineageId` off any entry the run committed. Or the frame's sequence
 sits below the lineage's first record, in which case raise the sequence. See
 [Frames and lineage](/concepts/frames-and-lineage/).
 
 ## not_found: "frame ... is not a record of ..."
+
+**Available now**
 
 **What happened.** A fork was asked for a frame that addresses no record of
 that parent run, usually a sequence past the journal tail.
@@ -36,6 +40,8 @@ const seq = page.entries.at(-1)?.seq ?? 0
 
 ## live_parent: "parent run ... is live" or "ancestor run ... is live"
 
+**Available now**
+
 **What happened.** A fork needs a settled prefix to copy, and the parent or one
 of its ancestors is running, claimed, or owned.
 
@@ -44,6 +50,8 @@ parked at a durable wait has released ownership with its history committed,
 which is the state fork and rewind both want.
 
 ## live_child: "live ... child ... blocks rewind"
+
+**Available now**
 
 **What happened.** A descendant would have had history cut out from under it.
 An attached child always blocks. A detached child blocks under the default
@@ -60,12 +68,16 @@ truncating history the child still depends on is not a policy choice. See
 
 ## busy: "run ... is not available for rewind"
 
+**Available now**
+
 **What happened.** Another owner holds the run, or the claim or activation was
 lost while the rewind was taking it.
 
 **What to change.** Retry. This is a contention answer, not a verdict.
 
 ## busy: "journal tail moved for ..."
+
+**Available now**
 
 **What happened.** Validation ran before the run was claimed, and another
 executor claimed the idle row, appended records, and released it inside that
@@ -75,6 +87,8 @@ window. The rewind refused rather than truncate records validation never saw.
 The refusal is the protocol working: the alternative was a silent truncation.
 
 ## irreversible: "rewind is blocked by N effect(s)"
+
+**Available now**
 
 **What happened.** At least one crossed effect cannot be undone. The cause
 carries each blocking assessment's identity and verdict, and the full records
@@ -99,6 +113,8 @@ declare, or a missing idempotency key a handler requires. See
 
 ## compensation_failed
 
+**Available now**
+
 **What happened.** A rollback handler or the workspace restore failed, so the
 rewind stopped rather than leave the world half reverted. Every earlier receipt
 was rolled back before the failure escaped.
@@ -116,6 +132,8 @@ detail no longer carries them.
 
 ## fence_lost
 
+**Available now**
+
 **What happened.** Ownership of the run, or of an attached child, was
 superseded before the truncation committed, so the mutation was refused rather
 than written behind the live owner.
@@ -124,6 +142,8 @@ than written behind the live owner.
 same class of answer as `busy`, raised at the commit rather than at the claim.
 
 ## already_crossed
+
+**Available now**
 
 **What happened.** `EffectBoundary.guard` tried to write the `intended` record
 and got a duplicate back: this effect already crossed its durable boundary, so
@@ -135,6 +155,8 @@ outcome instead of re-running the action.
 
 ## rate_limited
 
+**Available now**
+
 **What happened.** The rate limiter supplied as `Options.rateLimit` rejected
 the attempt. The decision is recorded on the audit row.
 
@@ -144,6 +166,8 @@ Nothing durable was compensated or truncated. A build that supplies no limiter
 never raises this code.
 
 ## limit_exceeded
+
+**Available now**
 
 **What happened.** The operation would read more journal entries than
 `maxHistoryEntries` allows: the prefix a replay folds, or the suffix a fork or
@@ -160,6 +184,8 @@ The default is 100,000 entries. Lower it deliberately when the caller is
 untrusted; raise it when a legitimately long run needs reading.
 
 ## invalid
+
+**Available now**
 
 **What happened.** Something malformed was refused before the operation touched
 anything, or a durable payload did not decode. The message names it. The
@@ -179,6 +205,8 @@ recurring ones:
 
 ## unknown
 
+**Available now**
+
 **What happened.** The store, the journal, the cache, or an unmapped host
 failure. The original cause is attached.
 
@@ -189,6 +217,8 @@ another dialect, such as MySQL, fails on the DDL. Archive writes use strict
 archive transaction.
 
 ## A fork re-executed a sealed step
+
+**Available now**
 
 **What happened.** The child dispatched an action the parent had already
 sealed, instead of replaying the recorded result.
@@ -204,6 +234,8 @@ const environment = Action.layerCacheEnvironment({ layers: [], capabilities: {} 
 
 ## A fork warns about the lane default
 
+**Available now**
+
 **What happened.** The fork succeeded and reported that the frame has no
 recorded Jujutsu pointer, so the child's workspace starts from the lane default
 rather than from the frame's tree.
@@ -214,6 +246,8 @@ projection for that lineage. Check that the run was driven by a composition
 that journals snapshots.
 
 ## Warnings in the log
+
+**Available now**
 
 Three log lines come from this package's own recovery paths:
 
@@ -231,6 +265,8 @@ Three log lines come from this package's own recovery paths:
   hand if the disk space matters.
 
 ## An audit stays in_progress across restarts
+
+**Available now**
 
 **What happened.** Startup recovery declined it, because the run it names is
 still held by a process the liveness check considers alive. The row keeps its

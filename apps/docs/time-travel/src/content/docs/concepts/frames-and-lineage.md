@@ -13,6 +13,8 @@ the four verbs are one call each; get it wrong and every one of them answers
 
 ## A frame is an address, not a snapshot
 
+**Available now**
+
 A `Frame` is two fields:
 
 ```ts
@@ -46,6 +48,8 @@ const position = { runId: "ledger-1", frame }
 
 ## A lineage is not a run
 
+**Available now**
+
 The frame carries `lineageId` rather than `runId`, and the difference matters
 as soon as a run branches. A fork or a continuation starts a new run but may
 keep walking the same lineage, so the run a frame belongs to is a property of
@@ -56,7 +60,9 @@ A run's journal can also interleave several lineages. Every fold filters by
 
 ## The lineage id is minted, never spelled
 
-`FlowEngine.Lineage` from [`@smthrs/engine`](https://engine.smithers.sh/reference/api/) is the one
+**Available now**
+
+`FlowEngine.Lineage` from [`@smthrs/engine`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/api.md) is the one
 constructor for a lineage id. The value is a versioned encoding rather than a
 path, and the encoding has already changed once:
 
@@ -76,6 +82,8 @@ id reads `meta.lineageId` off any entry the run committed instead.
 
 ## Edges make the tree
 
+**Available now**
+
 Every operation that creates a run from a frame records a `LineageEdge` back to
 it:
 
@@ -93,8 +101,9 @@ The three kinds are three different relationships:
 - `fork` is a time-travel branch that copied a prefix of the parent's journal
   and now runs alongside it. Only a fork produces two live runs sharing a past,
   which is why a rewind treats forked descendants differently from the rest.
-- `continuation` is the parent carrying on under a new run id after a rewind
-  truncated it.
+- `continuation` is an engine handoff to the next execution. It is derived
+  from a `handed-off` journal decision carrying `nextExecutionId`, and is
+  always detached. A rewind suspends the same run; it does not create one.
 
 `attached` is the flag a rewind's policy reads. An attached child still depends
 on the history being truncated and must be resolved: cancelled, or the rewind
@@ -107,6 +116,8 @@ package writes and the child spawns the engine writes. A descendant is a
 descendant however it came to exist.
 
 ## A fork says so on its own journal
+
+**Available now**
 
 A forked run records its own origin, so a forensic walk can start from any
 child and go back without consulting the edge table:
@@ -123,6 +134,8 @@ Reading the offset back is how a walk maps a child sequence number onto the
 parent's timeline.
 
 ## Where to go next
+
+**Available now**
 
 - [Replay a run into a view](/guides/replay-a-run/) uses a frame to read.
 - [Fork a run at a frame](/guides/fork-a-run/) creates a `fork` edge.

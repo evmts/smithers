@@ -16,6 +16,8 @@ effects. Only work without a completion at the frame executes in the child.
 
 ## Fork the run
 
+**Available now**
+
 ```ts
 import { FlowEngine } from "@smthrs/engine"
 import { TimeTravel } from "@smthrs/time-travel"
@@ -43,6 +45,8 @@ interface ForkResult {
 
 ## What the child inherits
 
+**Available now**
+
 The fork copies the journal prefix at or below the frame, the frame's
 anchors, and attempts whose completion receipts are in that prefix. An attempt
 that finished after the frame is not inherited, even if it started before it.
@@ -56,6 +60,8 @@ back without consulting the edge table.
 The parent is never mutated and keeps running.
 
 ## The workspace is derived, not supplied
+
+**Available now**
 
 The fork mints the child run id first and names the Jujutsu lane after it:
 `smithers-fork-`, the sanitized child id capped at 64 characters, then a short
@@ -81,6 +87,8 @@ succeeds and reports a warning naming the workspace it could not restore.
 
 ## Warnings are disclosure, not refusal
 
+**Available now**
+
 A fork never compensates anything. Its suffix assessment reports warnings when
 an effect may execute again on the child. A frame inside an unfinished
 irreversible crossing is refused before the child is created.
@@ -89,6 +97,8 @@ A fork with a non-empty `warnings` is a successful fork. Read the warnings and
 decide whether to drive the child; the copy already exists either way.
 
 ## Keep completed steps from re-executing
+
+**Available now**
 
 The durable engine resolves copied attempts using their original action
 identities. This includes sealed, compensable, and irreversible actions, with
@@ -112,6 +122,8 @@ effects: its suffix may repeat effects that the parent already performed.
 
 ## Drive the child
 
+**Available now**
+
 The child is an ordinary run. Execute the same flow with the forked run id as
 its execution id. Completed prefix actions return their recorded results and
 the remaining actions execute:
@@ -129,6 +141,8 @@ A runnable version of this walkthrough is
 in the Smithers examples on GitHub.
 
 ## Edit a step result
+
+**Available now**
 
 Pass `override` to fork with one step's recorded result replaced. The child
 replays every step up to the frame, serves that step with the edited value,
@@ -150,6 +164,8 @@ shared step cache holds refuses `invalid`, because a cache hit is served ahead
 of the attempt row and would hide the edit.
 
 ## Edit the input and carry spawned children
+
+**Available now**
 
 Pass `rebind` to change what the child starts from. It receives the id the fork
 mints for the child and returns a `TimeTravelStore.Rebinding`:
@@ -182,22 +198,17 @@ carried, and a run the parent never spawned refuses `invalid`. The memory store
 keeps journal records only, so it carries a child's records and holds no step
 result to edit.
 
-`smthrs runs fork --input <json|@file>` edits a run's input from the CLI. A
-run's input belongs to its approved plan, so the CLI plans and approves the
-edited input as a plan of its own, as `flow start` does, and binds the fork to
-it. The CLI forks every run as a run of its own: the fork's payload names the
-fork, its module flow runs in a module child of its own that carries the
-parent's recorded steps, and `--step` may name one of those steps. The CLI
-forks runs a control plane launched; a standalone engine execution has no
-control identity to resume, so fork it through this API.
-
 ## Bound what the fork reads
+
+**Available now**
 
 `ForkOptions.maxHistoryEntries` caps the suffix the fork assesses for this one
 call, overriding the service default. A suffix past the cap fails
 `limit_exceeded`.
 
 ## Failures
+
+**Available now**
 
 | Code              | Cause                                                                                                                                           |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -214,6 +225,8 @@ reserved ordinal is never handed out again, so a retry lands under a fresh
 name.
 
 ## Where to go next
+
+**Available now**
 
 - [Frames and lineage](/concepts/frames-and-lineage/): the edge a fork
   records, and what `attached` means for a later rewind.

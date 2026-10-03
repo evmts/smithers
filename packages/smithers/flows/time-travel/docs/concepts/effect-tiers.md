@@ -11,6 +11,8 @@ the only place to find out. This page is the model behind that decision.
 
 ## Three tiers
 
+**Available now**
+
 Every effect the engine journals declares one of three tiers, and the tier says
 how the effect can be undone:
 
@@ -25,6 +27,8 @@ effect must also carry an idempotency key, and `EffectBoundary.guard` refuses
 one that does not with `invalid` before the action runs.
 
 ## Boundary evidence is monotonic
+
+**Available now**
 
 An effect is journaled as a pair of records under the event type
 `flows.time-travel.effect-boundary`:
@@ -51,6 +55,8 @@ duplicate, the effect already crossed its durable boundary and executing it
 again is refused with `already_crossed`.
 
 ## How a rewind reads the evidence
+
+**Available now**
 
 Before a rewind mutates anything, it assesses every crossed effect in the
 suffix and gives each one a classification:
@@ -88,6 +94,8 @@ A handler bug can refuse a rewind; it can never let one through.
 
 ## A fork never compensates
 
+**Available now**
+
 A fork runs the same assessment and then normalizes every blocking and
 revertible entry to a warning, because a fork changes nothing about the parent
 and undoes nothing. The warning says what it means: this effect may execute
@@ -97,6 +105,8 @@ A fork with a non-empty `warnings` array is a successful fork, not a refused
 one. Read them and decide; the operation has already happened.
 
 ## Where to go next
+
+**Available now**
 
 - [Journal an effect boundary](../guides/journal-an-effect.md): the producer
   side, for an adapter author.

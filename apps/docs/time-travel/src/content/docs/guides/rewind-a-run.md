@@ -12,6 +12,8 @@ package, and the only one that takes the run away from whoever is driving it.
 
 ## Park the run first
 
+**Available now**
+
 A rewind is a writer. It claims the run's ownership like any driver and refuses
 a run that is still executing, so the run must be idle: pending or suspended.
 
@@ -24,6 +26,8 @@ yield * Ledger.execute({}, { executionId: "ledger-1", discard: true })
 ```
 
 ## Rewind
+
+**Available now**
 
 ```ts
 import { FlowEngine } from "@smthrs/engine"
@@ -69,6 +73,8 @@ discarded future's value or deadline.
 
 ## Choose what happens to detached children
 
+**Available now**
+
 `RewindOptions.detachedChildren` is the one policy decision the caller makes:
 
 ```ts
@@ -93,12 +99,16 @@ branch.
 
 ## Bound the read
 
+**Available now**
+
 `pageSize` sets the journal page size for the suffix scan. `maxHistoryEntries`
 caps the suffix the rewind may truncate for this one call, and a longer suffix
 is refused `limit_exceeded` **before** the run is claimed, so an oversized
 rewind never takes the run away from anyone.
 
 ## Read the audit row back
+
+**Available now**
 
 The audit row is the durable record of the attempt, and it outlives the call:
 
@@ -125,6 +135,8 @@ in the Smithers examples on GitHub.
 
 ## Failures
 
+**Available now**
+
 | Code                  | Cause                                                                                                                |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `busy`                | Another owner holds the run, the journal tail moved under the claim, or ownership was lost before the end.           |
@@ -149,6 +161,8 @@ attaches the restoration problem as its cause. See
 relative to that point, and what a crash between them costs.
 
 ## Where to go next
+
+**Available now**
 
 - [The rewind protocol](/concepts/rewind-protocol/): the ordered protocol
   and its crash behaviour.

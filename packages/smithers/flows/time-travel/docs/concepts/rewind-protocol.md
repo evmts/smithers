@@ -11,6 +11,8 @@ the process dies at this exact line, what does the next process see?
 
 ## The order of operations
 
+**Available now**
+
 1. **Validate the position**, before anything durable exists. A refused frame
    leaves no claim, no audit row, and no refreshed anchor behind.
 2. **Claim and activate the run**, then hold the ownership lease with a
@@ -60,6 +62,8 @@ the process dies at this exact line, what does the next process see?
 
 ## Step 10 is the commit point
 
+**Available now**
+
 Everything before it is reversible, and everything irreversible waits for it.
 
 The archive call and its local commit flag are uninterruptible together. If
@@ -85,6 +89,8 @@ Terminal descendants are disclosed as warnings rather than cancelled, because
 their external effects cannot be erased by deleting a parent's suffix.
 
 ## Recovery is not an operation
+
+**Available now**
 
 Building `TimeTravel.layer` finishes or rolls back every rewind a crash
 interrupted, before the service accepts new work. There is no recovery call for
@@ -127,6 +133,8 @@ could not be finished without reading the audit table by hand.
 
 ## Fork lanes are reclaimed on the same build
 
+**Available now**
+
 A fork reserves its child run id, provisions the Jujutsu lane, then commits. A
 process that dies between the last two steps leaves a registered lane behind
 and a reservation every later mint has already counted past.
@@ -138,6 +146,8 @@ the one the leftover on disk still holds. A lane that cannot be forgotten is
 reported and left, and because its name is never reused it blocks nothing.
 
 ## Where to go next
+
+**Available now**
 
 - [Rewind a run to a frame](../guides/rewind-a-run.md): the call, its options,
   and what it returns.

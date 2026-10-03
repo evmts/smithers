@@ -12,6 +12,8 @@ is why that choice was made and what it costs you.
 
 ## The fold is the whole mechanism
 
+**Available now**
+
 A replay walks the journal prefix at or below a frame and hands each entry to a
 projection you write:
 
@@ -45,7 +47,9 @@ explain.
 
 ## What the fold reads, and in what order
 
-Entries come from [`@smthrs/journal`](https://journal.smithers.sh/reference/api/) a page at a time, in
+**Available now**
+
+Entries come from [`@smthrs/journal`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/api.md) a page at a time, in
 sequence order. Three rules govern the walk, and each one exists because
 breaking it produced a wrong answer:
 
@@ -72,6 +76,8 @@ rewrites the evidence the fold is reading.
 
 ## Versioned engine admission
 
+**Available now**
+
 When replay encounters versioned `flows.engine.v2.*` history, pass `engineEvents` in the replay
 options. This is an `EngineEvent.Consumer` from `@smthrs/journal/EngineEvent`:
 the expected run, lineage id, root run, round, parent and allowed journal
@@ -91,9 +97,11 @@ The versioned constructors are additive. Engine recovery, fork copying and
 anchor projection still use the current authoritative stores and current
 writer families. The v2 replay decoder does not claim a whole-engine recovery
 cutover or manufacture missing lineage roots and completion values in old
-records. See the journal's [authority contract](https://journal.smithers.sh/concepts/state-event-authority/).
+records. See the journal's [authority contract](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/concepts/state-event-authority.md).
 
 ## Every read is bounded
+
+**Available now**
 
 A fold with no bound lets a long or hostile run decide how much memory a verb
 takes. `maxHistoryEntries` caps the entries any one operation reads, and an
@@ -115,6 +123,8 @@ const layer = TimeTravel.layerWith({ maxHistoryEntries: 500_000 })
 A value that is not a positive integer is refused `invalid` at build.
 
 ## The two facts a fold cannot derive
+
+**Available now**
 
 Two things about a frame are not in the records a fold reads, and they are
 exactly the two a fork or a rewind needs to put the world back:
@@ -158,6 +168,8 @@ warning naming the workspace it could not restore, and a rewind restores no
 pointer rather than a wrong one.
 
 ## Where to go next
+
+**Available now**
 
 - [Replay a run into a view](/guides/replay-a-run/): writing the projection.
 - [Effect tiers](/concepts/effect-tiers/): the evidence that decides whether history

@@ -11,6 +11,8 @@ whatever your fold built. Nothing is executed, and the run is not touched.
 
 ## Write the projection
 
+**Available now**
+
 A projection is two fields: the state before any record, and how one record
 folds into it.
 
@@ -50,6 +52,8 @@ const results = {
 
 ## Read at a frame
 
+**Available now**
+
 `inspect` is the short door, under the service defaults:
 
 ```ts
@@ -81,6 +85,8 @@ times.
 
 ## The two options, and what they do not do
 
+**Available now**
+
 `pageSize` sets how many journal entries are read per page. It defaults to 100
 and is a throughput knob only: the fold sees the same entries in the same order
 whatever the page boundaries are, so it never changes the derived state. A
@@ -100,6 +106,8 @@ low cap than for a long fold.
 
 ## Address the right lineage
 
+**Available now**
+
 The fold keeps only entries whose `meta.lineageId` matches the frame, so a run
 whose journal interleaves several lineages replays exactly the one you named.
 An entry that carries no lineage at all is kept, because dropping it would
@@ -114,6 +122,8 @@ lineage id was assembled by hand instead of minted by
 
 ## What a replay cannot tell you
 
+**Available now**
+
 - **Anything uncommitted.** The fold reads durable evidence only. Work in
   flight is not in the answer.
 - **Anything that needs re-execution.** There is no dispatcher behind the fold.
@@ -125,6 +135,8 @@ lineage id was assembled by hand instead of minted by
 
 ## Failures
 
+**Available now**
+
 | Code             | Cause                                                                     |
 | ---------------- | ------------------------------------------------------------------------- |
 | `not_found`      | The frame's lineage has no record at or below its sequence in this run.   |
@@ -134,7 +146,9 @@ lineage id was assembled by hand instead of minted by
 
 ## Where to go next
 
+**Available now**
+
 - [Derived state](../concepts/derived-state.md): why the fold is the whole
   mechanism, and what bounds it.
-- [Fork a run at a frame](./fork-a-run.md): acting on the frame you just read.
+- [Fork a run at a frame](./fork-a-run.md): acting on the frame you read.
 - [Test against history](./testing.md): folding a seeded history in a test.

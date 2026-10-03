@@ -1,6 +1,6 @@
 ---
 title: "Provide a store"
-description: "Choose and wire a TimeTravelStore: the in-memory reference implementation, the SQLite-backed durable one, and the migration ladder a composition that owns its schema should use instead."
+description: "Choose and wire a TimeTravelStore: the in-memory reference implementation, the SQL-backed durable one, and the migration ladder a composition that owns its schema should use instead."
 sidebar:
   order: 4
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flows/time-travel/docs/guides/provide-a-store.md"
@@ -18,6 +18,8 @@ identically.
 
 ## The durable store
 
+**Available now**
+
 `SqlTimeTravelStore` is the one to run in production:
 
 ```ts
@@ -28,7 +30,7 @@ const layer = TimeTravel.layer.pipe(Layer.provideMerge(SqlTimeTravelStore.layer)
 ```
 
 It requires a `SqlClient` and a `DurableWriter` from
-[`@smthrs/database`](https://database.smithers.sh/reference/api/). Writes go through the durable writer
+[`@smthrs/database`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/api.md). Writes go through the durable writer
 rather than straight to the client, so a rewind's audit row, its receipts, and
 its truncation land under the same durability discipline as the engine's own
 journal writes.
@@ -67,6 +69,8 @@ the archive transaction.
 
 ## Run the migrations on the shared ladder
 
+**Available now**
+
 `Migrations` publishes fixed schema rungs on the shared ladder, recorded in
 `flows_migrations`. Building the store applies the same set and skips completed
 rungs. A composition can install the complete schema first:
@@ -79,17 +83,20 @@ const migrated = Layer.provideMerge(Migrations.layer, database)
 
 `Migrations.set` is time travel's own set at id block `5000`. `Migrations.sets`
 is the complete durable schema for an engine with time travel: everything
-[`@smthrs/engine-store`](https://engine-store.smithers.sh/reference/api/) composes, then this.
+[`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md) composes, then this.
 `Migrations.run` applies them in order, and `Migrations.layer` installs them
 before exposing the database.
 
 Migration ids are spaced by 1,000. This set ships above the engine's existing
 sets and preserves its published rungs: `5001_initial`,
-`5002_archive_generation`, `5003_lineage_probes`, and `5004_plan_digest`.
+`5002_archive_generation`, `5003_lineage_probes`, `5004_plan_digest`, and
+`5005_operation_id`. The last rung adds the optional jj operation on snapshots.
 The plan-digest rung accepts columns installed by older store builds outside
 the ledger. Future schema changes require new rungs.
 
 ## The in-memory store
+
+**Available now**
 
 `MemoryTimeTravelStore` holds everything in JavaScript objects. It is
 deterministic, needs no database, and works in the browser, which makes it the
@@ -107,6 +114,8 @@ archived records or surviving edges. See
 [Test against history](/guides/testing/).
 
 ## Write your own
+
+**Available now**
 
 The contract is an ordinary interface. Write the implementation against
 `TimeTravelStore.Service`, then pass it through `TimeTravelStore.make`, which
@@ -137,6 +146,8 @@ stating:
   leftover on disk.
 
 ## Where to go next
+
+**Available now**
 
 - [Installation](/installation/): the other four services the layer needs.
 - [Test against history](/guides/testing/): seeding a store and asserting on what

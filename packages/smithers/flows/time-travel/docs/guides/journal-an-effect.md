@@ -14,6 +14,8 @@ This is a guide for adapter and engine authors. If you are calling
 
 ## Describe the effect, then guard it
 
+**Available now**
+
 ```ts
 import type { OwnerId } from "@smthrs/journal/OwnerId"
 import * as EffectBoundary from "@smthrs/time-travel/EffectBoundary"
@@ -56,6 +58,8 @@ action's error channel. It never swallows the action's own failure.
 
 ## What the fields are for
 
+**Available now**
+
 | Field               | Why a rewind cares                                                                               |
 | ------------------- | ------------------------------------------------------------------------------------------------ |
 | `id`                | Identity. Both records of one crossing carry it, and the fold groups by it.                      |
@@ -82,12 +86,16 @@ terminal record above it), and an `irreversible` tier with no idempotency key.
 
 ## Crossing twice is refused
 
+**Available now**
+
 If the `intended` write comes back as a duplicate, the effect already crossed
 its durable boundary and `guard` fails with `already_crossed` instead of
 running the action a second time. That code exists separately from `busy`
 precisely so a caller can tell a re-armed effect from a contended run.
 
 ## Read the records back
+
+**Available now**
 
 Boundary records carry the event type `EffectBoundary.eventType`, which is
 `flows.time-travel.effect-boundary`. Four functions decode them:
@@ -116,6 +124,8 @@ instead would let a reordered journal turn an `unknown` outcome, which must
 block a rewind, into a `succeeded` one a handler would compensate.
 
 ## Where to go next
+
+**Available now**
 
 - [Effect tiers](../concepts/effect-tiers.md): the verdict each tier's evidence
   produces.

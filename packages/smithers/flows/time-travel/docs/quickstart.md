@@ -16,10 +16,14 @@ in a run's past.
 
 ## Prerequisites
 
+**Available now**
+
 - Node.js 26.4.0 or later.
-- A package with the dependencies installed. Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
+- A package with the dependencies installed. Not on npm yet; see [Installation](installation.md).
 
 ## Declare a run worth replaying
+
+**Available now**
 
 Create `quickstart.ts`. The flow posts a ledger entry and then waits on a
 durable deferred, which is what leaves the run suspended with its history
@@ -61,6 +65,8 @@ const Ledger = Flow.make("quickstart/Ledger", {
 
 ## Compose time travel onto the engine
 
+**Available now**
+
 `TimeTravel.layer` asks only for injectable contracts, so it merges onto a
 durable engine composition over the same SQLite file. Building it also finishes
 or rolls back any rewind a crash interrupted, which is why recovery never
@@ -72,7 +78,7 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import { Interpreter } from "@smthrs/flow"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
-import { Jj } from "@smthrs/kernel"
+import * as Jj from "@smthrs/jj"
 import { Ownership } from "@smthrs/run-store"
 import { SqlTimeTravelStore, TimeTravel } from "@smthrs/time-travel"
 import * as Layer from "effect/Layer"
@@ -84,8 +90,12 @@ import { dirname } from "node:path"
  */
 const stubJj = Layer.succeed(
   Jj.Jj,
-  Jj.make({
-    snapshot: () => Effect.succeed({ changeId: "quickstart-snapshot" as never }),
+  Jj.makeNoop({
+    snapshot: () =>
+      Effect.succeed({
+        commitId: "quickstart-commit" as never,
+        changeId: "quickstart-snapshot" as never
+      }),
     restore: () => Effect.void,
     diff: () => Effect.succeed(""),
     workspaceAdd: () => Effect.void,
@@ -127,6 +137,8 @@ missing prerequisite tables fail with a typed `TimeTravelError`. Run
 [Provide a store](./guides/provide-a-store.md).
 
 ## Execute the run, then replay it
+
+**Available now**
 
 A frame is the pair `(lineageId, seq)`. The sequence comes from the journal;
 the lineage comes from `FlowEngine.Lineage`, the one constructor that mints
@@ -181,7 +193,9 @@ folding the prefix under that frame finds the two attempts the engine had
 admitted there. The exact counts follow from what the engine recorded, not from
 anything the projection stores.
 
-## What just happened
+## What happened
+
+**Available now**
 
 `inspect` read committed evidence and nothing else. It paged the run's journal
 in sequence order, kept the entries whose `meta.lineageId` matches the frame,
@@ -194,6 +208,8 @@ The `Position` you built is the same value the other two verbs take.
 under it. `timeTravel.rewind(position)` removes everything above it.
 
 ## Next steps
+
+**Available now**
 
 - [Replay a run into a view](./guides/replay-a-run.md): the read knobs, lineage
   filtering, and what a projection may and may not do.

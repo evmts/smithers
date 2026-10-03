@@ -10,6 +10,8 @@ Each one acts at a _frame_, which is a point in the run's committed journal.
 
 ## What it solves
 
+**Available now**
+
 A long agent run, build, or approval pipeline records what it did as it goes.
 Once it has finished or parked, that history is the only honest account of what
 happened, and the questions you want to ask it are awkward without a library:
@@ -27,13 +29,17 @@ stranding an effect that already crossed into the outside world.
 
 ## Install
 
-Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
+**Available now**
+
+Not on npm yet; see [Installation](installation.md).
 
 Node.js 26.4.0 or later. The package ships ESM and CommonJS with TypeScript
 declarations, and its root entry point bundles for the browser with no `node:`
 built-in.
 
 ## Read a run's past
+
+**Available now**
 
 `inspect` folds the run's journal up to a frame through a projection you write.
 A frame pairs a lineage id with a journal sequence, and the lineage id is minted
@@ -66,9 +72,11 @@ compensates what it crosses.
 
 ## How this fits with @smthrs/flows
 
+**Available now**
+
 Time travel reads history it does not write. The producer is the Smithers
 durable flow engine, which stamps a lineage id on every record a run commits and
-journals the evidence a rewind reasons about. [`@smthrs/flows`](/api/flows) is
+journals the evidence a rewind reasons about. [`@smthrs/flows`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/api.md) is
 that engine packaged as one dependency: it declares flows and actions, stands a
 durable host up over local SQLite, and resumes a run after a crash. Install it
 if you need runs to travel back through; install this package if you already
@@ -80,11 +88,13 @@ straight onto one. `@smthrs/flows` also re-exports the `TimeTravel` service key,
 so a program that already depends on the barrel reaches the service through it
 with no second dependency, and reaches `FlowEngine.Lineage` the same way.
 
-Above both sits the `smithers` command-line tool, which runs and supervises
+Above both sits the `smthrs` command-line tool, which runs and supervises
 flows without a program of your own. Its verbs are documented at
-[the CLI reference](/api/cli).
+[the CLI reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/api.md).
 
 ## Where to go next
+
+**Available now**
 
 - [Installation](./installation.md): the services `TimeTravel.layer` requires,
   the import forms, and the packages a runnable composition adds.

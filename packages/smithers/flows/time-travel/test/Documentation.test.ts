@@ -7,8 +7,11 @@ it.each(["../README.md", "../docs/api.md", "../CHANGELOG.md"])(
   "%s documents the shipped CLI and unified MCP access",
   (path) => {
     const text = read(path)
-    expect(text).toContain("`smthrs runs inspect|replay|fork|rewind`")
-    expect(text).toContain("https://smithers.sh/docs/reference/cli/")
+    expect(text).toContain("`smthrs runs inspect|replay|verify`")
+    expect(text).not.toContain("`smthrs runs inspect|replay|fork|rewind`")
+    expect(text).toContain(
+      "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/reference/cli/README.md#history-and-stored-state"
+    )
     expect(text).toMatch(/MCP[^.]*only through the unified command tools/)
     expect(text).not.toMatch(/no (?:time-travel|CLI) verb|only a library API|`smithers` command-line/)
   }
@@ -61,7 +64,7 @@ it("documents completed-prefix reuse and fresh child actions", () => {
   expect(guide).toContain("A frame inside an irreversible action")
   expect(readme).toContain("A durable fork reuses completed action results through its frame")
   expect(readme).toContain("child's own identity, even with a shared cache environment")
-  expect(readme).toContain("https://time-travel.smithers.sh/guides/fork-a-run/")
+  expect(readme).toContain("docs/guides/fork-a-run.md")
 })
 
 it("tells a handler author that receipts persist unredacted and must not carry credentials", () => {

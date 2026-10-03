@@ -14,6 +14,8 @@ returned.
 
 ## Seed a past
 
+**Available now**
+
 `MemoryTimeTravelStore.make` takes the history the store starts life holding:
 
 ```ts
@@ -51,6 +53,8 @@ on archived records or surviving edges has to hold the concrete store.
 
 ## Assert on the world, not the return value
 
+**Available now**
+
 `state()` copies every collection on read, so a test can capture the world
 before an operation and compare it with the world after, including the parts no
 operation returns:
@@ -78,6 +82,8 @@ The collections are `records`, `archived`, `edges`, `audits`, `receipts`,
 
 ## Reach a crash path without crashing
 
+**Available now**
+
 `failAt` throws an `unknown`-coded `TimeTravelError` at a named internal step,
 so a test can interrupt a rewind mid-flight and then assert that the next layer
 build finishes or rolls it back:
@@ -86,7 +92,7 @@ build finishes or rolls it back:
 const store = MemoryTimeTravelStore.make({ records, failAt: "archiveAndTruncate:commit" })
 ```
 
-The steps are `writeAudit`, `updateAudit`, `recordSnapshot`, `recordReceipt`,
+The steps are `writeAudit`, `updateAudit`, `recordSnapshot`, `recordSnapshots`, `recordReceipt`,
 `nextForkId`, `abandonForkIntents`, `createFork:start`, `createFork:copy`,
 `createFork:commit`, `archiveAndTruncate:start`,
 `archiveAndTruncate:before-archive`, `archiveAndTruncate:before-truncate`, and
@@ -98,6 +104,8 @@ failure at `writeAudit` leaves no row at all; one at `updateAudit` leaves it
 it `failed`.
 
 ## Stub only what the test exercises
+
+**Available now**
 
 `TimeTravelStore.makeNoop` fails every operation with an `unknown`-coded error
 except the ones you override:
@@ -121,6 +129,8 @@ or was not called. Reach for `MemoryTimeTravelStore` when the test needs a
 working store.
 
 ## Build the service over doubles
+
+**Available now**
 
 `TimeTravel.layer` needs four more services. For a replay test, the journal is
 the only one that has to answer:
@@ -159,6 +169,8 @@ A record without it is kept in every lineage, which is a different test than
 the one you probably meant to write.
 
 ## Where to go next
+
+**Available now**
 
 - [Provide a store](/guides/provide-a-store/): the durable store this one is a peer
   of.

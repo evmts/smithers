@@ -18,10 +18,12 @@ const program = Effect.gen(function*() {
 
 ## Entry points
 
-| Import                                   | Source                                                                                                                                      | Notes                                                                                |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `@smthrs/time-travel`                    | [src/index.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/time-travel/src/index.ts)                           | The barrel is a browser-contract entry point and bundles without a `node:` built-in. |
-| `@smthrs/time-travel/SqlTimeTravelStore` | [src/SqlTimeTravelStore.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/time-travel/src/SqlTimeTravelStore.ts) | Runs on an injected SQLite or PostgreSQL `SqlClient`.                                |
+**Available now**
+
+| Import                                   | Source                                                    | Notes                                                                                |
+| ---------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `@smthrs/time-travel`                    | [src/index.ts](../src/index.ts)                           | The barrel is a browser-contract entry point and bundles without a `node:` built-in. |
+| `@smthrs/time-travel/SqlTimeTravelStore` | [src/SqlTimeTravelStore.ts](../src/SqlTimeTravelStore.ts) | Runs on an injected SQLite or PostgreSQL `SqlClient`.                                |
 
 The barrel exports `TimeTravel` and `ReadOnlyTimeTravel` flat, and
 the other modules as namespaces. It re-exports the rest of the `TimeTravel`
@@ -39,6 +41,8 @@ reached through
 `HistoryLimit`, and `EffectHandlerRegistry` are machinery a caller never names.
 
 ## TimeTravel
+
+**Available now**
 
 The one injectable time-travel surface.
 
@@ -112,13 +116,13 @@ interface Service {
 
 How the service is composed.
 
-| Field                 | Type                                                    | Meaning                                                                                                                                                                                                         |
-| --------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `compensationTimeout` | `Duration.Input`                                        | Deadline per handler revert or rollback and per jj snapshot or restore. Defaults to three minutes. Refused `invalid` at build unless finite and positive.                                                       |
-| `recoveryTimeout`     | `Duration.Input`                                        | Deadline for startup recovery of every pending audit together. Defaults to ten compensation deadlines. Refused `invalid` at build unless finite and positive.                                                   |
-| `isAlive`             | `Ownership.LivenessCheck`                               | Whether the owner recorded on a run is still working, asked before startup recovery takes an interrupted rewind's run over. Defaults to `Ownership.leaseLiveness()` from [`@smthrs/run-store`](/api/run-store). |
-| `maxHistoryEntries`   | `number`                                                | The most journal entries one replay, fork, or rewind may read. Defaults to `defaultMaxHistoryEntries`. Refused `invalid` at build unless it is a positive integer.                                              |
-| `rateLimit`           | `(input) => Effect<RateLimitDecision, TimeTravelError>` | Whether one more rewind may start. Defaults to no limiter: every rewind is allowed. See [Rate limiting rewinds](#rate-limiting-rewinds).                                                                        |
+| Field                 | Type                                                    | Meaning                                                                                                                                                                                                                                                                                         |
+| --------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `compensationTimeout` | `Duration.Input`                                        | Deadline per handler revert or rollback and per jj snapshot or restore. Defaults to three minutes. Refused `invalid` at build unless finite and positive.                                                                                                                                       |
+| `recoveryTimeout`     | `Duration.Input`                                        | Deadline for startup recovery of every pending audit together. Defaults to ten compensation deadlines. Refused `invalid` at build unless finite and positive.                                                                                                                                   |
+| `isAlive`             | `Ownership.LivenessCheck`                               | Whether the owner recorded on a run is still working, asked before startup recovery takes an interrupted rewind's run over. Defaults to `Ownership.leaseLiveness()` from [`@smthrs/run-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/run-store/docs/api.md). |
+| `maxHistoryEntries`   | `number`                                                | The most journal entries one replay, fork, or rewind may read. Defaults to `defaultMaxHistoryEntries`. Refused `invalid` at build unless it is a positive integer.                                                                                                                              |
+| `rateLimit`           | `(input) => Effect<RateLimitDecision, TimeTravelError>` | Whether one more rewind may start. Defaults to no limiter: every rewind is allowed. See [Rate limiting rewinds](#rate-limiting-rewinds).                                                                                                                                                        |
 
 ### Rate limiting rewinds
 
@@ -218,6 +222,8 @@ An `Assessment` carries the crossed `effect` record, its `classification`
 
 ## Operations
 
+**Available now**
+
 `TimeTravel` is one injectable service with four operations, each addressed by
 a `Position`: a run id plus a `Frame`.
 
@@ -274,6 +280,8 @@ by the next recovery pass rather than silently dropped.
 
 ## Recovery
 
+**Available now**
+
 Recovery recognizes child ownership from the persisted rewind or recovery child
 nonce. It reclaims expired child leases with fresh liveness evidence and the
 run store's snapshot CAS. Claims interrupted before activation are cleared with
@@ -289,7 +297,7 @@ An audit whose parent or planned child a live process still holds is declined.
 It keeps its `in_progress` status and remains in `pendingAudits` for a later
 build to retry unresolved work.
 
-`Options.isAlive` is an [`Ownership.LivenessCheck`](/api/run-store) and decides
+`Options.isAlive` is an [`Ownership.LivenessCheck`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/run-store/docs/api.md) and decides
 what "still live" means. It defaults to `Ownership.leaseLiveness()`, the same
 check the engine's run driver applies to those rows: an owner is alive while its
 persisted heartbeat is younger than `Ownership.heartbeatStaleAfter`. A supplied
@@ -305,6 +313,8 @@ const layer = TimeTravel.layerWith({ isAlive: Ownership.leaseLiveness() })
 ```
 
 ## Frame
+
+**Available now**
 
 The coordinate system. Import as `Frame` from the barrel, or from
 `@smthrs/time-travel/Frame`.
@@ -327,6 +337,8 @@ one already cut loose.
 
 ## TimeTravelError
 
+**Available now**
+
 The single failure type every operation can fail with.
 
 ```ts
@@ -344,6 +356,8 @@ grows. `error` omits `cause` entirely when none is supplied, so an absent cause
 never encodes as an explicit `undefined`.
 
 ## TimeTravelStore
+
+**Available now**
 
 The persistence contract time travel reads history through.
 
@@ -363,20 +377,20 @@ moment the code under test reaches a third.
 
 ### Models
 
-| Export          | Shape                                                                                                          |
-| --------------- | -------------------------------------------------------------------------------------------------------------- |
-| `Snapshot`      | `{ runId, frame, changeId, planDigest? }`. The anchor at a frame. An absent digest means no plan was in force. |
-| `AttemptRef`    | `{ stepKeyDigest, attempt }`. An attempt row as `flows_attempts` addresses it.                                 |
-| `StepOverride`  | `{ stepKeyDigest, result }`. The step result a fork replays on its child in place of the parent's.             |
-| `CarriedChild`  | `{ from, to, payload? }`. A spawned child a fork carries under the id its forked parent opens it with.         |
-| `Rebinding`     | `{ payload?, children? }`. The payload a forked child starts from and the spawned children it carries.         |
-| `Descendants`   | `{ attached: LineageEdge[]; detached: LineageEdge[] }`.                                                        |
-| `Audit`         | `{ id, runId, frame, status, rateLimit?, detail? }` with `status` of `in_progress`, `completed`, or `failed`.  |
-| `AuditPatch`    | `{ status?, rateLimit?, detail? }`. The only keys an open audit row may be advanced through.                   |
-| `Receipt`       | `{ id, auditId, effectId, receipt }`. Proof one side effect was compensated.                                   |
-| `ArchiveResult` | `{ archived: number; orphaned: LineageEdge[] }`.                                                               |
-| `Fork`          | `{ runId, edge }`. The row `createFork` commits; a fork's warnings ride `ForkResult`.                          |
-| `ForkIntent`    | `{ childRunId, parentRunId, parentSeq, reservedAtMs }`. A minted fork id whose fork has not committed.         |
+| Export          | Shape                                                                                                                        |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `Snapshot`      | `{ runId, frame, changeId, operationId?, planDigest? }`. The anchor at a frame. An absent digest means no plan was in force. |
+| `AttemptRef`    | `{ stepKeyDigest, attempt }`. An attempt row as `flows_attempts` addresses it.                                               |
+| `StepOverride`  | `{ stepKeyDigest, result }`. The step result a fork replays on its child in place of the parent's.                           |
+| `CarriedChild`  | `{ from, to, payload? }`. A spawned child a fork carries under the id its forked parent opens it with.                       |
+| `Rebinding`     | `{ payload?, children? }`. The payload a forked child starts from and the spawned children it carries.                       |
+| `Descendants`   | `{ attached: LineageEdge[]; detached: LineageEdge[] }`.                                                                      |
+| `Audit`         | `{ id, runId, frame, status, rateLimit?, detail? }` with `status` of `in_progress`, `completed`, or `failed`.                |
+| `AuditPatch`    | `{ status?, rateLimit?, detail? }`. The only keys an open audit row may be advanced through.                                 |
+| `Receipt`       | `{ id, auditId, effectId, receipt }`. Proof one side effect was compensated.                                                 |
+| `ArchiveResult` | `{ archived: number; orphaned: LineageEdge[] }`.                                                                             |
+| `Fork`          | `{ runId, edge }`. The row `createFork` commits; a fork's warnings ride `ForkResult`.                                        |
+| `ForkIntent`    | `{ childRunId, parentRunId, parentSeq, reservedAtMs }`. A minted fork id whose fork has not committed.                       |
 
 Three helpers travel with them:
 
@@ -419,6 +433,8 @@ Every method fails as `TimeTravelError`.
 
 ## MemoryTimeTravelStore
 
+**Available now**
+
 A `TimeTravelStore` held entirely in JavaScript objects: deterministic, needs
 no database, and browser-safe.
 
@@ -437,6 +453,8 @@ lineageId?, payload, eventType? }`. `MemoryState` is the whole world as
 
 ## SqlTimeTravelStore
 
+**Available now**
+
 The durable store, over an injected SQLite or PostgreSQL `SqlClient`.
 
 ```ts
@@ -453,6 +471,8 @@ cause. Use `Migrations.run` for the complete durable schema on a fresh
 database. Writes go through `DurableWriter`.
 
 ## EffectBoundary
+
+**Available now**
 
 The producer side: journal an effect so a rewind can assess it.
 
@@ -484,6 +504,8 @@ projection over a shared journal stays total, and fails `invalid` for a corrupt
 payload under this module's own event type.
 
 ## CompensationHandlers
+
+**Available now**
 
 The contribution door for compensation handlers. The registry behind them stays
 internal.
@@ -521,11 +543,14 @@ as `blocking`.
 
 ## Migrations
 
+**Available now**
+
 The schema as fixed rungs on the shared migration ladder. Store construction
 uses this same ladder and skips recorded rungs. Published IDs remain stable:
-`5001_initial`, `5002_archive_generation`, `5003_lineage_probes`, and
-`5004_plan_digest`. The last rung also accepts databases where an older
-store build already added `plan_digest` outside the ledger.
+`5001_initial`, `5002_archive_generation`, `5003_lineage_probes`,
+`5004_plan_digest`, and `5005_operation_id`. The plan-digest rung also accepts
+databases where an older store build already added `plan_digest` outside the
+ledger. The operation-id rung adds the optional jj operation on snapshots.
 
 | Export  | Signature                                                                                            |
 | ------- | ---------------------------------------------------------------------------------------------------- |
@@ -539,6 +564,8 @@ on a database the engine ladder already migrated. The journal owns
 `flows_journal_events`; this set owns the lineage indexes on that table.
 
 ## Failure behaviour
+
+**Available now**
 
 Every operation fails as a `TimeTravelError` discriminated by a closed `code`,
 so a caller's branch stays exhaustive.
@@ -565,6 +592,8 @@ as its identity, classification, and reason, never as the effect's `input`,
 `eventType`, and the expected run and lineage, without journal payload or metadata.
 
 ## Limits
+
+**Available now**
 
 - The durable store runs on the SQL client it is given, SQLite or PostgreSQL.
   The client's dialect selects its CHECK constraints, JSON extraction, and
@@ -596,14 +625,16 @@ as its identity, classification, and reason, never as the effect's `input`,
 
 ## Composition
 
+**Available now**
+
 `TimeTravel.layer` requires `TimeTravelStore`, `Journal`, `RunStore`,
 `CacheStore`, and `Jj`, and nothing else. Time travel is a library API, also
-exposed as `smthrs runs inspect|replay|fork|rewind`; see the
-[CLI reference](https://smithers.sh/docs/reference/cli/). MCP exposes these verbs
-only through the unified command tools.
+exposed as `smthrs runs inspect|replay|verify`; see the
+[CLI reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/reference/cli/README.md#history-and-stored-state). MCP exposes these verbs
+only through the unified command tools. Fork and rewind are library APIs.
 
 The engine is the producer of everything the service reads.
-[`@smthrs/engine-store`](/api/engine-store) stamps `meta.lineageId` on every
+[`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md) stamps `meta.lineageId` on every
 record it writes, journals an anchor per attempt, and writes
 effect-boundary records around an irreversible dispatch and around a child
 spawn. Anchors reach `flows_time_travel_snapshots` through a projection of those

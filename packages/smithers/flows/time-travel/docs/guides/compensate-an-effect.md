@@ -12,6 +12,8 @@ charge, a message, or a deployment.
 
 ## Contribute a handler
 
+**Available now**
+
 `CompensationHandlers` is an optional service the composition provides. The
 adapter that performed the effect owns its compensation, and the composition
 that wires that adapter is the only place that can close over the services a
@@ -42,6 +44,8 @@ stays internal; you write a `Handler` and provide a layer, and never see the
 lookup.
 
 ## The three functions
+
+**Available now**
 
 **`residue(effect)`** is operator-facing disclosure: what remains outside the
 journal once this effect is compensated or allowed to stand. It is the sentence
@@ -86,6 +90,8 @@ current pointer whether the process died before or after the target restore.
 
 ## How a handler is matched to evidence
 
+**Available now**
+
 A handler is held to what the journal recorded, and each of these mismatches
 assesses as `blocking` rather than reverting the wrong thing:
 
@@ -103,6 +109,8 @@ A rollback is checked the same way: it refuses a receipt whose tier or
 descriptor the handler does not match.
 
 ## Refine the verdict
+
+**Available now**
 
 Add `assess` when the default `revertible` is too generous, for example when
 the effect is only compensable inside a time window:
@@ -124,6 +132,8 @@ refuse a rewind; it can never let one through.
 
 ## What a rewind does with them
 
+**Available now**
+
 The assessment runs before anything is compensated or truncated. One blocking
 verdict refuses the whole rewind with `irreversible`, carrying the blocking
 assessments as its cause: identity and verdict only, never the effect's `input`
@@ -134,6 +144,8 @@ Handlers then run in reverse journal order. A handler failure rolls back every
 earlier receipt before the typed failure escapes as `compensation_failed`.
 
 ## Where to go next
+
+**Available now**
 
 - [Effect tiers](../concepts/effect-tiers.md): the full verdict table, and how
   sealed and compensable effects are assessed.

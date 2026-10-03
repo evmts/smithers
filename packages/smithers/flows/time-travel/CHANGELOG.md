@@ -87,8 +87,8 @@
   or `output`. `TimeTravelError` encodes its cause, so a raw payload on one was
   a size and secret hazard.
 - Time travel is a library API, also exposed as
-  `smthrs runs inspect|replay|fork|rewind`; see the
-  [CLI reference](https://smithers.sh/docs/reference/cli/). MCP exposes these
+  `smthrs runs inspect|replay|verify`; see the
+  [CLI reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/reference/cli/README.md#history-and-stored-state). MCP exposes these
   verbs only through the unified command tools.
 
 ### Fixed
