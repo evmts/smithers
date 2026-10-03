@@ -19,6 +19,8 @@ gone, and what remains is a durable record that something is owed.
 
 ## How a caller waits
 
+**Available now.**
+
 Who is waiting decides what happens next.
 
 A nested execution, a flow running inside another flow, does not poll. Its
@@ -36,6 +38,8 @@ operator resume, continues the caller at once and the polling schedule becomes
 the bounded fallback rather than the mechanism.
 
 ## The caller's budget, and what it does not bound
+
+**Available now.**
 
 `suspendedRetryPolicy` is declared on the flow, and it bounds ONE CALLER's
 wall-clock patience. When the schedule is spent the caller dies with
@@ -56,6 +60,8 @@ The default policy never gives up: a 200 ms initial delay growing by 1.5 up to
 `suspendedRetryPolicy` on the flow when a caller must stop waiting.
 
 ## Cancellation
+
+**Available now.**
 
 Two operations cancel, and the difference is what they promise:
 
@@ -85,6 +91,8 @@ cascades cancellation over its own persisted parent edges independently, so the
 in-process link is the prompt delivery and not the guarantee.
 
 ## Related
+
+**Available now.**
 
 - [Execution identity](./execution-identity.md): why `resume` and `interrupt`
   are silent about ids they do not know.

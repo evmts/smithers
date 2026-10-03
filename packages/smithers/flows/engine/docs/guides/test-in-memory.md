@@ -10,6 +10,8 @@ what you are testing is the engine.
 
 ## The layer stack under test
 
+**Available now.**
+
 The composition is the production one with the store swapped:
 
 ```ts
@@ -53,6 +55,8 @@ Two services are easy to forget:
 
 ## Prove a replay by counting
 
+**Available now.**
+
 The engine's guarantees are about what does NOT run a second time, so the
 assertion is a counter, not a value:
 
@@ -89,6 +93,8 @@ joiners receive the interrupted dispatch's exit.
 
 ## Drive a park deterministically
 
+**Available now.**
+
 A flow parks when it awaits a `DurableDeferred`. In a test, that gives you a
 run you control: execute the flow in a forked fiber, assert it parked, complete
 the deferred, and assert it finished. The memory engine's `deferredDone`
@@ -96,6 +102,8 @@ re-drives the parked execution as part of completing it, so nothing has to be
 polled.
 
 ## What the memory engine does not give you
+
+**Available now.**
 
 Its limits are the honest boundary of what an in-memory test can prove:
 
@@ -108,7 +116,7 @@ Its limits are the honest boundary of what an in-memory test can prove:
   `actionLatestAttempt`. There is no durable retry origin and no persisted
   attempt counter, so the schedule-to-close budget and the attempt number are
   in-process. A test that must prove those survive a restart needs the
-  durable engine from [`@smthrs/engine-store`](/api/engine-store). Memory also
+  durable engine from [`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md). Memory also
   omits `actionSnapshot`, `recordNode`, and `nodeRecordBytes`: snapshots are
   process-local and no graph journal is retained. Two optional members are
   implemented in memory: `deferredDoneIfWaiting`
@@ -123,6 +131,8 @@ keyless-dispatch guard, and trampoline rounds, behaves as it does in
 production.
 
 ## Related
+
+**Available now.**
 
 - [Suspension and cancellation](../concepts/suspension.md) for what a parked
   run is waiting on.

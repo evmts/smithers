@@ -10,10 +10,12 @@ no boundary is in context.
 
 This package declares the service and ships no implementation, because
 snapshotting a workspace is a host concern.
-[`@smthrs/engine-store`](/api/engine-store) provides one backed by a Jujutsu
+[`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md) provides one backed by a Jujutsu
 repository.
 
 ## Provide the boundary
+
+**Available now.**
 
 `FlowEngine.SnapshotBoundary` has three members. `snapshot` returns an opaque
 handle of your choosing, and the other two receive it back:
@@ -47,6 +49,8 @@ carry.
 
 ## The order the engine calls them
 
+**Available now.**
+
 For a compensable action that fails once and succeeds on the retry, the engine
 produces exactly this sequence:
 
@@ -74,6 +78,8 @@ attempt is never preceded by one.
 
 ## Across a process restart
 
+**Available now.**
+
 A durable driver opts in by implementing `Encoded.actionSnapshot({ key })`.
 It returns the earliest persisted pre-attempt handle as `Option.some(handle)`,
 or `Option.none()` when none survives. The driver must evaluate the supplied
@@ -98,6 +104,8 @@ engine cannot recover the original world.
 
 ## The refusal
 
+**Available now.**
+
 A compensable action dispatched with no boundary in context dies with
 `FlowEngine.SnapshotBoundaryRequired`, carrying the action name and the
 message `Compensable action "<name>" requires SnapshotBoundary`. The action body
@@ -108,6 +116,8 @@ The fix is to provide the boundary, or to change the tier if the action is
 genuinely sealed.
 
 ## Related
+
+**Available now.**
 
 - [Retries and attempts](../concepts/retries.md): the retry decision that turns
   a failed attempt into the `restore` call above.

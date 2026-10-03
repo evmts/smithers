@@ -15,6 +15,8 @@ graph inside it, with its own execution id and its own journal.
 
 ## Following a handoff is the caller's job
 
+**Available now.**
+
 When a round settles as a handoff, the engine does not answer the caller with
 it. It resolves the named target, decodes the handoff payload through that
 target's own payload schema, derives the next round's execution id, and runs
@@ -40,6 +42,8 @@ Two consequences follow from resolving the target by tag:
 
 ## The next round's id is derived, not allocated
 
+**Available now.**
+
 Round 0's execution id is the one the caller executed, and it is also the
 root execution id. Every later round's id is derived from the pair
 `(rootExecutionId, ordinal)` through SHA-256.
@@ -56,6 +60,8 @@ re-address the rounds a lineage already opened.
 
 ## maxRounds counts rounds
 
+**Available now.**
+
 `maxRounds` is declared on the flow and is a budget, not loop detection:
 identical consecutive rounds are legal, and a runaway lineage is stopped by
 counting rather than comparing.
@@ -70,6 +76,8 @@ exit condition is its own branch. A budget that is not a positive safe integer
 is refused with `InvalidRound`, as is a malformed root execution id or ordinal.
 
 ## Two ids are called a lineage
+
+**Available now.**
 
 The word appears twice in this package, and they are different spaces.
 
@@ -90,6 +98,8 @@ engine node contributes a segment today. `Lineage` therefore exports only
 segment.
 
 ## Related
+
+**Available now.**
 
 - [Execution identity](./execution-identity.md): why every round is a separate
   execution id, and what joining one means.

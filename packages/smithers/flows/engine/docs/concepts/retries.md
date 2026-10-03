@@ -5,12 +5,14 @@ sidebar:
   order: 4
 ---
 
-`RetryPolicy` is declared in [`@smthrs/flow`](/api/flow). Deciding what to do
+`RetryPolicy` is declared in [`@smthrs/flow`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/api.md). Deciding what to do
 with it is the engine's job, and it happens in exactly one place: after an
 action dispatch settles and its recorded outcome is decoded. Nothing else
 in the system classifies a failure as retryable.
 
 ## The attempt number
+
+**Available now.**
 
 An attempt number starts at 1 and identifies both the attempt row and the rung
 of the backoff ladder. It has to survive a process restart, or a resumed run
@@ -26,6 +28,8 @@ Without that member the counter is in-process, which is correct for the
 in-memory engine and for any store that keeps no attempt rows.
 
 ## The elapsed-time origin
+
+**Available now.**
 
 A policy's `expirationMs` is a schedule-to-close bound: the whole retry
 sequence gives up after that much wall-clock time, however many attempts fit
@@ -46,6 +50,8 @@ answers are possible:
   starts the budget now.
 
 ## The four decisions
+
+**Available now.**
 
 When a dispatch settles as a failure and the action declares a policy, the
 engine asks the policy for a decision:
@@ -73,6 +79,8 @@ suspension, returns immediately. A parked action is not a failed one.
 
 ## Irreversible actions must be addressable to retry
 
+**Available now.**
+
 An action declared `tier: "irreversible"` may not be retried unless it declares
 an `idempotencyKey`. Re-dispatching an irreversible effect that the engine
 cannot address is how one charge becomes two, so the engine dies with
@@ -83,6 +91,8 @@ is already above 1, which catches a restart that resumed into a retry, and
 before following a policy's retry decision.
 
 ## Compensable actions retry against a snapshot
+
+**Available now.**
 
 An action declared `tier: "compensable"` runs inside a snapshot boundary. The
 engine snapshots before each executing attempt, diffs afterward, and restores
@@ -95,6 +105,8 @@ implements the durable contract. See
 [Run a compensable action](../guides/compensable-actions.md).
 
 ## What is not a retry
+
+**Available now.**
 
 Two other things bound work, and neither is this decision point:
 

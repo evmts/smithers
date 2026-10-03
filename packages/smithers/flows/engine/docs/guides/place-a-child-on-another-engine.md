@@ -6,11 +6,22 @@ description: "Annotate a flow with Flow.Placement, bind the placement's target t
 A flow says where it wants to run without naming a machine. The host that
 composes the engine says which machine that is.
 
+The snippets below are successive parts of one module. Supply the action
+implementation, engine, crypto service, and HTTP server when mounting it.
+
 ## Declare the placement
 
+**Available now.**
+
 ```ts
-import { Flow } from "@smthrs/flow"
+import { Action, Flow } from "@smthrs/flow"
+import * as Schema from "effect/Schema"
 import * as Placement from "@smthrs/plan/Placement"
+
+const PushRelease = Action.make("deploy/push-release", {
+  payload: { version: Schema.String },
+  success: Schema.String
+})
 
 const Release = Flow.make("deploy/release", {
   payload: { version: Schema.String },
@@ -30,9 +41,15 @@ A placement that differs from the caller's must be a `.child()`: an inline
 
 ## Serve the flow where it runs
 
+**Available now.**
+
 The engine that holds the secret or the machine serves the flow:
 
 ```ts
+import { FlowProxy, FlowProxyServer } from "@smthrs/engine"
+import * as Layer from "effect/Layer"
+import { RpcSerialization, RpcServer } from "effect/unstable/rpc"
+
 const served = RpcServer.layerHttp({ group: FlowProxy.toRpcGroup([Release]), path: "/rpc", protocol: "http" }).pipe(
   Layer.provide(FlowProxyServer.layerRpcHandlers([Release])),
   Layer.provide(RpcSerialization.layerJson)
@@ -41,8 +58,13 @@ const served = RpcServer.layerHttp({ group: FlowProxy.toRpcGroup([Release]), pat
 
 ## Bind the target where it is called
 
+**Available now.**
+
 ```ts
 import { Hosts } from "@smthrs/engine"
+import * as Effect from "effect/Effect"
+import { FetchHttpClient } from "effect/unstable/http"
+import { RpcClient } from "effect/unstable/rpc"
 
 const table = Hosts.layer({
   deploy: {
@@ -67,6 +89,8 @@ site. With no table every placement runs here, so the same flow file runs
 unchanged on a host that is the deploy machine.
 
 ## What the two engines hold
+
+**Available now.**
 
 - The caller's plan holds one leaf for the child, under the id
   `Interpreter.childExecutionId` derives from the parent, the node, the callee,
@@ -94,6 +118,8 @@ by reading its run row on this engine, and a remote child has none.
 
 ## Where the child can run
 
+**Partly available.**
+
 The remote engine is one you compose and serve yourself, as the steps above
 do, with the flow registered on it. The Smithers hosts cannot be that engine
 yet:
@@ -112,6 +138,8 @@ budget, and run it under the id the caller names. Until it does, place the
 child on an engine you serve, or run the whole flow on the host.
 
 ## Place one action instead of a flow
+
+**Available now.**
 
 When only one action must run elsewhere, implement it with
 `PlacedAction.layer(action, placement, body)` and serve

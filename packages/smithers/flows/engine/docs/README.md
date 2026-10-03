@@ -4,11 +4,13 @@ description: "The runtime that executes @smthrs/flow flows: it records every ste
 ---
 
 `@smthrs/engine` is the runtime that executes durable flows. A flow, written
-with [`@smthrs/flow`](/api/flow), declares what should happen; this package
-makes it happen, records every step it took, and picks the run back up after it
-parks waiting on something, after a crash, and after a process restart.
+with [`@smthrs/flow`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/api.md), declares what should happen; this package
+runs it and records its steps. The in-memory layer retains state for its scope;
+the durable store preserves it across crashes and process restarts.
 
 ## The problem it solves
+
+**Available now.**
 
 Retrying a job that already charged a card, resuming work after a deploy killed
 the process, waiting three days for a human approval without holding a thread
@@ -28,7 +30,9 @@ when running a step twice would be worse than running it late.
 
 ## Install
 
-Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
+**Available now.**
+
+See [Installation](installation.md) for source-checkout setup and runtime requirements.
 
 Node 26.4.0 or later, plus a platform crypto service.
 
@@ -39,6 +43,8 @@ this release pins one exact version: see [Installation](./installation.md) for
 that pin and for the four things a runnable composition provides.
 
 ## Run a flow twice, compile once
+
+**Available now.**
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
@@ -96,15 +102,19 @@ result. That is the guarantee, in one file, with no database configured.
 
 `FlowEngine.layerMemory` keeps its state for the life of its layer scope, which
 makes it a deterministic runtime for tests and local development.
-[`@smthrs/engine-store`](/api/engine-store) implements the same contract over a
+[`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md) implements the same contract over a
 durable journal, and swapping that one layer is the only change a program makes
 to keep its runs after the process exits.
 
 ## What the package exports
 
+**Available now.**
+
 | Namespace         | What it gives you                                                                                                                                               |
 | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `FlowEngine`      | The runtime: the in-memory `layerMemory`, the `Encoded` contract a durable store implements, and the identity, retry, suspension, and round machinery above it. |
+| `Hosts` | Binds placement targets to this engine or a remote served group. |
+| `PlacedAction` | Runs an action body on the host its placement names. |
 | `FlowProxy`       | RPC and HTTP definitions derived from a list of flows, so one process can execute a flow that another process declared.                                         |
 | `FlowProxyServer` | The layers that bind those derived definitions to a running engine.                                                                                             |
 
@@ -112,8 +122,10 @@ Full signatures are in the [API reference](./api.md).
 
 ## How this fits with @smthrs/flows
 
+**Available now.**
+
 `@smthrs/engine` is one package of a larger durable flow engine.
-[`@smthrs/flows`](/api/flows) is the barrel that re-exports the whole engine as
+[`@smthrs/flows`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/api.md) is the barrel that re-exports the whole engine as
 namespaces: this runtime, the flow-authoring package, the durable store, the
 journal, and the rest. It re-exports this package as `Engine`, so
 `Engine.FlowEngine.layerMemory` from the barrel is the same layer
@@ -121,18 +133,20 @@ journal, and the rest. It re-exports this package as `Engine`, so
 runtime and its transports alone, and `@smthrs/flows` when one dependency for
 the whole engine is the better trade.
 
-Its sibling is [`@smthrs/flow`](/api/flow), the package you author against:
+Its sibling is [`@smthrs/flow`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/api.md), the package you author against:
 `Flow`, `Action`, `DurableDeferred`, `DurableClock`, and `RetryPolicy` are all
 declared there. It defines `FlowRuntime` as a port and ships no implementation.
 This package is the implementation.
 
-Above all of them sits [`@smthrs/cli`](/api/cli), the `smthrs` command line
+Above all of them sits [`@smthrs/cli`](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/api.md), the `smthrs` command line
 these packages are built for: it plans, approves, runs, and inspects durable
 flows through one control plane. Nothing here needs it. The CLI is what a
 finished product on top of this engine looks like, and it is the place to start
 if you want the whole system rather than the runtime.
 
 ## Where to go next
+
+**Available now.**
 
 - [Installation](./installation.md): the packages, the version pin, and the
   services a composition provides.
@@ -147,6 +161,8 @@ if you want the whole system rather than the runtime.
   [Suspension and cancellation](./concepts/suspension.md), and
   [Trampoline rounds](./concepts/trampoline-rounds.md): what the engine does
   when a step fails, parks, or hands off.
+- [Capability ceilings](./concepts/capability-ceilings.md): admission authority,
+  joins, recovery, and remote requests.
 - [Place a child flow on another engine](./guides/place-a-child-on-another-engine.md):
   bind a placement to another engine's served group with `Hosts`.
 - [Serve flows over RPC or HTTP](./guides/serve-flows.md) and

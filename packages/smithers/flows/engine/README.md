@@ -6,7 +6,7 @@ This package declares `effect` as an exact
 `4.0.0-rc.115` peer dependency. Keep the application on that version so
 all Smithers packages share one Effect runtime.
 
-**Documentation:** https://engine.smithers.sh
+**Documentation:** [docs](./docs/README.md)
 
 The runtime that executes `@smthrs/flow` flows, plus the transport
 projections that expose them. It implements `FlowRuntime`, the port
@@ -14,7 +14,7 @@ projections that expose them. It implements `FlowRuntime`, the port
 volatile in-memory implementation of it; `@smthrs/engine-store` supplies
 durable persistence over the same seam.
 
-Not on npm yet; see [Installation](https://smithers.sh/docs/installation/#use-the-libraries).
+See [Installation](./docs/installation.md) for source-checkout setup and runtime requirements.
 
 Built on [Effect](https://effect.website): flows, actions, and the engine are
 Effect values you compose as layers. `effect` is a peer dependency pinned to
@@ -22,6 +22,8 @@ one exact version per release, listed under `peerDependencies` in
 `package.json`.
 
 ## Mental model
+
+**Available now.**
 
 A `Flow` is the durable program and `Action` values are its recorded
 operations, both defined in `@smthrs/flow`. This package is what runs them.
@@ -44,6 +46,8 @@ Everything below it decides only where state lives. That is what makes
 `@smthrs/engine-store` swap in durability without changing a single decision.
 
 ## The shortest program
+
+**Available now.**
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
@@ -84,9 +88,11 @@ calls `Compile` a second time.
 
 ## Public API
 
+**Available now.**
+
 The root exports these namespaces, also available from matching
 `@smthrs/engine/*` subpaths. The flow-authoring namespaces live in
-[`@smthrs/flow`](https://flow.smithers.sh).
+[`@smthrs/flow`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/).
 
 | Namespace         | What it is                                                                                                                                                                                                                 |
 | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -96,22 +102,26 @@ The root exports these namespaces, also available from matching
 | `PlacedAction`    | Implements an action whose body runs on the host its placement names, under the action's invocation key.                                                                                                                   |
 | `FlowProxyServer` | Binds those derived definitions to a running engine.                                                                                                                                                                       |
 
-Full signatures: <https://engine.smithers.sh/reference/api/>.
+Full signatures: [API reference](./docs/api.md).
 
 ## Documentation
 
+**Available now.**
+
 | Page                                                                           | What it covers                                                   |
 | ------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
-| [Quickstart](https://engine.smithers.sh/quickstart/)                           | Run a flow, then prove the second submission replays.            |
-| [The port and the seam](https://engine.smithers.sh/concepts/port-and-seam/)    | Why the engine is two layers, and what crosses the seam encoded. |
-| [Execution identity](https://engine.smithers.sh/concepts/execution-identity/)  | Caller-supplied execution ids, joins, and refused reuses.        |
-| [Step identity](https://engine.smithers.sh/concepts/step-identity/)            | Cache keys, invocation keys, and the keyless-dispatch guard.     |
-| [Retries and attempts](https://engine.smithers.sh/concepts/retries/)           | The single retry decision point and the durable attempt counter. |
-| [Suspension and cancellation](https://engine.smithers.sh/concepts/suspension/) | Parking, the caller's budget, and interrupt semantics.           |
-| [Trampoline rounds](https://engine.smithers.sh/concepts/trampoline-rounds/)    | Handoffs, derived round ids, and `maxRounds`.                    |
-| [Troubleshooting](https://engine.smithers.sh/troubleshooting/)                 | Every refusal and warning, with the fix.                         |
+| [Quickstart](./docs/quickstart.md)                           | Run a flow, then prove the second submission replays.            |
+| [The port and the seam](./docs/concepts/port-and-seam.md)    | Why the engine is two layers, and what crosses the seam encoded. |
+| [Execution identity](./docs/concepts/execution-identity.md)  | Caller-supplied execution ids, joins, and refused reuses.        |
+| [Step identity](./docs/concepts/step-identity.md)            | Cache keys, invocation keys, and the keyless-dispatch guard.     |
+| [Retries and attempts](./docs/concepts/retries.md)           | The single retry decision point and the durable attempt counter. |
+| [Suspension and cancellation](./docs/concepts/suspension.md) | Parking, the caller's budget, and interrupt semantics.           |
+| [Trampoline rounds](./docs/concepts/trampoline-rounds.md)    | Handoffs, derived round ids, and `maxRounds`.                    |
+| [Troubleshooting](./docs/troubleshooting.md)                 | Every refusal and warning, with the fix.                         |
 
 ## In-memory lifetime
+
+**Available now.**
 
 `FlowEngine.layerMemory` is a deterministic test and local-development
 runtime, not a bounded store. It retains completed executions, action
@@ -128,5 +138,5 @@ submission is idempotent; a reuse that names a different flow declaration, or
 that arrives with a different payload, is refused with
 `ExecutionIdentityConflict`. The derived transports pass the field through from
 the request body by default. Set the `executionId` option on either
-`FlowProxyServer` layer to apply one `ExecutionIdScope` to execute, discard, and
-resume requests before they reach the engine.
+`FlowProxyServer` layer to apply one `ExecutionIdScope` to execute, discard, resume, and
+interrupt requests before they reach the engine.

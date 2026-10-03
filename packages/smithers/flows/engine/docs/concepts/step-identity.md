@@ -14,6 +14,8 @@ declaration.
 
 ## The cache key: a sealed action with a declared key
 
+**Available now.**
+
 An action declared `tier: "sealed"` with an `idempotencyKey` gets a pure
 content key with no ordinal in it. The same call replays one recorded result
 wherever and whenever it appears, which is exactly what "sealed" declares.
@@ -59,6 +61,8 @@ miss and the action executes again. Boundary-free object keys are unchanged.
 
 ## The invocation key: everything else
 
+**Available now.**
+
 Any other action, sealed without a declared key, compensable, or irreversible,
 is recorded under an ordinal-scoped invocation key: the run id, an allocation
 scope, an ordinal within that scope, and the tier.
@@ -67,6 +71,8 @@ The ordinal is allocated from a counter, and which counter is the whole
 subtlety.
 
 ## Allocation scope
+
+**Available now.**
 
 A single per-run counter bumped in fiber-arrival order would make identity
 depend on scheduling. Under `Effect.all` with concurrency, a replay that
@@ -100,6 +106,8 @@ stable identity.
 
 ## Concurrent keyless dispatch is refused
 
+**Available now.**
+
 Two concurrent dispatches that land in one scope have no engine-visible
 material to order them by: their inputs live inside the execute closure, and
 the engine cannot see them. Rather than assign identity by arrival order, the
@@ -119,6 +127,8 @@ interruption between them cannot leak a scope and poison every later sequential
 dispatch of that declaration.
 
 ## Related
+
+**Available now.**
 
 - [Retries and attempts](./retries.md): the key is also what the attempt
   counter and the retry origin are looked up by.

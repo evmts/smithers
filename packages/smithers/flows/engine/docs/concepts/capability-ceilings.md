@@ -4,6 +4,8 @@ description: "Authority across execution, recovery, caching, and placement."
 ---
 
 Omitted capability declarations inherit authority; explicit empty declarations
+**Available now.**
+
 deny guarded operations. The engine intersects each declaration with its callers
 and persists admission authority for recovery. Joining, polling, or
 resuming an existing execution ID answers or drives what the admitted authority
@@ -34,6 +36,7 @@ request can only narrow what the serving host already allows. The serving engine
 persists, recovers, and joins under that authority exactly as a local run does.
 A request with no `capabilityCeilings` is bounded by the serving host alone.
 A request carries at most `FlowProxy.maxCeilingGroups` groups of at most
-`FlowProxy.maxCeilingPatterns` patterns. A refused join crosses the wire as the
-serving engine's `FlowHandlerDefect`. Remote cancellation carries no ceiling: it
+`FlowProxy.maxCeilingPatterns` patterns. A refused execute or discard join crosses the wire as typed
+`ExecutionIdentityConflict`. A conflict raised as a defect by another handler
+is replaced by `FlowHandlerDefect`. Remote cancellation carries no ceiling: it
 can only stop work.

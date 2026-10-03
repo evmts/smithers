@@ -4,9 +4,10 @@ description: "Every refusal and warning @smthrs/engine raises: the symptom you s
 ---
 
 The engine's admission and configuration refusals are coded, so a control plane
-or a proxy can classify one without scraping prose from a message. Most are
-raised as defects rather than typed failures, because each one names a wiring
-mistake rather than a condition a caller handles.
+or a proxy can classify one without scraping prose from a message. `FlowNotRegistered`, `SnapshotBoundaryRequired`, and `SuspendedResumeGaveUp`
+are defects. Memory identity conflicts are defects at the runtime seam and typed
+failures from `Flow.execute`. `Round.executionId` and `Round.next` fail typed
+with `InvalidRound`; `Round.initial` throws it synchronously.
 
 | Code                          | Class                                  | Section                                                                                       |
 | ----------------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------- |
@@ -18,7 +19,7 @@ mistake rather than a condition a caller handles.
 | `flow_proxy_collision`        | `FlowProxy.FlowProxyCollision`         | [Two derived operations share a wire name](#two-derived-operations-share-a-wire-name)         |
 | `invalid_flow_tag`            | `FlowProxy.InvalidFlowTag`             | [A flow tag has no route encoding](#a-flow-tag-has-no-route-encoding)                         |
 
-The engine also raises refusals declared in [`@smthrs/flow`](/api/flow):
+The engine also raises refusals declared in [`@smthrs/flow`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/api.md):
 `Flow.MaxRoundsExceeded`, `Action.ConcurrentKeylessDispatch`,
 `Action.IrreversibleRetryRequiresIdempotencyKey`, and
 `Action.UncanonicalIdempotencyKey`.
@@ -28,6 +29,8 @@ failure. Inspect the action span's `retry.stopReason` and `retry.attempt` to
 diagnose the spent budget. See [Retries and attempts](./concepts/retries.md).
 
 ## Flow is not registered
+
+**Available now.**
 
 **Symptom.** `Flow <tag> is not registered`, or
 `<caller> handed off to flow <tag>, which is not registered with this engine`.
@@ -44,12 +47,15 @@ run under it.
 
 ## Execution id already belongs to another run
 
+**Available now.**
+
 **Symptom.** `execution <id> already belongs to ...` with `field: "flow"` or
 `field: "payload"`. A durable trampoline collision may instead name
-`field: "lineage"`, `"round"`, or `"parent"`.
+`field: "lineage"`, `"round"`, or `"parent"`. `field: "capabilities"` means
+the caller's ceiling does not cover the run's admitted authority.
 
 **Cause.** A caller reused an execution id for a different flow declaration,
-payload, or durable round identity. The engine refuses rather than answering
+payload, capability ceiling, or durable round identity. The engine refuses rather than answering
 with a result that belongs to a different question.
 
 **Fix.** Make the id unique per (flow, payload). If the collision is across
@@ -60,6 +66,8 @@ structural over the schema: a field added or a value changed makes a new
 identity, while a declared-opaque value is compared by reference.
 
 ## One RPC request fails other pending requests
+
+**Available now.**
 
 **Symptom.** A handler defect also fails unrelated requests sharing one RPC
 client connection.
@@ -78,6 +86,8 @@ options.
 
 ## Compensable action requires SnapshotBoundary
 
+**Available now.**
+
 **Symptom.** `Compensable action "<name>" requires SnapshotBoundary`, and the
 action body never ran.
 
@@ -90,6 +100,8 @@ effect it has promised it can undo when it has no way to undo it.
 action's tier if it is genuinely sealed.
 
 ## The caller stopped waiting on a parked run
+
+**Available now.**
 
 **Symptom.** `<flow>.execute: suspendedRetryPolicy expired` or
 `... exhausted`, carrying the attempt count and elapsed milliseconds.
@@ -108,6 +120,8 @@ action, which the engine restores from persisted state across restarts.
 
 ## Invalid round or budget
 
+**Available now.**
+
 **Symptom.** `Round rootExecutionId must be non-empty well-formed text`,
 `Round ordinal must be a non-negative safe integer`, or
 `Round maxRounds must be a positive safe integer when supplied`.
@@ -122,6 +136,8 @@ rounds, so `maxRounds: 1` means no handoff at all. See
 
 ## A lineage spent its round budget
 
+**Available now.**
+
 **Symptom.** `Flow.MaxRoundsExceeded`, with a message naming the lineage, the
 flow, the requested ordinal, and the declared `maxRounds`.
 
@@ -134,6 +150,8 @@ settle sooner. A lineage that never settles on its own is a loop, and the
 budget is what stops it.
 
 ## Two concurrent dispatches of one declaration
+
+**Available now.**
 
 **Symptom.** `Action.ConcurrentKeylessDispatch` naming the action, usually
 under `Effect.all` with concurrency.
@@ -151,6 +169,8 @@ freely.
 
 ## An irreversible action tried to retry
 
+**Available now.**
+
 **Symptom.** `Action.IrreversibleRetryRequiresIdempotencyKey`, naming the
 action and the attempt.
 
@@ -163,6 +183,8 @@ the effect, or remove the retry policy so it never retries.
 
 ## An idempotency key could not be canonicalized
 
+**Available now.**
+
 **Symptom.** `Action.UncanonicalIdempotencyKey` with
 `reason: "canonicalize_failed"` and a `path` into the offending value.
 
@@ -174,6 +196,8 @@ never runs.
 **Fix.** Follow `path` to the field and replace it with JSON-canonical data.
 
 ## A recorded outcome does not match the declared schemas
+
+**Available now.**
 
 **Symptom.** The log line
 `A recorded action outcome does not match the action's declared schemas`,
@@ -191,6 +215,8 @@ digest of the declared schemas exactly so a changed declaration misses rather
 than decoding a stale row.
 
 ## A flow body failed outside its declared error schema
+
+**Available now.**
 
 **Symptom.** The log line
 `A flow body failed with an error outside its declared error schema`, annotated
@@ -222,6 +248,8 @@ to in-process error handling.
 
 ## Warnings a durable store can raise
 
+**Available now.**
+
 These are logged, not raised. Each one means the engine kept running on a
 fallback:
 
@@ -234,6 +262,8 @@ fallback:
 
 ## Two derived operations share a wire name
 
+**Available now.**
+
 **Symptom.** `Flow proxy operation "<name>" is not unique`, thrown while you
 wire the server rather than while it serves.
 
@@ -245,6 +275,8 @@ different prefixes.
 
 ## A flow tag has no route encoding
 
+**Available now.**
+
 **Symptom.** `Flow tag "<tag>" is not well-formed UTF-16`, thrown by
 `FlowProxy.toHttpApiGroup`.
 
@@ -254,6 +286,8 @@ encoding.
 **Fix.** Rename the flow to a well-formed tag.
 
 ## A cycle between executions
+
+**Available now.**
 
 **Symptom.** `FlowRuntime.FlowCycleDetected` carrying the path of execution ids
 it walked.
@@ -266,6 +300,8 @@ give the joining execution its own identity so it is not the same run.
 
 ## Polling an execution the engine does not know
 
+**Available now.**
+
 **Symptom.** `FlowRuntime.FlowExecutionNotFound` from `poll`.
 
 **Cause.** No engine holds that execution id. This is distinct from
@@ -276,6 +312,8 @@ settled AND for one belonging to a different flow declaration.
 admitted it. A memory engine loses every execution when its layer scope closes.
 
 ## A missing Crypto service
+
+**Available now.**
 
 **Symptom.** A type error naming `Crypto.Crypto` as an unmet requirement of a
 program that executes a flow.

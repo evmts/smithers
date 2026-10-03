@@ -12,12 +12,16 @@ configured.
 
 ## Before you start
 
-Install the packages and a crypto service. Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
+**Available now.**
+
+Install the packages and a crypto service. See [Installation](installation.md) for source-checkout setup and runtime requirements.
 
 `@effect/platform-node` supplies the runtime `Crypto` service used by every
 action dispatch, so install it in your application's `dependencies`.
 
 ## Declare the action and the flow
+
+**Available now.**
 
 An action is the atom that does the work. It declares schemas and a stable
 name, and carries no code. A flow is the composite: its `body` names actions
@@ -42,6 +46,8 @@ const Build = Flow.make("build/Build", {
 `Compile.call(payload)` records one plan node. It executes nothing.
 
 ## Compose the engine
+
+**Available now.**
 
 The implementation is attached separately, where code can run. Four layers make
 a runnable composition, and each answers one of the requirements
@@ -75,6 +81,8 @@ from a re-run.
 
 ## Run it twice under one execution id
 
+**Available now.**
+
 `executionId` is caller-supplied identity, not a handle the server mints. The
 same id names the same run:
 
@@ -94,7 +102,9 @@ Run the file. It prints:
 { first: 'app.js', second: 'app.js', compiles: 1 }
 ```
 
-## What just happened
+## Replay behavior
+
+**Available now.**
 
 The second submission did not run a second build. It joined the run that
 already owned `build-app-1` and answered with that run's recorded result, which
@@ -116,8 +126,10 @@ be a defect in the program rather than an error a caller handles.
 
 ## Where to go next
 
+**Available now.**
+
 - Keep the state after the process exits: swap `FlowEngine.layerMemory` for the
-  durable engine in [`@smthrs/engine-store`](/api/engine-store). Nothing above
+  durable engine in [`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md). Nothing above
   that line changes.
 - Run the flow from another process:
   [Serve flows over RPC or HTTP](./guides/serve-flows.md).

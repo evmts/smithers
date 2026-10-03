@@ -12,12 +12,14 @@ in one place, `FlowProxy.operationAddresses`:
 
 | Operation | Name             | Request                                          |
 | --------- | ---------------- | ------------------------------------------------ |
-| Execute   | `<tag>`          | The flow payload, plus a required `executionId`. |
+| Execute   | `<tag>`          | `{ payload, executionId, capabilityCeilings? }`. |
 | Discard   | `<tag>Discard`   | The same, run without waiting for a result.      |
-| Resume    | `<tag>Resume`    | An `executionId` alone.                          |
-| Interrupt | `<tag>Interrupt` | An `executionId` alone; requests cancellation.   |
+| Resume    | `<tag>Resume`    | `{ executionId, capabilityCeilings?, poll? }`.                          |
+| Interrupt | `<tag>Interrupt` | The resume shape; requests cancellation, ignoring `poll`.   |
 
 ## Start from a flow
+
+**Available now.**
 
 Nothing about the flow changes to make it servable:
 
@@ -42,6 +44,8 @@ const flows = [Review] as const
 
 ## Serve over RPC
 
+**Available now.**
+
 Derive the group from the flows, then provide the handler layer under an RPC
 server:
 
@@ -64,7 +68,7 @@ another produce a server with no matching handlers.
 Set `disableFatalDefects: true` to keep a handler defect scoped to its request
 on a shared RPC connection. See [Troubleshooting](../troubleshooting.md#one-rpc-request-fails-other-pending-requests).
 
-Execute, discard, and resume payloads require an `executionId` with 1 to 4,096
+Execute, discard, resume, and interrupt payloads require an `executionId` with 1 to 4,096
 UTF-16 code units and no unpaired surrogates. RPC and HTTP schemas reject
 invalid ids before invoking the engine.
 
@@ -74,6 +78,8 @@ UUID for each invocation. Proxy clients must supply an id and retain it to
 retry or resume the same execution.
 
 ## Serve over HTTP
+
+**Available now.**
 
 The HTTP form adds a group to an `HttpApi` and binds it the same way:
 
@@ -103,6 +109,8 @@ high surrogate.
 
 ## Collisions are refused before construction
 
+**Available now.**
+
 Operation names are derived by suffixing, so a flow set containing both `Foo`
 and `FooDiscard` would generate the same wire name twice.
 `FlowProxy.assertNoCollisions` runs first in every group builder and every
@@ -116,6 +124,8 @@ FlowProxy.assertNoCollisions(flows, "flows_")
 ```
 
 ## Serving a flow is executing it
+
+**Available now.**
 
 Both server layers drive the served bodies, so both require what those bodies
 require: `Flow.Requirements` of every flow, on top of the schema services
@@ -133,6 +143,8 @@ attributable without reading the client's error.
 
 ## What these modules are not
 
+**Available now.**
+
 `FlowProxy` and `FlowProxyServer` expose flow transport and nothing else. They
 do not ship a server, a router, an authentication policy, or a durable engine.
 Mount the derived definitions in your own application, and provide the engine
@@ -146,6 +158,8 @@ than one principal must bind each id to the caller with an
 [`executionId` scope](./namespace-execution-ids.md).
 
 ## Related
+
+**Available now.**
 
 - [Namespace execution ids per tenant](./namespace-execution-ids.md): the
   `executionId` option both server layers accept.

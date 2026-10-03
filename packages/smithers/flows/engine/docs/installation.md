@@ -7,7 +7,20 @@ sidebar:
 
 ## Install
 
-Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
+**Available now.**
+
+This checkout contains `@smthrs/engine@1.0.0-rc.1`. From the repository
+root, install its workspace dependencies:
+
+```bash
+corepack pnpm install --frozen-lockfile --prefer-offline
+```
+
+Runtime dependencies are `@smthrs/canonical`, `@smthrs/capability`,
+`@smthrs/crypto`, `@smthrs/flow`, `@smthrs/journal`, `@smthrs/keys`, and
+`@smthrs/plan`, each at `1.0.0-rc.1`. `effect` is an exact peer, while
+`@effect/platform-node` is a development dependency used by the examples
+and tests, not a runtime dependency of the engine package.
 
 `@smthrs/flow` is a runtime dependency of this package and also the package you
 author against: `Flow`, `Action`, `DurableDeferred`, `DurableClock`, and
@@ -23,12 +36,14 @@ Node 26.4.0 or later is required.
 
 ## What a real composition adds
 
+**Available now.**
+
 The engine alone runs nothing. A program that executes a flow provides four
 things, and the type checker names each one it is missing:
 
 | Requirement                  | Where it comes from                                                                                                    |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `FlowRuntime.FlowRuntime`    | `FlowEngine.layerMemory` here, or `EngineStore.layer` from [`@smthrs/engine-store`](/api/engine-store) for durability. |
+| `FlowRuntime.FlowRuntime`    | `FlowEngine.layerMemory` here, or `EngineStore.layer` from [`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md) for durability. |
 | The flow's registration      | `Interpreter.layer(flow)` from `@smthrs/flow`, once per flow you execute.                                              |
 | Each action's implementation | `action.toLayer(...)`, collected by `Action.layerImplementations`.                                                     |
 | `Crypto.Crypto`              | A platform crypto layer, such as `NodeCrypto.layer` from `@effect/platform-node`.                                      |
@@ -48,6 +63,8 @@ action dispatch, so install it in your application's `dependencies`.
 
 ## Compensable actions
 
+**Available now.**
+
 An action declared `tier: "compensable"` also requires
 `FlowEngine.SnapshotBoundary` in context. This package declares the service and
 ships no implementation, because snapshotting a workspace is a host concern.
@@ -56,14 +73,20 @@ ships no implementation, because snapshotting a workspace is a host concern.
 
 ## Import forms
 
-The exports map resolves four subpaths and nothing deeper:
+**Available now.**
+
+The exports map resolves these entry points:
 
 | Import                           | Source                               |
 | -------------------------------- | ------------------------------------ |
-| `@smthrs/engine`                 | `src/index.ts`, the three namespaces |
+| `@smthrs/engine`                 | `src/index.ts`, the root namespaces |
 | `@smthrs/engine/FlowEngine`      | `src/FlowEngine/index.ts`            |
+| `@smthrs/engine/Hosts` | `src/Hosts.ts` |
+| `@smthrs/engine/PlacedAction` | `src/PlacedAction.ts` |
 | `@smthrs/engine/FlowProxy`       | `src/FlowProxy.ts`                   |
 | `@smthrs/engine/FlowProxyServer` | `src/FlowProxyServer.ts`             |
+
+`./index` aliases the root; `./package.json` exposes the manifest.
 
 `./FlowEngine/*`, `./internal/*`, and `./*/index` are `null` in the map, so
 `@smthrs/engine/FlowEngine/make` does not resolve. Both forms below are the
@@ -80,6 +103,8 @@ The package publishes ESM and CommonJS builds along with its TypeScript source,
 so a consumer can step into the runtime it is debugging.
 
 ## Next
+
+**Available now.**
 
 [Quickstart](./quickstart.md) assembles all four requirements into one runnable
 program.

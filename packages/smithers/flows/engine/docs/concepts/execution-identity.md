@@ -10,6 +10,8 @@ one decision explains most of the engine's admission behavior.
 
 ## A repeated id joins
 
+**Available now.**
+
 A submission that names an id an execution already owns joins that run and
 answers with its recorded result. It does not start a second run. This is what
 makes a retried submission idempotent: a client that times out, a proxy that
@@ -27,6 +29,8 @@ unkeyed `execute` call starts new work. Historical id encodings are unchanged.
 
 ## Conflicting reuses are refused
 
+**Available now.**
+
 Answering a caller with a run it did not ask for is worse than failing it, so
 conflicting reuses fail from `Flow.execute` with typed `ExecutionIdentityConflict`:
 
@@ -34,6 +38,7 @@ conflicting reuses fail from `Flow.execute` with typed `ExecutionIdentityConflic
 | ----------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `"flow"`    | The id already belongs to a different flow declaration. Answering would hand one flow's value to another flow's schemas. |
 | `"payload"` | The id already belongs to a different payload. The recorded result answers the first payload's question, not this one's. |
+| `"capabilities"` | The caller's effective ceiling does not cover the authority persisted at admission. |
 | `"lineage"` | A durable row with the id belongs to another trampoline lineage.                                                         |
 | `"round"`   | A durable row with the id belongs to another round ordinal.                                                              |
 | `"parent"`  | A durable row with the id belongs to another predecessor round.                                                          |
@@ -66,6 +71,8 @@ cannot complete an execution that belongs to another.
 
 ## The id is a trust boundary
 
+**Available now.**
+
 Because clients supply it, an id is only as namespaced as the server makes it.
 Two tenants that both submit `report-1` are one execution unless something
 separates them. A server that accepts execution ids from more than one
@@ -74,7 +81,9 @@ principal namespaces them in one place:
 
 ## Unknown ids: failure, or silence
 
-The three read-and-control operations disagree about an unknown id on purpose:
+**Available now.**
+
+The read and control operations disagree about an unknown id on purpose:
 
 - `poll` fails with `FlowRuntime.FlowExecutionNotFound` for an id no engine
   knows. It answers `Option.none()` for a known execution that has not settled,
@@ -85,6 +94,8 @@ The three read-and-control operations disagree about an unknown id on purpose:
   has nothing left to cancel or re-drive.
 
 ## Parent and child executions
+
+**Available now.**
 
 A flow that opens an explicit child boundary creates a second execution with
 its own id, derived from the parent, the plan node, the callee, and the
@@ -98,6 +109,8 @@ Recording the edge rather than a single parent field is what catches a
 second-parent cycle in which two runs would otherwise join each other forever.
 
 ## Related
+
+**Available now.**
 
 - [Step identity](./step-identity.md) is the other identity in the system: it
   names one dispatch inside a run.

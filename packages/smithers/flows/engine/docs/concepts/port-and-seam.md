@@ -24,6 +24,8 @@ in two pieces with a seam between them.
 
 ## Why the seam exists
 
+**Available now.**
+
 Everything that decides behavior lives above the seam, in `makeUnsafe`:
 
 - which persisted key an action dispatch is recorded under,
@@ -41,6 +43,8 @@ The cost of the split is that a store implements a slightly awkward interface
 instead of the clean typed one, which is the next section.
 
 ## What crosses the seam encoded
+
+**Available now.**
 
 `Encoded` is named for a property only some of its members have. An
 implementation that encodes the rest produces a silently wrong system, because
@@ -60,10 +64,13 @@ it answers.
 
 ## What a store buys by implementing an optional member
 
-Seven members are optional. A store implements the guarantees it supports:
+**Available now.**
+
+These members are optional. A store implements the guarantees it supports:
 
 | Optional member         | What implementing it buys                                                                                                                                                                                                                     |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `actionReplayKey` | Resolves a fork's copied attempt identity before retry and dispatch lookup; fresh fork work uses run-scoped keys. |
 | `actionRetryOrigin`     | A `RetryPolicy.expirationMs` budget measured from the first attempt's persisted start time, so a schedule-to-close bound survives park, resume, and process death. Without it the budget restarts on each process.                            |
 | `actionLatestAttempt`   | An attempt counter that resumes from the persisted sequence, so a replayed failed attempt keeps its number, the backoff ladder is not re-slept from attempt 1, and a persisted non-retryable failure is decided against the original attempt. |
 | `resumeSignal`          | An in-process wake the engine races against its suspension backoff sleep, so a completed deferred resumes the waiting caller at once instead of at the next poll.                                                                             |
@@ -76,6 +83,8 @@ Nothing else changes when a member is absent. The engine falls back, logs where
 the fallback is observable, and keeps running.
 
 ## The two implementations
+
+**Available now.**
 
 `FlowEngine.layerMemory` keeps registrations, executions, action settlements,
 deferred results, and clocks in maps for the life of the layer scope. It is a
@@ -92,13 +101,15 @@ schema declares, and hands back by reference the values the schema declares
 opaque. Same-key in-flight actions share one settlement, so a concurrent
 duplicate dispatch waits rather than executing twice.
 
-[`@smthrs/engine-store`](/api/engine-store) implements the same seam over a
+[`@smthrs/engine-store`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md) implements the same seam over a
 durable journal. Its adapter supplies the retry, wake, conditional completion,
 snapshot, and node-record hooks, so a compensable retry restores its original
 pre-image after a restart. Swapping the layer supplies
 persistence without changing the authored flow.
 
 ## Related
+
+**Available now.**
 
 - [Implement the Encoded seam](../guides/implement-the-encoded-seam.md) walks
   the contract member by member.
