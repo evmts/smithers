@@ -7,6 +7,7 @@ const Positive = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))
 const Name = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._-]{0,100}$/))
 export const Input = Schema.Struct({
   suite: Schema.Literals(["tb4", "deepswe", "swebench", "noop"]),
+  environment: Schema.optional(Schema.Literals(["docker", "cloud"])),
   arms: Schema.Array(Arm).check(Schema.isMinLength(1)),
   tasks: Schema.Union([
     Schema.Literal("all"),
@@ -27,6 +28,7 @@ export type Input = typeof Input.Type
 const benchmarkAccounts: ReadonlyArray<typeof Account.Type> = ["codex-1", "codex-3", "codex-acct-1"]
 export const defaults = (input: Input) => ({
   ...input,
+  environment: input.environment ?? "cloud",
   arms: [...new Set(input.arms)],
   k: input.k ?? 1,
   model: input.model ?? "openai/gpt-6.1-sol",

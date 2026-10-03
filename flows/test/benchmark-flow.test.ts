@@ -85,7 +85,7 @@ test("real memory engine respects concurrency, journals completions, and replay 
       Effect.sync(() => {
         events.push("prepare")
         return prepared
-      }), { implementationVersion: "benchmark/v1" }),
+      }), { implementationVersion: "benchmark/v2" }),
     RunTrial.toLayer(({ trial }) =>
       Effect.gen(function*() {
         yield* Effect.sync(() => {
@@ -100,7 +100,7 @@ test("real memory engine respects concurrency, journals completions, and replay 
           events.push(`complete:${trial.id}`)
           return summary(trial)
         })
-      }), { implementationVersion: "benchmark/v1" }),
+      }), { implementationVersion: "benchmark/v2" }),
     Finish.toLayer(({ summaries }) =>
       Effect.sync(() => {
         assert.equal(completed, 6)
@@ -114,7 +114,7 @@ test("real memory engine respects concurrency, journals completions, and replay 
           commit: "a".repeat(40),
           publishable: false
         }
-      }), { implementationVersion: "benchmark/v1" }),
+      }), { implementationVersion: "benchmark/v2" }),
     Interpreter.layer(Trials)
   )
   const host = Layer.mergeAll(actions, Interpreter.layer(Benchmark)).pipe(

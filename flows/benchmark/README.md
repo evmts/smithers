@@ -8,7 +8,7 @@ calling a model. A queued run receipt is admission, not proof of execution.
 SMITHERS_API_ORIGIN=https://api.jjhub.tech
 export SMITHERS_API_ORIGIN
 smthrs flow start benchmark --cloud -R smithers-canary/bench --payload \
-  '{"suite":"noop","arms":["smithers"],"tasks":"all","k":1,"job":"noop-20261002"}' --format json
+  '{"suite":"noop","environment":"cloud","arms":["smithers"],"tasks":"all","k":1,"job":"noop-20261002"}' --format json
 smthrs runs show RUN_ID --cloud -R smithers-canary/bench --format json
 smthrs runs logs RUN_ID --cloud -R smithers-canary/bench --format json
 ```
@@ -111,6 +111,28 @@ task-workspace repository. The defaults use the canary repo. Secrets are never
 in task guests, result summaries, or archives. Archive export rejects symbolic
 links and credentials in binary files, excludes credential files, and redacts
 known secret values from text. Failed export retains the trial and its journal.
+
+## Local Docker
+
+The payload accepts `environment: "docker" | "cloud"` (default `cloud`).
+Docker selects Harbor's or Pier's native Docker environment on the flow host;
+Cloud selects `PlueEnvironment` or `PluePierEnvironment`. Both publish to the
+same Cloud Git LFS results repository. Noop creates synthetic evidence and makes
+no model calls or task containers in either environment.
+
+```sh
+smthrs flow start benchmark --payload \
+  '{"suite":"noop","environment":"docker","arms":["smithers"],"tasks":"all","job":"noop-mini"}' --format json
+```
+
+Local execution requires `BENCHMARK_SMITHERS_TOKEN` and a future
+`BENCHMARK_TOKEN_EXPIRES_AT` in the host environment. Resolve the host Docker
+context before isolating the authentication home; never copy registry credentials
+into a benchmark account home. Real Docker trials use `keep_containers=true` so
+Harbor and Pier stop, rather than delete, their guests before export. They require
+the shared adapter's export protocol in `evals.harbor.smithers_agent`; Cloud
+requires it in `evals.harbor.plue_env`. L2 must implement acknowledged cleanup
+for both environments before real suites are admitted.
 
 ## Meter
 

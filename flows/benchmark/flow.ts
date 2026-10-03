@@ -8,7 +8,7 @@ import { finalize, prepare, type RuntimeOptions, runTrial } from "./runtime.ts"
 import { BenchmarkFailed, defaults, Input, Prepared, Receipt, Summary, Trial } from "./schema.ts"
 
 export const Prepare = Action.make("benchmark/prepare", {
-  implementationVersion: "benchmark/v1",
+  implementationVersion: "benchmark/v2",
   payload: Input,
   success: Prepared,
   error: BenchmarkFailed,
@@ -16,7 +16,7 @@ export const Prepare = Action.make("benchmark/prepare", {
   tier: "compensable"
 })
 export const RunTrial = Action.make("benchmark/trial", {
-  implementationVersion: "benchmark/v1",
+  implementationVersion: "benchmark/v2",
   payload: { prepared: Prepared, trial: Trial },
   success: Summary,
   error: BenchmarkFailed,
@@ -24,7 +24,7 @@ export const RunTrial = Action.make("benchmark/trial", {
   tier: "irreversible"
 })
 export const Finish = Action.make("benchmark/finish", {
-  implementationVersion: "benchmark/v1",
+  implementationVersion: "benchmark/v2",
   payload: { prepared: Prepared, summaries: Schema.Array(Summary) },
   success: Receipt,
   error: BenchmarkFailed,
@@ -36,7 +36,7 @@ export const Trials = Flow.make("benchmark/trials", {
   payload: Prepared,
   success: Schema.Array(Summary),
   error: BenchmarkFailed,
-  body: Node.capture({ version: "benchmark/v1" }, (prepared: Prepared) => {
+  body: Node.capture({ version: "benchmark/v2" }, (prepared: Prepared) => {
     if (!prepared.trials.length) return Node.succeed([])
     const joined = Bounded.all(
       Object.fromEntries(prepared.trials.map((trial) => [trial.id, RunTrial.call({ prepared, trial })])),
@@ -46,7 +46,7 @@ export const Trials = Flow.make("benchmark/trials", {
       BenchmarkFailed,
       Action.Requirement<"benchmark/trial">
     >
-    return Node.map(joined, Node.capture({ version: "benchmark/v1" }, (summaries) => Object.values(summaries)))
+    return Node.map(joined, Node.capture({ version: "benchmark/v2" }, (summaries) => Object.values(summaries)))
   })
 })
 export default Flow.make("benchmark", {
@@ -64,15 +64,15 @@ export default Flow.make("benchmark", {
   success: Receipt,
   error: BenchmarkFailed,
   body: Node.capture(
-    { version: "benchmark/v1" },
+    { version: "benchmark/v2" },
     (input: Input) =>
       Node.bindPlanned(
         Prepare.call(input),
-        Node.capture({ version: "benchmark/v1" }, (prepared) =>
+        Node.capture({ version: "benchmark/v2" }, (prepared) =>
           Node.bindPlanned(
             Trials.child(prepared),
             Node.capture(
-              { prepared: Planned.reference(prepared), version: "benchmark/v1" },
+              { prepared: Planned.reference(prepared), version: "benchmark/v2" },
               (summaries) => Finish.call({ prepared, summaries })
             )
           ))
@@ -109,7 +109,7 @@ const attempt = <A>(code: "driver" | "export", body: (signal: AbortSignal) => Pr
 export const implementations = (options: RuntimeOptions = {}) =>
   Layer.mergeAll(
     Prepare.toLayer((input) => attempt("driver", (signal) => prepare(input, signal, options), options), {
-      implementationVersion: "benchmark/v1"
+      implementationVersion: "benchmark/v2"
     }),
     RunTrial.toLayer(
       ({ prepared, trial }) =>
@@ -130,12 +130,12 @@ export const implementations = (options: RuntimeOptions = {}) =>
             ))
           )
         ),
-      { implementationVersion: "benchmark/v1" }
+      { implementationVersion: "benchmark/v2" }
     ),
     Finish.toLayer(
       ({ prepared, summaries }) =>
         attempt("export", (signal) => finalize(prepared, summaries, signal, options), options),
-      { implementationVersion: "benchmark/v1" }
+      { implementationVersion: "benchmark/v2" }
     ),
     Interpreter.layer(Trials)
   )

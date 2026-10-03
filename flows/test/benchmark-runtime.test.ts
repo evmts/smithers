@@ -82,6 +82,8 @@ test("typed payload defaults and duplicate arms/accounts preserve only the bench
   assert.equal(config.effort, "max")
   assert.deepEqual(config.accounts, ["codex-1", "codex-3", "codex-acct-1"])
   assert.equal(config.resultsRepo, "smithers-canary/bench-results")
+  assert.equal(config.environment, "cloud")
+  assert.equal(defaults({ ...input, environment: "docker" }).environment, "docker")
   assert.deepEqual(defaults({ ...input, arms: ["codex", "codex"], accounts: ["codex-1", "codex-1"] }).arms, ["codex"])
   for (const account of ["codex-2", "codex-4", "codex-5", "other"]) {
     assert.throws(() => Schema.decodeUnknownSync(Input)({ ...input, accounts: [account] }))
@@ -99,7 +101,8 @@ test("typed payload defaults and duplicate arms/accounts preserve only the bench
       { job: "../escape" },
       { job: "bad/name" },
       { resultsRepo: "https://example.com" },
-      { effort: "unknown" }
+      { effort: "unknown" },
+      { environment: "other" }
     ]
   ) assert.throws(() => Schema.decodeUnknownSync(Input)({ ...input, ...invalid }))
 })
@@ -204,6 +207,7 @@ test("suite drivers retain one trial and select pinned model/effort without leak
   assert.equal(argv.includes("evals.harbor.codex_pool:PooledCodex"), true)
   assert.equal(argv.includes("reasoning_effort=max"), true)
   assert.equal(argv.includes("CODEX_FORCE_AUTH_JSON=1"), true)
+  assert.equal(argv[argv.indexOf("-e") + 1], "evals.harbor.plue_env:PlueEnvironment")
   assert.equal(
     driver({ ...prepared, input: { ...input, suite: "deepswe" } }, planned)[0],
     "/controller/tools/pier/bin/pier"
@@ -212,6 +216,30 @@ test("suite drivers retain one trial and select pinned model/effort without leak
     () => driver({ ...prepared, input: { ...input, suite: "swebench" } }, planned),
     /per-instance Cloud driver/
   )
+})
+
+test("both suites select their native Docker environment and retain guests until export", () => {
+  for (const suite of ["tb4", "deepswe"] as const) {
+    const prepared: Prepared = {
+      root: "/controller",
+      input: { ...input, suite, environment: "docker" },
+      trials: [planned]
+    }
+    const argv = driver(prepared, planned)
+    assert.equal(argv[argv.indexOf("-e") + 1], "docker")
+    assert.equal(argv[argv.indexOf("--ek") + 1], "keep_containers=true")
+    assert.equal(argv.some((value) => value.includes("Plue")), false)
+    assert.equal(argv.includes("--environment-import-path"), false)
+    assert.equal(defaults(prepared.input).resultsRepo, "smithers-canary/bench-results")
+  }
+  const cloud = driver({
+    root: "/controller",
+    input: { ...input, suite: "deepswe", environment: "cloud" },
+    trials: [planned]
+  }, planned)
+  assert.equal(cloud[cloud.indexOf("--environment-import-path") + 1], "evals.harbor.plue_env:PluePierEnvironment")
+  assert.equal(cloud.includes("-e"), false)
+  assert.equal(cloud.includes("keep_containers=true"), false)
 })
 
 test("SWE-bench explicit instances refuse before creating a job or launching the unrelated fullbench queue", async (t) => {

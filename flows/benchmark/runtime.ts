@@ -93,10 +93,14 @@ async function taskDirectories(root: string): Promise<Array<string>> {
 }
 
 /** Fail before spending tokens until the shared adapter can retain a guest through the remote export. */
-export async function requireExportProtocol(suite: Input["suite"], signal?: AbortSignal): Promise<void> {
+export async function requireExportProtocol(
+  suite: Input["suite"],
+  signal?: AbortSignal,
+  environment: "docker" | "cloud" = "cloud"
+): Promise<void> {
   if (suite === "noop") return
   if (suite === "swebench") throw unsupportedSwe()
-  const module = "evals.harbor.plue_env"
+  const module = environment === "cloud" ? "evals.harbor.plue_env" : "evals.harbor.smithers_agent"
   try {
     await command([
       "python3",
@@ -113,7 +117,7 @@ export async function requireExportProtocol(suite: Input["suite"], signal?: Abor
 export async function prepare(input: Input, signal?: AbortSignal, options: RuntimeOptions = {}): Promise<Prepared> {
   const config = defaults(input)
   cloudEnvironment(options.environment)
-  await requireExportProtocol(input.suite, signal)
+  await requireExportProtocol(input.suite, signal, config.environment)
   const root = resolve(options.checkout ?? checkout, ".flows", "benchmarks", config.job)
   await mkdir(root, { recursive: true, mode: 0o700 })
   const manifest = join(root, "input.json")
@@ -179,7 +183,7 @@ export function driver(prepared: Prepared, trial: Trial): ReadonlyArray<string> 
     : trial.arm === "codex"
     ? "evals.harbor.codex_pool:PooledCodex"
     : "oracle"
-  const environment = input.suite === "deepswe"
+  const environment = input.environment === "docker" ? "docker" : input.suite === "deepswe"
     ? "evals.harbor.plue_env:PluePierEnvironment"
     : "evals.harbor.plue_env:PlueEnvironment"
   return [
@@ -191,8 +195,9 @@ export function driver(prepared: Prepared, trial: Trial): ReadonlyArray<string> 
     agent,
     "-m",
     input.model,
-    "-e",
+    ...(input.suite === "deepswe" && input.environment === "cloud" ? ["--environment-import-path"] : ["-e"]),
     environment,
+    ...(input.environment === "docker" ? ["--ek", "keep_containers=true"] : []),
     "-k",
     "1",
     "-n",
@@ -281,7 +286,20 @@ export async function runTrial(
   if (input.suite === "swebench") throw unsupportedSwe()
   const source = join(prepared.root, "raw", trial.id)
   await mkdir(source, { recursive: true, mode: 0o700 })
-  const auth = await credentials(input.accounts, input.suite !== "noop" && trial.arm !== "oracle", options.environment)
+  const hostEnvironment = { ...(options.environment ?? process.env) }
+  if (input.environment === "docker" && input.suite !== "noop") {
+    // Resolve the host's context before credentials isolate HOME. A socket path
+    // grants access to the selected daemon without copying registry credentials.
+    hostEnvironment.DOCKER_HOST ??= await command([
+      "docker",
+      "context",
+      "inspect",
+      "--format",
+      "{{.Endpoints.docker.Host}}"
+    ], { env: hostEnvironment, ...(signal === undefined ? {} : { signal }) })
+    delete hostEnvironment.DOCKER_CONTEXT
+  }
+  const auth = await credentials(input.accounts, input.suite !== "noop" && trial.arm !== "oracle", hostEnvironment)
   try {
     const env = {
       ...auth.env,
