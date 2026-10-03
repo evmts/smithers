@@ -8,7 +8,7 @@
  * Code intelligence rides the same surface and the payload alone: the
  * diagnostics the seam wrote render under their lines, the last hover
  * answer renders under its line, and the two pointer gestures are command
- * bindings through onRunCommand — a pointer at rest on a token runs
+ * bindings supplied by FileCards — a pointer at rest on a token runs
  * `code.hover <path>:<line>:<col> <repo>`, ⌘/Ctrl-click runs
  * `code.definition` with the same position — the same door every row in
  * FileCards.tsx uses, so the slash and the agent tool run the identical act.
@@ -18,15 +18,10 @@
  * gesture. Nothing here is component state; the one ref is the position last
  * asked, so a pointer that stays put asks once.
  */
-import { fileArgs } from "../flows/FileArgs"
-import { LSP_HOVER_CAP_CHARS } from "@smthrs/rpc/LocalLsp"
-import { Markdown } from "@smthrs/ui"
 import { CodeFileView, languageForFile } from "@smthrs/ui/adapters/code-view"
 import type { CodeLineAnnotation, CodeTokenPosition } from "@smthrs/ui/adapters/code-view"
-import { useMemo, useRef } from "react"
+import { useMemo, useRef, type ReactNode } from "react"
 import type { Card } from "../state/AppState"
-import type { RunCommand } from "./CardFamily"
-import { flowGestureProps } from "../flows/FlowAction"
 
 type FilePayload = Extract<Card, { kind: "file" }>["payload"]
 type Diagnostic = NonNullable<FilePayload["diagnostics"]>[number]
@@ -45,38 +40,27 @@ const DiagnosticRow = ({ item }: { readonly item: Diagnostic }) => {
   )
 }
 
-/** The modifier the definition gesture takes on this machine, as the hover box names it. */
-const activateKey = (): string => (typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘-click" : "Ctrl-click")
-
-/** The host cut the server's text at its cap: the box says so rather than ending mid-sentence as if complete. */
-const HOVER_CUT = `(cut at ${LSP_HOVER_CAP_CHARS / 1024} KiB)`
-
-const HoverBox = ({ contents, truncated }: { readonly contents: string; readonly truncated: boolean }) => (
-  <div className="code-hover" data-slot="code-hover">
-    <Markdown className="code-hover-body" content={contents} />
-    {truncated ? <span className="code-hover-hint" data-slot="code-hover-cut">{HOVER_CUT}</span> : null}
-    <span className="code-hover-hint">{activateKey()}: definition</span>
-  </div>
-)
-
 export const CodeSurface = ({
   payload,
   codeIntel,
-  onRunCommand
+  onHover, onDefinition, hoverContents, gestureProps
 }: {
   readonly payload: FilePayload
   /** Whether this host registers the code.* flows (FileCards reads the catalog); false binds no gesture. */
   readonly codeIntel: boolean
-  readonly onRunCommand: RunCommand
+  readonly onHover: (token: CodeTokenPosition) => void
+  readonly onDefinition: (token: CodeTokenPosition) => void
+  readonly hoverContents?: ReactNode
+  readonly gestureProps?: Record<string, string>
 }) => {
-  const { path, content, line, repo, hover, diagnostics, intel } = payload
+  const { path, content, line, hover, diagnostics, intel } = payload
 
   const annotations = useMemo<ReadonlyArray<CodeLineAnnotation>>(
     () => [
       ...(diagnostics ?? []).map((item, index) => ({ key: `diagnostic-${index}`, line: item.line, node: <DiagnosticRow item={item} /> })),
-      ...(hover == null ? [] : [{ key: "hover", line: hover.line, node: <HoverBox contents={hover.contents} truncated={hover.truncated === true} /> }])
+      ...(hover == null ? [] : [{ key: "hover", line: hover.line, node: hoverContents }])
     ],
-    [diagnostics, hover]
+    [diagnostics, hover, hoverContents]
   )
 
   /*
@@ -86,15 +70,14 @@ export const CodeSurface = ({
    * position the payload already answers is never asked.
    */
   const asked = useRef<{ readonly key: string; readonly payload: FilePayload } | null>(null)
-  const position = (token: CodeTokenPosition): string => fileArgs(`${path}:${token.line}:${token.column}`, payload.localRepoId ?? repo)
   const onTokenRest = (token: CodeTokenPosition): void => {
     const key = `${token.line}:${token.column}`
     if (hover != null && hover.line === token.line && hover.character === token.column) return
     if (asked.current !== null && asked.current.key === key && asked.current.payload === payload) return
     asked.current = { key, payload }
-    onRunCommand("code.hover", position(token))
+    onHover(token)
   }
-  const onTokenActivate = (token: CodeTokenPosition): void => onRunCommand("code.definition", position(token))
+  const onTokenActivate = (token: CodeTokenPosition): void => onDefinition(token)
 
   if (languageForFile(path) === null) return <pre className="world-card-path">{content}</pre>
   /*
@@ -105,7 +88,7 @@ export const CodeSurface = ({
    */
   const bound = codeIntel && intel?.state !== "missing" && intel?.state !== "unavailable"
   return (
-    <div className="code-surface" {...(bound ? flowGestureProps("code.hover", "code.definition") : {})}>
+    <div className="code-surface" {...(bound ? gestureProps : {})}>
       <CodeFileView
         name={path}
         contents={content}

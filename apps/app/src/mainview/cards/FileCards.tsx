@@ -1,6 +1,6 @@
 import { ViewSkeleton } from "../ViewSkeleton"
 import { MarkdownEditorSurface, CodeSurface } from "../ViewModules"
-import { flowAction } from "../flows/FlowAction"
+import { flowAction, flowGestureProps } from "../flows/FlowAction"
 import { fileArgs } from "../flows/FileArgs"
 import { flowArgs } from "../flows/FlowArgs"
 import { headingLine, resolveMarkdownLink } from "./MarkdownLinks"
@@ -11,7 +11,8 @@ import { headingLine, resolveMarkdownLink } from "./MarkdownLinks"
  * onRunCommand — the one delegated dispatch CardView threads from App.tsx —
  * and carries data-flow with its registered command name.
  */
-import { Button } from "@smthrs/ui"
+import { Button, Markdown } from "@smthrs/ui"
+import { LSP_HOVER_CAP_CHARS } from "@smthrs/rpc/LocalLsp"
 import { FileText, Folder } from "lucide-react"
 import { Component, Suspense, useContext, useRef } from "react"
 import type { ReactNode } from "react"
@@ -438,7 +439,16 @@ export const FileCardBody = ({
         (
           <LazyViewerBoundary fallback={<pre className="world-card-path" data-viewer-fallback="">{card.payload.content}</pre>}>
             <Suspense fallback={<pre className="world-card-path">{card.payload.content}</pre>}>
-              <CodeSurface payload={card.payload} codeIntel={codeIntel} onRunCommand={onRunCommand} />
+              <CodeSurface payload={card.payload} codeIntel={codeIntel}
+                gestureProps={flowGestureProps("code.hover", "code.definition")}
+                onHover={token => onRunCommand("code.hover", fileArgs(`${card.payload.path}:${token.line}:${token.column}`, card.payload.localRepoId ?? card.payload.repo))}
+                onDefinition={token => onRunCommand("code.definition", fileArgs(`${card.payload.path}:${token.line}:${token.column}`, card.payload.localRepoId ?? card.payload.repo))}
+                hoverContents={card.payload.hover ? <div className="code-hover" data-slot="code-hover">
+                  <Markdown className="code-hover-body" content={card.payload.hover.contents} />
+                  {card.payload.hover.truncated ? <span className="code-hover-hint" data-slot="code-hover-cut">(cut at {LSP_HOVER_CAP_CHARS / 1024} KiB)</span> : null}
+                  <span className="code-hover-hint">{typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘-click" : "Ctrl-click"}: definition</span>
+                </div> : null}
+              />
             </Suspense>
           </LazyViewerBoundary>
         )}
