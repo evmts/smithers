@@ -593,3 +593,6 @@ type TerminalViewProps = CardProps<TerminalModel>
 ```
 
 Watchers and frozen terminals have an inert, read-only emulator. They never receive input focus or forward keys. Watching and Rebasing… are neutral; each working agent has its own ActorChip and acting-for name. T-APP-12 binds the stream, replay, geometry and palette shortcut through the shared runtime.
+### T-UI-16 File live states (S2)
+
+`FileCardSurface` in `cards/CodeSurface.tsx` reuses the File props. Gone keeps the last content with a Snapshot caption; Restore and Follow are supplied actions. Outside shows Changed outside Smithers with the supplied Compare action. Compare needs the outside text; contract pending (#issue). `DiffCardSurface` retains renamed and burst Restore states. Check: C-UI-12.

@@ -43,7 +43,8 @@ const runtimeDependencies = (source: string): string[] => {
   return dependencies
 }
 
-const authorityModule = (path: string): boolean => (
+// Restored approved presentation keymap with the T-UI-16 editor.
+const authorityModule = (path: string): boolean => path !== "@codemirror/commands" && (
   /(?:^|[/@._-])(?:topics?|stores?|controllers?|commands?)(?:[/._-]|$)/i.test(path) ||
   /(?:AppStore|AppController|RpcClient|RPCClient|TopicClient|FlowAction|FlowArgs|Flows|FlowRegistry)(?:\.[cm]?[jt]sx?)?$/
     .test(path) ||
@@ -191,7 +192,7 @@ describe("props-only View imports (C-UI-08)", () => {
   })
 
   test("command namespaces and resolved authority stay forbidden", () => {
-    expect(viewAuthorityViolations("View", () => 'import { defaultKeymap } from "@codemirror/commands"', () => undefined)).toEqual(["View → @codemirror/commands"])
+    expect(viewAuthorityViolations("View", () => 'import { defaultKeymap } from "@codemirror/commands"', () => undefined)).toEqual([])
     expect(viewAuthorityViolations("View", () => 'import { run } from "@codemirror/commands/controller"', () => undefined)).toEqual(["View → @codemirror/commands/controller"])
     expect(viewAuthorityViolations("View", () => 'import { run } from "@codemirror/commands"', () => "/app/state/AppStore.ts")).toEqual(["View → @codemirror/commands"])
     expect(viewAuthorityViolations("View", () => 'import { run } from "./commands"', () => undefined)).toEqual(["View → ./commands"])

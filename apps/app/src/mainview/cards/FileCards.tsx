@@ -467,10 +467,11 @@ export function FileCodeSurface({ payload, codeIntel, onRunCommand }: {
   readonly codeIntel: boolean
   readonly onRunCommand: RunCommand
 }) {
+  const at = (t: import("@smthrs/ui/adapters/code-view").CodeTokenPosition) => fileArgs(`${payload.path}:${t.line}:${t.column}`, payload.localRepoId ?? payload.repo)
   return <CodeSurface payload={payload} codeIntel={codeIntel}
                 gestureProps={flowGestureProps("code.hover", "code.definition")}
-                onHover={token => onRunCommand("code.hover", fileArgs(`${payload.path}:${token.line}:${token.column}`, payload.localRepoId ?? payload.repo))}
-                onDefinition={token => onRunCommand("code.definition", fileArgs(`${payload.path}:${token.line}:${token.column}`, payload.localRepoId ?? payload.repo))}
+                onHover={token => onRunCommand("code.hover", at(token))}
+                onDefinition={token => onRunCommand("code.definition", at(token))}
                 hoverContents={payload.hover ? <div className="code-hover" data-slot="code-hover">
                   <Markdown className="code-hover-body" content={payload.hover.contents} />
                   {payload.hover.truncated ? <span className="code-hover-hint" data-slot="code-hover-cut">(cut at {LSP_HOVER_CAP_CHARS / 1024} KiB)</span> : null}

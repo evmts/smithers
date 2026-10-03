@@ -2810,7 +2810,6 @@
 .code-diff-base { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--text-muted); font-size: var(--fs-caption); margin-bottom: 8px; }
 .code-diff-base time { margin-left: auto; }
 .code-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
-.code-actions button { border: 1px solid var(--border); border-radius: var(--r-1); background: var(--surface); color: var(--text); padding: 5px 10px; font: inherit; cursor: pointer; }
 .code-diff-view .sui-pierre-diff-frame { max-width: 100%; overflow: hidden; }
 .code-diff-view { box-sizing: border-box; }
 /* Pierre's inherited override seam keeps diff chrome on Paper's accessible tokens. */
@@ -2868,3 +2867,36 @@
 .terminal-view .terminal-status { display: flex; gap: 12px; margin-top: 8px; color: var(--text-muted); font-size: var(--fs-caption); }
 .terminal-view .terminal-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .terminal-view :focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }
+
+.code-file-view, .code-diff-view { min-width: 0; }
+.code-file-view .smithers-card-title, .code-diff-view .smithers-card-title { font-family: var(--font-mono); overflow-wrap: anywhere; min-width: 0; }
+.code-writer { margin-left: auto; }
+.code-diagnostics { list-style: none; padding: 0; margin: 8px 0 0; font-size: var(--fs-caption); overflow-wrap: anywhere; }
+.code-diagnostics [data-severity="error"] { color: var(--danger); }
+.code-diagnostics [data-severity="warning"] { color: var(--attention); }
+.code-file-view, .code-diff-view { box-sizing: border-box; }
+/* FileCardSurface (T-UI-16): live file notices, snapshots and outside comparison. */
+.code-file-view .code-file-state { display: inline-flex; align-items: center; gap: 5px; color: var(--attention-text); font-size: var(--fs-caption); font-weight: 600; white-space: nowrap; }
+.code-file-view .code-file-notice { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); padding: 6px 6px 6px 10px; border: 1px solid var(--attention-border); border-radius: var(--r-1); background: var(--attention-wash); color: var(--attention-text); font-size: var(--fs-small); font-weight: 500; }
+.code-file-view .code-file-notice > svg { flex-shrink: 0; }
+.code-file-view .code-file-notice > span { min-width: 0; overflow-wrap: anywhere; }
+.code-file-view .code-file-notice code { font-family: var(--font-mono); font-size: 12px; padding: 0 4px; border-radius: 4px; background: var(--inline-code-bg); }
+.code-file-view .code-file-notice[data-tone="outside"] { border-color: var(--border-strong); background: var(--surface-2); color: var(--text); }
+.code-file-view .code-snapshot-cap { display: flex; align-items: center; gap: 5px; margin: 0 0 4px 2px; color: var(--text-muted); font-size: var(--fs-caption); font-weight: 500; }
+.code-file-view .code-actions { margin-bottom: var(--sp-2); }
+.code-file-view .code-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: var(--sp-2); }
+.code-file-view .code-compare > div { display: flex; min-width: 0; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-1); background: var(--surface); }
+.code-file-view .code-compare span { color: var(--text-muted); font-size: var(--fs-caption); font-weight: 600; }
+.code-file-view .code-compare code { overflow-x: auto; font-family: var(--font-mono); font-size: 12px; white-space: pre; }
+@media (max-width: 480px) { .code-file-view .code-compare { grid-template-columns: 1fr; } }
+
+.code-file-view .code-file-notice .code-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 0 auto; flex-shrink: 0; }
+@media (max-width: 480px) { .code-file-view .code-file-notice { flex-wrap: wrap; } }
+
+.code-file-view .code-compare code:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }
+
+.code-file-view .code-file-editor[data-snapshot] .cm-editor { border-style: dashed; border-color: var(--border-strong); }
+@media (max-width: 480px) { .code-file-view .code-file-notice .code-actions { flex-basis: 100%; justify-content: flex-end; } }
+
+.code-file-view .code-editor { min-width: 0; }
+.code-file-view .code-editor .cm-content:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }
