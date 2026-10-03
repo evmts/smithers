@@ -588,10 +588,6 @@ type TerminalModel = {
   agents: Actor[]; watchers: Actor[]; command?: string
   viewer_is_owner: boolean; frozen: boolean
 }
-type TerminalStream = {
-  onData: (write: (bytes: string | Uint8Array) => void) => void | (() => void)
-  write?: (bytes: string) => void
-}
 type TerminalViewProps = CardProps<TerminalModel>
 // App-only: TerminalViewProps & { terminal: ReactNode }
 ```

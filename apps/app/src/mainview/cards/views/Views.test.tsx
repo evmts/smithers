@@ -1,3 +1,4 @@
+import { stories as terminalStories } from "./TerminalView.stories"
 import { createRoot } from "./testDom"
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test"
 import { Glob } from "bun"
@@ -23,11 +24,6 @@ async function mounted(story: ViewStory, removed = false) {
   const onAction = mock((_tag: string, _args?: Record<string, string>) => {})
   const onView = mock((_patch: Record<string, unknown>) => {})
   await act(async () => root.render(story.render({ onAction, onView }, removed ? story.actions?.slice(1) : undefined)))
-  if (host.querySelector(".terminal-view")) {
-    const deadline = Date.now() + 4000
-    while (!host.querySelector(".xterm-helper-textarea") && Date.now() < deadline) await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)) })
-    expect(host.querySelector(".xterm-helper-textarea")).not.toBeNull()
-  }
   return { host, root, onAction, onView, close: async () => { await act(async () => root.unmount()); host.remove() } }
 }
 for (const path of paths) {
@@ -36,7 +32,7 @@ for (const path of paths) {
   for (const story of stories) for (const theme of ["light", "dark"]) {
     test(`${path}/${story.name} ${theme} DOM`, async () => {
       document.documentElement.dataset.theme = theme
-      const mountedStory = await mounted(story)
+      const mountedStory = await (path === "TerminalView.stories.tsx" ? mountedTerminal(story) : mounted(story))
       const { host, onAction, onView } = mountedStory
       try {
         // Pierre renders asynchronously into a shadow root; read the production surface.
@@ -1216,8 +1212,17 @@ test("unchanged acceptance is silent for empty entries and embedded newlines", (
 
 })
 
+async function mountedTerminal(story: ViewStory) {
+  const item = await mounted(story)
+  const { host } = item
+  if (host.querySelector(".terminal-view")) {
+    const deadline = Date.now() + 4000
+    while (!host.querySelector(".xterm-helper-textarea") && Date.now() < deadline) await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)) })
+    expect(host.querySelector(".xterm-helper-textarea")).not.toBeNull()
+  }
+  return item
+}
 // T-UI-17: literal presentation oracles, independent of production copy.
-import { stories as terminalStories } from "./TerminalView.stories"
 for (const [name, watching, frozen] of [
   ["Owner's idle terminal", false, false],
   ["Someone else's terminal", true, false],
@@ -1225,9 +1230,9 @@ for (const [name, watching, frozen] of [
   ["Frozen while rebasing", false, true],
   ["Watching while rebasing", true, true],
 ] as const) test(`Terminal ${name}: input focus and state`, async () => {
-  const item = await mounted(terminalStories.find(story => story.name === name)!)
+  const item = await mountedTerminal(terminalStories.find(story => story.name === name)!)
   try {
-    expect(item.host.querySelector(".terminal-output")!.hasAttribute("inert")).toBe(watching || frozen)
+    expect(item.host.querySelector(".terminal-output > div")!.hasAttribute("inert")).toBe(watching || frozen)
     expect(item.host.textContent!.includes("Watching")).toBe(watching)
     expect(item.host.textContent!.includes("Rebasing…")).toBe(frozen)
     expect(item.host.querySelector(".terminal-output")!.getAttribute("role")).toBe("region")
@@ -1236,7 +1241,7 @@ for (const [name, watching, frozen] of [
   } finally { await item.close() }
 })
 test("Terminal gives the working agent its own avatar and acting-for label", async () => {
-  const item = await mounted(terminalStories.find(story => story.name === "Claude Code working in Ben's terminal")!)
+  const item = await mountedTerminal(terminalStories.find(story => story.name === "Claude Code working in Ben's terminal")!)
   try {
     expect(item.host.querySelectorAll('.mvp-avatar[data-kind="agent"]')).toHaveLength(1)
     expect(item.host.querySelectorAll('.mvp-avatar[data-kind="person"]')).toHaveLength(1)

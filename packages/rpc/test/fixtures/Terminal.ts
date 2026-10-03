@@ -27,7 +27,6 @@ export const fixtures = {
     "Someone else's terminal",
     { ...base, command: "go test ./...", watchers: [willActor], viewer_is_owner: false },
     {
-      actions: [{ tag: "terminal.watch", label: "Watch", args: { id: "terminal-1" } }],
       expect: ["go test ./..."]
     }
   ),
@@ -38,6 +37,5 @@ export const fixtures = {
   ),
   ssh: story("Ben via SSH", { ...base, owner: ssh_person, command: "jj status" }, { expect: ["jj status"] }),
   frozen_watching: story("Watching while rebasing", { ...base, frozen: true, viewer_is_owner: false }, { expect: ["Checks"] }),
-  disabled: story("Watch unavailable", { ...base, viewer_is_owner: false }, { actions: [{ tag: "terminal.watch", label: "Watch", args: { id: "terminal-1" }, disabled: { reason: "Machine asleep" } }], expect: ["Checks"] }),
   frozen: story("Frozen while rebasing", { ...base, command: "pnpm check", frozen: true }, { expect: ["Checks"] })
 } satisfies Record<string, Story<TerminalCard>>

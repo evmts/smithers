@@ -1,3 +1,4 @@
+import { FlowActionView } from "./FlowActionView"
 import { Eye } from "lucide-react"
 import type { ReactNode } from "react"
 import type { TerminalViewProps as TerminalMetadataProps } from "@smthrs/rpc/TerminalCard"
@@ -11,6 +12,7 @@ export function TerminalView({ model, actions, onAction, terminal }: TerminalVie
     <header className="smithers-card-header">
       <h2 className="smithers-card-title">{model.title}</h2>
       <code className="terminal-branch">{model.branch}</code>
+      {model.command ? <code className="terminal-command" data-live={!model.frozen || undefined}>{model.command}</code> : null}
       <div className="terminal-people">
         <span className="terminal-person" title={`${actorName(model.owner)}'s terminal`}><ActorChip actor={model.owner} size="s" /></span>
         {model.agents.map((actor, i) => <span className="terminal-person" key={i}><ActorChip actor={actor} size="s" live={!model.frozen} /><span>{actorName(actor)}</span></span>)}
@@ -18,15 +20,11 @@ export function TerminalView({ model, actions, onAction, terminal }: TerminalVie
       </div>
     </header>
     <div className="smithers-card-body">
-      {model.command ? <code className="terminal-command" data-live={!model.frozen || undefined}>{model.command}</code> : null}
-      <div className="terminal-output" inert={readOnly} aria-label={`${model.title} output`} role="region">
-        {terminal}
+      <div className="terminal-output" aria-label={`${model.title} output`} role="region">
+        <div inert={readOnly}>{terminal}</div>
       </div>
       {model.frozen || !model.viewer_is_owner ? <div className="terminal-status" role="status">{model.frozen ? <span>Rebasing…</span> : null}{!model.viewer_is_owner ? <span>Watching</span> : null}</div> : null}
-      {actions.length ? <div className="terminal-actions">{actions.map((action, i) => <span className="terminal-control" key={i}>
-        <button type="button" data-flow={action.tag} data-primary={action.primary || undefined} disabled={!!action.disabled} onClick={() => onAction(action.tag, { ...action.args })}>{action.label}</button>
-        {action.disabled ? <span>{action.disabled.reason}</span> : null}
-      </span>)}</div> : null}
+      {actions.length ? <div className="terminal-actions">{actions.map((action, i) => <FlowActionView key={i} action={action} onAction={onAction} />)}</div> : null}
     </div>
   </section>
 }

@@ -480,7 +480,7 @@ test("Draft field edits forward literal payloads once and unchanged blur is sile
 test("T-UI-17 watched and frozen terminals never take input focus", async ({ page }) => {
   for (const name of ["Someone else's terminal", "The coding agent's terminal", "Frozen while rebasing", "Watching while rebasing"]) {
     await page.goto(`/view-stories.html?story=${encodeURIComponent(`TerminalView/${name}`)}`)
-    const output = page.locator('.terminal-output')
+    const output = page.locator('.terminal-output > div')
     await expect(output).toHaveAttribute('inert', '')
     await expect(page.locator('.xterm-helper-textarea')).toHaveCount(1)
     await output.click({ force: true })
@@ -491,7 +491,7 @@ test("T-UI-17 watched and frozen terminals never take input focus", async ({ pag
     await expect(page.locator('.terminal-status')).toContainText(name.includes('rebasing') ? 'Rebasing…' : 'Watching')
   }
   await page.goto(`/view-stories.html?story=${encodeURIComponent("TerminalView/Owner's idle terminal")}`)
-  await expect(page.locator('.terminal-output')).not.toHaveAttribute('inert')
+  await expect(page.locator('.terminal-output > div')).not.toHaveAttribute('inert')
   await page.locator('.xterm-helper-textarea').focus()
   await expect(page.locator('.xterm-helper-textarea')).toBeFocused()
 })

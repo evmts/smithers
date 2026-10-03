@@ -33,16 +33,6 @@ export const TerminalCardSchema = z.object({
 export type TerminalCard = z.infer<typeof TerminalCardSchema>
 
 /**
- * The terminal byte stream, a separate prop from the model. The View sends input only when `viewer_is_owner`.
- * @since 1.0.0
- * @category models
- */
-export interface TerminalStream {
-  readonly write?: (bytes: string) => void
-  readonly onData: (callback: (bytes: string | Uint8Array) => void) => void | (() => void)
-}
-
-/**
  * The Terminal View's props (ui-components.md T-UI-17).
  * @since 1.0.0
  * @category models
