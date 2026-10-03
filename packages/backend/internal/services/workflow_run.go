@@ -1339,8 +1339,14 @@ func (s *workflowRunService) publishCancelledWorkflowRun(ctx context.Context, re
 	ObserveWorkflowRunCompletion(s.metrics, run, "cancelled")
 	if s.commitStatusWriter != nil {
 		if _, err := s.commitStatusWriter.UpdateCommitStatusForWorkflowRun(ctx, run.ID, "cancelled", WorkflowRunStatusDescription("cancelled"), ""); err != nil {
-			middleware.LoggerWithWorkflowRun(ctx, run.ID).
-				Error("failed to update commit status for cancelled workflow run", "repository_id", repositoryID, "error", err)
+			// Invoked file flows without a trigger commit do not create a commit status row.
+			var apiErr *pkgerrors.APIError
+			absentInvokedStatus := run.ExecutionPlane == WorkflowRunPlaneFlow && run.TriggerEvent == InvokeTriggerEvent &&
+				strings.TrimSpace(run.TriggerCommitSha) == "" && stdErrors.As(err, &apiErr) && apiErr.Code == pkgerrors.CodeNotFound
+			if !absentInvokedStatus {
+				middleware.LoggerWithWorkflowRun(ctx, run.ID).
+					Error("failed to update commit status for cancelled workflow run", "repository_id", repositoryID, "error", err)
+			}
 		}
 	}
 	if s.checkRunService != nil {
