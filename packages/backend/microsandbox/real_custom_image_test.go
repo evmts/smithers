@@ -48,11 +48,30 @@ func TestRealMicroVMCustomImageRootAndNetworkNone(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, *image, receipt)
 	t.Logf("image receipt: %s@%s", receipt.Ref, receipt.Digest)
-	result, err := runtime.ExecuteCommandAsUser(ctx, created.ID, "root", workspaceapi.Command{Args: []string{"sh", "-c", "cat /etc/os-release; id -u"}})
+	result, err := runtime.ExecuteCommandAsUser(ctx, created.ID, "root", workspaceapi.Command{Args: []string{"sh", "-c", "id -u; cat /etc/os-release"}})
 	require.NoError(t, err)
 	require.Equal(t, 0, result.ExitCode)
-	require.True(t, strings.HasSuffix(result.Stdout, "\n0\n"))
+	require.True(t, strings.HasPrefix(result.Stdout, "0\n"))
 	t.Logf("root exec:\n%s", result.Stdout)
+	// Python slim has no curl. A bundle downloaded by apt in the same pinned
+	// image lets this proof install it without granting the guest any egress.
+	if bundle := os.Getenv("SMITHERS_MICROVM_CURL_BUNDLE"); bundle != "" {
+		data, err := os.ReadFile(bundle)
+		require.NoError(t, err)
+		require.NoError(t, runtime.WriteFile(ctx, created.ID, "curl-debs.tar.gz", data, 0o600))
+		result, err = runtime.ExecuteCommandAsUser(ctx, created.ID, "root", workspaceapi.Command{Args: []string{"sh", "-c", "mkdir /tmp/curl-debs && tar -xzf curl-debs.tar.gz -C /tmp/curl-debs && dpkg -i /tmp/curl-debs/*.deb"}})
+		require.NoError(t, err)
+		require.Zero(t, result.ExitCode, result.Stdout+result.Stderr)
+		for _, args := range [][]string{
+			{"curl", "-m", "5", "https://example.com"},
+			{"curl", "-m", "5", "--resolve", "example.com:443:93.184.215.14", "https://example.com"},
+		} {
+			result, err = runtime.ExecuteCommandAsUser(ctx, created.ID, "root", workspaceapi.Command{Args: args})
+			require.NoError(t, err)
+			require.Contains(t, []int{6, 7}, result.ExitCode, "curl must report a DNS or connect refusal, not a missing executable or timeout")
+			t.Logf("%s\nexit_code=%d\n%s", strings.Join(args, " "), result.ExitCode, result.Stderr)
+		}
+	}
 	script := `import socket, sys
 for host, port in [("example.com", 443), ("93.184.215.14", 443), ("host.microsandbox.internal", int(sys.argv[1])), ("127.0.0.1", int(sys.argv[1]))]:
     try:

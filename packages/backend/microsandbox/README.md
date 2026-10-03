@@ -169,3 +169,25 @@ SMITHERS_MICROSANDBOX_BIN=/path/to/msb \
 It records root identity, guest OS, denied external/backend connections, and
 image receipts after create, fork and reclaimed restart.
 
+To include the exact `curl -m 5 https://example.com` check, download curl's
+packages in the same pinned image, then copy them into the offline guest.
+Run this only after the load check above passes. Replace the digest with the
+admission receipt; `curl` is absent from the unmodified Python slim image.
+
+```sh
+proof_dir=$(mktemp -d)
+proof_image=python@sha256:<digest>
+docker run --rm --cpus 1 --memory 512m -v "$proof_dir:/debs" "$proof_image" \
+  sh -c 'apt-get update && apt-get install --download-only -y curl && cp /var/cache/apt/archives/*.deb /debs/'
+tar -czf "$proof_dir/curl-debs.tar.gz" -C "$proof_dir" --exclude=curl-debs.tar.gz .
+SMITHERS_MICROSANDBOX_BIN=/path/to/msb \
+  SMITHERS_MICROVM_CUSTOM_IMAGE="$proof_image" \
+  SMITHERS_MICROVM_CURL_BUNDLE="$proof_dir/curl-debs.tar.gz" \
+  GOMAXPROCS=6 nice -n 10 go test -p 6 ./packages/backend/microsandbox \
+  -run '^TestRealMicroVMCustomImageRootAndNetworkNone$' -v -count=1 -timeout 10m
+rm -rf "$proof_dir"
+```
+
+The test requires curl's DNS or connect refusal, and also bypasses DNS with
+`--resolve` to prove the external IP connection is refused. A missing curl
+executable or a timeout does not satisfy this assertion.

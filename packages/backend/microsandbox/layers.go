@@ -228,7 +228,7 @@ func (r *Runtime) resolveWorkspaceLayerForCreate(ctx context.Context, spec works
 			unpin()
 		}
 	}
-	if r.environments == nil || spec.Source == nil {
+	if spec.Image != nil || r.environments == nil || spec.Source == nil {
 		return Layer{}, release, nil
 	}
 	layer, err := r.environments.resolve(ctx, *spec.Source, func(name string) {
