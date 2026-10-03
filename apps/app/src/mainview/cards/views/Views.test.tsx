@@ -48,7 +48,7 @@ for (const path of paths) {
           } else expect(host.textContent + [...host.querySelectorAll<HTMLInputElement>("input,textarea")].map(node => node.value).join(" ")).toContain(text)
         }
         const interactions = story.interactions ?? []
-        const gestureControls = new Set(interactions.filter(item => item.gesture || item.action).map(item => host.querySelector(item.selector)))
+        const gestureControls = new Set(interactions.map(item => host.querySelector(item.selector)))
         const controls = [...host.querySelectorAll<HTMLButtonElement>("[data-flow]")].filter(control => !gestureControls.has(control))
         const actions = story.actions ?? []
         expect(controls.map(control => control.dataset.flow)).toEqual(actions.map(action => action.tag))
@@ -101,7 +101,7 @@ for (const path of paths) {
       } finally { await mountedStory.close() }
       if (story.actions?.length) {
         const removed = await mounted(story, true)
-        try { expect([...removed.host.querySelectorAll<HTMLElement>("[data-flow]")].filter(control => !(story.interactions ?? []).some(item => (item.gesture || item.action) && control.matches(item.selector))).map(control => control.dataset.flow)).toEqual(story.actions.slice(1).map(action => action.tag)) }
+        try { expect([...removed.host.querySelectorAll<HTMLElement>("[data-flow]")].filter(control => !(story.interactions ?? []).some(item => control.matches(item.selector))).map(control => control.dataset.flow)).toEqual(story.actions.slice(1).map(action => action.tag)) }
         finally { await removed.close() }
       }
     })
@@ -173,8 +173,9 @@ for (const [name, fixture] of Object.entries(fixtures)) {
     expect(host.querySelector(".draft-private") !== null).toBe(!fixture.model.committed && fixture.model.private)
   })
 }
-test("local fields encode at render and forward bound arguments", () => {
+test("DraftView submits fields and renders private and committed drafts", () => {
   const host = render({ model: { ...fixtures.issue_fixes.model, place: { mode: "append", options: [{ n: 12, title: "Keep edits", state: "queued" }] } } })
+  expect(host.querySelector(".draft-private")!.textContent).toBe("Only you")
   const title = host.querySelector<HTMLInputElement>(".draft-field input")!
   change(title, "  Literal title  "); blur(title)
   const [prompt, acceptance] = host.querySelectorAll<HTMLTextAreaElement>("textarea")
@@ -193,10 +194,11 @@ test("local fields encode at render and forward bound arguments", () => {
     ["form.set", { entry: "entry-draft-1", field: "acceptance", value: '["passes checks","keeps edits"]' }],
     ["form.set", { entry: "entry-draft-1", field: "place", value: '{"mode":"before","n":12}' }],
     ["form.set", { entry: "entry-draft-1", field: "place", value: '{"mode":"amend","n":12}' }],
-    ["form.set", { entry: "entry-draft-1", field: "place", value: '{"mode":"append"}' }],
-    ["form.set", { entry: "entry-draft-1", field: "fixes", value: "false" }],
-    ["form.set", { entry: "entry-draft-1", field: "fixes", value: "true" }]
+    ["form.set", { entry: "entry-draft-1", field: "fixes", value: "false" }]
   ])
+  act(() => root.render(<DraftView {...fixtures.committed} onAction={(...args) => calls.push(args)} onView={() => {}} />))
+  expect(host.textContent).toContain("Committed as T12")
+  expect(host.querySelector(".draft-private")).toBeNull()
 })
 test("Commit forwards full supplied input once; Discard only deletes Draft", () => {
   const host = render({ actions: [
@@ -273,8 +275,7 @@ test("checkbox and select dispatch once on change without focus or blur", () => 
   blur(fixes)
   expect(calls.length).toBe(1)
   change(host.querySelector("select")!, '{"mode":"append"}')
-  expect(calls[1]).toEqual(["form.set", { entry: "entry-draft-1", field: "place", value: '{"mode":"append"}' }])
-  expect(calls.length).toBe(2)
+  expect(calls.length).toBe(1)
 })
 test("Commit has no unsupported Enter hint", () => {
   const host = render()
@@ -283,4 +284,49 @@ test("Commit has no unsupported Enter hint", () => {
 test("committed receipt has no unsupported link hint", () => {
   const host = render(fixtures.committed)
   expect(host.querySelector(".draft-receipt")!.textContent).not.toContain("↗")
+})
+
+test("agent model updates resync every field and unchanged blur never dispatches", () => {
+  const host = render(fixtures.issue_fixes)
+  change(host.querySelector("input")!, "Unsent title")
+  const model = { ...fixtures.issue_fixes.model, title: "Agent title", prompt: "Agent prompt", acceptance: ["Agent acceptance"], place: { mode: "before" as const, n: 9, options: fixtures.issue_fixes.model.place.options }, issue: { ...fixtures.issue_fixes.model.issue!, fixes: false } }
+  act(() => root.render(<DraftView {...fixtures.issue_fixes} model={model} onAction={(...args) => calls.push(args)} onView={() => {}} />))
+  const title = host.querySelector("input")!
+  expect(title.value).toBe("Agent title"); blur(title)
+  const areas = host.querySelectorAll("textarea")
+  expect(areas[0]!.value).toBe("Agent prompt"); blur(areas[0]!)
+  expect(areas[1]!.value).toBe("Agent acceptance"); blur(areas[1]!)
+  expect(host.querySelector("select")!.value).toBe('{"mode":"before","n":9}')
+  change(host.querySelector("select")!, '{"mode":"before","n":9}')
+  expect(host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(false)
+  expect(calls).toEqual([])
+})
+test("issue arrow requires the model GitHub href", () => {
+  const host = render(fixtures.issue_fixes)
+  const issue = host.querySelector(".draft-issue")!
+  expect(issue.getAttribute("href")).toBe(fixtures.issue_fixes.model.issue!.url!)
+  expect(issue.textContent).toContain("↗")
+  act(() => root.render(<DraftView {...fixtures.issue_fixes} model={{ ...fixtures.issue_fixes.model, issue: { ...fixtures.issue_fixes.model.issue!, url: undefined as unknown as string } }} onAction={() => {}} onView={() => {}} />))
+  expect(host.querySelector(".draft-issue")!.textContent).not.toContain("↗")
+})
+
+test("one model field update preserves other unsubmitted edits", () => {
+  const host = render(fixtures.append)
+  const prompt = host.querySelector("textarea")!
+  change(prompt, "Human prompt")
+  act(() => root.render(<DraftView {...fixtures.append} model={{ ...fixtures.append.model, title: "Agent title" }} onAction={(...args) => calls.push(args)} onView={() => {}} />))
+  expect(host.querySelector("input")!.value).toBe("Agent title")
+  expect(prompt.value).toBe("Human prompt")
+  blur(host.querySelector("input")!); blur(prompt)
+  expect(calls).toEqual([["form.set", { entry: "entry-draft-1", field: "prompt", value: "Human prompt" }]])
+})
+
+test("unchanged acceptance is silent for empty entries and embedded newlines", () => {
+  const host = render()
+  for (const acceptance of [[], [""], ["First\nSecond"]]) {
+    act(() => root.render(<DraftView {...fixtures.append} model={{ ...fixtures.append.model, acceptance }} onAction={(...args) => calls.push(args)} onView={() => {}} />))
+    const field = host.querySelectorAll("textarea")[1]!
+    expect(field.value).toBe(acceptance.join("\n")); blur(field)
+    expect(calls).toEqual([])
+  }
 })
