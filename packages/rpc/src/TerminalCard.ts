@@ -38,8 +38,8 @@ export type TerminalCard = z.infer<typeof TerminalCardSchema>
  * @category models
  */
 export interface TerminalStream {
-  readonly write: (bytes: Uint8Array) => void
-  readonly onData: (callback: (bytes: Uint8Array) => void) => void
+  readonly write?: (bytes: string) => void
+  readonly onData: (callback: (bytes: string | Uint8Array) => void) => void | (() => void)
 }
 
 /**
@@ -47,7 +47,7 @@ export interface TerminalStream {
  * @since 1.0.0
  * @category models
  */
-export type TerminalViewProps = CardProps<TerminalCard> & { readonly stream: TerminalStream }
+export type TerminalViewProps = CardProps<TerminalCard>
 
 /**
  * Typed catalog callbacks for Terminal.
