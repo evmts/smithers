@@ -577,3 +577,14 @@ type TodoRepairSlots = { conflictTerminal?: React.ReactNode } // rendered by the
 ```
 
 **Merge blocker tones (design G12, 2026-10-02).** A failed required check is ember (`failed`). Gold (`attention`) is only for blockers where a person must act (`review_required`, a question, an approval). System or order waits (`order`, `machine`, `rebase`, `merging`) are neutral (`quiet`).
+
+### T-UI-21 Docs (bundled pages)
+
+`DocsViewProps = CardProps<DocsCard, {}, "open">` from `@smthrs/rpc/DocsCard`.
+`DocsCard` is a TypeScript projection: `toc[] {slug, title}`, `page {slug, title,
+summary, markdown}`, `anchor?`, `not_found?`. The missing slug appears above the
+supplied fallback page. The read-only wiki Markdown adapter renders entity-escaped
+HTML. TOC and document links dispatch the supplied `open` gesture with
+`{...args, page: "<slug>#<anchor>"}`; absent or disabled gestures are inert.
+The adapter's heading scroll handle follows `anchor`. At 390px the rail wraps
+above the page. No router, loader or authorization belongs to this View.
