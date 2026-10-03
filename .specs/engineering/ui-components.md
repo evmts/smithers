@@ -577,3 +577,20 @@ type TodoRepairSlots = { conflictTerminal?: React.ReactNode } // rendered by the
 ```
 
 **Merge blocker tones (design G12, 2026-10-02).** A failed required check is ember (`failed`). Gold (`attention`) is only for blockers where a person must act (`review_required`, a question, an approval). System or order waits (`order`, `machine`, `rebase`, `merging`) are neutral (`quiet`).
+
+### T-UI-18 Secrets
+
+```ts
+type SecretsCard = { secrets: {
+  name: string
+  scope: "all_branches" | "main_only"
+  hosts?: string[]
+  actions: Action[]
+}[] }
+type SecretsViewProps = CardProps<SecretsCard>
+```
+
+Values never enter the model. Add and Replace supply Value, Scope and optional
+Hosts through `Action.input`; Add also supplies Name. Replace expands locally.
+Rows show names and scope, without a Hosts count or Bind control. Scope changes
+are submitted with Replace; the View adds no independent scope action.
