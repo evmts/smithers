@@ -22,6 +22,11 @@
 import { readFileSync } from "node:fs"
 
 const [, , datasetPath, instanceId, seat, container, testCommand, interpreter] = process.argv
+const effort = process.env.SWB_FLOWS_EFFORT ?? "high"
+if (!["none", "minimal", "low", "medium", "high", "xhigh", "max"].includes(effort)) {
+  console.error(`write-flow.mjs: invalid SWB_FLOWS_EFFORT: ${effort}`)
+  process.exit(2)
+}
 if (testCommand === undefined || testCommand.trim() === "") {
   console.error("write-flow.mjs: no test command given; see lib/test-command.py")
   process.exit(1)
@@ -116,6 +121,7 @@ const rootLine = transport === "plue"
 const body = `---
 description: Resolve a reported issue in this repository.
 model: ${seat}
+effort: ${effort}
 ---
 You are working in a checkout of ${instance.repo} at commit ${instance.base_commit}.
 ${rootLine}

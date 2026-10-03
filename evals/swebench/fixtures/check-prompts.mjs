@@ -79,6 +79,23 @@ try {
 
   const flowsPrompt = flowsRun.stdout
   const codexPrompt = codexRun.stdout
+  assert.match(flowsPrompt, /^effort: high$/mu, "the flows effort is explicitly pinned")
+  for (const effort of ["none", "minimal", "low", "medium", "high", "xhigh", "max"]) {
+    const pinned = spawnSync(process.execPath, [
+      join(root, "lib", "write-flow.mjs"), dataset, instance.instance_id,
+      "openai:gpt-6.1-sol", container, testCommand
+    ], { encoding: "utf8", env: { ...process.env, SWB_FLOWS_EFFORT: effort } })
+    assert.equal(pinned.status, 0, pinned.stderr)
+    assert.ok(pinned.stdout.includes(`\neffort: ${effort}\n`), `the flow declares ${effort}`)
+  }
+  for (const effort of ["", "HIGH", "high\nmodel: other"]) {
+    const refused = spawnSync(process.execPath, [
+      join(root, "lib", "write-flow.mjs"), dataset, instance.instance_id,
+      "openai:gpt-6.1-sol", container, testCommand
+    ], { encoding: "utf8", env: { ...process.env, SWB_FLOWS_EFFORT: effort } })
+    assert.equal(refused.status, 2, "invalid effort refuses to generate a flow")
+    assert.equal(refused.stdout, "", "invalid effort emits no partial flow")
+  }
 
   // -------------------------------------------------------------------------
   // Neither prompt carries the answer
@@ -166,6 +183,7 @@ try {
     "---",
     "description: Resolve a reported issue in this repository.",
     "model: openai:gpt-5.6-sol",
+    "effort: high",
     "---",
     // The same sentence, wrapped one word differently because the flows side
     // names the `bash` flow where the codex side says "shell".

@@ -154,6 +154,10 @@ for (const lane of declared) {
 
 // The sealed lane's condition is the one `run-instance-codex.sh` implements.
 const runner = readFileSync(join(root, "run-instance-codex.sh"), "utf8")
+assert.ok(
+  !runner.split("\n").some((line) => !line.trimStart().startsWith("#") && line.includes("--ephemeral")),
+  "Codex retains its rollout for exact token counts and turn configuration"
+)
 for (const condition of declared.map((lane) => lane.network)) {
   assert.match(
     runner,

@@ -247,6 +247,8 @@ case "$EFFORT" in
 esac
 
 echo "[$RUN_ID] codex start ($MODEL, effort $EFFORT, ${BUDGET}s)"
+# Retain the session rollout: the text footer alone cannot distinguish cached
+# input from uncached input and output tokens, or prove the turn's model pins.
 START=$(date +%s)
 CODE=0
 python3 "$S/lib/run-with-timeout.py" "$BUDGET" codex exec \
@@ -255,7 +257,6 @@ python3 "$S/lib/run-with-timeout.py" "$BUDGET" codex exec \
   -c model_reasoning_effort="$EFFORT" \
   "${CODEX_ARGS[@]}" \
   --skip-git-repo-check \
-  --ephemeral \
   --color never \
   -o "$LOG_PREFIX.last-message.txt" \
   - < "$LOG_PREFIX.prompt.md" \
