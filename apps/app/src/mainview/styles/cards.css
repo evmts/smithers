@@ -2872,6 +2872,7 @@
 .terminal-view .terminal-command { color: var(--text-muted); font: var(--fs-caption) var(--font-mono); overflow-wrap: anywhere; }
 .terminal-view .terminal-command[data-live] { color: var(--brand); }
 .terminal-view .terminal-output { height: 260px; min-width: 0; }
+.terminal-view .terminal-output > div { height: 100%; }
 .terminal-view .sui-terminal { padding: 10px 12px; border-color: var(--border); border-radius: var(--r-1); }
 .terminal-view .terminal-status { display: flex; gap: 12px; margin-top: 8px; color: var(--text-muted); font-size: var(--fs-caption); }
 .terminal-view .terminal-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
