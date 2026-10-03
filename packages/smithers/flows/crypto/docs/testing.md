@@ -8,6 +8,8 @@ Hashing is deterministic, so the only question a test has to answer is which
 
 ## Hash without a platform layer
 
+Available now.
+
 `syncCrypto` is the package's own implementation wearing the `Crypto`
 interface. Provide it and the test hashes for real with no platform
 dependency:
@@ -31,6 +33,8 @@ your own code. The empty string is
 is `ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad`.
 
 ## Exercise the failure paths
+
+Available now.
 
 Every failure `digest` reports comes from a host that misbehaved, so a test
 reaches all of them by constructing a `Crypto` service that misbehaves on
@@ -69,6 +73,8 @@ The two input failures need no host at all: pass an unpaired surrogate for
 
 ## The evidence behind the contract
 
+Available now.
+
 Each guarantee on [the contract](./contract.md) is stated as a fact because a
 test holds the package to it. The tests are not in the published tarball, but
 they are readable and runnable from the
@@ -97,6 +103,8 @@ The same tests run under Node and Bun, so both entry points are checked
 against both hosts.
 
 ## Related
+
+Available now.
 
 - [Hash inside synchronous code](./guides/hash-in-synchronous-code.md): the
   same `syncCrypto` seam, in production code.

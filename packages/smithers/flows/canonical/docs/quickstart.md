@@ -12,10 +12,14 @@ fails loudly on a value with no canonical form.
 
 ## Prerequisites
 
+Available now.
+
 - Node.js 26.4.0 or later.
-- The package and its `effect` peer dependency. Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
+- The package and its `effect` peer dependency. See [Installation](./installation.md) for source-checkout requirements.
 
 ## Canonicalize a value
+
+Available now.
 
 Create `quickstart.ts`:
 
@@ -40,6 +44,8 @@ fixed by [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785.html), so this
 string is the only canonical form this value has.
 
 ## Hash it into a key
+
+Available now.
 
 Canonical bytes are what makes the hash stable. Add the digest:
 
@@ -66,6 +72,8 @@ They name the same work, so they get the same key. That is the property a step
 cache, an idempotency key, and a plan digest all depend on.
 
 ## Handle a value that has no canonical form
+
+Available now.
 
 Not every JavaScript value can be a JSON document. Rather than emit a
 best-effort string that would hash to something another host disagrees with,
@@ -105,6 +113,8 @@ the other built-ins the same way.
 
 ## Use the schema instead of the function
 
+Available now.
+
 When the surrounding code is Effect, decode through the `Canonical` schema and
 the failure arrives as a `SchemaError` in the error channel rather than a
 thrown exception:
@@ -121,7 +131,9 @@ The decoded value is branded, so a function that requires a canonical document
 cannot be handed an arbitrary string. See
 [Canonicalize inside an Effect pipeline](./guides/use-the-schema.md).
 
-## What just happened
+## What happened
+
+Available now.
 
 One serialization decided one digest. Change the serialization and every key
 derived from it changes with it, which is why every rule that fixes the bytes
@@ -129,10 +141,12 @@ is written down in [The serialization contract](./serialization.md).
 
 ## Next steps
 
+Available now.
+
 - [The serialization contract](./serialization.md): sorting, numbers, strings,
   depth, and the two places this serializer deliberately diverges from
   `JSON.stringify`.
 - [Why digests need canonical JSON](./concepts/digest-determinism.md): what the
   bytes are load bearing for.
-- [`@smthrs/keys`](/api/keys): Smithers' own key derivation, which is this
+- [`@smthrs/keys`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/keys/docs/api.md): Smithers' own key derivation, which is this
   quickstart's two steps behind a typed failure.

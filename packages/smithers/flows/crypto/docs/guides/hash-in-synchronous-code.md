@@ -12,6 +12,8 @@ Effect to suspend in and no service to reach. Use `digestSync`.
 
 ## Call digestSync directly
 
+Available now.
+
 ```ts
 import { digestSync } from "@smthrs/crypto"
 
@@ -52,6 +54,8 @@ const identityOf = (value: string): string => {
 
 ## Separate the fields you join
 
+Available now.
+
 A synchronous identity is usually built from more than one piece of text, and
 the package hashes exactly the bytes you hand it. Join them with a byte that
 cannot appear in either part, so two different field splits cannot produce the
@@ -66,6 +70,8 @@ structured values rather than two strings, canonicalize instead: see
 [hash a structured value](./hash-a-structured-value.md).
 
 ## Use syncCrypto when the code already takes a Crypto service
+
+Available now.
 
 Sometimes the derivation you want to run synchronously is already written as
 an Effect that requires `Crypto.Crypto`, because it is shared with the
@@ -97,6 +103,8 @@ layer for those.
 
 ## Know when not to use the synchronous path
 
+Available now.
+
 - **Large inputs.** `digestSync` runs the compression function in JavaScript
   on the calling thread, so a large buffer blocks until it finishes. Prefer
   `digest` with a platform host, which hands the work to the host binding.
@@ -108,6 +116,8 @@ layer for those.
   refuses randomness deliberately rather than returning weak bytes.
 
 ## Related
+
+Available now.
 
 - [The injected hashing boundary](../concepts/injected-hashing.md): why the
   package has three doors and what each one is for.

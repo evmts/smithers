@@ -23,6 +23,8 @@ fails, and the code under test does not change.
 
 ## Why one entry point does not inject
 
+Available now.
+
 Some hashing is not host access in any meaningful sense: it happens inside a
 pure, synchronous constructor that has no Effect to suspend in. A fingerprint
 on a record you are about to return, a cache key derived while an object is
@@ -51,6 +53,8 @@ function of its own.
 
 ## The third door: syncCrypto
 
+Available now.
+
 `syncCrypto` is the same synchronous implementation wearing the `Crypto`
 interface, for code that already consumes the service and cannot suspend:
 
@@ -70,6 +74,8 @@ operation on `syncCrypto` fails with the same refusal. Supply a platform
 `Crypto` layer for anything but hashing.
 
 ## What the package checks about an answer it did not compute
+
+Available now.
 
 An injected service is a boundary, and the package treats what crosses it as
 untrusted. `digest` verifies four things about the host's answer, in order:
@@ -92,6 +98,8 @@ package will return as valid. That is stated plainly in
 it is the reason to provide a platform layer you trust.
 
 ## The one failure that is not a Sha256Error
+
+Available now.
 
 A missing `Crypto` service is not a runtime failure. It stays an unsatisfied
 Effect context requirement and surfaces as `Service not found: effect/Crypto`,

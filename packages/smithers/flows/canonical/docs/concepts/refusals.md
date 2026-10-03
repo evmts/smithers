@@ -16,6 +16,8 @@ than emitting nothing.
 
 ## A lossy built-in collides with an ordinary object
 
+Available now.
+
 `JSON.stringify` does not fail on a `Map`, a `Set`, or a typed array. It
 renders them, and it renders them lossily:
 
@@ -49,6 +51,8 @@ actually leaked in.
 
 ## `toJSON` is the escape hatch, and `Date` uses it
 
+Available now.
+
 A value's own `toJSON` runs before any of those checks, exactly as
 `JSON.stringify` orders them. That is why `new Date(0)` serializes rather than
 failing: `Date.prototype.toJSON` returns an ISO string, and the serializer
@@ -80,6 +84,8 @@ apart.
 
 ## A lone surrogate is not text
 
+Available now.
+
 An unpaired surrogate is a code unit with no character behind it. UTF-8
 encoders do not agree on what to do with one, and the common answer is to
 replace it with U+FFFD, which means two different strings can encode to the
@@ -94,6 +100,8 @@ canonical_lone_surrogate: lone surrogate in key at $["\ud800"]
 
 ## The checks live in the serializer, not in a pre-pass
 
+Available now.
+
 A caller could scan a value for bad strings before serializing it. That scan
 cannot be complete, because `toJSON` mints strings during serialization that no
 pre-pass ever saw:
@@ -104,7 +112,7 @@ canonicalize({ toJSON: () => "\ud800" })
 
 There is no lone surrogate in the input value. There is one in the document
 that would be emitted. Putting the well-formedness check inside the serializer
-is what makes the promise hold for every string it emits, not just for the
+is what makes the promise hold for every string it emits, not only for the
 strings the caller handed it.
 
 The same reasoning covers the other in-flight refusals. A getter or a proxy
@@ -115,6 +123,8 @@ inside the walk, because a caller that only knows "something threw" cannot say
 which member was at fault.
 
 ## A cycle and a depth bound are both about termination
+
+Available now.
 
 A value that contains itself has no finite serialization, so a cycle is refused
 at the path where the value is re-entered. Sharing is not a cycle: two members
@@ -134,6 +144,8 @@ same documents. That determinism is the point: a value that canonicalizes on a
 laptop must canonicalize in CI.
 
 ## Every refusal carries a path
+
+Available now.
 
 The failure is a `CanonicalError` with a stable `code` and a JSON-style `path`:
 `$` for the root, `.name` for an identifier-safe member, `["name"]` for any

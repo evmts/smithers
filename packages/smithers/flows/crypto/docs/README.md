@@ -9,11 +9,13 @@ representation: 64 lowercase hexadecimal characters, branded as `Digest`.
 Hashing is host access, so the cryptographic operation goes through
 [Effect](https://effect.website)'s `Crypto` service: a Node process, a Bun
 process, a browser, or a test supplies the implementation, and the code that
-hashes does not change. One entry point deliberately does not inject.
-`digestSync` uses the package's own FIPS 180-4 implementation, so a pure
-synchronous constructor can compute an identity without suspending.
+hashes does not change. The synchronous entry points, `digestSync` and
+`makeDigestPartsSync`, use the package's own FIPS 180-4 implementation, so a
+pure constructor can compute an identity without suspending.
 
 ## Why you would reach for it
+
+Available now.
 
 `node:crypto` already computes SHA-256. Reach for this package when the digest
 is part of a contract that two programs, or one program and its future self,
@@ -39,6 +41,8 @@ have to agree on.
 
 ## What SHA-256 gives you here, and what it does not
 
+Available now.
+
 SHA-256 is a collision-resistant hash function. It is not a message
 authentication code, not a key derivation function, and not a password hash.
 This package adds no key, no salt, and no iteration count, so it defends
@@ -52,15 +56,19 @@ choosing.
 
 ## Install
 
-Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
+Available now.
 
-`effect` is the only runtime dependency. `digest` also needs a `Crypto`
-service, which `@effect/platform-node`, `@effect/platform-bun`, and
-`@effect/platform-browser` each provide as a layer. For the runtime
+See [Installation](./installation.md) for source-checkout requirements.
+
+`effect@4.0.0-rc.115` is the only peer dependency; there are no runtime dependencies. `digest` also needs a `Crypto`
+service, which `@effect/platform-node` and `@effect/platform-bun`
+provide as a layer. Browser callers can supply their own service. For the runtime
 requirements, the import forms, and the full list of services you can supply,
 see [Installation](./installation.md).
 
 ## The smallest real example
+
+Available now.
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
@@ -99,13 +107,17 @@ validation on the way back.
 
 ## The package at a glance
 
-The root entry point exports every name below. Each is also importable from
-`@smthrs/crypto/Sha256`.
+Available now.
+
+The root entry point exports every name below. The hashing exports are also importable from
+`@smthrs/crypto/Sha256`; `Identity` has its own `@smthrs/crypto/Identity` subpath.
 
 | Export                           | What it is                                                                                             |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `digest`                         | Hashes text or bytes through the injected `Crypto` service. Fails with `Sha256Error`.                  |
 | `digestSync`                     | Hashes text or bytes with the package's own implementation. Throws `Sha256Error`.                      |
+| `makeDigestPartsSync` | Creates a synchronous text-fragment hasher with prefix reuse. |
+| `Identity` | Captures and digests functions for plan-time identity. |
 | `Digest`                         | The schema and brand for a digest: 64 lowercase hexadecimal characters. It validates and never hashes. |
 | `Sha256`                         | The one-way schema transformation from text or bytes to `Digest`.                                      |
 | `Sha256Error`, `Sha256ErrorCode` | The typed boundary failure and its five stable codes.                                                  |
@@ -115,6 +127,8 @@ Every export, with its signature and its failure modes, is on the
 [API reference](./api.md).
 
 ## What the package guarantees
+
+Available now.
 
 - **One representation.** A digest is 64 lowercase hexadecimal characters or
   it is not a `Digest`. Uppercase, truncated, padded, and non-hexadecimal
@@ -139,9 +153,11 @@ those holds.
 
 ## How this fits with @smthrs/flows
 
+Available now.
+
 `@smthrs/crypto` is one package of the Smithers durable flow engine, published
 on its own so a program that needs SHA-256 does not have to take the engine
-with it. [`@smthrs/flows`](/api/flows) is the barrel that re-exports the whole
+with it. [`@smthrs/flows`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/api.md) is the barrel that re-exports the whole
 engine, this package included, so code that already depends on flows reaches
 the same module as a namespace with no second dependency:
 
@@ -155,16 +171,18 @@ Inside that engine, digests are how work is identified: a step's cache key, an
 artifact's address, a flow's execution id, a plan card's identity. One input
 policy and one wire format hold across all of them because they all hash
 through this package. The layers above it belong to its neighbours:
-[`@smthrs/canonical`](/api/canonical) turns a structured value into stable
-bytes, [`@smthrs/keys`](/api/keys) turns bytes plus a domain into a versioned
-`key1_` string, and [`@smthrs/artifacts`](/api/artifacts) stores bytes under
+[`@smthrs/canonical`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/canonical/docs/api.md) turns a structured value into stable
+bytes, [`@smthrs/keys`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/keys/docs/api.md) turns bytes plus a domain into a versioned
+`key1_` string, and [`@smthrs/artifacts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/artifacts/docs/api.md) stores bytes under
 their digest and verifies them on the way back out. Reach for those rather
 than assembling a format out of `digest` yourself.
 
-The whole engine sits under the [`smithers` CLI](/api/cli), which is how you
+The whole engine sits under the [`smithers` CLI](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/api.md), which is how you
 run and inspect flows from a terminal.
 
 ## Where to go next
+
+Available now.
 
 - [Installation](./installation.md): runtime requirements, import forms, and
   the `Crypto` services you can provide.

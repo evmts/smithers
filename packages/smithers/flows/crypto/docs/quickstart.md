@@ -13,10 +13,14 @@ stored under.
 
 ## Prerequisites
 
+Available now.
+
 - Node.js 26.4.0 or later.
-- A package with the dependencies installed. Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
+- A package with the dependencies installed. See [Installation](./installation.md) for source-checkout requirements.
 
 ## Hash bytes and store them under the digest
+
+Available now.
 
 Create `quickstart.ts`. `digest` returns an Effect that requires
 `Crypto.Crypto`, so `put` carries that requirement outward instead of choosing
@@ -47,6 +51,8 @@ characters, and the only form this package ever produces or accepts.
 
 ## Validate the address on the way back
 
+Available now.
+
 An address that comes back from a database column, a URL segment, or a request
 body is an ordinary untrusted string. `Digest` validates one without hashing
 anything, so it needs no `Crypto` service:
@@ -75,6 +81,8 @@ rejection happens before the map is touched.
 
 ## Run it
 
+Available now.
+
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 
@@ -100,6 +108,8 @@ missing
 
 ## Prove the two entry points agree
 
+Available now.
+
 `digestSync` hashes the same input with the package's own implementation and
 needs no service, which is what makes it usable inside a synchronous
 constructor:
@@ -115,7 +125,9 @@ That equality holds for every input both entry points accept, including
 arbitrary text and any byte view, and both are cross-checked against Node and
 Web Crypto.
 
-## What just happened
+## What happened
+
+Available now.
 
 `put` copied your array before yielding to the hash service, hashed that copy,
 and stored the same copy after hashing succeeded. Caller writes during hashing
@@ -126,6 +138,8 @@ addressing: never accept a digest you have not validated, and never trust
 bytes you have not re-hashed.
 
 ## Next steps
+
+Available now.
 
 - [The contract](./contract.md): what a digest guarantees, and the attacks it
   does not stop. Read this before a digest becomes a security boundary.

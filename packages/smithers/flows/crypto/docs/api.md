@@ -1,6 +1,6 @@
 ---
 title: "API reference"
-description: "Every public export of @smthrs/crypto: digest, digestSync, Digest, Sha256, Sha256Error, Sha256ErrorCode, syncCrypto, and the Identity module for function identity, with signatures, failures, and the input policy they share."
+description: "Every public export of @smthrs/crypto: digest, digestSync, makeDigestPartsSync, Digest, Sha256, Sha256Error, Sha256ErrorCode, syncCrypto, and the Identity module for function identity, with signatures, failures, and the input policy they share."
 ---
 
 Every hashing, schema, error, and service name below is exported from the root
@@ -9,13 +9,17 @@ other public module: it is exported as the `Identity` namespace from the root
 and from `@smthrs/crypto/Identity`.
 
 ```ts
-import { Digest, digest, digestSync, Identity, Sha256, Sha256Error, Sha256ErrorCode, syncCrypto } from "@smthrs/crypto"
+import { Digest, digest, digestSync, Identity, makeDigestPartsSync, Sha256, Sha256Error, Sha256ErrorCode, syncCrypto } from "@smthrs/crypto"
 ```
 
 ## Example
 
+Available now.
+
 ```ts
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { digest, digestSync } from "@smthrs/crypto"
+import { Effect } from "effect"
 
 const address = await Effect.runPromise(
   digest("hello").pipe(Effect.provide(NodeCrypto.layer))
@@ -24,6 +28,8 @@ const sameAddress = digestSync("hello")
 ```
 
 ## Hashing
+
+Available now.
 
 ### digest
 
@@ -63,7 +69,33 @@ the explicit synchronous entry point, for pure plan and identity construction.
 - Runs on the calling thread. See
   [when not to use the synchronous path](./guides/hash-in-synchronous-code.md#know-when-not-to-use-the-synchronous-path).
 
+### makeDigestPartsSync
+
+```ts
+const makeDigestPartsSync: () => (parts: ReadonlyArray<string>) => Digest
+```
+
+Creates a synchronous text-fragment hasher. Each fragment must independently
+contain well-formed UTF-16; splitting a surrogate pair between fragments fails
+with `invalid_text`, even when the joined text would be well formed. For accepted
+fragments, the result equals `digestSync(parts.join(""))`.
+
+The returned function retains only the preceding call's fragments and SHA-256
+prefix states. It reuses their unchanged leading prefix on the next call.
+It requires no service and uses `digestSync`'s text encoding and error policy.
+Byte arrays are outside its typed contract; it is not a streaming interface.
+
+```ts
+import { makeDigestPartsSync } from "@smthrs/crypto"
+
+const hashParts = makeDigestPartsSync()
+const first = hashParts(["header\n", "one"])
+const second = hashParts(["header\n", "two"])
+```
+
 ## Schemas
+
+Available now.
 
 ### Digest
 
@@ -106,8 +138,7 @@ schema-composition face of [`digest`](#digest).
 - Operational failures become `SchemaError` issues whose message is
   `[code] message` and whose annotations carry the stable `code` and the typed
   `Sha256Error` as `cause`.
-- The schema annotates `parseOptions: { reportInput: false }`, overriding
-  input reporting for its own node only. Enclosing Struct, Array, and Union
+- The schema's own parser forces `reportInput: false` for its node only. Enclosing Struct, Array, and Union
   issues use their own options and can retain the original input, including
   when a sibling field fails. Pass `reportInput: false` at the outermost
   decode boundary and do not re-enable it on descendant schemas.
@@ -134,6 +165,8 @@ as the named exports, attached for consumers that reached them through the
 namespace.
 
 ## Errors
+
+Available now.
 
 ### Sha256Error
 
@@ -184,6 +217,8 @@ accept, are ordinary `SchemaError` validation failures rather than
 
 ## Services
 
+Available now.
+
 ### syncCrypto
 
 ```ts
@@ -212,6 +247,8 @@ Normal application code should provide its platform `Crypto` layer instead.
 
 ## Input and memory policy
 
+Available now.
+
 Text must be well-formed UTF-16. Unpaired surrogates are rejected before the
 standard `TextEncoder` converts text to UTF-8, which is what stops two
 different malformed strings from colliding on the digest of a replacement
@@ -234,6 +271,8 @@ and the guarantees these rules add up to, along with what they do not cover,
 are in [the contract](./contract.md).
 
 ## Function identity
+
+Available now.
 
 A digest of bytes identifies data. `Identity` digests a _function_: the plan-time
 mapper, continuation, or predicate a node AST embeds but cannot serialize. It is
@@ -336,19 +375,23 @@ derived from one rather than colliding with it.
 
 ## Requirements and platform
 
+Available now.
+
 - Node.js 26.4.0 or later. The package also runs under Bun and in a browser:
   it imports no `node:` built-in.
-- One runtime dependency, `effect`.
+- One peer dependency, `effect@4.0.0-rc.115`; no runtime dependencies.
 - `@smthrs/crypto/internal/*` and `@smthrs/crypto/*/index` are blocked in the
   export map. The handwritten implementation is reachable only through
-  `digestSync` and `syncCrypto`.
+  `digestSync`, `makeDigestPartsSync`, and `syncCrypto`.
 - `Identity.capture` uses `structuredClone`, a global on Node.js 26, Bun, and
   modern browsers, and `Identity.processNonce` uses `crypto.getRandomValues`.
   Neither is read while the module evaluates.
 
 ## Neighbouring packages
 
+Available now.
+
 Canonical value serialization belongs to
-[`@smthrs/canonical`](/api/canonical). Domain-specific key formats belong to
-[`@smthrs/keys`](/api/keys). Content addressing over a digest belongs to
-[`@smthrs/artifacts`](/api/artifacts).
+[`@smthrs/canonical`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/canonical/docs/api.md). Domain-specific key formats belong to
+[`@smthrs/keys`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/keys/docs/api.md). Content addressing over a digest belongs to
+[`@smthrs/artifacts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/artifacts/docs/api.md).

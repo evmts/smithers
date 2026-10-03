@@ -12,7 +12,9 @@ byte for byte, about how the value was written down.
 
 ## Canonicalize, then hash
 
-Use [`@smthrs/canonical`](/api/canonical), which implements RFC 8785 canonical
+Available now.
+
+Use [`@smthrs/canonical`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/canonical/docs/api.md), which implements RFC 8785 canonical
 JSON. It sorts object keys by UTF-16 code unit, and it rejects values that
 have no stable JSON form rather than guessing at one:
 
@@ -35,6 +37,8 @@ which matters when the value contains credentials or a multi-megabyte payload.
 It does not sanitize custom messages, annotations, or preserved causes.
 
 ## What you must not do instead
+
+Available now.
 
 Building the bytes by hand is where digests go wrong. Two structured values
 that are genuinely different can produce identical bytes:
@@ -61,7 +65,9 @@ the bytes it is given. See
 
 ## Reach for the package that already did this
 
-Do not re-derive a format that exists. [`@smthrs/keys`](/api/keys) is
+Available now.
+
+Do not re-derive a format that exists. [`@smthrs/keys`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/keys/docs/api.md) is
 canonicalization plus SHA-256 plus a versioned `key1_` prefix, with typed
 failures for both halves:
 
@@ -72,10 +78,12 @@ deriveKey({ domain: "step", flow: "build", attempt: 1 })
 // Effect<KeyV1, KeyDerivationError, Crypto.Crypto>
 ```
 
-[`@smthrs/artifacts`](/api/artifacts) is the same idea for bytes: an address
+[`@smthrs/artifacts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/artifacts/docs/api.md) is the same idea for bytes: an address
 plus a store that verifies it on every read.
 
 ## Compose the Sha256 schema
+
+Available now.
 
 Where the boundary is naturally a schema rather than a function call, `Sha256`
 is the transformation from `string | Uint8Array` to `Digest`:
@@ -128,6 +136,8 @@ before serializing or inspecting it. Do not re-enable `reportInput` on
 descendant schemas inside a boundary that disables it.
 
 ## Related
+
+Available now.
 
 - [What a digest covers](../concepts/what-a-digest-covers.md): the input
   policy every one of these paths shares.

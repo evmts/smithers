@@ -10,6 +10,8 @@ document names the value rather than the object that happened to carry it.
 
 ## The problem it solves
 
+Available now.
+
 `JSON.stringify` emits members in the order the object was built, so the same
 data has more than one byte sequence:
 
@@ -35,12 +37,16 @@ answer must not depend on how the value was built.
 
 ## Install
 
-Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
+Available now.
+
+See [Installation](./installation.md) for source-checkout requirements.
 
 `effect` is a peer dependency at exactly `4.0.0-rc.115`.
 [Installation](./installation.md) covers the rest of the requirements.
 
 ## Derive a content key
+
+Available now.
 
 ```ts
 import { canonicalize } from "@smthrs/canonical"
@@ -74,6 +80,8 @@ rendering only; it does not redact these diagnostics. See
 
 ## Use it as an Effect schema
 
+Available now.
+
 The same serialization is also a codec. `Canonical` decodes any value into a
 branded canonical document and reports the failure in the error channel instead
 of throwing:
@@ -91,8 +99,10 @@ canonical document cannot be handed a string that merely looks like JSON.
 
 ## How this fits with @smthrs/flows
 
+Available now.
+
 This package is one piece of the Smithers durable flow engine, whose whole
-surface is re-exported by [`@smthrs/flows`](/api/flows). If you already depend
+surface is re-exported by [`@smthrs/flows`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/api.md). If you already depend
 on that barrel, this serializer is its `Canonical` namespace and you do not
 need to install anything else:
 
@@ -104,16 +114,18 @@ Canonical.canonicalize({ b: 2, a: 1 })
 ```
 
 Install `@smthrs/canonical` on its own when canonical JSON is all you want. Its
-only dependency is `effect`, and it carries no engine, no storage, and no I/O.
+only peer dependency is `effect@4.0.0-rc.115`, and it carries no engine, no storage, and no I/O.
 
 `@smthrs/flows` is in turn the library behind the `smithers` command line
-tool, [`@smthrs/cli`](/api/cli), which runs and inspects durable flows. Every
-content-addressed identity that tool shows you, from flow keys to plan digests,
-is a hash of a document this package produced.
+tool, [`@smthrs/cli`](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/api.md), which runs and inspects durable flows. Flow keys and plan digests
+use documents this package produces; artifact addresses hash raw bytes, and
+function identities use a separate capture encoding.
 
 ## Where to go next
 
-- [Installation](./installation.md): runtime requirements, the two import
+Available now.
+
+- [Installation](./installation.md): runtime requirements, the import
   forms, and what the export map keeps private.
 - [Quickstart](./quickstart.md): build a content key end to end, including the
   failure path.
@@ -123,6 +135,6 @@ is a hash of a document this package produced.
 - [Why digests need canonical JSON](./concepts/digest-determinism.md): what the
   bytes are load bearing for, and why an output change is a digest change.
 - [API reference](./api.md): `canonicalize`, the `Canonical` schema,
-  `CanonicalError`, and the nine stable failure codes.
+  `CanonicalError`, and the stable failure codes.
 - [Troubleshooting](./troubleshooting.md): each failure code with its cause and
   its fix.

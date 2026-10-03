@@ -1,6 +1,6 @@
 ---
 title: "API reference"
-description: "Canonical JSON serialization, schema and errors, bounded JSON admission, and the shared record guard."
+description: "Canonical JSON serialization, schema and errors, bounded JSON admission, record guards, issue paths, and readonly maps."
 ---
 
 The package provides canonical serialization, its schema and errors, bounded JSON admission, and an array-excluding record guard.
@@ -9,6 +9,9 @@ The package provides canonical serialization, its schema and errors, bounded JSO
 import { Canonical, CanonicalError, canonicalize } from "@smthrs/canonical"
 import type { CanonicalErrorCode } from "@smthrs/canonical"
 ```
+
+`IssuePath.firstPath` and `ReadonlyMap.make` are public subpath APIs, not root
+exports. See their sections below.
 
 The schema is also importable as `@smthrs/canonical/Canonical`. The shape guard is importable as `@smthrs/canonical/Record`. Private paths `@smthrs/canonical/internal/*` and `@smthrs/canonical/*/index` are
 blocked in the export map.
@@ -24,15 +27,22 @@ specification.
 
 ## canonicalize
 
+Available now.
+
 ```ts
-const canonicalize: (input: unknown) => string
+const canonicalize: (input: unknown, options?: { readonly loneSurrogates?: "escape" }) => string
 ```
 
-Serializes a value into an RFC 8785 canonical JSON document.
+Serializes a value into an RFC 8785 canonical JSON document by default.
 
 | Parameter | Type      | Meaning                                                                                       |
 | --------- | --------- | --------------------------------------------------------------------------------------------- |
 | `input`   | `unknown` | Any JavaScript value. `JSON.stringify` semantics reduce it to JSON data before serialization. |
+
+`options` defaults to `{}`. The optional `loneSurrogates: "escape"` mode
+preserves lone UTF-16 surrogates as JSON escapes for legacy serialization. That
+mode is outside RFC 8785; the default refuses malformed text. The `Canonical`
+schema always uses the strict default.
 
 **Returns** the canonical document as a plain `string`. It is always valid JSON
 text, and canonicalizing its parse returns the same string.
@@ -42,11 +52,15 @@ canonical form. The error names the failure with a stable
 [code](#canonicalerrorcode) and the JSON-style path of the offending value.
 
 ```ts
+import { canonicalize } from "@smthrs/canonical"
+
 canonicalize({ flowId: "build", input: { target: "web-app", clean: false } })
 // => '{"flowId":"build","input":{"clean":false,"target":"web-app"}}'
 ```
 
 ## Canonical
+
+Available now.
 
 ```ts
 const Canonical: Schema.decodeTo<
@@ -76,6 +90,7 @@ text: a string that does not parse fails with a `Schema.SchemaError` whose
 message starts with `canonical_malformed:`, never a raw `SyntaxError`.
 
 ```ts
+import { Canonical } from "@smthrs/canonical"
 import * as Schema from "effect/Schema"
 
 const document = Schema.decodeUnknownSync(Canonical)({ b: 2, a: 1 })
@@ -92,6 +107,8 @@ getter or `toJSON` exception text. See
 
 ## Canonical (type)
 
+Available now.
+
 ```ts
 type Canonical = typeof Canonical.Type
 // string & Brand<"@smthrs/canonical/Canonical">
@@ -102,6 +119,8 @@ A canonical JSON document. The brand is obtainable only by decoding through the
 where a canonical document is required.
 
 ## CanonicalError
+
+Available now.
 
 ```ts
 class CanonicalError extends TypeError {
@@ -140,6 +159,8 @@ Path grammar:
 | `.toJSON()` | A step into the result of a `toJSON` method.                |
 
 ```ts
+import { CanonicalError, canonicalize } from "@smthrs/canonical"
+
 try {
   canonicalize({ input: { tags: new Set(["release"]) } })
 } catch (error) {
@@ -151,6 +172,8 @@ try {
 ```
 
 ## CanonicalErrorCode
+
+Available now.
 
 ```ts
 type CanonicalErrorCode =
@@ -165,7 +188,7 @@ type CanonicalErrorCode =
   | "canonical_unsupported_value"
 ```
 
-The nine stable failure identifiers. They are part of the package's public
+The stable failure identifiers. They are part of the package's public
 contract: a consumer may branch on them, and they do not change with a value's
 shape or a host's runtime.
 
@@ -186,9 +209,13 @@ Each code, with its cause and its fix, is in
 
 ## isRecord
 
+Available now.
+
 `isRecord(value)` accepts non-null objects and excludes arrays. It preserves member types for typed JSON-like values. It does not read properties or validate their contents, and accepts class instances; use `canonicalize` or a schema when validating serialization. Import it from the package root or `@smthrs/canonical/Record`.
 
 ## BoundedJson
+
+Available now.
 
 `BoundedJson.admit(input, limits)` copies inert JSON without calling getters or
 `toJSON`. A Proxy's `ownKeys`, `getOwnPropertyDescriptor`, and
@@ -219,3 +246,114 @@ or oversized text. It counts the short control escapes exactly.
 Import the namespace from the package root or `@smthrs/canonical/BoundedJson`.
 Admission is a separate boundary from canonical serialization and does not alter
 `canonicalize`'s handling of values or its output bytes.
+
+
+### Admission signatures and types
+
+```ts
+const admit: (
+  input: unknown,
+  limits: Limits,
+  options?: { readonly preflightObjects?: boolean }
+) => Result
+const encodedStringBytes: (value: string, maximum?: number) => number | undefined
+
+interface Limits {
+  readonly maxDepth: number
+  readonly maxNodes: number
+  readonly maxMembers: number
+  readonly maxTotalMembers?: number | undefined
+  readonly maxBytes?: number | undefined
+  readonly maxStringBytes?: number | undefined
+  readonly maxKeyBytes?: number | undefined
+}
+type Json = null | boolean | number | string | ReadonlyArray<Json> | { readonly [key: string]: Json }
+type Result =
+  | { readonly ok: true; readonly value: Json; readonly bytes: number }
+  | { readonly ok: false; readonly code: IssueCode; readonly complaint: string; readonly path: ReadonlyArray<string> }
+```
+
+`admit` defaults `preflightObjects` to true, checking minimum object-member
+node and byte costs while collecting descriptors. Setting it to false disables
+that early check, while retaining the configured traversal limits.
+`encodedStringBytes` defaults its maximum to `Infinity`.
+
+`IssueCode` is the refusal-code union for `admit`:
+
+```ts
+type IssueCode =
+  | "depth" | "nodes" | "bytes" | "number" | "string" | "value" | "cycle"
+  | "arrayLength" | "arrayMember" | "arrayExtra" | "members" | "object"
+  | "symbol" | "accessor" | "key" | "inspection"
+```
+
+### admitStrict
+
+```ts
+const admitStrict: (
+  input: unknown,
+  limits: StrictLimits,
+  options?: StrictOptions
+) =>
+  | { readonly ok: true; readonly value: Json }
+  | { readonly ok: false; readonly path: string; readonly complaint: string }
+
+type StrictLimits = { readonly [K in Exclude<keyof Limits, "maxTotalMembers">]: number }
+interface StrictOptions {
+  readonly ordinaryRecords?: boolean
+  readonly boundedText?: boolean
+  readonly onContainer?: (value: ReadonlyArray<Json> | { readonly [key: string]: Json }) => void
+  readonly native?: (value: object) => { readonly value: unknown; readonly bytes: number } | undefined
+}
+```
+
+All `StrictLimits` fields are required. `maxMembers` is cumulative across the
+tree, and `maxDepth` counts containers: a root container needs a positive depth
+budget. Strict admission also refuses repeated object references, hidden or
+symbol members, reserved keys (`__proto__`, `constructor`, `prototype`), and
+arrays with nonordinary prototypes or extra properties. Refusals return a
+JSON-style path and complaint; they omit `admit`'s code and byte count.
+
+`StrictOptions` defaults to `{}`:
+
+| Option | Default | Behavior |
+| --- | --- | --- |
+| `ordinaryRecords` | `false` | Build detached records with `Object.prototype` instead of a null prototype. |
+| `boundedText` | `false` | Preflight raw text lengths; render oversized or malformed rejected keys by position, such as `$[key:0]`. Reserved-key refusals still name the key. |
+| `onContainer` | Absent | Called with each detached frozen container in postorder. A thrown callback becomes an inspection refusal; earlier callbacks may already have run. |
+| `native` | Absent | Allow a caller-supported non-plain, non-array leaf by returning its detached value and nonnegative safe-integer encoded byte count. The callback owns leaf validation and immutability. |
+
+The traversal still inspects Proxy traps and materializes `Reflect.ownKeys`;
+configured bounds do not isolate arbitrary object code.
+
+## IssuePath.firstPath
+
+Available now.
+
+```ts
+import * as IssuePath from "@smthrs/canonical/IssuePath"
+
+const firstPath: (error: Schema.SchemaError) => string
+```
+
+Returns the first rejected field's JSON-style path without rendering its value.
+It follows the first child of composite and union issues, through pointer,
+filter, and encoding wrappers, for at most 64 issue nodes. A root failure returns
+`$`; reaching the bound returns the path accumulated so far. Member names remain
+caller-controlled and can contain secrets.
+
+## ReadonlyMap.make
+
+Available now.
+
+```ts
+import * as ReadonlyMap from "@smthrs/canonical/ReadonlyMap"
+
+const make: <K, V>(entries?: Iterable<readonly [K, V]>) => globalThis.ReadonlyMap<K, V>
+```
+
+Copies entries into a private map and returns a frozen facade with lookup,
+iteration, `size`, and `forEach`, without mutation methods. Entries default to
+an empty iterable. Duplicate keys follow `Map` semantics; keys and values are
+retained by reference rather than deeply frozen. `forEach` passes the facade as
+its third callback argument.

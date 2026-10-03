@@ -1,13 +1,16 @@
 ---
 title: "Installation"
-description: "Install @smthrs/canonical, its runtime requirements, its two import forms, and the subpaths the export map blocks."
+description: "Install @smthrs/canonical, its runtime requirements, its public import forms, and the subpaths the export map blocks."
 sidebar:
   order: 1
 ---
 
 ## Install the package
 
-Not on npm yet; see [Installation](/docs/installation/#use-the-libraries).
+Available now.
+
+Use a Smithers source checkout; follow [repository setup](https://github.com/smithersai/smithers/blob/main/CONTRIBUTING.md).
+The package version is `1.0.0-rc.1`.
 
 [`effect`](https://effect.website) is a peer dependency, declared at exactly
 `4.0.0-rc.115`. Install it yourself at that version: it supplies the `Schema`
@@ -23,7 +26,10 @@ Node.js, in Bun, and in a browser bundle.
 
 ## Import forms
 
-The root entry point exports the whole surface:
+Available now.
+
+The root entry point exports serialization, the schema, `isRecord`, and the
+`BoundedJson` namespace. `IssuePath` and `ReadonlyMap` require their own subpaths:
 
 ```ts
 import { Canonical, CanonicalError, canonicalize } from "@smthrs/canonical"
@@ -43,9 +49,24 @@ import { CanonicalError, canonicalize } from "@smthrs/canonical/Serializer"
 import type { CanonicalErrorCode } from "@smthrs/canonical/Serializer"
 ```
 
+Public subpaths:
+
+| Import | Exports |
+| --- | --- |
+| `@smthrs/canonical/Canonical` | `Canonical` schema and type. |
+| `@smthrs/canonical/Serializer` | `canonicalize`, `CanonicalError`, `CanonicalErrorCode`, without loading Effect. |
+| `@smthrs/canonical/Record` | `isRecord`. |
+| `@smthrs/canonical/BoundedJson` | Admission functions, limits, options, and result types. |
+| `@smthrs/canonical/IssuePath` | `firstPath` for Effect schema errors. |
+| `@smthrs/canonical/ReadonlyMap` | `make` for an immutable map facade. |
+| `@smthrs/canonical/index` | The same exports as the root. |
+| `@smthrs/canonical/package.json` | Package metadata. |
+
 The serializer implementation remains private under `internal/*`.
 
 ## What is not public
+
+Available now.
 
 Two subpath forms are blocked in the export map:
 
@@ -59,7 +80,9 @@ documented as 10,000 levels in
 
 ## Use it with the rest of Smithers
 
-If you already depend on [`@smthrs/flows`](/api/flows), the barrel for the
+Available now.
+
+If you already depend on [`@smthrs/flows`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/api.md), the barrel for the
 whole durable flow engine, this package is its `Canonical` namespace and needs
 no separate install:
 
@@ -71,16 +94,18 @@ Canonical.canonicalize({ b: 2, a: 1 })
 
 Several engine packages also wrap it behind a narrower surface:
 
-- [`@smthrs/keys`](/api/keys) derives a `key1_` flow key by canonicalizing key
+- [`@smthrs/keys`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/keys/docs/api.md) derives a `key1_` flow key by canonicalizing key
   material and hashing it.
-- [`@smthrs/core`](/api/core) exposes `Digest.canonical` for synchronous
-  fingerprints inside pure constructors.
-- [`@smthrs/crypto`](/api/crypto) supplies the SHA-256 service those
+- [`@smthrs/core`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/core/docs/api.md) exposes `Digest.canonical` for the canonical string, then
+  `Digest.digest` hashes it into a synchronous fingerprint inside a pure constructor.
+- [`@smthrs/crypto`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/crypto/docs/api.md) supplies the SHA-256 service those
   derivations hash with.
 
 Add `@smthrs/canonical` directly when you are computing your own digest and
 none of those fits, or when canonical JSON is all you want from Smithers.
 
 ## Next step
+
+Available now.
 
 Derive a content key end to end in the [Quickstart](./quickstart.md).

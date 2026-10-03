@@ -18,6 +18,8 @@ canonical_unsupported_value: Set at $.input.tags
 
 ## Decide once: convert, or add a `toJSON`
 
+Available now.
+
 There are two places to put the conversion, and the choice is about who owns
 the type.
 
@@ -49,6 +51,8 @@ keeps them apart.
 
 ## Set
 
+Available now.
+
 A `Set` has no order, so give it one. Sorting makes the digest independent of
 insertion order, which is usually what you wanted from a set in the first
 place:
@@ -63,6 +67,8 @@ unsorted spread preserves insertion order, and then `["beta", "release"]` and
 `["release", "beta"]` are different documents with different digests.
 
 ## Map
+
+Available now.
 
 A `Map` with string keys becomes a plain object, and the serializer sorts the
 members for you:
@@ -88,6 +94,8 @@ canonicalize({ limits: entries })
 
 ## Typed array, ArrayBuffer, and DataView
 
+Available now.
+
 Binary data becomes text. Base64 is compact and round trips:
 
 ```ts
@@ -107,6 +115,8 @@ same bytes.
 
 ## bigint
 
+Available now.
+
 A `bigint` has no JSON form, boxed or not, so it becomes a string. A number
 loses precision above `Number.MAX_SAFE_INTEGER`, which is the reason the value
 was a `bigint`:
@@ -117,6 +127,8 @@ canonicalize({ blockHeight: 21_000_000_000_000_000_001n.toString() })
 ```
 
 ## Date
+
+Available now.
 
 A `Date` needs no conversion. `Date.prototype.toJSON` runs first, so a `Date`
 reaches the document as an ISO 8601 string:
@@ -131,6 +143,8 @@ distinction matters to you, tag the value:
 `{ at: { kind: "instant", iso: date.toISOString() } }`.
 
 ## RegExp and Error
+
+Available now.
 
 Both are refused, and both need a decision about what you are actually
 identifying:
@@ -148,6 +162,8 @@ includes it is a digest that never matches twice.
 
 ## Non-finite numbers
 
+Available now.
+
 `NaN`, `Infinity`, and `-Infinity` are refused as `canonical_nan` and
 `canonical_non_finite`. Decide what the value means before encoding it: `null`
 for "no measurement", a sentinel string for "unbounded", or an object that says
@@ -162,6 +178,8 @@ some later value will exceed it.
 
 ## undefined
 
+Available now.
+
 An `undefined` member is dropped rather than refused, which is `JSON.stringify`
 parity and usually what you want. It does mean `{ a: 1 }` and
 `{ a: 1, b: undefined }` digest identically. When the difference matters,
@@ -175,6 +193,8 @@ canonical_unsupported_value: undefined at $
 ```
 
 ## Check the conversion
+
+Available now.
 
 Assert the whole document once, rather than asserting that the call did not
 throw:

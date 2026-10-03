@@ -8,6 +8,8 @@ branch on; messages are prose and may change.
 
 ## Service not found: effect/Crypto
 
+Available now.
+
 **Symptom.** The program dies with `Service not found: effect/Crypto`, or
 TypeScript refuses to run an Effect whose requirement channel still holds
 `Crypto.Crypto`.
@@ -17,11 +19,13 @@ the composition provided none. This is a composition defect, not a
 `Sha256Error`, which is why it is a defect rather than a typed failure.
 
 **Fix.** Provide a service: `NodeCrypto.layer`, `BunCrypto.layer`,
-`BrowserCrypto.layer`, or `syncCrypto` for synchronous code and tests. See
+your own browser `Crypto` service, or `syncCrypto` for synchronous code and tests. See
 [Installation](./installation.md#provide-a-crypto-service). If the call site
 cannot suspend at all, use `digestSync`, which requires nothing.
 
 ## invalid_text
+
+Available now.
 
 **Symptom.** `Sha256Error` with
 `SHA-256 text input contains an unpaired UTF-16 surrogate`.
@@ -35,6 +39,8 @@ string at an arbitrary index can cut a surrogate pair in half. Slice on code
 points, or hash the bytes you already have as a `Uint8Array`.
 
 ## invalid_input
+
+Available now.
 
 **Symptom.** `Sha256Error` with `SHA-256 input must be a string or Uint8Array`,
 or `SHA-256 byte input could not be copied`.
@@ -51,6 +57,8 @@ is a `Uint8Array` subclass and is accepted.
 
 ## text_encoding_failed
 
+Available now.
+
 **Symptom.** `Sha256Error` with
 `SHA-256 text input could not be encoded as UTF-8`, with the original throw as
 `cause`.
@@ -64,6 +72,8 @@ test code monkey-patched `TextEncoder.prototype.encode` and failed to restore
 it.
 
 ## digest_failed
+
+Available now.
 
 **Symptom.** `Sha256Error` with
 `The injected Crypto service failed to compute SHA-256`, or
@@ -80,6 +90,8 @@ build it with `Crypto.make({ randomBytes, digest })` so `digest` returns
 
 ## invalid_digest
 
+Available now.
+
 **Symptom.** `Sha256Error` with
 `The injected Crypto service returned N SHA-256 bytes; expected 32`,
 `returned a non-Uint8Array SHA-256 digest`, or
@@ -94,6 +106,8 @@ never accepts a hexadecimal string from a host; encoding is its job.
 
 ## A SchemaError instead of a Sha256Error
 
+Available now.
+
 **Symptom.** Decoding through `Sha256` fails with a `SchemaError` whose
 message reads `[digest_failed] The injected Crypto service failed ...`.
 
@@ -105,6 +119,8 @@ it composes with other schemas. The typed error is not lost: it is the issue's
 you want the typed failure in the error channel.
 
 ## The hashed value is missing from the error
+
+Available now.
 
 **Symptom.** You passed `reportInput: true` and the standalone `Sha256` issue
 still has no `input`.
@@ -121,15 +137,19 @@ logging a complete error.
 
 ## A digest cannot be converted back into its source bytes
 
+Available now.
+
 **Symptom.** Encoding a `Sha256` value fails with exactly that message.
 
 **Cause.** `Sha256` is a one-way transformation. There is no inverse to run.
 
 **Fix.** Keep the source bytes yourself if you need them later. A
-content-addressed store such as [`@smthrs/artifacts`](/api/artifacts) exists
+content-addressed store such as [`@smthrs/artifacts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/artifacts/docs/api.md) exists
 for exactly that.
 
 ## Digest rejected a value that looks like a digest
+
+Available now.
 
 **Symptom.** `Schema.decodeUnknownSync(Digest)` throws on a 64-character
 string.
@@ -143,6 +163,8 @@ digests comparable with `===`.
 
 ## syncCrypto refused the operation
 
+Available now.
+
 **Symptom.** A `BadArgument` reading
 `syncCrypto supports only SHA-256, not SHA-384`, or a `BadArgument` defect
 from `randomBytes` reading `@smthrs/crypto syncCrypto provides SHA-256 only;
@@ -155,6 +177,8 @@ also fails every random helper `Crypto.make` derives from `randomBytes`.
 **Fix.** Provide a platform `Crypto` layer for anything but SHA-256 hashing.
 
 ## digestSync blocks on a large input
+
+Available now.
 
 **Symptom.** A synchronous call takes noticeably long on a large buffer.
 

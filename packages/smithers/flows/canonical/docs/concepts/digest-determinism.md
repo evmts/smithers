@@ -7,6 +7,8 @@ sidebar:
 
 ## One value, one byte sequence
 
+Available now.
+
 A digest names bytes, not values. `JSON.stringify` gives one value many byte
 sequences, because it emits members in the object's own insertion order:
 
@@ -31,30 +33,36 @@ Node.js host and a browser tab.
 
 ## What Smithers identifies this way
 
-Every content-addressed identity in Smithers is a hash of a canonical
-document:
+Available now.
 
-- **Flow keys.** [`@smthrs/keys`](/api/keys) canonicalizes key material and
+Smithers uses canonical documents for these identities and comparisons:
+
+- **Flow keys.** [`@smthrs/keys`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/keys/docs/api.md) canonicalizes key material and
   hashes it into `key1_` followed by a SHA-256 digest. Two callers submitting
   the same work derive the same key without coordinating.
-- **Content fingerprints.** [`@smthrs/core`](/api/core) exposes
-  `Digest.canonical` for the synchronous fingerprints computed inside pure
-  constructors: a prompt section's identity, a context-window segment, a cell's
+- **Content fingerprints.** [`@smthrs/core`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/core/docs/api.md) exposes
+  `Digest.canonical` to produce the canonical string and `Digest.digest` to
+  hash it into a synchronous fingerprint inside pure constructors: a prompt section's identity, a context-window segment, a cell's
   source digest.
 - **Plan digests and envelope equality.**
-  [`@smthrs/control`](/api/control) digests plan cards so an approval binds to
+  [`@smthrs/control`](https://github.com/smithersai/smithers/blob/main/packages/smithers/control/docs/api.md) digests plan cards so an approval binds to
   a plan, and compares capability envelopes by canonical bytes rather than by
   reference or member order.
 - **Authenticated metadata.** The credential cipher in
-  [`@smthrs/control`](/api/control) encodes credential metadata as a canonical
+  [`@smthrs/control`](https://github.com/smithersai/smithers/blob/main/packages/smithers/control/docs/api.md) encodes credential metadata as a canonical
   document and passes it to AES-GCM as associated data. Canonical JSON names
   and escapes each field, so two different metadata tuples cannot authenticate
   as the same bytes by hiding a delimiter inside a value.
+
+Function identities use a separate capture encoding, and artifact addresses
+hash raw bytes; neither is a hash of RFC 8785 JSON.
 
 Because those identities are persisted, the serialization is not an
 implementation detail. It is the format they were written in.
 
 ## Idempotence is what makes a document portable
+
+Available now.
 
 A digest is often taken over a document that has already crossed a boundary:
 stored, sent over a wire, parsed by another service, and re-serialized. That
@@ -69,6 +77,8 @@ hostile strings. It is the property that lets a consumer hash the document it
 received rather than the value it decoded.
 
 ## Output changes are digest changes
+
+Available now.
 
 Treat the serialization the way you treat a wire format. Changing the bytes
 does not produce a compile error or a failing decode. It produces a run whose
@@ -87,6 +97,8 @@ Two habits follow:
 
 ## When canonical JSON is not enough
 
+Available now.
+
 This package mirrors `JSON.stringify`, which means it silently coerces some
 values on the way in: an `undefined` member disappears, a `Date` becomes a
 string, an object with a `toJSON` becomes something else entirely. That is
@@ -94,7 +106,7 @@ correct for a digest over JSON data, and wrong for a digest that must describe
 the exact value a caller passed.
 
 Where the difference matters, the caller adds its own pre-check rather than
-changing this serializer. [`@smthrs/model`](/api/model) does exactly that for
+changing this serializer. [`@smthrs/model`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/model/docs/api.md) does exactly that for
 sealed model steps: its request encoder rejects everything `JSON.stringify`
 would drop or reshape, because a key computed from a coerced body would
 describe a different request than the one sent on the wire. Everything both

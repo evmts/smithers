@@ -15,6 +15,8 @@ cannot be reduced is refused rather than approximated.
 
 ## Members and ordering
 
+Available now.
+
 Object members are the own enumerable string-keyed properties, sorted ascending
 by UTF-16 code unit, at every level of the document. Symbol-keyed properties
 are not members and never appear.
@@ -46,6 +48,8 @@ canonicalize([3, 1, 3, 2])
 
 ## Numbers
 
+Available now.
+
 Finite numbers are serialized exactly as `JSON.stringify` serializes them,
 which is the shortest form that round trips through the ECMAScript number
 parser. RFC 8785 section 3.2.2.3 defers to that same definition.
@@ -67,6 +71,8 @@ carry it. `NaN`, `Infinity`, `-Infinity`, and every `bigint` are refused.
 
 ## Strings
 
+Available now.
+
 Strings are escaped exactly as `JSON.stringify` escapes them, per RFC 8785
 section 3.2.2.2:
 
@@ -81,12 +87,14 @@ section 3.2.2.2:
 Strings are never normalized, so two spellings of the same rendered text stay
 two different strings.
 
-A string carrying an unpaired surrogate is refused wherever it appears, as a
+A string carrying an unpaired surrogate is refused by default wherever it appears, as a
 member name, as a value, or as a string a `toJSON` method mints during
 serialization. See
 [why the serializer refuses](./concepts/refusals.md#a-lone-surrogate-is-not-text).
 
 ## Parity with JSON.stringify
+
+Available now.
 
 For everything the two agree on, `canonicalize(value)` differs from
 `JSON.stringify(value)` only by member order.
@@ -104,6 +112,8 @@ For everything the two agree on, `canonicalize(value)` differs from
 
 ## Two deliberate divergences
 
+Available now.
+
 Both trade byte parity with `JSON.stringify` for a digest that cannot be moved
 by the object under it.
 
@@ -119,6 +129,8 @@ constructed with and emits `"ab"`, so mutating a wrapper cannot change the
 digest of the value it boxes.
 
 ## Observable semantics
+
+Available now.
 
 The serializer reads the value through whatever the value exposes, and it does
 so in a fixed order.
@@ -141,6 +153,8 @@ so in a fixed order.
 
 ## Depth
 
+Available now.
+
 The root value is depth 0, and every member, element, and `toJSON` result is
 one level deeper. The serializer supports 10,000 levels below the root and
 refuses 10,001 with `canonical_depth_exceeded`, naming both numbers:
@@ -155,6 +169,8 @@ sizes accept and refuse exactly the same documents.
 
 ## Idempotence and the round trip
 
+Available now.
+
 A canonical document re-enters the serializer and comes out byte-identical:
 
 ```ts
@@ -167,6 +183,8 @@ is the same round trip in reverse: it parses a document back into a plain JSON
 value.
 
 ## Values with no canonical form
+
+Available now.
 
 These are refused, each with a stable code and the path of the offending value:
 non-finite numbers, `bigint` (boxed or not), unpaired surrogates, cycles,
@@ -182,6 +200,8 @@ fix, and [Convert a value the serializer refuses](./guides/prepare-a-value.md)
 shows what to send instead.
 
 ## Pin the bytes you depend on
+
+Available now.
 
 Output changes are digest changes, so treat this contract the way you treat a
 wire format. Two tests are worth keeping in any project that hashes canonical

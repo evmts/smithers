@@ -8,6 +8,8 @@ means, what the package promises about it, and where those promises stop.
 
 ## What the package computes
 
+Available now.
+
 `digest` and `digestSync` compute SHA-256 as specified in FIPS 180-4 over the
 bytes described in [what a digest covers](./concepts/what-a-digest-covers.md),
 and return the result as 64 lowercase hexadecimal characters branded as
@@ -15,10 +17,12 @@ and return the result as 64 lowercase hexadecimal characters branded as
 algorithm.
 
 `digest` delegates the computation to the injected Effect `Crypto` service.
-`digestSync` and `syncCrypto` use the package's own implementation, which is
-not exported and is reachable only through those two entry points.
+`digestSync`, `makeDigestPartsSync`, and `syncCrypto` use the package's own
+implementation. The implementation itself is not exported.
 
 ## What the package guarantees
+
+Available now.
 
 - **One representation.** A value is a `Digest` only if it matches
   `^[0-9a-f]{64}$`. Uppercase, truncated, over-long, non-hexadecimal, and
@@ -55,6 +59,8 @@ not exported and is reachable only through those two entry points.
 
 ## What the injected host must supply
 
+Available now.
+
 `digest` accepts a `Crypto` service that satisfies all of the following, and
 fails with a typed `Sha256Error` when one does not hold:
 
@@ -71,6 +77,8 @@ context requirement, which surfaces as `Service not found: effect/Crypto` and
 is a composition defect rather than a runtime failure.
 
 ## What the package does not defend against
+
+Available now.
 
 SHA-256 is a collision-resistant hash function and nothing more. This package
 adds no key, no salt, and no iteration count, so everything below is outside
@@ -121,6 +129,8 @@ what it can protect.
 
 ## Failure codes
 
+Available now.
+
 `Sha256Error.code` is stable and is the value to branch on. `message` is prose
 and may change.
 
@@ -138,9 +148,11 @@ symptom-by-symptom version, see [Troubleshooting](./troubleshooting.md).
 
 ## Boundaries with neighbouring packages
 
+Available now.
+
 Canonical value serialization belongs to
-[`@smthrs/canonical`](/api/canonical). Domain-specific key formats, including
-the `key1_` prefix and its derivation, belong to [`@smthrs/keys`](/api/keys).
+[`@smthrs/canonical`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/canonical/docs/api.md). Domain-specific key formats, including
+the `key1_` prefix and its derivation, belong to [`@smthrs/keys`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/keys/docs/api.md).
 Content addressing over a digest belongs to
-[`@smthrs/artifacts`](/api/artifacts). This package hashes bytes and validates
+[`@smthrs/artifacts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/artifacts/docs/api.md). This package hashes bytes and validates
 digests, and does nothing else.

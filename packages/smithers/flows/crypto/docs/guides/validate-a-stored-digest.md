@@ -12,6 +12,8 @@ settles the claim, and it hashes nothing, so it needs no `Crypto` service.
 
 ## Decode the value
 
+Available now.
+
 ```ts
 import { Digest } from "@smthrs/crypto"
 import * as Schema from "effect/Schema"
@@ -30,6 +32,8 @@ channel rather than as a throw.
 
 ## Take the brand as a parameter
 
+Available now.
+
 The point of decoding is to do it once at the edge. Give the functions
 underneath it the branded type, so the type system stops them from being
 called with a raw string that nobody checked:
@@ -45,6 +49,8 @@ positions. A plain `string` will not satisfy the parameter, which is the whole
 value of the brand.
 
 ## Re-hash before you trust the bytes
+
+Available now.
 
 A validated address proves the string is well formed. It proves nothing about
 the bytes stored under it. If the bytes matter, hash them again and compare:
@@ -64,12 +70,16 @@ comparing a digest against a secret, this package is the wrong tool. See
 
 ## Do not slice a digest out of a longer format
 
+Available now.
+
 A stored key like `key1_<digest>` has a prefix that means something. Reach for
 the package that owns the format rather than slicing the string yourself:
-[`@smthrs/keys`](/api/keys) exposes the payload of a stored key through an
+[`@smthrs/keys`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/keys/docs/api.md) exposes the payload of a stored key through an
 accessor for exactly this reason.
 
 ## Related
+
+Available now.
 
 - [Quickstart](../quickstart.md): validation in the middle of a
   content-addressed read.

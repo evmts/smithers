@@ -11,6 +11,8 @@ is strict about how it gets from your value to those bytes.
 
 ## Text becomes UTF-8, and nothing else happens to it
 
+Available now.
+
 A string is checked for well-formedness and then encoded as UTF-8 with the
 host's `TextEncoder`.
 
@@ -37,6 +39,8 @@ the digest.
 
 ## Bytes are taken exactly as viewed
 
+Available now.
+
 `Uint8Array` is the only accepted byte input. `Buffer` works because it is a
 `Uint8Array` subclass. `ArrayBuffer`, `DataView`, other typed arrays, plain
 arrays, iterables, and streams are rejected with `invalid_input` rather than
@@ -54,6 +58,8 @@ digestSync(backing.subarray(2, 5)) === digestSync(new TextEncoder().encode("abc"
 ```
 
 ## The snapshot, and when it is taken
+
+Available now.
 
 The package hashes a copy, and the copy is taken at a defined moment:
 
@@ -82,6 +88,8 @@ array untouched.
 
 ## One shot, whole buffer
 
+Available now.
+
 There is no incremental or streaming entry point. `digest` and `digestSync`
 each require the complete input, and each holds the input and its snapshot in
 memory at once. Hashing a file means reading the whole file first.
@@ -92,6 +100,8 @@ at any size, including a million-character input, but that is roughly the
 scale at which to start preferring `digest` with a platform host.
 
 ## What a digest does not cover
+
+Available now.
 
 A digest covers bytes. It does not cover the structure those bytes came from,
 the field names you joined to build them, or the encoding you chose. Two

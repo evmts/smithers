@@ -17,6 +17,8 @@ peer dependency, and modules such as `effect/SchemaGetter` and
 
 ## Decode a value
 
+Available now.
+
 ```ts
 import { Canonical } from "@smthrs/canonical"
 import * as Effect from "effect/Effect"
@@ -35,13 +37,17 @@ brand, so a function that takes a `Canonical` cannot be handed a string that
 merely looks like JSON:
 
 ```ts
-const hash = (document: Canonical): Effect.Effect<string> => sha256(document)
+import { digestSync } from "@smthrs/crypto"
+
+const hash = (document: Canonical): string => digestSync(document)
 
 hash("{\"a\":1,\"b\":2}")
 // Type error: string is not assignable to Canonical.
 ```
 
 ## Encode a document back
+
+Available now.
 
 The encode direction takes the document itself, not the Effect that produced
 it, and parses it into a plain JSON value:
@@ -57,6 +63,8 @@ return.
 
 ## Handle both branches
 
+Available now.
+
 For a caller that wants the failure as a value rather than as a short circuit:
 
 ```ts
@@ -71,9 +79,11 @@ the `SchemaError` directly.
 
 ## Map to a typed failure
 
+Available now.
+
 A `SchemaError` says the value was not canonicalizable. It does not say what
 your caller should do about it. Map it to a failure your domain names, the way
-[`@smthrs/keys`](/api/keys) does when key derivation fails:
+[`@smthrs/keys`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/keys/docs/api.md) does when key derivation fails:
 
 ```ts
 class FingerprintError extends Schema.TaggedError<FingerprintError>()(
@@ -89,6 +99,8 @@ const fingerprint = (value: unknown): Effect.Effect<Canonical, FingerprintError>
 
 ## Limit diagnostic disclosure
 
+Available now.
+
 Canonicalized values can contain secrets, including in member names. Treat
 every path segment, `message`, and original `cause` text as caller-controlled
 and potentially sensitive.
@@ -103,9 +115,11 @@ caller or an enclosing schema supplies:
 decode(value, { reportInput: false })
 ```
 
-Pin it on a schema you own with
-`.annotate({ parseOptions: { reportInput: false } })`, so no caller can turn
-retention on.
+To force the policy at a schema node you own, wrap its parser with
+`Schema.declareConstructor` and forward `{ ...options, reportInput: false }`.
+The [derived schema below](#compose-a-derived-schema) uses this pattern.
+Annotations do not override parser options. Enclosing schema issues can still
+retain input; set `reportInput: false` at the complete decode boundary too.
 
 `reportInput` governs the retained input and nothing else. Whatever it is set
 to, the custom issue message still carries the path and the original getter or
@@ -150,12 +164,14 @@ allowlist or redaction policy to each before constructing the diagnostic.
 Cap the sanitized result as well: a path grows with depth, but limiting its
 length does not remove sensitive data.
 
-[`@smthrs/control`](/api/control) currently forwards `cause.path` and the code
+[`@smthrs/control`](https://github.com/smithersai/smithers/blob/main/packages/smithers/control/docs/api.md) currently forwards `cause.path` and the code
 over RPC with a length cap. That behavior can disclose caller-supplied member
 names; it is not a redaction guarantee. Apply the boundary policy above before
 forwarding diagnostics in your own integrations.
 
 ## Compose a derived schema
+
+Available now.
 
 Because `Canonical` is an ordinary codec, a derived identity is a schema
 transformation rather than a function callers must remember to apply. Map the
@@ -165,8 +181,9 @@ root path from `fingerprint`, and pin the retention policy on the schema:
 ```ts
 import * as SchemaGetter from "effect/SchemaGetter"
 import * as SchemaIssue from "effect/SchemaIssue"
+import * as SchemaParser from "effect/SchemaParser"
 
-const Fingerprint = Schema.Unknown.pipe(
+const FingerprintTransformation = Schema.Unknown.pipe(
   Schema.decodeTo(Schema.String, {
     decode: SchemaGetter.transformEffect((value) =>
       fingerprint(value).pipe(
@@ -175,18 +192,24 @@ const Fingerprint = Schema.Unknown.pipe(
     ),
     encode: SchemaGetter.forbidden(() => "A fingerprint cannot be converted back into its input")
   })
-).annotate({
-  identifier: "app/Fingerprint",
-  parseOptions: { reportInput: false }
-})
+)
+
+const Fingerprint = Schema.declareConstructor<string, unknown>()(
+  [FingerprintTransformation],
+  ([codec]) => (input, _ast, options) =>
+    SchemaParser.decodeUnknownEffect(codec)(input, { ...options, reportInput: false }),
+  { identifier: "app/Fingerprint" }
+)
 ```
 
 `Schema.decodeTo` with a forbidden encode is the right shape whenever the
-derivation is one way. [`@smthrs/keys`](/api/keys) builds its `DerivedKey`
-schema exactly this way: a key can be derived from its input, and never
+derivation is one way. [`@smthrs/keys`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/keys/docs/api.md) builds its `DerivedKey`
+schema with a one-way transformation and the same parser wrapper: a key can be derived from its input, and never
 recovered from it.
 
 ## What the schema adds, and what it does not
+
+Available now.
 
 The schema decodes through the same serializer, so every rule in
 [The serialization contract](../serialization.md) applies unchanged. It adds

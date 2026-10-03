@@ -1,5 +1,8 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import * as SchemaGetter from "effect/SchemaGetter"
+import * as SchemaIssue from "effect/SchemaIssue"
+import * as SchemaParser from "effect/SchemaParser"
 import { readFileSync } from "node:fs"
 import * as ts from "typescript"
 import { describe, expect, it } from "vitest"
@@ -40,6 +43,43 @@ const throwingInput = {
 }
 
 describe("documented diagnostic boundaries", () => {
+  it("forces the documented derived parser's policy even when the caller requests input", () => {
+    const code = [...guide.matchAll(/```ts\n([\s\S]*?)```/g)]
+      .map((match) => match[1]!)
+      .filter((example) => example.includes("const decode =") || example.includes("class FingerprintError") ||
+        example.includes("const FingerprintTransformation ="))
+      .join("\n")
+      .replace(/^import .*$/gm, "")
+    const { outputText } = ts.transpileModule(code, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None }
+    })
+    const fingerprint: Schema.Codec<string, unknown> = new Function(
+      "Canonical", "Effect", "Schema", "SchemaGetter", "SchemaIssue", "SchemaParser",
+      `${outputText}\nreturn Fingerprint`
+    )(Canonical, Effect, Schema, SchemaGetter, SchemaIssue, SchemaParser)
+
+    expect(Schema.decodeUnknownSync(fingerprint)({ b: 2, a: 1 })).toBe('{"a":1,"b":2}')
+    const input = { secret: secretText, value: NaN }
+    const error = Effect.runSync(Effect.flip(
+      Schema.decodeUnknownEffect(fingerprint)(input, { reportInput: true })
+    ))
+    expect(error.message).toContain("[canonicalization_failed] $")
+    expect(JSON.stringify(error)).not.toContain(secretText)
+    const encoded = Effect.runSync(Effect.flip(Schema.encodeUnknownEffect(fingerprint)("{}")))
+    expect(encoded.message).toContain("A fingerprint cannot be converted back into its input")
+
+    const enclosing = Schema.Struct({ value: fingerprint, sibling: Schema.Number })
+    const composedInput = { value: input, sibling: "invalid" }
+    const retained = Effect.runSync(Effect.flip(
+      Schema.decodeUnknownEffect(enclosing)(composedInput, { reportInput: true, errors: "all" })
+    ))
+    expect(JSON.stringify(retained)).toContain(secretText)
+    const suppressed = Effect.runSync(Effect.flip(
+      Schema.decodeUnknownEffect(enclosing)(composedInput, { reportInput: false, errors: "all" })
+    ))
+    expect(JSON.stringify(suppressed)).not.toContain(secretText)
+  })
+
   it.each([
     ["record member names", keyedInput],
     ["callback exception text", throwingInput],

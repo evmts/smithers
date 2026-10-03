@@ -14,6 +14,8 @@ index, and `.toJSON()` is a step into the result of a `toJSON` method.
 
 ## canonical_nan and canonical_non_finite
 
+Available now.
+
 ```text
 canonical_non_finite: Infinity at $.payload.cost
 ```
@@ -30,6 +32,8 @@ limit. See
 
 ## canonical_bigint
 
+Available now.
+
 ```text
 canonical_bigint: BigInt at $.blockHeight
 ```
@@ -41,6 +45,8 @@ serializer refuses it, boxed or not.
 above `Number.MAX_SAFE_INTEGER`, which is why the value was a `bigint`.
 
 ## canonical_lone_surrogate
+
+Available now.
 
 ```text
 canonical_lone_surrogate: lone surrogate in key at $["\ud800"]
@@ -59,6 +65,8 @@ genuinely binary, encode them as base64 rather than as text.
 
 ## canonical_circular
 
+Available now.
+
 ```text
 canonical_circular: circular reference at $.b.a
 ```
@@ -72,6 +80,8 @@ itself. Note that sharing is not a cycle. Two members pointing at one object
 serialize fine.
 
 ## canonical_unsupported_value
+
+Available now.
 
 ```text
 canonical_unsupported_value: Set at $.input.tags
@@ -98,6 +108,8 @@ collision.
 
 ## canonical_depth_exceeded
 
+Available now.
+
 ```text
 canonical_depth_exceeded: depth 10,001 exceeds 10,000 at $.child.child...
 ```
@@ -115,6 +127,8 @@ work with either.
 
 ## canonical_tojson_threw
 
+Available now.
+
 ```text
 canonical_tojson_threw: nope at $.x
 ```
@@ -127,6 +141,8 @@ that can fail is a poor fit for a digest, because whether a value has an
 identity would depend on when you asked.
 
 ## canonical_getter_threw
+
+Available now.
 
 ```text
 canonical_getter_threw: boom at $.x
@@ -144,6 +160,8 @@ data. Digest a plain snapshot of the fields you care about instead.
 
 ## canonical_malformed
 
+Available now.
+
 ```text
 canonical_malformed: Unexpected token } in JSON at position 1
 ```
@@ -159,6 +177,8 @@ the string came from storage, the stored bytes were altered after they were
 digested; treat it as corrupt rather than repairing it.
 
 ## My digest changed and the value did not
+
+Available now.
 
 The value probably did change, in one of the places `JSON.stringify` semantics
 reach through:
@@ -180,6 +200,8 @@ member that moved.
 
 ## Two different values digest the same
 
+Available now.
+
 The serializer applies `JSON.stringify` semantics, which coerce before they
 compare:
 
@@ -190,19 +212,23 @@ compare:
 
 Add a discriminating field to whichever value should be distinct. Where the
 coercion itself is unacceptable, add a pre-check that refuses values
-`JSON.stringify` would reshape, the way [`@smthrs/model`](/api/model) does for
+`JSON.stringify` would reshape, the way [`@smthrs/model`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/model/docs/api.md) does for
 sealed model requests.
 
 ## The error message contains my input
 
+Available now.
+
 A schema issue retains the rejected value only when the decode is given
 `reportInput: true`. In `effect@4.0.0-rc.115` nothing retains it by default,
 and this package adds no parse options of its own, so a plain decode is not
-where your input came from. Pass `reportInput: false`, or annotate a schema you
-own with `parseOptions: { reportInput: false }`, to hold that policy against a
-caller who asks for retention.
+where your input came from. Pass `reportInput: false` at the decode boundary.
+To force the policy at a schema node you own, use a `Schema.declareConstructor`
+wrapper whose parser forwards `{ ...options, reportInput: false }`; annotations
+do not override caller options. See the
+[derived schema](./guides/use-the-schema.md#compose-a-derived-schema).
 
-Neither redacts the custom issue message or a thrown `CanonicalError`, which is
+This does not redact the custom issue message or a thrown `CanonicalError`, which is
 the usual source. Those carry the path and the original exception text whatever
 `reportInput` is set to.
 
