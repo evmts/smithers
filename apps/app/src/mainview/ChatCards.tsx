@@ -1,3 +1,4 @@
+import { EntryRow } from "./EntryRow"
 import { ViewSkeleton } from "./ViewSkeleton"
 import { flowAction, flowProps } from "./flows/FlowAction"
 /*
@@ -152,7 +153,9 @@ export const CardView = memo(function CardView({
     pendingFocus.current = "maximize"
     onMinimize()
   }
-  if (card.kind === "retired") return null
+  if (card.kind === "retired") return card.title === "" ? null :
+    <EntryRow kind="card" author={{ kind: "system", color_index: 7 }} tone="quiet"
+      title={card.title} tombstone onAction={() => {}} />
   if (isRetiredCard(card)) return null
   return (
     <>
