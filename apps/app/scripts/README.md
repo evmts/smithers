@@ -3,6 +3,18 @@
 E2E and live-check scripts. Unless a section says otherwise, run them from
 `apps/app`.
 
+## Server bundle
+
+From the repository root, after the frozen pnpm install:
+
+```sh
+SMITHERS_BUILD_SHA=<full-commit-id> pnpm exec smthrs build //apps/app:serverBundle
+bun test apps/app/scripts/build-native.test.ts apps/app/scripts/bundle-manifest.test.ts
+SMITHERS_BUILD_SHA=<full-commit-id> pnpm exec smthrs test //apps/app:serverBundleIntegration
+```
+
+The restored assembler writes `apps/app/.server-bundle/`, using PostgreSQL 18 from `brew --prefix postgresql@18` or `SMITHERS_POSTGRES_BUNDLE_DIR`. The integration gate verifies the file inventory and digests, relocates the bundle, and checks required payloads and library paths. Launcher readiness belongs to T-INS-02.
+
 ## Declared test runners
 
 | Command (from `apps/app`) | Files executed | Requirement |

@@ -229,3 +229,6 @@ __pycache__/
 
 # Local review diffs
 .review-diff*.patch
+
+# Relocatable server build.
+/apps/app/.server-bundle/
