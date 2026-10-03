@@ -51,7 +51,7 @@ export const CodeSurface = ({
   readonly onHover: (token: CodeTokenPosition) => void
   readonly onDefinition: (token: CodeTokenPosition) => void
   readonly hoverContents?: ReactNode
-  readonly gestureProps?: Record<string, string>
+  readonly gestureProps?: Record<string, string | undefined>
 }) => {
   const { path, content, line, hover, diagnostics, intel } = payload
 

@@ -439,16 +439,7 @@ export const FileCardBody = ({
         (
           <LazyViewerBoundary fallback={<pre className="world-card-path" data-viewer-fallback="">{card.payload.content}</pre>}>
             <Suspense fallback={<pre className="world-card-path">{card.payload.content}</pre>}>
-              <CodeSurface payload={card.payload} codeIntel={codeIntel}
-                gestureProps={flowGestureProps("code.hover", "code.definition")}
-                onHover={token => onRunCommand("code.hover", fileArgs(`${card.payload.path}:${token.line}:${token.column}`, card.payload.localRepoId ?? card.payload.repo))}
-                onDefinition={token => onRunCommand("code.definition", fileArgs(`${card.payload.path}:${token.line}:${token.column}`, card.payload.localRepoId ?? card.payload.repo))}
-                hoverContents={card.payload.hover ? <div className="code-hover" data-slot="code-hover">
-                  <Markdown className="code-hover-body" content={card.payload.hover.contents} />
-                  {card.payload.hover.truncated ? <span className="code-hover-hint" data-slot="code-hover-cut">(cut at {LSP_HOVER_CAP_CHARS / 1024} KiB)</span> : null}
-                  <span className="code-hover-hint">{typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘-click" : "Ctrl-click"}: definition</span>
-                </div> : null}
-              />
+              <FileCodeSurface payload={card.payload} codeIntel={codeIntel} onRunCommand={onRunCommand} />
             </Suspense>
           </LazyViewerBoundary>
         )}
@@ -468,4 +459,22 @@ export const fileCardFamily: CardFamily<"file-list" | "file"> = {
     render: (card, actions) => <FileCardBody card={card} onRunCommand={actions.onRunCommand} />,
     pill: settledPill
   }
+}
+
+/** Legacy code-intelligence bindings stay in the card container. */
+export function FileCodeSurface({ payload, codeIntel, onRunCommand }: {
+  readonly payload: Extract<Card, { kind: "file" }>["payload"]
+  readonly codeIntel: boolean
+  readonly onRunCommand: RunCommand
+}) {
+  return <CodeSurface payload={payload} codeIntel={codeIntel}
+                gestureProps={flowGestureProps("code.hover", "code.definition")}
+                onHover={token => onRunCommand("code.hover", fileArgs(`${payload.path}:${token.line}:${token.column}`, payload.localRepoId ?? payload.repo))}
+                onDefinition={token => onRunCommand("code.definition", fileArgs(`${payload.path}:${token.line}:${token.column}`, payload.localRepoId ?? payload.repo))}
+                hoverContents={payload.hover ? <div className="code-hover" data-slot="code-hover">
+                  <Markdown className="code-hover-body" content={payload.hover.contents} />
+                  {payload.hover.truncated ? <span className="code-hover-hint" data-slot="code-hover-cut">(cut at {LSP_HOVER_CAP_CHARS / 1024} KiB)</span> : null}
+                  <span className="code-hover-hint">{typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘-click" : "Ctrl-click"}: definition</span>
+                </div> : null}
+              />
 }
