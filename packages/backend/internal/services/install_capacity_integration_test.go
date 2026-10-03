@@ -13,7 +13,8 @@ func TestInstallCapacityOwnerLowerRestoreAndPermissionPostgres(t *testing.T) {
 	pool, _ := postgresfixture.NewProductDatabase(t)
 	owner := int64(0)
 	require.NoError(t, pool.QueryRow(t.Context(), `INSERT INTO users(username,lower_username) VALUES ('capacityowner','capacityowner') RETURNING id`).Scan(&owner))
-	_, err := pool.Exec(t.Context(), `INSERT INTO self_host_owners(user_id) VALUES ($1)`, owner)
+	// Credential identity remains users.id; collaborators owns membership.
+	_, err := pool.Exec(t.Context(), `WITH o AS (INSERT INTO self_host_owners(user_id) VALUES($1)),c AS (INSERT INTO collaborators(id,user_id,github_user_id,permission) VALUES(4001,$1,7001,'admin')) INSERT INTO install_settings(key,value) VALUES('owner.access_checked',jsonb_build_object('last_access_check_at',NOW()))`, owner)
 	require.NoError(t, err)
 	svc := InstallCapacityService{Queries: db.New(pool), Profile: microsandbox.HostProfile{MemoryBytes: 32 << 30, PerfCores: 10, DiskFreeBytes: 400 << 30}}
 	// C-MCH-04 steps 3–5: only the owner, never above the formula; write refusal preserves saved value.
@@ -38,6 +39,8 @@ func TestInstallCapacityOwnerLowerRestoreAndPermissionPostgres(t *testing.T) {
 	for _, role := range []string{"maintainer", "member"} {
 		var id int64
 		require.NoError(t, pool.QueryRow(t.Context(), `INSERT INTO users(username,lower_username) VALUES ($1,$1) RETURNING id`, role).Scan(&id))
+		_, err = pool.Exec(t.Context(), `INSERT INTO collaborators(user_id,github_user_id,permission) VALUES($1::BIGINT,$1::BIGINT+7000,CASE WHEN $2::TEXT='maintainer' THEN 'admin' ELSE 'write' END)`, id, role)
+		require.NoError(t, err)
 		err = svc.Set(t.Context(), id, 1)
 		var typed *microsandbox.CapacityError
 		require.ErrorAs(t, err, &typed)

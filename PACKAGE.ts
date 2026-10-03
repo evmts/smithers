@@ -386,6 +386,10 @@ const backendGo = Smithers.Shell.Test({
     Smithers.file("//go.mod"),
     Smithers.file("//go.sum"),
     Smithers.file("//packages/rpc/contracts/app-bootstrap-v1.schema.json"),
+    // The owner-sign-in suite executes the matrix's actual seed before an API call.
+    Smithers.file("//apps/app/scripts/mode-matrix/owner-seed.ts"),
+    Smithers.file("//packages/rpc/src/ApplicationAuth.ts"),
+    Smithers.file("//packages/rpc/package.json"),
     Smithers.glob("//packages/backend/**/*"),
     Smithers.glob("//apps/backend/**/*"),
     Smithers.glob("//distribution/**/*"),

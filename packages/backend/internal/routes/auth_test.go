@@ -74,7 +74,7 @@ func (m mockAuthService) Logout(ctx context.Context, sessionKey string) error {
 	return m.logoutFn(ctx, sessionKey)
 }
 
-func (m mockAuthService) StartGitHubOAuth(ctx context.Context, stateVerifier string) (string, error) {
+func (m mockAuthService) StartGitHubOAuth(ctx context.Context, stateVerifier, _ string) (string, error) {
 	if m.startGitHubOAuthFn != nil {
 		return m.startGitHubOAuthFn(ctx, stateVerifier)
 	}
@@ -85,10 +85,10 @@ func (m mockAuthService) StartGitHubOAuthWithScopes(ctx context.Context, stateVe
 	if m.startGitHubScopesFn != nil {
 		return m.startGitHubScopesFn(ctx, stateVerifier, rawScopes)
 	}
-	return m.StartGitHubOAuth(ctx, stateVerifier)
+	return m.StartGitHubOAuth(ctx, stateVerifier, "")
 }
 
-func (m mockAuthService) CompleteGitHubOAuth(ctx context.Context, code, state, stateVerifier string) (services.OAuthCallbackResult, error) {
+func (m mockAuthService) CompleteGitHubOAuth(ctx context.Context, code, state, stateVerifier, _ string) (services.OAuthCallbackResult, error) {
 	if m.completeGitHubFn != nil {
 		return m.completeGitHubFn(ctx, code, state, stateVerifier)
 	}
@@ -553,4 +553,82 @@ func TestAuthHandler_PostKeyAuthVerify_NonAPIErrorReturnsSanitizedInternalError(
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	assert.Equal(t, "internal server error", body["message"])
 	assert.NotContains(t, rec.Body.String(), "secret=shh")
+}
+
+// spec §16.3.3: only the original loopback socket may supply a forwarded
+// host; the known origin supplies scheme, and no forwarded scheme is read.
+func TestInstallOAuthEffectiveOrigin(t *testing.T) {
+	h := &AuthHandler{AllowedOrigins: []string{"http://lan-a:4000", "https://box.example"}}
+	for _, tc := range []struct{ name, peer, host, forwarded, scheme, want string }{
+		{"lan", "192.0.2.1:123", "lan-a:4000", "", "https", "http://lan-a:4000"},
+		{"loopback proxy", "127.0.0.1:123", "localhost:4000", "box.example", "http", "https://box.example"},
+		{"remote cannot forward", "192.0.2.1:123", "lan-a:4000", "box.example", "https", "http://lan-a:4000"},
+		{"unknown host", "192.0.2.1:123", "evil.example", "box.example", "https", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			request := httptest.NewRequest("GET", "http://"+tc.host+"/api/auth/github", nil)
+			request.RemoteAddr = tc.peer
+			request.Header.Set("X-Forwarded-Host", tc.forwarded)
+			request.Header.Set("X-Forwarded-Proto", tc.scheme)
+			PreserveInstallSocketPeer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				// Simulate RealIP changing the displayed client; trust stays on the socket.
+				r.RemoteAddr = "127.0.0.1:999"
+				origin, ok := h.installBrowserOrigin(r)
+				require.Equal(t, tc.want, origin)
+				require.Equal(t, tc.want != "", ok)
+			})).ServeHTTP(httptest.NewRecorder(), request)
+		})
+	}
+}
+
+type setupCookieService struct{}
+
+func (setupCookieService) ExchangeSetupToken(context.Context, string) (string, error) {
+	return "opaque-setup-id", nil
+}
+
+// A session cookie follows server-enforced idle expiry, not a fixed 24h age.
+func TestSetupCookieFollowsEffectiveOriginAndServerIdleExpiry(t *testing.T) {
+	for _, origin := range []string{"http://lan-a:4000", "https://box.example"} {
+		t.Run(origin, func(t *testing.T) {
+			h := &AuthHandler{AuthConfig: config.AuthConfig{Mode: "selfhost"}, AllowedOrigins: []string{origin}, Setup: setupCookieService{}}
+			request := httptest.NewRequest("POST", origin+"/api/install/setup-session", strings.NewReader(`{"token":"one-time"}`))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			h.PostSetupSession(response, request)
+			require.Equal(t, 204, response.Code, response.Body.String())
+			cookies := response.Result().Cookies()
+			require.Len(t, cookies, 1)
+			cookie := cookies[0]
+			require.True(t, cookie.HttpOnly)
+			require.Empty(t, cookie.Domain)
+			require.Equal(t, "/", cookie.Path)
+			require.Equal(t, http.SameSiteLaxMode, cookie.SameSite)
+			require.Equal(t, strings.HasPrefix(origin, "https://"), cookie.Secure)
+			require.Zero(t, cookie.MaxAge)
+			require.True(t, cookie.Expires.IsZero())
+		})
+	}
+}
+
+func TestClearSetupCookieFollowsEffectiveOrigin(t *testing.T) {
+	for _, origin := range []string{"http://lan-a:4000", "https://box.example"} {
+		t.Run(origin, func(t *testing.T) {
+			h := &AuthHandler{AllowedOrigins: []string{origin}}
+			request := httptest.NewRequest("GET", origin+"/api/install", nil)
+			response := httptest.NewRecorder()
+			h.ClearSetupSessionCookie(response, request)
+			cookies := response.Result().Cookies()
+			require.Len(t, cookies, 1)
+			cookie := cookies[0]
+			require.Equal(t, "smithers_setup", cookie.Name)
+			require.Empty(t, cookie.Value)
+			require.Empty(t, cookie.Domain)
+			require.Equal(t, "/", cookie.Path)
+			require.Equal(t, -1, cookie.MaxAge)
+			require.True(t, cookie.HttpOnly)
+			require.Equal(t, http.SameSiteLaxMode, cookie.SameSite)
+			require.Equal(t, strings.HasPrefix(origin, "https://"), cookie.Secure)
+		})
+	}
 }

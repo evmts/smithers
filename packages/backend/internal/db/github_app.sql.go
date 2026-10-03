@@ -19,11 +19,13 @@ SET used_at = NOW()
 WHERE digest = $1
   AND setup_session_digest = $2
   AND origin = $3
-  AND NOT EXISTS (SELECT 1 FROM self_host_owners)
-  AND EXISTS (
-    SELECT 1 FROM install_settings
-    WHERE key = 'setup.session.' || $2::TEXT
-      AND (value->>'expires_at')::TIMESTAMPTZ > NOW()
+  AND (
+    (NOT EXISTS (SELECT 1 FROM self_host_owners o JOIN collaborators c ON c.user_id=o.user_id WHERE c.github_user_id IS NOT NULL)
+      AND EXISTS (SELECT 1 FROM install_settings WHERE key='setup.session.' || $2::TEXT AND updated_at>NOW()-INTERVAL '24 hours'))
+    OR EXISTS (SELECT 1 FROM auth_sessions s JOIN self_host_owners o ON o.user_id=s.user_id
+      JOIN users u ON u.id=o.user_id JOIN collaborators c ON c.user_id=o.user_id
+      WHERE s.session_key=$2 AND s.expires_at>NOW()
+        AND c.github_user_id IS NOT NULL AND c.suspended_at IS NULL AND u.is_active AND u.deleted_at IS NULL)
   )
   AND used_at IS NULL
   AND expires_at > NOW()

@@ -94,6 +94,11 @@ func New(directory string, mode Mode) (*Handler, error) {
 func (h *Handler) Close() error { return h.root.Close() }
 
 func reserved(name string) bool {
+	// Git smart-HTTP also matches owners named assets; never classify its
+	// discovery endpoint as a static asset (C-SEC-04).
+	if strings.HasSuffix(name, "/info/refs") {
+		return true
+	}
 	for _, part := range strings.Split(name, "/") {
 		if strings.HasPrefix(part, ".") || strings.HasSuffix(part, ".git") {
 			return true
@@ -101,7 +106,7 @@ func reserved(name string) bool {
 	}
 	first, _, _ := strings.Cut(name, "/")
 	switch first {
-	case "api", "auth", "git", "healthz", "readyz", "metrics", "ssh":
+	case "internal", "api", "auth", "git", "healthz", "readyz", "metrics", "ssh":
 		return true
 	}
 	return false
@@ -115,21 +120,38 @@ func wantsHTML(r *http.Request) bool {
 	}
 	return false
 }
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+
+// IsSetupPageRequest is the exact public exception to setup-cookie scope.
+// Both paths are served only by the webapp handler, never an API or Git handler.
+func IsSetupPageRequest(r *http.Request) bool {
+	if !IsApplicationRequest(r) {
+		return false
+	}
+	return r.URL.Path == "/setup" || (strings.HasPrefix(r.URL.Path, "/assets/") && fs.ValidPath(strings.TrimPrefix(r.URL.Path, "/")))
+}
+
+// IsApplicationRequest identifies public app pages and assets. Reserved API,
+// authentication, metrics and Git paths never gain authority as app content.
+func IsApplicationRequest(r *http.Request) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	name := strings.TrimPrefix(r.URL.Path, "/")
+	if name == "" {
+		name = "index.html"
+	}
+	name = strings.TrimSuffix(name, "/")
+	return fs.ValidPath(name) && !reserved(name)
+}
+
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if !IsApplicationRequest(r) {
 		http.NotFound(w, r)
 		return
 	}
 	name := strings.TrimPrefix(r.URL.Path, "/")
 	if name == "" {
 		name = "index.html"
-	}
-	// A single terminal slash is valid for an app route. Keep the original
-	// asset path so a file followed by a slash never becomes a file request.
-	routeName := strings.TrimSuffix(name, "/")
-	if !fs.ValidPath(routeName) || reserved(routeName) {
-		http.NotFound(w, r)
-		return
 	}
 	if name == "index.html" {
 		h.serveIndex(w, r)
@@ -148,7 +170,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if !os.IsNotExist(err) || path.Ext(routeName) != "" || !wantsHTML(r) {
+	if !os.IsNotExist(err) || path.Ext(strings.TrimSuffix(name, "/")) != "" || !wantsHTML(r) {
 		http.NotFound(w, r)
 		return
 	}

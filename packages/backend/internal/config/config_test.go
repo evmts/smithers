@@ -1,10 +1,12 @@
 package config
 
 import (
+	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -20,6 +22,7 @@ import (
 var allEnvKeys = []string{
 	"SMITHERS_INSTALL_QUIESCE_ENABLED",
 	"SMITHERS_INSTALL_STATE_DIR",
+	"SMITHERS_GITHUB_APP_REPOSITORY",
 	"SMITHERS_BLOB_BUILD_CACHE_MAX_AGE_DAYS",
 	"SMITHERS_BLOB_BUILD_CACHE_REPO_QUOTA_BYTES",
 	"SMITHERS_AGENT_NEVER_STARTED_TIMEOUT",
@@ -83,7 +86,6 @@ var allEnvKeys = []string{
 	"SMITHERS_SSH_MAX_SESSIONS_PER_CONN",
 	// Auth
 	"SMITHERS_AUTH_MODE",
-	"SMITHERS_AUTH_BOOTSTRAP_TOKEN",
 	"SMITHERS_AUTH_SESSION_DURATION",
 	"SMITHERS_AUTH_SESSION_REFRESH_WINDOW",
 	"SMITHERS_AUTH_SESSION_COOKIE_NAME",
@@ -564,7 +566,6 @@ func TestLoad_AuthConfigDefaultsAndEnvOverrides(t *testing.T) {
 			name: "env overrides",
 			env: map[string]string{
 				"SMITHERS_AUTH_MODE":                   AuthModeMultitenant,
-				"SMITHERS_AUTH_BOOTSTRAP_TOKEN":        "bootstrap-secret",
 				"SMITHERS_AUTH_SESSION_DURATION":       "24h",
 				"SMITHERS_AUTH_SESSION_REFRESH_WINDOW": "6h",
 				"SMITHERS_AUTH_SESSION_COOKIE_NAME":    "smithers_custom",
@@ -578,7 +579,6 @@ func TestLoad_AuthConfigDefaultsAndEnvOverrides(t *testing.T) {
 			},
 			want: AuthConfig{
 				Mode:                 AuthModeMultitenant,
-				BootstrapToken:       "bootstrap-secret",
 				SessionDuration:      "24h",
 				SessionRefreshWindow: "6h",
 				SessionCookieName:    "smithers_custom",
@@ -1852,4 +1852,28 @@ func TestLoad_WorkspaceResourceLimits(t *testing.T) {
 	require.Equal(t, int32(16), cfg.Sandbox.WorkspaceMaxVCPUCount)
 	require.Equal(t, int32(32768), cfg.Sandbox.WorkspaceMaxMemoryMB)
 	require.Equal(t, int32(65536), cfg.Sandbox.WorkspaceMaxDiskMB)
+}
+
+// T-ACC-01 thin-path repository is host configuration, fixed at load.
+func TestGitHubAppRepositoryComesFromHostConfig(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("SMITHERS_GITHUB_APP_REPOSITORY", "acme/widgets")
+	cfg, err := Load("")
+	require.NoError(t, err)
+	t.Setenv("SMITHERS_GITHUB_APP_REPOSITORY", "other/repository")
+	require.Equal(t, "acme/widgets", cfg.Auth.GitHubAppRepository)
+}
+
+func TestBootstrapTokenEnvironmentAndConfigIgnored(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("SMITHERS_AUTH_BOOTSTRAP_TOKEN", "attacker-env-token")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("auth:\n  bootstrap_token: attacker-config-token\n"), 0600))
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	encoded, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "attacker-env-token")
+	require.NotContains(t, string(encoded), "attacker-config-token")
+	require.NotContains(t, string(encoded), "bootstrap_token")
 }

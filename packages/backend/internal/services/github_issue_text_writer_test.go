@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -551,4 +552,30 @@ func TestGitHubPermissionEventsForgetCachedMaintainers(t *testing.T) {
 	stamper.forgetMaintainers("organization", []byte(`{"action":"member_removed","organization":{"login":"Acme"}}`))
 	restored := stampIssueText(t, stamper, "opened", issueTextEvent(t, "opened", issueAuthor))
 	assert.True(t, gitHubIssueEventApproves("issues", "opened", restored, "", nil))
+}
+
+// spec §5.1.2: push-or-higher is admin/maintain/write; role_name must keep
+// maintain distinct from its legacy write permission. Custom roles use their base.
+func TestGitHubRepoPermissionRoleTable(t *testing.T) {
+	for _, tc := range []struct {
+		role, permission, want string
+		push                   bool
+	}{
+		{"admin", "admin", "admin", true}, {"maintain", "write", "maintain", true}, {"write", "write", "write", true},
+		{"triage", "read", "triage", false}, {"read", "read", "read", false}, {"", "none", "none", false},
+		{"custom-write", "write", "write", true}, {"custom-read", "read", "read", false}, {"unknown", "unknown", "none", false},
+	} {
+		t.Run(tc.role+"/"+tc.permission, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, "/repos/acme/widgets/collaborators/own/permission", r.URL.Path)
+				require.Equal(t, "Bearer installation-token", r.Header.Get("Authorization"))
+				_, _ = fmt.Fprintf(w, `{"role_name":%q,"permission":%q}`, tc.role, tc.permission)
+			}))
+			defer server.Close()
+			permission, err := readGitHubRepoPermission(context.Background(), &landingGitHubAPI{client: server.Client(), baseURL: func() string { return server.URL }}, "installation-token", "acme", "widgets", "own")
+			require.NoError(t, err)
+			require.Equal(t, tc.want, string(permission))
+			require.Equal(t, tc.push, permission.CanPush())
+		})
+	}
 }

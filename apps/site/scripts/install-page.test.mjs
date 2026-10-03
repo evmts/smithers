@@ -86,11 +86,12 @@ test("installation keeps the project opening", () => {
 
 })
 
-// Frozen retirement inventory for #3458; installation is the replacement page.
+// Retirement inventory for #3458; T-ACC-01 retains the self-hosting setup guide.
 test("every retired inventory path is absent", () => {
   const retired = JSON.parse(read("apps/site/docs/retired-pages.json"))
-  assert.equal(retired.length, 53)
+  assert.equal(retired.length, 52)
   assert.equal(new Set(retired).size, retired.length)
+  assert.match(read("apps/site/src/content/docs/docs/self-hosting.mdx"), /Setup URL:/)
   for (const path of retired) assert.equal(existsSync(join(root, path)), false, `retired page exists: ${path}`)
 })
 

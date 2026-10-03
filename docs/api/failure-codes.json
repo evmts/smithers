@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "digest": "sha256:3f3599bfe182d7e7525b764f3e91d2acd1414e0c69822023adbb349597e86eef",
+  "digest": "sha256:f62bdeebc698acacf2c2b2f8f707327fc44960917b11f90d16bf20733de84272",
   "faults": [
     "user",
     "wait",
@@ -348,6 +348,13 @@
       "doc": "The sandbox create request named neither an image nor a snapshot."
     },
     {
+      "code": "install_repository_unset",
+      "fault": "user",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "The install has no GitHub repository with the GitHub App installed yet; until setup records one only the owner may sign in."
+    },
+    {
       "code": "internal",
       "fault": "bug",
       "status": 500,
@@ -460,6 +467,13 @@
       "doc": "The share listing contains something that scans as a credential; it was not published."
     },
     {
+      "code": "needs_github_access",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "The person needs push access to the install's repository on GitHub."
+    },
+    {
       "code": "no_capacity",
       "fault": "infra",
       "status": 503,
@@ -472,6 +486,13 @@
       "status": 409,
       "retry_after": 0,
       "doc": "The recorded operation for this idempotency key cannot be replayed."
+    },
+    {
+      "code": "not_a_member",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "The person is not a member of this install."
     },
     {
       "code": "not_found",
@@ -509,11 +530,25 @@
       "doc": "The account's credit balance cannot cover the next model call; upgrade or top up, then retry."
     },
     {
+      "code": "owner_unverified",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "The owner can only run setup until GitHub confirms push access on the install's repository."
+    },
+    {
       "code": "peer_identity_denied",
       "fault": "user",
       "status": 403,
       "retry_after": 0,
       "doc": "The calling peer's mTLS identity is not one this worker accepts."
+    },
+    {
+      "code": "permission",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "A setup credential cannot perform this action."
     },
     {
       "code": "plan_limit_exceeded",
@@ -689,6 +724,13 @@
       "status": 409,
       "retry_after": 0,
       "doc": "The setup request identity was already admitted with different input."
+    },
+    {
+      "code": "setup_token_invalid",
+      "fault": "user",
+      "status": 403,
+      "retry_after": 0,
+      "doc": "Claiming the install needs the one-time setup token printed when it started; the token was missing, wrong or already used."
     },
     {
       "code": "snapshot_in_use",

@@ -11,7 +11,7 @@ import (
 )
 
 const getInstallCapacity = `-- name: GetInstallCapacity :one
-SELECT COALESCE((SELECT user_id FROM self_host_owners WHERE singleton), 0)::bigint AS owner_id,
+SELECT COALESCE((SELECT user_id FROM self_host_owners), 0)::bigint AS owner_id,
        (SELECT value FROM install_settings WHERE key = 'capacity')::jsonb AS capacity
 `
 
@@ -20,6 +20,7 @@ type GetInstallCapacityRow struct {
 	Capacity json.RawMessage `json:"capacity"`
 }
 
+// spec §3 / T-ACC-01: self_host_owners owns install identity; actors retain users.id.
 func (q *Queries) GetInstallCapacity(ctx context.Context) (GetInstallCapacityRow, error) {
 	row := q.db.QueryRow(ctx, getInstallCapacity)
 	var i GetInstallCapacityRow
@@ -30,7 +31,7 @@ func (q *Queries) GetInstallCapacity(ctx context.Context) (GetInstallCapacityRow
 const setInstallCapacity = `-- name: SetInstallCapacity :execrows
 INSERT INTO install_settings (key, value, updated_by)
 SELECT 'capacity', $1::jsonb, user_id
-FROM self_host_owners WHERE singleton AND user_id = $2::bigint
+FROM self_host_owners WHERE user_id = $2::bigint
 ON CONFLICT (key) DO UPDATE
 SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = NOW()
 `

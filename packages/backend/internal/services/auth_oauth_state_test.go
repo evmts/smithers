@@ -36,7 +36,7 @@ func TestAuthService_StartGitHubOAuth_PersistsState(t *testing.T) {
 	svc.now = func() time.Time { return now }
 	svc.generateState = func() string { return "persisted-state" }
 
-	redirectURL, err := svc.StartGitHubOAuth(context.Background(), stateVerifier)
+	redirectURL, err := svc.StartGitHubOAuth(context.Background(), stateVerifier, "")
 	require.NoError(t, err)
 	require.True(t, createCalled, "expected oauth state to be persisted")
 	assert.Equal(t, "persisted-state", createdArg.State)
@@ -58,7 +58,7 @@ func TestAuthService_StartGitHubOAuth_PersistStateError(t *testing.T) {
 	}, defaultAuthConfig(), mockKeyAuthVerifier{}, mockGitHubClient{})
 	svc.generateState = func() string { return "persisted-state" }
 
-	_, err := svc.StartGitHubOAuth(context.Background(), "browser-verifier")
+	_, err := svc.StartGitHubOAuth(context.Background(), "browser-verifier", "")
 	require.Error(t, err)
 	apiErr, ok := err.(*errors.APIError)
 	require.True(t, ok)
@@ -75,7 +75,7 @@ func TestAuthService_StartGitHubOAuth_EmptyVerifierRejected(t *testing.T) {
 		},
 	}, defaultAuthConfig(), mockKeyAuthVerifier{}, mockGitHubClient{})
 
-	_, err := svc.StartGitHubOAuth(context.Background(), "")
+	_, err := svc.StartGitHubOAuth(context.Background(), "", "")
 	require.Error(t, err)
 	apiErr, ok := err.(*errors.APIError)
 	require.True(t, ok)
@@ -94,7 +94,7 @@ func TestAuthService_StartGitHubOAuth_UnconfiguredGitHubRejected(t *testing.T) {
 		GitHubRedirectURL: "http://localhost:4000/api/auth/github/callback",
 	}, mockKeyAuthVerifier{}, nil)
 
-	_, err := svc.StartGitHubOAuth(context.Background(), "browser-verifier")
+	_, err := svc.StartGitHubOAuth(context.Background(), "browser-verifier", "")
 	require.Error(t, err)
 	apiErr, ok := err.(*errors.APIError)
 	require.True(t, ok)
@@ -152,7 +152,7 @@ func TestAuthService_CompleteGitHubOAuth_InvalidStateRejected(t *testing.T) {
 				},
 			})
 
-			_, err := svc.CompleteGitHubOAuth(context.Background(), "code", tc.state, tc.verifier)
+			_, err := svc.CompleteGitHubOAuth(context.Background(), "code", tc.state, tc.verifier, "")
 			require.Error(t, err)
 			apiErr, ok := err.(*errors.APIError)
 			require.True(t, ok)
@@ -184,7 +184,7 @@ func TestAuthService_CompleteGitHubOAuth_EmptyCodeRejected(t *testing.T) {
 		},
 	})
 
-	_, err := svc.CompleteGitHubOAuth(context.Background(), "", "issued-state", "browser-verifier")
+	_, err := svc.CompleteGitHubOAuth(context.Background(), "", "issued-state", "browser-verifier", "")
 	require.Error(t, err)
 	apiErr, ok := err.(*errors.APIError)
 	require.True(t, ok)
@@ -214,7 +214,7 @@ func TestAuthService_CompleteGitHubOAuth_ConsumeStateDBError(t *testing.T) {
 		},
 	})
 
-	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "issued-state", "browser-verifier")
+	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "issued-state", "browser-verifier", "")
 	require.Error(t, err)
 	apiErr, ok := err.(*errors.APIError)
 	require.True(t, ok)
@@ -236,7 +236,7 @@ func TestAuthService_StartGitHubOAuth_CredentialFailureDoesNotPersistState(t *te
 				persisted = true
 				return db.OauthState{}, nil
 			}}, defaultAuthConfig(), nil, mockGitHubClient{authorizationErr: tc.err})
-			value, err := service.StartGitHubOAuth(context.Background(), "bound-verifier")
+			value, err := service.StartGitHubOAuth(context.Background(), "bound-verifier", "")
 			require.Error(t, err)
 			require.Empty(t, value)
 			require.False(t, persisted)
@@ -250,7 +250,7 @@ func TestAuthService_StartGitHubOAuth_LoadsCredentialsBeforePersistingState(t *t
 		require.Equal(t, arg.State, stateSeen, "credential resolution must precede persisting OAuth state")
 		return db.OauthState{}, nil
 	}}, defaultAuthConfig(), nil, mockGitHubClient{authorizationSeen: &stateSeen})
-	value, err := service.StartGitHubOAuth(context.Background(), "bound-verifier")
+	value, err := service.StartGitHubOAuth(context.Background(), "bound-verifier", "")
 	require.NoError(t, err)
 	require.Contains(t, value, stateSeen)
 }

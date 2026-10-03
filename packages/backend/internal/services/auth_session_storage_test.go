@@ -102,7 +102,7 @@ func TestAuthService_CompleteGitHubOAuth_StoresSessionKeyHashedAtRest(t *testing
 		},
 	})
 
-	result, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier")
+	result, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier", "")
 	require.NoError(t, err)
 	require.NotEmpty(t, result.SessionKey)
 	assert.NotEqual(t, result.SessionKey, stored.SessionKey,

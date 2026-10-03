@@ -454,6 +454,7 @@ export type ErrorDetail = {
 
 export type Error = {
   code?: string
+  class?: string
   fault?: string
   plan_key?: string
   limit_kind?: "concurrent_sandboxes" | "sandbox_hours_per_day" | "agent_runs" | "repositories" | "organizations"
@@ -1005,9 +1006,13 @@ export const getApiAuthAuth0Callback = (transport: Transport): Promise<GetApiAut
 
 export type GetApiAuthGithubResponse = AnyJSON
 
+export interface GetApiAuthGithubInput {
+  readonly query?: { readonly return_to?: string }
+}
+
 /** GET /api/auth/github */
-export const getApiAuthGithub = (transport: Transport): Promise<GetApiAuthGithubResponse> =>
-  transport.request("GET", `/api/auth/github`) as Promise<GetApiAuthGithubResponse>
+export const getApiAuthGithub = (transport: Transport, input?: GetApiAuthGithubInput): Promise<GetApiAuthGithubResponse> =>
+  transport.request("GET", `/api/auth/github${search({ return_to: input?.query?.return_to })}`) as Promise<GetApiAuthGithubResponse>
 
 export type GetApiAuthGithubCallbackResponse = AnyJSON
 
@@ -1063,59 +1068,17 @@ export type PostApiAuthSseTicketResponse = MultiSSETicketResponse
 export const postApiAuthSseTicket = (transport: Transport): Promise<PostApiAuthSseTicketResponse> =>
   transport.request("POST", `/api/auth/sse-ticket`) as Promise<PostApiAuthSseTicketResponse>
 
-export type GetApiAuthLocalStatusResponse = AnyJSON
-
-/** GET /api/auth/local/status */
-export const getApiAuthLocalStatus = (transport: Transport): Promise<GetApiAuthLocalStatusResponse> =>
-  transport.request("GET", `/api/auth/local/status`) as Promise<GetApiAuthLocalStatusResponse>
-
-export type PostApiAuthLocalBootstrapBody = AnyJSON
-
-export type PostApiAuthLocalBootstrapResponse = AnyJSON
-
-export interface PostApiAuthLocalBootstrapInput {
-  readonly body?: PostApiAuthLocalBootstrapBody
+export type PostApiInstallSetupSessionBody = {
+  token: string
 }
 
-/** POST /api/auth/local/bootstrap */
-export const postApiAuthLocalBootstrap = (transport: Transport, input?: PostApiAuthLocalBootstrapInput): Promise<PostApiAuthLocalBootstrapResponse> =>
-  transport.request("POST", `/api/auth/local/bootstrap`, input?.body) as Promise<PostApiAuthLocalBootstrapResponse>
-
-export type PostApiAuthLocalLoginBody = AnyJSON
-
-export type PostApiAuthLocalLoginResponse = AnyJSON
-
-export interface PostApiAuthLocalLoginInput {
-  readonly body?: PostApiAuthLocalLoginBody
+export interface PostApiInstallSetupSessionInput {
+  readonly body: PostApiInstallSetupSessionBody
 }
 
-/** POST /api/auth/local/login */
-export const postApiAuthLocalLogin = (transport: Transport, input?: PostApiAuthLocalLoginInput): Promise<PostApiAuthLocalLoginResponse> =>
-  transport.request("POST", `/api/auth/local/login`, input?.body) as Promise<PostApiAuthLocalLoginResponse>
-
-export type PostApiAuthLocalPasswordBody = AnyJSON
-
-export type PostApiAuthLocalPasswordResponse = AnyJSON
-
-export interface PostApiAuthLocalPasswordInput {
-  readonly body?: PostApiAuthLocalPasswordBody
-}
-
-/** POST /api/auth/local/password */
-export const postApiAuthLocalPassword = (transport: Transport, input?: PostApiAuthLocalPasswordInput): Promise<PostApiAuthLocalPasswordResponse> =>
-  transport.request("POST", `/api/auth/local/password`, input?.body) as Promise<PostApiAuthLocalPasswordResponse>
-
-export type PostApiAuthLocalTokenBody = AnyJSON
-
-export type PostApiAuthLocalTokenResponse = AnyJSON
-
-export interface PostApiAuthLocalTokenInput {
-  readonly body?: PostApiAuthLocalTokenBody
-}
-
-/** POST /api/auth/local/token */
-export const postApiAuthLocalToken = (transport: Transport, input?: PostApiAuthLocalTokenInput): Promise<PostApiAuthLocalTokenResponse> =>
-  transport.request("POST", `/api/auth/local/token`, input?.body) as Promise<PostApiAuthLocalTokenResponse>
+/** POST /api/install/setup-session: Open a setup session */
+export const postApiInstallSetupSession = (transport: Transport, input: PostApiInstallSetupSessionInput): Promise<void> =>
+  transport.request("POST", `/api/install/setup-session`, input.body).then(() => undefined)
 
 export type GetApiBillingResponse = MultiBillingOverview
 

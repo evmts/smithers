@@ -128,6 +128,9 @@ type gitHubAppSetupSession struct {
 func WithGitHubAppSetupSession(ctx context.Context, session, origin string) context.Context {
 	return context.WithValue(ctx, gitHubAppSetupSessionKey{}, gitHubAppSetupSession{digest: GitHubAppStateDigest(session), origin: origin})
 }
+func WithGitHubAppOwnerSession(ctx context.Context, digest, origin string) context.Context {
+	return context.WithValue(ctx, gitHubAppSetupSessionKey{}, gitHubAppSetupSession{digest: digest, origin: origin})
+}
 func GitHubAppStateDigest(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])

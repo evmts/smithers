@@ -58,7 +58,7 @@ func newPATGrantEnv(t *testing.T) *patGrantEnv {
 	})
 	require.NoError(t, err)
 
-	h := &OAuth2Handler{Service: services.NewOAuth2ServiceWithPool(q, pool)}
+	h := &OAuth2Handler{Service: services.NewOAuth2ServiceWithPool(q, pool, nil)}
 	r := chi.NewRouter()
 	r.Use(middleware.AuthLoader(q, config.AuthConfig{}))
 	r.Post("/api/oauth2/token", h.PostToken)

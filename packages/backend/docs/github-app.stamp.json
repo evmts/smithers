@@ -3,13 +3,13 @@
   "producer": null,
   "output": {
     "path": "packages/backend/docs/github-app.md",
-    "digest": "7d05c0708281fe0da11c253f75fc2673cf455fd63572dcc988c593ec55cae92b"
+    "digest": "3c12cd0ad919ee605b384cabf698c78e0c3d7b657a6a025a105fa4547a264ffb"
   },
-  "closure": "d4ee09647567d41882e7be5aea7f9d9a7507b5d45fa40fb9ba85fa6467cb1c51",
+  "closure": "7a79431f22f24b3554da70bf19e2e27d1c4cdb489ea6100cfc3bb3a2532c1540",
   "inputs": [
     {
       "path": "docs/api/openapi/install.yaml",
-      "digest": "e50a70450882a813ad0b7d0da8d29ad5bd9e4be95aa515e2f01c263b68f39bd8"
+      "digest": "3b785bf9fbbb8b435f2582d864e049bfbf766e8a2ecbe014ff32e768a9fa6e2c"
     },
     {
       "path": "packages/backend/db/product/migrations/0105_github_app.sql",
@@ -17,7 +17,7 @@
     },
     {
       "path": "packages/backend/db/product/queries/github_app.sql",
-      "digest": "c7028c1f6b8954e391c26202ceeace5ffb8614d63dabfe34f41602de9848c85a"
+      "digest": "ab7f3990d803d34aa77f9dbb3d4db4efd1acbdf9f81921f830bd4cbafd969fb2"
     },
     {
       "path": "packages/backend/internal/middleware/effective_origin.go",
@@ -25,7 +25,7 @@
     },
     {
       "path": "packages/backend/internal/routes/github_app_setup.go",
-      "digest": "69869908a32dc0d6230dd33579aad3cc701e6e843ff8ddc3dd93ef05ccde4a5c"
+      "digest": "20fde32f4a782f34f7916ed57108e0979a0a2ffda481b9dd8d8d16224d79d046"
     },
     {
       "path": "packages/backend/internal/services/github_app_credentials.go",
@@ -33,11 +33,11 @@
     },
     {
       "path": "packages/backend/internal/services/github_app_manifest.go",
-      "digest": "8bf5f05d9b6e8de24cf3a364f6683a87cadc4b2b1dbbe0222bfb766958524180"
+      "digest": "682e35b77a3662cc4e0cc5056fa228fb833f25da4ba139d7da9b77815864076f"
     },
     {
       "path": "packages/backend/internal/services/install_setup_session.go",
-      "digest": "600dd92a5e74ce8ec6344b67f29f28bc35e534298488ed428aac8a362f254fd3"
+      "digest": "ad17e855f783855f4e646eec286a08efb4fde5e1720206d94aa74059e14081de"
     }
   ]
 }

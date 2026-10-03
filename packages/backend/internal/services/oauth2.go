@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/identity"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
@@ -88,9 +89,10 @@ type OAuth2AuthorizeResult struct {
 
 // OAuth2Service handles OAuth2 provider operations.
 type OAuth2Service struct {
-	queries     OAuth2Querier
-	revocations revocation.Publisher
-	now         func() time.Time
+	memberAuthorizer identity.MemberAuthorizer
+	queries          OAuth2Querier
+	revocations      revocation.Publisher
+	now              func() time.Time
 	// inTx runs fn in one transaction and commits only when fn returns nil.
 	// Nil runs fn directly on queries (unit tests without a pool).
 	inTx func(ctx context.Context, fn func(q OAuth2Querier) error) error
@@ -108,8 +110,9 @@ func NewOAuth2Service(q OAuth2Querier) *OAuth2Service {
 // redemptions (authorization code, refresh token) consume the grant and write
 // the new token pair in one transaction, so a failed insert never spends the
 // grant.
-func NewOAuth2ServiceWithPool(q OAuth2Querier, pool *pgxpool.Pool) *OAuth2Service {
+func NewOAuth2ServiceWithPool(q OAuth2Querier, pool *pgxpool.Pool, authorizer identity.MemberAuthorizer) *OAuth2Service {
 	s := NewOAuth2Service(q)
+	s.memberAuthorizer = authorizer
 	if pool == nil {
 		return s
 	}
@@ -654,6 +657,11 @@ func (s *OAuth2Service) RevokeAllByAppAndUser(ctx context.Context, appID, userID
 
 // issueTokenPair creates a new access token and refresh token pair.
 func (s *OAuth2Service) issueTokenPair(ctx context.Context, q OAuth2Querier, appID, userID int64, scopes []string, source grantSource) (OAuth2TokenResponse, error) {
+	if s.memberAuthorizer != nil {
+		if err := s.memberAuthorizer.AuthorizeMember(identity.WithoutSetupRequest(ctx), userID); err != nil {
+			return OAuth2TokenResponse{}, err
+		}
+	}
 	now := s.now()
 	accessExpiry, refreshExpiry := now.Add(oauth2AccessTokenTTL), now.Add(oauth2RefreshTokenTTL)
 	if source.ExpiresAt.Valid {

@@ -61,7 +61,13 @@ paths:
       operationId: get_api_auth_github
       tags:
         - Authentication
-      parameters: []
+      parameters:
+        - name: return_to
+          in: query
+          required: false
+          description: Local path to open after sign-in.
+          schema:
+            type: string
       x-smithers-client-contract: multi-v1
       responses:
         '200':
@@ -422,170 +428,36 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/auth/local/status:
-    get:
-      summary: GET /api/auth/local/status
-      operationId: get_api_auth_local_status
-      tags:
-        - Authentication
-      parameters: []
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AnyJSON'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-        '429':
-          $ref: '#/components/responses/RateLimited'
-        '500':
-          $ref: '#/components/responses/InternalError'
-  /api/auth/local/bootstrap:
+  /api/install/setup-session:
     post:
-      summary: POST /api/auth/local/bootstrap
-      operationId: post_api_auth_local_bootstrap
+      summary: Open a setup session
+      description: Trades the one-time setup token from the setup URL printed when the install started for a setup session, set as the HttpOnly `smithers_setup` cookie. Any number of setup sessions may exist until the owner claims the install; each expires after 24 hours without a request. A setup session reaches only setup and the GitHub sign-in that claims the install.
+      operationId: post_api_install_setup_session
       tags:
         - Authentication
       parameters: []
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AnyJSON'
+              type: object
+              required:
+                - token
+              properties:
+                token:
+                  type: string
+                  description: The token from the printed setup URL.
+              additionalProperties: false
       responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AnyJSON'
+        '204':
+          description: The setup session is open; its cookie is set.
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-        '429':
-          $ref: '#/components/responses/RateLimited'
-        '500':
-          $ref: '#/components/responses/InternalError'
-  /api/auth/local/login:
-    post:
-      summary: POST /api/auth/local/login
-      operationId: post_api_auth_local_login
-      tags:
-        - Authentication
-      parameters: []
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AnyJSON'
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AnyJSON'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-        '429':
-          $ref: '#/components/responses/RateLimited'
-        '500':
-          $ref: '#/components/responses/InternalError'
-  /api/auth/local/password:
-    post:
-      summary: POST /api/auth/local/password
-      operationId: post_api_auth_local_password
-      tags:
-        - Authentication
-      parameters: []
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AnyJSON'
-      security:
-        - tokenAuth: []
-        - bearerAuth: []
-        - sessionCookie: []
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AnyJSON'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '422':
-          $ref: '#/components/responses/ValidationError'
-        '429':
-          $ref: '#/components/responses/RateLimited'
-        '500':
-          $ref: '#/components/responses/InternalError'
-  /api/auth/local/token:
-    post:
-      summary: POST /api/auth/local/token
-      operationId: post_api_auth_local_token
-      tags:
-        - Authentication
-      parameters: []
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AnyJSON'
-      responses:
-        '200':
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AnyJSON'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '422':
-          $ref: '#/components/responses/ValidationError'
         '429':
           $ref: '#/components/responses/RateLimited'
         '500':

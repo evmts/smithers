@@ -7,6 +7,7 @@
 ## Start here
 
 - [Pricing](https://smithers.sh/docs/pricing/): Free and Pro plans. Smithers runs the models; model usage draws on your account credit.
+- [Self-host Smithers](https://smithers.sh/docs/self-hosting/): Run the Smithers app and backend on your own machine: one container, an external PostgreSQL 18, and one data volume.
 - [Install Smithers](https://smithers.sh/docs/installation/): Install on your Mac and open the setup link.
 - [CLI quickstart](https://smithers.sh/docs/cli-quickstart/): Install the CLI, scaffold a flow, choose its model, and run it in your project.
 
@@ -157,6 +158,7 @@
 - [smthrs git-hooks](https://smithers.sh/docs/reference/cli/git-hooks/): Check the WORKSPACE.ts gitHooks scripts against .git/hooks, or install them with --write
 - [smthrs graph](https://smithers.sh/docs/reference/cli/graph/): Print the target graph without executing it
 - [smthrs history](https://smithers.sh/docs/reference/cli/history/): Follow each issue's lane, checks and pull request
+- [smthrs host](https://smithers.sh/docs/reference/cli/host/): Inspect this installation’s host
 - [smthrs index](https://smithers.sh/docs/reference/cli/index-command/): List every target a pattern selects as its declaration states it: rule, kinds, inputs, outputs, dependencies, and the declaring file
 - [smthrs info](https://smithers.sh/docs/reference/cli/info/): Report workspace and host configuration for diagnosis
 - [smthrs init](https://smithers.sh/docs/reference/cli/init/): Initialize target declarations and a starter durable flow while preserving existing files.

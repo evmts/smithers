@@ -82,6 +82,11 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
     reason: "Mode-matrix credential kind, declared by the matrix fixture contract, not a card kind."
   },
   {
+    literal: "postmaster.pid",
+    file: "scripts/mode-matrix/local-own.ts",
+    reason: "PostgreSQL's own postmaster file, read for the native database port the owner seed connects to."
+  },
+  {
     literal: "browser-profile",
     file: "scripts/run-mode-matrix.ts",
     reason: "Mode-matrix credential kind, declared by the matrix fixture contract, not a card kind."

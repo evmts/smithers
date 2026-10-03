@@ -15,11 +15,11 @@ import (
 const addCollaborator = `-- name: AddCollaborator :one
 INSERT INTO collaborators (repository_id, user_id, permission)
 VALUES ($1, $2, $3)
-RETURNING id, repository_id, user_id, permission, created_at
+RETURNING id, repository_id, user_id, permission, created_at, github_user_id, unix_uid, suspended_at
 `
 
 type AddCollaboratorParams struct {
-	RepositoryID int64       `json:"repository_id"`
+	RepositoryID pgtype.Int8 `json:"repository_id"`
 	UserID       pgtype.Int8 `json:"user_id"`
 	Permission   string      `json:"permission"`
 }
@@ -33,6 +33,9 @@ func (q *Queries) AddCollaborator(ctx context.Context, arg AddCollaboratorParams
 		&i.UserID,
 		&i.Permission,
 		&i.CreatedAt,
+		&i.GithubUserID,
+		&i.UnixUid,
+		&i.SuspendedAt,
 	)
 	return i, err
 }
@@ -421,7 +424,7 @@ func (q *Queries) CreateRepo(ctx context.Context, arg CreateRepoParams) (Reposit
 
 const deleteCollaboratorsByRepo = `-- name: DeleteCollaboratorsByRepo :exec
 DELETE FROM collaborators
-WHERE repository_id = $1
+WHERE repository_id = $1::BIGINT
 `
 
 func (q *Queries) DeleteCollaboratorsByRepo(ctx context.Context, repositoryID int64) error {
@@ -450,7 +453,7 @@ func (q *Queries) DeleteTeamReposByRepo(ctx context.Context, repositoryID int64)
 
 const getCollaboratorPermissionForRepoUser = `-- name: GetCollaboratorPermissionForRepoUser :one
 SELECT COALESCE(
-    (SELECT permission FROM collaborators WHERE repository_id = $1 AND user_id = $2),
+    (SELECT permission FROM collaborators WHERE repository_id = $1::BIGINT AND user_id = $2),
     ''
 )::text AS permission
 `
@@ -833,9 +836,9 @@ func (q *Queries) ListAllRepos(ctx context.Context, arg ListAllReposParams) ([]R
 }
 
 const listCollaboratorsByRepo = `-- name: ListCollaboratorsByRepo :many
-SELECT id, repository_id, user_id, permission, created_at
+SELECT id, repository_id, user_id, permission, created_at, github_user_id, unix_uid, suspended_at
 FROM collaborators
-WHERE repository_id = $1
+WHERE repository_id = $1::BIGINT
   AND user_id IS NOT NULL
 ORDER BY id ASC
 `
@@ -857,6 +860,9 @@ func (q *Queries) ListCollaboratorsByRepo(ctx context.Context, repositoryID int6
 			&i.UserID,
 			&i.Permission,
 			&i.CreatedAt,
+			&i.GithubUserID,
+			&i.UnixUid,
+			&i.SuspendedAt,
 		); err != nil {
 			return nil, err
 		}

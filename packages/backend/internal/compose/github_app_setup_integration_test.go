@@ -16,12 +16,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/smithersai/smithers/packages/backend/internal/identity"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/config"
@@ -44,7 +47,7 @@ func githubAppSetupComposeRouter(cfg *config.Config, pool *pgxpool.Pool, h *rout
 	}
 	return buildRouterCompat(
 		cfg, db.New(pool), pool,
-		&routes.RepoHandler{}, &routes.AuthHandler{}, &routes.UserHandler{}, &routes.SSHKeyHandler{}, &routes.LabelHandler{},
+		&routes.RepoHandler{}, &routes.AuthHandler{AuthConfig: cfg.Auth, AllowedOrigins: cfg.Server.AllowedOrigins, Setup: services.NewMemberService(pool, nil)}, &routes.UserHandler{}, &routes.SSHKeyHandler{}, &routes.LabelHandler{},
 		&routes.OrgHandler{}, &routes.LandingHandler{}, &routes.SearchHandler{Service: &mockRouterSearchService{}}, &routes.IssueHandler{},
 		nil, &routes.GitSmartHandler{Service: &mockRouterGitService{}},
 		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
@@ -73,7 +76,10 @@ func TestGitHubAppSetupAuthorityOnEveryListenerPostgres(t *testing.T) {
 	network := httptest.NewUnstartedServer(nil)
 	origins := []string{"http://" + local.Listener.Addr().String(), "https://" + network.Listener.Addr().String()}
 	store := services.NewGitHubAppCredentialStore(pool, codec)
-	sessions := &services.InstallSetupSessions{Pool: pool, TokenDigest: sha256.Sum256([]byte("setup-token"))}
+	setupToken := "setup-token"
+	tokenDigest := sha256.Sum256([]byte("setup-token"))
+	require.NoError(t, q.PutInstallSetting(ctx, db.PutInstallSettingParams{Key: "setup_token", Value: []byte(`{"digest":"` + hex.EncodeToString(tokenDigest[:]) + `"}`)}))
+	sessions := &services.InstallSetupSessions{Pool: pool}
 	h := &routes.GitHubAppSetupHandler{Service: services.NewGitHubAppManifestService(pool, store, fake.URL, origins), Store: store, Owners: q, Sessions: sessions, AllowedOrigins: origins}
 	cfg := testConfigAllFlagsOn()
 	cfg.Auth.Mode = "selfhost"
@@ -95,7 +101,9 @@ func TestGitHubAppSetupAuthorityOnEveryListenerPostgres(t *testing.T) {
 	request := func(server *httptest.Server, method, path string, cookies []*http.Cookie, origin bool) (int, []byte, []*http.Cookie) {
 		t.Helper()
 		var body io.Reader
-		if method == "POST" {
+		if path == "/api/install/setup-session" {
+			body = strings.NewReader(`{"token":"` + setupToken + `"}`)
+		} else if method == "POST" {
 			body = strings.NewReader(`{"owner_login":"acme","owner_kind":"org","repository":"app"}`)
 		}
 		req, err := http.NewRequest(method, server.URL+path, body)
@@ -121,6 +129,10 @@ func TestGitHubAppSetupAuthorityOnEveryListenerPostgres(t *testing.T) {
 	var live []*http.Cookie
 	var attempt services.GitHubAppManifestStart
 	for i, server := range []*httptest.Server{local, network} {
+		if i > 0 {
+			setupToken, err = services.MintSetupToken(ctx, q)
+			require.NoError(t, err)
+		}
 		for _, path := range []string{"/api/install", "/api/install/setup/app_manifest"} {
 			method := "GET"
 			if strings.Contains(path, "setup") {
@@ -129,13 +141,14 @@ func TestGitHubAppSetupAuthorityOnEveryListenerPostgres(t *testing.T) {
 			status, _, _ := request(server, method, path, nil, true)
 			require.Equal(t, 401, status)
 		}
-		status, _, cookies := request(server, "GET", "/setup?token=setup-token", nil, false)
-		require.Equal(t, 303, status)
-		require.Len(t, cookies, 2)
+		status, _, cookies := request(server, "POST", "/api/install/setup-session", nil, false)
+		require.Equal(t, 204, status)
+		require.Len(t, cookies, 1)
 		require.Equal(t, "/", cookies[0].Path)
 		require.Equal(t, http.SameSiteLaxMode, cookies[0].SameSite)
 		require.Equal(t, i == 1, cookies[0].Secure)
-		status, _, _ = request(server, "GET", "/api/install", cookies, false)
+		status, _, csrfCookies := request(server, "GET", "/api/install", cookies, false)
+		cookies = append(cookies, csrfCookies...)
 		require.Equal(t, 200, status)
 		status, body, stateCookies := request(server, "POST", "/api/install/setup/app_manifest", cookies, true)
 		if i == 0 {
@@ -146,19 +159,19 @@ func TestGitHubAppSetupAuthorityOnEveryListenerPostgres(t *testing.T) {
 			require.Equal(t, 409, status, string(body))
 		}
 		status, _, _ = request(server, "POST", "/api/install/setup/github_app", cookies, true)
-		require.Equal(t, 404, status)
+		require.Equal(t, 403, status) // spec §5.1.0: live setup denies non-allowlisted routes
 	}
 	require.Empty(t, fake.Writes())
 	// Durable session deletion, expiration and claim fence refuse before exchange.
 	callback := "/setup/github/callback?code=manifest-code&state=" + attempt.State
 	session := live[0].Value
 	sessionKey := "setup.session." + services.GitHubAppStateDigest(session)
-	_, err = pool.Exec(ctx, `UPDATE install_settings SET value='{"expires_at":"2000-01-01T00:00:00Z"}' WHERE key=$1`, sessionKey)
+	_, err = pool.Exec(ctx, `UPDATE install_settings SET updated_at='2000-01-01T00:00:00Z' WHERE key=$1`, sessionKey)
 	require.NoError(t, err)
 	status, _, _ := request(local, "GET", callback, live, false)
 	require.Equal(t, 401, status)
 	require.Empty(t, fake.Writes())
-	_, err = pool.Exec(ctx, `UPDATE install_settings SET value=jsonb_build_object('expires_at',now()+interval '24 hours') WHERE key=$1`, sessionKey)
+	_, err = pool.Exec(ctx, `UPDATE install_settings SET updated_at=now() WHERE key=$1`, sessionKey)
 	require.NoError(t, err)
 	// A session deleted by the shared claim lifecycle cannot be revived by its cookie.
 	_, err = pool.Exec(ctx, `DELETE FROM install_settings WHERE key=$1`, sessionKey)
@@ -199,7 +212,7 @@ func TestGitHubAppSetupAuthorityOnEveryListenerPostgres(t *testing.T) {
 	require.EqualValues(t, 91, loaded.InstallationID)
 	owner, err := q.CreateUser(ctx, db.CreateUserParams{Username: "setup-owner", LowerUsername: "setup-owner"})
 	require.NoError(t, err)
-	_, err = pool.Exec(ctx, `INSERT INTO self_host_owners(singleton,user_id) VALUES(TRUE,$1)`, owner.ID)
+	_, err = pool.Exec(ctx, `WITH o AS (INSERT INTO self_host_owners(user_id) VALUES($1)) INSERT INTO collaborators(user_id,github_user_id,permission) VALUES($1,$1,'admin')`, owner.ID)
 	require.NoError(t, err)
 	status, _, _ = request(local, "GET", callback, live, false)
 	require.Equal(t, 401, status)
@@ -261,11 +274,12 @@ func TestGitHubAppLegacyEnvironmentIgnoredByCompositionPostgres(t *testing.T) {
 	require.NotContains(t, authorizationURL, "legacy")
 	owner, err := q.CreateUser(ctx, db.CreateUserParams{Username: "stored-app-owner", LowerUsername: "stored-app-owner"})
 	require.NoError(t, err)
-	_, err = pool.Exec(ctx, `INSERT INTO self_host_owners(singleton,user_id) VALUES(TRUE,$1)`, owner.ID)
+	_, err = pool.Exec(ctx, `WITH o AS (INSERT INTO self_host_owners(user_id) VALUES($1)) INSERT INTO collaborators(user_id,github_user_id,permission) VALUES($1,$1,'admin')`, owner.ID)
 	require.NoError(t, err)
-	persistedOwner, err := q.GetSelfHostOwner(ctx)
+	persistedOwner, err := q.GetInstallOwnerUser(ctx)
 	require.NoError(t, err)
 	require.Equal(t, owner.ID, persistedOwner.ID)
+	require.NoError(t, q.MarkMemberAccessChecked(ctx, func() int64 { m, e := q.GetInstallOwner(ctx); require.NoError(t, e); return m.ID }()))
 	const session = "stored-app-owner-browser-session"
 	sessionHash := sha256.Sum256([]byte(session))
 	_, err = q.CreateAuthSession(ctx, db.CreateAuthSessionParams{SessionKey: hex.EncodeToString(sessionHash[:]), UserID: owner.ID, Username: owner.Username, ExpiresAt: time.Now().Add(time.Hour)})
@@ -353,4 +367,197 @@ func TestGitHubAppSetupOriginUsesSocketPeerThroughRouterPostgres(t *testing.T) {
 	router.ServeHTTP(w, r)
 	require.Equal(t, http.StatusMisdirectedRequest, w.Code)
 	require.Contains(t, w.Body.String(), "unknown_origin")
+}
+
+// Spec §5.1.0 / upgrade recovery: an owner without a linked GitHub ID is
+// unclaimed and may use the setup session to configure the App before sign-in.
+func TestUnlinkedUpgradedOwnerCanUseAppSetupSession(t *testing.T) {
+	pool, _ := postgresfixture.NewProductDatabase(t)
+	ctx := context.Background()
+	q := db.New(pool)
+	owner, err := q.CreateUser(ctx, db.CreateUserParams{Username: "password-owner", LowerUsername: "password-owner"})
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `WITH o AS (INSERT INTO self_host_owners(user_id) VALUES($1)) INSERT INTO collaborators(user_id,permission) VALUES($1,'admin')`, owner.ID)
+	require.NoError(t, err)
+	token, err := services.MintSetupToken(ctx, q)
+	require.NoError(t, err)
+	codec, err := webhook.NewSecretCodec("unlinked-owner-app-setup-key")
+	require.NoError(t, err)
+	server := httptest.NewUnstartedServer(nil)
+	origin := "http://" + server.Listener.Addr().String()
+	cfg := testConfigAllFlagsOn()
+	cfg.Auth.Mode = "selfhost"
+	cfg.Server.PublicURL = origin
+	cfg.Server.AllowedOrigins = []string{origin}
+	handler := &routes.GitHubAppSetupHandler{Owners: q, Sessions: &services.InstallSetupSessions{Pool: pool}, Store: services.NewGitHubAppCredentialStore(pool, codec), AllowedOrigins: []string{origin}}
+	server.Config.Handler = githubAppSetupComposeRouter(cfg, pool, handler)
+	server.Start()
+	t.Cleanup(server.Close)
+	request, err := http.NewRequest(http.MethodPost, origin+"/api/install/setup-session", strings.NewReader(`{"token":"`+token+`"}`))
+	require.NoError(t, err)
+	request.Header.Set("Content-Type", "application/json")
+	response, err := server.Client().Do(request)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNoContent, response.StatusCode)
+	cookies := response.Cookies()
+	response.Body.Close()
+	require.Len(t, cookies, 1)
+	request, err = http.NewRequest(http.MethodGet, origin+"/api/install", nil)
+	require.NoError(t, err)
+	request.AddCookie(cookies[0])
+	response, err = server.Client().Do(request)
+	require.NoError(t, err)
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, response.StatusCode, string(body))
+	require.Contains(t, string(body), `"configured":false`)
+	ownerMember, err := q.GetInstallOwner(ctx)
+	require.NoError(t, err)
+	require.Equal(t, owner.ID, ownerMember.UserID)
+	require.False(t, ownerMember.GithubUserID.Valid, "App setup does not link or promote the owner")
+	require.False(t, ownerMember.Verified)
+}
+
+// The claim invalidates setup cookies; the claimed browser session must finish
+// App setup through the real member boundary, state consumption and sealed store.
+func TestClaimedOwnerCompletesGitHubAppManifest(t *testing.T) {
+	pool, _ := postgresfixture.NewProductDatabase(t)
+	ctx := context.Background()
+	q := db.New(pool)
+	codec, err := webhook.NewSecretCodec("claimed-owner-manifest-key")
+	require.NoError(t, err)
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	pemKey := string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}))
+	fake, err := githubfake.New(githubfake.Config{AppID: 42, Slug: "claimed-test", OwnerLogin: "acme", OwnerKind: "org", ClientID: "client", ClientSecret: "secret", WebhookSecret: "webhook", PrivateKeyPEM: pemKey, ConversionCode: "manifest-code"})
+	require.NoError(t, err)
+	t.Cleanup(fake.Close)
+	token, err := services.MintSetupToken(ctx, q)
+	require.NoError(t, err)
+	authority := &services.InstallSetupSessions{Pool: pool}
+	setup, err := authority.Exchange(ctx, token)
+	require.NoError(t, err)
+	const browser = "claimed-owner-browser"
+	digest := sha256.Sum256([]byte(browser))
+	owner, err := services.NewMemberService(pool, nil).AdmitSignIn(ctx, services.GitHubSignIn{GitHubUserID: 77, Login: "owner", SetupSessionKey: services.SetupSessionKey(setup), CompleteClaim: func(ctx context.Context, tx *db.Queries, u db.User) error {
+		_, e := tx.CreateAuthSession(ctx, db.CreateAuthSessionParams{SessionKey: hex.EncodeToString(digest[:]), UserID: u.ID, Username: u.Username, ExpiresAt: time.Now().Add(time.Hour)})
+		return e
+	}})
+	require.NoError(t, err)
+	require.Error(t, authority.Validate(ctx, setup))
+	store := services.NewGitHubAppCredentialStore(pool, codec)
+	server := httptest.NewUnstartedServer(nil)
+	origin := "http://" + server.Listener.Addr().String()
+	cfg := testConfigAllFlagsOn()
+	cfg.Auth.Mode = "selfhost"
+	cfg.Server.PublicURL = origin
+	cfg.Server.AllowedOrigins = []string{origin}
+	h := &routes.GitHubAppSetupHandler{Owners: q, Sessions: authority, Store: store, Service: services.NewGitHubAppManifestService(pool, store, fake.URL, []string{origin}), AllowedOrigins: []string{origin}}
+	server.Config.Handler = githubAppSetupComposeRouter(cfg, pool, h)
+	server.Start()
+	t.Cleanup(server.Close)
+	server.Client().CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	call := func(method, path, principal, state string) (int, []byte, []*http.Cookie) {
+		req, e := http.NewRequest(method, origin+path, strings.NewReader(`{"owner_login":"acme","owner_kind":"org","repository":"app"}`))
+		require.NoError(t, e)
+		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: principal})
+		req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+		req.Header.Set("X-CSRF-Token", "csrf")
+		req.Header.Set("Origin", origin)
+		req.Header.Set("Content-Type", "application/json")
+		if state != "" {
+			req.AddCookie(&http.Cookie{Name: routes.GitHubAppStateCookie, Value: state})
+		}
+		resp, e := server.Client().Do(req)
+		require.NoError(t, e)
+		defer resp.Body.Close()
+		body, e := io.ReadAll(resp.Body)
+		require.NoError(t, e)
+		return resp.StatusCode, body, resp.Cookies()
+	}
+	status, body, _ := call("POST", "/api/install/setup/app_manifest", browser, "")
+	require.Equal(t, 200, status, string(body))
+	var start services.GitHubAppManifestStart
+	require.NoError(t, json.Unmarshal(body, &start))
+	require.NotEmpty(t, start.State)
+	other, err := q.CreateUser(ctx, db.CreateUserParams{Username: "stranger", LowerUsername: "stranger"})
+	require.NoError(t, err)
+	foreignDigest := sha256.Sum256([]byte("foreign-browser"))
+	_, err = q.CreateAuthSession(ctx, db.CreateAuthSessionParams{SessionKey: hex.EncodeToString(foreignDigest[:]), UserID: other.ID, Username: other.Username, ExpiresAt: time.Now().Add(time.Hour)})
+	require.NoError(t, err)
+	callback := "/setup/github/callback?code=manifest-code&state=" + start.State
+	status, _, _ = call("GET", callback, "foreign-browser", start.State)
+	require.Equal(t, 403, status)
+	require.Empty(t, fake.Writes())
+	status, _, _ = call("GET", callback, browser, "foreign-state")
+	require.Equal(t, 403, status)
+	require.Empty(t, fake.Writes())
+	status, body, _ = call("GET", callback, browser, start.State)
+	require.Equal(t, 303, status, string(body))
+	require.Len(t, fake.Writes(), 1)
+	loaded, err := store.Load(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 42, loaded.ID)
+	var sealed string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT client_secret_sealed FROM github_app`).Scan(&sealed))
+	require.NotContains(t, sealed, "secret")
+	status, _, _ = call("GET", callback, browser, start.State)
+	require.Equal(t, 409, status)
+	require.Len(t, fake.Writes(), 1)
+	persisted, err := q.GetInstallOwnerUser(ctx)
+	require.NoError(t, err)
+	require.Equal(t, owner.ID, persisted.ID)
+}
+
+// Every registered GET remains behind the setup-cookie boundary, including
+// reserved/internal routes and routes that might otherwise look like assets.
+func TestSetupSessionScopeChiWalkRegisteredGETs(t *testing.T) {
+	pool, _ := postgresfixture.NewProductDatabase(t)
+	q := db.New(pool)
+	token, err := services.MintSetupToken(t.Context(), q)
+	require.NoError(t, err)
+	session, err := (&services.InstallSetupSessions{Pool: pool}).Exchange(t.Context(), token)
+	require.NoError(t, err)
+	cfg := testConfigAllFlagsOn()
+	cfg.Auth.Mode = "selfhost"
+	cfg.Server.PublicURL = "http://localhost:4000"
+	router := githubAppSetupComposeRouter(cfg, pool, &routes.GitHubAppSetupHandler{Owners: q, Sessions: &services.InstallSetupSessions{Pool: pool}})
+	routesTree, ok := router.(chi.Routes)
+	require.True(t, ok)
+	params := regexp.MustCompile(`\{[^}]+\}`)
+	count := 0
+	require.NoError(t, chi.Walk(routesTree, func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+		if method != "GET" && method != "HEAD" {
+			return nil
+		}
+		path := params.ReplaceAllString(route, "1")
+		path = strings.ReplaceAll(path, "*", "asset.js")
+		if identity.IsPreClaimSetupRequest(method, path) {
+			return nil
+		}
+		req := httptest.NewRequest(method, "http://localhost:4000"+path, nil)
+		req.RemoteAddr = "127.0.0.1:1234"
+		req.AddCookie(&http.Cookie{Name: services.SetupSessionCookieName, Value: session})
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, 403, w.Code, method+" "+route+" "+w.Body.String())
+		require.Contains(t, w.Body.String(), `"code":"permission"`)
+		count++
+		return nil
+	}))
+	require.Greater(t, count, 100)
+	// A later registered route under assets can never inherit the page exception.
+	r := chi.NewRouter()
+	r.Use(setupSessionScope(q, func(http.ResponseWriter, *http.Request) {}, r))
+	for _, path := range []string{"/assets/privileged", "/assets/%61dmin"} {
+		r.Get(path, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) })
+	}
+	for _, path := range []string{"/assets/privileged", "/assets/%61dmin"} {
+		req := httptest.NewRequest("GET", path, nil)
+		req.AddCookie(&http.Cookie{Name: services.SetupSessionCookieName, Value: session})
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		require.Equal(t, 403, w.Code, path)
+	}
 }

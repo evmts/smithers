@@ -35,7 +35,7 @@ export const PLUE_FAILURE_SCHEMA_VERSION = 1
  * @since 1.0.0
  * @category constants
  */
-export const PLUE_FAILURE_DIGEST = "sha256:ea18e05bd1ebb3fab740b155dcf833bfc11f607243e556c776e950345aa8d6d3"
+export const PLUE_FAILURE_DIGEST = "sha256:f62bdeebc698acacf2c2b2f8f707327fc44960917b11f90d16bf20733de84272"
 
 /**
  * Whose problem a failure is — the registry's verdict, and the only question the app
@@ -117,6 +117,7 @@ export const PLUE_FAILURE_CODES = [
   "idempotency_conflict",
   "idempotency_key_required",
   "image_required",
+  "install_repository_unset",
   "internal",
   "internal_error",
   "invalid_egress_audit_batch",
@@ -133,14 +134,18 @@ export const PLUE_FAILURE_CODES = [
   "landing_stack_in_flight",
   "language_server_missing",
   "listing_secret_detected",
+  "needs_github_access",
   "no_capacity",
   "non_replayable_operation",
+  "not_a_member",
   "not_found",
   "not_implemented",
   "operation_in_progress",
   "org_membership_required",
   "out_of_credit",
+  "owner_unverified",
   "peer_identity_denied",
+  "permission",
   "plan_limit_exceeded",
   "preview_unavailable",
   "profile_unavailable",
@@ -164,14 +169,18 @@ export const PLUE_FAILURE_CODES = [
   "sandbox_control_busy",
   "secret_delivery_unavailable",
   "service_unavailable",
+  "setup_closed",
   "setup_request_reused",
+  "setup_token_invalid",
   "snapshot_in_use",
   "snapshot_not_found",
   "snapshot_too_large",
   "sse_unavailable",
   "stale_generation",
   "token_generation_failed",
+  "unauthenticated",
   "unauthorized",
+  "unknown_origin",
   "unprocessable_entity",
   "unsupported_media_type",
   "user_ref_missing",
@@ -326,6 +335,8 @@ export const PLUE_FAILURES = {
   "idempotency_key_required": { fault: "user", status: 400, retryAfter: 0 },
   /** The sandbox create request named neither an image nor a snapshot. */
   "image_required": { fault: "user", status: 400, retryAfter: 0 },
+  /** The install has no GitHub repository with the GitHub App installed yet; until setup records one only the owner may sign in. */
+  "install_repository_unset": { fault: "user", status: 409, retryAfter: 0 },
   /** plue failed in a way it does not have a name for. It is a defect, not a condition the caller can fix. */
   "internal": { fault: "bug", status: 500, retryAfter: 0 },
   /** A sandbox control operation failed in a way the controller does not have a name for. */
@@ -358,10 +369,14 @@ export const PLUE_FAILURES = {
   "language_server_missing": { fault: "user", status: 409, retryAfter: 0 },
   /** The share listing contains something that scans as a credential; it was not published. */
   "listing_secret_detected": { fault: "user", status: 400, retryAfter: 0 },
+  /** The person needs push access to the install's repository on GitHub. */
+  "needs_github_access": { fault: "user", status: 403, retryAfter: 0 },
   /** No worker in the pool has free CPU, memory or VM slots for the box, at placement or at resume. The box and its disk are untouched. */
   "no_capacity": { fault: "infra", status: 503, retryAfter: 30 },
   /** The recorded operation for this idempotency key cannot be replayed. */
   "non_replayable_operation": { fault: "user", status: 409, retryAfter: 0 },
+  /** The person is not a member of this install. */
+  "not_a_member": { fault: "user", status: 403, retryAfter: 0 },
   /** The addressed resource does not exist, or the caller may not see that it does. */
   "not_found": { fault: "user", status: 404, retryAfter: 0 },
   /** The route exists but its implementation does not. */
@@ -372,8 +387,12 @@ export const PLUE_FAILURES = {
   "org_membership_required": { fault: "user", status: 403, retryAfter: 0 },
   /** The account's credit balance cannot cover the next model call; upgrade or top up, then retry. */
   "out_of_credit": { fault: "user", status: 402, retryAfter: 0 },
+  /** The owner can only run setup until GitHub confirms push access on the install's repository. */
+  "owner_unverified": { fault: "user", status: 403, retryAfter: 0 },
   /** The calling peer's mTLS identity is not one this worker accepts. */
   "peer_identity_denied": { fault: "user", status: 403, retryAfter: 0 },
+  /** A setup credential cannot perform this action. */
+  "permission": { fault: "user", status: 403, retryAfter: 0 },
   /** The user has exhausted a limit included in their plan. */
   "plan_limit_exceeded": { fault: "user", status: 402, retryAfter: 0 },
   /** The preview gateway could not reach the port the box is serving. */
@@ -420,8 +439,12 @@ export const PLUE_FAILURES = {
   "secret_delivery_unavailable": { fault: "infra", status: 501, retryAfter: 0 },
   /** plue is up but a component it needs is not answering. */
   "service_unavailable": { fault: "infra", status: 503, retryAfter: 0 },
+  /** The owner claim invalidated the setup credential. */
+  "setup_closed": { fault: "user", status: 401, retryAfter: 0 },
   /** The setup request identity was already admitted with different input. */
   "setup_request_reused": { fault: "infra", status: 409, retryAfter: 0 },
+  /** Claiming the install needs the one-time setup token printed when it started; the token was missing, wrong or already used. */
+  "setup_token_invalid": { fault: "user", status: 403, retryAfter: 0 },
   /** The snapshot backs a live sandbox and cannot be changed or deleted. */
   "snapshot_in_use": { fault: "user", status: 409, retryAfter: 0 },
   /** The named sandbox snapshot does not exist. Distinct from not_found so a bad golden snapshot is diagnosable. */
@@ -434,8 +457,12 @@ export const PLUE_FAILURES = {
   "stale_generation": { fault: "user", status: 409, retryAfter: 0 },
   /** The controller could not mint the token the operation needs. */
   "token_generation_failed": { fault: "bug", status: 500, retryAfter: 0 },
+  /** The setup credential is missing, expired or invalid. */
+  "unauthenticated": { fault: "user", status: 401, retryAfter: 0 },
   /** The request carried no credential, or one the server could not verify. */
   "unauthorized": { fault: "user", status: 401, retryAfter: 0 },
+  /** The request host matches no configured install origin. */
+  "unknown_origin": { fault: "user", status: 421, retryAfter: 0 },
   /** The request parsed but its meaning cannot be acted on. */
   "unprocessable_entity": { fault: "user", status: 422, retryAfter: 0 },
   /** The request's Content-Type is not one this endpoint reads. */

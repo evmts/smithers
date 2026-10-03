@@ -159,7 +159,7 @@ func TestGetCollaboratorPermissionForRepoUser_ReturnsPermissionAndEmptyWhenMissi
 	assert.Equal(t, "", permission)
 
 	_, err = q.AddCollaborator(context.Background(), AddCollaboratorParams{
-		RepositoryID: repoID,
+		RepositoryID: pgtype.Int8{Int64: repoID, Valid: true},
 		UserID:       pgtype.Int8{Int64: userID, Valid: true},
 		Permission:   "write",
 	})
@@ -188,14 +188,14 @@ func TestAddCollaborator_RejectsDuplicateRepositoryUserPair(t *testing.T) {
 	repoID := mustCreateRepo(t, pool, ownerID, "dup-collab-repo")
 
 	_, err := q.AddCollaborator(context.Background(), AddCollaboratorParams{
-		RepositoryID: repoID,
+		RepositoryID: pgtype.Int8{Int64: repoID, Valid: true},
 		UserID:       pgtype.Int8{Int64: collabID, Valid: true},
 		Permission:   "read",
 	})
 	require.NoError(t, err)
 
 	_, err = q.AddCollaborator(context.Background(), AddCollaboratorParams{
-		RepositoryID: repoID,
+		RepositoryID: pgtype.Int8{Int64: repoID, Valid: true},
 		UserID:       pgtype.Int8{Int64: collabID, Valid: true},
 		Permission:   "admin",
 	})

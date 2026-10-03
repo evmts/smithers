@@ -117,9 +117,6 @@ func openAPIConformanceRouter(cfg *config.Config) chi.Router {
 // Shared production-router fixture: host HTTP tests use real PostgreSQL queries.
 func hostStatusProductionRouter(cfg *config.Config, queries *db.Queries, host *routes.HostStatusHandler) chi.Router {
 	authHandler := &routes.AuthHandler{}
-	if config.IsSingleOwner(cfg.Auth) {
-		authHandler.LocalService = (*services.AuthService)(nil)
-	}
 	workspaceHandler := &routes.WorkspaceHandler{
 		EnvironmentImages: &routes.SandboxEnvironmentImageHandler{},
 	}

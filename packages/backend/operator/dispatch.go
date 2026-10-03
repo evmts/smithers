@@ -33,7 +33,7 @@ type Config struct {
 // commands. All command syntax and audit inputs are checked before
 // OpenDatabase runs.
 func Dispatch(ctx context.Context, args []string, cfg Config) (bool, error) {
-	if len(args) == 0 || (args[0] != "credits" && args[0] != "plans" && args[0] != "keys") {
+	if len(args) == 0 || (args[0] != "credits" && args[0] != "plans" && args[0] != "keys" && args[0] != "owner") {
 		return false, nil
 	}
 	if cfg.Stdout == nil {
@@ -41,6 +41,9 @@ func Dispatch(ctx context.Context, args []string, cfg Config) (bool, error) {
 	}
 	if cfg.Stderr == nil {
 		cfg.Stderr = io.Discard
+	}
+	if args[0] == "owner" {
+		return true, runOwner(ctx, args[1:], cfg)
 	}
 	if args[0] == "keys" {
 		return true, runKeys(ctx, args[1:], cfg)

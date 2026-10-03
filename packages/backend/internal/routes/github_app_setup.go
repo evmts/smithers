@@ -15,7 +15,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
-const GitHubAppSetupSessionCookie = "smithers_setup_session"
+const GitHubAppSetupSessionCookie = services.SetupSessionCookieName
 const GitHubAppStateCookie = "smithers_github_app_state"
 
 type GitHubAppSetupService interface {
@@ -25,7 +25,7 @@ type GitHubAppSetupService interface {
 	ResumeInstallation(context.Context) error
 }
 type GitHubAppSetupOwners interface {
-	GetSelfHostOwner(context.Context) (db.User, error)
+	GetInstallOwnerUser(context.Context) (db.User, error)
 }
 type GitHubAppSetupCredentials interface {
 	Load(context.Context) (services.GitHubAppCredentials, error)
@@ -53,7 +53,7 @@ func (h *GitHubAppSetupHandler) authorize(w http.ResponseWriter, r *http.Request
 		pkgerrors.WriteError(w, pkgerrors.Internal("install setup is unavailable"))
 		return false
 	}
-	owner, err := h.Owners.GetSelfHostOwner(r.Context())
+	owner, err := h.Owners.GetInstallOwnerUser(r.Context())
 	if errors.Is(err, pgx.ErrNoRows) {
 		if h.Sessions == nil {
 			pkgerrors.WriteError(w, pkgerrors.Internal("setup session authority unavailable"))
@@ -100,35 +100,6 @@ func (h *GitHubAppSetupHandler) requestOrigin(r *http.Request) (string, bool) {
 	return origin, ok
 }
 
-// OpenSetup exchanges the terminal token for the shared durable session before
-// any setup step. Redirect removes the token from the address and referrer.
-func (h *GitHubAppSetupHandler) OpenSetup(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Referrer-Policy", "no-referrer")
-	origin, ok := h.requestOrigin(r)
-	if !ok {
-		writeGitHubAppOriginError(w, origin)
-		return
-	}
-	if h.Sessions == nil {
-		pkgerrors.WriteError(w, pkgerrors.Internal("setup session authority unavailable"))
-		return
-	}
-	session, err := h.Sessions.Exchange(r.Context(), r.URL.Query().Get("token"))
-	if err != nil {
-		writeRouteError(w, r, err)
-		return
-	}
-	http.SetCookie(w, &http.Cookie{Name: GitHubAppSetupSessionCookie, Value: session, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: strings.HasPrefix(origin, "https://"), MaxAge: 86400})
-	token, err := middleware.NewCSRFToken()
-	if err != nil {
-		writeRouteError(w, r, err)
-		return
-	}
-	http.SetCookie(w, &http.Cookie{Name: middleware.CSRFCookieName, Value: token, Path: "/", SameSite: http.SameSiteLaxMode, Secure: strings.HasPrefix(origin, "https://"), MaxAge: 86400})
-	http.Redirect(w, r, "/", http.StatusSeeOther)
-}
-
 func writeGitHubAppOriginError(w http.ResponseWriter, origin string) {
 	if origin != "" {
 		pkgerrors.WriteError(w, pkgerrors.Forbidden("request origin differs from install origin"))
@@ -145,6 +116,17 @@ func (h *GitHubAppSetupHandler) Status(w http.ResponseWriter, r *http.Request) {
 	}
 	if !h.authorize(w, r) {
 		return
+	}
+	// Setup holders are memberless, so AuthLoader cannot issue their CSRF
+	// cookie. The authorized status read supplies the double-submit proof.
+	if cookie, err := r.Cookie(middleware.CSRFCookieName); err != nil || cookie.Value == "" {
+		token, err := middleware.NewCSRFToken()
+		if err != nil {
+			writeRouteError(w, r, pkgerrors.Internal("failed to create setup CSRF token").WithCause(err))
+			return
+		}
+		origin, _ := h.requestOrigin(r)
+		middleware.SetCSRFCookie(w, token, strings.HasPrefix(origin, "https://"), time.Now().Add(24*time.Hour))
 	}
 	if h.Store == nil {
 		pkgerrors.WriteError(w, pkgerrors.Internal("GitHub App credential store is unavailable"))
@@ -199,13 +181,7 @@ func (h *GitHubAppSetupHandler) Begin(w http.ResponseWriter, r *http.Request) {
 		pkgerrors.WriteError(w, pkgerrors.Internal("GitHub App setup is unavailable"))
 		return
 	}
-	session := ""
-	if cookie, err := r.Cookie(GitHubAppSetupSessionCookie); err == nil {
-		session = cookie.Value
-	} else if info := middleware.AuthInfoFromContext(r.Context()); info != nil {
-		session = info.SessionHash
-	}
-	ctx := services.WithGitHubAppSetupSession(r.Context(), session, origin)
+	ctx := h.sessionContext(r, origin)
 	start, err := h.Service.Begin(ctx, req)
 	if err != nil {
 		writeRouteError(w, r, err)
@@ -216,6 +192,17 @@ func (h *GitHubAppSetupHandler) Begin(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	pkgerrors.WriteJSON(w, http.StatusOK, start)
+}
+
+// authorize has already checked owner identity and browser-session kind.
+func (h *GitHubAppSetupHandler) sessionContext(r *http.Request, origin string) context.Context {
+	if info := middleware.AuthInfoFromContext(r.Context()); info != nil && info.SessionHash != "" {
+		return services.WithGitHubAppOwnerSession(r.Context(), info.SessionHash, origin)
+	}
+	if cookie, err := r.Cookie(GitHubAppSetupSessionCookie); err == nil {
+		return services.WithGitHubAppSetupSession(r.Context(), cookie.Value, origin)
+	}
+	return r.Context()
 }
 func (h *GitHubAppSetupHandler) callbackState(w http.ResponseWriter, r *http.Request) (string, string, bool) {
 	w.Header().Set("Cache-Control", "no-store")
@@ -228,12 +215,7 @@ func (h *GitHubAppSetupHandler) callbackState(w http.ResponseWriter, r *http.Req
 	if !h.authorize(w, r) {
 		return "", "", false
 	}
-	session, sessionErr := r.Cookie(GitHubAppSetupSessionCookie)
-	if sessionErr != nil || len(session.Value) != 64 {
-		pkgerrors.WriteError(w, pkgerrors.Forbidden("setup session required"))
-		return "", "", false
-	}
-	*r = *r.WithContext(services.WithGitHubAppSetupSession(r.Context(), session.Value, origin))
+	*r = *r.WithContext(h.sessionContext(r, origin))
 	cookie, err := r.Cookie(GitHubAppStateCookie)
 	state := r.URL.Query().Get("state")
 	if err != nil || cookie.Value == "" || state == "" || subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(state)) != 1 {

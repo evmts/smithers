@@ -271,7 +271,7 @@ RETURNING *;
 
 -- name: DeleteCollaboratorsByRepo :exec
 DELETE FROM collaborators
-WHERE repository_id = $1;
+WHERE repository_id = sqlc.arg(repository_id)::BIGINT;
 
 -- name: DeleteTeamReposByRepo :exec
 DELETE FROM team_repos
@@ -280,9 +280,9 @@ WHERE repository_id = $1;
 -- name: ListCollaboratorsByRepo :many
 -- Excludes tombstone rows (user_id IS NULL from ON DELETE SET NULL) since
 -- there is no live user record to display or authorize.
-SELECT id, repository_id, user_id, permission, created_at
+SELECT *
 FROM collaborators
-WHERE repository_id = $1
+WHERE repository_id = sqlc.arg(repository_id)::BIGINT
   AND user_id IS NOT NULL
 ORDER BY id ASC;
 
@@ -317,7 +317,7 @@ RETURNING *;
 
 -- name: GetCollaboratorPermissionForRepoUser :one
 SELECT COALESCE(
-    (SELECT permission FROM collaborators WHERE repository_id = $1 AND user_id = $2),
+    (SELECT permission FROM collaborators WHERE repository_id = sqlc.arg(repository_id)::BIGINT AND user_id = sqlc.narg(user_id)),
     ''
 )::text AS permission;
 

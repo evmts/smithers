@@ -494,11 +494,14 @@ type CodeSearchIndexState struct {
 }
 
 type Collaborator struct {
-	ID           int64       `json:"id"`
-	RepositoryID int64       `json:"repository_id"`
-	UserID       pgtype.Int8 `json:"user_id"`
-	Permission   string      `json:"permission"`
-	CreatedAt    time.Time   `json:"created_at"`
+	ID           int64              `json:"id"`
+	RepositoryID pgtype.Int8        `json:"repository_id"`
+	UserID       pgtype.Int8        `json:"user_id"`
+	Permission   string             `json:"permission"`
+	CreatedAt    time.Time          `json:"created_at"`
+	GithubUserID pgtype.Int8        `json:"github_user_id"`
+	UnixUid      pgtype.Int4        `json:"unix_uid"`
+	SuspendedAt  pgtype.Timestamptz `json:"suspended_at"`
 }
 
 type CommitStatus struct {
@@ -1418,14 +1421,6 @@ type LinearSyncRun struct {
 	CreatedAt      time.Time          `json:"created_at"`
 }
 
-type LocalCredential struct {
-	UserID            int64     `json:"user_id"`
-	PasswordHash      string    `json:"password_hash"`
-	PasswordChangedAt time.Time `json:"password_changed_at"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
-}
-
 type Mention struct {
 	ID               int64       `json:"id"`
 	RepositoryID     int64       `json:"repository_id"`
@@ -1695,12 +1690,13 @@ type OauthAccount struct {
 }
 
 type OauthState struct {
-	StateKey        string             `json:"state_key"`
-	ContextHash     string             `json:"context_hash"`
-	RequestedScopes []string           `json:"requested_scopes"`
-	CreatedAt       time.Time          `json:"created_at"`
-	ExpiresAt       time.Time          `json:"expires_at"`
-	UsedAt          pgtype.Timestamptz `json:"used_at"`
+	StateKey           string             `json:"state_key"`
+	ContextHash        string             `json:"context_hash"`
+	RequestedScopes    []string           `json:"requested_scopes"`
+	CreatedAt          time.Time          `json:"created_at"`
+	ExpiresAt          time.Time          `json:"expires_at"`
+	UsedAt             pgtype.Timestamptz `json:"used_at"`
+	SetupSessionDigest pgtype.Text        `json:"setup_session_digest"`
 }
 
 type OnboardingAnswer struct {

@@ -306,6 +306,10 @@ var secretPathTokenPrefixes = []string{"smithers-canary-webhook.", "smithers_des
 func redactSecretPathSegments(path string) string {
 	segments := strings.Split(path, "/")
 	for i, segment := range segments {
+		if i > 0 && i+1 < len(segments) && segments[i-1] == "app-manifests" && segments[i+1] == "conversions" {
+			segments[i] = "REDACTED"
+			continue
+		}
 		for _, prefix := range secretPathTokenPrefixes {
 			if strings.HasPrefix(segment, prefix) {
 				segments[i] = prefix + "REDACTED"

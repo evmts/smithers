@@ -177,7 +177,7 @@ func TestAdminCLIRejectsNonAdminAndExpiredConsent(t *testing.T) {
 
 func TestAdminCLIRejectsConsentAsOAuthState(t *testing.T) {
 	s, _, _, _, _ := newCLIAdminFixture(t)
-	_, err := s.CompleteGitHubOAuth(context.Background(), "code", adminCLIConsentPrefix+"state", "verifier")
+	_, err := s.CompleteGitHubOAuth(context.Background(), "code", adminCLIConsentPrefix+"state", "verifier", "")
 	require.Error(t, err)
 }
 
@@ -230,7 +230,7 @@ func TestAdminCLIOAuthCallbackDoesNotMintSessionOrToken(t *testing.T) {
 			require.NoError(t, err)
 			parsed, err := url.Parse(start)
 			require.NoError(t, err)
-			result, err := s.CompleteGitHubOAuth(context.Background(), "code", parsed.Query().Get("state"), "verifier")
+			result, err := s.CompleteGitHubOAuth(context.Background(), "code", parsed.Query().Get("state"), "verifier", "")
 			require.NoError(t, err)
 			require.NotNil(t, result.AdminCLI)
 			require.Equal(t, isAdmin, result.User.IsAdmin)

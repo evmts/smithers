@@ -2252,113 +2252,6 @@
       }
     },
     {
-      "name": "auth local bootstrap",
-      "description": "Create and log in as the installation owner",
-      "schema": {
-        "args": {
-          "type": "object",
-          "properties": {},
-          "additionalProperties": false
-        },
-        "options": {
-          "type": "object",
-          "properties": {
-            "host": {
-              "type": "string",
-              "description": "Hostname or API origin (alias for --hostname)"
-            },
-            "hostname": {
-              "type": "string",
-              "description": "Hostname or API origin"
-            },
-            "username": {
-              "type": "string",
-              "description": "Owner username"
-            },
-            "verbose": {
-              "default": false,
-              "description": "Show redacted diagnostic details",
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "verbose"
-          ],
-          "additionalProperties": false
-        }
-      }
-    },
-    {
-      "name": "auth local login",
-      "description": "Log in to an owner backend",
-      "schema": {
-        "args": {
-          "type": "object",
-          "properties": {},
-          "additionalProperties": false
-        },
-        "options": {
-          "type": "object",
-          "properties": {
-            "host": {
-              "type": "string",
-              "description": "Hostname or API origin (alias for --hostname)"
-            },
-            "hostname": {
-              "type": "string",
-              "description": "Hostname or API origin"
-            },
-            "username": {
-              "type": "string",
-              "description": "Owner username"
-            },
-            "verbose": {
-              "default": false,
-              "description": "Show redacted diagnostic details",
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "verbose"
-          ],
-          "additionalProperties": false
-        }
-      }
-    },
-    {
-      "name": "auth local status",
-      "description": "Show owner setup status",
-      "schema": {
-        "args": {
-          "type": "object",
-          "properties": {},
-          "additionalProperties": false
-        },
-        "options": {
-          "type": "object",
-          "properties": {
-            "host": {
-              "type": "string",
-              "description": "Hostname or API origin (alias for --hostname)"
-            },
-            "hostname": {
-              "type": "string",
-              "description": "Hostname or API origin"
-            },
-            "verbose": {
-              "default": false,
-              "description": "Show redacted diagnostic details",
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "verbose"
-          ],
-          "additionalProperties": false
-        }
-      }
-    },
-    {
       "name": "auth login",
       "description": "Log in to Smithers",
       "schema": {
@@ -5631,6 +5524,31 @@
               "type": "string",
               "description": "Repository (OWNER/REPO)"
             },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "host status",
+      "description": "Show host profile and machine limits",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
             "verbose": {
               "default": false,
               "description": "Show redacted diagnostic details",

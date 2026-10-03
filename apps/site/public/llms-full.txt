@@ -37,6 +37,56 @@ See [CLI and libraries](/docs/developers/) for setup and supported platforms.
 
 ---
 
+# Self-host Smithers
+https://smithers.sh/docs/self-hosting/
+
+Smithers runs as one unprivileged container, next to a PostgreSQL 18 database you provide, with one persistent volume. One machine, one owner, local disk.
+
+**Partly available.** The image is not published yet ([#1667](https://github.com/smithersai/smithers/issues/1667)). Build it from a source checkout:
+
+```sh
+docker build -f distribution/Dockerfile -t smithers .
+```
+
+## Start it
+
+```sh
+umask 077
+cat >smithers.env <<EOF
+SMITHERS_AUTH_MODE=selfhost
+DATABASE_URL=postgres://smithers:replace-me@postgres:5432/smithers?sslmode=require
+SMITHERS_AUTH_GITHUB_REDIRECT_URL=http://localhost:4000/api/auth/github/callback
+SMITHERS_GITHUB_APP_REPOSITORY=owner/name
+EOF
+docker run --name smithers --restart unless-stopped -p 4000:4000 \
+  --network smithers \
+  --env-file ./smithers.env \
+  -v smithers-data:/var/lib/smithers \
+  smithers
+```
+
+`--network` must reach PostgreSQL. The app listens on port 4000 (set `PORT` to change it). Read `docker logs smithers` and open the printed `Setup URL:`. Create the GitHub App through setup, then sign in with GitHub to claim the install and install the App on the chosen repository. The owner needs push access on that repository.
+
+## Give it model keys
+
+Put provider keys in a JSON file on the data volume and point `SMITHERS_PLATFORM_MODEL_KEYS_FILE` at it. Providers: `anthropic`, `openai`, `cerebras`, `openrouter`, and `vercel` (the AI Gateway key). Every call is metered against the owner's credit; grant it with `smithers-backend credits grant`.
+
+## Back up and upgrade
+
+Stop the container, then run the image's `backup.sh`, `restore.sh`, or `upgrade.sh` entrypoint against the same volume. Upgrade always starts from a verified backup.
+
+Migration 0106 replaces password sign-in with GitHub. An owner who never linked GitHub opens the new Setup URL from the container logs and signs in to link the existing owner. For every upgraded owner, set `SMITHERS_GITHUB_APP_REPOSITORY=owner/name` in `smithers.env`, then recreate the container with the same data volume and database. Sign in with the linked GitHub account first to refresh its current login. The recovery command compares the GitHub permission response user ID with the linked account and refuses a different account. Confirm push access with:
+
+```sh
+docker exec smithers /opt/smithers/bin/smithers-backend owner verify-access
+```
+
+## More
+
+[The distribution guide](https://github.com/smithersai/smithers/blob/main/distribution/README.md) has every variable and command: Railway, the macOS app with its own PostgreSQL, microVM isolation, subscription connections, backup, restore, and upgrade.
+
+---
+
 # Install Smithers
 https://smithers.sh/docs/installation/
 
@@ -47471,7 +47521,6 @@ Usage: smthrs auth <command>
 Commands:
   connect      Connect an Anthropic API key (--api-key) for your own agent runs on a self-hosted server. Vendor subscriptions stay with their own CLIs; sign into Codex on the workspace with codex login --device-auth
   connections  List connected subscriptions
-  local        Set up and log in to an owner backend
   login        Log in to Smithers
   logout       Log out of Smithers
   revoke       Revoke a connected subscription
@@ -47537,124 +47586,6 @@ Usage: smthrs auth connections [options]
 Options:
   --org <string>
   --verbose       Show redacted diagnostic details
-
-Custom Global Options:
-  --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)
-  --silent                       Suppress progress; retain the result and actionable failures
-  --ui <auto|tty|stream|plain>   Terminal renderer: tty draws in place, stream colours without cursor motion, plain prints bare lines; auto shows live human progress; agent, --silent, pipe and dumb-terminal policies take precedence (default: auto)
-
-Global Options:
-  --filter-output <keys>              Filter output by key paths (e.g. foo,bar.baz,a[0,3])
-  --format <toon|json|yaml|md|jsonl>  Output format
-  --full-output                       Show full output envelope
-  --help                              Show help
-  --llms, --llms-full                 Print LLM-readable manifest
-  --schema                            Show JSON Schema for command
-  --token-count                       Print token count of output (instead of output)
-  --token-limit <n>                   Limit output to n tokens
-  --token-offset <n>                  Skip first n tokens of output
-```
-
-## auth local
-
-```text
-smthrs auth local — Set up and log in to an owner backend
-
-Usage: smthrs auth local <command>
-
-Commands:
-  bootstrap  Create and log in as the installation owner
-  login      Log in to an owner backend
-  status     Show owner setup status
-
-Custom Global Options:
-  --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)
-  --silent                       Suppress progress; retain the result and actionable failures
-  --ui <auto|tty|stream|plain>   Terminal renderer: tty draws in place, stream colours without cursor motion, plain prints bare lines; auto shows live human progress; agent, --silent, pipe and dumb-terminal policies take precedence (default: auto)
-
-Global Options:
-  --filter-output <keys>              Filter output by key paths (e.g. foo,bar.baz,a[0,3])
-  --format <toon|json|yaml|md|jsonl>  Output format
-  --full-output                       Show full output envelope
-  --help                              Show help
-  --llms, --llms-full                 Print LLM-readable manifest
-  --schema                            Show JSON Schema for command
-  --token-count                       Print token count of output (instead of output)
-  --token-limit <n>                   Limit output to n tokens
-  --token-offset <n>                  Skip first n tokens of output
-```
-
-## auth local bootstrap
-
-```text
-smthrs auth local bootstrap — Create and log in as the installation owner
-
-Usage: smthrs auth local bootstrap [options]
-
-Options:
-  --host <string>
-  --hostname <string>
-  --username <string>
-  --verbose            Show redacted diagnostic details
-
-Custom Global Options:
-  --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)
-  --silent                       Suppress progress; retain the result and actionable failures
-  --ui <auto|tty|stream|plain>   Terminal renderer: tty draws in place, stream colours without cursor motion, plain prints bare lines; auto shows live human progress; agent, --silent, pipe and dumb-terminal policies take precedence (default: auto)
-
-Global Options:
-  --filter-output <keys>              Filter output by key paths (e.g. foo,bar.baz,a[0,3])
-  --format <toon|json|yaml|md|jsonl>  Output format
-  --full-output                       Show full output envelope
-  --help                              Show help
-  --llms, --llms-full                 Print LLM-readable manifest
-  --schema                            Show JSON Schema for command
-  --token-count                       Print token count of output (instead of output)
-  --token-limit <n>                   Limit output to n tokens
-  --token-offset <n>                  Skip first n tokens of output
-```
-
-## auth local login
-
-```text
-smthrs auth local login — Log in to an owner backend
-
-Usage: smthrs auth local login [options]
-
-Options:
-  --host <string>
-  --hostname <string>
-  --username <string>
-  --verbose            Show redacted diagnostic details
-
-Custom Global Options:
-  --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)
-  --silent                       Suppress progress; retain the result and actionable failures
-  --ui <auto|tty|stream|plain>   Terminal renderer: tty draws in place, stream colours without cursor motion, plain prints bare lines; auto shows live human progress; agent, --silent, pipe and dumb-terminal policies take precedence (default: auto)
-
-Global Options:
-  --filter-output <keys>              Filter output by key paths (e.g. foo,bar.baz,a[0,3])
-  --format <toon|json|yaml|md|jsonl>  Output format
-  --full-output                       Show full output envelope
-  --help                              Show help
-  --llms, --llms-full                 Print LLM-readable manifest
-  --schema                            Show JSON Schema for command
-  --token-count                       Print token count of output (instead of output)
-  --token-limit <n>                   Limit output to n tokens
-  --token-offset <n>                  Skip first n tokens of output
-```
-
-## auth local status
-
-```text
-smthrs auth local status — Show owner setup status
-
-Usage: smthrs auth local status [options]
-
-Options:
-  --host <string>
-  --hostname <string>
-  --verbose            Show redacted diagnostic details
 
 Custom Global Options:
   --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)
@@ -49814,6 +49745,63 @@ Arguments:
 Options:
   --repo, -R <string>
   --verbose            Show redacted diagnostic details
+
+Custom Global Options:
+  --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)
+  --silent                       Suppress progress; retain the result and actionable failures
+  --ui <auto|tty|stream|plain>   Terminal renderer: tty draws in place, stream colours without cursor motion, plain prints bare lines; auto shows live human progress; agent, --silent, pipe and dumb-terminal policies take precedence (default: auto)
+
+Global Options:
+  --filter-output <keys>              Filter output by key paths (e.g. foo,bar.baz,a[0,3])
+  --format <toon|json|yaml|md|jsonl>  Output format
+  --full-output                       Show full output envelope
+  --help                              Show help
+  --llms, --llms-full                 Print LLM-readable manifest
+  --schema                            Show JSON Schema for command
+  --token-count                       Print token count of output (instead of output)
+  --token-limit <n>                   Limit output to n tokens
+  --token-offset <n>                  Skip first n tokens of output
+```
+
+---
+
+# smthrs host
+https://smithers.sh/docs/reference/cli/host/
+
+```text
+smthrs host — Inspect this installation’s host
+
+Usage: smthrs host <command>
+
+Commands:
+  status  Show host profile and machine limits
+
+Custom Global Options:
+  --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)
+  --silent                       Suppress progress; retain the result and actionable failures
+  --ui <auto|tty|stream|plain>   Terminal renderer: tty draws in place, stream colours without cursor motion, plain prints bare lines; auto shows live human progress; agent, --silent, pipe and dumb-terminal policies take precedence (default: auto)
+
+Global Options:
+  --filter-output <keys>              Filter output by key paths (e.g. foo,bar.baz,a[0,3])
+  --format <toon|json|yaml|md|jsonl>  Output format
+  --full-output                       Show full output envelope
+  --help                              Show help
+  --llms, --llms-full                 Print LLM-readable manifest
+  --schema                            Show JSON Schema for command
+  --token-count                       Print token count of output (instead of output)
+  --token-limit <n>                   Limit output to n tokens
+  --token-offset <n>                  Skip first n tokens of output
+```
+
+## host status
+
+```text
+smthrs host status — Show host profile and machine limits
+
+Usage: smthrs host status [options]
+
+Options:
+  --verbose  Show redacted diagnostic details
 
 Custom Global Options:
   --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)
@@ -53756,6 +53744,7 @@ flow is a durable program built with `Flow.make`, and a run is a persisted flow 
 | [`git-hooks`](/docs/reference/cli/git-hooks/) | Check the WORKSPACE.ts gitHooks scripts against .git/hooks, or install them with --write |
 | [`graph`](/docs/reference/cli/graph/) | Print the target graph without executing it |
 | [`history`](/docs/reference/cli/history/) | Follow each issue's lane, checks and pull request |
+| [`host`](/docs/reference/cli/host/) | Inspect this installation’s host |
 | [`index`](/docs/reference/cli/index-command/) | List every target a pattern selects as its declaration states it: rule, kinds, inputs, outputs, dependencies, and the declaring file |
 | [`info`](/docs/reference/cli/info/) | Report workspace and host configuration for diagnosis |
 | [`init`](/docs/reference/cli/init/) | Initialize workspace and target declarations plus a starter flow, preserving existing files |

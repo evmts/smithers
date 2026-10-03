@@ -139,9 +139,9 @@ func buildRouter(
 		extras.Catalog = routes.NewPublicRepositoryCatalog(queries)
 	}
 	r := chi.NewRouter()
-	var ownerBoundary identity.OwnerAuthorizer
+	var memberBoundary identity.MemberAuthorizer
 	if config.IsSingleOwner(cfg.Auth) {
-		ownerBoundary = identity.NewSingleOwnerBoundary(queries)
+		memberBoundary = identity.NewMemberBoundary(queries)
 	}
 	allowedOrigins := apiAllowedOrigins(cfg)
 	if authHandler != nil {
@@ -236,7 +236,7 @@ func buildRouter(
 		ticketAuth := middleware.SSETicketAuth(
 			sseTicketService,
 			sseTicketMetrics,
-			ownerBoundary,
+			memberBoundary,
 		)
 		// Ticket auth installs its principal after authLoader's guard has
 		// already run, so the guard must run again behind it or a ticket's
@@ -255,6 +255,9 @@ func buildRouter(
 	// (SMITHERS_SERVER_TRUSTED_PROXY_HOPS: 1 behind GCLB in prod, 0 = keep
 	// the socket address elsewhere). Replaces chi's RealIP, which trusted
 	// the spoofable first XFF entry (rate-limit bypass, audit-log forgery).
+	if config.IsSingleOwner(cfg.Auth) {
+		r.Use(routes.PreserveInstallSocketPeer)
+	}
 	r.Use(middleware.RealIP(cfg.Server.TrustedProxyHops))
 	r.Use(middleware.RequestIDEcho) // echo X-Request-Id in response for trace correlation
 	// OpenTelemetry HTTP middleware - instruments all incoming requests with trace context
@@ -273,7 +276,11 @@ func buildRouter(
 	// Recovery must complete inside the metrics recorder so a panic's 500 is
 	// counted alongside ordinary responses.
 	r.Use(middleware.JSONRecoverer)
-	if authHandler != nil && authHandler.Service != nil {
+	if config.IsSingleOwner(cfg.Auth) {
+		originHandler := &routes.AuthHandler{AuthConfig: cfg.Auth, AllowedOrigins: allowedOrigins}
+		r.Use(setupSessionScope(queries, originHandler.ClearSetupSessionCookie, r))
+	}
+	if authHandler != nil && authHandler.Service != nil && !config.IsSingleOwner(cfg.Auth) {
 		r.Use(middleware.CanonicalBrowserAuthOrigin(cfg.Auth.GitHubRedirectURL))
 	}
 
@@ -285,7 +292,6 @@ func buildRouter(
 	r.Get("/healthz", healthzHandler.Healthz)
 	r.Get("/readyz", readyzHandler.Readyz)
 	if extras.GitHubAppSetup != nil {
-		r.With(middleware.AuthRateLimit(queries)).Get("/setup", extras.GitHubAppSetup.OpenSetup)
 		r.With(authLoader(queries, cfg.Auth)).Get("/setup/github/callback", extras.GitHubAppSetup.Callback)
 		r.With(authLoader(queries, cfg.Auth)).Get("/setup/github/installed", extras.GitHubAppSetup.Installed)
 	}
@@ -935,18 +941,14 @@ func buildRouter(
 			r.With(middleware.AuthRateLimit(queries)).Post("/auth/key/verify", authHandler.PostKeyAuthVerify)
 			r.With(middleware.AuthRateLimit(queries)).Post("/auth/key/token", authHandler.PostKeyAuthToken)
 		}
-		if config.IsSingleOwner(cfg.Auth) && authHandler.LocalService != nil {
-			r.With(middleware.InteractiveAuthRateLimit(queries)).Get("/auth/local/status", authHandler.GetLocalIdentityStatus)
-			r.With(middleware.AuthRateLimit(queries)).Post("/auth/local/bootstrap", authHandler.PostLocalBootstrap)
-			r.With(middleware.AuthRateLimit(queries)).Post("/auth/local/login", authHandler.PostLocalLogin)
-			r.With(middleware.AuthRateLimit(queries)).Post("/auth/local/token", authHandler.PostLocalToken)
-			r.With(middleware.AuthRateLimit(queries), middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/auth/local/password", authHandler.PostLocalPassword)
-		}
 		// Direct GitHub App OAuth (browser sign-in / connect + CLI login).
 		// These interactive routes use the looser "auth_interactive" scope
 		// (20/min per IP): one sign-in attempt burns two tokens (start +
 		// callback), so the strict 5/min "auth" scope locked out users who
 		// retried a few times within a minute.
+		if config.IsSingleOwner(cfg.Auth) {
+			r.With(middleware.AuthRateLimit(queries)).Post("/install/setup-session", authHandler.PostSetupSession)
+		}
 		r.With(middleware.InteractiveAuthRateLimit(queries)).Get("/auth/github", authHandler.GetGitHubOAuthStart)
 		r.With(middleware.InteractiveAuthRateLimit(queries)).Get("/auth/github/cli", authHandler.GetGitHubOAuthCLIStart)
 		r.With(middleware.InteractiveAuthRateLimit(queries)).Get("/auth/github/callback", authHandler.GetGitHubOAuthCallback)

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	stdErrors "errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -22,9 +23,9 @@ import (
 type AuthService interface {
 	CreateKeyAuthNonce(ctx context.Context) (string, error)
 	VerifyKeyAuth(ctx context.Context, message, signature string) (services.VerifyKeyAuthResult, error)
-	StartGitHubOAuth(ctx context.Context, stateVerifier string) (string, error)
+	StartGitHubOAuth(ctx context.Context, stateVerifier, setupSession string) (string, error)
 	StartGitHubOAuthWithScopes(ctx context.Context, stateVerifier, rawScopes string) (string, error)
-	CompleteGitHubOAuth(ctx context.Context, code, state, stateVerifier string) (services.OAuthCallbackResult, error)
+	CompleteGitHubOAuth(ctx context.Context, code, state, stateVerifier, setupSession string) (services.OAuthCallbackResult, error)
 	StartAuth0OAuth(ctx context.Context, stateVerifier string) (string, error)
 	CompleteAuth0OAuth(ctx context.Context, code, state, stateVerifier string) (services.OAuthCallbackResult, error)
 	CreateToken(ctx context.Context, userID int64, req services.CreateTokenRequest) (services.CreateTokenResult, error)
@@ -39,9 +40,16 @@ type GitHubRepoListingWarmer interface {
 	WarmGitHubRepoListing(userID int64)
 }
 
+// SetupSessionService trades the install's printed setup token for a setup
+// session (spec §5.1.0).
+type SetupSessionService interface {
+	ExchangeSetupToken(ctx context.Context, token string) (string, error)
+}
+
 type AuthHandler struct {
-	Service        AuthService
-	LocalService   LocalIdentityService
+	Service AuthService
+	// Setup is set on the install; it serves POST /api/install/setup-session.
+	Setup          SetupSessionService
 	AuthConfig     config.AuthConfig
 	PublicOrigin   string
 	AllowedOrigins []string
@@ -204,8 +212,20 @@ func consumeOAuth2PendingAuthorizeCookie(w http.ResponseWriter, r *http.Request,
 
 // GetGitHubOAuthStart begins the browser GitHub App OAuth flow (the direct
 // GitHub sign-in path). It generates an oauth state verifier, stashes it in a
-// cookie, and redirects to GitHub's authorize endpoint.
+// cookie, and redirects to GitHub's authorize endpoint. On an unclaimed
+// install the setup-session cookie lets this sign-in claim the owner.
 func (h *AuthHandler) GetGitHubOAuthStart(w http.ResponseWriter, r *http.Request) {
+	if config.IsSingleOwner(h.AuthConfig) {
+		origin, ok := h.installBrowserOrigin(r)
+		if !ok {
+			writeRouteError(w, r, errors.New(errors.CodeUnknownOrigin, "unknown install origin"))
+			return
+		}
+		local := *h
+		local.AuthConfig.CookieSecure = strings.HasPrefix(origin, "https://")
+		h = &local
+	}
+
 	returnTo := r.URL.Query().Get("return_to")
 	if returnTo != "" && !validBrowserReturn(returnTo) {
 		writeRouteError(w, r, errors.BadRequest("return_to must be a local path"))
@@ -216,8 +236,20 @@ func (h *AuthHandler) GetGitHubOAuthStart(w http.ResponseWriter, r *http.Request
 		writeRouteError(w, r, errors.Internal("failed to generate oauth state").WithCause(err))
 		return
 	}
-	redirectURL, err := h.Service.StartGitHubOAuth(r.Context(), stateVerifier)
+	ctx := r.Context()
+	if config.IsSingleOwner(h.AuthConfig) {
+		origin, ok := h.installBrowserOrigin(r)
+		if !ok {
+			writeRouteError(w, r, errors.New(errors.CodeUnknownOrigin, "unknown install origin"))
+			return
+		}
+		ctx = services.WithGitHubCallback(ctx, origin+"/api/auth/github/callback")
+	}
+	redirectURL, err := h.Service.StartGitHubOAuth(ctx, stateVerifier, setupSessionFromRequest(r))
 	if err != nil {
+		if isSetupClosed(err) {
+			clearSetupSessionCookie(w, h.AuthConfig.CookieSecure)
+		}
 		writeRouteError(w, r, err)
 		return
 	}
@@ -294,6 +326,17 @@ func (h *AuthHandler) GetGitHubOAuthCLIStart(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *AuthHandler) GetGitHubOAuthCallback(w http.ResponseWriter, r *http.Request) {
+	if config.IsSingleOwner(h.AuthConfig) {
+		origin, ok := h.installBrowserOrigin(r)
+		if !ok {
+			writeRouteError(w, r, errors.New(errors.CodeUnknownOrigin, "unknown install origin"))
+			return
+		}
+		local := *h
+		local.AuthConfig.CookieSecure = strings.HasPrefix(origin, "https://")
+		h = &local
+	}
+
 	returnTo := consumeBrowserReturnCookie(w, r, h.AuthConfig.CookieSecure)
 	code := r.URL.Query().Get("code")
 	state := r.URL.Query().Get("state")
@@ -303,11 +346,18 @@ func (h *AuthHandler) GetGitHubOAuthCallback(w http.ResponseWriter, r *http.Requ
 	}
 
 	stateVerifier := oauthStateVerifierFromRequest(r)
-	result, err := h.Service.CompleteGitHubOAuth(r.Context(), code, state, stateVerifier)
+	result, err := h.Service.CompleteGitHubOAuth(r.Context(), code, state, stateVerifier, setupSessionFromRequest(r))
 	if err != nil {
 		clearOAuthStateCookie(w, h.AuthConfig.CookieSecure)
+		if isSetupClosed(err) {
+			clearSetupSessionCookie(w, h.AuthConfig.CookieSecure)
+		}
 		writeRouteError(w, r, err)
 		return
+	}
+	// A completed sign-in ends any setup session: the claim deleted them all.
+	if setupSessionFromRequest(r) != "" {
+		clearSetupSessionCookie(w, h.AuthConfig.CookieSecure)
 	}
 
 	if result.AdminCLI != nil {
@@ -352,7 +402,11 @@ func (h *AuthHandler) GetGitHubOAuthCallback(w http.ResponseWriter, r *http.Requ
 
 	redirectURL := result.RedirectURL
 	if redirectURL == "" || redirectURL == "/" {
-		redirectURL = h.githubBrowserOrigin() + "/"
+		if config.IsSingleOwner(h.AuthConfig) {
+			redirectURL = "/"
+		} else {
+			redirectURL = h.githubBrowserOrigin() + "/"
+		}
 	}
 	if returnTo != "" {
 		redirectURL = returnTo
@@ -669,6 +723,76 @@ func setSessionCookie(w http.ResponseWriter, configuredName, sessionKey string, 
 	})
 }
 
+// PostSetupSession trades the printed setup token for a setup session in an
+// HttpOnly cookie (spec §5.1.0). The token is never echoed or logged.
+func (h *AuthHandler) PostSetupSession(w http.ResponseWriter, r *http.Request) {
+	if config.IsSingleOwner(h.AuthConfig) {
+		origin, ok := h.installBrowserOrigin(r)
+		if !ok {
+			writeRouteError(w, r, errors.New(errors.CodeUnknownOrigin, "unknown install origin"))
+			return
+		}
+		local := *h
+		local.AuthConfig.CookieSecure = strings.HasPrefix(origin, "https://")
+		h = &local
+	}
+
+	if h.Setup == nil {
+		writeRouteError(w, r, errors.Internal("install setup is not configured"))
+		return
+	}
+	var body struct {
+		Token string `json:"token"`
+	}
+	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+	sessionID, err := h.Setup.ExchangeSetupToken(r.Context(), body.Token)
+	if err != nil {
+		if isSetupClosed(err) {
+			clearSetupSessionCookie(w, h.AuthConfig.CookieSecure)
+		}
+		writeRouteError(w, r, err)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     services.SetupSessionCookieName,
+		Value:    sessionID,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   h.AuthConfig.CookieSecure,
+		SameSite: http.SameSiteLaxMode,
+	})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func setupSessionFromRequest(r *http.Request) string {
+	cookie, err := r.Cookie(services.SetupSessionCookieName)
+	if err != nil {
+		return ""
+	}
+	return cookie.Value
+}
+
+// ClearSetupSessionCookie removes a refused setup credential on its effective
+// origin so the next browser request can sign in normally.
+func (h *AuthHandler) ClearSetupSessionCookie(w http.ResponseWriter, r *http.Request) {
+	origin, _ := h.installBrowserOrigin(r)
+	clearSetupSessionCookie(w, strings.HasPrefix(origin, "https://"))
+}
+
+func clearSetupSessionCookie(w http.ResponseWriter, secure bool) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     services.SetupSessionCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
+}
+
 func setOAuthStateCookie(w http.ResponseWriter, stateVerifier string, expiresAt time.Time, secure bool) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     oauthStateCookieName,
@@ -877,6 +1001,7 @@ func writeRouteError(w http.ResponseWriter, r *http.Request, err error) {
 				// RetryAfter here a full pool would answer 503 with no pacing
 				// at all.
 				Code:       apiErr.Code,
+				Class:      apiErr.Class,
 				Fault:      apiErr.Fault,
 				RetryAfter: apiErr.RetryAfter,
 			})
@@ -888,4 +1013,51 @@ func writeRouteError(w http.ResponseWriter, r *http.Request, err error) {
 	// Log the full error server-side before returning a sanitized response.
 	middleware.LoggerFromContext(r.Context()).Error("internal server error", "error", err)
 	errors.WriteError(w, errors.Internal("internal server error"))
+}
+
+// isSetupClosed reports a setup_closed refusal: the browser's setup-session
+// cookie is dead and is cleared.
+func isSetupClosed(err error) bool {
+	var apiErr *errors.APIError
+	return stdErrors.As(err, &apiErr) && apiErr.Code == errors.CodeSetupClosed
+}
+
+// PreserveInstallSocketPeer runs before RealIP; origin trust uses the socket,
+// never a forwarded client address (§16.3.3).
+type installSocketPeerKey struct{}
+
+func PreserveInstallSocketPeer(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), installSocketPeerKey{}, r.RemoteAddr)))
+	})
+}
+
+func (h *AuthHandler) installBrowserOrigin(r *http.Request) (string, bool) {
+	peer := r.RemoteAddr
+	if socket, ok := r.Context().Value(installSocketPeerKey{}).(string); ok {
+		peer = socket
+	}
+	host, _, err := net.SplitHostPort(peer)
+	if err != nil {
+		host = peer
+	}
+	ip := net.ParseIP(host)
+	requestHost := r.Host
+	if ip != nil && ip.IsLoopback() {
+		if forwarded := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Host"), ",")[0]); forwarded != "" {
+			requestHost = forwarded
+		}
+	}
+	// The configured origin supplies the scheme; no forwarding scheme is read.
+	origins := append([]string{}, h.AllowedOrigins...)
+	if callback, err := url.Parse(h.AuthConfig.GitHubRedirectURL); err == nil {
+		origins = append(origins, callback.Scheme+"://"+callback.Host)
+	}
+	for _, origin := range origins {
+		parsed, err := url.Parse(origin)
+		if err == nil && parsed.Host == requestHost {
+			return origin, true
+		}
+	}
+	return "", false
 }

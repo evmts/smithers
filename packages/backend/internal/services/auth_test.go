@@ -19,6 +19,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/identity"
 	"github.com/smithersai/smithers/packages/backend/internal/pkg/crypto"
 	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
@@ -60,18 +61,19 @@ func (m *mockAuthQuerier) ConsumeOAuthState(ctx context.Context, arg db.ConsumeO
 	return m.consumeOAuthStateFn(ctx, arg)
 }
 
-func (m *mockAuthQuerier) ConsumeOAuthStateWithScopes(ctx context.Context, arg db.ConsumeOAuthStateWithScopesParams) ([]string, error) {
+func (m *mockAuthQuerier) ConsumeOAuthStateWithScopes(ctx context.Context, arg db.ConsumeOAuthStateWithScopesParams) (db.ConsumeOAuthStateWithScopesRow, error) {
 	if m.consumeOAuthStateWithScopesFn != nil {
-		return m.consumeOAuthStateWithScopesFn(ctx, arg)
+		scopes, err := m.consumeOAuthStateWithScopesFn(ctx, arg)
+		return db.ConsumeOAuthStateWithScopesRow{RequestedScopes: scopes}, err
 	}
 	rows, err := m.consumeOAuthStateFn(ctx, db.ConsumeOAuthStateParams(arg))
 	if err != nil {
-		return nil, err
+		return db.ConsumeOAuthStateWithScopesRow{}, err
 	}
 	if rows == 0 {
-		return nil, pgx.ErrNoRows
+		return db.ConsumeOAuthStateWithScopesRow{}, pgx.ErrNoRows
 	}
-	return nil, nil
+	return db.ConsumeOAuthStateWithScopesRow{}, nil
 }
 
 func (m *mockAuthQuerier) ConsumeAuthNonce(ctx context.Context, arg db.ConsumeAuthNonceParams) (int64, error) {
@@ -434,7 +436,7 @@ func TestAuthService_StartGitHubOAuth_ReturnsRedirect(t *testing.T) {
 		},
 	}, defaultAuthConfig(), mockKeyAuthVerifier{}, mockGitHubClient{})
 
-	url, err := svc.StartGitHubOAuth(context.Background(), "verifier-redirect")
+	url, err := svc.StartGitHubOAuth(context.Background(), "verifier-redirect", "")
 	require.NoError(t, err)
 	// GitHub sign-in goes DIRECT to the GitHub App authorize endpoint.
 	assert.Contains(t, url, "github.test/login/oauth/authorize")
@@ -462,7 +464,7 @@ func TestAuthService_StartGitHubOAuth_Direct(t *testing.T) {
 	})
 	svc.generateState = func() string { return "direct-state" }
 
-	url, err := svc.StartGitHubOAuth(context.Background(), "verifier-direct")
+	url, err := svc.StartGitHubOAuth(context.Background(), "verifier-direct", "")
 	require.NoError(t, err)
 	assert.Equal(t, "direct-state", createdState)
 	assert.Equal(t, "direct-state", authorizationState)
@@ -559,7 +561,7 @@ func TestAuthService_CompleteGitHubOAuth_ExistingOAuthAccount(t *testing.T) {
 
 	m := newObserveV2Metrics()
 	WithAuthMetrics(m)(svc)
-	result, err := svc.CompleteGitHubOAuth(context.Background(), "code-1", "state-1", "verifier-1")
+	result, err := svc.CompleteGitHubOAuth(context.Background(), "code-1", "state-1", "verifier-1", "")
 	require.NoError(t, err)
 	assert.True(t, consumed)
 	assert.Equal(t, int64(22), result.User.ID)
@@ -617,7 +619,7 @@ func TestAuthService_CompleteGitHubOAuth_CreatesUserAndOAuthAccount(t *testing.T
 		},
 	})
 
-	result, err := svc.CompleteGitHubOAuth(context.Background(), "code-new", "state-new", "verifier-new")
+	result, err := svc.CompleteGitHubOAuth(context.Background(), "code-new", "state-new", "verifier-new", "")
 	require.NoError(t, err)
 	assert.True(t, consumed)
 	assert.Equal(t, int64(88), result.User.ID)
@@ -1101,7 +1103,7 @@ func TestAuthService_CompleteGitHubOAuth_NilClient(t *testing.T) {
 		},
 	}, defaultAuthConfig(), mockKeyAuthVerifier{}, nil)
 
-	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier")
+	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier", "")
 	require.Error(t, err)
 	apiErr, ok := err.(*errors.APIError)
 	require.True(t, ok)
@@ -1396,7 +1398,7 @@ func TestAuthService_CompleteGitHubOAuth_EmptyState(t *testing.T) {
 		},
 	})
 
-	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "", "verifier")
+	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "", "verifier", "")
 	require.Error(t, err)
 	apiErr, ok := err.(*errors.APIError)
 	require.True(t, ok)
@@ -1522,7 +1524,7 @@ func TestAuthService_CompleteGitHubOAuth_DuplicateEmailConflict(t *testing.T) {
 		},
 	})
 
-	_, err := svc.CompleteGitHubOAuth(context.Background(), "code-dup", "state-dup", "verifier-dup")
+	_, err := svc.CompleteGitHubOAuth(context.Background(), "code-dup", "state-dup", "verifier-dup", "")
 	require.Error(t, err)
 	apiErr, ok := err.(*errors.APIError)
 	require.True(t, ok)
@@ -1557,7 +1559,7 @@ func TestAuthService_CompleteGitHubOAuth_OwnerNamespaceConflict(t *testing.T) {
 		},
 	})
 
-	_, err := svc.CompleteGitHubOAuth(context.Background(), "code-owner", "state-owner", "verifier-owner")
+	_, err := svc.CompleteGitHubOAuth(context.Background(), "code-owner", "state-owner", "verifier-owner", "")
 	require.Error(t, err)
 	apiErr, ok := err.(*errors.APIError)
 	require.True(t, ok)
@@ -1737,7 +1739,7 @@ func TestAuthService_StartGitHubOAuth_EmptyRedirectURLStillStarts(t *testing.T) 
 		fetchEmailsFn: func(ctx context.Context, accessToken string) ([]GitHubEmail, error) { return nil, nil },
 	})
 
-	redirectURL, err := svc.StartGitHubOAuth(context.Background(), "test-verifier")
+	redirectURL, err := svc.StartGitHubOAuth(context.Background(), "test-verifier", "")
 	require.NoError(t, err)
 	// GitHub sign-in goes DIRECT to the GitHub App authorize endpoint.
 	assert.Contains(t, redirectURL, "github.test/login/oauth/authorize")
@@ -1835,7 +1837,7 @@ func TestAuthService_CompleteGitHubOAuth_ExchangeCodeError(t *testing.T) {
 		fetchEmailsFn: func(ctx context.Context, accessToken string) ([]GitHubEmail, error) { return nil, nil },
 	})
 
-	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier")
+	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier", "")
 	require.Error(t, err)
 	apiErr, ok := err.(*errors.APIError)
 	require.True(t, ok)
@@ -1860,7 +1862,7 @@ func TestAuthService_CompleteGitHubOAuth_FetchUserError(t *testing.T) {
 		fetchEmailsFn: func(ctx context.Context, accessToken string) ([]GitHubEmail, error) { return nil, nil },
 	})
 
-	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier")
+	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier", "")
 	require.Error(t, err)
 	apiErr, ok := err.(*errors.APIError)
 	require.True(t, ok)
@@ -1887,7 +1889,7 @@ func TestAuthService_CompleteGitHubOAuth_FetchEmailsError(t *testing.T) {
 		},
 	})
 
-	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier")
+	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier", "")
 	require.Error(t, err)
 	apiErr, ok := err.(*errors.APIError)
 	require.True(t, ok)
@@ -1922,7 +1924,7 @@ func TestAuthService_CompleteGitHubOAuth_GetUserByIDError(t *testing.T) {
 		},
 	})
 
-	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier")
+	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier", "")
 	require.Error(t, err)
 	apiErr, ok := err.(*errors.APIError)
 	require.True(t, ok)
@@ -1953,7 +1955,7 @@ func TestAuthService_CompleteGitHubOAuth_GetOAuthAccountDBError(t *testing.T) {
 		},
 	})
 
-	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier")
+	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier", "")
 	require.Error(t, err)
 	apiErr, ok := err.(*errors.APIError)
 	require.True(t, ok)
@@ -1987,7 +1989,7 @@ func TestAuthService_CompleteGitHubOAuth_CreateUserDBError(t *testing.T) {
 		},
 	})
 
-	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier")
+	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier", "")
 	require.Error(t, err)
 	apiErr, ok := err.(*errors.APIError)
 	require.True(t, ok)
@@ -2025,7 +2027,7 @@ func TestAuthService_CompleteGitHubOAuth_UpsertOAuthAccountError(t *testing.T) {
 				},
 			})
 
-			_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier")
+			_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier", "")
 			require.Error(t, err)
 			apiErr, ok := err.(*errors.APIError)
 			require.True(t, ok)
@@ -2071,7 +2073,7 @@ func TestAuthService_CompleteGitHubOAuth_UpsertEmailErrorDoesNotBlockSession(t *
 		},
 	})
 
-	result, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier")
+	result, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier", "")
 	require.NoError(t, err)
 	assert.True(t, sessionCreated)
 	assert.Equal(t, int64(10), result.User.ID)
@@ -2112,7 +2114,7 @@ func TestAuthService_CompleteGitHubOAuth_CreateAuthSessionError(t *testing.T) {
 		},
 	})
 
-	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier")
+	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier", "")
 	require.Error(t, err)
 	apiErr, ok := err.(*errors.APIError)
 	require.True(t, ok)
@@ -2195,7 +2197,7 @@ func TestAuthService_CompleteGitHubOAuth_RejectsProhibitedLoginExistingUser(t *t
 		},
 	})
 
-	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier")
+	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier", "")
 	require.Error(t, err)
 	apiErr, ok := err.(*errors.APIError)
 	require.True(t, ok)
@@ -2244,7 +2246,7 @@ func TestAuthService_CompleteGitHubOAuth_RejectsProhibitedLoginNewUser(t *testin
 		},
 	})
 
-	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier")
+	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier", "")
 	require.Error(t, err)
 	apiErr, ok := err.(*errors.APIError)
 	require.True(t, ok)
@@ -2296,7 +2298,7 @@ func TestAuthService_CompleteGitHubOAuth_EncryptsAccessTokenBeforeUpsert(t *test
 		},
 	})
 
-	_, err := svc.CompleteGitHubOAuth(context.Background(), "code-enc", "state-enc", "verifier-enc")
+	_, err := svc.CompleteGitHubOAuth(context.Background(), "code-enc", "state-enc", "verifier-enc", "")
 	require.NoError(t, err)
 
 	// Verify captured ciphertext decrypts back to original token
@@ -2346,7 +2348,7 @@ func TestAuthService_CompleteGitHubOAuth_EncryptionFailsWhenSessionSecretMissing
 		},
 	})
 
-	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier")
+	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier", "")
 	require.Error(t, err, "should fail when SessionSecret is empty")
 	apiErr, ok := err.(*errors.APIError)
 	require.True(t, ok)
@@ -2452,7 +2454,7 @@ func TestAuthService_CompleteGitHubOAuth_ExistingAccountReadDecryptFailure(t *te
 		},
 	})
 
-	_, err := svc.CompleteGitHubOAuth(context.Background(), "code-1", "state-1", "verifier-1")
+	_, err := svc.CompleteGitHubOAuth(context.Background(), "code-1", "state-1", "verifier-1", "")
 	require.Error(t, err)
 	apiErr, ok := err.(*errors.APIError)
 	require.True(t, ok)
@@ -2500,7 +2502,7 @@ func TestAuthService_CompleteGitHubOAuth_PersistsRefreshToken(t *testing.T) {
 		},
 	})
 
-	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier")
+	_, err := svc.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier", "")
 	require.NoError(t, err)
 
 	require.NotEmpty(t, captured.RefreshTokenEncrypted, "connect flow must persist the refresh token")
@@ -2655,3 +2657,68 @@ func (m mockAuth0Client) AuthorizationURL(state string) string {
 	return value
 }
 func auth0Fixture(client mockGitHubClient) mockAuth0Client { return mockAuth0Client{client} }
+
+// Unit fault injection exercises fail-closed reads independently of the real
+// PostgreSQL and HTTP mint/rollback integration test.
+type credentialMintRoster struct {
+	*mockAuthQuerier
+	provisional bool
+	err         error
+}
+
+func (q credentialMintRoster) AuthorizeMemberUser(ctx context.Context, userID int64) (db.AuthorizeMemberUserRow, error) {
+	return db.AuthorizeMemberUserRow{ID: userID, Provisional: q.provisional}, q.err
+}
+func TestCredentialMintChecksResolvedMember(t *testing.T) {
+	// spec §5.1.0: every non-setup action requires a verified member.
+	for _, tc := range []struct {
+		name        string
+		provisional bool
+		readErr     error
+		code        errors.Code
+	}{
+		{"verified", false, nil, ""}, {"provisional", true, nil, errors.CodeOwnerUnverified},
+		{"not a member", false, pgx.ErrNoRows, errors.CodeNotAMember}, {"database failure", false, assert.AnError, errors.CodeInternal},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			minted := 0
+			q := credentialMintRoster{mockAuthQuerier: &mockAuthQuerier{createAccessTokenFn: func(context.Context, db.CreateAccessTokenParams) (db.AccessToken, error) {
+				minted++
+				return db.AccessToken{}, nil
+			}}, provisional: tc.provisional, err: tc.readErr}
+			ctx := identity.WithSetupRequest(context.Background())
+			svc := NewAuthService(q, config.AuthConfig{Mode: "selfhost"}, nil, nil)
+			_, err := svc.CreateToken(ctx, 7, CreateTokenRequest{Name: "cli", Scopes: []string{"read:user"}})
+			check := func(err error) {
+				if tc.code == "" {
+					require.NoError(t, err)
+				} else {
+					var api *errors.APIError
+					require.ErrorAs(t, err, &api)
+					require.Equal(t, tc.code, api.Code)
+				}
+			}
+			check(err)
+			oauth := NewOAuth2ServiceWithPool(&mockOAuth2Querier{}, nil, identity.NewMemberBoundary(q))
+			oq := &mockOAuth2Querier{
+				createAccessTokenFn: func(context.Context, db.CreateOAuth2AccessTokenParams) (db.Oauth2AccessToken, error) {
+					minted++
+					return db.Oauth2AccessToken{}, nil
+				},
+				createRefreshTokenFn: func(context.Context, db.CreateOAuth2RefreshTokenParams) (db.Oauth2RefreshToken, error) {
+					minted++
+					return db.Oauth2RefreshToken{}, nil
+				},
+			}
+			_, err = oauth.issueTokenPair(ctx, oq, 1, 7, []string{"read:user"}, grantSource{})
+			check(err)
+			if tc.code == "" {
+				require.Equal(t, 3, minted)
+			} else {
+				require.Zero(t, minted)
+			}
+		})
+	}
+	_, err := NewAuthService(&mockAuthQuerier{}, config.AuthConfig{Mode: "selfhost"}, nil, nil).CreateToken(context.Background(), 7, CreateTokenRequest{Name: "cli"})
+	require.ErrorContains(t, err, "member authorization is not configured")
+}

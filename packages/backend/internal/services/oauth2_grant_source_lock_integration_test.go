@@ -32,7 +32,7 @@ func TestOAuth2GrantSourceLockSurvivesUntilTokenCommit(t *testing.T) {
 		_, err := pool.Exec(context.Background(), "DELETE FROM oauth2_applications WHERE id = $1", app.ID)
 		require.NoError(t, err)
 	})
-	svc := NewOAuth2ServiceWithPool(q, pool)
+	svc := NewOAuth2ServiceWithPool(q, pool, nil)
 	verifier := "verifier-verifier-verifier-verifier-verifier"
 	code, err := svc.AuthorizeGrant(ctx, OAuth2AuthorizeInput{UserID: user.ID, ClientID: app.ClientID, RedirectURI: app.RedirectUris[0], Scope: "read:user", CodeChallenge: pkceChallengeForTest(verifier), CodeChallengeMethod: "S256", CallerScopes: []string{"read:user"}, SourceAccessTokenID: pat.ID})
 	require.NoError(t, err)

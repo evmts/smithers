@@ -1373,6 +1373,9 @@ components:
       properties:
         code:
           type: string
+        class:
+          type: string
+          description: Install sign-in refusal class (permission, github or user).
         fault:
           type: string
         plan_key:

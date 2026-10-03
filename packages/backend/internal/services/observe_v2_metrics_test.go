@@ -76,7 +76,7 @@ func TestObserveV2AuthFailureAndDenial(t *testing.T) {
 	}
 	m := newObserveV2Metrics()
 	s := NewAuthService(nil, defaultAuthConfig(), nil, nil, WithAuthMetrics(m))
-	_, err := s.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier")
+	_, err := s.CompleteGitHubOAuth(context.Background(), "code", "state", "verifier", "")
 	require.Error(t, err)
 	require.Equal(t, 1.0, testutil.ToFloat64(m.auth.WithLabelValues("github", "failure")))
 }

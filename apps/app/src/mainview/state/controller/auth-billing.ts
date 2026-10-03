@@ -14,6 +14,7 @@ AUTH_SIGNED_IN_PARAM,
 BILLING_BALANCE_PATH
 } from "@smthrs/rpc/AgentApiRoutes"
 import { signInReturnTo } from "../../RepoLink"
+import { SETUP_SESSION_PATH } from "@smthrs/rpc/ApplicationAuth"
 import type { Card } from "../AppState"
 import type { ControllerContext } from "./context"
 import type { FailureController } from "./failures"
@@ -63,10 +64,28 @@ export interface SelectedBackendIdentity extends ApplicationIdentityClient {
 export const createAuthBillingController = (
   ctx: ControllerContext,
   nextTranscriptOrdinal: () => number,
-  selectedIdentity?: SelectedBackendIdentity,
-  openLocalAuth?: () => boolean
+  selectedIdentity?: SelectedBackendIdentity
 ): AuthBillingController => {
   const { store, services, baseUrl, boundedFetch: http, errorMessageOf, unref } = ctx
+  // Capture and exchange before frame history initializes and removes the entry query.
+  // spec §5.1.0: opening the URL exchanges; the sign-in door awaits this same request.
+  const enteredSetup = typeof window !== "undefined" && window.location.pathname === "/setup"
+  const setupToken = enteredSetup ? new URLSearchParams(window.location.search).get("token") : null
+  const setupExchange = setupToken === null ? Promise.resolve(true) : (async () => {
+    try {
+      const response = await http(`${baseUrl}${SETUP_SESSION_PATH}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: setupToken })
+      })
+      void response.body?.cancel().catch(() => {})
+      if (!response.ok) throw new Error(`Setup: HTTP ${response.status}`)
+      if (!ctx.disposed) window.history?.replaceState?.(window.history.state, "", window.location.pathname)
+      return !ctx.disposed
+    } catch (error) {
+      if (!ctx.disposed) ctx.failures.report("command.boundary", error, "auth.sign-in")
+      return false
+    }
+  })()
   const balanceAvailable = services.bootstrap?.capabilities.includes("billing.balance") ?? true
   // Only a session validated during this controller lifetime can complete login.
   // A hydrated identity row, local capability or cloud PAT is not proof.
@@ -513,7 +532,6 @@ export const createAuthBillingController = (
         action: { flow: "auth.sign-out", label: "Sign out" } })
       return
     }
-    if (openLocalAuth?.() === true) return
     if (identity === undefined || identity.state === "unavailable") {
       toast(
         "auth.sign-in.unavailable",
@@ -547,13 +565,16 @@ export const createAuthBillingController = (
     if (typeof window === "undefined") return
     // A repository page returns to itself; the landing needs a success marker
     // so its entrance resumes onboarding without a second Get started click.
-    // The server validates either path against its own origin.
-    const returnTo = window.location.pathname === "/" ? `/?${AUTH_SIGNED_IN_PARAM}=github` : signInReturnTo(window.location)
+    // The server validates either path against its own origin. The printed
+    // setup URL (`/setup?token=`) trades its one-time token for a setup
+    // session first; the sign-in from that session claims the install, then
+    // lands on the home page. The token never rides the sign-in URL.
+    const returnTo = window.location.pathname === "/" || enteredSetup ? `/?${AUTH_SIGNED_IN_PARAM}=github` : signInReturnTo(window.location)
     const query = returnTo === null ? "" : `?${AUTH_RETURN_TO_PARAM}=${encodeURIComponent(returnTo)}`
     // The hop leaves the page: let the durable queue settle, or the state this click just changed is lost.
-    return Promise.resolve(store.settled?.()).then(() => {
+    return setupExchange.then(opened => opened ? Promise.resolve(store.settled?.()).then(() => {
       if (!ctx.disposed) window.location.assign(`${baseUrl}${selectedIdentity?.signInPath ?? AUTH_SIGN_IN_PATH}${query}`)
-    })
+    }) : undefined)
   }
 
   // Logout responses can clear cookies even on HTTP failure. An obsolete

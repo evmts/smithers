@@ -72,13 +72,17 @@ func (c *GitHubClient) oauthClient(ctx context.Context) (string, string, error) 
 }
 
 func (c *GitHubClient) AuthorizationURL(ctx context.Context, state string) (string, error) {
+	return c.AuthorizationURLWithCallback(ctx, state, c.redirectURL)
+}
+
+func (c *GitHubClient) AuthorizationURLWithCallback(ctx context.Context, state, callback string) (string, error) {
 	clientID, _, err := c.oauthClient(ctx)
 	if err != nil {
 		return "", err
 	}
 	values := url.Values{}
 	values.Set("client_id", clientID)
-	values.Set("redirect_uri", c.redirectURL)
+	values.Set("redirect_uri", callback)
 	values.Set("scope", githubOAuthScope)
 	values.Set("state", strings.TrimSpace(state))
 	return strings.TrimRight(c.oauthBaseURL, "/") + "/login/oauth/authorize?" + values.Encode(), nil

@@ -1,6 +1,7 @@
 package seed_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -40,4 +41,22 @@ func TestCreateUserDuplicateReturnsErrorWithoutAnotherUser(t *testing.T) {
 	require.NoError(t, pool.QueryRow(t.Context(), `SELECT count(*), min(id) FROM users`).Scan(&rows, &persistedID))
 	require.Equal(t, 1, rows)
 	require.Equal(t, id, persistedID)
+}
+
+func TestInstallOwnerRecordsOwnerAndConsumesSetupToken(t *testing.T) {
+	pool, _ := postgresfixture.NewProductDatabase(t)
+	_, err := pool.Exec(t.Context(), `INSERT INTO install_settings (key, value) VALUES ('setup_token', '{"digest":"d"}')`)
+	require.NoError(t, err)
+	token, err := seed.InstallOwner(t.Context(), pool, "owner", 77)
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(token, "smithers_"))
+	var role, login string
+	var githubID int64
+	var verified bool
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT 'owner',u.username,c.github_user_id,EXISTS(SELECT 1 FROM install_settings WHERE key='owner.access_checked') FROM self_host_owners o JOIN collaborators c ON c.user_id=o.user_id JOIN users u ON u.id=o.user_id`).Scan(&role, &login, &githubID, &verified))
+	require.Equal(t, []any{"owner", "owner", int64(77)}, []any{role, login, githubID})
+	require.True(t, verified, "the seeded owner is past the provisional phase")
+	var settings int
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT count(*) FROM install_settings WHERE key = 'setup_token'`).Scan(&settings))
+	require.Zero(t, settings)
 }

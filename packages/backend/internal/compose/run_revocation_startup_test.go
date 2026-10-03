@@ -86,11 +86,11 @@ func TestRunWaitsForRevocationCursorBeforeAdmittingConsumers(t *testing.T) {
 			})
 			require.NoError(t, err)
 			_, err = writerPool.Exec(context.Background(),
-				`INSERT INTO self_host_owners (singleton, user_id) VALUES (TRUE, $1)`, user.ID)
+				`WITH o AS (INSERT INTO self_host_owners(user_id) VALUES($1)),c AS (INSERT INTO collaborators(user_id,github_user_id,permission) VALUES($1,$1,'admin')) INSERT INTO install_settings(key,value) VALUES('owner.access_checked',jsonb_build_object('login',$2::TEXT,'last_access_check_at',NOW()))`, user.ID, userName)
 			require.NoError(t, err)
 			t.Cleanup(func() {
 				_, _ = writerPool.Exec(context.Background(),
-					`DELETE FROM self_host_owners WHERE user_id = $1`, user.ID)
+					`WITH o AS (DELETE FROM self_host_owners WHERE user_id=$1),c AS (DELETE FROM collaborators WHERE user_id=$1) DELETE FROM install_settings WHERE key='owner.access_checked'`, user.ID)
 			})
 			makeCredential := func(name string) (string, int64, string) {
 				t.Helper()

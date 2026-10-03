@@ -262,6 +262,17 @@ func TestNewTracerProvider_RedactsDesktopTokenFromClientSpan(t *testing.T) {
 	full, ok := otelTestAttr(spans[0].Attributes, "url.full")
 	require.True(t, ok, "otelhttp records url.full on client spans")
 	assert.Equal(t, "http://relay.internal/api/workspaces/ws1/desktop/smithers_desk_REDACTED/websockify?path=REDACTED&password=REDACTED", full)
+	request, err := http.NewRequest(http.MethodPost, "https://api.github.com/app-manifests/conversion-secret/conversions", nil)
+	require.NoError(t, err)
+	response, err := client.Do(request)
+	require.NoError(t, err)
+	require.NoError(t, response.Body.Close())
+	require.NoError(t, provider.ForceFlush(context.Background()))
+	spans = exporter.GetSpans()
+	require.Len(t, spans, 2)
+	manifestURL, ok := otelTestAttr(spans[1].Attributes, "url.full")
+	require.True(t, ok)
+	assert.Equal(t, "https://api.github.com/app-manifests/REDACTED/conversions", manifestURL)
 	for _, attr := range spans[0].Attributes {
 		assert.NotContains(t, attr.Value.String(), otelTestDesktopToken, "attribute %s leaks the desktop token", attr.Key)
 	}

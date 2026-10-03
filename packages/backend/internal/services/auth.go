@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	stdErrors "errors"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/identity"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	smitherscrypto "github.com/smithersai/smithers/packages/backend/internal/pkg/crypto"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
@@ -112,7 +114,7 @@ type Auth0Client interface {
 type AuthQuerier interface {
 	CreateOAuthState(ctx context.Context, arg db.CreateOAuthStateParams) (db.OauthState, error)
 	ConsumeOAuthState(ctx context.Context, arg db.ConsumeOAuthStateParams) (int64, error)
-	ConsumeOAuthStateWithScopes(ctx context.Context, arg db.ConsumeOAuthStateWithScopesParams) ([]string, error)
+	ConsumeOAuthStateWithScopes(ctx context.Context, arg db.ConsumeOAuthStateWithScopesParams) (db.ConsumeOAuthStateWithScopesRow, error)
 	CreateAuthNonce(ctx context.Context, arg db.CreateAuthNonceParams) (db.AuthNonce, error)
 	ConsumeAuthNonce(ctx context.Context, arg db.ConsumeAuthNonceParams) (int64, error)
 	GetUserByWalletAddress(ctx context.Context, walletAddress pgtype.Text) (db.User, error)
@@ -168,6 +170,8 @@ type AuthService struct {
 	// githubRefreshLocker extends that serialization across replicas. Optional;
 	// see WithAuthGitHubRefreshLocker.
 	githubRefreshLocker GitHubRefreshLocker
+	// signIn admits GitHub sign-ins on the install (single-owner mode).
+	signIn SignInGate
 }
 
 // userLockRegistry hands out per-key mutexes that are dropped from the map as
@@ -311,6 +315,12 @@ func NewAuthService(q AuthQuerier, cfg config.AuthConfig, keyAuthVerifier KeyAut
 	return s
 }
 
+// SetSignInGate checks every GitHub sign-in on the install against the
+// roster and GitHub push permission, and lets the setup token claim the owner.
+func (s *AuthService) SetSignInGate(gate SignInGate) {
+	s.signIn = gate
+}
+
 // SetAuth0Client sets the Auth0 client for Auth0 OAuth flows.
 // This is called during server startup when Auth0 credentials are configured.
 func (s *AuthService) SetAuth0Client(client Auth0Client) {
@@ -409,11 +419,11 @@ func (s *AuthService) VerifyKeyAuth(ctx context.Context, message, signature stri
 	}, nil
 }
 
-func (s *AuthService) StartGitHubOAuth(ctx context.Context, stateVerifier string) (string, error) {
+func (s *AuthService) StartGitHubOAuth(ctx context.Context, stateVerifier, setupSession string) (string, error) {
 	// GitHub connect/sign-in always goes DIRECT to the GitHub App now — WorkOS is
 	// removed. (Routing through WorkOS made it reject the worker's rewritten
 	// redirect_uri: "This is not a valid redirect URI".)
-	return s.startGitHubOAuthDirect(ctx, stateVerifier, nil)
+	return s.startGitHubOAuthDirect(ctx, stateVerifier, nil, setupSession)
 }
 
 // StartGitHubOAuthWithScopes starts the first-party CLI/browser OAuth flow and
@@ -424,10 +434,21 @@ func (s *AuthService) StartGitHubOAuthWithScopes(ctx context.Context, stateVerif
 	if err != nil {
 		return "", err
 	}
-	return s.startGitHubOAuthDirect(ctx, stateVerifier, scopes)
+	return s.startGitHubOAuthDirect(ctx, stateVerifier, scopes, "")
 }
 
-func (s *AuthService) startGitHubOAuthDirect(ctx context.Context, stateVerifier string, requestedScopes []string) (string, error) {
+// WithGitHubCallback carries a callback selected from the install's exact origin allowlist.
+type gitHubCallbackKey struct{}
+
+func WithGitHubCallback(ctx context.Context, callback string) context.Context {
+	return context.WithValue(ctx, gitHubCallbackKey{}, callback)
+}
+
+// startGitHubOAuthDirect records the one-time OAuth state. On the install
+// the sign-in gate checks the setup session first: before the claim only a
+// sign-in from a live setup session may start, and its digest rides in the
+// state so the callback can require the same session.
+func (s *AuthService) startGitHubOAuthDirect(ctx context.Context, stateVerifier string, requestedScopes []string, setupSession string) (string, error) {
 	githubAuthClient, ok := s.githubClient.(GitHubAuthClient)
 	if !ok {
 		return "", pkgerrors.Internal("github oauth is not configured")
@@ -435,23 +456,56 @@ func (s *AuthService) startGitHubOAuthDirect(ctx context.Context, stateVerifier 
 	if strings.TrimSpace(stateVerifier) == "" {
 		return "", pkgerrors.BadRequest("invalid oauth state")
 	}
+	var setupSessionDigest pgtype.Text
+	if config.IsSingleOwner(s.cfg) {
+		starter, ok := s.signIn.(setupSignInStarter)
+		if !ok {
+			return "", pkgerrors.Internal("install sign-in is not configured")
+		}
+		claiming, err := starter.StartSignIn(ctx, setupSession)
+		if err != nil {
+			return "", err
+		}
+		if claiming {
+			setupSessionDigest = pgtype.Text{String: SetupTokenDigest(setupSession), Valid: true}
+		}
+	}
 
 	state := s.generateState()
-	authURL, err := githubAuthClient.AuthorizationURL(ctx, state)
+	var authURL string
+	var err error
+	if callback, ok := ctx.Value(gitHubCallbackKey{}).(string); ok {
+		client, ok := githubAuthClient.(interface {
+			AuthorizationURLWithCallback(context.Context, string, string) (string, error)
+		})
+		if !ok {
+			return "", pkgerrors.Internal("per-origin GitHub callback is unavailable")
+		}
+		authURL, err = client.AuthorizationURLWithCallback(ctx, state, callback)
+	} else {
+		authURL, err = githubAuthClient.AuthorizationURL(ctx, state)
+	}
 	if err != nil {
 		return "", pkgerrors.Internal("github oauth credentials are unavailable").WithCause(err)
 	}
 	_, err = s.queries.CreateOAuthState(ctx, db.CreateOAuthStateParams{
-		State:           state,
-		ContextHash:     hashOAuthStateVerifier(stateVerifier),
-		RequestedScopes: requestedScopes,
-		ExpiresAt:       s.now().Add(10 * time.Minute),
+		State:              state,
+		ContextHash:        hashOAuthStateVerifier(stateVerifier),
+		RequestedScopes:    requestedScopes,
+		ExpiresAt:          s.now().Add(10 * time.Minute),
+		SetupSessionDigest: setupSessionDigest,
 	})
 	if err != nil {
 		return "", pkgerrors.Internal("failed to create oauth state").WithCause(err)
 	}
 
 	return authURL, nil
+}
+
+// setupSignInStarter admits the start of an install sign-in. claiming is
+// true when the sign-in starts from a setup session and may claim the owner.
+type setupSignInStarter interface {
+	StartSignIn(ctx context.Context, setupSession string) (claiming bool, err error)
 }
 
 // StartAuth0OAuth initiates the Auth0 OAuth flow. It creates a state verifier,
@@ -478,7 +532,7 @@ func (s *AuthService) StartAuth0OAuth(ctx context.Context, stateVerifier string)
 	return authURL, nil
 }
 
-func (s *AuthService) CompleteGitHubOAuth(ctx context.Context, code, state, stateVerifier string) (result OAuthCallbackResult, retErr error) {
+func (s *AuthService) CompleteGitHubOAuth(ctx context.Context, code, state, stateVerifier, setupSession string) (result OAuthCallbackResult, retErr error) {
 	defer func() { s.observeLogin("github", retErr) }()
 	if s.githubClient == nil {
 		return OAuthCallbackResult{}, pkgerrors.Internal("github oauth is not configured")
@@ -488,7 +542,7 @@ func (s *AuthService) CompleteGitHubOAuth(ctx context.Context, code, state, stat
 	// lookup) were written under that label, so changing it would orphan those
 	// accounts and force re-onboarding. The WorkOS service itself is gone — this
 	// is just the historical row key.
-	return s.completeOAuthWithClient(ctx, s.githubClient, "workos", code, state, stateVerifier)
+	return s.completeOAuthWithClient(ctx, s.githubClient, githubOAuthProvider, code, state, stateVerifier, setupSession)
 }
 
 // CompleteAuth0OAuth completes the Auth0 OAuth flow. It uses the Auth0 client
@@ -498,13 +552,15 @@ func (s *AuthService) CompleteAuth0OAuth(ctx context.Context, code, state, state
 	if s.auth0Client == nil {
 		return OAuthCallbackResult{}, pkgerrors.Internal("auth0 oauth is not configured")
 	}
-	return s.completeOAuthWithClient(ctx, s.auth0Client, "auth0", code, state, stateVerifier)
+	return s.completeOAuthWithClient(ctx, s.auth0Client, "auth0", code, state, stateVerifier, "")
 }
 
 // completeOAuthWithClient is the shared implementation for completing any OAuth flow.
 // It validates state, exchanges the code via the given client, fetches the user profile
 // and emails, creates or loads the user, and creates a session.
-func (s *AuthService) completeOAuthWithClient(ctx context.Context, client GitHubClient, provider string, code, state, stateVerifier string) (OAuthCallbackResult, error) {
+// setupSession is the setup-session cookie the callback arrived with; a state
+// started from a setup session needs the same one.
+func (s *AuthService) completeOAuthWithClient(ctx context.Context, client GitHubClient, provider string, code, state, stateVerifier, setupSession string) (OAuthCallbackResult, error) {
 	if strings.HasPrefix(state, adminCLIConsentPrefix) {
 		return OAuthCallbackResult{}, pkgerrors.BadRequest("invalid oauth state")
 	}
@@ -518,15 +574,25 @@ func (s *AuthService) completeOAuthWithClient(ctx context.Context, client GitHub
 		return OAuthCallbackResult{}, pkgerrors.Unauthorized("invalid oauth state")
 	}
 
-	requestedScopes, err := s.queries.ConsumeOAuthStateWithScopes(ctx, db.ConsumeOAuthStateWithScopesParams{
+	consumed, err := s.queries.ConsumeOAuthStateWithScopes(ctx, db.ConsumeOAuthStateWithScopesParams{
 		State:       state,
 		ContextHash: hashOAuthStateVerifier(stateVerifier),
 	})
+	requestedScopes := consumed.RequestedScopes
 	if err != nil {
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return OAuthCallbackResult{}, pkgerrors.Unauthorized("invalid oauth state")
 		}
 		return OAuthCallbackResult{}, pkgerrors.Internal("failed to consume oauth state").WithCause(err)
+	}
+	setupSessionKey := ""
+	if consumed.SetupSessionDigest.Valid {
+		// The callback must return to the browser holding the setup session
+		// the sign-in started from (spec §5.1.0, §16.3.3).
+		if subtle.ConstantTimeCompare([]byte(SetupTokenDigest(setupSession)), []byte(consumed.SetupSessionDigest.String)) != 1 || strings.TrimSpace(setupSession) == "" {
+			return OAuthCallbackResult{}, pkgerrors.Unauthorized("invalid oauth state")
+		}
+		setupSessionKey = SetupSessionKey(setupSession)
 	}
 	if len(requestedScopes) == 0 {
 		requestedScopes = defaultCLIOAuthScopes()
@@ -541,7 +607,8 @@ func (s *AuthService) completeOAuthWithClient(ctx context.Context, client GitHub
 		return OAuthCallbackResult{}, pkgerrors.BadRequest("failed to exchange oauth code")
 	}
 
-	user, err := s.resolveOAuthUser(ctx, client, provider, tokenResult.AccessToken, tokenResult.RefreshToken, tokenResult.ExpiresIn)
+	var claimedSession OAuthCallbackResult
+	user, err := s.resolveOAuthUserWithSession(ctx, client, provider, tokenResult.AccessToken, tokenResult.RefreshToken, tokenResult.ExpiresIn, setupSessionKey, &claimedSession)
 	if err != nil {
 		return OAuthCallbackResult{}, err
 	}
@@ -550,6 +617,10 @@ func (s *AuthService) completeOAuthWithClient(ctx context.Context, client GitHub
 		return OAuthCallbackResult{User: user, AdminCLI: adminCLI}, nil
 	}
 
+	if claimedSession.SessionKey != "" {
+		claimedSession.TokenScopes = requestedScopes
+		return claimedSession, nil
+	}
 	rawSessionKey, session, err := s.createSession(ctx, user)
 	if err != nil {
 		return OAuthCallbackResult{}, pkgerrors.Internal("failed to create session").WithCause(err)
@@ -569,8 +640,15 @@ func (s *AuthService) completeOAuthWithClient(ctx context.Context, client GitHub
 // provider's API, never from the caller's claim), finds or creates the local
 // user, and upserts the oauth_accounts row (encrypted token) plus the primary email address.
 // It is shared by the browser OAuth callback flow and the trusted worker
-// token-exchange flow.
-func (s *AuthService) resolveOAuthUser(ctx context.Context, client GitHubClient, provider, accessToken, refreshToken string, expiresIn int64) (db.User, error) {
+// token-exchange flow. On the install, the sign-in gate decides the user:
+// setupSessionKey, set when the sign-in started from and returned to a setup
+// session, lets the sign-in claim the owner.
+func (s *AuthService) resolveOAuthUser(ctx context.Context, client GitHubClient, provider, accessToken, refreshToken string, expiresIn int64, setupSessionKey string) (db.User, error) {
+	return s.resolveOAuthUserWithSession(ctx, client, provider, accessToken, refreshToken, expiresIn, setupSessionKey, nil)
+}
+
+func (s *AuthService) resolveOAuthUserWithSession(ctx context.Context, client GitHubClient, provider, accessToken, refreshToken string, expiresIn int64, setupSessionKey string, claimedSession *OAuthCallbackResult) (db.User, error) {
+	var claimPersisted bool
 	profile, err := client.FetchUser(ctx, accessToken)
 	if err != nil {
 		return db.User{}, oauthFetchError("profile", err)
@@ -586,66 +664,88 @@ func (s *AuthService) resolveOAuthUser(ctx context.Context, client GitHubClient,
 		Provider:       provider,
 		ProviderUserID: providerUserID,
 	})
+	accountFound := err == nil
+	if err != nil && !stdErrors.Is(err, pgx.ErrNoRows) {
+		return db.User{}, pkgerrors.Internal("failed to query oauth account").WithCause(err)
+	}
+	// Validate that the stored access token is still decryptable before proceeding.
+	// If a non-empty ciphertext is present but fails to decrypt, abort rather than
+	// silently overwriting with the new token — this surfaces key-rotation issues early.
+	if accountFound && len(account.AccessTokenEncrypted) > 0 {
+		if _, decryptErr := s.DecryptOAuthAccessToken(account.AccessTokenEncrypted); decryptErr != nil {
+			return db.User{}, pkgerrors.Internal("failed to decrypt existing oauth access token").WithCause(decryptErr)
+		}
+	}
 
 	var user db.User
-	if err == nil {
-		// Validate that the stored access token is still decryptable before proceeding.
-		// If a non-empty ciphertext is present but fails to decrypt, abort rather than
-		// silently overwriting with the new token — this surfaces key-rotation issues early.
-		if len(account.AccessTokenEncrypted) > 0 {
-			if _, decryptErr := s.DecryptOAuthAccessToken(account.AccessTokenEncrypted); decryptErr != nil {
-				return db.User{}, pkgerrors.Internal("failed to decrypt existing oauth access token").WithCause(decryptErr)
-			}
+	switch {
+	case config.IsSingleOwner(s.cfg):
+		if provider != githubOAuthProvider || s.signIn == nil {
+			return db.User{}, pkgerrors.Forbidden("sign in with GitHub")
 		}
+		user, err = s.signIn.AdmitSignIn(ctx, GitHubSignIn{
+			GitHubUserID:    profile.ID,
+			Login:           profile.Login,
+			Name:            profile.Name,
+			Email:           pickVerifiedEmail(emails),
+			SetupSessionKey: setupSessionKey,
+			CompleteClaim: func(ctx context.Context, q *db.Queries, owner db.User) error {
+				transactionAuth := &AuthService{queries: q, cfg: s.cfg, now: s.now, generateSession: s.generateSession}
+				if _, err := transactionAuth.persistOAuthUser(ctx, owner, profile, emails, provider, accessToken, refreshToken, expiresIn); err != nil {
+					return err
+				}
+				if claimedSession != nil {
+					raw, session, err := transactionAuth.createSession(ctx, owner)
+					if err != nil {
+						return err
+					}
+					*claimedSession = OAuthCallbackResult{User: owner, SessionKey: raw, ExpiresAt: session.ExpiresAt, RedirectURL: "/"}
+				}
+				claimPersisted = true
+				return nil
+			},
+		})
+		if err != nil {
+			return db.User{}, err
+		}
+	case accountFound:
 		user, err = s.queries.GetUserByID(ctx, account.UserID)
 		if err != nil {
 			return db.User{}, pkgerrors.Internal("failed to load oauth user").WithCause(err)
 		}
-		if config.IsSingleOwner(s.cfg) {
-			localQueries, localErr := s.localIdentityQueries()
-			if localErr != nil {
-				return db.User{}, localErr
-			}
-			owner, ownerErr := localQueries.GetSelfHostOwner(ctx)
-			if ownerErr != nil || owner.ID != user.ID {
-				return db.User{}, pkgerrors.Forbidden("external identity is not linked to the installation owner")
-			}
-			user = owner
-		}
-	} else {
-		if !stdErrors.Is(err, pgx.ErrNoRows) {
-			return db.User{}, pkgerrors.Internal("failed to query oauth account")
-		}
-		if config.IsSingleOwner(s.cfg) {
-			// Never infer that a previously unseen external identity owns this
-			// installation. Provider/repository connections are authorized by an
-			// existing owner session through their dedicated routes; they are not
-			// an alternate self-host account-provisioning path.
-			return db.User{}, pkgerrors.Forbidden("external identity is not linked to the installation owner")
-		} else {
-			// Only a GitHub-verified address may become users.email: an
-			// unverified one would squat the real owner's address on
-			// uq_users_lower_email and block their signup.
-			email := pickVerifiedEmail(emails)
-			emailText := pgtype.Text{String: email, Valid: email != ""}
-			user, err = s.queries.CreateUser(ctx, db.CreateUserParams{
-				Username:      profile.Login,
-				LowerUsername: strings.ToLower(profile.Login),
-				Email:         emailText,
-				LowerEmail:    pgtype.Text{String: strings.ToLower(email), Valid: email != ""},
-				DisplayName:   firstNonEmpty(profile.Name, profile.Login),
-			})
-			if err != nil {
-				if isUniqueViolation(err) {
-					if isUsernameUniqueViolation(err) {
-						return db.User{}, pkgerrors.Conflict("username is already in use")
-					}
-					return db.User{}, pkgerrors.Conflict("email address is already in use")
+	default:
+		// Only a GitHub-verified address may become users.email: an
+		// unverified one would squat the real owner's address on
+		// uq_users_lower_email and block their signup.
+		email := pickVerifiedEmail(emails)
+		emailText := pgtype.Text{String: email, Valid: email != ""}
+		user, err = s.queries.CreateUser(ctx, db.CreateUserParams{
+			Username:      profile.Login,
+			LowerUsername: strings.ToLower(profile.Login),
+			Email:         emailText,
+			LowerEmail:    pgtype.Text{String: strings.ToLower(email), Valid: email != ""},
+			DisplayName:   firstNonEmpty(profile.Name, profile.Login),
+		})
+		if err != nil {
+			if isUniqueViolation(err) {
+				if isUsernameUniqueViolation(err) {
+					return db.User{}, pkgerrors.Conflict("username is already in use")
 				}
-				return db.User{}, pkgerrors.Internal("failed to create oauth user").WithCause(err)
+				return db.User{}, pkgerrors.Conflict("email address is already in use")
 			}
+			return db.User{}, pkgerrors.Internal("failed to create oauth user").WithCause(err)
 		}
 	}
+
+	if claimPersisted {
+		return user, nil
+	}
+	return s.persistOAuthUser(ctx, user, profile, emails, provider, accessToken, refreshToken, expiresIn)
+}
+
+func (s *AuthService) persistOAuthUser(ctx context.Context, user db.User, profile GitHubUserProfile, emails []GitHubEmail, provider, accessToken, refreshToken string, expiresIn int64) (db.User, error) {
+	providerUserID := fmt.Sprintf("%d", profile.ID)
+	var err error
 
 	if user.ProhibitLogin {
 		return db.User{}, pkgerrors.Forbidden("account is suspended")
@@ -797,7 +897,7 @@ func (s *AuthService) ExchangeGitHubToken(ctx context.Context, githubAccessToken
 	// A non-empty githubRefreshToken (freshly minted this login) is newer by
 	// construction and overwrites any stored one; an empty one preserves
 	// whatever a prior browser OAuth login already stored (today's behavior).
-	user, err := s.resolveOAuthUser(ctx, s.githubClient, "workos", githubAccessToken, githubRefreshToken, githubTokenExpiresIn)
+	user, err := s.resolveOAuthUser(ctx, s.githubClient, githubOAuthProvider, githubAccessToken, githubRefreshToken, githubTokenExpiresIn, "")
 	if err != nil {
 		return ExchangeGitHubTokenResult{}, err
 	}
@@ -1004,7 +1104,23 @@ func (s *AuthService) ListTokens(ctx context.Context, userID int64) ([]TokenSumm
 	return result, nil
 }
 
+// authorizeCredentialMint checks the resolved principal, including anonymous
+// CLI and worker exchanges, without granting provisional setup scope.
+func (s *AuthService) authorizeCredentialMint(ctx context.Context, userID int64) *pkgerrors.APIError {
+	if !config.IsSingleOwner(s.cfg) {
+		return nil
+	}
+	q, ok := s.queries.(identity.MemberQuerier)
+	if !ok {
+		return pkgerrors.Internal("member authorization is not configured")
+	}
+	return identity.NewMemberBoundary(q).AuthorizeMember(identity.WithoutSetupRequest(ctx), userID)
+}
+
 func (s *AuthService) CreateToken(ctx context.Context, userID int64, req CreateTokenRequest) (CreateTokenResult, error) {
+	if err := s.authorizeCredentialMint(ctx, userID); err != nil {
+		return CreateTokenResult{}, err
+	}
 	name, nameErr := validateCreateTokenName(req.Name)
 	if nameErr != nil {
 		return CreateTokenResult{}, nameErr

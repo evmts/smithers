@@ -80,7 +80,7 @@ func (m *mockRouterAuthService) VerifyKeyAuth(ctx context.Context, message, sign
 	}, nil
 }
 
-func (m *mockRouterAuthService) StartGitHubOAuth(ctx context.Context, stateVerifier string) (string, error) {
+func (m *mockRouterAuthService) StartGitHubOAuth(ctx context.Context, stateVerifier, _ string) (string, error) {
 	return "https://example.com/oauth", nil
 }
 
@@ -92,7 +92,7 @@ func (m *mockRouterAuthService) StartAuth0OAuth(ctx context.Context, stateVerifi
 	return "https://example.com/auth0", nil
 }
 
-func (m *mockRouterAuthService) CompleteGitHubOAuth(ctx context.Context, code, state, stateVerifier string) (services.OAuthCallbackResult, error) {
+func (m *mockRouterAuthService) CompleteGitHubOAuth(ctx context.Context, code, state, stateVerifier, _ string) (services.OAuthCallbackResult, error) {
 	return services.OAuthCallbackResult{
 		SessionKey:  "session-key",
 		ExpiresAt:   time.Now().UTC().Add(time.Hour),

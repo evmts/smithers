@@ -81,6 +81,7 @@ const (
 	CodeSetupClosed           Code = "setup_closed"
 	CodeUnknownOrigin         Code = "unknown_origin"
 	CodeUnauthenticated       Code = "unauthenticated"
+	CodePermission            Code = "permission"
 	CodeInvalidToken          Code = "invalid_token"
 	CodeForbidden             Code = "forbidden"
 	CodeNotFound              Code = "not_found"
@@ -123,6 +124,11 @@ const (
 const (
 	CodeGitHubReconnectRequired Code = "github_reconnect_required"
 	CodeGitHubForbiddenAction   Code = "FORBIDDEN_ACTION"
+	CodeNotAMember              Code = "not_a_member"
+	CodeNeedsGitHubAccess       Code = "needs_github_access"
+	CodeSetupTokenInvalid       Code = "setup_token_invalid"
+	CodeInstallRepositoryUnset  Code = "install_repository_unset"
+	CodeOwnerUnverified         Code = "owner_unverified"
 )
 
 // Desktop observe/input verdicts. See docs/specs/workspaces.md.
@@ -310,6 +316,7 @@ var registry = map[Code]Entry{
 	CodeUnauthenticated: {Status: http.StatusUnauthorized, Fault: FaultUser, Doc: "The setup credential is missing, expired or invalid."},
 	CodeUnauthorized:    {Status: http.StatusUnauthorized, Fault: FaultUser, RetryAfter: 0, Doc: "The request carried no credential, or one the server could not verify."},
 	CodeInvalidToken:    {Status: http.StatusUnauthorized, Fault: FaultUser, RetryAfter: 0, Doc: "The presented token has an unrecognized format or is no longer valid."},
+	CodePermission:      {Status: http.StatusForbidden, Fault: FaultUser, Doc: "A setup credential cannot perform this action."},
 	// The credential is valid but is not allowed to perform this operation.
 	CodeForbidden: {Status: http.StatusForbidden, Fault: FaultUser, RetryAfter: 0, Doc: "The credential is valid but is not allowed to perform this operation."},
 	// The addressed resource does not exist, or the caller may not see that
@@ -372,6 +379,24 @@ var registry = map[Code]Entry{
 	// SCREAMING_CASE spelling kept for the clients that already branch on
 	// it.
 	CodeGitHubForbiddenAction: {Status: http.StatusForbidden, Fault: FaultUser, RetryAfter: 0, Doc: "The GitHub proxy refuses this action for the caller's grant. Legacy SCREAMING_CASE spelling kept for the clients that already branch on it."},
+	// The GitHub account is not on the install's roster: it is neither the
+	// owner nor a member a maintainer added.
+	CodeNotAMember: {Status: http.StatusForbidden, Fault: FaultUser, RetryAfter: 0, Doc: "The person is not a member of this install."},
+	// The person lacks push access to the install's repository on GitHub.
+	// Access is granted on GitHub, not in Smithers.
+	CodeNeedsGitHubAccess: {Status: http.StatusForbidden, Fault: FaultUser, RetryAfter: 0, Doc: "The person needs push access to the install's repository on GitHub."},
+	// Before the install has an owner, only a sign-in carrying the one-time
+	// setup token may claim it; the token was missing, wrong or already used.
+	CodeSetupTokenInvalid: {Status: http.StatusForbidden, Fault: FaultUser, RetryAfter: 0, Doc: "Claiming the install needs the one-time setup token printed when it started; the token was missing, wrong or already used."},
+	// The owner claim already happened: every other setup session, a second
+	// callback and a replayed setup token are refused.
+	// The owner is claimed but GitHub has not yet confirmed push access on
+	// the install's repository; only setup steps are allowed until it does.
+	CodeOwnerUnverified: {Status: http.StatusForbidden, Fault: FaultUser, RetryAfter: 0, Doc: "The owner can only run setup until GitHub confirms push access on the install's repository."},
+	// Sign-in checks push access on the install's repository, and setup has
+	// not recorded one yet or the GitHub App is not installed on it. Only the
+	// owner signs in before setup records the repository.
+	CodeInstallRepositoryUnset: {Status: http.StatusConflict, Fault: FaultUser, RetryAfter: 0, Doc: "The install has no GitHub repository with the GitHub App installed yet; until setup records one only the owner may sign in."},
 	// The box is up but its desktop helpers have not finished linking; the
 	// same request works seconds later.
 	// The box is suspended, failed, or has no VM. Observe and input never
@@ -691,7 +716,17 @@ func New(code Code, msg string) *APIError {
 	if !ok {
 		entry = Entry{Status: http.StatusInternalServerError, Fault: FaultBug}
 	}
+	var class string
+	switch code {
+	case CodeUnauthenticated, CodePermission, CodeSetupClosed, CodeOwnerUnverified, CodeSetupTokenInvalid, CodeNotAMember, CodeNeedsGitHubAccess:
+		class = "permission"
+	case CodeGitHubUnavailable:
+		class = "github"
+	case CodeUnknownOrigin, CodeInstallRepositoryUnset:
+		class = "user"
+	}
 	return &APIError{
+		Class:      class,
 		Status:     entry.Status,
 		Code:       code,
 		Fault:      entry.Fault,

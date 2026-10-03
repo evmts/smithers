@@ -182,3 +182,21 @@ func TestDispatchOperatorFirstPreservesConfiguredSignupCredit(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, signup+25*credits.NanosPerUSD, balance)
 }
+
+func TestOwnerCommandRejectsInvalidInvocationBeforeOpeningDatabase(t *testing.T) {
+	for _, args := range [][]string{{"owner"}, {"owner", "link"}, {"owner", "verify-access", "extra"}} {
+		handled, err := Dispatch(context.Background(), args, Config{OpenDatabase: func(context.Context) (*pgxpool.Pool, error) {
+			t.Fatal("invalid syntax opened database")
+			return nil, nil
+		}})
+		require.True(t, handled)
+		require.ErrorContains(t, err, "usage:")
+	}
+	t.Setenv("SMITHERS_AUTH_MODE", "multitenant")
+	handled, err := Dispatch(context.Background(), []string{"owner", "verify-access"}, Config{OpenDatabase: func(context.Context) (*pgxpool.Pool, error) {
+		t.Fatal("multitenant command opened database")
+		return nil, nil
+	}})
+	require.True(t, handled)
+	require.ErrorContains(t, err, "requires SMITHERS_AUTH_MODE=selfhost")
+}

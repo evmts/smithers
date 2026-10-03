@@ -25,7 +25,7 @@ func (h *InstallQuiesceHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	if !auth.authorize(w, r) {
 		return
 	}
-	owner, err := h.Owners.GetSelfHostOwner(r.Context())
+	owner, err := h.Owners.GetInstallOwnerUser(r.Context())
 	if err != nil {
 		pkgerrors.WriteError(w, pkgerrors.Internal("install owner unavailable"))
 		return

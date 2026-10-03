@@ -889,6 +889,7 @@ type ErrorDetail struct {
 // Error is generated from docs/api/openapi.yaml.
 type Error struct {
 	Code                 *string                    `json:"code,omitempty"`
+	Class                *string                    `json:"class,omitempty"`
 	Fault                *string                    `json:"fault,omitempty"`
 	PlanKey              *string                    `json:"plan_key,omitempty"`
 	LimitKind            *string                    `json:"limit_kind,omitempty"`
@@ -906,7 +907,7 @@ func (v *Error) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, (*plain)(v)); err != nil {
 		return err
 	}
-	return splitAdditional(data, &v.AdditionalProperties, "code", "fault", "plan_key", "limit_kind", "upgrade_plan_key", "message", "errors", "request_id", "retryable")
+	return splitAdditional(data, &v.AdditionalProperties, "code", "class", "fault", "plan_key", "limit_kind", "upgrade_plan_key", "message", "errors", "request_id", "retryable")
 }
 
 // MarshalJSON writes AdditionalProperties beside the declared members of Error.
@@ -1125,6 +1126,11 @@ type GetAPIAgentConversationsParams struct {
 	Limit *int64
 }
 
+// GetAPIAuthGithubParams is the query of GET /api/auth/github.
+type GetAPIAuthGithubParams struct {
+	ReturnTo *string
+}
+
 // GetAPIAuthGithubCliParams is the query of GET /api/auth/github/cli.
 type GetAPIAuthGithubCliParams struct {
 	CallbackPort  int64
@@ -1132,6 +1138,11 @@ type GetAPIAuthGithubCliParams struct {
 	Scopes        *string
 	Admin         *string
 	TTL           *string
+}
+
+// PostAPIInstallSetupSessionBody is generated from docs/api/openapi.yaml.
+type PostAPIInstallSetupSessionBody struct {
+	Token string `json:"token"`
 }
 
 // PostAPIBillingCheckoutBody is generated from docs/api/openapi.yaml.
@@ -1848,9 +1859,13 @@ func (c *Client) GetAPIAuthAuth0Callback(ctx context.Context) (AnyJSON, error) {
 }
 
 // GetAPIAuthGithub calls GET /api/auth/github.
-func (c *Client) GetAPIAuthGithub(ctx context.Context) (AnyJSON, error) {
+func (c *Client) GetAPIAuthGithub(ctx context.Context, params GetAPIAuthGithubParams) (AnyJSON, error) {
+	query := url.Values{}
+	if params.ReturnTo != nil {
+		query.Set("return_to", *params.ReturnTo)
+	}
 	var out AnyJSON
-	err := c.do(ctx, "GET", "/api/auth/github", nil, nil, &out)
+	err := c.do(ctx, "GET", "/api/auth/github", query, nil, &out)
 	return out, err
 }
 
@@ -1927,39 +1942,9 @@ func (c *Client) PostAPIAuthSSETicket(ctx context.Context) (MultiSSETicketRespon
 	return out, err
 }
 
-// GetAPIAuthLocalStatus calls GET /api/auth/local/status.
-func (c *Client) GetAPIAuthLocalStatus(ctx context.Context) (AnyJSON, error) {
-	var out AnyJSON
-	err := c.do(ctx, "GET", "/api/auth/local/status", nil, nil, &out)
-	return out, err
-}
-
-// PostAPIAuthLocalBootstrap calls POST /api/auth/local/bootstrap.
-func (c *Client) PostAPIAuthLocalBootstrap(ctx context.Context, body any) (AnyJSON, error) {
-	var out AnyJSON
-	err := c.do(ctx, "POST", "/api/auth/local/bootstrap", nil, body, &out)
-	return out, err
-}
-
-// PostAPIAuthLocalLogin calls POST /api/auth/local/login.
-func (c *Client) PostAPIAuthLocalLogin(ctx context.Context, body any) (AnyJSON, error) {
-	var out AnyJSON
-	err := c.do(ctx, "POST", "/api/auth/local/login", nil, body, &out)
-	return out, err
-}
-
-// PostAPIAuthLocalPassword calls POST /api/auth/local/password.
-func (c *Client) PostAPIAuthLocalPassword(ctx context.Context, body any) (AnyJSON, error) {
-	var out AnyJSON
-	err := c.do(ctx, "POST", "/api/auth/local/password", nil, body, &out)
-	return out, err
-}
-
-// PostAPIAuthLocalToken calls POST /api/auth/local/token.
-func (c *Client) PostAPIAuthLocalToken(ctx context.Context, body any) (AnyJSON, error) {
-	var out AnyJSON
-	err := c.do(ctx, "POST", "/api/auth/local/token", nil, body, &out)
-	return out, err
+// PostAPIInstallSetupSession calls POST /api/install/setup-session.
+func (c *Client) PostAPIInstallSetupSession(ctx context.Context, body PostAPIInstallSetupSessionBody) error {
+	return c.do(ctx, "POST", "/api/install/setup-session", nil, body, nil)
 }
 
 // GetAPIBilling calls GET /api/billing.

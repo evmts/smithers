@@ -353,7 +353,6 @@ type AuthConfig struct {
 	// Mode selects identity topology, not product features. It is required:
 	// SMITHERS_ENV cannot distinguish a production selfhost from Plue dev/test.
 	Mode                 string `mapstructure:"mode"`
-	BootstrapToken       string `mapstructure:"bootstrap_token"`
 	SessionDuration      string `mapstructure:"session_duration"`
 	SessionRefreshWindow string `mapstructure:"session_refresh_window"`
 	SessionCookieName    string `mapstructure:"session_cookie_name"`
@@ -362,18 +361,19 @@ type AuthConfig struct {
 	// authenticated SSH session to the HTTP Git LFS API. It is deliberately
 	// separate from SessionSecret so the public SSH tier never receives the
 	// application's session/provider-token encryption key.
-	LFSSigningSecret   string `mapstructure:"lfs_signing_secret"`
-	CookieSecure       bool   `mapstructure:"cookie_secure"`
-	EnableKeyAuth      bool   `mapstructure:"enable_key_auth"`
-	KeyAuthDomain      string `mapstructure:"key_auth_domain"`
-	GitHubRedirectURL  string `mapstructure:"github_redirect_url"`
-	GitHubOAuthBaseURL string `mapstructure:"github_oauth_base_url"`
-	GitHubAPIBaseURL   string `mapstructure:"github_api_base_url"`
-	Auth0Domain        string `mapstructure:"auth0_domain"`
-	Auth0ClientID      string `mapstructure:"auth0_client_id"`
-	Auth0ClientSecret  string `mapstructure:"auth0_client_secret"`
-	Auth0RedirectURL   string `mapstructure:"auth0_redirect_url"`
-	Auth0Connection    string `mapstructure:"auth0_connection"`
+	LFSSigningSecret    string `mapstructure:"lfs_signing_secret"`
+	CookieSecure        bool   `mapstructure:"cookie_secure"`
+	EnableKeyAuth       bool   `mapstructure:"enable_key_auth"`
+	KeyAuthDomain       string `mapstructure:"key_auth_domain"`
+	GitHubRedirectURL   string `mapstructure:"github_redirect_url"`
+	GitHubOAuthBaseURL  string `mapstructure:"github_oauth_base_url"`
+	GitHubAPIBaseURL    string `mapstructure:"github_api_base_url"`
+	Auth0Domain         string `mapstructure:"auth0_domain"`
+	Auth0ClientID       string `mapstructure:"auth0_client_id"`
+	Auth0ClientSecret   string `mapstructure:"auth0_client_secret"`
+	Auth0RedirectURL    string `mapstructure:"auth0_redirect_url"`
+	Auth0Connection     string `mapstructure:"auth0_connection"`
+	GitHubAppRepository string `mapstructure:"github_app_repository"`
 	// WorkerExchangeToken is the shared secret that trusted first-party
 	// workers (e.g. the multi frontend's Cloudflare Worker) present as a
 	// Bearer token to call POST /api/auth/github/token-exchange. When unset
@@ -523,7 +523,6 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("ssh.max_timeout", "")             // empty means use package default (2h)
 	v.SetDefault("ssh.max_sessions_per_conn", 0)    // 0 means use package default (10)
 	v.SetDefault("auth.mode", "")
-	v.SetDefault("auth.bootstrap_token", "")
 	v.SetDefault("auth.session_duration", "720h")
 	v.SetDefault("auth.session_refresh_window", "168h")
 	v.SetDefault("auth.session_cookie_name", "smithers_session")
@@ -532,6 +531,7 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("auth.cookie_secure", true)
 	v.SetDefault("auth.enable_key_auth", true)
 	v.SetDefault("auth.key_auth_domain", "smithers.sh")
+	v.SetDefault("auth.github_app_repository", "")
 	v.SetDefault("auth.github_redirect_url", "http://localhost:4000/api/auth/github/callback")
 	v.SetDefault("auth.github_oauth_base_url", "https://github.com")
 	v.SetDefault("auth.github_api_base_url", "https://api.github.com")
@@ -687,11 +687,11 @@ func Load(configFile string) (*Config, error) {
 		{"auth.cookie_secure", "SMITHERS_AUTH_COOKIE_SECURE"},
 		{"auth.enable_key_auth", "SMITHERS_AUTH_ENABLE_KEY_AUTH"},
 		{"auth.key_auth_domain", "SMITHERS_AUTH_KEY_AUTH_DOMAIN"},
+		{"auth.github_app_repository", "SMITHERS_GITHUB_APP_REPOSITORY"},
 		{"auth.github_redirect_url", "SMITHERS_AUTH_GITHUB_REDIRECT_URL"},
 		{"auth.github_oauth_base_url", "SMITHERS_AUTH_GITHUB_OAUTH_BASE_URL"},
 		{"auth.github_api_base_url", "SMITHERS_AUTH_GITHUB_API_BASE_URL"},
 		{"auth.mode", "SMITHERS_AUTH_MODE"},
-		{"auth.bootstrap_token", "SMITHERS_AUTH_BOOTSTRAP_TOKEN"},
 		{"auth.auth0_domain", "SMITHERS_AUTH_AUTH0_DOMAIN"},
 		{"auth.auth0_client_id", "SMITHERS_AUTH_AUTH0_CLIENT_ID"},
 		{"auth.auth0_client_secret", "SMITHERS_AUTH_AUTH0_CLIENT_SECRET"},
