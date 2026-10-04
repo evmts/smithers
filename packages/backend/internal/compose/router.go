@@ -1152,7 +1152,6 @@ func buildRouter(
 					r.With(append(readRepo, middleware.ResolveConversationWithheld(outsiderWorkspaces))...).Get("/mythical", extras.Mythical.GetStack)
 					r.With(append(readRepo, withholdConversation)...).Get("/mythical/items/{ref}", extras.Mythical.GetItem)
 					r.With(adminRepo...).Post("/mythical/bootstrap", extras.Mythical.Bootstrap)
-					r.With(adminRepo...).Put("/mythical/config", extras.Mythical.Config)
 					r.With(writeRepo...).Post("/mythical/todos", extras.Mythical.Todos)
 					r.With(writeRepo...).Post("/mythical/items/{id}/land", extras.Mythical.Land)
 					r.With(writeRepo...).Put("/mythical/lanes", extras.Mythical.Lanes)

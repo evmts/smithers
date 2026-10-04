@@ -79,3 +79,20 @@ Once the shared authority exists, delegated Amend must refuse
 There is no local credential or confirmation substitute. Future activation
 requires the served install router, catalog dispatcher and pinned guest-host
 checks; these direct-handler refusal tests are supplemental evidence only.
+
+## Parallel setting (dark)
+
+`install_settings.parallel` stores the owner's requested integer, 1–8. The
+capacity service projects requested and effective values separately; effective
+is `min(requested, capacity)`, including zero. Only an absent saved value uses
+`max(1, capacity − 1)`. The forward migration preserves a single legacy stack's
+value and never overwrites an install value. Multiple legacy stacks are not a
+single-repository install and are not arbitrarily selected by the migration.
+
+Settings retains the request even above capacity; Home can represent effective
+zero. The old repository config write and `history.parallel` door are removed.
+The install write remains unmounted, and the service refuses writes without the
+shared authorization/catalog provider. Fresh TODO admission remains refused;
+ordered runtime demands, holder release accounting and live queue positions
+require the ordering, scheduler and machine-execution providers and C-STK-02.
+No admission queue, root operation or host execution fallback is added.

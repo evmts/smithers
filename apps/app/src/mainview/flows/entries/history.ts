@@ -3,7 +3,7 @@
  * IS its history of logical changes (D-09a, D-20), served by
  * `@smthrs/rpc/Mythical`. `history.show` and `history.view` are dark: the
  * Home card replaced the History card (T-APP-01; `/stack`), and they stay
- * only as the seam's readers until StackSeam.ts goes with it. Bootstrap, lane count, retry and land are the writes the API
+ * only as the seam's readers until StackSeam.ts goes with it. Bootstrap, retry and land are the writes the API
  * has, each acknowledged at once and finished in the shared toast stack.
  * One module per namespace: Flows.ts registers the block.
  */
@@ -55,23 +55,6 @@ export const historyFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
     /* The server's stack (#1760): acknowledged at once, its notice runs until the stack reads active. */
     handler: ({ repo }) => actions.bootstrapStack(repo)
   }),
-  flow({
-    name: "history.parallel",
-    summary: "Set how many lanes work at once",
-    runtime: ["cloud"],
-    args: "<1-8> [owner/repo]",
-    requires: ["signed-in"],
-    confirm: "change how many lanes work at once",
-    input: Schema.Struct({ value: Schema.Number, repo: RepoOptional }),
-    handler: ({ value, repo }) => actions.setStackParallel(value, repo)
-  }),
-  /*
-   * A TODO for the coding factory: the stack files it on the repository's
-   * GitHub issues as the maintainer's own and queues it (POST
-   * …/mythical/todos), acknowledged at once; its notice follows the factory
-   * until its pull request opens, it lands, or it stops. Filing starts
-   * credentialed work, so the agent's door confirms.
-   */
   flow({
     name: "history.todo",
     summary: "File a TODO for the coding factory and follow it to its pull request",

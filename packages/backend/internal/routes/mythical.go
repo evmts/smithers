@@ -22,7 +22,6 @@ type MythicalRouteService interface {
 	Snapshot(ctx context.Context, repositoryID int64, slug, mainCommit string, viewer services.MythicalViewer) (services.MythicalStackView, error)
 	RequestBootstrap(ctx context.Context, repositoryID, actorUserID int64, depth int32, reset bool) (db.MythicalStack, error)
 	SubmitLane(ctx context.Context, repositoryID, userID int64, input services.MythicalLaneSubmission) (services.MythicalLaneReceipt, error)
-	SetMaxParallel(ctx context.Context, repositoryID int64, maxParallel int32) error
 	Item(ctx context.Context, repositoryID int64, ref string) (services.MythicalItemView, error)
 	FileTodo(ctx context.Context, repositoryID, userID int64, input services.MythicalTodoInput) (services.MythicalItemView, error)
 	LandTodo(ctx context.Context, repositoryID, userID int64, itemID string, input services.MythicalLandInput) (services.MythicalItemView, error)
@@ -207,34 +206,6 @@ func (h *MythicalHandler) Lanes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pkgerrors.WriteJSON(w, http.StatusAccepted, receipt)
-}
-
-// Config sets how many lanes work at once.
-func (h *MythicalHandler) Config(w http.ResponseWriter, r *http.Request) {
-	if _, err := requireRouteUser(r); err != nil {
-		pkgerrors.WriteError(w, err.(*pkgerrors.APIError))
-		return
-	}
-	repoCtx, ok := h.repository(w, r)
-	if !ok {
-		return
-	}
-	var body struct {
-		MaxParallel int32 `json:"maxParallel"`
-	}
-	if !decodeMythicalBody(w, r, 1024, &body) {
-		return
-	}
-	if err := h.Service.SetMaxParallel(r.Context(), repoCtx.Repository.ID, body.MaxParallel); err != nil {
-		writeRouteError(w, r, err)
-		return
-	}
-	view, err := h.snapshot(r, repoCtx)
-	if err != nil {
-		writeRouteError(w, r, err)
-		return
-	}
-	pkgerrors.WriteJSON(w, http.StatusOK, view)
 }
 
 // Todos files a TODO on the repository's GitHub issues for a maintainer
