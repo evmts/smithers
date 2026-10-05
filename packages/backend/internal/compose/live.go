@@ -242,7 +242,7 @@ func homeModel(repository string, todos []map[string]any, sync *services.GitHubS
 	}
 	return map[string]any{
 		"repository": repository, "main": main, "attention": []any{}, "items": items, "counts": counts,
-		"merged_since_last_look": []any{}, "machines": map[string]any{"in_use": len(slots), "capacity": 0, "slots": slots},
+		"machines":        map[string]any{"in_use": len(slots), "capacity": 0, "slots": slots},
 		"background_runs": []any{},
 	}
 }

@@ -9,7 +9,7 @@ import type { TodoCard } from "@smthrs/rpc/TodoCard"
  * order with the controls its state offers, every state counted, a machine per TODO branch that is awake or waking,
  * and main's row without sync facts, which the list does not carry.
  */
-export const homeFromTodos = (repository: string, todos: ReadonlyArray<TodoCard>): HomeModel => {
+export const homeFromTodos = (repository: string, todos: ReadonlyArray<TodoCard>, lastSeenSeq = 0): HomeModel => {
   const counts: Record<TodoState, number> = { queued: 0, starting: 0, working: 0, needs_you: 0, paused: 0, failed: 0, in_review: 0, merged: 0, dropped: 0 }
   for (const todo of todos) counts[todo.state] += 1
   const open = todos.filter(todo => todo.state !== "merged" && todo.state !== "dropped")
@@ -43,7 +43,12 @@ export const homeFromTodos = (repository: string, todos: ReadonlyArray<TodoCard>
   return {
     repository,
     main: { sha: "", title: "main", last_success_at: new Date(0).toISOString(), health: "limited" },
-    attention: [], items, counts, merged_since_last_look: [],
+    attention: [], items, counts, merged_since_last_look: mergedSinceLastLook(todos, lastSeenSeq),
     machines: { in_use: slots.length, capacity: 0, slots }, background_runs: []
   }
 }
+
+/** Per-member derivation over shared merge facts, in merge order. */
+export const mergedSinceLastLook = (todos: ReadonlyArray<TodoCard>, lastSeenSeq: number): number[] =>
+ [...new Map(todos.filter(todo => todo.state === "merged" && todo.merge_seq !== undefined && todo.merge_seq > lastSeenSeq)
+   .map(todo => [todo.n, todo])).values()].sort((a, b) => a.merge_seq! - b.merge_seq! || a.n - b.n).map(todo => todo.n)

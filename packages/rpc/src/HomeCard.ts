@@ -69,7 +69,7 @@ export const HomeCardSchema = z.object({
   ),
   items: z.array(HomeItemSchema),
   counts: z.record(TodoStateSchema, z.number().int().nonnegative()),
-  merged_since_last_look: z.array(z.number().int().positive()),
+  merged_since_last_look: z.array(z.number().int().positive()).default([]),
   machines: z.object({
     in_use: z.number().int().nonnegative(),
     capacity: z.number().int().nonnegative(),

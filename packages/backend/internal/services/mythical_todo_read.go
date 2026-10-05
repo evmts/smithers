@@ -100,6 +100,13 @@ func (s *MythicalService) todoCard(ctx context.Context, item db.MythicalItem, it
 		"owner":            map[string]any{"login": owner.Username, "name": owner.DisplayName, "avatar_url": todoAvatar(owner)},
 		"prompt_revisions": revisions, "steps": todoSteps(item), "waits": waits, "steers": todoSteers(item), "evidence": []any{},
 		"present": []any{}}
+	if item.State == "landed" {
+		var seq int64
+		if err := s.store.QueryRow(ctx, `SELECT merge_seq FROM mythical_items WHERE id=$1`, item.ID).Scan(&seq); err != nil {
+			return nil, err
+		}
+		card["merge_seq"] = seq
+	}
 	if answer := todoFirstAnswer(item); answer != nil {
 		card["first_answer"] = answer
 	}

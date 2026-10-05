@@ -784,11 +784,12 @@ var rehearsalTodoWaits = map[string]time.Duration{"queued": 3 * time.Second, "st
 
 // rehearsalTodo is what the TODO rows read of GET /api/todos/{n}.
 type rehearsalTodo struct {
-	N      int64  `json:"n"`
-	Title  string `json:"title"`
-	State  string `json:"state"`
-	Place  int64  `json:"place"`
-	Branch *struct {
+	MergeSeq int64  `json:"merge_seq"`
+	N        int64  `json:"n"`
+	Title    string `json:"title"`
+	State    string `json:"state"`
+	Place    int64  `json:"place"`
+	Branch   *struct {
 		ID      string `json:"id"`
 		Name    string `json:"name"`
 		Machine struct {

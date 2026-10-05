@@ -340,6 +340,23 @@ func TestJ4Rehearsal(t *testing.T) {
 	})
 	// The 202s rows 7, 9 and 13 answered, which row 15 compares with the
 	// facts /api/live served after them.
+	// Store the owner's last look before the merge; row 16 derives from it.
+	var lastLook int64
+	if !r.step("6b Last look before merge", "PUT /api/conversations/main/view-state", "member-private cursor before T1 merges", "T-APP-01", func() error {
+		list, err := r.todoList()
+		if err != nil {
+			return err
+		}
+		for _, todo := range list {
+			if todo.MergeSeq > lastLook {
+				lastLook = todo.MergeSeq
+			}
+		}
+		_, err = r.expect("PUT", "/api/conversations/main/view-state", fmt.Sprintf(`{"last_seen_seq":%d}`, lastLook), 200)
+		return err
+	}) {
+		return
+	}
 	var answered, merged j4Receipt
 	var retriedAt time.Time
 	var retriedTo int
@@ -707,7 +724,51 @@ func TestJ4Rehearsal(t *testing.T) {
 		r.actual = strings.Join(settled, "; ")
 		return nil
 	})
-	r.pending("16 Merged since last look", "PUT view state; GET /api/todos", "the browser derives [T1] after the merge and [] after a new look", "T-APP-01", "last-look")
+	r.step("16 Merged since last look", "PUT /api/conversations/main/view-state; GET /api/todos", "browser derivation [T1], then []; shared body carries no member field", "T-APP-01", func() error {
+		data, err := r.expect("GET", "/api/todos", "", 200)
+		if err != nil {
+			return err
+		}
+		if strings.Contains(string(data), "last_seen_seq") || strings.Contains(string(data), "merged_since_last_look") || strings.Contains(string(data), "view_state") {
+			return fmt.Errorf("shared TODO read contains member state: %s", data)
+		}
+		list, err := r.todoList()
+		if err != nil {
+			return err
+		}
+		derive := func(cursor int64) []int64 {
+			out := []int64{}
+			for _, todo := range list {
+				if todo.State == "merged" && todo.MergeSeq > cursor {
+					out = append(out, todo.N)
+				}
+			}
+			return out
+		}
+		if got := derive(lastLook); !slices.Equal(got, []int64{t1}) {
+			return fmt.Errorf("derived %v, want [%d] above cursor %d", got, t1, lastLook)
+		}
+		for _, todo := range list {
+			if todo.MergeSeq > lastLook {
+				lastLook = todo.MergeSeq
+			}
+		}
+		data, err = r.expect("PUT", "/api/conversations/main/view-state", fmt.Sprintf(`{"last_seen_seq":%d}`, lastLook), 200)
+		if err != nil {
+			return err
+		}
+		var view struct {
+			LastSeenSeq int64 `json:"last_seen_seq"`
+		}
+		if err = json.Unmarshal(data, &view); err != nil {
+			return err
+		}
+		if got := derive(view.LastSeenSeq); len(got) != 0 {
+			return fmt.Errorf("new look still derives %v", got)
+		}
+		r.actual = fmt.Sprintf("derived [T%d] above old cursor; PUT %d; derived []; no member field in shared GET", t1, view.LastSeenSeq)
+		return nil
+	})
 	r.pending("17 T2 ready after T1 merges", "GitHub fake PR; GET /api/todos", "T2 rebases onto the merged main; one ready-for-review change on T2's PR; merge.state ready on T2 only", "T-STK-04, T-STK-08", "second-merge")
 	r.pending("18 main row synced", "GET /api/github/sync; Home card", "last_success_at within one poll; 'synced N s ago'; machines in use of capacity", "T-GH-02", "sync-row")
 	r.pending("19 Retry and dismiss failed background runs", "POST /api/runs/{id}", "Retry starts exactly one run; Dismiss removes the row for everyone; 403 without the role", "T-APP-01", "background-runs")

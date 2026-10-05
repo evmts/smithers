@@ -131,6 +131,7 @@ import type { SecretsSeam } from "./seams/SecretsSeam"
 import { createSecretsSeam } from "./seams/SecretsSeam"
 import type { StackSeam } from "./seams/StackSeam"
 import { createInstallSeam, type InstallSeam, type InstallTopic } from "./seams/InstallSeam"
+import { createHomeViewStateSeam, type HomeViewStateSeam } from "./seams/HomeViewStateSeam"
 import { createGitHubSyncSeam, type GitHubSyncSeam } from "./seams/GitHubSyncSeam"
 import { createMembersSeam, type MembersSnapshots } from "./seams/MembersSeam"
 import { createFlowsSeam, type FlowsSnapshots } from "./seams/FlowsSeam"
@@ -520,6 +521,7 @@ export interface AppController extends IssueFlowsController {
   /** members.add, members.role and members.remove: the install's routes, or the seeded roster off an install. A string is the refusal. */
   readonly changeMembers: (tag: "members.add" | "members.role" | "members.remove", input: { readonly login: string; readonly role?: "maintainer" | "member" }) => Promise<string | { readonly value: string }>
   /** GET /api/todos, read while Home is open on a host with no `home` topic (T-APP-01). */
+  readonly homeViewState: HomeViewStateSeam
   readonly todoList: TodoSeam["list"]
   /** The install's GitHub sync health, which Home's `main` row shows (GET /api/github/sync); none on other hosts. */
   readonly githubSyncSnapshots: GitHubSyncSeam["snapshots"]
@@ -952,6 +954,16 @@ export const createAppController = (
     const snapshot = services.live!.getSnapshot(topic)
     if (snapshot?.data !== undefined) receive(snapshot.data)
   }) } : undefined), debounceMs: ctx.toastDebounceMs, onDispose: ctx.onDispose }), context, design, todoSource))
+  const homeViewState = createHomeViewStateSeam({
+    http: installHost ? (path, init) => seamCtx.http(`${baseUrl.replace(/\/$/, "")}${path}`, init) : undefined,
+    todos: todoSeam.list, member: () => store.collections.identitySessions.get("identity")?.login
+  })
+  let homeViewLogin = store.collections.identitySessions.get("identity")?.login
+  const homeViewIdentity = store.collections.identitySessions.subscribeChanges(() => {
+    const login = store.collections.identitySessions.get("identity")?.login
+    if (login !== homeViewLogin) { homeViewLogin = login; homeViewState.reset() }
+  })
+  ctx.onDispose(() => { homeViewIdentity.unsubscribe(); homeViewState.dispose() })
   const stackSeam = actors.pair(seamCtx, (context) => createStackSeam(context, withToast, {
     debounceMs: ctx.toastDebounceMs,
     onDispose: ctx.onDispose
@@ -2177,6 +2189,7 @@ export const createAppController = (
     membersRoster,
     membersRole,
     flowCatalog: installHost ? flowsSeam.snapshots : undefined,
+    homeViewState,
     todoList: todoSeam.list,
     githubSyncSnapshots: gitHubSyncSeam.snapshots,
     design,

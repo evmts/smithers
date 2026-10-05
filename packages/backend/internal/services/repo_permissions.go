@@ -310,6 +310,7 @@ var installCommands = map[string]installCommand{
 	"live":             {role: InstallMember},
 	"agent.turn":       {role: InstallMember},
 	"issue.read":       {role: InstallMember},
+	"view.read":        {role: InstallMember, personOnly: true},
 	"todo.read":        {role: InstallMember},
 	"todo.new":         {role: InstallMember},
 	"todo.answer":      {role: InstallMember},

@@ -409,6 +409,8 @@ var installMemberRoutes = []struct {
 	// The issue list card and the issue card (J2 1 and 2).
 	{http.MethodGet, "issue.read", regexp.MustCompile(`^/api/issues$`)},
 	{http.MethodGet, "issue.read", regexp.MustCompile(`^/api/issues/[0-9]+$`)},
+	{http.MethodGet, "view.read", regexp.MustCompile(`^/api/conversations/main/view-state$`)},
+	{http.MethodPut, "view.read", regexp.MustCompile(`^/api/conversations/main/view-state$`)},
 	{http.MethodGet, "todo.read", regexp.MustCompile(`^/api/todos$`)},
 	{http.MethodGet, "todo.read", regexp.MustCompile(`^/api/todos/[0-9]+$`)},
 	{http.MethodPost, "todo.new", regexp.MustCompile(`^/api/todos$`)},

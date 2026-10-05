@@ -55,6 +55,8 @@ export const TodoCardSchema = z.object({
   n: z.number().int().positive(),
   title: z.string(),
   state: TodoStateSchema,
+  /** Repository-local immutable merge cursor; shared across members. */
+  merge_seq: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
   owner: PersonRefSchema,
   owner_removed: z.boolean().optional(),
   place: z.number().int().positive().optional(),

@@ -921,6 +921,9 @@ func buildRouter(
 			service, _ := extras.Mythical.Service.(routes.TodoRouteService)
 			todos := &routes.TodoHandler{Queries: queries, Service: service}
 			mountTodoReads(r, todos)
+			viewState := &routes.ConversationViewHandler{Queries: queries}
+			r.Get("/conversations/main/view-state", viewState.ServeHTTP)
+			r.Put("/conversations/main/view-state", viewState.ServeHTTP)
 			r.Post("/todos", todos.Create)
 			r.Post("/todos/{n}", todos.Control)
 			r.Post("/todos/{n}/merge", todos.Merge)
