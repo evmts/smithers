@@ -110,9 +110,9 @@ func TestRealMicroVMGuestFacts(t *testing.T) {
 	require.Equal(t, "err\n", result.Stderr)
 
 	// The host is unreachable except through the declared bridge ports, and
-	// the internet is denied.
+	// unlisted internet destinations are denied.
 	result, err = runtime.ExecuteCommand(ctx, "microvm-facts", workspaceapi.Command{Args: []string{"/bin/sh", "-c",
-		`curl -s -m 5 -o /dev/null https://registry.npmjs.org/ && echo reachable || echo denied`}})
+		`curl -s -m 5 -o /dev/null https://example.com/ && echo reachable || echo denied`}})
 	require.NoError(t, err)
 	require.Equal(t, "denied\n", result.Stdout)
 

@@ -602,7 +602,7 @@ func (r *Runtime) OpenWorkspaceTerminal(ctx context.Context, workspaceID string,
 		return nil, err
 	}
 	if len(command.Args) == 0 {
-		command.Args = []string{"/bin/bash", "-l"}
+		command.Args = []string{"/bin/bash", "--norc", "-i"}
 	}
 	ws, err := r.runningWorkspace(workspaceID)
 	if err != nil {
@@ -612,6 +612,7 @@ func (r *Runtime) OpenWorkspaceTerminal(ctx context.Context, workspaceID string,
 	if err != nil {
 		return nil, err
 	}
+	request.Argv = vendorTerminalArgs(request.Argv)
 	request.Stdin = "inherit"
 	request.Env["TERM"] = "xterm-256color"
 	encoded, err := json.Marshal(request)

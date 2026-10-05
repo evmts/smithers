@@ -638,8 +638,11 @@ func (r *Runtime) admitRunningLocked(maximum int) error {
 
 func (r *Runtime) machineFlags(workspaceID string) []string {
 	args := []string{"-n", r.machineName(workspaceID), "-c", strconv.Itoa(r.config.CPUs), "-m", strconv.Itoa(r.config.MemoryMiB) + "M", "-q",
-		// Deny every destination but the backend's own loopback listener.
-		"--no-net"}
+		// R2: deny by default; permit DNS and the fixed interactive vendor hosts.
+		"--no-net", "--net-rule", "allow@dns"}
+	for _, host := range vendorHosts {
+		args = append(args, "--net-rule", "allow@"+host)
+	}
 	for _, port := range r.config.HostPorts {
 		args = append(args, "--net-rule", fmt.Sprintf("allow@host:tcp:%d", port))
 	}

@@ -68,7 +68,7 @@ func TestJ6Rehearsal(t *testing.T) {
 		return nil
 	})
 	r.pending("3 App terminal door", "TodoCard → Open terminal → TerminalCard", "the app opens T1's terminal and echo ok prints ok (e2e terminal-signin.spec.ts)", "T-APP-12", "terminal-door")
-	r.pending("4 claude and codex signed in", "real microVM guest", "vendor and npm hosts reachable, others refused; claude and codex run (not provable on trusted-process)", "T-MCH-12", "vendor-egress")
+	r.vendorTerminalRow()
 	r.terminalRows(branch, sessionID)
 	r.pending("10 Skill discoverable", "guest smthrs --version; SKILL.md files", "the CLI runs and the skill is installed", "T-TRM-02", "guest-cli-skill")
 	r.delegatedRows(t1, t2, filed)
