@@ -517,6 +517,11 @@ func (e *environments) buildLayer(ctx context.Context, record layerRecord, value
 	if parent == "" && e.config.Image != DefaultImage {
 		return nil, fmt.Errorf("%w: unapproved layer base image", ErrUnavailable)
 	}
+	if parent == "" {
+		if err := e.runtime.ensureBaseImage(ctx); err != nil {
+			return nil, err
+		}
+	}
 	buildCtx, cancel := context.WithTimeout(ctx, e.config.PrepareTimeout)
 	defer cancel()
 	machine := "smthrs-prep-" + strings.TrimPrefix(e.runtime.owner, "smithers-backend-")[:8] + "-" + newExecID()[1:13]
@@ -532,7 +537,7 @@ func (e *environments) buildLayer(ctx context.Context, record layerRecord, value
 		args = append(args, "--net-rule", "allow@"+domain)
 	}
 	if parent == "" {
-		args = append([]string{"create", e.config.Image, "--pull", "if-missing", "--root-disk", strconv.Itoa(e.config.PrepareDiskMiB) + "M"}, args...)
+		args = append([]string{"create", e.config.Image, "--pull", e.runtime.pullPolicy(), "--root-disk", strconv.Itoa(e.config.PrepareDiskMiB) + "M"}, args...)
 	} else {
 		args = append([]string{"run", "--from-snapshot", parent, "-d"}, args...)
 	}

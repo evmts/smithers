@@ -159,6 +159,7 @@ type Runtime struct {
 
 	environments *environments
 	codingHelper codingHelperCache
+	baseImage    baseImage
 
 	mu                sync.Mutex
 	closed            bool
@@ -647,7 +648,10 @@ func (r *Runtime) createMachine(ctx context.Context, ws *workspace) error {
 	if ws.Snapshot != "" {
 		args = append([]string{"run", "--from-snapshot", ws.Snapshot, "-d"}, r.machineFlags(ws.ID)...)
 	} else {
-		args = append([]string{"create", r.config.Image, "--pull", "if-missing", "--root-disk", strconv.Itoa(r.config.DiskMiB) + "M"}, r.machineFlags(ws.ID)...)
+		if err := r.ensureBaseImage(ctx); err != nil {
+			return err
+		}
+		args = append([]string{"create", r.config.Image, "--pull", r.pullPolicy(), "--root-disk", strconv.Itoa(r.config.DiskMiB) + "M"}, r.machineFlags(ws.ID)...)
 	}
 	createCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()

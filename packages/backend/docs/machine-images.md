@@ -42,6 +42,16 @@ With no recognized files and no image packages, the base image suffices. A
 missing recognized executable exits with a `missing_machine_tool` error of
 class `user`, naming the file to add, such as `rust-toolchain.toml` for `cargo`.
 
+## Base image
+
+Every machine starts from the pinned `microsandbox.DefaultImage`. The install
+bundle ships it as `share/microsandbox/base-image.oci.tar` (spec §16.1.0).
+Before the first VM boots from the image, an installed runtime whose
+Microsandbox image store lacks it verifies the archive against the pinned
+bundle manifest and loads it. It never pulls (`--pull never`). The stored image
+must have the pinned digest; any other digest refuses the boot. A runtime
+without a bundle, as in development, pulls with `--pull if-missing`.
+
 ## Reviewed packages
 
 `.smithers/machine.json` is read from the mirror's `main`, including when a
