@@ -177,6 +177,7 @@ type Link struct {
 	objectPending    int
 	objectEOF        bool
 	objectSeen       map[uint32]bool
+	outgoingObject   *outgoingObject
 }
 
 func (l *Link) Close() error {
@@ -310,6 +311,12 @@ func (l *Link) read() {
 				return
 			}
 		case wire.Objects:
+			if f.Stream >= 0x80000000 {
+				if !l.receiveObjectReply(f) {
+					return
+				}
+				continue
+			}
 			if !l.receiveObject(f) {
 				return
 			}

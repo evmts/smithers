@@ -32,6 +32,7 @@ type Registry struct {
 	eventsMu      sync.Mutex
 	eventsClosing bool
 	events        *eventConsumer
+	exportObjects ObjectExporter
 }
 
 type boot struct {
@@ -41,6 +42,7 @@ type boot struct {
 	secret          [32]byte
 	link            *Link
 	connection      *Connection
+	nextObject      uint32
 }
 
 // Connection is an authenticated lease, not a wire frame. Only the ADR 0004
