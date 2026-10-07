@@ -1130,7 +1130,7 @@ test("shell text is inert; private, empty and disabled boundaries", async () => 
   const context = await mounted({ name: "empty", expect: [], render: ({ onView, onAction }) => <ContextLine count={0} items={[]} actions={[]} onAction={onAction} expanded={false} onView={onView} /> })
   try {
     expect(context.host.textContent).toBe("")
-    expect(context.host.querySelector(".mvp-context-chip")).toBeNull()
+    expect(context.host.querySelector(".context-chip")).toBeNull()
     expect(context.host.querySelector("button")).toBeNull()
     expect(context.onView.mock.calls).toEqual([])
     expect(context.onAction.mock.calls).toEqual([])
@@ -1868,7 +1868,7 @@ test("Branch SSH copies the supplied host line without a flow", async () => {
     await act(async () => root.render(<BranchView {...branchFixtures.awake} onAction={onAction} onView={onView} />))
     expect(host.querySelector(".branch-ssh code")!.getAttribute("title")).toBe("ssh -p 2222 todo-12@mac-mini.local")
     expect(host.querySelector(".branch-presence")).toBeNull()
-    expect(host.textContent).not.toContain("Nobody here")
+    expect(host.querySelector("p.branch-muted")!.textContent).toBe("Nobody here")
     await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Copy SSH line"]')!.click())
     expect(writeText.mock.calls).toEqual([["ssh -p 2222 todo-12@mac-mini.local"]])
     expect(onAction).toHaveBeenCalledTimes(0); expect(onView).toHaveBeenCalledTimes(0)
@@ -3263,10 +3263,10 @@ test.each([false, true])("ContextLine item and Inspect actions expanded=%s", asy
       expect(item.querySelector("svg")).not.toBeNull()
       const plain = context.host.querySelector('[data-kind="page"]')!
       expect(plain.tagName).toBe("SPAN")
-      expect(plain.className).toBe("mvp-context-text")
+      expect(plain.className).toBe("context-text")
       expect(plain.querySelector("svg")).not.toBeNull()
       const inspect = context.host.querySelector('[data-flow="context.inspect"]')!
-      expect(inspect.className).toBe("mvp-context-chip")
+      expect(inspect.className).toBe("context-chip")
       expect(inspect.querySelector("svg.lucide-maximize2")).not.toBeNull()
       await act(async () => item.click())
       await act(async () => context.host.querySelector<HTMLButtonElement>('[data-flow="context.inspect"]')!.click())
