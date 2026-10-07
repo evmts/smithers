@@ -495,8 +495,14 @@ func (h *GitHubAppSetupHandler) SetSettings(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var rawInput struct {
-		Capacity json.RawMessage `json:"capacity"`
-		ChatGPT  json.RawMessage `json:"chatgpt"`
+		Capacity              json.RawMessage `json:"capacity"`
+		ChatGPT               json.RawMessage `json:"chatgpt"`
+		Obsidian              json.RawMessage `json:"wiki_sync.obsidian"`
+		Parallel              json.RawMessage `json:"parallel"`
+		TodoDailyAdmissions   json.RawMessage `json:"todo_daily_admissions"`
+		Bind                  json.RawMessage `json:"bind"`
+		Origins               json.RawMessage `json:"origins"`
+		TodoPreapproveDefault json.RawMessage `json:"todo_preapprove_default"`
 	}
 	if !decodeStrictJSONBody(w, r, &rawInput) {
 		return
@@ -525,10 +531,30 @@ func (h *GitHubAppSetupHandler) SetSettings(w http.ResponseWriter, r *http.Reque
 			return
 		}
 	}
-	if input.Capacity == nil && input.ChatGPT == nil {
-		writeInstallAPIError(w, pkgerrors.BadRequest("install setting required"))
-		return
+	// Validate every present field before any setting can mutate durable state.
+	for _, field := range []struct {
+		raw     json.RawMessage
+		target  any
+		message string
+	}{
+		{rawInput.Parallel, &input.Parallel, "parallel must be an integer"},
+		{rawInput.TodoDailyAdmissions, &input.TodoDailyAdmissions, "daily admissions must be positive"},
+		{rawInput.TodoPreapproveDefault, &input.TodoPreapproveDefault, "invalid request body"},
+	} {
+		if len(field.raw) > 0 && (strings.TrimSpace(string(field.raw)) == "null" || json.Unmarshal(field.raw, field.target) != nil) {
+			writeInstallAPIError(w, pkgerrors.BadRequest(field.message))
+			return
+		}
 	}
+	if len(rawInput.Obsidian) > 0 {
+		decoder := json.NewDecoder(strings.NewReader(string(rawInput.Obsidian)))
+		decoder.DisallowUnknownFields()
+		if decoder.Decode(&input.Obsidian) != nil || input.Obsidian == nil {
+			writeInstallAPIError(w, pkgerrors.BadRequest("invalid request body"))
+			return
+		}
+	}
+	input.Bind, input.Origins = rawInput.Bind, rawInput.Origins
 	if input.TodoPreapproveDefault != nil {
 		if err := services.MergeCredential(r.Context(), r.Header.Get("Smithers-Via")); err != nil {
 			todoRouteError(w, err)

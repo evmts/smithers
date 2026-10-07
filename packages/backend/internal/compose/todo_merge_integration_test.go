@@ -655,6 +655,14 @@ func testTodoMergeComposedRouteBoundaryPostgres(t *testing.T, confirmations bool
 		require.Equal(t, 403, putDefault(true, credential))
 	}
 	require.Equal(t, 200, putDefault(true, browser("owner-browser-session", true, "default-on")))
+	defaultSetting, err := q.GetInstallSetting(ctx, "todo.preapproval_default")
+	require.NoError(t, err)
+	var defaultApproval struct {
+		User int64 `json:"standing_user"`
+	}
+	require.NoError(t, json.Unmarshal(defaultSetting.Value, &defaultApproval))
+	require.Equal(t, owner.ID, defaultApproval.User)
+
 	create := func(title string, expectedApproval bool) db.MythicalItem {
 		request, err := http.NewRequest(http.MethodPost, origin+"/api/todos", strings.NewReader(fmt.Sprintf(`{"title":%q,"prompt":"Do it","place":{"mode":"append"}}`, title)))
 		require.NoError(t, err)

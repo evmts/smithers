@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	"github.com/smithersai/smithers/packages/backend/internal/routes"
 	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 	"github.com/stretchr/testify/require"
@@ -280,6 +281,19 @@ func TestInstallServingOwnerAddressUpdatePostgres(t *testing.T) {
 	require.Equal(t, []string{"https://box.example"}, address.Origins())
 	require.NoError(t, pool.QueryRow(t.Context(), `SELECT count(*) FROM product_job_events WHERE event_type='install.address'`).Scan(&facts))
 	require.Equal(t, 2, facts)
+	// Persist each address field independently after the rollback exercise.
+	_, err = pool.Exec(t.Context(), `DROP TRIGGER refuse_address_fact ON product_job_events`)
+	require.NoError(t, err)
+	for _, setting := range []struct{ body, key, value string }{
+		{`{"bind":"0.0.0.0"}`, "bind", `"0.0.0.0:4000"`},
+		{`{"origins":["http://lan-a:4000"]}`, "public_origins", `["http://lan-a:4000"]`},
+	} {
+		updated := request(setting.body, "http://localhost:4000", "serving-csrf")
+		require.Equal(t, 200, updated.Code, updated.Body.String())
+		saved, err := q.GetInstallSetting(t.Context(), setting.key)
+		require.NoError(t, err)
+		require.JSONEq(t, setting.value, string(saved.Value))
+	}
 
 }
 
@@ -288,6 +302,11 @@ func TestInstallServingOwnerAddressUpdatePostgres(t *testing.T) {
 func TestInstallServingLiveOriginReconnectPostgres(t *testing.T) {
 	pool, _ := postgresfixture.NewProductDatabase(t)
 	q := db.New(pool)
+	busCtx, cancelBus := context.WithCancel(t.Context())
+	bus := revocation.NewBus(pool, q)
+	require.NoError(t, bus.Start(busCtx))
+	routes.SetRevocationSource(bus)
+	t.Cleanup(func() { routes.SetRevocationSource(nil); cancelBus() })
 	user, err := q.CreateUser(t.Context(), db.CreateUserParams{Username: "live-origin-owner", LowerUsername: "live-origin-owner"})
 	require.NoError(t, err)
 	_, err = pool.Exec(t.Context(), `INSERT INTO self_host_owners(user_id) VALUES($1)`, user.ID)

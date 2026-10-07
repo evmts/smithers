@@ -16,6 +16,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/live"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	"github.com/smithersai/smithers/packages/backend/internal/routes"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/microsandbox"
@@ -27,6 +28,11 @@ func TestInstallStatusOwnerHTTPModelPostgres(t *testing.T) {
 	pool, _ := postgresfixture.NewProductDatabase(t)
 	q := db.New(pool)
 	ctx := t.Context()
+	busCtx, cancelBus := context.WithCancel(ctx)
+	bus := revocation.NewBus(pool, q)
+	require.NoError(t, bus.Start(busCtx))
+	routes.SetRevocationSource(bus)
+	t.Cleanup(func() { routes.SetRevocationSource(nil); cancelBus() })
 	owner, err := q.CreateUser(ctx, db.CreateUserParams{Username: "hostowner", LowerUsername: "hostowner"})
 	require.NoError(t, err)
 	member, err := q.CreateUser(ctx, db.CreateUserParams{Username: "hostmember", LowerUsername: "hostmember"})
@@ -133,6 +139,35 @@ func TestInstallStatusOwnerHTTPModelPostgres(t *testing.T) {
 		projection, err := restarted.Status(ctx)
 		require.NoError(t, err)
 		require.Equal(t, strings.Contains(body, "true"), projection["chatgpt"])
+	}
+	// Exercise newly composed Settings fields through the authenticated HTTP boundary.
+	// The authority callback isolates catalog policy; persistence uses real PostgreSQL.
+	capacity.AuthorizeParallel = func(context.Context) error { return nil }
+	for _, setting := range []struct{ body, key, value string }{
+		{`{"parallel":2}`, "parallel", "2"},
+		{`{"todo_daily_admissions":7}`, "todo_daily_admissions", "7"},
+	} {
+		t.Run(setting.key, func(t *testing.T) {
+			require.Equal(t, 403, request("PUT", "/api/install", other, setting.body).Code)
+			updated := request("PUT", "/api/install", good, setting.body)
+			require.Equal(t, 200, updated.Code, updated.Body.String())
+			saved, err := q.GetInstallSetting(ctx, setting.key)
+			require.NoError(t, err)
+			require.JSONEq(t, setting.value, string(saved.Value))
+		})
+	}
+	for _, body := range []string{
+		`{"parallel":"2"}`, `{"parallel":null,"chatgpt":true}`,
+		`{"todo_daily_admissions":"7"}`, `{"todo_daily_admissions":null,"chatgpt":true}`,
+		`{"todo_preapprove_default":"true"}`, `{"todo_preapprove_default":null,"chatgpt":true}`,
+		`{"wiki_sync.obsidian":false}`, `{"wiki_sync.obsidian":null,"chatgpt":true}`,
+		`{"wiki_sync.obsidian":{"path":"","unknown":1}}`,
+		`{"parallel":2,"unknown":1}`, `{"parallel":2} {}`,
+	} {
+		require.Equal(t, 400, request("PUT", "/api/install", good, body).Code, body)
+		saved, err := q.GetInstallSetting(ctx, "models.chatgpt")
+		require.NoError(t, err)
+		require.JSONEq(t, "false", string(saved.Value), "malformed writes cannot enable ChatGPT")
 	}
 	for _, body := range []string{`{"chatgpt":"true"}`, `{"chatgpt":null}`, `{"chatgpt":true,"unknown":1}`, `{"chatgpt":null,"capacity":2}`, `{"chatgpt":true,"capacity":null}`} {
 		require.Equal(t, 400, request("PUT", "/api/install", good, body).Code)

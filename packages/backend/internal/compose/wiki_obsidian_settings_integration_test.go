@@ -62,6 +62,10 @@ func TestInstallObsidianSettingsRouteWorkerPostgres(t *testing.T) {
 		require.NoError(t, err)
 	}
 	state, vault, next := t.TempDir(), t.TempDir(), t.TempDir()
+	vault, err = filepath.EvalSymlinks(vault)
+	require.NoError(t, err)
+	next, err = filepath.EvalSymlinks(next)
+	require.NoError(t, err)
 	github := &rosterGitHub{roles: map[string]string{"owner": "admin"}}
 	provider := httptest.NewServer(http.HandlerFunc(github.serve))
 	defer provider.Close()
@@ -105,6 +109,10 @@ func TestInstallObsidianSettingsRouteWorkerPostgres(t *testing.T) {
 	w := set(owner.Username, vault)
 	require.Equal(t, 200, w.Code, w.Body.String())
 	require.Contains(t, w.Body.String(), vault)
+	persisted, err := q.GetInstallSetting(ctx, "wiki_sync.obsidian")
+	require.NoError(t, err)
+	require.Contains(t, string(persisted.Value), vault)
+
 	mixed, _ := json.Marshal(map[string]any{"wiki_sync.obsidian": map[string]string{"path": next}, "parallel": 3})
 	require.Equal(t, 400, request("PUT", owner.Username, string(mixed)).Code)
 	require.NotContains(t, w.Body.String(), "session")
