@@ -6755,15 +6755,15 @@ model call made outside any ladder.
 
 ### FlowEngineLike retry policy constants
 
-| Constant                        | Value                | What it bounds                                                                                                                                                                                              |
-| ------------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `defaultModelRetryBaseMillis`   | 1,000                | The first transport retry delay.                                                                                                                                                                            |
-| `defaultModelRetryFactor`       | 2                    | The factor each successive delay multiplies by.                                                                                                                                                             |
-| `defaultModelRetryTimes`        | 5                    | How many times one sealed step retries.                                                                                                                                                                     |
-| `defaultModelRetryWindowMillis` | 45,000               | The wall clock the ladder may span. Whichever of the count and the window arrives first ends the ladder.                                                                                                    |
-| `defaultModelRetryPolicy`       | jittered exponential | The production transport retry budget, composed from the four values. Sleeps are taken on the injected clock and jitter on the injected `Random`.                                                           |
-| `defaultModelOverruns`          | 1                    | How many times one sealed step re-issues a call its `modelCallMs` budget cut off, with overrun teaching prepended. An overrun costs a whole armed ceiling, so it does not share the transport retry budget. |
-| `defaultModelIdleMs`            | 300,000              | How long a model stream may send nothing before it is cut off as `transport` and re-issued without teaching, at most `defaultModelOverruns` times. Armed only below the call's `modelCallMs` ceiling.       |
+| Constant                        | Value                | What it bounds                                                                                                                                                                                                                                                                                                          |
+| ------------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `defaultModelRetryBaseMillis`   | 1,000                | The first transport retry delay.                                                                                                                                                                                                                                                                                        |
+| `defaultModelRetryFactor`       | 2                    | The factor each successive delay multiplies by.                                                                                                                                                                                                                                                                         |
+| `defaultModelRetryTimes`        | 5                    | How many times one sealed step retries.                                                                                                                                                                                                                                                                                 |
+| `defaultModelRetryWindowMillis` | 45,000               | The wall clock the ladder may span. Whichever of the count and the window arrives first ends the ladder.                                                                                                                                                                                                                |
+| `defaultModelRetryPolicy`       | jittered exponential | The production transport retry budget, composed from the four values. Sleeps are taken on the injected clock and jitter on the injected `Random`.                                                                                                                                                                       |
+| `defaultModelOverruns`          | 1                    | How many times one sealed step re-issues a call its `modelCallMs` budget cut off, with overrun teaching prepended. An overrun costs a whole armed ceiling, so it does not share the transport retry budget.                                                                                                             |
+| `defaultModelIdleMs`            | 300,000              | How long a model stream may send nothing before it is cut off as `transport` and re-issued without teaching, at most `defaultModelOverruns` times. Armed only below the call's `modelCallMs` ceiling, and never when the request's `reasoningEffort` is `xhigh` or `max`: those calls are bounded by the ceiling alone. |
 
 ### FlowEngineLike.workspaceRelative, FlowEngineLike.callBoundary, FlowEngineLike.callMaterial
 
@@ -18115,9 +18115,10 @@ Every omitted budget takes its module-level default, and zero disarms it:
 An omitted `modelCallMs` follows the run's reasoning effort through
 `modelCallMsFor(effort)`: 300,000 ms up to `medium`, 900,000 ms at `high`, and
 1,800,000 ms at `xhigh` or `max`. A steering change of effort moves a defaulted
-ceiling with it; a host's own number stays. The engine also cuts off a stream
-that sends nothing for `defaultModelIdleMs` (300,000 ms), so a long ceiling
-never waits out a stall.
+ceiling with it; a host's own number stays. Below `xhigh` effort the engine also
+cuts off a stream that sends nothing for `defaultModelIdleMs` (300,000 ms), so
+a longer ceiling never waits out a stall. At `xhigh` and `max` a silent stream
+can be a model at work, so the ceiling is the only bound.
 
 A read-only frame counts toward `readOnlyCap` unless the run has already
 written something and the frame settled a call the run had not issued before.

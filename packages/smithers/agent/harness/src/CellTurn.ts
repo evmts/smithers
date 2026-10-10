@@ -127,11 +127,12 @@ export const defaultModelCallMs = 300_000
  * hour on one decisive turn and still be working: on Terminal-Bench 4.0
  * `photonic-waveguide-routing` (2026-09-24) stock Codex's design turn took
  * 735 s on `gpt-6-sol` at `max`, and three of three harness attempts died at
- * that turn on the 300 s ceiling and its one re-issue. A ceiling is no longer
- * the only bound on a call: `recordModelStep` also cuts off a stream that goes
- * silent, which is the stall a long ceiling would otherwise wait out. So the
- * ceiling only has to stop a call that keeps producing and never ends, and it
- * scales with the effort the call was asked for:
+ * that turn on the 300 s ceiling and its one re-issue. Below `xhigh` a ceiling
+ * is not the only bound on a call: `recordModelStep` also cuts off a stream
+ * that goes silent for 300 s, which is the stall a long ceiling would otherwise
+ * wait out. At `xhigh` and `max` a silent stream can be a model at work, so
+ * the ceiling is the only bound there. The ceiling scales with the effort the
+ * call was asked for:
  *
  * | effort                                    | ceiling |
  * | ----------------------------------------- | ------- |

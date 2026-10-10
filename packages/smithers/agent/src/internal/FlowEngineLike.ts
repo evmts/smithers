@@ -118,8 +118,8 @@ export const defaultModelOverruns = 1
  * a model at work: Terminal-Bench 4.0's photonic-waveguide-routing
  * (2026-09-24) needed a 735 s design turn at `max` effort, and a total
  * ceiling short enough to catch a stall killed it. A stream that goes silent
- * is a dead socket or a stuck backend, and waiting out a 30-minute ceiling on
- * one is the cost this bound removes.
+ * is usually a dead socket or a stuck backend, and waiting out a long ceiling
+ * on one is the cost this bound removes.
  *
  * 300,000 ms is stock Codex's `stream_idle_timeout_ms` default. The ChatGPT
  * route asks for reasoning summaries, so a long think streams summary deltas
@@ -129,6 +129,22 @@ export const defaultModelOverruns = 1
  * nothing that needs correcting, and at most {@link defaultModelOverruns}
  * times, because each stall costs a whole window.
  *
+ * The bound follows the request's `params.reasoningEffort`, as the ceiling
+ * does:
+ *
+ * | effort                                            | idle bound |
+ * | ------------------------------------------------- | ---------- |
+ * | unset, `none`, `minimal`, `low`, `medium`, `high` | 300 s      |
+ * | `xhigh`, `max`                                    | none       |
+ *
+ * At `xhigh` and `max` silence is not evidence of a stall. The steady stream
+ * measured at `high` does not hold there, and a route that emits an event only
+ * when an item completes, such as the Codex CLI route, says nothing through a
+ * whole think: on Terminal-Bench 4.0 `wal-recovery-ordering` (2026-10-02) a
+ * `gpt-6.1-sol` turn at `max` was cut off after 300 s of silence and the trial
+ * was lost. Those calls are bounded by their ceiling alone, so a dead socket
+ * there costs the whole ceiling and ends as `call_timeout`.
+ *
  * Armed only when it is shorter than the call's ceiling, so a ceiling at or
  * below it is the only bound, as it was before this existed; a disarmed
  * ceiling disarms it too.
@@ -137,6 +153,17 @@ export const defaultModelOverruns = 1
  * @since 1.0.0-rc.0
  */
 export const defaultModelIdleMs = 300_000
+
+/** The idle bound for one request: {@link defaultModelIdleMs}, or none at `xhigh` and `max`. */
+const modelIdleMsFor = (effort: ModelRequest.ReasoningEffort | undefined): number | undefined => {
+  switch (effort) {
+    case "xhigh":
+    case "max":
+      return undefined
+    default:
+      return defaultModelIdleMs
+  }
+}
 
 /**
  * What a re-issued call tells the model about the attempt that was cut off.
@@ -287,7 +314,8 @@ export const recordModelStep = (
       )
     )
     const budget = budgetMillis === undefined || budgetMillis <= 0 ? undefined : budgetMillis
-    const idle = budget !== undefined && defaultModelIdleMs < budget ? defaultModelIdleMs : undefined
+    const idleFor = modelIdleMsFor(request.params.reasoningEffort)
+    const idle = budget !== undefined && idleFor !== undefined && idleFor < budget ? idleFor : undefined
     const silent = <A>(stream: Stream.Stream<A, Model.ModelFailure>): Stream.Stream<A, Model.ModelFailure> =>
       idle === undefined ? stream : stream.pipe(Stream.timeoutOrElse({
         duration: idle,

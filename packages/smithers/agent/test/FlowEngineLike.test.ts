@@ -2485,15 +2485,23 @@ describe("FlowEngineLike model-call budget", () => {
    * armed on a fiber the re-issued attempt forks, and one large adjustment can
    * finish before that fiber has armed it.
    */
-  const driveStepped = (model: Model.Model, budget: number): Promise<typeof FlowEngineLike.RecordedModelStep.Type> =>
+  const driveStepped = (
+    model: Model.Model,
+    budget: number,
+    effort?: ModelRequest.ReasoningEffort,
+    minutes = 60
+  ): Promise<typeof FlowEngineLike.RecordedModelStep.Type> =>
     Effect.gen(function*() {
       const fiber = yield* InternalFlowEngineLike.recordModelStep(
         model,
-        request("hello"),
+        ModelRequest.ModelRequest.make({
+          ...request("hello"),
+          params: ModelRequest.GenerationParams.make({ reasoningEffort: effort })
+        }),
         FlowEngineLike.defaultModelRetryPolicy,
         budget
       ).pipe(Effect.forkChild({ startImmediately: true }))
-      for (let minute = 0; minute < 60; minute++) yield* TestClock.adjust("1 minute")
+      for (let minute = 0; minute < minutes; minute++) yield* TestClock.adjust("1 minute")
       return yield* Fiber.join(fiber)
     }).pipe(Effect.provide(TestClock.layer()), Effect.runPromise)
 
@@ -2534,6 +2542,56 @@ describe("FlowEngineLike model-call budget", () => {
     expect(error).toMatchObject({ code: "transport" })
     expect((error as ModelError).message).toContain("sent nothing for 300 seconds")
   })
+
+  it.each(["xhigh", "max"] as const)(
+    "lets a %s-effort call stay silent past 300 s and answer (#3798)",
+    async (effort) => {
+      // wal-recovery-ordering, 2026-10-02: a `max` turn on a route that emits an
+      // event only when an item completes was cut off at 300 s of silence.
+      const seen: Seen = { requests: [], completed: [], startedAt: [] }
+      const recorded = await driveStepped(slow([891_000], seen), CellTurn.modelCallMsFor(effort), effort)
+
+      expect(retriesOf(recorded)).toEqual([])
+      expect(seen.requests).toHaveLength(1)
+      expect(seen.completed).toEqual([0])
+      expect(InternalFlowEngineLike.normalizeRecordedModelStep(recorded).error).toBeUndefined()
+    }
+  )
+
+  it.each(["xhigh", "max"] as const)(
+    "bounds a %s-effort call that never speaks by its ceiling alone (#3798)",
+    async (effort) => {
+      const ceiling = CellTurn.modelCallMsFor(effort)
+      const seen: Seen = { requests: [], completed: [], startedAt: [] }
+      const recorded = await driveStepped(thinking(10_000, 20_000, seen, 10), ceiling, effort, 70)
+
+      // No stall is declared, so the dead stream is an overrun: cut off at the
+      // ceiling, re-issued once with the teaching, then failed as `call_timeout`.
+      expect(retriesOf(recorded).map((retry) => retry.code)).toEqual(["call_timeout"])
+      expect(seen.requests).toHaveLength(FlowEngineLike.defaultModelOverruns + 1)
+      expect(seen.startedAt[1]! - seen.startedAt[0]!).toBeGreaterThanOrEqual(ceiling)
+      expect(InternalFlowEngineLike.normalizeRecordedModelStep(recorded).error).toMatchObject({
+        code: "call_timeout"
+      })
+    }
+  )
+
+  it.each([undefined, "none", "minimal", "low", "medium", "high"] as const)(
+    "still cuts off a %s-effort stream after 300 s of silence (#3798)",
+    async (effort) => {
+      // A host-chosen 900 s ceiling: the default below `high` equals the idle
+      // window, which leaves the ceiling as the only bound.
+      const seen: Seen = { requests: [], completed: [], startedAt: [] }
+      const recorded = await driveStepped(thinking(10_000, 20_000, seen, 1), 900_000, effort)
+
+      expect(retriesOf(recorded).map((retry) => retry.code)).toEqual(["transport"])
+      expect(seen.requests).toHaveLength(2)
+      const reopened = seen.startedAt[1]! - seen.startedAt[0]!
+      expect(reopened).toBeGreaterThanOrEqual(FlowEngineLike.defaultModelIdleMs)
+      expect(reopened).toBeLessThan(FlowEngineLike.defaultModelIdleMs + 5_000)
+      expect(InternalFlowEngineLike.normalizeRecordedModelStep(recorded).error).toBeUndefined()
+    }
+  )
 })
 
 describe("FlowEngineLike.routeResolver", () => {
