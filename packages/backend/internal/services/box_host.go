@@ -552,7 +552,8 @@ func (s *WorkspaceService) ReleaseFailedFlowHostMachine(ctx context.Context, bin
 // FlowHostMachineInitialized checks setup under an already revalidated run
 // authority. It does not open a person's workspace door or issue credentials.
 func FlowHostMachineInitialized(ctx context.Context, q *db.Queries, runtime workspaceapi.WorkspaceRuntime, authority flowhost.Authority) error {
-	owned, err := (&WorkspaceService{q: q}).loadServiceMachineAuthority(ctx, serviceMachineRequest{workspaceID: authority.WorkspaceID, repositoryID: authority.RepositoryID})
+	service := &WorkspaceService{q: q, runtime: runtime}
+	owned, err := service.loadServiceMachineAuthority(ctx, serviceMachineRequest{workspaceID: authority.WorkspaceID, repositoryID: authority.RepositoryID})
 	if err != nil {
 		return err
 	}
@@ -563,7 +564,9 @@ func FlowHostMachineInitialized(ctx context.Context, q *db.Queries, runtime work
 	if row.RepositoryID != authority.RepositoryID || (row.UserID != authority.UserID && authority.Target.BindingKind != "mythical-wiki") || row.DeletedAt.Valid {
 		return fmt.Errorf("background initialization authority mismatch")
 	}
-	data, err := runtime.ReadFile(ctx, row.ID, workspaceRepositoryReceiptPath)
+	// Native ordinary reads require the admitted working-copy daemon. Setup
+	// precedes that admission, so use the shared fixed-path preparation reader.
+	data, err := service.readRuntimeRepositoryFile(ctx, row, row.UserID, "flow-host-init", workspaceRepositoryReceiptPath)
 	if err != nil || !completedWorkspaceReceipt(data, row.ID, row.RepositoryID) {
 		return workspaceInitializing{}
 	}

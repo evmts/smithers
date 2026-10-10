@@ -22,6 +22,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// The native adapter's ordinary ReadFile uses the admitted working-copy
+// daemon; its initialization receipt must instead use the fixed-path
+// preparation reader before that daemon is ready. Only that transport contract
+// is adapted here; receipt contents and process files are real.
+type backgroundReceiptRuntime struct {
+	*process.Runtime
+	ordinaryReceiptReads int
+	preparationReads     int
+}
+
+func (r *backgroundReceiptRuntime) ReadFile(ctx context.Context, id, path string) ([]byte, error) {
+	if path == ".git/smithers-workspace-initialization.json" {
+		r.ordinaryReceiptReads++
+		return nil, fmt.Errorf("initialization receipt is not an ordinary working-copy read")
+	}
+	return r.Runtime.ReadFile(ctx, id, path)
+}
+func (r *backgroundReceiptRuntime) ReadRepositoryReceipt(ctx context.Context, id string) ([]byte, error) {
+	r.preparationReads++
+	return r.Runtime.ReadFile(ctx, id, ".git/smithers-workspace-initialization.json")
+}
+
 // Real SQL and process lifecycle, paired with the composed HTTP/SSH refusal
 // matrix in TestBackgroundMachineTerminalAdmission. A guest is not required
 // to reproduce the service authorization failure that leaked its capacity slot.
@@ -47,12 +69,15 @@ func TestBackgroundMachineServiceLifecycle(t *testing.T) {
 			// Initialization receipt is checked by the production composition's
 			// service-owned gate, never by the person's workspace loader.
 			require.NoError(t, runtime.WriteRepositoryReceipt(op, row.ID, receipt))
-			service := services.NewWorkspaceService(q, services.WithWorkspaceRuntime(runtime))
+			guarded := &backgroundReceiptRuntime{Runtime: runtime}
+			service := services.NewWorkspaceService(q, services.WithWorkspaceRuntime(guarded))
 			authority := flowhost.Authority{WorkspaceID: row.ID, RepositoryID: row.RepositoryID, UserID: row.UserID}
 			authority.Target.BindingKind = kind
 			t.Run("receipt", func(t *testing.T) {
-				require.NoError(t, services.FlowHostMachineInitialized(ctx, q, runtime, authority))
+				require.NoError(t, services.FlowHostMachineInitialized(ctx, q, guarded, authority))
 				require.NoError(t, service.FlowHostWorkspaceInitialized(ctx, authority))
+				require.Equal(t, 2, guarded.preparationReads)
+				require.Zero(t, guarded.ordinaryReceiptReads)
 			})
 			t.Run("launcher classification", func(t *testing.T) {
 				invoked := services.NewInvokedFlowService(f.pool, nil, nil)
