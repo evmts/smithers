@@ -23,9 +23,12 @@ export const restoreRolloutReceipt = async (repository: string, directory: strin
     for (const artifact of artifacts) {
       const runId = String(artifact.workflow_run.id)
       const run = JSON.parse(await command(["api", `repos/${repository}/actions/runs/${runId}`])) as {
-        path: string; event: string; head_branch: string; status: string
+        path: string; event: string; head_branch: string | null; status: string
       }
-      if (run.path !== ".github/workflows/apps-deploy.yml" || run.event !== "push" || run.head_branch !== "main" || run.status !== "completed") continue
+      // Keep historical main-push receipts and the release/manual deploy path.
+      const trustedEvent = run.event === "workflow_dispatch" ||
+        (run.event === "push" && (run.head_branch === "main" || run.head_branch?.startsWith("v")))
+      if (run.path !== ".github/workflows/apps-deploy.yml" || !trustedEvent || run.status !== "completed") continue
       // Never reach past expired evidence to silently select an older recovery target.
       if (artifact.expired) return
       const temporary = mkdtempSync(join(tmpdir(), "smithers-rollout-receipt-"))

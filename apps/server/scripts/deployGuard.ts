@@ -2,7 +2,7 @@
  * Deploy interlock for `smithers-mvp-web`: the checkout deploys the shared edge
  * (wrangler `main` = src/edge.ts, bundling to edge.js), never anything else.
  *
- * The one deploy path (scripts/deploy.ts, run on every push to main) asks
+ * The one deploy path (scripts/deploy.ts, run on each release) asks
  * this module first, before it reads the revision, builds, or spawns wrangler.
  * It compares what the checkout would deploy with what is live, named by
  * facts the provider and the checkout state directly: the entry module of

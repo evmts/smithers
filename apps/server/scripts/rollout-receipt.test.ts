@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { restoreRolloutReceipt } from "./rollout-receipt"
 
-test("fresh runners recover evidence only from completed main-push deploy artifacts, including failed runs", async () => {
+for (const revision of [{ event: "push", branch: "main" }, { event: "push", branch: "v1.0.0-rc.4" }, { event: "workflow_dispatch", branch: "main" }]) test("fresh runners recover evidence only from completed release/manual and historical main-push deploy artifacts, including failed runs", async () => {
   const directory = mkdtempSync(join(tmpdir(), "rollout-receipt-test-"))
   const downloads: string[] = []
   try {
@@ -15,7 +15,7 @@ test("fresh runners recover evidence only from completed main-push deploy artifa
         if (path.includes("/artifacts?")) return JSON.stringify({ artifacts })
         const id = Number(path.split("/").at(-1))
         return JSON.stringify({ path: id === 6 ? ".github/workflows/untrusted.yml" : ".github/workflows/apps-deploy.yml",
-          event: id === 5 ? "pull_request" : "push", head_branch: id === 4 ? "feature" : "main",
+          event: id === 5 ? "pull_request" : id === 4 ? "push" : revision.event, head_branch: id === 4 ? "feature" : revision.branch,
           status: id === 3 ? "in_progress" : "completed", conclusion: "failure" })
       }
       downloads.push(args[2]!)

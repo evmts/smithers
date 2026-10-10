@@ -16,7 +16,7 @@
  *     Runs scripts/adopt-durable-objects.ts first and stops on a red report,
  *     then `wrangler deploy --tag <sha12> --message "<sha> <subject>"`.
  *     Receipt lands in deploy-receipts/. The Deploy apps workflow runs this
- *     on every push to main; see DEPLOY.md.
+ *     on each release; see DEPLOY.md.
  *
  * The Worker identity (name `smithers-mvp-web`, the canary.smithers.sh domain,
  * the apex route, the six Durable Objects) is frozen in src/workerIdentity.ts

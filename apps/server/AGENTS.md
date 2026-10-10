@@ -29,8 +29,8 @@
   `wrangler secret put`, and kept by every deploy (`keep_bindings`); a
   deploying shell never carries a value, and no script, test or workflow may
   ask for one. Never print a secret value, in code or in a report.
-- Deploys are the Deploy apps workflow on a push to `main`: landing on `main`
-  is the deploy. It runs `scripts/deploy.ts` (site build, preflight, then
+- Deploys are the Deploy apps workflow on pushed `v*` release tags or manual
+  dispatch with an explicit ref. Main pushes run CI gates without deploying. It runs `scripts/deploy.ts` (site build, preflight, then
   `wrangler deploy`), which refuses a real deploy of a dirty tree or of a
   commit not on origin/main. Never run it for real or mutate Cloudflare from
   an agent session; the dry run and the preflight are read-only and are the

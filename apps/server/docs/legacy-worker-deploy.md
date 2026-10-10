@@ -101,8 +101,9 @@ restores the previous build without a rebuild.
   to 2026-09-23 a Stop hook on one laptop (outside this repository) ran
   `scripts/deploy.ts` for every local `main` commit with no test gate: about
   520 versions, each `Source: Unknown` with no message, seven of them commits
-  that exist on no branch. `.github/workflows/apps-deploy.yml` now deploys
-  every push to `main` after the apps gates, and `scripts/deploy.ts` refuses a
+  that exist on no branch. `.github/workflows/apps-deploy.yml` deployed
+  every push to `main` after the apps gates at that time (release tags and
+  explicit manual refs replace this trigger as of 2026-10-10), and `scripts/deploy.ts` refuses a
   real deploy of a dirty tree or of a commit not on origin/main, so the hook
   can no longer ship an unpushed or rewritten commit. Each version is tagged
   with its sha's first 12 characters and its message starts with the full sha.
@@ -311,7 +312,7 @@ records, and read back from `/__build.json` before anything is published),
 runs the preflight, then `wrangler deploy --tag <sha12> --message "<sha>
 <subject>"`, and writes a receipt (git sha, UTC timestamp, Cloudflare version
 id, version tag and message, and the workflow run URL) to `deploy-receipts/`.
-The Deploy apps workflow runs it; see "CI (every push to main)".
+The Deploy apps workflow runs it; see "CI (per release)".
 
 ```sh
 # Dry run: real site build, then `wrangler deploy --dry-run`. Bundles the
@@ -326,38 +327,29 @@ pnpm --filter smithers-server run deploy:dry
 pnpm --filter smithers-server run deploy
 ```
 
-## CI (every push to main)
+## CI (per release)
 
-`.github/workflows/apps-deploy.yml` ("Deploy apps") is the one deploy path.
-Landing on `main` is the deploy. Every push to `main` runs two jobs:
+`.github/workflows/apps-deploy.yml` ("Deploy apps") deploys smithers.sh and
+canary.smithers.sh on pushed `v*` release tags, using the same revision as
+Cloud's backend pin. Manual `workflow_dispatch` requires an explicit `ref`
+(release tag or commit). Both jobs check out that ref.
 
-1. `gate` runs the apps targets CI's `apps-e2e` job runs, by the same labels
-   (`//apps/app:check`, `:unitTests`, `:conformance`, `:browserE2e`), plus
-   `smthrs ci` over `//apps/server/...` and `//apps/site/...`, on the exact
-   sha. It never sees a Cloudflare credential.
-   `scripts/canary/workflow-wiring.test.ts` fails if its targets fall behind
-   `apps-e2e`'s.
-2. `deploy` needs `gate` and runs in the `production` environment, whose
-   secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are the only
-   deploy credentials; the Worker's own secrets live on the script and are
-   kept.
-   It runs `scripts/deploy.ts`, then CN-1 (the sha it published), the site
-   probe, CN-18, CN-23 and CN-24, and uploads the receipt as the
-   `deploy-receipt` artifact.
+`gate` runs app typecheck, unit tests, conformance and all three browser
+shards, plus server and site gates. `ci.yml` keeps those gates on every push
+to `main`; main pushes do not deploy. `deploy` needs `gate`, uses the
+`production` environment and exports only Cloudflare deployment credentials.
+Without a token it runs a dry run. With a token, manual dispatch publishes too.
 
-A manual `workflow_dispatch` run, or a push while the `production`
-environment has no token, runs the gates and the dry-run deploy.
+`scripts/deploy.ts` retains the required post-deploy probes, automatically
+restores failed rollouts and uploads `deploy-receipts/rollout/latest.json`
+in the `deploy-receipt` artifact. A post-deploy comparison reads each site's
+`/__build.json` and `/api/bootstrap` buildSha and reports both revisions.
+Mismatch or unavailable data warns without failing publication: Cloud's
+backend re-pin follows the app deploy.
 
-Deploys run one at a time and are never cancelled mid-publish. GitHub keeps
-one pending run and replaces it on each push, so under load the newest `main`
-deploys next and the shas between are skipped, never published out of order.
-Production trails `main` by one run, about 30 minutes, more under load.
-
-`scripts/deploy.ts` refuses a real deploy of a dirty tree or of any commit
-not on origin/main ("push main first, deploys ship only commits on
-origin/main"), whatever runs it. The version it publishes is tagged with the
-sha's first 12 characters and its message starts with the full sha, so
-`bun x wrangler deployments list` names every version's commit.
+Deploys run one at a time and are never cancelled mid-publish.
+`scripts/deploy.ts` refuses a real deploy of a dirty tree or a commit outside
+origin/main. The published version carries the commit SHA.
 
 ### Break-glass human run
 

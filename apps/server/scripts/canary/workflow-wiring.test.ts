@@ -13,8 +13,9 @@
  * passing after someone adds probe six.
  */
 import { describe, expect, it } from "bun:test"
-import { readdirSync, readFileSync } from "node:fs"
-import { dirname } from "node:path"
+import { readdirSync, readFileSync, mkdtempSync, writeFileSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const canaryDir = fileURLToPath(new URL(".", import.meta.url))
@@ -51,7 +52,7 @@ interface DeployJob {
 }
 
 interface DeployWorkflow {
-  readonly on: { readonly push?: { readonly branches?: ReadonlyArray<string>; readonly tags?: ReadonlyArray<string> } }
+  readonly on: { readonly push?: { readonly branches?: ReadonlyArray<string>; readonly tags?: ReadonlyArray<string> }; readonly workflow_dispatch?: { readonly inputs: { readonly ref: unknown } } }
   readonly concurrency?: unknown
   readonly jobs: Record<string, DeployJob> & { readonly gate: DeployJob; readonly deploy: DeployJob }
 }
@@ -166,16 +167,13 @@ describe("canary probes are wired into a gate", () => {
     expect(source).toContain("return { version: versionId, revision: gitSha }")
   })
 
-  /*
-   * The deploy was tag-triggered and nobody cut a tag, so the gated path never
-   * ran while a laptop hook published every local commit ungated. Every push to
-   * main deploys now, behind the same apps targets CI runs, and only the
-   * deploy job holds the production credential.
-   */
-  it("deploys every push to main behind the apps gates CI runs", () => {
+  it("deploys release tags and explicit manual refs behind the apps gates CI runs", () => {
     const deploy = Bun.YAML.parse(readWorkflow("apps-deploy.yml")) as DeployWorkflow
-    expect(deploy.on.push?.branches).toEqual(["main"])
-    expect(deploy.on.push?.tags).toBeUndefined()
+    expect(deploy.on.push?.branches).toBeUndefined()
+    expect(deploy.on.push?.tags).toEqual(["v*"])
+    expect(deploy.on.workflow_dispatch?.inputs.ref).toEqual({ description: "Release tag or commit to deploy (must be on origin/main)", required: true, type: "string" })
+    for (const job of [deploy.jobs.gate, deploy.jobs.deploy]) expect(job.steps[0]?.with?.ref).toBe("${{ inputs.ref || github.ref }}")
+    expect(deploy.jobs.deploy.steps.find(step => step.id === "mode")?.run).not.toContain("github.event_name")
     expect(deploy.concurrency).toEqual({ group: "apps-deploy", "cancel-in-progress": false })
     expect([deploy.jobs.deploy.needs].flat()).toContain("gate")
     expect(deploy.jobs.deploy.environment).toBe("production")
@@ -194,7 +192,35 @@ describe("canary probes are wired into a gate", () => {
     expect(gate.filter((target) => target.startsWith("//apps/tui"))).toEqual([])
     expect(appsE2e.filter((target) => !notDeployed.includes(target) && !gate.includes(target))).toEqual([])
     for (const target of ["//apps/server/...", "//apps/site/..."]) expect(gate).toContain(target)
+    for (const target of gate) expect(Object.values(ci.jobs).flatMap(appTargets)).toContain(target)
+    expect(ci.on.push?.branches).toEqual(["main"])
     expect(JSON.stringify(deploy)).not.toContain("continue-on-error")
+  })
+
+  it("reports live renderer/backend parity without failing on mismatch or unavailable data", async () => {
+    const deploy = Bun.YAML.parse(readWorkflow("apps-deploy.yml")) as DeployWorkflow
+    const step = deploy.jobs.deploy.steps.find(step => step.name === "Report renderer/backend revision parity")!
+    expect(step.if).toBe("steps.mode.outputs.dry_run == 'false' && steps.deploy_real.outcome == 'success'")
+    const directory = mkdtempSync(join(tmpdir(), "revision-parity-"))
+    try {
+      writeFileSync(join(directory, "curl"), `#!/bin/bash
+case "$*" in
+  *'__build.json'*) echo '{"gitSha":"renderer-revision"}' ;;
+  *) if [ "$BACKEND" = unavailable ]; then exit 22; fi; printf '{"buildSha":"%s"}' "$BACKEND" ;;
+esac
+`, { mode: 0o755 })
+      for (const backend of ["renderer-revision", "backend-revision", "unavailable"]) {
+        const proc = Bun.spawn(["bash", "-e", "-o", "pipefail", "-c", step.run!], {
+          env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, BACKEND: backend }, stdout: "pipe", stderr: "pipe"
+        })
+        const output = await new Response(proc.stdout).text()
+        expect(await proc.exited).toBe(0)
+        for (const origin of ["https://smithers.sh", "https://canary.smithers.sh"]) {
+          expect(output).toContain(`${origin}: renderer=renderer-revision backend=${backend}`)
+        }
+        expect(output.includes("::warning::")).toBe(backend !== "renderer-revision")
+      }
+    } finally { rmSync(directory, { recursive: true, force: true }) }
   })
 
   it("retains only the unit-test JUnit report even when the deploy gate fails", () => {
