@@ -2,13 +2,19 @@ package services
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/flowdispatch"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/jobs"
+	"github.com/smithersai/smithers/packages/backend/microsandbox"
+	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
 )
 
 // launchOn is the last launch of flowID on workspaceID.
@@ -189,7 +195,7 @@ func TestTodoReleasesItsCodingAndReviewLanes(t *testing.T) {
 // the merge pass retires its lane, and the lane sweep retires one the merge
 // pass missed.
 func TestMergedTodoRetiresItsUnansweredReviewLane(t *testing.T) {
-	for _, mode := range []string{"merge pass", "sweep"} {
+	for _, mode := range []string{"merge pass", "sweep", "starting"} {
 		t.Run(mode, func(t *testing.T) {
 			o, session := newTodoAdmission(t)
 			o.service.SetTodoFlow(func(context.Context, int64, string) (string, error) { return todoPinOne, nil })
@@ -226,6 +232,41 @@ func TestMergedTodoRetiresItsUnansweredReviewLane(t *testing.T) {
 			require.Empty(t, review.Verdict, "the review has not answered")
 
 			// A person merges before the review answers.
+			var starting *startingReviewLane
+			var learning chan error
+			if mode == "starting" {
+				queue := mergedReviewQueue(t)
+				holder := "workspace:" + reviewLane
+				_, err = queue.Request("person", holder, "review", "machine")
+				require.NoError(t, err)
+				grants := microsandbox.AdmissionProviders{Ready: func(context.Context, microsandbox.AdmissionRequest) error { return nil }, FreeDisk: func(context.Context) (int64, error) {
+					return microsandbox.MinFreeDiskBytes + microsandbox.MachineDiskBytes, nil
+				}}
+				grant, err := queue.GrantNext(ctx, grants)
+				require.NoError(t, err)
+				require.Equal(t, holder, grant.Holder)
+				learning = make(chan error, 1)
+				go func() {
+					_, err := queue.WaitAdmission(t.Context(), grants, "background", "learning", "learning", "learning")
+					learning <- err
+				}()
+				require.Eventually(t, func() bool {
+					for _, row := range queue.AdmissionSnapshot() {
+						if row.Holder == "learning" {
+							return true
+						}
+					}
+					return false
+				}, time.Second, time.Millisecond)
+				grant, err = queue.GrantNext(ctx, grants)
+				require.NoError(t, err)
+				require.Empty(t, grant.Holder)
+				_, err = o.pool.Exec(ctx, `INSERT INTO workspaces(id,repository_id,user_id,status,target_bookmark) VALUES($1,$2,$3,'starting',$4)`, reviewLane, o.repoID, o.userID, reviewLane)
+				require.NoError(t, err)
+				machines := NewWorkspaceService(db.New(o.pool), WithWorkspaceRuntime(&mergedReviewRuntime{queue: queue}))
+				starting = &startingReviewLane{fakeMythicalLanes: o.lanes, lane: reviewLane, machines: machines}
+				o.service.lanes = starting
+			}
 			if mode == "sweep" {
 				// The merge pass already released the coding lane; only the
 				// review lane is left, past the sweep's grace period.
@@ -238,11 +279,68 @@ func TestMergedTodoRetiresItsUnansweredReviewLane(t *testing.T) {
 				_, err = o.pool.Exec(ctx, `UPDATE mythical_items SET state='landed', pr_state='merged' WHERE id=$1`, item.ID)
 			}
 			require.NoError(t, err)
-			o.wake()
+			stack := o.wake()
+			if starting != nil {
+				require.NotContains(t, o.lanes.deleted, reviewLane)
+				require.Equal(t, stack.ProcessedGeneration+1, stack.RequestedGeneration, "the failed stop schedules a durable retry")
+				_, err = o.pool.Exec(ctx, `UPDATE workspaces SET status='running' WHERE id=$1`, reviewLane)
+				require.NoError(t, err)
+				time.Sleep(time.Until(stack.NextAttemptAt.Time) + 100*time.Millisecond)
+				require.NoError(t, o.service.PollOnce(ctx))
+				row, err := db.New(o.pool).GetWorkspace(ctx, reviewLane)
+				require.NoError(t, err)
+				require.Equal(t, "stopped", row.Status)
+				select {
+				case err := <-learning:
+					require.NoError(t, err, "learning obtains the only slot without a person's action")
+				case <-time.After(5 * time.Second):
+					t.Fatal("learning was not admitted after the review machine stopped")
+				}
+			}
 			assert.Contains(t, o.lanes.deleted, reviewLane, "a merged TODO's unanswered review releases its machine")
 			var retired bool
 			require.NoError(t, o.pool.QueryRow(ctx, `SELECT retired_at IS NOT NULL FROM mythical_lanes WHERE workspace_id=$1`, reviewLane).Scan(&retired))
 			assert.True(t, retired)
 		})
 	}
+}
+
+// Provisioning owns the machine until it settles; retirement must survive it.
+type startingReviewLane struct {
+	*fakeMythicalLanes
+	lane     string
+	machines *WorkspaceService
+}
+
+func (l *startingReviewLane) Delete(ctx context.Context, repo, actor int64, id string) error {
+	if id == l.lane && l.machines != nil {
+		if err := l.machines.StopLaneMachine(ctx, repo, id); err != nil {
+			return err
+		}
+	}
+	return l.fakeMythicalLanes.Delete(ctx, repo, actor, id)
+}
+
+type mergedReviewRuntime struct {
+	workspaceapi.WorkspaceRuntime
+	queue *microsandbox.Runtime
+}
+
+func (r *mergedReviewRuntime) StopWorkspace(_ context.Context, id string) error {
+	r.queue.ConfirmAdmissionStop("workspace:"+id, false)
+	return nil
+}
+func mergedReviewQueue(t *testing.T) *microsandbox.Runtime {
+	t.Helper()
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "owner"), []byte("smithers-backend-0123456789abcdef\n"), 0600))
+	binary := filepath.Join(root, "msb")
+	require.NoError(t, os.WriteFile(binary, []byte("#!/bin/sh\nprintf '[]\\n'\n"), 0700))
+	profile := microsandbox.HostProfile{MemoryBytes: 64 << 30, PerfCores: 10, PhysicalCores: 14, DiskFreeBytes: microsandbox.MinFreeDiskBytes + microsandbox.MachineDiskBytes, MacOSVersion: "15.6", Hypervisor: true}
+	sizing := microsandbox.ComputeSizing(profile)
+	queue, err := microsandbox.New(t.Context(), microsandbox.Config{Root: root, Binary: binary, SkipQualification: true, HostProfile: &profile, CPUs: sizing.CPUs, MemoryMiB: sizing.MemoryMiB, DiskMiB: int(microsandbox.MachineDiskBytes >> 20), MaxRunningVMs: 1})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = queue.Close() })
+	queue.SetCapacityReader(func(context.Context) (int, error) { return 1, nil })
+	return queue
 }

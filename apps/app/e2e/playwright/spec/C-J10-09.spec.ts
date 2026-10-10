@@ -96,13 +96,13 @@ test("C-J10-09: loading reviews can be retried and failed reviews retain their c
   const keys: string[] = []
   await page.route("**/api/reviews", route => {
     keys.push(route.request().headers()["idempotency-key"]!)
-    if (keys.length === 1) return route.fulfill({ status: 503, json: { error: { code: "active_flow_unavailable", class: "infra", message: "Review loading. Retry /review." } } })
+    if (keys.length === 1) return route.fulfill({ status: 503, json: { error: { code: "active_flow_unavailable", class: "infra", message: "Review starting. Retry /review." } } })
     return route.fulfill({ status: 202, json: { operationId: "failed-review", state: "accepted" } })
   })
   await page.route("**/api/reviews/failed-review", route => route.fulfill({ json: { state: "failed", error: "ChangeSetUnreadable: bwrap is not on PATH" } }))
   await page.goto('/smithers-mvp-canary/node')
   await say(page, '/review #50')
-  await expect(page.getByText('Review loading. Retry /review.', { exact: true })).toBeVisible()
+  await expect(page.getByText('Review starting. Retry /review.', { exact: true })).toBeVisible()
   await say(page, '/review #50')
   await expect(page.getByText('ChangeSetUnreadable: bwrap is not on PATH', { exact: true })).toBeVisible()
   expect(keys).toHaveLength(2)

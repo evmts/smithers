@@ -1668,7 +1668,8 @@ func (s *MythicalService) advanceItems(ctx context.Context, r *mythicalRun) {
 		}
 		if mythicalSettledStates[item.State] || item.State == "proposed" && item.PRState != "" {
 			// A finished item's lane is retired even if an earlier release failed.
-			if item.WorkspaceID != "" && (mythicalSettledStates[item.State] || item.State == "proposed" && !mythicalChecksOf(item).reviewing(item) && mythicalChecksOf(item).ForeignBring == nil) {
+			reviewNeedsRelease := mythicalSettledStates[item.State] && checks.Review != nil && checks.Review.Lane != ""
+			if (item.WorkspaceID != "" || reviewNeedsRelease) && (mythicalSettledStates[item.State] || item.State == "proposed" && !checks.reviewing(item) && checks.ForeignBring == nil) {
 				item = s.releaseLane(ctx, r, item)
 			}
 			if mythicalSettledStates[item.State] && !mythicalReopenFollowed(item, step.now) {
@@ -1913,6 +1914,7 @@ func (s *MythicalService) releaseLane(ctx context.Context, r *mythicalRun, item 
 		if review := mythicalChecksOf(item).Review; review != nil && (review.Verdict != "" || mythicalSettledStates[item.State]) && review.Lane != "" && review.Lane != item.WorkspaceID {
 			if err := s.retireLane(ctx, r, review.Lane); err != nil && ctx.Err() == nil {
 				s.logger.Warn("mythical.review_release_failed", "workspace_id", review.Lane, "error", err)
+				r.dueAt(s.now().Add(mythicalPollInterval))
 			}
 		}
 	}
@@ -2751,6 +2753,7 @@ func (s *MythicalService) sweepLanes(ctx context.Context, r *mythicalRun) {
 		}
 		if err := s.retireLane(ctx, r, lane.WorkspaceID); err != nil && ctx.Err() == nil {
 			s.logger.Warn("mythical.lane_release_failed", "workspace_id", lane.WorkspaceID, "error", err)
+			r.dueAt(s.now().Add(mythicalPollInterval))
 		}
 	}
 }

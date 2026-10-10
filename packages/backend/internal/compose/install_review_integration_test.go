@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/smithersai/smithers/packages/backend/jobs"
 	"github.com/smithersai/smithers/packages/backend/workspace"
@@ -744,35 +745,92 @@ func testInstallReviewHTTPAdmission(t *testing.T, successfulTerminal bool) {
 		// Run 15's review host exhausted its starts and the review retried
 		// forever, holding the only machine slot (#3783). An exhausted start
 		// settles the review failed and retires its machine once.
-		t.Run("an exhausted host start settles failed", func(t *testing.T) {
-			exhausted := &reviewMachineFixture{runs: map[string]string{}, startErr: exhaustedHostStart{}}
-			exhaustedBackground, err := services.NewReviewBackground(pool, service, exhausted, &reviewDeliveryFixture{})
-			require.NoError(t, err)
-			service.SetReviewBackground(exhaustedBackground)
-			defer service.SetReviewBackground(background)
-			answer := call(body, "exhausted-host-start")
-			require.Equal(t, 202, answer.Code, answer.Body.String())
-			var pending services.ReviewAdmission
-			require.NoError(t, json.Unmarshal(answer.Body.Bytes(), &pending))
-			workerCtx, cancel := context.WithCancel(ctx)
-			done := make(chan error, 1)
-			go func() {
-				done <- exhaustedBackground.RunWorker(workerCtx, jobs.WorkerConfig{WorkerID: "review-exhausted", Capacity: 1, Lease: time.Second, PollInterval: time.Millisecond, RetryDelay: time.Millisecond})
-			}()
-			require.Eventually(t, func() bool {
-				op, e := store.Get(ctx, scope, pending.OperationID)
-				return e == nil && op.State == jobs.StateFailed
-			}, 5*time.Second, 10*time.Millisecond)
-			cancel()
-			require.NoError(t, <-done)
-			op, err := store.Get(ctx, scope, pending.OperationID)
-			require.NoError(t, err)
-			require.JSONEq(t, `{"state":"failed","error":"runtime_start_exhausted"}`, string(op.TerminalReceipt))
-			exhausted.mu.Lock()
-			defer exhausted.mu.Unlock()
-			require.Equal(t, 1, exhausted.starts, "an exhausted start never boots the machine again")
-			require.True(t, exhausted.retiredOperations[pending.OperationID], "the review's machine is retired")
-		})
+		for _, failure := range []struct {
+			name    string
+			cause   error
+			release error
+			starts  int
+			message string
+		}{
+			{"exhausted", exhaustedHostStart{}, nil, 1, "runtime_start_exhausted"},
+			{"exhausted with release failure", exhaustedHostStart{}, errors.New("release unavailable"), 1, "runtime_start_exhausted; release: release unavailable"},
+			{"ordinary start failure with release failure", errors.New("guest boot unavailable"), errors.New("release unavailable"), 3, "guest boot unavailable; release: release unavailable"},
+		} {
+			t.Run(failure.name, func(t *testing.T) {
+				exhausted := &reviewMachineFixture{runs: map[string]string{}, startErr: failure.cause, retireErr: failure.release}
+				exhaustedBackground, err := services.NewReviewBackground(pool, service, exhausted, &reviewDeliveryFixture{})
+				require.NoError(t, err)
+				service.SetReviewBackground(exhaustedBackground)
+				defer service.SetReviewBackground(background)
+				answer := call(body, "exhausted-host-start-"+failure.name)
+				require.Equal(t, 202, answer.Code, answer.Body.String())
+				var pending services.ReviewAdmission
+				require.NoError(t, json.Unmarshal(answer.Body.Bytes(), &pending))
+				workerCtx, cancel := context.WithCancel(ctx)
+				done := make(chan error, 1)
+				go func() {
+					done <- exhaustedBackground.RunWorker(workerCtx, jobs.WorkerConfig{WorkerID: "review-exhausted", Capacity: 1, Lease: time.Second, PollInterval: time.Millisecond, RetryDelay: time.Millisecond})
+				}()
+				require.Eventually(t, func() bool {
+					op, e := store.Get(ctx, scope, pending.OperationID)
+					return e == nil && op.State == jobs.StateFailed
+				}, 5*time.Second, 10*time.Millisecond)
+				cancel()
+				require.NoError(t, <-done)
+				op, err := store.Get(ctx, scope, pending.OperationID)
+				require.NoError(t, err)
+				var terminal services.ReviewObservation
+				require.NoError(t, json.Unmarshal(op.TerminalReceipt, &terminal))
+				require.Equal(t, failure.message, terminal.Error)
+				observation := readReview(pending.OperationID, "review-cookie")
+				require.Equal(t, 200, observation.Code, observation.Body.String())
+				require.Contains(t, observation.Body.String(), failure.message)
+				home, err := service.BackgroundRuns(ctx, repo.ID)
+				require.NoError(t, err)
+				found := false
+				for _, row := range home {
+					if row["id"] == pending.OperationID {
+						found = true
+						require.Equal(t, "failed", row["state"])
+						require.Equal(t, failure.message, row["detail"])
+					}
+				}
+				require.True(t, found, "Home retains the failed review and its cause")
+				exhausted.mu.Lock()
+				require.Equal(t, failure.starts, exhausted.starts, "an exhausted start never boots the machine again")
+				require.Equal(t, failure.release == nil, exhausted.retiredOperations[pending.OperationID], "failed release is not a release receipt")
+				exhausted.mu.Unlock()
+				if failure.release != nil {
+					// A terminal job leaves its machine to recovery on restart.
+					id := reviewWorkspaceID(pending.OperationID)
+					_, err = pool.Exec(ctx, `INSERT INTO workspaces(id,repository_id,user_id,name,status) VALUES($1,$2,$3,$4,'running')`, id, pending.RepositoryID, pending.RequesterID, "review-"+pending.OperationID)
+					require.NoError(t, err)
+					exhausted.mu.Lock()
+					exhausted.retireErr = nil
+					exhausted.retireHook = func() error {
+						_, err := pool.Exec(ctx, `DELETE FROM workspaces WHERE id=$1`, id)
+						return err
+					}
+					exhausted.mu.Unlock()
+					recoveryCtx, stop := context.WithCancel(ctx)
+					t.Cleanup(stop)
+					recoveryDone := make(chan error, 1)
+					go func() {
+						recoveryDone <- exhaustedBackground.RunWorker(recoveryCtx, jobs.WorkerConfig{WorkerID: "review-cleanup", Capacity: 1, Lease: time.Second, PollInterval: time.Millisecond})
+					}()
+					require.Eventually(t, func() bool {
+						var count int
+						err := pool.QueryRow(ctx, `SELECT count(*) FROM workspaces WHERE id=$1`, id).Scan(&count)
+						return err == nil && count == 0
+					}, 5*time.Second, 10*time.Millisecond)
+					stop()
+					require.NoError(t, <-recoveryDone)
+					retained, err := store.Get(ctx, scope, pending.OperationID)
+					require.NoError(t, err)
+					require.Equal(t, op.TerminalReceipt, retained.TerminalReceipt, "recovery preserves the recorded causes")
+				}
+			})
+		}
 		for _, table := range []string{"workspaces", "mythical_items", "mythical_stacks"} {
 			require.NoError(t, pool.QueryRow(ctx, "SELECT count(*) FROM "+table).Scan(&count))
 			require.Zero(t, count, table)
@@ -802,6 +860,8 @@ type reviewMachineFixture struct {
 	retireEntered              chan<- struct{}
 	retired                    int
 	startErr                   error
+	retireErr                  error
+	retireHook                 func() error
 	starts                     int
 }
 
@@ -869,6 +929,9 @@ func (m *reviewMachineFixture) Retire(_ context.Context, id string, _ services.R
 		m.retireAttempts = map[string]int{}
 	}
 	m.retireAttempts[id]++
+	if m.retireErr != nil {
+		return m.retireErr
+	}
 	if m.retireGateID == id && m.retireGate != nil {
 		select {
 		case m.retireEntered <- struct{}{}:
@@ -879,6 +942,11 @@ func (m *reviewMachineFixture) Retire(_ context.Context, id string, _ services.R
 	if m.retireFailID == id {
 		m.retireFailID = ""
 		return fmt.Errorf("retirement retry")
+	}
+	if m.retireHook != nil {
+		if err := m.retireHook(); err != nil {
+			return err
+		}
 	}
 	m.retired++
 	if m.retiredOperations == nil {
@@ -916,4 +984,13 @@ func (d *reviewDeliveryFixture) Deliver(ctx context.Context, id string, a servic
 	}
 	d.id, d.conversation, d.change = id, a.Conversation, change
 	return nil
+}
+
+func (m *reviewMachineFixture) QueuePosition(string) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.retireErr != nil {
+		return 1
+	}
+	return 0
 }

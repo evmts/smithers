@@ -33,8 +33,10 @@ export const createReviewSeam = (ctx: SeamContext, pollMs = 1000) => {
           if (!stillCurrent(row)) return TOAST_SUPERSEDED
           if (!response.ok) {
             const refusal: unknown = await response.clone().json().catch(() => undefined)
-            const loading = typeof refusal === "object" && refusal !== null && "error" in refusal && typeof refusal.error === "object" && refusal.error !== null && "code" in refusal.error && refusal.error.code === "active_flow_unavailable"
-            const message = loading ? "Review loading. Retry /review." : await readErrorMessage(response, "Review unavailable")
+            const error = typeof refusal === "object" && refusal !== null && "error" in refusal ? refusal.error : null
+            const loading = typeof error === "object" && error !== null && "code" in error && error.code === "active_flow_unavailable"
+            const message = loading && "message" in error && typeof error.message === "string" && error.message
+              ? error.message : await readErrorMessage(response, "Review unavailable")
             await save({ ...row, state: "failed", terminal: response.status < 500 }); return message
           }
           const receipt: unknown = await response.json()

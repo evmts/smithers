@@ -159,7 +159,7 @@ test("an approved Review resumes the admitted operation and its confirmation toa
  const h = await harness(async (_url, init) => {
   if (init?.method === "POST") {
    keys.push((init.headers as Record<string, string>)["Idempotency-Key"])
-   if (keys.length === 1) return Response.json({ error: { message: "Review loading. Retry /review.", code: "active_flow_unavailable", class: "infra" } }, { status: 503 })
+   if (keys.length === 1) return Response.json({ error: { message: "Review starting. Retry /review.", code: "active_flow_unavailable", class: "infra" } }, { status: 503 })
    return Response.json({ operationId: "loaded", state: "accepted" }, { status: 202 })
   }
   return Response.json({ state: "failed", error: "ChangeSetUnreadable: bwrap is not on PATH" })
@@ -167,7 +167,7 @@ test("an approved Review resumes the admitted operation and its confirmation toa
  const seam = createReviewSeam(h.ctx, 1)
  await seam.request(2, "owner/repo")
  await waitFor(() => h.settled.length === 1)
- expect(h.settled[0]).toContain("Retry /review")
+ expect(h.settled[0]).toBe("Review starting. Retry /review.")
  expect(h.store.session().reviewRequests?.[0]?.terminal).toBe(false)
  await seam.request(2, "owner/repo")
  await waitFor(() => h.settled.length === 2)

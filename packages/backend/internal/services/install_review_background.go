@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -17,6 +18,8 @@ import (
 )
 
 const reviewOperation = "install.review"
+
+const reviewStartFailureLimit = 3
 
 // ReviewMachine runs the ordinary pinned flow through the shared engine. It
 // owns an ephemeral microVM at Admission.Head, never a person's working copy.
@@ -34,8 +37,9 @@ type ReviewMachine interface {
 type ReviewObservation struct {
 	State jobs.State `json:"state"`
 	// Change is the retained change-card payload from the review flow, not PR text.
-	Change json.RawMessage `json:"change,omitempty"`
-	Error  string          `json:"error,omitempty"`
+	Change       json.RawMessage `json:"change,omitempty"`
+	Error        string          `json:"error,omitempty"`
+	ReleaseError string          `json:"releaseError,omitempty"`
 }
 
 // ReviewDelivery persists a change card in the admitted conversation. The ID
@@ -57,9 +61,10 @@ type reviewJob struct {
 	Admission ReviewAdmission `json:"admission"`
 }
 type reviewCheckpoint struct {
-	Started bool               `json:"started,omitempty"`
-	Run     string             `json:"run,omitempty"`
-	Result  *ReviewObservation `json:"result,omitempty"`
+	Started       bool               `json:"started,omitempty"`
+	StartFailures int                `json:"startFailures,omitempty"`
+	Run           string             `json:"run,omitempty"`
+	Result        *ReviewObservation `json:"result,omitempty"`
 }
 
 func NewReviewBackground(pool *pgxpool.Pool, service *MythicalService, machine ReviewMachine, delivery ReviewDelivery) (*ReviewBackground, error) {
@@ -162,6 +167,24 @@ func (b *ReviewBackground) admitInTx(ctx context.Context, tx pgx.Tx, admission R
 
 func (b *ReviewBackground) RunWorker(ctx context.Context, config jobs.WorkerConfig) error {
 	config.Operations = []string{reviewOperation}
+	recovery, stop := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(WorkspaceProvisioningReconcileInterval)
+		defer ticker.Stop()
+		for {
+			if err := b.reconcileFailedMachines(recovery); err != nil && recovery.Err() == nil {
+				slog.WarnContext(recovery, "review retirement reconciliation failed", "error", err)
+			}
+			select {
+			case <-recovery.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	defer func() { stop(); <-done }()
 	return b.store.RunWorker(ctx, config, b.handle)
 }
 
@@ -227,29 +250,44 @@ func (b *ReviewBackground) handle(ctx context.Context, lease *jobs.Lease) error 
 	}
 	// A settled start (Result without Run) replays to retirement, never Start.
 	if checkpoint.Run == "" && checkpoint.Result == nil {
-		if err := b.machine.Prepare(ctx, admission); err != nil {
-			return err
+		launch := func() (string, error) {
+			if err := b.machine.Prepare(ctx, admission); err != nil {
+				return "", err
+			}
+			if err := b.delivery.Ready(ctx, admission); err != nil {
+				return "", err
+			}
+			checkpoint.Started = true
+			start, _ := json.Marshal(checkpoint)
+			if err := lease.StartExternal(ctx, start); err != nil {
+				return "", err
+			}
+			return b.machine.Start(ctx, claim.OperationID, admission)
 		}
-		if err := b.delivery.Ready(ctx, admission); err != nil {
-			return err
+		run, err := launch()
+		if err == nil && run == "" {
+			err = errors.New("review machine returned no run")
 		}
-		checkpoint.Started = true
-		start, _ := json.Marshal(checkpoint)
-		if err := lease.StartExternal(ctx, start); err != nil {
-			return err
-		}
-		run, err := b.machine.Start(ctx, claim.OperationID, admission)
-		var terminal flowruntime.Failure
-		switch {
-		case errors.As(err, &terminal) && !terminal.FlowRuntimeRetryable():
-			// A host that exhausted its starts has released its machine.
-			// Settle failed rather than boot the machine again on every retry.
-			checkpoint.Result = &ReviewObservation{State: jobs.StateFailed, Error: terminal.FlowRuntimeCode()}
-		case err != nil:
-			return err
-		case run == "":
-			return errors.New("review machine returned no run")
-		default:
+		if err != nil {
+			if ctx.Err() != nil || errors.Is(err, jobs.ErrClaimLost) {
+				return err
+			}
+			checkpoint.StartFailures++
+			var terminal flowruntime.Failure
+			exhausted := errors.As(err, &terminal) && !terminal.FlowRuntimeRetryable()
+			if !exhausted && checkpoint.StartFailures < reviewStartFailureLimit {
+				raw, _ := json.Marshal(checkpoint)
+				if _, checkpointErr := lease.Checkpoint(ctx, raw); checkpointErr != nil {
+					return checkpointErr
+				}
+				return err
+			}
+			cause := err.Error()
+			if exhausted {
+				cause = terminal.FlowRuntimeCode()
+			}
+			checkpoint.Result = &ReviewObservation{State: jobs.StateFailed, Error: cause}
+		} else {
 			checkpoint.Run = run
 		}
 		raw, _ := json.Marshal(checkpoint)
@@ -275,10 +313,14 @@ func (b *ReviewBackground) handle(ctx context.Context, lease *jobs.Lease) error 
 			return err
 		}
 	}
-	// Retirement is reconciled before the terminal receipt. A crash or delivery
-	// failure replays this checkpoint without relaunching or observing again.
+	// Successful results require retirement before delivery. Failed results
+	// settle even if retirement fails; the reconciler retains that obligation.
 	if err := b.machine.Retire(ctx, claim.OperationID, admission); err != nil {
-		return err
+		if checkpoint.Result.State != jobs.StateFailed {
+			return err
+		}
+		checkpoint.Result.ReleaseError = err.Error()
+		checkpoint.Result.Error += "; release: " + err.Error()
 	}
 	result := checkpoint.Result
 	if result.State == jobs.StateCompleted {
@@ -333,7 +375,7 @@ func (b *ReviewBackground) homeRuns(ctx context.Context, repository int64) ([]ma
 				run["detail"] = failure.Error
 			}
 		}
-		if queue, ok := b.machine.(interface{ QueuePosition(string) int }); ok {
+		if queue, ok := b.machine.(interface{ QueuePosition(string) int }); ok && state != "failed" {
 			if position := queue.QueuePosition(id); position > 0 {
 				run["state"] = "waiting"
 				run["detail"] = fmt.Sprintf("waiting for a machine #%d", position)
@@ -342,4 +384,46 @@ func (b *ReviewBackground) homeRuns(ctx context.Context, repository int64) ([]ma
 		result = append(result, run)
 	}
 	return result, rows.Err()
+}
+
+// Failed jobs settle independently of cleanup. Their retained machine row and
+// terminal release error are the durable reconciliation obligation, also on restart.
+func (b *ReviewBackground) reconcileFailedMachines(ctx context.Context) error {
+	rows, err := b.service.store.Query(ctx, `SELECT r.id::text,r.payload FROM product_job_requests r
+      JOIN workspaces w ON w.name='review-' || r.id::text
+      WHERE r.operation=$1 AND r.state='failed' AND r.terminal_receipt->>'releaseError' IS NOT NULL
+      ORDER BY r.created_at LIMIT 8`, reviewOperation)
+	if err != nil {
+		return err
+	}
+	type pending struct {
+		id  string
+		job reviewJob
+	}
+	var work []pending
+	for rows.Next() {
+		var id string
+		var payload []byte
+		if err := rows.Scan(&id, &payload); err != nil {
+			rows.Close()
+			return err
+		}
+		var job reviewJob
+		if err := json.Unmarshal(payload, &job); err != nil {
+			rows.Close()
+			return err
+		}
+		work = append(work, pending{id, job})
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, row := range work {
+		if err := b.machine.Retire(ctx, row.id, row.job.Admission); err != nil {
+			slog.WarnContext(ctx, "failed review machine retirement pending", "operation", row.id, "error", err)
+		}
+	}
+	return nil
 }
