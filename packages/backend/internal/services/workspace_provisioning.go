@@ -1618,6 +1618,14 @@ func (s *WorkspaceService) recoverAsyncProvision(ctx context.Context, workspace 
 }
 
 func (s *WorkspaceService) provisionWorkspaceAsync(ctx context.Context, workspace db.Workspace, input CreateWorkspaceSessionInput) {
+	s.provisionWorkspaceAsyncWithStart(ctx, workspace, input, s.ensureWorkspaceRunning)
+}
+
+func (s *WorkspaceService) provisionServiceWorkspaceAsync(ctx context.Context, workspace db.Workspace, input CreateWorkspaceSessionInput) {
+	s.provisionWorkspaceAsyncWithStart(ctx, workspace, input, s.ensureServiceWorkspaceRunning)
+}
+
+func (s *WorkspaceService) provisionWorkspaceAsyncWithStart(ctx context.Context, workspace db.Workspace, input CreateWorkspaceSessionInput, start func(context.Context, db.Workspace, CreateWorkspaceSessionInput) (db.Workspace, error)) {
 	if s.runtime == nil && workspace.Status == "running" && strings.TrimSpace(workspace.VmID) != "" {
 		s.completeRecoveredSessions(ctx, workspace.ID)
 		return
@@ -1636,12 +1644,12 @@ func (s *WorkspaceService) provisionWorkspaceAsync(ctx context.Context, workspac
 		defer s.recoverAsyncProvision(ctx, workspace, "async")
 		provisionCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), workspaceProvisionTimeout)
 		defer cancel()
-		_, err := s.ensureWorkspaceRunning(provisionCtx, workspace, input)
+		_, err := start(provisionCtx, workspace, input)
 		if isNoCapacityError(err) {
 			// A full host queues a workspace with no machine yet in the
 			// runtime's admission queue instead of failing it.
 			err = s.waitForMachine(provisionCtx, workspace, err, func(ctx context.Context, current db.Workspace) error {
-				_, err := s.ensureWorkspaceRunning(ctx, current, input)
+				_, err := start(ctx, current, input)
 				return err
 			})
 		}

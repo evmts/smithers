@@ -84,6 +84,8 @@ func (s *InvokedFlowService) manualMainCredential(ctx context.Context, runID int
 	return info, nil
 }
 
+// IsBackgroundFlowHost is only the launcher's manual-main source decision.
+// The wider person-door classification does not select a host source mode.
 func (s *InvokedFlowService) IsBackgroundFlowHost(ctx context.Context, workspace string) (bool, error) {
-	return db.New(s.pool).IsWorkflowBackgroundWorkspace(ctx, workspace)
+	return db.New(s.pool).IsManualMainFlowWorkspace(ctx, workspace)
 }

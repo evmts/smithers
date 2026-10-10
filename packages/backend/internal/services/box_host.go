@@ -260,7 +260,17 @@ const boxHostActivityInterval = time.Minute
 // host on the replacement at a new owner generation. With journals in the
 // box, the loss stays a refusal.
 func (s *WorkspaceService) RestartLostBox(ctx context.Context, workspaceID string, repositoryID, userID int64) error {
-	workspace, err := s.loadOwnedWorkspace(ctx, workspaceID, repositoryID, userID)
+	background, err := s.isServiceBackgroundMachine(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	var workspace db.Workspace
+	if background {
+		owned, loadErr := s.loadServiceMachineAuthority(ctx, serviceMachineRequest{workspaceID: workspaceID, repositoryID: repositoryID})
+		workspace, err = owned.row, loadErr
+	} else {
+		workspace, err = s.loadOwnedWorkspace(ctx, workspaceID, repositoryID, userID)
+	}
 	if err != nil {
 		return err
 	}
@@ -452,6 +462,17 @@ func bindInitialTodoHostCredential(ctx context.Context, tx pgx.Tx, item db.Mythi
 // FlowHostWorkspaceInitialized refuses a partial clone before source capture or
 // binding. The receipt is written only after repository and environment setup.
 func (s *WorkspaceService) FlowHostWorkspaceInitialized(ctx context.Context, authority flowhost.Authority) error {
+	background, err := s.isServiceBackgroundMachine(ctx, authority.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	if background {
+		q, ok := s.q.(*db.Queries)
+		if !ok {
+			return pkgerrors.Internal("background machine store unavailable")
+		}
+		return FlowHostMachineInitialized(ctx, q, s.runtime, authority)
+	}
 	row, err := s.loadOwnedWorkspace(ctx, authority.WorkspaceID, authority.RepositoryID, authority.UserID)
 	if err != nil {
 		return err
@@ -507,29 +528,35 @@ func (workspaceInitializing) FlowRuntimeRetryable() bool { return true }
 // ReleaseFailedFlowHostMachine retains the checkout and disk. The runtime's
 // confirmed stop releases admission exactly as its idle stop does.
 func (s *WorkspaceService) ReleaseFailedFlowHostMachine(ctx context.Context, binding flowhost.Binding) error {
-	row, err := s.loadOwnedWorkspace(ctx, binding.WorkspaceID, binding.RepositoryID, binding.UserID)
+	authority, err := s.loadServiceMachineAuthority(ctx, serviceMachineRequest{workspaceID: binding.WorkspaceID, repositoryID: binding.RepositoryID})
 	if err != nil {
 		return err
 	}
+	row := authority.row
+	// Binding.UserID is the run actor; a shared branch or wiki machine can
+	// belong to the service account. Release uses the machine's own identity.
 	unlock := s.lockRuntimeWorkspace(row.ID)
 	defer unlock()
-	if err := s.stopRuntimeWorkspaceLocked(ctx, row, binding.UserID, "flow-host-failed"); err != nil {
+	return s.withServiceMachineMutation(ctx, authority, func(ctx context.Context) error {
+		if err := s.stopRuntimeWorkspaceLocked(ctx, row, row.UserID, "flow-host-failed"); err != nil {
+			return err
+		}
+		_, err = s.q.UpdateWorkspaceStatus(ctx, db.UpdateWorkspaceStatusParams{ID: row.ID, Status: "stopped"})
+		if err == nil {
+			s.notifyWorkspace(ctx, row.ID, "stopped")
+		}
 		return err
-	}
-	_, err = s.q.UpdateWorkspaceStatus(ctx, db.UpdateWorkspaceStatusParams{ID: row.ID, Status: "stopped"})
-	if err == nil {
-		s.notifyWorkspace(ctx, row.ID, "stopped")
-	}
-	return err
+	})
 }
 
 // FlowHostMachineInitialized checks setup under an already revalidated run
 // authority. It does not open a person's workspace door or issue credentials.
 func FlowHostMachineInitialized(ctx context.Context, q *db.Queries, runtime workspaceapi.WorkspaceRuntime, authority flowhost.Authority) error {
-	row, err := q.GetWorkspace(ctx, authority.WorkspaceID)
+	owned, err := (&WorkspaceService{q: q}).loadServiceMachineAuthority(ctx, serviceMachineRequest{workspaceID: authority.WorkspaceID, repositoryID: authority.RepositoryID})
 	if err != nil {
 		return err
 	}
+	row := owned.row
 	// Wiki's service-owned workspace is shared by repository runs; the
 	// composition revalidates the wiki run's actor rather than treating it as
 	// a person's box. Review, learning and manual main retain their owner.

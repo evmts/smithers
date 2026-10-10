@@ -124,6 +124,10 @@ func (r j8ProcessRuntime) DeleteWorkspace(ctx context.Context, id string) error 
 // as the microVM runtime does; ordinary branches still require their daemon.
 // Planning citations require the isolated wiki provider.
 func TestJ8Rehearsal(t *testing.T) {
+	if os.Getenv("SMITHERS_J8_REHEARSAL") == "1" {
+		t.Run("background machine service preflight", backgroundMachineServiceRehearsal)
+	}
+
 	// The install's state directory, as localbootstrap gives it: an Obsidian
 	// folder inside it is refused. It is created here, not with t.TempDir,
 	// whose root newRehearsal keeps short for its sockets.

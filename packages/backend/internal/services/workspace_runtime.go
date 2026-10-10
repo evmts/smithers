@@ -170,8 +170,16 @@ func workspaceLifecycleOperation(row db.Workspace, action string) string {
 // ensureRuntimeWorkspaceRunning creates or starts the workspace for a
 // requester with write authority over it, held for the whole transition.
 func (s *WorkspaceService) ensureRuntimeWorkspaceRunning(ctx context.Context, row db.Workspace, requesterID int64) (db.Workspace, error) {
+	return s.ensureRuntimeWorkspaceRunningWithMutation(ctx, row, requesterID, func(fn func(context.Context) error) error {
+		return s.withWorkspaceMutationAuthority(ctx, row, requesterID, fn)
+	})
+}
+
+// The transition is shared; its caller supplies either person authorization or
+// the service's private machine authority. Neither changes the person doors.
+func (s *WorkspaceService) ensureRuntimeWorkspaceRunningWithMutation(ctx context.Context, row db.Workspace, requesterID int64, mutate func(func(context.Context) error) error) (db.Workspace, error) {
 	result := row
-	err := s.withWorkspaceMutationAuthority(ctx, row, requesterID, func(ctx context.Context) error {
+	err := mutate(func(ctx context.Context) error {
 		// Register person demand before waiting on a branch's lifecycle lock, so
 		// a person can promote the TODO already waiting on that same branch.
 		class, actor := machineDemand(ctx, row, requesterID)

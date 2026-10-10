@@ -741,6 +741,37 @@ func branchSleepInstall(t *testing.T, scenario string) {
 		capture = registry.Capture
 	}
 
+	if kind, background := strings.CutPrefix(scenario, "background-"); background {
+		// Classify the already materialized fixture before service capture. The
+		// guest capture transport is the existing stand-in; retained Git objects,
+		// projection, service retirement and person HTTP refusal are real.
+		_, err = pool.Exec(ctx, `INSERT INTO flow_runtime_host_bindings(id,tenant_id,principal_id,binding_kind,binding_id,repository_id,user_id,workspace_id,catalog_key,service_name,runtime_artifact_digest,source_revision,owner_generation,credential_ciphertext,credential_hash,state) VALUES(gen_random_uuid(),'test','test',$1,'test',$2,$3,$4,'coding','background-service',$5,$6,1,'test',decode(repeat('00',32),'hex'),'retired')`, kind, repo.ID, owner.ID, id, strings.Repeat("b", 64), head)
+		require.NoError(t, err)
+		readPath("/api/branches/"+id, http.StatusForbidden)
+		captures := 0
+		capture = func(ctx context.Context, id string) (machined.CaptureResult, error) {
+			captures++
+			current, err := q.GetWorkspace(ctx, id)
+			require.NoError(t, err)
+			require.Equal(t, "releasing", current.Status)
+			// A background service observes its SQL checkpoint; its person's
+			// HTTP branch read must stay refused even while capture is active.
+			readPath("/api/branches/"+id, http.StatusForbidden)
+			return machined.CaptureResult{Head: head, Tree: git("-C", seed, "rev-parse", head+"^{tree}")}, nil
+		}
+		svc := services.NewWorkspaceService(q, services.WithWorkspaceRuntime(counted), services.WithWorkspaceTransactions(pool), services.WithBranchMachineProviders(providers), services.WithBranchHeads(client), services.WithBranchCapture(captureProvider))
+		require.NoError(t, svc.StopLaneMachine(ctx, repo.ID, id))
+		require.Equal(t, 1, captures, "service retirement captures before sleeping")
+		retained, err := q.GetWorkspace(ctx, id)
+		require.NoError(t, err)
+		require.Equal(t, "stopped", retained.Status)
+		require.Equal(t, head, retained.HeadCommitID)
+		require.NoError(t, svc.StopLaneMachine(ctx, repo.ID, id), "retirement retries are idempotent")
+		require.Equal(t, 1, captures)
+		readPath("/api/branches/"+id, http.StatusForbidden)
+		return
+	}
+
 	if scenario == "idle" {
 		counted.idleHolder = "workspace:" + id
 		svc := services.NewWorkspaceService(q, services.WithWorkspaceRuntime(counted), services.WithWorkspaceTransactions(pool), services.WithBranchMachineProviders(providers), services.WithBranchHeads(client), services.WithBranchCapture(captureProvider))

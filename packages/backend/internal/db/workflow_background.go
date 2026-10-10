@@ -14,3 +14,12 @@ func (q *Queries) IsWorkflowBackgroundWorkspace(ctx context.Context, id string) 
    WHERE w.id=$1::uuid)`, id).Scan(&background)
 	return background, err
 }
+
+// IsManualMainFlowWorkspace selects only the ephemeral main-checkout hosts.
+// Person entry uses IsWorkflowBackgroundWorkspace, which intentionally covers
+// more machine kinds and must never select the launcher's source mode.
+func (q *Queries) IsManualMainFlowWorkspace(ctx context.Context, id string) (bool, error) {
+	var manual bool
+	err := q.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM workflow_run_flow_invocations WHERE background_workspace_id=$1::uuid)`, id).Scan(&manual)
+	return manual, err
+}

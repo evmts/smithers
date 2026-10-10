@@ -5706,8 +5706,12 @@ func (l *workspaceMythicalLanes) Create(ctx context.Context, repository db.Repos
 			return "", err
 		}
 	}
-	l.workspaces.provisionWorkspaceAsync(ctx, workspace, CreateWorkspaceSessionInput{RepositoryID: repository.ID, UserID: actorUserID,
-		RepoOwner: owner, RepoName: repository.Name, SourceBookmark: MythicalBookmark})
+	// Only run-owned background lanes use service authority. TODO branch starts
+	// retain the person's membership/share revalidation and admission contract.
+	if err := l.workspaces.provisionPersistedMachineAsync(ctx, workspace, CreateWorkspaceSessionInput{RepositoryID: repository.ID, UserID: actorUserID,
+		RepoOwner: owner, RepoName: repository.Name, SourceBookmark: MythicalBookmark}); err != nil {
+		return "", err
+	}
 	return workspace.ID, nil
 }
 

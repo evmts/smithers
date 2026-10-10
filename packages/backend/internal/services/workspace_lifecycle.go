@@ -192,11 +192,13 @@ func (s *WorkspaceService) StopLaneMachine(ctx context.Context, repositoryID int
 	if !ok {
 		return pkgerrors.Internal("workspace stop store unavailable")
 	}
-	stopped, err := s.stopWorkspaceRetaining(ctx, store, workspace, workspace.UserID)
-	if err == nil || stopped.Status == "stopped" {
-		return nil
-	}
-	return err
+	return s.withServiceMachineMutation(ctx, serviceMachineAuthority{row: workspace}, func(ctx context.Context) error {
+		stopped, err := s.stopWorkspaceRetaining(ctx, store, workspace, workspace.UserID)
+		if err == nil || stopped.Status == "stopped" {
+			return nil
+		}
+		return err
+	})
 }
 
 // UpdateWorkspacePodStatus handles optional workspace runtime status reports.
@@ -690,6 +692,10 @@ func (s *WorkspaceService) ensureWorkspaceRunning(ctx context.Context, workspace
 }
 
 func (s *WorkspaceService) ensureWorkspaceRunningOwned(ctx context.Context, workspace db.Workspace, input CreateWorkspaceSessionInput) (db.Workspace, error) {
+	return s.ensureWorkspaceRunningWithRuntimeStart(ctx, workspace, input, s.ensureRuntimeWorkspaceRunning)
+}
+
+func (s *WorkspaceService) ensureWorkspaceRunningWithRuntimeStart(ctx context.Context, workspace db.Workspace, input CreateWorkspaceSessionInput, start func(context.Context, db.Workspace, int64) (db.Workspace, error)) (db.Workspace, error) {
 	if err := s.refuseRebuildRequired(workspace); err != nil {
 		return workspace, err
 	}
@@ -719,7 +725,7 @@ func (s *WorkspaceService) ensureWorkspaceRunningOwned(ctx context.Context, work
 			}
 			return restored, err
 		}
-		return s.ensureRuntimeWorkspaceRunning(ctx, workspace, requesterID)
+		return start(ctx, workspace, requesterID)
 	}
 	if durable && provisioning {
 		var err error

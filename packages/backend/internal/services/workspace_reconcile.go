@@ -159,7 +159,9 @@ func (s *WorkspaceService) ReconcileWorkspaceProvisioning(ctx context.Context) e
 		if s.hostOwnedMachineWaits(ws.ID) {
 			continue
 		}
-		s.provisionWorkspaceAsync(ctx, ws, CreateWorkspaceSessionInput{RepositoryID: row.RepositoryID, UserID: row.UserID, RepoOwner: row.RepositoryOwner, RepoName: row.RepositoryName, SourceBookmark: row.TargetBookmark})
+		if err := s.provisionPersistedMachineAsync(ctx, ws, CreateWorkspaceSessionInput{RepositoryID: row.RepositoryID, UserID: row.UserID, RepoOwner: row.RepositoryOwner, RepoName: row.RepositoryName, SourceBookmark: row.TargetBookmark}); err != nil {
+			return err
+		}
 	}
 	return nil
 }

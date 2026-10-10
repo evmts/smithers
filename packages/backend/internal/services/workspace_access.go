@@ -235,8 +235,8 @@ func (s *WorkspaceService) touchWorkspaceEntryRecency(ctx context.Context, works
 	}
 }
 
-// Background machines have no branch/session/file door. The sole authority
-// is their persisted manual run; ordinary workspace ownership grants none.
+// Background machines have no person branch/session/file door. Run lifecycle
+// code uses serviceMachineAuthority; ordinary ownership and shares grant no entry.
 func (s *WorkspaceService) refuseBackgroundWorkspaceAccess(ctx context.Context, id string) error {
 	store, ok := s.q.(interface {
 		IsWorkflowBackgroundWorkspace(context.Context, string) (bool, error)

@@ -707,6 +707,10 @@ func TestJ10SyncRehearsal(t *testing.T) {
 // outsider's PR are reviewed, the network drops, and main is force-pushed.
 // A row whose product code is missing is pending and names its ticket.
 func TestJ10Rehearsal(t *testing.T) {
+	if os.Getenv("SMITHERS_J10_REHEARSAL") == "1" {
+		t.Run("background machine service preflight", backgroundMachineServiceRehearsal)
+	}
+
 	// The model trace keeps each turn's messages: the steer rows read them.
 	t.Setenv("TRACE_MESSAGES", "1")
 	// Public repositories support drafts: T2 opens as a draft behind T1.

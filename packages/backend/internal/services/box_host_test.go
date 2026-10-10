@@ -263,6 +263,13 @@ type restartWorkspaceQuerier struct {
 	branchMachineOwnerStore
 }
 
+// Cold recovery resolves the source before creating a replacement runtime.
+// Supply that existing store seam so this fixture reaches its intended
+// repository-capability refusal instead of failing on missing fixture data.
+func (restartWorkspaceQuerier) GetRepoOwnerSlugAndNameByID(context.Context, int64) (db.GetRepoOwnerSlugAndNameByIDRow, error) {
+	return db.GetRepoOwnerSlugAndNameByIDRow{OwnerSlug: "owner", RepoName: "app"}, nil
+}
+
 // Journal recovery uses a controlled admission/runtime peer; native slot and
 // privileged-entry certification have separate reference-host checks.
 type restartAdmissionRuntime struct {
