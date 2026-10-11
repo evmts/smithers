@@ -1,7 +1,13 @@
 """Harbor's stock Codex CLI agent, drawing one Codex login per trial.
 
-    harbor run … -a evals.harbor.codex_pool:PooledCodex -m openai/gpt-6-sol \
-        --ak version=0.155.1 --ak reasoning_effort=max
+    harbor run … -a evals.harbor.codex_pool:PooledCodex -m openai/gpt-6.1-sol \
+        --ak version=0.155.1
+
+The CLI is asked for `accounts.DEFAULT_EFFORT` (`xhigh`), the effort
+`SmithersAgent` runs at, unless the run passes `--ak reasoning_effort=<effort>`:
+left alone, Harbor's agent sends no effort and Pier's sends `high`. The
+trial's metadata carries the effort asked for (`reasoning_effort`) and the
+effort every turn of the session ran at (`efforts`).
 
 Harbor's `codex` agent takes one `auth.json` for the whole job
 (`CODEX_FORCE_AUTH_JSON` / `CODEX_AUTH_JSON_PATH`). This subclass leases the
@@ -15,8 +21,8 @@ scored. Everything else is Harbor's Codex agent unchanged.
 Under Pier the same class is Pier's Codex agent, and the task container is
 sealed to the ChatGPT-subscription route:
 
-    pier run … --agent-import-path evals.harbor.codex_pool:PooledCodex -m openai/gpt-6-sol \
-        --ak version=0.155.1 --ak reasoning_effort=<effort> --ak 'config_toml=web_search = "disabled"'
+    pier run … --agent-import-path evals.harbor.codex_pool:PooledCodex -m openai/gpt-6.1-sol \
+        --ak version=0.155.1 --ak 'config_toml=web_search = "disabled"'
 
 `network_allowlist()` hands Pier `seal.ALLOWED_HOSTS` and nothing else, and
 every trial runs the denied-connect probe of `seal.py` in the task container
@@ -92,8 +98,33 @@ def web_searches(output: str) -> int:
     return sum(1 for item in completed_items(output) if item.get("type") == "web_search")
 
 
+def session_efforts(sessions: Path) -> list[str]:
+    """The reasoning effort each turn of the Codex session ran at: the
+    distinct `effort` of the rollouts' `turn_context` events, first seen first."""
+    efforts: list[str] = []
+    for rollout in sorted(sessions.glob("**/rollout-*.jsonl")):
+        try:
+            lines = rollout.read_text(errors="replace").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            if '"turn_context"' not in line:
+                continue
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            payload = event.get("payload") if isinstance(event, dict) and event.get("type") == "turn_context" else None
+            effort = payload.get("effort") if isinstance(payload, dict) else None
+            if isinstance(effort, str) and effort not in efforts:
+                efforts.append(effort)
+    return efforts
+
+
 class PooledCodex(Codex):
     def __init__(self, logs_dir: Path, model_name: str | None = None, **kwargs: Any) -> None:
+        # Both arms run at one effort unless the run names another.
+        self._effort = kwargs.setdefault("reasoning_effort", accounts.DEFAULT_EFFORT)
         super().__init__(logs_dir=logs_dir, model_name=model_name, **kwargs)
         self._pool = accounts.Pool.from_environment()
         self._account: accounts.Account | None = None
@@ -123,7 +154,8 @@ class PooledCodex(Codex):
     def _write_account(self, **extra: Any) -> None:
         proof = {"sealed": self._seal["sealed"], "seal": self._seal} if self._seal else {}
         (self.logs_dir / ACCOUNT_FILE).write_text(json.dumps(
-            {"account": self._account.label if self._account else None, "requeues": self._requeues, **proof, **extra},
+            {"account": self._account.label if self._account else None, "reasoningEffort": self._effort,
+             "requeues": self._requeues, **proof, **extra},
             indent=2))
 
     async def _prove_seal(self, environment: BaseEnvironment) -> dict[str, Any]:
@@ -197,7 +229,9 @@ class PooledCodex(Codex):
         record. Harbor calls this after `run`, raised or not, only while the
         context is still empty."""
         super().populate_context_post_run(context)
-        context.metadata = {**(context.metadata or {}), **self._metadata}
+        # Asked for, then what each turn of the session really ran at.
+        context.metadata = {**(context.metadata or {}), **self._metadata, "reasoning_effort": self._effort,
+                            "efforts": session_efforts(self.logs_dir / "sessions")}
 
     async def _fetch_output(self, environment: BaseEnvironment, output: Path) -> None:
         """On an environment that does not mount the logs directory (plue),

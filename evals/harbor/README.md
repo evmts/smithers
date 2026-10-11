@@ -58,17 +58,56 @@ Terminal-Bench 4.0, two tasks, one attempt each, one at a time:
 cd <checkout>
 PYTHONPATH=$PWD harbor run -d terminal-bench/terminal-bench@4.0.0 \
   -i terminal-bench/wal-recovery-ordering -i terminal-bench/sound-change-cascade \
-  -a evals.harbor.smithers_agent:SmithersAgent -m openai/gpt-6-sol \
+  -a evals.harbor.smithers_agent:SmithersAgent -m openai/gpt-6.1-sol \
   -k 1 -n 1 -o "$PWD/evals/harbor/jobs" --job-name smithers-smoke -y
 ```
 
 The oracle arm proves the sandbox and the verifier (`--agent oracle`); the
-stock Codex CLI arm is `-a codex -m openai/gpt-6-sol` with
+stock Codex CLI arm is
+`-a codex -m openai/gpt-6.1-sol --ak reasoning_effort=xhigh` with
 `--ae CODEX_FORCE_AUTH_JSON=1` to use the ChatGPT login instead of an API key.
-Every task runs at `effort: max` (`prompt.md`), the top of the OpenAI scale
-and what the Terminal-Bench leaderboard's Codex entries ran at; the journal's
-`model-requested` params say which effort each call was really made at and
-`smithers-run.json` folds them into `run.efforts`.
+
+### One effort, one time limit
+
+Two arms are a pair only when both get the same reasoning effort and the same
+wall clock.
+
+**Effort.** Both arms run at `xhigh` (`accounts.DEFAULT_EFFORT`, owner ruling
+2026-10-10) and take `--ak reasoning_effort=<effort>` for a run at another.
+This adapter writes it into the flow's `effort:` frontmatter (`prompt.md`) and
+refuses a value the harness does not know, which the harness would run at
+`high`. `PooledCodex` passes it to the CLI as `model_reasoning_effort`. Left
+alone, Harbor's Codex agent sends no effort and Pier's sends `high`, so name
+the effort when you run `-a codex` itself.
+
+Each trial records the effort asked for and the effort every call ran at:
+
+- Smithers arm: `effort` and `run.efforts` in `smithers-run.json`, `effort`
+  and `efforts` in the trial's metadata. `efforts` is read off the journal's
+  `model-requested` params.
+- Codex arm: `reasoningEffort` in `codex-account.json`, `reasoning_effort` and
+  `efforts` in the trial's metadata. `efforts` is read off the session's
+  `turn_context` events.
+
+**Time.** The runner cancels an agent at the trial's agent timeout:
+
+    min(--agent-timeout or the task's [agent] timeout_sec, max_timeout_sec) * multiplier
+
+The multiplier is `--agent-timeout-multiplier` when set, else
+`--timeout-multiplier`. DeepSWE 1.1 tasks declare 5,400 s. Harbor 0.23.0 and
+Pier 0.3.1 hand that number to the oracle agent only, so the adapter computes
+it from the trial's `config.json` and `[agent] timeout_sec` in the task's
+`task.toml`, and gives the CLI one minute less. `--ak budget_sec=N` sets the
+budget outright. There is no default: a trial whose timeout cannot be found
+raises `BudgetUnknown` before any model call. The 2026-09-26 runs fell back to
+3,600 s here while the stock Codex arm had each task's 5,400 s.
+
+`smithers-run.json` and the trial's metadata record the budget (`budgetSec`,
+`budget_sec`), its source (`budgetSource`, `budget_source`: `budget_sec`,
+`agent_timeout_sec`, `override_timeout_sec` or `task.toml`) and the runner's
+timeout (`agentTimeoutSec`, `agent_timeout_sec`). With a runner's interpreter
+as `HARBOR_PYTHON`, `fixtures/check_budget.py` compares the rule with that
+runner's own function.
 
 ### On Smithers Cloud
 
@@ -128,7 +167,7 @@ Both arms draw one Codex login per trial from `accounts.py`: `~/.codex`
 `SMITHERS_CODEX_POOL_STATE` shared across runner processes. The label is
 recorded per trial (`smithers-run.json` `account`, `codex-account.json` for
 the stock arm). The stock arm is
-`-a evals.harbor.codex_pool:PooledCodex --ak version=0.155.1 --ak reasoning_effort=max`.
+`-a evals.harbor.codex_pool:PooledCodex --ak version=0.155.1`.
 
 **An infrastructure failure is never a score.** Both agents apply one policy:
 
@@ -167,8 +206,8 @@ the stock arm). The stock arm is
   `codex-*` login, then raises `NoSeatLeft`. `pool.json` carries `paused`.
 - The model's own failures (`claim_unproven`, `read_only_cap`, a wrong
   answer) are scored as the verifier says. So is `call_timeout`: the
-  harness's per-call ceiling (`modelCallMs`, 1,800 s at the prompt's
-  `effort: max`) is the arm's own limit.
+  harness's per-call ceiling (`modelCallMs`, 1,800 s at `xhigh` and `max`)
+  is the arm's own limit.
 
 The full benchmark drops the `-i` filters and raises `-n`. Use an absolute
 `-o`: Harbor resolves a relative jobs directory against the task's `tests/`
@@ -188,7 +227,7 @@ harbor dataset download datacurve/deep-swe-1-1 -o <deep-swe>
 PYTHONPATH=$PWD pier run -p <deep-swe>/deep-swe-1-1/<task> \
   --environment-import-path evals.harbor.plue_env:PluePierEnvironment \
   --agent-import-path evals.harbor.smithers_agent:SmithersAgent \
-  -m openai/gpt-6-sol -k 1 -n 1 -o "$PWD/evals/harbor/jobs"
+  -m openai/gpt-6.1-sol -k 1 -n 1 -o "$PWD/evals/harbor/jobs"
 ```
 
 DeepSWE grades `git diff <base>..HEAD`, so under Pier the prompt tells the
@@ -219,13 +258,14 @@ allowlist non-empty  main -- pier-egress-internal (internal: true) -- pier-egres
   | `chatgpt.com`     | Model backend, `chatgpt.com/backend-api/codex` (`CHATGPT_CODEX_BASE_URL`, `model-provider-info`) |
   | `auth.openai.com` | Token refresh, `auth.openai.com/oauth/token` (`REFRESH_TOKEN_URL`, `login/src/auth/manager.rs`)  |
 
-The stock arm, sealed, with one login per trial from the pool and the effort
-the Smithers arm runs at:
+The stock arm, sealed, with one login per trial from the pool, at the effort
+the Smithers arm runs at (`xhigh` unless `--ak reasoning_effort` names
+another):
 
 ```sh
 PYTHONPATH=$PWD pier run -p <deep-swe>/deep-swe-1-1 \
-  --agent-import-path evals.harbor.codex_pool:PooledCodex -m openai/gpt-6-sol \
-  --ak version=0.155.1 --ak reasoning_effort=<effort> \
+  --agent-import-path evals.harbor.codex_pool:PooledCodex -m openai/gpt-6.1-sol \
+  --ak version=0.155.1 \
   --ak 'config_toml=web_search = "disabled"' \
   -k 1 -n 1 -o "$PWD/evals/harbor/jobs"
 ```
@@ -303,7 +343,13 @@ The 2026-09-22 smoke (oracle, this adapter, and the stock Codex CLI on
 ## What the agent never sees
 
 The prompt is `prompt.md` with the instruction, the container id, the working
-directory and the seat filled in. The adapter discards the `task_dir` and
-`trial_paths` Harbor hands every agent, never reads `tests/` or `solution/`,
-and uploads nothing into the container. `fixtures/check_agent.py` pins that
-the rendered prompt names none of them.
+directory, the seat and the effort filled in. The adapter discards the
+`task_dir` and `trial_paths` Harbor hands every agent, never reads `tests/` or
+`solution/`, and uploads nothing into the container. `fixtures/check_agent.py`
+pins that the rendered prompt names none of them.
+
+The adapter reads one value from the task directory: `[agent] timeout_sec` in
+`task.toml`, for the budget. It opens no other file there and lists no
+directory, the number never reaches the prompt, and with `--ak budget_sec` or
+a trial `--agent-timeout` it does not open `task.toml` either.
+`fixtures/check_budget.py` pins this with an audit hook around a real `run()`.

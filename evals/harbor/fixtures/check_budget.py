@@ -17,9 +17,11 @@ budget fell back to a default nobody chose. What is pinned:
   - Blindness holds: of the task directory the run opens `task.toml` and
     nothing else, and lists no directory; with an explicit budget or a trial
     override it opens nothing there at all.
-  - The flow runs at `xhigh` unless the run names another effort
-    (`--ak reasoning_effort=`), and a spelling the harness would silently
-    read as `high` is refused.
+  - Both arms run at `xhigh` unless the run names another effort
+    (`--ak reasoning_effort=`). For this arm a spelling the harness would
+    silently read as `high` is refused. The stock Codex arm, checked when a
+    runner is importable, passes the effort to the CLI and records both the
+    effort asked for and the effort each turn of the session ran at.
   - When a runner is importable (HARBOR_PYTHON), the adapter's copy of the
     timeout rule agrees with the runner's own function over its own config
     model and path classes, so a runner upgrade that moves either is caught.
@@ -290,6 +292,84 @@ def check_effort() -> None:
         assert record["effort"] == effort and context.metadata["effort"] == effort, (record["effort"], context.metadata)
 
 
+def rollout(effort: str, at: str) -> str:
+    """One Codex session rollout whose turns ran at `effort`."""
+    events = [
+        {"timestamp": f"{at}:31.044Z", "type": "session_meta",
+         "payload": {"id": "s1", "timestamp": f"{at}:31.018Z", "cwd": "/app", "originator": "codex_exec",
+                     "cli_version": "0.155.1"}},
+        {"timestamp": f"{at}:32.000Z", "type": "turn_context",
+         "payload": {"cwd": "/app", "model": "gpt-6.1-sol", "effort": effort, "summary": "none"}},
+        {"timestamp": f"{at}:35.000Z", "type": "response_item",
+         "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "done"}]}},
+        {"timestamp": f"{at}:36.000Z", "type": "turn_context",
+         "payload": {"cwd": "/app", "model": "gpt-6.1-sol", "effort": effort, "summary": "none"}},
+        {"timestamp": f"{at}:39.040Z", "type": "event_msg",
+         "payload": {"type": "token_count", "info": {
+             "total_token_usage": {"input_tokens": 1200, "cached_input_tokens": 1000, "output_tokens": 30,
+                                   "reasoning_output_tokens": 10, "total_tokens": 1230},
+             "last_token_usage": {"input_tokens": 1200, "cached_input_tokens": 1000, "output_tokens": 30,
+                                  "reasoning_output_tokens": 10, "total_tokens": 1230}}}},
+    ]
+    return "".join(json.dumps(event) + "\n" for event in events) + "not json\n"
+
+
+def check_codex_effort() -> str:
+    """The stock arm asks the Codex CLI for the same effort, and its trial
+    says what was asked for and what each turn of the session ran at."""
+    sys.path.insert(0, str(HERE.parent.parent.parent))
+    try:
+        from evals.harbor import codex_pool
+    except ImportError:
+        if os.environ.get("HARBOR_PYTHON"):
+            raise
+        return "not checked (no runner importable)"
+
+    with tempfile.TemporaryDirectory() as directory:
+        logs = Path(directory) / "agent"
+        sessions = logs / "sessions" / "2026" / "10" / "10"
+        sessions.mkdir(parents=True)
+        assert codex_pool.session_efforts(logs / "sessions") == [] and codex_pool.session_efforts(logs / "none") == []
+        (sessions / "rollout-2026-10-10T09-45-31-s1.jsonl").write_text(rollout("xhigh", "2026-10-10T09:45"))
+        (logs / "codex.txt").write_text('{"type":"item.completed","item":{"type":"command_execution","exit_code":0}}\n')
+        home = Path(directory) / "seat"
+        home.mkdir()
+        (home / "auth.json").write_text("{}")
+        seat = codex_pool.accounts.Account("codex-2", home)
+
+        pooled = codex_pool.PooledCodex(logs_dir=logs, model_name=MODEL)
+        assert "model_reasoning_effort=xhigh" in pooled.build_cli_flags(), pooled.build_cli_flags()
+        told = codex_pool.PooledCodex(logs_dir=logs, model_name=MODEL, reasoning_effort="max")
+        assert "model_reasoning_effort=max" in told.build_cli_flags() and "xhigh" not in told.build_cli_flags()
+
+        pooled._pool = types.SimpleNamespace(lease=lambda trial="": seat)
+        pooled._account = seat  # what setup() leases before the CLI is installed
+
+        async def ran(self, instruction, environment, context):  # the CLI already ran in the container
+            return None
+
+        original = codex_pool.Codex.run
+        codex_pool.Codex.run = ran
+        try:
+            context = codex_pool.AgentContext()
+            environment = types.SimpleNamespace(capabilities=types.SimpleNamespace(mounted=True))
+            asyncio.run(pooled.run("fix it", environment, context))
+        finally:
+            codex_pool.Codex.run = original
+        pooled.populate_context_post_run(context)
+        assert context.metadata["reasoning_effort"] == "xhigh", context.metadata
+        assert context.metadata["efforts"] == ["xhigh"], "the effort each turn ran at is read off the session"
+        assert context.metadata["container_commands"] == {"attempted": 1, "succeeded": 1}, "the pool's record is kept"
+        assert json.loads((logs / "codex-account.json").read_text())["reasoningEffort"] == "xhigh"
+
+        # A session that did not run at the effort asked for says so.
+        later = logs / "sessions" / "2026" / "10" / "11"
+        later.mkdir()
+        (later / "rollout-2026-10-11T09-45-31-s2.jsonl").write_text(rollout("high", "2026-10-11T09:45"))
+        assert codex_pool.session_efforts(logs / "sessions") == ["xhigh", "high"]
+    return "checked"
+
+
 if __name__ == "__main__":
     os.environ["SMITHERS_BENCH_CONTAINER"] = CONTAINER
     with tempfile.TemporaryDirectory() as empty:
@@ -297,6 +377,7 @@ if __name__ == "__main__":
         check_budget()
         check_effort()
     rule = check_runner_rule()
+    codex = check_codex_effort()
     print(f"check_budget.py: the budget follows the task's agent timeout under both runners' configs, an unknown "
           f"timeout is refused, the task directory stays unread but for task.toml, and the flow defaults to xhigh; "
-          f"timeout rule {rule}.")
+          f"timeout rule {rule}; codex arm effort {codex}.")

@@ -60,8 +60,8 @@ Agent kwargs (`--ak key=value`):
                     whose timeout cannot be found is refused (`BudgetUnknown`)
     reasoning_effort=E
                     the flow's reasoning effort; default `xhigh`
-                    (`accounts.DEFAULT_EFFORT`). The stock Codex arm takes
-                    the same kwarg
+                    (`accounts.DEFAULT_EFFORT`), the kwarg and the default of
+                    the stock Codex arm (`codex_pool.py`)
 """
 
 from __future__ import annotations
@@ -639,8 +639,9 @@ def verdict(log_text: str, summary: dict[str, Any], events: list[dict[str, Any]]
     return kind, cause
 
 
-# The run stops a minute inside the runner's agent timeout, so it ends on the
-# harness's terms (journal closed, work committed), not the runner's cancel.
+# The CLI is stopped a minute inside the runner's agent timeout: the time this
+# adapter needs to fold the journal, write the record and commit the work
+# before the runner cancels `run()`.
 BUDGET_MARGIN_SEC = 60.0
 BUDGET_FLOOR_SEC = 60.0
 
@@ -650,10 +651,10 @@ class BudgetUnknown(Exception):
     this trial could not be found.
 
     There is no default. The 2026-09-26 runs fell back to 3,600 s here while
-    the stock Codex arm ran each DeepSWE task's own 5,400 s, and 14 of 109
-    scored trials ended at that cap: a budget nobody chose is an unequal pair
-    that still prints a score. Raised before the CLI starts, so a refusal
-    costs no model call, and the message names the way out."""
+    the stock Codex arm had each DeepSWE task's own 5,400 s, and 14 of 109
+    scored trials ended at the 3,600 s cap: a budget nobody chose is an
+    unequal pair that still prints a score. Raised before the CLI starts, so
+    a refusal costs no model call, and the message names the way out."""
 
 
 def _seconds(value: Any) -> float | None:
