@@ -140,7 +140,8 @@ def run_script(attempts: tuple, proxy: Proxy) -> str:
     environment = {"PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
                    "HTTPS_PROXY": f"http://agent:token@127.0.0.1:{proxy.port}",
                    "https_proxy": f"http://agent:token@127.0.0.1:{proxy.port}"}
-    done = subprocess.run(["sh", "-c", "set -o pipefail 2>/dev/null; " + seal.script(attempts)],
+    # dash (Debian's /bin/sh) exits 2 on `set -o pipefail`, so try it in a subshell first.
+    done = subprocess.run(["sh", "-c", "(set -o pipefail) 2>/dev/null && set -o pipefail; " + seal.script(attempts)],
                           capture_output=True, text=True, env=environment, timeout=120)
     assert done.returncode == 0, (done.returncode, done.stderr)
     return done.stdout
