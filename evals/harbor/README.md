@@ -25,6 +25,7 @@ adapter's own logic and is the only thing here CI runs.
 | `plue_docker.py`          | The `docker` the harness calls on Smithers Cloud: `exec` becomes `smithers workspace exec`                        |
 | `accounts.py`             | Round-robin over every logged-in Codex subscription, one per trial                                                |
 | `codex_pool.py`           | Harbor's stock Codex CLI agent drawing its `auth.json` from that pool                                             |
+| `seal.py`                 | The denied-connect probe and verdict behind the stock arm's `sealed`                                              |
 | `prompt.md`               | The one flow file every task runs; the instruction is pasted verbatim                                             |
 | `audit_host_calls.py`     | Per-trial audit of `bash` calls that ran on the host, not the task container: clean / host-calls-benign / TAINTED |
 | `report.py`               | The publishable paired report of two finished jobs; refuses an unsealed, unfinished or under-50-task run          |
@@ -193,6 +194,65 @@ PYTHONPATH=$PWD pier run -p <deep-swe>/deep-swe-1-1/<task> \
 DeepSWE grades `git diff <base>..HEAD`, so under Pier the prompt tells the
 model to commit and the adapter commits whatever is left afterwards
 (`--ak commit=1` does the same under Harbor).
+
+### The network seal under Pier
+
+Every DeepSWE task declares `[agent] network_mode = "no-network"`. Pier 0.3.1
+asks the agent for `network_allowlist()` and builds the task container's
+network from the answer (`pier/environments/docker/docker.py`):
+
+```
+allowlist empty      main: network_mode none        only `lo`, no route
+allowlist non-empty  main -- pier-egress-internal (internal: true) -- pier-egress-proxy -- default -- internet
+                             squid: CONNECT to an allowlisted name on 443 with the trial's token, else 403
+```
+
+- **Smithers arm.** `SmithersAgent.network_allowlist()` is empty: the model is
+  called from the host, and the container is on `network none`.
+- **Stock Codex arm.** The CLI runs in the container and must reach its model.
+  Pier's own `codex` agent allows `api.openai.com`, the API-key route, which a
+  ChatGPT login never uses. `PooledCodex` hands Pier `seal.ALLOWED_HOSTS`
+  and nothing else:
+
+  | Host              | Why (Codex CLI `rust-v0.155.1`)                                                                  |
+  | ----------------- | ------------------------------------------------------------------------------------------------ |
+  | `chatgpt.com`     | Model backend, `chatgpt.com/backend-api/codex` (`CHATGPT_CODEX_BASE_URL`, `model-provider-info`) |
+  | `auth.openai.com` | Token refresh, `auth.openai.com/oauth/token` (`REFRESH_TOKEN_URL`, `login/src/auth/manager.rs`)  |
+
+The stock arm, sealed, with one login per trial from the pool and the effort
+the Smithers arm runs at:
+
+```sh
+PYTHONPATH=$PWD pier run -p <deep-swe>/deep-swe-1-1 \
+  --agent-import-path evals.harbor.codex_pool:PooledCodex -m openai/gpt-6-sol \
+  --ak version=0.155.1 --ak reasoning_effort=<effort> \
+  --ak 'config_toml=web_search = "disabled"' \
+  -k 1 -n 1 -o "$PWD/evals/harbor/jobs"
+```
+
+`web_search = "disabled"` is part of the seal. The CLI runs with
+`--dangerously-bypass-approvals-and-sandbox`, and in that mode `rust-v0.155.1`
+prefers live web search unless the config disables it
+(`resolve_web_search_mode_for_turn`, `core/src/config/mod.rs`). The model
+backend runs the search, so no container network stops it.
+
+**The proof, per trial.** Before the CLI starts, `PooledCodex` runs
+`seal.script()` in the task container with the environment the CLI's commands
+get. curl tries `github.com` through the proxy, then `github.com` and `1.1.1.1`
+around it. `sealed` is true only when every one was refused (curl exit 5, 6,
+7, 56 or 97) and the CLI's transcript has no `web_search` item. A connection,
+a missing curl, a timeout or a missing line reads `sealed: false` with the
+`reason`. The verdict and every attempt are in `agent/codex-account.json`
+(`sealed`, `seal`) and in `result.json` under `agent_result.metadata`. Do not
+score a `sealed: false` trial.
+
+Rootless Docker needs nothing extra: the internal network and the proxy live
+in the daemon's own network namespace. Start the runner inside the daemon's
+user namespace, or `docker compose cp` fails with an `Lchown` error.
+
+`fixtures/check_seal.py` pins the verdict, runs the script with a real curl
+against a local proxy, and, with Pier's interpreter as `HARBOR_PYTHON`, pins
+the allowlist `PooledCodex` hands Pier.
 
 ## What a trial records
 

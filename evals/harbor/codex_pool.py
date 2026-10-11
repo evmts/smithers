@@ -11,6 +11,18 @@ next account from `accounts.Pool` for each trial instead, records the label
 the trial whole on the next healthy account (every re-run in `requeue.log`),
 and when none is left the pool pauses and then raises, so a dry seat is never
 scored. Everything else is Harbor's Codex agent unchanged.
+
+Under Pier the same class is Pier's Codex agent, and the task container is
+sealed to the ChatGPT-subscription route:
+
+    pier run … --agent-import-path evals.harbor.codex_pool:PooledCodex -m openai/gpt-6-sol \
+        --ak version=0.155.1 --ak reasoning_effort=<effort> --ak 'config_toml=web_search = "disabled"'
+
+`network_allowlist()` hands Pier `seal.ALLOWED_HOSTS` and nothing else, and
+every trial runs the denied-connect probe of `seal.py` in the task container
+before the CLI starts. The verdict is `sealed` in `codex-account.json` and in
+the trial's metadata. A web search in the CLI's transcript also reads
+`sealed: false`: the model backend runs it outside the container.
 """
 
 from __future__ import annotations
@@ -18,15 +30,25 @@ from __future__ import annotations
 import asyncio
 import json
 import shutil
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from harbor.agents.installed.codex import Codex
-from harbor.environments.base import BaseEnvironment
-from harbor.models.agent.context import AgentContext
+# The Codex agent of the runner that loaded this module. Pier ships Harbor as a
+# dependency, so in Pier's install both import. Pier's trial runner
+# (`pier.trial.execution`, loaded with its CLI) asks the agent for
+# `install_spec()` and `network_allowlist()`; only Pier's agent answers.
+if "pier.trial.execution" in sys.modules:
+    from pier.agents.installed.codex import Codex  # type: ignore[import-not-found]
+    from pier.environments.base import BaseEnvironment  # type: ignore[import-not-found]
+    from pier.models.agent.context import AgentContext  # type: ignore[import-not-found]
+else:
+    from harbor.agents.installed.codex import Codex
+    from harbor.environments.base import BaseEnvironment
+    from harbor.models.agent.context import AgentContext
 
-from . import accounts
+from . import accounts, seal
 
 ACCOUNT_FILE = "codex-account.json"
 
@@ -39,11 +61,9 @@ def usage_limit_in(output: str) -> str | None:
     return None
 
 
-def container_commands(output: str) -> dict[str, int]:
-    """Codex `command_execution` items the CLI completed inside the task
-    container, and how many exited 0. The CLI runs in the container, so every
-    command it ran is a container command."""
-    attempted = succeeded = 0
+def completed_items(output: str) -> list[dict]:
+    """The items of the CLI's `item.completed` events, in order."""
+    items = []
     for line in output.splitlines():
         line = line.strip()
         if not line.startswith("{"):
@@ -53,13 +73,23 @@ def container_commands(output: str) -> dict[str, int]:
         except ValueError:
             continue
         item = event.get("item") if isinstance(event, dict) else None
-        if event.get("type") != "item.completed" or not isinstance(item, dict):
-            continue
-        if item.get("type") == "command_execution":
-            attempted += 1
-            if item.get("exit_code") == 0:
-                succeeded += 1
-    return {"attempted": attempted, "succeeded": succeeded}
+        if isinstance(item, dict) and event.get("type") == "item.completed":
+            items.append(item)
+    return items
+
+
+def container_commands(output: str) -> dict[str, int]:
+    """Codex `command_execution` items the CLI completed inside the task
+    container, and how many exited 0. The CLI runs in the container, so every
+    command it ran is a container command."""
+    commands = [item for item in completed_items(output) if item.get("type") == "command_execution"]
+    return {"attempted": len(commands), "succeeded": sum(1 for item in commands if item.get("exit_code") == 0)}
+
+
+def web_searches(output: str) -> int:
+    """Web searches the CLI completed. The model backend runs them, so they
+    reach the internet whatever the task container's network is."""
+    return sum(1 for item in completed_items(output) if item.get("type") == "web_search")
 
 
 class PooledCodex(Codex):
@@ -69,6 +99,7 @@ class PooledCodex(Codex):
         self._account: accounts.Account | None = None
         self._requeues: list[dict[str, Any]] = []
         self._metadata: dict[str, Any] = {}
+        self._seal: dict[str, Any] = {}
 
     @staticmethod
     def name() -> str:
@@ -80,9 +111,29 @@ class PooledCodex(Codex):
         self._write_account()
         await super().setup(environment)
 
+    def network_allowlist(self):
+        """Pier: every host the task container may reach, through Pier's
+        egress proxy. Pier's own default is `api.openai.com`, the API-key route."""
+        try:
+            from pier.models.agent.network import NetworkAllowlist  # type: ignore[import-not-found]
+        except ImportError:
+            return None
+        return NetworkAllowlist(domains=list(seal.ALLOWED_HOSTS))
+
     def _write_account(self, **extra: Any) -> None:
+        proof = {"sealed": self._seal["sealed"], "seal": self._seal} if self._seal else {}
         (self.logs_dir / ACCOUNT_FILE).write_text(json.dumps(
-            {"account": self._account.label if self._account else None, "requeues": self._requeues, **extra}, indent=2))
+            {"account": self._account.label if self._account else None, "requeues": self._requeues, **proof, **extra},
+            indent=2))
+
+    async def _prove_seal(self, environment: BaseEnvironment) -> dict[str, Any]:
+        """Run the denied-connect probe in the task container, as the agent
+        user and with the environment the CLI's own commands get."""
+        try:
+            result = await self.exec_as_agent(environment, command=seal.script(), timeout_sec=300)
+        except Exception as error:  # no proof is an open seal, never a pass
+            return {**seal.verdict(""), "reason": f"the probe did not run: {str(error)[:300]}"}
+        return seal.verdict(getattr(result, "stdout", None) or "")
 
     def _resolve_auth_json_path(self) -> Path | None:
         if self._account is None:
@@ -90,6 +141,8 @@ class PooledCodex(Codex):
         return self._account.auth
 
     async def run(self, instruction: str, environment: BaseEnvironment, context: AgentContext) -> None:
+        self._seal = {**await self._prove_seal(environment), "webSearches": 0}
+        self._write_account()
         attempt = 0
         while True:
             attempt += 1
@@ -104,6 +157,7 @@ class PooledCodex(Codex):
                 text = output.read_text(errors="replace")
             except OSError:
                 text = ""
+            self._seal["webSearches"] += web_searches(text)
             limit = usage_limit_in(text) or (usage_limit_in(str(failure)) if failure else None)
             if limit is None:
                 if failure is not None:
@@ -125,11 +179,15 @@ class PooledCodex(Codex):
             with (self.logs_dir / "requeue.log").open("a", encoding="utf-8") as log:
                 log.write(f"{now} requeued as attempt {attempt + 1} on {self._account.label}\n")
         reached = container_commands(text)
+        if self._seal["webSearches"]:
+            searched = f"the CLI ran {self._seal['webSearches']} web search(es) outside the task container"
+            self._seal.update(sealed=False, reason="; ".join(filter(None, [self._seal.get("reason"), searched])))
         self._write_account(attempt=attempt, containerCommands=reached)
         # Kept off the context until Harbor has filled it: Harbor reads the
         # session's token usage only into an empty context.
         self._metadata = {"account": self._account.label if self._account else None,
-                          "attempt": attempt, "requeues": self._requeues, "container_commands": reached}
+                          "attempt": attempt, "requeues": self._requeues, "container_commands": reached,
+                          "sealed": self._seal["sealed"], "seal": self._seal}
         if reached["succeeded"] == 0:
             raise accounts.ContainerUnreachable(
                 f"codex ran no command with exit 0 in the task container ({reached['attempted']} attempted)")
