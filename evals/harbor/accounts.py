@@ -38,6 +38,10 @@ WAIT_VARIABLE = "SMITHERS_CODEX_POOL_WAIT_SEC"
 DEFAULT_LABEL = "default"
 DEFAULT_WAIT_SEC = 6 * 3600
 POLL_SEC = 60
+# The reasoning effort a benchmark arm asks for unless the run names another
+# (`--ak reasoning_effort=<effort>`): a pair is only a pair at one effort.
+# Owner ruling 2026-10-10: benchmarks run at `xhigh`, not `max`.
+DEFAULT_EFFORT = "xhigh"
 USAGE_LIMIT_SIGNAL = (
     "usage_limit_reached",
     "usage limit",

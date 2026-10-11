@@ -1,7 +1,7 @@
 """The Smithers flows harness as a Harbor (and Pier) external agent.
 
-    harbor run -p <tasks> -a evals.harbor.smithers_agent:SmithersAgent -m openai/gpt-6-sol
-    pier run -p <tasks> --agent-import-path evals.harbor.smithers_agent:SmithersAgent -m openai/gpt-6-sol
+    harbor run -p <tasks> -a evals.harbor.smithers_agent:SmithersAgent -m openai/gpt-6.1-sol
+    pier run -p <tasks> --agent-import-path evals.harbor.smithers_agent:SmithersAgent -m openai/gpt-6.1-sol
 
 Harbor starts the task's container and hands this class the instruction. The
 agent runs OUR harness on the host, the `smthrs` CLI out of this checkout, with
@@ -55,8 +55,13 @@ Agent kwargs (`--ak key=value`):
                     grades `git diff base..HEAD`; default on under Pier)
     cwd=/app        working directory inside the container; default: the
                     task's `workdir`, else `/app`
-    budget_sec=N    wall-clock budget for the run; default: the trial's agent
-                    timeout minus a minute, else 3600
+    budget_sec=N    wall-clock budget for the run; default: the agent timeout
+                    the runner enforces on the trial, minus a minute. A trial
+                    whose timeout cannot be found is refused (`BudgetUnknown`)
+    reasoning_effort=E
+                    the flow's reasoning effort; default `xhigh`
+                    (`accounts.DEFAULT_EFFORT`). The stock Codex arm takes
+                    the same kwarg
 """
 
 from __future__ import annotations
@@ -144,9 +149,9 @@ def compose_project_name(session_id: str) -> str:
 
 
 def seat_of(model_name: str | None) -> str:
-    """`openai/gpt-6-sol` (Harbor's spelling) to `openai:gpt-6-sol` (the CLI's)."""
+    """`openai/gpt-6.1-sol` (Harbor's spelling) to `openai:gpt-6.1-sol` (the CLI's)."""
     if not model_name:
-        raise ValueError("SmithersAgent needs a model, e.g. -m openai/gpt-6-sol")
+        raise ValueError("SmithersAgent needs a model, e.g. -m openai/gpt-6.1-sol")
     if "/" in model_name:
         provider, model = model_name.split("/", 1)
         return f"{provider}:{model}"
@@ -155,11 +160,28 @@ def seat_of(model_name: str | None) -> str:
     return f"openai:{model_name}"
 
 
-def render_prompt(instruction: str, *, seat: str, container: str, cwd: str, commit: bool) -> str:
+# The efforts the harness knows (`ModelRequest.ReasoningEffort`). It reads any
+# other `effort:` as unset and runs the flow at `high` (`effortFor` in
+# `AgentSession.ts`), which would change the arm without a word, so an unknown
+# effort is refused before a flow file is written.
+EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+DEFAULT_EFFORT = accounts.DEFAULT_EFFORT
+
+
+def effort_of(value: Any) -> str:
+    """`value` when it is an effort the harness knows, else a ValueError."""
+    if not isinstance(value, str) or value not in EFFORTS:
+        raise ValueError(f"reasoning_effort must be one of {', '.join(EFFORTS)}; got {value!r}")
+    return value
+
+
+def render_prompt(instruction: str, *, seat: str, container: str, cwd: str, commit: bool,
+                  effort: str = DEFAULT_EFFORT) -> str:
     """The one flow file, with the instruction verbatim."""
     template = PROMPT_PATH.read_text(encoding="utf-8")
     return (
-        template.replace("{{seat}}", seat)
+        template.replace("{{effort}}", effort_of(effort))
+        .replace("{{seat}}", seat)
         .replace("{{container}}", container)
         .replace("{{cwd}}", cwd)
         .replace("{{commit}}", COMMIT_PARAGRAPH if commit else "")
@@ -617,6 +639,122 @@ def verdict(log_text: str, summary: dict[str, Any], events: list[dict[str, Any]]
     return kind, cause
 
 
+# The run stops a minute inside the runner's agent timeout, so it ends on the
+# harness's terms (journal closed, work committed), not the runner's cancel.
+BUDGET_MARGIN_SEC = 60.0
+BUDGET_FLOOR_SEC = 60.0
+
+
+class BudgetUnknown(Exception):
+    """No `budget_sec` was given and the agent timeout the runner enforces on
+    this trial could not be found.
+
+    There is no default. The 2026-09-26 runs fell back to 3,600 s here while
+    the stock Codex arm ran each DeepSWE task's own 5,400 s, and 14 of 109
+    scored trials ended at that cap: a budget nobody chose is an unequal pair
+    that still prints a score. Raised before the CLI starts, so a refusal
+    costs no model call, and the message names the way out."""
+
+
+def _seconds(value: Any) -> float | None:
+    """A positive number of seconds, else None; the runners read 0 as unset."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        return None
+    return float(value)
+
+
+def trial_config(logs_dir: Path) -> dict[str, Any] | None:
+    """The runner's own record of how this trial was configured: `config.json`
+    beside the agent's logs directory, which Harbor (`Trial._init_result`) and
+    Pier (`Trial.run`) both write before the agent is set up. It holds the
+    operator's timeout override, cap and multipliers and nothing of the task;
+    `report.py` reads the same fields from it."""
+    try:
+        document = json.loads((logs_dir.parent / "config.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return document if isinstance(document, dict) else None
+
+
+def task_agent_timeout(environment: Any) -> float | None:
+    """`[agent] timeout_sec` from the task's `task.toml`.
+
+    This is the one thing the adapter reads from the task directory, and one
+    number of it, because neither runner hands a non-oracle agent its timeout:
+    it is `Trial._agent_timeout_sec` in Harbor 0.23.0 and
+    `TrialExecution.agent_timeout_sec` in Pier 0.3.1, passed only to the
+    `asyncio.wait_for` around `run()`, and `environment.task_env_config` is the
+    `[environment]` table alone. The file is found beside the environment
+    directory the runner gave the environment, where `plue_env.py` already
+    reads the `[verifier]` table. `tests/`, `solution/` and the instruction
+    file are never opened, and the number never reaches the prompt
+    (`fixtures/check_budget.py`).
+    """
+    directory = getattr(environment, "environment_dir", None)
+    if directory is None:
+        return None
+    try:
+        import tomllib
+        document = tomllib.loads((Path(directory).parent / "task.toml").read_text(encoding="utf-8"))
+    except (ImportError, OSError, ValueError):
+        return None
+    table = document.get("agent")
+    return _seconds(table.get("timeout_sec")) if isinstance(table, dict) else None
+
+
+def enforced_agent_timeout(logs_dir: Path, environment: Any) -> tuple[float, str]:
+    """The agent timeout the runner enforces on this trial, and where its base
+    came from, by the rule Harbor (`Trial._compute_agent_timeout_sec`) and
+    Pier (`TrialExecution._resolve_agent_timeout`) share:
+
+        min(override or the task's timeout, cap or inf) * multiplier
+
+    The multiplier is `--agent-timeout-multiplier` when set, else
+    `--timeout-multiplier`. The task's timeout is read only when the trial
+    does not override it."""
+    way_out = "pass --ak budget_sec=<seconds> to choose the budget on the record"
+    config = trial_config(logs_dir)
+    if config is None:
+        raise BudgetUnknown(
+            f"{logs_dir.parent / 'config.json'} is not a trial config, so the timeout override and "
+            f"multipliers of this trial are unknown; {way_out}")
+    knobs = config.get("agent") if isinstance(config.get("agent"), dict) else {}
+    source = "override_timeout_sec"
+    base = _seconds(knobs.get("override_timeout_sec"))
+    if base is None:
+        source = "task.toml"
+        base = task_agent_timeout(environment)
+    if base is None:
+        raise BudgetUnknown(
+            f"no [agent] timeout_sec in the task.toml beside {getattr(environment, 'environment_dir', None)} "
+            f"and no override in the trial config; {way_out}")
+    cap = _seconds(knobs.get("max_timeout_sec")) or float("inf")
+    multiplier = config.get("agent_timeout_multiplier")
+    if multiplier is None:
+        multiplier = config.get("timeout_multiplier")
+    return min(base, cap) * (1.0 if multiplier is None else multiplier), source
+
+
+def resolve_budget(budget_sec: float | None, agent_timeout_sec: float | None, logs_dir: Path,
+                   environment: Any) -> dict[str, Any]:
+    """The run's wall-clock budget, where it came from, and the agent timeout
+    it was cut from, as the trial records them.
+
+        budget_sec            `--ak budget_sec=N`, used as given
+        agent_timeout_sec     a runner that hands the agent its timeout
+        override_timeout_sec  the trial's override of the task's timeout
+        task.toml             the task's own `[agent] timeout_sec`
+    """
+    if budget_sec is not None:
+        return {"budgetSec": budget_sec, "budgetSource": "budget_sec", "agentTimeoutSec": None}
+    if agent_timeout_sec:
+        timeout, source = agent_timeout_sec, "agent_timeout_sec"
+    else:
+        timeout, source = enforced_agent_timeout(logs_dir, environment)
+    return {"budgetSec": max(BUDGET_FLOOR_SEC, timeout - BUDGET_MARGIN_SEC), "budgetSource": source,
+            "agentTimeoutSec": timeout}
+
+
 class SmithersAgent(BaseAgent):
     """The Smithers flows harness, driven from the host against the task container."""
 
@@ -634,17 +772,20 @@ class SmithersAgent(BaseAgent):
         commit: Any = None,
         cwd: str | None = None,
         budget_sec: Any = None,
+        reasoning_effort: Any = None,
         **kwargs: Any,
     ) -> None:
         # Harbor hands the task and trial paths to every agent; this one never
-        # opens them, which is how it stays blind to tests/ and solution/.
+        # opens them, which is how it stays blind to tests/ and solution/. The
+        # one read of the task directory is `task_agent_timeout`: one number.
         kwargs.pop("task_dir", None)
         kwargs.pop("trial_paths", None)
         super().__init__(logs_dir=logs_dir, model_name=model_name, **kwargs)
-        self._agent_timeout_sec = agent_timeout_sec
+        self._agent_timeout_sec = float(agent_timeout_sec) if agent_timeout_sec is not None else None
         self._commit = _truthy(commit) if commit is not None else FRAMEWORK == "pier"
         self._cwd_override = cwd
         self._budget_sec = float(budget_sec) if budget_sec is not None else None
+        self._effort = effort_of(reasoning_effort) if reasoning_effort is not None else DEFAULT_EFFORT
         self.root = Path(os.environ.get("SMITHERS_ROOT") or HERE.parent.parent).resolve()
         self.docker = os.environ.get("SMITHERS_BENCH_DOCKER", "docker")
         self.seat = seat_of(self.model_name)
@@ -727,11 +868,9 @@ class SmithersAgent(BaseAgent):
         return workdir or getattr(environment, "_plue_workdir", None) or "/app"
 
     async def run(self, instruction: str, environment: BaseEnvironment, context: AgentContext) -> None:
+        budget = resolve_budget(self._budget_sec, self._agent_timeout_sec, self.logs_dir, environment)
         container = self.container_of(environment)
         cwd = self.container_cwd(environment)
-        budget = self._budget_sec
-        if budget is None:
-            budget = max(60.0, self._agent_timeout_sec - 60.0) if self._agent_timeout_sec else 3600.0
         helper = helper_binary(self.root, dict(os.environ))
         kept = self.logs_dir / "workspace"
         if kept.exists():
@@ -754,7 +893,8 @@ class SmithersAgent(BaseAgent):
             flow_dir = workspace / "flows" / FLOW_NAME
             flow_dir.mkdir(parents=True)
             (flow_dir / "flow.mdx").write_text(
-                render_prompt(instruction, seat=self.seat, container=container, cwd=cwd, commit=self._commit),
+                render_prompt(instruction, seat=self.seat, container=container, cwd=cwd, commit=self._commit,
+                              effort=self._effort),
                 encoding="utf-8",
             )
             shim_home = Path(tempfile.mkdtemp(prefix="smithers-shim-")) if self._plue else None
@@ -777,7 +917,8 @@ class SmithersAgent(BaseAgent):
                 "container": container,
                 "cwd": cwd,
                 "commit": self._commit,
-                "budgetSec": budget,
+                "effort": self._effort,
+                **budget,
                 "harnessRoot": str(self.root),
                 "harnessRevision": harness_revision(self.root),
                 "subject": subject_fingerprint(self.root),
@@ -787,7 +928,7 @@ class SmithersAgent(BaseAgent):
 
             started = time.monotonic()
             try:
-                exit_status, phase = await asyncio.to_thread(self._drive, workspace, env, budget)
+                exit_status, phase = await asyncio.to_thread(self._drive, workspace, env, budget["budgetSec"])
             finally:
                 if shim_home is not None:
                     shutil.rmtree(shim_home, ignore_errors=True)
@@ -867,9 +1008,14 @@ class SmithersAgent(BaseAgent):
             "verdict": kind,
             "cause": cause,
             "bindings": summary["bindings"],
+            # Asked for, then what each model call was really made at.
+            "effort": self._effort,
             "efforts": summary["efforts"],
             "harness_revision": record["harnessRevision"],
             "subject": (record["subject"] or {}).get("stamp"),
+            "budget_sec": budget["budgetSec"],
+            "budget_source": budget["budgetSource"],
+            "agent_timeout_sec": budget["agentTimeoutSec"],
             "wall_sec": record["wallSec"],
             "exit_status": exit_status,
             "phase": phase,

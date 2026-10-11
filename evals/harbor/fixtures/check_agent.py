@@ -89,7 +89,7 @@ def check_prompt() -> None:
     text = agent.render_prompt(INSTRUCTION, seat="openai:gpt-6-sol", container="abc123", cwd="/app", commit=False)
     assert text.startswith("---\n"), "the flow file opens with frontmatter"
     assert "model: openai:gpt-6-sol\n" in text, "the seat is the frontmatter model"
-    assert "\neffort: max\n" in text, "every task runs at the top reasoning effort"
+    assert "\neffort: xhigh\n" in text, "a task runs at xhigh unless the run names another effort"
     assert 'container: "abc123"' in text and 'cwd: "/app"' in text, "the container and cwd are taught"
     assert text.rstrip().endswith(INSTRUCTION), "the instruction is the last thing in the prompt, verbatim"
     assert "{{" not in text, "every placeholder is filled"
