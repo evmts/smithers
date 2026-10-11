@@ -168,6 +168,11 @@ bound, or `Container.layerNoop` was.
 **What to change.** Bind `Container.layerCommand()` for the `docker` or `podman`
 CLI, or drop the `container` field and run the command on the host.
 
+The native CLI binds a transport only on a host sealed to one container: set
+`SMITHERS_BASH_CONTAINER` to the container `bash` and `test` may reach. An
+unsealed CLI host keeps refusing, because an existing Docker daemon is outside
+its OS sandbox.
+
 ## provider_unavailable: no test runner is declared
 
 **What happened.** `test` ran with `TestRunner.layerNoop` bound.

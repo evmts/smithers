@@ -10,7 +10,7 @@ import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as Workspace from "@smthrs/kernel/Workspace"
 import * as Executable from "@smthrs/registry/Executable"
 import { Effect, Layer, Option, type Schema } from "effect"
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { afterEach, expect, it } from "vitest"
@@ -19,9 +19,11 @@ import * as NodeControl from "../src/NodeControl.ts"
 
 const scratch = process.env.SMITHERS_CONFINEMENT_TEST_SCRATCH ?? join(process.cwd(), ".cache", "process-confinement")
 const roots = new Set<string>()
+const hostPath = process.env.PATH
 afterEach(() => {
   for (const root of roots) rmSync(root, { recursive: true, force: true })
   roots.clear()
+  process.env.PATH = hostPath
 })
 const fixture = () => {
   mkdirSync(scratch, { recursive: true })
@@ -31,6 +33,66 @@ const fixture = () => {
   mkdirSync(workspace)
   return { base, workspace }
 }
+/**
+ * A `docker` first on PATH that reaches no daemon: it records each call's argv
+ * and daemon variables outside the workspace, where only an unconfined process
+ * can write, and answers like a passing runner.
+ */
+const fakeDocker = (base: string) => {
+  const record = join(base, "docker-calls")
+  mkdirSync(join(base, "bin"))
+  writeFileSync(
+    join(base, "bin", "docker"),
+    [
+      `#!${process.execPath}`,
+      `process.getBuiltinModule("node:fs").appendFileSync(${JSON.stringify(record)}, JSON.stringify({`,
+      "  argv: process.argv.slice(2), host: process.env.DOCKER_HOST, config: process.env.DOCKER_CONFIG",
+      "}) + \"\\n\")",
+      "process.stdout.write(\"1 passed in 0.1s\\n\")"
+    ].join("\n"),
+    { mode: 0o755 }
+  )
+  process.env.PATH = `${join(base, "bin")}:${hostPath}`
+  return (): Array<{ argv: Array<string>; host?: string; config?: string }> =>
+    existsSync(record) ? readFileSync(record, "utf8").trim().split("\n").map((line) => JSON.parse(line)) : []
+}
+/** The flows the native executor binds, read where a module catalog is registered. */
+const offered = () => {
+  const bound: Array<FlowBinding.Binding> = []
+  const modules = Layer.effect(Executable.Catalog)(Effect.gen(function*() {
+    const host = yield* AgentAction.Host
+    bound.push(...(yield* Effect.forEach(host.flows ?? [], (source) => source.bindings())).flat())
+    return Executable.Catalog.of({ executables: [], refused: [] })
+  })).pipe(Layer.orDie)
+  return { modules, bound, flow: (name: string) => bound.find((binding) => binding.descriptor.name === name) }
+}
+const spawnCount = (workspace: string) => {
+  const database = new DatabaseSync(NodeControl.executionDatabasePath(workspace), { readOnly: true })
+  try {
+    return database.prepare(
+      "SELECT COUNT(*) AS count FROM flows_journal_events WHERE event_type = 'flows.host.process-spawned.v1'"
+    ).get()!.count
+  } finally {
+    database.close()
+  }
+}
+/** The flows that read and write this host's files, which a sealed host never offers. */
+const hostFilesystemFlows = ["read", "write", "edit", "apply_patch", "grep", "glob", "ls"]
+/** The workspace tree and nothing beside it, and any command unless `spawn` is false. */
+const workspaceGrants = (workspace: string, spawn = true) =>
+  GrantStore.layer({
+    attended: false,
+    rules: [
+      new Rule({ effect: "allow", pattern: new CapabilityPattern({ action: "fs:*", resource: workspace }) }),
+      new Rule({
+        effect: "allow",
+        pattern: new CapabilityPattern({ action: "fs:*", resource: `${workspace}/**` })
+      }),
+      ...(spawn
+        ? [new Rule({ effect: "allow", pattern: new CapabilityPattern({ action: "proc:spawn", resource: "**" }) })]
+        : [])
+    ]
+  }).pipe(Layer.provide(Workspace.layer(workspace)), Layer.orDie)
 const call = (input: Schema.Json, flowName = "bash"): Cell.Call =>
   new Cell.Call({
     flowName,
@@ -141,17 +203,7 @@ it("refuses native baseline comparison before any process and keeps workspace te
       Effect.provide(build(workspace, {
         modules,
         environment: { SMITHERS_TEST_COMMAND: "bash runtests.sh" },
-        grants: GrantStore.layer({
-          attended: false,
-          rules: [
-            new Rule({ effect: "allow", pattern: new CapabilityPattern({ action: "fs:*", resource: workspace }) }),
-            new Rule({
-              effect: "allow",
-              pattern: new CapabilityPattern({ action: "fs:*", resource: `${workspace}/**` })
-            }),
-            new Rule({ effect: "allow", pattern: new CapabilityPattern({ action: "proc:spawn", resource: "**" }) })
-          ]
-        }).pipe(Layer.provide(Workspace.layer(workspace)), Layer.orDie)
+        grants: workspaceGrants(workspace)
       })),
       Effect.scoped
     )
@@ -160,17 +212,15 @@ it("refuses native baseline comparison before any process and keeps workspace te
 
 it("keeps registered agent shell confined and refuses a named Docker transport", async () => {
   const { base, workspace } = fixture()
-  let shell: FlowBinding.Binding | undefined
-  const modules = Layer.effect(Executable.Catalog)(Effect.gen(function*() {
-    const host = yield* AgentAction.Host
-    const bindings = yield* Effect.forEach(host.flows ?? [], (source) => source.bindings())
-    shell = bindings.flat().find((binding) => binding.descriptor.name === "bash")
-    return Executable.Catalog.of({ executables: [], refused: [] })
-  })).pipe(Layer.orDie)
+  // A reachable CLI and daemon change nothing: an unsealed host binds no transport.
+  const dockerCalls = fakeDocker(base)
+  const { modules, bound, flow } = offered()
   await Effect.runPromise(
     Effect.gen(function*() {
       yield* Control.Control
+      const shell = flow("bash")
       expect(shell).toBeDefined()
+      expect(bound.map((binding) => binding.descriptor.name)).toEqual(expect.arrayContaining(hostFilesystemFlows))
       const result = yield* shell!.run(
         call({ mode: "unhermetic", command: "printf escaped > ../agent-escape", cwd: workspace })
       )
@@ -187,7 +237,149 @@ it("keeps registered agent shell confined and refuses a named Docker transport",
       expect(container.outcome).toBe("failure")
       expect(JSON.stringify(container)).toContain("has no container transport")
       expect(spawned()).toBe(before)
+      expect(dockerCalls()).toEqual([])
       database.close()
-    }).pipe(Effect.provide(build(workspace, { modules })), Effect.scoped)
+    }).pipe(
+      Effect.provide(build(workspace, { modules, environment: { DOCKER_HOST: "unix:///run/user/1000/docker.sock" } })),
+      Effect.scoped
+    )
   )
 })
+
+const sealed = {
+  SMITHERS_BASH_CONTAINER: "benchmark-cell",
+  DOCKER_HOST: "unix:///run/user/1000/docker.sock",
+  DOCKER_CONFIG: "/home/bench/.docker"
+}
+
+it("runs a sealed host's bash and test in its one container through the docker CLI (#3802)", async () => {
+  const { base, workspace } = fixture()
+  const dockerCalls = fakeDocker(base)
+  const { modules, flow } = offered()
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      yield* Control.Control
+      const result = yield* flow("bash")!.run(
+        call({ mode: "unhermetic", container: "benchmark-cell", cwd: "/app", command: "ls -la" })
+      )
+      expect(result.outcome, JSON.stringify(result)).toBe("success")
+      expect(result.value).toMatchObject({ exitCode: 0, stdout: "1 passed in 0.1s\n" })
+      // The measurement of /app before and after the command travels the same route.
+      expect(dockerCalls().map((entry) => entry.argv.slice(0, 6))).toEqual([
+        ["exec", "-w", "/app", "--", "benchmark-cell", "sh"],
+        ["exec", "-w", "/app", "--", "benchmark-cell", "bash"],
+        ["exec", "-w", "/app", "--", "benchmark-cell", "sh"]
+      ])
+      expect(dockerCalls()[1]!.argv).toEqual(["exec", "-w", "/app", "--", "benchmark-cell", "bash", "-lc", "ls -la"])
+      const tested = yield* flow("test")!.run(call({ against: "workspace" }, "test"))
+      expect(tested.outcome, JSON.stringify(tested)).toBe("success")
+      expect(tested.value).toMatchObject({ exitCode: 0, passed: 1 })
+      expect(dockerCalls()[3]!.argv).toEqual(
+        ["exec", "-w", "/app", "--", "benchmark-cell", "bash", "-c", "pytest -q \"$@\"", "pytest -q"]
+      )
+      // A rootless daemon is found only through these; every transport process carries them.
+      for (const entry of dockerCalls()) {
+        expect(entry).toMatchObject({ host: sealed.DOCKER_HOST, config: sealed.DOCKER_CONFIG })
+      }
+    }).pipe(
+      Effect.provide(build(workspace, {
+        modules,
+        environment: {
+          ...sealed,
+          SMITHERS_TEST_COMMAND: "pytest -q",
+          SMITHERS_TEST_CONTAINER: "benchmark-cell",
+          SMITHERS_TEST_CWD: "/app"
+        }
+      })),
+      Effect.scoped
+    )
+  )
+}, 60_000)
+
+it("keeps a sealed host out of every other container and off its own filesystem (#3802)", async () => {
+  const { base, workspace } = fixture()
+  const dockerCalls = fakeDocker(base)
+  const { modules, bound, flow } = offered()
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      yield* Control.Control
+      const names = bound.map((binding) => binding.descriptor.name)
+      expect(names).toContain("bash")
+      for (const host of hostFilesystemFlows) expect(names).not.toContain(host)
+      const before = spawnCount(workspace)
+      const refusals = [
+        yield* flow("bash")!.run(call({ mode: "unhermetic", container: "other-task", command: "true" })),
+        yield* flow("bash")!.run(call({ mode: "unhermetic", command: "true", cwd: workspace })),
+        // The runner shares the transport, which answers for one container only.
+        yield* flow("test")!.run(call({ against: "workspace" }, "test"))
+      ]
+      for (const refusal of refusals) {
+        expect(refusal.outcome).toBe("failure")
+        expect(JSON.stringify(refusal)).toContain("runs commands only inside container \\\"benchmark-cell\\\"")
+      }
+      expect(spawnCount(workspace)).toBe(before)
+      expect(dockerCalls()).toEqual([])
+    }).pipe(
+      Effect.provide(build(workspace, {
+        modules,
+        environment: { ...sealed, SMITHERS_TEST_COMMAND: "pytest -q", SMITHERS_TEST_CONTAINER: "other-task" }
+      })),
+      Effect.scoped
+    )
+  )
+}, 60_000)
+
+it("keeps a sealed host's own runner inside the OS profile (#3802)", async () => {
+  const { base, workspace } = fixture()
+  const dockerCalls = fakeDocker(base)
+  const escaped = join(base, "test-escape")
+  writeFileSync(
+    join(workspace, "runtests.sh"),
+    [
+      `printf escaped 2>/dev/null > '${escaped}' || true`,
+      "printf allowed > runner-control",
+      "printf '1 passed in 0.1s\\n'"
+    ]
+      .join("\n")
+  )
+  const { modules, flow } = offered()
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      yield* Control.Control
+      // No container is declared for the runner, so it starts here and no transport process does.
+      const result = yield* flow("test")!.run(call({ against: "workspace" }, "test"))
+      expect(result.outcome, JSON.stringify(result)).toBe("success")
+      expect(result.value).toMatchObject({ exitCode: 0, passed: 1 })
+      expect(existsSync(join(workspace, "runner-control"))).toBe(true)
+      expect(existsSync(escaped)).toBe(false)
+      expect(dockerCalls()).toEqual([])
+    }).pipe(
+      Effect.provide(build(workspace, {
+        modules,
+        environment: { ...sealed, SMITHERS_TEST_COMMAND: "bash runtests.sh" },
+        grants: workspaceGrants(workspace)
+      })),
+      Effect.scoped
+    )
+  )
+}, 60_000)
+
+it("asks the grant store before a sealed transport process starts (#3802)", async () => {
+  const { base, workspace } = fixture()
+  const dockerCalls = fakeDocker(base)
+  const { modules, flow } = offered()
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      yield* Control.Control
+      const result = yield* flow("bash")!.run(
+        call({ mode: "unhermetic", container: "benchmark-cell", command: "true" })
+      )
+      // No rule allows `proc:spawn`, and nobody attends this host to grant it.
+      expect(result.outcome).toBe("failure")
+      expect(dockerCalls()).toEqual([])
+    }).pipe(
+      Effect.provide(build(workspace, { modules, environment: sealed, grants: workspaceGrants(workspace, false) })),
+      Effect.scoped
+    )
+  )
+}, 60_000)

@@ -50,6 +50,7 @@ import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
 import * as KernelJj from "@smthrs/kernel/Jj"
 import * as KernelPath from "@smthrs/kernel/Path"
+import * as KernelProcessConfinement from "@smthrs/kernel/ProcessConfinement"
 import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
 import * as Workspace from "@smthrs/kernel/Workspace"
 import type * as McpClient from "@smthrs/mcp/McpClient"
@@ -70,6 +71,7 @@ import * as ExecutionSnapshot from "@smthrs/registry/ExecutionSnapshot"
 import * as Registry from "@smthrs/registry/Registry"
 import { type AttemptStore, Ownership, RunStore } from "@smthrs/run-store"
 import { Sandbox as Machine } from "@smthrs/sandbox"
+import * as Bash from "@smthrs/std/Bash"
 import * as Checkpoints from "@smthrs/std/Checkpoints"
 import * as Container from "@smthrs/std/Container"
 import * as PortableSearch from "@smthrs/std/PortableSearch"
@@ -391,6 +393,38 @@ const secureSqliteFiles = (file: string) =>
       if (yield* fs.exists(sqliteFile)) yield* fs.chmod(sqliteFile, 0o600)
     }
   }).pipe(Effect.orDie)
+
+/** The variables the `docker` CLI finds its daemon by. */
+const daemonVariables = ["DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH"]
+
+/**
+ * The container transport of a host sealed to one container.
+ *
+ * It builds the `docker exec` argv for `sealedTo` and refuses every other
+ * container. `bash` already refuses them (`Bash.sealed`); `test` takes its
+ * container from `SMITHERS_TEST_CONTAINER`, so the transport checks as well.
+ *
+ * A transport process inherits only the bootstrap environment
+ * (`ChildProcessEnvironment.inheritedNames`), which leaves the CLI looking for
+ * its daemon at the default socket. A rootless daemon listens elsewhere, so
+ * each plan declares the daemon variables this host holds.
+ */
+const sealedTransport = (
+  environment: Readonly<Record<string, string | undefined>>,
+  sealedTo: string
+): Container.Container => {
+  const command = Container.makeCommand()
+  const daemon = Object.fromEntries(daemonVariables.flatMap((name) => {
+    const value = environment[name]
+    return value === undefined || value === "" ? [] : [[name, value]]
+  }))
+  return Container.make({
+    exec: (request) =>
+      request.container === sealedTo
+        ? Effect.map(command.exec(request), (plan) => ({ ...plan, env: { ...daemon, ...plan.env } }))
+        : Effect.fail(Bash.outsideContainer(sealedTo, request.container))
+  })
+}
 
 /**
  * The seats a native host resolves, and the catalog Jev routes an `auto` run
@@ -1408,12 +1442,33 @@ export const make = (
         // runner reaches the same transport `bash` does, and the judge that
         // attributes a non-zero exit travels with them.
         const runner = testRunner(environment, root, workspaceRoot)
-        // A caller's OS profile cannot constrain execution in an existing
-        // Docker daemon. Native commands require an isolated provider instead.
-        const container = Container.makeNoop()
         // A sealed host reaches one container and nothing of itself: `bash`
         // refuses every other target and the host filesystem flows are absent.
         const sealedTo = sealedContainer(environment)
+        // An OS profile cannot constrain what an existing Docker daemon runs,
+        // so an unsealed host binds no container transport (#3140). A sealed
+        // host's operator named the one container its commands run in, so it
+        // binds the `docker` CLI for that container alone (#3802).
+        const container = sealedTo === undefined ? Container.makeNoop() : sealedTransport(environment, sealedTo)
+        // The OS profile denies a child the daemon's socket. A sealed `bash`
+        // starts only transport processes: the transport builds their argv,
+        // and the caller's command travels in it as data for the container.
+        // They pass the same `proc:spawn` check and run outside the profile.
+        const transportShell = sealedTo === undefined ? shellServices : Context.add(
+          shellServices,
+          KernelChildProcessSpawner.ChildProcessSpawner,
+          Context.get(
+            // Fresh: the memoized layer is the confined spawner already built.
+            yield* Layer.build(
+              Layer.fresh(KernelChildProcessSpawner.layer).pipe(Layer.provide([
+                Layer.succeed(KernelChildProcessSpawner.ChildProcessSpawner, toolSpawner!),
+                Workspace.layer(workspaceRoot),
+                KernelProcessConfinement.layerNoop
+              ]))
+            ),
+            KernelChildProcessSpawner.ChildProcessSpawner
+          )
+        )
         // With a host language server, `edit` returns the errors it leaves and
         // `bash` keeps the files the server holds open current. Servers start
         // on the first file they serve. Their executable and fixed arguments
@@ -1443,7 +1498,7 @@ export const make = (
           ...(sealedTo === undefined
             ? [StandardFlows.filesystem(HostLanguageServers.bind(filesystemServices, languageServer), nativeSearch)]
             : []),
-          StandardFlows.shell(HostLanguageServers.bind(shellServices, languageServer), container, {
+          StandardFlows.shell(HostLanguageServers.bind(transportShell, languageServer), container, {
             sealedTo,
             terminal: native.shellTerminal,
             terminalPort: native.shellTerminal === "agent" ? native.agentTerminal?.(toolSpawner!) : undefined
@@ -1463,7 +1518,13 @@ export const make = (
           ...(sealedTo === undefined
             ? [Memory.source(contextServices, { root: workspaceRoot })]
             : []),
-          ...testFlows(Context.merge(shellServices, judge), container, runner),
+          // Only a runner in the sealed container starts transport
+          // processes. Any other runner keeps the confined spawner.
+          ...testFlows(
+            Context.merge(runner?.container === sealedTo ? transportShell : shellServices, judge),
+            container,
+            runner
+          ),
           ...mcp
         ]
         // The judge `evaluatorFor` requires arms nudges and memory insertion
