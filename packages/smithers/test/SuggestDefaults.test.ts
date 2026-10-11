@@ -101,7 +101,7 @@ afterAll(() => {
 })
 
 describe("the Codex subscription opt-in (#2804)", () => {
-  it("selects the vendor CLI subscription seat when opted in", async () => {
+  it("selects the Codex subscription seat when opted in", async () => {
     const documents: Array<string> = []
 
     const outcome = await Effect.runPromise(
@@ -115,8 +115,8 @@ describe("the Codex subscription opt-in (#2804)", () => {
       })
     )
 
-    // #2804: the vendor CLI owns its credentials; the explicit opt-in
-    // selects its seat without interpreting the token file as an API session.
+    // The explicit opt-in selects the seat. The scan reads no credential:
+    // the resolver reads the login when it signs a request (#3808).
     expect(outcome.seat).toBe("codex:sol")
     expect(JSON.parse(documents.at(-2)!)).toEqual({
       document: "seat",
@@ -133,7 +133,7 @@ describe("the Codex subscription opt-in (#2804)", () => {
 
     expect(error).toBeInstanceOf(CliError.UnsupportedError)
     expect(CliError.exitCode(error)).toBe(1)
-    // The vendor CLI owns login; Smithers explains how to opt into its seat.
+    // Codex owns the login; Smithers explains how to opt into its seat.
     expect(error.message).toContain("Codex subscription (codex:sol): set SMITHERS_OPENAI_AUTH=chatgpt to use Codex")
   })
 })
@@ -241,7 +241,7 @@ describe("the pick", () => {
 
 describe("the implementing step, defaulted to the bundled flow on this host", () => {
   it.each([undefined, "must-not-spend-this-key"])(
-    "refuses a missing Codex executable without API-key fallback when OPENAI_API_KEY is %s",
+    "refuses a missing Codex login without API-key fallback when OPENAI_API_KEY is %s",
     async (apiKey) => {
       const terminal = sink()
       const service: Ui.Service = {
@@ -250,8 +250,8 @@ describe("the implementing step, defaulted to the bundled flow on this host", ()
         pickSuggestion: (items) => Effect.succeed(Option.fromUndefinedOr(items[0])),
         confirm: () => Effect.succeed(false)
       }
-      // The opt-in selects the vendor CLI. This injected environment has no
-      // Codex executable; a metered key must not silently replace that seat.
+      // The opt-in selects the Codex login. This injected environment has
+      // neither a login nor Codex; a metered key must not silently replace that seat.
       const error = await Effect.runPromise(Effect.flip(
         Suggest.run({
           ...base,
@@ -261,7 +261,9 @@ describe("the implementing step, defaulted to the bundled flow on this host", ()
         }).pipe(Effect.provideService(Ui.Ui, service))
       ))
       expect(error.message).toBe(
-        `${onlyMatch}: SeatUnresolved: install Codex, then run \`codex login --device-auth\` to run the codex:sol seat`
+        `${onlyMatch}: SeatUnresolved: install Codex, then run \`codex login --device-auth\` to run the codex:sol seat: no ChatGPT login at ${
+          join(signedOut, "auth.json")
+        }`
       )
       expect(error.message).not.toContain("Set OPENAI_API_KEY")
     }

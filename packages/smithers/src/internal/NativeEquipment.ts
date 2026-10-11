@@ -36,7 +36,7 @@ import * as CliError from "../CliError.ts"
 import * as Environment_ from "../Environment.ts"
 import * as Providers from "../Providers.ts"
 import * as ClaudeCode from "./ClaudeCode.ts"
-import * as CodexCode from "./CodexCode.ts"
+import * as CodexLogin from "./CodexLogin.ts"
 import { readText } from "./HostFiles.ts"
 import * as MeteredDispatch from "./MeteredDispatch.ts"
 
@@ -49,9 +49,9 @@ const apiKeyVariable: Readonly<Record<string, string>> = {
 /**
  * How the `openai` provider authenticates. `api-key` is the default and the
  * only mode the other providers have. `chatgpt` routes the same seat strings
- * to the ChatGPT-subscription backend on the codex CLI's OAuth session, so a
- * lane opts in through the environment without respelling any seat: the
- * journaled seat, its context window, and its committed price stay identical.
+ * to the ChatGPT-subscription backend on the local Codex login, so a lane
+ * opts in through the environment without respelling any seat: the journaled
+ * seat, its context window, and its committed price stay identical.
  */
 const openaiAuthVariable = "SMITHERS_OPENAI_AUTH"
 
@@ -113,8 +113,12 @@ const accountPoolOf = (environment: Readonly<Record<string, string | undefined>>
  * a Claude alias (`opus`, `sonnet`, `fable`) when no Anthropic key is set.
  *
  * `SMITHERS_OPENAI_AUTH=chatgpt` swaps the `openai` provider's credential source
- * from `OPENAI_API_KEY` to vendor `codex exec`, as `codex:<model>` does.
- * Only Codex reads or refreshes its login.
+ * from `OPENAI_API_KEY` to the local Codex login (`$CODEX_HOME/auth.json`), as
+ * `codex:<model>` does. The seat calls the ChatGPT backend directly, with the
+ * run's cache key as its session id (#3808). Smithers reads the login's access
+ * token and never writes the file: the Codex CLI refreshes its own login when
+ * asked (`CodexLogin`). One store per login file is shared by every seat that
+ * signs with it, so they ask for one refresh at a time.
  *
  * A Claude Code seat keeps its sessions open between turns. `retain` receives
  * each such seat's `close`, so the host can end the sessions when it shuts down.
@@ -249,7 +253,8 @@ const withAliases = (base: SeatResolver.Service, host: Providers.Host): SeatReso
  * routes by and {@link seatCandidates} offers by.
  *
  * `openai` runs in the mode `SMITHERS_OPENAI_AUTH` selects: a key, or the
- * ChatGPT session behind the model proxy or on this machine. `anthropic`
+ * ChatGPT session behind the model proxy or in this machine's Codex login,
+ * which `codex` seats always use. `anthropic`
  * takes only a key; a Claude subscription runs as `claude-code`, on Claude
  * Code, which signs its own requests. An empty variable is an unset one. An
  * account pool with accounts for the provider's route signs ahead of all of
@@ -258,7 +263,7 @@ const withAliases = (base: SeatResolver.Service, host: Providers.Host): SeatReso
 type Credential =
   | { readonly _tag: "Compatible"; readonly key: string }
   | { readonly _tag: "Pooled"; readonly key: string; readonly origin: string }
-  | { readonly _tag: "Codex"; readonly executable: string }
+  | { readonly _tag: "Codex"; readonly file: string }
   | { readonly _tag: "ClaudeCode"; readonly executable: string }
   | { readonly _tag: "Key"; readonly key: string }
   | { readonly _tag: "Refused"; readonly refusal: (seat: string) => string }
@@ -291,11 +296,16 @@ const credential = async (provider: string, host: Providers.Host): Promise<Crede
       : { _tag: "ClaudeCode", executable: found.executable }
   }
   if (provider === "codex") {
-    const login = await Providers.codexLogin(environment)
-    return login?.loggedIn === true
-      ? { _tag: "Codex", executable: login.executable }
+    // The login file says whether a subscription is signed in; no vendor
+    // process runs to resolve a seat. The refusal names the file, never its text.
+    const file = CodexLogin.locate(environment, host.homeDirectory)
+    const reason = CodexLogin.unusable(file, host.readFile(file))
+    return reason === undefined
+      ? { _tag: "Codex", file }
       : refused((seat) =>
-        `${login === undefined ? "install Codex, then " : ""}run \`codex login --device-auth\` to run the ${seat} seat`
+        `${
+          CodexLogin.executable(environment) === undefined ? "install Codex, then " : ""
+        }run \`codex login --device-auth\` to run the ${seat} seat: ${reason}`
       )
   }
   // Own properties only: `constructor:foo` must not read Object.prototype.
@@ -365,6 +375,16 @@ const providerSeats = (
       return served.routes.includes(route) ? pool : undefined
     })
   const host = hostOf(environment)
+  // One store per login file: every seat signing with it shares one refresh flight.
+  const codexLogins = new Map<string, CodexLogin.Store>()
+  const codexLogin = (file: string): CodexLogin.Store => {
+    let store = codexLogins.get(file)
+    if (store === undefined) {
+      store = CodexLogin.make({ file, refresh: CodexLogin.cliRefresh({ environment }) })
+      codexLogins.set(file, store)
+    }
+    return store
+  }
   // One Claude Code model per model and executable: an agent step resolves its
   // seat on every frame, and each model holds its own pool of sessions.
   const claudeModels = new Map<string, ReturnType<typeof ClaudeCode.make>>()
@@ -452,16 +472,15 @@ const providerSeats = (
               seat,
               modelId
             )
-          case "Codex": {
-            const model = Providers.codexModel(modelId)
-            return Seat.make({
-              id: seat,
-              modelId: model,
-              model: CodexCode.make({ model, executable: signed.executable, environment }),
-              route: CodexCode.route(model),
-              contextWindowTokens: SeatResolver.contextWindowTokensFor(model)
-            })
-          }
+          case "Codex":
+            // The subscription backend, called directly: the request carries
+            // the run's cache key and session id, and reasoning returns with it.
+            return yield* seatOf(
+              OpenAIChatGPT.make({ auth: codexLogin(signed.file).auth }),
+              executor,
+              seat,
+              Providers.codexModel(modelId)
+            )
           case "ClaudeCode": {
             const model = Providers.claudeCodeModel(modelId)
             const claude = claudeModel({

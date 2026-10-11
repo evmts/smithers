@@ -455,15 +455,17 @@ const securityReview = Smithers.SecurityReview({
       paths: ["src/internal/backend/Workspaces.ts", "src/internal/backend/Auth.ts"]
     },
     {
-      id: "codex-vendor-login",
-      title: "Codex alone holds its subscription credentials",
-      threat: "Smithers reads or forwards a vendor login, or silently replaces a subscription with an ambient API key.",
+      id: "codex-login-read-only",
+      title: "Smithers reads the Codex login and Codex alone writes it",
+      threat:
+        "Smithers rewrites the login or spends its refresh token and logs the operator out, sends the access token anywhere but the route's ChatGPT backend, or silently replaces a subscription with an ambient API key.",
       lookFor: [
-        "A read or rewrite of Codex auth.json outside the vendor binary.",
-        "A Codex key or token in child environment overrides, command arguments, model errors or journal receipts.",
-        "An unbounded vendor process or a process group left alive after cancellation."
+        "A write to Codex auth.json, a read of its refresh_token, or a request to the OAuth token endpoint anywhere outside the Codex CLI.",
+        "An access token or account id in a model error, a log, a journal receipt or the sealed request view, or signed onto a request to another origin.",
+        "A refresh lock in CodexLogin.ts opened without 'wx' and mode 0600, or removed while its recorded pid is alive, so two processes ask Codex to refresh at once.",
+        "A `codex app-server` process that is unbounded, outlives its answered request or a cancelled run, or receives an API key in its environment."
       ],
-      paths: ["src/internal/CodexCode.ts", "src/Providers.ts", "src/internal/NativeEquipment.ts"]
+      paths: ["src/internal/CodexLogin.ts", "src/Providers.ts", "src/internal/NativeEquipment.ts"]
     },
     {
       id: "serve-bind-auth",

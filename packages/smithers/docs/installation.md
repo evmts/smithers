@@ -78,12 +78,17 @@ downgrade to a 0.x `latest`.
   root and write `.flows/` under it. See
   [The project and its state](./concepts/project-and-state.md).
 - A configured subscription seat for model flows and their completion judge.
-  For Codex, install the vendor CLI and run `codex login --device-auth`.
-  A `codex:sol` seat runs `codex exec --json -m gpt-6-sol -` with the prompt
-  on stdin and Smithers tools over MCP. Only Codex reads or refreshes its login;
-  Smithers holds no Codex token. Set `SMITHERS_OPENAI_AUTH=chatgpt` to select
-  Codex automatically or to run existing `openai:` seats through Codex.
-  A signed-out host refuses the seat and names `codex login --device-auth`.
+  For Codex, install the Codex CLI and run `codex login --device-auth`.
+  A `codex:sol` seat calls the ChatGPT backend directly, signed with the
+  access token in that login (`$CODEX_HOME/auth.json`, `~/.codex/auth.json`
+  by default). Every call of a run carries the run's cache key as its session
+  id, and the model's reasoning returns with the next call. Smithers reads the
+  login and never writes it: when the token is near its expiry or the backend
+  answers 401, Smithers asks the Codex CLI to refresh its own login and reads
+  the file again. Set `SMITHERS_OPENAI_AUTH=chatgpt` to select Codex
+  automatically or to run existing `openai:` seats on the login.
+  A host with no ChatGPT login refuses the seat and names
+  `codex login --device-auth`.
   For Claude, install Claude Code and run `claude auth login`; with no
   `ANTHROPIC_API_KEY` set, the `opus`, `sonnet` and `fable` seats (and their
   `claude-code:` forms) run on your own Claude Code, which signs its own

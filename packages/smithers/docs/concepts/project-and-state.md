@@ -117,7 +117,7 @@ Anything outside it is not read, including the 0.x `SMITHERS_HOME`,
 | `SMITHERS_TOKEN` | Session token override for the saved login. |
 | `SMITHERS_MCP_CONFIG` | Path to the `--mcp-config` server array. |
 | `SMITHERS_BACKEND` | Database backend. Only `sqlite` is supported. |
-| `SMITHERS_OPENAI_AUTH` | `api-key` or `chatgpt`, selecting whether `openai` seats run through the API or vendor `codex exec`. Explicit `codex:<model>` seats always use the vendor CLI. Smithers never reads the Codex auth store. |
+| `SMITHERS_OPENAI_AUTH` | `api-key` or `chatgpt`, selecting whether `openai` seats sign with `OPENAI_API_KEY` or with the local Codex login. Explicit `codex:<model>` seats always use the login. Smithers reads its access token from `$CODEX_HOME/auth.json` and never writes the file; the Codex CLI refreshes it. |
 | `SMITHERS_TEST_COMMAND`, `SMITHERS_TEST_CONTAINER`, `SMITHERS_TEST_CWD`, `SMITHERS_TEST_TIMEOUT_MS` | What the `test` flow runs, where, and for how long. |
 | `SMITHERS_SANDBOX_IMAGE` | The image a flow's `sandbox: {provider: container}` runs in, through `docker`. Unset refuses such flows. |
 | `SMITHERS_BASH_CONTAINER` | The one container `bash` and `test` may reach, through the `docker` CLI and the host's `DOCKER_HOST`, `DOCKER_CONTEXT`, `DOCKER_CONFIG`, `DOCKER_TLS_VERIFY`, and `DOCKER_CERT_PATH`. Any other `bash` call fails with `outside_container`, and the host filesystem flows are not offered. Unset, the CLI reaches no container. |

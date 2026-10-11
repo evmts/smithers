@@ -2,13 +2,14 @@
  * (the `LlmLint` rows of the target index) is read from the commit the change
  * applies to, the source from the change's immutable head, both through the
  * native tree export, so no Git directory is needed. Every model request runs
- * on a tool-free subscription seat (Claude Code, or Codex without the Smithers
- * MCP server), never an API key. Findings stay in the host's private finding store; the
+ * on a tool-free subscription seat (Claude Code, or the ChatGPT backend on the
+ * host's Codex login), never an API key. Findings stay in the host's private finding store; the
  * receipt carries only their public summaries. `coding/SecurityAudit` runs the
  * scheduled audits the same way over one whole commit. */
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
-import type * as Model from "@smthrs/model/Model"
+import * as Model from "@smthrs/model/Model"
+import * as ModelRequest from "@smthrs/model/ModelRequest"
 import * as Executable from "@smthrs/registry/Executable"
 import * as LlmLint from "@smthrs/targets/LlmLint"
 import { Effect, Layer, Schema } from "effect"
@@ -18,8 +19,6 @@ import * as NodeFs from "node:fs/promises"
 import * as NodePath from "node:path"
 import * as Label from "../../packages/smithers/build/build-cli/src/Label.ts"
 import * as TrustedReview from "../../packages/smithers/build/build-cli/src/TrustedReview.ts"
-import * as CodexCode from "../../packages/smithers/src/internal/CodexCode.ts"
-import * as Providers from "../../packages/smithers/src/Providers.ts"
 import { privatePath } from "../repository/check-context.ts"
 import { type ImmutableSourceOptions, withImmutableCommit, withImmutableSource } from "./immutable-source.ts"
 import { NativeCoding } from "./native.ts"
@@ -33,42 +32,34 @@ export const Body = Schema.Struct({
   )
 })
 
-/** A Codex review seat: the model it runs, or why it cannot. */
-export type CodexSeat = (
-  model: string
-) => Effect.Effect<{ readonly model: Model.Model; readonly modelId: string }, Error>
+/**
+ * The model without an output cap. The ChatGPT subscription backend accepts
+ * none, so its seat refuses a request that carries one; the review cuts an
+ * answer at its own byte limit, whatever the seat.
+ */
+const uncapped = (model: Model.Model): Model.Model =>
+  Model.make({
+    ...model,
+    stream: (request) =>
+      model.stream(ModelRequest.ModelRequest.make({
+        ...request,
+        params: ModelRequest.GenerationParams.make({ ...request.params, maxTokens: undefined })
+      }))
+  })
 
 /**
- * The Codex subscription seat without its Smithers MCP server. Reviewed source
- * is untrusted, so the reviewer gets no tools: the ordinary `codex:` seat
- * loads Smithers MCP for agent cells, so this builds the same seat model with
- * `mcp: false` over the machine's own `codex login`.
+ * The review transport: every model on one of the host's subscription seats.
+ * Claude models run on Claude Code (`claude-code:<model>`), and OpenAI models
+ * on the ChatGPT backend with the host's own Codex login (`codex:<model>`).
+ * Reviewed source is untrusted, so the reviewer gets no tools: the review
+ * request declares none, and neither seat adds any.
  */
-export const toolFreeCodex = (environment: Readonly<Record<string, string | undefined>>): CodexSeat => (model) =>
-  Effect.promise(() => Providers.codexLogin(environment)).pipe(
-    Effect.flatMap((login) =>
-      login?.loggedIn === true
-        ? Effect.succeed({
-          model: CodexCode.make({
-            model: Providers.codexModel(model),
-            executable: login.executable,
-            environment,
-            mcp: false
-          }),
-          modelId: Providers.codexModel(model)
-        })
-        : Effect.fail(new Error("Codex is not signed in with ChatGPT; run `codex login --device-auth`"))
-    )
-  )
-
-/**
- * The review transport: Claude models on the host's Claude Code seat
- * (`claude-code:<model>`, which runs no tools or MCP servers), OpenAI models
- * on the tool-free Codex seat.
- */
-export const seatTransport = (resolver: SeatResolver.Service, codex: CodexSeat): LlmLint.ReviewTransport => (seat) =>
-  seat.engine === "codex" ? codex(seat.model) : resolver.resolve(`claude-code:${seat.model}`).pipe(
-    Effect.map((resolved) => ({ model: resolved.model, modelId: resolved.modelId })),
+export const seatTransport = (resolver: SeatResolver.Service): LlmLint.ReviewTransport => (seat) =>
+  resolver.resolve(`${seat.engine === "codex" ? "codex" : "claude-code"}:${seat.model}`).pipe(
+    Effect.map((resolved) => ({
+      model: seat.engine === "codex" ? uncapped(resolved.model) : resolved.model,
+      modelId: resolved.modelId
+    })),
     Effect.mapError((error) => new Error(error.message))
   )
 
@@ -312,8 +303,6 @@ const bodyPatterns = (invocation: typeof Executable.Invocation.Type) =>
 export type SecurityReviewOptions = ImmutableSourceOptions & {
   /** Absolute private directory for runs and findings, outside the repository. */
   readonly store: string
-  /** The Codex seat; defaults to {@link toolFreeCodex} over the host's environment. */
-  readonly codex?: CodexSeat | undefined
 }
 
 /** A failure's message with host paths and credentials removed, for an error that may be shown. */
@@ -355,7 +344,7 @@ export const reviewSecurity = (options: SecurityReviewOptions, invocation: typeo
               const reviewed = await TrustedReview.reviewPrepared(prepared, {
                 root: headRoot,
                 findingsStore: options.store,
-                transport: seatTransport(resolver, options.codex ?? toolFreeCodex(process.env)),
+                transport: seatTransport(resolver),
                 signal
               })
               return receipt(implementation, check, prepared, reviewed)
@@ -432,7 +421,7 @@ export const auditSecurity = (options: SecurityReviewOptions, invocation: typeof
           const reviewed = prepared.policies.length === 0 ? undefined : await TrustedReview.reviewPrepared(prepared, {
             root,
             findingsStore: options.store,
-            transport: seatTransport(resolver, options.codex ?? toolFreeCodex(process.env)),
+            transport: seatTransport(resolver),
             signal
           })
           const { evidence, messages } = summarize(prepared, reviewed, reviewed === undefined ? emptyAudit : undefined)

@@ -145,7 +145,7 @@ const scripted = (pick: string): Scripted => {
 }
 
 describe("the Codex subscription opt-in (#2804)", () => {
-  it("selects the vendor CLI seat with the subscription opt-in", async () => {
+  it("selects the Codex subscription seat with the opt-in", async () => {
     const home = directory("smthrs-suggest-home-")
     mkdirSync(join(home, ".codex"))
     writeFileSync(
@@ -167,8 +167,8 @@ describe("the Codex subscription opt-in (#2804)", () => {
       })
     )
 
-    // #2804: the opt-in selects the vendor CLI seat; a token file is
-    // no longer interpreted as an OpenAI API session by Smithers.
+    // The opt-in selects the seat. The scan reads no credential: the
+    // resolver reads the login when it signs a request (#3808).
     expect(outcome.seat).toBe("codex:sol")
     expect(JSON.parse(documents.at(-2)!)).toEqual({
       document: "seat",
@@ -195,8 +195,8 @@ describe("the Codex subscription opt-in (#2804)", () => {
       )
     )
 
-    // A missing opt-in reports the vendor login setup and continues
-    // through the other candidates without interpreting a token file.
+    // A missing opt-in reports the Codex login setup and continues
+    // through the other candidates without reading a token file.
     expect(CliError.exitCode(error)).toBe(1)
     expect(error.message).toContain("Codex subscription (codex:sol): set SMITHERS_OPENAI_AUTH=chatgpt to use Codex")
     expect(error.message).toContain("Kimi K3 (moonshot:kimi-k3): $MOONSHOT_API_KEY is not set")

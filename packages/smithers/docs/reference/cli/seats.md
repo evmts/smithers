@@ -14,6 +14,11 @@ Pinned seats bypass ambient API keys, pools, and proxies. Unknown accounts,
 missing logins, and incompatible seats fail with `SeatUnresolved` naming the
 account. The declared seat ID remains unchanged in the journal.
 
-Login status is cached for 30 seconds. After signing in or out, retry seat
-resolution once that cache expires; execution still reports authentication
-failures from the selected account.
+A Codex account is signed in when its directory holds the `auth.json` that
+`codex login` writes. Smithers reads that file each time a seat resolves and
+each time it signs a request, and never writes it: the Codex CLI refreshes its
+own login when Smithers asks. An API-key login cannot serve a seat.
+
+Claude login status is cached for 30 seconds. After signing in or out of
+Claude Code, retry seat resolution once that cache expires. Execution still
+reports authentication failures from the selected account.

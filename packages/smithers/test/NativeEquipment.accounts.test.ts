@@ -1,6 +1,7 @@
 import { Seat } from "@smthrs/agent"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import { Effect, Stream } from "effect"
+import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -23,30 +24,26 @@ const fixture = () => {
   directories.push(directory)
   return directory
 }
+/** A fabricated access token: only its expiry is ever read. */
+const access = (account: string) =>
+  `eyJhbGciOiJub25lIn0.${
+    Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600, account })).toString("base64url")
+  }.signature`
+/** One signed-in Codex login directory: the `auth.json` that `codex login` writes. */
 const login = (accounts: string, account: string) => {
   const directory = join(accounts, account)
   mkdirSync(directory)
-  writeFileSync(join(directory, "subscription"), "signed in")
-  return directory
-}
-const codexBinary = () => {
-  const directory = fixture()
   writeFileSync(
-    join(directory, "codex"),
-    "#!/bin/sh\nif [ -n \"$OPENAI_API_KEY$CODEX_API_KEY$OPENAI_BASE_URL\" ]; then exit 7; fi\n" +
-      "if [ \"$1 $2\" = \"login status\" ]; then\n" +
-      "printf \"%s\\n\" \"$CODEX_HOME\" >> \"${0%/*}/probes\"\n" +
-      "if [ -f \"$CODEX_HOME/subscription\" ]; then echo \"Logged in using ChatGPT\"; exit 0; fi\n" +
-      "echo \"Not logged in\"; exit 1\nfi\n" +
-      "printf \"%s\\n\" \"$CODEX_HOME\" >> \"${0%/*}/executions\"\n" +
-      "/bin/cat >/dev/null\n" +
-      "echo '{\"type\":\"thread.started\",\"thread_id\":\"account-test\"}'\n" +
-      "echo '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"id\":\"answer\",\"text\":\"ok\"}}'\n" +
-      "echo '{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}'\n",
-    { mode: 0o755 }
+    join(directory, "auth.json"),
+    JSON.stringify({
+      auth_mode: "chatgpt",
+      tokens: { access_token: access(account), refresh_token: `refresh-${account}`, account_id: `id-${account}` }
+    }),
+    { mode: 0o600 }
   )
   return directory
 }
+const chatgpt = "https://chatgpt.com/backend-api/codex/responses"
 // A pooled deployment serving both subscription routes: a pinned seat names one
 // local login, so it must never be handed to the pool or the model proxy.
 const ambientPool = {
@@ -56,7 +53,7 @@ const ambientPool = {
   SMITHERS_MODEL_PROXY_URL: "https://ambient-proxy.invalid"
 }
 const resolve = (environment: Readonly<Record<string, string | undefined>>, declared: string) =>
-  Effect.scoped(NodeControl.seatResolver({ PATH: codexBinary(), ...environment }, executor).resolve(declared))
+  Effect.scoped(NodeControl.seatResolver({ PATH: "/nonexistent", ...environment }, executor).resolve(declared))
 const prepared = (seat: Seat.Seat) =>
   Effect.runPromise(seat.route.prepare({
     modelId: seat.modelId,
@@ -89,8 +86,10 @@ describe("native account-pinned seat resolution", () => {
       expect(resolved.modelId).toBe(
         declared.startsWith("sol@") ? Seat.modelIdOf(Providers.expandSeat("sol")) : "gpt-6.1-sol"
       )
+      // The selected login's own backend, never the ambient pool or proxy.
       const request = await prepared(resolved)
-      expect(request.url).toBe(`codex:${resolved.modelId}`)
+      expect(request.routeId).toBe("openai-chatgpt")
+      expect(request.url).toBe(chatgpt)
       expect(JSON.stringify(request)).not.toContain("ambient-api-key")
       expect(environment.SMITHERS_OPENAI_AUTH).toBe("api-key")
     }
@@ -188,18 +187,35 @@ describe("native account-pinned seat resolution", () => {
     expect(error.message).toContain("claude-3")
   })
 
-  it("executes each pinned Codex seat in its selected login directory", async () => {
+  it("signs each pinned Codex seat with its selected login", async () => {
     const accounts = fixture()
-    const first = login(accounts, "codex-3")
-    const second = login(accounts, "codex-4")
-    const binary = codexBinary()
+    login(accounts, "codex-3")
+    login(accounts, "codex-4")
+    const signed: Array<Readonly<Record<string, string | undefined>>> = []
+    const recording = RequestExecutor.RequestExecutor.of({
+      execute: (request) => {
+        signed.push({
+          url: request.url,
+          authorization: request.headers["authorization"],
+          account: request.headers["chatgpt-account-id"]
+        })
+        return Effect.succeed(HttpClientResponse.fromWeb(
+          request,
+          new Response(
+            `data: ${JSON.stringify({ type: "response.completed", response: { id: "r", usage: {} } })}\n\n`,
+            { status: 200, headers: { "content-type": "text/event-stream" } }
+          )
+        ))
+      }
+    })
     const resolver = NodeControl.seatResolver({
       SMITHERS_ACCOUNTS_DIR: accounts,
-      PATH: binary,
+      PATH: "/nonexistent",
+      CODEX_HOME: fixture(),
       OPENAI_API_KEY: "ambient-key",
       CODEX_API_KEY: "ambient-key",
       OPENAI_BASE_URL: "https://ambient.invalid"
-    }, executor)
+    }, recording)
     for (const account of ["codex-3", "codex-4", "codex-3"]) {
       await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
         const seat = yield* resolver.resolve(`sol@${account}`)
@@ -212,15 +228,19 @@ describe("native account-pinned seat resolution", () => {
         }).pipe(Stream.runCollect)
       })))
     }
-    expect(readFileSync(join(binary, "executions"), "utf8")).toBe(`${first}\n${second}\n${first}\n`)
-    expect(readFileSync(join(binary, "probes"), "utf8")).toBe(`${first}\n${second}\n`)
+    expect(signed).toEqual(["codex-3", "codex-4", "codex-3"].map((account) => ({
+      url: chatgpt,
+      authorization: `Bearer ${access(account)}`,
+      account: `id-${account}`
+    })))
+    expect(JSON.stringify(signed)).not.toContain("ambient")
   })
 
   it("refuses a signed-out Codex account without reusing another account's cached login", async () => {
     const accounts = fixture()
     login(accounts, "codex-3")
     mkdirSync(join(accounts, "codex-4"))
-    const resolver = NodeControl.seatResolver({ SMITHERS_ACCOUNTS_DIR: accounts, PATH: codexBinary() }, executor)
+    const resolver = NodeControl.seatResolver({ SMITHERS_ACCOUNTS_DIR: accounts, PATH: "/nonexistent" }, executor)
     expect((await Effect.runPromise(Effect.scoped(resolver.resolve("sol@codex-3")))).id).toBe("sol@codex-3")
     const error = await Effect.runPromise(Effect.flip(Effect.scoped(resolver.resolve("sol@codex-4"))))
     expect(error).toBeInstanceOf(Seat.SeatUnresolved)
@@ -236,7 +256,7 @@ describe("native account-pinned seat resolution", () => {
     login(accounts, "codex-3")
     const seat = await Effect.runPromise(resolve({}, "sol@codex-3"))
     expect(seat.id).toBe("sol@codex-3")
-    expect((await prepared(seat)).url).toBe(`codex:${seat.modelId}`)
+    expect((await prepared(seat)).url).toBe(chatgpt)
   })
 
   it("selects ~/.codex for codex-default even with an accounts directory override", async () => {
@@ -248,6 +268,6 @@ describe("native account-pinned seat resolution", () => {
       CODEX_HOME: fixture()
     }, "openai:gpt-6.1-sol@codex-default"))
     expect(seat.id).toBe("openai:gpt-6.1-sol@codex-default")
-    expect((await prepared(seat)).url).toBe(`codex:${seat.modelId}`)
+    expect((await prepared(seat)).url).toBe(chatgpt)
   })
 })

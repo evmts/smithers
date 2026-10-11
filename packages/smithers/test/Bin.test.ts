@@ -1675,8 +1675,9 @@ describe("the migrate verb's target", processBudget, () => {
  * `smthrs up ci-fast --json` returned 0 in three seconds while `smthrs ps`
  * reported `failed`.
  *
- * The vendor CLI fixture reports a signed-in subscription, then fails its
- * first exec locally. The real agent session settles the accepted run failed.
+ * The fixture stages an expired Codex login beside a `codex` that cannot
+ * refresh it, so the seat resolves and its first turn fails before any request
+ * leaves the machine. The real agent session settles the accepted run failed.
  */
 /** A project whose one flow's seat resolves and whose turns cannot. */
 const stageUnservableSeat = (): string => {
@@ -1699,11 +1700,16 @@ const stageUnservableSeat = (): string => {
     ].join("\n")
   )
   mkdirSync(join(cwd, "codex"), { recursive: true })
+  // Fabricated and expired in 1970: only the expiry of an access token is read.
+  const expired = `eyJhbGciOiJub25lIn0.${Buffer.from(JSON.stringify({ exp: 1 })).toString("base64url")}.signature`
   writeFileSync(
-    join(cwd, "codex", "codex"),
-    "#!/bin/sh\nif [ \"$1\" = login ]; then echo \"Logged in using ChatGPT\"; exit 0; fi\necho \"fixture exec failed\" >&2\nexit 1\n",
-    { mode: 0o755 }
+    join(cwd, "codex", "auth.json"),
+    JSON.stringify({ auth_mode: "chatgpt", tokens: { access_token: expired, refresh_token: "fixture-refresh" } }),
+    { mode: 0o600 }
   )
+  writeFileSync(join(cwd, "codex", "codex"), "#!/bin/sh\necho \"fixture refresh failed\" >&2\nexit 1\n", {
+    mode: 0o755
+  })
   return cwd
 }
 
@@ -1757,6 +1763,7 @@ const launch = (cwd: string, args: ReadonlyArray<string>) =>
     env: {
       ...process.env,
       SMITHERS_OPENAI_AUTH: "chatgpt",
+      CODEX_HOME: join(cwd, "codex"),
       PATH: `${join(cwd, "codex")}:${process.env["PATH"] ?? ""}`
     }
   })
@@ -1788,6 +1795,7 @@ describe("an attached launch's exit status", processBudget, () => {
           ...process.env,
           HOME: cwd,
           SMITHERS_OPENAI_AUTH: "chatgpt",
+          CODEX_HOME: join(cwd, "codex"),
           PATH: `${join(cwd, "codex")}:${process.env.PATH ?? ""}`
         }
       })

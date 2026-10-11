@@ -199,10 +199,12 @@ commit's `.smithers/target-index.json`, and runs every review whose include
 selects a changed file, plus the proposed-policy reviews a changed
 `PACKAGE.ts`, `WORKSPACE.ts`, `security.ts` or index adds, through the same
 `TrustedReview` code `smthrs review` uses. Each review is required. Every
-model request goes to a tool-free subscription seat, never an API key: Claude
-models to the host's `claude-code:<model>` seat, OpenAI models to the Codex
-CLI on the machine's `codex login` without the Smithers MCP server that the
-ordinary `codex:` seat loads, because reviewed source is untrusted.
+model request goes to a subscription seat, never an API key: Claude models to
+the host's `claude-code:<model>` seat, OpenAI models to its `codex:<model>`
+seat, which calls the ChatGPT backend with the machine's own `codex login`.
+Reviewed source is untrusted, so the request declares no tools and neither
+seat adds any. The ChatGPT backend accepts no output cap, so the Codex seat is
+sent none; the review cuts any answer at its own byte limit.
 Findings persist in `<state dir>/security-review`, so an interrupted review
 resumes from its completed batches. The receipt carries only each finding's
 public summary (`restricted-finding:<fingerprint>`, severity, check and
