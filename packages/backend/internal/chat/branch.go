@@ -2,6 +2,7 @@ package chat
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 
@@ -14,6 +15,15 @@ func (h *Handler) branch(w http.ResponseWriter, r *http.Request, scope Scope) (s
 	if err != nil || !validIdentity(branch) {
 		queueError(w, ErrInvalidRequest)
 		return "", ErrInvalidRequest
+	}
+	if h.PrivateConversations && scope.RepositoryID == 0 {
+		if branch != "main" {
+			queueError(w, ErrForbidden)
+			return "", ErrForbidden
+		}
+		// Never share a repository-free branch identity across accounts. The
+		// browser supplies only main; authenticated identity supplies its owner.
+		return accountConversationID(scope.UserID), nil
 	}
 	if h.ResolveBranch == nil {
 		queueProblem(w, http.StatusServiceUnavailable, "conversation_unavailable")
@@ -31,3 +41,5 @@ func (h *Handler) branch(w http.ResponseWriter, r *http.Request, scope Scope) (s
 	}
 	return resolved, nil
 }
+
+func accountConversationID(userID int64) string { return fmt.Sprintf("account-%d-main", userID) }

@@ -102,6 +102,7 @@ func newChatComposition(options runOptions, pool *pgxpool.Pool, sizing chat.Runt
 	if len(presence) > 0 && presence[0] != nil {
 		host = presenceChatHost{ChatHost: host, presence: presence[0], pool: pool}
 	}
+	sizing.PrivateConversations = options.topology.hosted()
 	runtime, err := chat.NewRuntime(pool, host, callbackURL, sizing)
 	if err != nil {
 		if listener != nil {

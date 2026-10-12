@@ -216,7 +216,12 @@ func (h *Handler) ViewState(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	result, err := h.Store.memberViewState(r.Context(), scope.UserID, branch, value)
+	var result json.RawMessage
+	if h.PrivateConversations && scope.RepositoryID == 0 {
+		result, err = h.Store.accountViewState(r.Context(), scope, branch, value)
+	} else {
+		result, err = h.Store.memberViewState(r.Context(), scope.UserID, branch, value)
+	}
 	if err != nil {
 		publicError(w, err)
 		return

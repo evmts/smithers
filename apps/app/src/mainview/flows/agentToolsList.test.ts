@@ -92,6 +92,11 @@ const harness = async (bootstrap: AppBootstrap = bootstraps[0]!) => {
   }
   let controller: ReturnType<typeof createAppController>
   const profile = signupProfileFetch(async input => {
+    // Boot restores the authenticated conversation; listing commands must
+    // still perform no inference, mutation, or unrelated HTTP request.
+    const path = String(input)
+    if (path.endsWith("/api/conversations/main")) return Response.json({ id: "main", entries: [] })
+    if (path.endsWith("/api/conversations/main/view-state")) return Response.json({})
     requests.push(String(input))
     throw new Error(`Unexpected HTTP request during discovery: ${String(input)}`)
   })

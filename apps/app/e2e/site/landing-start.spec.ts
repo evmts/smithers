@@ -1,5 +1,34 @@
 import { expect,test } from "@playwright/test"
 import { identityRoute } from "../playwright/identity"
+import { fillComposer } from "../playwright/composer"
+
+test("production hosted Chat receives a real conversation response without install or owner keys", async ({ page }) => {
+  const submitted: unknown[] = []
+  await page.route("**/api/**", route => route.fulfill({ status: 404, json: { code: "not_found" } }))
+  await page.route("**/api/bootstrap", route => route.fulfill({ json: {
+    apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["identity", "agent", "cloud"], authFlow: "redirect", sandbox: null,
+  } }))
+  await page.route("**/api/user", identityRoute())
+  for (const path of ["repos", "orgs", "workspaces"]) await page.route(`**/api/user/${path}`, route => route.fulfill({ json: [] }))
+  await page.route("**/api/conversations/main/view-state", route => route.fulfill({ json: {} }))
+  await page.route("**/api/conversations/main", route => route.fulfill({ json: { id: "main", entries: submitted.length ? [{
+    id: "hosted-turn", author: 1, authorLogin: "codeplanesmithers", runId: "hosted-run", prompt: "Reply exactly READY.", state: "completed",
+    frames: [{ runId: "hosted-run", type: "delta", kind: "text", text: "READY" }, { runId: "hosted-run", type: "done" }],
+  }] : [] } }))
+  await page.route("**/api/conversations/main/prompt", route => {
+    submitted.push(route.request().postDataJSON())
+    return route.fulfill({ status: 202, json: { turnId: "hosted-turn", terminal: false } })
+  })
+  await page.goto("/")
+  await page.getByRole("link", { name: "Get started for free", exact: true }).click()
+  await fillComposer(page, "Reply exactly READY.")
+  await page.getByTestId("composer-send").click()
+  await expect(page.locator('[data-shared-turn="hosted-turn"]')).toHaveAttribute("data-state", "completed")
+  await expect(page.locator('[data-shared-turn="hosted-turn"]')).toContainText("READY")
+  expect(submitted).toEqual([{ prompt: "Reply exactly READY.", idempotencyKey: expect.any(String) }])
+  await expect(page.locator(".app-shell")).not.toContainText("On main: 0 working")
+  await expect(page.locator(".app-shell")).not.toContainText("Model credential missing")
+})
 
 test("production Start with an empty cloud account never displays demo activity, including after reload", async ({ page }) => {
   await page.route("**/api/**", route => route.fulfill({ status: 404, json: { code: "not_found", message: "Unavailable route" } }))

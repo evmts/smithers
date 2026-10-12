@@ -15,6 +15,18 @@ pnpm --filter smithers-app start
 `start` launches the headless local host. `dev` starts Vite; `build:web` builds
 the SPA used by the browser hosts.
 
+## Chat transport
+
+Signed-in hosted accounts submit to `POST /api/conversations/main/prompt`
+and read committed responses from `GET /api/conversations/main`. The backend
+owns execution and keeps each account's transcript and view private before
+a repository is selected. Install conversations retain their branch membership
+and shared transcript. A missing install capability never enables demo replies.
+
+Hosted chat uses the deployment's managed model when the account has no model
+assignment. Explicit model assignments keep their own credential requirements.
+Platform provider keys remain in the metered backend proxy.
+
 ## Background work and queued prompts
 
 Worker toasts offer the controls supported by their host and current state:

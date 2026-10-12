@@ -201,7 +201,8 @@ export const useHome = (active = true): HomeAnswer | undefined => {
   const answer = homeSource(useTopic(active && controller.live ? "home" : undefined, controller.live))
   const installs = controller.installSnapshots ?? NO_INSTALL
   const install = useSyncExternalStore(installs.subscribe, installs.get, installs.get).model
-  const listed = active && answer.kind === "seed" && controller.design.enabled === false ? controller.todoList ?? NO_TODO_LIST : NO_TODO_LIST
+  const hasRepository = controller.bootstrap === undefined || controller.bootstrap.capabilities.includes("install") || controller.store.session().activeRepoKey != null
+  const listed = active && hasRepository && answer.kind === "seed" && controller.design.enabled === false ? controller.todoList ?? NO_TODO_LIST : NO_TODO_LIST
   const list = useSyncExternalStore(listed.subscribe, listed.get, listed.get)
   const syncs = active ? controller.githubSyncSnapshots ?? NO_SYNC : NO_SYNC
   const sync = useSyncExternalStore(syncs.subscribe, syncs.get, syncs.get)

@@ -274,7 +274,7 @@ paths:
   /api/conversations/{b}:
     get:
       summary: Read shared branch entries
-      description: Active branch members read started prompts and committed public answer output in turn and batch order. Queued prompts, legacy private history, approvals and browser Drafts are excluded. No journal capability or private request context is returned.
+      description: Active install branch members read started prompts and committed public answer output in turn and batch order. Hosted accounts without an install read only their own main conversation. Queued prompts, legacy private history, approvals and browser Drafts are excluded. No journal capability or private request context is returned.
       operationId: get_api_conversation
       tags:
         - Agent
@@ -333,7 +333,7 @@ paths:
   /api/conversations/{b}/prompt:
     post:
       summary: Queue my branch prompt
-      description: Persists before acknowledging; does not wait for the model host. Retrying the same credential-scoped key and prompt returns the same turn. Restore uses a new key. Browser history, instructions and author overrides are refused.
+      description: Persists before acknowledging; does not wait for the model host. Hosted accounts without an install admit a private main conversation using authenticated account identity. Retrying the same credential-scoped key and prompt returns the same turn. Restore uses a new key. Browser history, instructions and author overrides are refused.
       operationId: post_api_conversation_prompt
       tags:
         - Agent

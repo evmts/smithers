@@ -27,11 +27,14 @@ const (
 )
 
 type RuntimeOptions struct {
-	ContextRepository ContextRepository
-	QueueSize         int
-	Concurrency       int
-	Lease             time.Duration
-	Logger            *slog.Logger
+	// PrivateConversations enables account-owned hosted chat. Repository
+	// conversations retain their install membership and branch checks.
+	PrivateConversations bool
+	ContextRepository    ContextRepository
+	QueueSize            int
+	Concurrency          int
+	Lease                time.Duration
+	Logger               *slog.Logger
 	// Sources serves turns' reads of a mirrored main as the credential that
 	// admitted each turn; nil offers none.
 	Sources SourceReader
@@ -86,7 +89,7 @@ func NewRuntime(pool *pgxpool.Pool, host ports.ChatHost, producerBaseURL string,
 	}
 	dispatcher.logger = options.Logger
 	store.latencies = dispatcher.metrics.latencies
-	handler := &Handler{ContextRepository: options.ContextRepository, Store: store, Dispatcher: dispatcher, Sources: options.Sources, credentials: credentials, logger: options.Logger}
+	handler := &Handler{PrivateConversations: options.PrivateConversations, ContextRepository: options.ContextRepository, Store: store, Dispatcher: dispatcher, Sources: options.Sources, credentials: credentials, logger: options.Logger}
 	return &Runtime{Handler: handler, dispatcher: dispatcher, concurrency: options.Concurrency}, nil
 }
 

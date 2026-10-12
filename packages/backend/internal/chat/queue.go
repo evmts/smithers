@@ -27,7 +27,10 @@ func (s *Store) cancelTurnTx(ctx context.Context, tx pgx.Tx, turn *turnRecord, n
 // MutateQueuedTurn locks the same row Claim locks. Once Claim starts the turn,
 // edits and removal refuse; no shared output or legacy private row is mutable.
 func (s *Store) MutateQueuedTurn(ctx context.Context, scope Scope, branch, id, method, prompt string) (Cursor, error) {
-	if scope.RepositoryID <= 0 || scope.UserID <= 0 || !validIdentity(branch) || !validIdentity(id) {
+	if scope.RepositoryID < 0 || scope.UserID <= 0 || !validIdentity(branch) || !validIdentity(id) {
+		return Cursor{}, ErrInvalidRequest
+	}
+	if scope.RepositoryID == 0 && branch != accountConversationID(scope.UserID) {
 		return Cursor{}, ErrInvalidRequest
 	}
 	if method == http.MethodPatch && (strings.TrimSpace(prompt) == "" || len(prompt) > maxPayloadBytes/2) {

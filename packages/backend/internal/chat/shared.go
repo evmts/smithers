@@ -54,7 +54,10 @@ type SharedConversation struct {
 // this read. Legacy private rows are never promoted into the shared transcript.
 func (s *Store) SharedEntries(ctx context.Context, scope Scope, branch string) (SharedConversation, error) {
 	result := SharedConversation{ID: branch, Entries: []SharedTurn{}}
-	if scope.RepositoryID <= 0 || scope.UserID <= 0 || !validIdentity(branch) {
+	if scope.RepositoryID < 0 || scope.UserID <= 0 || !validIdentity(branch) {
+		return result, ErrInvalidRequest
+	}
+	if scope.RepositoryID == 0 && branch != accountConversationID(scope.UserID) {
 		return result, ErrInvalidRequest
 	}
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
@@ -62,25 +65,37 @@ func (s *Store) SharedEntries(ctx context.Context, scope Scope, branch string) (
 		return result, err
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
-	installedID, err := db.New(tx).InstallRepositoryID(ctx)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return result, ErrForbidden
+	if scope.RepositoryID == 0 {
+		var active bool
+		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND username=$2 AND NOT prohibit_login)`, scope.UserID, scope.Owner).Scan(&active)
+		if err != nil {
+			return result, err
+		}
+		if !active {
+			return result, ErrForbidden
+		}
+	} else {
+		installedID, err := db.New(tx).InstallRepositoryID(ctx)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return result, ErrForbidden
+		}
+		if err != nil {
+			return result, err
+		}
+		if installedID != scope.RepositoryID {
+			return result, ErrForbidden
+		}
+		var active bool
+		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM collaborators c JOIN users u ON u.id=c.user_id WHERE c.repository_id=$1 AND c.user_id=$2 AND c.suspended_at IS NULL AND NOT u.prohibit_login)`, scope.RepositoryID, scope.UserID).Scan(&active)
+		if err != nil {
+			return result, err
+		}
+		if !active {
+			return result, ErrForbidden
+		}
 	}
-	if err != nil {
-		return result, err
-	}
-	if installedID != scope.RepositoryID {
-		return result, ErrForbidden
-	}
-	var active bool
-	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM collaborators c JOIN users u ON u.id=c.user_id WHERE c.repository_id=$1 AND c.user_id=$2 AND c.suspended_at IS NULL AND NOT u.prohibit_login)`, scope.RepositoryID, scope.UserID).Scan(&active)
-	if err != nil {
-		return result, err
-	}
-	if !active {
-		return result, ErrForbidden
-	}
-	rows, err := tx.Query(ctx, `SELECT `+turnColumns+` FROM chat_turns WHERE repository_id=$1 AND conversation_id=$2 AND producer_generation>0 AND state NOT IN ('queued','retired') AND request_payload->>'sharedConversation'='true' ORDER BY entry_seq,id`, scope.RepositoryID, branch)
+	rows, err := tx.Query(ctx, `SELECT `+turnColumns+` FROM chat_turns WHERE repository_id=$1 AND conversation_id=$2 AND producer_generation>0 AND state NOT IN ('queued','retired')
+	 AND (($1>0 AND request_payload->>'sharedConversation'='true') OR ($1=0 AND user_id=$3 AND request_payload->>'privateConversation'='true')) ORDER BY entry_seq,id`, scope.RepositoryID, branch, scope.UserID)
 	if err != nil {
 		return result, err
 	}

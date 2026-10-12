@@ -407,7 +407,7 @@ func (s *Store) Admit(ctx context.Context, input AdmitInput) (AdmitResult, error
 	if request, ok := value.(map[string]any); ok {
 		if id, ok := request["conversationId"].(string); ok {
 			conversationID = &id
-			if input.Scope.RepositoryID > 0 {
+			if input.Scope.RepositoryID > 0 || (input.Scope.RepositoryID == 0 && request["privateConversation"] == true) {
 				state = StateQueued
 			}
 		}
@@ -513,7 +513,7 @@ func (s *Store) Claim(ctx context.Context, scope Scope, turnID string, lease tim
 	if err != nil {
 		return ProducerGrant{}, err
 	}
-	if conversationID != nil && repositoryID > 0 {
+	if conversationID != nil && (repositoryID > 0 || (repositoryID == 0 && *conversationID == accountConversationID(scope.UserID))) {
 		if err = lockTurnIdentity(ctx, tx, fmt.Sprint(repositoryID), "conversation:"+*conversationID); err != nil {
 			return ProducerGrant{}, err
 		}

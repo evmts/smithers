@@ -27,7 +27,10 @@ const (
 )
 
 type Handler struct {
-	ContextRepository ContextRepository
+	// PrivateConversations permits authenticated hosted accounts to use their
+	// own main conversation before an install or repository exists.
+	PrivateConversations bool
+	ContextRepository    ContextRepository
 	// ResolveBranch authorizes and resolves branch aliases at the install boundary.
 	ResolveBranch func(context.Context, Scope, string) (string, error)
 	Store         *Store
@@ -163,7 +166,7 @@ func (h *Handler) publicScope(w http.ResponseWriter, r *http.Request) (Scope, bo
 	}
 	// Public install routes have no /repos prefix and therefore no RepoContext.
 	// Bind their durable queue to the installed repository, never a body field.
-	if scope.RepositoryID == 0 {
+	if scope.RepositoryID == 0 && !h.PrivateConversations {
 		scope.RepositoryID, err = db.New(h.Store.pool).InstallRepositoryID(r.Context())
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			publicError(w, err)

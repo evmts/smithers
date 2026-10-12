@@ -952,7 +952,8 @@ export const createAppController = (
   const setupEntry = typeof window !== "undefined" && window.location.pathname === "/setup"
   const installSignedIn = () => store.collections.identitySessions.get("identity")?.state === "signed-in"
   if (installHost && setupEntry) void installSeam.showSetup()
-  const sharedConversation = installHost ? createSharedConversationSeam(ctx, services.live) : undefined
+  const hostedConversation = !installHost && services.designFixture !== true && services.bootstrap?.capabilities.includes("agent") === true
+  const sharedConversation = installHost || hostedConversation ? createSharedConversationSeam(ctx, installHost ? services.live : undefined) : undefined
   const runMonitorSeam = createRunMonitorSeam({ owner: () => `${ctx.accountOwner()}:${ctx.accountEpoch}`, view: id => {
     const card = store.collections.cards.get(`run:${id}`)
     if (card?.kind !== "run") return undefined
@@ -1991,9 +1992,10 @@ export const createAppController = (
     await store.dispatch({ type: "message.response.completed", actor: "smithers", turnId, ...context }).isPersisted.promise
   }
   const designSend: TurnController["send"] = (text, admission, capturedDraft) => {
-    if (sharedPrompts && parseSubmit(text, ctx.commands.all()).kind === "prompt") return sharedPrompts.submit(text, capturedDraft)
+    if (sharedPrompts && store.collections.identitySessions.get("identity")?.state === "signed-in"
+      && parseSubmit(text, ctx.commands.all()).kind === "prompt") return sharedPrompts.submit(text, capturedDraft)
     const viewer = design.viewer()
-    const turn = admission === undefined && !text.trimStart().startsWith("/") && store.session().phase === "idle"
+    const turn = design.enabled && admission === undefined && !text.trimStart().startsWith("/") && store.session().phase === "idle"
       ? (() => {
         const at = shellViewsOf(design).get(viewer)?.at ?? "main"
         // MOCK SEAM: a booted host with no agent provider (the mounted design) answers an unscripted prompt from the seed

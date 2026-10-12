@@ -36,7 +36,7 @@ func (h *Handler) Prompt(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if h.Dispatcher == nil || scope.RepositoryID <= 0 {
+	if h.Dispatcher == nil || (scope.RepositoryID <= 0 && !h.PrivateConversations) {
 		queueProblem(w, http.StatusServiceUnavailable, "conversation_unavailable")
 		return
 	}
@@ -65,9 +65,10 @@ func (h *Handler) Prompt(w http.ResponseWriter, r *http.Request) {
 	accessToken := hex.EncodeToString(accessHash[:])
 	runID, legID := "prompt-"+key, "prompt-leg-"+key
 	request, err := buildcache.CanonicalJSON(map[string]any{
-		"runId": runID, "conversationId": branch, "purpose": "conversation", "sharedConversation": true,
-		"instructions": ports.BuiltinAppInstructions,
-		"messages":     []any{map[string]any{"role": "user", "content": input.Prompt}},
+		"runId": runID, "conversationId": branch, "purpose": "conversation", "sharedConversation": scope.RepositoryID > 0,
+		"privateConversation": scope.RepositoryID == 0,
+		"instructions":        ports.BuiltinAppInstructions,
+		"messages":            []any{map[string]any{"role": "user", "content": input.Prompt}},
 	})
 	if err != nil {
 		queueError(w, err)

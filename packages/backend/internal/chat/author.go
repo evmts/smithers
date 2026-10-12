@@ -83,6 +83,18 @@ func (s *Store) RevokeInactiveAuthors(ctx context.Context) error {
 // Hold the active membership through a claim or append commit. A concurrent
 // removal/suspension cannot commit between this decision and the journal write.
 func inactiveAuthor(ctx context.Context, tx pgx.Tx, turnID string) (bool, error) {
+	var private bool
+	if err := tx.QueryRow(ctx, `SELECT repository_id=0 AND coalesce(request_payload->>'privateConversation'='true',false) FROM chat_turns WHERE id=$1`, turnID).Scan(&private); err != nil {
+		return false, err
+	}
+	if private {
+		var active int
+		err := tx.QueryRow(ctx, `SELECT 1 FROM users u JOIN chat_turns t ON t.user_id=u.id WHERE t.id=$1 AND NOT u.prohibit_login FOR SHARE OF u`, turnID).Scan(&active)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return true, nil
+		}
+		return false, err
+	}
 	repositoryID, err := db.New(tx).InstallRepositoryID(ctx)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil

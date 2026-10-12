@@ -203,6 +203,7 @@ product_job_requests,product,product migration 0005
 product_job_dispatches,product,product migration 0005
 product_job_events,product,product migration 0005
 chat_turns,product,product migration 0007
+chat_account_views,product,product migration 0163
 chat_turn_batches,product,product migration 0007
 flow_runtime_host_bindings,product,product migration 0008
 storage_sets,private,Plue private migration 000002
