@@ -704,10 +704,11 @@ test("an install without the live provider refuses /secrets and write gestures w
 })
 
 
-test("outside an install the seed stands in until real metadata serves, then never masks a failed real read", async () => {
+test("an explicit design fixture stands in until real metadata serves, then never masks a failed real read", async () => {
   let available = false
   const hits: string[] = []
   const { store, controller, signupReads } = await heldController({
+    designFixture: true,
     bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["identity", "cloud"], authFlow: "credentials", sandbox: null },
     fetchImpl: async input => { hits.push(String(input)); return available ? json(200, []) : json(404, { message: "No provider" }) }
   })

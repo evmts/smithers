@@ -217,11 +217,12 @@ test("a configured host dispatches Draft, TODO and reviewed Merge to real routes
   } finally { await controller.dispose() }
 })
 
-/* The hosted site and local dev (#3466 regression): /api/bootstrap answers, every other route is a 404. */
+/* Explicit design fixture (#3466 regression): /api/bootstrap answers, every other route is a 404. */
 const noProviderHost = async (status = 404) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const calls: { path: string; method: string }[] = []
   const controller = createAppController(store, unavailable, {
+    designFixture: true,
     bootstrap: { apiVersion: 1, host: "local", version: "design", buildSha: "0".repeat(40), capabilities: [], authFlow: "none", sandbox: null },
     fetchImpl: async (input, init) => {
       const path = new URL(String(input), "https://install.test").pathname
@@ -295,6 +296,7 @@ const unansweredHost = async () => {
   const listed = new Promise<Response>(resolve => { answer = resolve })
   const calls: { path: string; method: string; body?: unknown }[] = []
   const controller = createAppController(store, unavailable, {
+    designFixture: true,
     bootstrap: { apiVersion: 1, host: "local", version: "design", buildSha: "0".repeat(40), capabilities: [], authFlow: "none", sandbox: null },
     fetchImpl: async (input, init) => {
       const path = new URL(String(input), "https://install.test").pathname

@@ -209,6 +209,11 @@ export const useHome = (active = true): HomeAnswer | undefined => {
   const source = answer.kind !== "seed" || controller.design.enabled !== false ? answer
     : list.todos !== undefined ? { kind: "served" as const, model: homeFromTodos(repository, list.todos, session) }
     : { kind: "failed" as const, code: list.error ?? (listed === NO_TODO_LIST ? "unsupported" : "loading") }
+  // A hosted entry without a selected repository has no stack to display.
+  // Keep install failures visible; its setup owns the repository selection.
+  if (controller.bootstrap !== undefined && !controller.bootstrap.capabilities.includes("install")
+    && !controller.design.enabled && answer.kind === "seed" && source.kind === "failed"
+    && repository === "" && controller.store.session().activeRepoKey == null) return undefined
   if (source.kind === "failed" && source.code === "loading") return undefined
   const home = source.kind === "served" ? source.model : source.kind === "failed" ? homeFailureModel(repository, source.code) : seeded.model
   /* A served Home owns every shared fact, including capacity. The separate

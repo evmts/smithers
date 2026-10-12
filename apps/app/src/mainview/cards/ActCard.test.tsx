@@ -96,8 +96,9 @@ test("on an install, only the person it was opened for sees Review & merge; Merg
 test("the seeded A✓ Drop press is the person's confirmation: it drops the TODO once and the card becomes its receipt", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", admin: false, scopesPlain: null }).isPersisted.promise
-  /* A configured host with no TODO provider (/api/todos is a 404): the seed answers TODO flows. */
+  /* This confirmation journey explicitly composes the design-world fixture. */
   const controller = createAppController(store, { available: true, startTurn: async () => ({ status: "started" }), cancelTurn: async () => {}, subscribe: () => () => {} }, {
+    designFixture: true,
     bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "identity"], authFlow: "redirect", sandbox: null },
     fetchImpl: async input => new URL(String(input), "https://cloud.test").pathname.startsWith("/api/todos") ? Response.json({}, { status: 404 }) : Response.json({})
   })

@@ -11,7 +11,7 @@ const UI_DIR = fileURLToPath(new URL("../../", import.meta.url))
 
 if (process.env.SMITHERS_SKIP_SPA_BUILD !== "1") {
   console.log("[webserver] vite build")
-  const build = Bun.spawn(["pnpm", "exec", "vite", "build", "--configLoader", "runner"], {
+  const build = Bun.spawn(["pnpm", "exec", "vite", "build", "--mode", "test", "--configLoader", "runner"], {
     cwd: UI_DIR,
     stdout: "inherit",
     stderr: "inherit"

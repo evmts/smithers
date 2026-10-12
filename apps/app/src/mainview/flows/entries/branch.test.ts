@@ -14,7 +14,7 @@ const boot = async (live?: import("../../state/useTopic").LiveTopics, bootstrap?
   if (bootstrap === true) bootstrap = { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null }
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const profile = signupProfileFetch(async () => new Response("{}", { status: 404 }))
-  const controller = createAppController(store, unavailableAgent, { fetchImpl: profile.fetchImpl, ...(live ? { live } : {}), ...(bootstrap ? { bootstrap } : {}) })
+  const controller = createAppController(store, unavailableAgent, { designFixture: true, fetchImpl: profile.fetchImpl, ...(live ? { live } : {}), ...(bootstrap ? { bootstrap } : {}) })
   await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "maya", admin: false, scopesPlain: null }).isPersisted.promise
   return { store, controller }
 }
@@ -156,10 +156,10 @@ test("install live dispatcher refuses absent read providers and records Rebase t
 
 
 
-test("bootstrap and an unanswered live channel keep seeded Home branch doors available off an install", async () => {
+test("an explicit fixture and an unanswered live channel keep seeded Home branch doors available", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const profile = signupProfileFetch(async () => new Response("{}", { status: 404 }))
-  const controller = createAppController(store, unavailableAgent, { fetchImpl: profile.fetchImpl,
+  const controller = createAppController(store, unavailableAgent, { designFixture: true, fetchImpl: profile.fetchImpl,
     bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: [], authFlow: "redirect", sandbox: null },
     live: { subscribe: () => () => {}, getSnapshot: () => undefined } })
   try {
@@ -207,11 +207,11 @@ test("On an install Fork requests POST /api/branches {from, name} in the backgro
   } finally { await controller.dispose() }
 })
 
-test("non-install bootstrap keeps design terminals while installs require a known repository", async () => {
+test("explicit fixtures keep design terminals while installs require a known repository", async () => {
   for (const install of [false, true]) {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const profile = signupProfileFetch(async () => new Response("{}", { status: 404 }))
-    const controller = createAppController(store, unavailableAgent, { fetchImpl: profile.fetchImpl,
+    const controller = createAppController(store, unavailableAgent, { designFixture: true, fetchImpl: profile.fetchImpl,
       live: { subscribe: () => () => {}, getSnapshot: () => undefined },
       bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: install ? ["install"] : [], authFlow: "none", sandbox: null } })
     await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "maya", admin: false, scopesPlain: null }).isPersisted.promise

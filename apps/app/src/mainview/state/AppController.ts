@@ -748,6 +748,8 @@ export interface AppServices {
   /** The shared session host supplies admitted member-owned daemon exec sessions. */
   readonly daemonLsp?: Pick<import("./CloudLspClient").CloudLspClientOptions, "openSession" | "socketUrl"> & { readonly ready: () => boolean }
   readonly bootstrap?: AppBootstrap
+  /** Explicit design-world composition for fixture builds; a real backend never enables it by default. */
+  readonly designFixture?: boolean
   readonly repositoryApp?: string
   readonly frameHistory?: FrameHistoryPort
   readonly baseUrl?: string
@@ -942,8 +944,8 @@ export const createAppController = (
       if (kind === "settings") await presentCard("settings", "Settings")
       services.presentInstallCard?.(kind)
     },
-    // MOCK SEAM: the design seed below stands in only where no install route exists (a 404 or a non-install page), so that
-    // answer is quiet; an install that is unreachable or errors keeps its visible, retryable failure.
+    // A non-install backend has no setup route. An install that is unreachable
+    // or errors keeps its visible, retryable failure.
     quietWithoutInstall: true }))
   ctx.onDispose(installSeam.dispose)
   const installHost = services.bootstrap?.capabilities.includes("install") === true
@@ -960,7 +962,9 @@ export const createAppController = (
   ctx.onDispose(runMonitorSeam.dispose)
   const runMonitors = installHost || services.live ? runMonitorSeam.snapshots : undefined
   services.live?.registerProjection?.("home", projectHome)
-  const design = createDesignWorld({ enabled: !installHost })
+  // Missing host capabilities are not demo permission. Remove this fixture
+  // composition when the DesignWorld journey fixtures are retired.
+  const design = createDesignWorld({ enabled: !installHost && (services.designFixture === true || services.bootstrap === undefined) })
   ctx.onDispose(design.dispose)
   const gitHubSyncSeam = createGitHubSyncSeam({ ready: () => !installHost || installSignedIn(), http: installHost ? (path, init) => seamCtx.http(`${baseUrl.replace(/\/$/, "")}${path}`, init) : undefined })
   const gitHubSyncRetry = createGitHubSyncRetry(ctx, gitHubSyncSeam)
@@ -1314,8 +1318,8 @@ export const createAppController = (
       queueMicrotask(() => { void (request.actor === "smithers" ? actors.select(listRepositoryFlows) : listRepositoryFlows)().catch(error => ctx.failures.report("toast.work", error, "flows.list")) })
     }
   }
-  /* MOCK SEAM: the seed answers TODO and Draft flows until this host serves /api/todos (todoSourceProbe). */
-  const todoSource = installHost ? { known: () => "real" as const, ask: () => Promise.resolve("real" as const) } : todoSourceProbe(seamCtx, services.bootstrap !== undefined)
+  /* Only explicit journey fixtures probe for a seed fallback; real bootstraps always use the TODO provider. */
+  const todoSource = !design.enabled ? { known: () => "real" as const, ask: () => Promise.resolve("real" as const) } : todoSourceProbe(seamCtx, services.bootstrap !== undefined)
   const flowSourceBranch = async (context: SeamContext, n: number) => {
     const response = await context.http(`${baseUrl.replace(/\/$/, "")}/api/todos/${n}`, { credentials: "include" })
     if (!response.ok) return { error: "Could not open the TODO." } as const
@@ -1323,7 +1327,7 @@ export const createAppController = (
     return !model.success || model.data.n !== n || !model.data.branch
       ? { error: "Branch files are unavailable." } as const : { branch: model.data.branch.id } as const
   }
-  const proposalSource = installHost ? todoSource : todoSourceProbe(seamCtx, services.bootstrap !== undefined, "/api/proposals")
+  const proposalSource = !design.enabled ? todoSource : todoSourceProbe(seamCtx, services.bootstrap !== undefined, "/api/proposals")
   const proposalSeam = actors.pair(seamCtx, context => {
     const real = createProposalSeam(context)
     return { ...real, openProposal: async (id: string) => {

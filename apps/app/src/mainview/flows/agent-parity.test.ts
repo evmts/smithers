@@ -201,6 +201,7 @@ const boot = async (bootstrap: AppBootstrap = EVERYTHING) => {
 
   const controller = createAppController(store, unavailableAgent, {
     features: {},
+    designFixture: true,
     bootstrap,
     fetchImpl: async (input) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url

@@ -132,9 +132,9 @@ test("Setup Sign in follows the GitHub door after the setup-only identity answer
   } finally { window.history.replaceState({}, "", "/setup"); flushSync(() => root.unmount()); host.remove() }
 })
 
-test("without install capability the seeded Setup and Settings remain usable (#3455)", async () => {
+test("an explicit design fixture keeps seeded Setup and Settings usable (#3455)", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, silentAgent, { bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", authFlow: "redirect", sandbox: null, capabilities: [] }, fetchImpl: async () => new Response("", { status: 404 }) })
+  const controller = createAppController(store, silentAgent, { designFixture: true, bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", authFlow: "redirect", sandbox: null, capabilities: [] }, fetchImpl: async () => new Response("", { status: 404 }) })
   const { designInstall } = await import("./seams/DesignWorld/settings")
   const { renderSetupCard } = await import("../cards/CardRenderers")
   const { SettingsContainer } = await import("../cards/SettingsContainer")

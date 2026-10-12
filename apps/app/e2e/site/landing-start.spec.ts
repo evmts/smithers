@@ -1,4 +1,28 @@
 import { expect,test } from "@playwright/test"
+import { identityRoute } from "../playwright/identity"
+
+test("production Start with an empty cloud account never displays demo activity, including after reload", async ({ page }) => {
+  await page.route("**/api/**", route => route.fulfill({ status: 404, json: { code: "not_found", message: "Unavailable route" } }))
+  await page.route("**/api/bootstrap", route => route.fulfill({ json: {
+    apiVersion: 1, host: "cloud", version: "test", buildSha: "test",
+    capabilities: ["identity", "github", "cloud"], authFlow: "redirect", sandbox: null,
+  } }))
+  await page.route("**/api/user", identityRoute())
+  for (const path of ["repos", "orgs", "workspaces"]) await page.route(`**/api/user/${path}`, route => route.fulfill({ json: [] }))
+  for (const reload of [false, true]) {
+    if (reload) await page.reload()
+    else await page.goto("/")
+    await page.getByRole("link", { name: "Get started for free", exact: true }).click()
+    await expect(page.locator(".app-shell")).toBeVisible()
+    await expect(page.getByTestId("composer-input")).toBeAttached()
+    await expect(page.locator(".home")).toHaveCount(0)
+    await expect(page.locator(".home .stack-row")).toHaveCount(0)
+    await expect(page.locator(".home .run-row")).toHaveCount(0)
+    for (const sample of ["acme/api", "Upgrade the Stripe SDK to v17", "Retry failed webhooks with backoff", "5 merged since you looked", "Wiki refresh", "GitHub API rate limited", "2/3 machines"]) {
+      await expect(page.locator(".app-shell")).not.toContainText(sample)
+    }
+  }
+})
 
 test("Get started for free mounts the real island in place when it loads", async ({ page }) => {
   const errors: string[] = []

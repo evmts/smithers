@@ -57,7 +57,7 @@ const platform = (secrets: Secret[] = [{ name: "NPM_TOKEN", main_only: false, ho
 
 const boot = async (persisted = new Map<string, string>(), world = platform()) => {
   const store = await createAppStore({ kind: "localStorage", storage: storage(persisted) })
-  const controller = createAppController(store, unavailableAgent, { bootstrap: BOOT(), fetchImpl: world.fetchImpl })
+  const controller = createAppController(store, unavailableAgent, { designFixture: true, bootstrap: BOOT(), fetchImpl: world.fetchImpl })
   await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "alice", admin: false, scopesPlain: null }).isPersisted.promise
   await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "alice/app", org: "alice", ownerKind: "user", name: "app", head: null }] }).isPersisted.promise
   return { store, controller, world, persisted }
