@@ -6,6 +6,7 @@ import type { Card } from "../AppState"
 import { isCurrentApprovalAnswer, prepareApprovalAnswer } from "../ApprovalAnswerState"
 import { parseApprovalActionId } from "../ApprovalReference"
 import { identityProviderFor } from "../IdentityProvider"
+import { SharedConversationFailure } from "../seams/SharedConversationSeam"
 import type { ControllerContext } from "./context"
 import type { FailureController } from "./failures"
 import { latestOrdinal } from "./spokenLines"
@@ -59,7 +60,7 @@ export const createTurnController = (ctx: ControllerContext, dependencies: TurnC
         return store.dispatch({ type: "chat.sign-in.required", actor: "system", provider: identityProviderFor(ctx.services), draft: text }).isPersisted.promise
           .then(() => false, error => { ctx.failures.report("turn.sign-in", error); return false })
       }
-      void ctx.withToast("chat.unavailable", "Chat", "Chat", async () => { throw new Error("Conversation unavailable") })
+      void ctx.withToast("chat.unavailable", "Chat", "Chat", async () => { throw new SharedConversationFailure({ sentence: "Conversation unavailable" }) })
       return Promise.resolve(false)
     }
     const generation = ctx.accountEpoch

@@ -10,6 +10,8 @@ import {
 } from "@smthrs/rpc/UserFailure"
 import type { ApplicationClientError } from "../../runtime/ApplicationClient"
 import type { RepositorySignInRequired } from "../seams/SeamContext"
+import type { SharedConversationFailure } from "../seams/SharedConversationSeam"
+import type { PromptRefusal } from "./sharedPrompts"
 import { STATE_FAILURE_COPY, type StateTaggedFailure } from "../StateFailureCopy"
 import type { SweepRequestTooLargeError } from "./ConversationSweep"
 
@@ -21,6 +23,8 @@ export type AppTaggedFailure =
   | ApplicationClientError
   | RepositorySignInRequired
   | SweepRequestTooLargeError
+  | SharedConversationFailure
+  | PromptRefusal
 
 const REFUSAL_ACTIONS: ReadonlySet<string> = new Set<UserFailureAction>(["retry", "sign-in"])
 
@@ -44,6 +48,8 @@ export const APP_FAILURE_COPY: UserFailureRegistry<AppTaggedFailure> = {
   CodeIntelUnavailable: { fault: "infra", sentence: "This host cannot run code intelligence yet.", actions: [] },
   ApplicationClientError: clientRefusalCopy,
   RepositorySignInRequired: { fault: "user", sentence: "Sign in to continue.", actions: ["sign-in"] },
+  SharedConversationFailure: failure => ({ fault: "infra", sentence: failure.sentence, actions: ["retry"] }),
+  PromptRefusal: { fault: "infra", sentence: "Prompt unavailable", actions: ["retry"] },
   SweepRequestTooLargeError: {
     fault: "user",
     sentence: "This conversation is too large to summarize. Nothing was cleared.",

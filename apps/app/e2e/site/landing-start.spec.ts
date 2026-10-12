@@ -2,6 +2,65 @@ import { expect,test } from "@playwright/test"
 import { identityRoute } from "../playwright/identity"
 import { fillComposer } from "../playwright/composer"
 
+async function hostedAccount(page: import("@playwright/test").Page) {
+  await page.route("**/api/**", route => route.fulfill({ status: 404, json: { code: "not_found" } }))
+  await page.route("**/api/bootstrap", route => route.fulfill({ json: {
+    apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["identity", "agent", "cloud"], authFlow: "redirect", sandbox: null,
+  } }))
+  await page.route("**/api/user", identityRoute())
+  for (const path of ["repos", "orgs", "workspaces"]) await page.route(`**/api/user/${path}`, route => route.fulfill({ json: [] }))
+}
+
+test("production hosted Chat keeps confirmed output when private view loading fails", async ({ page }) => {
+  await hostedAccount(page)
+  let available = false
+  await page.route("**/api/conversations/main/view-state", route => available ? route.fulfill({ json: {} }) : route.abort())
+  await page.route("**/api/conversations/main", route => route.fulfill({ json: { id: "main", entries: [{
+    id: "retained-turn", author: 1, authorLogin: "codeplanesmithers", runId: "retained-run", prompt: "Retained prompt", state: "completed",
+    frames: [{ runId: "retained-run", type: "delta", kind: "text", text: "CONFIRMED RESPONSE" }, { runId: "retained-run", type: "done" }],
+  }] } }))
+  await page.goto("/")
+  await page.getByRole("link", { name: "Get started for free", exact: true }).click()
+  await expect(page.locator('[data-shared-turn="retained-turn"]')).toContainText("CONFIRMED RESPONSE")
+  await expect(page.locator('[data-failure="ConversationUnavailable"]')).toContainText("View unavailable")
+  available = true
+  await page.reload()
+  await page.getByRole("link", { name: "Get started for free", exact: true }).click()
+  await expect(page.locator('[data-shared-turn="retained-turn"]')).toContainText("CONFIRMED RESPONSE")
+  await expect(page.locator('[data-failure="ConversationUnavailable"]')).toHaveCount(0)
+})
+
+test("production hosted Chat edits and removes the server-owned prompt queue", async ({ page }) => {
+  await hostedAccount(page)
+  let queued: Array<{ id: string; prompt: string }> = []
+  const mutations: Array<{ method: string; prompt?: string }> = []
+  await page.route("**/api/conversations/main", route => route.fulfill({ json: { id: "main", entries: [{
+    id: "running-turn", author: 1, authorLogin: "codeplanesmithers", runId: "running-run", prompt: "Running prompt", state: "running", frames: [],
+  }] } }))
+  await page.route("**/api/conversations/main/view-state", route => route.fulfill({ json: { queue: queued } }))
+  await page.route("**/api/conversations/main/prompt", route => {
+    queued = [{ id: "queued-turn", prompt: route.request().postDataJSON().prompt }]
+    return route.fulfill({ status: 202, json: { turnId: "queued-turn", terminal: false } })
+  })
+  await page.route("**/api/conversations/main/turns/queued-turn", route => {
+    const method = route.request().method(), prompt = method === "PATCH" ? route.request().postDataJSON().prompt : undefined
+    mutations.push({ method, ...(prompt === undefined ? {} : { prompt }) })
+    queued = method === "DELETE" ? [] : [{ id: "queued-turn", prompt }]
+    return route.fulfill({ json: { status: "ok" } })
+  })
+  await page.goto("/")
+  await page.getByRole("link", { name: "Get started for free", exact: true }).click()
+  await fillComposer(page, "Queued prompt")
+  await page.locator('[data-flow="chat.queue"]').click()
+  await page.getByRole("button", { name: "Edit queued prompt: Queued prompt", exact: true }).click()
+  await expect(page.getByTestId("composer-input")).toHaveValue("Queued prompt")
+  await fillComposer(page, "Edited prompt")
+  await page.getByTestId("composer-send").click()
+  await page.getByRole("button", { name: "Remove queued prompt: Edited prompt", exact: true }).click()
+  await expect(page.getByRole("region", { name: "Queued prompts" })).toHaveCount(0)
+  expect(mutations).toEqual([{ method: "PATCH", prompt: "Edited prompt" }, { method: "DELETE" }])
+})
+
 test("production hosted Chat receives a real conversation response without install or owner keys", async ({ page }) => {
   const submitted: unknown[] = []
   await page.route("**/api/**", route => route.fulfill({ status: 404, json: { code: "not_found" } }))

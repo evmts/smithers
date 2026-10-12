@@ -407,6 +407,12 @@ type ChangesetMember struct {
 	UpdatedAt        time.Time `json:"updated_at"`
 }
 
+type ChatAccountView struct {
+	UserID         int64           `json:"user_id"`
+	ConversationID string          `json:"conversation_id"`
+	ViewState      json.RawMessage `json:"view_state"`
+}
+
 type ChatTurn struct {
 	ID                     string             `json:"id"`
 	RepositoryID           int64              `json:"repository_id"`

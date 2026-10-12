@@ -1,4 +1,4 @@
-import { TOAST_SUPERSEDED } from "./failures"
+import { TOAST_CANCELLED, TOAST_SUPERSEDED } from "./failures"
 import { randomUuid } from "../../runtime/RandomUuid"
 import type { SharedPrompt } from "../AppState"
 import type { ControllerContext } from "./context"
@@ -8,7 +8,7 @@ import { Data } from "effect"
 
 const Admission = z.object({ turnId: z.string().min(1), terminal: z.boolean() })
 /** A prompt the conversation refused, stopped or failed; `sentence` is already a person's words. */
-class PromptRefusal extends Data.TaggedError("PromptRefusal")<{ readonly sentence: string }> {
+export class PromptRefusal extends Data.TaggedError("PromptRefusal")<{ readonly sentence: string }> {
   override get message() { return this.sentence }
 }
 
@@ -65,7 +65,11 @@ export function createSharedPrompts(ctx: ControllerContext, source: SharedConver
           const turn = conversation.entries.find(entry => entry.id === row.turnId)
           if (ctx.store.session().sharedPrompts?.find(item => item.id === row.id)?.state === "requested") continue
           if (turn && "state" in turn && ["completed", "failed", "cancelled", "uncertain"].includes(turn.state)) {
-            if (turn.state !== "completed") throw new PromptRefusal({ sentence: turn.state === "cancelled" ? "Prompt stopped" : "Prompt failed" })
+            if (turn.state === "cancelled") {
+              await save({ ...row, state: "cancelled", error: undefined })
+              return TOAST_CANCELLED
+            }
+            if (turn.state !== "completed") throw new PromptRefusal({ sentence: "Prompt failed" })
             await save({ ...row, state: "completed" })
             return
           }

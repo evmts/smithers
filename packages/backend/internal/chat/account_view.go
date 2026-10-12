@@ -15,7 +15,11 @@ func (s *Store) accountViewState(ctx context.Context, scope Scope, branch string
 	if scope.RepositoryID != 0 || scope.UserID <= 0 || branch != accountConversationID(scope.UserID) {
 		return nil, ErrInvalidRequest
 	}
-	tx, err := s.pool.Begin(ctx)
+	options := pgx.TxOptions{}
+	if value == nil {
+		options = pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}
+	}
+	tx, err := s.pool.BeginTx(ctx, options)
 	if err != nil {
 		return nil, err
 	}
@@ -93,6 +97,26 @@ func (s *Store) accountViewState(ctx context.Context, scope Scope, branch string
 		if _, err = tx.Exec(ctx, `UPDATE chat_account_views SET view_state=$3 WHERE user_id=$1 AND conversation_id=$2`, scope.UserID, branch, stored); err != nil {
 			return nil, err
 		}
+	}
+	queue, err := s.privatePromptQueue(ctx, tx, scope.RepositoryID, scope.UserID, branch)
+	if err != nil {
+		return nil, err
+	}
+	var view map[string]json.RawMessage
+	if err = json.Unmarshal(stored, &view); err != nil {
+		return nil, ErrCorrupt
+	}
+	delete(view, "queue")
+	delete(view, "instructions")
+	if len(queue) > 0 {
+		view["queue"], err = json.Marshal(queue)
+		if err != nil {
+			return nil, err
+		}
+	}
+	stored, err = json.Marshal(view)
+	if err != nil {
+		return nil, err
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return nil, err

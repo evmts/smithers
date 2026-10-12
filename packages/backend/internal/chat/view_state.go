@@ -45,38 +45,8 @@ func (s *Store) readMemberView(ctx context.Context, userID int64, conversation s
 	if err != nil {
 		return nil, err
 	}
-	rows, err := tx.Query(ctx, `SELECT `+turnColumns+` FROM chat_turns WHERE repository_id=$1 AND user_id=$2 AND conversation_id=$3 AND state='queued' AND NOT terminal ORDER BY created_at,id`, repositoryID, userID, conversation)
+	queue, err := s.privatePromptQueue(ctx, tx, repositoryID, userID, conversation)
 	if err != nil {
-		return nil, err
-	}
-	type queuedPrompt struct {
-		ID     string `json:"id"`
-		RunID  string `json:"runId"`
-		LegID  string `json:"legId"`
-		Prompt string `json:"prompt"`
-		Cursor Cursor `json:"cursor"`
-	}
-	queue := []queuedPrompt{}
-	for rows.Next() {
-		turn, scanErr := scanTurn(rows)
-		if scanErr != nil {
-			rows.Close()
-			return nil, scanErr
-		}
-		_, cursor, checkErr := checkHead(turn)
-		if checkErr != nil {
-			rows.Close()
-			return nil, checkErr
-		}
-		_, prompt, metadataErr := conversationMetadata(turn)
-		if metadataErr != nil {
-			rows.Close()
-			return nil, metadataErr
-		}
-		queue = append(queue, queuedPrompt{ID: turn.ID, RunID: turn.RunID, LegID: turn.LegID, Prompt: prompt, Cursor: cursor})
-	}
-	rows.Close()
-	if err = rows.Err(); err != nil {
 		return nil, err
 	}
 	var view map[string]json.RawMessage

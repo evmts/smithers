@@ -65,3 +65,18 @@ test("hosted chat admits a real prompt without install capability or demo replie
   expect(store.session().theme).not.toBe("dark")
   expect(JSON.stringify([...store.collections.messages.values()])).not.toContain("Changed Maya")
 })
+
+test("unavailable conversation admission preserves the draft and states availability honestly", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const app = controller(store, { available: false, startTurn: async () => ({ status: "error", message: "offline" }), cancelTurn: async () => {}, subscribe: () => () => {} }, {
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: [], authFlow: "redirect", sandbox: null },
+    toastAutoDismissMs: 60_000,
+    fetchImpl: async () => new Response("{}", { status: 503 })
+  })
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "unavailable", login: null, admin: false, scopesPlain: null }).isPersisted.promise
+  app.changeDraft("Keep this prompt")
+  expect(await app.send("Keep this prompt")).toBe(false)
+  await waitFor(() => store.collections.toasts.get("toast-chat.unavailable")?.status === "failed")
+  expect(store.session().draft).toBe("Keep this prompt")
+  expect(store.collections.toasts.get("toast-chat.unavailable")?.detail).toBe("Conversation unavailable")
+})

@@ -29,6 +29,8 @@ import {
 } from "../StorageRecoveryContract"
 import { SweepRequestTooLargeError } from "./ConversationSweep"
 import { presentAppFailure } from "./AppFailure"
+import { SharedConversationFailure } from "../seams/SharedConversationSeam"
+import { PromptRefusal } from "./sharedPrompts"
 
 const every = (): ReadonlyArray<Error & { readonly _tag: string }> => [
   new ConfirmationUnavailable(),
@@ -70,6 +72,16 @@ const every = (): ReadonlyArray<Error & { readonly _tag: string }> => [
 const noReport = (error: unknown): void => { throw new Error(`reported a tagged failure: ${String(error)}`) }
 
 describe("presentAppFailure", () => {
+  test("conversation availability and prompt refusals use registered infrastructure copy", () => {
+    const unavailable = presentAppFailure(new SharedConversationFailure({ sentence: "Conversation unavailable" }), noReport)
+    expect(unavailable.tag).toBe("SharedConversationFailure")
+    expect(unavailable.fault).toBe("infra")
+    expect(unavailable.sentence).toBe("Conversation unavailable")
+    const prompt = presentAppFailure(new PromptRefusal({ sentence: "Private server diagnostic" }), noReport)
+    expect(prompt.tag).toBe("PromptRefusal")
+    expect(prompt.sentence).toBe("Prompt unavailable")
+    expect(prompt.detail).toContain("Private server diagnostic")
+  })
   test("every tagged app failure presents a registered sentence, never its raw message", () => {
     for (const error of every()) {
       const failure = presentAppFailure(error, noReport)

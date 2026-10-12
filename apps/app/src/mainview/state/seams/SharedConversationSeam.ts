@@ -121,15 +121,20 @@ export function createSharedConversationSeam(ctx: ControllerContext, live?: Live
       // so that restoration cannot unmount an already-open Context disclosure.
       const initial = snapshot.view === undefined
       if (!initial && valid(revision)) publish({ ...snapshot, conversation, error: undefined })
-      const viewResponse = await ctx.boundedFetch(`${ctx.baseUrl}/api/conversations/${encodeURIComponent(at)}/view-state`, { credentials: "same-origin" })
-      if (viewResponse.ok) {
+      try {
+        const viewResponse = await ctx.boundedFetch(`${ctx.baseUrl}/api/conversations/${encodeURIComponent(at)}/view-state`, { credentials: "same-origin" })
+        if (!viewResponse.ok) throw new SharedConversationFailure({ sentence: "View unavailable" })
         const view = ConversationViewSchema.parse(await viewResponse.json())
         if (valid(revision) && viewing === viewRevision) { publish({ ...snapshot, conversation, view, queue: view.queue, error: undefined }); applyInstructions(view, revision) }
         else if (initial) {
           await saving
           if (valid(revision)) publish({ ...snapshot, conversation, error: undefined })
         }
-      } else if (initial && valid(revision)) publish({ ...snapshot, conversation, error: undefined })
+      } catch {
+        // A private view refusal cannot discard the conversation already read.
+        // Generation checks still clear all output when the account or branch changes.
+        if (valid(revision)) publish({ ...snapshot, conversation, error: "View unavailable" })
+      }
     } catch { if (valid(revision)) publish({ error: "Conversation unavailable" }) }
     finally { reading = false; if (again) { again = false; void read() } }
   }

@@ -31,6 +31,69 @@ const ben = { id: "turn-ben", author: 1, authorLogin: "ben", runId: "run-ben", p
   { runId: "run-ben", type: "delta", kind: "text", text: "One changed test" }, { runId: "run-ben", type: "done", reason: "stop" }
 ] }
 
+for (const failure of ["transport", "http", "invalid"] as const) test(`a ${failure} view failure keeps confirmed replies and recovers the private view`, async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  let failing = true
+  const controller = createAppController(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent"], authFlow: "redirect", sandbox: null },
+    fetchImpl: async input => {
+      if (String(input).endsWith("/view-state")) {
+        if (!failing) return Response.json({ scroll_anchor: "turn-ben:answer" })
+        if (failure === "transport") throw new TypeError("Failed to fetch")
+        return failure === "http" ? new Response("{}", { status: 503 }) : Response.json({ queue: "invalid" })
+      }
+      return Response.json({ id: "main", entries: [ben] })
+    }
+  })
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host)
+  try {
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+    flushSync(() => root.render(<ControllerTestProvider controller={controller}><App /></ControllerTestProvider>))
+    await waitFor(() => controller.sharedConversation!.get().error !== undefined)
+    expect(controller.sharedConversation!.get().error).toBe("View unavailable")
+    await waitFor(() => host.textContent?.includes("One changed test") === true)
+    const turn = host.querySelector('[data-shared-turn="turn-ben"]')
+    expect(turn).not.toBeNull()
+    failing = false
+    await controller.sharedConversation!.read()
+    expect(controller.sharedConversation!.get().error).toBeUndefined()
+    expect(controller.sharedConversation!.get().view?.scroll_anchor).toBe("turn-ben:answer")
+    expect(host.querySelector('[data-shared-turn="turn-ben"]')).toBe(turn)
+    failing = true
+    await controller.sharedConversation!.read()
+    expect(controller.sharedConversation!.get().view?.scroll_anchor).toBe("turn-ben:answer")
+    expect(controller.sharedConversation!.get().error).toBe("View unavailable")
+    expect(host.querySelector('[data-shared-turn="turn-ben"]')).toBe(turn)
+  } finally { flushSync(() => root.unmount()); host.remove(); await controller.dispose() }
+})
+
+test("a confirmed stopped prompt settles its toast as cancelled", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  let stopped = false
+  const controller = createAppController(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent"], authFlow: "redirect", sandbox: null },
+    toastDebounceMs: 1,
+    toastAutoDismissMs: 60_000,
+    fetchImpl: async input => {
+      const path = String(input)
+      if (path.endsWith("/prompt")) return Response.json({ turnId: ben.id, terminal: false }, { status: 202 })
+      if (path.endsWith("/stop")) { stopped = true; return Response.json({ status: "ok" }) }
+      if (path.endsWith("/view-state")) return Response.json({})
+      return Response.json({ id: "main", entries: [{ ...ben, state: stopped ? "cancelled" : "running", frames: [] }] })
+    }
+  })
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+  await controller.send(ben.prompt)
+  await waitFor(() => store.session().sharedPrompts?.[0]?.state === "accepted")
+  const key = `toast-prompt-${store.session().sharedPrompts![0]!.id}`
+  await waitFor(() => store.collections.toasts.get(key)?.status === "running")
+  controller.stop()
+  await waitFor(() => store.session().sharedPrompts?.[0]?.state === "cancelled")
+  await waitFor(() => store.collections.toasts.get(key)?.status === "cancelled")
+  expect(store.collections.toasts.get(key)?.detail).toBe("Cancelled")
+  expect([...store.collections.toasts.values()].some(row => row.detail.includes("unexpected error"))).toBe(false)
+})
+
 test("install shell reads shared authors and clears stale output across branch and account changes", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const requests: string[] = []
