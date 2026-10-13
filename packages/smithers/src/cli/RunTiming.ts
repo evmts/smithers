@@ -142,6 +142,8 @@ export interface ModelCall {
   readonly waitMs?: number
   readonly thinkingMs?: number
   readonly writingMs?: number
+  /** Time between the first output reaching the wire and reaching the harness: `stages` less `timing`. */
+  readonly hostMs?: number
   readonly stages?: Stages
   readonly timing?: Timing
   readonly requestBytes?: number
@@ -302,6 +304,10 @@ export interface Report {
   readonly frames: ReadonlyArray<Frame>
   /** Flow calls the cells made, and the part of `time.cellsMs` spent inside them. */
   readonly flowCalls: { readonly calls: number; readonly durationMs: number }
+  /** Over the calls that carry wire timing: the time before each request was sent. */
+  readonly beforeSent?: { readonly calls: number; readonly durationMs: number }
+  /** Over the calls that carry both records: the time in the host after the first output reached the wire. */
+  readonly host?: { readonly calls: number; readonly durationMs: number }
   /** Settled calls whose reply was rejected or whose frame left the workspace unchanged. */
   readonly unmoved: { readonly calls: number; readonly durationMs: number; readonly spent: number }
   readonly compactions: ReadonlyArray<Compaction>
@@ -529,7 +535,13 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
   const loose = new Map<string, { calls: number; spent: number; costUsd: number }>()
   const ledger = { entries: 0, spent: 0, costUsd: 0 }
   const ledgered = new Set<string>()
-  let batch: { spent: number; costUsd: number; purpose: string | undefined; readings: Array<Reading> } | undefined
+  let batch: {
+    spent: number
+    costUsd: number
+    purpose: string | undefined
+    parts: ReadonlyArray<Record<string, unknown>>
+    readings: Array<Reading>
+  } | undefined
   /** Readings journaled since the last ledger entry closed, which a later entry may pay for. */
   let unpaid: Array<Reading> = []
   let status: string | undefined
@@ -574,8 +586,13 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
     if (batch === undefined) return
     const entry = batch
     batch = undefined
-    if (entry.readings.length === 0) leave(entry.purpose ?? "unattributed", entry.spent, entry.costUsd)
-    else pay(entry.readings, entry.costUsd)
+    if (entry.readings.length === 0) return leave(entry.purpose ?? "unattributed", entry.spent, entry.costUsd)
+    if (entry.parts.length === 0) return pay(entry.readings, entry.costUsd)
+    // An entry that names its parts says what each purpose cost; nothing is split.
+    for (const part of entry.parts) {
+      const paid = entry.readings.filter((reading) => reading.purpose === part.purpose && !reading.priced)
+      for (const reading of paid) reading.costUsd += (count(part.costUsd) ?? 0) / paid.length
+    }
   }
   /** Ends a call no model-settled record closed, at the event that ended it. */
   const abandon = (scope: Scope, at: number): Call | undefined => {
@@ -702,7 +719,13 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
         // An entry is journaled before the readings it paid for. One journaled
         // after them is theirs when it spent exactly what they did.
         if (unpaid.length > 0 && tokensOf(unpaid) === spent) pay(unpaid, costUsd)
-        else batch = { spent, costUsd, purpose, readings: [] }
+        else {batch = {
+            spent,
+            costUsd,
+            purpose,
+            parts: Array.isArray(usage.parts) ? usage.parts.map(asRecord) : [],
+            readings: []
+          }}
         unpaid = []
         continue
       }
@@ -1044,6 +1067,16 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
         : []
     )
   )
+  const hostOf = (call: Call): number | undefined =>
+    call.stages?.firstOutputMs === undefined || call.timing?.firstOutputMs === undefined
+      ? undefined
+      : call.stages.firstOutputMs - call.timing.firstOutputMs
+  const totalOf = (durations: ReadonlyArray<number>) => ({
+    calls: durations.length,
+    durationMs: durations.reduce((sum, duration) => sum + duration, 0)
+  })
+  const sentAfter = calls.flatMap((call) => call.timing?.sentMs ?? [])
+  const inHost = calls.flatMap((call) => hostOf(call) ?? [])
   const fired = readings.flatMap((reading): Array<Fired> =>
     reading.fired.length === 0 ? [] : [{
       ...(reading.frame === undefined ? {} : { frame: reading.frame }),
@@ -1082,6 +1115,7 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
       const end = call.timing?.completedMs ?? call.durationMs
       const thinkingMs = span(stream?.firstThinkingMs, stream?.firstOutputMs ?? end)
       const writingMs = span(stream?.firstOutputMs, stream?.lastOutputMs ?? end)
+      const hostMs = hostOf(call)
       return {
         index: index + 1,
         frame: call.frame,
@@ -1094,6 +1128,7 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
         ...(first === undefined ? {} : { waitMs: first }),
         ...(thinkingMs === undefined ? {} : { thinkingMs }),
         ...(writingMs === undefined ? {} : { writingMs }),
+        ...(hostMs === undefined ? {} : { hostMs }),
         ...(call.stages === undefined ? {} : { stages: call.stages }),
         ...(call.timing === undefined ? {} : { timing: call.timing }),
         ...(call.requestBytes === undefined ? {} : { requestBytes: call.requestBytes }),
@@ -1113,6 +1148,8 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
     }),
     frames,
     flowCalls: { calls: [...cellCalls.values()].reduce((sum, calls) => sum + calls, 0), durationMs: overall.calls },
+    ...(sentAfter.length === 0 ? {} : { beforeSent: totalOf(sentAfter) }),
+    ...(inHost.length === 0 ? {} : { host: totalOf(inHost) }),
     unmoved: {
       calls: unmoved.length,
       durationMs: unmoved.reduce((sum, call) => sum + call.durationMs, 0),
@@ -1245,13 +1282,13 @@ export const render = (report: Report): string => {
   const staged = report.calls.filter((call) => call.timing !== undefined)
   table<ModelCall>("Wait by stage (seconds from the call's start)", staged, [
     ["#", (call) => String(call.index)],
-    ["prepared", (call) => stamp(call.timing?.preparedMs)],
     ["signed", (call) => stamp(call.timing?.signedMs)],
     ["sent", (call) => stamp(call.timing?.sentMs)],
     ["headers", (call) => stamp(call.timing?.headersMs)],
     ["1st event", (call) => stamp(call.timing?.firstEventMs)],
     ["1st thinking", (call) => stamp(call.timing?.firstThinkingMs)],
-    ["1st output", (call) => stamp(call.timing?.firstOutputMs)]
+    ["1st output", (call) => stamp(call.timing?.firstOutputMs)],
+    ["host", (call) => stamp(call.hostMs)]
   ])
   table<ModelCall>("After the first output (seconds from the call's start)", staged, [
     ["#", (call) => String(call.index)],
@@ -1318,6 +1355,18 @@ export const render = (report: Report): string => {
     ])
   }
   if (report.cacheShare !== undefined) facts.push(["Cache share", `${percent(report.cacheShare)} % of input`])
+  if (report.beforeSent !== undefined) {
+    facts.push([
+      "Before sent",
+      `${stamp(report.beforeSent.durationMs)} s over ${some(report.beforeSent.calls, "call")}`
+    ])
+  }
+  if (report.host !== undefined) {
+    facts.push([
+      "In host",
+      `${stamp(report.host.durationMs)} s over ${some(report.host.calls, "call")}, wire first output to harness`
+    ])
+  }
   if (report.flowCalls.calls > 0) {
     facts.push([
       "Flow calls",

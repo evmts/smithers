@@ -493,6 +493,25 @@ describe("RunTiming.fold", () => {
     expect(report.total.costUsd).toBeCloseTo(report.ledger!.costUsd, 12)
   })
 
+  it("prices each purpose from the parts a ledger entry names", () => {
+    const j = journal()
+    j.run("running", 0)
+    j.spend(90, "boundary-usage/a", 600, 0.0009, {
+      purpose: "judge",
+      frame: 0,
+      parts: [{ purpose: "judge", spent: 500, costUsd: 0.0002 }, { purpose: "marks", spent: 100, costUsd: 0.0007 }]
+    })
+    j.agent("supervisor-settled", 100, { frame: 0, latencyMs: 50, usage: jev(400, 100) })
+    j.agent("decision-settled", 100, { frame: 0, classifier: "compaction/marks", latencyMs: 50, usage: jev(90, 10) })
+    j.run("completed", 200)
+    const report = RunTiming.fold(j.events, "run-1")
+    expect(report.spend).toMatchObject([
+      { purpose: "judge", calls: 1, spent: 500, costUsd: 0.0002 },
+      { purpose: "marks", calls: 1, spent: 100, costUsd: 0.0007 }
+    ])
+    expect(report.derived.map((entry) => entry.field)).not.toContain("reading cost")
+  })
+
   it("files ledger spend no record explains as unattributed, so the purposes still sum to the ledger", () => {
     const j = journal()
     j.run("running", 0)
@@ -645,11 +664,23 @@ describe("RunTiming.fold", () => {
     j.settled(10_000, 10_000, [1_000, 0, 400, 300], 0.01, {
       tries: 1,
       stages: { firstEventMs: 7_000, firstThinkingMs: 7_200, firstOutputMs: 8_000, lastOutputMs: 9_900 },
-      timing: { attempts: 1, headersMs: 2_100, firstEventMs: 2_150, firstThinkingMs: 2_300, firstOutputMs: 7_400 }
+      timing: {
+        attempts: 1,
+        sentMs: 9,
+        headersMs: 2_100,
+        firstEventMs: 2_150,
+        firstThinkingMs: 2_300,
+        firstOutputMs: 7_400
+      }
     })
     j.run("completed", 10_000)
-    const [call] = RunTiming.fold(j.events, "run-1").calls
+    const report = RunTiming.fold(j.events, "run-1")
+    // The request left after 9 ms; its first output reached the wire at 7.4 s and the harness at 8.0 s.
+    expect(report.beforeSent).toEqual({ calls: 1, durationMs: 9 })
+    expect(report.host).toEqual({ calls: 1, durationMs: 600 })
+    const [call] = report.calls
     expect(call).toMatchObject({
+      hostMs: 600,
       waitMs: 7_200,
       thinkingMs: 800,
       writingMs: 1_900,
@@ -1200,6 +1231,7 @@ describe("RunTiming.render", () => {
     j.requested(0, 0)
     j.settled(10_000, 10_000, [1_000, 800, 400, 300], 0.01, {
       servedTier: "priority",
+      stages: { firstEventMs: 2_600, firstThinkingMs: 2_800, firstOutputMs: 7_900, lastOutputMs: 9_900 },
       timing: {
         attempts: 2,
         requestBytes: 12_345,
@@ -1224,7 +1256,7 @@ describe("RunTiming.render", () => {
     const calls = table(text, "Model calls (seconds)")
     expect(calls.header).toEqual(["#", "frame", "ask", "purpose", "start", "total", "wait", "think", "write"])
     expect(calls.rows).toEqual([
-      ["1", "0", "1", "frame", "0.0", "10.0", "2.3", "5.1", "2.4"],
+      ["1", "0", "1", "frame", "0.0", "10.0", "2.8", "5.1", "2.0"],
       ["2", "1", "1", "frame", "10.0", "2.0", "1.0", "—", "0.9"]
     ])
     expect(table(text, "Model call tokens").rows[0]).toEqual([
@@ -1240,13 +1272,15 @@ describe("RunTiming.render", () => {
     ])
     // Only the call that carries timing; milliseconds matter before the first token.
     expect(table(text, "Wait by stage (seconds from the call's start)")).toEqual({
-      header: ["#", "prepared", "signed", "sent", "headers", "1st event", "1st thinking", "1st output"],
-      rows: [["1", "0.003", "0.005", "0.009", "2.100", "2.150", "2.300", "7.400"]]
+      header: ["#", "signed", "sent", "headers", "1st event", "1st thinking", "1st output", "host"],
+      rows: [["1", "0.005", "0.009", "2.100", "2.150", "2.300", "7.400", "0.500"]]
     })
     expect(table(text, "Stream as the harness saw it (seconds from the call's start)")).toEqual({
       header: ["#", "1st event", "1st thinking", "1st output", "last output"],
-      rows: [["2", "0.900", "—", "1.000", "1.900"]]
+      rows: [["1", "2.600", "2.800", "7.900", "9.900"], ["2", "0.900", "—", "1.000", "1.900"]]
     })
+    expect(text).toMatch(/^Before sent +0\.009 s over 1 call$/m)
+    expect(text).toMatch(/^In host +0\.500 s over 1 call, wire first output to harness$/m)
     expect(table(text, "After the first output (seconds from the call's start)")).toEqual({
       header: ["#", "last output", "completed", "closed", "tries", "request bytes", "tier"],
       rows: [["1", "9.800", "9.900", "9.950", "2", "12,345", "priority"]]

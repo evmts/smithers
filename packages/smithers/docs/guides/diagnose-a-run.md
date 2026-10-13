@@ -182,9 +182,9 @@ Model calls (seconds)
 2      1    1    frame   25.8   27.3   7.0    2.4   17.7
 
 Wait by stage (seconds from the call's start)
-#  prepared  signed   sent  headers  1st event  1st thinking  1st output
-1     0.004   0.006  0.011    2.840      2.905         7.310      12.480
-2     0.003   0.005  0.012    2.610      2.660         7.020       9.440
+#  signed   sent  headers  1st event  1st thinking  1st output   host
+1   0.006  0.011    2.840      2.905         7.310      12.480  0.212
+2   0.005  0.012    2.610      2.660         7.020       9.440  0.180
 …
 ```
 
@@ -202,7 +202,9 @@ Wait by stage (seconds from the call's start)
   event that ended it. `wait`, `think`, and `write` appear for calls whose
   settle record timed the stream. `Stream as the harness saw it` lists the
   harness's own readings (`stages` in the JSON) and `Wait by stage` the wire's
-  (`timing`); the gap between the two is time the host spent. `Model call tokens`
+  (`timing`). Its `host` column is the time between the first output reaching
+  the wire and reaching the harness; the `In host` and `Before sent` lines
+  total that and the time before each request was sent. `Model call tokens`
   lists each call's input, cached, uncached, thinking, and written tokens, its
   tries, and whether its frame changed the workspace.
 - `Frames` splits each frame the way `Time` splits the run.
