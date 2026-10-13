@@ -1,6 +1,8 @@
 import { describedFailure, FailureNotice } from "./FailureNotice"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Fragment, useSyncExternalStore, type ReactNode } from "react"
+import { activityCode, activityLabel, elapsed, scriptFence, turnSegments } from "./TurnTrace"
+import { Wrench } from "lucide-react"
 import { Markdown, MessageScrollerItem } from "@smthrs/ui"
 import { PlaceholderAvatarUrl } from "@smthrs/rpc/CardPrimitives"
 import { CopyMessageButton, TranscriptMessage } from "./TranscriptMessage"
@@ -17,6 +19,21 @@ import { useController } from "./ControllerContext"
 import type { Card } from "./state/AppState"
 import type { SharedConversationSeam } from "./state/seams/SharedConversationSeam"
 import { TranscriptOrder } from "./state/TranscriptOrder"
+
+/* A live turn re-renders its line each second: an external clock
+ * subscription, never a lifecycle effect. */
+const tick = (onTick: () => void) => { const timer = setInterval(onTick, 1000); return () => clearInterval(timer) }
+const idle = () => () => {}
+function TurnElapsed({ state, startedAt, finishedAt }: { state: string; startedAt?: number; finishedAt?: number }) {
+  const working = state === "accepted" || state === "running"
+  const seconds = () => startedAt === undefined || !working ? 0 : Math.floor((Date.now() - startedAt) / 1000)
+  const live = useSyncExternalStore(working ? tick : idle, seconds, seconds)
+  if (working) return startedAt === undefined ? null : <p className="turn-elapsed" data-turn-elapsed="working">Working for {elapsed(live * 1000)}</p>
+  const label = state === "completed" ? "Worked" : state === "cancelled" ? "Stopped" : state === "failed" ? "Failed" : "Interrupted"
+  const duration = startedAt === undefined || finishedAt === undefined ? undefined : elapsed(finishedAt - startedAt)
+  if (state === "completed" && duration === undefined) return null
+  return <p className="turn-elapsed" data-turn-elapsed={state === "completed" ? "worked" : state}>{label}{duration === undefined ? "" : ` ${state === "completed" ? "for" : "after"} ${duration}`}</p>
+}
 
 /** Output only: no tool-call frame can invoke a browser command. */
 export function SharedConversation({ source, localCardIds, localEntries = [] }: { source: SharedConversationSeam; localCardIds?: ReadonlySet<string>; localEntries?: readonly { id: string; content: ReactNode }[] }) {
@@ -56,19 +73,30 @@ export function SharedConversation({ source, localCardIds, localEntries = [] }: 
         { tag: "run.inspect", label: "Inspect", command_input: { id: turn.runId } }
       ] : [])
       const answers = turn.state === "completed" && text.trim() ? answerActions((name, input) => controller.commands.submit({ name, payload: (input ?? {}) as Record<string, unknown>, actor: "user", ...(name === "wiki.save" ? { display: flowArgs("wiki.save", input as { name?: string; text?: string }) } : {}) }), text) : undefined
-      const answer = { kind: "agent" as const, id: turn.runId, agent: "smithers" as const, for_member: person, avatar_url: PlaceholderAvatarUrl, color_index: color }
+      // The sender is Smithers; the reply quote, not the name, attributes the prompt (M-34).
+      const answer = { kind: "agent" as const, id: turn.runId, agent: "smithers" as const, avatar_url: PlaceholderAvatarUrl, color_index: color }
+      const reply = <blockquote className="turn-reply" data-reply-to={`${turn.id}:prompt`}><span className="turn-reply-author">{person.name}</span><span className="turn-reply-text">{turn.prompt}</span></blockquote>
+      const renderCard = (id: string) => {
+        const card = sharedCards.get(id)
+        if (!card || localCardIds?.has(id) || renderedCards.has(id)) return null
+        renderedCards.add(id)
+        return <MessageScrollerItem style={{ contentVisibility: "visible" }} key={`card:${id}`} messageId={id}><CardView card={card} worldDocuments={[]} maximized={snapshot.view?.card_view?.[id] === "maximized"} {...controllerCardActions(controller, card)} /></MessageScrollerItem>
+      }
+      const trace = turn.subject ? null : turnSegments(frames).map((segment, index) => segment.kind === "text" ? <Markdown key={`text:${index}`} content={segment.text} />
+        : segment.kind === "reasoning" ? <p key={`reasoning:${index}`} className="turn-reasoning" data-turn-reasoning="">{segment.text}</p>
+        : segment.kind === "card" ? renderCard(segment.id)
+        : (() => {
+          const code = activityCode(segment)
+          const label = <><Wrench size={14} aria-hidden="true" />{activityLabel(segment)}</>
+          return code === undefined ? <p key={`activity:${segment.link}`} className="turn-activity" data-turn-activity={segment.link}>{label}</p>
+            : <details key={`activity:${segment.link}`} className="turn-activity" data-turn-activity={segment.link}><summary>{label}</summary><Markdown content={scriptFence(code)} />{segment.rejected ? <p>{segment.rejected}</p> : null}</details>
+        })())
       return <div key={turn.id} data-shared-turn={turn.id} data-state={turn.state}>
         {turn.subject ? null : <>
           <MessageScrollerItem style={{ contentVisibility: "visible" }} messageId={`${turn.id}:prompt`}><EntryRow kind="prompt" author={{ kind: "person", ...person, color_index: color }} title="" tone="quiet" card={<div data-composer-prompt={sessions[0]?.requests?.find(row => row.turnId === turn.id)?.id ?? turn.id}><Markdown content={turn.prompt} /></div>} onAction={() => {}} /></MessageScrollerItem>
-          <MessageScrollerItem style={{ contentVisibility: "visible" }} messageId={`${turn.id}:answer`}><EntryRow kind="answer" author={answer} title="" tone="quiet" action={inspect.actions[0]} contextActions={turn.context ? contextActions(turn.context, (tag, input) => controller.runCommand(tag, JSON.stringify(input)), contextOpenAction) : undefined} context={turn.context ? { count: turn.context.length, items: turn.context } : undefined} card={<><Markdown content={text} />{answers ? <div className="message-answer-actions">{answers.actions.map(action => <DiffAction key={action.tag} action={action} onAction={answers.onAction} />)}</div> : null}<span className="message-actions"><CopyMessageButton text={text} onCopy={value => controller.runCommandForResult("chat.copy-message", value)} /></span>{failure?.type === "done" && failure.error ? <FailureNotice role="status" failure={describedFailure("SharedTurnFailed", { fault: "infra", sentence: "Smithers could not finish that. Not your fault.", actions: [] }, failure.error)} /> : null}</>} onAction={inspect.onAction} /></MessageScrollerItem>
+          <MessageScrollerItem style={{ contentVisibility: "visible" }} messageId={`${turn.id}:answer`}><EntryRow kind="answer" author={answer} title="" tone="quiet" action={inspect.actions[0]} contextActions={turn.context ? contextActions(turn.context, (tag, input) => controller.runCommand(tag, JSON.stringify(input)), contextOpenAction) : undefined} context={turn.context ? { count: turn.context.length, items: turn.context } : undefined} card={<>{reply}<TurnElapsed state={turn.state} startedAt={turn.startedAt} finishedAt={turn.finishedAt} />{trace}{answers ? <div className="message-answer-actions">{answers.actions.map(action => <DiffAction key={action.tag} action={action} onAction={answers.onAction} />)}</div> : null}<span className="message-actions"><CopyMessageButton text={text} onCopy={value => controller.runCommandForResult("chat.copy-message", value)} /></span>{failure?.type === "done" && failure.error ? <FailureNotice role="status" failure={describedFailure("SharedTurnFailed", { fault: "infra", sentence: "Smithers could not finish that. Not your fault.", actions: [] }, failure.error)} /> : null}</>} onAction={inspect.onAction} /></MessageScrollerItem>
         </>}
-        {frames.flatMap((frame) => {
-          if (frame.type !== "card") return []
-          const card = sharedCards.get(frame.card.id) ?? frame.card
-          if (localCardIds?.has(card.id) || renderedCards.has(card.id)) return []
-          renderedCards.add(card.id)
-          return [<MessageScrollerItem style={{ contentVisibility: "visible" }} key={card.id} messageId={card.id}><CardView card={card} worldDocuments={[]} maximized={snapshot.view?.card_view?.[card.id] === "maximized"} {...controllerCardActions(controller, card)} /></MessageScrollerItem>]
-        })}
+        {turn.subject ? frames.flatMap(frame => frame.type === "card" ? [renderCard(frame.card.id)] : []) : null}
       </div>
     })}
   </div>

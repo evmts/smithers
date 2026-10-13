@@ -2002,7 +2002,8 @@
 
 .avatar { --size: 22px; position: relative; display: inline-flex; flex: none; width: var(--size); height: var(--size); align-items: center; justify-content: center; border-radius: 50%; background: var(--who); box-shadow: 0 0 0 2px var(--surface); color: var(--avatar-ink); font-size: calc(var(--size) * 0.46); font-weight: 600; line-height: 1; letter-spacing: 0.01em; user-select: none; }
 .avatar[data-agent], .avatar[data-kind="outside"], .avatar[data-kind="system"] { border-radius: calc(var(--size) * 0.3); }
-.avatar[data-smithers]:not([data-for]) { color: var(--surface); }
+/* The Smithers mark, whoever asked: authority stays in the actor, not the colour. */
+.avatar[data-smithers] { background: var(--g-accent); color: var(--surface); }
 .avatar[data-kind="outside"], .avatar[data-kind="github"] { background: var(--surface-2); color: var(--text-muted); box-shadow: inset 0 0 0 1px var(--border-strong); }
 .avatar img { position: absolute; inset: 2px; width: calc(100% - 4px); height: calc(100% - 4px); object-fit: cover; border-radius: inherit; z-index: 1; }
 .avatar-badge { position: absolute; z-index: 2; right: -4px; bottom: -3px; display: inline-flex; width: calc(var(--size) * 0.52); height: calc(var(--size) * 0.52); min-width: 11px; min-height: 11px; align-items: center; justify-content: center; border-radius: 3px; background: var(--ink-700); box-shadow: 0 0 0 1.5px var(--surface); color: var(--paper-0); }

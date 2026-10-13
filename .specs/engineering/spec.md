@@ -1346,8 +1346,11 @@ When the tab is hidden, a Needs you, In review or Failed toast for that member (
 | `via` ssh, terminal, cli | "Ben via SSH", "Ben's terminal", "Ben via CLI" |
 | The coding agent | "Coding agent, for Ben" (its own avatar; TODO when ambiguous) |
 | A reviewer agent | "Reviewer, for Ben" (its own avatar and review/run id) |
+| The app agent's chat answer | "Smithers" (the logo accent avatar) with a reply quote of Ben's prompt; `for_member` and the turn author stay recorded (#3822) |
 | System | "Smithers" |
 | A non-member GitHub user | "@login" with the GitHub mark |
+
+Chat progress (#3822) measures admission to the immutable terminal journal receipt. Live turns show **Working for Ns**, successful turns **Worked for Ns**, and stopped or failed turns their actual outcome. Uncertain turns have no guessed end time. Thinking and authored code or command arguments are requester data. Chat opts in with `X-Smithers-Chat-Trace: 1` and `conversation-trace:<branch>`; the baseline response and topic retain their existing shape for model context and older clients. Progress topics use separate cache keys per repository, member and format, with authorization checked before joining. Message-only code steps add no activity row.
 
 ### 14.6b Copy rules
 

@@ -771,3 +771,14 @@
 .context .context-chip { display: inline-flex; align-items: center; gap: 5px; background: transparent; }
 .context button.context-chip { cursor: pointer; }
 .context button:disabled { cursor: default; opacity: .5; }
+
+/* Shared turns: a reply quote names the prompt; working time, reasoning and
+ * code-mode activity read quieter than the answer they surround. */
+.turn-reply { display: flex; gap: var(--sp-2); margin: 0 0 4px; padding: 2px var(--sp-2); border-left: 2px solid var(--g-accent); color: var(--text-muted); font-size: var(--fs-small); }
+.turn-reply-author { flex: none; color: var(--text); font-weight: 600; }
+.turn-reply-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.turn-elapsed, .turn-activity { margin: 0 0 4px; color: var(--text-muted); font-size: var(--fs-small); }
+.turn-activity summary { cursor: pointer; }
+.turn-activity svg { display: inline; vertical-align: -2px; margin-right: 6px; }
+.turn-activity summary:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }
+.turn-reasoning { margin: 0 0 4px; color: var(--text-muted); overflow-wrap: anywhere; white-space: pre-wrap; }

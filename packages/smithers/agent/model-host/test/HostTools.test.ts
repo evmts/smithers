@@ -414,7 +414,15 @@ describe("host-owned turns run their tool calls on the host", () => {
     }])
     expect(journal.frames.map((frame) => frame.type)).toEqual(["call.started", "card", "call.settled", "delta", "done"])
     for (const frame of journal.frames) expect(AgentTurnFrameSchema.safeParse(frame).success).toBe(true)
-    expect(journal.frames[0]).toEqual({ runId: "run", type: "call.started", link: 0, ordinal: 0, name: "file" })
+    expect(journal.frames[0]).toEqual({
+      runId: "run",
+      type: "call.started",
+      link: 0,
+      ordinal: 0,
+      name: "file",
+      description: "Open and co-edit a file",
+      arguments: "JOURNEY.md"
+    })
     expect(journal.frames[1]).toMatchObject({
       runId: "run",
       type: "card",
@@ -2006,7 +2014,15 @@ describe("the host-owned app agent answers \"how do I\" from the bundled docs (C
     expect(toolOutputs(provider)).toEqual([read])
     expect(journal.frames.map((frame) => frame.type)).toEqual(["call.started", "call.settled", "delta", "done"])
     for (const frame of journal.frames) expect(AgentTurnFrameSchema.safeParse(frame).success).toBe(true)
-    expect(journal.frames[0]).toEqual({ runId: "run", type: "call.started", link: 0, ordinal: 0, name: "docs" })
+    expect(journal.frames[0]).toEqual({
+      runId: "run",
+      type: "call.started",
+      link: 0,
+      ordinal: 0,
+      name: "docs",
+      description: "Read the docs in the app",
+      arguments: JSON.stringify({ mode: "read", page: "quickstart" })
+    })
     expect(journal.frames[1]).toEqual({
       runId: "run",
       type: "call.settled",

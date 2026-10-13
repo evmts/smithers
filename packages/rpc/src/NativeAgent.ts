@@ -283,7 +283,10 @@ export const AgentTurnFrameSchema = z.discriminatedUnion("type", [
     type: z.literal("call.started"),
     link: z.number().int().nonnegative(),
     ordinal: z.number().int().nonnegative(),
-    name: z.string()
+    name: z.string(),
+    /** The invocation the host actually received; requester-only in shared chat. */
+    arguments: z.string().optional(),
+    description: z.string().optional()
   }),
   z.object({
     runId: z.string(),

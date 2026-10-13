@@ -20,7 +20,9 @@ test("shared cards retain their first position, latest record, and one owner acr
   const controller = { store, runCommand: () => {}, runCommandForResult: async () => undefined } as unknown as AppController
   const conversation = SharedConversationSchema.parse({ id: "main", entries: [
     { id: "first", author: 1, authorLogin: "maya", runId: "run-1", prompt: "first", state: "completed", frames: [
+      { type: "delta", runId: "run-1", kind: "text", text: "Before the card" },
       { type: "card", runId: "run-1", card: card("page", "Before") },
+      { type: "delta", runId: "run-1", kind: "text", text: "After the card" },
       { type: "card", runId: "foreign-run", card: card("foreign", "Foreign") }
     ] },
     { id: "second", author: 1, authorLogin: "maya", runId: "run-2", prompt: "second", state: "completed", frames: [
@@ -34,7 +36,9 @@ test("shared cards retain their first position, latest record, and one owner acr
     const html = render()
     expect(html.match(/data-testid="card-page"/g)).toHaveLength(1)
     expect(html).toContain("After")
-    expect(html).not.toContain("Before")
+    expect(html).not.toContain('>Before<')
+    expect(html.indexOf("Before the card")).toBeLessThan(html.indexOf('data-testid="card-page"'))
+    expect(html.indexOf("After the card")).toBeGreaterThan(html.indexOf('data-testid="card-page"'))
     expect(html).not.toContain("Foreign")
     expect(html.indexOf('data-testid="card-page"')).toBeLessThan(html.indexOf('data-testid="card-other"'))
     const local = render(new Set(["page"]))

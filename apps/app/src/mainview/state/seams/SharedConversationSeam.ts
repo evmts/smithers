@@ -18,7 +18,8 @@ const SharedTurnSchema = z.object({
   origin: z.literal("smithers").optional(),
   entry_sequences: z.record(z.string(), z.number().int().positive().safe()).optional(), summary: z.string().optional(), summary_rev: z.number().int().nonnegative().optional(), sequence: z.number().int().positive().optional(), id: z.string(), title: z.string().optional(), tone: ToneSchema.optional(), author: z.number().int().positive(), authorLogin: z.string().min(1), runId: z.string(), prompt: z.string(),
   state: z.enum(["accepted", "running", "completed", "failed", "cancelled", "uncertain"]),
-  frames: z.array(AgentTurnFrameSchema), context: z.array(ContextItemSchema).optional(), preflight: ContextPreflightResultSchema.optional()
+  frames: z.array(AgentTurnFrameSchema), context: z.array(ContextItemSchema).optional(), preflight: ContextPreflightResultSchema.optional(),
+  startedAt: z.number().int().positive().safe().optional(), finishedAt: z.number().int().positive().safe().optional()
 }).strict()
 // The journal projection carries adapter drafts, not persisted browser messages.
 // Validate its trusted identity before mapping it through the shared message decoder.
@@ -73,6 +74,7 @@ export interface ConversationSnapshot { readonly view?: ConversationView; readon
 export function createSharedConversationSeam(ctx: ControllerContext, live?: LiveTopics) {
   let snapshot: ConversationSnapshot = {}, generation = 0, disposed = false
   let key = "", branch = "main", stopLive: (() => void) | undefined
+  let stopTrace: (() => void) | undefined
   let stopView: (() => void) | undefined
   let reading = false, again = false, viewRevision = 0
   let saving = Promise.resolve()
@@ -114,7 +116,7 @@ export function createSharedConversationSeam(ctx: ControllerContext, live?: Live
     reading = true
     const revision = generation, at = branch, viewing = viewRevision
     try {
-      const response = await ctx.boundedFetch(`${ctx.baseUrl}/api/conversations/${encodeURIComponent(at)}`, { credentials: "same-origin" })
+      const response = await ctx.boundedFetch(`${ctx.baseUrl}/api/conversations/${encodeURIComponent(at)}`, { credentials: "same-origin", headers: { "X-Smithers-Chat-Trace": "1" } })
       if (!response.ok) throw new SharedConversationFailure({ sentence: "Conversation unavailable" })
       const conversation = SharedConversationSchema.parse(await response.json())
       // The first view restores the transcript; publish its entries with it
@@ -194,12 +196,21 @@ export function createSharedConversationSeam(ctx: ControllerContext, live?: Live
     if (next === key) return
     if (scrollTimer !== undefined) clearTimeout(scrollTimer)
     scrollTimer = undefined
-    key = next; branch = nextBranch; ++generation; ++viewRevision; stopLive?.(); stopView?.(); stopLive = undefined; stopView = undefined; publish({})
+    key = next; branch = nextBranch; ++generation; ++viewRevision; stopLive?.(); stopTrace?.(); stopView?.(); stopLive = undefined; stopTrace = undefined; stopView = undefined; publish({})
     if (!key) return
     // The HTTP response and authorized topic use the same SharedEntries projection.
     // Topic invalidations trigger a fresh bounded read, including reconnects.
     stopLive = live?.subscribe(`conversation:${branch}`, () => {
       const topic = live.getSnapshot(`conversation:${branch}`)
+      if (topic?.error === "unsupported") return
+      if (topic?.error) { ++generation; publish({ error: "Conversation unavailable" }); return }
+      void read()
+    })
+    // Progress changes the trace snapshot even when the public answer has no
+    // new text. Old servers reject this optional topic; the baseline stays live.
+    stopTrace = live?.subscribe(`conversation-trace:${branch}`, () => {
+      const topic = live.getSnapshot(`conversation-trace:${branch}`)
+      if (topic?.error === "unsupported") return
       if (topic?.error) { ++generation; publish({ error: "Conversation unavailable" }); return }
       void read()
     })
@@ -210,7 +221,7 @@ export function createSharedConversationSeam(ctx: ControllerContext, live?: Live
   const sessions = ctx.store.collections.sessions.subscribeChanges(change)
   const identities = ctx.store.collections.identitySessions.subscribeChanges(change)
   const stopAccount = ctx.onAccountChange(change)
-  const dispose = () => { if (typeof document !== "undefined") document.removeEventListener("visibilitychange", visibilityChanged); if (leaseTimer !== undefined) clearTimeout(leaseTimer); if (scrollTimer !== undefined) clearTimeout(scrollTimer); disposed = true; ++generation; stopLive?.(); stopView?.(); sessions.unsubscribe(); identities.unsubscribe(); stopAccount(); listeners.clear() }
+  const dispose = () => { if (typeof document !== "undefined") document.removeEventListener("visibilitychange", visibilityChanged); if (leaseTimer !== undefined) clearTimeout(leaseTimer); if (scrollTimer !== undefined) clearTimeout(scrollTimer); disposed = true; ++generation; stopLive?.(); stopTrace?.(); stopView?.(); sessions.unsubscribe(); identities.unsubscribe(); stopAccount(); listeners.clear() }
   ctx.onDispose(dispose)
   change()
   return { get: () => snapshot, subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } }, read, saveView, serializeView, setTimelineVisible, rememberScroll, dispose }

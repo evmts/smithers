@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
@@ -40,6 +41,8 @@ type SharedTurn struct {
 	Frames          []json.RawMessage       `json:"frames"`
 	Context         *[]json.RawMessage      `json:"context,omitempty"`
 	Preflight       *SharedContextPreflight `json:"preflight,omitempty"`
+	StartedAt       int64                   `json:"startedAt,omitempty"`
+	FinishedAt      int64                   `json:"finishedAt,omitempty"`
 	externalActor   map[string]any
 	externalAt      int64
 	externalOrdinal int
@@ -52,8 +55,14 @@ type SharedConversation struct {
 // SharedEntries rereads active install membership and the committed journal in
 // one snapshot. Branch access is resolved by the HTTP/live composition before
 // this read. Legacy private rows are never promoted into the shared transcript.
-func (s *Store) SharedEntries(ctx context.Context, scope Scope, branch string) (SharedConversation, error) {
+func (s *Store) SharedEntries(ctx context.Context, scope Scope, branch string, trace ...bool) (SharedConversation, error) {
+	if scope.RepositoryID == 0 && branch == "main" {
+		branch = accountConversationID(scope.UserID)
+	}
 	result := SharedConversation{ID: branch, Entries: []SharedTurn{}}
+	// The baseline also feeds model context and older clients. Only the chat
+	// viewer opts into progress; membership still determines whose trace it reads.
+	withTrace := len(trace) > 0 && trace[0]
 	if scope.RepositoryID < 0 || scope.UserID <= 0 || !validIdentity(branch) {
 		return result, ErrInvalidRequest
 	}
@@ -181,7 +190,7 @@ func (s *Store) SharedEntries(ctx context.Context, scope Scope, branch string) (
 					}
 					entry.Context = preflight.context
 					entry.Preflight = preflight.result
-					if sharedFrame(frame) {
+					if sharedFrame(frame, withTrace && turn.UserID == scope.UserID) {
 						entry.Frames = append(entry.Frames, frame)
 						var card struct {
 							Type string `json:"type"`
@@ -201,6 +210,15 @@ func (s *Store) SharedEntries(ctx context.Context, scope Scope, branch string) (
 				break
 			}
 			cursor = page.Next
+		}
+		if withTrace && !externalTurn(turn) {
+			var terminalAt *time.Time
+			if turn.Terminal {
+				if err := tx.QueryRow(ctx, `SELECT max(created_at) FROM chat_turn_batches WHERE turn_id=$1`, turn.ID).Scan(&terminalAt); err != nil {
+					return result, err
+				}
+			}
+			entry.StartedAt, entry.FinishedAt = turnTiming(turn, terminalAt)
 		}
 		var subjectBytes []byte
 		if err := tx.QueryRow(ctx, `SELECT entry_subject FROM chat_turns WHERE id=$1`, turn.ID).Scan(&subjectBytes); err != nil {
@@ -230,10 +248,30 @@ func (s *Store) SharedEntries(ctx context.Context, scope Scope, branch string) (
 	return result, nil
 }
 
+// turnTiming reads a turn's elapsed work from its admission and the receipt of
+// its last journal batch. A terminal turn's last batch is sealed, so a later
+// metadata update (summary, subject) never extends a finished duration.
+func turnTiming(turn turnRecord, terminalAt *time.Time) (startedAt, finishedAt int64) {
+	if turn.AcceptedAtMS == nil {
+		return 0, 0
+	}
+	startedAt = *turn.AcceptedAtMS
+	// A lost producer's last receipt cannot establish when its work ended.
+	if turn.State == StateUncertain {
+		return startedAt, 0
+	}
+	if turn.Terminal && terminalAt != nil && terminalAt.UnixMilli() >= startedAt {
+		finishedAt = terminalAt.UnixMilli()
+	}
+	return startedAt, finishedAt
+}
+
 // Only visible answer output crosses the shared audience. Tool arguments,
 // reasoning, preflight internals and private card kinds remain outside it.
+// The requester alone also reads their own turn's reasoning and code-mode
+// activity: authored scripts, call names and rejected gates.
 // A docs card holds only the install's bundled product docs.
-func sharedFrame(raw json.RawMessage) bool {
+func sharedFrame(raw json.RawMessage, requester bool) bool {
 	var frame struct {
 		Type string `json:"type"`
 		Kind string `json:"kind"`
@@ -246,7 +284,9 @@ func sharedFrame(raw json.RawMessage) bool {
 	}
 	switch frame.Type {
 	case "delta":
-		return frame.Kind == "text"
+		return frame.Kind == "text" || requester && frame.Kind == "reasoning"
+	case "link.authored", "call.started", "call.settled", "gate.rejected":
+		return requester
 	case "done", "error":
 		return true
 	case "card":
@@ -267,7 +307,7 @@ func (h *Handler) Conversation(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	result, err := h.Store.SharedEntries(r.Context(), scope, branch)
+	result, err := h.Store.SharedEntries(r.Context(), scope, branch, r.Header.Get("X-Smithers-Chat-Trace") == "1")
 	if err != nil {
 		if errors.Is(err, ErrForbidden) {
 			queueError(w, err)

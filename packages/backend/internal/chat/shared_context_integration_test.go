@@ -87,6 +87,61 @@ func TestSharedConversationRetainsSelectedContext(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, response.StatusCode)
 }
 
+func TestSharedConversationRequesterTraceAndFrozenTiming(t *testing.T) {
+	f := newContextFixture(t)
+	grant := f.admit(t, "trace-privacy", "Read the retry tests", true, true, false)
+	ctx := t.Context()
+	frames := []json.RawMessage{
+		json.RawMessage(`{"runId":"trace-privacy","type":"delta","kind":"reasoning","text":"requester-only thinking"}`),
+		json.RawMessage(`{"runId":"trace-privacy","type":"call.started","link":0,"ordinal":0,"name":"file","arguments":"requester-only invocation","description":"Read files"}`),
+		frame("trace-privacy", "The tests pass"), done("trace-privacy", "stop"),
+	}
+	_, err := f.handler.Store.Commit(ctx, CommitInput{TurnID: grant.TurnID, Generation: grant.Generation, Token: grant.Token, Expected: grant.Cursor, Frames: frames})
+	require.NoError(t, err)
+	read := func(scope Scope) SharedTurn {
+		body, err := f.handler.Store.SharedEntries(ctx, scope, "main", true)
+		require.NoError(t, err)
+		require.Len(t, body.Entries, 1)
+		return body.Entries[0]
+	}
+	first := read(f.scope)
+	require.Greater(t, first.StartedAt, int64(0))
+	require.GreaterOrEqual(t, first.FinishedAt, first.StartedAt)
+	require.Len(t, first.Frames, 4)
+	legacy, err := f.handler.Store.SharedEntries(ctx, f.scope, "main")
+	require.NoError(t, err)
+	require.Len(t, legacy.Entries[0].Frames, 2)
+	require.Zero(t, legacy.Entries[0].StartedAt)
+	require.Zero(t, legacy.Entries[0].FinishedAt)
+	request, err := http.NewRequest(http.MethodGet, f.server.URL+"/api/conversations/main", nil)
+	require.NoError(t, err)
+	request.Header.Set("X-Smithers-Chat-Trace", "1")
+	response, err := f.server.Client().Do(request)
+	require.NoError(t, err)
+	var current SharedConversation
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&current))
+	response.Body.Close()
+	require.Len(t, current.Entries[0].Frames, 4)
+	require.Equal(t, first.FinishedAt, current.Entries[0].FinishedAt)
+	// A later summary edit must not change the immutable terminal receipt time.
+	_, err = f.handler.Store.pool.Exec(ctx, `UPDATE chat_turns SET summary='Later summary',updated_at=now()+interval '1 hour' WHERE id=$1`, grant.TurnID)
+	require.NoError(t, err)
+	second := read(f.scope)
+	require.Equal(t, first.StartedAt, second.StartedAt)
+	require.Equal(t, first.FinishedAt, second.FinishedAt)
+	peerID, err := seed.CreateUser(ctx, f.handler.Store.pool, "trace-peer")
+	require.NoError(t, err)
+	_, err = f.handler.Store.pool.Exec(ctx, `INSERT INTO collaborators(repository_id,user_id,permission) VALUES($1,$2,'write')`, f.scope.RepositoryID, peerID)
+	require.NoError(t, err)
+	peer := read(Scope{RepositoryID: f.scope.RepositoryID, UserID: peerID, Owner: "trace-peer"})
+	require.Len(t, peer.Frames, 2)
+	encoded, err := json.Marshal(peer)
+	require.NoError(t, err)
+	require.Contains(t, string(encoded), "The tests pass")
+	require.NotContains(t, string(encoded), "requester-only thinking")
+	require.NotContains(t, string(encoded), "requester-only invocation")
+}
+
 func TestSharedConversationAssemblesPreflightAcrossReplayPages(t *testing.T) {
 	f := newContextFixture(t)
 	grant := f.admit(t, "paged", "Read the catalog", true, true, false)

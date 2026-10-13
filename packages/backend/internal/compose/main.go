@@ -2230,7 +2230,18 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 
 		if chatService != nil {
 			resolveBranch := conversationBranchResolver(workspaceService)
-			topics.conversation = func(ctx context.Context, member int64, branch string) (json.RawMessage, error) {
+			conversation := func(ctx context.Context, member int64, branch string, trace bool) (json.RawMessage, error) {
+				if trace && chatService.runtime.Handler.PrivateConversations {
+					user, err := queries.GetUserByID(ctx, member)
+					if err != nil {
+						return nil, err
+					}
+					entries, err := chatService.runtime.Handler.Store.SharedEntries(ctx, chat.Scope{UserID: member, Owner: user.Username}, branch, true)
+					if err != nil {
+						return nil, err
+					}
+					return json.Marshal(entries)
+				}
 				repository, _, err := installRepository(ctx, queries)
 				if err != nil {
 					return nil, err
@@ -2240,11 +2251,17 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 				if err != nil {
 					return nil, err
 				}
-				entries, err := chatService.runtime.Handler.Store.SharedEntries(ctx, scope, canonical)
+				entries, err := chatService.runtime.Handler.Store.SharedEntries(ctx, scope, canonical, trace)
 				if err != nil {
 					return nil, err
 				}
 				return json.Marshal(entries)
+			}
+			topics.conversation = func(ctx context.Context, member int64, branch string) (json.RawMessage, error) {
+				return conversation(ctx, member, branch, false)
+			}
+			topics.conversationTrace = func(ctx context.Context, member int64, branch string) (json.RawMessage, error) {
+				return conversation(ctx, member, branch, true)
 			}
 			topics.viewState = conversationLiveViewState(queries, chatService.runtime.Handler.Store, workspaceService)
 		}

@@ -189,7 +189,12 @@ test("install shell reads shared authors and clears stale output across branch a
     await store.dispatch({ type: "message.appended", actor: "system", text: "OTHER BRANCH DIAGNOSTIC", diagnostic: { login: "ben", branch: "feature" } }).isPersisted.promise
     flushSync(() => root.render(<ControllerTestProvider controller={controller}><App /></ControllerTestProvider>))
     await waitFor(() => host.querySelector("[data-shared-turn]") !== null)
-    expect(host.textContent).toContain("Smithers for ben")
+    const answer = host.querySelector('[data-shared-turn="turn-ben"] article[data-kind="answer"]')!
+    expect(answer.querySelector(".author .avatar")?.getAttribute("aria-label")).toBe("Smithers")
+    expect(answer.querySelector(".author")?.textContent).toBe("SSmithers")
+    expect(answer.querySelector('.avatar[data-smithers]')?.hasAttribute("data-for")).toBe(false)
+    expect(answer.querySelector('[data-reply-to="turn-ben:prompt"]')?.textContent).toBe("benList changed tests")
+    expect(host.textContent).not.toContain("Smithers for")
     expect(host.textContent).toContain("One changed test")
     expect(host.textContent).not.toContain("PRIVATE LEGACY HISTORY")
     expect(host.textContent).toContain("OWN DIAGNOSTIC")
@@ -738,3 +743,69 @@ test("served read-only messages retain their durable cursor through the shared s
   expect(SharedConversationSchema.parse({ id: "main", entries: [entry] }).entries[0]).toMatchObject({ origin: "external", sequence: 9, read_only: true })
   expect(SharedConversationSchema.safeParse({ id: "main", entries: [{ ...entry, sequence: 0 }] }).success).toBe(false)
 })
+
+test("a shared turn ticks while working, freezes on completion, and keeps its trace order across a reload", async () => {
+  const startedAt = Date.now() - 41_000
+  const frames = [
+    { runId: "run-ben", type: "delta", kind: "reasoning", text: "Look at the tests" },
+    { runId: "run-ben", type: "delta", kind: "text", text: "Checking." },
+    { runId: "run-ben", type: "link.authored", link: 0, scriptDigest: "d0", script: "await commands({ argv: ['ls'] })" },
+    { runId: "run-ben", type: "call.started", link: 0, ordinal: 0, name: "commands" },
+    { runId: "run-ben", type: "call.settled", link: 0, ordinal: 0, name: "commands", verdict: "run" },
+    { runId: "run-ben", type: "link.authored", link: 1, scriptDigest: "d1", script: "return done({ message: 'One changed test' })" },
+    { runId: "run-ben", type: "delta", kind: "text", text: "One changed test" }
+  ]
+  let turn: Record<string, unknown> = { ...ben, state: "running", startedAt, frames }
+  const mount = async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const controller = createAppController(store, silentAgent, {
+      bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null },
+      fetchImpl: async input => String(input) === "/api/conversations/main" ? Response.json({ id: "main", entries: [turn] }) : String(input).endsWith("/view-state") ? Response.json({}) : new Response("{}", { status: 404 })
+    })
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+    const host = document.createElement("div"); document.body.append(host); const root = createRoot(host)
+    flushSync(() => root.render(<ControllerTestProvider controller={controller}><App /></ControllerTestProvider>))
+    await waitFor(() => host.querySelector("[data-turn-elapsed]") !== null)
+    return { controller, host, unmount: async () => { flushSync(() => root.unmount()); host.remove(); await controller.dispose() } }
+  }
+  const elapsedText = (host: HTMLElement) => host.querySelector("[data-turn-elapsed]")?.textContent
+  const first = await mount()
+  try {
+    expect(elapsedText(first.host)).toMatch(/^Working for 4[12]s$/)
+    const before = elapsedText(first.host)
+    await waitFor(() => elapsedText(first.host) !== before, 2_500)
+    expect(elapsedText(first.host)).toMatch(/^Working for 4[2-4]s$/)
+    const answer = first.host.querySelector('[data-shared-turn="turn-ben"] article[data-kind="answer"]')!
+    const text = answer.textContent ?? ""
+    const order = ["Look at the tests", "Checking.", "Ran commands", "One changed test"].map(part => text.indexOf(part))
+    expect(order.every((at, index) => at >= 0 && (index === 0 || at > order[index - 1]!))).toBe(true)
+    expect(answer.querySelector("[data-turn-reasoning]")?.textContent).toBe("Look at the tests")
+    // The message-only step has no row; the command step expands to its authored code.
+    expect(answer.querySelectorAll("[data-turn-activity]")).toHaveLength(1)
+    const row = answer.querySelector('details[data-turn-activity="0"]') as HTMLDetailsElement
+    expect(row.querySelector("summary")?.textContent).toBe("Ran commands")
+    expect(row.textContent).toContain("await commands({ argv: ['ls'] })")
+    turn = { ...ben, state: "completed", startedAt, finishedAt: startedAt + 47_000, frames: [...frames, { runId: "run-ben", type: "done", reason: "stop" }] }
+    await first.controller.sharedConversation!.read()
+    await waitFor(() => elapsedText(first.host) === "Worked for 47s")
+    await new Promise(resolve => setTimeout(resolve, 1_100))
+    expect(elapsedText(first.host)).toBe("Worked for 47s")
+  } finally { await first.unmount() }
+  const reloaded = await mount()
+  try { expect(elapsedText(reloaded.host)).toBe("Worked for 47s") } finally { await reloaded.unmount() }
+  turn = { ...ben, state: "failed", startedAt, finishedAt: startedAt + 9_000, frames: [{ runId: "run-ben", type: "done", error: "provider down" }] }
+  const failed = await mount()
+  try {
+    expect(elapsedText(failed.host)).toBe("Failed after 9s")
+    expect(failed.host.textContent).toContain("Smithers could not finish that.")
+    expect(failed.host.querySelector("[data-turn-activity], [data-turn-reasoning]")).toBeNull()
+  } finally { await failed.unmount() }
+  turn = { ...ben, state: "cancelled", startedAt, finishedAt: startedAt + 12_000, frames: [{ runId: "run-ben", type: "done", reason: "cancelled" }] }
+  const stopped = await mount()
+  try {
+    expect(elapsedText(stopped.host)).toBe("Stopped after 12s")
+    await new Promise(resolve => setTimeout(resolve, 1_100))
+    expect(elapsedText(stopped.host)).toBe("Stopped after 12s")
+    expect(stopped.host.textContent).not.toContain("Worked for")
+  } finally { await stopped.unmount() }
+}, 15_000)

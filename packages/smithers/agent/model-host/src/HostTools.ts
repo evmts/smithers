@@ -825,7 +825,15 @@ const runCommand = <E>(
   Effect.gen(function*() {
     const runId = grant.request.runId
     const name = offered.command.name
-    yield* write({ runId, type: "call.started", link, ordinal, name })
+    yield* write({
+      runId,
+      type: "call.started",
+      link,
+      ordinal,
+      name,
+      description: offered.command.summary,
+      ...(args === undefined ? {} : { arguments: args })
+    })
     const outcome = yield* offered.run(args, ordinal)
     if ("refusal" in outcome) {
       yield* write({ runId, type: "gate.rejected", link, kind: "call_failed", message: outcome.refusal })

@@ -48,24 +48,25 @@ type liveSync interface {
 // person: home, todo:<n>, flows and members. Shared facts reuse streams;
 // member-specific projections keep their viewer bound to each refresh.
 type liveTopics struct {
-	changePool    *pgxpool.Pool
-	summaries     *services.ConversationSummaries
-	queries       *db.Queries
-	sources       workspaceapi.SourceFiles
-	main          homeMainReader
-	todos         liveTodos
-	sync          liveSync
-	install       *services.InstallSetupService
-	members       *services.Members
-	documents     *live.DocRelay
-	wikiDocuments *live.WikiHost
-	capacity      *services.InstallCapacityService
-	presence      *branchPresence
-	machined      *machined.Registry
-	conversation  func(context.Context, int64, string) (json.RawMessage, error)
-	viewState     func(context.Context, int64, string) (json.RawMessage, error)
-	secrets       *services.SecretService
-	jobs          *jobs.Store
+	changePool        *pgxpool.Pool
+	summaries         *services.ConversationSummaries
+	queries           *db.Queries
+	sources           workspaceapi.SourceFiles
+	main              homeMainReader
+	todos             liveTodos
+	sync              liveSync
+	install           *services.InstallSetupService
+	members           *services.Members
+	documents         *live.DocRelay
+	wikiDocuments     *live.WikiHost
+	capacity          *services.InstallCapacityService
+	presence          *branchPresence
+	machined          *machined.Registry
+	conversation      func(context.Context, int64, string) (json.RawMessage, error)
+	conversationTrace func(context.Context, int64, string) (json.RawMessage, error)
+	viewState         func(context.Context, int64, string) (json.RawMessage, error)
+	secrets           *services.SecretService
+	jobs              *jobs.Store
 }
 
 // liveRefreshEvery bounds how stale a topic is when its facts change without
@@ -320,14 +321,18 @@ func (t *liveTopics) resolve(ctx context.Context, topic string, repository int64
 			return t.wikiDocuments.Resolve(ctx, topic, repository, member)
 		}
 		return t.documents.Resolve(ctx, topic, repository, member)
-	case "conversation":
-		if repository <= 0 || member <= 0 || rest == "" || t.conversation == nil {
+	case "conversation", "conversation-trace":
+		build := t.conversation
+		if kind == "conversation-trace" {
+			build = t.conversationTrace
+		}
+		if repository < 0 || repository == 0 && kind == "conversation" || member <= 0 || rest == "" || build == nil {
 			return live.Source{}, live.Unsupported
 		}
 		// Authorize before Join can deliver a cached snapshot. Scope the
 		// builder to its reader so losing a workspace grant fails closed even
 		// while another member remains subscribed to the same conversation.
-		initial, err := t.conversation(ctx, member, rest)
+		initial, err := build(ctx, member, rest)
 		if err != nil {
 			return live.Source{}, live.Forbidden
 		}
@@ -338,7 +343,10 @@ func (t *liveTopics) resolve(ctx context.Context, topic string, repository int64
 			return live.Source{}, live.Unsupported
 		}
 		key := "conversation:" + strconv.FormatInt(repository, 10) + ":" + identity.ID + ":member:" + strconv.FormatInt(member, 10)
-		return live.Source{Key: key, Every: liveRefreshEvery, FailClosed: true, Build: func(ctx context.Context) (json.RawMessage, error) { return t.conversation(ctx, member, identity.ID) }}, ""
+		if kind == "conversation-trace" {
+			key += ":trace"
+		}
+		return live.Source{Key: key, Every: liveRefreshEvery, FailClosed: true, Build: func(ctx context.Context) (json.RawMessage, error) { return build(ctx, member, identity.ID) }}, ""
 	case "branch":
 		return live.Source{}, live.Unsupported
 	case "external":
