@@ -39,6 +39,7 @@ import * as ClaudeCode from "./ClaudeCode.ts"
 import * as CodexLogin from "./CodexLogin.ts"
 import { readText } from "./HostFiles.ts"
 import * as MeteredDispatch from "./MeteredDispatch.ts"
+import * as Telemetry from "./Telemetry.ts"
 
 const apiKeyVariable: Readonly<Record<string, string>> = {
   anthropic: "ANTHROPIC_API_KEY",
@@ -199,7 +200,7 @@ export const seatResolver = (
           Effect.map((resolved) => Seat.make({ ...resolved, id: declared })),
           Effect.mapError((error) => refuse(error.message))
         )
-      })
+      }).pipe(Effect.tap(() => Telemetry.startUp.mark("seat")))
   })
 }
 
@@ -380,7 +381,11 @@ const providerSeats = (
   const codexLogin = (file: string): CodexLogin.Store => {
     let store = codexLogins.get(file)
     if (store === undefined) {
-      store = CodexLogin.make({ file, refresh: CodexLogin.cliRefresh({ environment }) })
+      store = CodexLogin.make({
+        file,
+        refresh: CodexLogin.cliRefresh({ environment }),
+        record: (resolution) => Effect.asVoid(Telemetry.record(Telemetry.signInEvent, resolution))
+      })
       codexLogins.set(file, store)
     }
     return store
@@ -601,7 +606,11 @@ const seatOf = <Body, Frame, Event, State>(
       Effect.mapError((error) => new Seat.SeatUnresolved({ seat, message: error.message }))
     )
     const model = yield* Route.toModel(routeConfig).pipe(
-      Effect.provideService(RequestExecutor.RequestExecutor, executor)
+      // The process's start-up ends at the first model request a seat hands its transport.
+      Effect.provideService(RequestExecutor.RequestExecutor, {
+        execute: (request, options) =>
+          Effect.andThen(Telemetry.startUp.firstRequest, executor.execute(request, options))
+      })
     )
     return Seat.make({
       id: seat,

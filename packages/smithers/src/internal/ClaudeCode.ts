@@ -45,6 +45,7 @@ import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Effect, Schema, Stream } from "effect"
 import { tmpdir } from "node:os"
 import * as Failure from "./Failure.ts"
+import * as Telemetry from "./Telemetry.ts"
 
 /**
  * The part of an SDK query this seat drives.
@@ -412,16 +413,20 @@ export const make = (options: Options): Model.Model & { readonly close: () => vo
       stream: (request) =>
         Stream.unwrap(
           Effect.map(
-            Effect.tryPromise({
-              try: (signal) => answer(request, signal),
-              catch: (error) =>
-                error instanceof ModelError
-                  ? error
-                  : new ModelError({
-                    code: "transport",
-                    message: `Claude Code failed: ${Failure.operatorSentence(error)}`
-                  })
-            }),
+            // Claude Code is this seat's transport: the process's start-up ends at its first turn.
+            Effect.andThen(
+              Telemetry.startUp.firstRequest,
+              Effect.tryPromise({
+                try: (signal) => answer(request, signal),
+                catch: (error) =>
+                  error instanceof ModelError
+                    ? error
+                    : new ModelError({
+                      code: "transport",
+                      message: `Claude Code failed: ${Failure.operatorSentence(error)}`
+                    })
+              })
+            ),
             Stream.fromIterable
           )
         )

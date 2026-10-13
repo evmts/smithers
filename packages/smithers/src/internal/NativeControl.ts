@@ -138,6 +138,7 @@ import * as ReleasedChildResume from "./ReleasedChildResume.ts"
 import * as RoleProfile from "./RoleProfile.ts"
 import * as SourceRevision from "./SourceRevision.ts"
 import * as SupervisorMemory from "./SupervisorMemory.ts"
+import * as Telemetry from "./Telemetry.ts"
 import * as WorkspaceRouting from "./WorkspaceRouting.ts"
 
 /** Match the TUI's repository-bounded instruction file precedence. */
@@ -614,6 +615,7 @@ export const make = (
   const layerRegistry = (root: string): Layer.Layer<Registry.Registry> => {
     const discovery = Discovery.layer.pipe(Layer.provide(layerHostPlatform))
     return Layer.unwrap(Effect.gen(function*() {
+      yield* Telemetry.startUp.mark("boot")
       // Snapshot publication uses the trusted host filesystem, never a flow's
       // guarded filesystem. Methods retain these ports after construction.
       const snapshots = yield* ExecutionSnapshot.makeFileSystem({ root }).pipe(
@@ -624,7 +626,7 @@ export const make = (
         Layer.provide([discovery, layerGuardedPlatform(root)]),
         Layer.catch((error) => Layer.effect(Registry.Registry)(Effect.die(error)))
       )
-    }))
+    })).pipe(Layer.tap(() => Telemetry.startUp.mark("project")))
   }
 
   /**
@@ -662,7 +664,10 @@ export const make = (
    */
   const materializeEngine = (engine: EngineDurable): Effect.Effect<EngineDurable, never, Scope.Scope> =>
     Effect.map(
-      Layer.build(Layer.mergeAll(engine.runtime, engine.journal, engine.stores)),
+      Effect.andThen(
+        Telemetry.startUp.mark("boot"),
+        Layer.build(Layer.mergeAll(engine.runtime, engine.journal, engine.stores))
+      ),
       (services) => ({
         runtime: Layer.succeed(
           ControlRuntime.ControlRuntime,
@@ -676,7 +681,7 @@ export const make = (
         ),
         host: engine.host
       })
-    )
+    ).pipe(Effect.tap(() => Telemetry.startUp.mark("journal")))
 
   /**
    * The reserved system catalog in the durable runtime's flow shape.
@@ -1454,10 +1459,11 @@ export const make = (
         // starts only transport processes: the transport builds their argv,
         // and the caller's command travels in it as data for the container.
         // They pass the same `proc:spawn` check and run outside the profile.
+        // Each one's spawn, run and output collection is timed into its run's journal.
         const transportShell = sealedTo === undefined ? shellServices : Context.add(
           shellServices,
           KernelChildProcessSpawner.ChildProcessSpawner,
-          Context.get(
+          Telemetry.timedSpawner(Context.get(
             // Fresh: the memoized layer is the confined spawner already built.
             yield* Layer.build(
               Layer.fresh(KernelChildProcessSpawner.layer).pipe(Layer.provide([
@@ -1467,7 +1473,7 @@ export const make = (
               ]))
             ),
             KernelChildProcessSpawner.ChildProcessSpawner
-          )
+          ))
         )
         // With a host language server, `edit` returns the errors it leaves and
         // `bash` keeps the files the server holds open current. Servers start
@@ -1875,7 +1881,14 @@ export const make = (
           Effect.provideService(Executable.Catalog, catalog)
         )).pipe(Effect.provideService(Journal.Journal, controlJournal))
         yield* Effect.forkScoped(supervisor.recover)
-        return supervisor.wrap({ ...executor, readExecutions: yield* NativeExecutionRead.makeFromSql() })
+        const observed = supervisor.wrap({ ...executor, readExecutions: yield* NativeExecutionRead.makeFromSql() })
+        // The process's start-up clock: registered here, and handed its first run below.
+        yield* Telemetry.startUp.mark("executor")
+        return {
+          ...observed,
+          launch: (input) => Effect.andThen(Telemetry.startUp.mark("launch"), observed.launch(input)),
+          resumeRun: (input) => Effect.andThen(Telemetry.startUp.mark("launch"), observed.resumeRun(input))
+        }
       })
     ).pipe(
       Layer.provide([
