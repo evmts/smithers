@@ -65,15 +65,59 @@ const realRunner = invokesRealPlaywright(read("scripts/run-real-e2e.ts"))
 /*
  * The required PR browser tiers are steps of scripts/run-pr-e2e.mjs, the
  * browserE2e target CI executes. A package.json alias or a comment runs
- * nothing, so admit only the runner's literal argv arrays, matched exactly:
- * an extra argument such as --grep would narrow the tier.
+ * nothing, so match the runner's argv arrays exactly. Its validated three-way
+ * shard suffix partitions the full tier; an extra --grep would narrow it.
  */
 const ciSteps = (source: string): string[][] => {
   const parsed = ts.createSourceFile("run-pr-e2e.mjs", source, ts.ScriptTarget.Latest, true)
   const steps: string[][] = []
+  const unparen = (node: ts.Expression): ts.Expression =>
+    ts.isParenthesizedExpression(node) ? unparen(node.expression) : node
+  const validatedShardBefore = (node: ts.Node): boolean => {
+    for (let parent = node.parent; parent && parent !== parsed; parent = parent.parent)
+      if (ts.isFunctionLike(parent) || ts.isBlock(parent)) return false
+    const prior = parsed.statements.filter(statement => statement.end < node.pos)
+    const declaration = prior.find(statement => ts.isVariableStatement(statement) &&
+      (statement.declarationList.flags & ts.NodeFlags.Const) !== 0 &&
+      statement.declarationList.declarations.some(declaration =>
+        ts.isIdentifier(declaration.name) && declaration.name.text === "shard" &&
+        declaration.initializer?.getText(parsed).replace(/\s+/g, "") === "process.argv[2]"))
+    return declaration !== undefined && prior.some(statement => {
+      if (!ts.isIfStatement(statement) || statement.pos < declaration.end) return false
+      const condition = unparen(statement.expression)
+      if (!ts.isBinaryExpression(condition) || condition.operatorToken.kind !== ts.SyntaxKind.AmpersandAmpersandToken ||
+        !ts.isIdentifier(condition.left) || condition.left.text !== "shard" ||
+        !ts.isPrefixUnaryExpression(condition.right) || condition.right.operator !== ts.SyntaxKind.ExclamationToken) return false
+      const call = condition.right.operand
+      if (!ts.isCallExpression(call) || !ts.isPropertyAccessExpression(call.expression) || call.expression.name.text !== "test" ||
+        !ts.isRegularExpressionLiteral(call.expression.expression) || call.expression.expression.text !== "/^[123]$/" ||
+        call.arguments.length !== 1 || !ts.isIdentifier(call.arguments[0]!) || call.arguments[0]!.text !== "shard") return false
+      const body = statement.thenStatement
+      return ts.isThrowStatement(body) || (ts.isBlock(body) && body.statements.length === 1 && ts.isThrowStatement(body.statements[0]!))
+    })
+  }
+  const shardStep = (node: ts.ArrayLiteralExpression): boolean => {
+    if (node.elements.length !== 4 || !["exec", "playwright", "test"].every((value, index) => {
+      const element = node.elements[index]
+      return element !== undefined && ts.isStringLiteral(element) && element.text === value
+    })) return false
+    const spread = node.elements[3]!
+    if (!ts.isSpreadElement(spread)) return false
+    const choice = unparen(spread.expression)
+    if (!ts.isConditionalExpression(choice) || !ts.isIdentifier(choice.condition) || choice.condition.text !== "shard" ||
+      !ts.isArrayLiteralExpression(choice.whenTrue) || choice.whenTrue.elements.length !== 1 ||
+      !ts.isArrayLiteralExpression(choice.whenFalse) || choice.whenFalse.elements.length !== 0) return false
+    const flag = choice.whenTrue.elements[0]!
+    if (!ts.isTemplateExpression(flag) || flag.head.text !== "--shard=" || flag.templateSpans.length !== 1) return false
+    const span = flag.templateSpans[0]!
+    return ts.isIdentifier(span.expression) && span.expression.text === "shard" && span.literal.text === "/3" && validatedShardBefore(node)
+  }
   const visit = (node: ts.Node) => {
-    if (ts.isArrayLiteralExpression(node) && node.elements.length > 0 && node.elements.every(ts.isStringLiteral))
-      steps.push(node.elements.map((element) => (element as ts.StringLiteral).text))
+    if (ts.isArrayLiteralExpression(node) && node.elements.length > 0) {
+      if (node.elements.every(ts.isStringLiteral))
+        steps.push(node.elements.map((element) => (element as ts.StringLiteral).text))
+      else if (shardStep(node)) steps.push(["exec", "playwright", "test"])
+    }
     ts.forEachChild(node, visit)
   }
   visit(parsed)
@@ -389,6 +433,32 @@ test("CI browser ownership comes from the PR runner's argv, not an alias or pros
   expect(runsStep(ciSteps('const steps = [["exec", "playwright", "test", "--config", "playwright.site.config.ts"]]'), siteStep)).toBe(true)
 })
 
+test('CI inventory admits the validated shard suffix without admitting filters or unknown spreads (#3811)', () => {
+  const declaration = 'const shard = process.argv[2];'
+  const guard = 'if (shard && !/^[123]$/.test(shard)) throw new Error("invalid shard");'
+  const step = 'const steps = [["exec", "playwright", "test", ...(shard ? [`--shard=${shard}/3`] : [])]];'
+  const valid = `${declaration}${guard}${step}`
+  expect(runsStep(ciSteps(valid), playwrightStep)).toBe(true)
+  expect(runsStep(ciSteps(valid.replace('throw new Error("invalid shard");', '{ throw new Error("invalid shard"); }')), playwrightStep)).toBe(true)
+  for (const source of [
+    `${declaration}${step}`,
+    valid.replace('/^[123]$/', '/^[1234]$/'),
+    valid.replace('/^[123]$/', '/^[ 123]$/'),
+    valid.replace('throw new Error("invalid shard")', 'console.log("invalid shard")'),
+    valid.replace('const shard', 'let shard'),
+    valid.replace('process.argv[2]', 'process.env.SHARD'),
+    valid.replace('--shard=', '--grep='),
+    valid.replace('/3`', '/4`'),
+    valid.replace('--shard=', '--shard= '),
+    `${declaration}${step}${guard}`,
+    `function unused() { ${declaration}${guard} }${step}`,
+    `${declaration}${guard}function unused() { const shard = "x"; ${step} }`,
+    valid.replace('...(', '...unknown, ...('),
+    valid.replace('"test", ...', '"test", "--grep", "x", ...'),
+    `// ${valid}`,
+  ]) expect(runsStep(ciSteps(source), playwrightStep)).toBe(false)
+})
+
 test("the target unit gate matches package discovery and CI executes the browser OAuth, probe and graph lifecycle lanes", () => {
   const paths = inspectTarget('console.log(JSON.stringify(unit.attrs.runner.paths))')
   expect(paths).toEqual(unitPaths)
@@ -401,6 +471,11 @@ test("the target unit gate matches package discovery and CI executes the browser
   expect(read("scripts/run-pr-e2e.mjs")).toContain('["run", "test:e2e:graph-lifecycle"]')
   expect(inspectTarget('console.log(JSON.stringify(metadata(Package.browserE2e).attrs.runner.entry.path))'))
     .toBe("scripts/run-pr-e2e.mjs")
+  expect(inspectTarget(`console.log(JSON.stringify([
+    Package.browserE2eShard1, Package.browserE2eShard2, Package.browserE2eShard3
+  ].map(target => metadata(target).attrs.runner)))`)).toEqual([1, 2, 3].map(shard => ({
+    name: "entrypoint", entry: { _tag: "File", path: "scripts/run-pr-e2e.mjs" }, args: [String(shard)]
+  })))
 }, 240_000)
 
 test("the conformance lint gate matches package discovery", () => {
