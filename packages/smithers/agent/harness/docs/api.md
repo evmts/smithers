@@ -1004,6 +1004,24 @@ overrode a removal, by segment digest), `removedTokens`, `unaligned` and
 (each with a `Suppression` reason) and `memory`; `SeatRouted.backups` and
 `panel`.
 
+Some events say where a run's time and tokens went. Every such field is
+optional and absent from journals written before it; every duration and
+offset is whole milliseconds on the injected `Clock`, measured by the attempt
+that did the work, so a replayed frame reports the replay's own readings:
+
+- `ModelSettled` carries the join keys of the `ModelRequested` it settles
+  (`scope`, `frame`, `attempt`, `purpose`), `stages` (offsets from the moment
+  the sealed step was opened to `firstEventMs`, `firstThinkingMs`,
+  `firstOutputMs` and `lastOutputMs`; a stage the stream never reached is
+  absent, and a retry notice is not a first event), `tries` (transport tries,
+  the one that settled included) and `output` (`thinking` and `written`
+  tokens: the provider's reasoning count and the rest of its output count).
+  Output is a text delta or a tool-call event. No stream event is journaled
+  for these: the offsets are noted as events pass and written once.
+- `ModelRequested.reask` and `ModelSettled.reask` name the `Cell.RejectionCode`
+  the attempt before this one was refused with, so a frame's second call says
+  why it was made.
+
 Every member's `_tag` is the kebab-case discriminant `switch` and
 `Stream.filter` match on. `AgentEvent.eventType` is keyed by the camelCase
 property name and holds the journal event type, the one table `CellTurn`

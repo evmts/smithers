@@ -2447,7 +2447,8 @@ const requested = (
   request: ModelRequest.ModelRequest,
   purpose: AgentEvent.ModelRequested["purpose"],
   attempt: number,
-  emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>
+  emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>,
+  reask?: Cell.RejectionCode
 ): Effect.Effect<void> =>
   Effect.gen(function*() {
     const resolved = yield* EngineLike.resolve(engine, request)
@@ -2461,10 +2462,54 @@ const requested = (
         purpose,
         seat: state.seat,
         binding: Option.getOrUndefined(resolved.value.binding),
-        request: resolved.value.request
+        request: resolved.value.request,
+        ...(reask === undefined ? {} : { reask })
       })
     )
   })
+
+/**
+ * Notes when one model call's stream reached each stage and how many
+ * transport tries it took, as its events pass.
+ *
+ * A reading of the injected clock per event and nothing else: the stream is
+ * handed on unchanged, and what is noted is journaled once, on the call's
+ * settlement, never per event. Offsets count from `startedAt`.
+ */
+const staged = (startedAt: number) => {
+  const stages: { -readonly [Key in keyof NonNullable<AgentEvent.ModelSettled["stages"]>]?: number } = {}
+  let tries = 1
+  return {
+    /** What the stream reached, read after it ends. */
+    read: (): Pick<AgentEvent.ModelSettled, "stages" | "tries"> => ({ stages: { ...stages }, tries }),
+    note: (event: ModelEvent.ModelEvent): Effect.Effect<void> =>
+      Effect.map(Clock.currentTimeMillis, (now) => {
+        // A retry notice is the boundary starting over, not the provider answering.
+        if (event.type === "retry") return void tries++
+        const at = Math.max(0, Math.round(now - startedAt))
+        stages.firstEventMs ??= at
+        if (event.type === "thinking-start" || event.type === "thinking-delta") stages.firstThinkingMs ??= at
+        if (event.type === "text-delta" || event.type === "tool-call-start" || event.type === "tool-call-delta") {
+          stages.firstOutputMs ??= at
+          stages.lastOutputMs = at
+        }
+      })
+  }
+}
+
+/**
+ * The thinking and written tokens of one settled call. A provider's output
+ * count includes its reasoning count, so what was written is the difference;
+ * absent when the provider reported no output count to split.
+ */
+const outputOf = (usage: ModelEvent.Usage): Pick<AgentEvent.ModelSettled, "output"> => {
+  const count = (value: number | undefined): number | undefined =>
+    value !== undefined && Number.isSafeInteger(value) && value >= 0 ? value : undefined
+  const output = count(usage.outputTokens)
+  if (output === undefined) return {}
+  const thinking = count(usage.reasoningTokens)
+  return { output: { ...(thinking === undefined ? {} : { thinking }), written: Math.max(0, output - (thinking ?? 0)) } }
+}
 
 /** The sealed summary of what a compaction step squashes. */
 const summarized = (
@@ -2842,12 +2887,15 @@ const seal = (
 ): Effect.Effect<Sealed, HarnessError | Model.ModelFailure> =>
   Effect.gen(function*() {
     let contextWindow = state.contextWindow
+    // The refusal the attempt before this one met, which is why this one asks.
+    let reask: Cell.RejectionCode | undefined
     for (let attempt = 0;; attempt++) {
       const request = yield* Effect.fromResult(requestFrom(state, contextWindow))
-      yield* requested(state, engine, request, "frame", attempt + 1, emit)
+      yield* requested(state, engine, request, "frame", attempt + 1, emit, reask)
       // Timed on the injected clock, never on ambient wall time, so a test that
       // supplies a clock sees the duration it declared.
       const startedAt = yield* Clock.currentTimeMillis
+      const reached = staged(startedAt)
       const events = yield* Stream.runCollect(
         (engine.sealStepWithEvents?.({
           request,
@@ -2858,6 +2906,7 @@ const seal = (
           keyMaterial: keyMaterialFrom(state, contextWindow, request),
           modelCallMs: state.modelCallMs
         })).pipe(
+          Stream.tap(reached.note),
           Stream.tap((event) => emitModelProgress(event, emit))
         )
       ).pipe(Effect.map((collected) => Array.from(collected)))
@@ -2878,13 +2927,21 @@ const seal = (
           usage: settled.usage,
           ...cost,
           ...(sessionId === undefined ? {} : { sessionId }),
-          durationMillis: settledAt - startedAt
+          durationMillis: settledAt - startedAt,
+          scope: state.session,
+          frame: state.frame,
+          attempt: attempt + 1,
+          purpose: "frame",
+          ...(reask === undefined ? {} : { reask }),
+          ...reached.read(),
+          ...outputOf(settled.usage)
         })
       )
       const cell = parsed(settled.message)
       if (cell._tag === "Success" || attempt >= state.revalidations) {
         return { contextWindow, answer: settled.message, cell }
       }
+      reask = cell.failure.code
       yield* emit(
         new AgentEvent.CellRejectedInFrame({
           eventType: eventType.cellRejectedInFrame,

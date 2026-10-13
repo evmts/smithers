@@ -438,7 +438,16 @@ const lateFields: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   // The Jev fields.
   ["control.agent.decision-settled", new Set(["usage"])],
   ["control.agent.supervisor-settled", new Set(["monitors", "skillsCapped"])],
-  ["control.agent.compaction-settled", new Set(["marks", "removedTokens", "unaligned"])]
+  ["control.agent.compaction-settled", new Set(["marks", "removedTokens", "unaligned"])],
+  // Where a run's time and tokens went (#3844). Every one is a measurement or
+  // a join key added to a type journals already carried; the timed ones also
+  // differ between the attempt that measured them and a replay of it, the way
+  // `durationMillis` does.
+  ["control.agent.model-requested", new Set(["reask"])],
+  [
+    "control.agent.model-settled",
+    new Set(["scope", "frame", "attempt", "purpose", "reask", "stages", "tries", "output"])
+  ]
 ])
 
 /** The exclusion set for an event type that has never been enriched. */
@@ -813,6 +822,8 @@ const tracedRequest = (
       frame: event.frame,
       attempt: event.attempt,
       purpose: event.purpose,
+      // Why the frame asked again, on its second call and later.
+      ...(event.reask === undefined ? {} : { reask: event.reask }),
       seat: event.seat,
       modelId: event.request.modelId,
       // Names only. `EngineLike.Binding` has nowhere a credential could
@@ -965,7 +976,18 @@ export const trace = (
           // and it is the number a speed comparison actually needs.
           durationMillis: event.durationMillis,
           // A wrapped CLI seat's vendor session, so a take-over can resume it.
-          ...(event.sessionId === undefined ? {} : { sessionId: event.sessionId })
+          ...(event.sessionId === undefined ? {} : { sessionId: event.sessionId }),
+          // The keys of the request this settles, then where the call's time
+          // went as the controller saw it (#3844): absent on a settlement that
+          // measured none of it.
+          ...(event.scope === undefined ? {} : { scope: event.scope }),
+          ...(event.frame === undefined ? {} : { frame: event.frame }),
+          ...(event.attempt === undefined ? {} : { attempt: event.attempt }),
+          ...(event.purpose === undefined ? {} : { purpose: event.purpose }),
+          ...(event.reask === undefined ? {} : { reask: event.reask }),
+          ...(event.stages === undefined ? {} : { stages: event.stages }),
+          ...(event.tries === undefined ? {} : { tries: event.tries }),
+          ...(event.output === undefined ? {} : { output: event.output })
         }
       }
     case "cell-produced":

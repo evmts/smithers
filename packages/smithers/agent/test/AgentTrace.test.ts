@@ -2173,3 +2173,83 @@ describe("Jev receipts", () => {
     }
   })
 })
+
+/*
+ * Where a run's time and tokens went (#3844). Each fact the harness measures
+ * has to reach the journal row a report reads, under a name the journal's own
+ * redaction keeps, and without moving the identity of the rows a run journaled
+ * before the fact existed: a resumed run replays its prefix, and a row that
+ * derives a new identity is published a second time.
+ */
+describe("where time and tokens went", () => {
+  /** The journal row of one event: its projection, as the journal stores it. */
+  const row = (event: AgentEvent.AgentEvent): Record<string, unknown> =>
+    JSON.parse(JSON.stringify(AgentSession.trace(event)!.payload)) as Record<string, unknown>
+  /** The same row after the journal's write-path redaction. */
+  const stored = (event: AgentEvent.AgentEvent): unknown => Redaction.make()(row(event))
+  const identity = (event: AgentEvent.AgentEvent) =>
+    AgentSession.traceIdentity(4, 2, cell.digest, AgentSession.trace(event)!.eventType, row(event))
+
+  const settled = {
+    eventType: "flows.harness.model-settled.v1",
+    message: assistant,
+    usage: ModelEvent.Usage.make({ inputTokens: 100, outputTokens: 40, reasoningTokens: 15 }),
+    durationMillis: 3_000
+  } as const
+  const staged = {
+    scope: "run-1",
+    frame: 9,
+    attempt: 2,
+    purpose: "frame",
+    reask: "compile_failed",
+    stages: { firstEventMs: 1_200, firstThinkingMs: 1_200, firstOutputMs: 2_500, lastOutputMs: 2_750 },
+    tries: 3,
+    output: { thinking: 15, written: 25 }
+  } as const
+
+  it("journals a model call's stages, tries, token split and join keys on its settlement", () => {
+    const journaled = row(new AgentEvent.ModelSettled({ ...settled, ...staged }))
+    expect(journaled).toMatchObject(staged)
+    // Nothing the journal redacts by name: the row reads back as written.
+    expect(stored(new AgentEvent.ModelSettled({ ...settled, ...staged }))).toEqual(journaled)
+  })
+
+  it("leaves a settlement that measured none of it as it was journaled before", () => {
+    expect(row(new AgentEvent.ModelSettled(settled))).toEqual({
+      text: "First line.\nSecond line.",
+      usage: { inputTokens: 100, outputTokens: 40, reasoningTokens: 15 },
+      durationMillis: 3_000
+    })
+  })
+
+  it("journals why a frame asked again on the request", () => {
+    const requested = (reask?: "compile_failed") =>
+      new AgentEvent.ModelRequested({
+        eventType: "flows.harness.model-requested.v1",
+        scope: "run-1",
+        frame: 9,
+        attempt: 2,
+        purpose: "frame",
+        seat: "openai:test-model",
+        request: ModelRequest.ModelRequest.make({
+          modelId: "test-model",
+          system: [],
+          messages: [ModelRequest.Message.user("start")],
+          tools: [],
+          toolChoice: "none",
+          params: ModelRequest.GenerationParams.make()
+        }),
+        ...(reask === undefined ? {} : { reask })
+      })
+    expect(row(requested("compile_failed"))["reask"]).toBe("compile_failed")
+    expect(Object.hasOwn(row(requested()), "reask")).toBe(false)
+    expect(identity(requested("compile_failed"))).toBe(identity(requested()))
+  })
+
+  it("keeps a run journaled before these fields on the identities it was journaled under", () => {
+    const pairs: ReadonlyArray<readonly [AgentEvent.AgentEvent, AgentEvent.AgentEvent]> = [
+      [new AgentEvent.ModelSettled(settled), new AgentEvent.ModelSettled({ ...settled, ...staged })]
+    ]
+    for (const [before, after] of pairs) expect(identity(after)).toBe(identity(before))
+  })
+})

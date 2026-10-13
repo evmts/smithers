@@ -29,6 +29,14 @@
 
 ### Added
 
+- `ModelSettled` says which call it settles and where the call's time went:
+  the join keys of its `ModelRequested` (`scope`, `frame`, `attempt`,
+  `purpose`), `stages` (when the stream reached its first event, first
+  thinking event, first and last output), `tries` and `output` (thinking and
+  written tokens). `ModelRequested.reask` and `ModelSettled.reask` name the
+  rejection code a frame's second call answers. All optional; journals
+  written before them decode unchanged (#3844).
+
 - `ExternalTranscript.decodeCodex` reads what Codex records outside its
   completed items: a message between agents (`agent_message`), whose encrypted
   body is one `encrypted` placeholder; a failed code-mode script with the

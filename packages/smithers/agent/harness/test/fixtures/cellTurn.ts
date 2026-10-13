@@ -75,6 +75,45 @@ export const emits = (cell: string): ScriptedModel.Step => ({
 })
 
 /**
+ * A clock a case moves by hand, so every duration under test is one the case
+ * declared. `sleep` never elapses: nothing here waits on this clock.
+ *
+ * @category fixtures
+ * @since 1.0.0-rc.1
+ */
+export const manualClock = (): { readonly clock: Clock.Clock; readonly advance: (millis: number) => void } => {
+  let now = 0
+  const nanos = (): bigint => BigInt(now) * 1_000_000n
+  return {
+    advance: (millis) => void (now += millis),
+    clock: {
+      currentTimeMillisUnsafe: () => now,
+      currentTimeMillis: Effect.sync(() => now),
+      currentTimeNanosUnsafe: nanos,
+      currentTimeNanos: Effect.sync(nanos),
+      monotonicTimeNanosUnsafe: nanos,
+      monotonicTimeNanos: Effect.sync(nanos),
+      sleep: () => Effect.never
+    }
+  }
+}
+
+/**
+ * A recorded model frame whose events arrive at declared times: each entry is
+ * the milliseconds the provider took before the event beside it.
+ *
+ * @category fixtures
+ * @since 1.0.0-rc.1
+ */
+export const arrives = (
+  advance: (millis: number) => void,
+  timeline: ReadonlyArray<readonly [afterMillis: number, event: ModelEvent.ModelEvent]>
+): ScriptedModel.Step => ({
+  events: timeline.map(([, event]) => event),
+  arriving: (index) => advance(timeline[index]![0])
+})
+
+/**
  * A recorded model frame whose text carries no cell at all.
  *
  * @category fixtures

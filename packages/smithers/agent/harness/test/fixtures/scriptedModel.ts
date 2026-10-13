@@ -10,6 +10,12 @@ import { Effect, Layer, Stream } from "effect"
 export interface Step {
   readonly events: ReadonlyArray<ModelEvent.ModelEvent>
   readonly interruptAfterEvents?: boolean | undefined
+  /**
+   * Runs as the event at `index` leaves the provider, before anything
+   * downstream reads it: where a case moves its clock to say when the event
+   * arrived. A step that declares it emits its events one at a time.
+   */
+  readonly arriving?: ((index: number) => void) | undefined
 }
 
 /**
@@ -85,7 +91,20 @@ export const make = (script: Script): Fixture => {
           })
         )
       }
-      const events = Stream.fromIterable(step.events)
+      const arriving = step.arriving
+      const events = arriving === undefined
+        ? Stream.fromIterable(step.events)
+        : step.events.reduce<Stream.Stream<ModelEvent.ModelEvent>>(
+          (stream, event, at) =>
+            Stream.concat(
+              stream,
+              Stream.fromEffect(Effect.sync(() => {
+                arriving(at)
+                return event
+              }))
+            ),
+          Stream.empty
+        )
       return step.interruptAfterEvents === true
         ? Stream.concat(events, Stream.fromEffect(Effect.interrupt))
         : events

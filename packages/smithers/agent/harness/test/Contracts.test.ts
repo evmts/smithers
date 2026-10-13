@@ -788,6 +788,42 @@ describe("AgentEvent", () => {
     expect(decoded._tag === "model-settled" ? decoded.durationMillis : undefined).toBe(0)
   })
 
+  it("decodes a model request and settlement journaled before their stages and join keys were", () => {
+    // The shapes a journal written before #3844 holds: no `reask`, no join
+    // keys on the settlement, no stages, tries or token split.
+    const requested = Schema.decodeUnknownSync(AgentEvent.AgentEvent)({
+      _tag: "model-requested",
+      eventType: "flows.harness.model-requested.v1",
+      scope: "session-1",
+      frame: 9,
+      attempt: 2,
+      purpose: "frame",
+      seat: "openai:test-model",
+      request: Schema.encodeSync(ModelRequest.ModelRequest)(ModelRequest.ModelRequest.make({
+        modelId: "test-model",
+        system: [],
+        messages: [ModelRequest.Message.user("start")],
+        tools: [],
+        toolChoice: "none",
+        params: ModelRequest.GenerationParams.make()
+      }))
+    })
+    const settled = Schema.decodeUnknownSync(AgentEvent.AgentEvent)({
+      _tag: "model-settled",
+      eventType: "flows.harness.model-settled.v1",
+      message: Schema.encodeSync(ModelRequest.AssistantMessage)(assistantMessage),
+      usage: { inputTokens: 1, outputTokens: 2 },
+      durationMillis: 49_885
+    })
+
+    expect(requested).toMatchObject({ _tag: "model-requested", frame: 9, attempt: 2, purpose: "frame" })
+    expect(requested).not.toHaveProperty("reask")
+    expect(settled).toMatchObject({ _tag: "model-settled", durationMillis: 49_885 })
+    for (const key of ["scope", "frame", "attempt", "purpose", "reask", "stages", "tries", "output"]) {
+      expect(settled).not.toHaveProperty(key)
+    }
+  })
+
   it("refuses a payload that is not one of the union's tags", () => {
     const decoded = Schema.decodeUnknownResult(AgentEvent.AgentEvent)({
       _tag: "not-an-event",

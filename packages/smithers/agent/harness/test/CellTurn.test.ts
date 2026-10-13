@@ -14,7 +14,7 @@ import * as Evaluator from "@smthrs/model/Evaluator"
 import * as OpenAIChatGPT from "@smthrs/model/OpenAIChatGPT"
 import * as Route from "@smthrs/model/Route"
 import { Descriptor } from "@smthrs/registry"
-import { Clock, Deferred, Effect, type Layer, Option, Redacted, Result, Schema, Stream } from "effect"
+import { Deferred, Effect, type Layer, Option, Redacted, Result, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import * as AgentEvent from "../src/AgentEvent.ts"
 import type * as Cell from "../src/Cell.ts"
@@ -34,9 +34,11 @@ import * as Tokens from "../src/Tokens.ts"
 import * as Transcript from "../src/Transcript.ts"
 import { batchedReply } from "./fixtures/batchedReplies.ts"
 import {
+  arrives,
   confidentEvaluator,
   descriptor,
   emits,
+  manualClock,
   of,
   type Options as RunOptions,
   pattern,
@@ -98,30 +100,6 @@ const state = (
     ...(overrides.unresolvedCap === undefined ? {} : { unresolvedCap: overrides.unresolvedCap }),
     ...(overrides.serverTools === undefined ? {} : { serverTools: overrides.serverTools })
   })
-
-/**
- * A clock that advances a fixed step every time it is read.
- *
- * Durations are measured through the injected clock, so a test declares the
- * elapsed time instead of racing the host's wall clock.
- */
-const tickingClock = (stepMillis: number): Clock.Clock => {
-  let now = 0
-  const read = (): number => {
-    const current = now
-    now += stepMillis
-    return current
-  }
-  return {
-    currentTimeMillisUnsafe: read,
-    currentTimeMillis: Effect.sync(read),
-    currentTimeNanosUnsafe: () => BigInt(read()) * 1_000_000n,
-    currentTimeNanos: Effect.sync(() => BigInt(read()) * 1_000_000n),
-    monotonicTimeNanosUnsafe: () => BigInt(read()) * 1_000_000n,
-    monotonicTimeNanos: Effect.sync(() => BigInt(read()) * 1_000_000n),
-    sleep: () => Effect.void
-  }
-}
 
 /** The shared driver, starting from this suite's {@link state} unless a case supplies one. */
 const run = (options: Omit<RunOptions, "state"> & { readonly state?: CellTurn.State | undefined }) =>
@@ -3048,18 +3026,139 @@ describe("CellTurn vacuous verification, unwired", () => {
 
 describe("CellTurn call latency", () => {
   it("journals the wall-clock duration of each sealed model call from the injected clock", async () => {
+    const { advance, clock } = manualClock()
+    // Each step takes the 250 ms its settlement arrives after.
+    const taking250 = (step: ScriptedModel.Step): ScriptedModel.Step =>
+      arrives(advance, step.events.map((event) => [event.type === "settle" ? 250 : 0, event] as const))
     const { events } = await run({
       state: state({ maxFrames: 2 }),
       script: [
-        emits(`console.log("on it")`),
-        emits(`ctx.done("done")`)
+        taking250(emits(`console.log("on it")`)),
+        taking250(emits(`ctx.done("done")`))
       ],
-      clock: tickingClock(250)
+      clock
     })
 
-    // One tick before the step and one after, on the clock the run was given
-    // rather than the host's wall time.
+    // On the clock the run was given rather than the host's wall time.
     expect(of(events, "model-settled").map((event) => event.durationMillis)).toEqual([250, 250])
+  })
+})
+
+describe("CellTurn model call stages", () => {
+  const text = (id: string, chunk: string) => ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id, text: chunk })
+
+  it("times when each call's stream reached its stages, and says which call of the frame it was", async () => {
+    const { advance, clock } = manualClock()
+    const { events } = await run({
+      state: state({ maxFrames: 1 }),
+      script: [
+        arrives(advance, [
+          [1_200, ModelEvent.ModelEvent.ThinkingStart({ type: "thinking-start", id: "think" })],
+          [300, ModelEvent.ModelEvent.ThinkingDelta({ type: "thinking-delta", id: "think", text: "plan" })],
+          [500, ModelEvent.ModelEvent.ThinkingEnd({ type: "thinking-end", id: "think" })],
+          [100, ModelEvent.ModelEvent.TextStart({ type: "text-start", id: "cell" })],
+          [400, text("cell", "```cell\n")],
+          [250, text("cell", "ctx.done(\"done\")\n```")],
+          [50, ModelEvent.ModelEvent.TextEnd({ type: "text-end", id: "cell" })],
+          [0, ModelEvent.ModelEvent.Usage({ inputTokens: 100, outputTokens: 40, reasoningTokens: 15 })],
+          [200, ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })]
+        ])
+      ],
+      clock
+    })
+
+    const [settled] = of(events, "model-settled")
+    expect(settled).toMatchObject({
+      scope: "session-1",
+      frame: 0,
+      attempt: 1,
+      purpose: "frame",
+      durationMillis: 3_000,
+      stages: { firstEventMs: 1_200, firstThinkingMs: 1_200, firstOutputMs: 2_500, lastOutputMs: 2_750 },
+      tries: 1,
+      output: { thinking: 15, written: 25 }
+    })
+    expect(settled).not.toHaveProperty("reask")
+    // The request it settles carries the same keys, so the pair joins by them.
+    expect(
+      of(events, "model-requested").map(({ attempt, frame, purpose, scope }) => ({
+        scope,
+        frame,
+        attempt,
+        purpose
+      }))
+    ).toEqual([{ scope: "session-1", frame: 0, attempt: 1, purpose: "frame" }])
+  })
+
+  it("counts transport tries and leaves a retry notice out of the first event", async () => {
+    const { advance, clock } = manualClock()
+    const { events } = await run({
+      state: state({ maxFrames: 1 }),
+      script: [
+        arrives(advance, [
+          [900, ModelEvent.ModelEvent.Retry({ type: "retry", attempt: 1, code: "rate_limited", delayMillis: 400 })],
+          [700, ModelEvent.ModelEvent.Retry({ type: "retry", attempt: 2, code: "rate_limited", delayMillis: 800 })],
+          [2_000, ModelEvent.ModelEvent.TextStart({ type: "text-start", id: "cell" })],
+          [10, text("cell", "```cell\nctx.done(\"done\")\n```")],
+          [0, ModelEvent.ModelEvent.Usage({ inputTokens: 8, outputTokens: 4 })],
+          [40, ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })]
+        ])
+      ],
+      clock
+    })
+
+    const [settled] = of(events, "model-settled")
+    expect(settled?.tries).toBe(3)
+    expect(settled?.durationMillis).toBe(3_650)
+    // No thinking arrived, so that stage is absent and one delta is both ends.
+    expect(settled?.stages).toEqual({ firstEventMs: 3_600, firstOutputMs: 3_610, lastOutputMs: 3_610 })
+    // The provider reported no reasoning count: all of its output was written.
+    expect(settled?.output).toEqual({ written: 4 })
+  })
+
+  it("times a tool-call delta as output and reports no token split without a usage count", async () => {
+    const { advance, clock } = manualClock()
+    const { events } = await run({
+      state: state({ maxFrames: 1, revalidations: 0 }),
+      script: [
+        arrives(advance, [
+          [70, ModelEvent.ModelEvent.ToolCallStart({ type: "tool-call-start", id: "t", name: "bash" })],
+          [30, ModelEvent.ModelEvent.ToolCallDelta({ type: "tool-call-delta", id: "t", arguments: "{}" })],
+          [5, ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })]
+        ])
+      ],
+      clock
+    })
+
+    const [settled] = of(events, "model-settled")
+    expect(settled?.stages).toEqual({ firstEventMs: 70, firstOutputMs: 70, lastOutputMs: 100 })
+    expect(settled).not.toHaveProperty("output")
+  })
+
+  it("says why a frame asked again, on the request and on its settlement", async () => {
+    const { events } = await run({
+      state: state({ maxFrames: 1, revalidations: 1 }),
+      script: [prose("I will look into it."), emits(`ctx.done("done")`)]
+    })
+
+    expect(of(events, "cell-rejected-in-frame").map(({ attempt, code }) => ({ attempt, code }))).toEqual([
+      { attempt: 1, code: "no_cell" }
+    ])
+    expect(of(events, "model-requested").map(({ attempt, frame, reask }) => ({ frame, attempt, reask }))).toEqual([
+      { frame: 0, attempt: 1, reask: undefined },
+      { frame: 0, attempt: 2, reask: "no_cell" }
+    ])
+    expect(
+      of(events, "model-settled").map(({ attempt, frame, purpose, reask }) => ({
+        frame,
+        attempt,
+        purpose,
+        reask
+      }))
+    ).toEqual([
+      { frame: 0, attempt: 1, purpose: "frame", reask: undefined },
+      { frame: 0, attempt: 2, purpose: "frame", reask: "no_cell" }
+    ])
   })
 })
 

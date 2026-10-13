@@ -226,8 +226,8 @@ const attempt = async (
 
 /**
  * The loop's own events from the `n`th opened turn on. Supervisor readings,
- * and the compaction marks they carry, settle off the hot path, and neither a model step's wall-clock duration nor
- * a reading's latency is part of what it settled: a resumed run replays the
+ * and the compaction marks they carry, settle off the hot path, and neither a model step's wall-clock duration, the
+ * stages inside it, nor a reading's latency is part of what it settled: a resumed run replays the
  * interrupted run's latency, which the uninterrupted run measured afresh.
  */
 const suffix = (events: ReadonlyArray<AgentEvent.AgentEvent>, n: number) => {
@@ -239,7 +239,7 @@ const suffix = (events: ReadonlyArray<AgentEvent.AgentEvent>, n: number) => {
       ? []
       : [
         event._tag === "model-settled"
-          ? { ...event, durationMillis: 0 }
+          ? { ...event, durationMillis: 0, stages: undefined }
           : "latencyMs" in event
           ? { ...event, latencyMs: 0 }
           : event

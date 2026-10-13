@@ -323,8 +323,44 @@ export class ModelRequested extends Schema.TaggedClass<ModelRequested>(
   /** The route the host resolved, absent where the host names none. */
   binding: Schema.optional(EngineLike.Binding),
   /** The request the provider is sent, whole: after any rewrite the host applies. */
-  request: ModelRequest.ModelRequest
+  request: ModelRequest.ModelRequest,
+  /**
+   * Why the frame is asking again: the code `cell-rejected-in-frame` refused
+   * the attempt before this one with. Absent on a frame's first call.
+   */
+  reask: Schema.optional(Cell.RejectionCode)
 }) {}
+
+/**
+ * When one model call's stream reached each stage, as the controller saw it:
+ * whole milliseconds from the moment the sealed step was opened, on the
+ * injected clock. A stage the stream never reached is absent.
+ *
+ * These are the controller's readings, taken after the host's own handling of
+ * the stream, so they bound what the host and the wire did between them and
+ * do not replace a wire-level record.
+ */
+const ModelStages = Schema.Struct({
+  /** The first stream event of any kind but a retry notice. */
+  firstEventMs: Schema.optional(NonNegativeSafeInt),
+  /** The first thinking event. */
+  firstThinkingMs: Schema.optional(NonNegativeSafeInt),
+  /** The first text delta or tool-call event. */
+  firstOutputMs: Schema.optional(NonNegativeSafeInt),
+  /** The last text delta or tool-call event. */
+  lastOutputMs: Schema.optional(NonNegativeSafeInt)
+})
+
+/**
+ * What one model call wrote, split the way a speed comparison needs it: the
+ * reasoning tokens the provider reported, and the output tokens beside them.
+ */
+const ModelOutput = Schema.Struct({
+  /** Reasoning tokens; absent when the provider reported none. */
+  thinking: Schema.optional(NonNegativeSafeInt),
+  /** Output tokens that were not reasoning. */
+  written: NonNegativeSafeInt
+})
 
 /**
  * The host selected the seat that will receive this capacity attempt.
@@ -458,7 +494,23 @@ export class ModelSettled extends Schema.TaggedClass<ModelSettled>(
   durationMillis: Schema.Number.pipe(
     Schema.withConstructorDefault(Effect.succeed(0)),
     Schema.withDecodingDefaultKey(Effect.succeed(0))
-  )
+  ),
+  /**
+   * The join keys of the `model-requested` this settles, and that record's
+   * `reask`. Position is not a key: a frame that asks twice settles twice.
+   * Absent from settlements journaled before they were carried.
+   */
+  scope: Schema.optional(Schema.String),
+  frame: Schema.optional(NonNegativeSafeInt),
+  attempt: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+  purpose: Schema.optional(Schema.Literals(["frame", "compaction"])),
+  reask: Schema.optional(Cell.RejectionCode),
+  /** When the stream reached each stage; absent before stages were timed. */
+  stages: Schema.optional(ModelStages),
+  /** Transport tries the sealed step took, the one that settled included. */
+  tries: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+  /** Thinking and written token counts; absent when the provider reported no output count. */
+  output: Schema.optional(ModelOutput)
 }) {}
 
 /**
