@@ -99,7 +99,7 @@ export type FeatureSupport = "core" | "optional" | "absent"
 export type FeatureRow = { readonly support: "core" } | { readonly support: "optional" | "absent"; readonly reason: string }
 
 /** Bump with any row change; every matrix report publishes this version and the table's digest. */
-export const FEATURE_MATRIX_VERSION = 9
+export const FEATURE_MATRIX_VERSION = 10
 
 const core = { support: "core" } as const
 const optional = (reason: string): FeatureRow => ({ support: "optional", reason })
@@ -113,6 +113,8 @@ const billing = optional("needs the operator's payment provider")
  */
 export const FEATURE_MATRIX: Readonly<Record<RuntimeCapability, Readonly<Record<ProductProvider, FeatureRow>>>> = {
   "agent": { selfhost: optional("needs a configured default agent"), plue: optional("needs a configured default agent") },
+  // Served with the conversation routes: the same condition as `agent` (#3827).
+  "chat.archive": { selfhost: optional("needs a configured default agent"), plue: optional("needs a configured default agent") },
   "model.turn": {
     // The model laboratory that configured an owner's model is deferred past the MVP (#3387): no product door exercises it.
     selfhost: optional("needs an operator-configured model provider"), plue: optional("needs a configured model provider")

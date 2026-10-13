@@ -85,6 +85,9 @@ func (s *ConversationSummaries) Handle(ctx context.Context, lease *jobs.Lease) e
 	if lease.Claim().Operation == RunSummaryOperation {
 		return s.handleRun(ctx, lease)
 	}
+	if lease.Claim().Operation == ArchiveSummaryOperation {
+		return s.handleArchive(ctx, lease)
+	}
 	var input summarySource
 	if err := json.Unmarshal(lease.Claim().Payload, &input); err != nil {
 		return lease.Fail(ctx, json.RawMessage(`{"status":"invalid"}`))

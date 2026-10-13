@@ -77,7 +77,8 @@ func newAppBootstrap(features bootstrapFeatures) appBootstrap {
 		}
 	}
 	if features.agent {
-		result.Capabilities = append(result.Capabilities, "agent")
+		// The archive routes are mounted with the conversation routes they cut from.
+		result.Capabilities = append(result.Capabilities, "agent", "chat.archive")
 	}
 	if features.github {
 		result.Capabilities = append(result.Capabilities, "github")

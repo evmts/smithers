@@ -155,6 +155,12 @@ func composeConversationSummaries(pool *pgxpool.Pool, jobStore *jobs.Store, stor
 	store.OnConversationRead = func(ctx context.Context, scope chat.Scope, branch string) error {
 		return summaries.Backfill(ctx, scope.RepositoryID, scope.UserID, branch)
 	}
+	store.OnArchive = func(ctx context.Context, tx pgx.Tx, scope chat.Scope, id string) error {
+		return summaries.AdmitArchive(ctx, tx, scope.RepositoryID, scope.UserID, id)
+	}
+	store.OnArchivesRead = func(ctx context.Context, scope chat.Scope) error {
+		return summaries.BackfillArchives(ctx, scope.RepositoryID, scope.UserID)
+	}
 	return summaries
 }
 

@@ -824,6 +824,7 @@ const FIXTURES: Record<
   settings: { minimal: {}, full: {} },
   members: { minimal: {}, full: {} },
   commands: { minimal: {}, full: {} },
+  "archives": { minimal: {}, full: { selected: "0b1c2d3e" } },
   draft: {
     minimal: { ...draftFixtures.append.model, idempotencyKey: "commit-1" },
     full: {

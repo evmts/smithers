@@ -224,6 +224,6 @@ export function createSharedConversationSeam(ctx: ControllerContext, live?: Live
   const dispose = () => { if (typeof document !== "undefined") document.removeEventListener("visibilitychange", visibilityChanged); if (leaseTimer !== undefined) clearTimeout(leaseTimer); if (scrollTimer !== undefined) clearTimeout(scrollTimer); disposed = true; ++generation; stopLive?.(); stopTrace?.(); stopView?.(); sessions.unsubscribe(); identities.unsubscribe(); stopAccount(); listeners.clear() }
   ctx.onDispose(dispose)
   change()
-  return { get: () => snapshot, subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } }, read, saveView, serializeView, setTimelineVisible, rememberScroll, dispose }
+  return { get: () => snapshot, /** The branch key this seam addresses the host by. */ branch: () => branch, subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } }, read, saveView, serializeView, setTimelineVisible, rememberScroll, dispose }
 }
 export type SharedConversationSeam = ReturnType<typeof createSharedConversationSeam>

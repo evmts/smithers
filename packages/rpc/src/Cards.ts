@@ -865,6 +865,8 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
   z.object({ ...cardBaseShape, kind: z.literal("settings"), payload: z.object({}) }),
   z.object({ ...cardBaseShape, kind: z.literal("members"), payload: z.object({}) }),
   z.object({ ...cardBaseShape, kind: z.literal("commands"), payload: z.object({}) }),
+  /* Archived chats as a tree; `selected` is the archive whose entries the card shows (#3827). */
+  z.object({ ...cardBaseShape, kind: z.literal("archives"), payload: z.object({ selected: z.string().optional() }) }),
 
   // Identity-only tombstones keep historical frames and journals loadable.
   z.object({

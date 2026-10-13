@@ -36,6 +36,34 @@ SMITHERS_LIVE_MODEL='{"protocol":"openai-chat","modelId":"gpt-oss-120b","credent
 
 The default suite skips it; a skip is not a pass.
 
+## Archived chats
+
+A conversation key holds one live chat. `POST /api/conversations/{b}/archive`
+moves every turn under that key to `archive-<id>` and inserts a
+`chat_archives` row (migration 0164) in one transaction, under the same
+advisory lock a turn claim takes, so no turn starts under the old key while its
+rows move. The request is refused with 409 while any turn under the key is not
+terminal, and answers `{"archive": null}` when the chat has no entries. An
+agent credential is refused.
+
+The row records the repository and branch history groups by, a title, a
+summary, the runs the chat's cards referenced, the entry count and its times.
+An install names its own repository and the addressed branch; a hosted account
+supplies the labels its header shows. Each member's `last_seen_seq` for the key
+is dropped, because entry numbers start over in the next chat.
+
+`GET /api/conversation-archives` lists the reader's archives, newest first:
+an account's own private chats, or the install repository's shared chats for
+an active member. `GET /api/conversation-archives/{id}` returns the archive
+and its entries through the same projection as a live conversation.
+
+The title starts as the first prompt's first line. A durable
+`conversation.archive.summary` job asks the fast model for a title of at most
+eight words and a summary of one to three sentences, from prompts and text
+answers only. Without model access no job is admitted. A failed or unusable
+answer leaves the title and a null summary; a later listing admits one retry
+per hour. A written summary is never replaced.
+
 ## Account conversation history
 
 `GET /api/agent/conversations` lists the authenticated account's saved conversation

@@ -9,7 +9,7 @@ import { auditAppIds } from "../../../../../scripts/catalog-policy"
 // names every unlisted or renamed registration awaiting T-CUT-03.
 test("C-CAT-01 Appendix B Cut rows have no registered or catalog door", () => {
   const cuts = appendixB.rows.filter(row => row.status === "cut").flatMap(row => row.ids)
-  expect(cuts).toHaveLength(51)
+  expect(cuts).toHaveLength(50)
   expect(cuts).toContain("chat.dictate")
   expect(cuts).toContain("agent.session.*")
   expect(cuts).toContain("setup.*")

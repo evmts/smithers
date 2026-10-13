@@ -182,6 +182,8 @@ describe("the controller's command surface", () => {
       "todoList",
       "fileDocuments",
       "repositoryBranches",
+      "chatArchives",
+      "archiveLabel",
       "flowCatalog",
       "membersRole",
       "membersRoster",

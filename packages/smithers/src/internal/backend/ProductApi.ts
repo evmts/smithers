@@ -1569,6 +1569,93 @@ export interface PutApiConversationViewStateInput {
 export const putApiConversationViewState = (transport: Transport, input: PutApiConversationViewStateInput): Promise<PutApiConversationViewStateResponse> =>
   transport.request("PUT", `/api/conversations/${segment(input.path.b)}/view-state`, input.body) as Promise<PutApiConversationViewStateResponse>
 
+export type PostApiConversationArchiveBody = {
+  repository?: string
+  branch?: string
+}
+
+export type PostApiConversationArchiveResponse = {
+  archive: {
+    id: string
+    repository: string
+    branch: string
+    title: string
+    summary: string
+    runs: Array<{
+      repo: string
+      runId: string
+      workspaceId?: string
+    }>
+    entries: number
+    first_at: number
+    last_at: number
+    archived_at: number
+    archived_by?: string
+  }
+}
+
+export interface PostApiConversationArchiveInput {
+  readonly path: { readonly b: string }
+  readonly body: PostApiConversationArchiveBody
+}
+
+/** POST /api/conversations/{b}/archive: Archive my branch chat */
+export const postApiConversationArchive = (transport: Transport, input: PostApiConversationArchiveInput): Promise<PostApiConversationArchiveResponse> =>
+  transport.request("POST", `/api/conversations/${segment(input.path.b)}/archive`, input.body) as Promise<PostApiConversationArchiveResponse>
+
+export type GetApiConversationArchivesResponse = {
+  archives: Array<{
+    id: string
+    repository: string
+    branch: string
+    title: string
+    summary: string
+    runs: Array<{
+      repo: string
+      runId: string
+      workspaceId?: string
+    }>
+    entries: number
+    first_at: number
+    last_at: number
+    archived_at: number
+    archived_by?: string
+  }>
+}
+
+/** GET /api/conversation-archives: List archived chats */
+export const getApiConversationArchives = (transport: Transport): Promise<GetApiConversationArchivesResponse> =>
+  transport.request("GET", `/api/conversation-archives`) as Promise<GetApiConversationArchivesResponse>
+
+export type GetApiConversationArchiveResponse = {
+  archive: {
+    id: string
+    repository: string
+    branch: string
+    title: string
+    summary: string
+    runs: Array<{
+      repo: string
+      runId: string
+      workspaceId?: string
+    }>
+    entries: number
+    first_at: number
+    last_at: number
+    archived_at: number
+    archived_by?: string
+  }
+  conversation: AnyJSON
+}
+
+export interface GetApiConversationArchiveInput {
+  readonly path: { readonly id: string }
+}
+
+/** GET /api/conversation-archives/{id}: Read an archived chat */
+export const getApiConversationArchive = (transport: Transport, input: GetApiConversationArchiveInput): Promise<GetApiConversationArchiveResponse> =>
+  transport.request("GET", `/api/conversation-archives/${segment(input.path.id)}`) as Promise<GetApiConversationArchiveResponse>
+
 export type GetApiAgentsResponse = AnyJSON
 
 /** GET /api/agents: Read factory agents */

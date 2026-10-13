@@ -2010,6 +2010,94 @@ func (v PutAPIConversationViewStateResponse) MarshalJSON() ([]byte, error) {
 	return joinAdditional(plain(v), v.AdditionalProperties)
 }
 
+// PostAPIConversationArchiveBody is generated from docs/api/openapi.yaml.
+type PostAPIConversationArchiveBody struct {
+	Repository *string `json:"repository,omitempty"`
+	Branch     *string `json:"branch,omitempty"`
+}
+
+// PostAPIConversationArchiveResponse is generated from docs/api/openapi.yaml.
+type PostAPIConversationArchiveResponse struct {
+	Archive PostAPIConversationArchiveResponseArchive `json:"archive"`
+}
+
+// PostAPIConversationArchiveResponseArchive is generated from docs/api/openapi.yaml.
+type PostAPIConversationArchiveResponseArchive struct {
+	ID         string                                              `json:"id"`
+	Repository string                                              `json:"repository"`
+	Branch     string                                              `json:"branch"`
+	Title      string                                              `json:"title"`
+	Summary    string                                              `json:"summary"`
+	Runs       []PostAPIConversationArchiveResponseArchiveRunsItem `json:"runs"`
+	Entries    int64                                               `json:"entries"`
+	FirstAt    int64                                               `json:"first_at"`
+	LastAt     int64                                               `json:"last_at"`
+	ArchivedAt int64                                               `json:"archived_at"`
+	ArchivedBy *string                                             `json:"archived_by,omitempty"`
+}
+
+// PostAPIConversationArchiveResponseArchiveRunsItem is generated from docs/api/openapi.yaml.
+type PostAPIConversationArchiveResponseArchiveRunsItem struct {
+	Repo        string  `json:"repo"`
+	RunID       string  `json:"runId"`
+	WorkspaceID *string `json:"workspaceId,omitempty"`
+}
+
+// GetAPIConversationArchivesResponse is generated from docs/api/openapi.yaml.
+type GetAPIConversationArchivesResponse struct {
+	Archives []GetAPIConversationArchivesResponseArchivesItem `json:"archives"`
+}
+
+// GetAPIConversationArchivesResponseArchivesItem is generated from docs/api/openapi.yaml.
+type GetAPIConversationArchivesResponseArchivesItem struct {
+	ID         string                                                   `json:"id"`
+	Repository string                                                   `json:"repository"`
+	Branch     string                                                   `json:"branch"`
+	Title      string                                                   `json:"title"`
+	Summary    string                                                   `json:"summary"`
+	Runs       []GetAPIConversationArchivesResponseArchivesItemRunsItem `json:"runs"`
+	Entries    int64                                                    `json:"entries"`
+	FirstAt    int64                                                    `json:"first_at"`
+	LastAt     int64                                                    `json:"last_at"`
+	ArchivedAt int64                                                    `json:"archived_at"`
+	ArchivedBy *string                                                  `json:"archived_by,omitempty"`
+}
+
+// GetAPIConversationArchivesResponseArchivesItemRunsItem is generated from docs/api/openapi.yaml.
+type GetAPIConversationArchivesResponseArchivesItemRunsItem struct {
+	Repo        string  `json:"repo"`
+	RunID       string  `json:"runId"`
+	WorkspaceID *string `json:"workspaceId,omitempty"`
+}
+
+// GetAPIConversationArchiveResponse is generated from docs/api/openapi.yaml.
+type GetAPIConversationArchiveResponse struct {
+	Archive      GetAPIConversationArchiveResponseArchive `json:"archive"`
+	Conversation AnyJSON                                  `json:"conversation"`
+}
+
+// GetAPIConversationArchiveResponseArchive is generated from docs/api/openapi.yaml.
+type GetAPIConversationArchiveResponseArchive struct {
+	ID         string                                             `json:"id"`
+	Repository string                                             `json:"repository"`
+	Branch     string                                             `json:"branch"`
+	Title      string                                             `json:"title"`
+	Summary    string                                             `json:"summary"`
+	Runs       []GetAPIConversationArchiveResponseArchiveRunsItem `json:"runs"`
+	Entries    int64                                              `json:"entries"`
+	FirstAt    int64                                              `json:"first_at"`
+	LastAt     int64                                              `json:"last_at"`
+	ArchivedAt int64                                              `json:"archived_at"`
+	ArchivedBy *string                                            `json:"archived_by,omitempty"`
+}
+
+// GetAPIConversationArchiveResponseArchiveRunsItem is generated from docs/api/openapi.yaml.
+type GetAPIConversationArchiveResponseArchiveRunsItem struct {
+	Repo        string  `json:"repo"`
+	RunID       string  `json:"runId"`
+	WorkspaceID *string `json:"workspaceId,omitempty"`
+}
+
 // PostAPIAgentsRoleEditBody is generated from docs/api/openapi.yaml.
 type PostAPIAgentsRoleEditBody struct {
 	Name    *string `json:"name,omitempty"`
@@ -3138,6 +3226,27 @@ func (c *Client) GetAPIConversationViewState(ctx context.Context, b string) (Get
 func (c *Client) PutAPIConversationViewState(ctx context.Context, b string, body PutAPIConversationViewStateBody) (PutAPIConversationViewStateResponse, error) {
 	var out PutAPIConversationViewStateResponse
 	err := c.do(ctx, "PUT", "/api/conversations/"+url.PathEscape(b)+"/view-state", nil, body, &out)
+	return out, err
+}
+
+// PostAPIConversationArchive calls POST /api/conversations/{b}/archive.
+func (c *Client) PostAPIConversationArchive(ctx context.Context, b string, body PostAPIConversationArchiveBody) (PostAPIConversationArchiveResponse, error) {
+	var out PostAPIConversationArchiveResponse
+	err := c.do(ctx, "POST", "/api/conversations/"+url.PathEscape(b)+"/archive", nil, body, &out)
+	return out, err
+}
+
+// GetAPIConversationArchives calls GET /api/conversation-archives.
+func (c *Client) GetAPIConversationArchives(ctx context.Context) (GetAPIConversationArchivesResponse, error) {
+	var out GetAPIConversationArchivesResponse
+	err := c.do(ctx, "GET", "/api/conversation-archives", nil, nil, &out)
+	return out, err
+}
+
+// GetAPIConversationArchive calls GET /api/conversation-archives/{id}.
+func (c *Client) GetAPIConversationArchive(ctx context.Context, id string) (GetAPIConversationArchiveResponse, error) {
+	var out GetAPIConversationArchiveResponse
+	err := c.do(ctx, "GET", "/api/conversation-archives/"+url.PathEscape(id), nil, nil, &out)
 	return out, err
 }
 

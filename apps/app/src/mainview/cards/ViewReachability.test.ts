@@ -30,7 +30,8 @@ const WIRED_VIEWS = {
   "DebugApiView.tsx": { ticket: "T-APP-21", legacy: [] },
   "ProposalView.tsx": { ticket: "T-FLW-06", legacy: [] },
   "RunView.tsx": { ticket: "T-FLW-07", legacy: [] },
-  "CommandsView.tsx": { ticket: "T-UI-14", legacy: ["cards/views/CommandsCases.ts", "cards/views/CommandsExpectations.ts", "cards/views/CommandActionView.tsx"] }
+  "CommandsView.tsx": { ticket: "T-UI-14", legacy: ["cards/views/CommandsCases.ts", "cards/views/CommandsExpectations.ts", "cards/views/CommandActionView.tsx"] },
+  "HistoryView.tsx": { ticket: "#3827", legacy: [] }
 } as const
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..")

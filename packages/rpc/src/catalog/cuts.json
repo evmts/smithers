@@ -179,7 +179,6 @@
       "id": "appendix-b-retired-doors",
       "disposition": "cut",
       "flowNames": [
-        "chat.clear",
         "tab.card",
         "tab.close",
         "tab.select",

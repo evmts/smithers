@@ -22,3 +22,13 @@ test("the command catalog owns argument admission, not a display hint", () => {
   expect(parseSubmit("/chat", [{ name: "chat" }])).toEqual({ kind: "command", name: "chat" })
   expect(parseSubmit("/not/command", [])).toEqual({ kind: "prompt", text: "/not/command" })
 })
+
+test("an alias submits the command it names, and a registered name wins over an alias", () => {
+  const commands = [{ name: "archive", aliases: ["new", "clear"] }, { name: "history", acceptsArgs: true, aliases: ["resume"] }]
+  expect(parseSubmit("/clear", commands)).toEqual({ kind: "command", name: "archive" })
+  expect(parseSubmit("/resume 0b1c", commands)).toEqual({ kind: "command", name: "history", args: "0b1c" })
+  // The named command takes no input, so text after its alias stays a prompt.
+  expect(parseSubmit("/new idea", commands)).toEqual({ kind: "prompt", text: "/new idea" })
+  expect(parseSubmit("/cle", commands)).toEqual({ kind: "unknown-command", name: "cle" })
+  expect(parseSubmit("/clear", [...commands, { name: "clear" }])).toEqual({ kind: "command", name: "clear" })
+})

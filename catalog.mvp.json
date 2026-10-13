@@ -1047,6 +1047,30 @@
       }
     },
     {
+      "name": "archive",
+      "slash": "/archive",
+      "cli": null,
+      "journey": [],
+      "group": "Ask",
+      "visibility": "core",
+      "actors": [
+        "person"
+      ],
+      "minimumRole": "member",
+      "credentialScope": "write:repository",
+      "agent": "never",
+      "summary": "Archive this chat and start a new one",
+      "http": null,
+      "payload": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "additionalProperties": false
+        },
+        "definitions": {}
+      }
+    },
+    {
       "name": "auth.email",
       "slash": null,
       "cli": null,
@@ -6121,6 +6145,44 @@
         "schema": {
           "type": "object",
           "additionalProperties": false
+        },
+        "definitions": {}
+      }
+    },
+    {
+      "name": "history",
+      "slash": "/history",
+      "cli": null,
+      "journey": [],
+      "group": "Ask",
+      "visibility": "core",
+      "actors": [
+        "person",
+        "app_agent"
+      ],
+      "minimumRole": "member",
+      "credentialScope": "write:repository",
+      "agent": "run",
+      "summary": "Archived chats",
+      "http": null,
+      "payload": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": true
         },
         "definitions": {}
       }

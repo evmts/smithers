@@ -163,6 +163,7 @@ Closed without a change: 2, a queued "Refresh wiki" row with no button. spec.md 
 - **Waiting on smithers-3f** (Detail E): three guest-helper questions, learning machine isolation (T-FLW-06), and wire protocols 7 to 12.
 - **Mac mini and Cloud.** Nothing has run on the Mac mini. Smithers Cloud admits no TODO (`packages/backend/internal/compose/main.go:1370-1377`).
 - **80 tickets** have code on main and no real-machine run (Detail C). 33 journey rows are pending (Detail A).
+- **Chat archive and history** ([#3827](https://github.com/smithersai/smithers/issues/3827)). `/archive` (aliases `/new`, `/clear`) and `/history` pass their unit, PostgreSQL and browser-fixture suites. Nothing has run against a real install or the hosted backend, and no model has written a real summary. Both commands stay hidden until the host advertises `chat.archive`, so hosted needs the backend deploy first.
 - **Sign-offs and the Mac mini schedule** serve Done, not this prerelease. No sign-off is done and the schedule is stopped.
 
 ## 5. Not in this prerelease

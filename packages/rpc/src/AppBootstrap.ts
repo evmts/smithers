@@ -29,6 +29,7 @@ export const APP_BOOTSTRAP_PATH = "/api/bootstrap"
  */
 export const RuntimeCapabilitySchema = z.enum([
   "agent",
+  "chat.archive", // the host archives a chat and lists archived chats (#3827)
   "model.turn", // sealed turns on a configured model, independent of the default agent
   "recommend", // provider-backed command recommendations
   "commands.select", // the decision model selects each chat message's commands (POST /api/commands/select)

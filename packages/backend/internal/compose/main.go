@@ -2585,7 +2585,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		})
 	}
 	if conversationSummaries != nil {
-		summaryOperations := []string{services.ConversationSummaryOperation}
+		summaryOperations := []string{services.ConversationSummaryOperation, services.ArchiveSummaryOperation}
 		if conversationSummaries.RunSource != nil {
 			summaryOperations = append(summaryOperations, services.RunSummaryOperation)
 		}

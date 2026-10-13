@@ -391,7 +391,30 @@ keystroke in that window returns the same receipt, and the journal holds one
 record also bridges that batching window and is reconciled into the envelope
 on boot.
 
-## Clearing and recovering a conversation
+## Archiving a chat and history
+
+`/archive` moves the chat on screen into history and starts a new one; `/new`
+and `/clear` are aliases of it. The chat is archived on the host, not in the
+browser: `POST /api/conversations/{b}/archive` moves the conversation's turns
+under an archive record and leaves the branch with an empty chat. The record
+keeps the repository and branch the header showed, a title (the first prompt's
+first line until the model writes one), a summary the host's fast model writes
+in the background, and the runs the chat started. A chat whose summary never
+arrives still lists and opens. Archiving is refused while a prompt is running
+or queued, and the app agent cannot archive the chat its own turn runs in.
+
+`/history` opens the History card: archived chats as a tree of repository,
+then branch, then chat, then the runs that chat started. The header's
+repository and branch come first and start open. Selecting a chat shows its
+summary and its entries, read-only. The card's selection is saved in its
+payload; the rows come from `GET /api/conversation-archives` and are never
+written to browser storage. On an install, members of the repository share its
+archives; on a hosted account, archives belong to the account.
+
+## Clearing and recovering a conversation (cut 2026-10-02, T-CUT-01)
+
+The text below describes the removed `/chat.clear`, kept so stored journals
+that hold `conversation.cleared` stay explicable. `/archive` replaced it (#3827).
 
 `/chat.clear` archives the current conversation locally and starts a new one.
 It requires neither sign-in nor a model request. The confirmation contains a

@@ -199,6 +199,7 @@ var migrationRegistry = []migrationSpec{
 	{161, "migrations/0161_flow_host_start_bound.sql"},
 	{162, "migrations/0162_workspace_children_quota_exemption.sql"},
 	{163, "migrations/0163_hosted_account_conversations.sql"},
+	{164, "migrations/0164_chat_archives.sql"},
 }
 
 type migration struct {

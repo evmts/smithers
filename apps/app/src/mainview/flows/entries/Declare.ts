@@ -38,6 +38,9 @@ export type CommandActions =
     | "fileDocuments"
     // The header's branch rows are view data; the `branch` flow reaches the seam through openBranch.
     | "repositoryBranches"
+    // The History card reads archived chats and the header's label; `archive` and `history` are the acts.
+    | "chatArchives"
+    | "archiveLabel"
     // Control focus is the composition root's DOM-owned projection, never a flow's act.
     | "controlFocus"
     | "formFocus"

@@ -26,6 +26,7 @@ export const UI_INSTRUCTION_FIELDS = {
   "flow.plan.tab": ["cardId", "tab"],
   "form.set": ["cardId", "field", "value"],
   "help": [],
+  "history": ["id"],
   "prs.tab": ["cardId", "tab"],
   "runs.coding.select": ["sourceCard", "runId", "changeId"],
   "runs.graph.execution": ["sourceCard", "runId", "executionId"],

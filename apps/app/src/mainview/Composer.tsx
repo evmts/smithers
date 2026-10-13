@@ -271,7 +271,7 @@ export function Composer({
      * unless the person moved the highlight to a row of their own.
      */
     const outright = inputAnswer.parsed.mode === "flows" && inputQuery !== undefined && inputQuery !== "" &&
-        !inputSlashRows.some((row) => row.kind === "flow" && row.flow.name.toLowerCase() === inputQuery) &&
+        !inputSlashRows.some((row) => row.kind === "flow" && (row.alias ?? row.flow.name).toLowerCase() === inputQuery) &&
         controller.commands.find(inputQuery) !== undefined
       ? inputQuery
       : undefined

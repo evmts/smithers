@@ -4239,6 +4239,20 @@ export const legacyCards = [
   },
   {
     row: {
+      id: "archived-chats",
+      title: "History",
+      status: "active",
+      createdAt: 0,
+      ordinal: 0,
+      kind: "archives",
+      payload: { selected: "0b1c2d3e" }
+    },
+    expectedKind: "archives",
+    expectedTitle: "History",
+    expectedWas: null
+  },
+  {
+    row: {
       id: "saved-docs",
       title: "Saved docs",
       status: "active",

@@ -205,6 +205,8 @@ export const stubCommandActions = (overrides: Partial<CommandActions> = {}): Com
   design: createDesignWorld(),
   live: undefined,
   presentCard: unexpected,
+  archiveChat: unexpected,
+  showHistory: unexpected,
   presentRun: unexpected,
   presentFlow: unexpected,
   presentSubject: unexpected,

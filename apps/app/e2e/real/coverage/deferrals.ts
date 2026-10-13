@@ -103,6 +103,8 @@ export const UNSCENARIOED_ACTIONS: Readonly<Record<Deferral, readonly string[]>>
     "todo.unapprove",
     // Current MVP doors still owe real-host scenarios (#2290). These are gaps, never executed coverage.
     "agent.edit",
+    // Chat archive and history reach the host's conversation routes (#3827).
+    "archive",
     "auth.email",
     "background.dismiss",
     "background.retry",
@@ -116,6 +118,7 @@ export const UNSCENARIOED_ACTIONS: Readonly<Record<Deferral, readonly string[]>>
     "draft.discard",
     "flow.source",
     "github",
+    "history",
     "issue.comment",
     "issues",
     // DARK (#3558): activation awaits the T-APP-07 entry provider and synchronous person dispatch.

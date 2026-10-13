@@ -309,6 +309,9 @@ func (h *Handler) MountAuthenticated(router chi.Router) {
 	router.Delete("/api/conversations/{b}/turns/{id}", h.QueueTurn)
 	router.Get("/api/conversations/{b}/view-state", h.ViewState)
 	router.Put("/api/conversations/{b}/view-state", h.ViewState)
+	router.Post("/api/conversations/{b}/archive", h.ArchiveConversation)
+	router.Get(ArchivesPath, h.ListArchives)
+	router.Get(ArchivesPath+"/{id}", h.ReadArchive)
 	router.Get(HistoryPath, h.History)
 	router.Post(AccountReplayPath, h.ReplayAccount)
 }

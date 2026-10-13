@@ -76,6 +76,7 @@ function joinDefault(root: string, child: string): string {
       "confirm.cancel", "debug-api", "docs", "draft.discard", "flow.source", "github", "issue.comment", "issues",
       "notifications.allow", "run", "run.inspect", "ssh", "stack", "stack.move", "todo.amend", "todo.drop",
       "todo.from-issue", "todo.resume", "todo.retry-current-flow", "todo.stop", "wiki.page", "wiki.save",
+      "archive", "history",
     ],
   } as const
   const covered = new Set(report.scenarios.flatMap((scenario) => scenario.actions))

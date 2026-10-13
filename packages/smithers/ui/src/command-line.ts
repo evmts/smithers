@@ -52,7 +52,7 @@ const commandHead = (text: string): { readonly name: string; readonly args?: str
  *  - blank (or a bare "/") submits nothing — bare "/" + Enter is handled by the
  *    menu selecting its first (recommended) item,
  *  - an input that is ONLY a registered slash flow executes it directly
- *    by its registered name,
+ *    by its registered name; an alias executes the flow it names,
  *  - `/name <text>` executes directly when the flow declares input,
  *  - a leading token that is flow SYNTAX but names no registered flow is
  *    refused by name — never handed to the model as prose,
@@ -63,7 +63,7 @@ const commandHead = (text: string): { readonly name: string; readonly args?: str
  * into the flow's typed payload is `SlashPayload.payloadFor`, which the same
  * boundary calls next — so a handler never sees raw argument text.
  */
-export const parseSubmit = <C extends { readonly name: string; readonly acceptsArgs?: boolean }>(
+export const parseSubmit = <C extends { readonly name: string; readonly acceptsArgs?: boolean; readonly aliases?: ReadonlyArray<string> }>(
   input: string,
   commands: ReadonlyArray<C>
 ): Submit => {
@@ -71,11 +71,13 @@ export const parseSubmit = <C extends { readonly name: string; readonly acceptsA
   if (text === "" || text === "/") return { kind: "empty" }
   const invocation = commandHead(text)
   if (invocation === undefined) return { kind: "prompt", text }
-  const command = commands.find((candidate) => candidate.name === invocation.name)
+  // A registered name wins; an alias resolves to the flow it names, so every door runs one flow.
+  const command = commands.find((candidate) => candidate.name === invocation.name) ??
+    commands.find((candidate) => candidate.aliases?.includes(invocation.name) === true)
   if (command === undefined) return { kind: "unknown-command", name: invocation.name }
-  if (invocation.args === undefined) return { kind: "command", name: invocation.name }
+  if (invocation.args === undefined) return { kind: "command", name: command.name }
   if (command.acceptsArgs === true) {
-    return { kind: "command", name: invocation.name, args: invocation.args }
+    return { kind: "command", name: command.name, args: invocation.args }
   }
   return { kind: "prompt", text }
 }

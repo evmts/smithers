@@ -257,12 +257,12 @@ export function PaletteOverlay({ id, answer, rows, highlighted, slashBranch, onH
             )
           }
           if (row.kind === "slash" && row.row.kind === "flow") {
-            const { flow, recommended } = row.row
+            const { flow, recommended, alias } = row.row
             return (
-              <Fragment key={flow.name}>
+              <Fragment key={alias === undefined ? flow.name : `alias:${alias}`}>
                 {heading}
-                <button {...common} data-gold={recommended} {...dynamicFlowProps(flow.name)} className="slash-menu-item" onClick={() => onChoose(row)}>
-                  <span className="slash-menu-name">/{flow.name}</span>
+                <button {...common} data-gold={recommended} {...dynamicFlowProps(flow.name)} data-alias={alias} className="slash-menu-item" onClick={() => onChoose(row)}>
+                  <span className="slash-menu-name">{alias === undefined ? `/${flow.name}` : `/${alias} (${flow.name})`}</span>
                   <span className="slash-menu-description">{flow.summary}</span>
                 </button>
               </Fragment>

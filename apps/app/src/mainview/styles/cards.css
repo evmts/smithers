@@ -3365,3 +3365,13 @@ button.mvp-node:focus-visible { outline: 2px solid var(--ring-border); outline-o
 .timeline li[data-tone="failed"] .tl-text b { color: var(--danger); }
 .timeline li[data-tone="live"] .tl-text b { animation: shell-live 1.8s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .timeline li[data-tone="live"] .tl-text b { animation: none; } }
+
+/* History card (#3827): archived chats as repository, branch, chat, then the runs a chat started. */
+.history-card { min-width: 0; overflow-wrap: anywhere; }
+.history-card ol { display: flex; flex-direction: column; gap: 1px; margin: 0; padding: 0; list-style: none; }
+.history-card ol ol { padding-left: 16px; }
+.history-card .tree-row time, .history-count { flex: none; color: var(--text-muted); font-size: var(--fs-caption); }
+.history-chat { padding: 4px 8px 8px 24px; }
+.history-summary, .history-note { margin: 0 0 6px; color: var(--text-muted); font: var(--fs-small) var(--font-ui); }
+.history-prompt { margin: 8px 0 2px; font: var(--fs-small) var(--font-ui); }
+.history-card button:focus-visible { outline: 2px solid var(--ring-border); outline-offset: -2px; }

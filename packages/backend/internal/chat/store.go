@@ -62,9 +62,13 @@ type SharedCommit struct {
 type Store struct {
 	OnSharedCommit     func(context.Context, pgx.Tx, SharedCommit) error
 	OnConversationRead func(context.Context, Scope, string) error
-	pool               *pgxpool.Pool
-	now                func() time.Time
-	latencies          *turnLatencies
+	// OnArchive runs in the transaction that archives a chat; its id follows the scope.
+	OnArchive func(context.Context, pgx.Tx, Scope, string) error
+	// OnArchivesRead runs after an authorized history listing; it never fails the read.
+	OnArchivesRead func(context.Context, Scope) error
+	pool           *pgxpool.Pool
+	now            func() time.Time
+	latencies      *turnLatencies
 	// afterReplayHead is a test seam that runs between the head read and the
 	// batch reads of Replay.
 	afterReplayHead func()

@@ -303,6 +303,12 @@ application events and verified checkpoints own UI persistence. Every paragraph 
 in-webview loop, its relay seat, its catalog adapter or its approval tiers is
 history, not current behaviour.
 
+**Archive amendment (Will, 2026-10-13, #3827; supersedes the `/chat.clear` text below):**
+a branch holds one live chat and any number of archived ones. `/archive`
+(aliases `/new`, `/clear`) moves the chat into history on the host and starts a
+new one; `/history` shows archived chats as a tree of repository, branch, chat.
+An alias is listed only once the person starts typing it, as `/clear (archive)`.
+
 **1.0 review amendment (2026-09-04, R7/R8; supersedes the earlier clear/sweep rule):**
 `/chat.clear` is an offline-capable local archive/start-new operation, not a
 model-dependent deletion. `/chat.clear --summarize` explicitly requests additive

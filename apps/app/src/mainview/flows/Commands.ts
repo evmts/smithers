@@ -367,7 +367,11 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     return catalog.filter(item => item.visibility === undefined || admitted.has(item.name))
   }
 
-  const find = (name: string): FlowEntry | undefined => entries().find((entry) => nameOf(entry) === name)
+  /** A registered name, else the flow that lists `name` as an alias. */
+  const find = (name: string): FlowEntry | undefined => {
+    const all = entries()
+    return all.find((entry) => nameOf(entry) === name) ?? all.find((entry) => entry.metadata.aliases?.includes(name) === true)
+  }
 
   /*
    * The honest refusal (docs/web-mode/PLAN.md §1). The enabled catalog stays

@@ -61,6 +61,7 @@ const USER_ONLY_ALLOWLIST: Readonly<Record<string, string>> = {
   "chat.queue.restore": "the prompt queue is the human's composer",
   "chat.send": "the composer is the human's; the model is already the turn, and sending would nest one",
   "stop": "stopping the model's own turn is the human's Escape key",
+  "archive": "turn mechanics: a chat cannot be archived while the model's own turn runs in it",
   "chat.copy-message": "the clipboard write is the human's browser gesture",
   "wiki.pane": "a surface switch; the model reads the wiki with wiki and wiki.cloud, which answer as embedded cards",
   "card.maximize": "maximizing a card is the human's explicit act (THE EMBED LAW)",

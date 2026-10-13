@@ -79,8 +79,19 @@
       "ids": [
         "chat.clear"
       ],
-      "status": "cut",
-      "who": "–"
+      "status": "rename",
+      "who": "P",
+      "replacement": [
+        "archive"
+      ]
+    },
+    {
+      "section": "B.1",
+      "ids": [
+        "history"
+      ],
+      "status": "keep",
+      "who": "P, A"
     },
     {
       "section": "B.1",
@@ -1225,6 +1236,8 @@
     "help",
     "docs",
     "stop",
+    "archive",
+    "history",
     "search",
     "stack",
     "todo.new",

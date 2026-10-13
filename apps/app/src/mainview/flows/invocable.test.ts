@@ -57,7 +57,7 @@ const EVERYTHING: AppBootstrap = {
 }
 
 // T-CAT-01: only Appendix A core/advanced commands are menu rows.
-const exceptionNames = ["chat.send", "stop", "debug-api", "settings", "secrets", "members", "ssh", "sign-in", "sign-out"]
+const exceptionNames = ["chat.send", "stop", "archive", "debug-api", "settings", "secrets", "members", "ssh", "sign-in", "sign-out"]
 
 describe("every listed flow is a tool call", () => {
   test("visible ⊆ model-invocable, Appendix A person-only commands excepted", async () => {

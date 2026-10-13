@@ -178,6 +178,10 @@
       "door": "app"
     },
     {
+      "command": "archive",
+      "door": "app"
+    },
+    {
       "command": "auth.email",
       "door": "app"
     },
@@ -713,6 +717,10 @@
     },
     {
       "command": "help",
+      "door": "app"
+    },
+    {
+      "command": "history",
       "door": "app"
     },
     {

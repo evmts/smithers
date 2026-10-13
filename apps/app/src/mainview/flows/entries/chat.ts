@@ -60,6 +60,23 @@ export const chatFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
     handler: () => actions.stop()
   }),
   flow(SEND),
+  flow({
+    /* A branch holds one live chat and any number of archived ones (Will, 2026-10-13, #3827). */
+    name: "archive", aliases: ["new", "clear"],
+     slash: "/archive", cli: null, journey: [], group: "Ask", visibility: "core" as const, actors: ["person"] as const, minimumRole: "member" as const, http: null, summary: "Archive this chat and start a new one",
+    agentReason: "turn mechanics: a chat cannot be archived while the model's own turn runs in it",
+    runtime: ["chat.archive"],
+    agent: "never", input: NoPayload,
+    handler: () => actions.archiveChat()
+  }),
+  flow({
+    name: "history",
+     slash: "/history", cli: null, journey: [], group: "Ask", visibility: "core" as const, actors: ["person","app_agent"] as const, minimumRole: "member" as const, http: null, summary: "Archived chats",
+    runtime: ["chat.archive"],
+    args: "[id]", grammar: args => ({ payload: args?.trim() ? { id: args.trim() } : {} }),
+    agent: "run", input: Schema.Struct({ id: Schema.optional(Schema.NonEmptyString) }),
+    handler: ({ id }: { readonly id?: string }) => actions.showHistory(id)
+  }),
   flow({ name: "chat.queue", summary: "Queue a follow-up", args: "<text>",
     agent: "never" as const, agentReason: "the prompt queue is the human's composer",
     input: Schema.Struct({ text: Schema.String }), handler: ({ text }, _signal, _call, gesture) => actions.enqueuePrompt(text, gesture?.composerDraftCurrent) }),

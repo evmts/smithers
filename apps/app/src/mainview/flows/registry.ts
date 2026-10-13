@@ -87,7 +87,21 @@ export interface FlowMetadata extends OperationMetadata<RuntimeCapability, AppBo
    * table first and this second. Absent for every declared flow.
    */
   readonly grammar?: Grammar
+  /**
+   * Other slash names that run this flow (`/new` and `/clear` run `/archive`).
+   * An alias is never listed for a bare `/`: its row appears once the person
+   * starts typing the alias, and names this flow in parentheses. A flow
+   * registered under the same name wins over an alias.
+   */
+  readonly aliases?: ReadonlyArray<string>
 }
+
+/** The flow an alias runs: only when no flow is registered under that name. */
+export const aliasOwner = <C extends { readonly name: string; readonly aliases?: ReadonlyArray<string> }>(
+  commands: ReadonlyArray<C>,
+  name: string
+): C | undefined =>
+  commands.some((command) => command.name === name) ? undefined : commands.find((command) => command.aliases?.includes(name) === true)
 
 /** The confirmation label an agent invocation of this flow needs, or undefined when it needs none. */
 export const confirmLabel = (metadata: FlowMetadata, payload: Record<string, unknown>): string | undefined =>
@@ -430,7 +444,8 @@ export const namespacesOf = <C extends CatalogItem>(
 
 /** One row of the slash menu: a flow to run, a namespace to open, or a one-line note the listing needs. */
 export type SlashRow<C extends CatalogItem> =
-  | { readonly kind: "flow"; readonly flow: C; readonly recommended: boolean }
+  /** `alias` is the typed name this row answers; the row still runs `flow`. */
+  | { readonly kind: "flow"; readonly flow: C; readonly recommended: boolean; readonly alias?: string }
   | { readonly kind: "namespace"; readonly namespace: Namespace; readonly count: number }
   | { readonly kind: "note"; readonly text: string }
 
@@ -503,7 +518,13 @@ export const slashTree = <C extends CatalogItem>(
   const matches = slashItems(state, needle, commands)
   const exact = matches.filter(item => item.flow.name.toLowerCase() === query)
   const fuzzy = matches.filter(item => item.flow.name.toLowerCase() !== query)
-  return [...(collides ? [collisionNote<C>(query)] : []), ...exact.map(asFlow), ...heads, ...fuzzy.map(asFlow)]
+  // An alias answers only its own spelling: the typed text must begin it. The whole alias sorts first, so Enter runs what was typed.
+  const aliases = visible(offerable(state, commands, query))
+    .flatMap((flow) => (flow.aliases ?? []).map((alias) => ({ flow, alias })))
+    .filter(({ alias }) => alias.startsWith(query) && aliasOwner(commands, alias) !== undefined)
+    .sort((left, right) => Number(right.alias === query) - Number(left.alias === query))
+    .map(({ flow, alias }): SlashRow<C> => ({ kind: "flow", flow, recommended: false, alias }))
+  return [...(collides ? [collisionNote<C>(query)] : []), ...exact.map(asFlow), ...aliases, ...heads, ...fuzzy.map(asFlow)]
 }
 
 /**

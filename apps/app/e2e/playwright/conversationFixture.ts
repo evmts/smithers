@@ -5,7 +5,7 @@ import { SCOPED_TEST_USER } from "./identity"
 
 /** Producer-shaped shared conversation for Chat interaction tests. */
 export async function installConversationFixture(page: Page, options: { readonly context?: readonly ContextItem[]; readonly model?: string; readonly holdFirstTurn?: Promise<void> } = {}) {
-  await installCloudFixture(page, { capabilities: ["install", "identity", "agent"] })
+  await installCloudFixture(page, { capabilities: ["install", "identity", "agent", "chat.archive"] })
   await page.route("**/api/members", route => route.fulfill({ json: { members: [{ login: SCOPED_TEST_USER.login, name: SCOPED_TEST_USER.login, avatar_url: "https://example.test/member.png", role: "member", color_index: 0, needs_access: false, suspended: false, actions: [] }], access_url: "https://github.com/smithersai/smithers/settings/access" } }))
   const entries: Array<Record<string, unknown>> = []
   let active = false

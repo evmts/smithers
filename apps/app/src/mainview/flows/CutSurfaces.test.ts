@@ -17,7 +17,6 @@ const createAppController = scopedControllers()
 const CUT_NAMES = [
   "chat.dictate",
   "commits.list", "commits.read",
-  "chat.clear",
   "tab.card",
   "tab.close",
   "tab.select",

@@ -217,7 +217,7 @@ requires all declared hosts. Test discovery (`--list`) is not execution proof.
 
 ### Feature matrix
 
-Feature matrix version 9. `FEATURE_MATRIX` in `matrix.ts` classifies every
+Feature matrix version 10. `FEATURE_MATRIX` in `matrix.ts` classifies every
 runtime capability for each provider:
 
 - `core`: every mode of the provider must advertise it. The report has one
@@ -232,6 +232,7 @@ SHA-256 digest of the table. Change a row only with a version bump.
 | Capability | selfhost | Plue |
 | --- | --- | --- |
 | `agent` | optional | optional |
+| `chat.archive` | optional | optional |
 | `model.turn` | optional | optional |
 | `recommend` | optional | optional |
 | `commands.select` | optional | optional |

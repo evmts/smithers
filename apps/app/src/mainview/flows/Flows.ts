@@ -98,6 +98,7 @@ export const USER_ONLY_VISIBLE: ReadonlyArray<{ readonly name: string; readonly 
   { name: "chat.queue", why: "the prompt queue is the human's composer" },
   { name: "chat.send", why: "turn mechanics: the model is already the turn; sending would nest one" },
   { name: "stop", why: "turn mechanics: stopping the model's own turn from inside it" },
+  { name: "archive", why: "turn mechanics: a chat cannot be archived while the model's own turn runs in it" },
   { name: "admin.reset", why: "destroys the whole store with no undo; the confirm dialog is the only door" },
   { name: "billing.upgrade", why: "external checkout with real money; the human clicks" },
   { name: "billing.portal", why: "external billing portal; the human clicks" },

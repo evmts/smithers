@@ -9,6 +9,8 @@ import { flowArgs } from "../flows/FlowArgs"
 import { createSharedPrompts } from "./controller/sharedPrompts"
 import { createSharedConversationSeam, type SharedConversationSeam } from "./seams/SharedConversationSeam"
 import { TranscriptOrder } from "./TranscriptOrder"
+import { createChatArchiveSeam, type ArchiveLabel, type ChatArchiveSeam } from "./seams/ChatArchiveSeam"
+import { headerSelection } from "./HeaderSelection"
 import { createEarlierHistoryController } from "./controller/earlierHistory"
 import { accountOwnerOf } from "./AccountOwner"
 import { createHomeBackgroundSeam, type HomeBackgroundSeam } from "./seams/HomeBackgroundSeam"
@@ -586,6 +588,14 @@ export interface AppController extends IssueFlowsController {
   /** Opens a subject-only card (card-kinds.md L5) once per conversation; its card file reads the data. */
   /** With a `subject` (Branch, Terminal: card-kinds.md L5) the card is `${kind}:${subject}` with payload `{ id: subject }`. */
   readonly presentCard: (kind: "setup" | "settings" | "members" | "commands" | "branch" | "terminal", title: string, subject?: string) => Promise<string>
+  /** Archived chats on the host; the History card reads them (#3827). */
+  readonly chatArchives: ChatArchiveSeam
+  /** The repository and branch the header shows: what an archived chat is filed under. */
+  readonly archiveLabel: () => ArchiveLabel
+  /** `/archive`: moves this chat into history and starts a new one. It acknowledges before the host answers. */
+  readonly archiveChat: () => string | { readonly value: string }
+  /** `/history`: opens the History card; with `id`, opens that archived chat in it, or closes it when it is the open one. A refusal is its sentence. */
+  readonly showHistory: (id?: string) => Promise<string | undefined>
   /** Opens (or reveals) the Run card for run `id`; `maximize` is Inspect. */
   readonly runMonitors: RunMonitorSnapshots | undefined
   readonly openRunMonitor: (id: string, maximize: boolean) => Promise<string | { readonly value: string } | void>
@@ -1178,6 +1188,26 @@ export const createAppController = (
     const card: Card = kind === "branch" || kind === "terminal" ? { ...base, kind, payload: { id: subject ?? "" } } : { ...base, kind, payload: {} }
     await store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card }).isPersisted.promise
     return `Opened ${title}`
+  }
+  // One rule with the header (state/HeaderSelection.ts): a history group and a selection never name different things.
+  const archiveLabel = (): ArchiveLabel => headerSelection({ store, bootstrap: services.bootstrap, installSnapshots: installSeam.snapshots, repositoryBranches })
+  const chatArchives = createChatArchiveSeam(ctx, {
+    // The archive is cut from the conversation on screen: the key its seam addresses the host by.
+    branch: () => sharedConversation?.branch() ?? "main",
+    label: archiveLabel,
+    reread: () => sharedConversation?.read()
+  })
+  const archiveChat = (): string | { readonly value: string } => sharedConversation === undefined ? "Archive unavailable" : chatArchives.archive()
+  const showHistory = async (id?: string): Promise<string | undefined> => {
+    const existing = store.collections.cards.get("archived-chats")
+    const open = existing?.kind === "archives" ? existing.payload.selected : undefined
+    const selected = id === undefined ? open : id === open ? undefined : id
+    const card: Card = { id: "archived-chats", kind: "archives", title: "History", status: "active", createdAt: existing?.createdAt ?? Date.now(),
+      ordinal: existing?.ordinal ?? store.nextOrdinal(), payload: selected === undefined ? {} : { selected } }
+    await store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card }).isPersisted.promise
+    // The card is on screen first; its rows and the opened chat's entries follow from the host.
+    void chatArchives.list()
+    return id !== undefined && selected !== undefined ? chatArchives.open(selected) : undefined
   }
   const { setRunView } = actors.pair(ctx, context => ({ setRunView: async (cardId: string, patch: { selected?: string; at?: number; tab?: "run" | "journal" | "custom" }): Promise<string | void> => {
     const card = store.collections.cards.get(cardId)
@@ -2248,6 +2278,8 @@ export const createAppController = (
     live: services.live,
     design,
     presentCard,
+    archiveChat,
+    showHistory,
     runMonitors,
     openRunMonitor,
     listRunMonitors,
@@ -2872,6 +2904,8 @@ export const createAppController = (
     design,
     live: services.live,
     presentCard,
+    chatArchives,
+    archiveLabel,
     runMonitors,
     openRunMonitor,
     listRunMonitors,

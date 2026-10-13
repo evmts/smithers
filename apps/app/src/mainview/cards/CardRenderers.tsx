@@ -44,6 +44,7 @@ import { environmentImagesCardFamily } from "./EnvironmentImagesCard"
 import { settingsCardFamily } from "./SettingsContainer"
 import { membersCardFamily } from "./MembersCard"
 import { commandsCardFamily } from "./CommandsContainer"
+import { historyCardFamily } from "./HistoryContainer"
 import { todoCardFamily } from "./TodoCard"
 import { draftCardFamily } from "./DraftCard"
 import { confirmCardFamily } from "./ActCard"
@@ -67,6 +68,7 @@ export const CARD_FAMILIES: ReadonlyArray<CardFamily<never>> = [
   settingsCardFamily,
   membersCardFamily,
   commandsCardFamily,
+  historyCardFamily,
   turnCardFamily,
   approvalCardFamily,
   conversationCardFamily,
@@ -106,6 +108,7 @@ export const CARD_RENDERERS: CardFamily<RenderedCardKind> = {
   ...settingsCardFamily,
   ...membersCardFamily,
   ...commandsCardFamily,
+  ...historyCardFamily,
   ...turnCardFamily,
   ...approvalCardFamily,
   ...conversationCardFamily,

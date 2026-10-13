@@ -59,49 +59,58 @@ func (s *Store) SharedEntries(ctx context.Context, scope Scope, branch string, t
 	if scope.RepositoryID == 0 && branch == "main" {
 		branch = accountConversationID(scope.UserID)
 	}
-	result := SharedConversation{ID: branch, Entries: []SharedTurn{}}
-	// The baseline also feeds model context and older clients. Only the chat
-	// viewer opts into progress; membership still determines whose trace it reads.
-	withTrace := len(trace) > 0 && trace[0]
 	if scope.RepositoryID < 0 || scope.UserID <= 0 || !validIdentity(branch) {
-		return result, ErrInvalidRequest
+		return SharedConversation{ID: branch, Entries: []SharedTurn{}}, ErrInvalidRequest
 	}
 	if scope.RepositoryID == 0 && branch != accountConversationID(scope.UserID) {
-		return result, ErrInvalidRequest
+		return SharedConversation{ID: branch, Entries: []SharedTurn{}}, ErrInvalidRequest
 	}
+	// The baseline also feeds model context and older clients. Only the chat
+	// viewer opts into progress; membership still determines whose trace it reads.
+	return s.sharedEntries(ctx, scope, branch, len(trace) > 0 && trace[0])
+}
+
+// activeReader rechecks, inside the caller's snapshot, that the scope still
+// reads conversations: an active account for a private chat, an active member
+// of the installed repository for a shared one.
+func activeReader(ctx context.Context, tx pgx.Tx, scope Scope) error {
+	var active bool
+	if scope.RepositoryID == 0 {
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND username=$2 AND NOT prohibit_login)`, scope.UserID, scope.Owner).Scan(&active); err != nil {
+			return err
+		}
+	} else {
+		installedID, err := db.New(tx).InstallRepositoryID(ctx)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrForbidden
+		}
+		if err != nil {
+			return err
+		}
+		if installedID != scope.RepositoryID {
+			return ErrForbidden
+		}
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM collaborators c JOIN users u ON u.id=c.user_id WHERE c.repository_id=$1 AND c.user_id=$2 AND c.suspended_at IS NULL AND NOT u.prohibit_login)`, scope.RepositoryID, scope.UserID).Scan(&active); err != nil {
+			return err
+		}
+	}
+	if !active {
+		return ErrForbidden
+	}
+	return nil
+}
+
+// sharedEntries projects the turns stored under one conversation key: a live
+// branch key, or an archived chat's key once its archive row admitted the reader.
+func (s *Store) sharedEntries(ctx context.Context, scope Scope, branch string, withTrace bool) (SharedConversation, error) {
+	result := SharedConversation{ID: branch, Entries: []SharedTurn{}}
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
 		return result, err
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
-	if scope.RepositoryID == 0 {
-		var active bool
-		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND username=$2 AND NOT prohibit_login)`, scope.UserID, scope.Owner).Scan(&active)
-		if err != nil {
-			return result, err
-		}
-		if !active {
-			return result, ErrForbidden
-		}
-	} else {
-		installedID, err := db.New(tx).InstallRepositoryID(ctx)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return result, ErrForbidden
-		}
-		if err != nil {
-			return result, err
-		}
-		if installedID != scope.RepositoryID {
-			return result, ErrForbidden
-		}
-		var active bool
-		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM collaborators c JOIN users u ON u.id=c.user_id WHERE c.repository_id=$1 AND c.user_id=$2 AND c.suspended_at IS NULL AND NOT u.prohibit_login)`, scope.RepositoryID, scope.UserID).Scan(&active)
-		if err != nil {
-			return result, err
-		}
-		if !active {
-			return result, ErrForbidden
-		}
+	if err = activeReader(ctx, tx, scope); err != nil {
+		return result, err
 	}
 	rows, err := tx.Query(ctx, `SELECT `+turnColumns+` FROM chat_turns WHERE repository_id=$1 AND conversation_id=$2 AND producer_generation>0 AND state NOT IN ('queued','retired')
 	 AND (($1>0 AND request_payload->>'sharedConversation'='true') OR ($1=0 AND user_id=$3 AND request_payload->>'privateConversation'='true')) ORDER BY entry_seq,id`, scope.RepositoryID, branch, scope.UserID)

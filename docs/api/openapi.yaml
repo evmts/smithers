@@ -1513,6 +1513,256 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /api/conversations/{b}/archive:
+    post:
+      summary: Archive my branch chat
+      description: Moves the branch's chat into history and leaves the branch with an empty chat. The archive records the repository and branch the browser shows, a title and, later, a model-written summary. Refused while a prompt is running or queued. An agent credential is refused.
+      operationId: post_api_conversation_archive
+      tags:
+        - Agent
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: b
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 160
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                repository:
+                  type: string
+                  maxLength: 200
+                branch:
+                  type: string
+                  maxLength: 200
+      responses:
+        '200':
+          description: The archived chat, or a null archive when the chat had no entries.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [archive]
+                properties:
+                  archive:
+                    type: object
+                    nullable: true
+                    required: [id, repository, branch, title, summary, runs, entries, first_at, last_at, archived_at]
+                    properties:
+                      id:
+                        type: string
+                      repository:
+                        type: string
+                        nullable: true
+                        description: owner/name; null is the no-repository group.
+                      branch:
+                        type: string
+                        nullable: true
+                      title:
+                        type: string
+                        description: The first prompt's first line until the model writes a title.
+                      summary:
+                        type: string
+                        nullable: true
+                        description: Null until the model writes it; a chat lists and opens without one.
+                      runs:
+                        type: array
+                        items:
+                          type: object
+                          required: [repo, runId]
+                          properties:
+                            repo:
+                              type: string
+                            runId:
+                              type: string
+                            workspaceId:
+                              type: string
+                      entries:
+                        type: integer
+                      first_at:
+                        type: integer
+                        format: int64
+                      last_at:
+                        type: integer
+                        format: int64
+                      archived_at:
+                        type: integer
+                        format: int64
+                      archived_by:
+                        type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: A prompt is running or queued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /api/conversation-archives:
+    get:
+      summary: List archived chats
+      description: Archived chats the caller reads, newest first. An account reads its own private chats; an active install member reads the install repository's shared ones.
+      operationId: get_api_conversation_archives
+      tags:
+        - Agent
+      security:
+        - sessionCookie: []
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Archived chats, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [archives]
+                properties:
+                  archives:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, repository, branch, title, summary, runs, entries, first_at, last_at, archived_at]
+                      properties:
+                        id:
+                          type: string
+                        repository:
+                          type: string
+                          nullable: true
+                          description: owner/name; null is the no-repository group.
+                        branch:
+                          type: string
+                          nullable: true
+                        title:
+                          type: string
+                          description: The first prompt's first line until the model writes a title.
+                        summary:
+                          type: string
+                          nullable: true
+                          description: Null until the model writes it; a chat lists and opens without one.
+                        runs:
+                          type: array
+                          items:
+                            type: object
+                            required: [repo, runId]
+                            properties:
+                              repo:
+                                type: string
+                              runId:
+                                type: string
+                              workspaceId:
+                                type: string
+                        entries:
+                          type: integer
+                        first_at:
+                          type: integer
+                          format: int64
+                        last_at:
+                          type: integer
+                          format: int64
+                        archived_at:
+                          type: integer
+                          format: int64
+                        archived_by:
+                          type: string
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /api/conversation-archives/{id}:
+    get:
+      summary: Read an archived chat
+      description: The archive and its read-only entries, in the shape of a live conversation.
+      operationId: get_api_conversation_archive
+      tags:
+        - Agent
+      security:
+        - sessionCookie: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 160
+      responses:
+        '200':
+          description: The archive and its entries.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [archive, conversation]
+                properties:
+                  archive:
+                    type: object
+                    required: [id, repository, branch, title, summary, runs, entries, first_at, last_at, archived_at]
+                    properties:
+                      id:
+                        type: string
+                      repository:
+                        type: string
+                        nullable: true
+                        description: owner/name; null is the no-repository group.
+                      branch:
+                        type: string
+                        nullable: true
+                      title:
+                        type: string
+                        description: The first prompt's first line until the model writes a title.
+                      summary:
+                        type: string
+                        nullable: true
+                        description: Null until the model writes it; a chat lists and opens without one.
+                      runs:
+                        type: array
+                        items:
+                          type: object
+                          required: [repo, runId]
+                          properties:
+                            repo:
+                              type: string
+                            runId:
+                              type: string
+                            workspaceId:
+                              type: string
+                      entries:
+                        type: integer
+                      first_at:
+                        type: integer
+                        format: int64
+                      last_at:
+                        type: integer
+                        format: int64
+                      archived_at:
+                        type: integer
+                        format: int64
+                      archived_by:
+                        type: string
+                  conversation:
+                    $ref: '#/components/schemas/AnyJSON'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: No archived chat with this id is readable by the caller.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /api/agents:
     x-composition: install
     get:

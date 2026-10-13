@@ -5,7 +5,7 @@ import cli from "../../../../../packages/smithers/test/CatalogCli.fixture.json"
 import { assertCatalogPolicy, auditAppIds, auditCliPaths, auditRuntimeTags } from "../../../../../scripts/catalog-policy"
 
 test("literal B inventory expands shorthand without authorizing renamed aliases", () => {
-  expect(b.rows).toHaveLength(118)
+  expect(b.rows).toHaveLength(120)
   expect(b.rows.flatMap(row => row.ids)).toContain("chat.queue.edit")
   expect(b.rows.flatMap(row => row.ids)).toContain("storage.recovery.export")
   expect(b.rows.flatMap(row => row.ids)).not.toContain("chat.edit")
@@ -16,7 +16,7 @@ test("literal B inventory expands shorthand without authorizing renamed aliases"
   expect(auditAppIds(["history.todo", "box.open", "prs.land", "change.land", "chat.clear", "world.page", "invented"])).toEqual([
     { id: "history.todo", reason: "renamed" }, { id: "box.open", reason: "renamed" },
     { id: "prs.land", reason: "renamed" }, { id: "change.land", reason: "renamed" },
-    { id: "chat.clear", reason: "cut" }, { id: "world.page", reason: "cut" }, { id: "invented", reason: "unlisted" }
+    { id: "chat.clear", reason: "renamed" }, { id: "world.page", reason: "cut" }, { id: "invented", reason: "unlisted" }
   ])
   expect(auditAppIds(["search.secrets", "flows", "issues", "workspace.rename.edit"])).toEqual([
     { id: "workspace.rename.edit", reason: "cut" }
@@ -47,7 +47,7 @@ test("literal C rejects cut, replaced, unknown and misplaced registry entries", 
 test("parameterized actions require their inventoried source, and failures name the offending row", () => {
   expect(auditRuntimeTags([{ id: "model/parked", kind: "action", runtime: "machine", source: "packages/smithers/agent/src/Agent.ts" }])).toEqual([])
   expect(auditRuntimeTags([{ id: "model/parked", kind: "action", runtime: "machine", source: "flows/invented.ts" }])).toEqual([{ id: "model/parked", reason: "unlisted" }])
-  expect(() => assertCatalogPolicy(auditAppIds(["chat.clear", "invented"]))).toThrow("cut: chat.clear\nunlisted: invented")
+  expect(() => assertCatalogPolicy(auditAppIds(["chat.dictate", "invented"]))).toThrow("cut: chat.dictate\nunlisted: invented")
   expect(() => assertCatalogPolicy([])).not.toThrow()
 })
 

@@ -62,6 +62,37 @@
     "http": null
   },
   {
+    "name": "archive",
+    "summary": "Archive this chat and start a new one",
+    "slash": "/archive",
+    "cli": null,
+    "journey": [],
+    "group": "Ask",
+    "visibility": "core",
+    "actors": [
+      "person"
+    ],
+    "minimumRole": "member",
+    "agent": "never",
+    "http": null
+  },
+  {
+    "name": "history",
+    "summary": "Archived chats",
+    "slash": "/history",
+    "cli": null,
+    "journey": [],
+    "group": "Ask",
+    "visibility": "core",
+    "actors": [
+      "person",
+      "app_agent"
+    ],
+    "minimumRole": "member",
+    "agent": "run",
+    "http": null
+  },
+  {
     "name": "search",
     "summary": "Search code, wiki and runs",
     "slash": "/search",
@@ -1097,7 +1128,10 @@
     "name": "debug-api",
     "summary": "Try any call in the open API",
     "slash": "/debug-api",
-    "cli": ["debug", "api"],
+    "cli": [
+      "debug",
+      "api"
+    ],
     "journey": [],
     "group": "Advanced",
     "visibility": "advanced",
