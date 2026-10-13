@@ -321,8 +321,15 @@ and `AI_GATEWAY_API_KEY` exported, then
 `SMITHERS_CLAUDE_CODE_SMOKE=1 pnpm --filter @smthrs/cli exec vitest run test/ClaudeCodeHost.test.ts --coverage.enabled=false`.
 A source checkout also needs the `smithers-jj-export` helper
 (`cargo build --locked --release -p smithers-ffi --bin smithers-jj-export`).
-Closing it for the default gate means spending subscription quota on every
-run, which the RC does not do.
+The same gate opens one case in `flows/test/wrapped.test.ts`, whose other
+cases launch a fake `claude` script. It runs the `wrapped` flow against the
+real `claude -p` under `plan` permission on a one-file working copy and
+asserts the answer read from that file, the recorded session, and unchanged
+sources. That launch runs under the operator's own settings, so their Claude
+Code hooks fire. Run it with
+`SMITHERS_CLAUDE_CODE_SMOKE=1 node --experimental-strip-types --test --test-name-pattern='installed Claude Code' flows/test/wrapped.test.ts`.
+Closing either for the default gate means spending subscription quota on
+every run, which the RC does not do.
 
 **`smithers`: the live Cloud workspace.** `CloudSandbox.test.ts` gates one
 case on `SMITHERS_CLOUD_SANDBOX_SMOKE=1`: it provisions a real Smithers Cloud

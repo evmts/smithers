@@ -1087,3 +1087,40 @@ test("a supplied block Jev cannot read is kept whole and marked unjudged", async
   assert.equal(empty.memory.cost.jevRequests, 0)
   assert.ok(readFileSync(empty.extra.path, "utf8").endsWith(`${rules("acceptEdits")}\n`))
 })
+
+// Opt-in: one read-only turn on the operator's signed-in Claude Code, under
+// their own settings and hooks as every wrapped launch is. It spends their
+// subscription, so it never runs by default.
+test("the flow launches the installed Claude Code on a read-only task", {
+  skip: process.env.SMITHERS_CLAUDE_CODE_SMOKE === "1"
+    ? false
+    : "Set SMITHERS_CLAUDE_CODE_SMOKE=1 with Claude Code signed in",
+  timeout: 600_000
+}, async () => {
+  const fake = fakeClaude()
+  const repo = join(fake.dir, "repo")
+  const source = "export const greet = (name: string) => `ahoy-7c1 ${name}`\n"
+  mkdirSync(join(repo, "src"), { recursive: true })
+  writeFileSync(join(repo, "src", "greeting.ts"), source)
+  // The operator's environment without the variables of a Claude Code this
+  // suite runs under, and without a key that moves the launch off the login.
+  const parent = /^(CLAUDECODE|CLAUDE_PID|CLAUDE_EFFORT|AI_AGENT|CLAUDE_CODE_(?!OAUTH_TOKEN$).*|ANTHROPIC_.*)$/
+  const inherited = Object.fromEntries(Object.entries(process.env).filter(([name]) => !parent.test(name)))
+  const env = () => ({ ...inherited, PATH: process.env.PATH ?? "", WRAPPED_LOG: fake.log, FAKE_MODE: "" })
+  const { succeeded } = flowHarnessAt({ ...fake, env }, repo)
+  const launched = await succeeded({
+    harness: "claude-code",
+    task: "Read src/greeting.ts. What does greet(\"Ada\") return? Reply with the returned string only.",
+    cwd: repo,
+    permission: "plan"
+  }, "wrapped-real")
+  // The real binary took the argv and its envelope parsed: the answer came from the file.
+  assert.equal(launched.permission, "plan")
+  assert.match(launched.answer, /ahoy-7c1 Ada/)
+  assert.equal(fake.calls(), 0, "the fake claude never ran")
+  const record = JSON.parse(readFileSync(sessionPath(repo, launched.session)!, "utf8"))
+  assert.deepEqual([record.harness, record.permission], ["claude-code", "plan"])
+  // Read-only: the working copy's sources are as they were.
+  assert.deepEqual(readdirSync(join(repo, "src")), ["greeting.ts"])
+  assert.equal(readFileSync(join(repo, "src", "greeting.ts"), "utf8"), source)
+})
