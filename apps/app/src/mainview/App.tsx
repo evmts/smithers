@@ -1,3 +1,4 @@
+import { TranscriptOrder } from "./state/TranscriptOrder"
 import { rememberComposerFocus, restoreComposerFocus } from "./runtime/ComposerFocus"
 import { useSharedConversation } from "./state/useSharedConversation"
 import { useTodoRole } from "./cards/TodoCard"
@@ -93,6 +94,7 @@ function AppContent() {
       maximizedCardId: session.maximizedCardId,
       activeBranchId: session.activeBranchId,
       branchNavigation: session.branchNavigation,
+      transcriptAnchors: session.transcriptAnchors,
       devtoolsOpen: session.devtoolsOpen,
       paletteOpen: session.paletteOpen,
       inputMode: session.inputMode,
@@ -344,9 +346,31 @@ function AppContent() {
     ? `${identity?.login ?? ""}:${session.branchNavigation?.selected_branch ?? "main"}`
     : `${conversationTabId ?? "main"}:${session.activeRepoKey ?? ""}`
 
-  const latestEntry = entries.at(-1)
+  const visibleEntries = entries.filter(entry => !controller.sharedConversation || entry.kind !== "message" || entry.message.id === authMessage?.id || entry.message.origin === "external" || entry.message.action !== undefined || diagnosticVisible(entry.message, identityRows[0]?.login, session.branchNavigation?.selected_branch ?? "main"))
+  const localEntries = visibleEntries.map(entry => ({ id: entryId(entry), value: entry }))
+  const orderedEntries = TranscriptOrder.merge(sharedConversation.conversation?.entries ?? [], localEntries, session.transcriptAnchors,
+    controller.sharedConversation ? TranscriptOrder.scope(identityRows[0], session) : undefined)
+  const latest = orderedEntries.at(-1)
+  const latestEntry = latest?.kind === "local" ? latest.entry.value : undefined
   const latestReadId = latestEntry === undefined ? undefined : entryId(latestEntry)
   const initialReadId = loginScreen ? "login" : repositoryNotice ? authMessage?.id : home ? HOME_ENTRY_ID : undefined
+
+  const renderEntry = (entry: TranscriptEntry) => <MessageScrollerItem key={entryId(entry)} messageId={entryId(entry)} style={{ contentVisibility: "visible" }}>
+    {entry.kind === "card" ? <CardView
+      key={entry.card.id}
+      card={entry.card}
+      maximized={session.maximizedCardId === entry.card.id}
+      debugVerbose={session.verbose === true}
+      signedOut={identity?.state === "signed-out"}
+      admin={isAdmin}
+      worldDocuments={worldDocuments}
+      workflowCatalogs={workflowCatalogs}
+      triggerCatalogs={triggerCatalogs}
+      flowDurations={flowDurations}
+      fileCards={fileCards}
+      {...cardActions(controller, entry.card)}
+    /> : <TranscriptMessage key={entry.message.id} entry={entry} streamingMessageId={streamingMessageId} />}
+  </MessageScrollerItem>
 
   // Chat stays mounted when closed.
   const composerWrap = (
@@ -501,27 +525,8 @@ function AppContent() {
             </MessageScrollerItem>}
             {!earlier && !repositoryNotice && home && <MessageScrollerItem messageId={HOME_ENTRY_ID}>{homeCard}</MessageScrollerItem>}
             {!loginScreen && !repositoryNotice && <BranchNavigation />}
-            {!earlier && controller.sharedConversation && <SharedConversation source={controller.sharedConversation} localCardIds={new Set(entries.flatMap(entry => entry.kind === "card" ? [entry.card.id] : []))} />}
-            {!earlier && entries.filter(entry => !controller.sharedConversation || entry.kind !== "message" || entry.message.id === authMessage?.id || entry.message.origin === "external" || entry.message.action !== undefined || diagnosticVisible(entry.message, identityRows[0]?.login, session.branchNavigation?.selected_branch ?? "main")).map((entry) => <MessageScrollerItem key={entryId(entry)} messageId={entryId(entry)} style={{ contentVisibility: "visible" }}>
-              {entry.kind === "card" ?
-                (
-                  <CardView
-                    key={entry.card.id}
-                    card={entry.card}
-                    maximized={session.maximizedCardId === entry.card.id}
-                    debugVerbose={session.verbose === true}
-                    signedOut={identity?.state === "signed-out"}
-                    admin={isAdmin}
-                    worldDocuments={worldDocuments}
-                    workflowCatalogs={workflowCatalogs}
-                    triggerCatalogs={triggerCatalogs}
-                    flowDurations={flowDurations}
-                    fileCards={fileCards}
-                    {...cardActions(controller, entry.card)}
-                  />
-                ) :
-                <TranscriptMessage key={entry.message.id} entry={entry} streamingMessageId={streamingMessageId} />}
-            </MessageScrollerItem>)}
+            {!earlier && controller.sharedConversation && <SharedConversation source={controller.sharedConversation} localCardIds={new Set(visibleEntries.flatMap(entry => entry.kind === "card" ? [entry.card.id] : []))} localEntries={visibleEntries.map(entry => ({ id: entryId(entry), content: renderEntry(entry) }))} />}
+            {!earlier && !controller.sharedConversation && visibleEntries.map(renderEntry)}
             {!earlier && privateConfirms.map(row => <MessageScrollerItem key={`confirmation:${row.id}`} messageId={`confirmation:${row.id}`}>
               {renderConfirmCard(memberConfirmCardProps(row, (tag, input) => {
                 if ((tag === "approval.approve" || tag === "approval.deny") && input && "cardId" in input) {

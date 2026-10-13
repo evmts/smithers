@@ -921,7 +921,13 @@ export const SharedPromptSchema = z.object({
 })
 export type SharedPrompt = z.infer<typeof SharedPromptSchema>
 
+/** Private placement of a local entry after the shared turns visible when it was admitted. */
+export const TranscriptAnchorSchema = z.object({ scope: z.string().min(1), afterSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), localOrdinal: z.number().int().nonnegative().optional() })
+export type TranscriptAnchor = z.infer<typeof TranscriptAnchorSchema>
+
 export const SessionSchema = z.object({
+  /** Account/repository/branch-scoped placement; never published to the shared conversation. */
+  transcriptAnchors: z.record(z.string(), TranscriptAnchorSchema).optional(),
   sharedPrompts: z.array(SharedPromptSchema).optional(),
   uiInstructionsSeen: z.array(z.string()).optional(),
   branchNavigation: BranchNavigationSchema.optional(),
@@ -1353,7 +1359,10 @@ export type BillingAccount = z.infer<typeof BillingAccountSchema>
 export const CardHistorySchema = z.object({ id: z.string(), index: z.number().int().nonnegative(), entries: z.array(CardSchema) })
 export type CardHistory = z.infer<typeof CardHistorySchema>
 
-export type AppTransition =
+/** Private transcript placement is captured with the event that admits local output. */
+export type AppTransition = AppTransitionBody & { transcriptAnchor?: TranscriptAnchor }
+
+type AppTransitionBody =
   | { type: "gateway.run.observed"; actor: "system"; observation: RuntimeRunObservation }
   | { type: "gateway.run.observer.changed"; actor: "system"; scope: RuntimeScope; observer: { state: "connected" | "reconnecting" | "quiet" | "stopped"; action?: "retry"; error?: string; quietForMs?: number } }
   | { type: "gateway.approvals.observed"; actor: "system"; scope: RuntimeScope; rows: ReadonlyArray<ApprovalRow> }

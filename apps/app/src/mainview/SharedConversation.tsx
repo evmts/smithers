@@ -1,6 +1,6 @@
 import { describedFailure, FailureNotice } from "./FailureNotice"
 import { useLiveQuery } from "@tanstack/react-db"
-import { useSyncExternalStore } from "react"
+import { Fragment, useSyncExternalStore, type ReactNode } from "react"
 import { Markdown, MessageScrollerItem } from "@smthrs/ui"
 import { PlaceholderAvatarUrl } from "@smthrs/rpc/CardPrimitives"
 import { CopyMessageButton, TranscriptMessage } from "./TranscriptMessage"
@@ -16,11 +16,12 @@ import { controllerCardActions } from "./cards/controllerCardActions"
 import { useController } from "./ControllerContext"
 import type { Card } from "./state/AppState"
 import type { SharedConversationSeam } from "./state/seams/SharedConversationSeam"
+import { TranscriptOrder } from "./state/TranscriptOrder"
 
 /** Output only: no tool-call frame can invoke a browser command. */
-export function SharedConversation({ source, localCardIds }: { source: SharedConversationSeam; localCardIds?: ReadonlySet<string> }) {
+export function SharedConversation({ source, localCardIds, localEntries = [] }: { source: SharedConversationSeam; localCardIds?: ReadonlySet<string>; localEntries?: readonly { id: string; content: ReactNode }[] }) {
   const controller = useController()
-  const { data: sessions } = useLiveQuery(q => q.from({ session: controller.store.collections.sessions }).select(({ session }) => ({ id: session.id, requests: session.sharedPrompts })))
+  const { data: sessions } = useLiveQuery(q => q.from({ session: controller.store.collections.sessions }).select(({ session }) => ({ id: session.id, requests: session.sharedPrompts, anchors: session.transcriptAnchors })))
   const { data: identities } = useLiveQuery(controller.store.collections.identitySessions)
   const owner = identities[0]?.state === "signed-in" ? identities[0].login : undefined
   const navigation = controller.store.session().branchNavigation
@@ -33,10 +34,17 @@ export function SharedConversation({ source, localCardIds }: { source: SharedCon
     for (const frame of turn.frames) if (frame.runId === turn.runId && frame.type === "card") sharedCards.set(frame.card.id, frame.card)
   }
   const renderedCards = new Set<string>()
+  const scope = TranscriptOrder.scope(identities[0], controller.store.session())
+  const local = [...localEntries.map(entry => ({ id: entry.id, value: entry.content })), ...requests.map(row => ({
+    id: `prompt-request:${row.id}`,
+    value: <MessageScrollerItem messageId={`prompt-request:${row.id}`} style={{ contentVisibility: "visible" }}><EntryRow kind="prompt" private author={{ kind: "person", login: row.owner, name: row.owner, avatar_url: PlaceholderAvatarUrl, color_index: 0 }} title="" tone={row.state === "failed" ? "failed" : "quiet"} card={<div data-prompt-request={row.id}><div data-composer-prompt={row.id}><Markdown content={row.prompt} /></div>{row.error ? <FailureNotice role="status" failure={describedFailure("PromptUnavailable", { fault: "infra", sentence: "Prompt unavailable", actions: [] }, row.error)} /> : <p role="status">Requested</p>}</div>} onAction={() => {}} /></MessageScrollerItem>
+  }))]
+  const ordered = TranscriptOrder.merge(snapshot.conversation?.entries ?? [], local, sessions[0]?.anchors, scope)
   return <div data-shared-conversation={snapshot.conversation?.id}>
     {snapshot.error ? <FailureNotice role="status" failure={describedFailure("ConversationUnavailable", { fault: "infra", sentence: snapshot.error === "View unavailable" ? "View unavailable" : "Conversation unavailable", actions: [] }, snapshot.error)} /> : null}
-    {requests.map(row => <EntryRow key={row.id} kind="prompt" private author={{ kind: "person", login: row.owner, name: row.owner, avatar_url: PlaceholderAvatarUrl, color_index: 0 }} title="" tone={row.state === "failed" ? "failed" : "quiet"} card={<div data-prompt-request={row.id}><div data-composer-prompt={row.id}><Markdown content={row.prompt} /></div>{row.error ? <FailureNotice role="status" failure={describedFailure("PromptUnavailable", { fault: "infra", sentence: "Prompt unavailable", actions: [] }, row.error)} /> : <p role="status">Requested</p>}</div>} onAction={() => {}} />)}
-    {snapshot.conversation?.entries.map(turn => {
+    {ordered.map(item => {
+      if (item.kind === "local") return <Fragment key={`local:${item.entry.id}`}>{item.entry.value}</Fragment>
+      const turn = item.turn
       if ("origin" in turn && turn.origin === "external" && "role" in turn) return <MessageScrollerItem key={turn.id} messageId={turn.id} style={{ contentVisibility: "visible" }}><TranscriptMessage entry={{ kind: "message", message: turn }} streamingMessageId={undefined} /></MessageScrollerItem>
       if (!("frames" in turn)) return null
       const person = { login: turn.authorLogin, name: turn.authorLogin, avatar_url: PlaceholderAvatarUrl }

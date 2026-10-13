@@ -1117,9 +1117,16 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
   // A transport batch uses the same primitive cases as ordinary dispatch.
   // Nested facts share one authoritative revision and use a stable position
   // suffix for rows which normally derive their identity from that revision.
+  const transcriptAnchor = transition.transcriptAnchor
   const reduce = (nestedTransition: AppTransition = transition, position?: number | string): void => {
       const transition = nestedTransition
       const current = collections.sessions.get(SESSION_ID)!
+      const anchorEntry = (id: string, anchor: import("./AppState").TranscriptAnchor | undefined): void => {
+        if (!anchor) return
+        const key = JSON.stringify([anchor.scope, id])
+        if (collections.sessions.get(SESSION_ID)?.transcriptAnchors?.[key]) return
+        collections.sessions.update(SESSION_ID, draft => { draft.transcriptAnchors = { ...draft.transcriptAnchors, [key]: { ...anchor, localOrdinal: revision } } })
+      }
       const recordId = position === undefined ? `${revision}` : `${revision}-${position}`
       const activeWorkspaceId = current.activeWorkspaceId ?? DEFAULT_WORKSPACE_ID
       const activeBranchId = current.activeBranchId ?? DEFAULT_BRANCH_ID
@@ -1195,9 +1202,11 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
       const conversationTabId = conversationTabIdOf(current)
       const insertMessage = (row: Message): void => {
         collections.messages.insert(conversationTabId === undefined ? row : { ...row, tabId: conversationTabId })
+        anchorEntry(row.id, transition.transcriptAnchor ?? transcriptAnchor)
       }
       const insertCard = (row: Card): void => {
         collections.cards.insert(conversationTabId === undefined ? row : { ...row, tabId: conversationTabId })
+        anchorEntry(row.id, transition.transcriptAnchor ?? transcriptAnchor)
       }
       const ensureCardFrame = (cardId: string): Frame => {
         const id = cardFrameId(activeBranchId, cardId)
@@ -2232,6 +2241,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
               draft.paletteActionsRef = null
             }
           })
+          anchorEntry(`prompt-request:${transition.request.id}`, transition.transcriptAnchor)
           break
 
         case "branch.navigation.changed":

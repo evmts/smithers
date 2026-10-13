@@ -12,7 +12,7 @@ import { RepositoryHomeSchema } from "@smthrs/rpc/RepositoryHome"
 import { z } from "zod"
 import type { AppProjectionSnapshot } from "./AppProjection"
 import {
-SharedPromptSchema,ActorSchema,BranchSchema,BranchNavigationSchema,CardHistorySchema,CardPatchSchema,CardSchema,ChangeRowSchema,
+TranscriptAnchorSchema,SharedPromptSchema,ActorSchema,BranchSchema,BranchNavigationSchema,CardHistorySchema,CardPatchSchema,CardSchema,ChangeRowSchema,
 CloudRepositorySchema,CloudWorkspaceRowSchema,FrameSchema,GitHubAppStatusRowSchema,
 MessageSchema,HISTORICAL_PALETTES,
 RecommendationSourceSchema,RepositoryEntrySchema,RepositoryCommandEntrySchema,RepositoryFlowSchema,RepositoryJobObservationSchema,
@@ -47,7 +47,7 @@ const CardUpdatePatchSchema = z.object({
 }).strict() as z.ZodType<Extract<AppTransition, { type: "card.updated" }>["patch"]>
 
 /** Complete payload and actor contracts, keyed for constant-time validation before append or replay. */
-export const APP_TRANSITION_SCHEMAS = {
+const TRANSITION_SCHEMAS = {
   "gateway.run.observed": z.object({ type: z.literal("gateway.run.observed"), actor: z.literal("system"), observation: RuntimeRunObservationSchema }).strict(),
   "gateway.run.observer.changed": z.object({ type: z.literal("gateway.run.observer.changed"), actor: z.literal("system"), scope: RuntimeScopeSchema, observer: RuntimeObserverSchema }).strict(),
   "gateway.approvals.observed": RuntimeApprovalObservationSchema.extend({ type: z.literal("gateway.approvals.observed"), actor: z.literal("system") }).strict(),
@@ -219,6 +219,11 @@ export const APP_TRANSITION_SCHEMAS = {
   "recommendations.updated": z.object({ "type": z.literal("recommendations.updated"), "actor": z.enum(["system", "smithers"]), "suggestions": z.array(SuggestionSchema), "source": RecommendationSourceSchema, "revision": z.number().finite() }).strict(),
   "recommendations.deferred": z.object({ "type": z.literal("recommendations.deferred"), "actor": z.literal("system"), "retryAt": z.number().finite(), "origin": z.string().min(1).max(512) }).strict(),
 } as const satisfies { [K in AppTransition["type"]]: z.ZodType<Extract<AppTransition, { type: K }>> }
+
+/** Placement belongs to the private event envelope for every local-output door. */
+export const APP_TRANSITION_SCHEMAS = Object.fromEntries(Object.entries(TRANSITION_SCHEMAS).map(([type, schema]) =>
+  [type, schema.extend({ transcriptAnchor: TranscriptAnchorSchema.optional() })]
+)) as unknown as typeof TRANSITION_SCHEMAS
 
 export class InvalidAppTransitionError extends Data.TaggedError("InvalidAppTransitionError")<{ readonly message: string }> {
   constructor() { super({ message: "The app transition does not match its event contract." }) }

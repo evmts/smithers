@@ -60,6 +60,7 @@ type AppProjectionSnapshot
 } from "./AppProjection"
 import type {
 AppTransition,
+TranscriptAnchor,
 Card,
 CloudWorkspaceRow,
 LocalRepositoryConnector,
@@ -808,6 +809,8 @@ export interface AppStore {
    * pause in typing, the next other dispatch, page hide or `dispose`.
    */
   readonly dispatch: (transition: AppTransition) => Transaction
+  /** Capture shared placement at admission and journal it with the local output; disposal unbinds this runtime source. */
+  readonly bindTranscriptAnchor?: (source: () => TranscriptAnchor | undefined) => () => void
   /** Runtime ownership of the current input; later edits or a reopened composer revoke it. */
   readonly captureComposerDraft: (text: string) => () => boolean
   /** Private preparation of validated human form input; never changes accepted projections. */
@@ -1729,12 +1732,15 @@ const initializeAppStore = async (
       session().draft.trim() === text.trim()
   }
 
+  let transcriptAnchorSource: (() => TranscriptAnchor | undefined) | undefined
   const dispatch = (transition: AppTransition): Transaction => {
     if (disposed) throw new Error("The app state owner is closed. Open the current store before dispatching.")
     assertReadable()
     if (rejectedStorage !== undefined) throw rejectedStorage
     if (privacyRecord !== undefined && readPrivacyRetirement(privacyRecord)?.phase === "pending") throw new PrivacyCleanupPending()
     if (resetTransaction !== undefined) return resetTransaction
+    if (transcriptAnchorSource) transition = { ...transition, transcriptAnchor: transcriptAnchorSource() }
+
     if (transition.type === "composer.changed" && pendingDraft?.transaction.state === "pending") {
       const pending = pendingDraft
       const next = appendAppEvent(pending.previous, { kind: "transition", transition }, {
@@ -2104,6 +2110,10 @@ const initializeAppStore = async (
     collections: Object.fromEntries(Object.entries({ ...publicCollections, ...views })
       .map(([name, collection]) => [name, readOnlyCollection(collection, assertReadable)])) as AppCollections,
     dispatch,
+    bindTranscriptAnchor: source => {
+      transcriptAnchorSource = source
+      return () => { if (transcriptAnchorSource === source) transcriptAnchorSource = undefined }
+    },
     captureComposerDraft,
     approvalRequest,
     committedRepositoryImport: id => { assertReadable(); return committed.snapshot.sessions.find(row => row.id === SESSION_ID)?.repositoryImports?.find(row => row.id === id) },
@@ -2186,6 +2196,7 @@ const initializeAppStore = async (
     dispose: () => {
       if (disposePromise !== undefined) return disposePromise
       disposed = true
+      transcriptAnchorSource = undefined
       if (compactionTimer !== undefined) clearTimeout(compactionTimer)
       disposePromise = (async () => {
         await stopRemoteRetirement()

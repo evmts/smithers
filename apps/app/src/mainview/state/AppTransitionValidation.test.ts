@@ -8,13 +8,18 @@ const fixture = () => seedAppProjection(emptyAppProjection(), { createdAt: 1, th
 test("every transition has a payload schema and top-level contract fields cannot silently drift", async () => {
   expect(Object.keys(APP_TRANSITION_SCHEMAS).sort()).toEqual(Object.keys(APP_TRANSITION_TYPES).sort())
   const source = ts.createSourceFile("AppState.ts", await Bun.file(new URL("./AppState.ts", import.meta.url)).text(), ts.ScriptTarget.Latest, true)
-  const alias = source.statements.find((node): node is ts.TypeAliasDeclaration => ts.isTypeAliasDeclaration(node) && node.name.text === "AppTransition")!
+  const alias = source.statements.find((node): node is ts.TypeAliasDeclaration => ts.isTypeAliasDeclaration(node) && node.name.text === "AppTransitionBody")!
+  const envelope = source.statements.find((node): node is ts.TypeAliasDeclaration => ts.isTypeAliasDeclaration(node) && node.name.text === "AppTransition")!
+  expect(ts.isIntersectionTypeNode(envelope.type)).toBe(true)
+  const common = (envelope.type as ts.IntersectionTypeNode).types.find(ts.isTypeLiteralNode)!
+  const commonFields = common.members.map(property => (property as ts.PropertySignature).name!.getText(source))
+  expect(commonFields).toEqual(["transcriptAnchor"])
   expect(ts.isUnionTypeNode(alias.type)).toBe(true)
   for (const member of (alias.type as ts.UnionTypeNode).types) {
     const properties = (member as ts.TypeLiteralNode).members as ts.NodeArray<ts.PropertySignature>
     const tag = properties.find(property => property.name!.getText(source) === "type")!.type as ts.LiteralTypeNode
     const name = (tag.literal as ts.StringLiteral).text as keyof typeof APP_TRANSITION_SCHEMAS
-    expect(Object.keys(APP_TRANSITION_SCHEMAS[name].shape).sort()).toEqual(properties.map(property => property.name!.getText(source)).sort())
+    expect(Object.keys(APP_TRANSITION_SCHEMAS[name].shape).sort()).toEqual([...properties.map(property => property.name!.getText(source)), ...commonFields].sort())
     expect(APP_TRANSITION_SCHEMAS[name].safeParse({ type: name, actor: "unknown-actor" }).success).toBe(false)
   }
 })

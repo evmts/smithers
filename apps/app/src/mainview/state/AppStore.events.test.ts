@@ -542,9 +542,9 @@ describe("the live store's authoritative event path", () => {
     expect(restored.collections.models.has("jev")).toBe(true)
   })
 
-  test("version 31 rotates once for account replay while preserving existing local conversation facts", async () => {
+  test.each([31, 34])("version %i rotates once while preserving existing local conversation facts", async (version) => {
     const storage = memoryStorage()
-    const old = await installProjectorFixture(storage, 31)
+    const old = await installProjectorFixture(storage, version)
     const restored = await open(storage)
     const history = await restored.eventHistory()
     expect(history.checkpoint.reason).toBe("projector-upgrade")
@@ -672,7 +672,7 @@ describe("the live store's authoritative event path", () => {
      * out. Changing this list owes a bump and an upgrade test like the ones
      * below.
      */
-    expect({ version: APP_PROJECTOR_VERSION, roster: [...APP_PROJECTION_COLLECTION_NAMES].sort() }).toEqual({ version: 34, roster: [
+    expect({ version: APP_PROJECTOR_VERSION, roster: [...APP_PROJECTION_COLLECTION_NAMES].sort() }).toEqual({ version: 35, roster: [
       "agents", "approvalRequests", "billingAccounts", "branches", "cardHistories", "cards", "changes",
       "cloudSessions", "cloudWorkspaces", "commandIntents", "connectorOperations", "connectors", "flowDurations", "frames",
       "githubAppStatuses", "httpTurnLegs", "httpTurns", "identitySessions", "messages", "models",

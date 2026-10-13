@@ -1,4 +1,5 @@
 import { SharedConversationSchema } from "./seams/SharedConversationSeam"
+import { docsCard } from "@smthrs/rpc/DocsPages"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
@@ -30,6 +31,76 @@ test("private diagnostic scope survives the actual storage boundary", async () =
 const ben = { id: "turn-ben", author: 1, authorLogin: "ben", runId: "run-ben", prompt: "List changed tests", state: "completed", frames: [
   { runId: "run-ben", type: "delta", kind: "text", text: "One changed test" }, { runId: "run-ben", type: "done", reason: "stop" }
 ] }
+
+const documentation = (id: string) => ({ ...docsCard([{ slug: id, title: id, summary: "", markdown: `# ${id}` }], id, 1, 100).card, id })
+const orderedIds = (host: HTMLElement) => [...host.querySelectorAll('[data-message-id]')].map(row => row.getAttribute('data-message-id'))
+
+test("a retained local card precedes a later shared reply (#3813)", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  await store.dispatch({ type: "card.upsert", actor: "user", card: documentation("retained-docs") }).isPersisted.promise
+  const controller = createAppController(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent"], authFlow: "redirect", sandbox: null },
+    fetchImpl: async input => Response.json(String(input).endsWith('/view-state') ? {} : { id: "main", entries: [{ ...ben, sequence: 10 }] })
+  })
+  const host = document.createElement('div'); document.body.append(host); const root = createRoot(host)
+  try {
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+    await controller.sharedConversation!.read()
+    flushSync(() => root.render(<ControllerTestProvider controller={controller}><App /></ControllerTestProvider>))
+    await waitFor(() => host.querySelector('[data-message-id="retained-docs"]') !== null && host.textContent?.includes('One changed test') === true)
+    const ids = orderedIds(host)
+    expect(ids.indexOf('retained-docs')).toBeLessThan(ids.indexOf('turn-ben:prompt'))
+    expect(ids.at(-1)).toBe('turn-ben:answer')
+  } finally { flushSync(() => root.unmount()); host.remove(); await controller.dispose() }
+})
+
+test("local cards keep their place between shared turns across refresh and reload (#3813)", async () => {
+  const storage = memoryStorage()
+  const turns = [{ ...ben, sequence: 10 }]
+  const services = {
+    bootstrap: { apiVersion: 1 as const, host: "cloud" as const, version: "test", buildSha: "test", capabilities: ["agent" as const], authFlow: "redirect" as const, sandbox: null },
+    fetchImpl: async (input: RequestInfo | URL) => Response.json(String(input).endsWith('/view-state') ? {} : { id: "main", entries: turns })
+  }
+  const host = document.createElement('div'); document.body.append(host); const root = createRoot(host)
+  let controller: ReturnType<typeof createAppController> | undefined
+  const mount = async () => {
+    const store = await createAppStore({ kind: "localStorage", storage })
+    controller = createAppController(store, silentAgent, services)
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+    await controller.sharedConversation!.read()
+    flushSync(() => root.render(<ControllerTestProvider controller={controller!}><App /></ControllerTestProvider>))
+    await waitFor(() => host.textContent?.includes('One changed test') === true)
+    return store
+  }
+  try {
+    const store = await mount()
+    await store.dispatch({ type: "card.upsert", actor: "user", card: documentation("between-docs") }).isPersisted.promise
+    await waitFor(() => host.querySelector('[data-message-id="between-docs"]') !== null)
+    expect(orderedIds(host).indexOf('turn-ben:answer')).toBeLessThan(orderedIds(host).indexOf('between-docs'))
+    turns.push({ ...ben, id: "next", runId: "next-run", sequence: 11, prompt: "Next prompt", frames: [
+      { runId: "next-run", type: "delta", kind: "text", text: "New answer" }, { runId: "next-run", type: "done", reason: "stop" }
+    ] })
+    await controller!.sharedConversation!.read()
+    await waitFor(() => host.textContent?.includes('New answer') === true)
+    await store.dispatch({ type: "card.upsert", actor: "user", card: documentation("newest-docs") }).isPersisted.promise
+    const assertOrder = async () => {
+      await waitFor(() => host.querySelector('[data-message-id="newest-docs"]') !== null)
+      const ids = orderedIds(host)
+      expect(ids.indexOf('turn-ben:answer')).toBeLessThan(ids.indexOf('between-docs'))
+      expect(ids.indexOf('between-docs')).toBeLessThan(ids.indexOf('next:prompt'))
+      expect(ids.indexOf('next:answer')).toBeLessThan(ids.indexOf('newest-docs'))
+    }
+    await assertOrder()
+    // Refreshing an old card cannot move it beneath the new reply.
+    await store.dispatch({ type: "card.upsert", actor: "user", card: documentation("between-docs") }).isPersisted.promise
+    await assertOrder()
+    await controller!.sharedConversation!.read()
+    await assertOrder()
+    flushSync(() => root.render(null)); await controller!.dispose(); controller = undefined
+    await mount()
+    await assertOrder()
+  } finally { flushSync(() => root.unmount()); host.remove(); await controller?.dispose() }
+})
 
 for (const failure of ["transport", "http", "invalid"] as const) test(`a ${failure} view failure keeps confirmed replies and recovers the private view`, async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })

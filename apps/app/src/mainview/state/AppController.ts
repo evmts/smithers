@@ -8,6 +8,7 @@ import { projectTodoCard } from "../runtime/TodoProjection"
 import { flowArgs } from "../flows/FlowArgs"
 import { createSharedPrompts } from "./controller/sharedPrompts"
 import { createSharedConversationSeam, type SharedConversationSeam } from "./seams/SharedConversationSeam"
+import { TranscriptOrder } from "./TranscriptOrder"
 import { createEarlierHistoryController } from "./controller/earlierHistory"
 import { accountOwnerOf } from "./AccountOwner"
 import { createHomeBackgroundSeam, type HomeBackgroundSeam } from "./seams/HomeBackgroundSeam"
@@ -951,6 +952,10 @@ export const createAppController = (
   if (installHost && setupEntry) void installSeam.showSetup()
   const hostedConversation = !installHost && services.designFixture !== true && services.bootstrap?.capabilities.includes("agent") === true
   const sharedConversation = installHost || hostedConversation ? createSharedConversationSeam(ctx, installHost ? services.live : undefined) : undefined
+  if (sharedConversation && store.bindTranscriptAnchor) ctx.onDispose(store.bindTranscriptAnchor(() => {
+    const scope = TranscriptOrder.scope(store.collections.identitySessions.get("identity"), store.session())
+    return scope === undefined ? undefined : { scope, afterSequence: TranscriptOrder.sequence(sharedConversation.get().conversation?.entries ?? []) }
+  }))
   const runMonitorSeam = createRunMonitorSeam({ owner: () => `${ctx.accountOwner()}:${ctx.accountEpoch}`, view: id => {
     const card = store.collections.cards.get(`run:${id}`)
     if (card?.kind !== "run") return undefined
