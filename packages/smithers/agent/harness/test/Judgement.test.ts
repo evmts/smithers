@@ -91,11 +91,16 @@ describe("measured", () => {
             answers: { yes: { type: "boolean", probability: 0.3 }, pick: { type: "choice", choice: "b" } },
             confidence: { pick: 0.7 },
             usage: { inputTokens: 321, outputTokens: 12 },
-            latencyMs: 5
+            latencyMs: 5,
+            timing: { attempts: 1, sentMs: 2, headersMs: 190, closedMs: 201 }
           })
       })
     )
     const { answers, asked } = await Effect.runPromise(Judgement.measured(one, { n: 3 }).pipe(Effect.provide(metered)))
+    // Where the reading's time went on the wire, as the transport timed it,
+    // and on the decision row a reading journals.
+    expect(asked.timing).toEqual({ attempts: 1, sentMs: 2, headersMs: 190, closedMs: 201 })
+    expect(Judgement.decision(asked, { scope: "s", frame: 3, acted: false }).timing).toEqual(asked.timing)
 
     expect(answers.yes.probability).toBe(0.3)
     expect(asked.state).toEqual({ n: "3" })

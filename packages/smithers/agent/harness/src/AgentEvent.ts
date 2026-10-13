@@ -1166,7 +1166,13 @@ export class DecisionSettled extends Schema.TaggedClass<DecisionSettled>(
   /** Who answered. */
   decidedBy: Schema.Literals(["jev", "seat", "human"]),
   /** Token usage reported by the evaluator, absent when it supplied none. */
-  usage: Schema.optional(Usage)
+  usage: Schema.optional(Usage),
+  /**
+   * Where the reading's time went on the wire, as the transport timed it:
+   * `Evaluator.Response.timing`, handed on whole. Absent where the transport
+   * timed nothing, and from journals written before it was carried.
+   */
+  timing: Schema.optional(ModelEvent.Timing)
 }) {}
 
 const Level = Schema.Literals(["none", "mild", "strong"])
@@ -1276,7 +1282,9 @@ export class SupervisorSettled extends Schema.TaggedClass<SupervisorSettled>(
   /** What {@link usage} cost under the reading model's rate card; absent when unmetered or unpriced. */
   costUsd: Schema.optional(Schema.Number),
   /** Where {@link costUsd} came from. */
-  costSource: Schema.optional(Pricing.CostSource)
+  costSource: Schema.optional(Pricing.CostSource),
+  /** Where the reading's time went on the wire, as the transport timed it; absent where it timed nothing. */
+  timing: Schema.optional(ModelEvent.Timing)
 }) {}
 
 /**

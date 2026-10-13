@@ -1047,6 +1047,10 @@ that did the work, so a replayed frame reports the replay's own readings:
   or under `Compaction.judgedAbove`, `unjudged` for a host with no real
   judge), and `costUsd` with `costSource`, its `usage` priced under the
   reading model's rate card. `nudged` already says whether a nudge was queued.
+- `SupervisorSettled.timing` and `DecisionSettled.timing` are the transport's
+  own record of where a reading's time went on the wire
+  (`Evaluator.Response.timing`), handed on whole. `Judgement.measured` keeps
+  it on `Asked.timing` and `Judgement.decision` writes it.
 - `SteeringDrained.compact` names the context triggers a boundary took from a
   reading. A reading's `compact` that no boundary took compacted nothing.
 - `ClaimDemanded` carries `costUsd` and `costSource` for the completion check.

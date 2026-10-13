@@ -78,6 +78,11 @@
 - `ModelRetried.elapsedMs` and `httpStatus`: how long the failed try ran and
   the status that failed it, copied from `ModelEvent.Retry` (#3844).
 
+- `SupervisorSettled.timing` and `DecisionSettled.timing`: where a judge
+  reading's time went on the wire, as its transport timed it
+  (`Evaluator.Response.timing`). `Judgement.Asked` and `Supervisor.Reading`
+  carry it (#3844).
+
 - `ExternalTranscript.decodeCodex` reads what Codex records outside its
   completed items: a message between agents (`agent_message`), whose encrypted
   body is one `encrypted` placeholder; a failed code-mode script with the

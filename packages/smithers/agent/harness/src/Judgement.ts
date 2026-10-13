@@ -86,6 +86,8 @@ export interface Asked {
   readonly latencyMs: number
   /** Token usage the transport reported, absent when it reported none. */
   readonly usage?: Evaluator.Usage | undefined
+  /** Where the reading's time went on the wire, when the transport timed it. */
+  readonly timing?: Evaluator.Response["timing"]
   /** `seat` when a generation seat answered in the decision-only model's place. */
   readonly decidedBy?: "seat" | undefined
 }
@@ -121,6 +123,7 @@ export const measured = <Id extends string, S extends Schema.Codec<any, any>, Qs
     let usage: Evaluator.Usage | undefined
     let confidence: Readonly<Record<string, number>> | undefined
     let decidedBy: Evaluator.Response["decidedBy"]
+    let timing: Evaluator.Response["timing"]
     let sent: Schema.Json = null
     const metered = Evaluator.Evaluator.of({
       evaluate: (request) =>
@@ -129,6 +132,7 @@ export const measured = <Id extends string, S extends Schema.Codec<any, any>, Qs
             usage = response.usage
             confidence = response.confidence
             decidedBy = response.decidedBy
+            timing = response.timing
             // A classifier state is a codec to JSON, so its encoding is JSON.
             sent = request.state as Schema.Json
           })
@@ -148,6 +152,7 @@ export const measured = <Id extends string, S extends Schema.Codec<any, any>, Qs
         answers: AgentEvent.decisionAnswers(answers, confidence),
         latencyMs: Math.round(Duration.toMillis(elapsed)),
         ...(usage === undefined ? {} : { usage }),
+        ...(timing === undefined ? {} : { timing }),
         ...answeredBy({ decidedBy })
       }
     }
@@ -399,7 +404,8 @@ export const decision = (
     latencyMs: asked.latencyMs,
     acted: at.acted,
     decidedBy: decider(asked),
-    ...(asked.usage === undefined ? {} : { usage: asked.usage })
+    ...(asked.usage === undefined ? {} : { usage: asked.usage }),
+    ...(asked.timing === undefined ? {} : { timing: asked.timing })
   })
 
 /**

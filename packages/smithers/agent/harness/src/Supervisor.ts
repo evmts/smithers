@@ -536,6 +536,8 @@ export interface Reading {
   readonly monitors: Readonly<Record<string, number>>
   readonly latencyMs: number
   readonly usage?: Evaluator.Usage | undefined
+  /** Where the reading's time went on the wire, when the transport timed it. */
+  readonly timing?: Evaluator.Response["timing"]
   /** What was asked and what came back, for `decision-settled`. */
   readonly asked: {
     readonly digest: string
@@ -581,6 +583,7 @@ export const read = (snapshot: Snapshot, extra: MonitorQuestions): Effect.Effect
       monitors: Object.fromEntries(Object.keys(extra).map((id) => [id.slice(monitorPrefix.length), bool(id)])),
       latencyMs: asked.latencyMs,
       ...(asked.usage === undefined ? {} : { usage: asked.usage }),
+      ...(asked.timing === undefined ? {} : { timing: asked.timing }),
       asked: {
         digest: asked.digest,
         questions: asked.questions,

@@ -19,7 +19,8 @@
     `durationMillis`, `context` (`before`, `after`), `marksCall`,
     `summaryCall`.
   - `control.agent.supervisor-settled`: `triggers`, `compact`,
-    `compactSuppressed`, `costUsd`, `costSource`.
+    `compactSuppressed`, `costUsd`, `costSource`, `timing`.
+    `control.agent.decision-settled`: `timing`.
     `control.agent.steering-drained`: `compact`.
     `control.agent.claim-demanded`: `costUsd`, `costSource`.
   - `control.agent.turn-closed`: `frame` and `time` (`wallMs`, `modelMs`,

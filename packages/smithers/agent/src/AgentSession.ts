@@ -439,11 +439,12 @@ const lateFields: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   // resumed prefix may or may not carry it.
   ["control.agent.discipline-armed", new Set(["supervisorSteer", "judged", "relevance", "monitors", "stance"])],
   // The Jev fields.
-  ["control.agent.decision-settled", new Set(["usage"])],
+  // `timing` is the transport's own record of a reading's time on the wire (#3844).
+  ["control.agent.decision-settled", new Set(["usage", "timing"])],
   [
     "control.agent.supervisor-settled",
-    // The last five say what a reading did and cost (#3844).
-    new Set(["monitors", "skillsCapped", "triggers", "compact", "compactSuppressed", "costUsd", "costSource"])
+    // The last six say what a reading did, cost and took on the wire (#3844).
+    new Set(["monitors", "skillsCapped", "triggers", "compact", "compactSuppressed", "costUsd", "costSource", "timing"])
   ],
   [
     "control.agent.compaction-settled",
@@ -1365,7 +1366,9 @@ export const trace = (
           ...(event.compact === undefined ? {} : { compact: event.compact }),
           ...(event.compactSuppressed === undefined ? {} : { compactSuppressed: event.compactSuppressed }),
           ...(event.costUsd === undefined ? {} : { costUsd: event.costUsd }),
-          ...(event.costSource === undefined ? {} : { costSource: event.costSource })
+          ...(event.costSource === undefined ? {} : { costSource: event.costSource }),
+          // The transport's own timing of the reading, under its own name.
+          ...(event.timing === undefined ? {} : { timing: event.timing })
         }
       }
     case "supervisor-unjudged":
@@ -1477,6 +1480,7 @@ export const trace = (
           acted: event.acted,
           decidedBy: event.decidedBy,
           ...(event.usage === undefined ? {} : { usage: event.usage }),
+          ...(event.timing === undefined ? {} : { timing: event.timing }),
           ...truncatedMarker([
             [event.state, traced.state.field],
             [questions, traced.questions.field],

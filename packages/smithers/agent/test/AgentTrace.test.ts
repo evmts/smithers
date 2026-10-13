@@ -2493,6 +2493,32 @@ describe("where time and tokens went", () => {
     expect(stored(suppressed)).toEqual(row(suppressed))
   })
 
+  it("journals where a judge reading's time went on the wire, on the reading and on a decision row", () => {
+    const timing = { attempts: 2, sentMs: 3, headersMs: 255, closedMs: 262 } as const
+    const timed = new AgentEvent.SupervisorSettled({ ...reading, timing })
+    expect(row(timed)).toMatchObject({ timing, latencyMs: 275 })
+    expect(stored(timed)).toEqual(row(timed))
+    expect(identityOf(timed)).toBe(identityOf(new AgentEvent.SupervisorSettled(reading)))
+
+    const decision = {
+      eventType: "flows.harness.decision-settled.v1",
+      scope: "run-1",
+      frame: 7,
+      classifier: "compaction/marks",
+      digest: "classifier-digest",
+      state: { items: [] },
+      questions: { remove_0: Evaluator.BooleanQuestion.of({ instructions: "Remove?" }) },
+      answers: { remove_0: { kind: "boolean", p: 0.9 } },
+      latencyMs: 350,
+      acted: true,
+      decidedBy: "jev"
+    } as const
+    const decided = new AgentEvent.DecisionSettled({ ...decision, timing })
+    expect(row(decided)).toMatchObject({ timing, classifier: "compaction/marks" })
+    expect(stored(decided)).toEqual(row(decided))
+    expect(identityOf(decided)).toBe(identityOf(new AgentEvent.DecisionSettled(decision)))
+  })
+
   it("journals the compaction a boundary took from a reading, and what a completion check cost", () => {
     const taken = new AgentEvent.SteeringDrained({ ...drain, compact: ["outdated_context", "irrelevant_context"] })
     expect(row(taken)).toEqual({

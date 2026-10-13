@@ -444,7 +444,11 @@ describe("Supervisor", () => {
         advance,
         (request) =>
           isSupervisor(request)
-            ? { millis: 268, usage: { inputTokens: 3_069, outputTokens: 239, modelId: "typesafe-ai/jev" } }
+            ? {
+              millis: 268,
+              usage: { inputTokens: 3_069, outputTokens: 239, modelId: "typesafe-ai/jev" },
+              timing: { attempts: 1, sentMs: 3, headersMs: 255, closedMs: 262 }
+            }
             : undefined
       )
 
@@ -475,7 +479,9 @@ describe("Supervisor", () => {
         latencyMs: 268,
         usage: { inputTokens: 3_069, outputTokens: 239, modelId: "typesafe-ai/jev" },
         costUsd: 0.000128898,
-        costSource: "estimated"
+        costSource: "estimated",
+        // The transport's own timing of the reading, handed on as it gave it.
+        timing: { attempts: 1, sentMs: 3, headersMs: 255, closedMs: 262 }
       })
       // Neither is a context trigger, so nothing was scheduled or suppressed.
       expect(crossed).not.toHaveProperty("compact")
@@ -583,6 +589,7 @@ describe("Supervisor", () => {
       const [settled] = of(read.seen, "supervisor-settled")
       expect(settled).not.toHaveProperty("costUsd")
       expect(settled).not.toHaveProperty("costSource")
+      expect(settled).not.toHaveProperty("timing")
     })
   })
 

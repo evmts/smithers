@@ -520,6 +520,7 @@ export const open = (input: {
                 latencyMs: reading.latencyMs,
                 ...(reading.usage === undefined ? {} : { usage: reading.usage }),
                 ...readingCost(reading.usage, yield* Clock.currentTimeMillis),
+                ...(reading.timing === undefined ? {} : { timing: reading.timing }),
                 monitors: evaluation.rows,
                 ...(offer.skillsCapped ? { skillsCapped: true } : {}),
                 triggers: Supervisor.triggered(reading),

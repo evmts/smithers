@@ -123,7 +123,9 @@ export const arrives = (
 export const metered = (
   inner: Layer.Layer<Evaluator.Evaluator>,
   advance: (millis: number) => void,
-  paid: (request: Evaluator.Request) => { readonly millis: number; readonly usage: Evaluator.Usage } | undefined
+  paid: (request: Evaluator.Request) =>
+    | { readonly millis: number; readonly usage: Evaluator.Usage; readonly timing?: Evaluator.Response["timing"] }
+    | undefined
 ): Layer.Layer<Evaluator.Evaluator> =>
   Layer.effect(Evaluator.Evaluator)(
     Effect.map(Evaluator.Evaluator, (bound) =>
@@ -133,7 +135,7 @@ export const metered = (
             const cost = paid(request)
             if (cost === undefined) return response
             advance(cost.millis)
-            return { ...response, usage: cost.usage }
+            return { ...response, usage: cost.usage, ...(cost.timing === undefined ? {} : { timing: cost.timing }) }
           })
       }))
   ).pipe(Layer.provide(inner))
