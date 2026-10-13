@@ -1,10 +1,12 @@
 import * as Audience from "@smthrs/build-cli/Audience"
 import { Control, type ControlSchema } from "@smthrs/control"
 import { Effect, Stream } from "effect"
+import { Cli } from "incur"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { makeCli } from "../src/Cli.ts"
 import type * as Bridge from "../src/cli/ControlBridge.ts"
 import * as RunTiming from "../src/cli/RunTiming.ts"
+import { appendRunTiming } from "../src/cli/RunTimingCommand.ts"
 
 const ports = vi.hoisted(() => ({
   read: vi.fn(),
@@ -181,6 +183,17 @@ describe("runs show --timing", { timeout: 120_000 }, () => {
     expect(empty.codes).toEqual([1])
     expect(JSON.parse(empty.stdout)).toMatchObject({ code: "run_not_found", message: "Unknown run run-1" })
     expect(ports.watch).not.toHaveBeenCalled()
+  })
+
+  it("refuses a listing that is not a run listing", async () => {
+    ports.list.mockReturnValue(Effect.succeed({ _tag: "flows", items: [] }))
+    const result = await invoke(["runs", "show", "run-1", "--timing", "--json"])
+    expect(result.codes).toEqual([1])
+    expect(result.stdout).toContain("Unknown run run-1")
+  })
+
+  it("mounts only on a runs group that has the status command", () => {
+    expect(() => appendRunTiming(Cli.create("runs"))).toThrow("runs show is not registered")
   })
 
   it("lists the flag where the status command is discovered", async () => {

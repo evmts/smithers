@@ -363,7 +363,6 @@ interface Scope {
   frame: number | undefined
   open: Call | undefined
   last: Call | undefined
-  summary: Call | undefined
   cellAt: number | undefined
 }
 
@@ -538,7 +537,7 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
   const scopeOf = (key: string): Scope => {
     let scope = scopes.get(key)
     if (scope === undefined) {
-      scope = { turns: 0, frame: undefined, open: undefined, last: undefined, summary: undefined, cellAt: undefined }
+      scope = { turns: 0, frame: undefined, open: undefined, last: undefined, cellAt: undefined }
       scopes.set(key, scope)
     }
     return scope
@@ -729,7 +728,6 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
         scope.open = undefined
         scope.last = call
         settle(call, payload, at)
-        if (call.purpose === "compaction") scope.summary = call
         break
       }
       case "cell-rejected-in-frame":
@@ -768,24 +766,22 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
         const recorded = count(payload.durationMillis)
         // Its summary call settles here, on `summaryCall`, and not as a model-settled of its own.
         const settledHere = payload.summaryCall === undefined ? undefined : asRecord(payload.summaryCall)
-        let summary = scope.summary
-        if (scope.open?.purpose === "compaction" || settledHere !== undefined) {
-          summary = scope.open?.purpose === "compaction"
-            ? scope.open
-            : request(scope, key, step, at - (recorded ?? 0), { frame: payload.frame, purpose: "compaction" })
-          if (settledHere === undefined) abandon(scope, at)
-          else {
-            scope.open = undefined
-            settle(summary, settledHere, at)
-          }
+        if (scope.open?.purpose !== "compaction" && settledHere !== undefined) {
+          // A journal that kept no request record for it still holds the call's duration.
+          abandon(scope, at)
+          request(scope, key, step, at - (recorded ?? 0), { frame: payload.frame, purpose: "compaction" })
         }
-        scope.summary = undefined
+        const summary = scope.open?.purpose === "compaction" ? scope.open : undefined
+        if (summary !== undefined && settledHere !== undefined) {
+          scope.open = undefined
+          settle(summary, settledHere, at)
+        } else if (summary !== undefined) abandon(scope, at)
         const from = recorded !== undefined ? at - recorded : summary?.startAt ?? at
         if (recorded === undefined && summary !== undefined) note("compaction total")
         const marks = asRecord(payload.marks)
         const frame = count(payload.frame) ?? summary?.frame
         const durationMs = recorded ?? (summary === undefined ? undefined : at - from)
-        const cause = asString(payload.cause) ?? (names(payload.causes).join(", ") || undefined)
+        const cause = names(payload.causes).join(", ") || undefined
         const before = count(asRecord(payload.context).before)
         const after = count(asRecord(payload.context).after)
         const freed = count(payload.removed)

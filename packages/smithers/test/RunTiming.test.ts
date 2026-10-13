@@ -723,6 +723,154 @@ describe("RunTiming.fold", () => {
     }
   })
 
+  it("keeps each step's frames apart in a run whose steps call the model side by side", () => {
+    const j = journal()
+    const step = (stepId: string) => ({
+      executionId: "run-1",
+      stepId,
+      attempt: 1,
+      ask: 1,
+      retry: 0,
+      scope: stepId,
+      generation: 0
+    })
+    j.run("running", 0)
+    // Two steps, each on its own frame 0, their calls overlapping.
+    j.requested(1_000, 0, { step: step("plan") })
+    j.requested(2_000, 0, { step: step("review") })
+    j.settled(5_000, 4_000, [100, 0, 10, 0], 0, { step: step("plan") })
+    j.agent("cell-produced", 5_000, { step: step("plan") })
+    j.agent("cell-call-started", 5_100, { step: step("plan"), callId: "c1", flowName: "bash" })
+    j.agent("cell-call-settled", 5_900, { step: step("plan"), callId: "c1", flowName: "bash", outcome: "success" })
+    j.agent("cell-settled", 6_000, { step: step("plan") })
+    j.settled(8_000, 6_000, [200, 0, 20, 0], 0, { step: step("review") })
+    j.run("completed", 9_000)
+    const report = RunTiming.fold(j.events, "run-1")
+    expect(report.calls.map((call) => [call.step, call.frame, call.startMs, call.durationMs])).toEqual([
+      ["plan", 0, 1_000, 4_000],
+      ["review", 0, 2_000, 6_000]
+    ])
+    expect(report.frames.map((frame) => [frame.step, frame.frame, frame.modelCalls, frame.cellCalls])).toEqual([
+      [undefined, "start", 0, 0],
+      ["plan", 0, 1, 1],
+      ["review", 0, 1, 0]
+    ])
+    // Overlapping calls are one stretch of model wait, so the split still sums to the wall.
+    expect(report.time).toEqual({ modelMs: 7_000, cellsMs: 0, judgeMs: 0, compactionMs: 0, otherMs: 2_000 })
+    expect(sum(report.frames.map((frame) => frame.wallMs))).toBe(report.wallMs)
+    const text = RunTiming.render(report)
+    expect(table(text, "Model calls (seconds)").rows.map((row) => row[1])).toEqual(["plan:0", "review:0"])
+    expect(table(text, "Frames (seconds)").rows.map((row) => row[0])).toEqual(["start", "plan:0", "review:0"])
+  })
+
+  it("counts a cell the run died inside as cell time", () => {
+    const j = journal()
+    j.run("running", 0)
+    j.requested(0, 0)
+    j.settled(2_000, 2_000, [100, 0, 10, 0], 0)
+    j.agent("cell-produced", 2_000)
+    j.agent("cell-call-started", 2_500, { callId: "c1", flowName: "bash" })
+    j.push("control.run.failed", 9_000, { runId: "run-1", status: "failed", cause: "host died" }, false)
+    expect(RunTiming.fold(j.events, "run-1").time).toEqual({
+      modelMs: 2_000,
+      cellsMs: 7_000,
+      judgeMs: 0,
+      compactionMs: 0,
+      otherMs: 0
+    })
+  })
+
+  it("files each kind of reading under its purpose and says what it did", () => {
+    const j = journal()
+    j.run("running", 0)
+    j.requested(0, 0)
+    j.settled(1_000, 1_000, [100, 0, 10, 0], 0)
+    // A crossing with no monitor list, and a monitor with no id.
+    j.agent("supervisor-settled", 1_200, { latencyMs: 100, crossed: true })
+    j.agent("supervisor-settled", 1_400, {
+      frame: 0,
+      latencyMs: 100,
+      crossed: true,
+      monitors: [{ crossed: true }, { id: "calm", crossed: false }]
+    })
+    j.agent("claim-demanded", 1_600, { latencyMs: 100, refused: true })
+    // A classifier this report has no name for keeps its own family as its purpose.
+    j.agent("decision-settled", 1_800, {
+      frame: 0,
+      classifier: "router/pick",
+      latencyMs: 100,
+      acted: true,
+      usage: jev(30, 5)
+    })
+    j.agent("decision-settled", 1_900, { frame: 0, latencyMs: 50, usage: jev(7, 1) })
+    j.run("completed", 2_000)
+    const report = RunTiming.fold(j.events, "run-1")
+    expect(report.judge.fired).toEqual([
+      { purpose: "judge", startMs: 1_100, latencyMs: 100, fired: ["crossed"] },
+      { frame: 0, purpose: "judge", startMs: 1_300, latencyMs: 100, fired: ["crossed"] },
+      { purpose: "claim", startMs: 1_500, latencyMs: 100, fired: ["refused"] },
+      { frame: 0, purpose: "router", startMs: 1_700, latencyMs: 100, fired: ["acted"] }
+    ])
+    expect(report.spend.map((row) => [row.purpose, row.calls, row.spent])).toEqual([
+      ["frame", 1, 110],
+      ["judge", 3, 8],
+      ["claim", 1, 0],
+      ["router", 1, 35]
+    ])
+    expect(table(RunTiming.render(report), "Judge readings that fired (seconds)").rows[0]).toEqual([
+      "—",
+      "judge",
+      "1.1",
+      "0.1",
+      "crossed"
+    ])
+  })
+
+  it("splits a ledger entry evenly across readings that report no usage", () => {
+    const j = journal()
+    j.run("running", 0)
+    j.push("flows.agent.usage.v1", 100, { stepKey: "boundary-usage/a", spent: 0, costUsd: 0.004 }, false)
+    j.agent("supervisor-settled", 200, { frame: 0, latencyMs: 50 })
+    j.agent("decision-settled", 200, { frame: 0, classifier: "compaction/marks", latencyMs: 50 })
+    // An entry with neither a key nor a price is a model call's, and costs nothing.
+    j.push("flows.agent.usage.v1", 300, { spent: 12 }, false)
+    j.run("completed", 400)
+    const report = RunTiming.fold(j.events, "run-1")
+    expect(report.spend).toMatchObject([
+      { purpose: "judge", calls: 1, costUsd: 0.002 },
+      { purpose: "marks", calls: 1, costUsd: 0.002 },
+      { purpose: "unattributed", calls: 0, spent: 12, costUsd: 0 }
+    ])
+  })
+
+  it("settles a summary call whose request record the journal never kept", () => {
+    const j = journal()
+    j.run("running", 0)
+    j.agent("compaction-settled", 9_000, {
+      frame: 3,
+      durationMillis: 8_000,
+      marks: {},
+      summaryCall: { usage: { inputTokens: 500, outputTokens: 50 }, durationMillis: 6_000 }
+    })
+    j.run("completed", 9_000)
+    const report = RunTiming.fold(j.events, "run-1")
+    expect(report.calls).toMatchObject([{
+      frame: 3,
+      purpose: "compaction",
+      settled: true,
+      startMs: 1_000,
+      durationMs: 6_000
+    }])
+    expect(report.compactions).toEqual([{
+      frame: 3,
+      startMs: 1_000,
+      durationMs: 8_000,
+      marks: { kept: 0, squashed: 0, removed: 0 },
+      spent: 550
+    }])
+    expect(report.time.compactionMs).toBe(8_000)
+  })
+
   it("is total over an empty or malformed journal", () => {
     const empty = RunTiming.fold([], "run-1")
     expect(empty).toMatchObject({ wallMs: 0, calls: [], frames: [], spend: [], compactions: [] })
@@ -743,6 +891,48 @@ describe("RunTiming.fold", () => {
     j.push("flows.agent.usage.v1", 1_000, { spent: "[REDACTED]" }, false)
     j.push("control.agent.model-settled", 2_000, null as never, false)
     expect(() => RunTiming.render(RunTiming.fold(j.events))).not.toThrow()
+
+    // Records that arrive with nothing before them to belong to change nothing.
+    const stray = journal()
+    stray.run("running", 0)
+    stray.push("control.run.lineage", 100, { runId: "run-1" }, false)
+    stray.push("control.engine.bound", 100, { executionId: "run-1" }, false)
+    stray.agent("model-retried", 200, { attempt: 1 })
+    stray.agent("cell-rejected-in-frame", 200, { attempt: 1 })
+    stray.agent("mutation-observed", 200, { mutated: true })
+    stray.agent("cell-settled", 200)
+    stray.agent("cell-call-started", 300, {})
+    stray.agent("cell-call-settled", 400, {})
+    stray.agent("cell-call-settled", 500, { callId: "never-started" })
+    stray.requested(1_000, 0)
+    stray.agent("model-settled", 2_000, {
+      durationMillis: 1_000,
+      usage: { outputTokens: 9 },
+      timing: { failedTries: [{ failedMs: 300 }, { code: "no time" }, "garbage"] }
+    })
+    stray.agent("cell-rejected-in-frame", 2_000, {})
+    stray.requested(2_000, 0, { attempt: 2 })
+    stray.agent("model-settled", 3_000, {
+      durationMillis: 1_000,
+      usage: { inputTokens: 4 },
+      timing: { failedTries: [] }
+    })
+    stray.run("completed", 3_000)
+    const report = RunTiming.fold(stray.events, "run-1")
+    expect(report.status).toBe("completed")
+    expect(report.calls).toMatchObject([
+      {
+        usage: { input: 0, cached: 0, uncached: 0, thinking: 0, written: 9 },
+        rejected: "rejected",
+        failedTries: [{ failedMs: 300, code: "?" }]
+      },
+      { ask: 2, usage: { input: 4, cached: 0, uncached: 4, thinking: 0, written: 0 } }
+    ])
+    expect(report.calls[1]!.failedTries).toBeUndefined()
+    expect(report.calls[1]!.moved).toBeUndefined()
+    // The flow call with no id is still timed, and still counted against the frame it ran in.
+    expect(report.time).toEqual({ modelMs: 2_000, cellsMs: 100, judgeMs: 0, compactionMs: 0, otherMs: 900 })
+    expect(report.frames.find((frame) => frame.frame === 0)).toMatchObject({ cellCalls: 1 })
   })
 
   it("keeps the split equal to the wall however the readings and calls overlap", () => {
@@ -835,6 +1025,14 @@ describe("RunTiming speed fit", () => {
     ])
     expect(speed!.r2).toBeGreaterThan(0.9)
     expect(speed!.r2).toBeLessThan(1)
+  })
+
+  it("fits a flat line through calls that all took the same time", () => {
+    const speed = fitted([[100, 50, 9_000], [400, 20, 9_000], [0, 300, 9_000], [250, 250, 9_000], [900, 10, 9_000]])
+    expect(speed).toMatchObject({ calls: 5, r2: 1 })
+    expect(speed!.fixedMs).toBeCloseTo(9_000, 6)
+    expect(speed!.perThinkingMs).toBeCloseTo(0, 6)
+    expect(speed!.perWrittenMs).toBeCloseTo(0, 6)
   })
 
   it("fits nothing from too few calls or from calls that cannot tell the two rates apart", () => {
