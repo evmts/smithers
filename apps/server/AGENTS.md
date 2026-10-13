@@ -30,12 +30,14 @@
   deploying shell never carries a value, and no script, test or workflow may
   ask for one. Never print a secret value, in code or in a report.
 - Deploys are the Deploy apps workflow on pushed `v*` release tags or manual
-  dispatch with an explicit ref. Main pushes run CI gates without deploying. It runs `scripts/deploy.ts` (site build, preflight, then
-  `wrangler deploy`), which refuses a real deploy of a dirty tree or of a
-  commit not on origin/main. Never run it for real or mutate Cloudflare from
-  an agent session; the dry run and the preflight are read-only and are the
-  most an agent may run. `wrangler deploy --dry-run` bundles and reads no live script, so it is
-  never the identity verdict — `bun scripts/adopt-durable-objects.ts` is.
+  dispatch with an explicit ref. Main pushes run CI gates without deploying.
+  After validating and pushing product changes to `main`, agents dispatch the
+  existing workflow at that revision and verify its result so Will can test
+  in production (Will, 2026-10-13; root maintainer workflow). It runs
+  `scripts/deploy.ts` (site build, preflight, then `wrangler deploy`), which
+  refuses a real deploy of a dirty tree or a commit not on origin/main.
+  `wrangler deploy --dry-run` bundles and reads no live script, so it is never
+  the identity verdict — `bun scripts/adopt-durable-objects.ts` is.
 - A Durable Object's in-memory state is made once by the object (the native
   class's field), never a Layer built per request.
 - `src/edge.ts` forwards `/api` and `/api/*` to `SMITHERS_BACKEND_ORIGIN`.

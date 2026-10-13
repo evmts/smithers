@@ -121,9 +121,12 @@ rules to behavior that applies throughout their directory trees.
 - Commit and push repository maintenance directly to `main` with `jj`; do not
   open PRs for maintenance (Will, 2026-10-13). This overrides PR-only landing
   and agent `main` movement restrictions for source maintenance; the product's
-  TODO flow still follows its own contract. Temporary workspaces are for one
-  change and are removed after landing; no permanent integration branches or
-  history-rewrite lanes.
+  TODO flow still follows its own contract. After relevant validation, deploy
+  product changes from the pushed `main` revision through the existing
+  deployment workflow so Will can test them in production. This is standing
+  authorization to deploy; do not ask again for routine deployments.
+  Temporary workspaces are for one change and are removed after landing; no
+  permanent integration branches or history-rewrite lanes.
 - Reuse or create a GitHub issue for every actionable TODO, bug, blocker, or
   deferred requirement. Reconcile stale issues against evidence; never close an
   issue merely because code exists or a launch request was accepted.
