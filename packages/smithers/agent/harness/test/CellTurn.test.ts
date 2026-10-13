@@ -22,6 +22,7 @@ import * as CellHistory from "../src/CellHistory.ts"
 import * as CellTurn from "../src/CellTurn.ts"
 import * as Compaction from "../src/Compaction.ts"
 import * as ContextWindow from "../src/ContextWindow.ts"
+import * as EngineLike from "../src/EngineLike.ts"
 import { compactable } from "../src/internal/compactable.ts"
 import type * as compactionMarks from "../src/internal/compactionMarks.ts"
 import { printsObservation } from "../src/internal/printsObservation.ts"
@@ -3654,6 +3655,75 @@ describe("CellTurn completion check cost", () => {
         costSource: "estimated"
       })
     ])
+  })
+})
+
+describe("CellTurn spend purposes", () => {
+  /** What the engine was told each paid call was for, in call order. */
+  const purposes = (engine: ScriptedEngine.Fixture) =>
+    engine.recorder.spends.map(({ at, frame, purpose }) => ({ at, purpose, frame }))
+
+  it("tells the engine what each model call, completion check and cell call is for, and its frame", async () => {
+    const { engine, failure } = await run({
+      state: CellTurn.make({
+        session: "session-1",
+        seat: "anthropic:test-model",
+        modelParams: ModelRequest.GenerationParams.make(),
+        layers: [],
+        capabilityEnvelope: ["fs:read:**"].map(pattern),
+        placement: Option.none(),
+        contextWindow: tasked,
+        maxFrames: 2
+      }),
+      script: [emits(`await ctx.call("fs/list", { path: "." })`), emits(`ctx.done("The query string is kept.")`)],
+      calls: [{ _tag: "Success", value: ["a.ts"] }]
+    })
+    expect(failure).toBeUndefined()
+
+    expect(purposes(engine).filter(({ at }) => at !== "record:supervisor")).toEqual([
+      { at: "sealStep", purpose: "frame", frame: 0 },
+      { at: "call:fs/list", purpose: "reading", frame: 0 },
+      { at: "sealStep", purpose: "frame", frame: 1 },
+      { at: "record:completion-judgement", purpose: "claim", frame: 1 }
+    ])
+  })
+
+  it("tells the engine a compaction's marks reading and summary call apart from the frame's own call", async () => {
+    const judge = marksJudge(oneTwo)
+    const { engine, failure } = await run({
+      script: [prose("the compacted summary"), emits(`ctx.done("done")`)],
+      state: compactionState(crowded, 70_000),
+      flows: [],
+      evaluator: judge.layer,
+      judged: true
+    })
+    expect(failure).toBeUndefined()
+
+    expect(purposes(engine)).toEqual([
+      { at: "record:compaction-marks", purpose: "marks", frame: 0 },
+      { at: "sealStep", purpose: "compaction", frame: 0 },
+      { at: "sealStep", purpose: "frame", frame: 0 },
+      { at: "record:completion-judgement", purpose: "claim", frame: 0 }
+    ])
+  })
+
+  it("declares nothing outside a paid call", () => {
+    expect(Effect.runSync(EngineLike.Spend)).toBeUndefined()
+  })
+
+  it("tells the engine the run-start relevance reading is its own purpose", async () => {
+    const { engine } = await run({
+      state: state({ maxFrames: 1 }),
+      script: [emits(`ctx.done("done")`)],
+      evaluator: Evaluator.layerScripted((request) =>
+        Object.fromEntries(
+          Object.keys(request.questions).map((id) => [id, { probability: id.startsWith("unnecessary") ? 0.1 : 0.01 }])
+        )
+      ),
+      judged: true
+    })
+
+    expect(purposes(engine)[0]).toEqual({ at: "record:relevance", purpose: "relevance", frame: 0 })
   })
 })
 

@@ -182,6 +182,66 @@ export interface Paid {
 }
 
 /**
+ * What a paid engine call is for: `frame` (the agent's own model call),
+ * `compaction` (a compaction's summary call), `judge` (a supervisor reading),
+ * `marks` (compaction marks), `claim` (a completion check), `relevance` (a
+ * relevance reading, at run start or over recalled memory) and `reading` (an
+ * evaluator reading a cell's own flow call asked for).
+ *
+ * @category models
+ * @since 1.0.0-rc.1
+ */
+export type SpendPurpose = "frame" | "compaction" | "judge" | "marks" | "claim" | "relevance" | "reading"
+
+/**
+ * One metered reading inside a boundary that pays for readings of more than
+ * one purpose.
+ *
+ * @category models
+ * @since 1.0.0-rc.1
+ */
+export interface SpendReading {
+  readonly purpose: SpendPurpose
+  readonly usage: { readonly inputTokens: number; readonly outputTokens: number }
+  readonly modelId?: string | undefined
+}
+
+/**
+ * What the controller says the engine call it is making is for.
+ *
+ * @category models
+ * @since 1.0.0-rc.1
+ */
+export interface Spend {
+  readonly purpose: SpendPurpose
+  /** The controller's frame the spend belongs to. */
+  readonly frame: number
+  /**
+   * The metered readings of a boundary whose one charge covers readings of
+   * more than one purpose, read after the boundary's value is recorded. Each
+   * model's readings sum to the share {@link RecordBoundary.usage} reports
+   * for that model. Absent where every token the call spends is `purpose`'s.
+   */
+  readonly readings?: (() => ReadonlyArray<SpendReading>) | undefined
+}
+
+/**
+ * The purpose of the engine call in progress, for a host that accounts spend.
+ *
+ * The controller provides it around every sealed step, every boundary that
+ * declares {@link RecordBoundary.usage}, and every cell call, so a host's
+ * ledger can label each charge without the controller knowing the ledger
+ * exists. It labels and decides nothing: a host that never reads it charges
+ * exactly as before. Outside such a call it is `undefined`.
+ *
+ * @category services
+ * @since 1.0.0-rc.1
+ */
+export const Spend = Context.Reference<Spend | undefined>("@smthrs/harness/EngineLike/Spend", {
+  defaultValue: () => undefined
+})
+
+/**
  * One measurement of the workspace the run is changing.
  *
  * The controller never interprets `digest`; it only asks whether two

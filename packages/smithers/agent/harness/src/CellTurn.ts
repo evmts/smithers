@@ -2411,8 +2411,12 @@ const callHandler = (
       invocation.ordinal,
       callMs,
       invocation.flow,
-      // A flow that asks Jev journals its receipts into this run.
-      Effect.suspend(() => engine.call(call)).pipe(Effect.provideService(AgentEvent.Journal, emit)),
+      // A flow that asks Jev journals its receipts into this run, and what it
+      // pays for them is a reading this frame's cell asked for.
+      Effect.suspend(() => engine.call(call)).pipe(
+        Effect.provideService(AgentEvent.Journal, emit),
+        Effect.provideService(EngineLike.Spend, { purpose: "reading", frame: state.frame })
+      ),
       replaying,
       call
     )
@@ -2548,7 +2552,8 @@ const summarized = (
         modelCallMs: state.modelCallMs
       })).pipe(
         Stream.tap(reached.note),
-        Stream.tap((event) => emitModelProgress(event, emit))
+        Stream.tap((event) => emitModelProgress(event, emit)),
+        Stream.provideService(EngineLike.Spend, { purpose: "compaction", frame: state.frame })
       )
     ).pipe(Effect.map((collected) => Array.from(collected)))
     const settledAt = yield* Clock.currentTimeMillis
@@ -2718,7 +2723,8 @@ const marked = (
         identity: { session: state.session, frame: state.frame, boundary: `compaction-marks:${prefix}` },
         classifier: "compaction/marks",
         value: MarksRecord,
-        items: missing.length
+        items: missing.length,
+        purpose: "marks"
       },
       compactionMarks.read(
         { task: Judgement.task(taskOf(state.contextWindow)), failing },
@@ -2959,7 +2965,8 @@ const seal = (
           modelCallMs: state.modelCallMs
         })).pipe(
           Stream.tap(reached.note),
-          Stream.tap((event) => emitModelProgress(event, emit))
+          Stream.tap((event) => emitModelProgress(event, emit)),
+          Stream.provideService(EngineLike.Spend, { purpose: "frame", frame: state.frame })
         )
       ).pipe(Effect.map((collected) => Array.from(collected)))
       const settledAt = yield* Clock.currentTimeMillis
@@ -4067,14 +4074,17 @@ const frame = (
             unfinishedDecision: judgement.unfinishedDecision ?? null
           }))
         )
-      }).pipe(Effect.map((judgement) => ({
-        observed: judgement.observed ?? undefined,
-        demand: judgement.demand ?? undefined,
-        unproven: judgement.unproven ?? undefined,
-        decision: judgement.decision ?? undefined,
-        sentenceDecision: judgement.sentenceDecision ?? undefined,
-        unfinishedDecision: judgement.unfinishedDecision ?? undefined
-      })))
+      }).pipe(
+        Effect.provideService(EngineLike.Spend, { purpose: "claim", frame: state.frame }),
+        Effect.map((judgement) => ({
+          observed: judgement.observed ?? undefined,
+          demand: judgement.demand ?? undefined,
+          unproven: judgement.unproven ?? undefined,
+          decision: judgement.decision ?? undefined,
+          sentenceDecision: judgement.sentenceDecision ?? undefined,
+          unfinishedDecision: judgement.unfinishedDecision ?? undefined
+        }))
+      )
       // The claim brake's reading when it issued no demand. It is the one
       // demand whose non-demanding readings are journaled, because it is the
       // one a grader cannot recompute; see `AgentEvent.ClaimDemanded`. It is
@@ -4239,7 +4249,8 @@ const withheld = (
         identity: { session: state.session, frame: 0, boundary: "relevance" },
         classifier: "relevance/unnecessary",
         value: RelevanceRecord,
-        items: items.length
+        items: items.length,
+        purpose: "relevance"
       },
       Effect.map(Relevance.judge({ task: Judgement.task(taskOf(state.contextWindow)) }, items), (reading) => ({
         value: { settled: Relevance.settled(reading, { scope: state.session, frame: 0, source: "run" }) },

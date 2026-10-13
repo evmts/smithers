@@ -44,6 +44,17 @@ export interface Recorder {
   readonly records: Array<EngineLike.RecordBoundary<unknown>>
   /** What each executed boundary's recorded value says it paid a model for. */
   readonly paid: Array<{ readonly name: string; readonly usage: ReadonlyArray<EngineLike.Paid> | undefined }>
+  /**
+   * What the controller said each paid engine call was for, read where a host
+   * that accounts spend reads it: at the sealed step, at a boundary that
+   * declares usage (after its value is recorded), and at a cell call.
+   */
+  readonly spends: Array<{
+    readonly at: string
+    readonly purpose: string | undefined
+    readonly frame: number | undefined
+    readonly readings: ReadonlyArray<EngineLike.SpendReading>
+  }>
   /** Every checkpoint the run asked this host to pin, with the tree it held. */
   readonly captures: Array<{ readonly id: string; readonly tree: string | undefined }>
   readonly suspend: Array<EngineLike.SuspendReason>
@@ -102,11 +113,21 @@ export const make = (
     calls: [],
     records: [],
     paid: [],
+    spends: [],
     captures: [],
     suspend: [],
     walks: []
   }
   let callIndex = 0
+  const spent = (at: string): Effect.Effect<void> =>
+    Effect.map(EngineLike.Spend, (label) => {
+      recorder.spends.push({
+        at,
+        purpose: label?.purpose,
+        frame: label?.frame,
+        readings: label?.readings?.() ?? []
+      })
+    })
   const engine = EngineLike.make({
     capture: (request) =>
       Effect.sync(() => {
@@ -115,37 +136,39 @@ export const make = (
           ? Option.some(new EngineLike.Snapshot({ id: request.id, ref: `test/${request.id}` }))
           : Option.none()
       }),
-    sealStep: (step) => {
-      recorder.sealStep.push(step)
-      return model.stream(step.request)
-    },
+    sealStep: (step) =>
+      Stream.unwrap(Effect.map(spent("sealStep"), () => {
+        recorder.sealStep.push(step)
+        return model.stream(step.request)
+      })),
     splice: (batch) => {
       recorder.splice.push(batch)
       return Stream.empty
     },
-    call: (request) => {
-      recorder.calls.push(request)
-      const step = callScript[callIndex++] ?? { _tag: "Success", value: null }
-      switch (step._tag) {
-        case "Success":
-          if (step.tree !== undefined) workspace.value = step.tree
-          return Effect.succeed(new Cell.CallResult({ outcome: "success", value: step.value }))
-        case "Failure":
-          return Effect.succeed(
-            new Cell.CallResult({ outcome: "failure", value: null, message: step.message })
-          )
-        case "PermissionRequired":
-          return Effect.fail(
-            new HarnessError({
-              code: "engine_failed",
-              message: "Permission required",
-              cause: step.request
-            })
-          )
-        case "Interrupt":
-          return Effect.interrupt
-      }
-    },
+    call: (request) =>
+      Effect.flatMap(spent(`call:${request.flowName}`), () => {
+        recorder.calls.push(request)
+        const step = callScript[callIndex++] ?? { _tag: "Success", value: null }
+        switch (step._tag) {
+          case "Success":
+            if (step.tree !== undefined) workspace.value = step.tree
+            return Effect.succeed(new Cell.CallResult({ outcome: "success", value: step.value }))
+          case "Failure":
+            return Effect.succeed(
+              new Cell.CallResult({ outcome: "failure", value: null, message: step.message })
+            )
+          case "PermissionRequired":
+            return Effect.fail(
+              new HarnessError({
+                code: "engine_failed",
+                message: "Permission required",
+                cause: step.request
+              })
+            )
+          case "Interrupt":
+            return Effect.interrupt
+        }
+      }),
     // The fixture keeps no journal: single-pass tests execute the boundary,
     // and replay behaviour is proven against the real engine in
     // `@smthrs/agent`.
@@ -153,9 +176,12 @@ export const make = (
       recorder.records.push(boundary)
       // Read the way a budgeted engine reads it: off the recorded value.
       return Effect.tap(boundary.execute, (value) =>
-        Effect.sync(() => {
-          recorder.paid.push({ name: boundary.name, usage: boundary.usage?.(value) })
-        }))
+        Effect.andThen(
+          Effect.sync(() => {
+            recorder.paid.push({ name: boundary.name, usage: boundary.usage?.(value) })
+          }),
+          boundary.usage === undefined ? Effect.void : spent(`record:${boundary.name}`)
+        ))
     },
     observe: Effect.suspend(() => {
       recorder.walks.push(workspace.value)

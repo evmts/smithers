@@ -4,6 +4,27 @@
 
 ### Added
 
+- A run's records say where its time and tokens went (#3844). Every field is
+  optional on read and listed as late in the trail's identity, so a run
+  journaled before it resumes without re-publishing its prefix.
+  - `control.agent.model-settled`: `scope`, `frame`, `attempt`, `purpose`,
+    `reask`, `stages` (`firstEventMs`, `firstThinkingMs`, `firstOutputMs`,
+    `lastOutputMs`), `tries`, `output` (`thinking`, `written`).
+    `control.agent.model-requested`: `reask`.
+  - `control.agent.compaction-settled`: `causes`, `scope`, `frame`,
+    `durationMillis`, `context` (`before`, `after`), `marksCall`,
+    `summaryCall`.
+  - `control.agent.supervisor-settled`: `triggers`, `compact`,
+    `compactSuppressed`, `costUsd`, `costSource`.
+    `control.agent.steering-drained`: `compact`.
+    `control.agent.claim-demanded`: `costUsd`, `costSource`.
+  - `flows.agent.usage.v1` (`Budget.UsageRecord`): `purpose` and `frame`, read
+    from `EngineLike.Spend` where the call is made, and `parts` (`purpose`,
+    `spent`, `costUsd`) when one charge covers readings of more than one
+    purpose. A reader totalling by purpose takes `parts` in place of
+    `purpose`; the totals add up to the run's spend. This is a durable wire
+    addition: records without the fields still decode and recover.
+
 - `AgentSession.Options.reentryCheckpoint` runs host controls before entering
   or resuming a retained module, including an unfinished child holding a question.
 
@@ -31,6 +52,16 @@
   on `Stuck` `tool-call` facts for Continue or Stop (#2279).
 
 ### Changed
+
+- `control.agent.compaction-settled` writes the tokens its removed messages
+  held as `removed`. It wrote `removedTokens`, a name the journal reads as a
+  credential, so every stored row held a placeholder in its place (#3844).
+
+- Model step keys moved when `ModelEvent.Settle` gained `timing` and
+  `servedTier` and `Retry` gained `elapsedMs` and `httpStatus` (1ae37f2b82). A
+  run journaled before that commit and resumed after it asks the provider
+  again for the model calls in its prefix; finish in-flight runs on their
+  original revision.
 
 - Sealed model/cell identities changed when the harness added
   `approval_unavailable` (#3161, #3317). The preceding rc.115 model key

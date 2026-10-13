@@ -515,6 +515,41 @@ describe("Supervisor", () => {
       })
     })
 
+    it("tells the engine a reading is the judge's, and which of its requests were relevance or marks", async () => {
+      const read = untilRead()
+      const { advance, clock } = manualClock()
+      const { layer } = scripted(() => calm())
+      const jev = (inputTokens: number) => ({ inputTokens, outputTokens: 10, modelId: "typesafe-ai/jev" })
+      const { engine } = await run({
+        state: state(3),
+        script: threeFrames,
+        evaluator: metered(
+          layer,
+          advance,
+          (request) => ({ millis: 1, usage: jev(isSupervisor(request) ? 3_000 : isRelevance(request) ? 400 : 26_000) })
+        ),
+        memory: recalling([tests]).memory,
+        ...read,
+        judged: true,
+        clock
+      })
+
+      const [first] = engine.recorder.spends.filter(({ at }) => at === "record:supervisor")
+      expect(first).toEqual({
+        at: "record:supervisor",
+        purpose: "judge",
+        frame: 0,
+        readings: [
+          { purpose: "judge", usage: { inputTokens: 3_000, outputTokens: 10 }, modelId: "typesafe-ai/jev" },
+          { purpose: "relevance", usage: { inputTokens: 400, outputTokens: 10 }, modelId: "typesafe-ai/jev" }
+        ]
+      })
+      // The split says whose tokens the boundary's one charge is made of.
+      expect(engine.recorder.paid.find(({ name }) => name === "supervisor")?.usage).toEqual([
+        { usage: { inputTokens: 3_400, outputTokens: 20 }, modelId: "typesafe-ai/jev" }
+      ])
+    })
+
     it("journals every trigger the supervisor declares, and no other name", () => {
       const reading = {
         eventType: "flows.harness.supervisor-settled.v1",

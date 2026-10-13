@@ -462,6 +462,29 @@ describe("recorded", () => {
     expect(paid).toEqual([share, share])
   })
 
+  it("tells the engine what the reading is for when the caller says, and nothing of its own when it does not", async () => {
+    const seen: Array<EngineLike.Spend | undefined> = []
+    const { engine } = recording()
+    const watching = EngineLike.makeNoop({
+      record: (recorded) =>
+        Effect.andThen(Effect.map(EngineLike.Spend, (spend) => void seen.push(spend)), engine.record(recorded))
+    })
+    const jev = answered()
+    const at = (name: string) => ({ ...boundary, name })
+    await Effect.runPromise(
+      Judgement.recorded(watching, { ...at("declared"), purpose: "marks" }, execute).pipe(Effect.provide(jev.layer))
+    )
+    await Effect.runPromise(Judgement.recorded(watching, at("bare"), execute).pipe(Effect.provide(jev.layer)))
+    await Effect.runPromise(
+      Judgement.recorded(watching, at("inherited"), execute).pipe(
+        Effect.provide(jev.layer),
+        Effect.provideService(EngineLike.Spend, { purpose: "judge", frame: 9 })
+      )
+    )
+
+    expect(seen).toEqual([{ purpose: "marks", frame: 3 }, undefined, { purpose: "judge", frame: 9 }])
+  })
+
   it("keeps each settled request's model id through the record (#3010)", async () => {
     const { engine } = recording()
     const metered = Layer.succeed(Evaluator.Evaluator)(Evaluator.Evaluator.of({

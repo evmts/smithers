@@ -79,6 +79,7 @@ import { digest } from "@smthrs/core/Digest"
 import { FlowRuntime } from "@smthrs/flow"
 import * as Fault from "@smthrs/flow/Fault"
 import type * as RetryPolicy from "@smthrs/flow/RetryPolicy"
+import * as EngineLike from "@smthrs/harness/EngineLike"
 import type * as HarnessError from "@smthrs/harness/HarnessError"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import type * as ModelEvent from "@smthrs/model/ModelEvent"
@@ -699,8 +700,66 @@ export const UsageRecord = Schema.Struct({
   spent: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
   /** Absent for an unpriced model and in records written before pricing. */
   costUsd: Schema.optional(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))),
-  costSource: Schema.optional(Pricing.CostSource)
+  costSource: Schema.optional(Pricing.CostSource),
+  /**
+   * What the spend was for, as the controller declared it when it made the
+   * call: an `EngineLike.SpendPurpose`. A string and not that closed set,
+   * because this record is read back on resume and a purpose a later host
+   * adds must not make an older one refuse the ledger. Absent for a spend
+   * nothing declared, and in records written before spends were labelled.
+   */
+  purpose: Schema.optional(Schema.String),
+  /** The controller's frame the spend belongs to; travels with `purpose`. */
+  frame: Schema.optional(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))),
+  /**
+   * Present when this one charge covers readings of more than one purpose:
+   * each purpose's share of `spent` and of `costUsd`, counted the way the
+   * record itself is. A reader totalling by purpose takes the parts in place
+   * of `purpose`; they add up to `spent`.
+   */
+  parts: Schema.optional(Schema.Array(Schema.Struct({
+    purpose: Schema.String,
+    spent: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
+    costUsd: Schema.optional(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)))
+  })))
 })
+
+/**
+ * What a usage record says its spend was for: the purpose and frame the
+ * controller declared, and the split when one charge covers readings of more
+ * than one purpose.
+ *
+ * `usage` is one model's share of a boundary, so only that model's readings
+ * are its parts. Readings that do not add up to it describe some other
+ * charge, and the record keeps the declared purpose whole rather than a split
+ * that would not sum. Labelling only: nothing here is read back by admission.
+ */
+const attributed = (
+  label: EngineLike.Spend | undefined,
+  usage: ModelEvent.Usage,
+  modelId: string | undefined,
+  share: (usage: ModelEvent.Usage) => Charge
+): Pick<typeof UsageRecord.Type, "purpose" | "frame" | "parts"> => {
+  if (label === undefined) return {}
+  const declared = { purpose: label.purpose as string, frame: label.frame }
+  const shares = new Map<string, { inputTokens: number; outputTokens: number }>()
+  for (const reading of label.readings?.() ?? []) {
+    if (reading.modelId !== modelId) continue
+    const held = shares.get(reading.purpose)
+    shares.set(reading.purpose, {
+      inputTokens: (held?.inputTokens ?? 0) + reading.usage.inputTokens,
+      outputTokens: (held?.outputTokens ?? 0) + reading.usage.outputTokens
+    })
+  }
+  const purposes = [...shares]
+  const adds = (counter: "inputTokens" | "outputTokens"): boolean =>
+    purposes.reduce((sum, [, held]) => sum + held[counter], 0) === usage[counter]
+  if (purposes.length === 0 || !adds("inputTokens") || !adds("outputTokens")) return declared
+  const [sole] = purposes
+  return purposes.length === 1
+    ? { ...declared, purpose: sole![0] }
+    : { ...declared, parts: purposes.map(([purpose, held]) => ({ purpose, ...share(held) })) }
+}
 
 /**
  * The journal event one run's latency clock zero is written to.
@@ -1756,12 +1815,21 @@ export const make = (
       record: (stepKey, usage, modelId) =>
         withRecovered((run, runId) =>
           Effect.gen(function*() {
-            const spent = tokensOf(usage, modelId === undefined ? undefined : policy.weights?.[modelId])
-            const priced = Pricing.cost(usage, modelId, { table: prices, at: yield* Clock.currentTimeMillis })
+            const weights = modelId === undefined ? undefined : policy.weights?.[modelId]
+            const at = yield* Clock.currentTimeMillis
+            const charged = (paid: ModelEvent.Usage): Charge => {
+              const cost = Pricing.cost(paid, modelId, { table: prices, at })
+              return { spent: tokensOf(paid, weights), ...(cost === undefined ? {} : { costUsd: cost.costUsd }) }
+            }
+            const spent = tokensOf(usage, weights)
+            const priced = Pricing.cost(usage, modelId, { table: prices, at })
             const charge: Charge = { spent, ...(priced === undefined ? {} : { costUsd: priced.costUsd }) }
+            // What the controller said this call was for, read where the call
+            // is made. It labels the record and decides nothing.
+            const labelled = attributed(yield* EngineLike.Spend, usage, modelId, charged)
             // A malformed cost must not poison the numeric accumulator. Keep the
             // ledger unavailable until that step supplies a valid record.
-            const payload = yield* Schema.encodeEffect(UsageRecord)({ stepKey, spent, ...priced }).pipe(
+            const payload = yield* Schema.encodeEffect(UsageRecord)({ stepKey, spent, ...priced, ...labelled }).pipe(
               Effect.mapError((cause) => unavailable("record", runId, "its usage record does not encode", cause)),
               Effect.tapError((failure) =>
                 Effect.sync(() => {

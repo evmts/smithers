@@ -33,7 +33,7 @@ import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as AgentEvent from "./AgentEvent.ts"
-import type * as EngineLike from "./EngineLike.ts"
+import * as EngineLike from "./EngineLike.ts"
 import type { HarnessError } from "./HarnessError.ts"
 import * as bytes from "./internal/bytes.ts"
 import { answeredBy, decider } from "./internal/decidedBy.ts"
@@ -468,6 +468,12 @@ export const recorded = <A>(
     readonly classifier: string
     readonly value: EngineLike.DurableSchema<A>
     readonly items: number
+    /**
+     * What the reading is for. A host that accounts spend labels the charge
+     * with it and the boundary's frame: see `EngineLike.Spend`. Omitted, the
+     * charge carries whatever label the caller's own context holds.
+     */
+    readonly purpose?: EngineLike.SpendPurpose | undefined
   },
   execute: Effect.Effect<
     { readonly value: A; readonly asked: ReadonlyArray<Asked>; readonly acted: boolean },
@@ -476,7 +482,10 @@ export const recorded = <A>(
 ): Effect.Effect<Recorded<A>, HarnessError> => {
   const scope = boundary.identity.session
   const frame = boundary.identity.frame
-  return engine.record({
+  const { purpose } = boundary
+  const labelled = <B, E>(reading: Effect.Effect<B, E>): Effect.Effect<B, E> =>
+    purpose === undefined ? reading : Effect.provideService(reading, EngineLike.Spend, { purpose, frame })
+  return labelled(engine.record({
     name: boundary.name,
     identity: boundary.identity,
     success: Recorded(boundary.value),
@@ -496,7 +505,7 @@ export const recorded = <A>(
         unjudged: null
       })
     })
-  })
+  }))
 }
 
 /**

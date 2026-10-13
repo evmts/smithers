@@ -38,7 +38,7 @@ import type * as Descriptor from "@smthrs/registry/Descriptor"
 import { Clock, Deferred, Effect, Fiber, Option, Queue, Ref, Schema, type Scope } from "effect"
 import * as AgentEvent from "../AgentEvent.ts"
 import type { State } from "../CellTurn.ts"
-import type * as EngineLike from "../EngineLike.ts"
+import * as EngineLike from "../EngineLike.ts"
 import * as Judgement from "../Judgement.ts"
 import * as Monitor from "../Monitor.ts"
 import * as Relevance from "../Relevance.ts"
@@ -369,6 +369,9 @@ export const open = (input: {
         const snapshot: Supervisor.Snapshot = { ...offer.snapshot, frames: offer.frames }
         const declared = scored(snapshot)
         const unmarked = (offer.compaction?.unmarked ?? []).filter(({ digest }) => !marked.has(digest))
+        // What the boundary's one charge is made of, for a host that labels
+        // spend: read off the record, as the charge itself is.
+        let readings: ReadonlyArray<EngineLike.SpendReading> = []
         const recorded = yield* engine.record({
           name: "supervisor",
           identity: { session, frame: offer.frame, boundary: `supervisor:${offer.digest}` },
@@ -378,15 +381,23 @@ export const open = (input: {
           advisory: true,
           // The monitors' reading, then each relevance and marks request: every
           // reading the boundary took is one the run paid for.
-          usage: (record) =>
-            paidUsage([
-              record.settled?.usage,
-              ...(record.unjudged?.usage ?? []),
-              ...record.memoryDecisions.map((settled) => settled.usage),
-              ...(record.memoryUnjudged?.usage ?? []),
-              ...record.marksDecisions.map((settled) => settled.usage),
-              ...(record.marksUnjudged?.usage ?? [])
-            ]),
+          usage: (record) => {
+            const paid = [
+              ...[record.settled?.usage, ...(record.unjudged?.usage ?? [])].map((usage) => ["judge", usage] as const),
+              ...[...record.memoryDecisions.map((settled) => settled.usage), ...(record.memoryUnjudged?.usage ?? [])]
+                .map((usage) => ["relevance", usage] as const),
+              ...[...record.marksDecisions.map((settled) => settled.usage), ...(record.marksUnjudged?.usage ?? [])]
+                .map((usage) => ["marks", usage] as const)
+            ]
+            readings = paid.flatMap(([purpose, usage]) =>
+              usage === undefined ? [] : [{
+                purpose,
+                usage: { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens },
+                ...(usage.modelId === undefined ? {} : { modelId: usage.modelId })
+              }]
+            )
+            return paidUsage(paid.map(([, usage]) => usage))
+          },
           execute: Effect.gen(function*() {
             // The task does not change between frames, so the store ranks the
             // same rows first each time: it is asked past every row already
@@ -534,7 +545,9 @@ export const open = (input: {
             }
             return record
           })
-        })
+        }).pipe(
+          Effect.provideService(EngineLike.Spend, { purpose: "judge", frame: offer.frame, readings: () => readings })
+        )
         // Posted before anything is journaled: an observer's checkpoint sits
         // inside `emit`, and a boundary that wakes on the settled event must
         // find the reading already waiting for it. Every reading Jev took is

@@ -1043,6 +1043,18 @@ that did the work, so a replayed frame reports the replay's own readings:
   reading. A reading's `compact` that no boundary took compacted nothing.
 - `ClaimDemanded` carries `costUsd` and `costSource` for the completion check.
 
+A host that keeps a spend ledger labels each charge from `EngineLike.Spend`, a
+`Context.Reference` the controller provides around every sealed step, every
+boundary that declares `RecordBoundary.usage` and every cell call. It holds
+the `purpose` (`EngineLike.SpendPurpose`: `frame`, `compaction`, `judge`,
+`marks`, `claim`, `relevance` or `reading`) and the `frame`; outside such a
+call it is `undefined`. The supervisor's boundary pays for the judge's reading,
+a relevance reading over recalled memory and a marks reading in one charge, so
+its label also carries `readings`: each metered reading's purpose, usage and
+model, read after the boundary's value is recorded. `Judgement.recorded` takes
+an optional `purpose` and labels its boundary with it. The reference labels
+and decides nothing: a host that never reads it charges exactly as before.
+
 Every member's `_tag` is the kebab-case discriminant `switch` and
 `Stream.filter` match on. `AgentEvent.eventType` is keyed by the camelCase
 property name and holds the journal event type, the one table `CellTurn`

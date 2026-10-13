@@ -50,6 +50,13 @@
   boundary took from a reading; `ClaimDemanded` carries `costUsd` and
   `costSource` (#3844).
 
+- `EngineLike.Spend` says what the engine call in progress is for. The
+  controller provides it around every sealed step, paid boundary and cell
+  call: a `purpose` (`EngineLike.SpendPurpose`), the `frame`, and, for the
+  supervisor's boundary, the purpose of each reading its one charge covers. A
+  host's spend ledger reads it to label what it charges; nothing else changes.
+  `Judgement.recorded` accepts an optional `purpose` (#3844).
+
 - `ExternalTranscript.decodeCodex` reads what Codex records outside its
   completed items: a message between agents (`agent_message`), whose encrypted
   body is one `encrypted` placeholder; a failed code-mode script with the

@@ -23,8 +23,11 @@ import * as EngineStore from "@smthrs/engine-store/EngineStore"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
 import { Action, DurableClock, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
+import * as EngineLike from "@smthrs/harness/EngineLike"
 import { Journal, JournalEvent, Redaction } from "@smthrs/journal"
+import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import * as Jj from "@smthrs/kernel/Jj"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import { ModelError } from "@smthrs/model/ModelError"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
@@ -302,6 +305,170 @@ describe("the accumulator", () => {
     expect(redact(Schema.encodeSync(Budget.BudgetStartedRecord)({ startedAt: 1_700 }))).toEqual({
       startedAt: 1_700
     })
+  })
+})
+
+/*
+ * A run's spend is one total made of calls with different purposes: the
+ * agent's own model calls, the judge's readings, compaction's marks and
+ * summary, the completion check. The controller says which a call is as it
+ * makes it (`EngineLike.Spend`), and the usage record keeps what it said, so
+ * the totals by purpose are read off the ledger and add up to the run (#3844).
+ */
+describe("what a spend was for", () => {
+  const instance = (executionId: string) => ({ executionId }) as FlowRuntime.FlowInstance["Service"]
+  const inRun = <A, E, R>(runId: string, effect: Effect.Effect<A, E, R>) =>
+    effect.pipe(Effect.provideService(FlowRuntime.FlowInstance, instance(runId)))
+  const journaled = <A, E>(effect: Effect.Effect<A, E, Journal.Journal>) =>
+    Effect.runPromise(effect.pipe(Effect.provide(TestJournal.layer()), Effect.scoped))
+  const payloads = (runId: string) =>
+    Effect.flatMap(
+      Journal.Journal,
+      (journal) =>
+        journal.entries({ runId: JournalEvent.RunId.make(runId), limit: 100 }).pipe(
+          Effect.map((page) =>
+            page.entries.filter((entry) => entry.eventType === Budget.usageEvent).map((entry) => entry.payload)
+          )
+        )
+    )
+  const as = (spend: EngineLike.Spend) => <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    Effect.provideService(effect, EngineLike.Spend, spend)
+  const jev = "typesafe-ai/jev"
+
+  it("labels a usage record with the purpose and frame the controller declared, and leaves an undeclared one bare", async () => {
+    await journaled(inRun(
+      "labelled",
+      Effect.gen(function*() {
+        const budget = yield* Budget.make({})
+        yield* budget.record("step-a", { inputTokens: 100, outputTokens: 40 }).pipe(as({ purpose: "frame", frame: 3 }))
+        yield* budget.record("boundary-usage/b", { inputTokens: 3_000, outputTokens: 10 }, jev).pipe(
+          as({ purpose: "claim", frame: 3 })
+        )
+        yield* budget.record("step-c", { inputTokens: 7, outputTokens: 1 })
+
+        const records = yield* payloads("labelled")
+        // typesafe-ai/jev: $0.042 in, $0 out per million tokens.
+        expect(records).toEqual([
+          { stepKey: "step-a", spent: 140, purpose: "frame", frame: 3 },
+          {
+            stepKey: "boundary-usage/b",
+            spent: 3_010,
+            costUsd: 0.000126,
+            costSource: "estimated",
+            purpose: "claim",
+            frame: 3
+          },
+          { stepKey: "step-c", spent: 8 }
+        ])
+        // Nothing here names a credential, so the journal stores it as written.
+        expect(records.map(Redaction.make())).toEqual(records)
+      })
+    ))
+  })
+
+  it("splits one charge among the purposes of the readings it covers, and the parts add up to it", async () => {
+    await journaled(inRun(
+      "split",
+      Effect.gen(function*() {
+        const budget = yield* Budget.make({})
+        // One supervisor boundary: the judge's reading and a marks reading on
+        // Jev, and a relevance reading a second model took.
+        const supervisor = as({
+          purpose: "judge",
+          frame: 4,
+          readings: () => [
+            { purpose: "judge", usage: { inputTokens: 3_000, outputTokens: 10 }, modelId: jev },
+            { purpose: "relevance", usage: { inputTokens: 400, outputTokens: 10 }, modelId: "claude-sonnet-5" },
+            { purpose: "marks", usage: { inputTokens: 26_000, outputTokens: 20 }, modelId: jev }
+          ]
+        })
+        yield* budget.record("boundary-usage/s", { inputTokens: 29_000, outputTokens: 30 }, jev).pipe(supervisor)
+        yield* budget.record("boundary-usage/s#1", { inputTokens: 400, outputTokens: 10 }, "claude-sonnet-5").pipe(
+          supervisor
+        )
+
+        const [shared, sole] = (yield* payloads("split")) as ReadonlyArray<typeof Budget.UsageRecord.Type>
+        expect(shared).toEqual({
+          stepKey: "boundary-usage/s",
+          spent: 29_030,
+          costUsd: 0.001218,
+          costSource: "estimated",
+          purpose: "judge",
+          frame: 4,
+          parts: [
+            { purpose: "judge", spent: 3_010, costUsd: 0.000126 },
+            { purpose: "marks", spent: 26_020, costUsd: 0.001092 }
+          ]
+        })
+        expect(shared!.parts!.reduce((sum, part) => sum + part.spent, 0)).toBe(shared!.spent)
+        // The second model read one purpose, so its share is that purpose's
+        // whole: claude-sonnet-5 at $2 in, $10 out per million tokens.
+        expect(sole).toEqual({
+          stepKey: "boundary-usage/s#1",
+          spent: 410,
+          costUsd: 0.0009,
+          costSource: "estimated",
+          purpose: "relevance",
+          frame: 4
+        })
+      })
+    ))
+  })
+
+  it("keeps a charge whole under the declared purpose when its readings do not add up to it", async () => {
+    await journaled(inRun(
+      "unsplit",
+      Effect.gen(function*() {
+        const budget = yield* Budget.make({})
+        yield* budget.record("boundary-usage/s", { inputTokens: 29_000, outputTokens: 30 }, jev).pipe(as({
+          purpose: "judge",
+          frame: 4,
+          readings: () => [
+            { purpose: "judge", usage: { inputTokens: 3_000, outputTokens: 10 }, modelId: jev },
+            { purpose: "marks", usage: { inputTokens: 1, outputTokens: 1 }, modelId: jev }
+          ]
+        }))
+        expect(yield* payloads("unsplit")).toEqual([
+          {
+            stepKey: "boundary-usage/s",
+            spent: 29_030,
+            costUsd: 0.001218,
+            costSource: "estimated",
+            purpose: "judge",
+            frame: 4
+          }
+        ])
+      })
+    ))
+  })
+
+  it("recovers a ledger that mixes records written before spends were labelled with ones written after", async () => {
+    await journaled(inRun(
+      "mixed",
+      Effect.gen(function*() {
+        const journal = yield* Journal.Journal
+        // The shape every record had before this field existed.
+        yield* journal.emitDurableUnfenced(
+          new JournalEvent.Input({
+            runId: JournalEvent.RunId.make("mixed"),
+            sourceId: JournalEvent.SourceId.make("/agent/budget/usage/old"),
+            sourceSeq: JournalEvent.SourceSeq.make(0),
+            eventType: Budget.usageEvent,
+            payload: { stepKey: "old-step", spent: 600, costUsd: 0.01, costSource: "estimated" }
+          })
+        )
+        const first = yield* Budget.make({})
+        yield* first.record("new-step", { inputTokens: 100, outputTokens: 40 }).pipe(as({ purpose: "frame", frame: 1 }))
+
+        // A fresh budget is a restarted host: it has only the journal.
+        const resumed = yield* Budget.make({})
+        expect(yield* resumed.usage).toEqual({ tokens: 740, calls: 2, largestCall: 600 })
+        expect(Schema.decodeUnknownSync(Budget.UsageRecord)({ stepKey: "old-step", spent: 600 })).toEqual({
+          stepKey: "old-step",
+          spent: 600
+        })
+      })
+    ))
   })
 })
 
@@ -689,6 +856,87 @@ describe("a budget on the durable engine", () => {
     // The completion judge's reading, let through past the spent ceiling, is
     // warned about too, at no projected cost (#3010).
     expect(observed.records[1]).toMatchObject({ scope: "tokens", used: 1_200, max: 1_000, next: 0 })
+  }, 60_000)
+
+  it("labels every spend of a real run, and the totals by purpose add up to what the run spent", async () => {
+    const calls: Array<string> = []
+    // A judge that is metered: every reading it takes costs 50 tokens.
+    const judge = Layer.succeed(Evaluator.Evaluator)(
+      Evaluator.Evaluator.of({
+        evaluate: (request) =>
+          Effect.succeed({
+            answers: Object.fromEntries(
+              Object.entries(request.questions).map(([id, question]) => [
+                id,
+                question.type === "boolean"
+                  ? { type: "boolean" as const, probability: id === "complete" || id === "on_target" ? 0.99 : 0.01 }
+                  : question.type === "score"
+                  ? { type: "score" as const, score: 0 }
+                  : { type: "choice" as const, choice: "none" }
+              ])
+            ),
+            usage: { inputTokens: 45, outputTokens: 5, modelId: "typesafe-ai/jev" },
+            latencyMs: 1
+          })
+      })
+    )
+    const observed = await durable(
+      Effect.gen(function*() {
+        const engine = yield* EngineStore.make({
+          owner: { hostId: "budget" },
+          journalSource: "budget-test",
+          isAlive: () => Effect.succeed(false)
+        })
+        const budget = yield* Budget.make({})
+        const wiring = Layer.mergeAll(First.layer, Interpreter.layer(OneStep)).pipe(
+          Layer.provideMerge(AgentAction.layerHost(host)),
+          Layer.provideMerge(seats(spending(600, [thinking, thinking, answering(`{"approved":true}`)], calls))),
+          Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, judge)),
+          Layer.provideMerge(Layer.succeed(Budget.Budget)(budget)),
+          Layer.provideMerge(QuotaPolicy.layerUnclassified()),
+          Layer.provideMerge(Action.layerImplementations),
+          Layer.provideMerge(Layer.succeed(FlowRuntime.FlowRuntime)(engine))
+        )
+        yield* OneStep.execute({ diff: "-  old\n+  new" }, { executionId: "budget-purposes" }).pipe(
+          Effect.provide(wiring)
+        )
+        const journal = yield* Journal.Journal
+        yield* journal.flush
+        const page = yield* journal.entries({ runId: "budget-purposes" as never, limit: 500 })
+        return {
+          records: page.entries.filter((entry) => entry.eventType === Budget.usageEvent).map((entry) =>
+            Schema.decodeUnknownSync(Budget.UsageRecord)(entry.payload)
+          ),
+          spent: yield* budget.usageOf("budget-purposes")
+        }
+      }).pipe(Effect.provide(stores))
+    )
+
+    expect(calls).toHaveLength(3)
+    // No spend is unlabelled, and none is split: this run's judge took one
+    // kind of reading per boundary.
+    expect(observed.records.every((record) => record.purpose !== undefined && record.frame !== undefined)).toBe(true)
+    const by = (purpose: string) => observed.records.filter((record) => record.purpose === purpose)
+    expect(by("frame").map(({ frame, spent }) => ({ frame, spent }))).toEqual([
+      { frame: 0, spent: 600 },
+      { frame: 1, spent: 600 },
+      { frame: 2, spent: 600 }
+    ])
+    expect(by("claim").map(({ frame, spent }) => ({ frame, spent }))).toEqual([{ frame: 2, spent: 50 }])
+    // The supervisor reads beside the loop, so how many of its readings a
+    // short run takes is its own business; each one it took is a judge's.
+    expect(by("judge").every(({ spent }) => spent === 50)).toBe(true)
+    const totals = new Map<string, number>()
+    for (const record of observed.records) {
+      for (const part of record.parts ?? [{ purpose: record.purpose!, spent: record.spent }]) {
+        totals.set(part.purpose, (totals.get(part.purpose) ?? 0) + part.spent)
+      }
+    }
+    expect([...totals.keys()].sort()).toEqual(
+      by("judge").length === 0 ? ["claim", "frame"] : ["claim", "frame", "judge"]
+    )
+    expect([...totals.values()].reduce((sum, spent) => sum + spent, 0)).toBe(observed.spent.tokens)
+    expect(observed.spent.tokens).toBe(1_800 + 50 + by("judge").length * 50)
   }, 60_000)
 
   it("reports a skipped step as the typed skip, through the action's own encoder", async () => {
