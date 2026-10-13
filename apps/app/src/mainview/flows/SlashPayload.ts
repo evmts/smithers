@@ -380,7 +380,8 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
    * inputs name a target.
    */
   "flow": args => structuredFields("flow", args, ["name"]) ?? required("name", args, "Flow name required"),
-  "flow.new": (args) => structuredFields("flow.new", args, ["description", "repo"]) ?? ok({ description: trimmed(args) }),
+  // A bare line names no description, so THE FORM LAW's form asks for it (#3828).
+  "flow.new": (args) => structuredFields("flow.new", args, ["description", "repo"]) ?? ok(trimmed(args) === "" ? {} : { description: trimmed(args) }),
   "flow.repo.choose": (args) => required("repo", args, "flow.repo.choose needs a repository name"),
   "flow.run.stop": (args) => {
     const [cardId, ...rest] = tokensOf(args)

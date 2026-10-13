@@ -419,6 +419,55 @@ describe("wave 11 — the loaded repositories are the universe", () => {
     expect(double.calls.some((call) => call.path === "/api/workflow/provision")).toBe(false)
   })
 
+  /*
+   * #3828: a bare `/flow.new` answered a usage sentence ("flow.new needs a
+   * description…"), which THE FORM LAW forbids, and on Cloud showed nothing.
+   * It asks with the form, and the repository is the one already open.
+   */
+  test("a bare /flow.new asks with the form, the open repository already filled in", async () => {
+    const store = await webStore()
+    const double = relay()
+    const controller = createAppController(store, silentAgent, double.services)
+    await signIn(store)
+
+    const outcome = await controller.commands.run("flow.new")
+    expect(outcome).toMatchObject({ status: "form", flow: "flow.new", fields: ["description"] })
+    const form = [...store.collections.cards.values()].find(card => card.kind === "flow-form")
+    if (form?.kind !== "flow-form") throw new Error("no form card")
+    expect(form.title).toBe("Create a new flow")
+    expect(form.payload.fields.map(field => [field.name, field.label, field.required])).toEqual([
+      ["description", "Description", true],
+      ["repo", "Repo", false]
+    ])
+    expect(form.payload.draft).toEqual({ repo: REPO })
+    expect([...store.collections.messages.values()].map(message => message.text).join("\n")).not.toContain("needs a description")
+    expect(double.calls.some(call => call.path === "/api/workflow/provision")).toBe(false)
+
+    /* Submit without a description names the field and launches nothing. */
+    expect(said(await controller.commands.run("form.submit", form.id))).toBe("The form still needs: Description.")
+    expect(double.state.launched).toEqual([])
+
+    expect((await controller.commands.run("form.set", `${form.id} description summarize my open issues`)).status).toBe("executed")
+    expect(said(await controller.commands.run("form.submit", form.id))).toBe(`flow-requested repo=${REPO}`)
+    await waitFor(() => double.state.launched.length > 0)
+    expect(double.state.launched).toEqual([{ workflow: "create-flow", input: { args: "summarize my open issues" } }])
+  })
+
+  test("the form keeps the repository a line names, and leaves it blank when none is open", async () => {
+    const store = await webStore()
+    const controller = createAppController(store, silentAgent, relay().services)
+    await signIn(store, null)
+    const draft = () => {
+      const form = [...store.collections.cards.values()].find(card => card.kind === "flow-form")
+      return form?.kind === "flow-form" ? form.payload.draft : undefined
+    }
+
+    expect((await controller.commands.run("flow.new")).status).toBe("form")
+    expect(draft()).toEqual({})
+    expect((await controller.commands.run("flow.new", JSON.stringify({ repo: "acme/other" }))).status).toBe("form")
+    expect(draft()).toEqual({ repo: "acme/other" })
+  })
+
   test("signed out, nothing reaches the seam — the answer names the one step", async () => {
     const store = await webStore()
     const double = relay()

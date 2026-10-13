@@ -118,6 +118,7 @@ export const flowFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
     runtime: ["cloud"],
     args: "<description> [owner/repo]",
     requires: ["signed-in"],
+    form: { fields: { repo: { optionsFrom: "cloud-repos", kind: "text" } } },
     input: Schema.Struct({
       description: Schema.String,
       repo: Schema.optional(Schema.String)

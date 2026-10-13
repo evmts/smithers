@@ -366,6 +366,11 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
       const missing = missingFields(fields, draftFrom(fields, given))
       fields = fields.filter(field => missing.includes(field.name))
     }
+    // A new flow belongs to the repository the person is in unless the line named another (Will, 2026-10-13; #3823).
+    if (request.name === "flow.new" && typeof given["repo"] !== "string") {
+      const target = resolveTargetRepo(store, undefined)
+      if ("repo" in target) given = { ...given, repo: target.repo }
+    }
     // A flow whose named input makes fields required asks only for those still missing; what the line named stays in given.
     const requires = hints?.requires?.(given)
     if (requires !== undefined) {
