@@ -604,7 +604,11 @@ describe("RuntimeBridge", () => {
           })
       })
       const result = yield* RuntimeBridge.observe(control, { protocol: RuntimeBridge.protocol, runId: "run-1" })
-      expect(result.run).toMatchObject({ failureFault: "wait", failureTag: "flows/model/ModelError/quota_exceeded", failureMessage: "quota_exceeded: limit" })
+      expect(result.run).toMatchObject({
+        failureFault: "wait",
+        failureTag: "flows/model/ModelError/quota_exceeded",
+        failureMessage: "quota_exceeded: limit"
+      })
       expect(
         Schema.decodeUnknownSync(RuntimeBridge.ObserveResponse)({
           protocol: RuntimeBridge.protocol,

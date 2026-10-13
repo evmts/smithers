@@ -510,7 +510,11 @@ export const observe = (control: Control["Service"], input: ObserveRequest, rece
     // A terminal status alone never supplies a result, and a bounded event
     // page cannot reconstruct a root result that precedes its cursor.
     let finalOutput: string | undefined
-    let failure: { readonly failureFault?: Fault.Class; readonly failureTag?: string; readonly failureMessage?: string } = {}
+    let failure: {
+      readonly failureFault?: Fault.Class
+      readonly failureTag?: string
+      readonly failureMessage?: string
+    } = {}
     if (terminal.has(summary.status)) {
       const projections = yield* Projections.make(control)
       const snapshot = yield* projections.snapshot({ _tag: "run-summary", runId: input.runId })
