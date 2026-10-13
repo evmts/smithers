@@ -158,6 +158,7 @@ only.
 | `testing`                     | `registers a skipped layered Effect body`                                                          | `test.skip`                                                 |
 | `smithers`                    | `runs a prompt on the Codex subscription with no provider keys`                                    | `it.skipIf(SMITHERS_LIVE_MODEL_TESTS !== "1")`              |
 | `smithers`                    | `ClaudeCode against the installed Claude Code`                                                     | `describe.runIf(SMITHERS_CLAUDE_CODE_SMOKE === "1")`        |
+| `smithers`                    | `a flow on the installed Claude Code`                                                              | `describe.runIf(SMITHERS_CLAUDE_CODE_SMOKE === "1")`        |
 | `smithers`                    | `CloudSandbox live workspace lifecycle`                                                            | `it.skipIf(SMITHERS_CLOUD_SANDBOX_SMOKE !== "1")`           |
 | `smithers`                    | `PostgreSQL retains one native ancestry snapshot across a committed writer on a separate connection` | `it.skipIf(process.env.SMITHERS_TEST_PG_URL === undefined)` |
 | `smithers`                    | `observing host over PostgreSQL`                                                                   | `describe.skipIf(!postgres)`                               |
@@ -296,6 +297,30 @@ Claude Code release changes its session or streaming behavior and a user's
 subscription seat stops completing runs. Run it with Claude Code signed in,
 then `SMITHERS_CLAUDE_CODE_SMOKE=1 pnpm --filter @smthrs/cli test`
 (`SMITHERS_CLAUDE_CODE_SMOKE_MODEL` picks the model; the default is `sonnet`).
+Closing it for the default gate means spending subscription quota on every
+run, which the RC does not do.
+
+**`smithers`: a flow on the installed Claude Code.** `ClaudeCodeHost.test.ts`
+gates one suite on `SMITHERS_CLAUDE_CODE_SMOKE=1`. It starts the real native
+host with an allowlisted environment that carries no provider API key, no
+Codex login and none of a parent Claude Code's session variables, and runs a
+one-prompt flow on the `claude-code:sonnet` seat through the CLI
+(`SMITHERS_CLAUDE_CODE_SMOKE_MODEL` picks the model). The first case passes
+`AI_GATEWAY_API_KEY` to the host and asserts the run completed in both
+databases, every model request on the `claude-code` route, the reply, and
+Jev's `completion/claim` decision. The second case withholds that key and
+asserts what a host with a Claude subscription and nothing else does: Claude
+answers, no evaluator can judge the completion, and the run fails closed as
+`unconfigured` with the answer quoted in its failure. `ClaudeCode.test.ts`
+proves the seat alone; only this suite proves a flow reaches the signed-in
+Claude Code through the CLI, the host and the judge. It spends the operator's
+Claude subscription, so it never runs by default. What breaks if it
+regresses: flows on a Claude subscription stop completing, or complete
+unjudged, and only a signed-in run notices. Run it with Claude Code signed in
+and `AI_GATEWAY_API_KEY` exported, then
+`SMITHERS_CLAUDE_CODE_SMOKE=1 pnpm --filter @smthrs/cli exec vitest run test/ClaudeCodeHost.test.ts --coverage.enabled=false`.
+A source checkout also needs the `smithers-jj-export` helper
+(`cargo build --locked --release -p smithers-ffi --bin smithers-jj-export`).
 Closing it for the default gate means spending subscription quota on every
 run, which the RC does not do.
 
