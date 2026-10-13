@@ -31,6 +31,17 @@
 
 ### Added
 
+- The `settle` event can say where a call's time went. `ModelEvent.Settle`
+  gains optional `timing` and `servedTier`. `ModelEvent.Timing` holds
+  `startedAt` (epoch milliseconds) and whole milliseconds from that start:
+  `attempts`, `requestBytes`,
+  `preparedMs`, `signedMs`, `sentMs`, `headersMs`, `firstEventMs`,
+  `firstThinkingMs`, `firstOutputMs`, `lastOutputMs`, `completedMs`,
+  `closedMs`, and `failedTries` (`ModelEvent.FailedTry`: when each failed try
+  was sent, when it failed, and why). A stage that was not observed is absent,
+  never zero. `ModelEvent.Retry` gains optional `elapsedMs` and `httpStatus`.
+  Records written before these fields decode unchanged (#3840).
+
 - `ModelError.isTerminalRefusal` shares the quota cooldown classification with
   agent hosts and failure copy. Recoverable quota cards retain Wait for reset.
 

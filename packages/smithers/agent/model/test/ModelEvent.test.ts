@@ -55,6 +55,69 @@ describe("ModelEvent", () => {
     expect(Events.ModelEvent.Retry({ type: "retry", attempt: 1, code: "transport" }).delayMillis).toBe(0)
   })
 
+  it("carries a call's wire timing and served tier on the settle event", () => {
+    const timing = {
+      startedAt: 1_760_000_000_000,
+      attempts: 2,
+      requestBytes: 48_211,
+      preparedMs: 4,
+      signedMs: 9,
+      sentMs: 1_310,
+      headersMs: 2_190,
+      firstEventMs: 2_204,
+      firstThinkingMs: 2_950,
+      firstOutputMs: 7_480,
+      lastOutputMs: 9_020,
+      completedMs: 9_066,
+      closedMs: 9_067,
+      failedTries: [{ sentMs: 10, failedMs: 760, code: "provider_internal", httpStatus: 503 }]
+    }
+    const settle = { type: "settle", stopReason: "stop", responseId: "resp_1", servedTier: "priority", timing }
+    expect(Schema.decodeUnknownSync(Events.ModelEvent)(Schema.encodeSync(Events.ModelEvent)(settle as Events.Settle)))
+      .toEqual(settle)
+    expect(Schema.decodeUnknownSync(Events.Timing)(timing)).toEqual(timing)
+    // A stage the protocol could not know is absent, never a zero.
+    expect(Schema.decodeUnknownSync(Events.Timing)({ attempts: 1, headersMs: 12 })).toEqual({
+      attempts: 1,
+      headersMs: 12
+    })
+    expect(Schema.decodeUnknownSync(Events.FailedTry)({ failedMs: 3, code: "transport" })).toEqual({
+      failedMs: 3,
+      code: "transport"
+    })
+  })
+
+  it("reads a settle and a retry written before the timing fields existed", () => {
+    // A journal sealed before this change replays against this schema.
+    const old = { type: "settle", stopReason: "tool-calls", responseId: "resp_0", itemIds: ["rs_1"] }
+    const decoded = Schema.decodeUnknownSync(Events.ModelEvent)(old)
+    expect(decoded).toEqual(old)
+    expect(decoded).not.toHaveProperty("timing")
+    expect(decoded).not.toHaveProperty("servedTier")
+    expect(Events.settledMessage([decoded]).message).toMatchObject({ stopReason: "tool-calls", responseId: "resp_0" })
+
+    const retry = Schema.decodeUnknownSync(Events.ModelEvent)({
+      type: "retry",
+      attempt: 1,
+      code: "transport",
+      delayMillis: 500
+    })
+    expect(retry).toEqual({ type: "retry", attempt: 1, code: "transport", delayMillis: 500 })
+  })
+
+  it("states how long a retried attempt ran and the status that failed it", () => {
+    const retry = {
+      type: "retry",
+      attempt: 2,
+      code: "rate_limited",
+      delayMillis: 2_000,
+      elapsedMs: 412,
+      httpStatus: 429
+    }
+    expect(Schema.decodeUnknownSync(Events.ModelEvent)(Schema.encodeSync(Events.ModelEvent)(retry as Events.Retry)))
+      .toEqual(retry)
+  })
+
   it("folds accumulated stream content on settlement", () => {
     const settled = Events.settledMessage([
       { type: "retry", attempt: 1, code: "provider_internal", delayMillis: 2_000 },

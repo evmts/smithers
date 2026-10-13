@@ -286,7 +286,16 @@ export const Retry = Schema.Struct({
   delayMillis: Schema.Number.pipe(
     Schema.withConstructorDefault(Effect.succeed(0)),
     Schema.withDecodingDefaultKey(Effect.succeed(0))
-  )
+  ),
+  /**
+   * Milliseconds the failed attempt ran before it failed. The journal stamps
+   * every retry of one step with the same instant, so without this a report
+   * cannot tell an attempt refused at once from one cut off after minutes.
+   * Absent when the boundary that retried did not time the attempt.
+   */
+  elapsedMs: Schema.optional(Schema.Number),
+  /** The HTTP status that failed the attempt, when a response carried one. */
+  httpStatus: Schema.optional(Schema.Number)
 })
 /**
  * The decoded form of {@link Retry}.
@@ -295,6 +304,86 @@ export const Retry = Schema.Struct({
  * @since 0.1.0
  */
 export type Retry = typeof Retry.Type
+/**
+ * One HTTP try of a model call that failed and was tried again inside the
+ * call. Offsets are whole milliseconds from the start of the call.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export const FailedTry = Schema.Struct({
+  /** The try's request was handed to the HTTP client. */
+  sentMs: Schema.optional(Schema.Number),
+  /** The try failed. */
+  failedMs: Schema.Number,
+  /** Why: a `ModelError` code, or the tag of a kernel permission failure. */
+  code: Schema.String,
+  /** The HTTP status that failed it, when a response carried one. */
+  httpStatus: Schema.optional(Schema.Number)
+})
+/**
+ * The decoded form of {@link FailedTry}.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type FailedTry = typeof FailedTry.Type
+/**
+ * Where one model call's time went on the wire. Every offset is whole
+ * milliseconds from the start of the call, read on Effect's `Clock`.
+ *
+ * Every field is optional: a stage the transport or the protocol cannot
+ * observe is absent, and an absent stage is not a zero. A call with no
+ * thinking has no `firstThinkingMs`; a model that is not an HTTP route (a
+ * wrapped CLI) reports only the stages it sees.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export const Timing = Schema.Struct({
+  /**
+   * When the call started, in epoch milliseconds: the instant every offset
+   * below counts from, so a report can place the call on a run's timeline.
+   */
+  startedAt: Schema.optional(Schema.Number),
+  /** HTTP tries, including the one that was answered. */
+  attempts: Schema.optional(Schema.Int),
+  /** Bytes of the request body sent. */
+  requestBytes: Schema.optional(Schema.Number),
+  /** The request was validated and encoded to the bytes that are sent. */
+  preparedMs: Schema.optional(Schema.Number),
+  /** The credential was resolved and the request signed. */
+  signedMs: Schema.optional(Schema.Number),
+  /**
+   * The answered try's request was handed to the HTTP client. The client does
+   * not report the socket write, so the upload lies between this and
+   * `headersMs`.
+   */
+  sentMs: Schema.optional(Schema.Number),
+  /** The response status and headers arrived. */
+  headersMs: Schema.optional(Schema.Number),
+  /** The first stream event of any kind arrived. */
+  firstEventMs: Schema.optional(Schema.Number),
+  /** The first thinking event; absent when the call emitted none. */
+  firstThinkingMs: Schema.optional(Schema.Number),
+  /** The first text or tool-call delta; absent when the call emitted none. */
+  firstOutputMs: Schema.optional(Schema.Number),
+  /** The last text or tool-call delta; absent when the call emitted none. */
+  lastOutputMs: Schema.optional(Schema.Number),
+  /** The provider's terminal event: the one the settlement is read from. */
+  completedMs: Schema.optional(Schema.Number),
+  /** The response stream closed. */
+  closedMs: Schema.optional(Schema.Number),
+  /** The tries that failed before the answered one, oldest first. */
+  failedTries: Schema.optional(Schema.Array(FailedTry))
+})
+/**
+ * The decoded form of {@link Timing}.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Timing = typeof Timing.Type
 /**
  * Ends the stream and states why. A stream without one was interrupted.
  *
@@ -306,6 +395,10 @@ export const Settle = Schema.Struct({
   type: Schema.Literal("settle"),
   stopReason: StopReason,
   responseId: Schema.optional(Schema.String),
+  /** The service tier that served the call, as the provider reported it. */
+  servedTier: Schema.optional(Schema.String),
+  /** Where the call's time went on the wire; absent on a record written before it was measured. */
+  timing: Schema.optional(Timing),
   /** The vendor session that answered, for a seat that is a wrapped CLI: `claude --resume <sessionId>`. */
   sessionId: Schema.optional(Schema.String),
   /**

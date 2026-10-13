@@ -12,21 +12,21 @@ interruption: interrupt the fiber running the stream and the call stops.
 
 ## The event vocabulary
 
-| `type`            | Fields                                  | Meaning                                                                       |
-| ----------------- | --------------------------------------- | ----------------------------------------------------------------------------- |
-| `text-start`      | `id`                                    | Opens a text part.                                                            |
-| `text-delta`      | `id`, `text`                            | One chunk of that part's content.                                             |
-| `text-end`        | `id`                                    | Closes the part.                                                              |
-| `thinking-start`  | `id`, `signature?`                      | Opens a reasoning part.                                                       |
-| `thinking-delta`  | `id`, `text`                            | One chunk of reasoning.                                                       |
-| `thinking-end`    | `id`                                    | Closes the part.                                                              |
-| `tool-call-start` | `id`, `name`                            | Opens a tool call and names the tool.                                         |
-| `tool-call-delta` | `id`, `arguments`                       | One chunk of the JSON argument text.                                          |
-| `tool-call-end`   | `id`, `arguments?`                      | Closes the call, repeating the full argument text when the provider sends it. |
-| `tool-result`     | `id`, `output`, `isError?`              | A harness's report of an executed call; not part of the settled message.      |
-| `usage`           | the `Usage` counters                    | Token counts reported mid-stream.                                             |
-| `retry`           | `attempt`, `code`, `delayMillis`        | A bounded model-boundary retry, recorded for run reports.                     |
-| `settle`          | `stopReason`, `responseId?`, `itemIds?` | Ends the stream and states why.                                               |
+| `type`            | Fields                                                            | Meaning                                                                       |
+| ----------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `text-start`      | `id`                                                              | Opens a text part.                                                            |
+| `text-delta`      | `id`, `text`                                                      | One chunk of that part's content.                                             |
+| `text-end`        | `id`                                                              | Closes the part.                                                              |
+| `thinking-start`  | `id`, `signature?`                                                | Opens a reasoning part.                                                       |
+| `thinking-delta`  | `id`, `text`                                                      | One chunk of reasoning.                                                       |
+| `thinking-end`    | `id`                                                              | Closes the part.                                                              |
+| `tool-call-start` | `id`, `name`                                                      | Opens a tool call and names the tool.                                         |
+| `tool-call-delta` | `id`, `arguments`                                                 | One chunk of the JSON argument text.                                          |
+| `tool-call-end`   | `id`, `arguments?`                                                | Closes the call, repeating the full argument text when the provider sends it. |
+| `tool-result`     | `id`, `output`, `isError?`                                        | A harness's report of an executed call; not part of the settled message.      |
+| `usage`           | the `Usage` counters                                              | Token counts reported mid-stream.                                             |
+| `retry`           | `attempt`, `code`, `delayMillis`, `elapsedMs?`, `httpStatus?`     | A bounded model-boundary retry, recorded for run reports.                     |
+| `settle`          | `stopReason`, `responseId?`, `servedTier?`, `timing?`, `itemIds?` | Ends the stream and states why.                                               |
 
 Parts correlate by `id`: deltas and the end event carry the `id` of the
 start event they belong to, so interleaved text, thinking, and tool calls
