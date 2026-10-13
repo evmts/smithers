@@ -405,7 +405,9 @@ earliest stage the rows record: `stages.firstEventMs`, else the wire's
 `timing.firstEventMs`, else the Codex log's `timing.firstItemMs`. The report
 names which and gives the median and the least. The Codex stage bounds each
 call's wait from above, so its least is the closest reading; the fit's
-`fixedSeconds` is the same quantity estimated from every call.
+`fixedSeconds` is the same quantity estimated from every call. `stageMedians`
+is the median offset of every stage the rows record, the harness's `stages`
+apart from the wire's `timing`.
 
 The fit is least squares of call seconds on thinking and written tokens over
 the agent's own settled calls:

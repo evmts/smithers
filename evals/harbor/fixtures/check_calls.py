@@ -434,8 +434,20 @@ class JournalFold(unittest.TestCase):
         self.assertEqual((side["wait"], side["compactions"]),
                          ({"stage": "stages.firstEventMs", "calls": 1, "medianMs": 7_000, "leastMs": 7_000}, 2),
                          "the harness's own reading, of the agent's own calls")
+        once = {"calls": 1}
+        self.assertEqual(side["stageMedians"], {
+            "stages": {"firstEventMs": {**once, "medianMs": 7_000}, "firstThinkingMs": {**once, "medianMs": 7_100},
+                       "firstOutputMs": {**once, "medianMs": 9_000}, "lastOutputMs": {**once, "medianMs": 11_500}},
+            "timing": {"signedMs": {**once, "medianMs": 3}, "sentMs": {**once, "medianMs": 9},
+                       "headersMs": {**once, "medianMs": 6_900}, "firstEventMs": {**once, "medianMs": 6_950},
+                       "completedMs": {**once, "medianMs": 11_900}, "closedMs": {**once, "medianMs": 11_950}}},
+            "every stage either record names, in the order a call reaches them; counts and sizes are not stages")
         text = calls.render("t", {"source": "journal", **folded})
         self.assertIn("  wait before a reply began: median 7.0 s, least 7.0 s (stages.firstEventMs, 1 calls)\n", text)
+        self.assertIn("  median `stages` offsets from a call's start: `firstEventMs` 7.0 s, `firstThinkingMs` 7.1 s, "
+                      "`firstOutputMs` 9.0 s, `lastOutputMs` 11.5 s (1 calls)\n", text)
+        self.assertIn("  median `timing` offsets from a call's start: `signedMs` 0.0 s, `sentMs` 0.0 s, `headersMs` 6.9 s, "
+                      "`firstEventMs` 7.0 s, `completedMs` 11.9 s, `closedMs` 11.9 s (1 calls)\n", text)
         self.assertIn("  compaction before frame 5: outdated_context, budget, 16.5 s, context 250,000 to 60,000 tokens\n", text)
         self.assertIn("  compaction before frame 7: irrelevant_context, 0.8 s\n", text)
         self.assertIn("| 4 try 2 | asked again after compile_failed, 2 tries, first event 7.0 s, first output 9.0 s, "
@@ -475,8 +487,10 @@ class SessionFold(unittest.TestCase):
         self.assertIsNone(self.folded["ledgerTokens"])
         side = calls.breakdown([{"source": "session", **self.folded}])
         self.assertEqual(side["wait"], {"stage": "timing.firstItemMs", "calls": 3, "medianMs": 1_500, "leastMs": 1_200})
-        self.assertIsNone(calls.breakdown([{"source": "journal", **calls.fold_journal(journal())}])["wait"],
-                          "a journal that timed no stage has no wait to report")
+        self.assertEqual(side["stageMedians"], {"timing": {"firstItemMs": {"calls": 3, "medianMs": 1_500}}})
+        untimed = calls.breakdown([{"source": "journal", **calls.fold_journal(journal())}])
+        self.assertEqual((untimed["wait"], untimed["stageMedians"]), (None, None),
+                         "a journal that timed no stage has no wait to report")
 
     def test_a_log_without_usage_records_gives_no_rows(self) -> None:
         folded = calls.fold_session([line for line in session() if "token_usage_record" not in line])

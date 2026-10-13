@@ -372,6 +372,7 @@ class ReportCLI(unittest.TestCase):
             "- Smithers: 18,000 compaction tokens are recorded as a sum, with no input, cached or output count.",
             "- Smithers: 2 frame calls report no tokens and are in no total.",
             "- Baseline: Codex CLI 0.160.0; effort xhigh; summary none.",
+            "- Baseline: median `timing` offsets from a call's start: `firstItemMs` 1.5 s (6 calls).",
             "| terminal-bench/task-000 | 5 / 3 | 10.9 / 6.0 | 65.4% / 87.2% | 10.0 / 4.5 | 0.03M / 0.02M | 54.5 s / 18.0 s | "
             "3.3 s / 2.5 s | 1.4 s / 0.0 s | 10.0 s / 0.0 s | 0.8 s / 1.0 s |",
         ):

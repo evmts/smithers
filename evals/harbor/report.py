@@ -384,6 +384,7 @@ def _caveats(arm: str, side: dict) -> list[str]:
                      f"{side['allPurposes']['totalTokens']:,}.")
     if side["unlistedInputTokens"]:
         found.append(f"- {arm}: {side['unlistedInputTokens']:,} input tokens are in a trajectory total and in no row.")
+    found += [f"- {arm}: {line}." for line in calls.stage_lines(side["stageMedians"])]
     session = side.get("session")
     if session:
         found.append(f"- {arm}: Codex CLI {', '.join(session['cliVersions']) or 'unrecorded'}; effort "

@@ -622,6 +622,39 @@ def wait(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
     return None
 
 
+STAGE_ORDER = ("preparedMs", "signedMs", "sentMs", "headersMs", "firstEventMs", "firstItemMs", "firstThinkingMs",
+               "firstOutputMs", "lastOutputMs", "completedMs", "closedMs")
+
+
+def stage_medians(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The median offset of every stage the agent's own calls recorded, the
+    harness's readings (`stages`) apart from the wire's (`timing`); None when
+    no call recorded one. Read down a column, it is where a call's time
+    before and during its reply went."""
+    found: dict[str, Any] = {}
+    for holder in ("stages", "timing"):
+        offsets: dict[str, list[int]] = {}
+        for row in rows:
+            if row.get("purpose") != "frame":
+                continue
+            for stage, value in (_record(row.get(holder)) or {}).items():
+                if stage.endswith("Ms") and _count(value) is not None:
+                    offsets.setdefault(stage, []).append(_count(value))
+        ordered = [stage for stage in STAGE_ORDER if stage in offsets] + sorted(set(offsets) - set(STAGE_ORDER))
+        if ordered:
+            found[holder] = {stage: {"calls": len(offsets[stage]), "medianMs": round(statistics.median(offsets[stage]))}
+                             for stage in ordered}
+    return found or None
+
+
+def stage_lines(medians: dict[str, Any] | None) -> list[str]:
+    """`stage_medians` as text, one line for each of `stages` and `timing`."""
+    return [f"median `{holder}` offsets from a call's start: "
+            + ", ".join(f"`{stage}` {reading['medianMs'] / 1000:,.1f} s" for stage, reading in stages.items())
+            + f" ({max(reading['calls'] for reading in stages.values())} calls)"
+            for holder, stages in (medians or {}).items()]
+
+
 def breakdown(reads: list[dict[str, Any]]) -> dict[str, Any]:
     """One side of a comparison over the trials `read_trial` returned: the
     agent's own calls, where the time went, tokens by purpose and the fit."""
@@ -646,6 +679,7 @@ def breakdown(reads: list[dict[str, Any]]) -> dict[str, Any]:
         "modelCalls": len(own),
         "secondsPerCall": round(sum(timed) / len(timed) / 1000, 1) if timed else None,
         "wait": wait(own),
+        "stageMedians": stage_medians(own),
         "cacheShare": round(frame["cachedTokens"] / frame["inputTokens"], 4)
         if frame["inputTokens"] and frame["cachedTokens"] is not None else None,
         "thinkingTokens": frame["thinkingTokens"],
@@ -712,6 +746,7 @@ def render(name: str, read: dict[str, Any]) -> str:
     if side["wait"]:
         lines.append(f"  wait before a reply began: median {_seconds(side['wait']['medianMs'])} s, least "
                      f"{_seconds(side['wait']['leastMs'])} s ({side['wait']['stage']}, {side['wait']['calls']} calls)")
+    lines += [f"  {line}" for line in stage_lines(side["stageMedians"])]
     for record in read.get("compactions") or []:
         causes = ", ".join(str(cause) for cause in record.get("causes") or []) or "cause not recorded"
         context = record.get("context") or {}
