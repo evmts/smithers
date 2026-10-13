@@ -29,7 +29,8 @@ The release candidate's required platform is Linux with Node 26.4.0. See the [su
 
 ## Install
 
-The 1.0 release candidate is not on npm. Install it from the source checkout
+The libraries install from npm; start with the
+[Flows quickstart](./packages/smithers/flows/docs/quickstart.md). Install the CLI from the source checkout
 ([Installation](https://smithers.sh/docs/installation/#install-the-cli)):
 
 ```bash

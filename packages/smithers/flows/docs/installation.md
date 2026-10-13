@@ -1,29 +1,25 @@
 ---
 title: "Installation"
-description: "Depend on @smthrs/flows from a checkout, its Node and effect requirements, its three import forms, the platform packages the barrel leaves to the program that runs, and when to depend on individual engine packages instead."
+description: "Install @smthrs/flows from npm, its Node and effect requirements, its three import forms, the platform packages each runtime needs, and when to depend on individual engine packages instead."
 sidebar:
   order: 1
 ---
 
-## Get the package
+## Install the package
 
-`@smthrs/flows` is not published to npm at 1.0.0-rc.0, so `pnpm add
-@smthrs/flows` does not resolve. Its source lives in the
-[smithers repository](https://github.com/smithersai/smithers). Clone that
-repository, install its dependencies, and declare the package where you need
-it:
-
-```json
-{
-  "dependencies": {
-    "@smthrs/flows": "workspace:*"
-  }
-}
+```bash
+npm install @smthrs/flows@next effect@4.0.0-rc.115
 ```
 
-Depending on the barrel brings in the twenty engine packages it re-exports,
-`effect`, and `esbuild`, which `SandboxedFlow` uses to bundle a guest entry
-module. Node host and SQLite adapters are optional and are selected below.
+The `next` tag carries the 1.0 release candidates. With pnpm, run `pnpm add`
+with the same two packages.
+
+`@smthrs/flows` installs the twenty engine packages it re-exports, the Node host
+[`@smthrs/platform-node`](/api/platform-node), the Node SQLite driver
+`@effect/sql-sqlite-node`, and `esbuild`, which `SandboxedFlow` uses to bundle a
+guest entry module. `effect` is a peer dependency. Install it yourself, because
+your program imports it directly and pnpm links only the packages a project
+declares.
 
 ## Requirements
 
@@ -58,38 +54,25 @@ Two subpath forms are blocked in the export map and are not public:
 `@smthrs/flows/internal/*` and `@smthrs/flows/*/index`.
 `@smthrs/flows/package.json` is exported.
 
-## Choose a platform package yourself
+## Platform packages
 
-The barrel re-exports no `@smthrs/platform-*` bundle, for the same reason
-`effect`'s own index does not re-export `@effect/platform-node`: a platform is
-chosen by the program that runs, not by the library it depends on. Re-exporting
-all three would make one import resolve `node:child_process`, ZenFS, and Bun at
-once.
+The root entry point imports no platform, for the same reason `effect`'s own
+index does not re-export `@effect/platform-node`: one import must not resolve
+`node:child_process`, ZenFS, and Bun at once. A platform is reached through an
+explicit subpath or its own package:
 
-There is one platform package per runtime:
+| Runtime | Import                      | Platform package                                    | Installed by                            |
+| ------- | --------------------------- | --------------------------------------------------- | --------------------------------------- |
+| Node.js | `@smthrs/flows/NodeRuntime` | [`@smthrs/platform-node`](/api/platform-node)       | `@smthrs/flows`                         |
+| Bun     | `@smthrs/flows/BunRuntime`  | [`@smthrs/platform-bun`](/api/platform-bun)         | You. See [Bun](#bun-durable-execution). |
+| Browser | `@smthrs/platform-browser`  | [`@smthrs/platform-browser`](/api/platform-browser) | You. It hosts authoring and inspection. |
 
-- [`@smthrs/platform-node`](/api/platform-node) supplies the Node host,
-  containment, process reaping, and the liveness probe. It is an optional peer
-  required by `NodeRuntime`, including `NodeRuntime.layerHost`.
-- [`@smthrs/platform-bun`](/api/platform-bun) supplies the Bun host.
-- [`@smthrs/platform-browser`](/api/platform-browser) supplies a browser host
-  for authoring and inspection.
+`@smthrs/platform-node` supplies the Node host, containment, process reaping,
+and the liveness probe. It carries its own copy of `@effect/platform-node`, and
+`@smthrs/flows` installs the SQLite driver `@effect/sql-sqlite-node` beside it,
+so a Node program adds no `@effect/*` package of its own.
 
-For `@smthrs/flows/NodeRuntime`, select `@smthrs/platform-node`, `@effect/platform-node`,
-`@effect/platform-node-shared`, and `@effect/sql-sqlite-node`. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
-
-Compose a host yourself and you declare the platform package you compose
-against, the same way you declared the barrel:
-
-```json
-{
-  "dependencies": {
-    "@smthrs/platform-node": "workspace:*"
-  }
-}
-```
-
-Test doubles are reached the same way, through their own packages:
+Test doubles are reached through their own packages:
 `@smthrs/testing/TestHost`, `@smthrs/database/node/NodeDatabase`,
 `@smthrs/journal/test/TestJournal`.
 
@@ -121,8 +104,12 @@ Stand a durable runtime up and run a flow on it in the
 
 ## Bun durable execution
 
-Install `@smthrs/platform-bun@1.0.0-rc.0`, `@effect/platform-bun@4.0.0-rc.115`,
-`@effect/platform-node-shared@4.0.0-rc.115` and
-`@effect/sql-sqlite-bun@4.0.0-rc.115`, then import
-`@smthrs/flows/BunRuntime`. Its `layerHost`, `layer`, `make` and `storage`
-compositions share the engine with Node. See [runtime portability](./concepts/runtime-portability.md).
+```bash
+bun add @smthrs/flows@next effect@4.0.0-rc.115 @smthrs/platform-bun@next \
+  @effect/platform-bun@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115 \
+  @effect/sql-sqlite-bun@4.0.0-rc.115
+```
+
+Then import `@smthrs/flows/BunRuntime`. Its `layerHost`, `layer`, `make` and
+`storage` compositions share the engine with Node. See
+[runtime portability](./concepts/runtime-portability.md).

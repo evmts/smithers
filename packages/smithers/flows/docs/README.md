@@ -27,11 +27,13 @@ whole composition.
 
 ## Install
 
-`@smthrs/flows` is not on npm at 1.0.0-rc.0. Its source lives in the
-[smithers repository](https://github.com/smithersai/smithers), and
-[Installation](./installation.md) covers how to depend on it from a checkout,
-the import forms, the platform packages the barrel leaves to you, and when to
-depend on individual engine packages instead.
+```bash
+npm install @smthrs/flows@next effect@4.0.0-rc.115
+```
+
+That line is all a Node program needs. [Installation](./installation.md) covers
+the requirements, the import forms, the packages Bun and the browser add, and
+when to depend on individual engine packages instead.
 
 Durable execution uses a Node.js 26.4.0+ or Bun 1.4.0+ host composition. The API is
 [Effect](https://effect.website) throughout: a flow declares its payload and

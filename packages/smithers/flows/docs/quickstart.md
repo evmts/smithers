@@ -12,17 +12,24 @@ run of it that answers without reading the file again.
 
 ## Prerequisites
 
-- Node.js 26.4.0 or later. It runs the TypeScript file below directly, with no
-  build step and no loader flag.
-- A package that depends on `@smthrs/flows` and sets `"type": "module"`, because
-  the program ends in a top-level `await`. The package is not on npm at
-  1.0.0-rc.0; [Installation](./installation.md) covers how to depend on it from
-  a checkout.
-- A workspace directory with something to read:
+Node.js 26.4.0 or later. It runs the TypeScript file below directly, with no
+build step and no loader flag.
+
+Create an empty project, install the two packages the program imports, and give
+it something to read:
 
 ```bash
+mkdir flows-quickstart && cd flows-quickstart
+npm init -y && npm pkg set type=module
+npm install @smthrs/flows@next effect@4.0.0-rc.115
 mkdir -p workspace && echo "the note" > workspace/note.txt
 ```
+
+The project is `"type": "module"` because the program ends in a top-level
+`await`. `@smthrs/flows` installs the Node host and its SQLite driver. `effect`
+is on the line because the program imports it directly; it must be the version
+`@smthrs/flows` names as its peer. With pnpm, run `pnpm add` with the same two
+packages. [Installation](./installation.md) has the requirements in full.
 
 ## Declare the action and the flow
 

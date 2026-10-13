@@ -18,13 +18,18 @@ A flow records each step in a journal as it completes, so a process that dies
 mid-flight replays what already finished and resumes at the first step that did
 not.
 
-## Availability
+## Install
 
-`@smthrs/flows` is not on npm at 1.0.0-rc.0. Its source lives in the
-[smithers repository](https://github.com/smithersai/smithers), and
-[Installation](https://flows.smithers.sh/installation/) covers how to depend on
-it from a checkout, the Node.js and `effect` versions it requires, and the
-platform packages the barrel leaves to you.
+```bash
+npm install @smthrs/flows@next effect@4.0.0-rc.115
+```
+
+That line is all a Node program needs. It requires Node.js 26.4.0 or later.
+[Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/installation.md)
+covers the `effect` version, the import forms, and the packages Bun and the
+browser add. The
+[Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/quickstart.md)
+runs a flow end to end from an empty directory.
 
 ## A flow that survives a restart
 
@@ -130,10 +135,9 @@ and the native cross-runtime restart regression.
 durable engine up. `layerHost` decides the whole composition; `layer`, `make`,
 and `storage` hand progressively more of it back to the caller.
 
-The driver-neutral root installs no platform adapter. Select these optional
-prerequisites before importing `NodeRuntime`: `@smthrs/platform-node`, `@effect/platform-node`,
-`@effect/platform-node-shared`, and `@effect/sql-sqlite-node`. Not on npm yet; see
-[Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+The driver-neutral root imports no platform adapter. `@smthrs/flows` installs
+the two packages `NodeRuntime` runs on, `@smthrs/platform-node` and
+`@effect/sql-sqlite-node`, so the import needs nothing more.
 
 ```ts
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
@@ -190,8 +194,9 @@ Runtime parity must be demonstrated by the same execute, persist, restart, resum
 and cancellation scenarios, including opening a Node-created database in Bun and
 vice versa. A browser-safe import alone does not prove durable browser execution.
 
-For a Bun executable, install `@smthrs/platform-bun`, `@effect/platform-bun`,
-`@effect/platform-node-shared`, and `@effect/sql-sqlite-bun`. Not on npm yet; see
-[Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+For a Bun executable, also install `@smthrs/platform-bun`, `@effect/platform-bun`,
+`@effect/platform-node-shared`, and `@effect/sql-sqlite-bun`;
+[Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/installation.md#bun-durable-execution)
+has the line.
 
 Then use `BunRuntime.layerHost` with the same options and registered flows.

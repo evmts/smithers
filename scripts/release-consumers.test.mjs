@@ -11,11 +11,15 @@ import {
   assertConsumerTree,
   candidateVersion,
   consumerCacheFlags,
+  importedPackages,
   migrationProfiles,
   minimalProfiles,
+  readQuickstart,
   runConsumerProfile,
+  runQuickstartConsumer,
 } from "./release-consumers.mjs"
 import { releaseRegistry } from "./release-registry.mjs"
+import { repoRoot } from "./workspace-packages.mjs"
 
 test("external pnpm consumers retain the workspace's configured store and report cache reuse", () => {
   const root = mkdtempSync(join(tmpdir(), "smithers-release-store-"))
@@ -266,5 +270,140 @@ test("consumer tree refuses an off-pin Effect-family dependency even with one co
     assert.throws(() => assertConsumerTree(consumer, profile), /exactly one physical Effect copy/)
   } finally {
     rmSync(consumer, { recursive: true, force: true })
+  }
+})
+
+// #3838: rc.4's quickstart needed five packages its install line never named.
+const flowsPages = () => {
+  const directory = join(repoRoot, "packages/smithers/flows")
+  return ["README.md", ...readdirSync(join(directory, "docs"), { recursive: true }).map((entry) => join("docs", String(entry)))]
+    .filter((page) => page.endsWith(".md"))
+    .map((page) => [page, readFileSync(join(directory, page), "utf8")])
+}
+
+test("the Flows quickstart imports only the packages its one install line names", () => {
+  const quickstart = readQuickstart()
+  assert.deepEqual(quickstart.packages, ["@smthrs/flows@next", "effect@" + EXPECTED_EFFECT_VERSION])
+  assert.deepEqual(importedPackages(quickstart.program), ["@smthrs/flows", "effect"])
+  assert.deepEqual(quickstart.run, ["node", "quickstart.ts"])
+  assert.equal(quickstart.printed, "the note")
+  const pages = new Map(flowsPages())
+  for (const page of ["README.md", "docs/README.md", "docs/installation.md"]) {
+    assert.ok(pages.get(page).split("\n").includes(quickstart.install), page + " must give the quickstart's install line")
+  }
+})
+
+test("program imports reduce to package names, without relative and node: specifiers", () => {
+  const program = [
+    'import { Action } from "@smthrs/flows"',
+    'import * as NodeRuntime from "@smthrs/flows/NodeRuntime"',
+    'import * as Effect from "effect/Effect"',
+    'import { resolve } from "node:path"',
+    'import { local } from "./local.ts"',
+    'import type * as Schema from "effect/Schema"'
+  ].join("\n")
+  assert.deepEqual(importedPackages(program), ["@smthrs/flows", "effect"])
+  assert.deepEqual(importedPackages("console.log(1)"), [])
+})
+
+test("every Flows page states the manifest's Node floor and none says the package is off npm", () => {
+  const manifest = JSON.parse(readFileSync(join(repoRoot, "packages/smithers/flows/package.json"), "utf8"))
+  const [, floor] = /^>=(\d+\.\d+\.\d+)$/.exec(manifest.engines.node)
+  let stated = 0
+  for (const [page, text] of flowsPages()) {
+    assert.doesNotMatch(text, /not (?:yet )?(?:on|published to) npm/i, page)
+    for (const [, version] of text.matchAll(/Node(?:\.js)? (\d+\.\d+\.\d+)/g)) {
+      assert.equal(version, floor, page + " states another Node floor")
+      stated += 1
+    }
+  }
+  assert.ok(stated >= 5, "the pages that state a floor were not read")
+})
+
+test("the quickstart consumer passes only when the install line brings what the program imports", { timeout: 5 * 60_000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), "smithers-quickstart-gate-"))
+  const previousRegistry = process.env.npm_config_registry
+  const registries = []
+  try {
+    const version = "1.0.0"
+    const pack = (directory, name, manifest, files) => {
+      mkdirSync(join(directory, name, "package"), { recursive: true })
+      writeFileSync(join(directory, name, "package/package.json"), JSON.stringify(manifest))
+      for (const [file, source] of Object.entries(files)) writeFileSync(join(directory, name, "package", file), source)
+      execFileSync("tar", ["-czf", join(directory, name + ".tgz"), "-C", join(directory, name), "package"])
+      return { name: manifest.name, version: manifest.version, filename: name + ".tgz" }
+    }
+    // A fixture engine: the host journals the first read, as the real one does.
+    const candidate = (name, flowsEdges) => {
+      const directory = join(root, name)
+      return [
+        pack(directory, "flows", {
+          name: "@smthrs/flows", version, type: "module",
+          exports: { "./NodeRuntime": "./NodeRuntime.js" },
+          ...flowsEdges
+        }, { "NodeRuntime.js": 'export { read } from "@smthrs/platform-node"\n' }),
+        pack(directory, "platform-node", { name: "@smthrs/platform-node", version, type: "module", main: "index.js" }, {
+          "index.js": [
+            'import { existsSync, readFileSync, writeFileSync } from "node:fs"',
+            'export const read = (path) => {',
+            '  if (!existsSync(".journal")) writeFileSync(".journal", readFileSync(path))',
+            '  return readFileSync(".journal", "utf8")',
+            '}',
+            ''
+          ].join("\n")
+        }),
+        pack(directory, "effect", {
+          name: "effect", version: EXPECTED_EFFECT_VERSION, type: "module",
+          exports: { "./package.json": "./package.json", "./*": "./*.js" }
+        }, { "Effect.js": "export const succeed = (value) => value\n" })
+      ].map((entry) => ({ ...entry, directory }))
+    }
+    const install = "npm install @smthrs/flows@next effect@" + EXPECTED_EFFECT_VERSION
+    const quickstart = {
+      commands: ["npm init -y && npm pkg set type=module", install, 'mkdir -p workspace && echo "the note" > workspace/note.txt'],
+      install,
+      packages: install.split(" ").slice(2),
+      program: [
+        'import { read } from "@smthrs/flows/NodeRuntime"',
+        'import * as Effect from "effect/Effect"',
+        // A warm pnpm store may serve the published Effect for this version.
+        'if (typeof Effect.succeed !== "function") throw new Error("effect did not resolve")',
+        'console.log(read("workspace/note.txt"))',
+        ''
+      ].join("\n"),
+      run: ["node", "quickstart.ts"],
+      printed: "the note"
+    }
+    const peer = { effect: EXPECTED_EFFECT_VERSION }
+    const cases = [
+      ["declared", { dependencies: { "@smthrs/platform-node": version }, peerDependencies: peer }, undefined],
+      // rc.4's shape: the import resolves only if the program installs the peer.
+      ["optional peer", {
+        peerDependencies: { ...peer, "@smthrs/platform-node": version },
+        peerDependenciesMeta: { "@smthrs/platform-node": { optional: true } }
+      }, /Cannot find package '@smthrs\/platform-node'/]
+    ]
+    for (const [name, edges, refusal] of cases) {
+      const entries = candidate(name.replace(" ", "-"), edges)
+      const registry = await releaseRegistry(entries[0].directory, entries)
+      registries.push(registry)
+      process.env.npm_config_registry = registry.url
+      for (const manager of ["npm", "pnpm"]) {
+        const run = runQuickstartConsumer(manager, registry.url, { quickstart })
+        if (refusal === undefined) {
+          const result = await run
+          assert.deepEqual(result.declared, ["@smthrs/flows", "effect"], manager + " " + name)
+          assert.deepEqual(result.runs, ["the note", "the note"], manager + " " + name)
+          assert.equal(result.install.startsWith(manager === "npm" ? "npm install " : "pnpm add "), true)
+        } else {
+          await assert.rejects(run, refusal, manager + " " + name + " must fail on the first run")
+        }
+      }
+    }
+  } finally {
+    if (previousRegistry === undefined) delete process.env.npm_config_registry
+    else process.env.npm_config_registry = previousRegistry
+    for (const registry of registries) await registry.close()
+    rmSync(root, { recursive: true, force: true })
   }
 })

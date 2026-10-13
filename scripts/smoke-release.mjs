@@ -473,7 +473,8 @@ try {
         ...adapterProfiles(packManifest),
         ...migrationProfiles(packManifest)
       ],
-      runtime: true
+      runtime: true,
+      env: cliEnv
     }))
   if (hasPackagedNativeHelpers) {
     await phase("success receipt", () => recordSmokeSuccess(absolutePackDirectory, candidate))

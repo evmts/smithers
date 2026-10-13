@@ -7,7 +7,7 @@ sidebar:
 
 ## Install the CLI
 
-The 1.0 release candidate is not published to npm. Use Node.js 26.4.0 or later, pnpm 11.25.0, Git, and the Rust toolchain pinned in `rust-toolchain.toml`.
+Install the CLI from a source checkout. Use Node.js 26.4.0 or later, pnpm 11.25.0, Git, and the Rust toolchain pinned in `rust-toolchain.toml`.
 
 ```bash
 git clone https://github.com/smithersai/smithers.git

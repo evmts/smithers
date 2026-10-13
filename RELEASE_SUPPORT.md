@@ -55,8 +55,11 @@ consumer gate checks `.mts` and `.cts` clients under TypeScript `Node16` and
 every transitive dependency.
 
 The CLI installs both Node and Bun transport adapters because its executable
-selects the current native host. Library-only installs keep those host adapters
-optional; selecting `@smthrs/gateway/bun/BunGateway` requires the Bun peer.
+selects the current native host. `@smthrs/flows` installs the Node host and the
+SQLite driver its `NodeRuntime` subpath runs on, so the published quickstart
+needs only `@smthrs/flows` and `effect`. Other library installs keep host
+adapters optional; selecting `@smthrs/gateway/bun/BunGateway` or
+`@smthrs/flows/BunRuntime` requires the Bun peers.
 
 ## Changes from earlier development candidates
 

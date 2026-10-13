@@ -1,11 +1,25 @@
 ---
 title: "Troubleshooting"
-description: "Every typed refusal NodeRuntime and SandboxedFlow raise, plus the capability denials and replay surprises a host meets first: the symptom, what caused it, and what to change."
+description: "A missing package at startup, every typed refusal NodeRuntime and SandboxedFlow raise, and the capability denials and replay surprises a host meets first: the symptom, what caused it, and what to change."
 ---
 
 Every failure these two modules report is typed, and most of them are a decision
 the host made, stated back plainly. Find the tag or the code and read the
-matching section. The full schemas are in the [API reference](./api.md).
+matching section. A program that stops before any of them, on a missing
+package, is the first section. The full schemas are in the [API reference](./api.md).
+
+## ERR_MODULE_NOT_FOUND: Cannot find package
+
+**Symptom.** `node` exits before your program runs:
+`Error [ERR_MODULE_NOT_FOUND]: Cannot find package '<name>'`.
+
+**Cause and fix.** The package named decides it:
+
+| Package named                                                            | Cause                                                                                                     | Fix                                                                  |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `effect`                                                                 | Your program imports `effect/...` and the project does not declare it. pnpm links only declared packages. | Add `effect` at the version [Installation](./installation.md) names. |
+| `@smthrs/platform-node`, `@effect/sql-sqlite-node`                       | `@smthrs/flows` 1.0.0-rc.4 or earlier, which left the Node host to the program.                           | `npm install @smthrs/flows@next`                                     |
+| `@smthrs/platform-bun`, `@effect/platform-bun`, `@effect/sql-sqlite-bun` | `@smthrs/flows/BunRuntime` without its packages.                                                          | Install the [Bun](./installation.md#bun-durable-execution) line.     |
 
 ## RuntimeConfigurationError
 

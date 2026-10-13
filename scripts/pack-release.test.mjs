@@ -503,7 +503,7 @@ test("published adapters remain optional while executable SQLite and Bun host pr
   const byName = new Map([...readWorkspaceManifests().values()].map((manifest) => [manifest.name, publicationManifest(manifest)]))
   const optional = {
     "@smthrs/database": { "@effect/sql-sqlite-node": "4.0.0-rc.115" },
-    "@smthrs/flows": { "@smthrs/platform-node": releaseVersion, "@smthrs/platform-bun": releaseVersion },
+    "@smthrs/flows": { "@smthrs/platform-bun": releaseVersion },
     "@smthrs/observability": {
       "@opentelemetry/exporter-logs-otlp-http": "0.222.0", "@opentelemetry/exporter-metrics-otlp-http": "0.222.0",
       "@opentelemetry/exporter-trace-otlp-http": "0.222.0", "@opentelemetry/sdk-trace-base": "2.11.0",
@@ -526,6 +526,14 @@ test("published adapters remain optional while executable SQLite and Bun host pr
       assert.deepEqual(manifest.peerDependenciesMeta[peer], { optional: true })
       assert.equal(manifest.devDependencies[peer], version)
     }
+  }
+  // The barrel's NodeRuntime is the published quickstart, so its Node host and
+  // SQLite driver install with it rather than waiting on an optional peer (#3838).
+  for (const [peer, version] of [["@smthrs/platform-node", releaseVersion], ["@effect/sql-sqlite-node", "4.0.0-rc.115"]]) {
+    const flows = byName.get("@smthrs/flows")
+    assert.equal(flows.dependencies[peer], version, "@smthrs/flows must install " + peer)
+    assert.equal(flows.peerDependencies[peer], undefined)
+    assert.equal(flows.peerDependenciesMeta[peer], undefined)
   }
   for (const [name, peer, version] of [
     ["@smthrs/cli", "@effect/sql-sqlite-node", "4.0.0-rc.115"],
@@ -629,9 +637,9 @@ test("the CLI install line needs no dependency workaround", () => {
       .split("\n")
       .filter((line) => /^(pnpm add|npm install|npm i|bun add|yarn add) /.test(line))
       .filter((line) => /@smthrs\/cli@/.test(line))
-    // Until publication the README installs from the source checkout and says
-    // so (e312ca0cf); once it drops that sentence it must name @smthrs/cli again.
-    if (!/release candidate is not on npm/.test(source)) {
+    // While the README installs the CLI from the source checkout it says so
+    // (e312ca0cf); once it drops that sentence it must name @smthrs/cli again.
+    if (!/Install the CLI from the source checkout/.test(source)) {
       assert.ok(installLines.length > 0, `${relative} must show an install command naming @smthrs/cli`)
     }
     assert.ok(installLines.every((line) => !line.includes("@effect/platform-node")))

@@ -155,6 +155,7 @@
     "@smthrs/observability": "1.0.0-rc.4",
     "@smthrs/plan": "1.0.0-rc.4",
     "@smthrs/plan-store": "1.0.0-rc.4",
+    "@smthrs/platform-node": "1.0.0-rc.4",
     "@smthrs/run-store": "1.0.0-rc.4",
     "@smthrs/sandbox": "1.0.0-rc.4",
     "@smthrs/step-cache": "1.0.0-rc.4",
@@ -164,7 +165,8 @@
     "undici": "8.10.2",
     "redis": "6.2.1",
     "@types/ws": "8.18.1",
-    "ws": "8.21.3"
+    "ws": "8.21.3",
+    "@effect/sql-sqlite-node": "4.0.0-rc.115"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
@@ -175,7 +177,6 @@
     "@smthrs/control": "1.0.0-rc.4",
     "@smthrs/model": "1.0.0-rc.4",
     "@smthrs/notifications": "1.0.0-rc.4",
-    "@smthrs/platform-node": "1.0.0-rc.4",
     "@smthrs/registry": "1.0.0-rc.4",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
@@ -194,14 +195,10 @@
     "@smthrs/platform-bun": "1.0.0-rc.4"
   },
   "peerDependencies": {
-    "@smthrs/platform-node": "1.0.0-rc.4",
     "effect": "4.0.0-rc.115",
     "@smthrs/platform-bun": "1.0.0-rc.4"
   },
   "peerDependenciesMeta": {
-    "@smthrs/platform-node": {
-      "optional": true
-    },
     "@smthrs/platform-bun": {
       "optional": true
     }

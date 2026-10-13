@@ -12,6 +12,7 @@ import { build as bundle } from "esbuild"
 import { valid } from "semver"
 import { EXPECTED_EFFECT_VERSION } from "./check-single-effect-version.mjs"
 import { assertEffectFamilyInstalled, mcpInitialize } from "./release-mcp-handshake.mjs"
+import { captureProcess } from "./release-process.mjs"
 import { releaseRegistry } from "./release-registry.mjs"
 import { isMain, repoRoot } from "./workspace-packages.mjs"
 
@@ -57,18 +58,29 @@ const telemetryAdapters = [
   "@opentelemetry/sdk-trace-web"
 ]
 const browserAdapters = ["@smthrs/platform-browser", "@smthrs/platform-bun", "@effect/platform-bun"]
+const flowsNodeHost = ["@smthrs/platform-node", "@effect/sql-sqlite-node"]
 const absentByDefault = [...runners, ...nodeAdapters, ...telemetryAdapters, ...browserAdapters, "react", "tsx", "vite"]
 
 // Explicit policy expectations; never derived from the manifest being tested.
 export const minimalProfiles = (entries) => {
   const firstParty = candidateVersion(entries)
   return [
-    ...["database", "gateway", "observability", "flows"].map((name) => ({
+    ...["database", "gateway", "observability"].map((name) => ({
       name: name + "-default",
       dependencies: { ["@smthrs/" + name]: firstParty, effect },
       absent: absentByDefault,
       imports: ["@smthrs/" + name]
     })),
+    {
+      name: "flows-default",
+      dependencies: { "@smthrs/flows": firstParty, effect },
+      // The barrel is the package a Node program installs, so it brings the
+      // Node host and SQLite driver its NodeRuntime subpath imports (#3838).
+      // The Effect platform adapters stay private to @smthrs/platform-node.
+      required: flowsNodeHost,
+      absent: absentByDefault.filter((name) => !flowsNodeHost.includes(name)),
+      imports: ["@smthrs/flows", "@smthrs/flows/NodeRuntime"]
+    }
   ]
 }
 
@@ -455,6 +467,100 @@ export const runConsumerProfile = async (profile, manager, registryUrl, { runtim
   }
 }
 
+/**
+ * The published Flows quickstart as a stranger meets it: the commands of its
+ * set-up block, the program its `ts` blocks paste together, the command that
+ * runs it and the line it prints. Read from the page, never restated here, so
+ * the page and the gate cannot disagree.
+ */
+export const readQuickstart = (root = repoRoot) => {
+  const source = readFileSync(join(root, "packages/smithers/flows/docs/quickstart.md"), "utf8")
+  const fenced = (language) =>
+    [...source.matchAll(new RegExp("^```" + language + "\\n([\\s\\S]*?)^```$", "gm"))].map(([, body]) => body.trimEnd())
+  const [setup, run, ...extra] = fenced("bash")
+  const printed = fenced("text")
+  assert.ok(setup !== undefined && run !== undefined && extra.length === 0, "quickstart needs a set-up block and a run block")
+  assert.equal(printed.length, 1, "quickstart must show the one line the program prints")
+  const [enter, ...commands] = setup.split("\n")
+  assert.match(enter, /^mkdir (\S+) && cd \1$/, "quickstart must start in a new, empty directory")
+  const installs = commands.filter((command) => command.startsWith("npm install "))
+  assert.equal(installs.length, 1, "quickstart must give exactly one install line")
+  return {
+    commands,
+    install: installs[0],
+    packages: installs[0].split(" ").slice(2),
+    program: fenced("ts").join("\n\n") + "\n",
+    run: run.split(" "),
+    printed: printed[0]
+  }
+}
+
+/** Package names a program imports, without its relative and `node:` specifiers. */
+export const importedPackages = (program) => [
+  ...new Set(
+    [...program.matchAll(/\bfrom\s+"([^"./][^"]*)"/g)]
+      .map(([, specifier]) => specifier)
+      .filter((specifier) => !specifier.startsWith("node:"))
+      .map((specifier) => specifier.split("/").slice(0, specifier.startsWith("@") ? 2 : 1).join("/"))
+  )
+].sort()
+
+/**
+ * The install line plus the pasted quickstart, from an empty directory (#3838).
+ * Nothing is preinstalled: the project declares exactly what the install line
+ * names, so a package the program reaches only through an optional peer fails
+ * here the way it fails for a stranger. The second run proves the replay the
+ * page promises by changing the file the first run read. `env` is the smoke's
+ * CLI environment: a final pack runs on its own packaged native helper, and a
+ * pre-helper rehearsal on the configured source helper.
+ */
+export const runQuickstartConsumer = async (
+  manager,
+  registryUrl,
+  { quickstart = readQuickstart(), env = process.env } = {}
+) => {
+  assert.ok(manager === "npm" || manager === "pnpm", "Unsupported release package manager: " + manager)
+  const consumer = await mkdtemp(join(tmpdir(), "smthrs-release-quickstart-" + manager + "-"))
+  try {
+    await writeFile(join(consumer, ".npmrc"), "@smthrs:registry=" + registryUrl + "\n")
+    const managerVersion = (await successful(manager, ["--version"], consumer)).output.trim()
+    // The page says a pnpm project runs `pnpm add` with the same packages.
+    const installed = [manager, manager === "npm" ? "install" : "add", ...quickstart.packages]
+    for (const command of quickstart.commands) {
+      if (command !== quickstart.install) {
+        await successful("sh", ["-c", command], consumer)
+        continue
+      }
+      if (manager === "pnpm") await successful("npm", ["pkg", "set", "packageManager=" + releasePackageManager], consumer)
+      await successful(manager, [
+        ...installed.slice(1),
+        "--ignore-scripts",
+        ...consumerCacheFlags(manager),
+        ...(manager === "npm" ? ["--no-audit", "--no-fund"] : [])
+      ], consumer)
+    }
+    const declared = Object.keys(JSON.parse(await readFile(join(consumer, "package.json"), "utf8")).dependencies).sort()
+    const named = quickstart.packages.map((spec) => spec.slice(0, spec.lastIndexOf("@"))).sort()
+    assert.deepEqual(declared, named, "the project declares exactly the packages on the install line")
+    await writeFile(join(consumer, "quickstart.ts"), quickstart.program)
+    const [command, ...args] = quickstart.run
+    assert.equal(command, "node", "the quickstart runs under node")
+    const runs = []
+    for (const attempt of ["first run", "second run"]) {
+      const result = await captureProcess(process.execPath, args, consumer, { timeoutMs: 120_000, env })
+      assert.equal(result.ok, true, manager + " quickstart " + attempt + " failed:\n" + result.output)
+      assert.equal(result.output.trim(), quickstart.printed, manager + " quickstart " + attempt + " printed something else")
+      runs.push(result.output.trim())
+      // A replayed step answers from the journal, so the next run must not see this.
+      await writeFile(join(consumer, "workspace/note.txt"), "changed after the " + attempt + "\n")
+    }
+    console.log("quickstart ok " + manager + " " + managerVersion + ": " + installed.join(" ") + "; printed and replayed")
+    return { manager, managerVersion, install: installed.join(" "), declared, runs }
+  } finally {
+    await rm(consumer, { recursive: true, force: true })
+  }
+}
+
 export const refuseIncompatibleRc = async (manager, registryUrl, entries) => {
   const firstParty = candidateVersion(entries)
   const consumer = await mkdtemp(join(tmpdir(), "smithers-k-incompatible-" + manager + "-"))
@@ -490,7 +596,10 @@ export const refuseIncompatibleRc = async (manager, registryUrl, entries) => {
 export const runConsumerMatrix = async (directory, entries, {
   profiles = minimalProfiles(entries),
   managers = ["npm", "pnpm"],
-  runtime = false
+  runtime = false,
+  // The published quickstart runs wherever the candidate's code does.
+  quickstart = runtime,
+  env = process.env
 } = {}) => {
   const registry = await releaseRegistry(directory, entries)
   const results = []
@@ -511,11 +620,21 @@ export const runConsumerMatrix = async (directory, entries, {
       } catch (cause) {
         failures.push(new Error(manager + " incompatible RC: " + cause.message, { cause }))
       }
+      if (quickstart) {
+        try {
+          results.push({ quickstart: await runQuickstartConsumer(manager, registry.url, { env }) })
+        } catch (cause) {
+          const error = new Error(manager + " quickstart: " + cause.message, { cause })
+          failures.push(error)
+          console.error(error.message)
+        }
+      }
     }
     console.log(JSON.stringify({
       consumerMatrix: {
         profilesPassed: results.filter((result) => result.profile !== undefined).length,
         incompatibleRefusals: results.filter((result) => result.incompatible !== undefined).length,
+        quickstartsPassed: results.filter((result) => result.quickstart !== undefined).length,
         failures: failures.length
       },
       node: process.version

@@ -326,7 +326,7 @@ importers:
         version: 4.3.3
       '@types/bun':
         specifier: latest
-        version: 1.4.2
+        version: 1.4.3
       '@types/d3-force':
         specifier: 3.0.10
         version: 3.0.10
@@ -443,7 +443,7 @@ importers:
     devDependencies:
       '@types/bun':
         specifier: latest
-        version: 1.4.2
+        version: 1.4.3
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -1093,7 +1093,7 @@ importers:
         version: 9.39.5
       '@types/bun':
         specifier: latest
-        version: 1.4.2
+        version: 1.4.3
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -2218,7 +2218,7 @@ importers:
         version: 9.39.5
       '@types/bun':
         specifier: latest
-        version: 1.4.2
+        version: 1.4.3
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -3036,6 +3036,9 @@ importers:
 
   packages/smithers/flows:
     dependencies:
+      '@effect/sql-sqlite-node':
+        specifier: 4.0.0-rc.115
+        version: 4.0.0-rc.115(effect@4.0.0-rc.115)
       '@smthrs/artifacts':
         specifier: 1.0.0-rc.4
         version: link:artifacts
@@ -3081,6 +3084,9 @@ importers:
       '@smthrs/plan-store':
         specifier: 1.0.0-rc.4
         version: link:plan-store
+      '@smthrs/platform-node':
+        specifier: 1.0.0-rc.4
+        version: link:platform-node
       '@smthrs/run-store':
         specifier: 1.0.0-rc.4
         version: link:run-store
@@ -3139,9 +3145,6 @@ importers:
       '@smthrs/platform-bun':
         specifier: 1.0.0-rc.4
         version: link:platform-bun
-      '@smthrs/platform-node':
-        specifier: 1.0.0-rc.4
-        version: link:platform-node
       '@smthrs/registry':
         specifier: 1.0.0-rc.4
         version: link:../agent/registry
@@ -5470,7 +5473,7 @@ importers:
         version: 20.13.2
       '@types/bun':
         specifier: latest
-        version: 1.4.2
+        version: 1.4.3
       '@types/d3-force':
         specifier: ^3.0.10
         version: 3.0.10
@@ -9706,8 +9709,8 @@ packages:
   '@types/bun@1.3.6':
     resolution: {integrity: sha512-uWCv6FO/8LcpREhenN1d1b6fcspAB+cefwD7uti8C8VffIv0Um08TKMn98FynpTiU38+y2dUO55T11NgDt8VAA==}
 
-  '@types/bun@1.4.2':
-    resolution: {integrity: sha512-GimotNn7+ZV0uVArItBbriZsR1oNf0+WTzPkdcFrzShI7k2norL0uzEaJT8T33dWr7O/c9ZDuAFQrctKCi72oQ==}
+  '@types/bun@1.4.3':
+    resolution: {integrity: sha512-N67Pqy8JXbAY/j0tNraS3V5mubGvc6rrrNDmDCtZLlFzccbUJPDb0tvgUBC5q4m8ybkP93Jcn1QB+RYQ6PvBhw==}
 
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
@@ -10722,6 +10725,9 @@ packages:
 
   bun-types@1.4.2:
     resolution: {integrity: sha512-bxV1FgK7yBIzjRe5zBozIM4Bem11ZJcCXSrjWRG3YWLt8yFDePu4cLjpebO8OvPeIE9trbyPF4fuj3Cia4Fj3w==}
+
+  bun-types@1.4.3:
+    resolution: {integrity: sha512-tinRJNGOmUN+tEAsn2y2e942n9JHRHR42iUYzDH75NmhJqVBokGSQkkfSFdNWwsANIdrK6ACH9t01M452YyTwg==}
 
   bytes@3.1.2:
     resolution: {integrity: sha512-/Nf7TyzTx6S3yRJObOAV7956r8cr2+Oj8AC5dt8wSP3BQAoeX58NoHyCU8P8zGkNXStjTSi6fzO6F0pBdcYbEg==}
@@ -19106,9 +19112,9 @@ snapshots:
     dependencies:
       bun-types: 1.3.6
 
-  '@types/bun@1.4.2':
+  '@types/bun@1.4.3':
     dependencies:
-      bun-types: 1.4.2
+      bun-types: 1.4.3
 
   '@types/chai@5.2.3':
     dependencies:
@@ -20253,6 +20259,11 @@ snapshots:
   bun-types@1.4.2:
     dependencies:
       '@types/node': 26.4.1
+
+  bun-types@1.4.3:
+    dependencies:
+      '@types/node': 26.4.1
+      undici-types: 8.3.0
 
   bytes@3.1.2: {}
 
