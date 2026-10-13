@@ -43,14 +43,14 @@ test("authors, edits, replans and runs the written source from chat", async ({ p
   // Repeating the command neither launches another author nor blocks chat.
   await command(page, request)
   await expect(page.locator('.smithers-card[data-kind="run-trace"]')).toHaveCount(1)
-  // A plain prompt still settles beside the author: the prompt lands, Smithers
-  // answers after it, and the composer stays usable. The reply's words are the
-  // host's to choose; this host has no model.
+  // A plain prompt still settles beside the author. This host has no model and
+  // admits no conversation, and no production build answers from the demo
+  // world (#3148): Chat says so, keeps the words, and the composer stays usable.
   await command(page, "hello")
+  await expect(page.getByRole("alert").filter({ hasText: "Conversation unavailable" })).toBeVisible()
+  await expect(page.getByTestId("composer-input")).toHaveValue("hello")
   await expect(page.getByTestId("composer-input")).toBeEnabled()
-  const entries = page.locator(".smithers-chat-message")
-  await expect(entries.filter({ hasText: "hello" }).last()).toHaveAttribute("data-role", "user")
-  await expect(entries.last()).toHaveAttribute("data-role", "assistant")
+  await expect(page.locator(".smithers-chat-message").filter({ hasText: "hello" })).toHaveCount(0)
   await expect(page.getByTestId("composer-stop")).not.toBeVisible()
   await expect(page.locator("body")).not.toContainText("stub:")
   await page.keyboard.press("Escape")

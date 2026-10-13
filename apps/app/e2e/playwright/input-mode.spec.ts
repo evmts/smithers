@@ -16,6 +16,9 @@ test('Chat Tab reaches Send and footer controls without trapping focus', async (
   await input.fill('An earlier answer')
   await input.press('Enter')
   await expect(page.getByTestId('transcript')).toContainText('stub: An earlier answer')
+  // An accepted prompt dismisses Chat (#3819); the walk continues in the reopened composer.
+  await expect(input).toBeHidden()
+  await chat.click()
   await input.fill('hello there')
   await page.keyboard.press(controlTabKey(page))
   await expect(queue).toBeFocused()

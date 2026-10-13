@@ -19,7 +19,10 @@ export default showcase({
     const user = page.locator('.smithers-chat-message[data-role="user"]')
     await expect(user.filter({ hasText: "What does this repository do?" })).toBeVisible()
 
+    // An accepted prompt dismisses Chat (#3819); the follow-up reopens it.
     const input = page.getByTestId("composer-input")
+    await expect(input).toBeHidden()
+    await app.press("ControlOrMeta+k")
     await app.type(input, "Then list its open issues.")
     await app.press("Alt+Enter")
     await expect(input).toHaveValue("")

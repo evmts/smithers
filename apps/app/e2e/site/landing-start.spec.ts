@@ -50,14 +50,22 @@ test("production hosted Chat edits and removes the server-owned prompt queue", a
   })
   await page.goto("/")
   await page.getByRole("link", { name: "Get started for free", exact: true }).click()
+  const input = page.getByTestId("composer-input"), chat = page.getByRole("button", { name: "Chat", exact: true })
   await fillComposer(page, "Queued prompt")
   await page.locator('[data-flow="chat.queue"]').click()
+  // An accepted prompt dismisses Chat (#3819); its queue is in the reopened composer.
+  await expect(input).toBeHidden()
+  await chat.click()
   await page.getByRole("button", { name: "Edit queued prompt: Queued prompt", exact: true }).click()
-  await expect(page.getByTestId("composer-input")).toHaveValue("Queued prompt")
+  await expect(input).toHaveValue("Queued prompt")
   await fillComposer(page, "Edited prompt")
   await page.getByTestId("composer-send").click()
+  await expect(input).toBeHidden()
+  await chat.click()
   await page.getByRole("button", { name: "Remove queued prompt: Edited prompt", exact: true }).click()
   await expect(page.getByRole("region", { name: "Queued prompts" })).toHaveCount(0)
+  // The strip left an open composer; a hidden one would hide it too.
+  await expect(input).toBeVisible()
   expect(mutations).toEqual([{ method: "PATCH", prompt: "Edited prompt" }, { method: "DELETE" }])
 })
 

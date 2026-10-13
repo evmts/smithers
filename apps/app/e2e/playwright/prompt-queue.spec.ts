@@ -16,8 +16,13 @@ for (const width of [390, 1280]) test(`the queued-prompt strip has the composer'
   await input.fill("What does this repository do?")
   await input.press("Enter")
   await expect(page.locator('.smithers-chat-message[data-role="user"]').filter({ hasText: "What does this repository do?" })).toBeVisible()
+  // An accepted prompt dismisses Chat (#3819); the strip is in the reopened composer.
+  await expect(input).toBeHidden()
+  await page.keyboard.press("ControlOrMeta+k")
   await input.fill("Then list its open issues.")
   await input.press("Alt+Enter")
+  await expect(input).toBeHidden()
+  await page.keyboard.press("ControlOrMeta+k")
   try {
     const strip = page.getByRole("region", { name: "Queued prompts" })
     await expect(strip).toContainText("Then list its open issues.")
