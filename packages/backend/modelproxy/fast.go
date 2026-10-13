@@ -59,6 +59,8 @@ func (h *Handler) serveFast(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, ProviderCerebras, 404, "not_found_error", "Only POST is served.")
 		return
 	}
+	w, finishObservation := observeRequest(w, r, caller, ProviderCerebras)
+	defer finishObservation()
 	body, err := io.ReadAll(io.LimitReader(r.Body, defaultMaxBody+1))
 	if err != nil || len(body) > defaultMaxBody {
 		WriteError(w, ProviderCerebras, 400, "invalid_request_error", "Invalid request.")

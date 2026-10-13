@@ -29,11 +29,11 @@ type Config struct {
 	Stderr       io.Writer
 }
 
-// Dispatch recognizes credits, plans and keys, returning false for other
+// Dispatch recognizes credits, plans, keys and chat, returning false for other
 // commands. All command syntax and audit inputs are checked before
 // OpenDatabase runs.
 func Dispatch(ctx context.Context, args []string, cfg Config) (bool, error) {
-	if len(args) == 0 || (args[0] != "credits" && args[0] != "plans" && args[0] != "keys") {
+	if len(args) == 0 || (args[0] != "credits" && args[0] != "plans" && args[0] != "keys" && args[0] != "chat") {
 		return false, nil
 	}
 	if cfg.Stdout == nil {
@@ -44,6 +44,9 @@ func Dispatch(ctx context.Context, args []string, cfg Config) (bool, error) {
 	}
 	if args[0] == "keys" {
 		return true, runKeys(ctx, args[1:], cfg)
+	}
+	if args[0] == "chat" {
+		return true, runChat(ctx, args[1:], cfg)
 	}
 	var run func(*pgxpool.Pool) error
 	if args[0] == "credits" {

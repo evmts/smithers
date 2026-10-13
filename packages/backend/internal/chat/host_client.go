@@ -88,11 +88,14 @@ func (h *HTTPChatHost) RunChatTurn(ctx context.Context, grant ports.ChatTurnGran
 	}
 	request.Header.Set("content-type", "application/json")
 	request.Header.Set("authorization", "Bearer "+h.authorization)
+	ports.ReportChatProgress(ctx, ports.ChatStageHostRequest, "")
 	response, err := h.client.Do(request)
 	if err != nil {
 		return fmt.Errorf("run chat model host: %w", err)
 	}
+	ports.ReportChatProgress(ctx, ports.ChatStageHostResponse, "")
 	defer func() { _ = response.Body.Close() }()
+	ports.ReportChatProgress(ctx, ports.ChatStageHostBody, "")
 	detail, _ := io.ReadAll(io.LimitReader(response.Body, maxRefusalDetailBytes))
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
 	if response.StatusCode < 200 || response.StatusCode >= 300 {

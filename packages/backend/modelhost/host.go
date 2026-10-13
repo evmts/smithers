@@ -183,6 +183,7 @@ func (host *Host) RunChatTurn(ctx context.Context, grant ports.ChatTurnGrant) (r
 	if grant.OwnerID <= 0 {
 		return errors.New("model host grant has no authenticated owner")
 	}
+	ports.ReportChatProgress(ctx, ports.ChatStageModel, "")
 	binding, err := host.resolver.ResolveChatModel(ctx, grant.OwnerID, grant.RepositoryID, grant.Request)
 	if err != nil {
 		return fmt.Errorf("resolve owner model: %w", err)
@@ -205,6 +206,7 @@ func (host *Host) RunChatTurn(ctx context.Context, grant ports.ChatTurnGrant) (r
 		return fmt.Errorf("launch owner model host: %w", err)
 	}
 	defer func() {
+		ports.ReportChatProgress(ctx, ports.ChatStageCleanup, "")
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 		defer cancel()
 		runErr = errors.Join(runErr, lease.Close(cleanupCtx))

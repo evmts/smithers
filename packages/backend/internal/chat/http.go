@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
@@ -275,9 +276,11 @@ func (h *Handler) Commit(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.Store.Commit(r.Context(), CommitInput{TurnID: request.TurnID, Generation: request.Generation, Token: token, Expected: request.Expected, Frames: request.Frames})
 	if err != nil {
+		h.logProducerCallback(r, "commit", request.TurnID, request.Generation, errorCode(err), len(request.Frames))
 		producerError(w, err)
 		return
 	}
+	h.logProducerCallback(r, "commit", request.TurnID, request.Generation, "ok", len(request.Frames))
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -293,10 +296,25 @@ func (h *Handler) ProviderStarted(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err = h.Store.MarkProviderStarted(r.Context(), ProducerGrant{TurnID: turnID, Generation: generation, Token: bearerToken(r)}); err != nil {
+		h.logProducerCallback(r, "provider_started", turnID, generation, errorCode(err), 0)
 		producerError(w, err)
 		return
 	}
+	h.logProducerCallback(r, "provider_started", turnID, generation, "ok", 0)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) logProducerCallback(r *http.Request, stage, turnID string, generation int64, code string, frames int) {
+	// Rejected inputs are untrusted; log bounded UUID identities only. Payloads,
+	// producer bearers and raw errors are deliberately absent.
+	if _, err := uuid.Parse(turnID); err != nil {
+		return
+	}
+	logger := h.logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	logger.InfoContext(r.Context(), "chat producer callback", "stage", stage, "turn_id", turnID, "generation", generation, "code", code, "frame_count", frames)
 }
 
 // MountAuthenticated contains the routes that need an active account scope.

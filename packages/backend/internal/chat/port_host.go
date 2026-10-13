@@ -48,6 +48,7 @@ func (h PortHost) RunTurn(ctx context.Context, grant ProducerGrant) (result erro
 	key := turnKey{userID: grant.OwnerID, runID: grant.RunID, legID: grant.LegID}
 	credential, _ := h.credentials.credential(key)
 	if h.API != nil {
+		ports.ReportChatProgress(ctx, ports.ChatStageCredential, "")
 		api, err := h.API.Begin(ctx, credential, grant.OwnerID, grant.TurnID, grant.Generation)
 		if err != nil {
 			// A shared turn must never spend on a model without its author-bound
@@ -80,10 +81,12 @@ func (h PortHost) RunTurn(ctx context.Context, grant ProducerGrant) (result erro
 			}()
 		}
 	}
+	ports.ReportChatProgress(ctx, ports.ChatStageSource, "")
 	grant.Source = h.source(ctx, grant)
 	if reader, ok := h.Sources.(interface {
 		ReadAgentInstructions(context.Context, middleware.Credential, int64, int64) (string, error)
 	}); ok && grant.Source != nil {
+		ports.ReportChatProgress(ctx, ports.ChatStageInstructions, "")
 		current, admitted := h.credentials.credential(key)
 		if !admitted {
 			return ports.ErrSourceForbidden

@@ -109,7 +109,7 @@ func (d *Dispatcher) claim(ctx context.Context, candidate Candidate) (ProducerGr
 
 // renew keeps the lease ahead of a healthy host. It cancels the turn when the
 // lease is fenced, because another producer may now own it.
-func (d *Dispatcher) renew(ctx context.Context, grant ProducerGrant, lost context.CancelFunc) {
+func (d *Dispatcher) renew(ctx context.Context, grant ProducerGrant, lost context.CancelFunc, progress *turnProgress) {
 	ticker := time.NewTicker(max(d.lease/4, time.Millisecond))
 	defer ticker.Stop()
 	for {
@@ -118,6 +118,7 @@ func (d *Dispatcher) renew(ctx context.Context, grant ProducerGrant, lost contex
 			return
 		case <-ticker.C:
 		}
+		progress.waiting()
 		if _, err := d.store.RenewProducer(ctx, grant, d.lease); err != nil {
 			if ctx.Err() != nil {
 				return
@@ -215,6 +216,9 @@ func (d *Dispatcher) runOne(parent context.Context, candidate Candidate) {
 	d.metrics.running.Inc()
 	defer d.metrics.running.Dec()
 	ctx, cancel := context.WithCancel(parent)
+	progress := newTurnProgress(grant, d.logger)
+	ctx = ports.WithChatProgress(ctx, progress.observe)
+	ports.ReportChatProgress(ctx, ports.ChatStageDispatch, "")
 	d.mu.Lock()
 	d.running[candidate.TurnID] = runningTurn{generation: grant.Generation, cancel: cancel}
 	d.mu.Unlock()
@@ -228,7 +232,7 @@ func (d *Dispatcher) runOne(parent context.Context, candidate Candidate) {
 		}
 		d.mu.Unlock()
 	}()
-	renewals.Go(func() { d.renew(ctx, grant, cancel) })
+	renewals.Go(func() { d.renew(ctx, grant, cancel, progress) })
 	err := d.host.RunTurn(ctx, grant)
 	detached := context.WithoutCancel(parent)
 	if parent.Err() != nil {
@@ -261,13 +265,15 @@ func (d *Dispatcher) runOne(parent context.Context, candidate Candidate) {
 		d.retry(detached, grant, "host_failed", err)
 		return
 	}
-	_, terminal, getErr := d.store.GetState(detached, candidate.Scope, candidate.TurnID)
+	state, terminal, getErr := d.store.GetState(detached, candidate.Scope, candidate.TurnID)
 	if getErr != nil {
 		d.logger.Error("chat turn state read failed", "turn_id", grant.TurnID, "generation", grant.Generation, "code", errorCode(getErr), "error", getErr)
 		return
 	}
 	if !terminal {
 		d.fail(detached, grant, "host_returned_without_receipt", errors.New("model host returned without a terminal batch"))
+	} else {
+		d.logger.Info("chat turn finished", "turn_id", grant.TurnID, "run_id", grant.RunID, "generation", grant.Generation, "state", state)
 	}
 }
 

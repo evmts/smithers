@@ -153,9 +153,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return Caller{}, false
 	}
 	// A refused credential never makes the proxy read a body.
-	if _, ok := resolveCaller(); !ok {
+	admitted, ok := resolveCaller()
+	if !ok {
 		return
 	}
+	w, finishObservation := observeRequest(w, r, admitted, provider)
+	defer finishObservation()
 	limit := h.MaxBodyBytes
 	if limit <= 0 {
 		limit = defaultMaxBody
