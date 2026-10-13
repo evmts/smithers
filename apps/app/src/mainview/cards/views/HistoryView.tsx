@@ -47,7 +47,7 @@ function Group({ name, kind, count, open: initially, children }: { name: string;
 
 /** Archived entries are prose only: no control in them can act on a live chat. */
 function Entries({ conversation }: { conversation: SharedConversation }) {
-  return <div className="archive-entries" data-archived-entries={conversation.id}>
+  return <div className="archive-entries" data-content="" data-archived-entries={conversation.id}>
     {conversation.entries.map(entry => {
       if (!("frames" in entry)) return "text" in entry ? <Markdown key={entry.id} content={entry.text} /> : null
       const frames = entry.frames.filter(frame => frame.runId === entry.runId)
@@ -70,7 +70,7 @@ function Chat({ chat, selected, opened, actions, onAction, onView }: { chat: His
       <time dateTime={new Date(chat.archivedAt).toISOString()}>{day(chat.archivedAt)}</time>
     </button>
     {selected ? <div className="history-chat">
-      {chat.summary ? <p className="history-summary">{chat.summary}</p> : null}
+      {chat.summary ? <p className="history-summary" data-content="">{chat.summary}</p> : null}
       {runs.length > 0 ? <ol className="history-runs">{runs.map(action => <li key={action.label} data-history="run">
         <button type="button" className="tree-row" data-flow={action.tag} onClick={() => onAction(action.tag, action.args)}><span className="tree-name">{action.label}</span></button>
       </li>)}</ol> : null}

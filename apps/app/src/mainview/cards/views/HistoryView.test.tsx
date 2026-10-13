@@ -4,6 +4,7 @@ import { act } from "react"
 import type { Action } from "@smthrs/rpc/CardAction"
 import { SharedConversationSchema } from "../../state/seams/SharedConversationSeam"
 import { unavailableFailure } from "../../FailureNotice"
+import { lintCopy } from "../productWords"
 import { createRoot } from "./testDom"
 import { HistoryView, type HistoryViewProps } from "./HistoryView"
 
@@ -86,6 +87,8 @@ test("pressing a chat selects it, pressing the open chat closes it, and a run ro
   expect(open.onView).toHaveBeenCalledWith({ selected: undefined })
   // Only the selected chat shows its body; an unselected chat with no summary shows only its line.
   expect(open.host.querySelectorAll(".history-chat")).toHaveLength(1)
+  // The summary and the archived replies are the person's content, so the copy lint reads only the card's own words.
+  expect(lintCopy(open.host)).toEqual([])
 })
 
 test("a selected chat in a closed group opens the groups that hold it, and one whose entries or summary never arrived still lists", async () => {

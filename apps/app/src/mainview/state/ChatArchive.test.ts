@@ -6,8 +6,10 @@
 import { describe, expect, test } from "bun:test"
 import type { StorageApi } from "@tanstack/db"
 import type { AgentPort } from "../runtime/AgentPort"
-import { createAppController } from "./AppController"
 import { createAppStore } from "./AppStore"
+import { scopedControllers } from "./ControllerTestScope"
+
+const createAppController = scopedControllers()
 
 const memoryStorage = (): StorageApi => {
   const values = new Map<string, string>()

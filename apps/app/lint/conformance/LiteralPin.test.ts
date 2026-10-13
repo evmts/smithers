@@ -727,10 +727,6 @@ const KNOWN_ORPHANS: ReadonlyArray<Excuse> = [
     reason: "scripts/live-workflow-check.ts: the former workflow chooser action is absent; repo.choose opens Setup rather than choosing a watched repo for flow creation."
   },
   {
-    literal: "data-content", file: "e2e/playwright/spec/C-UI-02.spec.ts",
-    reason: "e2e/playwright/spec/C-UI-02.spec.ts: productWords.ts supports excluding this marker but no current View renders it; copy-scope behavior needs design/engineering ownership."
-  },
-  {
     literal: "p.branch-muted", file: "e2e/playwright/view-stories.spec.ts",
     reason: "e2e/playwright/view-stories.spec.ts: BranchView no longer renders the Nobody here paragraph; the empty-presence visual assertion needs design review."
   },
