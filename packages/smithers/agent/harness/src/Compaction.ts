@@ -126,6 +126,33 @@ export const shouldCompact = (
 }
 
 /**
+ * The context size, in tokens, above which a judged run's judge is consulted
+ * about compaction: 200,000, whatever the model's window (#3809).
+ *
+ * At or under it the judge is not asked which segments to keep, and a
+ * supervisor reading that finds the context outdated or irrelevant schedules
+ * nothing, so the prefix the model is sent does not change. A model whose
+ * window is under this size plus the reserve never reaches it.
+ *
+ * {@link shouldCompact} is the other trigger and does not read this: a
+ * context within the reserve of its window is compacted at any size, judged
+ * or not, because a full window cannot send another call.
+ *
+ * @category constants
+ * @since 1.0.0-rc.1
+ */
+export const judgedAbove = 200_000
+
+/**
+ * Whether the judge is consulted about compacting a context of `total`
+ * tokens: only above {@link judgedAbove}.
+ *
+ * @category predicates
+ * @since 1.0.0-rc.1
+ */
+export const consultsJudge = (total: TokenAccounting["total"]): boolean => total.value > judgedAbove
+
+/**
  * Selects the longest compactable prefix while preserving a whole recent
  * suffix. A boundary between a tool call and its result is never selected.
  *

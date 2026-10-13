@@ -136,7 +136,9 @@ export const suspectAt = 0.5
 
 /**
  * At or above this probability of `outdated_context` or
- * `irrelevant_context`, a judged run compacts at its next frame.
+ * `irrelevant_context`, a judged run whose context is above
+ * `Compaction.judgedAbove` tokens compacts at its next frame. A reading of a
+ * smaller context schedules nothing.
  *
  * @category constants
  * @since 1.0.0-rc.0
@@ -708,7 +710,9 @@ export const crosses = (reading: Triggerable): boolean => triggered(reading).som
 
 /**
  * The context triggers one reading fires, in declaration order: why a judged
- * run that is sent this reading compacts at its next frame.
+ * run that is sent this reading compacts at its next frame. The run is sent
+ * them only when the reading is of a context above `Compaction.judgedAbove`
+ * tokens.
  *
  * @category conversions
  * @since 1.0.0-rc.0

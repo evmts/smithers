@@ -217,12 +217,15 @@ export const DrainRecord = Schema.Struct({
   /**
    * Jev's answers about transcript segments, by digest, which the run stores
    * for its next compaction. The model is not sent them. Absent from
-   * boundaries that took none.
+   * boundaries that took none, as every boundary of a context at or under
+   * `Compaction.judgedAbove` tokens does.
    */
   marks: Schema.optional(Schema.Array(compactionMarks.Marking)),
   /**
    * The context triggers the delivered supervisor reading fired, which
-   * compact the run at its next frame. Absent from boundaries that took none.
+   * compact the run at its next frame. Absent from boundaries that took none:
+   * a reading of a context at or under `Compaction.judgedAbove` tokens
+   * delivers none.
    */
   compact: Schema.optional(Schema.Array(AgentEvent.CompactionCause))
 })

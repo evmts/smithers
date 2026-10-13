@@ -80,7 +80,7 @@ behavior and signatures.
 | `ContextWindow`              | `TypeId`, `SegmentKind`, `SegmentZone`, `Content`, `Mark`, `ContextWindowErrorCode`, `ContextWindowError`, `Segment`, `ContextWindow`, `SegmentInput`, `MakeOptions`, `makeSegment`, `make`, `empty`, `appendTurn`, `prefixDigest`, `compactMarked`, `compactPrefix`, `compact`, `render`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | The immutable, provider-neutral context assembled for one model request.                                 |
 | `Transcript`                 | `journalVersion`, `validateJournal`, `TranscriptErrorCode`, `TranscriptError`, `ProjectedMessage`, `ProjectedState`, `CellEvidence`, `projectStateResult`, `projectResult`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Transcript projection from durable journal entries.                                                      |
 | `ExternalTranscript`         | `AgentKind`, `EditedFile`, `Part`, `Entry`, `ExternalTranscriptErrorCode`, `ExternalTranscriptError`, `codexReleases`, `CodexState`, `CodexCall`, `codexStart`, `Decoded`, `decodeCodex`, `claudeReleases`, `ClaudeCall`, `ClaudeState`, `claudeStart`, `decodeClaude`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Read-only conversation entries decoded from another agent's transcript file.                             |
-| `Compaction`                 | `summaryInstruction`, `InvalidStep`, `Summarizer`, `CompactionStep`, `TokenAccounting`, `shouldCompact`, `selectPrefix`, `declare`, `summaryRequest`, `apply`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Declarations for sealed transcript-summary steps.                                                        |
+| `Compaction`                 | `summaryInstruction`, `InvalidStep`, `Summarizer`, `CompactionStep`, `TokenAccounting`, `shouldCompact`, `judgedAbove`, `consultsJudge`, `selectPrefix`, `declare`, `summaryRequest`, `apply`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Declarations for sealed transcript-summary steps.                                                        |
 | `Steering`                   | `Delivery`, `SteerInsert`, `QueueInsert`, `Insert`, `SeatChange`, `ThinkingChange`, `Item`, `Queue`, `Drain`, `BoundaryInput`, `DrainRecord`, `drainRecord`, `empty`, `enqueue`, `drainAtClose`, `Source`, `SourceInput`, `make`, `makeNoop`, `layer`, `layerNoop`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Turn-boundary steering values and their source contract.                                                 |
 | `Notifications`              | `Options`, `make`, `layer`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Adapter from the durable notification queue to harness turn boundaries.                                  |
 | `Cell`                       | `Language`, `Source`, `digestOf`, `source`, `Continue`, `Complete`, `Park`, `Transition`, `renderText`, `RejectionCode`, `Settled`, `Raised`, `Rejected`, `Outcome`, `FlowProjection`, `project`, `CallFailureCode`, `defaultCallFailureCode`, `callFailureHint`, `CallIdentity`, `declarationDigest`, `Call`, `baseCheckpoint`, `checkpoint`, `checkpointOf`, `CallResult`, `CallSuccess`, `CallFailure`, `CallResultVariant`, `decodeCallResult`, `decodeOutcome`, `decodeTransition`, `callFailure`, `Extracted`, `extract`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | The cell contract.                                                                                       |
@@ -273,17 +273,31 @@ journals `decision-unjudged`. A call to a withheld flow
 settles `flow_withheld` and restores it: the next frame shows it, and
 `relevance-restored` names it. A replay is served the recorded reading.
 
-**Compaction marks.** Marking is separate from compacting. In a judged run
-each supervisor reading also asks `compaction/marks` about the transcript
-segments not yet marked, the person's excepted, and the next boundary stores
-the answers, by segment digest, on `State.segmentFacts` inside its recorded
-drain (`Steering.DrainRecord.marks`). Marking changes nothing the model is
-sent: the prefix a request is sent stays byte-stable until a compaction. A
-frame compacts when the window crosses its budget (`Compaction.shouldCompact`
-and `selectPrefix` at their defaults), or when the boundary before it took a
-supervisor reading that fired `outdated_context` or `irrelevant_context`
-(`Steering.DrainRecord.compact`, carried on `State.compactionDue` for that
-frame alone); a judged run then marks each prefix segment `keep`, `squash` or `remove`. Pins, read
+**Compaction marks.** Marking is separate from compacting, and the judge is
+consulted about either only while the context a frame opened on is above
+`Compaction.judgedAbove`, 200,000 tokens whatever the model's window
+(`Compaction.consultsJudge`). At or under that size a judged run takes no
+`compaction/marks` reading and its supervisor readings deliver no context
+trigger, so nothing is compacted on a reading and the prefix a request is
+sent does not change.
+
+Above it, each supervisor reading of a judged run also asks
+`compaction/marks` about the transcript segments not yet marked, the person's
+excepted, and the next boundary stores the answers, by segment digest, on
+`State.segmentFacts` inside its recorded drain
+(`Steering.DrainRecord.marks`). The first such reading is asked about every
+segment so far. Marking changes nothing the model is sent: the prefix a
+request is sent stays byte-stable until a compaction.
+
+A frame compacts for one of two reasons. The window crossed its budget
+(`Compaction.shouldCompact` and `selectPrefix` at their defaults): this
+applies at any size, judged or not, because a context within the reserve of
+its window cannot send another call. Or the boundary before it took a
+supervisor reading, of a context above `Compaction.judgedAbove`, that fired
+`outdated_context` or `irrelevant_context` (`Steering.DrainRecord.compact`,
+carried on `State.compactionDue` for that frame alone). A model whose window
+is under `judgedAbove` plus the reserve compacts on its budget only. A
+judged run then marks each prefix segment `keep`, `squash` or `remove`. Pins, read
 from `State.segmentFacts` and the still-failing checks, fix what must
 survive: a summary is squashed; steering, the person's segments and the
 newest segment that ran each still-failing check are kept; a segment that
@@ -1324,7 +1338,9 @@ four as `dependency`: the agent wrote a transcript this release cannot read.
 
 Declarations for sealed transcript-summary steps.
 `shouldCompact(accounting, { reserve?, keepRecent? }?)` returns whether the
-model context crossed its reserved threshold; `selectPrefix(window, { keepRecent? }?)`
+model context crossed its reserved threshold; `judgedAbove` is the context
+size, 200,000 tokens, above which a judged run's judge is consulted about
+compaction, and `consultsJudge(total)` is that test; `selectPrefix(window, { keepRecent? }?)`
 selects the
 longest compactable prefix while preserving a whole recent suffix; `declare`
 builds the sealed `CompactionStep` for one prefix and `Summarizer` without
@@ -1702,9 +1718,11 @@ above `thrashingAt`, 0.5), `off_target` (`on_target` at or below
 `outdated_context` and `irrelevant_context` (each at or above `contextAt`,
 0.5). `triggered(reading)` names the triggers that fired. The two
 `contextTriggers` never nudge: `compacting(reading)` names the ones that
-fired, and a judged run whose boundary takes that reading compacts its
+fired. A reading of a context above `Compaction.judgedAbove` tokens delivers
+them, and the judged run whose boundary takes that reading compacts its
 context at the next frame by the marks it stored, whatever the budget, its
-`compaction-settled` naming them as `causes`. `crosses(reading)` is any other
+`compaction-settled` naming them as `causes`. A reading of a smaller context
+delivers none. `crosses(reading)` is any other
 trigger firing; the `supervisor` lint monitor and the offline replay both
 call it, and `nudge` names the counts behind it. Five are
 operational states scored on `Level` (`none`, `mild`, `strong`), each naming
@@ -1737,7 +1755,8 @@ and journals, in order, the supervisor's `DecisionSettled` (the snapshot and
 every answer), the memory reading's `DecisionSettled` rows, its
 `RelevanceSettled` (`source: "supervisor"`) or a `DecisionUnjudged` for
 `relevance/unnecessary`, the marks reading's `DecisionSettled` rows or a
-`DecisionUnjudged` for `compaction/marks`, and last
+`DecisionUnjudged` for `compaction/marks` (taken only above
+`Compaction.judgedAbove`), and last
 `AgentEvent.SupervisorSettled`, whose `monitors` holds each monitor's value
 and whether it crossed, and whose `skillsCapped` is true when more than
 `skillLimit` skills could have been offered. Each reading scores the run's monitors, then

@@ -10,12 +10,13 @@
  * about each segment, and {@link resolve} turns the answers into marks,
  * demoting the least-needed keeps until the kept frames fit the window.
  *
- * Marking is not compacting. The supervisor asks about each settled segment
- * off the loop's hot path, and the run stores each {@link Answer} in the
- * segment's {@link Facts}; nothing the model is sent changes. Only when the
- * budget forces a compaction are the pins taken and the stored answers
- * resolved, and a segment still unmarked then is asked about in that one
- * reading.
+ * Marking is not compacting. While the run's context is above
+ * `Compaction.judgedAbove` tokens the supervisor asks about each settled
+ * segment off the loop's hot path, and the run stores each {@link Answer} in
+ * the segment's {@link Facts}; nothing the model is sent changes. A smaller
+ * context is not asked about at all. Only when a compaction is taken are the
+ * pins taken and the stored answers resolved, and a segment still unmarked
+ * then is asked about in that one reading.
  *
  * Nothing here journals or compacts; the caller records the reading, and
  * journals `decision-unjudged` and squashes every frame when it fails.

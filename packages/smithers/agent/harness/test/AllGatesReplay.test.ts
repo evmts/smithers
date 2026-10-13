@@ -15,11 +15,13 @@ import { Deferred, Effect, Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import type * as AgentEvent from "../src/AgentEvent.ts"
 import * as CellTurn from "../src/CellTurn.ts"
+import * as Compaction from "../src/Compaction.ts"
 import * as ContextWindow from "../src/ContextWindow.ts"
 import * as Monitor from "../src/Monitor.ts"
 import type * as Relevance from "../src/Relevance.ts"
 import * as Steering from "../src/Steering.ts"
 import * as Supervisor from "../src/Supervisor.ts"
+import * as Tokens from "../src/Tokens.ts"
 import { descriptor, emits, of, pattern, prose, run } from "./fixtures/cellTurn.ts"
 import * as ScriptedModel from "./fixtures/scriptedModel.ts"
 
@@ -139,11 +141,19 @@ const untilRead = (live: number, interrupt: number | undefined) => {
   }
 }
 
+// The host's rules are declared at 200,000 tokens, so the run is above the
+// size the judge is consulted about compaction at (`Compaction.judgedAbove`)
+// and its budget leaves the transcript what a 30,000-token window would.
 const opening = CellTurn.teach(
   ContextWindow.make({
     modelId: "test-model",
     segments: [
-      { kind: "system", zone: "prefix", content: [ModelRequest.SystemPart.make({ text: "host safety rules" })] },
+      {
+        kind: "system",
+        zone: "prefix",
+        content: [ModelRequest.SystemPart.make({ text: "host safety rules" })],
+        tokens: new Tokens.Count({ value: Compaction.judgedAbove, estimated: true })
+      },
       CellTurn.instructionsSegment(instructions, new Set()),
       {
         kind: "instructions",
@@ -167,7 +177,7 @@ const checkpointed = (): CellTurn.State =>
       capabilityEnvelope: [pattern("fs:read:**")],
       placement: Option.none(),
       contextWindow: opening,
-      contextWindowTokens: 30_000,
+      contextWindowTokens: Compaction.judgedAbove + 30_000,
       maxFrames: 12,
       repeatCap: 0,
       narrowingCap: 0,

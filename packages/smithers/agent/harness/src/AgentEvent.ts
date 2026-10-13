@@ -67,8 +67,8 @@ export const CompactionPin = Schema.Literals(["summary", "person", "steering", "
 
 /**
  * Why a compaction ran: the context `budget` was crossed, or a drained
- * supervisor reading found the run carrying `outdated_context` or
- * `irrelevant_context`.
+ * supervisor reading found a context above `Compaction.judgedAbove` tokens
+ * carrying `outdated_context` or `irrelevant_context`.
  *
  * @category models
  * @since 1.0.0-rc.0

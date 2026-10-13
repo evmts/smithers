@@ -72,12 +72,17 @@ export interface Offer {
   /** Whether more than `Supervisor.skillLimit` skills could have been offered. */
   readonly skillsCapped: boolean
   /**
-   * The transcript segments the run has no answer about yet, each once by
-   * digest; empty unless the host holds a real judge.
+   * What the judge is asked about compacting this context, absent when it is
+   * not consulted: the host holds no real judge, or the context the frame
+   * opened on is at or under `Compaction.judgedAbove` tokens. Absent, the
+   * reading marks no segment and its context triggers schedule nothing.
    */
-  readonly unmarked: ReadonlyArray<{ readonly digest: string; readonly item: compactionMarks.Item }>
-  /** The labels of the checks still failing when the frame closed, which the marks reading is told. */
-  readonly failing: ReadonlyArray<string>
+  readonly compaction?: {
+    /** The transcript segments the run has no answer about yet, each once by digest. */
+    readonly unmarked: ReadonlyArray<{ readonly digest: string; readonly item: compactionMarks.Item }>
+    /** The labels of the checks still failing when the frame closed, which the marks reading is told. */
+    readonly failing: ReadonlyArray<string>
+  } | undefined
 }
 
 /**
@@ -99,7 +104,11 @@ export interface Taken {
   readonly ledger?: Monitor.Ledger
   /** Jev's answers about the segments the reading marked. */
   readonly marks: ReadonlyArray<compactionMarks.Marking>
-  /** The context triggers the reading fired, which compact the run at its next frame. */
+  /**
+   * The context triggers the reading fired, which compact the run at its
+   * next frame; none from a reading of a context the judge is not consulted
+   * about.
+   */
   readonly compact: ReadonlyArray<Supervisor.ContextTrigger>
 }
 
@@ -179,7 +188,10 @@ interface Mailbox {
   readonly declared: ReadonlyArray<Monitor.Monitor>
   readonly rows: ReadonlyArray<Supervisor.Recalled>
   readonly marks: ReadonlyArray<compactionMarks.Marking>
-  /** The context triggers the reading fired; empty when Jev could not take it. */
+  /**
+   * The context triggers the reading fired; empty when Jev could not take it
+   * or the offer carried no `compaction`.
+   */
   readonly compact: ReadonlyArray<Supervisor.ContextTrigger>
 }
 
@@ -355,7 +367,7 @@ export const open = (input: {
       Effect.gen(function*() {
         const snapshot: Supervisor.Snapshot = { ...offer.snapshot, frames: offer.frames }
         const declared = scored(snapshot)
-        const unmarked = offer.unmarked.filter(({ digest }) => !marked.has(digest))
+        const unmarked = (offer.compaction?.unmarked ?? []).filter(({ digest }) => !marked.has(digest))
         const recorded = yield* engine.record({
           name: "supervisor",
           identity: { session, frame: offer.frame, boundary: `supervisor:${offer.digest}` },
@@ -397,7 +409,7 @@ export const open = (input: {
               ),
               unmarked.length === 0 ? Effect.succeed(undefined) : Effect.result(
                 compactionMarks.read(
-                  { task: snapshot.task, failing: offer.failing },
+                  { task: snapshot.task, failing: offer.compaction?.failing ?? [] },
                   unmarked.map(({ item }) => item)
                 )
               )
@@ -526,11 +538,13 @@ export const open = (input: {
                 ? undefined
                 : { rows: recorded.monitorRows, candidates: recorded.monitorCandidates },
               rows: recorded.memoryRows,
-              compact: recorded.settled === null ? [] : Supervisor.compacting({
-                ...recorded.settled,
-                outdatedContext: recorded.settled.outdatedContext ?? 0,
-                irrelevantContext: recorded.settled.irrelevantContext ?? 0
-              }),
+              compact: recorded.settled === null || offer.compaction === undefined
+                ? []
+                : Supervisor.compacting({
+                  ...recorded.settled,
+                  outdatedContext: recorded.settled.outdatedContext ?? 0,
+                  irrelevantContext: recorded.settled.irrelevantContext ?? 0
+                }),
               marks: [...Option.match(held, { onNone: () => [], onSome: (value) => value.marks }), ...recorded.marks]
             }))
         }

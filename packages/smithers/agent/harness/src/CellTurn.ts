@@ -958,6 +958,8 @@ export class State extends Schema.Class<State>("flows/harness/CellTurn/State")({
   /**
    * The context triggers a drained supervisor reading fired, which compact the
    * next frame's context whatever the budget says; empty once it has opened.
+   * A reading delivers them only for a context above `Compaction.judgedAbove`
+   * tokens.
    *
    * State because it is folded in only from each recorded drain, so a replay
    * compacts the same frame for the same cause.
@@ -2551,9 +2553,11 @@ const alignedFacts = (
 /**
  * The transcript segments a supervisor reading is asked to mark: those with
  * no answer yet, each once by digest. The person's are always kept and never
- * asked about; a run whose facts are not aligned marks nothing.
+ * asked about; a run whose facts are not aligned marks nothing. Offered only
+ * while the judge is consulted about compaction (`Compaction.consultsJudge`),
+ * so the first reading above that size is asked about every segment so far.
  */
-const unmarked = (state: State): Supervision.Offer["unmarked"] => {
+const unmarked = (state: State): NonNullable<Supervision.Offer["compaction"]>["unmarked"] => {
   const segments = compactable(state.contextWindow.segments)
   const facts = alignedFacts(state, segments)
   if (facts === undefined) return []
@@ -2673,14 +2677,18 @@ const marked = (
  * emitting it is what makes the compacted window part of the run's durable
  * state rather than an artifact of when the process happened to notice.
  *
+ * Two things compact a frame. The budget does, judged or not, at any size:
+ * a context within the reserve of its window cannot send another call. A
+ * drained supervisor reading that found the context outdated or irrelevant
+ * does, and only for a context above `Compaction.judgedAbove` tokens: the
+ * reading of a smaller one delivers no trigger, so nothing is due here.
+ *
  * A judged run marks each replaced segment keep, squash or remove first, and
  * only what it squashes is summarized; an unjudged one squashes all of them.
- * Marks are stored as the supervisor reads them and applied only here, when
- * the budget forces a compaction or a drained supervisor reading found the
- * context outdated or irrelevant, so the prefix the model is sent never
- * changes between compactions. The settlement names its `causes`. A judged
- * run whose facts are not aligned cannot be marked; its settlement says so as
- * `unaligned`.
+ * Marks are stored as the supervisor reads them and applied only here, so the
+ * prefix the model is sent never changes between compactions. The settlement
+ * names its `causes`. A judged run whose facts are not aligned cannot be
+ * marked; its settlement says so as `unaligned`.
  *
  * Nothing here is best-effort. A window that cannot be compacted stays as it
  * is; a compaction the model started and could not finish is a typed failure.
@@ -3639,8 +3647,17 @@ const frame = (
         shown: state.memoryShown,
         recent: Supervisor.head(written),
         skillsCapped,
-        unmarked: input.judged === true ? unmarked(state) : [],
-        failing: accounting.facts.checks.filter((check) => check.failing).map((check) => check.label)
+        // The judge is consulted about compaction only above
+        // `Compaction.judgedAbove`: under it no segment is marked and the
+        // reading's context triggers schedule nothing.
+        ...(input.judged === true && Compaction.consultsJudge(compactedState.contextWindow.tokens.total)
+          ? {
+            compaction: {
+              unmarked: unmarked(state),
+              failing: accounting.facts.checks.filter((check) => check.failing).map((check) => check.label)
+            }
+          }
+          : {})
       })
     )
 

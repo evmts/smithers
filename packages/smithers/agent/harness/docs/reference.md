@@ -21,7 +21,7 @@ importable as `@smthrs/harness/<Module>`.
 | `Tokens` | `Count`, `Segment`, `Accounting`, `Estimator`, `estimate`, `count`, `combine` | Deterministic token accounting for context windows. |
 | `ContextWindow` | `TypeId`, `SegmentKind`, `SegmentZone`, `Content`, `Mark`, `ContextWindowErrorCode`, `ContextWindowError`, `Segment`, `ContextWindow`, `SegmentInput`, `MakeOptions`, `makeSegment`, `make`, `empty`, `appendTurn`, `prefixDigest`, `compactMarked`, `compactPrefix`, `compact`, `render` | The immutable, provider-neutral context assembled for one model request. |
 | `Transcript` | `journalVersion`, `controlEventPrefix`, `ControlEventType`, `validateJournal`, `TranscriptErrorCode`, `TranscriptError`, `ProjectedMessage`, `ProjectedState`, `CellEvidence`, `projectStateResult`, `projectResult` | Transcript projection from durable journal entries. |
-| `Compaction` | `summaryInstruction`, `summaryTurn`, `InvalidStep`, `Summarizer`, `CompactionStep`, `TokenAccounting`, `shouldCompact`, `selectPrefix`, `declare`, `summaryRequest`, `apply` | Declarations for sealed transcript-summary steps. |
+| `Compaction` | `summaryInstruction`, `summaryTurn`, `InvalidStep`, `Summarizer`, `CompactionStep`, `TokenAccounting`, `shouldCompact`, `judgedAbove`, `consultsJudge`, `selectPrefix`, `declare`, `summaryRequest`, `apply` | Declarations for sealed transcript-summary steps. |
 | `Steering` | `Delivery`, `SteerInsert`, `QueueInsert`, `Insert`, `SeatChange`, `ThinkingChange`, `Item`, `Queue`, `Drain`, `BoundaryInput`, `DrainRecord`, `drainRecord`, `empty`, `enqueue`, `drainAtClose`, `Source`, `SourceInput`, `make`, `makeNoop`, `layer`, `layerNoop` | Turn-boundary steering values and their source contract. |
 | `Notifications` | `Options`, `make`, `layer` | Adapter from the durable notification queue to harness turn boundaries. |
 | `Cell` | `Language`, `Source`, `digestOf`, `source`, `Continue`, `Complete`, `Park`, `Transition`, `renderText`, `RejectionCode`, `Settled`, `Raised`, `Rejected`, `Outcome`, `FlowProjection`, `project`, `CallFailureCode`, `defaultCallFailureCode`, `callFailureHint`, `TreeEpoch`, `LiveTree`, `CallIdentity`, `declarationDigest`, `Call`, `callOf`, `displayDescriptor`, `baseCheckpoint`, `checkpoint`, `checkpointOf`, `CallResult`, `CallSuccess`, `CallFailure`, `CallResultVariant`, `decodeCallResult`, `decodeOutcome`, `decodeTransition`, `callFailure`, `Extracted`, `extract` | The cell contract. |
@@ -72,7 +72,7 @@ Serializable events emitted by harness adapters.
 | `RelevanceKind` | const | models | The kind of a human-provided item a relevance reading may withhold. |
 | `CompactionMark` | const | models | What a compaction reading did with one replaced message. |
 | `CompactionPin` | const | models | The invariant that kept a message from being removed, whatever it was marked. |
-| `CompactionCause` | const | models | Why a compaction ran: the context `budget` was crossed, or a drained supervisor reading found the run carrying `outdated_context` or `irrelevant_context`. |
+| `CompactionCause` | const | models | Why a compaction ran: the context `budget` was crossed, or a drained supervisor reading found a context above `Compaction.judgedAbove` tokens carrying `outdated_context` or `irrelevant_context`. |
 | `MonitorKind` | const | models | What a supervisor monitor watches for. |
 | `Stance` | const | models | The static stance a run's monitors deliver under. |
 | `Suppression` | const | models | Why a crossed monitor was not delivered. |
@@ -261,6 +261,8 @@ Declarations for sealed transcript-summary steps.
 | `CompactionStep` | interface | models | The sealed declaration consumed by the engine to request one summary. |
 | `TokenAccounting` | interface | models | The token accounting accepted by the compaction policy. |
 | `shouldCompact` | const | predicates | Returns whether the model context has crossed its reserved compaction threshold. |
+| `judgedAbove` | const | constants | The context size, in tokens, above which a judged run's judge is consulted about compaction: 200,000, whatever the model's window (#3809). |
+| `consultsJudge` | const | predicates | Whether the judge is consulted about compacting a context of `total` tokens: only above `judgedAbove`. |
 | `selectPrefix` | const | operations | Selects the longest compactable prefix while preserving a whole recent suffix. |
 | `declare` | const | constructors | Declares a compaction step without invoking a model or selecting a trigger. |
 | `summaryRequest` | const | operations | Builds the model request input for a compaction step. |
@@ -793,7 +795,7 @@ The reading Jev takes of a run while it is still running.
 | `thrashingAt` | const | constants | At or above this probability of `thrashing`, the reading crosses. |
 | `offTargetAt` | const | constants | At or below this probability of `on_target`, the reading crosses. |
 | `suspectAt` | const | constants | At or above this probability of `suspect`, the reading crosses. |
-| `contextAt` | const | constants | At or above this probability of `outdated_context` or `irrelevant_context`, a judged run compacts at its next frame. |
+| `contextAt` | const | constants | At or above this probability of `outdated_context` or `irrelevant_context`, a judged run whose context is above `Compaction.judgedAbove` tokens compacts at its next frame. |
 | `Level` | const | schemas | The three rungs every operational-state question is scored on. |
 | `levels` | const | constants | The rungs as the score question declares them, in order. |
 | `Help` | const | schemas | The one word a person is shown about a run. |

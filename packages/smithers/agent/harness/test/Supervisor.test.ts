@@ -928,14 +928,15 @@ describe("Supervisor", () => {
       kept: [{ kind: "memory", id: "layout", p: 0.3 }],
       withheld: [{ kind: "memory", id: "tests", p: 0.95 }]
     })
-    // The supervisor's decision, the memory decision and settlement, then the verdict.
+    // The supervisor's decision, the memory decision and settlement, then the
+    // verdict. No marks reading: the context is far under the size the judge
+    // is consulted about compaction at.
     expect(
       readingOf(read.seen, 0)
     ).toEqual([
       "supervisor/turn",
       "relevance/unnecessary",
       "relevance-settled",
-      "compaction/marks",
       "supervisor-settled"
     ])
   })
@@ -1025,7 +1026,7 @@ describe("Supervisor", () => {
     expect(of(read.seen, "supervisor-unjudged")[0]).toMatchObject({ frame: 0, reason: "refused" })
     expect(
       readingOf(read.seen, 0)
-    ).toEqual(["relevance/unnecessary", "relevance-settled", "compaction/marks", "supervisor-unjudged"])
+    ).toEqual(["relevance/unnecessary", "relevance-settled", "supervisor-unjudged"])
     expect(shownBy(events)).toEqual([["layout"]])
   })
 
@@ -1233,10 +1234,11 @@ describe("Supervisor", () => {
         return { handle, events }
       }).pipe(Effect.provide(evaluator), Effect.provideService(Supervisor.Memory, memory))
 
+    /** An offer whose context the judge is consulted about compacting, unless `unmarked` is `"unconsulted"`. */
     const offer = (
       frame: number,
       shown: ReadonlyArray<string> = [],
-      unmarked: Supervision.Offer["unmarked"] = []
+      unmarked: NonNullable<Supervision.Offer["compaction"]>["unmarked"] | "unconsulted" = []
     ): Supervision.Offer => ({
       frame,
       digest: `cell-${frame}`,
@@ -1270,8 +1272,7 @@ describe("Supervisor", () => {
       shown,
       recent: "",
       skillsCapped: false,
-      unmarked,
-      failing: []
+      ...(unmarked === "unconsulted" ? {} : { compaction: { unmarked, failing: [] } })
     })
 
     const delivering = { ledger: {}, shown: [], deliver: true } as const
@@ -1333,6 +1334,24 @@ describe("Supervisor", () => {
         // A boundary two frames on is stale, and the stale verdict is dropped, not held.
         expect((yield* handle.take(7, delivering)).messages).toEqual([])
         expect((yield* handle.take(6, delivering)).messages).toEqual([])
+      })))
+    })
+
+    it("hands the boundary a reading's context triggers only for a context the judge is consulted about", async () => {
+      const { layer } = scripted(() => calm({ outdated_context: { probability: 0.9 } }))
+      await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        const { events, handle } = yield* open(layer)
+        yield* handle.offer(offer(0))
+        yield* Effect.sleep("20 millis")
+        expect((yield* handle.take(0, delivering)).compact).toEqual(["outdated_context"])
+        // The same reading of a context at or under `Compaction.judgedAbove`
+        // is journaled with its score and schedules nothing.
+        yield* handle.offer(offer(1, [], "unconsulted"))
+        yield* Effect.sleep("20 millis")
+        expect(yield* handle.take(1, delivering)).toMatchObject({ compact: [], marks: [], messages: [] })
+        expect(
+          events.filter((event) => event._tag === "supervisor-settled").map((event) => event.outdatedContext)
+        ).toEqual([0.9, 0.9])
       })))
     })
 
@@ -1601,8 +1620,7 @@ describe("Supervisor", () => {
         shown: [],
         recent: "",
         skillsCapped: false,
-        unmarked: [],
-        failing: []
+        compaction: { unmarked: [], failing: [] }
       }))
       expect(await Effect.runPromise(Supervision.none.take(0, { ledger: {}, shown: [], deliver: true }))).toEqual({
         messages: [],

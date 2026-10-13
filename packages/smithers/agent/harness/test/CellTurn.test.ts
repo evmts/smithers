@@ -29,6 +29,8 @@ import * as Monitor from "../src/Monitor.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import * as Sandbox from "../src/Sandbox.ts"
 import * as Steering from "../src/Steering.ts"
+import * as Supervisor from "../src/Supervisor.ts"
+import * as Tokens from "../src/Tokens.ts"
 import * as Transcript from "../src/Transcript.ts"
 import { batchedReply } from "./fixtures/batchedReplies.ts"
 import {
@@ -949,6 +951,42 @@ const crowded = ContextWindow.make({
     }
   ]
 })
+
+/**
+ * A window of exactly `total` tokens, declared rather than measured: the cell
+ * contract, four old segments, one recent segment large enough to be the
+ * suffix a compaction keeps, and a last small one. The first frame writes its
+ * state section into the last segment, which is measured again from then on.
+ */
+const sized = (total: number): ContextWindow.ContextWindow => {
+  const count = (value: number) => new Tokens.Count({ value, estimated: true })
+  const last = 10
+  const recent = 25_000
+  const each = Math.floor((total - recent - last) / 4)
+  const segment = (label: string, tokens: number): ContextWindow.SegmentInput => ({
+    kind: "transcript",
+    zone: "tail",
+    content: [ModelRequest.Message.user(`${label}: detail`)],
+    tokens: count(tokens)
+  })
+  return ContextWindow.make({
+    modelId: "test-model",
+    segments: [
+      {
+        kind: "system",
+        zone: "prefix",
+        content: [ModelRequest.SystemPart.make({ text: "cell contract" })],
+        tokens: count(0)
+      },
+      segment("one", total - recent - last - each * 3),
+      segment("two", each),
+      segment("three", each),
+      segment("four", each),
+      segment("five", recent),
+      segment("six", last)
+    ]
+  })
+}
 
 /** A command flow whose result a frame reads, plus the run that may call it. */
 const check = descriptor("bash", { capabilities: ["proc:spawn:*"], tier: "irreversible" })
@@ -3298,37 +3336,37 @@ const replayed = (
 const contextDigests = (events: ReadonlyArray<AgentEvent.AgentEvent>): ReadonlyArray<string> =>
   of(events, "turn-opened").map((event) => event.contextDigest)
 
-describe("CellTurn compaction marks", () => {
-  /** Each boundary waits for the reading of the frame before it, so frame 0's reading is what frame 1's boundary delivers. */
-  const gated = () => {
-    const gates = new Map<number, Deferred.Deferred<void>>()
-    const gate = (frame: number) => {
-      const held = gates.get(frame)
-      if (held !== undefined) return held
-      const made = Effect.runSync(Deferred.make<void>())
-      gates.set(frame, made)
-      return made
-    }
-    const steering: Layer.Layer<Steering.Source> = Steering.layer({
-      read: () => Effect.succeed(Steering.empty()),
-      drain: (input) => {
-        const frame = Number(input.boundary.split(":")[0])
-        return (frame === 0 ? Effect.void : Deferred.await(gate(frame - 1))).pipe(Effect.as({
-          inserts: [],
-          seatChanges: [],
-          remaining: Steering.empty(),
-          queued: false,
-          duplicate: false
-        }))
-      }
-    })
-    const observer = (event: AgentEvent.AgentEvent) =>
-      event._tag === "supervisor-settled" || event._tag === "supervisor-unjudged"
-        ? Effect.asVoid(Deferred.succeed(gate(event.frame), undefined))
-        : Effect.void
-    return { steering, observer }
+/** Each boundary waits for the reading of the frame before it, so frame 0's reading is what frame 1's boundary delivers. */
+const gated = () => {
+  const gates = new Map<number, Deferred.Deferred<void>>()
+  const gate = (frame: number) => {
+    const held = gates.get(frame)
+    if (held !== undefined) return held
+    const made = Effect.runSync(Deferred.make<void>())
+    gates.set(frame, made)
+    return made
   }
+  const steering: Layer.Layer<Steering.Source> = Steering.layer({
+    read: () => Effect.succeed(Steering.empty()),
+    drain: (input) => {
+      const frame = Number(input.boundary.split(":")[0])
+      return (frame === 0 ? Effect.void : Deferred.await(gate(frame - 1))).pipe(Effect.as({
+        inserts: [],
+        seatChanges: [],
+        remaining: Steering.empty(),
+        queued: false,
+        duplicate: false
+      }))
+    }
+  })
+  const observer = (event: AgentEvent.AgentEvent) =>
+    event._tag === "supervisor-settled" || event._tag === "supervisor-unjudged"
+      ? Effect.asVoid(Deferred.succeed(gate(event.frame), undefined))
+      : Effect.void
+  return { steering, observer }
+}
 
+describe("CellTurn compaction marks", () => {
   // Room to keep bulk `two` beside the suffix, and still over the trigger.
   const marking = () => compactionState(crowded, 70_000)
   const script = (): ScriptedModel.Script => [prose("the compacted summary"), emits(`ctx.done("done")`)]
@@ -3429,6 +3467,21 @@ describe("CellTurn compaction marks", () => {
         (request.state as { readonly frames: ReadonlyArray<{ readonly frame: number }> }).frames.at(-1)?.frame === 1
     )
     const big = `console.log("${"x".repeat(15_000)}")`
+    // A contract declared at 200,000 tokens puts the run above the size the
+    // judge is consulted at, and the budget leaves the transcript the same
+    // 14,000 a 30,000-token window would.
+    const heavy = ContextWindow.make({
+      modelId: "test-model",
+      segments: [
+        {
+          kind: "system",
+          zone: "prefix",
+          content: [ModelRequest.SystemPart.make({ text: "cell contract" })],
+          tokens: new Tokens.Count({ value: Compaction.judgedAbove, estimated: true })
+        },
+        { kind: "transcript", zone: "tail", content: [ModelRequest.Message.user("start")] }
+      ]
+    })
     const { engine, events, failure, model } = await run({
       script: [
         emits(`console.log("reading")`),
@@ -3438,7 +3491,7 @@ describe("CellTurn compaction marks", () => {
         ...Array.from({ length: 5 }, () => emits(big)),
         emits(`ctx.done("done")`)
       ],
-      state: compactionState(window, 30_000, 10),
+      state: compactionState(heavy, Compaction.judgedAbove + 30_000, 10),
       flows: [editor, check],
       calls: [{ _tag: "Success", value: "ok" }, { _tag: "Success", value: { exitCode: 1, stdout: "1 failed" } }],
       steering,
@@ -3499,8 +3552,9 @@ describe("CellTurn compaction marks", () => {
       prose("the early summary"),
       emits(`ctx.done("done")`)
     ]
-    // Far under the budget: only the reading can compact it.
-    const early = () => compactionState(crowded, 10_000_000, 4)
+    // Above the size the judge is consulted at and far under the budget:
+    // only the reading can compact it.
+    const early = () => compactionState(sized(240_000), 10_000_000, 4)
     const records = new Map<string, unknown>()
     const judge = marksJudge(() => ({ remove: 0.05, keep: 0.05 }), () => false, frameZero)
     const first = await run({
@@ -3546,7 +3600,7 @@ describe("CellTurn compaction marks", () => {
     const judge = marksJudge(() => ({ remove: 0.01, keep: 0.99 }), () => false, () => true)
     const { events, failure } = await run({
       script: [emits(`console.log("looked")`), emits(`console.log("looked again")`), emits(`ctx.done("done")`)],
-      state: compactionState(crowded, 10_000_000, 4),
+      state: compactionState(sized(240_000), 10_000_000, 4),
       flows: [],
       evaluator: judge.layer,
       judged: true,
@@ -3561,7 +3615,7 @@ describe("CellTurn compaction marks", () => {
     const judge = marksJudge(() => ({ remove: 0.05, keep: 0.05 }), () => false, () => true)
     const { events, failure } = await run({
       script: [emits(`console.log("looked")`), emits(`console.log("looked again")`), emits(`ctx.done("done")`)],
-      state: compactionState(crowded, 10_000_000, 4),
+      state: compactionState(sized(240_000), 10_000_000, 4),
       flows: [],
       evaluator: judge.layer,
       ...gated()
@@ -3666,6 +3720,177 @@ describe("CellTurn compaction marks", () => {
     )
     expect(of(replay.events, "compaction-settled")).toEqual(of(first.events, "compaction-settled"))
   })
+})
+
+/**
+ * The judge is consulted about compaction only above
+ * `Compaction.judgedAbove` tokens (#3809): at or under it no segment is
+ * marked and a reading that finds the context outdated schedules nothing. The
+ * budget trigger compacts a full window at any size, judged or not.
+ */
+describe("CellTurn judged compaction floor", () => {
+  const isSummary = (request: ModelRequest.ModelRequest): boolean =>
+    request.system.some((part) => part.text === Compaction.summaryInstruction)
+  const marksDecided = (events: ReadonlyArray<AgentEvent.AgentEvent>) =>
+    of(events, "decision-settled").filter((event) => event.classifier === "compaction/marks")
+  const frameZero = (request: Evaluator.Request) =>
+    (request.state as { readonly frames?: ReadonlyArray<{ readonly frame: number }> }).frames?.at(-1)?.frame === 0
+  const looks = (frames: number): ScriptedModel.Script => [
+    ...Array.from({ length: frames }, (_, index) => emits(`console.log("looked ${index}")`)),
+    emits(`ctx.done("done")`)
+  ]
+
+  it("declares one absolute size, whatever the model's window", () => {
+    expect(Compaction.judgedAbove).toBe(200_000)
+    expect(sized(200_000).tokens.total.value).toBe(200_000)
+    expect(sized(200_001).tokens.total.value).toBe(200_001)
+  })
+
+  it("leaves a 40,000-token context alone when every reading finds it outdated: no marks, no summary, the same prefix", async () => {
+    const judge = marksJudge(() => ({ remove: 0.05, keep: 0.05 }), () => false, () => true)
+    const { engine, events, failure, model } = await run({
+      script: looks(3),
+      // The window of the run that showed this: 40,000 tokens of 400,000.
+      state: compactionState(sized(40_000), 400_000, 5),
+      flows: [],
+      evaluator: judge.layer,
+      judged: true,
+      ...gated()
+    })
+    expect(failure).toBeUndefined()
+    // The readings were taken and did find the context outdated.
+    const readings = of(events, "supervisor-settled")
+    expect(readings.length).toBeGreaterThanOrEqual(2)
+    expect(readings.every((reading) => (reading.outdatedContext ?? 0) >= Supervisor.contextAt)).toBe(true)
+    // Nothing was compacted and the judge was not asked which segments to keep.
+    expect(of(events, "compaction-settled")).toEqual([])
+    expect(judge.asked).toEqual([])
+    expect(marksDecided(events)).toEqual([])
+    expect(of(events, "decision-unjudged")).toEqual([])
+    expect(engine.recorder.records.filter((boundary) => boundary.name === "compaction-marks")).toEqual([])
+    // No summary call: every model request is a frame's own.
+    const requests = model.recorder.requests
+    expect(requests).toHaveLength(4)
+    expect(engine.recorder.sealStep).toHaveLength(4)
+    expect(requests.some(isSummary)).toBe(false)
+    // The prefix the model is sent never changes: each request is the one
+    // before it and more, under the same system prompt.
+    for (let index = 1; index < requests.length; index++) {
+      const before = conversation(requests[index - 1])
+      expect(requests[index]!.system).toEqual(requests[index - 1]!.system)
+      expect(conversation(requests[index]).slice(0, before.length)).toEqual(before)
+    }
+  })
+
+  it("compacts a context above 200,000 tokens when a reading finds it outdated", async () => {
+    const judge = marksJudge(() => ({ remove: 0.05, keep: 0.05 }), () => false, frameZero)
+    const { events, failure, model } = await run({
+      script: [
+        emits(`console.log("looked")`),
+        emits(`console.log("looked again")`),
+        prose("the early summary"),
+        emits(`ctx.done("done")`)
+      ],
+      state: compactionState(sized(240_000), 10_000_000, 4),
+      flows: [],
+      evaluator: judge.layer,
+      judged: true,
+      ...gated()
+    })
+    expect(failure).toBeUndefined()
+    const settled = of(events, "compaction-settled")
+    expect(settled).toHaveLength(1)
+    expect(settled[0]!.causes).toEqual(["outdated_context"])
+    // The judge was consulted from the first frame, a frame behind the loop.
+    expect(marksDecided(events).map((event) => event.frame)).toContain(0)
+    expect(model.recorder.requests.filter(isSummary)).toHaveLength(1)
+  })
+
+  it("does not compact a context above 200,000 tokens on a reading under the trigger", async () => {
+    const judge = marksJudge(() => ({ remove: 0.05, keep: 0.05 }))
+    const { events, failure, model } = await run({
+      script: looks(2),
+      state: compactionState(sized(240_000), 10_000_000, 4),
+      flows: [],
+      evaluator: judge.layer,
+      judged: true,
+      ...gated()
+    })
+    expect(failure).toBeUndefined()
+    const readings = of(events, "supervisor-settled")
+    expect(readings.length).toBeGreaterThanOrEqual(1)
+    expect(readings.every((reading) => (reading.outdatedContext ?? 0) < Supervisor.contextAt)).toBe(true)
+    expect(of(events, "compaction-settled")).toEqual([])
+    expect(model.recorder.requests.some(isSummary)).toBe(false)
+    // Above the size the judge is consulted: it marks segments for the
+    // compaction that may come, and nothing the model is sent changes.
+    expect(marksDecided(events).length).toBeGreaterThan(0)
+    expect(marksDecided(events).every((event) => !event.acted)).toBe(true)
+  })
+
+  it.each([
+    ["at exactly 200,000 tokens", 200_000, false],
+    ["at 200,001 tokens", 200_001, true]
+  ])("consults the judge only above the size: %s", async (_name, total, consulted) => {
+    // Only the reading of frame 0, taken on exactly `total` tokens, finds the context outdated.
+    const judge = marksJudge(() => ({ remove: 0.05, keep: 0.05 }), () => false, frameZero)
+    const { events, failure, model } = await run({
+      script: consulted
+        ? [
+          emits(`console.log("looked")`),
+          emits(`console.log("looked again")`),
+          prose("the early summary"),
+          emits(`ctx.done("done")`)
+        ]
+        : looks(2),
+      state: compactionState(sized(total), 10_000_000, 4),
+      flows: [],
+      evaluator: judge.layer,
+      judged: true,
+      ...gated()
+    })
+    expect(failure).toBeUndefined()
+    expect(of(events, "supervisor-settled").find((reading) => reading.frame === 0)?.outdatedContext)
+      .toBeGreaterThanOrEqual(
+        Supervisor.contextAt
+      )
+    expect(of(events, "compaction-settled").map((event) => event.causes)).toEqual(
+      consulted ? [["outdated_context"]] : []
+    )
+    expect(model.recorder.requests.filter(isSummary)).toHaveLength(consulted ? 1 : 0)
+    expect(marksDecided(events).some((event) => event.frame === 0)).toBe(consulted)
+  })
+
+  it.each([
+    ["an unjudged run under 200,000 tokens", 40_000, 50_000, false],
+    ["a judged run under 200,000 tokens", 40_000, 50_000, true],
+    ["an unjudged run above 200,000 tokens", 240_000, 250_000, false],
+    ["a judged run above 200,000 tokens", 240_000, 250_000, true]
+  ])(
+    "compacts a context within the reserve of its window whatever its size: %s",
+    async (_name, total, limit, judged) => {
+      // A calm judge: no reading asks for this compaction.
+      const judge = marksJudge(() => ({ remove: 0.05, keep: 0.05 }))
+      expect(Compaction.shouldCompact({ total: sized(total).tokens.total, contextWindow: limit })).toBe(true)
+      const { events, failure, model } = await run({
+        script: [prose("the budget summary"), emits(`ctx.done("done")`)],
+        state: compactionState(sized(total), limit),
+        flows: [],
+        evaluator: judge.layer,
+        judged
+      })
+      expect(failure).toBeUndefined()
+      const settled = of(events, "compaction-settled")
+      expect(settled.map((event) => event.causes)).toEqual([["budget"]])
+      expect(isSummary(model.recorder.requests[0]!)).toBe(true)
+      // A judged run's marks are asked in the compaction's own reading; an
+      // unjudged run squashes everything and asks nobody.
+      expect(marksDecided(events).map((event) => ({ frame: event.frame, acted: event.acted }))).toEqual(
+        judged ? [{ frame: 0, acted: false }] : []
+      )
+      expect(settled[0]!.marks === undefined).toBe(!judged)
+    }
+  )
 })
 
 describe("CellTurn truncated output", () => {
