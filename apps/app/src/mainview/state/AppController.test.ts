@@ -70,7 +70,8 @@ describe("createAppController in pure web mode", () => {
 
     expect(await controller.send("hello from the web build")).toBe(false)
     await waitFor(() => [...store.collections.toasts.values()].some(toast => toast.status === "failed"))
-    expect([...store.collections.toasts.values()].find(toast => toast.status === "failed")?.detail).toBe("Chat didn't finish — the app hit an unexpected error.")
+    expect([...store.collections.toasts.values()].find(toast => toast.status === "failed")?.detail).toBe("Conversation unavailable")
+    expect([...store.collections.httpTurns.values()]).toEqual([])
     expect([...store.collections.messages.values()]).toEqual([])
   })
 
