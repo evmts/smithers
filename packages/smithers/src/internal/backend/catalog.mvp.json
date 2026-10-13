@@ -2847,30 +2847,6 @@
       }
     },
     {
-      "name": "chat.dictate",
-      "slash": null,
-      "cli": null,
-      "journey": [],
-      "group": "",
-      "visibility": "in-card",
-      "actors": [
-        "person"
-      ],
-      "minimumRole": "member",
-      "credentialScope": "write:repository",
-      "agent": "never",
-      "summary": "Start or stop dictation into the chat draft (⌘D)",
-      "http": null,
-      "payload": {
-        "dialect": "draft-2020-12",
-        "schema": {
-          "type": "object",
-          "additionalProperties": false
-        },
-        "definitions": {}
-      }
-    },
-    {
       "name": "chat.open",
       "slash": null,
       "cli": null,

@@ -167,6 +167,7 @@ Closed without a change: 2, a queued "Refresh wiki" row with no button. spec.md 
 
 ## 5. Not in this prerelease
 
+- **Dictation.** Removed because it does not work. Restore after release: [#3815](https://github.com/smithersai/smithers/issues/3815). Normal and Vim remain.
 - **Homebrew install.** The job does not run for a suffixed version. It needs check runs from the Mac mini, a `HOMEBREW_TAP_TOKEN` secret and a `homebrew-publish` environment. None exists.
 - **A public bundle download.** The bundle is a GitHub Actions artifact. It needs a GitHub login and expires after 90 days.
 - **A GitHub Release and installer archives.** Nothing publishes them.

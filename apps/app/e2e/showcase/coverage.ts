@@ -18,7 +18,6 @@ import type { ShowcaseRecord } from "./showcase"
 
 /** Flows that cannot run on the T1 test host, by exact name or `namespace.*`. */
 export const UNAVAILABLE: Readonly<Record<string, string>> = {
-  "chat.dictate": "needs a microphone",
   "cloud.sign-in": "local host only (host-held Cloud session)",
   "cloud.sign-out": "local host only (host-held Cloud session)"
 }

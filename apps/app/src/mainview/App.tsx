@@ -95,7 +95,6 @@ function AppContent() {
       branchNavigation: session.branchNavigation,
       devtoolsOpen: session.devtoolsOpen,
       paletteOpen: session.paletteOpen,
-      dictating: session.dictating,
       inputMode: session.inputMode,
       paletteLastQuery: session.paletteLastQuery,
       resetConfirmOpen: session.resetConfirmOpen,

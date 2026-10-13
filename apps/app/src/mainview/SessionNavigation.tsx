@@ -15,7 +15,7 @@ import { designBranchTree, shellViewsOf } from "./state/seams/DesignWorld/shell"
 const Mark = () => <pre aria-hidden="true">{WORDMARK.map((line, i) => <span key={i} style={{ "--row": i } as CSSProperties}>{line}{"\n"}</span>)}</pre>
 export const SessionNavigationFallback = () => <header className="session-navigation" aria-label="Smithers"><h1 className="guide-wordmark" aria-label="Smithers" style={{ margin: 0 }}><Mark /></h1></header>
 
-/** Mode selection is a preference; it never starts microphone capture. */
+/** Mode selection is a local keyboard preference. */
 export const modeShortcut = (event: KeyboardEvent): boolean => !event.repeat && !event.isComposing && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && event.key.toLowerCase() === SHORTCUT_KEYS.mode && !(event.target as Element | null)?.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"])')
 
 /** `owner/repo / main / <branch> ▾`: parent crumbs go up, the last opens the branch tree. */

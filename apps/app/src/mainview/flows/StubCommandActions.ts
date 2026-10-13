@@ -132,8 +132,6 @@ export const stubCommandActions = (overrides: Partial<CommandActions> = {}): Com
   moveCardHistory: unexpected,
   setInputMode: unexpected,
   openChat: unexpected,
-  toggleDictation: unexpected,
-  cancelDictation: unexpected,
   openPalette: unexpected,
   closePalette: unexpected,
   togglePaletteActions: unexpected,

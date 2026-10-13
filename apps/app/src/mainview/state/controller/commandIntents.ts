@@ -62,7 +62,7 @@ export const createCommandIntentLifecycle = (ctx: ControllerContext, onAccepted?
     }
     if (name === "chat.open") {
       // Prepare the local input during the gesture so immediate typing has a
-      // destination. The flow (including microphone capture) still waits for
+      // destination. The flow still waits for
       // its receipt, and a dismissal while saving cancels that pending open.
       if (ctx.store.session().paletteOpen !== true) ctx.store.dispatch({ type: "palette.toggled", actor: "user", open: true })
       return { name, chatInputCurrent: () => ctx.store.session().paletteOpen === true, release: () => {} }
@@ -71,7 +71,7 @@ export const createCommandIntentLifecycle = (ctx: ControllerContext, onAccepted?
       const mode = named === undefined ? args?.trim() : named.mode
       if (typeof mode === "string" && INPUT_MODES.includes(mode as InputMode)) {
         // Local keyboard preferences must precede the next key, just like
-        // opening Chat. No microphone starts here. The binding consumes this
+        // opening Chat. The binding consumes this
         // receipt so a delayed command cannot replay an older selection.
         const inputModeChanged = setInputMode(mode as InputMode)
         void inputModeChanged.catch(() => {})

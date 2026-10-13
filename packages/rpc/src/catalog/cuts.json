@@ -2,6 +2,15 @@
   "version": 1,
   "rows": [
     {
+      "id": "dictation",
+      "disposition": "cut",
+      "flowNames": ["chat.dictate"],
+      "cardKinds": [],
+      "sourcePaths": [
+        "apps/app/src/mainview/state/controller/dictation.ts"
+      ]
+    },
+    {
       "id": "branch-commit-cards",
       "disposition": "cut",
       "flowNames": ["commits.list", "commits.read"],

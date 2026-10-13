@@ -203,7 +203,6 @@ export const CatalogOperationSchema = z.enum([
   "change.resolve",
   "chat",
   "chat.copy-message",
-  "chat.dictate",
   "chat.open",
   "chat.queue",
   "chat.queue.edit",

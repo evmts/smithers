@@ -331,7 +331,7 @@ Smithers wraps the team's GitHub repository; it doesn't replace it. GitHub stays
 | Toasts for events (Will) | Notable events and anything that needs action pop as toasts with their one action: approvals, Needs you, a PR ready, a failure. Each person can hide them. Every toast also stays as an entry in the timeline. Live work in cards scrolled out of view shows on the left edge: above at the top-left, below at the bottom-left. | Partial (the toast stack is built) |
 | Timeline (Will) | Desktop only, between the two toast edges: one line per transcript entry. Each line has a title and a one-line summary of what happened there, written by the install's cheap fast model and refreshed as the entry's run progresses (debounced), e.g. "Agent: edited retry.ts line 14" or "Asks: backoff or timeout?". Live entries pulse, Needs you is gold and failures are ember. A band marks the entries on screen, and clicking an entry scrolls to it. A long conversation zooms out with distance from the band (Will, 2026-10-05): one line per entry near it, then a line per message and what followed, then a line per run of those, then coarser still, so hundreds of entries read as a few dozen lines; clicking a far line jumps there and the zoom follows. On narrow screens and phones there's no timeline; each edge collapses to one pill ("↑ 2 live above"). It replaces the per-run ChatRunTimeline strip; the run card keeps its own scrubber. | Missing: needs a stored one-line summary and live tone per conversation entry |
 | Browser notifications (Fable for Will) | When the tab is hidden, a Needs you, In review or Failed toast for that person also raises a browser notification. There is one permission ask, at the person's first Needs you. Browsers allow notifications only on HTTPS or `localhost`. On a plain-HTTP address the toast still shows, the Allow action is hidden, and Settings shows one line: "Notifications need HTTPS", linking to the docs. Email and phone come later (#3423). | Missing |
-| Input and theme | Normal, Vim and dictation input, keyboard-only throughout, and the light and dark Paper palette. Both themes gate acceptance (§12). | Built |
+| Input and theme | Normal and Vim input, keyboard-only throughout, and the light and dark Paper palette. Both themes gate acceptance (§12). | Built |
 
 ### 6.5 App agent
 
@@ -773,11 +773,12 @@ Coding agents and external agents can't call these (they have no screen). The ap
 | Flow | What | Who | MVP | Card |
 | --- | --- | --- | --- | --- |
 | `appearance.dark-mode` | Light or dark, per person | P, A | Rename → `/theme` | none |
-| `input.mode` | Normal, Vim, dictation | P, A | Keep | none |
+| `input.mode` | Normal, Vim | P, A | Keep | none |
 | `chat.send`, `chat.stop`, `chat.retry` | Send a prompt, stop or retry the answer | P (retry: A) | Keep (`/stop`) | conversation |
 | `chat.queue`, `.edit`, `.remove`, `.restore` | Queued prompts: each waits on the branch's turn queue until its turn starts (the queue never pauses) | P | Keep | composer |
 | `chat.filter`, `.grep`, `.toggle`, `.reset` | Filter the conversation | P, A | Keep | conversation |
-| `chat.copy-message`, `chat.dictate`, `chat.open`, `chat.reload`, `chat` | Copy, dictate, open composer, reload | P (reload: A) | Keep | none |
+| `chat.copy-message`, `chat.open`, `chat.reload`, `chat` | Copy, open composer, reload | P (reload: A) | Keep | none |
+| `chat.dictate` | Dictation | P | Cut | After release: [#3815](https://github.com/smithersai/smithers/issues/3815), Will, 2026-10-13 |
 | `chat.commands` | List commands | P, A | Rename → `/help` | message |
 | `chat.clear` | Archive the conversation | – | Cut: a branch's conversation is shared and permanent | – |
 | `card.maximize`, `card.minimize`, `card.history.back`, `.forward`, `card.dismiss` | Card view controls (per person) | P, A | Keep | any card |

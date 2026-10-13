@@ -85,7 +85,6 @@ import type { NetEntry } from "./controller/context"
 import { createControllerContext, UNRECORDED_NET, type UnrecordedInit } from "./controller/context"
 import type { ControlFocusController } from "./controller/controlFocus"
 import { createControlFocus } from "./controller/controlFocus"
-import { createDictation } from "./controller/dictation"
 import { TOAST_SUPERSEDED, createFailureController,humanCommandText } from "./controller/failures"
 import type { FormFocusHandoff, FormsController } from "./controller/forms"
 import { createFormsController } from "./controller/forms"
@@ -407,8 +406,6 @@ export interface AppController extends IssueFlowsController {
   readonly moveCardHistory: (id: string, delta: -1 | 1) => void
   readonly setInputMode: (mode: InputMode) => Promise<void>
   readonly openChat: () => Promise<string | void>
-  readonly toggleDictation: () => Promise<string | void>
-  readonly cancelDictation: () => void
   readonly openPalette: (prefix?: string) => void
   readonly closePalette: (lastQuery?: string) => void
   readonly togglePaletteActions: (ref: string) => void
@@ -1875,16 +1872,6 @@ export const createAppController = (
     store.dispatch({ type: "command.ran", actor: "user", name })
   }
 
-  const dictation = createDictation(store)
-  ctx.onDispose(dictation.cancel)
-  const cancelDictation = dictation.cancel
-  const toggleDictation = async (): Promise<string | void> => {
-    if (!store.session().dictating) {
-      openPalette()
-    }
-    return dictation.toggle()
-  }
-
   /* The palette's session acts (palette spec §3): open, close, the actions panel, the recents ledger. */
   const openPalette = (prefix?: string): void => {
     if (ctx.disposed || privacyActions.refuse("user") !== undefined) return
@@ -1894,12 +1881,9 @@ export const createAppController = (
   }
   const inputMode = createInputModeController(store, {
     actor: () => ctx.commandActor,
-    cancelDictation,
-    startDictation: dictation.toggle,
     openChat: async () => { openPalette() },
   })
   const closePalette = (lastQuery?: string): void => {
-    cancelDictation()
     if (ctx.disposed || privacyActions.refuse("user") !== undefined) return
     if (store.session().paletteOpen !== true) return
     store.dispatch({ type: "palette.toggled", actor: "user", open: false, ...(lastQuery === undefined ? {} : { lastQuery }) })
@@ -2417,8 +2401,6 @@ export const createAppController = (
     terminalCards: terminalProvider?.source,
     toggleDevtools,
     moveCardHistory: (id, delta) => { store.dispatch({ type: "card.history.moved", actor: ctx.commandActor, id, delta }) },
-    toggleDictation,
-    cancelDictation,
     setInputMode: inputMode.setInputMode,
     openChat: inputMode.openChat,
     searchPalette: searchSeam.palette,

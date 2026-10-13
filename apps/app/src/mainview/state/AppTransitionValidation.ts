@@ -22,7 +22,7 @@ WorkingCopySchema,WorldDocumentSchema,
 type AppTransition,type Card,type Tab
 } from "./AppState"
 import { CommandIntentOutcomeSchema,CommandIntentSourceSchema } from "./CommandIntent"
-import { INPUT_MODES } from "./InputMode"
+import { HISTORICAL_INPUT_MODES } from "./InputMode"
 import { PendingRecoveryScopeSchema } from "./PendingRecovery"
 import { RepositoryContextSchema } from "./RepositoryContext"
 import { RepositoryNotificationSchema } from "./RepositoryNotifications"
@@ -92,7 +92,7 @@ export const APP_TRANSITION_SCHEMAS = {
   "signup.changed": z.object({ type: z.literal("signup.changed"), actor: ActorSchema, patch: SignupSchema.partial() }).strict(),
   "card.navigated": z.object({ "type": z.literal("card.navigated"), "actor": ActorSchema, "card": CardSchema }).strict(),
   "card.history.moved": z.object({ "type": z.literal("card.history.moved"), "actor": ActorSchema, "id": z.string(), "delta": z.union([z.literal(-1), z.literal(1)]) }).strict(),
-  "input.mode.changed": z.object({ "type": z.literal("input.mode.changed"), "actor": ActorSchema, "mode": z.enum(INPUT_MODES) }).strict(),
+  "input.mode.changed": z.object({ "type": z.literal("input.mode.changed"), "actor": ActorSchema, "mode": z.enum(HISTORICAL_INPUT_MODES) }).strict(),
   "dictation.changed": z.object({ "type": z.literal("dictation.changed"), "actor": ActorSchema, "listening": z.boolean() }).strict(),
   "prompt.queued": z.object({ type: z.literal("prompt.queued"), actor: z.literal("user"), prompt: QueuedPromptSchema, preserveDraft: z.boolean().optional() }).strict(),
   "prompt.removed": z.object({ type: z.literal("prompt.removed"), actor: z.literal("user"), id: z.string(), edit: z.boolean().optional() }).strict(),
