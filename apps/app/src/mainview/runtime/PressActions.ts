@@ -42,6 +42,8 @@ export function bindPressActions({ root, resolveShortcut, enabled = () => true }
   const held = createPressActions()
   let activating = false
   const pointers = new Map<number, HTMLElement>()
+  const metaKeys = new Set<string>()
+  const cancel = () => { pointers.clear(); metaKeys.clear(); held.cancel() }
   const buttonAction = (element: HTMLElement): PressAction => ({ element, activate: () => {
     if (!element.isConnected || !available(element)) return
     activating = true
@@ -54,7 +56,7 @@ export function bindPressActions({ root, resolveShortcut, enabled = () => true }
   const keyId = (event: KeyboardEvent) => `key:${event.code || event.key.toLowerCase()}`
   const down = (event: KeyboardEvent) => {
     if (!enabled() || event.defaultPrevented || event.isComposing) return
-    if (event.key === 'Tab') return held.cancel()
+    if (event.key === 'Tab') return cancel()
     const button = buttonAt(event.target)
     const native = button && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && (event.key === 'Enter' || (event.key === ' ' && button.tagName === 'BUTTON'))
     const editingTarget = (event.target as Element | null)?.closest?.(editing) || doc.activeElement?.closest(editing)
@@ -62,15 +64,34 @@ export function bindPressActions({ root, resolveShortcut, enabled = () => true }
     const plainKey = !event.metaKey && !event.ctrlKey && event.key !== 'Escape'
     const action = native ? buttonAction(button) : plainKey && (editingTarget || composerOpen) ? undefined : resolveShortcut(event)
     if (!action) {
-      if (event.key === 'Escape') held.cancel()
+      if (event.key === 'Escape') cancel()
       return
     }
     event.preventDefault()
     event.stopPropagation()
-    if (!event.repeat) held.down(keyId(event), action)
+    if (!event.repeat) {
+      const id = keyId(event)
+      if (event.metaKey) metaKeys.add(id)
+      held.down(id, action)
+    }
   }
   const up = (event: KeyboardEvent) => {
-    if (held.up(keyId(event), enabled() && !event.isComposing)) {
+    const id = keyId(event)
+    metaKeys.delete(id)
+    const valid = enabled() && !event.isComposing
+    let released = held.up(id, valid)
+    // macOS browsers omit the shortcut keyup while Command is held. Its
+    // modifier release completes that chord; a normal keyup removes the key
+    // first, so browsers that deliver it do not activate twice. Other held
+    // inputs still own arbitration, and only the final shortcut may activate.
+    if (event.key === 'Meta' && !event.metaKey) {
+      const pending = [...metaKeys]
+      metaKeys.clear()
+      for (const [index, key] of pending.entries()) {
+        released = held.up(key, valid && index === pending.length - 1) || released
+      }
+    }
+    if (released) {
       event.preventDefault()
       event.stopImmediatePropagation()
     }
@@ -92,21 +113,20 @@ export function bindPressActions({ root, resolveShortcut, enabled = () => true }
     pointers.delete(event.pointerId)
     held.up(actionId, enabled() && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && original !== undefined && original === button)
   }
-  const pointerCancel = () => { pointers.clear(); held.cancel() }
+  const pointerCancel = cancel
   const click = (event: MouseEvent) => {
     if (!activating && enabled() && event.detail > 0 && buttonAt(event.target) && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
       event.preventDefault()
       event.stopImmediatePropagation()
     }
   }
-  const cancel = pointerCancel
   const focus = (event: FocusEvent) => {
     if ((event.target as Element | null)?.closest?.(editing)) cancel()
   }
   const visibility = () => { if (doc.visibilityState === 'hidden') cancel() }
   // Inner menus get first refusal on Escape before a shell close is armed.
   const captureDown = (event: KeyboardEvent) => {
-    if (event.key === 'Escape') held.cancel()
+    if (event.key === 'Escape') cancel()
     else down(event)
   }
   const escapeDown = (event: KeyboardEvent) => { if (event.key === 'Escape') down(event) }

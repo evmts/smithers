@@ -53,6 +53,107 @@ test('only the final release wins, independent of press order; repeat downs cann
   expect(calls).toEqual(['t'])
 })
 
+test.each(['MetaLeft', 'MetaRight'])('%s completes a shortcut when macOS omits the shortcut keyup and leaves later clicks usable (#3810)', code => {
+  const f = setup()
+  f.stop()
+  const stop = bindPressActions({ root: f.root, resolveShortcut: event => event.metaKey && event.key.toLowerCase() === 'k'
+    ? { element: f.buttons[1], activate: () => f.buttons[1]!.click() } : undefined })
+  cleanup.push(stop)
+  f.key('keydown', 'Meta', { code, metaKey: true })
+  f.key('keydown', 'k', { code: 'KeyK', metaKey: true })
+  expect(f.calls).toEqual([])
+  expect(f.buttons[1]!.hasAttribute('data-pressed')).toBe(true)
+  // Native Arc delivers only the modifier release for this Command chord.
+  f.key('keyup', 'Meta', { code, metaKey: false })
+  expect(f.calls).toEqual(['Help'])
+  expect(f.buttons[1]!.hasAttribute('data-pressed')).toBe(false)
+  f.pointer('pointerdown', f.buttons[0]); f.pointer('pointerup', f.buttons[0])
+  expect(f.calls).toEqual(['Help', 'Tutorial'])
+  f.key('keyup', 'k', { code: 'KeyK' })
+  expect(f.calls).toEqual(['Help', 'Tutorial'])
+})
+
+const metaSetup = (enabled?: () => boolean) => {
+  const f = setup()
+  f.stop()
+  const stop = bindPressActions({ root: f.root, enabled, resolveShortcut: event => {
+    const button = event.metaKey && event.key === 'k' ? f.buttons[0]
+      : event.metaKey && event.key === 'h' ? f.buttons[1] : undefined
+    return button ? { element: button, activate: () => button.click() } : undefined
+  } })
+  cleanup.push(stop)
+  return { ...f, stop }
+}
+
+test('a delivered Command keyup activates once and a later modifier release does not repeat it', () => {
+  const f = metaSetup()
+  f.key('keydown', 'k', { code: 'KeyK', metaKey: true })
+  f.key('keyup', 'k', { code: 'KeyK', metaKey: true })
+  f.key('keyup', 'Meta', { code: 'MetaLeft' })
+  expect(f.calls).toEqual(['Tutorial'])
+})
+
+test('only the final pending Command shortcut activates when its modifier releases', () => {
+  const f = metaSetup()
+  f.key('keydown', 'k', { code: 'KeyK', metaKey: true })
+  f.key('keydown', 'h', { code: 'KeyH', metaKey: true })
+  f.key('keydown', 'h', { code: 'KeyH', metaKey: true, repeat: true })
+  expect(f.calls).toEqual([])
+  f.key('keyup', 'Meta', { code: 'MetaRight' })
+  expect(f.calls).toEqual(['Help'])
+  expect(f.buttons.every(button => !button.hasAttribute('data-pressed'))).toBe(true)
+})
+
+test.each(['pointer', 'command'])('a missing Command keyup still leaves the final %s release in control', last => {
+  const f = metaSetup()
+  f.key('keydown', 'h', { code: 'KeyH', metaKey: true })
+  f.pointer('pointerdown', f.buttons[0])
+  if (last === 'pointer') f.key('keyup', 'Meta', { code: 'MetaLeft' })
+  else f.pointer('pointerup', f.buttons[0])
+  expect(f.calls).toEqual([])
+  if (last === 'pointer') f.pointer('pointerup', f.buttons[0])
+  else f.key('keyup', 'Meta', { code: 'MetaLeft' })
+  expect(f.calls).toEqual([last === 'pointer' ? 'Tutorial' : 'Help'])
+})
+
+test('releasing one Command key while another remains held does not complete the shortcut', () => {
+  const f = metaSetup()
+  f.key('keydown', 'k', { code: 'KeyK', metaKey: true })
+  f.key('keyup', 'Meta', { code: 'MetaLeft', metaKey: true })
+  expect(f.calls).toEqual([])
+  f.key('keyup', 'Meta', { code: 'MetaRight' })
+  expect(f.calls).toEqual(['Tutorial'])
+})
+
+for (const reason of ['Tab', 'Escape', 'blur', 'compositionstart', 'focus', 'pointercancel', 'pagehide', 'unmount']) test(`${reason} cancels pending Command fallback activation`, () => {
+  const f = metaSetup()
+  f.key('keydown', 'k', { code: 'KeyK', metaKey: true })
+  if (reason === 'Tab' || reason === 'Escape') f.key('keydown', reason)
+  else if (reason === 'blur' || reason === 'pagehide') f.win.dispatchEvent(new Event(reason))
+  else if (reason === 'compositionstart') document.dispatchEvent(new Event(reason))
+  else if (reason === 'focus') f.root.querySelector('input')!.focus()
+  else if (reason === 'pointercancel') f.pointer('pointercancel', f.buttons[0])
+  else f.stop()
+  f.key('keyup', 'Meta', { code: 'MetaLeft' })
+  f.key('keyup', 'k', { code: 'KeyK' })
+  expect(f.calls).toEqual([])
+  expect(f.buttons.every(button => !button.hasAttribute('data-pressed'))).toBe(true)
+})
+
+test.each(['disabled', 'composing'])('%s Command release clears the hold without activating and permits recovery', reason => {
+  let enabled = true
+  const f = metaSetup(() => enabled)
+  f.key('keydown', 'k', { code: 'KeyK', metaKey: true })
+  if (reason === 'disabled') enabled = false
+  f.key('keyup', 'Meta', { code: 'MetaLeft', isComposing: reason === 'composing' })
+  expect(f.calls).toEqual([])
+  expect(f.buttons[0]!.hasAttribute('data-pressed')).toBe(false)
+  enabled = true
+  f.key('keydown', 'k', { code: 'KeyK', metaKey: true })
+  f.key('keyup', 'Meta', { code: 'MetaLeft' })
+  expect(f.calls).toEqual(['Tutorial'])
+})
+
 test('held keys highlight their own controls and intermediate release cannot activate', () => {
   const { key, buttons, calls } = setup()
   key('keydown', 't'); key('keydown', 'h'); key('keydown', 'h', { repeat: true })
