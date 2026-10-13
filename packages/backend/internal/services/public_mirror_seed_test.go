@@ -1,7 +1,10 @@
 package services
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -293,6 +296,60 @@ func TestPublicMirrorSeederWithoutMirrorsNeverStarts(t *testing.T) {
 	var seeder *PublicMirrorSeeder
 	seeder.Start(context.Background())
 	NewPublicMirrorSeeder(nil, nil, nil, nil, nil).Start(context.Background())
+}
+
+// Production on 2026-10-13 held the mirror's repository private. Every
+// replica rechecks every five minutes; the refusal is logged once, not each
+// time, and its end is logged once.
+func TestPublicMirrorSeederLogsAFailureOnceAndItsEndOnce(t *testing.T) {
+	pool := newProductTestPool(t)
+	f := newPublicMirrorFixture(t, pool, "smithersai/smithers")
+	var org int64
+	require.NoError(t, pool.QueryRow(context.Background(), `INSERT INTO organizations(name, lower_name, visibility) VALUES ('smithersai', 'smithersai', 'public') RETURNING id`).Scan(&org))
+	_, err := pool.Exec(context.Background(), `INSERT INTO repositories(org_id, name, lower_name, is_public, mirror_destination) VALUES ($1, 'smithers', 'smithers', FALSE, 'https://github.com/smithersai/smithers')`, org)
+	require.NoError(t, err)
+	logs := &lockedBuffer{}
+	f.seeder.logger = slog.New(slog.NewJSONHandler(logs, nil))
+	f.seeder.interval = 5 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		f.seeder.Start(ctx)
+	}()
+	count := func(event string) int { return strings.Count(logs.String(), `"msg":"`+event+`"`) }
+
+	require.Eventually(t, func() bool { return count("public_mirror.seed_failed") == 1 }, 10*time.Second, 5*time.Millisecond)
+	time.Sleep(20 * f.seeder.interval)
+	assert.Equal(t, 1, count("public_mirror.seed_failed"), "a standing refusal is not repeated")
+	assert.Contains(t, logs.String(), "smithersai/smithers: the repository is private; an owner makes it public")
+
+	_, err = pool.Exec(context.Background(), `UPDATE repositories SET is_public = TRUE WHERE org_id = $1`, org)
+	require.NoError(t, err)
+	require.Eventually(t, func() bool { return count("public_mirror.seed_recovered") == 1 }, 10*time.Second, 5*time.Millisecond)
+	time.Sleep(20 * f.seeder.interval)
+	cancel()
+	<-done
+	assert.Equal(t, 1, count("public_mirror.seed_recovered"))
+	assert.Equal(t, 1, count("public_mirror.seed_failed"))
+}
+
+// lockedBuffer is a log sink the seeder and the test touch concurrently.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 func TestPublicMirrorSeederStartSeedsUntilItsContextEnds(t *testing.T) {

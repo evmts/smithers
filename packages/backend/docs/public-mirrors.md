@@ -48,7 +48,9 @@ create one mirror. It creates what is missing and changes nothing that exists.
 The service account cannot sign in and none of its tokens authenticate. An
 administrator makes a person an owner of a seeded organization.
 
-The seeder refuses a mirror, and logs `public_mirror.seed_failed`, when:
+The seeder refuses a mirror when one of the following holds. It logs
+`public_mirror.seed_failed` once when a refusal appears or changes, and
+`public_mirror.seed_recovered` once when every mirror is in place again.
 
 - `owner` is a user account. Users and organizations share one namespace.
 - The organization is private. The signed-out catalog lists repositories of

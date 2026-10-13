@@ -85,10 +85,11 @@ type PublicMirrorSeeder struct {
 	pulls    publicMirrorPulls
 	mirrors  []PublicMirror
 	interval time.Duration
+	logger   *slog.Logger
 }
 
 func NewPublicMirrorSeeder(pool *pgxpool.Pool, orgs *OrgService, repos *RepoService, pulls publicMirrorPulls, mirrors []PublicMirror) *PublicMirrorSeeder {
-	return &PublicMirrorSeeder{pool: pool, queries: db.New(pool), orgs: orgs, repos: repos, pulls: pulls, mirrors: mirrors, interval: publicMirrorSeedInterval}
+	return &PublicMirrorSeeder{pool: pool, queries: db.New(pool), orgs: orgs, repos: repos, pulls: pulls, mirrors: mirrors, interval: publicMirrorSeedInterval, logger: slog.Default()}
 }
 
 // Start seeds now and again every interval until ctx ends.
@@ -98,9 +99,22 @@ func (s *PublicMirrorSeeder) Start(ctx context.Context) {
 	}
 	ticker := time.NewTicker(s.interval)
 	defer ticker.Stop()
+	// A mirror that cannot be seeded stays that way until someone acts, so a
+	// failure is logged when it first appears or changes, and once when it ends.
+	reported := ""
 	for {
-		if err := s.Seed(ctx); err != nil && ctx.Err() == nil {
-			slog.ErrorContext(ctx, "public_mirror.seed_failed", "error", err)
+		err := s.Seed(ctx)
+		failure := ""
+		if err != nil {
+			failure = err.Error()
+		}
+		if ctx.Err() == nil && failure != reported {
+			if err != nil {
+				s.logger.ErrorContext(ctx, "public_mirror.seed_failed", "error", err)
+			} else {
+				s.logger.InfoContext(ctx, "public_mirror.seed_recovered")
+			}
+			reported = failure
 		}
 		select {
 		case <-ctx.Done():
@@ -164,7 +178,7 @@ func (s *PublicMirrorSeeder) seed(ctx context.Context, mirror PublicMirror) erro
 		if _, err := s.pulls.Request(ctx, repository.ID); err != nil {
 			return fmt.Errorf("request the GitHub pull: %w", err)
 		}
-		slog.InfoContext(ctx, "public_mirror.seeded", "repository", mirror.String(), "repository_id", repository.ID, "created", created)
+		s.logger.InfoContext(ctx, "public_mirror.seeded", "repository", mirror.String(), "repository_id", repository.ID, "created", created)
 	}
 	return nil
 }
@@ -201,7 +215,7 @@ func (s *PublicMirrorSeeder) organization(ctx context.Context, actor *db.User, n
 		if err != nil {
 			return db.Organization{}, fmt.Errorf("create the organization: %w", err)
 		}
-		slog.InfoContext(ctx, "public_mirror.organization_created", "organization", org.Name, "organization_id", org.ID)
+		s.logger.InfoContext(ctx, "public_mirror.organization_created", "organization", org.Name, "organization_id", org.ID)
 	} else if err != nil {
 		return db.Organization{}, fmt.Errorf("load the organization: %w", err)
 	}
