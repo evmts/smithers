@@ -153,16 +153,23 @@ content. Compare the `request` line with the `usage` on the `response` line:
 
 **A call waits a long time before its first token.** Set
 `SMITHERS_WIRE_TRACE` to a file path and rerun. The `response` line of each
-call is written when the call ends, however it ends:
+call is written when the call ends, however it ends. It is one line; it is
+wrapped here:
 
 ```json
 {
+  "at": "2026-10-13T18:04:11.066Z",
   "kind": "response",
   "call": 12,
+  "routeId": "openai-chatgpt",
+  "protocolId": "openai-responses-chatgpt",
   "outcome": "settled",
+  "stopReason": "tool-calls",
   "status": 200,
+  "responseId": "resp_...",
   "servedTier": "default",
   "timing": {
+    "startedAt": 1791914642000,
     "attempts": 1,
     "requestBytes": 48211,
     "preparedMs": 4,
@@ -176,23 +183,25 @@ call is written when the call ends, however it ends:
     "completedMs": 9066,
     "closedMs": 9066
   },
-  "usage": { "inputTokens": 21040, "outputTokens": 388, "cachedInputTokens": 19968 },
+  "usage": { "inputTokens": 21040, "outputTokens": 388, "cachedInputTokens": 19968, "reasoningTokens": 320 },
   "headers": { "x-request-id": "req_..." }
 }
 ```
 
-Every offset is milliseconds from the start of the call. Read the gaps:
+Every offset is milliseconds from `startedAt`. Read the gaps:
 
-- `signedMs` is large: resolving the credential took the time. A token store
-  that refreshes or reads a file on every call shows here.
+- `preparedMs` is large: validating and encoding the request took the time.
+  Compare with `requestBytes`.
+- `signedMs` is far past `preparedMs`: resolving the credential took the
+  time. A token store that refreshes or reads a file on every call shows here.
 - `sentMs` is far past `signedMs`, or `attempts` is above 1: the call was
   retried. `timing.failedTries` says when each try was sent, when it failed,
   and why.
 - `headersMs` is far past `sentMs`: the upload and the provider's wait before
-  it starts answering. Compare with `requestBytes`.
+  it starts answering.
 - `firstOutputMs` is far past `firstEventMs`: the model was thinking.
-  `firstThinkingMs` says when it started, and `usage.reasoningTokens` how
-  much.
+  `firstThinkingMs` is the first thinking event the provider sent, and
+  `usage.reasoningTokens` is how much it thought.
 - `closedMs` is far past `lastOutputMs`: the provider held the stream open
   after it finished writing.
 
