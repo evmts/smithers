@@ -4,6 +4,12 @@
 
 ### Changed
 
+- The key of a sealed model step moves. `ModelEvent.Settle` and
+  `ModelEvent.Retry` gained optional fields (see Added), and a sealed step's
+  key includes the fingerprint of the event schema its record is written in.
+  Records written before the change still decode. A run journaled before it
+  and resumed after it asks the provider again for the model calls in its
+  prefix, so finish in-flight runs on their original revision (#3840).
 - `Evaluator.Request` and `Classifier.make` take an optional `seatNote`: how a
   generation seat asked to judge should read the questions' words where it
   reads them otherwise than Jev does. `Evaluator.layerFromSeat` appends it to

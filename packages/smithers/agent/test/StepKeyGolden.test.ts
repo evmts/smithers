@@ -240,7 +240,17 @@ describe("the sealed model step key", () => {
     // preceding declaration identity; an unchanged Effect lock alone does not
     // make different harness declarations replay-compatible (#3317).
     expect(observed.host).not.toBe("key1_91d1fb4dc2465b267ef74cda2fad8d7d42e3986e293fcd0f642ec2e33b0a80fa")
-    expect(observed.host).toBe("key1_3f683043bfe48814c4f4fe4ea219b2f5475539f72142abaef067987e9bf8241e")
+    // Moved a twelfth time on 2026-10-13, when a model call learned to say
+    // where its time went (1ae37f2b82, #3840): `ModelEvent.Settle` gained
+    // `timing` (`ModelEvent.Timing`, with its `failedTries`) and `servedTier`,
+    // and `ModelEvent.Retry` gained `elapsedMs` and `httpStatus`. Every field
+    // is optional and an old record still decodes, but the activity's
+    // `RecordedModelStep` success schema embeds the event union and its
+    // fingerprint is in this key. A run journaled before the change and
+    // resumed after it asks the provider again for the model calls in its
+    // prefix, so in-flight runs finish on their original revision.
+    expect(observed.host).not.toBe("key1_3f683043bfe48814c4f4fe4ea219b2f5475539f72142abaef067987e9bf8241e")
+    expect(observed.host).toBe("key1_1f993b7602a78244c50e2d62884a7adaf57aa1d9bb84d96c71f3a4938a2f85a3")
     // Sealed means content-addressed: the same declaration through a second
     // port of the same composition is one recorded answer, not two calls.
     expect(observed.again).toBe(observed.host)
