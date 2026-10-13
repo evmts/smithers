@@ -535,6 +535,6 @@ export const manualInstructions = (targets: ReadonlyArray<string> = agents.map((
         ""
       ] :
       []),
-    "Docs: https://smithers.sh/docs/guides/mcp-setup/"
+    "Docs: https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/wire-the-mcp-server.md"
   ].join("\n")
 }

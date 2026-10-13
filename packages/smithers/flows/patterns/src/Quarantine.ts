@@ -7,7 +7,6 @@
  * member instead: its siblings run to completion and the join returns a record
  * of explicit {@link Succeeded} and {@link Quarantined} outcomes.
  *
- * @see https://smithers.sh/docs/concepts/ownership
  * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
  *
  * @since 0.1.0

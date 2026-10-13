@@ -6,7 +6,7 @@
  * recorded result, while large result bytes live here under their digest. The
  * two tiers remain separate because artifacts must be published before a cache
  * record may reference them. See the package README and
- * {@link https://smithers.sh/docs/concepts/content-addressing | step-key documentation}.
+ * {@link https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/docs/concepts/step-keys.md | step-key documentation}.
  *
  * This module defines the contract: the address schema, the service interface
  * and tag, and one layer per local implementation. The errors, byte helpers,

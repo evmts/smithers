@@ -445,7 +445,7 @@
       "anchor": "make-workflow",
       "name": "make-workflow",
       "group": "Packs and scaffolding",
-      "reason": "JSX pack tooling is gone; `smithers-migrate` replaces `upgrade`",
+      "reason": "JSX pack tooling is gone; `smthrs migrate` replaces `upgrade`",
       "subcommands": [],
       "spellings": [
         "smthrs make-workflow"
@@ -456,7 +456,7 @@
       "anchor": "starters",
       "name": "starters",
       "group": "Packs and scaffolding",
-      "reason": "JSX pack tooling is gone; `smithers-migrate` replaces `upgrade`",
+      "reason": "JSX pack tooling is gone; `smthrs migrate` replaces `upgrade`",
       "subcommands": [],
       "spellings": [
         "smthrs starters"
@@ -467,7 +467,7 @@
       "anchor": "share",
       "name": "share",
       "group": "Packs and scaffolding",
-      "reason": "JSX pack tooling is gone; `smithers-migrate` replaces `upgrade`",
+      "reason": "JSX pack tooling is gone; `smthrs migrate` replaces `upgrade`",
       "subcommands": [],
       "spellings": [
         "smthrs share"
@@ -478,7 +478,7 @@
       "anchor": "add",
       "name": "add",
       "group": "Packs and scaffolding",
-      "reason": "JSX pack tooling is gone; `smithers-migrate` replaces `upgrade`",
+      "reason": "JSX pack tooling is gone; `smthrs migrate` replaces `upgrade`",
       "subcommands": [],
       "spellings": [
         "smthrs add"
@@ -489,7 +489,7 @@
       "anchor": "remove",
       "name": "remove",
       "group": "Packs and scaffolding",
-      "reason": "JSX pack tooling is gone; `smithers-migrate` replaces `upgrade`",
+      "reason": "JSX pack tooling is gone; `smthrs migrate` replaces `upgrade`",
       "subcommands": [],
       "spellings": [
         "smthrs remove"
@@ -500,7 +500,7 @@
       "anchor": "eject",
       "name": "eject",
       "group": "Packs and scaffolding",
-      "reason": "JSX pack tooling is gone; `smithers-migrate` replaces `upgrade`",
+      "reason": "JSX pack tooling is gone; `smthrs migrate` replaces `upgrade`",
       "subcommands": [],
       "spellings": [
         "smthrs eject"
@@ -511,7 +511,7 @@
       "anchor": "upgrade",
       "name": "upgrade",
       "group": "Packs and scaffolding",
-      "reason": "JSX pack tooling is gone; `smithers-migrate` replaces `upgrade`",
+      "reason": "JSX pack tooling is gone; `smthrs migrate` replaces `upgrade`",
       "subcommands": [],
       "spellings": [
         "smthrs upgrade"
@@ -522,7 +522,7 @@
       "anchor": "packs",
       "name": "packs",
       "group": "Packs and scaffolding",
-      "reason": "JSX pack tooling is gone; `smithers-migrate` replaces `upgrade`",
+      "reason": "JSX pack tooling is gone; `smthrs migrate` replaces `upgrade`",
       "subcommands": [
         "list",
         "update"
@@ -537,7 +537,7 @@
       "anchor": "workflow",
       "name": "workflow",
       "group": "Packs and scaffolding",
-      "reason": "JSX pack tooling is gone; `smithers-migrate` replaces `upgrade`",
+      "reason": "JSX pack tooling is gone; `smthrs migrate` replaces `upgrade`",
       "subcommands": [
         "run",
         "path",

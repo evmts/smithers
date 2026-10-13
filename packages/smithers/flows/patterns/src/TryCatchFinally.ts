@@ -7,7 +7,7 @@
  * handler claimed. The declaration shows the finalizer on both arms, so a
  * reader sees that nothing leaves the boundary without it.
  *
- * @see https://smithers.sh/docs/concepts/retries
+ * @see https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/concepts/retries.md
  * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
  *
  * @since 0.1.0

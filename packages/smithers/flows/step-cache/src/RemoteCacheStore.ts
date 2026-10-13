@@ -21,7 +21,7 @@
  * The endpoint and its credentials arrive as layer construction options. They
  * are a capability, never an input: they are not hashed into a step key and
  * never journaled; see the
- * {@link https://smithers.sh/docs/concepts/content-addressing | step-key contract}.
+ * {@link https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/docs/concepts/step-keys.md | step-key contract}.
  *
  * ## Server contract
  *

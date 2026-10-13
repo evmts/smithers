@@ -87,7 +87,8 @@ test("Bun installation claims match its declared engine floor", () => {
 test("the aggregate does not promise edge runtime execution", () => {
   const page = read("packages/smithers/flows/README.md")
   assert.doesNotMatch(page, /browser and edge runtimes may author/)
-  assert.ok(page.includes("/docs/reference/support-matrix/"))
+  // The site page retired (M-35); the README links the matrix source (#3845).
+  assert.ok(page.includes("/apps/site/docs/reference/support-matrix.md"))
 })
 
 test("the reference is a current projection of its colocated sources", () => {

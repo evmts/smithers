@@ -7,7 +7,7 @@
  * lives here, above `@smthrs/keys`, so the key package stays a leaf.
  *
  * Governing contract: the step-key rules at
- * https://smithers.sh/docs/concepts/content-addressing. Material is computed with no I/O,
+ * https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/docs/concepts/step-keys.md. Material is computed with no I/O,
  * and two hardening rules shape it: the nominal, never shape-sniffed
  * `InputRef` and the hashed `version`.
  *

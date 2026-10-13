@@ -156,9 +156,10 @@ const referenceIngest = Smithers.Generate({
 // The CLI facts the docs quote instead of retyping: verbatim `--help` for
 // every verb and subcommand, the version pins, the removed-command anchor
 // contract (every `smithers.sh/migration/1.0#<anchor>` the binary links), and
-// The script splices the anchor entries into the migration page, so
-// `smithers-build lint //apps/site:cliData` fails the moment a removed verb or
-// help string moves without the docs.
+// the migration guide those links land on. The script writes the guide from
+// the CLI package's docs/migration.md with one table row per removed command,
+// so `smithers-build lint //apps/site:cliData` fails the moment a removed
+// verb, a help string, or the guide moves without the site.
 const cliData = Smithers.Generate({
   summary:
     "Regenerate CLI help captures, version pins, and the removed-command anchor contract; check drift under lint.",
@@ -175,7 +176,8 @@ const cliData = Smithers.Generate({
     "src/data/versions.json",
     "src/data/cli-commands.json",
     "src/data/removed-commands.json",
-    "src/data/help/**"
+    "src/data/help/**",
+    "src/pages/migration/1.0.md"
   ]
 })
 // --- end CLI data ----------------------------------------------------------

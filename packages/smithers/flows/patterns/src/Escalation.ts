@@ -7,7 +7,7 @@
  * every rung escalated, which is where a human approval flow belongs.
  *
  * @see https://smithers.sh/docs/reference/api/patterns
- * @see https://smithers.sh/docs/concepts/retries
+ * @see https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/concepts/retries.md
  * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
  *
  * @since 0.1.0

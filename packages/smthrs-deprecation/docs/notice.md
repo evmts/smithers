@@ -1,10 +1,9 @@
 ---
 title: "Why importing smthrs throws"
-description: "The planned smthrs@1.0.0-rc.1 notice, its import behavior, and the difference between checkout and npm availability."
+description: "The notice smthrs@1.0 throws, its import behavior, and which npm tag installs it."
 ---
 
-The `smthrs@1.0.0-rc.1` source checkout defines one error, raised while the module
-evaluates once this candidate is published:
+`smthrs@1.0` defines one error, raised while the module evaluates:
 
 ```text
 smthrs 1.0 is a migration notice, not a runtime.
@@ -73,10 +72,7 @@ error is documented rather than avoided; see
 
 ## Publication status
 
-At the 2026-09-29 registry check, `npm view smthrs dist-tags version --json`
-reported only `latest: 0.35.0`; `npm view @smthrs/flow dist-tags version --json`
-returned 404. Neither `smthrs@next` nor `smthrs@1.0.0-rc.1` is an installable
-notice yet. Use the source checkout and its workspace dependencies to inspect
-or test this candidate; do not treat a source build as an npm publication.
-The manifest requests the `next` tag for a future release, while `latest`
-continues to install 0.x until an actual release changes that tag.
+Release candidates publish under the `next` dist-tag, so `npm install smthrs@next`
+and `npx smthrs@next <verb>` reach this package. `latest` stays on
+`smthrs@0.35.0` until Smithers 1.0.0 is final, so a plain `npm install smthrs`
+still installs 0.x.

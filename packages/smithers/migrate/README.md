@@ -105,7 +105,7 @@ A derived command is an executable and its arguments, spawned with no shell: a t
 
 https://migrate.smithers.sh covers the installation shapes, the quickstart, migration units, checkpoints, the mapping table, the report, the guides, every failure code, and the full API reference.
 
-The operator walkthrough for the whole 0.x upgrade, including every removed CLI verb and flag, is [Upgrade from 0.x to 1.0](https://smithers.sh/docs/migration/1.0/).
+The operator walkthrough for the whole 0.x upgrade, including every removed CLI verb and flag, is [Upgrade from 0.x to 1.0](https://smithers.sh/migration/1.0).
 
 ### Zod default fields
 

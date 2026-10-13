@@ -23,3 +23,26 @@ describe("the notice this package throws", () => {
     expect(fences(read("../docs/notice.md"))[0]).toBe(notice)
   })
 })
+
+describe("what the published docs say about installing 1.0", () => {
+  // The README npm publishes said "Not on npm yet" through rc.5, while
+  // `smthrs@next` and `@smthrs/cli@next` were installable (#3845). The
+  // manifest's publish tag is the fact; every published page follows it.
+  const pages = ["../README.md", "../docs/README.md", "../docs/notice.md", "../docs/troubleshooting.md"]
+  const tag = (JSON.parse(read("../package.json")) as { publishConfig: { tag: string } }).publishConfig.tag
+
+  it("never tells a reader the packages are missing from npm", () => {
+    for (const page of pages) {
+      expect(read(page), page).not.toMatch(/not on npm|not (?:yet )?published|installable notice yet/i)
+    }
+  })
+
+  it("installs the CLI and the migration from the tag the package publishes under", () => {
+    expect(tag).toBe("next")
+    for (const page of ["../README.md", "../docs/README.md"]) {
+      const text = read(page)
+      expect(text, page).toContain(`npx smthrs@${tag} migrate`)
+      expect(text, page).toContain(`npm install @smthrs/flows@${tag} @smthrs/cli@${tag}`)
+    }
+  })
+})

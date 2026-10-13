@@ -1,7 +1,7 @@
 /**
  * Deterministic bundle of the production step cache service.
  *
- * See the {@link https://smithers.sh/docs/concepts/content-addressing | step-key contract}.
+ * See the {@link https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/docs/concepts/step-keys.md | step-key contract}.
  *
  * @since 0.1.0
  */

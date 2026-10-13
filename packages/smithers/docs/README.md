@@ -84,7 +84,7 @@ The commands group by the job they do:
 Smithers 0.x spellings that were removed refuse with one sentence and a
 migration link rather than a parser error, so a script written against 0.x is
 told what replaced each one. The per-command reference, generated from
-`--help`, is at [smithers.sh/docs/reference/cli](https://smithers.sh/docs/reference/cli/).
+`--help`, is at [the CLI reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/reference/cli/README.md).
 See [the command surface](./concepts/command-surface.md) for how the shipped
 list and the removed list are both kept closed.
 

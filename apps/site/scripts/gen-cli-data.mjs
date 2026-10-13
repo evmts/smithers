@@ -1,18 +1,22 @@
 /**
- * Capture the checked-out CLI's schemas, help and version pins for docs lint.
- * M-35 retires public CLI and migration pages; source facts remain available.
+ * Capture the checked-out CLI's schemas, help and version pins for docs lint,
+ * and write the migration guide the CLI links (migration-guide.mjs).
+ * M-35 retires the public CLI pages and the migration page under /docs; source
+ * facts remain available. The guide at /migration/1.0 stays, because every
+ * published 1.0 package sends a 0.x project there (issue 3845).
  * Run with --check to report drift without writing.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { guidePage, guideSource, renderMigrationPage } from "./migration-guide.mjs"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, "../../..")
 const site = resolve(here, "..")
 const dataDir = join(site, "src/data")
 const helpDir = join(dataDir, "help")
-const migrationPage = join(site, "src/content/docs/docs/migration/1.0.mdx")
+const retiredMigrationPage = join(site, "src/content/docs/docs/migration/1.0.mdx")
 const check = process.argv.includes("--check")
 
 // Capture defaults from one known directory, then replace that machine-specific
@@ -113,6 +117,7 @@ const outputs = new Map()
 outputs.set(join(dataDir, "versions.json"), JSON.stringify(versions, null, 2) + "\n")
 outputs.set(join(dataDir, "cli-commands.json"), JSON.stringify(manifest, null, 2) + "\n")
 outputs.set(join(dataDir, "removed-commands.json"), JSON.stringify(removed, null, 2) + "\n")
+outputs.set(join(site, guidePage), renderMigrationPage(readFileSync(join(root, guideSource), "utf8"), removed))
 outputs.set(join(helpDir, "smthrs.txt"), topHelp)
 const commandPaths = new Set([
   "completions", "mcp", "mcp add", "mcp doctor", "skills", "skills add", "skills list"
@@ -139,7 +144,7 @@ const retiredTree = join(site, "src/content/docs/docs/reference/cli")
 const stalePages = [
   ...helpFiles(helpDir).filter((path) => path.endsWith(".txt") && !outputs.has(path)),
   ...(existsSync(retiredTree) ? helpFiles(retiredTree).filter((path) => /\.mdx?$/.test(path)) : []),
-  ...(existsSync(migrationPage) ? [migrationPage] : [])
+  ...(existsSync(retiredMigrationPage) ? [retiredMigrationPage] : [])
 ]
 
 let drift = 0

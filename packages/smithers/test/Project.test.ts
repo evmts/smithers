@@ -9,7 +9,7 @@
  */
 import { Effect } from "effect"
 import { spawnSync } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -237,5 +237,27 @@ describe("Smithers 0.x detection", () => {
     expect(notice).toContain("does not load, resume, or migrate 0.x run databases")
     expect(notice).toContain("bunx smthrs@0.35.0 ps")
     expect(notice).toContain("https://smithers.sh/migration/1.0#run-data")
+  })
+
+  it("names the version that is running, read from the package", () => {
+    // The notice said 1.0.0-rc.0 from every release through rc.5 (#3845): a
+    // literal no cut rewrote. The manifest is what `smthrs --version` prints.
+    const { version } = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
+      readonly version: string
+    }
+    const notice = Project.legacyNotice("/work/smithers.db")
+
+    expect(notice).toContain(`Smithers ${version} does not load, resume, or migrate 0.x run databases.`)
+    expect(notice.match(/\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?/g)).toEqual([version, "0.35.0"])
+  })
+
+  it("sends the reader to the command that ships on their PATH", () => {
+    // `smithers-migrate` is @smthrs/migrate's own bin. A project that ran
+    // `npx smthrs` has `smthrs`, and the docs and the notice thrown by the
+    // `smthrs` package both say `smthrs migrate`.
+    const notice = Project.legacyNotice("/work/smithers.db")
+
+    expect(notice).toContain("then run \"smthrs migrate\" to convert the project source.")
+    expect(notice).not.toContain("smithers-migrate")
   })
 })

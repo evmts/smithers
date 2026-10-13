@@ -99,8 +99,9 @@ function rewriteLinks(text, pkg) {
     /\]\(https:\/\/smithers\.sh(\/docs\/reference\/cli\/(?:[a-z0-9-]+\/)?)(#[^)]+)?\)/gi,
     (_m, path, frag) => `](${path}${frag ?? ""})`
   )
-  // smithers.sh/migration/1.0 -> site-relative
-  out = out.replace(/\]\(https:\/\/smithers\.sh\/migration\/1\.0(#[^)]+)?\)/gi, (_m, frag) => `](/docs/migration/1.0/${frag ?? ""})`)
+  // smithers.sh/migration/1.0 -> site-relative. The guide is the page at
+  // /migration/1.0/ (migration-guide.mjs), outside the /docs tree.
+  out = out.replace(/\]\(https:\/\/smithers\.sh\/migration\/1\.0(#[^)]+)?\)/gi, (_m, frag) => `](/migration/1.0/${frag ?? ""})`)
   // Relative links remain precise file links in the package's source docs.
   const repoRel = relative(repoRoot, pkg.apiPath).split("\\").join("/")
   const docsDirUrl = `https://github.com/smithersai/smithers/blob/main/${dirname(repoRel)}`

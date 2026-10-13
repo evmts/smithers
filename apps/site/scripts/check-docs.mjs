@@ -13,7 +13,9 @@
  *   5. every link anchor resolves to a heading on the target page
  *   6. imports in ts fences resolve to published packages
  *   7. no "coming soon", "capture needed", or "TODO" in prose
- *   8. every anchor the 1.0 CLI links to exists on the migration page
+ *   8. every anchor the 1.0 CLI links to exists on a migration page under
+ *      /docs, if one exists (the guide at /migration/1.0 is generated with the
+ *      same contract by migration-guide.mjs and checked in the built site)
  *   9. the API roster's workspace-private labels match the package manifests
  *  10. a page that imports a workspace-private package says so beside its name
  *  11. no repository request or nomination instruction (the home page
@@ -94,7 +96,7 @@ function redirectTarget(path) {
   }
   return path
 }
-const staticRoutes = new Set(["/", "/download/", "/demo/", "/pricing/", "/terms/", "/privacy/", "/refunds/", "/migration/1.0", "/llms.txt", "/llms-full.txt"])
+const staticRoutes = new Set(["/", "/download/", "/demo/", "/pricing/", "/terms/", "/privacy/", "/refunds/", "/migration/1.0", "/migration/1.0/", "/llms.txt", "/llms-full.txt"])
 
 // --- repo package roster (any @smthrs/* package that exists in the tree) ---
 const roster = new Set()

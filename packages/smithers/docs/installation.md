@@ -153,7 +153,7 @@ The loader and declarations must resolve the same physical Effect and Smithers
 packages. A separately installed global CLI can report
 `declaration_dependency_mismatch` even when versions match. Before publication,
 use the checkout's workspace dependency graph. The
-[first-target tutorial](https://smithers.sh/docs/tutorials/first-target/) walks
+[first-target tutorial](https://github.com/smithersai/smithers/blob/main/packages/smithers/build/docs/getting-started/first-build.md) walks
 through local planning, execution, and cache reuse.
 
 ## Using the library

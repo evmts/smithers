@@ -5,7 +5,7 @@
  * changed the world". Each step registers the call that undoes it, and a
  * failure walks those calls backwards, most recent first.
  *
- * @see https://smithers.sh/docs/concepts/retries
+ * @see https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/concepts/retries.md
  * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
  *
  * @since 0.1.0

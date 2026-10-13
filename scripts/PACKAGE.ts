@@ -1150,6 +1150,21 @@ const packageDocInputs = libraryPackages().flatMap(({ dir }) => {
     ...(existsSync(docs) ? walk(docs).map((path) => Smithers.file(`//${path.slice(repoRoot.length + 1)}`)) : [])
   ]
 })
+/**
+ * The collector and resolver behind `//scripts/repo-contract:smithersLinks`:
+ * which smithers.sh URLs a published package ships, and whether the page a URL
+ * lands on is about the URL's own path. Fixtures only, so it needs no site
+ * build; the contract gate runs the same rules over the real build.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const publishedLinksUnit = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//scripts/published-links.test.mjs")]),
+  srcs: [...sources, Smithers.file("//pnpm-workspace.yaml")],
+  deps: []
+})
+
 const packageDocs = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//scripts/package-docs.test.mjs"), Smithers.file("//scripts/package-docs-redirect.test.mjs")]),
   timeout: "30m",
@@ -1172,6 +1187,7 @@ export const Package = Smithers.Package({
     trackedHygieneUnit,
     docsDrift,
     packageDocs,
+    publishedLinksUnit,
     driftJob,
     providerLiveGuards,
     openapiBundle,

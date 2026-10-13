@@ -140,8 +140,8 @@ The full documentation is at <https://engine-store.smithers.sh>:
 - [Troubleshooting](https://engine-store.smithers.sh/troubleshooting/): each
   typed failure, its cause, and its fix.
 
-See also [durable execution](https://smithers.sh/docs/concepts/durable-execution/)
-and [content addressing](https://smithers.sh/docs/concepts/content-addressing/)
+See also [durable execution](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/README.md)
+and [content addressing](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/docs/concepts/step-keys.md)
 on smithers.sh.
 
 List reads of durable wait state skip corrupt rows and log storage-integrity warnings; point reads still fail for an invalid row.

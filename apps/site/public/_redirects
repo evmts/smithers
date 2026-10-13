@@ -729,11 +729,12 @@
 /workflows/workflow-skill  /docs/installation/  301
 /workflows/workflow-skill/  /docs/installation/  301
 
-# The 1.0 CLI links removed 0.x spellings to https://smithers.sh/migration/1.0#<anchor>
-# (packages/smithers/src/Unsupported.ts). A 301 keeps the fragment; an Astro
-# redirect page (meta refresh) drops it, so this file is the redirect.
-/migration/1.0  /docs/installation/  301
-/migration/1.0/  /docs/installation/  301
+# https://smithers.sh/migration/1.0 is the guide every published 1.0 package
+# sends a 0.x project to, and the 1.0 CLI links each removed 0.x spelling to an
+# anchor on it (packages/smithers/src/Unsupported.ts). It is a page of this
+# build, src/pages/migration/1.0.md, so no rule here has /migration/1.0 as its
+# source: a rule is read before the page and would shadow it, which is how the
+# guide answered with the install page until issue 3845.
 
 # CHANGELOG.md and archived release notes link versions with dots. Starlight
 # normalizes those page slugs; retain both spellings, including fragments.
@@ -1003,8 +1004,8 @@
 /docs/pricing/  /docs/installation/  301
 /docs/migration/compatibility  /docs/installation/  301
 /docs/migration/compatibility/  /docs/installation/  301
-/docs/migration/1.0  /docs/installation/  301
-/docs/migration/1.0/  /docs/installation/  301
+/docs/migration/1.0  /migration/1.0/  301
+/docs/migration/1.0/  /migration/1.0/  301
 /docs/guides/steering  /docs/installation/  301
 /docs/guides/steering/  /docs/installation/  301
 /docs/guides/plan-approve-run  /docs/installation/  301

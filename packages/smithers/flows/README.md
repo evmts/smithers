@@ -118,7 +118,7 @@ carry that guarantee, and
 [`@smthrs/platform-browser`](https://platform-browser.smithers.sh) is the host a
 tab runs them on.
 
-[RC support matrix](https://smithers.sh/docs/reference/support-matrix/) lists runtime evidence limits.
+[RC support matrix](https://github.com/smithersai/smithers/blob/main/apps/site/docs/reference/support-matrix.md) lists runtime evidence limits.
 
 Durable execution is provided by the Node and Bun compositions over SQLite or
 PostgreSQL. See [database configuration](./database/docs/concepts/sqlite-only.md)

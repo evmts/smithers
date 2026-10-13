@@ -9,7 +9,7 @@
  * `RetryPolicy`'s, so a pattern policy and an engine policy are the same three
  * numbers rather than two spellings of them.
  *
- * @see https://smithers.sh/docs/concepts/retries
+ * @see https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/concepts/retries.md
  * @see https://smithers.sh/docs/reference/api/patterns
  * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
  *

@@ -7,7 +7,7 @@ Release candidate scope, host requirements and compatibility review are defined 
 `npx smthrs <verb>` runs the Smithers CLI (`@smthrs/cli`). `npx smthrs tui`
 opens the terminal coding agent; it requires [Bun](https://bun.sh).
 
-As a library, `smthrs@1.0.0-rc.0` is a migration notice, not a runtime. An
+As a library, `smthrs@1.0` is a migration notice, not a runtime. An
 import that reaches it throws:
 
 ```text
@@ -26,11 +26,12 @@ compatibility shim.
 
 ## Upgrading a 0.x project
 
-Read the [migration guide](https://smithers.sh/migration/1.0), install the 1.0
-command line, and plan the migration from the project directory. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli).
+Read the [migration guide](https://smithers.sh/migration/1.0), and plan the
+migration from the project directory with the 1.0 command line, which npm
+publishes under the `next` tag:
 
 ```sh
-smthrs migrate
+npx smthrs@next migrate
 ```
 
 `smthrs migrate` with no flags plans only. It writes
@@ -39,13 +40,13 @@ nothing else. Read the report, then convert the source with
 `smthrs migrate --apply --seat provider:model`.
 
 Leave `smthrs` in `package.json` while you do. An apply run migrates the
-project one unit at a time: the first unit adds the `@smthrs/*` packages at
-1.0.0-rc.0 beside the old ones, and the final unit removes the 0.x packages,
+project one unit at a time: the first unit adds the `@smthrs/*` packages
+beside the old ones, and the final unit removes the 0.x packages,
 the JSX settings, and the old CLI scripts once nothing depends on them.
 
-Reaching this notice means `smthrs@1.0.0-rc.0` is installed where 0.x used to
+Reaching this notice means `smthrs@next` is installed where 0.x used to
 be. Reinstall `smthrs@0.35.0` first if the project's `.tsx` sources still have
-to compile: 1.0.0-rc.0 publishes no `jsx-runtime`, so nothing that resolves
+to compile: 1.0 publishes no `jsx-runtime`, so nothing that resolves
 through `jsxImportSource: "smthrs"` resolves at all.
 
 ## Wanted the 1.0 runtime, installed this name
@@ -54,9 +55,8 @@ Depend on the `@smthrs/*` packages directly:
 
 ```sh
 npm remove smthrs
+npm install @smthrs/flows@next @smthrs/cli@next
 ```
-
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli).
 
 `@smthrs/flows` is the curated aggregate: the authoring primitives, the durable
 engine, and the stores behind one dependency. `@smthrs/cli` owns the `smthrs`

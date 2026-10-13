@@ -913,7 +913,14 @@ describe("the fixture under the real CLI", () => {
 
     succeeded(first);
     assert.match(first.stderr, /^Found Smithers 0\.x state at .*\.smithers\./);
-    assert.match(first.stderr, /1\.0\.0-rc\.0 does not load, resume, or migrate 0\.x run databases/);
+    // The CLI's own version, from its manifest: the notice named 1.0.0-rc.0
+    // through rc.5 while this test pinned the same literal (#3845).
+    const { version } = JSON.parse(readFileSync(join(repoRoot, "packages/smithers/package.json"), "utf8"));
+    assert.ok(
+      first.stderr.includes(`Smithers ${version} does not load, resume, or migrate 0.x run databases.`),
+      first.stderr,
+    );
+    assert.match(first.stderr, /then run "smthrs migrate" to convert the project source\./);
     assert.match(first.stderr, /https:\/\/smithers\.sh\/migration\/1\.0#run-data/);
     // Listing reads the discovery snapshot without opening stores (#1857), so
     // it leaves no `.flows/` behind and the project is still unmigrated.

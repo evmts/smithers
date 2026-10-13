@@ -1,11 +1,12 @@
 # Maintaining public setup docs
 
-The public site keeps one install page and the HTTP reference. Pricing stays held for Will's rewrite. Product guides live in the app; retained library references move into package docs under #3478.
+The public site keeps one install page, the HTTP reference, and the migration guide every published 1.0 package links. Pricing stays held for Will's rewrite. Product guides live in the app; retained library references move into package docs under #3478.
 
 | Page | Source | Projection |
 | --- | --- | --- |
 | Install | `docs/installation.mdx` | `src/content/docs/docs/installation.mdx` |
 | HTTP reference | `src/content/docs/docs/reference/http-api.mdx` | None |
+| 0.x migration guide, `/migration/1.0` | `packages/smithers/docs/migration.md` | `src/pages/migration/1.0.md`, written by `scripts/gen-cli-data.mjs` with the removed-command table |
 
 Edit the install source, then run:
 

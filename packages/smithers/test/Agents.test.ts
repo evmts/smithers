@@ -309,7 +309,9 @@ describe("registering the MCP server", () => {
     // and rejects the registration.
     expect(instructions).toContain("claude mcp add smithers -- ")
     expect(instructions).toContain("\"mcpServers\"")
-    expect(instructions).toContain("https://smithers.sh/docs/guides/mcp-setup/")
+    expect(instructions).toContain(
+      "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/wire-the-mcp-server.md"
+    )
     expect(Agents.manualInstructions()).toContain("codex mcp add smithers -- ")
     expect(Agents.manualInstructions(["codex"])).not.toContain("mcpServers")
   })

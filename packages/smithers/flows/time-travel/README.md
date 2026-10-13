@@ -130,7 +130,7 @@ discarded future cannot answer them.
   read-only.
 - Time travel is a library API, also exposed as
   `smthrs runs inspect|replay|fork|rewind`; see the
-  [CLI reference](https://smithers.sh/docs/reference/cli/). MCP exposes these
+  [CLI reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/reference/cli/README.md). MCP exposes these
   verbs only through the unified command tools.
 
 ## Documentation

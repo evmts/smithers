@@ -174,7 +174,7 @@ These nested modules are exported as `@smthrs/cli/<dir>/<Module>` only. The root
 
 Every export of every namespace is on the [API reference](https://cli.smithers.sh/reference/api/), and [Embed the command tree](https://cli.smithers.sh/guides/embed-the-command-tree/) is the guide.
 
-Control servers bind `127.0.0.1` by default. See the [control-plane guide](https://smithers.sh/docs/guides/control-plane/) before opting into a non-loopback bind.
+Control servers bind `127.0.0.1` by default. See the [control-plane guide](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/serve-the-workspace-gateway.md) before opting into a non-loopback bind.
 
 `SMITHERS_API_KEY` is the preferred credential channel. The compatibility
 flag `--credential` warns on stderr, even under `--quiet`, because argv is
@@ -194,7 +194,7 @@ visible in process listings and may remain in shell history.
 | `130` | The run was cancelled or interrupted.                                                               |
 | `143` | The run was terminated.                                                                             |
 
-Codes 3, 130, and 143 report a run outcome rather than a failure of the command, and are decided from the control receipt alone. See [the CLI reference](https://smithers.sh/docs/reference/cli/) for the per-verb detail.
+Codes 3, 130, and 143 report a run outcome rather than a failure of the command, and are decided from the control receipt alone. See [the CLI reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/reference/cli/README.md) for the per-verb detail.
 
 ## Environment
 

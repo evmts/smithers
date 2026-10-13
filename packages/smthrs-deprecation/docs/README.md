@@ -45,11 +45,11 @@ package.
 
 ## Upgrade a 0.x project
 
-Install the 1.0 command line and plan the migration from the project
-directory. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli).
+Plan the migration from the project directory with the 1.0 command line,
+which npm publishes under the `next` tag:
 
 ```bash
-smthrs migrate
+npx smthrs@next migrate
 ```
 
 With no flags, `smthrs migrate` plans only. It writes
@@ -77,9 +77,8 @@ packages directly:
 
 ```bash
 npm remove smthrs
+npm install @smthrs/flows@next @smthrs/cli@next
 ```
-
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli).
 
 ## Where the code went
 

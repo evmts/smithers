@@ -123,6 +123,18 @@ describe("published group children", () => {
   })
 })
 
+/**
+ * Commands the install catalog hides and a message may still name.
+ *
+ * `smthrs migrate` is the command every 0.x project is told to run: by the
+ * notice the `smthrs` package throws, by the READMEs, and by the migration
+ * guide. A sweep once respelled it `smithers-migrate` to satisfy this suite
+ * (#3071), which is `@smthrs/migrate`'s own bin and is not on the PATH of a
+ * project that ran `npx smthrs`, so the 0.x notice named a command its reader
+ * did not have (#3845).
+ */
+const documentedDoors: ReadonlyArray<string> = ["migrate"]
+
 describe("printed command spellings", () => {
   it("name only canonical, non-hidden commands and their declared options", async () => {
     const manifest = JSON.parse(await capture(["--llms-full", "--format", "json"])) as Manifest
@@ -139,11 +151,15 @@ describe("printed command spellings", () => {
     const topLevel = new Set(manifest.commands.map((command) => command.name.split(" ")[0]!))
     // Published library doors remain valid in their own output even when install
     // discovery omits them. Only compatibility spellings are hidden aliases.
+    const registered = cli.subcommands.flatMap((group) => group.commands.map((command) => command.name))
+    // Every documented door is a command the tree answers, so the exception
+    // above cannot outlive the command it names.
+    expect(documentedDoors.filter((name) => !registered.includes(name))).toEqual([])
     const hidden = new Set(
       [
-        ...cli.subcommands.flatMap((group) => group.commands.map((command) => command.name)),
+        ...registered,
         ...Unsupported.removedVerbs.map((verb) => verb.name)
-      ].filter((name) => !topLevel.has(name) && !canonical.has(name))
+      ].filter((name) => !topLevel.has(name) && !canonical.has(name) && !documentedDoors.includes(name))
     )
     const sharedFlags = new Set(
       [...(await capture(["--help"])).matchAll(/--([a-z][a-z0-9-]*)/g)].map((match) => match[1]!)
@@ -151,8 +167,13 @@ describe("printed command spellings", () => {
     for (const name of Object.keys(manifest.globals?.properties ?? {})) sharedFlags.add(kebab(name))
 
     const findings: Array<string> = []
+    // Sentences that tell the reader which command migrates a project.
+    const migrateInstructions: Array<string> = []
     for (const file of sources()) {
       for (const { line, text } of printedTexts(file)) {
+        if (/\brun "(?:smthrs migrate|smithers-migrate)"|`(?:smthrs migrate|smithers-migrate)` replaces/.test(text)) {
+          migrateInstructions.push(text)
+        }
         for (const match of text.matchAll(/(?<![\w@/.-])smthrs +(?=\S)/g)) {
           const tokens = text.slice(match.index + match[0].length).split(/\s+/)
           const where = `${relative(packageRoot, file)}:${line}: smthrs ${tokens.slice(0, 4).join(" ")}`
@@ -186,5 +207,9 @@ describe("printed command spellings", () => {
     }
     expect(hidden.size).toBeGreaterThan(0)
     expect(findings).toEqual([])
+    // The 0.x notice and the `upgrade` refusal both name the migration
+    // command, and both name the spelling the reader has.
+    expect(migrateInstructions.filter((text) => text.includes("smthrs migrate")).length).toBeGreaterThanOrEqual(2)
+    expect(migrateInstructions.filter((text) => text.includes("smithers-migrate"))).toEqual([])
   })
 })

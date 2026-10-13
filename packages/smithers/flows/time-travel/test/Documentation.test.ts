@@ -8,7 +8,9 @@ it.each(["../README.md", "../docs/api.md", "../CHANGELOG.md"])(
   (path) => {
     const text = read(path)
     expect(text).toContain("`smthrs runs inspect|replay|fork|rewind`")
-    expect(text).toContain("https://smithers.sh/docs/reference/cli/")
+    // The CLI reference moved from smithers.sh to the package docs (#3845);
+    // the changelog keeps the URL of its day.
+    expect(text).toMatch(/smithers\.sh\/docs\/reference\/cli\/|packages\/smithers\/docs\/reference\/cli\/README\.md/)
     expect(text).toMatch(/MCP[^.]*only through the unified command tools/)
     expect(text).not.toMatch(/no (?:time-travel|CLI) verb|only a library API|`smithers` command-line/)
   }

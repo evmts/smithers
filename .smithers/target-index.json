@@ -32938,7 +32938,8 @@
       "apps/site/src/data/cli-commands.json",
       "apps/site/src/data/help/**",
       "apps/site/src/data/removed-commands.json",
-      "apps/site/src/data/versions.json"
+      "apps/site/src/data/versions.json",
+      "apps/site/src/pages/migration/1.0.md"
     ],
     "dependencies": [
       "//packages/smithers:docsSources"
@@ -64525,6 +64526,18 @@
         "kind": "glob",
         "pattern": "scripts/repo-contract/**/*.mjs",
         "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "scripts/published-links.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/pack-release.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/workspace-packages.mjs"
       }
     ],
     "outputs": [],
@@ -66642,6 +66655,10 @@
       {
         "kind": "file",
         "path": "packages/smithers/docs/installation.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/docs/migration.md"
       },
       {
         "kind": "file",
@@ -70804,6 +70821,46 @@
       {
         "kind": "file",
         "path": "scripts/ci/provider-live.sh"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "scripts/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//scripts:publishedLinksUnit",
+    "package": "scripts",
+    "name": "publishedLinksUnit",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "scripts/published-links.test.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": "scripts/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "scripts/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "scripts/fixtures/**/*.json",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-workspace.yaml"
       }
     ],
     "outputs": [],

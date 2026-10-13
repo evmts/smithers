@@ -7,8 +7,8 @@
  * journal's or the run store's — see `@smthrs/database`'s `Migrations` for how
  * the blocks compose.
  *
- * See the {@link https://smithers.sh/docs/concepts/content-addressing | step-key contract}
- * and {@link https://smithers.sh/docs/concepts/durable-execution | journal architecture}.
+ * See the {@link https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/docs/concepts/step-keys.md | step-key contract}
+ * and {@link https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/README.md | journal architecture}.
  *
  * @since 0.1.0
  */

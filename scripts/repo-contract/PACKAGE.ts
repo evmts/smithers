@@ -178,10 +178,13 @@ const scratchArtifacts = Smithers.NodeTest({
 })
 
 /**
- * Every smithers.sh URL shipped by a package reaches the built documentation,
- * directly or through one production redirect whose destination is real.
+ * Every smithers.sh URL a published package ships or prints lands on a built
+ * page about the URL's own path: directly, or through one production redirect
+ * that keeps every path segment, with the fragment present on the page.
+ * `scripts/published-links.mjs` holds the rules; its `--live` mode applies them
+ * to production after a deploy.
  *
- * The route oracle is the emitted HTML under `apps/site/dist`, so the site's
+ * The route oracle is the emitted files under `apps/site/dist`, so the site's
  * build is a dependency rather than a step someone ran first. The edge orders
  * the build ahead of the gate, keys the gate on the build's own key so a
  * content change re-runs it, and puts the build's declared outputs in the
@@ -198,7 +201,12 @@ const scratchArtifacts = Smithers.NodeTest({
  */
 const smithersLinks = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//scripts/repo-contract/smithers-links.test.mjs")]),
-  srcs: [sources],
+  srcs: [
+    sources,
+    Smithers.file("//scripts/published-links.mjs"),
+    Smithers.file("//scripts/pack-release.mjs"),
+    Smithers.file("//scripts/workspace-packages.mjs")
+  ],
   deps: [sitePackage.build]
 })
 

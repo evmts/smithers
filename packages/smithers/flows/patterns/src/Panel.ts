@@ -5,7 +5,6 @@
  * and hands one moderator every answer. {@link make} declares that topology,
  * {@link run} performs it.
  *
- * @see https://smithers.sh/docs/concepts/ownership
  * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
  *
  * @since 0.1.0

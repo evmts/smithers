@@ -11,8 +11,8 @@
  * The export list below re-exports them, so this subpath stays the one import
  * for the whole public surface.
  *
- * See the {@link https://smithers.sh/docs/concepts/content-addressing | step-key contract}
- * and {@link https://smithers.sh/docs/concepts/durable-execution | journal architecture}.
+ * See the {@link https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/docs/concepts/step-keys.md | step-key contract}
+ * and {@link https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/README.md | journal architecture}.
  *
  * @since 0.1.0
  */
@@ -184,7 +184,7 @@ export interface Service {
  * service identity in this repository. The pre-split `flows/journal/CacheStore`
  * identity was retired before rc.0, while no persisted journal or step-key
  * digest named it. See the
- * {@link https://smithers.sh/docs/concepts/durable-execution | journal architecture}.
+ * {@link https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/README.md | journal architecture}.
  *
  * @category services
  * @since 0.1.0

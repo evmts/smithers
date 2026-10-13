@@ -23,6 +23,7 @@ import { existsSync, readdirSync, statSync } from "node:fs"
 import { dirname, isAbsolute, join, resolve } from "node:path"
 import * as CliError from "./CliError.ts"
 import * as Environment from "./Environment.ts"
+import { packageVersion } from "./Version.ts"
 
 /**
  * Directory and file names that mark a Smithers 0.x project.
@@ -274,15 +275,20 @@ export const legacyState = (
 
 /**
  * The one-line notice written to stderr when 0.x state
- * is found and rc.0 state is not.
+ * is found and 1.0 state is not.
+ *
+ * It names the running version from the package manifest, never a literal a
+ * release can leave behind, and the command a project that ran `npx smthrs`
+ * has: `smthrs migrate`. `smithers-migrate` is `@smthrs/migrate`'s own bin,
+ * which that project's PATH does not hold.
  *
  * @category constructors
  * @since 1.0.0
  */
 export const legacyNotice = (path: string): string =>
-  `Found Smithers 0.x state at ${path}. 1.0.0-rc.0 does not load, resume, or migrate 0.x run databases. ` +
+  `Found Smithers 0.x state at ${path}. Smithers ${packageVersion} does not load, resume, or migrate 0.x run databases. ` +
   `Finish, archive, or discard those runs with the 0.x CLI (bunx smthrs@0.35.0 ps), ` +
-  `then run "smithers-migrate" to convert the project source. ` +
+  `then run "smthrs migrate" to convert the project source. ` +
   `See https://smithers.sh/migration/1.0#run-data`
 
 /**
