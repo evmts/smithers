@@ -19,7 +19,9 @@
  * again before asking, so a token that Codex or another process has already
  * rotated is used as it is.
  *
- * No token or account id enters an error message, a log or a journal.
+ * No token or account id enters an error message, a log or a journal. What a
+ * resolution cost is reported to {@link MakeOptions.record}: its reads of the
+ * file, its wait for the refresh flight, and the refresh it ran.
  *
  * @since 1.0.0
  * @private
@@ -29,7 +31,7 @@ import { isRecord } from "@smthrs/canonical/Record"
 import type * as Auth from "@smthrs/model/Auth"
 import { ModelError } from "@smthrs/model/ModelError"
 import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
-import { Clock, Effect, Semaphore, Stream } from "effect"
+import { Clock, Effect, Exit, Semaphore, Stream } from "effect"
 import { randomUUID } from "node:crypto"
 import {
   accessSync,
@@ -48,6 +50,7 @@ import { codexEnvironment } from "../Agents.ts"
 import * as Environment from "../Environment.ts"
 import { packageVersion } from "../Version.ts"
 import { errorCode } from "./ErrorCode.ts"
+import type * as Telemetry from "./Telemetry.ts"
 
 /** How long before its JWT `exp` an access token is treated as already stale. */
 const expiryMarginMillis = 5 * 60_000
@@ -191,18 +194,36 @@ export interface Store {
  * the file or fails; the store reads the file again after it returns. Both are
  * parameters so a test points at a scratch file and a scripted owner.
  *
+ * `record` receives what each resolution cost, once it has ended either way.
+ *
  * @since 1.0.0
  * @private
  */
 export interface MakeOptions {
   readonly file: string
   readonly refresh: Effect.Effect<void, ModelError>
+  readonly record?: ((resolution: Telemetry.SignIn) => Effect.Effect<void>) | undefined
 }
 
 interface Tokens {
   readonly access: string
   readonly accountId: string | undefined
 }
+
+/** What one resolution has measured so far. */
+interface Measured {
+  readMs: number
+  lockWaitMs: number
+  refreshMs?: number
+  refreshOutcome?: Telemetry.SignIn["refreshOutcome"]
+}
+
+/** Runs `effect` and hands `note` how long it took, however it ended. */
+const clocked = <A, E>(effect: Effect.Effect<A, E>, note: (millis: number) => void): Effect.Effect<A, E> =>
+  Effect.flatMap(
+    Clock.currentTimeMillis,
+    (from) => Effect.onExit(effect, () => Effect.map(Clock.currentTimeMillis, (to) => note(to - from)))
+  )
 
 /**
  * Builds the credential over one login file. See the module header for the
@@ -230,6 +251,30 @@ export const make = (options: MakeOptions): Store => {
       ? Effect.succeed({ access: parsed.access, accountId: parsed.accountId })
       : Effect.fail(authenticationError(`${unusable(file, text)}; sign in with \`codex login\``))
   })
+  const reading = (measured: Measured) => clocked(read, (millis) => void (measured.readMs += millis))
+
+  /** One resolution, measured and reported once it has ended. */
+  const resolution = <A>(
+    trigger: Telemetry.SignIn["trigger"],
+    resolve: (measured: Measured) => Effect.Effect<A, ModelError>
+  ): Effect.Effect<A, ModelError> =>
+    Effect.flatMap(Clock.currentTimeMillis, (startedAt) => {
+      const measured: Measured = { readMs: 0, lockWaitMs: 0 }
+      return Effect.onExit(resolve(measured), (exit) =>
+        options.record === undefined ?
+          Effect.void :
+          Effect.flatMap(Clock.currentTimeMillis, (endedAt) =>
+            options.record!({
+              trigger,
+              readMs: measured.readMs,
+              lockWaitMs: measured.lockWaitMs,
+              refreshed: measured.refreshOutcome !== undefined,
+              ...(measured.refreshMs === undefined ? {} : { refreshMs: measured.refreshMs }),
+              ...(measured.refreshOutcome === undefined ? {} : { refreshOutcome: measured.refreshOutcome }),
+              totalMs: endedAt - startedAt,
+              ok: Exit.isSuccess(exit)
+            })))
+    })
 
   /** A lock is recoverable only when its recorded process is provably gone. */
   const lockOwnerAlive = (token: string): boolean => {
@@ -313,40 +358,47 @@ export const make = (options: MakeOptions): Store => {
   // The single flight. `stale` is the token the caller found wanting: near its
   // expiry, or answered with a 401. A different, fresh token in the file means
   // Codex or another entrant already refreshed, and nobody is asked again.
-  const renew = (stale: string): Effect.Effect<Tokens, ModelError> =>
-    gate.withPermits(1)(Effect.scoped(Effect.gen(function*() {
-      yield* Effect.acquireRelease(acquireLock, releaseLock)
-      const before = yield* read
-      const now = yield* Clock.currentTimeMillis
-      if (before.access !== stale && isFresh(before.access, now)) return before
-      yield* options.refresh
-      const after = yield* read
-      return after.access === before.access
-        ? yield* Effect.fail(
-          authenticationError(`Codex did not refresh its login at ${file}; sign in again with \`codex login\``)
-        )
-        : after
-    })))
+  const renew = (stale: string, measured: Measured): Effect.Effect<Tokens, ModelError> =>
+    Effect.flatMap(Clock.currentTimeMillis, (enteredAt) =>
+      gate.withPermits(1)(Effect.scoped(Effect.gen(function*() {
+        // The wait is for the flight: this process's permit, then the lock file.
+        const waited = Effect.map(Clock.currentTimeMillis, (now) => void (measured.lockWaitMs = now - enteredAt))
+        yield* Effect.acquireRelease(Effect.onExit(acquireLock, () => waited), releaseLock)
+        const before = yield* reading(measured)
+        const now = yield* Clock.currentTimeMillis
+        if (before.access !== stale && isFresh(before.access, now)) return before
+        measured.refreshOutcome = "failed"
+        yield* clocked(options.refresh, (millis) => void (measured.refreshMs = millis))
+        const after = yield* reading(measured)
+        measured.refreshOutcome = after.access === before.access ? "unchanged" : "rotated"
+        return after.access === before.access
+          ? yield* Effect.fail(
+            authenticationError(`Codex did not refresh its login at ${file}; sign in again with \`codex login\``)
+          )
+          : after
+      }))))
 
   return {
     auth: {
       sign: Effect.fn("Auth.sign")((headers) =>
-        Effect.gen(function*() {
-          const found = yield* read
-          const now = yield* Clock.currentTimeMillis
-          const tokens = isFresh(found.access, now) ? found : yield* renew(found.access)
-          signed = tokens.access
-          return {
-            ...headers,
-            Authorization: `Bearer ${tokens.access}`,
-            ...(tokens.accountId === undefined ? {} : { "chatgpt-account-id": tokens.accountId })
-          }
-        })
+        resolution("request", (measured) =>
+          Effect.gen(function*() {
+            const found = yield* reading(measured)
+            const now = yield* Clock.currentTimeMillis
+            const tokens = isFresh(found.access, now) ? found : yield* renew(found.access, measured)
+            signed = tokens.access
+            return {
+              ...headers,
+              Authorization: `Bearer ${tokens.access}`,
+              ...(tokens.accountId === undefined ? {} : { "chatgpt-account-id": tokens.accountId })
+            }
+          }))
       ),
-      refresh: Effect.gen(function*() {
-        const stale = signed ?? (yield* read).access
-        yield* renew(stale)
-      }),
+      refresh: resolution("rejected", (measured) =>
+        Effect.gen(function*() {
+          const stale = signed ?? (yield* reading(measured)).access
+          yield* renew(stale, measured)
+        })).pipe(Effect.withSpan("Auth.refresh")),
       credentialHeaders: ["Authorization", "chatgpt-account-id"]
     }
   }

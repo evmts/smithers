@@ -6,7 +6,7 @@
  * fixtures is fabricated.
  */
 import { ModelError } from "@smthrs/model/ModelError"
-import { Deferred, Effect, Exit, Fiber } from "effect"
+import { Deferred, Effect, Exit, Fiber, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { spawn } from "node:child_process"
 import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs"
@@ -15,6 +15,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, it } from "vitest"
 import * as CodexLogin from "../src/internal/CodexLogin.ts"
+import * as Telemetry from "../src/internal/Telemetry.ts"
 
 /** A syntactically valid JWT whose payload carries only the given expiry. */
 const jwt = (expiresAtSeconds: number, marker = "fake"): string =>
@@ -397,6 +398,217 @@ describe("CodexLogin refresh rule", () => {
   })
 })
 
+/** The resolutions one store reported, in order. */
+const recorded = () => {
+  const resolutions: Array<Telemetry.SignIn> = []
+  return {
+    resolutions,
+    record: (resolution: Telemetry.SignIn) => Effect.sync(() => void resolutions.push(resolution))
+  }
+}
+
+describe("CodexLogin timing", () => {
+  it("records a fresh login as one read, with no wait and no refresh", async () => {
+    const file = loginFile(authJson({ access_token: freshJwt(), refresh_token: "r", account_id: "acct-fake-123" }))
+    const { record, resolutions } = recorded()
+
+    await Effect.runPromise(
+      CodexLogin.make({ file, refresh: never, record }).auth.sign({}).pipe(Effect.provide(TestClock.layer()))
+    )
+
+    expect(resolutions).toEqual([
+      { trigger: "request", readMs: 0, lockWaitMs: 0, refreshed: false, totalMs: 0, ok: true }
+    ])
+  })
+
+  it("records the wait under a lock another process holds, then the refresh it ran", async () => {
+    const rotated = freshJwt("rotated")
+    const file = loginFile(authJson({ access_token: jwt(0), refresh_token: "fake-refresh-0" }))
+    const lock = `${file}.refresh.lock`
+    // A live owner's fresh lock: this entrant can only wait for it.
+    writeFileSync(lock, `${process.pid}:live`, { mode: 0o600 })
+    const { record, resolutions } = recorded()
+    const refresh = Effect.sleep("1500 millis").pipe(Effect.andThen(Effect.sync(() => {
+      writeFileSync(file, authJson({ access_token: rotated, refresh_token: "rotated-by-codex" }))
+    })))
+
+    const headers = await Effect.runPromise(
+      Effect.gen(function*() {
+        const fiber = yield* Effect.forkChild(
+          CodexLogin.make({ file, refresh, record }).auth.sign({}),
+          { startImmediately: true }
+        )
+        yield* Effect.yieldNow
+        yield* TestClock.adjust("4 seconds")
+        rmSync(lock)
+        // The next poll takes the lock and asks; the owner answers 1.5 s later.
+        yield* TestClock.adjust("25 millis")
+        yield* TestClock.adjust("1500 millis")
+        return yield* Fiber.join(fiber)
+      }).pipe(Effect.provide(TestClock.layer()))
+    )
+
+    expect(headers).toEqual({ Authorization: `Bearer ${rotated}` })
+    expect(resolutions).toEqual([{
+      trigger: "request",
+      readMs: 0,
+      lockWaitMs: 4025,
+      refreshed: true,
+      refreshMs: 1500,
+      refreshOutcome: "rotated",
+      totalMs: 5525,
+      ok: true
+    }])
+  })
+
+  it("records the whole minute it waited for a lock that never freed", async () => {
+    const file = loginFile(authJson({ access_token: jwt(0), refresh_token: "fake-refresh-0" }))
+    writeFileSync(`${file}.refresh.lock`, `${process.pid}:live`, { mode: 0o600 })
+    const { record, resolutions } = recorded()
+
+    const exit = await Effect.runPromise(
+      Effect.gen(function*() {
+        const fiber = yield* Effect.forkChild(
+          CodexLogin.make({ file, refresh: never, record }).auth.sign({}),
+          { startImmediately: true }
+        )
+        yield* Effect.yieldNow
+        yield* TestClock.adjust("61 seconds")
+        return yield* Effect.exit(Fiber.join(fiber))
+      }).pipe(Effect.provide(TestClock.layer()))
+    )
+
+    expect(Exit.isFailure(exit)).toBe(true)
+    expect(resolutions).toEqual([
+      { trigger: "request", readMs: 0, lockWaitMs: 60_000, refreshed: false, totalMs: 60_000, ok: false }
+    ])
+  })
+
+  it("records the wait for this process's own flight without a second refresh", async () => {
+    const rotated = freshJwt("rotated")
+    const file = loginFile(authJson({ access_token: jwt(0), refresh_token: "fake-refresh-0" }))
+    const { record, resolutions } = recorded()
+    const refresh = Effect.sleep("2 seconds").pipe(Effect.andThen(Effect.sync(() => {
+      writeFileSync(file, authJson({ access_token: rotated, refresh_token: "rotated-by-codex" }))
+    })))
+    const auth = CodexLogin.make({ file, refresh, record }).auth
+
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const fibers = yield* Effect.forEach([0, 1], () => Effect.forkChild(auth.sign({}), { startImmediately: true }))
+        yield* Effect.yieldNow
+        yield* TestClock.adjust("2 seconds")
+        yield* Effect.forEach(fibers, Fiber.join)
+      }).pipe(Effect.provide(TestClock.layer()))
+    )
+
+    expect(resolutions).toEqual([
+      expect.objectContaining({ lockWaitMs: 0, refreshed: true, refreshMs: 2000, refreshOutcome: "rotated", ok: true }),
+      // The second entrant waited out the first one's ask and found the token rotated.
+      { trigger: "request", readMs: 0, lockWaitMs: 2000, refreshed: false, totalMs: 2000, ok: true }
+    ])
+  })
+
+  it.each([
+    ["an owner that answers and leaves the token in place", Effect.sleep("300 millis"), "unchanged"],
+    [
+      "an owner that fails",
+      Effect.sleep("300 millis").pipe(
+        Effect.andThen(Effect.fail(new ModelError({ code: "authentication", message: "Codex is not installed" })))
+      ),
+      "failed"
+    ]
+  ])("records a refresh that did not rotate the login: %s", async (_state, refresh, refreshOutcome) => {
+    const file = loginFile(authJson({ access_token: jwt(0), refresh_token: "fake-refresh-0" }))
+    const { record, resolutions } = recorded()
+
+    const exit = await Effect.runPromise(
+      Effect.gen(function*() {
+        const fiber = yield* Effect.forkChild(
+          CodexLogin.make({ file, refresh, record }).auth.sign({}),
+          { startImmediately: true }
+        )
+        yield* Effect.yieldNow
+        yield* TestClock.adjust("300 millis")
+        return yield* Effect.exit(Fiber.join(fiber))
+      }).pipe(Effect.provide(TestClock.layer()))
+    )
+
+    expect(Exit.isFailure(exit)).toBe(true)
+    expect(resolutions).toEqual([{
+      trigger: "request",
+      readMs: 0,
+      lockWaitMs: 0,
+      refreshed: true,
+      refreshMs: 300,
+      refreshOutcome,
+      totalMs: 300,
+      ok: false
+    }])
+  })
+
+  it("records the refresh a 401 asks for as its own resolution", async () => {
+    const rotated = freshJwt("rotated")
+    const file = loginFile(authJson({ access_token: freshJwt("revoked"), refresh_token: "fake-refresh-0" }))
+    const codex = owner(file, () => rotated)
+    const { record, resolutions } = recorded()
+    const auth = CodexLogin.make({ file, refresh: codex.refresh, record }).auth
+
+    await Effect.runPromise(
+      Effect.andThen(auth.sign({}), auth.refresh!).pipe(Effect.provide(TestClock.layer()))
+    )
+
+    expect(resolutions.map((resolution) => resolution.trigger)).toEqual(["request", "rejected"])
+    expect(resolutions[1]).toEqual({
+      trigger: "rejected",
+      readMs: 0,
+      lockWaitMs: 0,
+      refreshed: true,
+      refreshMs: 0,
+      refreshOutcome: "rotated",
+      totalMs: 0,
+      ok: true
+    })
+  })
+
+  it("records a login it cannot read as a failed resolution", async () => {
+    const { record, resolutions } = recorded()
+
+    await Effect.runPromise(
+      Effect.flip(CodexLogin.make({ file: join(scratch(), "auth.json"), refresh: never, record }).auth.sign({})).pipe(
+        Effect.provide(TestClock.layer())
+      )
+    )
+
+    expect(resolutions).toEqual([
+      { trigger: "request", readMs: 0, lockWaitMs: 0, refreshed: false, totalMs: 0, ok: false }
+    ])
+  })
+
+  it("keeps the token, the account id and the login's path out of every record", async () => {
+    const stale = jwt(0, "stale-marker")
+    const issued: Array<string> = []
+    const file = loginFile(
+      authJson({ access_token: stale, refresh_token: "fake-refresh-0", account_id: "acct-fake-123" })
+    )
+    const codex = owner(file, () => issued[issued.push(freshJwt(`rotated-marker-${issued.length}`)) - 1])
+    const { record, resolutions } = recorded()
+    const auth = CodexLogin.make({ file, refresh: codex.refresh, record }).auth
+
+    await Effect.runPromise(Effect.andThen(auth.sign({}), auth.refresh!))
+
+    expect(resolutions).toHaveLength(2)
+    const written = JSON.stringify(resolutions)
+    for (const secret of [stale, ...issued, "fake-refresh-0", "rotated-by-codex", "acct-fake", join(file, "..")]) {
+      expect(written).not.toContain(secret)
+    }
+    // Every field is one the record declares, and none is free text.
+    for (const resolution of resolutions) {
+      expect(Schema.decodeUnknownSync(Telemetry.SignIn, { onExcessProperty: "error" })(resolution)).toEqual(resolution)
+    }
+  })
+})
+
 /**
  * A `codex` whose `app-server` answers `account/read` the way the CLI does:
  * it records each request it was sent, and on `refreshToken: true` rewrites
@@ -480,6 +692,36 @@ describe("CodexLogin.cliRefresh", () => {
     // Codex wrote the login; Smithers left only that file behind.
     expect(JSON.parse(readFileSync(file, "utf8")).tokens.refresh_token).toBe("rotated-by-codex")
     expect(readdirSync(join(file, ".."))).toEqual(["auth.json"])
+  })
+
+  it("records the CLI's refresh with its duration and outcome, and nothing of the login", async () => {
+    const rotated = freshJwt("rotated")
+    const bin = fakeCodex(appServer(rotated))
+    const file = loginFile(
+      authJson({ access_token: expiredJwt(), refresh_token: "fake-refresh-0", account_id: "acct-fake-123" })
+    )
+    const { record, resolutions } = recorded()
+    const environment = { PATH: bin, CODEX_HOME: join(file, ".."), HOME: join(file, "..") }
+
+    await Effect.runPromise(
+      CodexLogin.make({ file, refresh: CodexLogin.cliRefresh({ environment }), record }).auth.sign({})
+    )
+
+    expect(resolutions).toEqual([{
+      trigger: "request",
+      readMs: expect.any(Number),
+      lockWaitMs: expect.any(Number),
+      refreshed: true,
+      refreshMs: expect.any(Number),
+      refreshOutcome: "rotated",
+      totalMs: expect.any(Number),
+      ok: true
+    }])
+    // The stub is a real process: its ask is inside the whole, and nothing is negative.
+    const [resolution] = resolutions
+    expect(resolution!.refreshMs!).toBeGreaterThanOrEqual(0)
+    expect(resolution!.totalMs).toBeGreaterThanOrEqual(resolution!.refreshMs! + resolution!.lockWaitMs)
+    expect(JSON.stringify(resolutions)).not.toMatch(/acct-fake|rotated-by-codex|fake-refresh|eyJ/)
   })
 
   it("fails typed when Codex is not installed", async () => {
