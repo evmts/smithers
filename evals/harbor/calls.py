@@ -10,9 +10,9 @@ by purpose, where the wall clock went, and how call time scales with tokens.
 compares the two arms with them. It reads, in this order:
 
     agent/sessions/**/rollout-*.jsonl   the Codex CLI's session log
-    agent/trajectory.json               the Smithers arm's rows (`extra.calls`)
-    agent/workspace/.flows/control.db   the harness journal, for a trajectory
-                                        written before it carried the rows
+    agent/workspace/.flows/control.db   the harness journal, where it is kept
+    agent/trajectory.json               the journal as the adapter folded it
+                                        (`extra.calls`), where it is not
     agent/trajectory.json               its steps alone: the agent's own calls
 
 A row:
@@ -35,6 +35,9 @@ A row:
     stages           when the harness saw the call's stream reach each stage,
                      in milliseconds from the call's start, when recorded
     timing           the same for the wire, when recorded
+    retried          what each failed try was and how long it ran
+    work             what the reply's cell amounted to: its kind and calls
+    costUsd          the call's cost as the journal priced it
     derived          the fields computed from event times, the ledger or
                      other counts instead of read off the record
 
@@ -43,11 +46,15 @@ Every Codex request is a `frame` row: the CLI has no judge. Its `timing` is
 a reasoning block's end. It is an upper bound on the wait before the first
 token, and a tight one only for a reply that opens with a message.
 
-The time split is exclusive and sums to the record's span, first event to
-last. A second is counted once, for the first of these that was running:
-the agent's own model call, a compaction call, a command, a judge reading.
-A judge reading that ran under a model call therefore costs nothing here;
-its latency is in the totals by purpose.
+The time split sums to the record's span, first event to last. Where the
+harness timed a frame itself (`turn-closed.time`), the frame's parts are taken
+as recorded: its model calls, its compaction, its cell, and what the loop
+waited on the judge. Outside those frames, and in a journal or a session log
+that timed none, a second is counted once, for the first of these that was
+running: the agent's own model call, a compaction call, a command, a judge
+reading. `time.derived` names the parts that hold any such time. A judge
+reading that ran beside a model call costs nothing either way; its latency is
+in the totals by purpose.
 """
 from __future__ import annotations
 
@@ -80,12 +87,20 @@ TOOL_OUTPUTS = ("custom_tool_call_output", "function_call_output")
 REPLY_ITEMS = ("reasoning", "custom_tool_call", "function_call")
 JOURNAL_FILES = ("control.db", "engine.db")
 SPLIT = ("modelMs", "compactionMs", "commandsMs", "judgeMs")
+# A frame's own clock, as `turn-closed.time` names its parts, beside ours.
+FRAME_PARTS = {"modelMs": "modelMs", "compactionMs": "compactionMs", "cellMs": "commandsMs", "judgeMs": "judgeMs"}
+UNLABELLED = "unlabelled"
+STAGE_FIT_MINIMUM = 3
 
 
 def _count(value: Any) -> int | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     return int(value)
+
+
+def _cost(value: Any) -> float | None:
+    return None if isinstance(value, bool) or not isinstance(value, (int, float)) else float(value)
 
 
 def iso(millis: int | None) -> str | None:
@@ -233,23 +248,53 @@ def _union(intervals: Iterable[tuple[int, int]]) -> list[list[int]]:
     return merged
 
 
-def _split(first: int, last: int, layers: list[list[tuple[int, int]]]) -> dict[str, int]:
-    """Milliseconds of `first..last` each layer alone accounts for, earlier
-    layers first, and what no layer covers."""
-    time = {"spanMs": last - first}
-    taken: list[list[int]] = []
+def _split(first: int, last: int, layers: list[list[tuple[int, int]]],
+           frames: Iterable[tuple[int, int, dict[str, int]]] = ()) -> dict[str, Any]:
+    """Where `first..last` went: `SPLIT`'s four parts and `otherMs`.
+
+    `frames` are the frames whose own clock the journal recorded, each its
+    start, its end and its parts. Their time is taken as recorded. `layers`
+    are the intervals read off event times, one list per part, and count only
+    outside every recorded frame, a second once, earlier parts first.
+    `derived` names the parts that hold any such time and `recordedMs` is what
+    the frames' clocks cover.
+    """
+    frames = list(frames)
+    time: dict[str, Any] = {"spanMs": last - first}
+    taken = _union((max(start, first), min(end, last)) for start, end, _ in frames)
+    derived = []
     for name, intervals in zip(SPLIT, layers):
         clipped = [(max(start, first), min(end, last)) for start, end in intervals]
         grown = _union([*map(tuple, taken), *clipped])
-        time[name] = sum(end - start for start, end in grown) - sum(end - start for start, end in taken)
+        outside = sum(end - start for start, end in grown) - sum(end - start for start, end in taken)
+        time[name] = outside + sum(parts.get(name, 0) for _, _, parts in frames)
+        if outside:
+            derived.append(name)
         taken = grown
     time["otherMs"] = time["spanMs"] - sum(time[name] for name in SPLIT)
+    if time["spanMs"] > sum(end - start for start, end in taken):
+        derived.append("otherMs")
+    time["recordedMs"] = sum(end - start for start, end, _ in frames)
+    time["derived"] = sorted(derived)
     return time
 
 
-def _folded(calls: list[tuple[int, dict[str, Any]]], time: dict[str, int] | None, ledger: int | None) -> dict[str, Any]:
+def _folded(calls: list[tuple[int, dict[str, Any]]], time: dict[str, Any] | None, ledger: int | None,
+            entries: int = 0, labelled: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
     rows = [row for _, row in sorted(calls, key=lambda entry: entry[0])]
-    return {"calls": rows, **totals(rows), "ledgerTokens": ledger, "time": time}
+    return {"calls": rows, **totals(rows), "ledgerTokens": ledger, "ledgerEntries": entries,
+            "ledgerByPurpose": _by_purpose(labelled), "time": time}
+
+
+def _by_purpose(labelled: dict[str, dict[str, Any]] | None) -> dict[str, dict[str, Any]] | None:
+    """The ledger's spend under each purpose it names, `PURPOSES` first; None
+    for a ledger that names none."""
+    if not labelled or set(labelled) == {UNLABELLED}:
+        return None
+    known = [purpose for purpose in PURPOSES if purpose in labelled]
+    return {purpose: {"tokens": labelled[purpose]["tokens"],
+                      "costUsd": None if labelled[purpose]["costUsd"] is None else round(labelled[purpose]["costUsd"], 9)}
+            for purpose in known + sorted(set(labelled) - set(known))}
 
 
 def _record(value: Any) -> dict[str, Any] | None:
@@ -266,21 +311,43 @@ def fold_journal(events: list[dict[str, Any]]) -> dict[str, Any]:
     must sum to. `compactions` is one record per compaction, whether or not
     it made a summary call.
 
-    What a settle carries is read: `purpose`, `frame`, `attempt`, `reask`,
-    `stages`, `tries` and `output` on `model-settled`, and `summaryCall`,
-    `causes`, `context`, `removed` and `durationMillis` on
-    `compaction-settled`. A journal from before them gives the same rows with
-    the request's keys, the times between events and the ledger's spend.
+    What the journal records is read, and `derived` names what is not:
+
+        model-settled       purpose, frame, attempt, reask, stages, tries,
+                            output, timing, servedTier, costUsd
+        model-retried       code, delayMillis, elapsedMs, httpStatus
+        compaction-settled  summaryCall, causes, context, removed, durationMillis
+        a judge reading     timing, costUsd, triggers, compact, compactSuppressed
+        cell-settled        work, on the row of the reply whose cell it was
+        cell-call-settled   durationMillis
+        turn-closed         time, the frame's own clock
+        the usage ledger    purpose, frame, parts
+
+    A journal from before them gives the same rows from the request's keys,
+    the times between events and the ledger's spend. A judge reading's
+    purpose follows from the event that settled it, in either journal; the
+    ledger names the same purposes and `ledgerByPurpose` totals them.
     """
     calls: list[tuple[int, dict[str, Any]]] = []
     compactions: list[dict[str, Any]] = []
     layers: dict[str, list[tuple[int, int]]] = {name: [] for name in SPLIT}
+    frames: list[tuple[int, int, dict[str, int]]] = []
     opened: dict[str, Any] | None = None
     seat_row: dict[str, Any] | None = None
     started: dict[str, int] = {}
     anonymous: list[int] = []
     ledger: int | None = None
+    entries = 0
+    labelled: dict[str, dict[str, Any]] = {}
     first = last = None
+
+    def charge(purpose: Any, spent: int | None, cost: float | None) -> None:
+        if spent is None:
+            return
+        held = labelled.setdefault(purpose if isinstance(purpose, str) else UNLABELLED, {"tokens": 0, "costUsd": None})
+        held["tokens"] += spent
+        if cost is not None:
+            held["costUsd"] = (held["costUsd"] or 0.0) + cost
 
     def add(row: dict[str, Any], start: int, end: int) -> dict[str, Any]:
         purpose = row["purpose"]
@@ -294,7 +361,7 @@ def fold_journal(events: list[dict[str, Any]]) -> dict[str, Any]:
     def unasked(purpose: str) -> dict[str, Any]:
         """A settle with no request before it: an older journal's, or a fragment's."""
         return {"purpose": purpose, "derived": {"purpose", "start"}, "start": None, "frame": None, "attempt": None,
-                "model": None, "reask": None, "retries": 0, "spent": None}
+                "model": None, "reask": None, "retried": [], "spent": None}
 
     def settle(call: dict[str, Any], record: dict[str, Any], at: int, ends_at_record: bool) -> dict[str, Any]:
         """The row of a call its record settles: a `model-settled` payload,
@@ -314,14 +381,18 @@ def fold_journal(events: list[dict[str, Any]]) -> dict[str, Any]:
             purpose if isinstance(purpose, str) else call["purpose"], start, end, duration, record.get("usage"),
             split=record.get("output"), derived=derived, frame=call["frame"] if frame is None else frame,
             attempt=call["attempt"] if attempt is None else attempt, model=call["model"],
-            reask=record.get("reask") or call["reask"], retries=call["retries"] or None, tries=_count(record.get("tries")),
+            reask=record.get("reask") or call["reask"], **retried(call), tries=_count(record.get("tries")),
             stages=_record(record.get("stages")), timing=_record(record.get("timing")),
-            servedTier=record.get("servedTier")), start, end)
+            servedTier=record.get("servedTier"), costUsd=_cost(record.get("costUsd"))), start, end)
+
+    def retried(call: dict[str, Any]) -> dict[str, Any]:
+        """A call's retry notices: how many, and what each failed try was."""
+        return {"retries": len(call["retried"]) or None, "retried": call["retried"] or None}
 
     def unsettled(call: dict[str, Any], end: int, derived: set[str]) -> dict[str, Any]:
         row = _row(call["purpose"], call["start"], end, end - call["start"], settled=False,
                    derived={*call["derived"], *derived, "durationMs"}, frame=call["frame"], attempt=call["attempt"],
-                   model=call["model"], reask=call["reask"], retries=call["retries"] or None)
+                   model=call["model"], reask=call["reask"], **retried(call))
         if call["spent"] is not None:
             row["totalTokens"] = call["spent"]
             row["derived"] = sorted({*row["derived"], "totalTokens"})
@@ -339,7 +410,17 @@ def fold_journal(events: list[dict[str, Any]]) -> dict[str, Any]:
             spent = _count(payload.get("spent"))
             if spent is not None:
                 ledger = (ledger or 0) + spent
-                if opened is not None and "/" not in str(payload.get("stepKey")):
+                entries += 1
+                # One charge for readings of more than one purpose says each one's share.
+                parts = [part for part in payload.get("parts") or [] if isinstance(part, dict)] \
+                    if isinstance(payload.get("parts"), list) else []
+                for part in parts or [payload]:
+                    charge(part.get("purpose"), _count(part.get("spent")), _cost(part.get("costUsd")))
+                # The spend of a call in flight: labelled so, or in a ledger
+                # from before labels, the one charge whose key names no boundary.
+                own = payload.get("purpose") == opened["purpose"] if opened is not None and "purpose" in payload else \
+                    "/" not in str(payload.get("stepKey"))
+                if opened is not None and own:
                     opened["spent"] = spent
         elif kind == "control.agent.model-requested":
             if opened is not None:
@@ -348,10 +429,12 @@ def fold_journal(events: list[dict[str, Any]]) -> dict[str, Any]:
             opened = {"purpose": purpose if isinstance(purpose, str) else "frame",
                       "derived": set() if isinstance(purpose, str) else {"purpose"}, "start": at,
                       "frame": _count(payload.get("frame")), "attempt": _count(payload.get("attempt")),
-                      "model": payload.get("modelId"), "reask": payload.get("reask"), "retries": 0, "spent": None}
+                      "model": payload.get("modelId"), "reask": payload.get("reask"), "retried": [], "spent": None}
         elif kind == "control.agent.model-retried":
             if opened is not None:
-                opened["retries"] += 1
+                opened["retried"].append({name: payload[name] for name in ("code", "delayMillis", "elapsedMs", "httpStatus")
+                                          if isinstance(payload.get(name), (str, int, float))
+                                          and not isinstance(payload.get(name), bool)})
         elif kind == "control.agent.model-settled":
             seat_row, opened = settle(opened or unasked("frame"), payload, at, True), None
         elif kind == "control.agent.compaction-settled":
@@ -369,8 +452,8 @@ def fold_journal(events: list[dict[str, Any]]) -> dict[str, Any]:
                 record["durationMs"], record["derived"] = at - call["start"], ["durationMs"]
             if record["durationMs"] is not None:
                 layers["compactionMs"].append((at - record["durationMs"], at))
-            for name in ("causes", "marks", "context", "removed"):
-                if isinstance(payload.get(name), (dict, list, int)) and not isinstance(payload.get(name), bool):
+            for name, shape in (("causes", list), ("marks", dict), ("context", dict), ("removed", int)):
+                if isinstance(payload.get(name), shape) and not isinstance(payload.get(name), bool):
                     record[name] = payload[name]
             compactions.append(record)
         elif kind == "control.agent.cell-rejected-in-frame":
@@ -387,7 +470,12 @@ def fold_journal(events: list[dict[str, Any]]) -> dict[str, Any]:
             add(_row(purpose if isinstance(purpose, str) else mapped, at - (latency or 0), at, latency, counters,
                      derived=() if isinstance(purpose, str) else ("purpose",), frame=_count(payload.get("frame")),
                      model=counters.get("modelId") if isinstance(counters, dict) else None,
-                     classifier=classifier if isinstance(classifier, str) else None), at - (latency or 0), at)
+                     classifier=classifier if isinstance(classifier, str) else None,
+                     timing=_record(payload.get("timing")), costUsd=_cost(payload.get("costUsd")),
+                     triggers=payload.get("triggers") if isinstance(payload.get("triggers"), list) else None,
+                     compact=payload.get("compact") if isinstance(payload.get("compact"), list) else None,
+                     compactSuppressed=payload.get("compactSuppressed") if isinstance(payload.get("compactSuppressed"), str)
+                     else None), at - (latency or 0), at)
         elif kind == "control.agent.cell-call-started":
             if payload.get("callId") is None:
                 anonymous.append(at)
@@ -396,23 +484,39 @@ def fold_journal(events: list[dict[str, Any]]) -> dict[str, Any]:
         elif kind == "control.agent.cell-call-settled":
             begun = started.pop(str(payload["callId"]), None) if payload.get("callId") is not None else \
                 anonymous.pop(0) if anonymous else None
-            if begun is not None:
-                layers["commandsMs"].append((begun, at))
+            took = _count(payload.get("durationMillis"))
+            if took is not None or begun is not None:
+                layers["commandsMs"].append((at - took if took is not None else begun, at))
             value = payload.get("value")
             counters = value.get("usage") if isinstance(value, dict) else None
             if isinstance(counters, dict):
                 latency, derived = _count(value.get("latencyMs")), {"purpose"}
+                latency = took if latency is None else latency
                 if latency is None and begun is not None:
                     latency = at - begun
                     derived.add("durationMs")
                 add(_row("reading", at - (latency or 0), at, latency, counters, derived=derived,
                          model=counters.get("modelId"), flow=payload.get("flowName")), at - (latency or 0), at)
+        elif kind == "control.agent.cell-settled":
+            # What the reply's cell amounted to. A reply rejected in its
+            # frame has no cell of its own: the frame asks again, and the cell
+            # that settles is the next reply's.
+            work = _record(payload.get("work"))
+            if work is not None and seat_row is not None and seat_row["purpose"] == "frame" and "work" not in seat_row \
+                    and ("rejected" not in seat_row or work.get("kind") == "rejected"):
+                seat_row["work"] = work
+        elif kind == "control.agent.turn-closed":
+            clock = _record(payload.get("time"))
+            wall = _count(clock.get("wallMs")) if clock is not None else None
+            if wall is not None:
+                frames.append((at - wall, at, {ours: _count(clock.get(theirs)) or 0 for theirs, ours in FRAME_PARTS.items()}))
     if first is None:
-        return {**_folded([], None, ledger), "compactions": []}
+        return {**_folded([], None, ledger, entries, labelled), "compactions": []}
     if opened is not None:
         unsettled(opened, last, {"end"})
     layers["commandsMs"] += [(begun, last) for begun in [*started.values(), *anonymous]]
-    return {**_folded(calls, _split(first, last, [layers[name] for name in SPLIT]), ledger), "compactions": compactions}
+    time = _split(first, last, [layers[name] for name in SPLIT], frames)
+    return {**_folded(calls, time, ledger, entries, labelled), "compactions": compactions}
 
 
 def fold_session(lines: Iterable[str]) -> dict[str, Any]:
@@ -498,7 +602,7 @@ def _fold_steps(document: dict[str, Any]) -> dict[str, Any]:
     timed = [row["durationMs"] for row in folded["calls"] if row["durationMs"] is not None]
     if timed:
         folded["time"] = {"spanMs": None, "modelMs": sum(timed), "compactionMs": None, "commandsMs": None,
-                          "judgeMs": None, "otherMs": None}
+                          "judgeMs": None, "otherMs": None, "recordedMs": None, "derived": []}
     # One step per frame dropped a frame's earlier replies from the steps and
     # kept them in the totals: the difference is the input no row lists.
     total = _count((document.get("final_metrics") or {}).get("total_prompt_tokens"))
@@ -529,6 +633,16 @@ def _read_trial(trial: Path) -> dict[str, Any]:
         folded = fold_session(lines)
         if folded["calls"]:
             return {"source": "session", **folded}
+    # The kept journal before the trajectory: the trajectory is the journal as
+    # the adapter of its day folded it, and a later fold reads more of it.
+    journal = journal_path(agent / "workspace" / ".flows")
+    if journal is not None:
+        try:
+            folded = fold_journal(read_journal(journal))
+        except sqlite3.Error:
+            folded = {"calls": []}
+        if folded["calls"]:
+            return {"source": "journal", **folded}
     try:
         document = json.loads((agent / "trajectory.json").read_text())
     except (OSError, ValueError):
@@ -539,18 +653,11 @@ def _read_trial(trial: Path) -> dict[str, Any]:
         rows = [row for row in extra["calls"] if isinstance(row, dict) and isinstance(row.get("purpose"), str)]
         final = (document.get("final_metrics") or {}).get("extra") or {}
         read = {"source": "trajectory", "calls": rows, **totals(rows), "ledgerTokens": final.get("ledgerTokens"),
-                "time": final.get("time") if isinstance(final.get("time"), dict) else None}
+                "ledgerEntries": _count(final.get("ledgerEntries")) or 0, "ledgerByPurpose": _record(final.get("ledgerByPurpose")),
+                "time": _record(final.get("time"))}
         if isinstance(final.get("compactions"), list):
             read["compactions"] = final["compactions"]
         return read
-    journal = journal_path(agent / "workspace" / ".flows")
-    if journal is not None:
-        try:
-            folded = fold_journal(read_journal(journal))
-        except sqlite3.Error:
-            folded = {"calls": []}
-        if folded["calls"]:
-            return {"source": "journal", **folded}
     folded = _fold_steps(document)
     return {"source": "steps" if folded["calls"] else None, **folded}
 
@@ -603,9 +710,62 @@ def fit(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
             "r2": round(1 - residual / spread, 4) if spread > 0 else None}
 
 
+def _line(points: list[tuple[int, int]]) -> tuple[float, float, float | None] | None:
+    """Least squares of y on x: the intercept, the slope and R squared; None
+    for fewer than three points or an x that never moves."""
+    if len(points) < STAGE_FIT_MINIMUM:
+        return None
+    mean_x, mean_y = (sum(point[axis] for point in points) / len(points) for axis in (0, 1))
+    spread_x = sum((x - mean_x) ** 2 for x, _ in points)
+    if spread_x == 0:
+        return None
+    slope = sum((x - mean_x) * (y - mean_y) for x, y in points) / spread_x
+    fixed = mean_y - slope * mean_x
+    spread_y = sum((y - mean_y) ** 2 for _, y in points)
+    left = sum((y - (fixed + slope * x)) ** 2 for x, y in points)
+    return fixed, slope, round(1 - left / spread_y, 4) if spread_y > 0 else None
+
+
+def stage_fit(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """A call's time by stage, from the wire's `timing` of the agent's own
+    settled calls: the mean wait for the response headers, then
+
+        firstOutputMs - headersMs     = fixed + thinking tokens x a
+        lastOutputMs  - firstOutputMs = fixed + written tokens x b
+
+    each by least squares. None when no call records the wire's stages, as in
+    a journal from before them and in a Codex session log, which has no
+    first-token time. A line needs three calls.
+    """
+    waits: list[int] = []
+    thinking: list[tuple[int, int]] = []
+    written: list[tuple[int, int]] = []
+    for row in rows:
+        timing = _record(row.get("timing")) or {}
+        headers, begun, ended = (_count(timing.get(name)) for name in ("headersMs", "firstOutputMs", "lastOutputMs"))
+        if row.get("purpose") != "frame" or not row.get("settled", True) or headers is None:
+            continue
+        waits.append(headers)
+        if begun is not None and row.get("thinkingTokens") is not None:
+            thinking.append((row["thinkingTokens"], begun - headers))
+        if begun is not None and ended is not None and row.get("writtenTokens") is not None:
+            written.append((row["writtenTokens"], ended - begun))
+    if not waits:
+        return None
+
+    def stage(points: list[tuple[int, int]], slope: str) -> dict[str, Any] | None:
+        line = _line(points)
+        return None if line is None else {"calls": len(points), "fixedMs": round(line[0]), slope: round(line[1], 3) + 0.0,
+                                          "r2": line[2]}
+
+    return {"calls": len(waits), "meanHeadersMs": round(sum(waits) / len(waits)),
+            "thinking": stage(thinking, "msPerThinkingToken"), "written": stage(written, "msPerWrittenToken")}
+
+
 # Where a row says when its reply began, the closest reading first: the
-# harness's own, the wire's, then the Codex log's first item.
-WAITS = (("stages", "firstEventMs"), ("timing", "firstEventMs"), ("timing", "firstItemMs"))
+# wire's first stream event, the first event the harness saw, which is later
+# by whatever the host held back, then the Codex log's first item.
+WAITS = (("timing", "firstEventMs"), ("stages", "firstEventMs"), ("timing", "firstItemMs"))
 
 
 def wait(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -663,12 +823,36 @@ def breakdown(reads: list[dict[str, Any]]) -> dict[str, Any]:
     summed = totals(rows)
     frame = summed["byPurpose"].get("frame") or _zero()
     timed = [row["durationMs"] for row in own if row.get("durationMs") is not None]
-    time: dict[str, int | None] = {name: None for name in ("spanMs", *SPLIT, "otherMs")}
+    time: dict[str, Any] = {name: None for name in ("spanMs", *SPLIT, "otherMs", "recordedMs")}
+    split_from_events: set[str] = set()
     for read in reads:
-        for name, value in (read.get("time") or {}).items():
-            if value is not None:
-                time[name] = (time[name] or 0) + value
+        held = read.get("time") or {}
+        for name in time:
+            if held.get(name) is not None:
+                time[name] = (time[name] or 0) + held[name]
+        # A split stored before it said what it derived was all from event times.
+        split_from_events.update(held.get("derived", [name for name in (*SPLIT, "otherMs") if held.get("spanMs") is not None]))
+    time["derived"] = sorted(split_from_events)
     ledgers = [read["ledgerTokens"] for read in reads if read.get("ledgerTokens") is not None]
+    labelled: dict[str, dict[str, Any]] = {}
+    for read in reads:
+        for purpose, entry in (read.get("ledgerByPurpose") or {}).items():
+            held = labelled.setdefault(purpose, {"tokens": 0, "costUsd": None})
+            held["tokens"] += entry.get("tokens") or 0
+            if entry.get("costUsd") is not None:
+                held["costUsd"] = (held["costUsd"] or 0.0) + entry["costUsd"]
+    work: dict[str, dict[str, int]] = {}
+    classified = any(_record(row.get("work")) for row in own)
+    for row in own:
+        # A reply rejected in its frame settles no cell, so the journal that
+        # classifies cells says nothing of it; it is the kind it names `rejected`.
+        kind = (_record(row.get("work")) or {}).get("kind", "rejected" if classified and row.get("rejected") else None)
+        if isinstance(kind, str):
+            held = work.setdefault(kind, {"calls": 0, "durationMs": 0, "totalTokens": 0})
+            held["calls"] += 1
+            held["durationMs"] += row.get("durationMs") or 0
+            held["totalTokens"] += row.get("totalTokens") or 0
+    staged = stage_fit(own)
     sessions = [read["session"] for read in reads if read.get("session")]
     sources: dict[str, int] = {}
     for read in reads:
@@ -694,9 +878,16 @@ def breakdown(reads: list[dict[str, Any]]) -> dict[str, Any]:
         "byPurpose": summed["byPurpose"],
         "allPurposes": summed["allPurposes"],
         "ledgerTokens": sum(ledgers) if ledgers else None,
+        "ledgerEntries": sum(read.get("ledgerEntries") or 0 for read in reads),
+        "ledgerByPurpose": _by_purpose(labelled),
         "unlistedInputTokens": sum(read.get("unlistedInputTokens") or 0 for read in reads),
+        "cellWork": dict(sorted(work.items())) or None,
         "fit": fit(own),
+        "stageFit": staged,
     }
+    if staged is None:
+        side["stageFitUnavailable"] = "the Codex session log has no first-token time" if sessions else \
+            "no call records the wire's stage times"
     if sessions:
         side["session"] = {
             "cliVersions": sorted({session["cliVersion"] for session in sessions if session.get("cliVersion")}),
@@ -714,6 +905,32 @@ def _seconds(millis: int | None) -> str:
     return "-" if millis is None else f"{millis / 1000:,.1f}"
 
 
+def split_source(time: dict[str, Any]) -> str:
+    """Where a time split came from, as a clause: the frames' own clocks, event times, or both."""
+    derived = time.get("derived") or []
+    if time.get("recordedMs"):
+        return (f"; {_seconds(time['recordedMs'])} s of it on the frames' own clocks"
+                + (f"; from event times: {', '.join(derived)}" if derived else ""))
+    return "; from event times" if derived else ""
+
+
+def stage_fit_line(side: dict[str, Any]) -> str:
+    """One side's stage fit as a sentence, or why it has none."""
+    staged = side.get("stageFit")
+    if staged is None:
+        return f"no stage fit: {side.get('stageFitUnavailable')}"
+
+    def stage(fitted: dict[str, Any] | None, slope: str, token: str, reached: str) -> str:
+        if fitted is None:
+            return f"; too few calls to fit the time to the {reached}"
+        return (f"; then {fitted['fixedMs'] / 1000:.1f} s + {fitted[slope]:.1f} ms per {token} token to the {reached} "
+                f"(R2 {_number(fitted['r2'], 2)})")
+
+    return (f"stage fit over {staged['calls']} calls: headers after {staged['meanHeadersMs'] / 1000:.1f} s"
+            + stage(staged["thinking"], "msPerThinkingToken", "thinking", "first output")
+            + stage(staged["written"], "msPerWrittenToken", "written", "last"))
+
+
 def _notes(row: dict[str, Any]) -> str:
     notes = []
     if not row.get("settled", True):
@@ -723,7 +940,12 @@ def _notes(row: dict[str, Any]) -> str:
     if row.get("reask"):
         notes.append(f"asked again after {row['reask']}")
     if row.get("retries"):
-        notes.append(f"{row['retries']} retried")
+        # What failed each try and how long it ran, where the journal says.
+        failed = ", ".join(" ".join(str(part) for part in (
+            lost.get("code"), lost.get("httpStatus"),
+            f"after {lost['elapsedMs'] / 1000:.1f} s" if _count(lost.get("elapsedMs")) is not None else None,
+        ) if part is not None) for lost in row.get("retried") or [] if isinstance(lost, dict))
+        notes.append(f"{row['retries']} retried" + (f" ({failed})" if failed else ""))
     if (row.get("tries") or 1) > 1:
         notes.append(f"{row['tries']} tries")
     for holder, name, label in (("stages", "firstEventMs", "first event"), ("stages", "firstOutputMs", "first output"),
@@ -749,8 +971,9 @@ def render(name: str, read: dict[str, Any]) -> str:
     lines += [f"  {line}" for line in stage_lines(side["stageMedians"])]
     for record in read.get("compactions") or []:
         causes = ", ".join(str(cause) for cause in record.get("causes") or []) or "cause not recorded"
-        context = record.get("context") or {}
-        sizes = f", context {context.get('before'):,} to {context.get('after'):,} tokens" if context else ""
+        context = _record(record.get("context")) or {}
+        sizes = f", context {_number(_count(context.get('before')))} to {_number(_count(context.get('after')))} tokens" \
+            if context else ""
         lines.append(f"  compaction before frame {record.get('frame')}: {causes}, {_seconds(record.get('durationMs'))} s{sizes}")
     session = side.get("session")
     if session:
@@ -762,7 +985,7 @@ def render(name: str, read: dict[str, Any]) -> str:
         wall = f"; the adapter's wall clock {read['wallSec']:,.1f} s" if read.get("wallSec") is not None else ""
         lines.append(f"  span {_seconds(time['spanMs'])} s: model {_seconds(time['modelMs'])}, compaction "
                      f"{_seconds(time['compactionMs'])}, commands {_seconds(time['commandsMs'])}, judge "
-                     f"{_seconds(time['judgeMs'])}, other {_seconds(time['otherMs'])}{wall}")
+                     f"{_seconds(time['judgeMs'])}, other {_seconds(time['otherMs'])}{split_source(side['time'])}{wall}")
     if read.get("unlistedInputTokens"):
         lines.append(f"  the trajectory's total holds {read['unlistedInputTokens']:,} input tokens that no step lists")
     fitted = side["fit"]
@@ -770,16 +993,23 @@ def render(name: str, read: dict[str, Any]) -> str:
         lines.append(f"  fit over {fitted['calls']} calls: {fitted['fixedSeconds']:.1f} s fixed, "
                      f"{fitted['msPerThinkingToken']:.1f} ms per thinking token, {fitted['msPerWrittenToken']:.1f} ms "
                      f"per written token, R2 {_number(fitted['r2'], 2)}")
+    lines.append(f"  {stage_fit_line(side)}")
     if read.get("ledgerTokens") is not None:
         missing = read["ledgerTokens"] - side["allPurposes"]["totalTokens"]
-        lines.append(f"  ledger {read['ledgerTokens']:,} tokens; rows {side['allPurposes']['totalTokens']:,}"
-                     + (f"; {missing:,} in no row" if missing else ""))
-    lines += ["", "| Purpose | Calls | Input | Cached | Output | Total | Seconds |",
-              "| --- | --- | --- | --- | --- | --- | --- |"]
+        lines.append(f"  ledger {read['ledgerTokens']:,} tokens in {side['ledgerEntries']} entries; rows "
+                     f"{side['allPurposes']['totalTokens']:,}" + (f"; {missing:,} in no row" if missing else ""))
+    if side["cellWork"]:
+        lines.append("  model calls by what their cell did: " + ", ".join(
+            f"{kind} {held['calls']} ({_seconds(held['durationMs'])} s)" for kind, held in side["cellWork"].items()))
+    ledger = side["ledgerByPurpose"] or {}
+    lines += ["", "| Purpose | Calls | Input | Cached | Output | Total | Ledger | Cost USD | Seconds |",
+              "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for purpose, total in side["byPurpose"].items():
         flags = "".join(f" ({total[name]} {name})" for name in ("unsettled", "tokenless") if total[name])
+        entry = ledger.get(purpose) or {}
         lines.append(f"| {purpose} | {total['calls']}{flags} | {_number(total['inputTokens'])} | "
                      f"{_number(total['cachedTokens'])} | {_number(total['outputTokens'])} | {total['totalTokens']:,} | "
+                     f"{_number(entry.get('tokens'))} | {_number(entry.get('costUsd'), 6)} | "
                      f"{_seconds(total['durationMs'])} |")
     lines += ["", "| # | Purpose | Start | Seconds | Input | Cached | Thinking | Written | Total | Frame | Notes |",
               "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]

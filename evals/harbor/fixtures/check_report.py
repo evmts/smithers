@@ -113,7 +113,8 @@ class ReportCLI(unittest.TestCase):
         if host_command:
             calls.append(({"command": host_command, "mode": "unhermetic"}, ran))
         if refused_input:
-            calls.append((refused_input, {"outcome": "failure", "code": "invalid_input", "message": "x"}))
+            calls.append((refused_input, {"outcome": "failure", "code": "invalid_input", "reason": "too_large",
+                                          "message": "x"}))
         connection = sqlite3.connect(flows / "control.db")
         connection.execute(DDL)
         seq = 0
@@ -128,13 +129,15 @@ class ReportCLI(unittest.TestCase):
         connection.commit()
         connection.close()
 
-    def recorded(self, arm: str, task: str, *, minutes: float) -> Path:
+    def recorded(self, arm: str, task: str, *, minutes: float, journal: list | None = None) -> Path:
         """A trial with the records a real one keeps: the Smithers arm's
-        trajectory as the adapter folds it, the baseline's Codex session log,
-        and the runner's timing of the agent."""
+        trajectory as the adapter folds `journal`, the baseline's Codex
+        session log, and the runner's timing of the agent."""
         if arm == "smithers":
-            directory = self.trial(arm, task, tokens=(26_000, 17_000, 2_600))
-            document = smithers_agent.trajectory(check_calls.journal(), agent_name="smithers", agent_version="test",
+            events = check_calls.journal() if journal is None else journal
+            used = smithers_agent.summarize(events)["usage"]
+            directory = self.trial(arm, task, tokens=(used["inputTokens"], used["cachedInputTokens"], used["outputTokens"]))
+            document = smithers_agent.trajectory(events, agent_name="smithers", agent_version="test",
                                                  seat="openai:seat-model", instruction="i", session_id="s")
             (directory / "agent" / "trajectory.json").write_text(json.dumps(document))
         else:
@@ -225,11 +228,19 @@ class ReportCLI(unittest.TestCase):
         self.trial("baseline", "task-001")
         self.assert_refused(f"smithers: {trial.name} is not sealed: host-call audit host-calls-benign")
 
-    def test_a_truncated_input_stays_unsealed_and_the_audit_says_its_target_is_unknown(self) -> None:
-        """The journal keeps a digest in place of an input too large to keep,
-        which hides the call's container. Nothing shows it reached the task
-        container, so the trial stays unsealed; the output says why, so the
-        reader need not open the journal."""
+    def audit(self, trial: Path) -> tuple[str, dict]:
+        """The audit's listing of one trial, as text and as JSON."""
+        runs = [subprocess.run([sys.executable, "-B", str(AUDIT), str(trial), *flag], text=True, capture_output=True,
+                               timeout=120) for flag in ((), ("--json",))]
+        self.assertEqual([run.stderr for run in runs], ["", ""])
+        (listed,) = json.loads(runs[1].stdout)
+        return runs[0].stdout, listed
+
+    def test_a_bare_truncation_marker_stays_unsealed_and_the_audit_says_its_target_is_unknown(self) -> None:
+        """A journal from before routing fields were kept holds only a digest
+        of an input too large to keep, which hides the call's container.
+        Nothing shows it reached the task container, so the trial stays
+        unsealed; the output says why, so the reader need not open the journal."""
         marker = {"truncated": True, "bytes": 73_691, "digest": "ab" * 32}
         self.paired(1)
         trial = self.trial("smithers", "task-001", refused_input=marker)
@@ -240,25 +251,50 @@ class ReportCLI(unittest.TestCase):
         self.assertEqual((process.returncode, process.stderr), (0, ""))
         self.assertIn(f"host-calls-benign  {trial.parent.name}/{trial.name}  host=1 container=1 journal=kept unknown=1\n",
                       process.stdout)
-        self.assertIn("    seq 2 bash exit=None outcome=failure cwd=None TARGET UNKNOWN: the journal kept a digest of this "
-                      f"call's 73,691-byte input and nothing else, so its container and command are not recorded: digest {'ab' * 32}\n",
-                      process.stdout)
+        self.assertIn("    seq 2 bash exit=None code=invalid_input reason=too_large outcome=failure cwd=None TARGET UNKNOWN: "
+                      "the journal kept a digest of this call's 73,691-byte input and nothing else, so its container and "
+                      f"command are not recorded: digest {'ab' * 32}\n", process.stdout)
         (audit,) = json.loads(subprocess.run([sys.executable, "-B", str(AUDIT), str(trial), "--json"], text=True,
                                              capture_output=True, timeout=60).stdout)
         (call,) = audit["hostCalls"]
         self.assertEqual((audit["verdict"], audit["unknownTargets"], call["target"], call["truncated"], call["outcome"]),
                          ("host-calls-benign", 1, "unknown", {"bytes": 73_691, "digest": "ab" * 32}, "failure"))
 
-    def test_a_truncated_input_that_names_its_container_is_a_container_call(self) -> None:
+    def test_a_truncated_input_that_kept_its_container_is_a_container_call(self) -> None:
+        """Since the journal keeps an oversized input's small fields beside
+        its digest, the call says where it was aimed and is read like any other."""
         self.paired(1)
-        trial = self.trial("smithers", "task-001",
-                           refused_input={"truncated": True, "bytes": 73_691, "digest": "ab" * 32, "container": "ws-1"})
+        trial = self.trial("smithers", "task-001", refused_input={
+            "container": "ws-1", "cwd": "/app", "interpreter": "python3", "truncated": True, "bytes": 73_691,
+            "digest": "ab" * 32})
         self.trial("baseline", "task-001")
         _, report = self.run_report(0, "--min-tasks", "2")
         self.assertTrue(report["publishable"], report["refusals"])
-        (audit,) = json.loads(subprocess.run([sys.executable, "-B", str(AUDIT), str(trial), "--json"], text=True,
-                                             capture_output=True, timeout=60).stdout)
-        self.assertEqual((audit["verdict"], audit["containerCalls"], audit["unknownTargets"]), ("clean", 2, 0))
+        text, audit = self.audit(trial)
+        self.assertEqual((audit["verdict"], audit["containerCalls"], audit["unknownTargets"], audit["hostCalls"]),
+                         ("clean", 2, 0, []))
+        self.assertIn(f"clean              {trial.parent.name}/{trial.name}  host=0 container=2 journal=kept\n", text)
+
+    def test_a_truncated_input_that_kept_its_fields_and_names_no_container_is_a_host_call(self) -> None:
+        """The kept fields show the call was aimed at no container, so its
+        target is the host and is not unknown. Its command is still not
+        recorded, and what was kept is still read for a forbidden name."""
+        self.paired(1)
+        kept = {"cwd": "/work", "interpreter": "python3", "truncated": True, "bytes": 73_691, "digest": "ab" * 32}
+        trial = self.trial("smithers", "task-001", refused_input=kept)
+        self.trial("baseline", "task-001")
+        self.assert_refused(f"smithers: {trial.name} is not sealed: host-call audit host-calls-benign")
+        text, audit = self.audit(trial)
+        (call,) = audit["hostCalls"]
+        self.assertEqual((audit["verdict"], audit["unknownTargets"], call["target"], call["truncated"], call["cwd"]),
+                         ("host-calls-benign", 0, "host", {"bytes": 73_691, "digest": "ab" * 32}, "/work"))
+        self.assertEqual((call["code"], call["reason"]), ("invalid_input", "too_large"))
+        self.assertIn(f"host-calls-benign  {trial.parent.name}/{trial.name}  host=1 container=1 journal=kept\n", text)
+        self.assertIn("    seq 2 bash exit=None code=invalid_input reason=too_large outcome=failure cwd=/work INPUT TRUNCATED: "
+                      "the journal kept this call's small fields and a digest of its 73,691-byte input; it names no "
+                      f"container and its command is not recorded: interpreter=python3 digest {'ab' * 32}\n", text)
+        tainted = self.trial("smithers", "task-002", refused_input={**kept, "cwd": "/work/tests"})
+        self.assertEqual(self.audit(tainted)[1]["verdict"], "TAINTED", "a kept field is read like any other input")
 
     def test_a_host_call_is_listed_as_before(self) -> None:
         self.paired(1)
@@ -391,9 +427,15 @@ class ReportCLI(unittest.TestCase):
         self.assertEqual((theirs["thinkingTokens"], theirs["writtenTokens"], theirs["weightedTokens"], theirs["agentMinutes"]),
                          (800, 1_000, 31_200, 9.0))
         self.assertEqual(ours["time"], {"spanMs": 140_000, "modelMs": 109_000, "compactionMs": 20_000, "commandsMs": 6_600,
-                                        "judgeMs": 2_800, "otherMs": 1_600})
+                                        "judgeMs": 2_800, "otherMs": 1_600, "recordedMs": 0,
+                                        "derived": ["commandsMs", "compactionMs", "judgeMs", "modelMs", "otherMs"]})
         self.assertEqual(theirs["time"], {"spanMs": 43_000, "modelMs": 36_000, "compactionMs": 0, "commandsMs": 5_000,
-                                          "judgeMs": 0, "otherMs": 2_000})
+                                          "judgeMs": 0, "otherMs": 2_000, "recordedMs": 0,
+                                          "derived": ["commandsMs", "modelMs", "otherMs"]})
+        self.assertEqual((ours["stageFit"], ours["stageFitUnavailable"], theirs["stageFit"], theirs["stageFitUnavailable"]),
+                         (None, "no call records the wire's stage times", None,
+                          "the Codex session log has no first-token time"))
+        self.assertEqual((ours["ledgerEntries"], ours["ledgerByPurpose"]), (20, None))
         self.assertEqual((ours["compactions"], ours["judgeReadings"], theirs["compactions"], theirs["judgeReadings"]),
                          (2, 8, 2, 0))
         self.assertEqual((ours["wait"], theirs["wait"]),
@@ -418,9 +460,14 @@ class ReportCLI(unittest.TestCase):
             "| Commands | 6.6 s | 5.0 s |", "| Judge | 2.8 s | 0.0 s |", "| Compaction | 20.0 s | 0.0 s |",
             "| Other | 1.6 s | 2.0 s |", "| Compactions | 2 | 2 |", "| Judge readings | 8 | 0 |",
             "| Milliseconds per written token | " + f"{ours['fit']['msPerWrittenToken']:,.1f}" + " | -60.0 |",
-            "| Smithers | compaction | 2 | n/a | n/a | n/a | 18,000 | 20.0 |",
-            "| Smithers | judge | 2 | 6,000 | n/a | 480 | 6,480 | 0.5 |",
-            "| Baseline | frame | 6 | 78,000 | 68,000 | 1,800 | 79,800 | 36.0 |",
+            "| Smithers | compaction | 2 | n/a | n/a | n/a | 18,000 | n/a | n/a | 20.0 |",
+            "| Smithers | judge | 2 | 6,000 | n/a | 480 | 6,480 | n/a | n/a | 0.5 |",
+            "| Baseline | frame | 6 | 78,000 | 68,000 | 1,800 | 79,800 | n/a | n/a | 36.0 |",
+            "| Stage fit: milliseconds per thinking token | n/a | n/a |",
+            "- Smithers: the time split is from event times.",
+            "- Baseline: the time split is from event times.",
+            "- Smithers: no stage fit: no call records the wire's stage times.",
+            "- Baseline: no stage fit: the Codex session log has no first-token time.",
             "- Smithers: 18,000 compaction tokens are recorded as a sum, with no input, cached or output count.",
             "- Smithers: 2 frame calls report no tokens and are in no total.",
             "- Baseline: Codex CLI 0.160.0; effort xhigh; summary none.",
@@ -432,6 +479,50 @@ class ReportCLI(unittest.TestCase):
         self.assertNotIn("ledgers hold", text, "the rows sum to the run's ledger, so nothing is said")
         self.assertEqual(report["results"]["smithers"]["tokens"], {"input": 52_000, "cached": 34_000, "output": 5_200},
                          "the scored token columns are the agent's own calls, as before")
+
+    def test_a_journal_that_records_its_own_times_reports_them_and_the_stage_fit(self) -> None:
+        for task in ("task-000", "task-001"):
+            self.recorded("smithers", task, minutes=10, journal=check_calls.recorded())
+            self.recorded("baseline", task, minutes=4.5)
+        text, report = self.run_report(0, "--min-tasks", "2")
+        ours, theirs = (report["comparison"]["arms"][arm] for arm in ("smithers", "baseline"))
+        self.assertEqual(ours["time"], {"spanMs": 141_000, "modelMs": 109_000, "compactionMs": 20_600, "commandsMs": 6_900,
+                                        "judgeMs": 2_800, "otherMs": 1_700, "recordedMs": 137_400,
+                                        "derived": ["modelMs", "otherMs"]})
+        self.assertEqual(ours["stageFit"], {
+            "calls": 8, "meanHeadersMs": 1_025,
+            "thinking": {"calls": 8, "fixedMs": 500, "msPerThinkingToken": 20.0, "r2": 1.0},
+            "written": {"calls": 8, "fixedMs": 300, "msPerWrittenToken": 10.0, "r2": 1.0}})
+        self.assertNotIn("stageFitUnavailable", ours)
+        self.assertEqual((theirs["stageFit"], theirs["stageFitUnavailable"], theirs["fit"]["calls"]),
+                         (None, "the Codex session log has no first-token time", 6), "the whole-call fit stays")
+        self.assertEqual((ours["ledgerEntries"], ours["ledgerTokens"], ours["ledgerByPurpose"]["frame"]),
+                         (18, 141_720, {"tokens": 56_400, "costUsd": 0.114}))
+        self.assertEqual(ours["cellWork"], {"calls": {"calls": 4, "durationMs": 50_000, "totalTokens": 26_400},
+                                            "no_call": {"calls": 2, "durationMs": 16_000, "totalTokens": 16_800},
+                                            "rejected": {"calls": 2, "durationMs": 40_000, "totalTokens": 13_200}})
+        first = report["comparison"]["tasks"][0]
+        self.assertEqual((first["smithers"]["stageFit"]["thinking"]["msPerThinkingToken"], first["baseline"]["stageFit"]),
+                         (20.0, None))
+        for line in (
+            "| Stage fit: calls | 8 | n/a |", "| Stage fit: mean seconds to headers | 1.0 | n/a |",
+            "| Stage fit: headers to first output, fixed seconds | 0.5 | n/a |",
+            "| Stage fit: milliseconds per thinking token | 20.0 | n/a |", "| Stage fit: R squared, thinking | 1.00 | n/a |",
+            "| Stage fit: first to last output, fixed seconds | 0.3 | n/a |",
+            "| Stage fit: milliseconds per written token | 10.0 | n/a |", "| Stage fit: R squared, written | 1.00 | n/a |",
+            "- Smithers: 137.4 s of the 141.0 s span is the frames' own clocks; from event times: modelMs, otherMs.",
+            "- Baseline: the time split is from event times.",
+            "- Baseline: no stage fit: the Codex session log has no first-token time.",
+            "- Smithers: model calls by what their cell did: calls 4 (50.0 s), no_call 2 (16.0 s), rejected 2 (40.0 s).",
+            "| Smithers | frame | 10 | 52,000 | 34,000 | 4,400 | 56,400 | 56,400 | 0.114000 | 109.0 |",
+            "| Smithers | compaction | 2 | 16,400 | 0 | 1,600 | 18,000 | 18,000 | 0.040000 | 20.0 |",
+            "| Smithers | marks | 2 | 4,000 | n/a | 80 | 4,080 | 4,080 | 0.000100 | 0.3 |",
+            "Smithers. Baseline: no stage fit: the Codex session log has no first-token time.",
+            "| terminal-bench/task-000 | 4 | 1.0 | 0.5 | 20.0 | 1.00 | 0.3 | 10.0 | 1.00 |",
+        ):
+            self.assertIn(line + "\n", text)
+        self.assertNotIn("ledgers hold", text, "the rows agree with the ledger under every purpose")
+        self.assertNotIn("Smithers: no stage fit", text)
 
     def test_an_old_trajectory_and_a_trial_with_no_call_record_still_report(self) -> None:
         old = self.trial("smithers", "task-000", tokens=(3_900, 1_100, 120))

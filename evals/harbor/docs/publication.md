@@ -23,10 +23,11 @@ A publishable run meets every rule:
 | Measured | Every scored trial reports input, cached and output tokens                                      |
 | Sealed   | No extra allowed hosts or mounts; a command exited 0 in the task container; host audit clean    |
 
-The journal keeps a digest in place of a call input too large to keep, which
-hides the call's container. The host audit lists such a call with
-`target: unknown`, the trial stays unsealed, and the refusal says the input was
-truncated.
+The journal keeps a digest in place of a call input too large to keep, and
+beside it the input's small fields, so the host audit reads the call's
+container like any other's. A journal from before those fields were kept hides
+the container: the audit lists the call with `target: unknown`, the trial
+stays unsealed, and the refusal says the input was truncated.
 
 The pass rate is the mean verifier reward over every scored trial of the
 paired tasks. `report.json` names each trial and its `agent/trajectory.json`.
@@ -34,7 +35,9 @@ paired tasks. `report.json` names each trial and its `agent/trajectory.json`.
 Both files also say where each arm's time and tokens went, for every paired
 task and overall: model calls, seconds per call, cache share, the wall clock
 split into model wait, commands, judge, compaction and the rest, tokens by
-purpose, and the fit of call seconds on thinking and written tokens. In
+purpose beside the run's own ledger, and the fit of call seconds on thinking
+and written tokens, whole and by stage. The baseline has no stage fit: the
+Codex session log has no first-token time. In
 `report.json` this is `comparison`. It is read from each scored trial's own
 record and changes no score; a refused report carries it too. The
 [adapter README](../README.md#where-time-and-tokens-went) defines each number.

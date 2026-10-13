@@ -14,9 +14,12 @@ time a fixed constant. What is pinned, and why each one matters:
     are in a total. A call whose tokens are known only as a sum is named.
   - The time split is exclusive and sums to the span: a judge reading that
     ran under a model call costs no wall clock, one that held the frame does.
-  - A journal written before any of these fields existed still folds, a
-    field the harness adds later is read as written, not derived, and a
+  - A journal written before any of these fields existed still folds, and a
     payload of a shape nobody expected costs a row its value, never the fold.
+  - A journal that records a fact is read for it, and `derived` names only
+    what it does not record: a settle's own keys, wire timing and written
+    count, each frame's own clock, the ledger's purposes, what a failed try
+    cost. The stage fit splits a call on the wire's times.
   - The Codex session log gives the same rows, the session's effort, summary
     setting and CLI version, and none of the ids the log carries.
   - The fit recovers known coefficients and refuses a degenerate sample.
@@ -153,6 +156,130 @@ def stamp(offset: int) -> str:
     return agent._iso(T0 + offset)
 
 
+def labelled(key: str, spent: int, purpose: str, frame: int, cost: float, parts: list | None = None) -> tuple:
+    """A ledger entry as the journal writes it since spends were labelled."""
+    return ("flows.agent.usage.v1", None, {"stepKey": key, "spent": spent, "costUsd": cost, "costSource": "estimated",
+                                           "purpose": purpose, "frame": frame, **({"parts": parts} if parts else {})})
+
+
+def wire(headers: int, first_output: int, last_output: int) -> dict:
+    return {"startedAt": T0, "attempts": 1, "requestBytes": 24_000, "preparedMs": 1, "signedMs": 2, "sentMs": 4,
+            "headersMs": headers, "firstEventMs": headers + 20, "firstThinkingMs": headers + 100,
+            "firstOutputMs": first_output, "lastOutputMs": last_output, "completedMs": last_output + 100,
+            "closedMs": last_output + 150}
+
+
+def settled(at: int, duration: int, frame: int, attempt: int, counters: dict, timing: dict, cost: float,
+            **more: object) -> tuple:
+    written = counters["outputTokens"] - counters["reasoningTokens"]
+    return ("control.agent.model-settled", at, {
+        "durationMillis": duration, "frame": frame, "attempt": attempt, "purpose": "frame", "scope": "run-1",
+        "stages": {"firstEventMs": timing["firstThinkingMs"] + 25, "firstOutputMs": timing["firstOutputMs"] + 25},
+        "tries": 1, "output": {"thinking": counters["reasoningTokens"], "written": written}, "timing": timing,
+        "servedTier": "default", "costUsd": cost, "costSource": "estimated", "text": "reply", "usage": counters, **more})
+
+
+def recorded() -> list[dict]:
+    """The same kind of run in a journal that records what `journal()` leaves
+    to derive: each settle's own keys, wire timing and written count, what a
+    failed try cost, a compaction's summary call, each frame's own clock, what
+    each cell amounted to, each call's duration, and a labelled ledger.
+
+    Headers to first output is 500 ms + 20 ms a thinking token and first to
+    last output is 300 ms + 10 ms a written token, in every call."""
+    judged = {"modelId": JUDGE}
+    marks = {"kept": 2, "removed": 1, "squashed": 3}
+    rows = [
+        ("control.run.running", None, {}),
+        labelled("boundary-usage/key1_a", 1_420, "relevance", 0, 0.0002),
+        ("control.agent.decision-settled", 1_000, {"classifier": "relevance/unnecessary", "frame": 0, "latencyMs": 600,
+                                                   "usage": {"inputTokens": 1_400, "outputTokens": 20, **judged}}),
+        ("control.agent.relevance-settled", 1_000, {"frame": 0, "latencyMs": 600,
+                                                    "usage": {"inputTokens": 1_400, "outputTokens": 20}}),
+        ("control.agent.turn-opened", 1_000, {"seat": "openai:seat-model"}),
+        requested(1_000, 0),
+        labelled("key1_b", 5_500, "frame", 0, 0.01),
+        settled(11_000, 10_000, 0, 1, usage(5_000, 0, 500, 200), wire(1_000, 5_500, 8_800), 0.01),
+        ("control.agent.cell-produced", 11_000, {"text": "await bash()"}),
+        ("control.agent.cell-call-started", 11_100, {"callId": "c1", "flowName": "bash", "input": {"command": "ls"}}),
+        ("control.agent.cell-call-settled", 12_100, {"callId": "c1", "flowName": "bash", "outcome": "success",
+                                                     "durationMillis": 1_000, "value": {"exitCode": 0}}),
+        ("control.agent.cell-call-started", 12_100, {"callId": "c2", "flowName": "jev", "input": {"questions": {}}}),
+        ("control.agent.cell-call-settled", 12_400, {"callId": "c2", "flowName": "jev", "outcome": "success",
+                                                     "durationMillis": 300,
+                                                     "value": {"answers": {}, "latencyMs": 250,
+                                                               "usage": {"inputTokens": 700, "outputTokens": 60}}}),
+        ("control.engine.event", None, {"eventType": "flows.agent.usage.v1",
+                                        "payload": labelled("call-reading/key1_c/receipt/0", 760, "reading", 0, 0.00003)[2]}),
+        ("control.agent.cell-settled", 12_450, {"outcome": {"_tag": "settled"},
+                                                "work": {"kind": "calls", "calls": 2, "callMs": 1_300}}),
+        ("control.agent.turn-closed", 12_500, {"outcome": "continue", "frame": 0, "time": {
+            "wallMs": 12_200, "modelMs": 10_000, "cellMs": 1_350, "judgeMs": 600, "compactionMs": 0, "otherMs": 250}}),
+        ("control.agent.turn-opened", 12_500, {"seat": "openai:seat-model"}),
+        requested(12_500, 1),
+        labelled("boundary-usage/key1_d", 5_280, "judge", 0, 0.00015, [
+            {"purpose": "judge", "spent": 3_240, "costUsd": 0.0001}, {"purpose": "marks", "spent": 2_040, "costUsd": 0.00005}]),
+        ("control.agent.decision-settled", 12_800, {"classifier": "supervisor/turn", "frame": 0, "latencyMs": 250,
+                                                    "timing": {"headersMs": 200, "completedMs": 240}}),
+        ("control.agent.decision-settled", 12_800, {"classifier": "compaction/marks", "frame": 0, "latencyMs": 150,
+                                                    "timing": {"headersMs": 120, "completedMs": 140},
+                                                    "usage": {"inputTokens": 2_000, "outputTokens": 40, **judged}}),
+        ("control.agent.supervisor-settled", 12_800, {
+            "frame": 0, "latencyMs": 250, "usage": {"inputTokens": 3_000, "outputTokens": 240, **judged},
+            "costUsd": 0.0001, "costSource": "estimated", "triggers": ["suspect", "outdated_context"],
+            "compact": ["outdated_context"], "compactSuppressed": "floor", "timing": {"headersMs": 200, "completedMs": 240}}),
+        ("control.agent.model-retried", 20_000, {"attempt": 1, "code": "transport", "delayMillis": 900,
+                                                 "elapsedMs": 6_500, "httpStatus": 502}),
+        labelled("key1_e", 6_600, "frame", 1, 0.02),
+        settled(32_500, 20_000, 1, 1, usage(6_000, 4_000, 600, 300), wire(1_200, 7_700, 11_000), 0.02, tries=2),
+        ("control.agent.cell-rejected-in-frame", 32_500, {"attempt": 1, "code": "compile_failed", "message": "no"}),
+        ("control.agent.model-requested", 32_500, {"frame": 1, "attempt": 2, "purpose": "frame", "modelId": SEAT,
+                                                   "reask": "compile_failed"}),
+        labelled("key1_f", 7_700, "frame", 1, 0.015),
+        settled(47_500, 15_000, 1, 2, usage(7_000, 6_000, 700, 100), wire(900, 3_400, 9_700), 0.015,
+                reask="compile_failed"),
+        ("control.agent.cell-produced", 47_500, {"text": "await bash()"}),
+        ("control.agent.cell-call-started", 47_600, {"callId": "c3", "flowName": "bash", "input": {"command": "make"}}),
+        ("control.agent.cell-call-settled", 49_600, {"callId": "c3", "flowName": "bash", "outcome": "failure",
+                                                     "code": "flow_failed", "reason": "exit", "durationMillis": 2_000}),
+        ("control.agent.cell-settled", 49_650, {"outcome": {"_tag": "settled"},
+                                                "work": {"kind": "calls", "calls": 1, "callMs": 2_000}}),
+        ("control.agent.turn-closed", 49_700, {"outcome": "continue", "frame": 1, "time": {
+            "wallMs": 37_200, "modelMs": 35_000, "cellMs": 2_050, "judgeMs": 0, "compactionMs": 0, "otherMs": 150}}),
+        requested(49_800, 2, purpose="compaction"),
+        labelled("key1_g", 9_000, "compaction", 2, 0.02),
+        ("control.agent.compaction-settled", 60_000, {
+            "frame": 2, "durationMillis": 10_300, "causes": ["outdated_context"], "marks": marks, "removed": 1_200,
+            "context": {"before": 250_000, "after": 60_000},
+            "summaryCall": {"durationMillis": 10_000, "usage": usage(8_200, 0, 800, 100), "costUsd": 0.02,
+                            "output": {"thinking": 100, "written": 700}, "tries": 1}}),
+        ("control.agent.turn-opened", 60_000, {"seat": "openai:seat-model"}),
+        requested(60_000, 2),
+        labelled("key1_h", 8_400, "frame", 2, 0.012),
+        settled(68_000, 8_000, 2, 1, usage(8_000, 7_000, 400, 150), wire(1_000, 4_500, 7_300), 0.012),
+        ("control.agent.cell-settled", 68_050, {"outcome": {"_tag": "settled"},
+                                                "work": {"kind": "no_call", "calls": 0, "callMs": 0}}),
+        labelled("boundary-usage/key1_i", 26_200, "claim", 2, 0.001),
+        ("control.agent.claim-demanded", 68_900, {"latencyMs": 800, "demanded": True, "nextFrame": 3, "costUsd": 0.001,
+                                                  "usage": {"inputTokens": 26_000, "outputTokens": 200, **judged}}),
+        ("control.agent.turn-closed", 69_000, {"outcome": "continue", "frame": 2, "time": {
+            "wallMs": 19_300, "modelMs": 8_000, "cellMs": 50, "judgeMs": 800, "compactionMs": 10_300, "otherMs": 150}}),
+        ("control.agent.turn-opened", 69_000, {"seat": "openai:seat-model"}),
+        requested(69_000, 3),
+        ("control.status.observed", None, {}),
+    ]
+    events = []
+    clock = T0
+    for seq, (kind, at, payload) in enumerate(rows):
+        if at is not None:
+            clock = T0 + at
+            payload = {**payload, "at": clock}
+        elif kind == "control.status.observed":
+            clock = T0 + 70_500
+        events.append({"seq": seq, "at": clock + (FLUSH_LAG if at is not None else 0), "type": kind, "payload": payload})
+    return events
+
+
 SESSION_BASE = "2026-01-01T00:00:"
 SESSION_EPOCH = 1_767_225_600_000  # 2026-01-01T00:00:00Z
 ACCOUNT = "acct-do-not-copy"
@@ -265,6 +392,8 @@ class JournalFold(unittest.TestCase):
             self.assertEqual(everything[field], sum(total[field] for total in by_purpose.values()), field)
         self.assertEqual(everything["totalTokens"], 71_260)
         self.assertEqual(self.folded["ledgerTokens"], 71_260, "every usage event, the engine's wrapped ones included")
+        self.assertEqual((self.folded["ledgerEntries"], self.folded["ledgerByPurpose"]), (10, None),
+                         "this ledger names no purpose, so it has no total by purpose")
         seat = agent.summarize(self.events)
         self.assertEqual(seat["modelCalls"], 4)
         self.assertEqual(seat["usage"], {"inputTokens": 26_000, "cachedInputTokens": 17_000, "outputTokens": 2_600,
@@ -276,8 +405,10 @@ class JournalFold(unittest.TestCase):
     def test_the_time_split_is_exclusive_and_sums_to_the_span(self) -> None:
         time = self.folded["time"]
         self.assertEqual(time, {"spanMs": 70_000, "modelMs": 54_500, "compactionMs": 10_000, "commandsMs": 3_300,
-                                "judgeMs": 1_400, "otherMs": 800})
-        self.assertEqual(time["spanMs"], sum(value for name, value in time.items() if name != "spanMs"))
+                                "judgeMs": 1_400, "otherMs": 800, "recordedMs": 0,
+                                "derived": ["commandsMs", "compactionMs", "judgeMs", "modelMs", "otherMs"]},
+                         "this journal timed no frame, so every part is read off event times and says so")
+        self.assertEqual(time["spanMs"], sum(time[name] for name in (*calls.SPLIT, "otherMs")))
         readings = sum(self.folded["byPurpose"][purpose]["durationMs"] for purpose in ("judge", "marks", "claim", "relevance"))
         self.assertEqual(readings, 1_800, "every reading's latency, the 400 ms under a model call included")
 
@@ -320,11 +451,12 @@ class JournalFold(unittest.TestCase):
             if os.environ.get("HARBOR_PYTHON"):
                 raise
             self.skipTest("harbor not importable")
-        document = agent.trajectory(self.events, agent_name="smithers", agent_version="test", seat="openai:seat-model",
-                                    instruction="do it", session_id="trial")
-        validated = Trajectory.model_validate(document)
-        self.assertEqual(len(validated.extra["calls"]), len(self.rows))
-        self.assertEqual(validated.steps[2].extra["rejected"]["code"], "compile_failed")
+        for events in (self.events, recorded()):
+            document = agent.trajectory(events, agent_name="smithers", agent_version="test", seat="openai:seat-model",
+                                        instruction="do it", session_id="trial")
+            validated = Trajectory.model_validate(document)
+            self.assertEqual(len(validated.extra["calls"]), len(self.rows))
+            self.assertEqual(validated.steps[2].extra["rejected"]["code"], "compile_failed")
 
     def test_a_journal_from_before_these_fields_still_folds(self) -> None:
         old = [
@@ -347,10 +479,13 @@ class JournalFold(unittest.TestCase):
         self.assertIsNone(folded["ledgerTokens"], "no ledger was written, which is not a ledger of zero")
         self.assertEqual(folded["byPurpose"]["frame"]["tokenless"], 1)
         self.assertEqual(folded["time"], {"spanMs": 6_000, "modelMs": 4_700, "compactionMs": 0, "commandsMs": 300,
-                                          "judgeMs": 0, "otherMs": 1_000})
+                                          "judgeMs": 0, "otherMs": 1_000, "recordedMs": 0,
+                                          "derived": ["commandsMs", "modelMs", "otherMs"]})
+        self.assertEqual((folded["ledgerEntries"], folded["ledgerByPurpose"]), (0, None))
         self.assertEqual(folded["compactions"], [])
         self.assertEqual(calls.fold_journal([]), {"calls": [], "byPurpose": {}, "allPurposes": calls.totals([])["allPurposes"],
-                                                  "ledgerTokens": None, "time": None, "compactions": []})
+                                                  "ledgerTokens": None, "ledgerEntries": 0, "ledgerByPurpose": None,
+                                                  "time": None, "compactions": []})
 
     def test_a_payload_of_the_wrong_shape_never_ends_the_fold(self) -> None:
         """The fold runs after the model work is paid for: a field of a type
@@ -360,10 +495,12 @@ class JournalFold(unittest.TestCase):
                  "control.agent.decision-settled", "control.agent.supervisor-settled", "control.agent.claim-demanded",
                  "control.agent.relevance-settled", "control.agent.cell-call-started",
                  "control.agent.cell-call-settled", "control.engine.event", "flows.agent.usage.v1",
-                 "control.agent.turn-opened"]
+                 "control.agent.turn-opened", "control.agent.cell-settled", "control.agent.turn-closed"]
         fields = ["at", "purpose", "frame", "attempt", "modelId", "usage", "durationMillis", "timing", "servedTier",
                   "marks", "code", "classifier", "latencyMs", "callId", "flowName", "value", "eventType", "payload",
-                  "stepKey", "spent", "text", "cell", "message"]
+                  "stepKey", "spent", "text", "cell", "message", "time", "work", "parts", "triggers", "compact",
+                  "compactSuppressed", "costUsd", "elapsedMs", "httpStatus", "delayMillis", "output", "stages",
+                  "summaryCall", "causes", "context", "removed", "tries", "reask"]
         for wrong in (None, "text", 3.5, True, [1], {"usage": "x", "latencyMs": [], "inputTokens": "many"}):
             events = [{"seq": seq, "at": T0 + seq, "type": kind, "payload": {field: wrong for field in fields}}
                       for seq, kind in enumerate(kinds * 2)]
@@ -371,6 +508,9 @@ class JournalFold(unittest.TestCase):
             self.assertEqual(folded["allPurposes"]["calls"], len(folded["calls"]), repr(wrong))
             self.assertGreaterEqual(len(folded["calls"]), 2, "the calls are still rows")
             json.dumps(folded)
+            side = calls.breakdown([{"source": "journal", **folded}])
+            json.dumps(side)
+            calls.render("t", {"source": "journal", **folded})
         self.assertEqual(calls.fold_session(['{"timestamp": 5}', '[]', '{"timestamp": "2026-01-01T00:00:00Z", "type": 7, '
                                              '"payload": []}', '{"timestamp": "2026-01-01T00:00:01Z", '
                                              '"type": "token_usage_record", "payload": {"usage": {"input_tokens": "x"}}}'])
@@ -432,8 +572,11 @@ class JournalFold(unittest.TestCase):
                          (1, 9_000, folded["compactions"]), "a summary call is not one of the agent's own")
         side = calls.breakdown([{"source": "journal", **folded}])
         self.assertEqual((side["wait"], side["compactions"]),
-                         ({"stage": "stages.firstEventMs", "calls": 1, "medianMs": 7_000, "leastMs": 7_000}, 2),
-                         "the harness's own reading, of the agent's own calls")
+                         ({"stage": "timing.firstEventMs", "calls": 1, "medianMs": 6_950, "leastMs": 6_950}, 2),
+                         "the wire's first event, of the agent's own calls")
+        bare = [{key: value for key, value in row.items() if key != "timing"} for row in folded["calls"]]
+        self.assertEqual(calls.wait(bare), {"stage": "stages.firstEventMs", "calls": 1, "medianMs": 7_000, "leastMs": 7_000},
+                         "a journal with no wire timing has the harness's own reading")
         once = {"calls": 1}
         self.assertEqual(side["stageMedians"], {
             "stages": {"firstEventMs": {**once, "medianMs": 7_000}, "firstThinkingMs": {**once, "medianMs": 7_100},
@@ -443,7 +586,7 @@ class JournalFold(unittest.TestCase):
                        "completedMs": {**once, "medianMs": 11_900}, "closedMs": {**once, "medianMs": 11_950}}},
             "every stage either record names, in the order a call reaches them; counts and sizes are not stages")
         text = calls.render("t", {"source": "journal", **folded})
-        self.assertIn("  wait before a reply began: median 7.0 s, least 7.0 s (stages.firstEventMs, 1 calls)\n", text)
+        self.assertIn("  wait before a reply began: median 7.0 s, least 7.0 s (timing.firstEventMs, 1 calls)\n", text)
         self.assertIn("  median `stages` offsets from a call's start: `firstEventMs` 7.0 s, `firstThinkingMs` 7.1 s, "
                       "`firstOutputMs` 9.0 s, `lastOutputMs` 11.5 s (1 calls)\n", text)
         self.assertIn("  median `timing` offsets from a call's start: `signedMs` 0.0 s, `sentMs` 0.0 s, `headersMs` 6.9 s, "
@@ -452,6 +595,133 @@ class JournalFold(unittest.TestCase):
         self.assertIn("  compaction before frame 7: irrelevant_context, 0.8 s\n", text)
         self.assertIn("| 4 try 2 | asked again after compile_failed, 2 tries, first event 7.0 s, first output 9.0 s, "
                       "headers 6.9 s |\n", text)
+
+
+class RecordedJournal(unittest.TestCase):
+    """A journal written since #3844: what it records is read, and `derived`
+    names only what still is not recorded."""
+
+    def setUp(self) -> None:
+        self.events = recorded()
+        self.folded = calls.fold_journal(self.events)
+        self.rows = self.folded["calls"]
+        self.frames = [row for row in self.rows if row["purpose"] == "frame"]
+
+    def test_a_settle_s_own_record_is_read_and_nothing_about_the_call_is_derived(self) -> None:
+        self.assertEqual([(row["purpose"], row["start"], row["durationMs"], row["derived"]) for row in self.rows], [
+            ("relevance", stamp(400), 600, ["purpose"]),
+            ("frame", stamp(1_000), 10_000, []),
+            ("reading", stamp(12_150), 250, ["purpose"]),
+            ("frame", stamp(12_500), 20_000, []),
+            ("judge", stamp(12_550), 250, ["purpose"]),
+            ("marks", stamp(12_650), 150, ["purpose"]),
+            ("frame", stamp(32_500), 15_000, []),
+            ("compaction", stamp(49_800), 10_000, []),
+            ("frame", stamp(60_000), 8_000, []),
+            ("claim", stamp(68_100), 800, ["purpose"]),
+            ("frame", stamp(69_000), 1_500, ["durationMs", "end"]),
+        ])
+        first, rejected, again, last, killed = self.frames
+        self.assertEqual((first["timing"], first["servedTier"], first["costUsd"], first["tries"]),
+                         (wire(1_000, 5_500, 8_800), "default", 0.01, 1))
+        self.assertEqual((first["thinkingTokens"], first["writtenTokens"]), (200, 300))
+        self.assertEqual((rejected["rejected"], rejected["tries"], rejected["retries"]), ("compile_failed", 2, 1))
+        self.assertEqual(rejected["retried"], [{"code": "transport", "delayMillis": 900, "elapsedMs": 6_500, "httpStatus": 502}],
+                         "how long the failed try ran and what failed it")
+        self.assertEqual((again["frame"], again["attempt"], again["reask"]), (1, 2, "compile_failed"))
+        self.assertEqual([row.get("work") for row in self.frames],
+                         [{"kind": "calls", "calls": 2, "callMs": 1_300}, None, {"kind": "calls", "calls": 1, "callMs": 2_000},
+                          {"kind": "no_call", "calls": 0, "callMs": 0}, None], "what each reply's cell amounted to")
+        self.assertFalse(killed["settled"])
+        judge, summary, claim = self.rows[4], self.rows[7], self.rows[9]
+        self.assertEqual((judge["triggers"], judge["compact"], judge["compactSuppressed"], judge["costUsd"], judge["timing"]),
+                         (["suspect", "outdated_context"], ["outdated_context"], "floor", 0.0001,
+                          {"headersMs": 200, "completedMs": 240}))
+        self.assertEqual(self.rows[5]["timing"], {"headersMs": 120, "completedMs": 140})
+        self.assertEqual((summary["settled"], summary["inputTokens"], summary["writtenTokens"], summary["costUsd"]),
+                         (True, 8_200, 700, 0.02))
+        self.assertEqual(claim["costUsd"], 0.001)
+
+    def test_the_time_split_is_the_frames_own_clocks_and_event_times_only_outside_them(self) -> None:
+        time = self.folded["time"]
+        self.assertEqual(time, {"spanMs": 70_500, "modelMs": 53_000 + 1_500, "compactionMs": 10_300,
+                                "commandsMs": 3_450, "judgeMs": 1_400, "otherMs": 550 + 300, "recordedMs": 68_700,
+                                "derived": ["modelMs", "otherMs"]},
+                         "the call the budget killed and the time before the first frame are outside every frame's clock")
+        self.assertEqual(time["spanMs"], sum(time[name] for name in (*calls.SPLIT, "otherMs")))
+        closed = [event for event in self.events if event["type"] != "control.status.observed"][:-2]
+        whole = calls.fold_journal(closed)["time"]
+        self.assertEqual((whole["modelMs"], whole["derived"], whole["recordedMs"]), (53_000, ["otherMs"], 68_700),
+                         "with every frame closed only the time around the frames is left to event times")
+
+    def test_the_ledger_is_totalled_by_purpose_and_the_rows_agree(self) -> None:
+        self.assertEqual((self.folded["ledgerTokens"], self.folded["ledgerEntries"]), (70_860, 9))
+        self.assertEqual(self.folded["ledgerByPurpose"], {
+            "frame": {"tokens": 28_200, "costUsd": 0.057}, "compaction": {"tokens": 9_000, "costUsd": 0.02},
+            "judge": {"tokens": 3_240, "costUsd": 0.0001}, "marks": {"tokens": 2_040, "costUsd": 0.00005},
+            "claim": {"tokens": 26_200, "costUsd": 0.001}, "relevance": {"tokens": 1_420, "costUsd": 0.0002},
+            "reading": {"tokens": 760, "costUsd": 0.00003}}, "one charge for two readings is taken by its parts")
+        self.assertEqual({purpose: total["totalTokens"] for purpose, total in self.folded["byPurpose"].items()},
+                         {purpose: entry["tokens"] for purpose, entry in self.folded["ledgerByPurpose"].items()})
+        self.assertEqual(self.folded["byPurpose"]["compaction"]["unsplitTokens"], 0, "the summary call settled its own counts")
+        unlabelled = [*self.events, {"seq": 999, "at": T0, "type": "flows.agent.usage.v1", "payload": {"stepKey": "k", "spent": 7}}]
+        self.assertEqual(calls.fold_journal(unlabelled)["ledgerByPurpose"]["unlabelled"], {"tokens": 7, "costUsd": None})
+
+    def test_the_stage_fit_separates_the_wait_the_thinking_and_the_writing(self) -> None:
+        self.assertEqual(calls.stage_fit(self.rows), {
+            "calls": 4, "meanHeadersMs": 1_025,
+            "thinking": {"calls": 4, "fixedMs": 500, "msPerThinkingToken": 20.0, "r2": 1.0},
+            "written": {"calls": 4, "fixedMs": 300, "msPerWrittenToken": 10.0, "r2": 1.0}})
+        self.assertIsNone(calls.stage_fit(calls.fold_journal(journal())["calls"]), "an older journal timed no stage on the wire")
+        self.assertIsNone(calls.stage_fit(calls.fold_session(session())["calls"]), "the Codex log has no first-token time")
+        two = [row for row in self.frames if row.get("timing")][:2]
+        self.assertEqual(calls.stage_fit(two), {"calls": 2, "meanHeadersMs": 1_100, "thinking": None, "written": None},
+                         "two calls give a mean and no line")
+
+    def test_the_adapter_writes_what_the_fold_recorded(self) -> None:
+        summary = agent.summarize(self.events)
+        self.assertEqual((summary["modelCalls"], summary["usage"]["inputTokens"], summary["time"]),
+                         (4, 26_000, self.folded["time"]))
+        self.assertEqual((summary["ledgerEntries"], summary["ledgerByPurpose"]), (9, self.folded["ledgerByPurpose"]))
+        document = agent.trajectory(self.events, agent_name="smithers", agent_version="test", seat="s", instruction="i",
+                                    session_id="t")
+        final = document["final_metrics"]["extra"]
+        self.assertEqual((final["time"], final["ledgerEntries"], final["ledgerByPurpose"]),
+                         (self.folded["time"], 9, self.folded["ledgerByPurpose"]))
+        measured = [step["metrics"]["extra"] for step in document["steps"] if step.get("metrics")]
+        self.assertEqual([(extra["frame"], extra["attempt"]) for extra in measured], [(0, 1), (1, 1), (1, 2), (2, 1)])
+        misfiled = [{**event, "payload": {**event["payload"], "frame": 9, "attempt": 3}}
+                    if event["type"] == "control.agent.model-requested" else event for event in self.events]
+        again = agent.trajectory(misfiled, agent_name="smithers", agent_version="test", seat="s", instruction="i",
+                                 session_id="t")
+        self.assertEqual([(step["metrics"]["extra"]["frame"], step["metrics"]["extra"]["attempt"])
+                          for step in again["steps"] if step.get("metrics")], [(0, 1), (1, 1), (1, 2), (2, 1)],
+                         "a settle that names its own frame is filed by it, not by the request before it")
+
+    def test_the_summary_says_what_was_recorded(self) -> None:
+        read = {"source": "journal", **self.folded}
+        side = calls.breakdown([read])
+        self.assertEqual((side["time"], side["ledgerEntries"], side["ledgerByPurpose"], side["stageFit"]["meanHeadersMs"]),
+                         (self.folded["time"], 9, self.folded["ledgerByPurpose"], 1_025))
+        self.assertEqual(side["cellWork"], {"calls": {"calls": 2, "durationMs": 25_000, "totalTokens": 13_200},
+                                            "no_call": {"calls": 1, "durationMs": 8_000, "totalTokens": 8_400},
+                                            "rejected": {"calls": 1, "durationMs": 20_000, "totalTokens": 6_600}},
+                         "the reply rejected in its frame settled no cell and is counted as rejected")
+        self.assertIsNone(calls.breakdown([{"source": "journal", **calls.fold_journal(journal())}])["cellWork"],
+                          "a journal that classifies no cell has no such count")
+        text = calls.render("t", read)
+        for line in (
+            "  span 70.5 s: model 54.5, compaction 10.3, commands 3.5, judge 1.4, other 0.8; 68.7 s of it on the frames' "
+            "own clocks; from event times: modelMs, otherMs\n",
+            "  stage fit over 4 calls: headers after 1.0 s; then 0.5 s + 20.0 ms per thinking token to the first output "
+            "(R2 1.00); then 0.3 s + 10.0 ms per written token to the last (R2 1.00)\n",
+            "  ledger 70,860 tokens in 9 entries; rows 70,860\n",
+            "  model calls by what their cell did: calls 2 (25.0 s), no_call 1 (8.0 s), rejected 1 (20.0 s)\n",
+            "| frame | 5 (1 unsettled) (1 tokenless) | 26,000 | 17,000 | 2,200 | 28,200 | 28,200 | 0.057000 | 54.5 |\n",
+            "| marks | 1 | 2,000 | - | 40 | 2,040 | 2,040 | 0.000050 | 0.1 |\n",
+        ):
+            self.assertIn(line, text)
+        self.assertIn("1 retried (transport 502 after 6.5 s), 2 tries", text)
 
 
 class SessionFold(unittest.TestCase):
@@ -482,7 +752,8 @@ class SessionFold(unittest.TestCase):
 
     def test_commands_are_the_time_from_a_reply_to_its_last_tool_output(self) -> None:
         self.assertEqual(self.folded["time"], {"spanMs": 21_500, "modelMs": 18_000, "compactionMs": 0, "commandsMs": 2_500,
-                                               "judgeMs": 0, "otherMs": 1_000})
+                                               "judgeMs": 0, "otherMs": 1_000, "recordedMs": 0,
+                                               "derived": ["commandsMs", "modelMs", "otherMs"]})
         self.assertEqual(self.folded["byPurpose"]["frame"]["totalTokens"], 39_900)
         self.assertIsNone(self.folded["ledgerTokens"])
         side = calls.breakdown([{"source": "session", **self.folded}])
@@ -582,7 +853,7 @@ class Trial(unittest.TestCase):
                            row["durationMs"]) for row in read["calls"]],
                          [("frame", 1_000, None, None, 12_000), ("frame", 2_000, 20, 50, 8_000)])
         self.assertEqual(read["time"], {"spanMs": None, "modelMs": 20_000, "compactionMs": None, "commandsMs": None,
-                                        "judgeMs": None, "otherMs": None})
+                                        "judgeMs": None, "otherMs": None, "recordedMs": None, "derived": []})
         self.assertEqual(read["byPurpose"]["frame"]["totalTokens"], 3_120)
         self.assertIsNone(read["ledgerTokens"])
         self.assertNotIn("unlistedInputTokens", read)

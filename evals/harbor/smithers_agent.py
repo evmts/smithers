@@ -330,8 +330,9 @@ def summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
     `usage` and `modelCalls` are the agent's own calls, the figures Harbor
     reads and every earlier report printed. `byPurpose` and `allPurposes`
     add the compaction calls and the judge's readings (`calls.totals`);
-    `ledgerTokens` is the run's own count of all of them, `time` is where
-    the wall clock went, and `compactions` is one record per compaction.
+    `ledgerTokens`, `ledgerEntries` and `ledgerByPurpose` are the run's own
+    count of all of them, `time` is where the wall clock went, and
+    `compactions` is one record per compaction.
     """
     usage = {"inputTokens": None, "cachedInputTokens": None, "outputTokens": None, "reasoningTokens": None}
     missing_usage = {name: False for name in usage}
@@ -403,6 +404,8 @@ def summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
         "byPurpose": folded["byPurpose"],
         "allPurposes": folded["allPurposes"],
         "ledgerTokens": folded["ledgerTokens"],
+        "ledgerEntries": folded["ledgerEntries"],
+        "ledgerByPurpose": folded["ledgerByPurpose"],
         "time": folded["time"],
         "compactions": folded["compactions"],
         "bindings": bindings,
@@ -524,8 +527,10 @@ def trajectory(events: list[dict[str, Any]], *, agent_name: str, agent_version: 
                     "reasoning_tokens": counters.get("reasoningTokens"),
                     "duration_millis": payload.get("durationMillis"),
                     "purpose": "frame",
-                    "frame": requested.get("frame"),
-                    "attempt": requested.get("attempt"),
+                    # The settle's own keys where the journal carries them:
+                    # position files a call under the request before it.
+                    "frame": payload.get("frame", requested.get("frame")),
+                    "attempt": payload.get("attempt", requested.get("attempt")),
                 },
             }
             requested, requested_at = {}, None
@@ -565,6 +570,8 @@ def trajectory(events: list[dict[str, Any]], *, agent_name: str, agent_version: 
                 "byPurpose": folded["byPurpose"],
                 "allPurposes": folded["allPurposes"],
                 "ledgerTokens": folded["ledgerTokens"],
+                "ledgerEntries": folded["ledgerEntries"],
+                "ledgerByPurpose": folded["ledgerByPurpose"],
                 "time": folded["time"],
                 "compactions": folded["compactions"],
             },

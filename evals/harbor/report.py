@@ -33,8 +33,8 @@ Beside the scores, and in a refused report too, `comparison` says where each
 arm's time and tokens went, per paired task and overall: model calls, seconds
 per call, cache share, the wall clock split into model wait, commands, judge,
 compaction and the rest, tokens by purpose, and the least-squares fit of call
-seconds on thinking and written tokens. It is read from each scored trial's
-own record (`calls.py`) and changes no score.
+seconds on thinking and written tokens, whole and by stage. It is read from
+each scored trial's own record (`calls.py`) and changes no score.
 """
 from __future__ import annotations
 
@@ -370,8 +370,27 @@ FIT = (
     ("Milliseconds per written token", "msPerWrittenToken", ",.1f"),
     ("R squared", "r2", ".2f"),
 )
+# The stage fit: its label, where it sits in `stageFit`, and how to print it.
+STAGE_FIT = (
+    ("Stage fit: calls", ("calls",), 1, ",.0f"),
+    ("Stage fit: mean seconds to headers", ("meanHeadersMs",), 1000, ",.1f"),
+    ("Stage fit: headers to first output, fixed seconds", ("thinking", "fixedMs"), 1000, ",.1f"),
+    ("Stage fit: milliseconds per thinking token", ("thinking", "msPerThinkingToken"), 1, ",.1f"),
+    ("Stage fit: R squared, thinking", ("thinking", "r2"), 1, ".2f"),
+    ("Stage fit: first to last output, fixed seconds", ("written", "fixedMs"), 1000, ",.1f"),
+    ("Stage fit: milliseconds per written token", ("written", "msPerWrittenToken"), 1, ",.1f"),
+    ("Stage fit: R squared, written", ("written", "r2"), 1, ".2f"),
+)
 PER_TASK = ("Model calls", "Seconds per call", "Cache share", "Agent minutes", "Weighted tokens", "Model wait",
             "Commands", "Judge", "Compaction", "Other")
+
+
+def _staged(side: dict, path: tuple[str, ...], scale: float, form: str) -> str:
+    """One number of a side's stage fit, `n/a` where it has none."""
+    value: Any = side.get("stageFit")
+    for key in path:
+        value = value.get(key) if isinstance(value, dict) else None
+    return _scaled(value, scale, form)
 
 
 def _caveats(arm: str, side: dict) -> list[str]:
@@ -379,6 +398,17 @@ def _caveats(arm: str, side: dict) -> list[str]:
     found = []
     if side["splitTrials"] != side["trials"]:
         found.append(f"- {arm}: the time split is recorded for {side['splitTrials']} of {side['trials']} trials.")
+    time = side["time"]
+    if time["recordedMs"]:
+        found.append(f"- {arm}: {time['recordedMs'] / 1000:,.1f} s of the {time['spanMs'] / 1000:,.1f} s span is the "
+                     "frames' own clocks" + (f"; from event times: {', '.join(time['derived'])}." if time["derived"] else "."))
+    elif time["derived"]:
+        found.append(f"- {arm}: the time split is from event times.")
+    if side["stageFit"] is None:
+        found.append(f"- {arm}: {calls.stage_fit_line(side)}.")
+    if side["cellWork"]:
+        found.append(f"- {arm}: model calls by what their cell did: " + ", ".join(
+            f"{kind} {held['calls']:,} ({held['durationMs'] / 1000:,.1f} s)" for kind, held in side["cellWork"].items()) + ".")
     for purpose, total in side["byPurpose"].items():
         if total["unsplitTokens"]:
             found.append(f"- {arm}: {total['unsplitTokens']:,} {purpose} tokens are recorded as a sum, with no input, "
@@ -388,6 +418,10 @@ def _caveats(arm: str, side: dict) -> list[str]:
     if side["ledgerTokens"] is not None and side["ledgerTokens"] != side["allPurposes"]["totalTokens"]:
         found.append(f"- {arm}: the runs' ledgers hold {side['ledgerTokens']:,} tokens and the rows "
                      f"{side['allPurposes']['totalTokens']:,}.")
+    for purpose, entry in (side["ledgerByPurpose"] or {}).items():
+        listed = side["byPurpose"].get(purpose, {}).get("totalTokens", 0)
+        if entry["tokens"] != listed:
+            found.append(f"- {arm}: the ledgers hold {entry['tokens']:,} {purpose} tokens and the rows {listed:,}.")
     if side["unlistedInputTokens"]:
         found.append(f"- {arm}: {side['unlistedInputTokens']:,} input tokens are in a trajectory total and in no row.")
     found += [f"- {arm}: {line}." for line in calls.stage_lines(side["stageMedians"])]
@@ -408,22 +442,32 @@ def render_comparison(report: dict) -> list[str]:
     lines += [f"| {label} | {read(arms['smithers'])} | {read(arms['baseline'])} |" for label, read in MEASURES]
     lines += [f"| {label} | {_figure((arms['smithers']['fit'] or {}).get(key), form)} | "
               f"{_figure((arms['baseline']['fit'] or {}).get(key), form)} |" for label, key, form in FIT]
+    lines += [f"| {label} | {_staged(arms['smithers'], *where)} | {_staged(arms['baseline'], *where)} |"
+              for label, *where in STAGE_FIT]
     lines += ["",
               f"- Model calls, seconds per call, cache share and the fit count each agent's own calls. Weighted tokens are "
               f"uncached input + {weights['cached']:g} x cached input + {weights['output']:g} x output of those calls.",
-              "- The wait is from a call's start to the stage named: the first stream event the harness saw, or the "
-              "first item of the reply in the Codex log. That item is a message's start or a reasoning block's end, so "
-              "it bounds the wait from above and the least is the closest reading.",
+              "- The wait is from a call's start to the stage named: the wire's first stream event, the first event the "
+              "harness saw, or the first item of the reply in the Codex log. That item is a message's start or a "
+              "reasoning block's end, so it bounds the wait from above and the least is the closest reading.",
               "- The five times split each record's span and count a second once: a judge reading that ran under a "
-              "model call is model wait.",
-              "- The fit is call seconds = fixed + thinking tokens x a + written tokens x b, by least squares."]
+              "model call is model wait. Where the harness timed a frame itself, Commands is the time its cell ran and "
+              "Judge is what the loop waited on.",
+              "- The fit is call seconds = fixed + thinking tokens x a + written tokens x b, by least squares.",
+              "- The stage fit splits a call on the wire's own times: the mean wait for the response headers, then "
+              "headers to first output = fixed + thinking tokens x a, then first to last output = fixed + written "
+              "tokens x b."]
     lines += [line for arm, name in (("smithers", "Smithers"), ("baseline", "Baseline")) for line in _caveats(name, arms[arm])]
-    lines += ["", "### Tokens by purpose", "", "| Arm | Purpose | Calls | Input | Cached | Output | Total | Seconds |",
-              "| --- | --- | --- | --- | --- | --- | --- | --- |"]
+    lines += ["", "### Tokens by purpose", "", "Total is the rows; Ledger and Cost USD are the run's own usage ledger.", "",
+              "| Arm | Purpose | Calls | Input | Cached | Output | Total | Ledger | Cost USD | Seconds |",
+              "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for arm, name in (("smithers", "Smithers"), ("baseline", "Baseline")):
+        ledger = arms[arm]["ledgerByPurpose"] or {}
         for purpose, total in arms[arm]["byPurpose"].items():
+            entry = ledger.get(purpose) or {}
             lines.append(f"| {name} | {purpose} | {total['calls']:,} | {_figure(total['inputTokens'])} | "
                          f"{_figure(total['cachedTokens'])} | {_figure(total['outputTokens'])} | {total['totalTokens']:,} | "
+                         f"{_figure(entry.get('tokens'))} | {_figure(entry.get('costUsd'), ',.6f')} | "
                          f"{total['durationMs'] / 1000:,.1f} |")
     measures = dict(MEASURES)
     lines += ["", "### Per task", "", "Smithers / baseline.", "", "| Task | " + " | ".join(PER_TASK) + " |",
@@ -437,6 +481,12 @@ def render_comparison(report: dict) -> list[str]:
         lines.append(f"| {row['task']} | " + " | ".join(
             f"{_figure((row['smithers']['fit'] or {}).get(key), form)} / {_figure((row['baseline']['fit'] or {}).get(key), form)}"
             for _, key, form in FIT) + " |")
+    if any(row["smithers"]["stageFit"] for row in comparison["tasks"]):
+        lines += ["", "### Stage fit per task", "", f"Smithers. Baseline: {calls.stage_fit_line(arms['baseline'])}.", "",
+                  "| Task | " + " | ".join(label.removeprefix("Stage fit: ").capitalize() for label, *_ in STAGE_FIT) + " |",
+                  "| --- |" + " --- |" * len(STAGE_FIT)]
+        for row in comparison["tasks"]:
+            lines.append(f"| {row['task']} | " + " | ".join(_staged(row["smithers"], *where) for _, *where in STAGE_FIT) + " |")
     return lines + [""]
 
 

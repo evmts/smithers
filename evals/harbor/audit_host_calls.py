@@ -23,10 +23,15 @@ Verdict per trial:
     no-journal         the trial has no journal yet
 
 The journal keeps `{truncated, bytes, digest}` in place of an input too large
-to keep. A `bash` call journalled that way names no container, so it is listed
-as a host call: nothing shows it reached the task container. Its `target` is
-`unknown`, the trial's `unknownTargets` counts it, and the listing says the
-input was truncated, because neither its target nor its command was recorded.
+to keep, and beside it the input's small scalar fields: `container`, `cwd`,
+`interpreter`. Such a call is classified like any other, by its `container`.
+Its command is not recorded, so a host call of that kind is listed with what
+was kept and `INPUT TRUNCATED`.
+
+A journal from before those fields were kept holds the three marker keys and
+nothing else. A `bash` call journalled that way is listed as a host call:
+nothing shows it reached the task container. Its `target` is `unknown`, the
+trial's `unknownTargets` counts it, and the listing says so.
 
 Exit status: 2 when any trial is TAINTED, else 0.
 """
@@ -116,6 +121,8 @@ def calls(db: Path) -> list[dict]:
             value = payload.get("value")
             started[call_id]["outcome"] = payload.get("outcome")
             started[call_id]["exitCode"] = value.get("exitCode") if isinstance(value, dict) else None
+            # Why a failed call failed, where the journal says.
+            started[call_id]["code"], started[call_id]["reason"] = payload.get("code"), payload.get("reason")
     return [started[c] for c in order]
 
 
@@ -123,13 +130,22 @@ def text_of(given: dict) -> str:
     return json.dumps(given, ensure_ascii=False)
 
 
+MARKER_KEYS = ("truncated", "bytes", "digest")
+
+
 def truncation(given: dict) -> dict | None:
     """The size and digest the journal kept in place of an input too large to
-    keep (`tracedField` in `packages/smithers/agent/src/AgentSession.ts`),
-    else None. Whatever else the input held was not written."""
+    keep (`tracedInput` in `packages/smithers/agent/src/AgentSession.ts`),
+    else None. The input's large fields were not written."""
     if given.get("truncated") is not True:
         return None
     return {"bytes": given.get("bytes"), "digest": given.get("digest")}
+
+
+def kept_fields(given: dict) -> dict:
+    """The small fields the journal kept beside a truncated input's marker.
+    None at all is a journal from before they were kept: the marker alone."""
+    return {key: value for key, value in given.items() if key not in MARKER_KEYS}
 
 
 def audit_trial(trial: Path, live: dict[str, Path]) -> dict:
@@ -166,13 +182,17 @@ def audit_trial(trial: Path, live: dict[str, Path]) -> dict:
             "cwd": given.get("cwd"), "exitCode": call.get("exitCode"), "outcome": call.get("outcome"),
             "flags": hits,
             "target": "host",
+            **{name: call[name] for name in ("code", "reason") if call.get(name) is not None},
         }
         cut = truncation(given)
         if cut is not None:
-            # Still a host call: a digest cannot show the call reached the
-            # container, and it cannot be read for a forbidden name either.
+            # Still a host call: what the journal kept names no container,
+            # and a digest cannot be read for a forbidden name.
             listed["truncated"] = cut
-            if flow == "bash":
+            listed["kept"] = kept_fields(given)
+            if flow == "bash" and not listed["kept"]:
+                # The marker alone, from before routing fields were kept:
+                # the journal cannot say where the call was aimed.
                 listed["target"] = "unknown"
                 result["unknownTargets"] += 1
         result["hostCalls"].append(listed)
@@ -185,16 +205,24 @@ def describe(call: dict) -> str:
     says so, so its reader need not open the journal to learn why it has no
     command."""
     flags = f" FLAGS={','.join(call['flags'])}" if call["flags"] else ""
-    head = f"seq {call['seq']} {call['flow']} exit={call['exitCode']}"
+    why = "".join(f" {name}={call[name]}" for name in ("code", "reason") if call.get(name) is not None)
+    head = f"seq {call['seq']} {call['flow']} exit={call['exitCode']}{why}"
     cut = call.get("truncated")
     if cut is None:
         command = str(call["command"]).replace("\n", "\\n")
         return f"{head} cwd={call['cwd']}{flags}: {command[:300]}"
     size = f"{cut['bytes']:,}-byte " if isinstance(cut["bytes"], int) else ""
-    lost = "its container and command are" if call["target"] == "unknown" else "its path is"
-    target = "TARGET UNKNOWN" if call["target"] == "unknown" else "INPUT TRUNCATED"
-    return (f"{head} outcome={call['outcome']} cwd={call['cwd']}{flags} {target}: the journal kept a digest of this "
-            f"call's {size}input and nothing else, so {lost} not recorded: digest {cut['digest']}")
+    head = f"{head} outcome={call['outcome']} cwd={call['cwd']}{flags}"
+    kept = " ".join(f"{key}={value}" for key, value in (call.get("kept") or {}).items() if key != "cwd")
+    if call["target"] == "unknown":
+        return (f"{head} TARGET UNKNOWN: the journal kept a digest of this call's {size}input and nothing else, so its "
+                f"container and command are not recorded: digest {cut['digest']}")
+    if not call.get("kept"):
+        return (f"{head} INPUT TRUNCATED: the journal kept a digest of this call's {size}input and nothing else, so its "
+                f"path is not recorded: digest {cut['digest']}")
+    aimed = "it names no container and its command is" if call["flow"] == "bash" else "its large fields are"
+    return (f"{head} INPUT TRUNCATED: the journal kept this call's small fields and a digest of its {size}input; "
+            f"{aimed} not recorded: {kept + ' ' if kept else ''}digest {cut['digest']}")
 
 
 def trials_of(paths: list[str]) -> list[Path]:

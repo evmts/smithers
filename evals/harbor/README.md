@@ -326,25 +326,36 @@ for both arms, and prints them:
 python3 -B evals/harbor/calls.py <trial-dir>... [--json]
 ```
 
-| Field                                         | Meaning                                                              |
-| --------------------------------------------- | -------------------------------------------------------------------- |
-| `purpose`                                     | What the call was for; see the next table                            |
-| `start`, `end`, `durationMs`                  | When the call ran, UTC, and its whole milliseconds                   |
-| `inputTokens`, `cachedTokens`, `outputTokens` | The provider's counts                                                |
-| `thinkingTokens`, `writtenTokens`             | Output split into reasoning and everything else                      |
-| `totalTokens`                                 | Input + output                                                       |
-| `settled`                                     | `false` when the record holds no settle for the call                 |
-| `frame`, `attempt`, `reask`, `rejected`       | Smithers arm: the call's frame, and why a frame asked again          |
-| `retries`, `tries`                            | Smithers arm: retry notices, and transport tries of the sealed step  |
-| `stages`                                      | When the harness saw the stream reach each stage, when recorded      |
-| `timing`                                      | The same for the wire, when recorded                                 |
-| `derived`                                     | The fields computed from other records, not read as such             |
+| Field                                         | Meaning                                                             |
+| --------------------------------------------- | ------------------------------------------------------------------- |
+| `purpose`                                     | What the call was for; see the next table                           |
+| `start`, `end`, `durationMs`                  | When the call ran, UTC, and its whole milliseconds                  |
+| `inputTokens`, `cachedTokens`, `outputTokens` | The provider's counts                                               |
+| `thinkingTokens`, `writtenTokens`             | Output split into reasoning and everything else                     |
+| `totalTokens`                                 | Input + output                                                      |
+| `settled`                                     | `false` when the record holds no settle for the call                |
+| `frame`, `attempt`, `reask`, `rejected`       | Smithers arm: the call's frame, and why a frame asked again         |
+| `retries`, `retried`, `tries`                 | Smithers arm: retry notices, each failed try, and transport tries   |
+| `stages`                                      | When the harness saw the stream reach each stage, when recorded     |
+| `timing`                                      | The same for the wire, when recorded                                |
+| `work`                                        | Smithers arm: what the reply's cell amounted to                     |
+| `costUsd`                                     | The call's cost as the journal priced it                            |
+| `triggers`, `compact`, `compactSuppressed`    | A supervisor reading: what it fired and the compaction it handed on |
+| `derived`                                     | The fields computed from other records, not read as such            |
 
 `stages` and `timing` count whole milliseconds from the call's start. `stages`
-holds `firstEventMs`, `firstThinkingMs`, `firstOutputMs` and `lastOutputMs`.
+holds `firstEventMs`, `firstThinkingMs`, `firstOutputMs` and `lastOutputMs`;
+`timing` adds `preparedMs`, `signedMs`, `sentMs`, `headersMs`, `completedMs`
+and `closedMs`. `retried` holds each failed try's `code`, `delayMillis`,
+`elapsedMs` and `httpStatus`. `work` is `kind` (`calls`, `no_call`,
+`comment_only`, `threw`, `rejected`), `calls` and `callMs`.
+
 `derived` names `durationMs` when it is the time between two events,
 `totalTokens` when it is the ledger's spend, `writtenTokens` when it is output
-minus reasoning, and `purpose` when it follows from the event's kind.
+minus reasoning, and `purpose` when it follows from the event's kind. A
+journal since #3844 records the first three on its own settles, so they are
+read and not named. A judge reading's purpose always follows from the event
+that settled it; the ledger names the same purposes.
 
 | Purpose      | The call                                                             |
 | ------------ | -------------------------------------------------------------------- |
@@ -357,9 +368,10 @@ minus reasoning, and `purpose` when it follows from the event's kind.
 | `reading`    | An evaluator reading the agent's own cell asked for (the `jev` flow) |
 
 - **Smithers arm.** The adapter folds the journal into the rows and writes
-  them to `extra.calls` of `trajectory.json`. A trial recorded before the rows
-  existed is folded from its kept journal, else from its trajectory's steps,
-  which hold the agent's own calls only.
+  them to `extra.calls` of `trajectory.json`. A reader folds the kept journal
+  again, so a trial recorded by an older adapter gains what the fold has since
+  learned to read. Without the journal it reads the trajectory's rows, else
+  the trajectory's steps, which hold the agent's own calls only.
 - **Codex arm.** The rows are read from `agent/sessions/**/rollout-*.jsonl`. A
   request starts at the previous tool output, or the user's message, and ends
   at its `token_usage_record`. The session's effort, summary setting and CLI
@@ -376,12 +388,14 @@ What each total includes:
 | Weighted tokens                                                                             | Uncached input + 0.1 x cached input + 8 x output of those same calls                                 |
 | `byPurpose`                                                                                 | Calls, tokens and milliseconds for each purpose                                                      |
 | `allPurposes`                                                                               | Every purpose summed: the run's total                                                                |
-| `ledgerTokens`                                                                              | The harness's own count of every spend (`flows.agent.usage.v1`); it equals `allPurposes.totalTokens` |
+| `ledgerTokens`, `ledgerEntries`                                                             | The harness's own count of every spend (`flows.agent.usage.v1`); it equals `allPurposes.totalTokens` |
+| `ledgerByPurpose`                                                                           | That ledger's tokens and cost under each purpose it names; null for a ledger that names none         |
 
-`byPurpose`, `allPurposes`, `ledgerTokens`, `time` and `compactions` are in
-`run` of `smithers-run.json` and in `final_metrics.extra` of the trajectory. A
-difference between the ledger and the rows is a spend no row lists. A call
-with no token figure at all is counted in `tokenless` and is in no total.
+`byPurpose`, `allPurposes`, the three ledger fields, `time` and `compactions`
+are in `run` of `smithers-run.json` and in `final_metrics.extra` of the
+trajectory. A difference between the ledger and the rows, in all or under one
+purpose, is a spend no row lists. A call with no token figure at all is
+counted in `tokenless` and is in no total.
 
 `compactions` is one record per compaction: when it ended, the frame it ran
 ahead of, `durationMs`, `causes`, `marks`, `context` before and after, and
@@ -391,23 +405,30 @@ whether it made a summary call. A compaction's summary call is settled on
 `compaction-settled`, and its tokens are the ledger's one sum
 (`unsplitTokens`), with no input, cached or output count.
 
-`time` splits the record's span, first event to last, and counts a second
-once, for the first of these that was running: the agent's own model call
-(`modelMs`), a compaction call (`compactionMs`), a command (`commandsMs`), a
-judge reading (`judgeMs`); the rest is `otherMs`. A judge reading that ran
-under a model call is therefore model wait, and `judgeMs` is the time the
-judge held the run. Every reading's own latency is `durationMs` in
-`byPurpose`. `wallSec` is longer than the span by the CLI's own start and
-exit.
+`time` splits the record's span, first event to last: `modelMs`,
+`compactionMs`, `commandsMs`, `judgeMs` and `otherMs` sum to `spanMs`.
+
+- A journal since #3844 times each frame itself (`turn-closed.time`). Those
+  parts are taken as recorded: the frame's model calls, its compaction, the
+  time its cell ran (`commandsMs`), and what the loop waited on the judge.
+  `recordedMs` is how much of the span those clocks cover.
+- Outside them, and in an older journal or a Codex session log, a second is
+  counted once, for the first of these that was running: the agent's own
+  model call, a compaction call, a command, a judge reading.
+- `derived` names the parts that hold any time counted the second way.
+
+A judge reading that ran beside a model call is model wait either way, and
+`judgeMs` is the time the judge held the run. Every reading's own latency is
+`durationMs` in `byPurpose`. `wallSec` is longer than the span by the CLI's
+own start and exit.
 
 The wait before a reply began is read, over the agent's own calls, from the
-earliest stage the rows record: `stages.firstEventMs`, else the wire's
-`timing.firstEventMs`, else the Codex log's `timing.firstItemMs`. The report
-names which and gives the median and the least. The Codex stage bounds each
-call's wait from above, so its least is the closest reading; the fit's
-`fixedSeconds` is the same quantity estimated from every call. `stageMedians`
-is the median offset of every stage the rows record, the harness's `stages`
-apart from the wire's `timing`.
+closest stage the rows record: the wire's `timing.firstEventMs`, else the
+first event the harness saw (`stages.firstEventMs`), else the Codex log's
+`timing.firstItemMs`. The report names which and gives the median and the
+least. The Codex stage bounds each call's wait from above, so its least is the
+closest reading. `stageMedians` is the median offset of every stage the rows
+record, the harness's `stages` apart from the wire's `timing`.
 
 The fit is least squares of call seconds on thinking and written tokens over
 the agent's own settled calls:
@@ -415,6 +436,20 @@ the agent's own settled calls:
     seconds = fixedSeconds + thinkingTokens x msPerThinkingToken / 1000 + writtenTokens x msPerWrittenToken / 1000
 
 Fewer than four calls, or counts that move together, have no fit.
+
+The stage fit (`stageFit`) splits a call on the wire's own `timing`:
+`meanHeadersMs`, the mean wait for the response headers, then two lines by
+least squares, each needing three calls:
+
+    firstOutputMs - headersMs     = thinking.fixedMs + thinkingTokens x thinking.msPerThinkingToken
+    lastOutputMs  - firstOutputMs = written.fixedMs  + writtenTokens  x written.msPerWrittenToken
+
+A journal from before the wire was timed has none. Nor has the Codex arm: its
+session log has no first-token time, so its whole-call fit stands alone and
+`stageFitUnavailable` says why.
+
+`cellWork` counts the agent's own calls by what their cell did, with their
+time and tokens, where the journal records it.
 
 `report.py` writes all of this for both arms, over every paired task and for
 each one, to `report.md` and to `comparison` in `report.json`. A refused
