@@ -3,6 +3,8 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,6 +18,110 @@ import (
 	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture/seed"
 	"github.com/stretchr/testify/require"
 )
+
+// Exercise the same HTTP model stream and PostgreSQL producer callbacks as a
+// hosted account. A synthetic Model stream misses framing and journal receipts.
+func TestHostedLongRepliesThroughTypeScriptHost(t *testing.T) {
+	for _, item := range []struct {
+		size   int
+		reason string
+	}{{32, "stop"}, {1 << 20, "stop"}, {32, "length"}, {1 << 20, "length"}} {
+		fragmentSize := item.size
+		t.Run(fmt.Sprintf("fragment_%d_%s", fragmentSize, item.reason), func(t *testing.T) {
+			pool, _ := postgresfixture.NewProductDatabase(t)
+			user, err := seed.CreateUser(t.Context(), pool, "long-reply-owner")
+			require.NoError(t, err)
+			store, err := NewStore(pool)
+			require.NoError(t, err)
+			handler := &Handler{Store: store, PrivateConversations: true}
+			router := chi.NewRouter()
+			router.Group(func(public chi.Router) {
+				public.Use(func(next http.Handler) http.Handler {
+					return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						ctx := middleware.ContextWithAuthInfo(r.Context(), &middleware.AuthInfo{User: &db.User{ID: user, Username: "long-reply-owner"}, SessionHash: strings.Repeat("a", 64)})
+						next.ServeHTTP(w, r.WithContext(ctx))
+					})
+				})
+				handler.MountPublic(public)
+			})
+			handler.MountProducerCallbacks(router)
+			server := httptest.NewServer(router)
+			defer server.Close()
+			answer := strings.Repeat("Queue state — β <input> & retry.\n", 600)
+			providerCancelled := make(chan struct{})
+			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				w.Header().Set("Content-Type", "text/event-stream")
+				// Split by runes so the byte-fragment case preserves valid UTF-8.
+				runes := []rune(answer)
+				for at := 0; at < len(runes); at += fragmentSize {
+					end := min(at+fragmentSize, len(runes))
+					raw, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"index": 0, "delta": map[string]string{"content": string(runes[at:end])}, "finish_reason": nil}}})
+					fmt.Fprintf(w, "data: %s\n\n", raw)
+				}
+				fmt.Fprintf(w, "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":%q}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":4096}}\n\ndata: [DONE]\n\n", item.reason)
+				w.(http.Flusher).Flush()
+				// The proxy may retain the connection after its terminal SSE chunk.
+				<-r.Context().Done()
+				close(providerCancelled)
+			}))
+			defer provider.Close()
+			defer provider.CloseClientConnections()
+			fixture := startFixtureHost(t, server.URL, provider.URL)
+			defer fixture.stop()
+			host, err := NewHTTPChatHost(fixture.origin, nil, "deterministic-host-token")
+			require.NoError(t, err)
+			runtime, err := NewRuntime(pool, host, server.URL, RuntimeOptions{PrivateConversations: true, QueueSize: 8, Concurrency: 1, Lease: time.Minute})
+			require.NoError(t, err)
+			*handler = *runtime.Handler
+			ctx, cancel := context.WithCancel(t.Context())
+			finished := make(chan error, 1)
+			go func() { finished <- runtime.Run(ctx) }()
+			defer func() { cancel(); <-finished }()
+			receipt := submitPrompt(t, server, "main", "long-reply-3812", "Write a long answer")
+			deadline := time.Now().Add(20 * time.Second)
+			for {
+				requestCtx, stopRead := context.WithTimeout(t.Context(), 2*time.Second)
+				request, err := http.NewRequestWithContext(requestCtx, http.MethodGet, server.URL+"/api/conversations/main", nil)
+				require.NoError(t, err)
+				response, err := server.Client().Do(request)
+				require.NoError(t, err)
+				var view SharedConversation
+				err = json.NewDecoder(response.Body).Decode(&view)
+				response.Body.Close()
+				stopRead()
+				require.NoError(t, err)
+				require.Equal(t, http.StatusOK, response.StatusCode)
+				expectedState := StateCompleted
+				if item.reason == "length" {
+					expectedState = StateFailed
+				}
+				if len(view.Entries) > 0 && view.Entries[0].State == expectedState {
+					require.Equal(t, receipt.TurnID, view.Entries[0].ID)
+					var text strings.Builder
+					for _, raw := range view.Entries[0].Frames {
+						var frame struct{ Type, Kind, Text string }
+						require.NoError(t, json.Unmarshal(raw, &frame))
+						if frame.Type == "delta" && frame.Kind == "text" {
+							text.WriteString(frame.Text)
+						}
+					}
+					require.Equal(t, answer, text.String())
+					select {
+					case <-providerCancelled:
+					case <-time.After(2 * time.Second):
+						t.Fatal("host retained the finished model stream")
+					}
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("long reply did not finish: entries=%d", len(view.Entries))
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+		})
+	}
+}
 
 func TestHostedConversationWithoutInstallOwnsAdmissionOutputAndView(t *testing.T) {
 	pool, _ := postgresfixture.NewProductDatabase(t)

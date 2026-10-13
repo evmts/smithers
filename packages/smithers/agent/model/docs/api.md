@@ -500,9 +500,11 @@ A route configured with `structuredOutput` preserves declared tools alongside
 `content_filter` onto the matching stop reasons; only `stop` normalizes to
 `"tool-calls"` when a call completed, since Gemini finishes a successful tool
 turn that way, while `length` and `content_filter` after a completed call stay
-what they are. The choice-less usage chunk that `include_usage` makes the
-provider send after the finish chunk is the `terminal` predicate; `[DONE]`
-never reaches the protocol. A purely numeric provider
+what they are. The final usage chunk is the `terminal` predicate: OpenAI and
+Ollama send it separately with no choices; Cerebras includes usage in the
+finish chunk. Both end the stream without waiting for HTTP EOF. A finish
+without usage still waits for the trailing counters. `[DONE]` never reaches
+the protocol. A purely numeric provider
 code in the HTTP range stands in for a missing status, which is how a gateway
 that reports `{"error":{"code":429}}` inside an HTTP 200 stream still
 classifies as `rate_limited`.

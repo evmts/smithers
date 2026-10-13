@@ -1125,6 +1125,56 @@ describe("Route.stream terminal events", () => {
     )
 
   const key = Redacted.make("secret")
+  it.each(["stop", "length", "tool_calls"])(
+    "completes a Cerebras %s chunk with inline usage while the connection stays open (#3812)",
+    async (reason) => {
+      let cancelled = false
+      const route = Result.getOrThrow(Route.openaiChatCompatible({
+        providerName: "cerebras",
+        id: "cerebras",
+        baseUrl: "https://compat.test",
+        apiKey: key
+      }))
+      const frames = [
+        JSON.stringify({ choices: [{ index: 0, delta: { content: "A retained long reply. ".repeat(1_500) } }] }),
+        JSON.stringify({
+          choices: [{ index: 0, delta: {}, finish_reason: reason }],
+          usage: { prompt_tokens: 88, completion_tokens: 4096 }
+        }),
+        "[DONE]"
+      ]
+      const events = Array.from(
+        await Effect.runPromise(
+          Effect.scoped(
+            Route.toModel(route).pipe(
+              Effect.flatMap((model) => Stream.runCollect(model.stream(request))),
+              Effect.provideService(
+                RequestExecutor.RequestExecutor,
+                executorOf(() =>
+                  neverClosing(frames, () => {
+                    cancelled = true
+                  })
+                )
+              )
+            )
+          ).pipe(Effect.timeout("2 seconds"))
+        )
+      )
+      expect(events.filter((event) => event.type === "text-delta").map((event) => event.text).join("")).toBe(
+        "A retained long reply. ".repeat(1_500)
+      )
+      expect(events.filter((event) => event.type === "usage")).toEqual([{
+        type: "usage",
+        inputTokens: 88,
+        outputTokens: 4096
+      }])
+      expect(events.filter((event) => event.type === "settle")).toEqual([{
+        type: "settle",
+        stopReason: reason === "tool_calls" ? "tool-calls" : reason
+      }])
+      expect(cancelled).toBe(true)
+    }
+  )
   it.each([
     [
       "anthropic",

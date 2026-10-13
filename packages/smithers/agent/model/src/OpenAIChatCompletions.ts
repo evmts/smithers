@@ -471,13 +471,15 @@ const step = Effect.fn("OpenAIChatCompletions.step")((
   })
 )
 
-// `[DONE]` never reaches a protocol (SSE framing discards it), and the
-// finish_reason chunk precedes the choice-less usage chunk that
-// `stream_options.include_usage` makes api.openai.com and Ollama send last, so
-// that chunk is the final frame the route can stop pulling at. A provider that
-// folds usage into the finish_reason chunk still ends at HTTP EOF.
+// `[DONE]` never reaches a protocol (SSE framing discards it). OpenAI and
+// Ollama send a choice-less usage chunk after finish_reason; Cerebras folds
+// usage into finish_reason. Both carry the final counters, so stop there even
+// when a proxy keeps the body open. A finish without usage must still pull
+// the trailing counters before returning.
 const terminalEvent = (event: ChatCompletionChunk): boolean =>
-  (event.choices === undefined || event.choices.length === 0) && event.usage !== undefined && event.usage !== null
+  event.usage !== undefined && event.usage !== null &&
+  (event.choices === undefined || event.choices.length === 0 ||
+    (event.choices[0]?.finish_reason !== undefined && event.choices[0]?.finish_reason !== null))
 
 const finalize = (state: State): ReadonlyArray<ModelEvent.ModelEvent> =>
   ToolStream.flushAborted(state.tools).completed.map((call) =>
