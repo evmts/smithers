@@ -1023,8 +1023,9 @@ export const decisionAnswers = (
  * because the passing decisions are what say whether asking was right.
  *
  * `decidedBy` names who answered: `jev` for the decision-only model behind
- * `Evaluator`, `seat` for a generation seat asked to judge, `human` for a
- * person. Only `jev` is written today.
+ * `Evaluator`, `seat` for a generation seat asked to judge through the
+ * model-to-judge adapter (`usage.modelId` names its model), `human` for a
+ * person. `human` is not written today.
  *
  * `scope` and `frame` are the join keys {@link ModelRequested} carries, for the
  * reason it carries them.

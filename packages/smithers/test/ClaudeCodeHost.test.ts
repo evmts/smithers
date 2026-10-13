@@ -1,6 +1,7 @@
 /**
  * Real native host, clean environment, the signed-in Claude Code as the flow's
- * seat, and the completion judge beside it.
+ * seat, and the completion judge beside it: Jev with a gateway key, Claude
+ * Haiku on the same Claude Code without one.
  */
 import { spawn, spawnSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
@@ -46,9 +47,9 @@ interface Hosted {
  * under `USER`. Nothing else of this process is inherited: no provider API
  * key, Codex login, proxy setting, `NODE_OPTIONS` or fixture preload, and none
  * of the `CLAUDECODE` and session variables of a Claude Code this suite runs
- * under. `judged` adds the completion judge's credential and nothing more.
+ * under. `gatewayKey` adds Jev's credential and nothing more.
  */
-const hostFlow = async (judged: boolean): Promise<Hosted> => {
+const hostFlow = async (gatewayKey: boolean): Promise<Hosted> => {
   const root = mkdtempSync(join(tmpdir(), "smithers-claude-code-host-test-"))
   const env: Record<string, string> = { CI: "1" }
   for (
@@ -58,7 +59,7 @@ const hostFlow = async (judged: boolean): Promise<Hosted> => {
       "USER",
       "CLAUDE_CONFIG_DIR",
       "SMITHERS_WORKSPACE_JJ_EXPORT_BINARY",
-      ...(judged ? ["AI_GATEWAY_API_KEY"] : [])
+      ...(gatewayKey ? ["AI_GATEWAY_API_KEY"] : [])
     ]
   ) {
     if (process.env[key] !== undefined) env[key] = process.env[key]!
@@ -150,75 +151,72 @@ const requests = (hosted: Hosted) =>
     protocolId: event.protocolId
   }))
 
+const claims = (hosted: Hosted) =>
+  hosted.events("control.agent.decision-settled").filter((event) => event.classifier === "completion/claim")
+
+/** The model each completion reading was metered on: the model that judged. */
+const judgeModels = (hosted: Hosted): ReadonlyArray<unknown> =>
+  hosted.events("control.agent.claim-demanded").map((event) => event.usage?.modelId)
+
 /** What the run left behind, printed so a real run's receipt outlives its fixture. */
 const evidence = (hosted: Hosted) => ({
   runId: hosted.started.runId,
   exit: hosted.status,
   cause: hosted.started.cause,
   runs: hosted.runs,
-  asked: requests(hosted)
+  asked: requests(hosted),
+  judgedBy: claims(hosted).map((claim) => claim.decidedBy),
+  judgeModels: judgeModels(hosted),
+  answers: claims(hosted).map((claim) => claim.answers)
 })
 
-const claims = (hosted: Hosted) =>
-  hosted.events("control.agent.decision-settled").filter((event) => event.classifier === "completion/claim")
+/**
+ * A run that completed on the claude-code seat: both databases say so, every
+ * model request took the claude-code route, the answer holds the marker, and
+ * the one completion judgment read it as complete. Returns that judgment.
+ */
+const completed = (hosted: Hosted) => {
+  process.stderr.write(`${JSON.stringify(evidence(hosted))}\n`)
+  expect(hosted.status, JSON.stringify(hosted.started)).toBe(0)
+  for (const run of hosted.runs) {
+    expect(run.status, run.database).toBe("completed")
+    expect(run.finished, run.database).not.toBeNull()
+  }
+  const asked = requests(hosted)
+  expect(asked.length).toBeGreaterThan(0)
+  for (const request of asked) {
+    expect(request).toMatchObject({ seat, routeId: "claude-code", protocolId: "claude-code" })
+  }
+  expect(JSON.stringify(hosted.events("control.agent.resolved"))).toContain(marker)
+  expect(hosted.events("control.agent.decision-unjudged")).toEqual([])
+  const [claim, ...others] = claims(hosted)
+  expect(others).toEqual([])
+  expect(claim.answers).toEqual(
+    expect.arrayContaining([expect.objectContaining({ id: "complete", kind: "boolean", p: expect.any(Number) })])
+  )
+  expect(claim.answers.find((answer: { id: string }) => answer.id === "complete").p).toBeGreaterThan(0.5)
+  return claim
+}
 
 // Opt-in: each case spends a turn of the operator's Claude subscription, so
 // neither runs by default.
 describe.runIf(process.env.SMITHERS_CLAUDE_CODE_SMOKE === "1")("a flow on the installed Claude Code", () => {
   it("completes on the claude-code seat, its completion judged by Jev", { timeout: 900_000 }, async () => {
-    // Jev judges every completion, and this host is given no other judge.
-    expect(process.env.AI_GATEWAY_API_KEY, "export AI_GATEWAY_API_KEY: Jev judges the completion").toBeTruthy()
-    const hosted = await hostFlow(true)
-    const asked = requests(hosted)
-    const [claim] = claims(hosted)
-    process.stderr.write(
-      `${JSON.stringify({ ...evidence(hosted), judgedBy: claim?.decidedBy, answers: claim?.answers })}\n`
-    )
-
-    expect(hosted.status, JSON.stringify(hosted.started)).toBe(0)
-    for (const run of hosted.runs) {
-      expect(run.status, run.database).toBe("completed")
-      expect(run.finished, run.database).not.toBeNull()
-    }
-    expect(asked.length).toBeGreaterThan(0)
-    for (const request of asked) {
-      expect(request).toMatchObject({ seat, routeId: "claude-code", protocolId: "claude-code" })
-    }
-    expect(JSON.stringify(hosted.events("control.agent.resolved"))).toContain(marker)
-    expect(claim).toMatchObject({
-      decidedBy: "jev",
-      answers: expect.arrayContaining([
-        expect.objectContaining({ id: "complete", kind: "boolean", p: expect.any(Number) })
-      ])
-    })
-    expect(claim.answers.find((answer: { id: string }) => answer.id === "complete").p).toBeGreaterThan(0.5)
+    // Only a gateway key puts Jev in the judge's seat.
+    expect(process.env.AI_GATEWAY_API_KEY, "export AI_GATEWAY_API_KEY: Jev judges this case").toBeTruthy()
+    const claim = completed(await hostFlow(true))
+    expect(claim.decidedBy).toBe("jev")
   })
 
-  it("fails closed, unjudged, where Claude Code is the host's only credential", { timeout: 900_000 }, async () => {
-    const hosted = await hostFlow(false)
-    const asked = requests(hosted)
-    const unjudged = hosted.events("control.agent.decision-unjudged").map((event) => ({
-      classifier: event.classifier,
-      reason: event.reason
-    }))
-    const failures = hosted.events("control.run.failed")
-    process.stderr.write(`${JSON.stringify({ ...evidence(hosted), unjudged })}\n`)
-
-    // Claude answered on its own route, and nothing could judge the answer.
-    expect(asked.length).toBeGreaterThan(0)
-    for (const request of asked) {
-      expect(request).toMatchObject({ seat, routeId: "claude-code", protocolId: "claude-code" })
+  it(
+    "completes with no gateway key, its completion judged by Claude Haiku through the adapter",
+    { timeout: 900_000 },
+    async () => {
+      // Claude Code is this host's only credential, so its Haiku judges in Jev's place.
+      const hosted = await hostFlow(false)
+      const claim = completed(hosted)
+      expect(claim.decidedBy).toBe("seat")
+      expect(judgeModels(hosted)).toEqual(["haiku"])
     }
-    expect(unjudged).toContainEqual(expect.objectContaining({ reason: "unconfigured" }))
-    expect(claims(hosted)).toEqual([])
-    // So the run fails, names the missing judge, and still quotes the answer.
-    expect(hosted.status, JSON.stringify(hosted.started)).toBe(1)
-    expect(hosted.started.status).toBe("failed")
-    expect(hosted.started.cause).toContain("AI_GATEWAY_API_KEY is not set")
-    for (const run of hosted.runs) expect(run.status, run.database).toBe("failed")
-    expect(hosted.events("control.agent.resolved")).toEqual([])
-    expect(failures).toHaveLength(1)
-    expect(failures[0].cause).toContain("A completion no evaluator could judge (unconfigured)")
-    expect(failures[0].cause).toContain(marker)
-  })
+  )
 })

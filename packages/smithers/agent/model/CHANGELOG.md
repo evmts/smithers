@@ -4,6 +4,16 @@
 
 ### Changed
 
+- `EvaluatorBackup.fromModel` judges at `reasoningEffort: "medium"`, not
+  `low`, and `Evaluator.layerFromSeat` tells the seat that a boolean
+  `probability` is the chance the answer is yes. GPT-6 Luna at `low` read a
+  finished one-line completion as not done in 10 of 12 readings on
+  2026-10-13, and a seat told only "probability" answered its confidence and
+  flipped a question asked in the negative (#3806).
+- `Evaluator.Response` carries `decidedBy: "seat"` when `layerFromSeat`
+  answered, so a host can journal who judged. `Evaluator.unconfiguredMessage`
+  names the gateway key, `claude auth login` with `ANTHROPIC_API_KEY` unset,
+  and `codex login` with `SMITHERS_OPENAI_AUTH=chatgpt`.
 - `EvaluatorBackup.withFallback` no longer asks the backup when the primary is
   `unconfigured` (for example, no `AI_GATEWAY_API_KEY`). A missing credential
   now fails with the primary's typed `unconfigured` error and setup message

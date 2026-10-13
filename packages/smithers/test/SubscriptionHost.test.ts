@@ -1,4 +1,7 @@
-/** Real native host, clean environment, subscription transport and completion judge. */
+/**
+ * Real native host, clean environment, the Codex subscription as the flow's
+ * seat, and GPT-6 Luna on the same subscription as its completion judge.
+ */
 import { spawn, spawnSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -94,6 +97,20 @@ Reply with the exact text SUBSCRIPTION_OK. Do not run tools or modify files. Thi
             const judgment = payloads("control.agent.decision-settled").find((event) =>
               event.classifier === "completion/claim"
             )
+            // What the run left behind, printed so a real run's receipt outlives its fixture.
+            process.stderr.write(`${
+              JSON.stringify({
+                runId,
+                judgedBy: judgment?.decidedBy,
+                judgeModels: payloads("control.agent.claim-demanded").map((event) => event.usage?.modelId),
+                answers: judgment?.answers
+              })
+            }\n`)
+            // No gateway key: Luna judged on the subscription, through the model-to-judge adapter.
+            expect(judgment?.decidedBy).toBe("seat")
+            expect(payloads("control.agent.claim-demanded").map((event) => event.usage?.modelId)).toEqual([
+              "gpt-6-luna"
+            ])
             expect(judgment?.answers).toEqual(
               expect.arrayContaining([
                 expect.objectContaining({ id: "complete", kind: "boolean", p: expect.any(Number) })

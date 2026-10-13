@@ -107,6 +107,29 @@ describe("measured", () => {
     expect(asked).toMatchObject({ classifier: "test/one", digest: one.digest, questions: one.questions })
     expect(Number.isInteger(asked.latencyMs)).toBe(true)
     expect(asked.latencyMs).toBeGreaterThanOrEqual(0)
+    // The decision-only model answered, so the record names no seat.
+    expect(asked).not.toHaveProperty("decidedBy")
+  })
+
+  it("keeps that a generation seat answered in Jev's place", async () => {
+    const seat = Layer.succeed(Evaluator.Evaluator)(
+      Evaluator.Evaluator.of({
+        evaluate: () =>
+          Effect.succeed({
+            answers: { yes: { type: "boolean", probability: 0.3 }, pick: { type: "choice", choice: "b" } },
+            usage: { inputTokens: 40, outputTokens: 12, modelId: "haiku" },
+            latencyMs: 5,
+            decidedBy: "seat" as const
+          })
+      })
+    )
+    const { asked } = await Effect.runPromise(Judgement.measured(one, { n: 3 }).pipe(Effect.provide(seat)))
+
+    expect(asked.decidedBy).toBe("seat")
+    expect(Judgement.decision(asked, { scope: "s", frame: 0, acted: false })).toMatchObject({
+      decidedBy: "seat",
+      usage: { modelId: "haiku" }
+    })
   })
 
   it("keeps the transport's own failure", async () => {

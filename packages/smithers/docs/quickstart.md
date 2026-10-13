@@ -75,10 +75,21 @@ export SMITHERS_OPENAI_AUTH=chatgpt
 For Codex, use `model: openai:gpt-6.1-sol`. For a Claude subscription, run
 `claude auth login` and use `model: opus`; with `ANTHROPIC_API_KEY` unset the
 seat runs on your own Claude Code, and with it set, on the Anthropic API. Team hosts use
-their connected accounts. The completion judge is Jev through the Vercel AI Gateway
-(`AI_GATEWAY_API_KEY`); when Jev is unreachable, times out, answers 5xx or 429,
-or has no key, GPT-6 Luna judges through the same subscription resolver.
-Refusals and invalid judgments fail the run without a fallback.
+their connected accounts.
+
+The host picks the completion judge from what it holds:
+
+| The host holds                                                                 | Judge                              |
+| ------------------------------------------------------------------------------ | ---------------------------------- |
+| `AI_GATEWAY_API_KEY`                                                           | Jev, through the Vercel AI Gateway |
+| No key, and a signed-in Claude Code with `ANTHROPIC_API_KEY` unset             | Claude Haiku on that Claude Code   |
+| No key or Claude Code, and the Codex subscription above or a team account pool | GPT-6 Luna on that subscription    |
+| None of these                                                                  | None: the run fails `unconfigured` |
+
+A host with both subscriptions judges on Claude Haiku. With a key, a
+subscription judges only while Jev is unreachable, times out, or answers 5xx
+or 429. A provider API key never judges. Refusals and invalid judgments fail
+the run without a fallback.
 
 Confirm the flow is discoverable:
 

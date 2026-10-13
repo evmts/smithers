@@ -200,9 +200,11 @@ the rig's isolated API-key home for historical lanes. Set
 for the flows arm when overriding the CLI's packaged/checkout resolver. Its
 guarded filesystem needs the helper even for `plan`, and the rig rejects a
 broken explicit override before pulling an image.
-The current flows CLI also requires `AI_GATEWAY_API_KEY` for its Jev judge at
-approval time; `SMITHERS_OPENAI_AUTH=chatgpt` changes the agent model route,
-not that judge.
+The flows CLI judges with Jev at approval time when `AI_GATEWAY_API_KEY` is
+set. Without the key it judges on a subscription: Claude Haiku where Claude
+Code is signed in, otherwise GPT-6 Luna, which `SMITHERS_OPENAI_AUTH=chatgpt`
+puts in the judge's seat as well as changing the agent model route. Export
+the key for a run that must be judged by Jev.
 
 The whole sample, one harness at a time:
 

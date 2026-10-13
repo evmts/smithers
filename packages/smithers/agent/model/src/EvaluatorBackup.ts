@@ -28,7 +28,9 @@ export const fromModel = (model: Model.Model, modelId: string): Evaluator.Evalua
                 ...judgeRequest,
                 tools: [],
                 toolChoice: "none",
-                params: { reasoningEffort: "low" }
+                // Not `low`: GPT-6 Luna spends no reasoning tokens there, and on 2026-10-13 it read a
+                // correct one-line completion as not done in 10 of 12 readings. At `medium`, 0 of 9.
+                params: { reasoningEffort: "medium" }
               })
             ).pipe(
               Stream.runCollect,

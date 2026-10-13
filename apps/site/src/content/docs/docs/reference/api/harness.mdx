@@ -964,7 +964,8 @@ ask it again:
   `Classifier.digest`, the encoded state the transport was sent, the questions
   in their wire form, and one `DecisionAnswer` per question. `acted` says
   whether the decision changed what the run did next, and `decidedBy` is
-  `jev`, `seat` or `human`. A `DecisionAnswer` is tagged by `kind`: `boolean`
+  `jev`, `seat` or `human`: `seat` when a generation seat judged in Jev's
+  place, with its model in `usage.modelId`. A `DecisionAnswer` is tagged by `kind`: `boolean`
   carries `p`; `choice` and `score` carry `value`, `probabilities`, and
   `confidence`. `confidence` is `Evaluator.Response.confidence`, the
   provider's own number, and the key is absent when the provider sent none. It

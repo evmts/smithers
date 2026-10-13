@@ -178,6 +178,14 @@
 
 ### Changed
 
+- With no `AI_GATEWAY_API_KEY`, `smthrs run` and `smthrs serve` judge on a
+  subscription through the model-to-judge adapter instead of failing every
+  completion `unconfigured`: Claude Haiku on a signed-in Claude Code
+  (`claude-code:haiku`), else GPT-6 Luna on a Codex subscription
+  (`codex login` and `SMITHERS_OPENAI_AUTH=chatgpt`) or an account pool, else
+  the first router key's review model. With a key, Jev judges and the same chain
+  covers only its outages. A host whose only credential is a provider API key
+  still fails `unconfigured`, and the message names each way out (#3806).
 - **Breaking:** `Providers.seatDescriptions` is removed. `seatCandidates`
   returns the routing graph's seat ids that run here; a Claude seat is offered
   on `ANTHROPIC_API_KEY` or on Claude Code, never as a `claude-code:` seat. The

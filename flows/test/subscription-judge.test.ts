@@ -134,17 +134,47 @@ for (
     }
   })
 
-  test(`${name}: missing Jev key fails before consulting a configured subscription pool`, async () => {
-    const result = await evaluate(compose({
-      SMITHERS_ACCOUNT_POOL_URL: "http://127.0.0.1:1",
-      SMITHERS_ACCOUNT_POOL_KEY: "fixture-host",
-      SMITHERS_ACCOUNT_POOL_PROVIDERS: "chatgpt",
-      CODEX_HOME: "/nonexistent"
-    }))
-    assert.equal(result._tag, "Failure")
-    if (result._tag === "Failure") {
-      assert.equal(result.failure.code, "unconfigured")
-      assert.match(result.failure.message, /AI_GATEWAY_API_KEY/)
+  test(`${name}: with no Jev key the subscription pool's Luna is the judge`, async () => {
+    const seen: string[] = []
+    const server = createServer((request, response) => {
+      seen.push(request.url!)
+      if (request.url === "/routes") {
+        response.setHeader("content-type", "application/json")
+        response.end(JSON.stringify({ routes: ["chatgpt"] }))
+        return
+      }
+      const events = [
+        {
+          type: "response.output_text.delta",
+          item_id: "answer",
+          output_index: 0,
+          content_index: 0,
+          delta: JSON.stringify({ answers: { complete: { type: "boolean", probability: 0.95 } } })
+        },
+        { type: "response.completed", response: { id: "response", status: "completed", usage: {} } }
+      ]
+      response.setHeader("content-type", "text/event-stream")
+      response.end(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""))
+    })
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    const { port } = server.address() as AddressInfo
+    try {
+      // The Jev client is the outage fixture: a host without a key never asks it.
+      const result = await evaluate(compose({
+        SMITHERS_ACCOUNT_POOL_URL: `http://127.0.0.1:${port}`,
+        SMITHERS_ACCOUNT_POOL_KEY: "fixture-host",
+        SMITHERS_ACCOUNT_POOL_PROVIDERS: "chatgpt",
+        CODEX_HOME: "/nonexistent",
+        NO_PROXY: "*"
+      }, unavailableJev))
+      assert.equal(result._tag, "Success")
+      if (result._tag === "Success") {
+        assert.deepEqual(result.success.answers.complete, { type: "boolean", probability: 0.95 })
+        assert.equal(result.success.decidedBy, "seat")
+      }
+      assert.deepEqual(seen, ["/routes", "/chatgpt/codex/responses"])
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
     }
   })
 

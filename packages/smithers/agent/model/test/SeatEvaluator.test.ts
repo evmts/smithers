@@ -45,6 +45,8 @@ describe("subscription seat evaluator", () => {
       }
     }))
     expect(result.answers).toEqual(answers)
+    // The answer says a generation seat gave it, so a journal can name who judged.
+    expect(result.decidedBy).toBe("seat")
     expect(sent?.modelId).toBe("gpt-6.1-sol")
     expect(sent?.tools).toEqual([])
     expect(JSON.stringify(sent)).toContain("tests passed")

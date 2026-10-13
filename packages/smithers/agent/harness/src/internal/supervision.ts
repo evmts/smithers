@@ -45,6 +45,7 @@ import * as Relevance from "../Relevance.ts"
 import * as Supervisor from "../Supervisor.ts"
 import * as UnmovedTree from "../UnmovedTree.ts"
 import * as compactionMarks from "./compactionMarks.ts"
+import { decider } from "./decidedBy.ts"
 import type * as Frame from "./frame.ts"
 import { paidUsage } from "./paidUsage.ts"
 
@@ -511,7 +512,7 @@ export const open = (input: {
                 answers: reading.asked.answers,
                 latencyMs: reading.latencyMs,
                 acted: nudged,
-                decidedBy: "jev"
+                decidedBy: decider(reading.asked)
               }),
               unjudged: null,
               ...memoryRecord,

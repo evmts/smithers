@@ -276,7 +276,12 @@ real native host with an allowlisted environment that carries no provider API
 keys, runs a one-prompt flow on the Codex subscription transport
 (`SMITHERS_OPENAI_AUTH=chatgpt`), and asserts the run completed in both
 databases, the requested model, the reply, and the completion judge's
-decision. Only a real subscription call proves a user with no API key can run
+decision. The host has no `AI_GATEWAY_API_KEY` and its environment reaches
+no Claude Code login, so GPT-6 Luna judges on the same subscription through
+the model-to-judge adapter, and the test asserts the decision says
+`decidedBy: "seat"` and was metered on `gpt-6-luna`. A host that also has
+Claude Code signed in judges on Claude Haiku first. Only a
+real subscription call proves a user with no API key can run
 a flow end to end. It spends subscription quota and minutes, so it requires
 `SMITHERS_LIVE_MODEL_TESTS=1`, the same intent flag the Gemini contract uses,
 plus a signed-in `CODEX_HOME`. What breaks if it regresses: the keyless
@@ -308,10 +313,11 @@ one-prompt flow on the `claude-code:sonnet` seat through the CLI
 (`SMITHERS_CLAUDE_CODE_SMOKE_MODEL` picks the model). The first case passes
 `AI_GATEWAY_API_KEY` to the host and asserts the run completed in both
 databases, every model request on the `claude-code` route, the reply, and
-Jev's `completion/claim` decision. The second case withholds that key and
-asserts what a host with a Claude subscription and nothing else does: Claude
-answers, no evaluator can judge the completion, and the run fails closed as
-`unconfigured` with the answer quoted in its failure. `ClaudeCode.test.ts`
+Jev's `completion/claim` decision (`decidedBy: "jev"`). The second case
+withholds that key and asserts what a host with a Claude subscription and
+nothing else does: the run completes the same way, and Claude Haiku on the
+same Claude Code judged it through the model-to-judge adapter
+(`decidedBy: "seat"`, metered on `haiku`). `ClaudeCode.test.ts`
 proves the seat alone; only this suite proves a flow reaches the signed-in
 Claude Code through the CLI, the host and the judge. It spends the operator's
 Claude subscription, so it never runs by default. What breaks if it

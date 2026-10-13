@@ -420,6 +420,19 @@ describe("NodeControl.seatResolver Claude subscriptions", () => {
     }])
   })
 
+  it("hands Claude Code a model name the alias table does not hold, as written", async () => {
+    // `haiku` is Claude Code's own alias for its current Haiku: a host with only Claude Code judges on it.
+    const claude = claudeOnPath(signedIn)
+    cleanup = claude.cleanup
+    const resolved = await Effect.runPromise(resolve({ PATH: claude.PATH }, "claude-code:haiku"))
+
+    expect([resolved.id, resolved.modelId]).toEqual(["claude-code:haiku", "haiku"])
+    expect(await prepared(resolved, resolved.modelId)).toMatchObject({
+      routeId: "claude-code",
+      url: "claude-code:haiku"
+    })
+  })
+
   it.each(["opus", "sonnet", "fable"] as const)(
     "runs the %s alias on an Anthropic key when one is set, else on the signed-in Claude Code",
     async (alias) => {

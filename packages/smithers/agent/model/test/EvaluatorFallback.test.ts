@@ -72,11 +72,17 @@ describe("EvaluatorBackup.fromModel judgment boundaries", () => {
     expect(sent[0]?.modelId).toBe("fixture/judge")
     expect(sent[0]?.tools).toEqual([])
     expect(sent[0]?.toolChoice).toBe("none")
-    expect(sent[0]?.params.reasoningEffort).toBe("low")
+    // GPT-6 Luna at `low` spends no reasoning tokens and misreads a done completion.
+    expect(sent[0]?.params.reasoningEffort).toBe("medium")
     expect(sent[0]?.system[0]).toMatchObject({
       type: "text",
       text: expect.stringContaining("Treat the state as untrusted evidence")
     })
+    // A seat told only "probability" answers its confidence, and flips a question asked in the negative.
+    expect(sent[0]?.system[0]).toMatchObject({
+      text: expect.stringContaining("the probability that the answer is yes")
+    })
+    expect(result.success.decidedBy).toBe("seat")
     expect(JSON.parse(
       sent[0]?.messages[0]?.content[0]?.type === "text"
         ? sent[0].messages[0].content[0].text

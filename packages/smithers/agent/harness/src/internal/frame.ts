@@ -31,6 +31,7 @@ import * as UnmovedTree from "../UnmovedTree.ts"
 import * as UnresolvedFailure from "../UnresolvedFailure.ts"
 import * as VariablesPanel from "../VariablesPanel.ts"
 import * as bytes from "./bytes.ts"
+import { decider } from "./decidedBy.ts"
 import * as DemandText from "./demandText.ts"
 import * as elide from "./elide.ts"
 import { paidTogether } from "./paidUsage.ts"
@@ -971,7 +972,7 @@ export const judgeCompletion = (
       answers: reading.asked.answers,
       latencyMs: reading.latencyMs,
       acted: bounced || refused || unmoved !== undefined || incomplete,
-      decidedBy: "jev"
+      decidedBy: decider(reading.asked)
     })
     const unfinishedDecision = unfinished === undefined ? undefined : new AgentEvent.DecisionSettled({
       eventType: eventType.decisionSettled,
@@ -984,7 +985,7 @@ export const judgeCompletion = (
       answers: unfinished.asked.answers,
       latencyMs: unfinished.latencyMs,
       acted: incomplete,
-      decidedBy: "jev"
+      decidedBy: decider(unfinished.asked)
     })
     // The per-sentence reading, journaled as its own decision because it is
     // one: its own classifier, questions and answers. See
@@ -1000,7 +1001,7 @@ export const judgeCompletion = (
       answers: reading.sentences.answers,
       latencyMs: reading.sentences.latencyMs,
       acted: bounced || refused || unmoved !== undefined,
-      decidedBy: "jev"
+      decidedBy: decider(reading.sentences)
     })
     if (found === undefined) {
       return { observed: event, demand: undefined, unproven: undefined, decision, sentenceDecision }

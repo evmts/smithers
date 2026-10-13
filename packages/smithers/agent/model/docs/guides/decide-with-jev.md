@@ -90,6 +90,11 @@ backup is used only when Jev is unreachable, times out, or refuses with a 5xx or
 `unconfigured` error and never falls back to the backup. Backup answers receive
 the same question validation; a malformed answer still fails.
 
+A native host with no `AI_GATEWAY_API_KEY` does not use the fallback: it binds
+a subscription judge as its `Evaluator`. That is Claude Haiku on a signed-in
+Claude Code, otherwise GPT-6 Luna on a Codex subscription or account pool. It
+fails `unconfigured` only when it holds neither.
+
 ## Examples
 
 - [flows/coding/jev-check.ts](https://github.com/smithersai/smithers/blob/main/flows/coding/jev-check.ts)

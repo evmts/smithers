@@ -139,6 +139,27 @@ describe("a completion that reports its own work unfinished", () => {
     })
   })
 
+  it("names the seat on every row it journals when a generation seat judged in Jev's place", async () => {
+    // The claim reads as invented, so its two sentences are read too, and as
+    // not done with no bounce left, so the unfinished question is asked.
+    const probabilities: Readonly<Record<string, number>> = { complete: 0.04, invented: 0.6, unfinished: 0.97 }
+    const seat = Layer.succeed(Evaluator.Evaluator)(Evaluator.Evaluator.of({
+      evaluate: (request) =>
+        Effect.succeed({
+          answers: Object.fromEntries(
+            Object.keys(request.questions).map((id) => [id, { type: "boolean", probability: probabilities[id] ?? 0.1 }])
+          ),
+          latencyMs: 3,
+          decidedBy: "seat" as const
+        })
+    }))
+    const judged = await settled(seat, spent, "I could not finish the migration. It needs credentials this run lacks.")
+
+    expect(judged.decision).toMatchObject({ classifier: "completion/claim", decidedBy: "seat" })
+    expect(judged.sentenceDecision).toMatchObject({ classifier: "completion/claim-sentences", decidedBy: "seat" })
+    expect(judged.unfinishedDecision).toMatchObject({ classifier: UnfinishedWork.classifier.id, decidedBy: "seat" })
+  })
+
   it("ends the run at the last frame too, where nothing could be handed back", async () => {
     const judged = await settled(jev({ complete: 0.1 }, 0.95).layer, { frame: 9 })
 

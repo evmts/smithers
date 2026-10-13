@@ -5,13 +5,52 @@ import { Effect, Layer } from "effect"
 import * as HttpClient from "effect/unstable/http/HttpClient"
 import * as HttpClientError from "effect/unstable/http/HttpClientError"
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { afterEach, expect, it, vi } from "vitest"
 import * as NativeControl from "../src/internal/NativeControl.ts"
 import { layerSeatEvaluator } from "../src/internal/NativeEquipment.ts"
 import { platform } from "../src/internal/NodeControlHost.ts"
 import * as NodeControl from "../src/NodeControl.ts"
 
-afterEach(() => vi.unstubAllEnvs())
+/** Claude Code, scripted: every session the SDK is asked to start, and the text each one answers. */
+const claudeCode = vi.hoisted(() => ({
+  started: [] as Array<{ readonly model: unknown; readonly prompt: unknown }>,
+  reply: ""
+}))
+vi.mock(import("@anthropic-ai/claude-agent-sdk"), async (original) => ({
+  ...(await original()),
+  query: (({ options, prompt }: { readonly options?: { readonly model?: string }; readonly prompt: unknown }) => {
+    claudeCode.started.push({ model: options?.model, prompt })
+    return Object.assign(
+      (async function*() {
+        yield {
+          type: "assistant",
+          parent_tool_use_id: null,
+          message: { id: "msg_1", content: [{ type: "text", text: claudeCode.reply }] }
+        }
+        yield {
+          type: "result",
+          subtype: "success",
+          session_id: "sess_1",
+          is_error: false,
+          result: claudeCode.reply,
+          stop_reason: "end_turn",
+          usage: { input_tokens: 30, output_tokens: 9 }
+        }
+      })(),
+      { interrupt: () => Promise.resolve(), close: () => {} }
+    )
+  }) as never
+}))
+
+const roots: Array<string> = []
+afterEach(() => {
+  vi.unstubAllEnvs()
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+  claudeCode.started.length = 0
+})
 
 it("composes native hosts without provider keys", () => {
   vi.stubEnv("AI_GATEWAY_API_KEY", "")
@@ -53,7 +92,11 @@ const poolEnvironment = {
   SMITHERS_ACCOUNT_POOL_PROVIDERS: "chatgpt"
 }
 const jevUrl = Evaluator.defaultBaseUrl
-const sse = (request: Parameters<RequestExecutor.RequestExecutor["execute"]>[0], answer: unknown) => {
+const sse = (
+  request: Parameters<RequestExecutor.RequestExecutor["execute"]>[0],
+  answer: unknown,
+  usage: Record<string, number> = {}
+) => {
   const events = [
     {
       type: "response.output_text.delta",
@@ -62,7 +105,7 @@ const sse = (request: Parameters<RequestExecutor.RequestExecutor["execute"]>[0],
       content_index: 0,
       delta: JSON.stringify({ answers: { complete: answer } })
     },
-    { type: "response.completed", response: { id: "response", status: "completed", usage: {} } }
+    { type: "response.completed", response: { id: "response", status: "completed", usage } }
   ]
   return HttpClientResponse.fromWeb(
     request,
@@ -121,6 +164,7 @@ it("judges with Jev and never calls Luna when the gateway answers", async () => 
   const { run, sent } = judge({ AI_GATEWAY_API_KEY: "vck_test" }, "answers")
   const result = await Effect.runPromise(run)
   expect(result.answers.complete).toEqual({ type: "boolean", probability: 0.9 })
+  expect(result.decidedBy).toBeUndefined()
   expect(sent).toEqual([jevUrl])
 })
 
@@ -157,6 +201,7 @@ it("answers with Luna through the pool seat when Jev is unreachable", async () =
   const { run, sent } = judge({ AI_GATEWAY_API_KEY: "vck_test" }, "unreachable")
   const result = await Effect.runPromise(run)
   expect(result.answers.complete).toEqual({ type: "boolean", probability: 0.95 })
+  expect(result.decidedBy).toBe("seat")
   expect(sent.at(-1)).toBe("https://pool.example/chatgpt/codex/responses")
 })
 
@@ -173,13 +218,12 @@ it("answers with Luna when Jev times out", async () => {
   }
 })
 
-it("refuses a missing Jev key without asking the configured Luna pool", async () => {
+it("judges on Luna through the pool, and never asks Jev, when no gateway key is set", async () => {
   const { run, sent } = judge({}, "answers")
-  await expect(Effect.runPromise(run)).rejects.toMatchObject({
-    code: "unconfigured",
-    message: expect.stringContaining("AI_GATEWAY_API_KEY")
-  })
-  expect(sent).toEqual([])
+  const result = await Effect.runPromise(run)
+  expect(result.answers.complete).toEqual({ type: "boolean", probability: 0.95 })
+  expect(result.decidedBy).toBe("seat")
+  expect(sent).toEqual(["https://pool.example/routes", "https://pool.example/chatgpt/codex/responses"])
 })
 
 it.each([429, 503] as const)("answers with Luna when the gateway keeps answering %s", async (status) => {
@@ -400,4 +444,176 @@ it("fails closed when the subscription pool's route list cannot be read", async 
       ))
   )).rejects.toMatchObject({ code: "unreachable", message: Evaluator.unreachableMessage })
   expect(sent).toEqual(["https://pool.example/routes"])
+})
+
+// A host with no gateway key judges on its subscription, through the
+// model-to-judge adapter (#3806).
+const signedIn = { loggedIn: true, authMethod: "claude.ai", subscriptionType: "max" }
+
+/**
+ * A machine: a Codex subscription (login and opt-in) and a Claude Code on
+ * `PATH`, signed in or signed out, each when asked for.
+ */
+const machine = (
+  has: { readonly codex?: boolean; readonly claude?: boolean | "signed-out" }
+): Record<string, string> => {
+  const root = mkdtempSync(join(tmpdir(), "smithers-host-judge-"))
+  roots.push(root)
+  if (has.codex === true) {
+    const expiry = Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url")
+    writeFileSync(
+      join(root, "auth.json"),
+      JSON.stringify({
+        auth_mode: "chatgpt",
+        OPENAI_API_KEY: null,
+        tokens: {
+          id_token: "fake-id",
+          access_token: `eyJhbGciOiJub25lIn0.${expiry}.signature`,
+          refresh_token: "fake-refresh",
+          account_id: "acct-fake"
+        }
+      }),
+      { mode: 0o600 }
+    )
+  }
+  if (has.claude !== undefined && has.claude !== false) {
+    const status = has.claude === true ? signedIn : { loggedIn: false, authMethod: "none" }
+    writeFileSync(join(root, "claude"), `#!/bin/sh\necho '${JSON.stringify(status)}'\n`, { mode: 0o755 })
+  }
+  return { CODEX_HOME: root, PATH: root, ...(has.codex === true ? { SMITHERS_OPENAI_AUTH: "chatgpt" } : {}) }
+}
+
+const verdict = (probability: number) => ({ type: "boolean", probability })
+
+/** The model transport, scripted: it records each call and Luna answers 0.95. */
+const transport = () => {
+  const sent: Array<{ readonly url: string; readonly model: unknown }> = []
+  const executor = RequestExecutor.RequestExecutor.of({
+    execute: (request) => {
+      const body = request.body._tag === "Uint8Array" ? JSON.parse(new TextDecoder().decode(request.body.body)) : {}
+      sent.push({ url: request.url, model: body.model })
+      return Effect.succeed(sse(request, verdict(0.95), { input_tokens: 40, output_tokens: 12 }))
+    }
+  })
+  return { sent, executor }
+}
+
+const jevNeverAsked = Layer.succeed(HttpClient.HttpClient)(
+  HttpClient.make(() => Effect.die("Jev must not be asked without a gateway key"))
+)
+
+const judgment = (
+  environment: Record<string, string>,
+  executor: RequestExecutor.RequestExecutor,
+  jevHttp: Layer.Layer<HttpClient.HttpClient> = jevNeverAsked
+) =>
+  Effect.runPromise(
+    Effect.flatMap(Evaluator.Evaluator, (evaluator) => evaluator.evaluate({ state: "proof", questions: question }))
+      .pipe(
+        Effect.provide(
+          layerSeatEvaluator(environment, jevHttp).pipe(
+            Layer.provide(Layer.succeed(RequestExecutor.RequestExecutor)(executor))
+          )
+        )
+      )
+  )
+
+it("judges on Luna with no gateway key on a Codex subscription", async () => {
+  const { sent, executor } = transport()
+  const result = await judgment(machine({ codex: true }), executor)
+  expect(result).toMatchObject({
+    answers: { complete: verdict(0.95) },
+    decidedBy: "seat",
+    usage: { inputTokens: 40, outputTokens: 12, modelId: "gpt-6-luna" }
+  })
+  expect(sent).toEqual([{ url: "https://chatgpt.com/backend-api/codex/responses", model: "gpt-6-luna" }])
+})
+
+it("judges on Claude Haiku with no gateway key where Claude Code is the only subscription", async () => {
+  const { sent, executor } = transport()
+  claudeCode.reply = JSON.stringify({ answers: { complete: verdict(0.8) } })
+  const result = await judgment(machine({ claude: true }), executor)
+  expect(result).toMatchObject({
+    answers: { complete: verdict(0.8) },
+    decidedBy: "seat",
+    usage: { inputTokens: 30, outputTokens: 9, modelId: "haiku" }
+  })
+  // Claude Code is asked for its own `haiku` alias, and nothing reaches the HTTP transport.
+  expect(claudeCode.started).toEqual([{ model: "haiku", prompt: expect.stringContaining("Complete?") }])
+  expect(sent).toEqual([])
+})
+
+it("judges on Claude Haiku, and never asks Luna, when both subscriptions are signed in", async () => {
+  const { sent, executor } = transport()
+  claudeCode.reply = JSON.stringify({ answers: { complete: verdict(0.8) } })
+  const result = await judgment(machine({ codex: true, claude: true }), executor)
+  expect(result).toMatchObject({ answers: { complete: verdict(0.8) }, decidedBy: "seat", usage: { modelId: "haiku" } })
+  expect(claudeCode.started).toHaveLength(1)
+  expect(sent).toEqual([])
+})
+
+it.each(
+  [
+    ["is signed out", { codex: true, claude: "signed-out" }, {}],
+    ["is refused because ANTHROPIC_API_KEY is set", { codex: true, claude: true }, { ANTHROPIC_API_KEY: "sk-ant-test" }]
+  ] as const
+)("judges on Luna on a Codex subscription when Claude Code %s", async (_case, has, keys) => {
+  const { sent, executor } = transport()
+  const result = await judgment({ ...machine(has), ...keys }, executor)
+  expect(result).toMatchObject({
+    answers: { complete: verdict(0.95) },
+    decidedBy: "seat",
+    usage: { modelId: "gpt-6-luna" }
+  })
+  expect(sent).toEqual([{ url: "https://chatgpt.com/backend-api/codex/responses", model: "gpt-6-luna" }])
+  expect(claudeCode.started).toEqual([])
+})
+
+it("fails unconfigured and asks nothing with no gateway key and no subscription", async () => {
+  const { sent, executor } = transport()
+  await expect(judgment(machine({}), executor)).rejects.toMatchObject({
+    code: "unconfigured",
+    message: `AI_GATEWAY_API_KEY is not set and no subscription can judge. ${Evaluator.unconfiguredMessage}`
+  })
+  // Every way out the message names is one this host takes, in the order it takes them.
+  const ways = ["AI_GATEWAY_API_KEY", "claude auth login", "codex login", "SMITHERS_OPENAI_AUTH=chatgpt"]
+  const at = ways.map((way) => Evaluator.unconfiguredMessage.indexOf(way))
+  expect(at.every((index) => index >= 0)).toBe(true)
+  expect(at).toEqual([...at].sort((left, right) => left - right))
+  expect(sent).toEqual([])
+  expect(claudeCode.started).toEqual([])
+})
+
+it.each(
+  [
+    ["OPENAI_API_KEY beside a Codex login", { codex: true }, {
+      SMITHERS_OPENAI_AUTH: "api-key",
+      OPENAI_API_KEY: "sk-test"
+    }],
+    ["ANTHROPIC_API_KEY beside a signed-in Claude Code", { claude: true }, { ANTHROPIC_API_KEY: "sk-ant-test" }]
+  ] as const
+)("never judges on a provider API key: %s", async (_case, has, keys) => {
+  const { sent, executor } = transport()
+  const failure = await judgment({ ...machine(has), ...keys }, executor).then(
+    () => undefined,
+    (error: Evaluator.EvaluatorError) => error
+  )
+  expect(failure).toMatchObject({ code: "unconfigured" })
+  expect(failure?.message).not.toContain("sk-")
+  expect(sent).toEqual([])
+  expect(claudeCode.started).toEqual([])
+})
+
+it("judges on Claude Haiku in Jev's place when the gateway is unreachable", async () => {
+  const { sent, executor } = transport()
+  claudeCode.reply = JSON.stringify({ answers: { complete: verdict(0.7) } })
+  const result = await judgment(
+    { ...machine({ claude: true }), AI_GATEWAY_API_KEY: "vck_test" },
+    executor,
+    unreachableJev
+  )
+  expect(result).toMatchObject({ answers: { complete: verdict(0.7) }, decidedBy: "seat", usage: { modelId: "haiku" } })
+  expect(claudeCode.started).toHaveLength(1)
+  // The Gateway key is a router key too, and the subscription still judges ahead of it.
+  expect(sent).toEqual([])
 })

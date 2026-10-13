@@ -173,6 +173,7 @@ import * as Schema from "effect/Schema"
 import type * as AgentEvent from "./AgentEvent.ts"
 import { HarnessError } from "./HarnessError.ts"
 import * as bytes from "./internal/bytes.ts"
+import { answeredBy } from "./internal/decidedBy.ts"
 import * as DemandText from "./internal/demandText.ts"
 import * as elide from "./internal/elide.ts"
 import { failedReading, paidTogether } from "./internal/paidUsage.ts"
@@ -717,6 +718,8 @@ export interface Reading extends Probabilities {
   readonly asked?: {
     readonly state: Schema.Json
     readonly answers: Readonly<Record<string, AgentEvent.DecisionAnswer>>
+    /** `seat` when a generation seat answered in Jev's place. */
+    readonly decidedBy?: "seat" | undefined
   } | undefined
   /**
    * The per-sentence reading, when {@link read} asked for one: the claim's
@@ -732,6 +735,7 @@ export interface Reading extends Probabilities {
     readonly state: Schema.Json
     readonly answers: Readonly<Record<string, AgentEvent.DecisionAnswer>>
     readonly latencyMs: number
+    readonly decidedBy?: "seat" | undefined
   } | undefined
 }
 
@@ -952,7 +956,7 @@ export const read = (
       invented: answers.invented.probability,
       latencyMs: asked.latencyMs,
       ...(asked.usage === undefined ? {} : { usage: asked.usage }),
-      asked: { state: asked.state, answers: asked.answers }
+      asked: { state: asked.state, answers: asked.answers, ...answeredBy(asked) }
     }
     // A claim the whole question already reads as recorded, or one sentence
     // long, has nothing a sentence reading could find. Otherwise the claim's
@@ -978,7 +982,8 @@ export const read = (
         questions: bySentence.questions,
         state: read.asked.state,
         answers: read.asked.answers,
-        latencyMs: read.asked.latencyMs
+        latencyMs: read.asked.latencyMs,
+        ...answeredBy(read.asked)
       }
     }
   })

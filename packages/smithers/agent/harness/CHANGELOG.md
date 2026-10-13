@@ -4,6 +4,11 @@
 
 ### Changed
 
+- `decision-settled` rows say `decidedBy: "seat"` when a generation seat
+  judged in Jev's place, for the completion claim, its sentence and
+  unfinished readings, the supervisor and every `Judgement.decision` row.
+  They said `jev` whoever answered. `usage.modelId` names the seat's model
+  (#3806).
 - `ExternalTranscript.decodeCodex` and `decodeClaude` refuse a record, event,
   item, status line, attachment or content block they do not name with the new
   error code `unsupported_record`, and a record of the wrong shape with

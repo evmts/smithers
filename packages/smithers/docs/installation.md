@@ -92,7 +92,10 @@ downgrade to a 0.x `latest`.
   For Claude, install Claude Code and run `claude auth login`; with no
   `ANTHROPIC_API_KEY` set, the `opus`, `sonnet` and `fable` seats (and their
   `claude-code:` forms) run on your own Claude Code, which signs its own
-  requests. They run flows only; the completion judge needs a Codex seat.
+  requests.
+  With no `AI_GATEWAY_API_KEY` the completion judge runs on the subscription
+  too: Claude Haiku on your Claude Code when it is signed in, otherwise GPT-6
+  Luna on the Codex login when `SMITHERS_OPENAI_AUTH=chatgpt` is set.
   Team hosts use connected accounts through the existing account pool.
   No provider API key or gateway key is required; a failed subscription never
   falls back to an API key.

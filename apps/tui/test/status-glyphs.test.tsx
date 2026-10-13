@@ -271,7 +271,7 @@ describe("a worker's result card", () => {
   it("never teaches setup: a judge's or seat's instructions stay in details", () => {
     const judge = new EvaluatorError({
       code: "unconfigured",
-      message: "AI_GATEWAY_API_KEY is not set. Luna is not opted in."
+      message: "AI_GATEWAY_API_KEY is not set and no subscription can judge."
     })
     const card = workerFailure(judge)
     // Nothing replaces the instructions: a failure is never worded as a stop.

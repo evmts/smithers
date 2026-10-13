@@ -36,6 +36,7 @@ import * as AgentEvent from "./AgentEvent.ts"
 import type * as EngineLike from "./EngineLike.ts"
 import type { HarnessError } from "./HarnessError.ts"
 import * as bytes from "./internal/bytes.ts"
+import { answeredBy, decider } from "./internal/decidedBy.ts"
 import * as elide from "./internal/elide.ts"
 import { paidUsage } from "./internal/paidUsage.ts"
 
@@ -85,6 +86,8 @@ export interface Asked {
   readonly latencyMs: number
   /** Token usage the transport reported, absent when it reported none. */
   readonly usage?: Evaluator.Usage | undefined
+  /** `seat` when a generation seat answered in the decision-only model's place. */
+  readonly decidedBy?: "seat" | undefined
 }
 
 /**
@@ -117,6 +120,7 @@ export const measured = <Id extends string, S extends Schema.Codec<any, any>, Qs
     // state: a record of what was asked is of the encoding that crossed it.
     let usage: Evaluator.Usage | undefined
     let confidence: Readonly<Record<string, number>> | undefined
+    let decidedBy: Evaluator.Response["decidedBy"]
     let sent: Schema.Json = null
     const metered = Evaluator.Evaluator.of({
       evaluate: (request) =>
@@ -124,6 +128,7 @@ export const measured = <Id extends string, S extends Schema.Codec<any, any>, Qs
           Effect.sync(() => {
             usage = response.usage
             confidence = response.confidence
+            decidedBy = response.decidedBy
             // A classifier state is a codec to JSON, so its encoding is JSON.
             sent = request.state as Schema.Json
           })
@@ -142,7 +147,8 @@ export const measured = <Id extends string, S extends Schema.Codec<any, any>, Qs
         state: sent,
         answers: AgentEvent.decisionAnswers(answers, confidence),
         latencyMs: Math.round(Duration.toMillis(elapsed)),
-        ...(usage === undefined ? {} : { usage })
+        ...(usage === undefined ? {} : { usage }),
+        ...answeredBy({ decidedBy })
       }
     }
   })
@@ -370,7 +376,8 @@ export const perItem = <Ctx, Item, const Qs extends ItemQuestions>(
 }
 
 /**
- * The `decision-settled` row for one request. `decidedBy` is `jev`, and the
+ * The `decision-settled` row for one request. `decidedBy` is who answered:
+ * `seat` when a generation seat judged in Jev's place, else `jev`. The
  * transport's usage is carried when it reported any.
  *
  * @category conversions
@@ -391,7 +398,7 @@ export const decision = (
     answers: asked.answers,
     latencyMs: asked.latencyMs,
     acted: at.acted,
-    decidedBy: "jev",
+    decidedBy: decider(asked),
     ...(asked.usage === undefined ? {} : { usage: asked.usage })
   })
 

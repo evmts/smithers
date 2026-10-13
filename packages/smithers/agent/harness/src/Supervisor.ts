@@ -68,6 +68,7 @@ import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import type * as AgentEvent from "./AgentEvent.ts"
+import { answeredBy } from "./internal/decidedBy.ts"
 import * as elide from "./internal/elide.ts"
 import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.ts"
 import { untrustedData } from "./internal/untrustedData.ts"
@@ -541,6 +542,8 @@ export interface Reading {
     readonly questions: Classifier.Questions
     readonly state: Schema.Json
     readonly answers: Readonly<Record<string, AgentEvent.DecisionAnswer>>
+    /** `seat` when a generation seat answered in Jev's place. */
+    readonly decidedBy?: "seat" | undefined
   }
 }
 
@@ -578,7 +581,13 @@ export const read = (snapshot: Snapshot, extra: MonitorQuestions): Effect.Effect
       monitors: Object.fromEntries(Object.keys(extra).map((id) => [id.slice(monitorPrefix.length), bool(id)])),
       latencyMs: asked.latencyMs,
       ...(asked.usage === undefined ? {} : { usage: asked.usage }),
-      asked: { digest: asked.digest, questions: asked.questions, state: asked.state, answers: asked.answers }
+      asked: {
+        digest: asked.digest,
+        questions: asked.questions,
+        state: asked.state,
+        answers: asked.answers,
+        ...answeredBy(asked)
+      }
     }
   })
 

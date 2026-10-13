@@ -717,14 +717,19 @@ export const routers: ReadonlyArray<string> = ["vercel", "openrouter"]
 export const routedReviewModels: ReadonlyArray<string> = ["anthropic/claude-sonnet-4.5", "openai/gpt-5.1"]
 
 /**
- * Judges with Jev through the Vercel AI Gateway (`AI_GATEWAY_API_KEY`), and
- * with a backup only when Jev is unreachable, times out, or stays
- * unavailable (5xx or 429) through its retries. A missing key
- * leaves Jev unconfigured. The backup is GPT-6 Luna on a subscription, read
- * at evaluation time, so newly connected pool accounts work after startup;
- * without one, the first router with a key judges on its first
- * {@link routedReviewModels} model, so an install with only its Gateway key
- * still judges. It never judges on a provider API key.
+ * The host's judge. With `AI_GATEWAY_API_KEY` it is Jev through the Vercel AI
+ * Gateway, and a subscription judges in its place only when Jev is
+ * unreachable, times out, or stays unavailable (5xx or 429) through its
+ * retries. With no key the subscription is the judge itself.
+ *
+ * A subscription judges through the model-to-judge adapter
+ * (`EvaluatorBackup.fromModel`), on the first of: Claude Haiku on a signed-in
+ * Claude Code, GPT-6 Luna on the account pool or a ChatGPT session, then the
+ * first router with a key on its first {@link routedReviewModels} model, so an
+ * install with only its Gateway key still judges through a Jev outage. The
+ * choice is read at each judgment, so an account connected after startup
+ * counts. It never judges on a provider API key: a host that holds nothing
+ * else fails `unconfigured`.
  *
  * Jev speaks over `jevHttp`, by default the environment's egress client on
  * Node and fetch on Bun, not the model executor: the gateway's own statuses, retries and deadline stay
@@ -744,57 +749,34 @@ export const layerSeatEvaluator = (
     const executor = yield* RequestExecutor.RequestExecutor
     const resolver = seatResolver(environment, executor)
     const key = environment["AI_GATEWAY_API_KEY"]?.trim()
-    const jev = key === undefined || key === ""
-      ? Evaluator.Evaluator.of({
-        evaluate: () =>
-          Effect.fail(
-            new Evaluator.EvaluatorError({
-              code: "unconfigured",
-              message: `AI_GATEWAY_API_KEY is not set. ${Evaluator.unconfiguredMessage}`
-            })
-          )
-      })
-      : Context.get(
-        yield* Layer.build(
-          Evaluator.layerVercelGateway({ apiKey: Redacted.make(key), baseUrl: jevBaseUrl(environment) }).pipe(
-            // A judgment through the install's metered proxy names the engine
-            // dispatch it ran under, as every other model call does.
-            Layer.provide(
-              Layer.effect(
-                HttpClient.HttpClient,
-                Effect.map(
-                  HttpClient.HttpClient,
-                  (client) => MeteredDispatch.attributeClient(client, environment[Endpoint.modelProxyVariable])
-                )
-              ).pipe(Layer.provide(jevHttp))
-            )
-          )
-        ),
-        Evaluator.Evaluator
-      )
-    // Luna judges on a subscription: through the account pool or a ChatGPT
-    // session, never on a provider API key. Read at each judgment, so a
-    // `codex login` after startup counts. Without one, a router key (an
-    // install's AI Gateway key, through the model proxy) judges on the
-    // router's second-vendor model, as coding/review's default seats do.
-    const backupSeat = async (): Promise<string | undefined> => {
+    const keyed = key !== undefined && key !== ""
+    // Claude Haiku on this machine's Claude Code first, by Claude Code's own
+    // `haiku` alias: asked for `claude-haiku-4-5` by id on 2026-10-13, it
+    // fenced its JSON in 13 of 13 readings, which the adapter refuses, and the
+    // alias in none of 15. Else Luna on a subscription: the account pool or a
+    // ChatGPT session. Else a router key (an install's AI Gateway key, through
+    // the model proxy) on the router's second-vendor model, as coding/review's
+    // default seats do. Never a provider API key.
+    const subscriptionSeat = async (): Promise<string | undefined> => {
+      const host = hostOf(environment)
+      if ((await credential("claude-code", host))._tag === "ClaudeCode") return "claude-code:haiku"
       const pool = accountPoolOf(environment)
       const route = poolRouteOf("openai", environment)
-      const signed = await credential("openai", hostOf(environment))
+      const signed = await credential("openai", host)
       if (
         (pool !== undefined && route !== undefined && pool.routes.includes(route)) ||
         signed._tag === "Codex" || signed._tag === "Pooled"
       ) return "luna"
       for (const router of routers) {
-        if ((await credential(router, hostOf(environment)))._tag !== "Refused") {
+        if ((await credential(router, host))._tag !== "Refused") {
           return `${router}:${routedReviewModels[0]}`
         }
       }
       return undefined
     }
-    const luna: Evaluator.Evaluator = Evaluator.Evaluator.of({
+    const subscription: Evaluator.Evaluator = Evaluator.Evaluator.of({
       evaluate: (request) =>
-        Effect.promise(backupSeat).pipe(
+        Effect.promise(subscriptionSeat).pipe(
           Effect.flatMap((seat) =>
             seat !== undefined
               ? resolver.resolve(seat).pipe(
@@ -805,18 +787,35 @@ export const layerSeatEvaluator = (
               : Effect.fail(
                 new Evaluator.EvaluatorError({
                   code: "unconfigured",
-                  message: `${key === undefined || key === "" ? "AI_GATEWAY_API_KEY is not set. " : ""}${
-                    environment["SMITHERS_OPENAI_AUTH"]?.trim() === "chatgpt"
-                      ? "Luna needs a ChatGPT login."
-                      : "Luna is not opted in."
-                  } ${Evaluator.unconfiguredMessage}`
+                  message: `${
+                    keyed ? "No" : "AI_GATEWAY_API_KEY is not set and no"
+                  } subscription can judge. ${Evaluator.unconfiguredMessage}`
                 })
               )
           ),
           Effect.flatMap((seat) => EvaluatorBackup.fromModel(seat.model, seat.modelId).evaluate(request))
         )
     })
-    return EvaluatorBackup.withFallback(jev, luna)
+    if (!keyed) return subscription
+    const jev = Context.get(
+      yield* Layer.build(
+        Evaluator.layerVercelGateway({ apiKey: Redacted.make(key), baseUrl: jevBaseUrl(environment) }).pipe(
+          // A judgment through the install's metered proxy names the engine
+          // dispatch it ran under, as every other model call does.
+          Layer.provide(
+            Layer.effect(
+              HttpClient.HttpClient,
+              Effect.map(
+                HttpClient.HttpClient,
+                (client) => MeteredDispatch.attributeClient(client, environment[Endpoint.modelProxyVariable])
+              )
+            ).pipe(Layer.provide(jevHttp))
+          )
+        )
+      ),
+      Evaluator.Evaluator
+    )
+    return EvaluatorBackup.withFallback(jev, subscription)
   }))
 
 /**
