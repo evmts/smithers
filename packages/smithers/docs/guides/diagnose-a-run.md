@@ -148,6 +148,73 @@ what ends the wait:
   `smthrs runs cancel <run-id>`, or run the flow from the host program that
   registers its delegates.
 
+## Where did the time and tokens go?
+
+```bash
+smthrs runs show <run-id> --timing
+```
+
+`--timing` returns a timing report in place of the run card, computed from the
+same journal events. A terminal shows tables in seconds; `--json` carries the
+same facts in whole milliseconds.
+
+```text
+Run  run-1 · completed · 57.6 s wall · 2 model calls
+
+Time
+part           s      %
+model       50.6   87.8
+cells        5.4    9.4
+judge        0.0    0.0
+compaction   0.0    0.0
+other        1.6    2.8
+wall        57.6  100.0
+
+Tokens
+purpose  calls   input  cached  thinking  written  tokens  cost $
+frame        2  18,632   6,272       286      846  19,764  0.0373
+judge        1   3,069       —         —      239   3,308  0.0001
+run          3       —       —         —        —  23,072  0.0374
+
+Model calls (seconds)
+#  frame  ask  purpose  start  total  wait  think  write
+1      0    1    frame    0.9   23.3   7.3    5.2   10.6
+2      1    1    frame   25.8   27.3   7.0    2.4   17.7
+
+Wait by stage (seconds from the call's start)
+#  signed   sent  headers  first event  first thinking  first output
+1   0.006  0.011    2.840        2.905           7.310        12.480
+2   0.005  0.012    2.610        2.660           7.020         9.440
+…
+```
+
+- `Time` splits the wall time, from the run's first event to its last, into
+  model wait, cells, judge, compaction, and other. The parts sum to the wall.
+  `judge` is only the time a judge reading held the run up; a reading that
+  settles beside a model call adds nothing.
+- `Tokens` totals tokens and cost by purpose. The `run` row is their sum and
+  matches the `Ledger` line.
+- `Model calls` has one row per call. A re-ask of a frame is its own row with
+  `ask` 2. A call that never settled reads `unsettled`, with the time until the
+  event that ended it. `wait`, `think`, `write`, and the stage tables appear
+  for calls whose journal record carries wire timing. `Model call tokens`
+  lists each call's input, cached, uncached, thinking, and written tokens, its
+  tries, and whether its frame changed the workspace.
+- `Frames` splits each frame the way `Time` splits the run.
+- `Compactions` and `Judge readings that fired` list each one.
+- `Speed` fits call time against thinking and written tokens by least squares:
+  fixed seconds per call, milliseconds per token, and R².
+- `Derived` names every number the report worked out because the journal did
+  not record it.
+
+To read a run copied from another machine, point `--root` at the directory
+that holds its `.flows/control.db`. The report only reads; it creates and
+migrates nothing.
+
+```bash
+smthrs runs show run-1 --timing --root ./trial/agent/workspace
+```
+
 ## What happens to subprocesses after a crash?
 
 The local control executor records agent shell and configured MCP subprocesses

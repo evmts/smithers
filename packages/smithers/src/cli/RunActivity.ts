@@ -36,8 +36,11 @@ const terminal: ReadonlySet<string> = new Set(["completed", "failed", "cancelled
 /**
  * Event kinds that observe a run without advancing it: the status monitor's
  * periodic check and the gateway's watch keepalive.
+ *
+ * @category constants
+ * @since 1.0.0
  */
-const observational: ReadonlySet<string> = new Set(["control.status.observed", "control.gateway.heartbeat"])
+export const observational: ReadonlySet<string> = new Set(["control.status.observed", "control.gateway.heartbeat"])
 
 /** Exact identities recorded by the journal; lifecycle still comes from native snapshots.
  * @category queries

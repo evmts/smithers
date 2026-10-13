@@ -22,6 +22,7 @@ import * as Generate from "./cli/Generate.ts"
 import { createGenerateCli, initialize } from "./cli/Generate.ts"
 import { appendHistoryCommands } from "./cli/HistoryCommands.ts"
 import * as Presentation from "./cli/Presentation.ts"
+import { appendRunTiming } from "./cli/RunTimingCommand.ts"
 import { createStepCacheCli } from "./cli/StepCacheCommands.ts"
 import * as TargetApprovals from "./cli/TargetApprovals.ts"
 import { createTokenCli } from "./cli/TokenCommands.ts"
@@ -130,7 +131,7 @@ export const makeCli = (
   cli.use((context, next) => Presentation.scope(context, config, next))
   cli
     .command(createFlowCli(config))
-    .command(appendHistoryCommands(createRunsCli(config), config))
+    .command(appendHistoryCommands(appendRunTiming(createRunsCli(config), config), config))
     .command(createApprovalsCli(config))
     .command(createGenerateCli(config))
     .command(createMemoryCli())
