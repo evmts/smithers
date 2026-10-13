@@ -51,6 +51,33 @@ describe("subscription seat evaluator", () => {
     expect(sent?.tools).toEqual([])
     expect(JSON.stringify(sent)).toContain("tests passed")
   })
+  it("returns what the seat's call cost: its usage, wire timing, response id and served tier", async () => {
+    // A judge reading is a model call. What it took is read off the seat's own
+    // settle event, so a host can record the reading's cost without asking again.
+    const timing = { startedAt: 1_760_000_000_000, attempts: 1, headersMs: 410, firstOutputMs: 2_950, closedMs: 3_020 }
+    const result = await run(Model.make({
+      stream: () =>
+        Stream.make(
+          { type: "text-delta", id: "answer", text: JSON.stringify({ answers }) },
+          { type: "usage", inputTokens: 512, outputTokens: 64 },
+          { type: "settle", stopReason: "stop", responseId: "resp_judge", servedTier: "default", timing }
+        )
+    }))
+
+    expect(result).toEqual({
+      answers,
+      latencyMs: result.latencyMs,
+      decidedBy: "seat",
+      usage: { inputTokens: 512, outputTokens: 64, modelId: "gpt-6.1-sol" },
+      timing,
+      responseId: "resp_judge",
+      servedTier: "default"
+    })
+  })
+  it("adds nothing about time, id or tier when the seat's settle says none", async () => {
+    const result = await run(reply({ answers }))
+    expect(result).toEqual({ answers, latencyMs: result.latencyMs, decidedBy: "seat" })
+  })
   it("fails closed without leaking provider errors", async () => {
     await expect(
       run(Model.make({ stream: () => Stream.fail(new ModelError({ code: "no_route", message: "secret-token" })) }))

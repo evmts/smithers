@@ -29,6 +29,7 @@ import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
 import type * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
 import * as CanonicalJson from "./CanonicalJson.ts"
 import * as Endpoint from "./Endpoint.ts"
+import * as CallTiming from "./internal/CallTiming.ts"
 import type * as Model from "./Model.ts"
 import { ModelError } from "./ModelError.ts"
 import * as ModelEvent from "./ModelEvent.ts"
@@ -428,8 +429,9 @@ export interface Usage {
 
 /**
  * What one evaluation answered: the raw answers keyed by question id, the
- * confidence and usage when the transport reported them, and the wall-clock
- * time the call took.
+ * confidence and usage when the transport reported them, the wall-clock time
+ * the call took, and where that time went on the wire when the transport
+ * timed it.
  *
  * `confidence` is the provider's own number, not one derived here. Jev reports
  * it for a choice and a score and never for a boolean, whose `probability` is
@@ -448,6 +450,18 @@ export interface Response {
   readonly latencyMs: number
   /** `seat` when a generation seat answered through {@link layerFromSeat}; absent when the decision-only model did. */
   readonly decidedBy?: "seat" | undefined
+  /**
+   * Where the reading's time went on the wire: the same record a model call's
+   * settle event carries, so a host can account for a judge reading the way it
+   * accounts for any other call. The gateway answers one JSON body, so its
+   * reading has no stream stages; a seat's is its own call's. Absent when the
+   * transport did not time the call.
+   */
+  readonly timing?: ModelEvent.Timing | undefined
+  /** The provider's id for the response that held the reading, when a seat's call reported one. */
+  readonly responseId?: string | undefined
+  /** The service tier that served the reading, when a seat's call reported one. */
+  readonly servedTier?: string | undefined
 }
 
 /**
@@ -724,7 +738,9 @@ export function layerVercelGateway(
 
       const evaluate = (request: Request): Effect.Effect<Response, EvaluatorError> =>
         Effect.gen(function*() {
-          const started = yield* Clock.currentTimeMillis
+          const clock = yield* Clock.clockWith(Effect.succeed)
+          const started = clock.currentTimeMillisUnsafe()
+          const timing = CallTiming.start(clock)
           if (Result.isFailure(endpoint)) {
             return yield* Effect.fail(
               new EvaluatorError({ code: "unreachable", message: `Invalid baseUrl: ${endpoint.failure.message}` })
@@ -766,6 +782,8 @@ export function layerVercelGateway(
             catch: () =>
               new EvaluatorError({ code: "invalid_question", message: "The evaluation state must be a JSON value" })
           })
+          const payload = HttpBody.text(serializedBody, "application/json")
+          timing.prepared(payload.contentLength)
           const wire = HttpClientRequest.post(baseUrl, {
             headers: {
               authorization: `Bearer ${Redacted.value(apiKey)}`,
@@ -775,12 +793,32 @@ export function layerVercelGateway(
               "ai-model-id": model,
               "content-type": "application/json"
             },
-            body: HttpBody.text(serializedBody, "application/json")
+            body: payload
           })
-          const send = http.execute(wire).pipe(
-            KernelHttpClient.withModelCall(model),
-            Effect.mapError((error) => new EvaluatorError({ code: "unreachable", message: error.message }))
-          )
+          timing.signed()
+          // Each try is timed as it leaves and as it answers, so a reading
+          // that was shed and asked again says so rather than reading slow.
+          const send = Effect.suspend(() => {
+            const sentAt = clock.currentTimeMillisUnsafe()
+            timing.onTry({ type: "sent", at: sentAt })
+            const failed = (code: string, httpStatus?: number): void =>
+              timing.onTry({ type: "failed", sentAt, at: clock.currentTimeMillisUnsafe(), code, httpStatus })
+            return http.execute(wire).pipe(
+              KernelHttpClient.withModelCall(model),
+              Effect.mapError((error) => new EvaluatorError({ code: "unreachable", message: error.message })),
+              Effect.tapError((error) => Effect.sync(() => failed(error.code))),
+              Effect.tap((response) =>
+                Effect.sync(() =>
+                  response.status === 200
+                    ? timing.headers()
+                    : failed(
+                      invalidQuestionStatuses.has(response.status) ? "invalid_question" : "refused",
+                      response.status
+                    )
+                )
+              )
+            )
+          })
           // An evaluation is a pure question, so asking it again is safe.
           const retryable = (outcome: Result.Result<HttpClientResponse.HttpClientResponse, EvaluatorError>) =>
             Result.isFailure(outcome) || retryStatuses.has(outcome.success.status)
@@ -811,6 +849,7 @@ export function layerVercelGateway(
             )
           }
           const text = yield* cappedText(response)
+          timing.closed()
           const body = yield* Effect.try({
             try: (): unknown => JSON.parse(text),
             catch: () => new EvaluatorError({ code: "empty", status: 200, message: "Unreadable body: Decode" })
@@ -830,12 +869,13 @@ export function layerVercelGateway(
             )
           )
           const confidence = confidenceOf(body)
-          const latencyMs = (yield* Clock.currentTimeMillis) - started
+          const latencyMs = clock.currentTimeMillisUnsafe() - started
           return {
             answers,
             ...(confidence === undefined ? {} : { confidence }),
             ...(usage === undefined ? {} : { usage }),
-            latencyMs
+            latencyMs,
+            timing: timing.read()
           }
         }).pipe(
           Effect.scoped,
@@ -982,6 +1022,8 @@ export const layerFromSeat = (
           )
         )
         const { message } = ModelEvent.settledMessage(events)
+        // The seat's call says what it took on its own settle event.
+        const settle = events.find((event) => event.type === "settle")
         const invalid = () =>
           new EvaluatorError({ code: "invalid_answer", message: "The seat returned an invalid judgment.", ...paid() })
         if (message.stopReason !== "stop" || message.content.some((part) => part.type === "tool-call")) {
@@ -1015,7 +1057,10 @@ export const layerFromSeat = (
           answers,
           latencyMs: (yield* Clock.currentTimeMillis) - started,
           decidedBy: "seat" as const,
-          ...paid()
+          ...paid(),
+          ...(settle?.timing === undefined ? {} : { timing: settle.timing }),
+          ...(settle?.responseId === undefined ? {} : { responseId: settle.responseId }),
+          ...(settle?.servedTier === undefined ? {} : { servedTier: settle.servedTier })
         }
       }).pipe(Effect.timeoutOrElse({
         duration: options.timeoutMs ?? 120_000,

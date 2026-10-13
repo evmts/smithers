@@ -559,6 +559,97 @@ describe("Evaluator.layerVercelGateway", () => {
     expect(sent[1]!.body).toBe(sent[0]!.body)
   })
 
+  it("times the reading: its bytes, the try that was shed, the answered try, the headers and the end of the body", async () => {
+    const NOW = 1_760_000_000_000
+    // Each try answers after its own wait on the test clock.
+    const waits = [40, 300]
+    const bodies: Array<string> = []
+    const http = Layer.succeed(KernelHttpClient.HttpClient)(
+      HttpClient.make((request) =>
+        Effect.suspend(() => {
+          bodies.push(request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "")
+          const first = bodies.length === 1
+          return Effect.as(
+            Effect.sleep(waits[bodies.length - 1]!),
+            HttpClientResponse.fromWeb(
+              request,
+              first ? json(shed, 503) : json({ ...recorded, usage: { inputTokens: 120, outputTokens: 3 } })
+            )
+          )
+        })
+      )
+    )
+    // Lets the reading run to its next wait before the clock moves again.
+    const parked = Effect.gen(function*() {
+      for (let round = 0; round < 8; round += 1) yield* Effect.yieldNow
+    })
+
+    const response = await Effect.runPromise(
+      Effect.gen(function*() {
+        yield* TestClock.setTime(NOW)
+        const evaluator = yield* Evaluator.Evaluator
+        const fiber = yield* evaluator.evaluate({ state, questions }).pipe(Effect.forkChild)
+        yield* parked
+        yield* TestClock.adjust(40)
+        yield* parked
+        yield* TestClock.adjust(Evaluator.retryBackoffMs)
+        yield* parked
+        yield* TestClock.adjust(300)
+        return yield* Fiber.join(fiber)
+      }).pipe(
+        Effect.provide(Evaluator.layerVercelGateway({ apiKey: Redacted.make("k") }).pipe(Layer.provide(http))),
+        Effect.provide(TestClock.layer()),
+        Effect.provideService(HttpClient.TracerDisabledWhen, () => true)
+      )
+    )
+
+    expect(bodies).toHaveLength(2)
+    expect(response.latencyMs).toBe(440)
+    expect(response.usage).toEqual({ inputTokens: 120, outputTokens: 3, modelId: "typesafe-ai/jev" })
+    expect(response.timing).toEqual({
+      startedAt: NOW,
+      attempts: 2,
+      requestBytes: new TextEncoder().encode(bodies[0]!).byteLength,
+      preparedMs: 0,
+      signedMs: 0,
+      // The answered try left after the shed one and the pause.
+      sentMs: 140,
+      headersMs: 440,
+      closedMs: 440,
+      failedTries: [{ sentMs: 0, failedMs: 40, code: "refused", httpStatus: 503 }]
+    })
+    // A gateway answer is one JSON body, not a stream: it has no stream stages.
+    expect(response.timing).not.toHaveProperty("firstEventMs")
+    expect(response.timing).not.toHaveProperty("completedMs")
+  })
+
+  it("counts a try the connection failed, with its code and no status", async () => {
+    let tries = 0
+    const http = Layer.succeed(KernelHttpClient.HttpClient)(
+      HttpClient.make((request) =>
+        Effect.suspend(() => {
+          tries += 1
+          return tries === 1
+            ? Effect.fail(
+              new HttpClientError.HttpClientError({
+                reason: new HttpClientError.TransportError({ request, description: "socket hang up" })
+              })
+            )
+            : Effect.succeed(HttpClientResponse.fromWeb(request, json(recorded)))
+        })
+      )
+    )
+
+    const response = success(
+      await evaluate(Evaluator.layerVercelGateway({ apiKey: Redacted.make("k") }).pipe(Layer.provide(http)))
+    )
+
+    expect(response.timing).toMatchObject({ attempts: 2 })
+    expect(response.timing?.failedTries).toHaveLength(1)
+    expect(response.timing?.failedTries?.[0]).toMatchObject({ code: "unreachable" })
+    expect(response.timing?.failedTries?.[0]).not.toHaveProperty("httpStatus")
+  })
+
   it("fails a gateway that sheds every attempt as refused, after the last attempt and before the deadline", async () => {
     const sent: Array<Sent> = []
     const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("k"), timeoutMs: 3000 }).pipe(

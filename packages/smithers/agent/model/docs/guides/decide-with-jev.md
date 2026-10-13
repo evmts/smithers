@@ -82,6 +82,24 @@ export const rank = (state: typeof Items.Type) =>
 export const JudgeLive = Layer.mergeAll(Keep.toLayer(keep), Rank.toLayer(rank))
 ```
 
+## What a reading cost
+
+`evaluate` returns the answers. `read` sends the same request and returns
+what the reading cost beside them. With the `needed` classifier above:
+
+```ts
+const reading = yield * needed.read(state)
+reading.answers // the typed answers, as evaluate gives them
+reading.usage // { inputTokens, outputTokens, modelId? } when the transport reported it
+reading.latencyMs // the whole reading
+reading.timing // where that time went on the wire, when the transport timed it
+```
+
+`timing` is the record a model call's `settle` event carries; the
+[API reference](../api.md#wire-timing) defines its fields. A reading a seat
+took carries the seat call's own. A reading through the gateway is one JSON
+body, so it has the request's stages and no stream stages.
+
 ## Failure
 
 Jev refusals and invalid answers fail with a typed `ClassifierError`. A configured

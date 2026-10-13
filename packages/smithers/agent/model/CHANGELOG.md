@@ -64,6 +64,13 @@
   reading as `smithers.model.*` attributes, and `Model.withGenAiSpan` puts
   the settle event's whole reading and `smithers.model.served_tier` on the
   `chat` span.
+- A judge reading says what it cost. `Evaluator.Response` gains optional
+  `timing`, `responseId` and `servedTier`: `Evaluator.layerFromSeat` (and so
+  `EvaluatorBackup.fromModel`) copies them from the seat call's `settle`
+  event, and `Evaluator.layerVercelGateway` times its own request, each shed
+  try included. `Classifier.read` sends exactly what `evaluate` sends and
+  answers a `Classifier.Reading`: the typed answers beside the reading's
+  `usage`, `latencyMs` and `timing`. Nothing sent to a judge changes.
 
 - `ModelError.isTerminalRefusal` shares the quota cooldown classification with
   agent hosts and failure copy. Recoverable quota cards retain Wait for reset.

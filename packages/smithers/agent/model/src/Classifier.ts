@@ -410,7 +410,20 @@ export interface EvaluateAllOptions {
 export const defaultConcurrency = 8
 
 /**
- * A declared classifier: its identity, its schemas, and the two ways to ask.
+ * What one reading answered and what it cost: the typed answers, beside
+ * everything else the transport's `Evaluator.Response` reported about the call
+ * that produced them. `usage` is the tokens the reading spent, `latencyMs` how
+ * long it took, and `timing` where that time went on the wire.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Reading<Qs extends Questions> extends Omit<Evaluator.Response, "answers"> {
+  readonly answers: AnswersOf<Qs>
+}
+
+/**
+ * A declared classifier: its identity, its schemas, and the ways to ask.
  *
  * @category models
  * @since 1.0.0-rc.0
@@ -424,6 +437,11 @@ export interface Classifier<Id extends string, State extends Schema.Codec<any, a
   readonly digest: string
   /** Asks every question about one state. */
   readonly evaluate: (state: State["Type"]) => Effect.Effect<AnswersOf<Qs>, ClassifierError, Evaluator.Evaluator>
+  /**
+   * Asks exactly what {@link Classifier.evaluate} asks, and answers what the
+   * reading cost beside its answers. One request; nothing more is sent.
+   */
+  readonly read: (state: State["Type"]) => Effect.Effect<Reading<Qs>, ClassifierError, Evaluator.Evaluator>
   /**
    * Asks every question about each state, one request per state, at most
    * `concurrency` in flight. Results keep the states' order and a failed
@@ -489,7 +507,7 @@ export const make = <const Id extends string, State extends Schema.Codec<any, an
   const digest = Digest.digest(CanonicalJson.stringify({ id, questions: Evaluator.encodeQuestions(questions) }))
   const encodeState = Schema.encodeEffect(state)
 
-  const evaluate = Effect.fn(`Classifier.evaluate(${id})`)((value: State["Type"]) =>
+  const read = Effect.fn(`Classifier.evaluate(${id})`)((value: State["Type"]) =>
     Effect.gen(function*() {
       const evaluator = yield* Evaluator.Evaluator
       const encoded = yield* encodeState(value).pipe(
@@ -501,15 +519,18 @@ export const make = <const Id extends string, State extends Schema.Codec<any, an
         ...(seatNote === undefined ? {} : { seatNote })
       }).pipe(Effect.mapError(fromEvaluatorError))
       // An answer this classifier cannot decode was still paid for.
-      return yield* decodeAnswers(questions, response.answers).pipe(
+      const answers = yield* decodeAnswers(questions, response.answers).pipe(
         Effect.mapError((error) =>
           response.usage === undefined
             ? error
             : new ClassifierError({ code: error.code, message: error.message, usage: response.usage })
         )
       )
+      return { ...response, answers }
     })
   )
+
+  const evaluate = (value: State["Type"]) => Effect.map(read(value), (reading) => reading.answers)
 
   const evaluateAll = (
     states: ReadonlyArray<State["Type"]>,
@@ -519,5 +540,5 @@ export const make = <const Id extends string, State extends Schema.Codec<any, an
       concurrency: all.concurrency ?? defaultConcurrency
     })
 
-  return { id, description, state, questions, digest, evaluate, evaluateAll }
+  return { id, description, state, questions, digest, evaluate, read, evaluateAll }
 }

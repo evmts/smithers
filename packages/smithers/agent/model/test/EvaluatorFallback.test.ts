@@ -50,6 +50,23 @@ const answered = (calls: Array<Evaluator.Request>): Evaluator.Evaluator => ({
 })
 
 describe("EvaluatorBackup.fromModel judgment boundaries", () => {
+  it("keeps the model call's wire timing on the reading it returns", async () => {
+    const timing = { startedAt: 1_760_000_000_000, attempts: 2, headersMs: 900, completedMs: 1_400 }
+    const model = Model.make({
+      stream: () =>
+        Stream.make(
+          { type: "text-delta" as const, id: "answer", text: JSON.stringify({ answers }) },
+          { type: "settle" as const, stopReason: "stop" as const, responseId: "resp_backup", timing }
+        )
+    })
+
+    const result = await run(seat(model))
+    expect(Result.isSuccess(result)).toBe(true)
+    if (Result.isFailure(result)) return
+    expect(result.success).toMatchObject({ timing, responseId: "resp_backup", decidedBy: "seat" })
+    expect(result.success).not.toHaveProperty("servedTier")
+  })
+
   it("asks the model one JSON request and returns all three question kinds with usage", async () => {
     const sent: Array<ModelRequest> = []
     const model = Model.make({

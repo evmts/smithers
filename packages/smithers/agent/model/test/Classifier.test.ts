@@ -496,6 +496,78 @@ describe("Classifier.evaluate", () => {
   })
 })
 
+describe("Classifier.read", () => {
+  const timing = { startedAt: 1_760_000_000_000, attempts: 1, headersMs: 310, closedMs: 330 }
+  const paid = { inputTokens: 40, outputTokens: 3, modelId: "judge" }
+  const metered = (seen: Array<Evaluator.Request> = []): Layer.Layer<Evaluator.Evaluator> =>
+    Layer.succeed(Evaluator.Evaluator)(Evaluator.Evaluator.of({
+      evaluate: (request) => {
+        seen.push(request)
+        return Effect.succeed({
+          answers: {
+            relevant: { type: "boolean", probability: 0.91 },
+            role: { type: "choice", choice: "implementation" },
+            risk: { type: "score", score: 1 }
+          },
+          confidence: { role: 0.8 },
+          usage: paid,
+          latencyMs: 330,
+          decidedBy: "seat",
+          timing,
+          responseId: "resp_judge",
+          servedTier: "default"
+        })
+      }
+    }))
+
+  it("answers the typed answers with what the reading cost: usage, latency and wire timing", async () => {
+    const reading = success(await run(Relevance.read(state), metered()))
+
+    expect(reading.answers.relevant).toEqual({ value: true, probability: 0.91 })
+    expect(reading.answers.role.value).toBe("implementation")
+    const { answers: _answers, ...cost } = reading
+    expect(cost).toEqual({
+      confidence: { role: 0.8 },
+      usage: paid,
+      latencyMs: 330,
+      decidedBy: "seat",
+      timing,
+      responseId: "resp_judge",
+      servedTier: "default"
+    })
+  })
+
+  it("asks exactly what evaluate asks, and evaluate answers the same answers", async () => {
+    const read: Array<Evaluator.Request> = []
+    const evaluated: Array<Evaluator.Request> = []
+    const reading = success(await run(Relevance.read(state), metered(read)))
+    const answers = success(await run(Relevance.evaluate(state), metered(evaluated)))
+
+    expect(read).toEqual(evaluated)
+    expect(read).toHaveLength(1)
+    expect(answers).toEqual(reading.answers)
+  })
+
+  it("fails the way evaluate fails, keeping what the reading paid", async () => {
+    const error = failure(
+      await run(
+        Relevance.read(state),
+        Evaluator.layerScripted(() =>
+          Effect.fail(new Evaluator.EvaluatorError({ code: "timeout", message: "late", usage: paid }))
+        )
+      )
+    )
+    expect(error).toBeInstanceOf(Classifier.ClassifierError)
+    expect(error).toMatchObject({ code: "timeout", message: "late", usage: paid })
+  })
+
+  it("adds nothing a transport did not report", async () => {
+    const reading = success(await run(Relevance.read(state), scripted(good)))
+    const { answers: _answers, ...cost } = reading
+    expect(cost).toEqual({ latencyMs: 0 })
+  })
+})
+
 describe("Classifier.evaluateAll", () => {
   it("keeps the states' order and each state's own failure", async () => {
     const states = [
