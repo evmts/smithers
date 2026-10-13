@@ -230,11 +230,16 @@ class JournalFold(unittest.TestCase):
         self.assertEqual(frames[2]["end"], stamp(47_500))
         self.assertEqual({row["model"] for row in frames}, {SEAT})
         self.assertEqual(self.rows[4]["model"], JUDGE)
+        self.assertEqual([row["derived"] for row in frames[:4]], [["writtenTokens"]] * 4,
+                         "this journal reports no written count, so it is output minus reasoning")
+        self.assertEqual({tuple(row["derived"]) for row in self.rows if row["purpose"] in calls.READINGS}, {("purpose",)})
 
     def test_a_call_with_no_settle_record_is_reported_unsettled_with_its_elapsed_time(self) -> None:
         compaction = self.rows[6]
         self.assertFalse(compaction["settled"])
-        self.assertEqual(compaction["marks"], {"kept": 1, "removed": 0, "squashed": 2})
+        self.assertEqual(self.folded["compactions"], [
+            {"at": stamp(59_700), "frame": 2, "durationMs": 10_000, "summaryCall": True, "derived": ["durationMs"],
+             "marks": {"kept": 1, "removed": 0, "squashed": 2}}], "the redacted count is not copied")
         self.assertIsNone(compaction["inputTokens"])
         self.assertEqual(compaction["totalTokens"], 9_000, "the ledger's spend under the open call")
         self.assertEqual(compaction["derived"], ["durationMs", "totalTokens"])
@@ -265,8 +270,8 @@ class JournalFold(unittest.TestCase):
         self.assertEqual(seat["usage"], {"inputTokens": 26_000, "cachedInputTokens": 17_000, "outputTokens": 2_600,
                                          "reasoningTokens": 1_000}, "the figure Harbor reads is the frame calls alone")
         self.assertEqual(seat["byPurpose"], by_purpose)
-        self.assertEqual((seat["allPurposes"], seat["ledgerTokens"], seat["time"]),
-                         (everything, 71_260, self.folded["time"]))
+        self.assertEqual((seat["allPurposes"], seat["ledgerTokens"], seat["time"], seat["compactions"]),
+                         (everything, 71_260, self.folded["time"], self.folded["compactions"]))
 
     def test_the_time_split_is_exclusive_and_sums_to_the_span(self) -> None:
         time = self.folded["time"]
@@ -304,7 +309,8 @@ class JournalFold(unittest.TestCase):
         self.assertEqual(document["extra"]["calls"], self.rows)
         self.assertEqual(final["extra"]["byPurpose"], self.folded["byPurpose"])
         self.assertEqual(final["extra"]["allPurposes"], self.folded["allPurposes"])
-        self.assertEqual((final["extra"]["ledgerTokens"], final["extra"]["time"]), (71_260, self.folded["time"]))
+        self.assertEqual((final["extra"]["ledgerTokens"], final["extra"]["time"], final["extra"]["compactions"]),
+                         (71_260, self.folded["time"], self.folded["compactions"]))
         self.assertEqual(final["extra"]["cached_share"], 17_000 / 26_000)
 
     def test_the_trajectory_is_valid_atif(self) -> None:
@@ -342,8 +348,9 @@ class JournalFold(unittest.TestCase):
         self.assertEqual(folded["byPurpose"]["frame"]["tokenless"], 1)
         self.assertEqual(folded["time"], {"spanMs": 6_000, "modelMs": 4_700, "compactionMs": 0, "commandsMs": 300,
                                           "judgeMs": 0, "otherMs": 1_000})
+        self.assertEqual(folded["compactions"], [])
         self.assertEqual(calls.fold_journal([]), {"calls": [], "byPurpose": {}, "allPurposes": calls.totals([])["allPurposes"],
-                                                  "ledgerTokens": None, "time": None})
+                                                  "ledgerTokens": None, "time": None, "compactions": []})
 
     def test_a_payload_of_the_wrong_shape_never_ends_the_fold(self) -> None:
         """The fold runs after the model work is paid for: a field of a type
@@ -370,26 +377,69 @@ class JournalFold(unittest.TestCase):
                          ["calls"][0]["totalTokens"], None)
 
     def test_fields_the_harness_adds_are_read_as_written(self) -> None:
+        """The journal since #3844: a settle names its own request, when its
+        stream reached each stage, its tries and its written tokens, and a
+        compaction says why it ran, how long it took and what its summary
+        call spent."""
+        stages = {"firstEventMs": 7_000, "firstThinkingMs": 7_100, "firstOutputMs": 9_000, "lastOutputMs": 11_500}
         timing = {"attempts": 2, "requestBytes": 48_211, "signedMs": 3, "sentMs": 9, "headersMs": 6_900,
-                  "firstEventMs": 7_000, "firstThinkingMs": 7_100, "firstOutputMs": 9_000, "lastOutputMs": 11_500,
-                  "completedMs": 11_900, "closedMs": 11_950}
-        events = [
-            {"seq": 0, "at": T0, "type": "control.agent.model-requested",
-             "payload": {"at": T0, "frame": 4, "attempt": 1, "purpose": "compaction", "modelId": SEAT}},
-            {"seq": 1, "at": T0, "type": "control.agent.model-settled",
-             "payload": {"at": T0 + 12_000, "durationMillis": 12_000, "purpose": "compaction", "timing": timing,
-                         "servedTier": "priority", "usage": usage(9_000, 0, 400, 100)}},
-            {"seq": 2, "at": T0, "type": "control.agent.compaction-settled",
-             "payload": {"at": T0 + 12_000, "marks": {"kept": 2, "removed": 1, "squashed": 0}}},
-            {"seq": 3, "at": T0, "type": "control.agent.supervisor-settled",
-             "payload": {"at": T0 + 13_000, "latencyMs": 400, "purpose": "claim",
-                         "usage": {"inputTokens": 50, "outputTokens": 5}}},
-        ]
-        summary, reading = calls.fold_journal(events)["calls"]
+                  "firstEventMs": 6_950, "completedMs": 11_900, "closedMs": 11_950}
+        marks = {"kept": 2, "removed": 1, "squashed": 3}
+        events = [{"seq": seq, "at": T0, "type": f"control.agent.{kind}", "payload": {**payload, "at": T0 + at}}
+                  for seq, (kind, at, payload) in enumerate([
+                      ("model-requested", 0, {"frame": 4, "attempt": 1, "purpose": "frame", "modelId": SEAT}),
+                      ("model-settled", 12_000, {"durationMillis": 12_000, "frame": 4, "attempt": 2, "purpose": "frame",
+                                                 "reask": "compile_failed", "stages": stages, "tries": 2,
+                                                 "output": {"thinking": 100, "written": 290}, "timing": timing,
+                                                 "servedTier": "priority", "usage": usage(9_000, 0, 400, 100)}),
+                      ("model-requested", 13_000, {"frame": 5, "attempt": 1, "purpose": "compaction", "modelId": SEAT}),
+                      ("compaction-settled", 30_000, {
+                          "frame": 5, "durationMillis": 16_500, "causes": ["outdated_context", "budget"], "marks": marks,
+                          "context": {"before": 250_000, "after": 60_000}, "removed": 1_200,
+                          "marksCall": {"requests": 1, "latencyMs": 300, "usage": {"inputTokens": 2_000, "outputTokens": 40}},
+                          "summaryCall": {"durationMillis": 15_000, "stages": {"firstEventMs": 6_000}, "tries": 1,
+                                          "output": {"thinking": 200, "written": 700},
+                                          "usage": usage(8_000, 0, 900, 200)}}),
+                      ("compaction-settled", 40_000, {"frame": 7, "durationMillis": 800, "causes": ["irrelevant_context"],
+                                                      "marks": {"kept": 3, "removed": 2, "squashed": 0}}),
+                      ("supervisor-settled", 41_000, {"latencyMs": 400, "purpose": "claim",
+                                                      "usage": {"inputTokens": 50, "outputTokens": 5}}),
+                  ])]
+        folded = calls.fold_journal(events)
+        own, summary, reading = folded["calls"]
+        self.assertEqual((own["purpose"], own["frame"], own["attempt"], own["reask"], own["tries"], own["derived"]),
+                         ("frame", 4, 2, "compile_failed", 2, []), "the settle's own keys win over the request's")
+        self.assertEqual((own["stages"], own["timing"], own["servedTier"]), (stages, timing, "priority"))
+        self.assertEqual((own["thinkingTokens"], own["writtenTokens"]), (100, 290), "the written count is read, not subtracted")
         self.assertEqual((summary["purpose"], summary["settled"], summary["derived"]), ("compaction", True, []))
-        self.assertEqual((summary["timing"], summary["servedTier"]), (timing, "priority"))
-        self.assertEqual((summary["inputTokens"], summary["marks"]), (9_000, {"kept": 2, "removed": 1, "squashed": 0}))
+        self.assertEqual((summary["start"], summary["end"], summary["durationMs"]), (stamp(13_000), stamp(28_000), 15_000))
+        self.assertEqual((summary["inputTokens"], summary["outputTokens"], summary["thinkingTokens"], summary["writtenTokens"],
+                          summary["stages"], summary["tries"], summary["frame"]), (8_000, 900, 200, 700, {"firstEventMs": 6_000}, 1, 5))
+        self.assertEqual(folded["compactions"], [
+            {"at": stamp(30_000), "frame": 5, "durationMs": 16_500, "summaryCall": True, "derived": [],
+             "causes": ["outdated_context", "budget"], "marks": marks, "context": {"before": 250_000, "after": 60_000},
+             "removed": 1_200},
+            {"at": stamp(40_000), "frame": 7, "durationMs": 800, "summaryCall": False, "derived": [],
+             "causes": ["irrelevant_context"], "marks": {"kept": 3, "removed": 2, "squashed": 0}}],
+            "a compaction that squashed nothing made no call and is still a compaction")
+        self.assertEqual(folded["byPurpose"]["compaction"]["calls"], 1)
+        self.assertEqual(folded["time"]["compactionMs"], 17_000 + 800, "the whole compaction, not its summary call alone")
         self.assertEqual((reading["purpose"], reading["derived"]), ("claim", []), "a written purpose wins over the event's kind")
+        self.assertNotIn("marks", [row["purpose"] for row in folded["calls"]],
+                         "a compaction's marks reading is its `decision-settled` rows; `marksCall` sums them")
+        seat = agent.summarize(events)
+        self.assertEqual((seat["modelCalls"], seat["usage"]["inputTokens"], seat["compactions"]),
+                         (1, 9_000, folded["compactions"]), "a summary call is not one of the agent's own")
+        side = calls.breakdown([{"source": "journal", **folded}])
+        self.assertEqual((side["wait"], side["compactions"]),
+                         ({"stage": "stages.firstEventMs", "calls": 1, "medianMs": 7_000, "leastMs": 7_000}, 2),
+                         "the harness's own reading, of the agent's own calls")
+        text = calls.render("t", {"source": "journal", **folded})
+        self.assertIn("  wait before a reply began: median 7.0 s, least 7.0 s (stages.firstEventMs, 1 calls)\n", text)
+        self.assertIn("  compaction before frame 5: outdated_context, budget, 16.5 s, context 250,000 to 60,000 tokens\n", text)
+        self.assertIn("  compaction before frame 7: irrelevant_context, 0.8 s\n", text)
+        self.assertIn("| 4 try 2 | asked again after compile_failed, 2 tries, first event 7.0 s, first output 9.0 s, "
+                      "headers 6.9 s |\n", text)
 
 
 class SessionFold(unittest.TestCase):
@@ -409,7 +459,7 @@ class SessionFold(unittest.TestCase):
                          [(12_000, 9_000, 200, 0, 200), (13_000, 12_000, 400, 300, 100), (14_000, 13_000, 300, 100, 200)])
         self.assertEqual({(row["purpose"], row["settled"], row["model"]) for row in rows}, {("frame", True, SEAT)})
         self.assertEqual([row["timing"] for row in rows], [{"firstItemMs": 1_200}, {"firstItemMs": 2_000}, {"firstItemMs": 1_500}])
-        self.assertEqual({tuple(row["derived"]) for row in rows}, {("durationMs", "start", "timing")})
+        self.assertEqual({tuple(row["derived"]) for row in rows}, {("durationMs", "start", "timing", "writtenTokens")})
 
     def test_the_session_names_its_effort_summary_and_cli_and_no_id(self) -> None:
         self.assertEqual(self.folded["session"], {"cliVersion": "0.160.0", "models": [SEAT], "efforts": ["xhigh"],
@@ -423,6 +473,10 @@ class SessionFold(unittest.TestCase):
                                                "judgeMs": 0, "otherMs": 1_000})
         self.assertEqual(self.folded["byPurpose"]["frame"]["totalTokens"], 39_900)
         self.assertIsNone(self.folded["ledgerTokens"])
+        side = calls.breakdown([{"source": "session", **self.folded}])
+        self.assertEqual(side["wait"], {"stage": "timing.firstItemMs", "calls": 3, "medianMs": 1_500, "leastMs": 1_200})
+        self.assertIsNone(calls.breakdown([{"source": "journal", **calls.fold_journal(journal())}])["wait"],
+                          "a journal that timed no stage has no wait to report")
 
     def test_a_log_without_usage_records_gives_no_rows(self) -> None:
         folded = calls.fold_session([line for line in session() if "token_usage_record" not in line])
@@ -493,7 +547,8 @@ class Trial(unittest.TestCase):
         read = calls.read_trial(self.trial)
         folded = calls.fold_journal(events)
         self.assertEqual((read["source"], read["calls"], read["time"]), ("trajectory", folded["calls"], folded["time"]))
-        self.assertEqual(read["ledgerTokens"], 71_260)
+        self.assertEqual((read["ledgerTokens"], read["compactions"]), (71_260, folded["compactions"]))
+        self.assertEqual(calls.breakdown([read])["compactions"], 1)
 
     def test_an_old_trajectory_without_call_rows_still_reports_its_frame_calls(self) -> None:
         old = {"schema_version": "ATIF-v1.8", "steps": [

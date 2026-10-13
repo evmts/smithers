@@ -344,6 +344,8 @@ class ReportCLI(unittest.TestCase):
                                           "judgeMs": 0, "otherMs": 2_000})
         self.assertEqual((ours["compactions"], ours["judgeReadings"], theirs["compactions"], theirs["judgeReadings"]),
                          (2, 8, 2, 0))
+        self.assertEqual((ours["wait"], theirs["wait"]),
+                         (None, {"stage": "timing.firstItemMs", "calls": 6, "medianMs": 1_500, "leastMs": 1_200}))
         self.assertEqual({purpose: total["totalTokens"] for purpose, total in ours["byPurpose"].items()},
                          {"frame": 57_200, "compaction": 18_000, "judge": 6_480, "marks": 4_080, "claim": 52_400,
                           "relevance": 2_840, "reading": 1_520})
@@ -359,6 +361,7 @@ class ReportCLI(unittest.TestCase):
         self.assertEqual((first["smithers"]["weightedTokens"], first["baseline"]["agentMinutes"]), (31_500, 4.5))
         for line in (
             "| Model calls | 10 | 6 |", "| Seconds per call | 10.9 | 6.0 |", "| Cache share | 65.4% | 87.2% |",
+            "| Wait before a reply: median, least | n/a | 1.5 s, 1.2 s (timing.firstItemMs) |",
             "| Weighted tokens | 0.06M | 0.03M |", "| Agent minutes | 20.0 | 9.0 |", "| Model wait | 109.0 s | 36.0 s |",
             "| Commands | 6.6 s | 5.0 s |", "| Judge | 2.8 s | 0.0 s |", "| Compaction | 20.0 s | 0.0 s |",
             "| Other | 1.6 s | 2.0 s |", "| Compactions | 2 | 2 |", "| Judge readings | 8 | 0 |",

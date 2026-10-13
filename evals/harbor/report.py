@@ -342,6 +342,8 @@ def _scaled(value: Any, scale: float, form: str, unit: str = "") -> str:
 MEASURES = (
     ("Model calls", lambda side: _figure(side["modelCalls"])),
     ("Seconds per call", lambda side: _figure(side["secondsPerCall"], ",.1f")),
+    ("Wait before a reply: median, least", lambda side: "n/a" if side["wait"] is None else
+     f"{side['wait']['medianMs'] / 1000:,.1f} s, {side['wait']['leastMs'] / 1000:,.1f} s ({side['wait']['stage']})"),
     ("Cache share", lambda side: _scaled(side["cacheShare"], 0.01, ".1f", "%")),
     ("Thinking tokens", lambda side: _figure(side["thinkingTokens"])),
     ("Written tokens", lambda side: _figure(side["writtenTokens"])),
@@ -402,6 +404,9 @@ def render_comparison(report: dict) -> list[str]:
     lines += ["",
               f"- Model calls, seconds per call, cache share and the fit count each agent's own calls. Weighted tokens are "
               f"uncached input + {weights['cached']:g} x cached input + {weights['output']:g} x output of those calls.",
+              "- The wait is from a call's start to the stage named: the first stream event the harness saw, or the "
+              "first item of the reply in the Codex log. That item is a message's start or a reasoning block's end, so "
+              "it bounds the wait from above and the least is the closest reading.",
               "- The five times split each record's span and count a second once: a judge reading that ran under a "
               "model call is model wait.",
               "- The fit is call seconds = fixed + thinking tokens x a + written tokens x b, by least squares."]

@@ -32,9 +32,11 @@ A row:
     totalTokens      input + output, or the ledger's spend for a call the
                      journal settles without a usage record
     settled          false when the record holds no settle for the call
-    timing           stage offsets from the call's start, when recorded
-    derived          the fields computed from event times or the ledger
-                     instead of read off the record
+    stages           when the harness saw the call's stream reach each stage,
+                     in milliseconds from the call's start, when recorded
+    timing           the same for the wire, when recorded
+    derived          the fields computed from event times, the ledger or
+                     other counts instead of read off the record
 
 Every Codex request is a `frame` row: the CLI has no judge. Its `timing` is
 `firstItemMs`, when the log shows the reply's first item: a message's start or
@@ -51,6 +53,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import statistics
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -154,11 +157,20 @@ def read_journal(path: Path) -> list[dict[str, Any]]:
     return events
 
 
-def _row(purpose: str, start: int, end: int | None, duration: int | None, counters: Any = None, *,
-         derived: Iterable[str] = (), settled: bool = True, **fields: Any) -> dict[str, Any]:
+def _row(purpose: str, start: int | None, end: int | None, duration: int | None, counters: Any = None, *,
+         split: Any = None, derived: Iterable[str] = (), settled: bool = True, **fields: Any) -> dict[str, Any]:
+    """One call. `counters` is a usage record in the harness's names; `split`
+    is the harness's own `output` record, read when it is there. Without one
+    the written tokens are output minus reasoning, and say so in `derived`."""
     counters = counters if isinstance(counters, dict) else {}
+    split = split if isinstance(split, dict) else {}
     given, output = _count(counters.get("inputTokens")), _count(counters.get("outputTokens"))
-    thinking = _count(counters.get("reasoningTokens"))
+    thinking, written = _count(counters.get("reasoningTokens")), _count(split.get("written"))
+    thinking = _count(split.get("thinking")) if thinking is None else thinking
+    derived = set(derived)
+    if written is None and output is not None and thinking is not None:
+        written = output - thinking
+        derived.add("writtenTokens")
     return {
         "purpose": purpose,
         "start": iso(start),
@@ -168,7 +180,7 @@ def _row(purpose: str, start: int, end: int | None, duration: int | None, counte
         "cachedTokens": _count(counters.get("cachedInputTokens")),
         "outputTokens": output,
         "thinkingTokens": thinking,
-        "writtenTokens": output - thinking if output is not None and thinking is not None else None,
+        "writtenTokens": written,
         "totalTokens": given + output if given is not None and output is not None else None,
         "settled": settled,
         **{name: value for name, value in fields.items() if value is not None},
@@ -240,6 +252,10 @@ def _folded(calls: list[tuple[int, dict[str, Any]]], time: dict[str, int] | None
     return {"calls": rows, **totals(rows), "ledgerTokens": ledger, "time": time}
 
 
+def _record(value: Any) -> dict[str, Any] | None:
+    return value if isinstance(value, dict) else None
+
+
 def fold_journal(events: list[dict[str, Any]]) -> dict[str, Any]:
     """Folds the harness journal into call rows, totals and the time split.
 
@@ -247,13 +263,20 @@ def fold_journal(events: list[dict[str, Any]]) -> dict[str, Any]:
     row's own time is when its batch was flushed, and is used only for an
     event without one. `ledgerTokens` is every `flows.agent.usage.v1` spend,
     the ones the engine wraps included: the run's own total, which the rows
-    must sum to.
+    must sum to. `compactions` is one record per compaction, whether or not
+    it made a summary call.
+
+    What a settle carries is read: `purpose`, `frame`, `attempt`, `reask`,
+    `stages`, `tries` and `output` on `model-settled`, and `summaryCall`,
+    `causes`, `context`, `removed` and `durationMillis` on
+    `compaction-settled`. A journal from before them gives the same rows with
+    the request's keys, the times between events and the ledger's spend.
     """
     calls: list[tuple[int, dict[str, Any]]] = []
+    compactions: list[dict[str, Any]] = []
     layers: dict[str, list[tuple[int, int]]] = {name: [] for name in SPLIT}
     opened: dict[str, Any] | None = None
     seat_row: dict[str, Any] | None = None
-    compaction_row: dict[str, Any] | None = None
     started: dict[str, int] = {}
     anonymous: list[int] = []
     ledger: int | None = None
@@ -268,10 +291,37 @@ def fold_journal(events: list[dict[str, Any]]) -> dict[str, Any]:
         calls.append((start, row))
         return row
 
+    def unasked(purpose: str) -> dict[str, Any]:
+        """A settle with no request before it: an older journal's, or a fragment's."""
+        return {"purpose": purpose, "derived": {"purpose", "start"}, "start": None, "frame": None, "attempt": None,
+                "model": None, "reask": None, "retries": 0, "spent": None}
+
+    def settle(call: dict[str, Any], record: dict[str, Any], at: int, ends_at_record: bool) -> dict[str, Any]:
+        """The row of a call its record settles: a `model-settled` payload,
+        which ends the call, or a compaction's `summaryCall`, which is
+        written when the whole compaction ends."""
+        duration, derived = _count(record.get("durationMillis")), set(call["derived"])
+        start = call["start"] if call["start"] is not None else at - (duration or 0)
+        if duration is None:
+            duration = at - start
+            derived.add("durationMs")
+        end = at if ends_at_record else min(at, start + duration)
+        purpose = record.get("purpose")
+        if isinstance(purpose, str):
+            derived.discard("purpose")
+        frame, attempt = _count(record.get("frame")), _count(record.get("attempt"))
+        return add(_row(
+            purpose if isinstance(purpose, str) else call["purpose"], start, end, duration, record.get("usage"),
+            split=record.get("output"), derived=derived, frame=call["frame"] if frame is None else frame,
+            attempt=call["attempt"] if attempt is None else attempt, model=call["model"],
+            reask=record.get("reask") or call["reask"], retries=call["retries"] or None, tries=_count(record.get("tries")),
+            stages=_record(record.get("stages")), timing=_record(record.get("timing")),
+            servedTier=record.get("servedTier")), start, end)
+
     def unsettled(call: dict[str, Any], end: int, derived: set[str]) -> dict[str, Any]:
         row = _row(call["purpose"], call["start"], end, end - call["start"], settled=False,
                    derived={*call["derived"], *derived, "durationMs"}, frame=call["frame"], attempt=call["attempt"],
-                   model=call["model"], retries=call["retries"] or None)
+                   model=call["model"], reask=call["reask"], retries=call["retries"] or None)
         if call["spent"] is not None:
             row["totalTokens"] = call["spent"]
             row["derived"] = sorted({*row["derived"], "totalTokens"})
@@ -284,7 +334,7 @@ def fold_journal(events: list[dict[str, Any]]) -> dict[str, Any]:
         first = at if first is None else min(first, at)
         last = at if last is None else max(last, at)
         if kind == "control.engine.event" and payload.get("eventType") == USAGE_EVENT:
-            kind, payload = USAGE_EVENT, payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
+            kind, payload = USAGE_EVENT, _record(payload.get("payload")) or {}
         if kind == USAGE_EVENT:
             spent = _count(payload.get("spent"))
             if spent is not None:
@@ -298,35 +348,31 @@ def fold_journal(events: list[dict[str, Any]]) -> dict[str, Any]:
             opened = {"purpose": purpose if isinstance(purpose, str) else "frame",
                       "derived": set() if isinstance(purpose, str) else {"purpose"}, "start": at,
                       "frame": _count(payload.get("frame")), "attempt": _count(payload.get("attempt")),
-                      "model": payload.get("modelId"), "retries": 0, "spent": None}
+                      "model": payload.get("modelId"), "reask": payload.get("reask"), "retries": 0, "spent": None}
         elif kind == "control.agent.model-retried":
             if opened is not None:
                 opened["retries"] += 1
         elif kind == "control.agent.model-settled":
-            call = opened or {"purpose": "frame", "derived": {"purpose", "start"}, "start": None, "frame": None,
-                              "attempt": None, "model": None, "retries": 0}
-            opened = None
-            duration, derived = _count(payload.get("durationMillis")), set(call["derived"])
-            start = call["start"] if call["start"] is not None else at - (duration or 0)
-            if duration is None:
-                duration = at - start
-                derived.add("durationMs")
-            purpose = payload.get("purpose")
-            if isinstance(purpose, str):
-                derived.discard("purpose")
-            timing = payload.get("timing")
-            seat_row = add(_row(purpose if isinstance(purpose, str) else call["purpose"], start, at, duration,
-                                payload.get("usage"), derived=derived, frame=call["frame"], attempt=call["attempt"],
-                                model=call["model"], retries=call["retries"] or None,
-                                timing=timing if isinstance(timing, dict) else None,
-                                servedTier=payload.get("servedTier")), start, at)
-            if seat_row["purpose"] == "compaction":
-                compaction_row = seat_row
+            seat_row, opened = settle(opened or unasked("frame"), payload, at, True), None
         elif kind == "control.agent.compaction-settled":
-            if opened is not None and opened["purpose"] == "compaction":
-                compaction_row, opened = unsettled(opened, at, set()), None
-            if compaction_row is not None and isinstance(payload.get("marks"), dict):
-                compaction_row["marks"] = payload["marks"]
+            call = opened if opened is not None and opened["purpose"] == "compaction" else None
+            opened = None if call is not None else opened
+            summary, whole = _record(payload.get("summaryCall")), _count(payload.get("durationMillis"))
+            record = {"at": iso(at), "frame": _count(payload.get("frame")) if call is None else call["frame"],
+                      "durationMs": whole, "summaryCall": summary is not None or call is not None, "derived": []}
+            if summary is not None:
+                settle(call or unasked("compaction"), summary, at, False)
+            elif call is not None:
+                unsettled(call, at, set())
+            if whole is None and call is not None:
+                # No duration was recorded: the time from the summary call's request is the least it took.
+                record["durationMs"], record["derived"] = at - call["start"], ["durationMs"]
+            if record["durationMs"] is not None:
+                layers["compactionMs"].append((at - record["durationMs"], at))
+            for name in ("causes", "marks", "context", "removed"):
+                if isinstance(payload.get(name), (dict, list, int)) and not isinstance(payload.get(name), bool):
+                    record[name] = payload[name]
+            compactions.append(record)
         elif kind == "control.agent.cell-rejected-in-frame":
             if seat_row is not None:
                 seat_row["rejected"] = str(payload.get("code"))
@@ -362,11 +408,11 @@ def fold_journal(events: list[dict[str, Any]]) -> dict[str, Any]:
                 add(_row("reading", at - (latency or 0), at, latency, counters, derived=derived,
                          model=counters.get("modelId"), flow=payload.get("flowName")), at - (latency or 0), at)
     if first is None:
-        return _folded([], None, ledger)
+        return {**_folded([], None, ledger), "compactions": []}
     if opened is not None:
         unsettled(opened, last, {"end"})
     layers["commandsMs"] += [(begun, last) for begun in [*started.values(), *anonymous]]
-    return _folded(calls, _split(first, last, [layers[name] for name in SPLIT]), ledger)
+    return {**_folded(calls, _split(first, last, [layers[name] for name in SPLIT]), ledger), "compactions": compactions}
 
 
 def fold_session(lines: Iterable[str]) -> dict[str, Any]:
@@ -492,8 +538,11 @@ def _read_trial(trial: Path) -> dict[str, Any]:
     if isinstance(extra.get("calls"), list):
         rows = [row for row in extra["calls"] if isinstance(row, dict) and isinstance(row.get("purpose"), str)]
         final = (document.get("final_metrics") or {}).get("extra") or {}
-        return {"source": "trajectory", "calls": rows, **totals(rows), "ledgerTokens": final.get("ledgerTokens"),
+        read = {"source": "trajectory", "calls": rows, **totals(rows), "ledgerTokens": final.get("ledgerTokens"),
                 "time": final.get("time") if isinstance(final.get("time"), dict) else None}
+        if isinstance(final.get("compactions"), list):
+            read["compactions"] = final["compactions"]
+        return read
     journal = journal_path(agent / "workspace" / ".flows")
     if journal is not None:
         try:
@@ -554,6 +603,25 @@ def fit(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
             "r2": round(1 - residual / spread, 4) if spread > 0 else None}
 
 
+# Where a row says when its reply began, the closest reading first: the
+# harness's own, the wire's, then the Codex log's first item.
+WAITS = (("stages", "firstEventMs"), ("timing", "firstEventMs"), ("timing", "firstItemMs"))
+
+
+def wait(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The wait before a reply began over the agent's own calls, by the first
+    stage in `WAITS` any of them records; None when none does. The Codex
+    log's stage is an upper bound for each call, so the least of them is the
+    closest it comes to the wait itself."""
+    for holder, stage in WAITS:
+        waits = [count for count in (_count((_record(row.get(holder)) or {}).get(stage)) for row in rows
+                                     if row.get("purpose") == "frame") if count is not None]
+        if waits:
+            return {"stage": f"{holder}.{stage}", "calls": len(waits), "medianMs": round(statistics.median(waits)),
+                    "leastMs": min(waits)}
+    return None
+
+
 def breakdown(reads: list[dict[str, Any]]) -> dict[str, Any]:
     """One side of a comparison over the trials `read_trial` returned: the
     agent's own calls, where the time went, tokens by purpose and the fit."""
@@ -577,11 +645,14 @@ def breakdown(reads: list[dict[str, Any]]) -> dict[str, Any]:
         "sources": dict(sorted(sources.items())),
         "modelCalls": len(own),
         "secondsPerCall": round(sum(timed) / len(timed) / 1000, 1) if timed else None,
+        "wait": wait(own),
         "cacheShare": round(frame["cachedTokens"] / frame["inputTokens"], 4)
         if frame["inputTokens"] and frame["cachedTokens"] is not None else None,
         "thinkingTokens": frame["thinkingTokens"],
         "writtenTokens": frame["writtenTokens"],
-        "compactions": summed["byPurpose"].get("compaction", {}).get("calls", 0)
+        # A record per compaction where the trial has them; else its summary calls, the most an older one shows.
+        "compactions": sum(len(read["compactions"]) if isinstance(read.get("compactions"), list)
+                           else sum(1 for row in read["calls"] if row["purpose"] == "compaction") for read in reads)
         + sum(session.get("compactions") or 0 for session in sessions),
         "judgeReadings": sum(summed["byPurpose"].get(purpose, {}).get("calls", 0) for purpose in READINGS),
         "time": time,
@@ -615,13 +686,17 @@ def _notes(row: dict[str, Any]) -> str:
         notes.append("unsettled")
     if row.get("rejected"):
         notes.append(f"rejected {row['rejected']}")
+    if row.get("reask"):
+        notes.append(f"asked again after {row['reask']}")
     if row.get("retries"):
         notes.append(f"{row['retries']} retried")
-    timing = row.get("timing") if isinstance(row.get("timing"), dict) else {}
-    for name, label in (("firstEventMs", "first event"), ("firstOutputMs", "first output"),
-                        ("firstItemMs", "first item")):
-        if _count(timing.get(name)) is not None:
-            notes.append(f"{label} {timing[name] / 1000:.1f} s")
+    if (row.get("tries") or 1) > 1:
+        notes.append(f"{row['tries']} tries")
+    for holder, name, label in (("stages", "firstEventMs", "first event"), ("stages", "firstOutputMs", "first output"),
+                                ("timing", "headersMs", "headers"), ("timing", "firstItemMs", "first item")):
+        reached = _count((_record(row.get(holder)) or {}).get(name))
+        if reached is not None:
+            notes.append(f"{label} {reached / 1000:.1f} s")
     return ", ".join(notes)
 
 
@@ -634,6 +709,14 @@ def render(name: str, read: dict[str, Any]) -> str:
              f"cache share {share}",
              f"  record: {read['source']}; weighted tokens "
              f"{_number(weighted(frame['inputTokens'], frame['cachedTokens'], frame['outputTokens']))}"]
+    if side["wait"]:
+        lines.append(f"  wait before a reply began: median {_seconds(side['wait']['medianMs'])} s, least "
+                     f"{_seconds(side['wait']['leastMs'])} s ({side['wait']['stage']}, {side['wait']['calls']} calls)")
+    for record in read.get("compactions") or []:
+        causes = ", ".join(str(cause) for cause in record.get("causes") or []) or "cause not recorded"
+        context = record.get("context") or {}
+        sizes = f", context {context.get('before'):,} to {context.get('after'):,} tokens" if context else ""
+        lines.append(f"  compaction before frame {record.get('frame')}: {causes}, {_seconds(record.get('durationMs'))} s{sizes}")
     session = side.get("session")
     if session:
         lines.append(f"  codex-cli {', '.join(session['cliVersions']) or '-'}; effort "

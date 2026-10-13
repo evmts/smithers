@@ -334,9 +334,17 @@ python3 -B evals/harbor/calls.py <trial-dir>... [--json]
 | `thinkingTokens`, `writtenTokens`             | Output split into reasoning and everything else                      |
 | `totalTokens`                                 | Input + output                                                       |
 | `settled`                                     | `false` when the record holds no settle for the call                 |
-| `frame`, `attempt`, `retries`, `rejected`     | Smithers arm: where the call sits in the run, and how it went        |
-| `timing`                                      | Stage offsets from the call's start, in milliseconds, when recorded  |
-| `derived`                                     | The fields computed from event times or the ledger, not read as such |
+| `frame`, `attempt`, `reask`, `rejected`       | Smithers arm: the call's frame, and why a frame asked again          |
+| `retries`, `tries`                            | Smithers arm: retry notices, and transport tries of the sealed step  |
+| `stages`                                      | When the harness saw the stream reach each stage, when recorded      |
+| `timing`                                      | The same for the wire, when recorded                                 |
+| `derived`                                     | The fields computed from other records, not read as such             |
+
+`stages` and `timing` count whole milliseconds from the call's start. `stages`
+holds `firstEventMs`, `firstThinkingMs`, `firstOutputMs` and `lastOutputMs`.
+`derived` names `durationMs` when it is the time between two events,
+`totalTokens` when it is the ledger's spend, `writtenTokens` when it is output
+minus reasoning, and `purpose` when it follows from the event's kind.
 
 | Purpose      | The call                                                             |
 | ------------ | -------------------------------------------------------------------- |
@@ -370,13 +378,18 @@ What each total includes:
 | `allPurposes`                                                                               | Every purpose summed: the run's total                                                                |
 | `ledgerTokens`                                                                              | The harness's own count of every spend (`flows.agent.usage.v1`); it equals `allPurposes.totalTokens` |
 
-`byPurpose`, `allPurposes`, `ledgerTokens` and `time` are in `run` of
-`smithers-run.json` and in `final_metrics.extra` of the trajectory. A
-difference between the ledger and the rows is a spend no row lists. A
-compaction call has no settle record: its row is unsettled, its time is the
-time to `compaction-settled`, and its tokens are the ledger's one sum
-(`unsplitTokens`), with no input, cached or output count. A call with no
-token figure at all is counted in `tokenless` and is in no total.
+`byPurpose`, `allPurposes`, `ledgerTokens`, `time` and `compactions` are in
+`run` of `smithers-run.json` and in `final_metrics.extra` of the trajectory. A
+difference between the ledger and the rows is a spend no row lists. A call
+with no token figure at all is counted in `tokenless` and is in no total.
+
+`compactions` is one record per compaction: when it ended, the frame it ran
+ahead of, `durationMs`, `causes`, `marks`, `context` before and after, and
+whether it made a summary call. A compaction's summary call is settled on
+`compaction-settled`, not on a `model-settled`. A journal from before that
+(#3844) leaves the call unsettled: its row's time is the time to
+`compaction-settled`, and its tokens are the ledger's one sum
+(`unsplitTokens`), with no input, cached or output count.
 
 `time` splits the record's span, first event to last, and counts a second
 once, for the first of these that was running: the agent's own model call
@@ -386,6 +399,13 @@ under a model call is therefore model wait, and `judgeMs` is the time the
 judge held the run. Every reading's own latency is `durationMs` in
 `byPurpose`. `wallSec` is longer than the span by the CLI's own start and
 exit.
+
+The wait before a reply began is read, over the agent's own calls, from the
+earliest stage the rows record: `stages.firstEventMs`, else the wire's
+`timing.firstEventMs`, else the Codex log's `timing.firstItemMs`. The report
+names which and gives the median and the least. The Codex stage bounds each
+call's wait from above, so its least is the closest reading; the fit's
+`fixedSeconds` is the same quantity estimated from every call.
 
 The fit is least squares of call seconds on thinking and written tokens over
 the agent's own settled calls:

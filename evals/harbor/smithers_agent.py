@@ -330,8 +330,8 @@ def summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
     `usage` and `modelCalls` are the agent's own calls, the figures Harbor
     reads and every earlier report printed. `byPurpose` and `allPurposes`
     add the compaction calls and the judge's readings (`calls.totals`);
-    `ledgerTokens` is the run's own count of all of them, and `time` is where
-    the wall clock went.
+    `ledgerTokens` is the run's own count of all of them, `time` is where
+    the wall clock went, and `compactions` is one record per compaction.
     """
     usage = {"inputTokens": None, "cachedInputTokens": None, "outputTokens": None, "reasoningTokens": None}
     missing_usage = {name: False for name in usage}
@@ -404,6 +404,7 @@ def summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
         "allPurposes": folded["allPurposes"],
         "ledgerTokens": folded["ledgerTokens"],
         "time": folded["time"],
+        "compactions": folded["compactions"],
         "bindings": bindings,
         "efforts": efforts,
         "status": status,
@@ -565,6 +566,7 @@ def trajectory(events: list[dict[str, Any]], *, agent_name: str, agent_version: 
                 "allPurposes": folded["allPurposes"],
                 "ledgerTokens": folded["ledgerTokens"],
                 "time": folded["time"],
+                "compactions": folded["compactions"],
             },
         },
     }
