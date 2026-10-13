@@ -196,8 +196,10 @@ Wait by stage (seconds from the call's start)
   matches the `Ledger` line.
 - `Model calls` has one row per call. A re-ask of a frame is its own row with
   `ask` 2. A call that never settled reads `unsettled`, with the time until the
-  event that ended it. `wait`, `think`, `write`, and the stage tables appear
-  for calls whose journal record carries wire timing. `Model call tokens`
+  event that ended it. `wait`, `think`, and `write` appear for calls whose
+  settle record timed the stream. `Stream as the harness saw it` lists the
+  harness's own readings (`stages` in the JSON) and `Wait by stage` the wire's
+  (`timing`); the gap between the two is time the host spent. `Model call tokens`
   lists each call's input, cached, uncached, thinking, and written tokens, its
   tries, and whether its frame changed the workspace.
 - `Frames` splits each frame the way `Time` splits the run.

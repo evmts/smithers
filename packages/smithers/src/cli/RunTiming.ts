@@ -39,38 +39,55 @@ import { terminalSafe } from "../internal/Failure.ts"
 import { observational } from "./RunActivity.ts"
 
 /**
- * When each stage of one model call was reached, in milliseconds from the
- * call's start: the wire `timing` record the model package measures. A stage
- * the wire did not see is absent.
+ * When one model call's stream reached each stage as the harness saw it, in
+ * milliseconds from the call's start: the `stages` a settle record carries.
+ * These readings are taken after the host's own handling of the stream, so the
+ * gap between one and the same stage of {@link Timing} is time the host spent.
  *
  * @category models
  * @since 1.0.0
  */
 export interface Stages {
-  readonly preparedMs?: number
-  readonly signedMs?: number
-  readonly sentMs?: number
-  readonly headersMs?: number
   readonly firstEventMs?: number
   readonly firstThinkingMs?: number
   readonly firstOutputMs?: number
   readonly lastOutputMs?: number
+}
+
+/**
+ * When each stage of one model call was reached on the wire, in milliseconds
+ * from the call's start: the `timing` record the model package measures. A
+ * stage the wire did not see is absent.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Timing extends Stages {
+  readonly preparedMs?: number
+  readonly signedMs?: number
+  readonly sentMs?: number
+  readonly headersMs?: number
   readonly completedMs?: number
   readonly closedMs?: number
 }
 
 const stageNames = [
+  "firstEventMs",
+  "firstThinkingMs",
+  "firstOutputMs",
+  "lastOutputMs"
+] as const satisfies ReadonlyArray<
+  keyof Stages
+>
+const timingNames = [
   "preparedMs",
   "signedMs",
   "sentMs",
   "headersMs",
-  "firstEventMs",
-  "firstThinkingMs",
-  "firstOutputMs",
-  "lastOutputMs",
+  ...stageNames,
   "completedMs",
   "closedMs"
-] as const satisfies ReadonlyArray<keyof Stages>
+] as const satisfies ReadonlyArray<keyof Timing>
 
 /**
  * One try of a model call that failed and was tried again inside the call,
@@ -121,11 +138,12 @@ export interface ModelCall {
   /** The call's recorded duration; for an unsettled call, the time until the event that ended it. */
   readonly durationMs: number
   readonly settled: boolean
-  /** Time before the first thinking or output token. */
+  /** Time before the first thinking or output token, as the harness saw it when it timed the stream. */
   readonly waitMs?: number
   readonly thinkingMs?: number
   readonly writingMs?: number
   readonly stages?: Stages
+  readonly timing?: Timing
   readonly requestBytes?: number
   readonly servedTier?: string
   readonly usage?: Usage
@@ -133,7 +151,7 @@ export interface ModelCall {
   readonly spent?: number
   readonly cacheShare?: number
   readonly costUsd?: number
-  /** Tries of this one call on the wire, counting the one that succeeded. */
+  /** Tries of this one call, the answered one and the wire's retries inside it included. */
   readonly tries: number
   /** The tries that failed before the answered one, as the wire timed them. */
   readonly failedTries?: ReadonlyArray<FailedTry>
@@ -211,6 +229,8 @@ export interface Compaction {
   /** Context size before and after, in tokens. */
   readonly contextBefore?: number
   readonly contextAfter?: number
+  /** Tokens the removed messages held. */
+  readonly freed?: number
   readonly marks?: { readonly kept: number; readonly squashed: number; readonly removed: number }
   /** Tokens its summary call spent. */
   readonly spent?: number
@@ -308,9 +328,11 @@ interface Call {
   durationMs: number
   settled: boolean
   retries: number
+  tries: number | undefined
   attempts: number | undefined
   failedTries: ReadonlyArray<FailedTry> | undefined
   stages: Stages | undefined
+  timing: Timing | undefined
   requestBytes: number | undefined
   servedTier: string | undefined
   usage: Usage | undefined
@@ -387,13 +409,14 @@ const count = (value: unknown): number | undefined => {
   return number !== undefined && Number.isFinite(number) && number >= 0 ? number : undefined
 }
 
-const usageOf = (value: unknown): Usage | undefined => {
+/** A call's counts from its `usage`, with the settle's own `output` split where usage reports no thinking. */
+const usageOf = (value: unknown, split?: unknown): Usage | undefined => {
   const usage = asRecord(value)
   const input = count(usage.inputTokens)
   const output = count(usage.outputTokens)
   if (input === undefined && output === undefined) return undefined
   const cached = Math.min(count(usage.cachedInputTokens) ?? 0, input ?? 0)
-  const thinking = Math.min(count(usage.reasoningTokens) ?? 0, output ?? 0)
+  const thinking = Math.min(count(usage.reasoningTokens) ?? count(asRecord(split).thinking) ?? 0, output ?? 0)
   return {
     input: input ?? 0,
     cached,
@@ -403,12 +426,15 @@ const usageOf = (value: unknown): Usage | undefined => {
   }
 }
 
-const stagesOf = (timing: Record<string, unknown>): Stages | undefined => {
-  const reached = stageNames.flatMap((name) => {
-    const at = count(timing[name])
+const reached = <Name extends string>(
+  record: unknown,
+  names: ReadonlyArray<Name>
+): { readonly [K in Name]?: number } | undefined => {
+  const stages = names.flatMap((name) => {
+    const at = count(asRecord(record)[name])
     return at === undefined ? [] : [[name, at] as const]
   })
-  return reached.length === 0 ? undefined : Object.fromEntries(reached)
+  return stages.length === 0 ? undefined : Object.fromEntries(stages) as { readonly [K in Name]?: number }
 }
 
 /** The strings of a journaled list of names, made terminal-inert. */
@@ -578,9 +604,11 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
       durationMs: 0,
       settled: false,
       retries: 0,
+      tries: undefined,
       attempts: undefined,
       failedTries: undefined,
       stages: undefined,
+      timing: undefined,
       requestBytes: undefined,
       servedTier: undefined,
       usage: undefined,
@@ -592,6 +620,29 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
     }
     calls.push(scope.open)
     return scope.open
+  }
+  /** Fills a call from the record that settled it: a model-settled, or a compaction's `summaryCall`. */
+  const settle = (call: Call, record: Record<string, unknown>, at: number): void => {
+    const timing = asRecord(record.timing)
+    const recorded = count(record.durationMillis)
+    if (recorded === undefined) note("call total")
+    call.settled = true
+    call.durationMs = recorded ?? Math.max(0, at - call.startAt)
+    call.purpose = asString(record.purpose) ?? call.purpose
+    call.tries = count(record.tries)
+    if (call.tries === undefined) note("call tries")
+    call.attempts = count(timing.attempts)
+    call.failedTries = failedTriesOf(timing.failedTries)
+    call.stages = reached(record.stages, stageNames)
+    call.timing = reached(record.timing, timingNames)
+    call.requestBytes = count(timing.requestBytes)
+    call.servedTier = asString(record.servedTier) ?? asString(timing.servedTier)
+    call.usage = usageOf(record.usage, record.output)
+    if (call.usage !== undefined) {
+      call.spent = count(asRecord(record.usage).totalTokens) ??
+        call.usage.input + call.usage.thinking + call.usage.written
+    }
+    call.costUsd = count(record.costUsd) ?? call.costUsd
   }
   const read = (reading: Omit<Reading, "costUsd" | "priced">, payload: Record<string, unknown>): void => {
     const costUsd = count(payload.costUsd)
@@ -677,24 +728,7 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
         const call = scope.open ?? request(scope, key, step, at - (count(payload.durationMillis) ?? 0), payload)
         scope.open = undefined
         scope.last = call
-        const timing = asRecord(payload.timing)
-        const recorded = count(payload.durationMillis)
-        if (recorded === undefined) note("call total")
-        call.settled = true
-        call.durationMs = recorded ?? Math.max(0, at - call.startAt)
-        call.purpose = asString(payload.purpose) ?? call.purpose
-        call.attempts = count(timing.attempts)
-        if (call.attempts === undefined) note("call tries")
-        call.failedTries = failedTriesOf(timing.failedTries)
-        call.stages = stagesOf(timing)
-        call.requestBytes = count(timing.requestBytes)
-        call.servedTier = asString(payload.servedTier) ?? asString(timing.servedTier)
-        call.usage = usageOf(payload.usage)
-        if (call.usage !== undefined) {
-          call.spent = count(asRecord(payload.usage).totalTokens) ??
-            call.usage.input + call.usage.thinking + call.usage.written
-        }
-        call.costUsd = count(payload.costUsd) ?? call.costUsd
+        settle(call, payload, at)
         if (call.purpose === "compaction") scope.summary = call
         break
       }
@@ -731,17 +765,30 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
         break
       }
       case "compaction-settled": {
-        const summary = scope.open?.purpose === "compaction" ? abandon(scope, at) : scope.summary
+        const recorded = count(payload.durationMillis)
+        // Its summary call settles here, on `summaryCall`, and not as a model-settled of its own.
+        const settledHere = payload.summaryCall === undefined ? undefined : asRecord(payload.summaryCall)
+        let summary = scope.summary
+        if (scope.open?.purpose === "compaction" || settledHere !== undefined) {
+          summary = scope.open?.purpose === "compaction"
+            ? scope.open
+            : request(scope, key, step, at - (recorded ?? 0), { frame: payload.frame, purpose: "compaction" })
+          if (settledHere === undefined) abandon(scope, at)
+          else {
+            scope.open = undefined
+            settle(summary, settledHere, at)
+          }
+        }
         scope.summary = undefined
-        const recorded = count(payload.durationMillis) ?? count(payload.durationMs)
         const from = recorded !== undefined ? at - recorded : summary?.startAt ?? at
         if (recorded === undefined && summary !== undefined) note("compaction total")
         const marks = asRecord(payload.marks)
         const frame = count(payload.frame) ?? summary?.frame
         const durationMs = recorded ?? (summary === undefined ? undefined : at - from)
         const cause = asString(payload.cause) ?? (names(payload.causes).join(", ") || undefined)
-        const before = count(payload.contextBefore)
-        const after = count(payload.contextAfter)
+        const before = count(asRecord(payload.context).before)
+        const after = count(asRecord(payload.context).after)
+        const freed = count(payload.removed)
         intervals.push({ part: "compaction", from, to: at })
         compactions.push({
           from,
@@ -751,6 +798,7 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
             ...(cause === undefined ? {} : { cause: terminalSafe(cause) }),
             ...(before === undefined ? {} : { contextBefore: before }),
             ...(after === undefined ? {} : { contextAfter: after }),
+            ...(freed === undefined ? {} : { freed }),
             ...(payload.marks === undefined ? {} : {
               marks: {
                 kept: count(marks.kept) ?? 0,
@@ -1000,14 +1048,16 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
     ...(ledger.entries === 0 ? {} : { ledger }),
     ...(sent === 0 ? {} : { cacheShare: seat.reduce((sum, usage) => sum + usage.cached, 0) / sent }),
     calls: calls.map((call, index): ModelCall => {
-      const stages = call.stages
-      const first = stages === undefined
+      // The harness's readings are the wait the run lived through; the wire's stand in where it took none.
+      const token = (stages: Stages | undefined) =>
+        stages?.firstThinkingMs !== undefined || stages?.firstOutputMs !== undefined
+      const stream = token(call.stages) ? call.stages : token(call.timing) ? call.timing : undefined
+      const first = stream === undefined
         ? undefined
-        : [stages.firstThinkingMs, stages.firstOutputMs].flatMap((at) => at === undefined ? [] : [at]).sort((a, b) =>
-          a - b
-        )[0]
-      const thinkingMs = span(stages?.firstThinkingMs, stages?.firstOutputMs ?? stages?.completedMs)
-      const writingMs = span(stages?.firstOutputMs, stages?.lastOutputMs ?? stages?.completedMs)
+        : Math.min(stream.firstThinkingMs ?? Infinity, stream.firstOutputMs ?? Infinity)
+      const end = call.timing?.completedMs ?? call.durationMs
+      const thinkingMs = span(stream?.firstThinkingMs, stream?.firstOutputMs ?? end)
+      const writingMs = span(stream?.firstOutputMs, stream?.lastOutputMs ?? end)
       return {
         index: index + 1,
         frame: call.frame,
@@ -1020,7 +1070,8 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
         ...(first === undefined ? {} : { waitMs: first }),
         ...(thinkingMs === undefined ? {} : { thinkingMs }),
         ...(writingMs === undefined ? {} : { writingMs }),
-        ...(stages === undefined ? {} : { stages }),
+        ...(call.stages === undefined ? {} : { stages: call.stages }),
+        ...(call.timing === undefined ? {} : { timing: call.timing }),
         ...(call.requestBytes === undefined ? {} : { requestBytes: call.requestBytes }),
         ...(call.servedTier === undefined ? {} : { servedTier: terminalSafe(call.servedTier) }),
         ...(call.usage === undefined ? {} : { usage: call.usage }),
@@ -1029,7 +1080,8 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
           ? {}
           : { cacheShare: call.usage.cached / call.usage.input }),
         ...(call.costUsd === undefined ? {} : { costUsd: call.costUsd }),
-        tries: call.attempts ?? 1 + call.retries,
+        // The harness counts its own tries; the wire counts the tries inside the answered one.
+        tries: (call.tries ?? 1 + call.retries) + Math.max(0, (call.attempts ?? 1) - 1),
         ...(call.failedTries === undefined ? {} : { failedTries: call.failedTries }),
         ...(call.moved === undefined ? {} : { moved: call.moved }),
         ...(call.rejected === undefined ? {} : { rejected: terminalSafe(call.rejected) })
@@ -1165,26 +1217,37 @@ export const render = (report: Report): string => {
       (call) => call.rejected !== undefined ? "rejected" : call.moved === undefined ? dash : call.moved ? "yes" : "no"
     ]
   ])
-  const staged = report.calls.filter((call) => call.stages !== undefined)
+  const staged = report.calls.filter((call) => call.timing !== undefined)
   table<ModelCall>("Wait by stage (seconds from the call's start)", staged, [
     ["#", (call) => String(call.index)],
-    ["prepared", (call) => stamp(call.stages?.preparedMs)],
-    ["signed", (call) => stamp(call.stages?.signedMs)],
-    ["sent", (call) => stamp(call.stages?.sentMs)],
-    ["headers", (call) => stamp(call.stages?.headersMs)],
-    ["1st event", (call) => stamp(call.stages?.firstEventMs)],
-    ["1st thinking", (call) => stamp(call.stages?.firstThinkingMs)],
-    ["1st output", (call) => stamp(call.stages?.firstOutputMs)]
+    ["prepared", (call) => stamp(call.timing?.preparedMs)],
+    ["signed", (call) => stamp(call.timing?.signedMs)],
+    ["sent", (call) => stamp(call.timing?.sentMs)],
+    ["headers", (call) => stamp(call.timing?.headersMs)],
+    ["1st event", (call) => stamp(call.timing?.firstEventMs)],
+    ["1st thinking", (call) => stamp(call.timing?.firstThinkingMs)],
+    ["1st output", (call) => stamp(call.timing?.firstOutputMs)]
   ])
   table<ModelCall>("After the first output (seconds from the call's start)", staged, [
     ["#", (call) => String(call.index)],
-    ["last output", (call) => stamp(call.stages?.lastOutputMs)],
-    ["completed", (call) => stamp(call.stages?.completedMs)],
-    ["closed", (call) => stamp(call.stages?.closedMs)],
+    ["last output", (call) => stamp(call.timing?.lastOutputMs)],
+    ["completed", (call) => stamp(call.timing?.completedMs)],
+    ["closed", (call) => stamp(call.timing?.closedMs)],
     ["tries", (call) => String(call.tries)],
     ["request bytes", (call) => whole(call.requestBytes)],
     ["tier", (call) => call.servedTier ?? dash]
   ])
+  table<ModelCall>(
+    "Stream as the harness saw it (seconds from the call's start)",
+    report.calls.filter((call) => call.stages !== undefined),
+    [
+      ["#", (call) => String(call.index)],
+      ["1st event", (call) => stamp(call.stages?.firstEventMs)],
+      ["1st thinking", (call) => stamp(call.stages?.firstThinkingMs)],
+      ["1st output", (call) => stamp(call.stages?.firstOutputMs)],
+      ["last output", (call) => stamp(call.stages?.lastOutputMs)]
+    ]
+  )
   table<Frame>("Frames (seconds)", report.frames, [
     ["frame", (frame) => frame.step === undefined ? String(frame.frame) : `${frame.step}:${frame.frame}`],
     ["wall", (frame) => seconds(frame.wallMs)],
@@ -1203,9 +1266,6 @@ export const render = (report: Report): string => {
     ["cause", (compaction) => compaction.cause ?? dash],
     ["before", (compaction) => whole(compaction.contextBefore)],
     ["after", (compaction) => whole(compaction.contextAfter)],
-    ["kept", (compaction) => whole(compaction.marks?.kept)],
-    ["squashed", (compaction) => whole(compaction.marks?.squashed)],
-    ["removed", (compaction) => whole(compaction.marks?.removed)],
     ["tokens", (compaction) => whole(compaction.spent)]
   ], 1)
   table<Fired>("Judge readings that fired (seconds)", report.judge.fired, [

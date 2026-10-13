@@ -148,7 +148,7 @@ describe("runs show --timing", { timeout: 120_000 }, () => {
       { index: 1, frame: 0, durationMs: 3_000, tries: 1, moved: false },
       { index: 2, frame: 1, durationMs: 4_000, waitMs: 1_000, thinkingMs: 1_500, writingMs: 1_400, moved: true }
     ])
-    expect(report.calls[1]!.stages).toMatchObject({ signedMs: 4, headersMs: 900, firstOutputMs: 2_500 })
+    expect(report.calls[1]!.timing).toMatchObject({ signedMs: 4, headersMs: 900, firstOutputMs: 2_500 })
   })
 
   it("prints a person the table of the same report the JSON carries", async () => {

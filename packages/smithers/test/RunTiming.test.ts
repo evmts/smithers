@@ -253,6 +253,7 @@ describe("RunTiming.fold", () => {
       expect(call.thinkingMs).toBeUndefined()
       expect(call.writingMs).toBeUndefined()
       expect(call.stages).toBeUndefined()
+      expect(call.timing).toBeUndefined()
     }
   })
 
@@ -350,8 +351,8 @@ describe("RunTiming.fold", () => {
     const [call] = RunTiming.fold(j.events, "run-1").calls
     expect(call).toMatchObject({
       purpose: "frame",
-      // The wire's own count wins over the retries the harness happened to see.
-      tries: 3,
+      // Two tries by the harness, the answered one taking three on the wire.
+      tries: 4,
       failedTries: [{ sentMs: 4, failedMs: 600, code: "transport" }, {
         failedMs: 1_900,
         code: "rate_limit",
@@ -362,7 +363,7 @@ describe("RunTiming.fold", () => {
       writingMs: 2_400,
       requestBytes: 12_345,
       servedTier: "priority",
-      stages: {
+      timing: {
         preparedMs: 3,
         signedMs: 5,
         sentMs: 9,
@@ -399,7 +400,8 @@ describe("RunTiming.fold", () => {
     expect(call!.thinkingMs).toBeUndefined()
     // Without a last-output stamp the writing runs to the provider's terminal event.
     expect(call!.writingMs).toBe(900)
-    expect(call!.stages).toEqual({
+    expect(call!.stages).toBeUndefined()
+    expect(call!.timing).toEqual({
       signedMs: 1,
       sentMs: 2,
       headersMs: 900,
@@ -593,17 +595,91 @@ describe("RunTiming.fold", () => {
     expect(report.derived.map((entry) => entry.field)).toContain("reading cost")
   })
 
-  it("reads a compaction's cause and duration from a record that carries them", () => {
+  it("reads the stream stages, tries and join keys the harness journals on a settle", () => {
+    const j = journal()
+    j.run("running", 0)
+    j.agent("turn-opened", 0)
+    j.requested(0, 0)
+    j.agent("model-retried", 1_000, { attempt: 1, code: "transport", delayMillis: 100 })
+    j.agent("model-retried", 2_000, { attempt: 2, code: "transport", delayMillis: 100 })
+    j.agent("model-settled", 10_000, {
+      durationMillis: 10_000,
+      costUsd: 0.01,
+      // No reasoning count in the usage: the settle's own split carries it.
+      usage: { inputTokens: 1_000, cachedInputTokens: 800, outputTokens: 400, totalTokens: 1_400 },
+      scope: "run-1",
+      frame: 0,
+      attempt: 1,
+      purpose: "frame",
+      tries: 2,
+      stages: { firstEventMs: 7_000, firstThinkingMs: 7_200, firstOutputMs: 8_000, lastOutputMs: 9_900 },
+      output: { thinking: 300, written: 100 }
+    })
+    j.run("completed", 10_000)
+    const report = RunTiming.fold(j.events, "run-1")
+    expect(report.calls).toMatchObject([{
+      frame: 0,
+      ask: 1,
+      purpose: "frame",
+      // The settle's own count, not the retry records counted around it.
+      tries: 2,
+      waitMs: 7_200,
+      thinkingMs: 800,
+      writingMs: 1_900,
+      stages: { firstEventMs: 7_000, firstThinkingMs: 7_200, firstOutputMs: 8_000, lastOutputMs: 9_900 },
+      // The settle's split fills in what its usage left out.
+      usage: { input: 1_000, cached: 800, uncached: 200, thinking: 300, written: 100 }
+    }])
+    expect(report.calls[0]!.timing).toBeUndefined()
+    expect(report.derived.map((entry) => entry.field)).not.toContain("call tries")
+  })
+
+  it("times the wait as the harness saw it and keeps the wire's record beside it", () => {
+    const j = journal()
+    j.run("running", 0)
+    j.requested(0, 0)
+    // The wire saw the first thinking at 2.3 s; the harness was handed it at 7.2 s.
+    j.settled(10_000, 10_000, [1_000, 0, 400, 300], 0.01, {
+      tries: 1,
+      stages: { firstEventMs: 7_000, firstThinkingMs: 7_200, firstOutputMs: 8_000, lastOutputMs: 9_900 },
+      timing: { attempts: 1, headersMs: 2_100, firstEventMs: 2_150, firstThinkingMs: 2_300, firstOutputMs: 7_400 }
+    })
+    j.run("completed", 10_000)
+    const [call] = RunTiming.fold(j.events, "run-1").calls
+    expect(call).toMatchObject({
+      waitMs: 7_200,
+      thinkingMs: 800,
+      writingMs: 1_900,
+      stages: { firstThinkingMs: 7_200 },
+      timing: { headersMs: 2_100, firstThinkingMs: 2_300 }
+    })
+  })
+
+  it("reads a compaction's causes, duration, context and summary call from a record that carries them", () => {
     const j = journal()
     j.run("running", 0)
     j.requested(1_000, 0, { purpose: "compaction" })
-    j.settled(8_000, 7_000, [5_000, 0, 900, 0], 0.03, { purpose: "compaction" })
+    j.spend(7_990, "key1_summary", 5_900, 0.03)
+    // The summary call settles on the compaction's own record, never as a model-settled.
     j.agent("compaction-settled", 10_000, {
+      scope: "run-1",
+      frame: 0,
       causes: ["outdated_context", "window"],
       durationMillis: 9_500,
-      marks: { kept: 2, squashed: 1, removed: 3 }
+      context: { before: 180_000, after: 40_000 },
+      removed: 120_000,
+      marks: { kept: 2, squashed: 1, removed: 3 },
+      marksCall: { requests: 1, latencyMs: 400, usage: jev(2_000, 40) },
+      summaryCall: {
+        usage: { inputTokens: 5_000, cachedInputTokens: 0, outputTokens: 900, reasoningTokens: 0, totalTokens: 5_900 },
+        costUsd: 0.03,
+        durationMillis: 7_000,
+        tries: 1,
+        stages: { firstEventMs: 2_000, firstOutputMs: 2_500, lastOutputMs: 6_900 }
+      }
     })
     j.requested(10_000, 0)
+    j.spend(11_990, "key1_frame", 700, 0.001)
     j.settled(12_000, 2_000, [600, 0, 100, 0], 0.001)
     j.run("completed", 12_000)
     const report = RunTiming.fold(j.events, "run-1")
@@ -612,21 +688,39 @@ describe("RunTiming.fold", () => {
       startMs: 500,
       durationMs: 9_500,
       cause: "outdated_context, window",
+      contextBefore: 180_000,
+      contextAfter: 40_000,
+      freed: 120_000,
       marks: { kept: 2, squashed: 1, removed: 3 },
       spent: 5_900
     }])
-    // A settled summary call is a row like any other, and its time is compaction time.
+    // The summary call is a settled row like any other, and its time is compaction time.
     expect(report.calls).toMatchObject([
-      { purpose: "compaction", settled: true, durationMs: 7_000, usage: { input: 5_000, written: 900 } },
-      { purpose: "frame", settled: true }
+      {
+        frame: 0,
+        purpose: "compaction",
+        settled: true,
+        startMs: 1_000,
+        durationMs: 7_000,
+        waitMs: 2_500,
+        writingMs: 4_400,
+        tries: 1,
+        usage: { input: 5_000, written: 900 },
+        spent: 5_900,
+        costUsd: 0.03
+      },
+      { frame: 0, purpose: "frame", settled: true }
     ])
     expect(report.time).toEqual({ modelMs: 2_000, cellsMs: 0, judgeMs: 0, compactionMs: 9_500, otherMs: 500 })
-    expect(report.spend.map((row) => [row.purpose, row.calls, row.spent])).toEqual([["frame", 1, 700], [
-      "compaction",
-      1,
-      5_900
-    ]])
-    expect(report.derived.map((entry) => entry.field)).not.toContain("compaction total")
+    expect(report.spend).toMatchObject([
+      { purpose: "frame", calls: 1, spent: 700 },
+      { purpose: "compaction", calls: 1, input: 5_000, written: 900, spent: 5_900 }
+    ])
+    expect(report.total.spent).toBe(report.ledger!.spent)
+    const fields = report.derived.map((entry) => entry.field)
+    for (const field of ["compaction total", "unsettled call total", "unsettled call tokens"]) {
+      expect(fields).not.toContain(field)
+    }
   })
 
   it("is total over an empty or malformed journal", () => {
@@ -846,18 +940,10 @@ describe("RunTiming.render", () => {
     }
     expect(cellsOf(spend, 0)).toMatchObject({ input: "8,500", cached: "3,000", thinking: "650", written: "1,250" })
 
-    expect(table(text, "Compactions (seconds)").rows).toEqual([[
-      "2",
-      "50.0",
-      "10.0",
-      "—",
-      "—",
-      "—",
-      "1",
-      "2",
-      "0",
-      "900"
-    ]])
+    expect(table(text, "Compactions (seconds)")).toEqual({
+      header: ["frame", "start", "total", "cause", "before", "after", "tokens"],
+      rows: [["2", "50.0", "10.0", "—", "—", "—", "900"]]
+    })
     expect(table(text, "Judge readings that fired (seconds)").rows).toEqual([
       ["1", "judge", "50.1", "0.3", "supervisor, nudged"]
     ])
@@ -893,14 +979,16 @@ describe("RunTiming.render", () => {
       }
     })
     j.requested(10_000, 1)
-    j.settled(12_000, 2_000, [1_000, 800, 40, 0], 0.01)
+    j.settled(12_000, 2_000, [1_000, 800, 40, 0], 0.01, {
+      stages: { firstEventMs: 900, firstOutputMs: 1_000, lastOutputMs: 1_900 }
+    })
     j.run("completed", 12_000)
     const text = RunTiming.render(RunTiming.fold(j.events, "run-1"))
     const calls = table(text, "Model calls (seconds)")
     expect(calls.header).toEqual(["#", "frame", "ask", "purpose", "start", "total", "wait", "think", "write"])
     expect(calls.rows).toEqual([
       ["1", "0", "1", "frame", "0.0", "10.0", "2.3", "5.1", "2.4"],
-      ["2", "1", "1", "frame", "10.0", "2.0", "—", "—", "—"]
+      ["2", "1", "1", "frame", "10.0", "2.0", "1.0", "—", "0.9"]
     ])
     expect(table(text, "Model call tokens").rows[0]).toEqual([
       "1",
@@ -917,6 +1005,10 @@ describe("RunTiming.render", () => {
     expect(table(text, "Wait by stage (seconds from the call's start)")).toEqual({
       header: ["#", "prepared", "signed", "sent", "headers", "1st event", "1st thinking", "1st output"],
       rows: [["1", "0.003", "0.005", "0.009", "2.100", "2.150", "2.300", "7.400"]]
+    })
+    expect(table(text, "Stream as the harness saw it (seconds from the call's start)")).toEqual({
+      header: ["#", "1st event", "1st thinking", "1st output", "last output"],
+      rows: [["2", "0.900", "—", "1.000", "1.900"]]
     })
     expect(table(text, "After the first output (seconds from the call's start)")).toEqual({
       header: ["#", "last output", "completed", "closed", "tries", "request bytes", "tier"],
