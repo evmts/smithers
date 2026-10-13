@@ -688,6 +688,37 @@ describe("FlowBinding.make", () => {
     })
   })
 
+  it("reports what kind of failure the handler met in identifiers only, and tells the cell no more than before", async () => {
+    const reported: Array<Cell.FailureKind> = []
+    const failing = (failure: unknown) =>
+      FlowBinding.make({ flow: echo, handler: () => Effect.fail(failure) }).run(call("echo", { text: "hi" })).pipe(
+        Effect.provideService(Cell.Failures, (kind) => Effect.sync(() => void reported.push(kind))),
+        Effect.runPromise
+      )
+
+    const result = await failing({
+      _tag: "StdError",
+      code: "request_failed",
+      message: "spawn E2BIG /home/operator/SYNTHETIC_SECRET"
+    })
+    // A tag or a code that is prose, not a name, is not let through.
+    await failing({ _tag: "Lookup failed for SYNTHETIC_SECRET", code: "has spaces" })
+    await failing("a bare string")
+    await failing(null)
+
+    expect(reported).toEqual([{ tag: "StdError", code: "request_failed" }, {}, {}, {}])
+    expect(result).toMatchObject({ outcome: "failure", code: "flow_failed", message: "Flow echo failed." })
+    expect(JSON.stringify([result, reported])).not.toContain("SYNTHETIC_SECRET")
+    // Outside a call nobody is listening, and the binding behaves the same.
+    await expect(
+      Effect.runPromise(
+        FlowBinding.make({ flow: echo, handler: () => Effect.fail({ _tag: "StdError" }) }).run(
+          call("echo", { text: "hi" })
+        )
+      )
+    ).resolves.toMatchObject({ outcome: "failure", message: "Flow echo failed." })
+  })
+
   it("publishes only details explicitly selected by the typed renderer", async () => {
     const failure = { status: 404, request: { headers: { Authorization: "SYNTHETIC_SECRET" } } }
     let observed: unknown

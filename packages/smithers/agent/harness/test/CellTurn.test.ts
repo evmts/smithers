@@ -3891,6 +3891,28 @@ describe("CellTurn cell classification", () => {
     expect(work(events)[0]).toEqual({ kind: "threw", calls: 1, callMs: 0 })
   })
 
+  it("says what kind of failure a flow's handler met, and nothing for a failure that named none", async () => {
+    const { events } = await run({
+      state: reading(1),
+      script: [
+        emits(
+          `await ctx.call("fs/list", { path: "a" })\nawait ctx.call("fs/list", { path: "b" })\nawait ctx.call("fs/list", { path: "c" })\nctx.done("done")`
+        )
+      ],
+      calls: [
+        { _tag: "Failure", message: "Flow fs/list failed.", kind: { tag: "StdError", code: "request_failed" } },
+        { _tag: "Failure", message: "Flow fs/list failed." },
+        { _tag: "Success", value: ["c.ts"] }
+      ]
+    })
+
+    expect(of(events, "cell-call-settled").map(({ reason, result }) => ({ outcome: result.outcome, reason }))).toEqual([
+      { outcome: "failure", reason: { tag: "StdError", code: "request_failed" } },
+      { outcome: "failure", reason: undefined },
+      { outcome: "success", reason: undefined }
+    ])
+  })
+
   it("says a reply with no runnable cell was rejected, having run nothing", async () => {
     const { events } = await run({
       state: reading(1, 0),

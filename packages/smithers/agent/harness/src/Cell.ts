@@ -25,7 +25,7 @@
 import * as Digest from "@smthrs/core/Digest"
 import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import * as Descriptor from "@smthrs/registry/Descriptor"
-import { Cause, Effect, Option, Result, Schema } from "effect"
+import { Cause, Context, Effect, Option, Result, Schema } from "effect"
 import { HarnessError } from "./HarnessError.ts"
 import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.ts"
 
@@ -362,6 +362,73 @@ export type CallFailureCode = typeof CallFailureCode.Type
  * @slop
  */
 export const defaultCallFailureCode: CallFailureCode = "flow_failed"
+
+/**
+ * What kind of failure a flow's handler met, in identifiers only.
+ *
+ * A handler's failure is opaque to the cell unless its binding declares a
+ * public message, and "Flow bash failed." is then all a run's record says. The
+ * failure's `_tag` and its own `code` are names its author chose, not data it
+ * carried, so they may be journaled where its message may not: they tell a
+ * command that could not be started from one that ran and failed.
+ *
+ * @category models
+ * @since 1.0.0-rc.1
+ */
+export interface FailureKind {
+  readonly tag?: string | undefined
+  readonly code?: string | undefined
+}
+
+/**
+ * The durable schema of {@link FailureKind}.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.1
+ */
+export const FailureKind = Schema.Struct({
+  tag: Schema.optional(Schema.String),
+  code: Schema.optional(Schema.String)
+})
+
+/**
+ * What {@link failureKind} lets through: a name, never prose.
+ */
+const identifier = /^[A-Za-z][\w.:/-]{0,95}$/
+
+/**
+ * The {@link FailureKind} of one handler failure, read without trusting it:
+ * a failure with throwing accessors, or with a tag or code that is not an
+ * identifier, says nothing.
+ *
+ * @category conversions
+ * @since 1.0.0-rc.1
+ */
+export const failureKind = (failure: unknown): FailureKind => {
+  try {
+    const { _tag, code } = failure as { readonly _tag?: unknown; readonly code?: unknown }
+    return {
+      ...(typeof _tag === "string" && identifier.test(_tag) ? { tag: _tag } : {}),
+      ...(typeof code === "string" && identifier.test(code) ? { code } : {})
+    }
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * Where a flow binding reports the {@link FailureKind} of a handler failure.
+ * The controller provides it around each flow call and journals what arrives
+ * on that call's settlement; outside a call it does nothing. It tells the
+ * cell nothing: the call result is unchanged.
+ *
+ * @category services
+ * @since 1.0.0-rc.1
+ */
+export const Failures = Context.Reference<(kind: FailureKind) => Effect.Effect<void>>(
+  "@smthrs/harness/Cell/Failures",
+  { defaultValue: () => () => Effect.void }
+)
 
 /**
  * The one action that recovers each failure class, stated to the cell.

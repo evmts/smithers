@@ -1744,6 +1744,43 @@ describe("a call carries what its declaration says it does", () => {
       }]
     })
 
+  it("journals what kind of failure a handler met, through the real engine, without telling the cell", async () => {
+    class LookupFailed extends Schema.TaggedError<LookupFailed>()("test/LookupFailed", {
+      code: Schema.String,
+      message: Schema.String
+    }) {}
+    const outcome = await drive(
+      collect({
+        flows: [
+          FlowBinding.source("host/inspect", [
+            FlowBinding.make({
+              flow: inspect,
+              handler: () =>
+                Effect.fail(new LookupFailed({ code: "request_failed", message: "spawn E2BIG /home/operator" }))
+            })
+          ])
+        ],
+        cells: [
+          `const seen = await ctx.call("inspect", { path: "/repo/alpha.md" })
+ctx.done(String(seen.ok) + ":" + seen.error.message)`
+        ]
+      })
+    )
+    expect(outcome._tag).toBe("completed")
+
+    const [failed] = firstFrameSettledCalls(eventsOf(outcome))
+    // The cell read the opaque refusal and nothing of the failure itself.
+    expect(failed?.result).toMatchObject({ outcome: "failure", code: "flow_failed", message: "Flow inspect failed." })
+    // The run's record names the failure's tag and its own code.
+    expect(failed?.reason).toEqual({ tag: "test/LookupFailed", code: "request_failed" })
+    expect(AgentSession.trace(failed!)!.payload).toMatchObject({
+      outcome: "failure",
+      code: "flow_failed",
+      reason: { tag: "test/LookupFailed", code: "request_failed" }
+    })
+    expect(JSON.stringify(eventsOf(outcome))).not.toContain("E2BIG")
+  }, 60_000)
+
   it("produces standard, custom, shadowed and unknown semantics for a card to read", async () => {
     const filesystem = files({ "/repo/alpha.md": "first line\nsecond line" })
     const note = (input: { readonly path: string }) => Effect.succeed({ note: `about ${input.path}` })

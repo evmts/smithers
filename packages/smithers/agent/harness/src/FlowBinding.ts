@@ -49,7 +49,7 @@ import type { Context, Schema as SchemaTypes } from "effect"
 import { Effect, Option, Result, Schema, SchemaAST } from "effect"
 import { width as callLedgerWidth } from "./CallLedger.ts"
 import type * as Cell from "./Cell.ts"
-import { CallResult } from "./Cell.ts"
+import { CallResult, failureKind, Failures } from "./Cell.ts"
 import { HarnessError } from "./HarnessError.ts"
 import * as elide from "./internal/elide.ts"
 import { refusal, timedOut } from "./internal/refusal.ts"
@@ -382,6 +382,9 @@ export const make = <
         if (produced._tag === "Failure") {
           const escalate = escalated(produced.failure)
           if (escalate !== undefined) return yield* Effect.fail(escalate)
+          // For the run's record only: what kind of failure this was. The
+          // cell is told what `publicError` selects below and nothing more.
+          yield* (yield* Failures)(failureKind(produced.failure))
           const message = publicMessage(produced.failure, options.publicError)
           const rendered = message === undefined
             ? `Flow ${descriptor.name} failed.`

@@ -2407,6 +2407,8 @@ const callHandler = (
     }
     yield* emit(new AgentEvent.CellCallStarted({ eventType: eventType.cellCallStarted, call }))
     const issuedAt = yield* Clock.currentTimeMillis
+    // What kind of failure the flow's handler met, when its binding says.
+    let kind: Cell.FailureKind = {}
     const result = yield* issued(
       engine,
       state,
@@ -2418,7 +2420,8 @@ const callHandler = (
       // pays for them is a reading this frame's cell asked for.
       Effect.suspend(() => engine.call(call)).pipe(
         Effect.provideService(AgentEvent.Journal, emit),
-        Effect.provideService(EngineLike.Spend, { purpose: "reading", frame: state.frame })
+        Effect.provideService(EngineLike.Spend, { purpose: "reading", frame: state.frame }),
+        Effect.provideService(Cell.Failures, (reported) => Effect.sync(() => void (kind = reported)))
       ),
       replaying,
       call
@@ -2432,7 +2435,8 @@ const callHandler = (
         flowName: call.flowName,
         identity: call.identity,
         result,
-        durationMillis
+        durationMillis,
+        ...(result.outcome === "failure" && Object.keys(kind).length > 0 ? { reason: kind } : {})
       })
     )
     return result

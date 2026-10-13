@@ -69,6 +69,12 @@
   `CompactionSettled.summaryCall`: the model package's wire timing
   (`ModelEvent.Timing`) and served tier, copied from its settle event (#3844).
 
+- `CellCallSettled.reason` names what kind of failure a flow's handler met:
+  the failure's `tag` and its own `code`, identifiers only (`Cell.FailureKind`,
+  `Cell.failureKind`). `FlowBinding.make` reports it through `Cell.Failures`,
+  which the controller provides around each flow call. What the cell is told
+  is unchanged, and the failure's message is still never published (#3844).
+
 - `ExternalTranscript.decodeCodex` reads what Codex records outside its
   completed items: a message between agents (`agent_message`), whose encrypted
   body is one `encrypted` placeholder; a failed code-mode script with the

@@ -1064,6 +1064,13 @@ that did the work, so a replayed frame reports the replay's own readings:
   the flow calls the cell issued, refused ones included, and `callMs` sums
   what they took. `CellCallSettled.durationMillis` is one call, from issue to
   settlement.
+- `CellCallSettled.reason` is the `Cell.FailureKind` of a handler failure: its
+  `tag` and its own `code`, each only when it reads as an identifier. A
+  binding reports it through `Cell.Failures`, a `Context.Reference` the
+  controller provides around each flow call, and `Cell.failureKind` reads it
+  off the failure without trusting it. The failure's message stays as opaque
+  as it was: the cell is told what the binding's `publicError` selects and
+  nothing else, and the record carries names, never the failure's text.
 
 A host that keeps a spend ledger labels each charge from `EngineLike.Spend`, a
 `Context.Reference` the controller provides around every sealed step, every

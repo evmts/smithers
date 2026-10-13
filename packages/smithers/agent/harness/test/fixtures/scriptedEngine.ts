@@ -31,7 +31,12 @@ export type CallStep =
      */
     readonly taking?: (() => void) | undefined
   }
-  | { readonly _tag: "Failure"; readonly message: string }
+  | {
+    readonly _tag: "Failure"
+    readonly message: string
+    /** What kind of failure the flow's binding reports for the run's record. */
+    readonly kind?: Cell.FailureKind | undefined
+  }
   | { readonly _tag: "PermissionRequired"; readonly request: Permission.PermissionRequired }
   | { readonly _tag: "Interrupt" }
 
@@ -160,7 +165,10 @@ export const make = (
             step.taking?.()
             return Effect.succeed(new Cell.CallResult({ outcome: "success", value: step.value }))
           case "Failure":
-            return Effect.succeed(
+            return Effect.as(
+              step.kind === undefined
+                ? Effect.void
+                : Effect.flatMap(Cell.Failures, (report) => report(step.kind!)),
               new Cell.CallResult({ outcome: "failure", value: null, message: step.message })
             )
           case "PermissionRequired":

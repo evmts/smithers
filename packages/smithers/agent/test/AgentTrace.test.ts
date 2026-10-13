@@ -18,7 +18,7 @@ import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
-import { Effect, Option, Result } from "effect"
+import { Effect, Option, Result, type Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Frame from "../harness/src/internal/frame.ts"
 import * as AgentSession from "../src/AgentSession.ts"
@@ -689,6 +689,9 @@ describe("trace", () => {
             callId: AgentSession.callId(identity),
             flowName: "notes/save",
             outcome: "failure",
+            // The flow failed on its own terms: no code on the result, and the
+            // record names the one that stands for.
+            code: "flow_failed",
             message: "The note was locked",
             value: null
           }
@@ -948,10 +951,129 @@ describe("trace", () => {
         input: {
           truncated: true,
           bytes: new TextEncoder().encode(CanonicalJson.stringify(input)).byteLength,
-          digest: Digest.digest(CanonicalJson.stringify(input))
+          digest: Digest.digest(CanonicalJson.stringify(input)),
+          // Where the call was aimed is small, and is kept beside the digest.
+          path: "/notes/log.md"
         }
       }
     })
+  })
+
+  it("keeps where an oversized call was aimed beside its digest, and leaves the large fields out", () => {
+    // A `bash` call whose script made its input too large to journal used to
+    // leave `{ truncated, bytes, digest }` and nothing else, so a reader could
+    // not tell a command sent into the container from one run on the host.
+    const input = {
+      mode: "unhermetic",
+      container: "fb0bbd386555",
+      cwd: "/app",
+      interpreter: "python3",
+      timeoutMs: 10_000,
+      background: false,
+      stdin: null,
+      args: ["-c", "print(1)"],
+      env: { PYTHONUNBUFFERED: "1" },
+      script: "x = 1\n".repeat(12_000),
+      note: "n".repeat(300)
+    }
+    const started = (carried: Schema.Json) =>
+      new AgentEvent.CellCallStarted({
+        eventType: "flows.harness.cell-call-started.v1",
+        call: new Cell.Call({ ...call, flowName: "bash", input: carried })
+      })
+    const payload = AgentSession.trace(started(input))!.payload as { readonly input: Record<string, unknown> }
+    const marker = {
+      truncated: true,
+      bytes: new TextEncoder().encode(CanonicalJson.stringify(input)).byteLength,
+      digest: Digest.digest(CanonicalJson.stringify(input))
+    }
+
+    expect(marker.bytes).toBeGreaterThan(AgentSession.maxTracedBytes)
+    // Every small scalar, under its own name; no array, no object, and no
+    // string past the bound a routing field fits in.
+    expect(payload.input).toEqual({
+      ...marker,
+      mode: "unhermetic",
+      container: "fb0bbd386555",
+      cwd: "/app",
+      interpreter: "python3",
+      timeoutMs: 10_000,
+      background: false,
+      stdin: null
+    })
+    expect(Redaction.make()(payload.input)).toEqual(payload.input)
+
+    // A field of the input cannot pass for the marker's own.
+    const shadowing = { ...input, truncated: false, bytes: 1, digest: "mine" }
+    const shadowed = AgentSession.trace(started(shadowing))!.payload as { readonly input: Record<string, unknown> }
+    expect(shadowed.input).toMatchObject({
+      truncated: true,
+      bytes: new TextEncoder().encode(CanonicalJson.stringify(shadowing)).byteLength,
+      digest: Digest.digest(CanonicalJson.stringify(shadowing)),
+      container: "fb0bbd386555"
+    })
+
+    // An input that fits is written whole, as it always was.
+    expect((AgentSession.trace(started({ container: "c", script: "x = 1" }))!.payload as { input: unknown }).input)
+      .toEqual({ container: "c", script: "x = 1" })
+
+    // A run journaled with the bare marker resumes onto the same row.
+    const type = "control.agent.cell-call-started"
+    const row = JSON.parse(JSON.stringify(payload)) as Record<string, unknown>
+    expect(AgentSession.traceIdentity(4, 2, cell.digest, type, row))
+      .toBe(AgentSession.traceIdentity(4, 2, cell.digest, type, { ...row, input: marker }))
+    // The digest still separates two different oversized inputs.
+    expect(AgentSession.traceIdentity(4, 2, cell.digest, type, row))
+      .not.toBe(AgentSession.traceIdentity(4, 2, cell.digest, type, { ...row, input: { ...marker, digest: "other" } }))
+  })
+
+  it("journals the code a failed call failed with, and none for a call that succeeded", () => {
+    const settledWith = (result: Cell.CallResult) =>
+      AgentSession.trace(
+        new AgentEvent.CellCallSettled({
+          eventType: "flows.harness.cell-call-settled.v1",
+          flowName: "bash",
+          identity,
+          result
+        })
+      )!.payload as Record<string, unknown>
+    const failed = settledWith(
+      new Cell.CallResult({ outcome: "failure", value: null, code: "timeout", message: "Flow bash timed out." })
+    )
+    expect(failed).toMatchObject({ outcome: "failure", code: "timeout", message: "Flow bash timed out." })
+    // A flow's own failure carries no code on the result; the journal says
+    // which code that absence stands for instead of leaving a reader to know.
+    expect(settledWith(new Cell.CallResult({ outcome: "failure", value: null, message: "Flow bash failed." })))
+      .toMatchObject({ outcome: "failure", code: Cell.defaultCallFailureCode })
+    const passed = settledWith(new Cell.CallResult({ outcome: "success", value: { exitCode: 0 } }))
+    expect(passed).not.toHaveProperty("code")
+    expect(passed).not.toHaveProperty("reason")
+
+    // What kind of failure the handler met, when its binding said: names only.
+    const explained = AgentSession.trace(
+      new AgentEvent.CellCallSettled({
+        eventType: "flows.harness.cell-call-settled.v1",
+        flowName: "bash",
+        identity,
+        result: new Cell.CallResult({ outcome: "failure", value: null, message: "Flow bash failed." }),
+        reason: { tag: "StdError", code: "request_failed" }
+      })
+    )!.payload as Record<string, unknown>
+    expect(explained).toMatchObject({ code: "flow_failed", reason: { tag: "StdError", code: "request_failed" } })
+    expect(Redaction.make()(explained)).toEqual(explained)
+    expect(AgentSession.traceIdentity(4, 2, cell.digest, "control.agent.cell-call-settled", explained))
+      .toBe(AgentSession.traceIdentity(4, 2, cell.digest, "control.agent.cell-call-settled", {
+        callId: explained["callId"],
+        flowName: "bash",
+        outcome: "failure",
+        message: "Flow bash failed.",
+        value: null
+      }))
+
+    const type = "control.agent.cell-call-settled"
+    const { code: _, ...before } = JSON.parse(JSON.stringify(failed)) as Record<string, unknown>
+    expect(AgentSession.traceIdentity(4, 2, cell.digest, type, JSON.parse(JSON.stringify(failed))))
+      .toBe(AgentSession.traceIdentity(4, 2, cell.digest, type, before))
   })
 
   it("replaces an oversized failure message with its byte count and full-value digest", () => {
@@ -973,6 +1095,7 @@ describe("trace", () => {
         callId: AgentSession.callId(identity),
         flowName: "test/run",
         outcome: "failure",
+        code: "flow_failed",
         message: {
           truncated: true,
           bytes: new TextEncoder().encode(message).byteLength,

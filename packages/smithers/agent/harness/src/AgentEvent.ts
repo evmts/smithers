@@ -610,7 +610,13 @@ export class CellCallSettled extends Schema.TaggedClass<CellCallSettled>(
    * Wall-clock milliseconds from the call being issued to its settlement, on
    * the injected clock. Absent from journals written before calls were timed.
    */
-  durationMillis: Schema.optional(NonNegativeSafeInt)
+  durationMillis: Schema.optional(NonNegativeSafeInt),
+  /**
+   * What kind of failure the flow's handler met, in identifiers only: see
+   * `Cell.FailureKind`. Absent for a call that succeeded, for a failure the
+   * boundary raised itself, and for a settlement replayed from its record.
+   */
+  reason: Schema.optional(Cell.FailureKind)
 }) {}
 
 /**

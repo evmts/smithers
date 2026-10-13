@@ -23,7 +23,14 @@
     `cellMs`, `judgeMs`, `compactionMs`, `otherMs`; the last five add up to
     the first).
   - `control.agent.cell-settled`: `work` (`kind`, `calls`, `callMs`).
-    `control.agent.cell-call-settled`: `durationMillis`.
+    `control.agent.cell-call-settled`: `durationMillis`, `code` (why a failed
+    call failed; `flow_failed` for a flow's own failure) and `reason` (the
+    `tag` and `code` of the handler's failure, identifiers only).
+  - `control.agent.cell-call-started`: an `input` too large to journal keeps
+    its scalar fields of at most 256 bytes each (4,096 together) beside
+    `truncated`, `bytes` and `digest`, so a truncated `bash` call still says
+    its `container`, `cwd` and `interpreter`. The record's identity hashes
+    the marker alone, as it did.
   - `flows.agent.usage.v1` (`Budget.UsageRecord`): `purpose` and `frame`, read
     from `EngineLike.Spend` where the call is made, and `parts` (`purpose`,
     `spent`, `costUsd`) when one charge covers readings of more than one

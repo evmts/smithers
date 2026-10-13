@@ -416,7 +416,9 @@ const lateFields: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   // that already exists in journals, and a resumed pre-enrichment run must
   // deduplicate its recorded prefix rather than publish all of it again.
   ["control.agent.cell-call-started", new Set(["callId", "descriptor"])],
-  ["control.agent.cell-call-settled", new Set(["callId"])],
+  // `code` names why a failed call failed, on a record that already said it had.
+  // and `reason` what kind of failure its handler met.
+  ["control.agent.cell-call-settled", new Set(["callId", "code", "reason"])],
   // The five events below reached every consumer countable and otherwise
   // empty: the projection's `default` arm dropped every field they carried.
   // Their whole payload is late, so their whole payload is excluded.
@@ -557,7 +559,15 @@ export const traceIdentity = (
   // its recorded prefix instead of publishing all of it a second time.
   const late = lateFields.get(eventType) ?? noLateFields
   const material = Object.fromEntries(
-    Object.entries(payload).filter(([key]) => !observationOnly.has(key) && !late.has(key))
+    Object.entries(payload).filter(([key]) => !observationOnly.has(key) && !late.has(key)).map((
+      [key, value]
+    ) => [
+      key,
+      // A field left out for its size is identified by its marker alone. The
+      // routing fields {@link tracedInput} keeps beside one were added after
+      // journals held bare markers, and a bare marker hashes as it did.
+      isMarker(value) ? { truncated: true, bytes: value.bytes, digest: value.digest } : value
+    ])
   )
   const digest = Digest.digest(CanonicalJson.stringify({ cell, eventType, frame, material, ordinal }))
   return JournalEvent.SourceSeq.make(Number.parseInt(digest.slice(0, 12), 16))
@@ -634,6 +644,50 @@ const bounded = <A extends Schema.Json | string>(
 }
 
 const tracedField = <A extends Schema.Json | string>(value: A): A | Marker => bounded(value).field
+
+/** The most one kept field may take, and the most all of them may take together. */
+const maxKeptFieldBytes = 256
+const maxKeptBytes = 4_096
+
+/** A marker's own keys, which no field kept beside it may stand in for. */
+const markerKeys: ReadonlySet<string> = new Set(["truncated", "bytes", "digest"])
+
+const isMarker = (value: unknown): value is Marker => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false
+  const { bytes, digest, truncated } = value as Record<string, unknown>
+  return truncated === true && typeof bytes === "number" && typeof digest === "string"
+}
+
+/**
+ * A call's input bounded for the trail, with where the call was aimed kept
+ * beside the marker when the whole of it does not fit.
+ *
+ * A marker alone says how large an input was and what it digested to, and
+ * drops everything a reader routes on: a `bash` call whose script is too
+ * large to journal lost its `container`, its `cwd` and its `interpreter`, so
+ * the record could no longer say whether the command ran in the container or
+ * on the host. Those are small. So the scalar fields of an oversized object
+ * input are kept under their own names, each no larger than
+ * {@link maxKeptFieldBytes} and {@link maxKeptBytes} between them, and only
+ * the large fields, the arrays and the objects are left to the digest. The
+ * marker's own three keys are written last and cannot be shadowed.
+ *
+ * The kept fields are outside the record's identity: see {@link traceIdentity}.
+ */
+const tracedInput = (input: Schema.Json): Schema.Json => {
+  const traced = tracedField(input)
+  if (traced === input || typeof input !== "object" || input === null || Array.isArray(input)) return traced
+  let room = maxKeptBytes
+  const kept: Record<string, Schema.Json> = {}
+  for (const [key, value] of Object.entries(input)) {
+    if (markerKeys.has(key) || (typeof value === "object" && value !== null)) continue
+    const size = traceEncoder.encode(JSON.stringify([key, value])).byteLength
+    if (size > maxKeptFieldBytes || size > room) continue
+    room -= size
+    kept[key] = value
+  }
+  return { ...kept, ...(traced as Marker) }
+}
 
 /**
  * The top-level marker a record carries when any of the fields it is rebuilt
@@ -1048,7 +1102,7 @@ export const trace = (
         payload: {
           callId: callId(event.call.identity),
           flowName: event.call.flowName,
-          input: tracedField(event.call.input),
+          input: tracedInput(event.call.input),
           ...(descriptor === undefined ? {} : { descriptor })
         }
       }
@@ -1060,12 +1114,20 @@ export const trace = (
           callId: callId(event.identity),
           flowName: event.flowName,
           outcome: event.result.outcome,
+          // Why a failed call failed, from the closed set a cell branches on.
+          // A flow's own failure carries none on the result, and the record
+          // names the code that absence stands for.
+          ...(event.result.outcome === "failure"
+            ? { code: event.result.code ?? Cell.defaultCallFailureCode }
+            : {}),
           // A failure message is free text a handler chose, and a compiler or
           // test runner writes megabytes of it.
           message: event.result.message === undefined ? undefined : tracedField(event.result.message),
           value: tracedField(event.result.value),
           // How long the call took, from issue to settlement (#3844).
-          ...(event.durationMillis === undefined ? {} : { durationMillis: event.durationMillis })
+          ...(event.durationMillis === undefined ? {} : { durationMillis: event.durationMillis }),
+          // What kind of failure the flow's handler met, in identifiers only.
+          ...(event.reason === undefined ? {} : { reason: event.reason })
         }
       }
     case "cell-printed":
