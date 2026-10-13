@@ -97,17 +97,18 @@ func TestProducerRenewalCannotReviveExpiredOrReleasedLease(t *testing.T) {
 			}
 			var previous time.Time
 			require.NoError(t, store.pool.QueryRow(ctx, `SELECT producer_lease_expires_at FROM chat_turns WHERE id=$1`, grant.TurnID).Scan(&previous))
-			expires, err := store.RenewProducer(ctx, grant, time.Minute)
+			renewal, err := store.RenewProducer(ctx, grant, time.Minute)
 			if tc.live {
 				require.NoError(t, err)
-				require.Equal(t, clock.Now().UTC().Add(time.Minute), expires)
+				require.Equal(t, clock.Now().UTC().Add(time.Minute), renewal.ExpiresAt)
+				require.Zero(t, renewal.HeadBatch, "a producer that committed nothing renews at journal head zero")
 				clock.advance(time.Second)
 				_, err = store.Producer(ctx, grant.TurnID, grant.Generation, grant.Token)
 				require.NoError(t, err, "timely renewal keeps the producer alive past its original deadline")
 				return
 			}
 			require.ErrorIs(t, err, ErrProducerFenced)
-			require.True(t, expires.IsZero())
+			require.True(t, renewal.ExpiresAt.IsZero())
 			var after time.Time
 			require.NoError(t, store.pool.QueryRow(ctx, `SELECT producer_lease_expires_at FROM chat_turns WHERE id=$1`, grant.TurnID).Scan(&after))
 			require.True(t, previous.Equal(after), "refused renewal must not alter the recorded lease")

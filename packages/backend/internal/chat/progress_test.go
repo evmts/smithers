@@ -55,7 +55,7 @@ func TestBlockedHostReportsItsLastStageAndSafeCorrelation(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- host.RunChatTurn(ctx, grant) }()
 	<-arrived
-	progress.waiting()
+	require.Positive(t, progress.waiting(0))
 	var waiting map[string]any
 	for _, line := range strings.Split(strings.TrimSpace(logs.text()), "\n") {
 		var record map[string]any
@@ -70,6 +70,7 @@ func TestBlockedHostReportsItsLastStageAndSafeCorrelation(t *testing.T) {
 	require.Equal(t, float64(3), waiting["generation"])
 	require.Equal(t, "sandbox-1", waiting["sandbox_id"])
 	require.Contains(t, waiting, "stage_elapsed_ms")
+	require.Equal(t, float64(0), waiting["head_batch"], "a blocked host that committed nothing is visible as an unmoved journal head")
 	finish()
 	require.NoError(t, <-done)
 	require.Contains(t, logs.text(), `"stage":"host_response"`)

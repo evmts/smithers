@@ -45,7 +45,10 @@ type Dispatcher struct {
 	// backoff is the rerun delay for a generation. Tests shorten it.
 	backoff func(generation int64) time.Duration
 	// scan is the recovery and interruption poll interval.
-	scan    time.Duration
+	scan time.Duration
+	// silence is how long a dispatched host may make no progress before the
+	// attempt is interrupted. Tests shorten it.
+	silence time.Duration
 	mu      sync.Mutex
 	running map[string]runningTurn
 }
@@ -54,7 +57,7 @@ func NewDispatcher(store *Store, host Host, queueSize int, lease time.Duration) 
 	if store == nil || host == nil || queueSize <= 0 || lease <= 0 {
 		return nil, errors.New("invalid chat dispatcher configuration")
 	}
-	d := &Dispatcher{store: store, host: host, lease: lease, queue: make(chan Candidate, queueSize), logger: slog.Default(), backoff: retryDelay, scan: time.Second, running: map[string]runningTurn{}}
+	d := &Dispatcher{store: store, host: host, lease: lease, queue: make(chan Candidate, queueSize), logger: slog.Default(), backoff: retryDelay, scan: time.Second, silence: DefaultHostSilence, running: map[string]runningTurn{}}
 	d.metrics = newMetrics(func() float64 { return float64(len(d.queue)) })
 	return d, nil
 }
@@ -108,7 +111,9 @@ func (d *Dispatcher) claim(ctx context.Context, candidate Candidate) (ProducerGr
 }
 
 // renew keeps the lease ahead of a healthy host. It cancels the turn when the
-// lease is fenced, because another producer may now own it.
+// lease is fenced, because another producer may now own it, and when the host
+// goes silent: a renewed lease proves the producer lives, never that the turn
+// is still moving.
 func (d *Dispatcher) renew(ctx context.Context, grant ProducerGrant, lost context.CancelFunc, progress *turnProgress) {
 	ticker := time.NewTicker(max(d.lease/4, time.Millisecond))
 	defer ticker.Stop()
@@ -118,8 +123,8 @@ func (d *Dispatcher) renew(ctx context.Context, grant ProducerGrant, lost contex
 			return
 		case <-ticker.C:
 		}
-		progress.waiting()
-		if _, err := d.store.RenewProducer(ctx, grant, d.lease); err != nil {
+		renewal, err := d.store.RenewProducer(ctx, grant, d.lease)
+		if err != nil {
 			if ctx.Err() != nil {
 				return
 			}
@@ -128,6 +133,16 @@ func (d *Dispatcher) renew(ctx context.Context, grant ProducerGrant, lost contex
 				lost()
 				return
 			}
+			continue
+		}
+		// A host that neither reaches a new stage nor commits a batch is
+		// wedged: its model stream, its journal callback or its sandbox stopped
+		// answering. Interrupt the attempt so the turn ends with a receipt the
+		// person sees, instead of renewing its lease for hours.
+		if silence := progress.waiting(renewal.HeadBatch); silence > d.silence {
+			progress.stall(silence)
+			lost()
+			return
 		}
 	}
 }
@@ -260,6 +275,12 @@ func (d *Dispatcher) runOne(parent context.Context, candidate Candidate) {
 		// The provider answered with a refusal: a rerun meets the same one.
 		if refusal := (*ProviderRefusal)(nil); errors.As(err, &refusal) {
 			d.fail(detached, grant, refusal.Code, err)
+			return
+		}
+		if progress.silent() {
+			// The host was interrupted for making no progress. A started
+			// provider seals the turn; a sandbox that never reached one reruns.
+			d.retry(detached, grant, "host_stalled", err)
 			return
 		}
 		d.retry(detached, grant, "host_failed", err)

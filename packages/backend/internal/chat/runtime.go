@@ -24,6 +24,11 @@ const (
 	// lease while the host runs. It bounds how long a crashed process holds a
 	// turn before recovery reclaims it.
 	DefaultLease = 2 * time.Minute
+	// DefaultHostSilence bounds how long a dispatched host may report no new
+	// stage and commit no batch. It exceeds the slowest healthy gap, a provider
+	// that answers nothing while it reads a long prompt, and bounds a wedged
+	// host, whose turn would otherwise renew its lease for hours (#3812).
+	DefaultHostSilence = 5 * time.Minute
 )
 
 type RuntimeOptions struct {
@@ -44,6 +49,9 @@ type RuntimeOptions struct {
 	// InstallOrigin is read for each turn so Settings address changes apply
 	// without restarting the dispatcher or exposing a callback listener.
 	InstallOrigin func() string
+	// HostSilence overrides DefaultHostSilence, the no-progress bound on one
+	// dispatched host.
+	HostSilence time.Duration
 }
 
 type Runtime struct {
@@ -72,7 +80,10 @@ func NewRuntime(pool *pgxpool.Pool, host ports.ChatHost, producerBaseURL string,
 	if options.Lease == 0 {
 		options.Lease = DefaultLease
 	}
-	if options.QueueSize < 1 || options.Concurrency < 1 || options.Lease <= 0 {
+	if options.HostSilence == 0 {
+		options.HostSilence = DefaultHostSilence
+	}
+	if options.QueueSize < 1 || options.Concurrency < 1 || options.Lease <= 0 || options.HostSilence <= 0 {
 		return nil, errors.New("chat runtime options are invalid")
 	}
 	if options.Logger == nil {
@@ -88,6 +99,7 @@ func NewRuntime(pool *pgxpool.Pool, host ports.ChatHost, producerBaseURL string,
 		return nil, err
 	}
 	dispatcher.logger = options.Logger
+	dispatcher.silence = options.HostSilence
 	store.latencies = dispatcher.metrics.latencies
 	handler := &Handler{PrivateConversations: options.PrivateConversations, ContextRepository: options.ContextRepository, Store: store, Dispatcher: dispatcher, Sources: options.Sources, credentials: credentials, logger: options.Logger}
 	return &Runtime{Handler: handler, dispatcher: dispatcher, concurrency: options.Concurrency}, nil

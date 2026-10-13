@@ -624,45 +624,56 @@ func (s *Store) MarkProviderStarted(ctx context.Context, grant ProducerGrant) er
 	return nil
 }
 
+// ProducerRenewal is what one renewal read under the turn's row lock: the new
+// lease expiry, and the committed journal head that proves whether the host is
+// still making durable progress.
+type ProducerRenewal struct {
+	ExpiresAt time.Time
+	HeadBatch int64
+}
+
 // RenewProducer extends a live producer's lease. It is fenced by generation
-// and token, so a producer that lost its claim cannot take the turn back.
-func (s *Store) RenewProducer(ctx context.Context, grant ProducerGrant, lease time.Duration) (time.Time, error) {
+// and token, so a producer that lost its claim cannot take the turn back. It
+// returns the journal head with the lease, so a dispatcher watching for a
+// silent host costs no extra query.
+func (s *Store) RenewProducer(ctx context.Context, grant ProducerGrant, lease time.Duration) (ProducerRenewal, error) {
 	if lease <= 0 {
-		return time.Time{}, ErrInvalidRequest
+		return ProducerRenewal{}, ErrInvalidRequest
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return time.Time{}, err
+		return ProducerRenewal{}, err
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 	repositoryID, err := optionalInstallRepositoryID(ctx, db.New(tx))
 	if err != nil {
-		return time.Time{}, err
+		return ProducerRenewal{}, err
 	}
 	var previous *time.Time
-	err = tx.QueryRow(ctx, `SELECT producer_lease_expires_at FROM chat_turns t
+	var head int64
+	err = tx.QueryRow(ctx, `SELECT producer_lease_expires_at,head_batch FROM chat_turns t
 		WHERE id=$1 AND producer_generation=$2 AND producer_token_hash=$3 AND state='running' AND NOT terminal AND NOT (`+inactiveInstallAuthor("$4")+`) FOR UPDATE`,
-		grant.TurnID, grant.Generation, hashToken(grant.Token), repositoryID).Scan(&previous)
+		grant.TurnID, grant.Generation, hashToken(grant.Token), repositoryID).Scan(&previous, &head)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return time.Time{}, ErrProducerFenced
+		return ProducerRenewal{}, ErrProducerFenced
 	}
 	if err != nil {
-		return time.Time{}, err
+		return ProducerRenewal{}, err
 	}
 	// Sample the same clock as Claim after acquiring the row lock. A renewal
 	// that waited past expiry cannot revive a released or abandoned producer.
 	now := s.now().UTC()
 	if previous == nil || !previous.After(now) {
-		return time.Time{}, ErrProducerFenced
+		return ProducerRenewal{}, ErrProducerFenced
 	}
 	expiresAt := now.Add(lease)
 	if _, err = tx.Exec(ctx, `UPDATE chat_turns SET producer_lease_expires_at=$2 WHERE id=$1`, grant.TurnID, expiresAt); err != nil {
-		return time.Time{}, err
+		return ProducerRenewal{}, err
 	}
 	if err = tx.Commit(ctx); err != nil {
-		return time.Time{}, err
+		return ProducerRenewal{}, err
 	}
-	return expiresAt, nil
+	return ProducerRenewal{ExpiresAt: expiresAt, HeadBatch: head}, nil
 }
 
 // ReleaseProducer ends the lease of a producer that stopped without a terminal
