@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -247,13 +248,15 @@ type Options struct {
 	HostedBranchMachines bool
 	// EnvGitHubAppCredentials is an explicit Plue adapter; self-hosting leaves it false.
 	EnvGitHubAppCredentials bool
-	CanaryRuns              ports.CanaryRunSource
-	RuntimeStores           ports.RuntimeStores
-	ReadyBindings           func(operations.Bindings)
-	BeforeShutdown          func() error
-	ComputeProvider         sandbox.Provider
-	Admission               admission.Policy
-	Commerce                commerce.Service
+	// PublicMirrors are the composer's public mirrors (app.Config.PublicMirrors).
+	PublicMirrors   []string
+	CanaryRuns      ports.CanaryRunSource
+	RuntimeStores   ports.RuntimeStores
+	ReadyBindings   func(operations.Bindings)
+	BeforeShutdown  func() error
+	ComputeProvider sandbox.Provider
+	Admission       admission.Policy
+	Commerce        commerce.Service
 	// Duties selects which halves of the product this process runs. The zero
 	// value serves HTTP and runs the background workers in one process.
 	Duties                 Duties
@@ -322,6 +325,21 @@ type topology struct {
 func (t topology) hosted() bool     { return t.multitenant }
 func (t topology) workers() bool    { return t.duties != DutiesHTTP }
 func (t topology) servesHTTP() bool { return t.duties != DutiesWorkers }
+
+// selectPublicMirrors is a deployment's mirror list: the composer's names
+// (Options.PublicMirrors) and then SMITHERS_PUBLIC_MIRRORS's, each repository
+// once. An install wraps one repository whose import, not the GitHub pull,
+// creates main, so it refuses any.
+func selectPublicMirrors(composed, configured []string, hosted bool) ([]services.PublicMirror, error) {
+	mirrors, err := services.ParsePublicMirrors(append(slices.Clone(composed), configured...))
+	if err != nil {
+		return nil, err
+	}
+	if len(mirrors) > 0 && !hosted {
+		return nil, errors.New("public mirrors apply to a hosted deployment only")
+	}
+	return mirrors, nil
+}
 
 type runOptions struct {
 	Options
@@ -1365,13 +1383,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		gitHubMainPullService.UseInstallPolicy()
 	}
 	gitHubSyncedRepoService.SetPullMirror(gitHubMainPullService.PullMirror)
-	publicMirrors, err := services.ParsePublicMirrors(cfg.Server.PublicMirrors)
+	publicMirrors, err := selectPublicMirrors(options.PublicMirrors, cfg.Server.PublicMirrors, options.topology.hosted())
 	if err != nil {
 		return err
-	}
-	if len(publicMirrors) > 0 && !options.topology.hosted() {
-		// An install wraps one repository and its import, not the pull, creates main.
-		return errors.New("SMITHERS_PUBLIC_MIRRORS applies to a hosted deployment only")
 	}
 	gitHubWebhookEventWorker.SetMainPull(gitHubMainPullService)
 	// The mythical stack folds every main the pull brings in, admits every

@@ -41,6 +41,11 @@ type Config struct {
 	HostProfile *microsandbox.HostProfile
 	// EnvGitHubAppCredentials is an explicit Plue adapter; self-hosting leaves it false.
 	EnvGitHubAppCredentials bool
+	// PublicMirrors names public GitHub repositories, as owner/repo, that a
+	// hosted deployment always serves signed out under the same name, beside
+	// any SMITHERS_PUBLIC_MIRRORS names (docs/public-mirrors.md). An install
+	// refuses to start with it.
+	PublicMirrors []string
 	// CanaryRuns supplies deployment run evidence for the public status page.
 	// Nil reports unknown; self-hosting does not require a canary service.
 	CanaryRuns    ports.CanaryRunSource
@@ -247,6 +252,7 @@ func (cfg Config) options() compose.Options {
 		InstallRunSummary:          cfg.InstallRunSummary,
 		HostProfile:                cfg.HostProfile,
 		EnvGitHubAppCredentials:    cfg.EnvGitHubAppCredentials,
+		PublicMirrors:              cfg.PublicMirrors,
 		CanaryRuns:                 cfg.CanaryRuns,
 		RuntimeStores:              cfg.RuntimeStores,
 		BeforeShutdown:             cfg.BeforeShutdown,

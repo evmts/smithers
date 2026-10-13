@@ -25,8 +25,13 @@ Each GitHub repository must be public and must declare the pull policy in its
 { "github": { "mirror": "pull" } }
 ```
 
-A malformed entry stops the backend at start. The setting applies to hosted
-deployments only; an install refuses to start with it.
+A program that composes the backend can name mirrors in code instead, with
+`app.Config.PublicMirrors`. The deployment's mirrors are that list followed by
+the environment's, each repository once. Smithers Cloud names its mirrors this
+way, so they ship with the API image.
+
+A malformed entry stops the backend at start. Mirrors apply to hosted
+deployments only; an install refuses to start with any.
 
 ## What the seeder does
 
