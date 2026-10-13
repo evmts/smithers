@@ -150,6 +150,7 @@ test("composer admits in the background and reconnects the same host turn after 
   await composer.fill("Shared prompt")
   await composer.press("Enter")
   await expect.poll(() => requests.length).toBe(1)
+  await expect(composer).not.toBeVisible()
   await page.getByRole("button", { name: "Chat", exact: true }).press("Enter")
   await composer.fill("Unrelated draft")
   await expect(composer).toHaveValue("Unrelated draft")
