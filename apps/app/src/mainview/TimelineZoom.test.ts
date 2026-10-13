@@ -227,6 +227,16 @@ describe("model titles (#3732)", () => {
     expect(foldedRuns(lines.slice(0, 5), [{ ...folds[0]!, entry_id: "gone" }])).toEqual([])
   })
 
+  test("a run's key changes with a line the title prompt reads, and not with one it skips", () => {
+    const run = session(100)
+    const group = { level: 2, first: 0, last: 99 }
+    const key = (changed: number) => foldKey(foldedLine(run.map((each, index) => index === changed ? { ...each, summary: "changed", tone: "failed" } : each), group))
+    const before = foldKey(foldedLine(run, group))
+    // titlePrompt reads the first 30 and the last 10 of a run longer than 40.
+    for (const read of [0, 29, 90, 99]) expect(key(read), `line ${read}`).not.toBe(before)
+    for (const skipped of [30, 50, 89]) expect(key(skipped), `line ${skipped}`).toBe(before)
+  })
+
   test("a title written for exactly a line's key replaces its title, marked written; nothing else changes", () => {
     const [first, second] = folds
     const titles = new Map([[foldKey(first!)!, "Hardened webhook retries"]])

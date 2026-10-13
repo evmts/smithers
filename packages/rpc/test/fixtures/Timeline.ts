@@ -173,7 +173,8 @@ const zoomed: TimelineCard["lines"] = [
 
 export const fixtures = {
   timeline: story("Every tone, the band on two entries", { lines, on_screen: ["entry-11", "entry-12"] }, {
-    expect: ["T12 needs you", "Include S3 fields?", "T9 failed"]
+    // A line with a summary shows it in place of its title.
+    expect: ["Include S3 fields?", "Checks failed", "T8 merged"]
   }),
   one_entry: story("One entry on screen", { lines: lines.slice(0, 1), on_screen: ["entry-10", "entry-10"] }, {
     expect: ["Publish card contracts"]

@@ -704,6 +704,8 @@
 .tree-row[aria-current] { background: var(--surface-2); font-weight: 600; }
 .tree li[data-kind="earlier"] .tree-row { color: var(--text-muted); }
 .tree-row .state { padding: 0; border: 0; background: transparent; font-size: 0; gap: 0; }
+/* The History card (cards.css) reuses the shell's tree rows; their timestamps read as captions. */
+.history-card .tree-row time { flex: none; color: var(--text-muted); font-size: var(--fs-caption); }
 .tree-name { min-width: 0; flex: 1; overflow: hidden; font: 12.5px var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .tree-presence { display: flex; gap: 2px; flex-wrap: wrap; }
 .crumbs { position: relative; }

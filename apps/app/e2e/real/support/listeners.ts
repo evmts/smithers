@@ -1,4 +1,5 @@
-import { spawnSync } from "../../../scripts/test-child"
+// Native, not scripts/test-child: Playwright loads this module as CommonJS, where that wrapper's import.meta does not parse.
+import { spawnSync } from "node:child_process"
 import { request } from "node:http"
 import { connect as tcpConnect } from "node:net"
 
@@ -12,6 +13,9 @@ import { connect as tcpConnect } from "node:net"
 
 /** One listening TCP socket, as `lsof -nP -iTCP -sTCP:LISTEN` names it. `address` is `*` for every interface. */
 export type Listener = { readonly command: string; readonly pid: number; readonly address: string; readonly port: number }
+
+/** A probe that outlives this is killed and throws, as the test-child wrapper's own 30 s bound did. */
+const PROBE_TIMEOUT_MS = 30_000
 
 const LSOF = process.env.SMITHERS_LSOF ?? (process.platform === "darwin" ? "/usr/sbin/lsof" : "lsof")
 
@@ -36,7 +40,7 @@ export const parseListeners = (output: string): Listener[] => {
 
 const lsof = (pids: readonly number[], format: readonly string[]): string => {
   if (pids.length === 0 || pids.some(pid => !Number.isInteger(pid) || pid < 1)) throw new Error(`Listener probe needs process ids: ${JSON.stringify(pids)}`)
-  const listed = spawnSync(LSOF, ["-nP", "-iTCP", "-sTCP:LISTEN", "-a", "-p", pids.join(","), ...format], { encoding: "utf8" })
+  const listed = spawnSync(LSOF, ["-nP", "-iTCP", "-sTCP:LISTEN", "-a", "-p", pids.join(","), ...format], { encoding: "utf8", timeout: PROBE_TIMEOUT_MS, killSignal: "SIGKILL" })
   // lsof exits 1 when any process it was asked about lists nothing: one that does not listen, or one that has
   // exited since the tree was read. What the others listen on is still on stdout.
   if (listed.error || (listed.status !== 0 && listed.status !== 1)) throw listed.error ?? new Error(`lsof exited ${listed.status}: ${listed.stderr}`)
@@ -70,9 +74,9 @@ export const descendants = (root: number, table: string): number[] => {
 
 /** An install's process tree: its root process and everything it started, without the `ps` that read it. */
 export const processTree = (root: number): number[] => {
-  const ps = spawnSync("/bin/ps", ["-axo", "pid=,ppid="], { encoding: "utf8" })
+  const ps = spawnSync("/bin/ps", ["-axo", "pid=,ppid="], { encoding: "utf8", timeout: PROBE_TIMEOUT_MS, killSignal: "SIGKILL" })
   if (ps.error || ps.status !== 0) throw ps.error ?? new Error(`ps exited ${ps.status}: ${ps.stderr}`)
-  return descendants(root, ps.stdout).filter(pid => pid !== ps.pid && pid !== (ps as typeof ps & { supervisorPid?: number }).supervisorPid)
+  return descendants(root, ps.stdout).filter(pid => pid !== ps.pid)
 }
 
 /** Whether a listener accepts loopback connections only. */

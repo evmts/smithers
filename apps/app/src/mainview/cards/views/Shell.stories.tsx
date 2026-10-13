@@ -32,7 +32,8 @@ const lines: TimelineLine[] = [
 
 export const stories: ViewStory[] = [{
   name: "Breakpoint and controls",
-  expect: ["+2 more", "↑ 3 live above", "↓ 3 live below", "Retry policy", "Asks: backoff or timeout?"],
+  // A line with a summary shows it in place of its title.
+  expect: ["+2 more", "↑ 3 live above", "↓ 3 live below", "Asks: backoff or timeout?"],
   gestures: { allow: toasts[0]!.action! },
   render: callbacks => <aside className="rail" aria-label="Activity" data-keyboard-pane="Timeline">
     <EdgeMap above={above} below={below} narrow={false} onAction={callbacks.onAction} onView={patch => callbacks.onView({ ...patch })} />

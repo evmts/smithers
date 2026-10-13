@@ -1,3 +1,4 @@
+import { isRecord } from "@smthrs/canonical/Record"
 import type { MemberConfirmation } from "@smthrs/rpc/ConfirmCard"
 import { CardSchema, conversationTabIdOf } from "../AppState"
 import type { Session } from "../AppState"
@@ -9,6 +10,8 @@ import { captureCloudOwner, readErrorMessage, readResult, unreachableSentence, t
 import { TOAST_SUPERSEDED } from "../controller/failures"
 
 type Request = NonNullable<Session["reviewRequests"]>[number]
+
+const REVIEW_LOADING = "Review starting. Retry /review."
 
 /** The shared slash/button/confirmed-agent door. Only the install runs review. */
 export const createReviewSeam = (ctx: SeamContext, pollMs = 1000) => {
@@ -32,11 +35,10 @@ export const createReviewSeam = (ctx: SeamContext, pollMs = 1000) => {
             body: JSON.stringify({ number: row.number, repo: row.repo, conversation: row.conversation }) })
           if (!stillCurrent(row)) return TOAST_SUPERSEDED
           if (!response.ok) {
-            const refusal: unknown = await response.clone().json().catch(() => undefined)
-            const error = typeof refusal === "object" && refusal !== null && "error" in refusal ? refusal.error : null
-            const loading = typeof error === "object" && error !== null && "code" in error && error.code === "active_flow_unavailable"
-            const message = loading && "message" in error && typeof error.message === "string" && error.message
-              ? error.message : await readErrorMessage(response, "Review unavailable")
+            // The install's flow is still loading: a retryable 503 that earns its own sentence, keyed on the code, never the body's words.
+            const body: unknown = await response.clone().json().catch(() => undefined)
+            const loading = isRecord(body) && isRecord(body.error) && body.error.code === "active_flow_unavailable"
+            const message = loading ? REVIEW_LOADING : await readErrorMessage(response, "Review unavailable")
             await save({ ...row, state: "failed", terminal: response.status < 500 }); return message
           }
           const receipt: unknown = await response.json()

@@ -42,7 +42,7 @@ export const TITLE_INSTRUCTIONS = [
 
 /** The most input lines one request carries: the first ones and the last few, with the count between them. */
 export const TITLE_INPUT_LINES = 40
-const TITLE_INPUT_TAIL = 10
+export const TITLE_INPUT_TAIL = 10
 const TITLE_INPUT_CHARS = 160
 const TITLE_WORDS = 8
 

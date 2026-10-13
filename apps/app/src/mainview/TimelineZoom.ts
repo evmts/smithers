@@ -22,6 +22,7 @@
  * run's key, and the deterministic one stands otherwise.
  */
 import type { TimelineLine } from "@smthrs/rpc/TimelineCard"
+import { TITLE_INPUT_LINES, TITLE_INPUT_TAIL } from "./state/seams/TimelineTitleSeam"
 
 export interface ZoomOptions {
   /** Conversations with at most this many lines are not zoomed. */
@@ -77,17 +78,32 @@ const GLYPH: Record<TimelineLine["tone"], "running" | "ok" | "attention" | "fail
 
 /** One line standing for `group`: its first prompt (else answer) as title, what it holds as summary, its most urgent tone and act. */
 export const foldedLine = (lines: ReadonlyArray<TimelineLine>, group: Pick<Group, "level" | "first" | "last">, times?: ReadonlyMap<string, number>): TimelineLine => {
-  const inside = lines.slice(group.first, group.last + 1)
-  const named = inside.find(line => line.kind === "prompt") ?? inside.find(line => line.kind === "answer") ?? inside[0]!
-  const urgent = inside.reduce((best, line) => RANK[line.tone] < RANK[best.tone] ? line : best)
-  const acting = inside.filter(line => line.action !== undefined).sort((left, right) => RANK[left.tone] - RANK[right.tone])[0]
-  const at = inside.map(line => times?.get(line.entry_id)).filter((time): time is number => time !== undefined && time > 0)
+  // One pass: a folded group can hold most of a 200 000-entry conversation, and the rail redraws on every scroll.
+  const head = lines[group.first]!, tail = lines[group.last]!
+  let prompt: TimelineLine | undefined, answer: TimelineLine | undefined, acting: TimelineLine | undefined
+  let urgent = head, fresh = false, from = Infinity, to = -Infinity
+  // The revision covers the lines `titlePrompt` reads, so only a change the model could see asks for a new title.
+  const count = group.last - group.first + 1
+  const read = (index: number) => count <= TITLE_INPUT_LINES || index < group.first + TITLE_INPUT_LINES - TITLE_INPUT_TAIL || index > group.last - TITLE_INPUT_TAIL
+  const revision: Array<readonly [TimelineLine["kind"], string, TimelineLine["tone"]]> = []
+  for (let index = group.first; index <= group.last; index++) {
+    const line = lines[index]!
+    if (prompt === undefined && line.kind === "prompt") prompt = line
+    if (answer === undefined && line.kind === "answer") answer = line
+    if (RANK[line.tone] < RANK[urgent.tone]) urgent = line
+    if (line.action !== undefined && (acting === undefined || RANK[line.tone] < RANK[acting.tone])) acting = line
+    if (line.fresh) fresh = true
+    const time = times?.get(line.entry_id)
+    if (time !== undefined && time > 0) { from = Math.min(from, time); to = Math.max(to, time) }
+    if (read(index)) revision.push([line.kind, line.summary ?? line.title, line.tone])
+  }
+  const named = prompt ?? answer ?? head
   return {
-    entry_id: inside[0]!.entry_id, kind: named.kind, title: group.level === 1 ? "Conversation activity" : "App activity", tone: urgent.tone, glyph: { event: GLYPH[urgent.tone] },
+    entry_id: head.entry_id, kind: named.kind, title: group.level === 1 ? "Conversation activity" : "App activity", tone: urgent.tone, glyph: { event: GLYPH[urgent.tone] },
     ...(acting?.action === undefined ? {} : { action: acting.action }),
-    ...(inside.some(line => line.fresh) ? { fresh: true } : {}),
-    zoom: { level: group.level, count: inside.length, last_entry_id: inside.at(-1)!.entry_id, revision: JSON.stringify(inside.map(line => [line.kind, line.summary ?? line.title, line.tone])),
-      ...(at.length === 0 ? {} : { from: Math.min(...at), to: Math.max(...at) }) }
+    ...(fresh ? { fresh: true } : {}),
+    zoom: { level: group.level, count, last_entry_id: tail.entry_id, revision: JSON.stringify(revision),
+      ...(from > to ? {} : { from, to }) }
   }
 }
 
