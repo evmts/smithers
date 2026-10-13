@@ -2,7 +2,7 @@ import { Capability } from "@smthrs/kernel"
 import { ModelEvent, ModelRequest } from "@smthrs/model"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Descriptor } from "@smthrs/registry"
-import { Clock, Effect, type Layer, Option, Schema, Stream } from "effect"
+import { Clock, Effect, Layer, Option, Schema, Stream } from "effect"
 import * as AgentEvent from "../../src/AgentEvent.ts"
 import * as CellHistory from "../../src/CellHistory.ts"
 import * as CellTurn from "../../src/CellTurn.ts"
@@ -112,6 +112,31 @@ export const arrives = (
   events: timeline.map(([, event]) => event),
   arriving: (index) => advance(timeline[index]![0])
 })
+
+/**
+ * A judge whose readings are metered and take time: the reading of every
+ * request `paid` answers for moves the clock and reports the usage.
+ *
+ * @category fixtures
+ * @since 1.0.0-rc.1
+ */
+export const metered = (
+  inner: Layer.Layer<Evaluator.Evaluator>,
+  advance: (millis: number) => void,
+  paid: (request: Evaluator.Request) => { readonly millis: number; readonly usage: Evaluator.Usage } | undefined
+): Layer.Layer<Evaluator.Evaluator> =>
+  Layer.effect(Evaluator.Evaluator)(
+    Effect.map(Evaluator.Evaluator, (bound) =>
+      Evaluator.Evaluator.of({
+        evaluate: (request) =>
+          Effect.map(bound.evaluate(request), (response) => {
+            const cost = paid(request)
+            if (cost === undefined) return response
+            advance(cost.millis)
+            return { ...response, usage: cost.usage }
+          })
+      }))
+  ).pipe(Layer.provide(inner))
 
 /**
  * A recorded model frame whose text carries no cell at all.

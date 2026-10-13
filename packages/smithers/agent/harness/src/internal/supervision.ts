@@ -35,7 +35,7 @@
 import { ModelRequest } from "@smthrs/model"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import type * as Descriptor from "@smthrs/registry/Descriptor"
-import { Deferred, Effect, Fiber, Option, Queue, Ref, Schema, type Scope } from "effect"
+import { Clock, Deferred, Effect, Fiber, Option, Queue, Ref, Schema, type Scope } from "effect"
 import * as AgentEvent from "../AgentEvent.ts"
 import type { State } from "../CellTurn.ts"
 import type * as EngineLike from "../EngineLike.ts"
@@ -47,7 +47,7 @@ import * as UnmovedTree from "../UnmovedTree.ts"
 import * as compactionMarks from "./compactionMarks.ts"
 import { decider } from "./decidedBy.ts"
 import type * as Frame from "./frame.ts"
-import { paidUsage } from "./paidUsage.ts"
+import { paidUsage, readingCost } from "./paidUsage.ts"
 
 const eventType = AgentEvent.eventType
 
@@ -479,6 +479,15 @@ export const open = (input: {
               return record
             }
             const reading = result.success
+            // What the reading fired, and why a context trigger among them
+            // schedules nothing: the same rule the mailbox below applies,
+            // stated on the record so a reader does not have to re-derive it.
+            const context = Supervisor.compacting(reading)
+            const scheduled = context.length === 0
+              ? {}
+              : offer.compaction !== undefined
+              ? { compact: context }
+              : { compactSuppressed: deliver ? "floor" as const : "unjudged" as const }
             const evaluation = Monitor.evaluate({ monitors: declared, reading, snapshot, values: reading.monitors })
             // Whether a monitor's message is handed to the boundary, which may
             // still withhold it for its streak, cooldown, limit or slot.
@@ -499,8 +508,11 @@ export const open = (input: {
                 steer: deliver,
                 latencyMs: reading.latencyMs,
                 ...(reading.usage === undefined ? {} : { usage: reading.usage }),
+                ...readingCost(reading.usage, yield* Clock.currentTimeMillis),
                 monitors: evaluation.rows,
-                ...(offer.skillsCapped ? { skillsCapped: true } : {})
+                ...(offer.skillsCapped ? { skillsCapped: true } : {}),
+                triggers: Supervisor.triggered(reading),
+                ...scheduled
               }),
               decision: new AgentEvent.DecisionSettled({
                 eventType: eventType.decisionSettled,

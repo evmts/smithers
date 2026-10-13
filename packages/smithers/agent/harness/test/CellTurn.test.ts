@@ -14,7 +14,7 @@ import * as Evaluator from "@smthrs/model/Evaluator"
 import * as OpenAIChatGPT from "@smthrs/model/OpenAIChatGPT"
 import * as Route from "@smthrs/model/Route"
 import { Descriptor } from "@smthrs/registry"
-import { Deferred, Effect, Layer, Option, Redacted, Result, Schema, Stream } from "effect"
+import { Deferred, Effect, type Layer, Option, Redacted, Result, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import * as AgentEvent from "../src/AgentEvent.ts"
 import type * as Cell from "../src/Cell.ts"
@@ -39,6 +39,7 @@ import {
   descriptor,
   emits,
   manualClock,
+  metered,
   of,
   type Options as RunOptions,
   pattern,
@@ -3473,28 +3474,6 @@ const gated = () => {
   return { steering, observer }
 }
 
-/**
- * A judge whose readings are metered and take time: the reading of every
- * request `paid` answers for moves the clock and reports the usage.
- */
-const metered = (
-  inner: Layer.Layer<Evaluator.Evaluator>,
-  advance: (millis: number) => void,
-  paid: (request: Evaluator.Request) => { readonly millis: number; readonly usage: Evaluator.Usage } | undefined
-): Layer.Layer<Evaluator.Evaluator> =>
-  Layer.effect(Evaluator.Evaluator)(
-    Effect.map(Evaluator.Evaluator, (bound) =>
-      Evaluator.Evaluator.of({
-        evaluate: (request) =>
-          Effect.map(bound.evaluate(request), (response) => {
-            const cost = paid(request)
-            if (cost === undefined) return response
-            advance(cost.millis)
-            return { ...response, usage: cost.usage }
-          })
-      }))
-  ).pipe(Layer.provide(inner))
-
 describe("CellTurn compaction cost", () => {
   const summarizing = (advance: (millis: number) => void): ScriptedModel.Step =>
     arrives(advance, [
@@ -3598,6 +3577,83 @@ describe("CellTurn compaction cost", () => {
     })
     expect(settled).not.toHaveProperty("summaryCall")
     expect(settled!.context!.before - settled!.context!.after).toBe(settled!.removedTokens)
+  })
+})
+
+describe("CellTurn judged compaction, as its records tell it", () => {
+  it("names the trigger on the reading, the boundary that took it, and the compaction it caused", async () => {
+    const judge = marksJudge(
+      () => ({ remove: 0.95, keep: 0.05 }),
+      () => false,
+      (request) => (request.state as { readonly signals: { readonly frame: number } }).signals.frame === 0
+    )
+    const seen: Array<AgentEvent.AgentEvent> = []
+    const { observer, steering } = gated()
+    const { events, failure } = await run({
+      script: [emits(`console.log("one")`), emits(`console.log("two")`), emits(`ctx.done("done")`)],
+      // Above the floor and far under the budget, so only the judge compacts it.
+      state: compactionState(sized(240_000), 1_000_000, 3),
+      flows: [],
+      evaluator: judge.layer,
+      judged: true,
+      steering,
+      observer: (event) => Effect.andThen(Effect.sync(() => void seen.push(event)), observer(event))
+    })
+    expect(failure).toBeUndefined()
+
+    // The reading of frame 0 fired the trigger and handed it on.
+    expect(of(seen, "supervisor-settled")[0]).toMatchObject({
+      frame: 0,
+      triggers: ["outdated_context"],
+      compact: ["outdated_context"]
+    })
+    expect(of(seen, "supervisor-settled")[0]).not.toHaveProperty("compactSuppressed")
+    // The boundary closing frame 1 took it, so frame 2 opens on a compaction.
+    expect(of(events, "steering-drained").map((drained) => drained.compact)).toEqual([
+      undefined,
+      ["outdated_context"],
+      undefined
+    ])
+    expect(of(events, "compaction-settled").map(({ causes, frame }) => ({ frame, causes }))).toEqual([
+      { frame: 2, causes: ["outdated_context"] }
+    ])
+  })
+})
+
+describe("CellTurn completion check cost", () => {
+  it("says what the completion check read, how long it took and what it cost", async () => {
+    const { advance, clock } = manualClock()
+    const { events, failure } = await run({
+      state: CellTurn.make({
+        session: "session-1",
+        seat: "anthropic:test-model",
+        modelParams: ModelRequest.GenerationParams.make(),
+        layers: [],
+        capabilityEnvelope: [],
+        placement: Option.none(),
+        contextWindow: tasked,
+        maxFrames: 1
+      }),
+      script: [emits(`ctx.done("The query string is kept.")`)],
+      evaluator: metered(
+        confidentEvaluator,
+        advance,
+        () => ({ millis: 793, usage: { inputTokens: 26_498, outputTokens: 268, modelId: "typesafe-ai/jev" } })
+      ),
+      clock
+    })
+    expect(failure).toBeUndefined()
+
+    // typesafe-ai/jev: $0.042 in, $0 out per million tokens.
+    expect(of(events, "claim-demanded")).toEqual([
+      expect.objectContaining({
+        demanded: false,
+        latencyMs: 793,
+        usage: { inputTokens: 26_498, outputTokens: 268, modelId: "typesafe-ai/jev" },
+        costUsd: 0.001112916,
+        costSource: "estimated"
+      })
+    ])
   })
 })
 

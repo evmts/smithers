@@ -44,6 +44,12 @@
   compaction's summary call had a `ModelRequested` and no settlement anywhere;
   it is settled here (#3844).
 
+- A judge reading says what it did and cost. `SupervisorSettled` carries
+  `triggers`, `compact` or `compactSuppressed` (`floor`, `unjudged`),
+  `costUsd` and `costSource`; `SteeringDrained.compact` names the compaction a
+  boundary took from a reading; `ClaimDemanded` carries `costUsd` and
+  `costSource` (#3844).
+
 - `ExternalTranscript.decodeCodex` reads what Codex records outside its
   completed items: a message between agents (`agent_message`), whose encrypted
   body is one `encrypted` placeholder; a failed code-mode script with the

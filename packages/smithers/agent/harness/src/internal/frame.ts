@@ -15,7 +15,7 @@
 
 import { ModelRequest } from "@smthrs/model"
 import type * as Evaluator from "@smthrs/model/Evaluator"
-import { Effect, Option, type Schema } from "effect"
+import { Clock, Effect, Option, type Schema } from "effect"
 import * as AgentEvent from "../AgentEvent.ts"
 import * as CallLedger from "../CallLedger.ts"
 import type { State } from "../CellTurn.ts"
@@ -34,7 +34,7 @@ import * as bytes from "./bytes.ts"
 import { decider } from "./decidedBy.ts"
 import * as DemandText from "./demandText.ts"
 import * as elide from "./elide.ts"
-import { paidTogether } from "./paidUsage.ts"
+import { paidTogether, readingCost } from "./paidUsage.ts"
 import * as UnfinishedWork from "./unfinishedWork.ts"
 import * as UnobservedCall from "./unobservedCall.ts"
 
@@ -953,6 +953,7 @@ export const judgeCompletion = (
       invented: reading.invented,
       latencyMs: reading.latencyMs + (unfinished?.latencyMs ?? 0),
       ...(usage === undefined ? {} : { usage }),
+      ...readingCost(usage, yield* Clock.currentTimeMillis),
       demanded: bounced && unmoved === undefined,
       refused,
       currentDigest: workspaceDigest,

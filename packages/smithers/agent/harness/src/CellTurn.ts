@@ -3381,7 +3381,8 @@ const drain = (settling: Settling, wouldIdle: boolean): Effect.Effect<Steering.D
           : { supervisor: drained.supervisor }),
         ...(drained.monitor === undefined ? {} : { monitor: drained.monitor }),
         ...(drained.suppressed === undefined ? {} : { suppressed: drained.suppressed }),
-        ...(drained.memory === undefined ? {} : { memory: drained.memory })
+        ...(drained.memory === undefined ? {} : { memory: drained.memory }),
+        ...(drained.compact === undefined ? {} : { compact: drained.compact })
       })
     )
     // The frame is offered to the supervisor from here, after its own take

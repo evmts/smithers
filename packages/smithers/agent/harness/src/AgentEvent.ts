@@ -951,6 +951,13 @@ export class ClaimDemanded extends Schema.TaggedClass<ClaimDemanded>(
   latencyMs: Schema.Int,
   /** Token usage reported by the evaluator, absent from older journal entries. */
   usage: Schema.optional(Usage),
+  /**
+   * What {@link usage} cost under the reading model's rate card. Absent for
+   * an unmetered reading or an unpriced model, and from older journal entries.
+   */
+  costUsd: Schema.optional(Schema.Number),
+  /** Where {@link costUsd} came from. */
+  costSource: Schema.optional(Pricing.CostSource),
   /** Whether this reading handed the completion back. */
   demanded: Schema.Boolean,
   /**
@@ -1120,6 +1127,15 @@ export class DecisionSettled extends Schema.TaggedClass<DecisionSettled>(
 
 const Level = Schema.Literals(["none", "mild", "strong"])
 
+/** The names of `Supervisor.triggers`, which that module's tests pin against this. */
+const SupervisorTrigger = Schema.Literals([
+  "thrashing",
+  "off_target",
+  "suspect",
+  "outdated_context",
+  "irrelevant_context"
+])
+
 /**
  * What Jev read off one frame of a running run, whether or not it nudged.
  *
@@ -1194,7 +1210,29 @@ export class SupervisorSettled extends Schema.TaggedClass<SupervisorSettled>(
     kind: MonitorKind,
     p: Schema.Number,
     crossed: Schema.Boolean
-  })))
+  }))),
+  /**
+   * Every `Supervisor` trigger this reading fired, in declaration order;
+   * empty when it fired none. Absent, like every field below, from readings
+   * journaled before it was carried.
+   */
+  triggers: Schema.optional(Schema.Array(SupervisorTrigger)),
+  /**
+   * The context triggers this reading handed on, which compact the run at
+   * its next frame if a boundary takes them: `steering-drained` says whether
+   * one did. Absent when it fired none, or when {@link compactSuppressed}.
+   */
+  compact: Schema.optional(Schema.Array(CompactionCause)),
+  /**
+   * Why a context trigger this reading fired scheduled nothing: `floor` when
+   * the context was at or under `Compaction.judgedAbove` tokens, `unjudged`
+   * when the host holds no real judge.
+   */
+  compactSuppressed: Schema.optional(Schema.Literals(["floor", "unjudged"])),
+  /** What {@link usage} cost under the reading model's rate card; absent when unmetered or unpriced. */
+  costUsd: Schema.optional(Schema.Number),
+  /** Where {@link costUsd} came from. */
+  costSource: Schema.optional(Pricing.CostSource)
 }) {}
 
 /**
@@ -1684,7 +1722,12 @@ export class SteeringDrained extends Schema.TaggedClass<SteeringDrained>(
   /** Crossed monitors not delivered at this boundary, and why. */
   suppressed: Schema.optional(Schema.Array(Schema.Struct({ id: Schema.String, reason: Suppression }))),
   /** Keys of the memory rows delivered at this boundary. */
-  memory: Schema.optional(Schema.Array(Schema.String))
+  memory: Schema.optional(Schema.Array(Schema.String)),
+  /**
+   * The context triggers this boundary took from a supervisor reading, which
+   * compact the run at its next frame. Absent when it took none.
+   */
+  compact: Schema.optional(Schema.Array(CompactionCause))
 }) {}
 
 /**

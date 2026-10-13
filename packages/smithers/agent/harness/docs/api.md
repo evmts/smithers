@@ -1032,6 +1032,16 @@ that did the work, so a replayed frame reports the replay's own readings:
   own answer. Marks a supervisor reading stored on an earlier frame were paid
   there, as that frame's `DecisionSettled` rows of classifier
   `compaction/marks`.
+- `SupervisorSettled` carries `triggers` (every `Supervisor.triggers` name
+  the reading fired, empty when none), `compact` (the context triggers it
+  handed on to compact the run at its next frame) or `compactSuppressed`
+  (why a context trigger it fired handed nothing on: `floor` for a context at
+  or under `Compaction.judgedAbove`, `unjudged` for a host with no real
+  judge), and `costUsd` with `costSource`, its `usage` priced under the
+  reading model's rate card. `nudged` already says whether a nudge was queued.
+- `SteeringDrained.compact` names the context triggers a boundary took from a
+  reading. A reading's `compact` that no boundary took compacted nothing.
+- `ClaimDemanded` carries `costUsd` and `costSource` for the completion check.
 
 Every member's `_tag` is the kebab-case discriminant `switch` and
 `Stream.filter` match on. `AgentEvent.eventType` is keyed by the camelCase

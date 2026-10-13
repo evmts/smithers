@@ -423,21 +423,26 @@ const lateFields: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ["control.agent.cell-rejected-in-frame", new Set(["attempt", "code", "message"])],
   ["control.agent.narrow-only-demanded", new Set(["flow", "check", "targets", "currentDigest", "nextFrame"])],
   ["control.agent.read-only-demand-issued", new Set(["streak", "cap", "nextFrame"])],
-  ["control.agent.steering-drained", new Set(["messages", "supervisor", "monitor", "suppressed", "memory"])],
+  ["control.agent.steering-drained", new Set(["messages", "supervisor", "monitor", "suppressed", "memory", "compact"])],
   ["control.agent.sufficiency-observed", new Set(["flow", "failed", "passed", "epoch", "nextFrame"])],
   // `refused` separates the reading that ended a run from the one that let a
   // claim stand, and it was added to an event type journals already carried.
   // A pre-`refused` record has no such key, and the decoder fills it with
   // `false`, so a resumed run would derive a new identity for every
   // `claim-demanded` in its recorded prefix and publish the prefix twice.
-  ["control.agent.claim-demanded", new Set(["refused"])],
+  // `costUsd` and `costSource` price a reading that was already journaled (#3844).
+  ["control.agent.claim-demanded", new Set(["refused", "costUsd", "costSource"])],
   // `supervisorSteer` was added to the one event every run journals first,
   // and later writers omit it again for `judged`; either way a record in a
   // resumed prefix may or may not carry it.
   ["control.agent.discipline-armed", new Set(["supervisorSteer", "judged", "relevance", "monitors", "stance"])],
   // The Jev fields.
   ["control.agent.decision-settled", new Set(["usage"])],
-  ["control.agent.supervisor-settled", new Set(["monitors", "skillsCapped"])],
+  [
+    "control.agent.supervisor-settled",
+    // The last five say what a reading did and cost (#3844).
+    new Set(["monitors", "skillsCapped", "triggers", "compact", "compactSuppressed", "costUsd", "costSource"])
+  ],
   [
     "control.agent.compaction-settled",
     new Set([
@@ -1238,6 +1243,9 @@ export const trace = (
           invented: event.invented,
           latencyMs: event.latencyMs,
           usage: event.usage,
+          // What the reading cost, beside what it read (#3844).
+          ...(event.costUsd === undefined ? {} : { costUsd: event.costUsd }),
+          ...(event.costSource === undefined ? {} : { costSource: event.costSource }),
           demanded: event.demanded,
           refused: event.refused,
           currentDigest: event.currentDigest,
@@ -1269,7 +1277,14 @@ export const trace = (
           latencyMs: event.latencyMs,
           ...(event.usage === undefined ? {} : { usage: event.usage }),
           ...(event.monitors === undefined ? {} : { monitors: event.monitors }),
-          ...(event.skillsCapped === undefined ? {} : { skillsCapped: event.skillsCapped })
+          ...(event.skillsCapped === undefined ? {} : { skillsCapped: event.skillsCapped }),
+          // What the reading did and cost (#3844): the triggers it fired, the
+          // compaction it handed on or why it handed none, and its price.
+          ...(event.triggers === undefined ? {} : { triggers: event.triggers }),
+          ...(event.compact === undefined ? {} : { compact: event.compact }),
+          ...(event.compactSuppressed === undefined ? {} : { compactSuppressed: event.compactSuppressed }),
+          ...(event.costUsd === undefined ? {} : { costUsd: event.costUsd }),
+          ...(event.costSource === undefined ? {} : { costSource: event.costSource })
         }
       }
     case "supervisor-unjudged":
@@ -1480,7 +1495,9 @@ export const trace = (
           }),
           ...(event.monitor === undefined ? {} : { monitor: event.monitor }),
           ...(event.suppressed === undefined ? {} : { suppressed: event.suppressed }),
-          ...(event.memory === undefined ? {} : { memory: event.memory })
+          ...(event.memory === undefined ? {} : { memory: event.memory }),
+          // The compaction this boundary took from a reading, due next frame.
+          ...(event.compact === undefined ? {} : { compact: event.compact })
         }
       }
     case "turn-closed":

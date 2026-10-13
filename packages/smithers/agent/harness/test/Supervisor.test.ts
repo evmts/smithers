@@ -41,7 +41,7 @@ import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import type * as Relevance from "../src/Relevance.ts"
 import * as Steering from "../src/Steering.ts"
 import * as Supervisor from "../src/Supervisor.ts"
-import { descriptor, emits, of, prose, run } from "./fixtures/cellTurn.ts"
+import { descriptor, emits, manualClock, metered, of, prose, run } from "./fixtures/cellTurn.ts"
 import * as ScriptedEngine from "./fixtures/scriptedEngine.ts"
 import * as ScriptedModel from "./fixtures/scriptedModel.ts"
 
@@ -434,6 +434,121 @@ describe("Supervisor", () => {
     expect(of(read.seen, "supervisor-settled")[0]).toMatchObject({ frame: 0, crossed: true, nudged: true })
     // The calm readings after it nudged nothing.
     expect(of(read.seen, "supervisor-settled").slice(1).every((event) => !event.nudged)).toBe(true)
+  })
+
+  describe("what a reading did and cost (#3844)", () => {
+    // typesafe-ai/jev: $0.042 in, $0 out per million tokens.
+    const paying = (advance: (millis: number) => void, layer: Layer.Layer<Evaluator.Evaluator>) =>
+      metered(
+        layer,
+        advance,
+        (request) =>
+          isSupervisor(request)
+            ? { millis: 268, usage: { inputTokens: 3_069, outputTokens: 239, modelId: "typesafe-ai/jev" } }
+            : undefined
+      )
+
+    it("names the triggers a reading fired, that it nudged, and what it cost", async () => {
+      const read = untilRead()
+      const { advance, clock } = manualClock()
+      const { layer } = scripted((_, ordinal) =>
+        ordinal === 0 ? calm({ thrashing: { probability: 0.9 }, suspect: { probability: 0.7 } }) : calm()
+      )
+      const { failure } = await run({
+        // The last frame's boundary drains nothing, so a third continuing
+        // frame is what waits for the second reading.
+        state: state(4),
+        script: framesOf(4),
+        evaluator: paying(advance, layer),
+        ...read,
+        judged: true,
+        clock
+      })
+      expect(failure).toBeUndefined()
+
+      const [crossed, quiet] = of(read.seen, "supervisor-settled")
+      expect(crossed).toMatchObject({
+        frame: 0,
+        triggers: ["thrashing", "suspect"],
+        crossed: true,
+        nudged: true,
+        latencyMs: 268,
+        usage: { inputTokens: 3_069, outputTokens: 239, modelId: "typesafe-ai/jev" },
+        costUsd: 0.000128898,
+        costSource: "estimated"
+      })
+      // Neither is a context trigger, so nothing was scheduled or suppressed.
+      expect(crossed).not.toHaveProperty("compact")
+      expect(crossed).not.toHaveProperty("compactSuppressed")
+      // A reading that fired nothing says so, and still cost what it cost.
+      expect(quiet).toMatchObject({ triggers: [], nudged: false, costUsd: 0.000128898 })
+    })
+
+    it("says a context trigger under the compaction floor scheduled nothing, and that the floor is why", async () => {
+      const read = untilRead()
+      const { layer } = scripted(() => calm({ outdated_context: { probability: 0.9 } }))
+      const { events, failure } = await run({
+        state: state(3),
+        script: threeFrames,
+        evaluator: layer,
+        ...read,
+        judged: true
+      })
+      expect(failure).toBeUndefined()
+
+      const [settled] = of(read.seen, "supervisor-settled")
+      expect(settled).toMatchObject({ triggers: ["outdated_context"], compactSuppressed: "floor", crossed: false })
+      expect(settled).not.toHaveProperty("compact")
+      // No boundary took a compaction to run, and none ran.
+      expect(of(events, "steering-drained").every((drained) => drained.compact === undefined)).toBe(true)
+      expect(of(events, "compaction-settled")).toEqual([])
+    })
+
+    it("says an unjudged host is why a context trigger scheduled nothing", async () => {
+      const read = untilRead()
+      const { layer } = scripted(() => calm({ irrelevant_context: { probability: 0.8 } }))
+      await run({ state: state(3), script: threeFrames, evaluator: layer, ...read })
+
+      expect(of(read.seen, "supervisor-settled")[0]).toMatchObject({
+        triggers: ["irrelevant_context"],
+        compactSuppressed: "unjudged"
+      })
+    })
+
+    it("journals every trigger the supervisor declares, and no other name", () => {
+      const reading = {
+        eventType: "flows.harness.supervisor-settled.v1",
+        scope: "session-1",
+        frame: 0,
+        thrashing: 0.9,
+        onTarget: 0.1,
+        suspect: 0.9,
+        frustrated: "none",
+        anxious: "none",
+        scared: "none",
+        confused: "none",
+        confident: "none",
+        needsHelp: "none",
+        crossed: true,
+        nudged: false,
+        latencyMs: 1
+      } as const
+      const decode = Schema.decodeUnknownResult(AgentEvent.SupervisorSettled)
+      const encoded = (triggers: ReadonlyArray<string>) => ({ _tag: "supervisor-settled", ...reading, triggers })
+
+      expect(Result.isSuccess(decode(encoded(Object.keys(Supervisor.triggers))))).toBe(true)
+      expect(Result.isFailure(decode(encoded(["thrashing", "restless"])))).toBe(true)
+    })
+
+    it("leaves an unmetered reading unpriced", async () => {
+      const read = untilRead()
+      const { layer } = scripted(() => calm())
+      await run({ state: state(3), script: threeFrames, evaluator: layer, ...read, judged: true })
+
+      const [settled] = of(read.seen, "supervisor-settled")
+      expect(settled).not.toHaveProperty("costUsd")
+      expect(settled).not.toHaveProperty("costSource")
+    })
   })
 
   it("journals a crossed reading and delivers nothing while steering is off", async () => {

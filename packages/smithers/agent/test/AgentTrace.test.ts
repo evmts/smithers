@@ -2290,10 +2290,90 @@ describe("where time and tokens went", () => {
     expect(Redaction.isSensitiveKey("removedTokens")).toBe(true)
   })
 
+  const reading = {
+    eventType: "flows.harness.supervisor-settled.v1",
+    scope: "run-1",
+    frame: 5,
+    thrashing: 0.54,
+    onTarget: 0.92,
+    suspect: 0.6,
+    outdatedContext: 0.62,
+    irrelevantContext: 0.28,
+    frustrated: "strong",
+    anxious: "mild",
+    scared: "none",
+    confused: "mild",
+    confident: "mild",
+    needsHelp: "none",
+    crossed: true,
+    nudged: true,
+    steer: true,
+    latencyMs: 275,
+    usage: { inputTokens: 4_714, outputTokens: 239, modelId: "typesafe-ai/jev" }
+  } as const
+  const acted = {
+    triggers: ["thrashing", "suspect", "outdated_context"],
+    costUsd: 0.000197988,
+    costSource: "estimated"
+  } as const
+  const claim = {
+    eventType: "flows.harness.claim-demanded.v1",
+    complete: 0.64,
+    overclaims: 0.66,
+    invented: 0.65,
+    latencyMs: 793,
+    usage: { inputTokens: 26_498, outputTokens: 268, modelId: "typesafe-ai/jev" },
+    demanded: false,
+    currentDigest: "tree",
+    nextFrame: 15
+  } as const
+  const claimCost = { costUsd: 0.001112916, costSource: "estimated" } as const
+  const drain = { eventType: "flows.harness.steering-drained.v1", messages: [], monitor: "supervisor" } as const
+
+  it("journals which triggers a judge reading fired, what it scheduled or why not, and what it cost", () => {
+    const scheduled = new AgentEvent.SupervisorSettled({ ...reading, ...acted, compact: ["outdated_context"] })
+    expect(row(scheduled)).toMatchObject({ ...acted, nudged: true, compact: ["outdated_context"] })
+    expect(row(scheduled)).not.toHaveProperty("compactSuppressed")
+    expect(stored(scheduled)).toEqual(row(scheduled))
+
+    const suppressed = new AgentEvent.SupervisorSettled({ ...reading, ...acted, compactSuppressed: "floor" })
+    expect(row(suppressed)).toMatchObject({ ...acted, compactSuppressed: "floor" })
+    expect(row(suppressed)).not.toHaveProperty("compact")
+    expect(stored(suppressed)).toEqual(row(suppressed))
+  })
+
+  it("journals the compaction a boundary took from a reading, and what a completion check cost", () => {
+    const taken = new AgentEvent.SteeringDrained({ ...drain, compact: ["outdated_context", "irrelevant_context"] })
+    expect(row(taken)).toEqual({
+      messages: [],
+      monitor: "supervisor",
+      compact: ["outdated_context", "irrelevant_context"]
+    })
+    expect(row(new AgentEvent.SteeringDrained(drain))).not.toHaveProperty("compact")
+
+    const checked = new AgentEvent.ClaimDemanded({ ...claim, ...claimCost })
+    expect(row(checked)).toMatchObject({ ...claimCost, latencyMs: 793, demanded: false })
+    expect(stored(checked)).toEqual(row(checked))
+    expect(row(new AgentEvent.ClaimDemanded(claim))).not.toHaveProperty("costUsd")
+  })
+
   it("keeps a run journaled before these fields on the identities it was journaled under", () => {
     const pairs: ReadonlyArray<readonly [AgentEvent.AgentEvent, AgentEvent.AgentEvent]> = [
       [new AgentEvent.ModelSettled(settled), new AgentEvent.ModelSettled({ ...settled, ...staged })],
-      [new AgentEvent.CompactionSettled(compaction), new AgentEvent.CompactionSettled({ ...compaction, ...accounted })]
+      [new AgentEvent.CompactionSettled(compaction), new AgentEvent.CompactionSettled({ ...compaction, ...accounted })],
+      [
+        new AgentEvent.SupervisorSettled(reading),
+        new AgentEvent.SupervisorSettled({ ...reading, ...acted, compact: ["outdated_context"] })
+      ],
+      [
+        new AgentEvent.SupervisorSettled(reading),
+        new AgentEvent.SupervisorSettled({ ...reading, ...acted, compactSuppressed: "floor" })
+      ],
+      [
+        new AgentEvent.SteeringDrained(drain),
+        new AgentEvent.SteeringDrained({ ...drain, compact: ["outdated_context"] })
+      ],
+      [new AgentEvent.ClaimDemanded(claim), new AgentEvent.ClaimDemanded({ ...claim, ...claimCost })]
     ]
     for (const [before, after] of pairs) expect(identity(after)).toBe(identity(before))
   })

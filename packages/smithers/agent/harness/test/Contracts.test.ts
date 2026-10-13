@@ -840,6 +840,62 @@ describe("AgentEvent", () => {
     }
   })
 
+  it("decodes a judge reading, a drain and a completion check journaled before what they did and cost were", () => {
+    const decode = Schema.decodeUnknownSync(AgentEvent.AgentEvent)
+    const reading = decode({
+      _tag: "supervisor-settled",
+      eventType: "flows.harness.supervisor-settled.v1",
+      scope: "session-1",
+      frame: 4,
+      thrashing: 0.39,
+      onTarget: 0.94,
+      suspect: 0.61,
+      outdatedContext: 0.42,
+      irrelevantContext: 0.22,
+      frustrated: "mild",
+      anxious: "none",
+      scared: "none",
+      confused: "mild",
+      confident: "mild",
+      needsHelp: "none",
+      crossed: true,
+      nudged: true,
+      steer: true,
+      latencyMs: 419,
+      usage: { inputTokens: 4_754, outputTokens: 239, modelId: "typesafe-ai/jev" },
+      monitors: [{ id: "supervisor", kind: "lint", p: 1, crossed: true }]
+    })
+    const drained = decode({
+      _tag: "steering-drained",
+      eventType: "flows.harness.steering-drained.v1",
+      messages: [],
+      monitor: "supervisor"
+    })
+    const claim = decode({
+      _tag: "claim-demanded",
+      eventType: "flows.harness.claim-demanded.v1",
+      complete: 0.64,
+      overclaims: 0.66,
+      invented: 0.65,
+      latencyMs: 793,
+      usage: { inputTokens: 26_498, outputTokens: 268, modelId: "typesafe-ai/jev" },
+      demanded: false,
+      refused: false,
+      currentDigest: "tree",
+      nextFrame: 15
+    })
+
+    expect(reading).toMatchObject({ _tag: "supervisor-settled", crossed: true, nudged: true, latencyMs: 419 })
+    for (const key of ["triggers", "compact", "compactSuppressed", "costUsd", "costSource"]) {
+      expect(reading).not.toHaveProperty(key)
+    }
+    expect(drained).toMatchObject({ _tag: "steering-drained", monitor: "supervisor" })
+    expect(drained).not.toHaveProperty("compact")
+    expect(claim).toMatchObject({ _tag: "claim-demanded", invented: 0.65, latencyMs: 793 })
+    expect(claim).not.toHaveProperty("costUsd")
+    expect(claim).not.toHaveProperty("costSource")
+  })
+
   it("refuses a payload that is not one of the union's tags", () => {
     const decoded = Schema.decodeUnknownResult(AgentEvent.AgentEvent)({
       _tag: "not-an-event",
