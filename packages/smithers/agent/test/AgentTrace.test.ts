@@ -2214,6 +2214,34 @@ describe("where time and tokens went", () => {
     expect(stored(new AgentEvent.ModelSettled({ ...settled, ...staged }))).toEqual(journaled)
   })
 
+  const wire = {
+    timing: {
+      startedAt: 1_791_894_347_302,
+      attempts: 2,
+      requestBytes: 48_211,
+      preparedMs: 2,
+      signedMs: 3,
+      sentMs: 9,
+      headersMs: 1_140,
+      firstEventMs: 1_180,
+      firstThinkingMs: 1_190,
+      firstOutputMs: 2_420,
+      lastOutputMs: 2_700,
+      completedMs: 2_930,
+      closedMs: 2_940,
+      failedTries: [{ sentMs: 2, failedMs: 310, code: "rate_limited", httpStatus: 429 }]
+    },
+    servedTier: "priority"
+  } as const
+
+  it("journals the model package's wire timing and served tier on the settlement, beside the controller's stages", () => {
+    const event = new AgentEvent.ModelSettled({ ...settled, ...staged, ...wire })
+    expect(row(event)).toMatchObject({ ...wire, stages: staged.stages })
+    // No stage name ends in a word the journal reads as a credential.
+    expect(stored(event)).toEqual(row(event))
+    expect(identityOf(event)).toBe(identityOf(new AgentEvent.ModelSettled(settled)))
+  })
+
   it("leaves a settlement that measured none of it as it was journaled before", () => {
     expect(row(new AgentEvent.ModelSettled(settled))).toEqual({
       text: "First line.\nSecond line.",

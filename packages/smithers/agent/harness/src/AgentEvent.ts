@@ -510,7 +510,17 @@ export class ModelSettled extends Schema.TaggedClass<ModelSettled>(
   /** Transport tries the sealed step took, the one that settled included. */
   tries: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
   /** Thinking and written token counts; absent when the provider reported no output count. */
-  output: Schema.optional(ModelOutput)
+  output: Schema.optional(ModelOutput),
+  /**
+   * Where the call's time went on the wire, as the model package measured it
+   * and reported on its settle event: `ModelEvent.Timing`, copied whole. Its
+   * offsets and {@link stages}' count from the same call, so the gap between
+   * a stage here and the same stage there is time the call spent inside this
+   * process. Absent where the model timed nothing.
+   */
+  timing: Schema.optional(ModelEvent.Timing),
+  /** The service tier that served the call, when the provider reported one. */
+  servedTier: Schema.optional(Schema.String)
 }) {}
 
 /**
@@ -1645,7 +1655,9 @@ const SummaryCall = Schema.Struct({
   durationMillis: NonNegativeSafeInt,
   stages: Schema.optional(ModelStages),
   tries: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
-  output: Schema.optional(ModelOutput)
+  output: Schema.optional(ModelOutput),
+  timing: Schema.optional(ModelEvent.Timing),
+  servedTier: Schema.optional(Schema.String)
 })
 
 /**

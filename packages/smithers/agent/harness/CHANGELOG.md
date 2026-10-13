@@ -65,6 +65,10 @@
   `no_call`, `calls`) and carries its call count and total call time, and
   `CellCallSettled.durationMillis` times one call (#3844).
 
+- `ModelSettled.timing` and `servedTier`, and the same two on
+  `CompactionSettled.summaryCall`: the model package's wire timing
+  (`ModelEvent.Timing`) and served tier, copied from its settle event (#3844).
+
 - `ExternalTranscript.decodeCodex` reads what Codex records outside its
   completed items: a message between agents (`agent_message`), whose encrypted
   body is one `encrypted` placeholder; a failed code-mode script with the

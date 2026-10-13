@@ -3137,6 +3137,50 @@ describe("CellTurn model call stages", () => {
     expect(settled).not.toHaveProperty("output")
   })
 
+  it("carries the model package's own wire timing and served tier beside the stages the controller saw", async () => {
+    const { advance, clock } = manualClock()
+    const timing: ModelEvent.Timing = {
+      attempts: 2,
+      requestBytes: 48_211,
+      signedMs: 3,
+      sentMs: 9,
+      headersMs: 1_140,
+      firstEventMs: 1_180,
+      firstOutputMs: 2_420,
+      lastOutputMs: 2_700,
+      completedMs: 2_930,
+      closedMs: 2_940,
+      failedTries: [{ sentMs: 2, failedMs: 310, code: "rate_limited", httpStatus: 429 }]
+    }
+    const { events } = await run({
+      state: state({ maxFrames: 1 }),
+      script: [
+        arrives(advance, [
+          [1_200, ModelEvent.ModelEvent.TextStart({ type: "text-start", id: "cell" })],
+          [1_300, text("cell", "```cell\nctx.done(\"done\")\n```")],
+          [0, ModelEvent.ModelEvent.Usage({ inputTokens: 8, outputTokens: 4 })],
+          [500, ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop", servedTier: "priority", timing })]
+        ])
+      ],
+      clock
+    })
+
+    const [settled] = of(events, "model-settled")
+    expect(settled?.timing).toEqual(timing)
+    expect(settled?.servedTier).toBe("priority")
+    // The gap between the two is the time the call spent inside this process:
+    // the wire saw the first output at 2,420 ms and the controller at 2,500.
+    expect(settled?.stages).toEqual({ firstEventMs: 1_200, firstOutputMs: 2_500, lastOutputMs: 2_500 })
+    expect(settled?.durationMillis).toBe(3_000)
+  })
+
+  it("leaves both absent where the model reported neither", async () => {
+    const { events } = await run({ state: state({ maxFrames: 1 }), script: [emits(`ctx.done("done")`)] })
+
+    expect(of(events, "model-settled")[0]).not.toHaveProperty("timing")
+    expect(of(events, "model-settled")[0]).not.toHaveProperty("servedTier")
+  })
+
   it("says why a frame asked again, on the request and on its settlement", async () => {
     const { events } = await run({
       state: state({ maxFrames: 1, revalidations: 1 }),
@@ -3483,7 +3527,15 @@ describe("CellTurn compaction cost", () => {
       [1_800, ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id: "summary", text: "summary" })],
       [0, ModelEvent.ModelEvent.TextEnd({ type: "text-end", id: "summary" })],
       [0, ModelEvent.ModelEvent.Usage({ inputTokens: 900, outputTokens: 60, reasoningTokens: 10 })],
-      [200, ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })]
+      [
+        200,
+        ModelEvent.ModelEvent.Settle({
+          type: "settle",
+          stopReason: "stop",
+          servedTier: "default",
+          timing: { attempts: 1, headersMs: 1_400, firstOutputMs: 1_950, completedMs: 3_990 }
+        })
+      ]
     ])
 
   it("says why a compaction ran, how long it took, what it left, and what its summary call spent", async () => {
@@ -3530,7 +3582,10 @@ describe("CellTurn compaction cost", () => {
         durationMillis: 4_000,
         stages: { firstEventMs: 1_500, firstOutputMs: 2_000, lastOutputMs: 3_800 },
         tries: 1,
-        output: { thinking: 10, written: 50 }
+        output: { thinking: 10, written: 50 },
+        // The wire's own record of the same call, as the model package gave it.
+        timing: { attempts: 1, headersMs: 1_400, firstOutputMs: 1_950, completedMs: 3_990 },
+        servedTier: "default"
       }
     })
     // An unjudged run marks nothing, so it paid for no marks reading.

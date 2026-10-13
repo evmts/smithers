@@ -468,7 +468,7 @@ const lateFields: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ["control.agent.cell-settled", new Set(["work"])],
   [
     "control.agent.model-settled",
-    new Set(["scope", "frame", "attempt", "purpose", "reask", "stages", "tries", "output"])
+    new Set(["scope", "frame", "attempt", "purpose", "reask", "stages", "tries", "output", "timing", "servedTier"])
   ]
 ])
 
@@ -1009,7 +1009,11 @@ export const trace = (
           ...(event.reask === undefined ? {} : { reask: event.reask }),
           ...(event.stages === undefined ? {} : { stages: event.stages }),
           ...(event.tries === undefined ? {} : { tries: event.tries }),
-          ...(event.output === undefined ? {} : { output: event.output })
+          ...(event.output === undefined ? {} : { output: event.output }),
+          // The model package's own record of the same call on the wire, under
+          // the name it gives it. `stages` above is what this process saw.
+          ...(event.timing === undefined ? {} : { timing: event.timing }),
+          ...(event.servedTier === undefined ? {} : { servedTier: event.servedTier })
         }
       }
     case "cell-produced":

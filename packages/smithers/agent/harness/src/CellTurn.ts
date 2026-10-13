@@ -2553,6 +2553,20 @@ const staged = (startedAt: number) => {
 }
 
 /**
+ * What the model package said about its own call on the settle event: its
+ * wire timing and the tier that served it, handed on as it gave them.
+ */
+const wireOf = (
+  events: ReadonlyArray<ModelEvent.ModelEvent>
+): Pick<AgentEvent.ModelSettled, "timing" | "servedTier"> => {
+  const settle = events.find((event) => event.type === "settle")
+  return {
+    ...(settle?.timing === undefined ? {} : { timing: settle.timing }),
+    ...(settle?.servedTier === undefined ? {} : { servedTier: settle.servedTier })
+  }
+}
+
+/**
  * The thinking and written tokens of one settled call. A provider's output
  * count includes its reasoning count, so what was written is the difference;
  * absent when the provider reported no output count to split.
@@ -2630,7 +2644,8 @@ const summarized = (
         ...Pricing.cost(settled.usage, request.modelId, { at: settledAt }),
         durationMillis: elapsed(startedAt, settledAt),
         ...reached.read(),
-        ...outputOf(settled.usage)
+        ...outputOf(settled.usage),
+        ...wireOf(events)
       }
     }
   })
@@ -3043,7 +3058,8 @@ const seal = (
           purpose: "frame",
           ...(reask === undefined ? {} : { reask }),
           ...reached.read(),
-          ...outputOf(settled.usage)
+          ...outputOf(settled.usage),
+          ...wireOf(events)
         })
       )
       const cell = parsed(settled.message)

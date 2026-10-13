@@ -1018,6 +1018,11 @@ that did the work, so a replayed frame reports the replay's own readings:
   tokens: the provider's reasoning count and the rest of its output count).
   Output is a text delta or a tool-call event. No stream event is journaled
   for these: the offsets are noted as events pass and written once.
+  `timing` and `servedTier` are the model package's own record of the same
+  call, copied from its settle event: `ModelEvent.Timing` whole, and the tier
+  that served it. Both count from the same call, so `stages.firstOutputMs`
+  less `timing.firstOutputMs` is time the first output spent inside this
+  process.
 - `ModelRequested.reask` and `ModelSettled.reask` name the `Cell.RejectionCode`
   the attempt before this one was refused with, so a frame's second call says
   why it was made.

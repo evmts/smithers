@@ -9,7 +9,8 @@
   journaled before it resumes without re-publishing its prefix.
   - `control.agent.model-settled`: `scope`, `frame`, `attempt`, `purpose`,
     `reask`, `stages` (`firstEventMs`, `firstThinkingMs`, `firstOutputMs`,
-    `lastOutputMs`), `tries`, `output` (`thinking`, `written`).
+    `lastOutputMs`), `tries`, `output` (`thinking`, `written`), and `timing`
+    and `servedTier`, the model package's wire record of the same call.
     `control.agent.model-requested`: `reask`.
   - `control.agent.compaction-settled`: `causes`, `scope`, `frame`,
     `durationMillis`, `context` (`before`, `after`), `marksCall`,
