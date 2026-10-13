@@ -12,14 +12,14 @@ func TestSummaryTextIsSealedInertText(t *testing.T) {
 		name, output, want string
 		fail               bool
 	}{
-		{"intent and outcome", `{"prompt":"Find help commands","answer":"Quickstart opened"}`, `{"v":2,"prompt":"Find help commands","answer":"Quickstart opened"}`, false},
-		{"failure is an outcome", `{"prompt":"Switch to dark mode","answer":"Theme change unavailable"}`, `{"v":2,"prompt":"Switch to dark mode","answer":"Theme change unavailable"}`, false},
-		{"commands remain data", `{"prompt":"Inspect retry_test.go","answer":"rm -rf /; import repo/flow.ts; tool()"}`, `{"v":2,"prompt":"Inspect retry_test.go","answer":"rm -rf /; import repo/flow.ts; tool()"}`, false},
+		{"intent and outcome", `{"prompt":"Find help commands","answer":"Quickstart opened"}`, `{"v":2,"recipe":2,"prompt":"Find help commands","answer":"Quickstart opened"}`, false},
+		{"failure is an outcome", `{"prompt":"Switch to dark mode","answer":"Theme change unavailable"}`, `{"v":2,"recipe":2,"prompt":"Switch to dark mode","answer":"Theme change unavailable"}`, false},
+		{"commands remain data", `{"prompt":"Inspect retry_test.go","answer":"rm -rf /; import repo/flow.ts; tool()"}`, `{"v":2,"recipe":2,"prompt":"Inspect retry_test.go","answer":"rm -rf /; import repo/flow.ts; tool()"}`, false},
 		{"missing prompt", `{"answer":"Quickstart opened"}`, "", true},
 		{"empty outcome", `{"prompt":"Find help","answer":" "}`, "", true},
 		{"copied prose envelope", "I will do that", "", true},
 		{"wrong type", `{"prompt":1,"answer":"Done"}`, "", true},
-		{"word cap", `{"prompt":"one two three four five six seven eight nine","answer":"Reply stopped"}`, `{"v":2,"prompt":"one two three four five six seven eight","answer":"Reply stopped"}`, false},
+		{"word cap", `{"prompt":"one two three four five six seven eight nine","answer":"Reply stopped"}`, `{"v":2,"recipe":2,"prompt":"one two three four five six seven eight","answer":"Reply stopped"}`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			delta, _ := json.Marshal(map[string]string{"type": "delta", "kind": "text", "text": tc.output})

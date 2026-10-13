@@ -3,6 +3,7 @@ package services_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/jackc/pgx/v5"
 	"github.com/smithersai/smithers/packages/backend/internal/chat"
@@ -13,12 +14,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"io"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
 
 func TestHostedTimelineSummariesBackfillAndIsolation(t *testing.T) {
-	for _, outcome := range []string{"written", "revoked", "stale"} {
+	for _, outcome := range []string{"written", "slow", "retry", "revoked", "stale"} {
 		t.Run(outcome, func(t *testing.T) {
 			pool, _ := postgresfixture.NewProductDatabase(t)
 			ctx := t.Context()
@@ -47,7 +49,19 @@ func TestHostedTimelineSummariesBackfillAndIsolation(t *testing.T) {
 			turn := admit(owner, "timeline-owner", "owner-run")
 			_ = admit(other, "timeline-other", "other-run")
 			entered, release := make(chan struct{}, 1), make(chan struct{})
+			var attempts atomic.Int64
 			summaries := &services.ConversationSummaries{Pool: pool, Jobs: queue, Model: func(call context.Context, user, repo int64, body json.RawMessage) (io.ReadCloser, error) {
+				attempt := attempts.Add(1)
+				if outcome == "retry" && attempt == 1 {
+					return nil, errors.New("temporary model outage")
+				}
+				if outcome == "slow" {
+					select {
+					case <-time.After(7 * time.Second):
+					case <-call.Done():
+						return nil, call.Err()
+					}
+				}
 				require.Equal(t, owner, user)
 				require.Zero(t, repo)
 				require.NotContains(t, string(body), "private-canary")
@@ -63,8 +77,8 @@ func TestHostedTimelineSummariesBackfillAndIsolation(t *testing.T) {
 				require.Empty(t, request.Model)
 				var data map[string]string
 				require.NoError(t, json.Unmarshal([]byte(request.Messages[0].Content), &data))
-				require.Equal(t, "completed", data["state"])
-				require.Equal(t, "The theme command is unavailable.", data["answer"])
+				require.Equal(t, "completed", data["turn_state"])
+				require.Equal(t, "The theme command is unavailable.", data["observed_reply"])
 				entered <- struct{}{}
 				select {
 				case <-release:
@@ -90,7 +104,7 @@ func TestHostedTimelineSummariesBackfillAndIsolation(t *testing.T) {
 			}()
 			select {
 			case <-entered:
-			case <-time.After(5 * time.Second):
+			case <-time.After(10 * time.Second):
 				t.Fatal("summary model did not run")
 			}
 			if outcome == "revoked" {
@@ -110,12 +124,17 @@ func TestHostedTimelineSummariesBackfillAndIsolation(t *testing.T) {
 			require.NoError(t, <-finished)
 			var summary *string
 			require.NoError(t, pool.QueryRow(ctx, `SELECT summary FROM chat_turns WHERE id=$1`, turn).Scan(&summary))
-			if outcome != "written" {
+			if outcome == "revoked" || outcome == "stale" {
 				require.Nil(t, summary)
 				return
 			}
+			if outcome == "retry" {
+				require.Equal(t, int64(2), attempts.Load())
+			} else {
+				require.Equal(t, int64(1), attempts.Load())
+			}
 			require.NotNil(t, summary)
-			require.JSONEq(t, `{"v":2,"prompt":"Switch to dark mode","answer":"Theme change unavailable"}`, *summary)
+			require.JSONEq(t, `{"v":2,"recipe":2,"prompt":"Switch to dark mode","answer":"Theme change unavailable"}`, *summary)
 			shared, err := store.SharedEntries(ctx, chat.Scope{UserID: owner, Owner: "timeline-owner"}, branch)
 			require.NoError(t, err)
 			require.Len(t, shared.Entries, 1)
