@@ -438,7 +438,22 @@ const lateFields: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   // The Jev fields.
   ["control.agent.decision-settled", new Set(["usage"])],
   ["control.agent.supervisor-settled", new Set(["monitors", "skillsCapped"])],
-  ["control.agent.compaction-settled", new Set(["marks", "removedTokens", "unaligned"])],
+  [
+    "control.agent.compaction-settled",
+    new Set([
+      "marks",
+      "removedTokens",
+      "unaligned",
+      // (#3844); `removed` is `removedTokens` under a name the journal keeps.
+      "removed",
+      "causes",
+      "scope",
+      "frame",
+      "context",
+      "marksCall",
+      "summaryCall"
+    ])
+  ],
   // Where a run's time and tokens went (#3844). Every one is a measurement or
   // a join key added to a type journals already carried; the timed ones also
   // differ between the attempt that measured them and a replay of it, the way
@@ -1423,8 +1438,19 @@ export const trace = (
               removed: event.marks.filter(({ mark }) => mark === "remove").length
             }
           }),
-          ...(event.removedTokens === undefined ? {} : { removedTokens: event.removedTokens }),
-          ...(event.unaligned === undefined ? {} : { unaligned: event.unaligned })
+          // `removedTokens` ends in a word the journal reads as a credential
+          // name, so the row read `"[REDACTED]"`. It travels as `removed`.
+          ...(event.removedTokens === undefined ? {} : { removed: event.removedTokens }),
+          ...(event.unaligned === undefined ? {} : { unaligned: event.unaligned }),
+          // Why it ran, where it sits, how long it took, what it left, and
+          // what its own marks reading and summary call spent (#3844).
+          ...(event.causes === undefined ? {} : { causes: event.causes }),
+          ...(event.scope === undefined ? {} : { scope: event.scope }),
+          ...(event.frame === undefined ? {} : { frame: event.frame }),
+          ...(event.durationMillis === undefined ? {} : { durationMillis: event.durationMillis }),
+          ...(event.context === undefined ? {} : { context: event.context }),
+          ...(event.marksCall === undefined ? {} : { marksCall: event.marksCall }),
+          ...(event.summaryCall === undefined ? {} : { summaryCall: event.summaryCall })
         }
       }
     case "steering-drained":

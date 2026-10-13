@@ -14,7 +14,7 @@ import * as Evaluator from "@smthrs/model/Evaluator"
 import * as OpenAIChatGPT from "@smthrs/model/OpenAIChatGPT"
 import * as Route from "@smthrs/model/Route"
 import { Descriptor } from "@smthrs/registry"
-import { Deferred, Effect, type Layer, Option, Redacted, Result, Schema, Stream } from "effect"
+import { Deferred, Effect, Layer, Option, Redacted, Result, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import * as AgentEvent from "../src/AgentEvent.ts"
 import type * as Cell from "../src/Cell.ts"
@@ -3432,6 +3432,14 @@ const replayed = (
   return { rebuilt, projected: Result.getOrThrow(Transcript.projectResult(entries)) }
 }
 
+/**
+ * What each compaction of a run decided, without what it measured: its
+ * duration and what its own calls spent are readings of the attempt that did
+ * the work, and a replay or a differently armed run takes its own.
+ */
+const compactions = (events: ReadonlyArray<AgentEvent.AgentEvent>) =>
+  of(events, "compaction-settled").map(({ durationMillis: _, marksCall: __, summaryCall: ___, ...decided }) => decided)
+
 const contextDigests = (events: ReadonlyArray<AgentEvent.AgentEvent>): ReadonlyArray<string> =>
   of(events, "turn-opened").map((event) => event.contextDigest)
 
@@ -3464,6 +3472,134 @@ const gated = () => {
       : Effect.void
   return { steering, observer }
 }
+
+/**
+ * A judge whose readings are metered and take time: the reading of every
+ * request `paid` answers for moves the clock and reports the usage.
+ */
+const metered = (
+  inner: Layer.Layer<Evaluator.Evaluator>,
+  advance: (millis: number) => void,
+  paid: (request: Evaluator.Request) => { readonly millis: number; readonly usage: Evaluator.Usage } | undefined
+): Layer.Layer<Evaluator.Evaluator> =>
+  Layer.effect(Evaluator.Evaluator)(
+    Effect.map(Evaluator.Evaluator, (bound) =>
+      Evaluator.Evaluator.of({
+        evaluate: (request) =>
+          Effect.map(bound.evaluate(request), (response) => {
+            const cost = paid(request)
+            if (cost === undefined) return response
+            advance(cost.millis)
+            return { ...response, usage: cost.usage }
+          })
+      }))
+  ).pipe(Layer.provide(inner))
+
+describe("CellTurn compaction cost", () => {
+  const summarizing = (advance: (millis: number) => void): ScriptedModel.Step =>
+    arrives(advance, [
+      [1_500, ModelEvent.ModelEvent.TextStart({ type: "text-start", id: "summary" })],
+      [500, ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id: "summary", text: "the compacted " })],
+      [1_800, ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id: "summary", text: "summary" })],
+      [0, ModelEvent.ModelEvent.TextEnd({ type: "text-end", id: "summary" })],
+      [0, ModelEvent.ModelEvent.Usage({ inputTokens: 900, outputTokens: 60, reasoningTokens: 10 })],
+      [200, ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })]
+    ])
+
+  it("says why a compaction ran, how long it took, what it left, and what its summary call spent", async () => {
+    const { advance, clock } = manualClock()
+    // claude-sonnet-5: $2 in, $10 out per million tokens.
+    const priced = ContextWindow.make({ modelId: "claude-sonnet-5", segments: crowded.segments })
+    const { events } = await run({
+      script: [summarizing(advance), emits(`ctx.done("done")`)],
+      state: CellTurn.make({
+        session: "session-1",
+        seat: "anthropic:test-model",
+        modelParams: ModelRequest.GenerationParams.make(),
+        layers: ["layer-a"],
+        capabilityEnvelope: [],
+        placement: Option.none(),
+        contextWindow: priced,
+        contextWindowTokens: 40_000,
+        maxFrames: 2
+      }),
+      flows: [],
+      clock
+    })
+
+    const [settled] = of(events, "compaction-settled")
+    const step = Effect.runSync(
+      Compaction.declare(priced, Compaction.selectPrefix(priced), {
+        identity: "flows/harness/CellTurn.compaction",
+        modelId: "claude-sonnet-5",
+        params: ModelRequest.GenerationParams.make()
+      })
+    )
+    const after = Effect.runSync(Compaction.apply(priced, step, settled!.summary))
+    expect(after.tokens.total.value).toBeLessThan(priced.tokens.total.value)
+    expect(settled).toMatchObject({
+      scope: "session-1",
+      frame: 0,
+      causes: ["budget"],
+      durationMillis: 4_000,
+      context: { before: priced.tokens.total.value, after: after.tokens.total.value },
+      summaryCall: {
+        usage: { inputTokens: 900, outputTokens: 60, reasoningTokens: 10 },
+        costUsd: 0.0024,
+        costSource: "estimated",
+        durationMillis: 4_000,
+        stages: { firstEventMs: 1_500, firstOutputMs: 2_000, lastOutputMs: 3_800 },
+        tries: 1,
+        output: { thinking: 10, written: 50 }
+      }
+    })
+    // An unjudged run marks nothing, so it paid for no marks reading.
+    expect(settled).not.toHaveProperty("marksCall")
+    // The summary call is settled here and nowhere else: `model-settled` is a
+    // frame's own answer, and the frame after the compaction wrote the only one.
+    expect(of(events, "model-requested").map(({ purpose }) => purpose)).toEqual(["compaction", "frame"])
+    expect(of(events, "model-settled").map(({ purpose }) => purpose)).toEqual(["frame"])
+  })
+
+  it("says what the marks reading a compaction took spent, and that nothing squashed means no summary call", async () => {
+    const { advance, clock } = manualClock()
+    // Keeps bulk `two` and removes the rest of the prefix: nothing is left to squash.
+    const judge = marksJudge((_, index) => index === 1 ? { remove: 0.05, keep: 0.9 } : { remove: 0.95, keep: 0.05 })
+    const { events, failure } = await run({
+      script: [emits(`ctx.done("done")`)],
+      state: compactionState(crowded, 70_000),
+      flows: [],
+      evaluator: metered(
+        judge.layer,
+        advance,
+        (request) =>
+          isMarks(request)
+            ? { millis: 350, usage: { inputTokens: 700, outputTokens: 30, modelId: "typesafe-ai/jev" } }
+            : undefined
+      ),
+      judged: true,
+      clock
+    })
+    expect(failure).toBeUndefined()
+
+    const [settled] = of(events, "compaction-settled")
+    expect(settled).toMatchObject({
+      causes: ["budget"],
+      durationMillis: 350,
+      removedTokens: [0, 2, 3].reduce((sum, at) => sum + compactable(crowded.segments)[at]!.tokens.value, 0),
+      // typesafe-ai/jev: $0.042 in, $0 out per million tokens.
+      marksCall: {
+        requests: 1,
+        usage: { inputTokens: 700, outputTokens: 30, modelId: "typesafe-ai/jev" },
+        costUsd: 0.0000294,
+        costSource: "estimated",
+        latencyMs: 350
+      }
+    })
+    expect(settled).not.toHaveProperty("summaryCall")
+    expect(settled!.context!.before - settled!.context!.after).toBe(settled!.removedTokens)
+  })
+})
 
 describe("CellTurn compaction marks", () => {
   // Room to keep bulk `two` beside the suffix, and still over the trigger.
@@ -3691,7 +3827,7 @@ describe("CellTurn compaction marks", () => {
     })
     expect(replay.failure).toBeUndefined()
     expect(quiet.asked).toEqual([])
-    expect(of(replay.events, "compaction-settled")).toEqual(settled)
+    expect(compactions(replay.events)).toEqual(compactions(first.events))
     expect(contextDigests(replay.events)).toEqual(contextDigests(first.events))
   })
 
@@ -3770,7 +3906,7 @@ describe("CellTurn compaction marks", () => {
     const unarmedJudge = marksJudge(oneTwo)
     const unarmed = await run({ script: script(), state: marking(), flows: [], evaluator: unarmedJudge.layer })
     expect(unarmedJudge.asked).toEqual([])
-    expect(of(unarmed.events, "compaction-settled")).toEqual([settled])
+    expect(compactions(unarmed.events)).toEqual(compactions(judged.events))
     expect(contextDigests(judged.events)).toEqual(contextDigests(unarmed.events))
     expect(judged.model.recorder.requests).toEqual(unarmed.model.recorder.requests)
   })
@@ -3817,7 +3953,7 @@ describe("CellTurn compaction marks", () => {
     expect(replay.engine.recorder.sealStep.map((step) => step.keyMaterial)).toEqual(
       first.engine.recorder.sealStep.map((step) => step.keyMaterial)
     )
-    expect(of(replay.events, "compaction-settled")).toEqual(of(first.events, "compaction-settled"))
+    expect(compactions(replay.events)).toEqual(compactions(first.events))
   })
 })
 

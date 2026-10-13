@@ -1573,6 +1573,40 @@ export class Suspended extends Schema.TaggedClass<Suspended>(
 }) {}
 
 /**
+ * What a compaction's own summary call spent, in the fields `model-settled`
+ * carries for a frame's call. It is settled here and not as a `model-settled`
+ * of its own, because that event is a frame's answer and every reader of it
+ * takes it for one. Its request is the `model-requested` of the same `scope`
+ * and `frame` whose `purpose` is `compaction`.
+ */
+const SummaryCall = Schema.Struct({
+  usage: ModelEvent.Usage,
+  costUsd: Schema.optional(Schema.Number),
+  costSource: Schema.optional(Pricing.CostSource),
+  /** Wall-clock milliseconds the sealed step took. */
+  durationMillis: NonNegativeSafeInt,
+  stages: Schema.optional(ModelStages),
+  tries: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+  output: Schema.optional(ModelOutput)
+})
+
+/**
+ * What the marks reading a compaction took at its own boundary spent. Marks a
+ * supervisor reading stored on an earlier frame were paid for there, and are
+ * that frame's `decision-settled` rows of classifier `compaction/marks`.
+ */
+const MarksCall = Schema.Struct({
+  /** Requests the reading settled, one `decision-settled` row each; zero when it could not be judged. */
+  requests: NonNegativeSafeInt,
+  /** Summed over the requests that were metered; absent when none was. */
+  usage: Schema.optional(Usage),
+  costUsd: Schema.optional(Schema.Number),
+  costSource: Schema.optional(Pricing.CostSource),
+  /** Wall-clock milliseconds the reading's requests took, summed. */
+  latencyMs: NonNegativeSafeInt
+})
+
+/**
  * A sealed compaction summary and the prefix it replaces.
  *
  * @category events
@@ -1607,7 +1641,23 @@ export class CompactionSettled extends Schema.TaggedClass<CompactionSettled>(
    */
   unaligned: Schema.optional(Schema.Boolean),
   /** Why the compaction ran, budget first. Absent in older journals, which compacted on the budget alone. */
-  causes: Schema.optional(Schema.Array(CompactionCause))
+  causes: Schema.optional(Schema.Array(CompactionCause)),
+  /**
+   * The run's session and the frame the compaction ran ahead of: the join
+   * keys of its `model-requested`, because it is written before that frame's
+   * `turn-opened` and position would file it under the frame before. Absent,
+   * like every field below, from journals written before it was carried.
+   */
+  scope: Schema.optional(Schema.String),
+  frame: Schema.optional(NonNegativeSafeInt),
+  /** Wall-clock milliseconds the compaction took: its marks reading, its summary call and the rewrite. */
+  durationMillis: Schema.optional(NonNegativeSafeInt),
+  /** The context's estimated tokens before the compaction and after it. */
+  context: Schema.optional(Schema.Struct({ before: NonNegativeSafeInt, after: NonNegativeSafeInt })),
+  /** What the marks reading taken here spent; absent when none was taken. */
+  marksCall: Schema.optional(MarksCall),
+  /** What the summary call spent; absent when nothing was squashed. */
+  summaryCall: Schema.optional(SummaryCall)
 }) {}
 
 /**

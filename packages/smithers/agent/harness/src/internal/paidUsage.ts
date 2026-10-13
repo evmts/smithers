@@ -7,6 +7,7 @@
 
 import type * as Classifier from "@smthrs/model/Classifier"
 import * as Evaluator from "@smthrs/model/Evaluator"
+import * as Pricing from "@smthrs/model/Pricing"
 import type * as EngineLike from "../EngineLike.ts"
 
 /**
@@ -41,6 +42,19 @@ export const paidUsage = (readings: ReadonlyArray<Metered>): ReadonlyArray<Engin
   if (shares.size === 0) return undefined
   return [...shares].map(([modelId, usage]) => modelId === undefined ? { usage } : { usage, modelId })
 }
+
+/**
+ * What one metered reading cost at the instant `at`, under the rate card of
+ * the model that read it. `undefined` for a reading the transport did not
+ * meter and for a model the card does not price: neither cost zero.
+ *
+ * @since 1.0.0-rc.1
+ * @private
+ */
+export const readingCost = (reading: Metered, at: number): Pricing.Cost | undefined =>
+  reading === undefined
+    ? undefined
+    : Pricing.cost({ inputTokens: reading.inputTokens, outputTokens: reading.outputTokens }, reading.modelId, { at })
 
 /**
  * What two readings of one completion paid together. Either may come back

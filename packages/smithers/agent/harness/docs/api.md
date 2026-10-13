@@ -1021,6 +1021,17 @@ that did the work, so a replayed frame reports the replay's own readings:
 - `ModelRequested.reask` and `ModelSettled.reask` name the `Cell.RejectionCode`
   the attempt before this one was refused with, so a frame's second call says
   why it was made.
+- `CompactionSettled` carries `scope` and `frame` (it is written ahead of its
+  frame's `TurnOpened`, so position files it under the frame before),
+  `durationMillis` for the whole compaction, `context` (`before` and `after`,
+  the window's estimated tokens), `marksCall` (the marks reading taken at
+  this boundary: `requests`, summed `usage`, `costUsd`, `costSource`,
+  `latencyMs`) and `summaryCall` (the summary call: `usage`, `costUsd`,
+  `costSource`, `durationMillis`, `stages`, `tries`, `output`). The summary
+  call is settled here and writes no `ModelSettled`: that event is a frame's
+  own answer. Marks a supervisor reading stored on an earlier frame were paid
+  there, as that frame's `DecisionSettled` rows of classifier
+  `compaction/marks`.
 
 Every member's `_tag` is the kebab-case discriminant `switch` and
 `Stream.filter` match on. `AgentEvent.eventType` is keyed by the camelCase

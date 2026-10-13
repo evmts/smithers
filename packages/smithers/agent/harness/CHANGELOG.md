@@ -37,6 +37,13 @@
   rejection code a frame's second call answers. All optional; journals
   written before them decode unchanged (#3844).
 
+- `CompactionSettled` says where it sits and what it cost: `scope`, `frame`,
+  `durationMillis`, `context` (tokens `before` and `after`), `marksCall` (the
+  marks reading it took: requests, usage, cost, latency) and `summaryCall`
+  (its summary call: usage, cost, duration, stages, tries, token split). A
+  compaction's summary call had a `ModelRequested` and no settlement anywhere;
+  it is settled here (#3844).
+
 - `ExternalTranscript.decodeCodex` reads what Codex records outside its
   completed items: a message between agents (`agent_message`), whose encrypted
   body is one `encrypted` placeholder; a failed code-mode script with the

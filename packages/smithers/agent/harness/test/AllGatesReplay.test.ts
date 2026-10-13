@@ -240,6 +240,8 @@ const suffix = (events: ReadonlyArray<AgentEvent.AgentEvent>, n: number) => {
       : [
         event._tag === "model-settled"
           ? { ...event, durationMillis: 0, stages: undefined }
+          : event._tag === "compaction-settled"
+          ? { ...event, durationMillis: 0, summaryCall: undefined }
           : "latencyMs" in event
           ? { ...event, latencyMs: 0 }
           : event

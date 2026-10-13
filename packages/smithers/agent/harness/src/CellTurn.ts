@@ -42,7 +42,7 @@ import * as compactionMarks from "./internal/compactionMarks.ts"
 import * as elide from "./internal/elide.ts"
 import * as Frame from "./internal/frame.ts"
 import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.ts"
-import { paidUsage } from "./internal/paidUsage.ts"
+import { paidTogether, paidUsage, readingCost } from "./internal/paidUsage.ts"
 import { printsObservation } from "./internal/printsObservation.ts"
 import { limitOf, refusal } from "./internal/refusal.ts"
 import * as Supervision from "./internal/supervision.ts"
@@ -2468,6 +2468,9 @@ const requested = (
     )
   })
 
+/** Whole milliseconds between two readings of the injected clock, never negative. */
+const elapsed = (from: number, to: number): number => Math.max(0, Math.round(to - from))
+
 /**
  * Notes when one model call's stream reached each stage and how many
  * transport tries it took, as its events pass.
@@ -2486,7 +2489,7 @@ const staged = (startedAt: number) => {
       Effect.map(Clock.currentTimeMillis, (now) => {
         // A retry notice is the boundary starting over, not the provider answering.
         if (event.type === "retry") return void tries++
-        const at = Math.max(0, Math.round(now - startedAt))
+        const at = elapsed(startedAt, now)
         stages.firstEventMs ??= at
         if (event.type === "thinking-start" || event.type === "thinking-delta") stages.firstThinkingMs ??= at
         if (event.type === "text-delta" || event.type === "tool-call-start" || event.type === "tool-call-delta") {
@@ -2511,13 +2514,16 @@ const outputOf = (usage: ModelEvent.Usage): Pick<AgentEvent.ModelSettled, "outpu
   return { output: { ...(thinking === undefined ? {} : { thinking }), written: Math.max(0, output - (thinking ?? 0)) } }
 }
 
-/** The sealed summary of what a compaction step squashes. */
+/** The sealed summary of what a compaction step squashes, and what the call that wrote it spent. */
 const summarized = (
   state: State,
   engine: EngineLike.EngineLike,
   emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>,
   step: Compaction.CompactionStep
-): Effect.Effect<ModelRequest.Message, HarnessError | Model.ModelFailure> =>
+): Effect.Effect<
+  { readonly summary: ModelRequest.Message; readonly call: NonNullable<AgentEvent.CompactionSettled["summaryCall"]> },
+  HarnessError | Model.ModelFailure
+> =>
   Effect.gen(function*() {
     const summaryRequest = yield* Compaction.summaryRequest(state.contextWindow, step).pipe(Effect.orDie)
     const request = ModelRequest.ModelRequest.make({
@@ -2529,6 +2535,8 @@ const summarized = (
       params: summaryRequest.params
     })
     yield* requested(state, engine, request, "compaction", 1, emit)
+    const startedAt = yield* Clock.currentTimeMillis
+    const reached = staged(startedAt)
     const events = yield* Stream.runCollect(
       (engine.sealStepWithEvents?.({
         request,
@@ -2539,9 +2547,11 @@ const summarized = (
         keyMaterial: keyMaterialFrom(state, state.contextWindow, request),
         modelCallMs: state.modelCallMs
       })).pipe(
+        Stream.tap(reached.note),
         Stream.tap((event) => emitModelProgress(event, emit))
       )
     ).pipe(Effect.map((collected) => Array.from(collected)))
+    const settledAt = yield* Clock.currentTimeMillis
     if (!events.some((event) => event.type === "settle")) {
       return yield* new HarnessError({
         code: "model_failed",
@@ -2558,9 +2568,18 @@ const summarized = (
         message: "The sealed compaction step returned no text summary"
       })
     }
-    return ModelRequest.Message.user(
-      untrustedData(text.map((part) => part.text).join("\n"), "compaction summary of conversation and tool output")
-    )
+    return {
+      summary: ModelRequest.Message.user(
+        untrustedData(text.map((part) => part.text).join("\n"), "compaction summary of conversation and tool output")
+      ),
+      call: {
+        usage: settled.usage,
+        ...Pricing.cost(settled.usage, request.modelId, { at: settledAt }),
+        durationMillis: elapsed(startedAt, settledAt),
+        ...reached.read(),
+        ...outputOf(settled.usage)
+      }
+    }
   })
 
 const messageText = (message: ModelRequest.Message): string =>
@@ -2658,7 +2677,14 @@ const marked = (
   engine: EngineLike.EngineLike,
   emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>,
   taskOf: (window: ContextWindow.ContextWindow) => string
-): Effect.Effect<ReadonlyArray<compactionMarks.Marked> | undefined, HarnessError> =>
+): Effect.Effect<
+  {
+    readonly marks: ReadonlyArray<compactionMarks.Marked> | undefined
+    /** What the reading taken here spent; absent when the stored answers were enough. */
+    readonly call?: NonNullable<AgentEvent.CompactionSettled["marksCall"]>
+  },
+  HarnessError
+> =>
   Effect.gen(function*() {
     const segments = compactable(state.contextWindow.segments)
     const failing = state.checks.filter((check) => check.failing).map((check) => check.label)
@@ -2681,7 +2707,7 @@ const marked = (
       const answer = facts[index]?.answer
       return answer === undefined ? [] : [[index, answer] as const]
     }))
-    if (missing.length === 0) return yield* resolved(stored)
+    if (missing.length === 0) return { marks: yield* resolved(stored) }
     const prefix = yield* Effect.fromResult(ContextWindow.prefixDigest(state.contextWindow, prefixLength)).pipe(
       Effect.orDie
     )
@@ -2708,7 +2734,24 @@ const marked = (
       ))
     )
     yield* Judgement.emitRecorded(emit, record)
-    return record.value ?? undefined
+    // Read off the record, so a replayed compaction reports what the reading
+    // it replays paid.
+    const usage = [
+      ...record.decisions.map((settled) =>
+        settled.usage
+      ),
+      ...(record.unjudged?.usage ?? [])
+    ]
+      .reduce<Evaluator.Usage | undefined>((sum, reading) => paidTogether(sum, reading), undefined)
+    return {
+      marks: record.value ?? undefined,
+      call: {
+        requests: record.decisions.length,
+        ...(usage === undefined ? {} : { usage }),
+        ...readingCost(usage, yield* Clock.currentTimeMillis),
+        latencyMs: record.decisions.reduce((sum, settled) => sum + settled.latencyMs, 0)
+      }
+    }
   })
 
 /**
@@ -2746,6 +2789,7 @@ const compacted = (
   taskOf: (window: ContextWindow.ContextWindow) => string
 ): Effect.Effect<State, HarnessError | Model.ModelFailure> =>
   Effect.gen(function*() {
+    const startedAt = yield* Clock.currentTimeMillis
     const over = Compaction.shouldCompact({
       total: state.contextWindow.tokens.total,
       contextWindow: state.contextWindowTokens
@@ -2761,7 +2805,8 @@ const compacted = (
     const causes: ReadonlyArray<typeof AgentEvent.CompactionCause.Type> = [...(over ? ["budget" as const] : []), ...due]
     const facts = judged ? alignedFacts(state, compactable(state.contextWindow.segments)) : undefined
     const unaligned = judged && facts === undefined
-    const marks = facts === undefined ? undefined : yield* marked(state, facts, prefixLength, engine, emit, taskOf)
+    const reading = facts === undefined ? undefined : yield* marked(state, facts, prefixLength, engine, emit, taskOf)
+    const marks = reading?.marks
     // An early compaction that would keep every segment gives nothing up.
     if (!over && marks !== undefined && marks.every((mark) => mark.mark === "keep")) return opened
     // `InvalidStep` is discharged as a defect, not surfaced as a typed failure.
@@ -2779,9 +2824,10 @@ const compacted = (
       },
       marks?.map((mark) => mark.mark)
     ).pipe(Effect.orDie)
-    const summary = marks === undefined || marks.some((mark) => mark.mark === "squash")
+    const written = marks === undefined || marks.some((mark) => mark.mark === "squash")
       ? yield* summarized(state, engine, emit, step)
       : undefined
+    const summary = written?.summary
     const contextWindow = yield* Compaction.apply(state.contextWindow, step, summary).pipe(Effect.orDie)
     const segments = compactable(state.contextWindow.segments)
     const replaced = segments.slice(0, prefixLength)
@@ -2796,6 +2842,12 @@ const compacted = (
         ...(summary === undefined ? {} : { summary }),
         ...(unaligned ? { unaligned } : {}),
         causes,
+        scope: state.session,
+        frame: state.frame,
+        durationMillis: elapsed(startedAt, yield* Clock.currentTimeMillis),
+        context: { before: state.contextWindow.tokens.total.value, after: contextWindow.tokens.total.value },
+        ...(reading?.call === undefined ? {} : { marksCall: reading.call }),
+        ...(written === undefined ? {} : { summaryCall: written.call }),
         ...(marks === undefined ? {} : {
           kept: replaced
             .filter((_, index) => marks[index]!.mark === "keep")

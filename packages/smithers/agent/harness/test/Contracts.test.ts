@@ -824,6 +824,22 @@ describe("AgentEvent", () => {
     }
   })
 
+  it("decodes a compaction journaled before its cause, duration and costs were", () => {
+    const decoded = Schema.decodeUnknownSync(AgentEvent.AgentEvent)({
+      _tag: "compaction-settled",
+      eventType: "flows.harness.compaction-settled.v1",
+      replacedPrefixDigest: "prefix",
+      retainedMessageCount: 2,
+      marks: [{ digest: "a", mark: "remove" }],
+      removedTokens: 41_370
+    })
+
+    expect(decoded).toMatchObject({ _tag: "compaction-settled", retainedMessageCount: 2, removedTokens: 41_370 })
+    for (const key of ["causes", "scope", "frame", "durationMillis", "context", "marksCall", "summaryCall"]) {
+      expect(decoded).not.toHaveProperty(key)
+    }
+  })
+
   it("refuses a payload that is not one of the union's tags", () => {
     const decoded = Schema.decodeUnknownResult(AgentEvent.AgentEvent)({
       _tag: "not-an-event",

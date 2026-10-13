@@ -2038,7 +2038,7 @@ describe("Jev receipts", () => {
       )
     ).toEqual({
       eventType: "control.agent.compaction-settled",
-      payload: { replacedPrefixDigest: "prefix", marks: { kept: 1, squashed: 1, removed: 2 }, removedTokens: 900 }
+      payload: { replacedPrefixDigest: "prefix", marks: { kept: 1, squashed: 1, removed: 2 }, removed: 900 }
     })
     expect(
       AgentSession.trace(
@@ -2246,9 +2246,54 @@ describe("where time and tokens went", () => {
     expect(identity(requested("compile_failed"))).toBe(identity(requested()))
   })
 
+  const compaction = {
+    eventType: "flows.harness.compaction-settled.v1",
+    replacedPrefixDigest: "prefix",
+    marks: [{ digest: "a", mark: "remove" }, { digest: "b", mark: "squash" }],
+    removedTokens: 41_370
+  } as const
+  const accounted = {
+    causes: ["budget", "outdated_context"],
+    scope: "run-1",
+    frame: 7,
+    durationMillis: 4_350,
+    context: { before: 212_400, after: 61_030 },
+    marksCall: {
+      requests: 1,
+      usage: { inputTokens: 700, outputTokens: 30, modelId: "typesafe-ai/jev" },
+      costUsd: 0.0000294,
+      costSource: "estimated",
+      latencyMs: 350
+    },
+    summaryCall: {
+      usage: { inputTokens: 900, outputTokens: 60, reasoningTokens: 10 },
+      costUsd: 0.0024,
+      costSource: "estimated",
+      durationMillis: 4_000,
+      stages: { firstEventMs: 1_500, firstOutputMs: 2_000, lastOutputMs: 3_800 },
+      tries: 1,
+      output: { thinking: 10, written: 50 }
+    }
+  } as const
+
+  it("journals why a compaction ran, how long it took, what it left and what its calls spent", () => {
+    const event = new AgentEvent.CompactionSettled({ ...compaction, ...accounted })
+    expect(row(event)).toEqual({
+      replacedPrefixDigest: "prefix",
+      marks: { kept: 0, squashed: 1, removed: 1 },
+      // The tokens the removed messages held, under a name the journal keeps:
+      // `removedTokens` ends in a word it reads as a credential.
+      removed: 41_370,
+      ...accounted
+    })
+    expect(stored(event)).toEqual(row(event))
+    expect(Redaction.isSensitiveKey("removedTokens")).toBe(true)
+  })
+
   it("keeps a run journaled before these fields on the identities it was journaled under", () => {
     const pairs: ReadonlyArray<readonly [AgentEvent.AgentEvent, AgentEvent.AgentEvent]> = [
-      [new AgentEvent.ModelSettled(settled), new AgentEvent.ModelSettled({ ...settled, ...staged })]
+      [new AgentEvent.ModelSettled(settled), new AgentEvent.ModelSettled({ ...settled, ...staged })],
+      [new AgentEvent.CompactionSettled(compaction), new AgentEvent.CompactionSettled({ ...compaction, ...accounted })]
     ]
     for (const [before, after] of pairs) expect(identity(after)).toBe(identity(before))
   })
