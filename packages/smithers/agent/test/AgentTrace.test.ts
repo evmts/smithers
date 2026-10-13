@@ -2544,6 +2544,20 @@ describe("where time and tokens went", () => {
     expect(row(new AgentEvent.CellCallSettled(called))).not.toHaveProperty("durationMillis")
   })
 
+  const retried = {
+    eventType: "flows.harness.model-retried.v1",
+    attempt: 1,
+    code: "rate_limited",
+    delayMillis: 400
+  } as const
+
+  it("journals how long a failed try ran and the status that failed it", () => {
+    const event = new AgentEvent.ModelRetried({ ...retried, elapsedMs: 310, httpStatus: 429 })
+    expect(row(event)).toEqual({ attempt: 1, code: "rate_limited", delayMillis: 400, elapsedMs: 310, httpStatus: 429 })
+    expect(stored(event)).toEqual(row(event))
+    expect(row(new AgentEvent.ModelRetried(retried))).toEqual({ attempt: 1, code: "rate_limited", delayMillis: 400 })
+  })
+
   it("keeps a run journaled before these fields on the identities it was journaled under", () => {
     const pairs: ReadonlyArray<readonly [AgentEvent.AgentEvent, AgentEvent.AgentEvent]> = [
       [new AgentEvent.ModelSettled(settled), new AgentEvent.ModelSettled({ ...settled, ...staged })],
@@ -2563,7 +2577,11 @@ describe("where time and tokens went", () => {
       [new AgentEvent.ClaimDemanded(claim), new AgentEvent.ClaimDemanded({ ...claim, ...claimCost })],
       [new AgentEvent.TurnClosed(closed), new AgentEvent.TurnClosed({ ...closed, ...split })],
       [new AgentEvent.CellSettled(ran), new AgentEvent.CellSettled({ ...ran, ...worked })],
-      [new AgentEvent.CellCallSettled(called), new AgentEvent.CellCallSettled({ ...called, durationMillis: 651 })]
+      [new AgentEvent.CellCallSettled(called), new AgentEvent.CellCallSettled({ ...called, durationMillis: 651 })],
+      [
+        new AgentEvent.ModelRetried(retried),
+        new AgentEvent.ModelRetried({ ...retried, elapsedMs: 310, httpStatus: 429 })
+      ]
     ]
     for (const [before, after] of pairs) expect(identityOf(after)).toBe(identityOf(before))
   })

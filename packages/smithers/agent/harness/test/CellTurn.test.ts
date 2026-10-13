@@ -3112,6 +3112,9 @@ describe("CellTurn model call stages", () => {
     const [settled] = of(events, "model-settled")
     expect(settled?.tries).toBe(3)
     expect(settled?.durationMillis).toBe(3_650)
+    // A retry notice that carries neither reading adds neither key.
+    expect(of(events, "model-retried").every((retried) => !("elapsedMs" in retried) && !("httpStatus" in retried)))
+      .toBe(true)
     // No thinking arrived, so that stage is absent and one delta is both ends.
     expect(settled?.stages).toEqual({ firstEventMs: 3_600, firstOutputMs: 3_610, lastOutputMs: 3_610 })
     // The provider reported no reasoning count: all of its output was written.
@@ -3179,6 +3182,29 @@ describe("CellTurn model call stages", () => {
 
     expect(of(events, "model-settled")[0]).not.toHaveProperty("timing")
     expect(of(events, "model-settled")[0]).not.toHaveProperty("servedTier")
+  })
+
+  it("carries how long a failed try ran and the status that failed it on its retry notice", async () => {
+    const { events } = await run({
+      state: state({ maxFrames: 1 }),
+      script: [{
+        events: [
+          ModelEvent.ModelEvent.Retry({
+            type: "retry",
+            attempt: 1,
+            code: "rate_limited",
+            delayMillis: 400,
+            elapsedMs: 310,
+            httpStatus: 429
+          }),
+          ...emits(`ctx.done("done")`).events
+        ]
+      }]
+    })
+
+    expect(of(events, "model-retried")).toEqual([
+      expect.objectContaining({ attempt: 1, code: "rate_limited", delayMillis: 400, elapsedMs: 310, httpStatus: 429 })
+    ])
   })
 
   it("says why a frame asked again, on the request and on its settlement", async () => {

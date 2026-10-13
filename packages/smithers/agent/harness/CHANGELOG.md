@@ -75,6 +75,9 @@
   which the controller provides around each flow call. What the cell is told
   is unchanged, and the failure's message is still never published (#3844).
 
+- `ModelRetried.elapsedMs` and `httpStatus`: how long the failed try ran and
+  the status that failed it, copied from `ModelEvent.Retry` (#3844).
+
 - `ExternalTranscript.decodeCodex` reads what Codex records outside its
   completed items: a message between agents (`agent_message`), whose encrypted
   body is one `encrypted` placeholder; a failed code-mode script with the

@@ -457,7 +457,15 @@ export class ModelRetried extends Schema.TaggedClass<ModelRetried>(
   delayMillis: Schema.Number.pipe(
     Schema.withConstructorDefault(Effect.succeed(0)),
     Schema.withDecodingDefaultKey(Effect.succeed(0))
-  )
+  ),
+  /**
+   * Milliseconds the failed try ran before it failed, as the boundary that
+   * retried timed it. Absent where that boundary timed nothing, and from
+   * journals written before it was carried.
+   */
+  elapsedMs: Schema.optional(Schema.Number),
+  /** The HTTP status that failed the try, when a response carried one. */
+  httpStatus: Schema.optional(Schema.Number)
 }) {}
 
 /**

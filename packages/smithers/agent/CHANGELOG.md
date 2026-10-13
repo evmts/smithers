@@ -12,6 +12,9 @@
     `lastOutputMs`), `tries`, `output` (`thinking`, `written`), and `timing`
     and `servedTier`, the model package's wire record of the same call.
     `control.agent.model-requested`: `reask`.
+    `control.agent.model-retried`: `elapsedMs` and `httpStatus`. Both retry
+    emitters now fill them on `ModelEvent.Retry`: the boundary that retries a
+    try on the same seat, and the failover to the next seat.
   - `control.agent.compaction-settled`: `causes`, `scope`, `frame`,
     `durationMillis`, `context` (`before`, `after`), `marksCall`,
     `summaryCall`.

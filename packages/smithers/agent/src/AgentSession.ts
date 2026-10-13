@@ -466,6 +466,7 @@ const lateFields: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   // differ between the attempt that measured them and a replay of it, the way
   // `durationMillis` does.
   ["control.agent.model-requested", new Set(["reask"])],
+  ["control.agent.model-retried", new Set(["elapsedMs", "httpStatus"])],
   ["control.agent.turn-closed", new Set(["frame", "time"])],
   ["control.agent.cell-settled", new Set(["work"])],
   [
@@ -981,7 +982,15 @@ export const trace = (
       // timestamps. A wave report reads the schedule off this field.
       return {
         eventType: "control.agent.model-retried",
-        payload: { attempt: event.attempt, code: event.code, delayMillis: event.delayMillis }
+        payload: {
+          attempt: event.attempt,
+          code: event.code,
+          delayMillis: event.delayMillis,
+          // How long the failed try ran and what status failed it (#3844):
+          // the stamps cannot say, for the reason the delay cannot.
+          ...(event.elapsedMs === undefined ? {} : { elapsedMs: event.elapsedMs }),
+          ...(event.httpStatus === undefined ? {} : { httpStatus: event.httpStatus })
+        }
       }
     case "discipline-armed":
       // The positive record of what this run armed, written before any of it

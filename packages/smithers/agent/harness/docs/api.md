@@ -1023,6 +1023,9 @@ that did the work, so a replayed frame reports the replay's own readings:
   that served it. Both count from the same call, so `stages.firstOutputMs`
   less `timing.firstOutputMs` is time the first output spent inside this
   process.
+- `ModelRetried` carries `elapsedMs`, how long the failed try ran, and
+  `httpStatus`, the status that failed it, when the boundary that retried
+  reported them on its `ModelEvent.Retry`.
 - `ModelRequested.reask` and `ModelSettled.reask` name the `Cell.RejectionCode`
   the attempt before this one was refused with, so a frame's second call says
   why it was made.

@@ -2165,7 +2165,9 @@ const emitModelProgress = (
         eventType: eventType.modelRetried,
         attempt: event.attempt,
         code: event.code,
-        delayMillis: event.delayMillis
+        delayMillis: event.delayMillis,
+        ...(event.elapsedMs === undefined ? {} : { elapsedMs: event.elapsedMs }),
+        ...(event.httpStatus === undefined ? {} : { httpStatus: event.httpStatus })
       })
     )
     : event.type === "settle"

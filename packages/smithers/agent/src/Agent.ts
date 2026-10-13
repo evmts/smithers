@@ -770,6 +770,9 @@ const withCapacity = (
               ]
             }
           }
+          // When this seat's try was issued, so the retry that follows a
+          // failure can say how long the failed try ran.
+          const beforeCall = yield* Clock.currentTimeMillis
           return entry.engine.sealStepWithEvents!(changed, emit).pipe(
             Stream.catchCause((cause) =>
               Stream.unwrap(Effect.gen(function*() {
@@ -831,7 +834,9 @@ const withCapacity = (
                       type: "retry",
                       attempt: tried.size,
                       code: model!.code,
-                      delayMillis: 0
+                      delayMillis: 0,
+                      elapsedMs: Math.max(0, Math.round(afterCall - beforeCall)),
+                      ...(model!.httpStatus === undefined ? {} : { httpStatus: model!.httpStatus })
                     })
                   ),
                   attempt()

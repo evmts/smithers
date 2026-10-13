@@ -27,6 +27,7 @@ import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as Recall from "@smthrs/memory/Recall"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
+import * as ModelError from "@smthrs/model/ModelError"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
 import { Node } from "@smthrs/plan"
@@ -49,6 +50,7 @@ import {
   Layer,
   Option,
   Path,
+  Schedule,
   Schema,
   Scope,
   Sink,
@@ -1571,6 +1573,127 @@ ctx.done(child.child + ":" + answer.answer)`
     expect(resolved?._tag === "resolved" ? resolved.message.content : []).toEqual([
       { type: "text", text: "child-1:yes" }
     ])
+  })
+})
+
+/*
+ * A retry notice says the try before it failed. It did not say how long that
+ * try ran or what status failed it, and the journal stamps every retry of one
+ * step with the same instant, so a try refused at once and one cut off after
+ * minutes read the same (#3844).
+ */
+describe("a retried model call says what the failed try took", () => {
+  /** A clock the failing model moves, so the time a try ran is the time this case declares. */
+  const moved = () => {
+    let now = 1_791_894_346_000
+    const nanos = (): bigint => BigInt(now) * 1_000_000n
+    return {
+      advance: (millis: number) => void (now += millis),
+      under: <A, E, R>(run: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+        Effect.provideServiceEffect(
+          run,
+          Clock.Clock,
+          Effect.map(Clock.Clock, (clock): Clock.Clock => ({
+            currentTimeMillis: Effect.sync(() => now),
+            currentTimeMillisUnsafe: () => now,
+            currentTimeNanos: Effect.sync(nanos),
+            currentTimeNanosUnsafe: nanos,
+            monotonicTimeNanos: Effect.sync(nanos),
+            monotonicTimeNanosUnsafe: nanos,
+            sleep: (duration) => clock.sleep(duration)
+          }))
+        )
+    }
+  }
+  /** Fails after `millis` with `error`, then answers from `cells`. */
+  const failingOnce = (advance: (millis: number) => void, millis: number, error: ModelError.ModelError) => {
+    const answering = recorded([], [`ctx.done("done")`])
+    let calls = 0
+    return Model.make({
+      stream: (request) =>
+        calls++ === 0
+          ? Stream.unwrap(Effect.sync(() => {
+            advance(millis)
+            return Stream.fail(error)
+          }))
+          : answering.stream(request)
+    })
+  }
+  const running = (options: {
+    readonly model: Model.Model
+    readonly fallback?: Model.Model
+    readonly modelRetryPolicy?: Schedule.Schedule<unknown, unknown>
+  }) =>
+    Effect.gen(function*() {
+      const collected: Array<AgentEvent.AgentEvent> = []
+      const agent = yield* Agent.Agent
+      const seat = (id: string, model: Model.Model) =>
+        Seat.make({ id, modelId: id, model, route, contextWindowTokens: 0 })
+      yield* agent.run({
+        session: "session-1",
+        seat: seat("first", options.model),
+        ...(options.fallback === undefined ? {} : { fallbackSeats: [seat("second", options.fallback)] }),
+        ...(options.modelRetryPolicy === undefined ? {} : { modelRetryPolicy: options.modelRetryPolicy }),
+        prompt: "do the task",
+        registry: registryOf([]),
+        capabilityEnvelope: [new Capability.CapabilityPattern({ action: "*", resource: "*" })],
+        maxFrames: 2
+      }).pipe(
+        Stream.runForEach((event) => Effect.sync(() => collected.push(event))),
+        Effect.provide(Layer.merge(Agent.layerDefaults, scriptedCompletionJudge))
+      )
+      return collected
+    }).pipe(Effect.provide(Agent.layer), Effect.provide(Safety.layer))
+  const retries = (outcome: Outcome) =>
+    eventsOf(outcome).flatMap((event) =>
+      event._tag === "model-retried"
+        ? [{ attempt: event.attempt, code: event.code, elapsedMs: event.elapsedMs, httpStatus: event.httpStatus }]
+        : []
+    )
+
+  it("times a try the boundary retried on the same seat, and names the status when the failure had one", async () => {
+    const clock = moved()
+    const outcome = await drive(clock.under(running({
+      model: failingOnce(
+        clock.advance,
+        700,
+        new ModelError.ModelError({ code: "provider_internal", message: "bad gateway", httpStatus: 502 })
+      ),
+      modelRetryPolicy: Schedule.recurs(1)
+    })))
+    expect(outcome._tag).toBe("completed")
+
+    expect(retries(outcome)).toEqual([{ attempt: 1, code: "provider_internal", elapsedMs: 700, httpStatus: 502 }])
+  })
+
+  it("names no status for a failure that carried none", async () => {
+    const clock = moved()
+    const outcome = await drive(clock.under(running({
+      model: failingOnce(clock.advance, 45, new ModelError.ModelError({ code: "transport", message: "socket closed" })),
+      modelRetryPolicy: Schedule.recurs(1)
+    })))
+
+    expect(retries(outcome)).toEqual([{ attempt: 1, code: "transport", elapsedMs: 45, httpStatus: undefined }])
+  })
+
+  it("times a try that failed over to the next seat", async () => {
+    const clock = moved()
+    const outcome = await drive(clock.under(running({
+      model: failingOnce(
+        clock.advance,
+        310,
+        new ModelError.ModelError({
+          code: "rate_limited",
+          message: "limited",
+          retryAfterMillis: 60_000,
+          httpStatus: 429
+        })
+      ),
+      fallback: recorded([], [`ctx.done("fallback")`])
+    })))
+    expect(outcome._tag).toBe("completed")
+
+    expect(retries(outcome)).toEqual([{ attempt: 1, code: "rate_limited", elapsedMs: 310, httpStatus: 429 }])
   })
 })
 

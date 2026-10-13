@@ -12,6 +12,7 @@ import * as Model from "@smthrs/model/Model"
 import * as ModelError from "@smthrs/model/ModelError"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
+import * as Clock from "effect/Clock"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Schedule from "effect/Schedule"
@@ -277,6 +278,8 @@ export const recordModelStep = (
     const failedUsage: Array<ModelEvent.Usage> = []
     let attemptUsage: ModelEvent.Usage = {}
     let attempt = 0
+    /** When the attempt in flight was issued, so a retry can say how long the failed one ran. */
+    let attemptStartedAt = 0
     /** How many attempts this step has already had cut off at the budget. */
     let overruns = 0
     /**
@@ -300,13 +303,18 @@ export const recordModelStep = (
           // Only a retryable `ModelError` reaches the tap: the classification
           // above stops the schedule before it on anything else.
           const error = input as ModelError.ModelError
+          const failedAt = yield* Clock.currentTimeMillis
           const retry = ModelEvent.ModelEvent.Retry({
             type: "retry",
             attempt,
             code: error.code,
             // Jitter produces a fractional millisecond. The whole millisecond
             // is the honest resolution for a report to read.
-            delayMillis: Math.round(Duration.toMillis(duration))
+            delayMillis: Math.round(Duration.toMillis(duration)),
+            // Read before the delay above is slept, so this is the failed
+            // attempt alone.
+            elapsedMs: Math.max(0, Math.round(failedAt - attemptStartedAt)),
+            ...(error.httpStatus === undefined ? {} : { httpStatus: error.httpStatus })
           })
           retries.push(retry)
           if (onEvent !== undefined) yield* onEvent(retry)
@@ -330,7 +338,8 @@ export const recordModelStep = (
           }))
       }))
     const collect = (input: ModelRequest.ModelRequest) =>
-      Effect.suspend(() => {
+      Effect.flatMap(Clock.currentTimeMillis, (issuedAt) => {
+        attemptStartedAt = issuedAt
         attemptUsage = {}
         return Stream.runCollect(
           silent(model.stream(input).pipe(Model.withGenAiSpan(input, model.providerName))).pipe(Stream.tap((event) =>
