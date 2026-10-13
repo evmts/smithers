@@ -11,6 +11,7 @@ import { ModelEvent, ModelRequest } from "@smthrs/model"
 import * as Auth from "@smthrs/model/Auth"
 import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import * as Evaluator from "@smthrs/model/Evaluator"
+import * as ModelError from "@smthrs/model/ModelError"
 import * as OpenAIChatGPT from "@smthrs/model/OpenAIChatGPT"
 import * as Route from "@smthrs/model/Route"
 import { Descriptor } from "@smthrs/registry"
@@ -23,6 +24,7 @@ import * as CellTurn from "../src/CellTurn.ts"
 import * as Compaction from "../src/Compaction.ts"
 import * as ContextWindow from "../src/ContextWindow.ts"
 import * as EngineLike from "../src/EngineLike.ts"
+import { HarnessError } from "../src/HarnessError.ts"
 import { compactable } from "../src/internal/compactable.ts"
 import type * as compactionMarks from "../src/internal/compactionMarks.ts"
 import { printsObservation } from "../src/internal/printsObservation.ts"
@@ -3234,6 +3236,195 @@ describe("CellTurn model call stages", () => {
   })
 })
 
+describe("CellTurn failed model calls", () => {
+  const failed = (events: ReadonlyArray<AgentEvent.AgentEvent>) => of(events, "model-failed")
+
+  it("records a call that began and failed: which call, why, how long it ran and how far its stream got", async () => {
+    const { advance, clock } = manualClock()
+    const timing: ModelEvent.Timing = {
+      attempts: 2,
+      sentMs: 9,
+      headersMs: 1_140,
+      firstEventMs: 1_180,
+      failedTries: [{ sentMs: 2, failedMs: 310, code: "provider_internal", httpStatus: 502 }]
+    }
+    // The route attaches its timing outside the error's schema, as the model package does.
+    const cutOff = Object.defineProperty(
+      new ModelError.ModelError({
+        code: "call_timeout",
+        message: "The model call ran past its budget",
+        httpStatus: 504
+      }),
+      "timing",
+      { value: timing, enumerable: false, configurable: true }
+    )
+    const { events, failure } = await run({
+      state: state({ maxFrames: 2 }),
+      script: [{
+        ...arrives(advance, [
+          [1_200, ModelEvent.ModelEvent.ThinkingStart({ type: "thinking-start", id: "think" })],
+          [800, ModelEvent.ModelEvent.Retry({ type: "retry", attempt: 1, code: "transport", delayMillis: 0 })],
+          [3_000, ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id: "cell", text: "```cell\n" })]
+        ]),
+        failure: cutOff,
+        failing: () => advance(85_000)
+      }],
+      clock
+    })
+
+    expect(failure).toMatchObject({ code: "model_failed" })
+    expect(failed(events)).toEqual([
+      expect.objectContaining({
+        scope: "session-1",
+        frame: 0,
+        attempt: 1,
+        purpose: "frame",
+        code: "call_timeout",
+        httpStatus: 504,
+        // Ninety seconds went into a call that returned nothing.
+        durationMillis: 90_000,
+        stages: { firstEventMs: 1_200, firstThinkingMs: 1_200, firstOutputMs: 5_000, lastOutputMs: 5_000 },
+        tries: 2,
+        timing
+      })
+    ])
+    // It settled nothing, so nothing says it did.
+    expect(of(events, "model-settled")).toEqual([])
+    expect(of(events, "model-requested").map(({ attempt, frame, purpose }) => ({ frame, attempt, purpose }))).toEqual([
+      { frame: 0, attempt: 1, purpose: "frame" }
+    ])
+  })
+
+  it.each([
+    ["a harness failure's code", new HarnessError({ code: "engine_failed", message: "no route" }), "engine_failed"],
+    ["a failure's tag where it has no code", { _tag: "Odd" }, "Odd"],
+    ["`failed` where it names neither", {}, "failed"]
+  ])("names %s", async (_, raised, code) => {
+    const { events } = await run({ state: state({ maxFrames: 1 }), script: [{ events: [], failure: raised }] })
+
+    expect(failed(events).map((event) => event.code)).toEqual([code])
+    // No route answered, so no stage was reached and nothing about the wire is known.
+    expect(failed(events)[0]).toMatchObject({ stages: {}, tries: 1 })
+    expect(failed(events)[0]).not.toHaveProperty("timing")
+    expect(failed(events)[0]).not.toHaveProperty("httpStatus")
+  })
+
+  it("takes the wire timing a host reports beside a failure that no longer carries it", async () => {
+    // An engine that records a failure hands the controller its decoded copy,
+    // and the model package's timing is outside the error's schema.
+    const reports: ModelEvent.Timing = { attempts: 1, sentMs: 4, headersMs: 880 }
+    const { events } = await run({
+      state: state({ maxFrames: 1 }),
+      script: [{
+        events: [],
+        failure: new ModelError.ModelError({ code: "invalid_request", message: "bad request", httpStatus: 400 }),
+        reports
+      }]
+    })
+
+    expect(failed(events)).toEqual([
+      expect.objectContaining({ code: "invalid_request", httpStatus: 400, timing: reports })
+    ])
+  })
+
+  it("lets a host report a timing outside a sealed step, to no one", () => {
+    expect(Effect.runSync(Effect.flatMap(EngineLike.FailedTimings, (report) => report({ attempts: 1 }))))
+      .toBeUndefined()
+  })
+
+  it("records a re-ask that failed as the frame's second call, with why it was asked", async () => {
+    const { events } = await run({
+      state: state({ maxFrames: 1, revalidations: 1 }),
+      script: [
+        prose("I will look into it."),
+        { events: [], failure: new ModelError.ModelError({ code: "transport", message: "socket closed" }) }
+      ]
+    })
+
+    expect(of(events, "model-settled").map(({ attempt }) => attempt)).toEqual([1])
+    expect(failed(events)).toEqual([
+      expect.objectContaining({ frame: 0, attempt: 2, purpose: "frame", reask: "no_cell", code: "transport" })
+    ])
+  })
+
+  it("records a compaction's summary call that failed, apart from the frame's own", async () => {
+    const { advance, clock } = manualClock()
+    const { events, failure } = await run({
+      script: [{
+        events: [],
+        failure: new ModelError.ModelError({ code: "provider_internal", message: "bad gateway", httpStatus: 502 }),
+        failing: () => advance(4_000)
+      }],
+      state: CellTurn.make({
+        session: "session-1",
+        seat: "anthropic:test-model",
+        modelParams: ModelRequest.GenerationParams.make(),
+        layers: ["layer-a"],
+        capabilityEnvelope: [],
+        placement: Option.none(),
+        contextWindow: crowded,
+        contextWindowTokens: 40_000,
+        maxFrames: 2
+      }),
+      flows: [],
+      clock
+    })
+
+    expect(failure).toBeDefined()
+    expect(failed(events)).toEqual([
+      expect.objectContaining({
+        frame: 0,
+        attempt: 1,
+        purpose: "compaction",
+        code: "provider_internal",
+        httpStatus: 502,
+        durationMillis: 4_000
+      })
+    ])
+    expect(of(events, "compaction-settled")).toEqual([])
+  })
+
+  it("records a compaction's summary call the run was interrupted in", async () => {
+    const { events, interrupted } = await run({
+      script: [ScriptedModel.midStreamInterrupt],
+      state: CellTurn.make({
+        session: "session-1",
+        seat: "anthropic:test-model",
+        modelParams: ModelRequest.GenerationParams.make(),
+        layers: ["layer-a"],
+        capabilityEnvelope: [],
+        placement: Option.none(),
+        contextWindow: crowded,
+        contextWindowTokens: 40_000,
+        maxFrames: 2
+      }),
+      flows: []
+    })
+
+    expect(interrupted).toBe(true)
+    expect(failed(events)).toEqual([
+      expect.objectContaining({ frame: 0, attempt: 1, purpose: "compaction", code: "interrupted" })
+    ])
+  })
+
+  it("records a call the run was interrupted in, which never settled", async () => {
+    const { events, interrupted } = await run({
+      state: state({ maxFrames: 1 }),
+      script: [ScriptedModel.midStreamInterrupt]
+    })
+
+    expect(interrupted).toBe(true)
+    expect(failed(events)).toEqual([
+      expect.objectContaining({ frame: 0, attempt: 1, purpose: "frame", code: "interrupted", tries: 1 })
+    ])
+    // The stream had begun writing before it was cut.
+    expect(failed(events)[0]?.stages).toMatchObject({
+      firstEventMs: expect.any(Number),
+      firstOutputMs: expect.any(Number)
+    })
+  })
+})
+
 describe("CellTurn call cost", () => {
   it("journals each priced call's USD cost from the seat's rate card", async () => {
     const { events } = await run({
@@ -3905,13 +4096,16 @@ describe("CellTurn cell classification", () => {
   })
 
   it("says a cell threw, and counts the calls it made before it did", async () => {
+    // A clock held still: the call took the no time this case declares.
+    const { clock } = manualClock()
     const { events } = await run({
       state: reading(2),
       script: [
         emits(`await ctx.call("fs/list", { path: "a" })\nthrow new Error("boom")`),
         emits(`ctx.done("done")`)
       ],
-      calls: [{ _tag: "Success", value: ["a.ts"] }]
+      calls: [{ _tag: "Success", value: ["a.ts"] }],
+      clock
     })
 
     expect(work(events)[0]).toEqual({ kind: "threw", calls: 1, callMs: 0 })

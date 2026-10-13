@@ -22,6 +22,7 @@ import * as Fault from "@smthrs/flow/Fault"
 import { Capability, CapabilitySet, Permission } from "@smthrs/kernel"
 import { CanonicalJson, type Model, ModelCatalog, ModelEvent, ModelRequest } from "@smthrs/model"
 import type * as Evaluator from "@smthrs/model/Evaluator"
+import * as ModelError from "@smthrs/model/ModelError"
 import * as Pricing from "@smthrs/model/Pricing"
 import { Descriptor } from "@smthrs/registry"
 import { Clock, Effect, Option, Queue, Result, Schema, Stream } from "effect"
@@ -2504,6 +2505,12 @@ interface FrameClock {
   cellMs: number
   judgeMs: number
   compactionMs: number
+  /**
+   * Ends the record of the model call the frame is waiting on, when it is
+   * waiting on one: what the run's own interruption handler calls, so a call
+   * the run was interrupted in is recorded as one that did not settle.
+   */
+  interrupted?: (() => Effect.Effect<void>) | undefined
 }
 
 /** Runs `effect` and adds the time it took to one part of the frame's clock. */
@@ -2542,7 +2549,7 @@ const staged = (startedAt: number) => {
   let tries = 1
   return {
     /** What the stream reached, read after it ends. */
-    read: (): Pick<AgentEvent.ModelSettled, "stages" | "tries"> => ({ stages: { ...stages }, tries }),
+    read: () => ({ stages: { ...stages }, tries }),
     note: (event: ModelEvent.ModelEvent): Effect.Effect<void> =>
       Effect.map(Clock.currentTimeMillis, (now) => {
         // A retry notice is the boundary starting over, not the provider answering.
@@ -2573,6 +2580,61 @@ const wireOf = (
 }
 
 /**
+ * Records a model call that began and did not settle: see
+ * `AgentEvent.ModelFailed`. `failure` is absent for a call the run was
+ * interrupted in. It observes the failure and hands it on unchanged.
+ */
+const unsettled = (
+  state: State,
+  call: Pick<AgentEvent.ModelFailed, "attempt" | "purpose" | "reask">,
+  startedAt: number,
+  reached: ReturnType<typeof staged>,
+  emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>,
+  spent: FrameClock
+) => {
+  // What the host said the last failed try took on the wire, for an engine
+  // that hands on a failure without it: see `EngineLike.FailedTimings`.
+  let reported: ModelEvent.Timing | undefined
+  const failing = (failure?: unknown): Effect.Effect<void> =>
+    Effect.gen(function*() {
+      spent.interrupted = undefined
+      const durationMillis = elapsed(startedAt, yield* Clock.currentTimeMillis)
+      // The frame waited on this call whether or not it answered. A summary
+      // call's wait is its compaction's, which times itself.
+      if (call.purpose === "frame") spent.modelMs += durationMillis
+      const kind = failure === undefined ? { code: "interrupted" } : Cell.failureKind(failure)
+      const wire = failure instanceof ModelError.ModelError ? failure : undefined
+      const timing = wire?.timing ?? reported
+      const { stages, tries } = reached.read()
+      yield* emit(
+        new AgentEvent.ModelFailed({
+          eventType: eventType.modelFailed,
+          scope: state.session,
+          frame: state.frame,
+          ...call,
+          code: kind.code ?? kind.tag ?? "failed",
+          ...(wire?.httpStatus === undefined ? {} : { httpStatus: wire.httpStatus }),
+          durationMillis,
+          stages,
+          tries,
+          ...(timing === undefined ? {} : { timing })
+        })
+      )
+    })
+  // From here until the call settles or fails, the run being interrupted is
+  // this call never settling.
+  spent.interrupted = () => failing()
+  return {
+    failing,
+    /** The call settled: nothing is left to record but its settlement. */
+    settled: (): void => void (spent.interrupted = undefined),
+    /** Hears what the host reports about the step's failed tries. */
+    hearing: <A, E, R>(step: Stream.Stream<A, E, R>): Stream.Stream<A, E, R> =>
+      Stream.provideService(step, EngineLike.FailedTimings, (timing) => Effect.sync(() => void (reported = timing)))
+  }
+}
+
+/**
  * The thinking and written tokens of one settled call. A provider's output
  * count includes its reasoning count, so what was written is the difference;
  * absent when the provider reported no output count to split.
@@ -2591,7 +2653,8 @@ const summarized = (
   state: State,
   engine: EngineLike.EngineLike,
   emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>,
-  step: Compaction.CompactionStep
+  step: Compaction.CompactionStep,
+  spent: FrameClock
 ): Effect.Effect<
   { readonly summary: ModelRequest.Message; readonly call: NonNullable<AgentEvent.CompactionSettled["summaryCall"]> },
   HarnessError | Model.ModelFailure
@@ -2609,6 +2672,14 @@ const summarized = (
     yield* requested(state, engine, request, "compaction", 1, emit)
     const startedAt = yield* Clock.currentTimeMillis
     const reached = staged(startedAt)
+    const { failing, hearing, settled: ended } = unsettled(
+      state,
+      { attempt: 1, purpose: "compaction" },
+      startedAt,
+      reached,
+      emit,
+      spent
+    )
     const events = yield* Stream.runCollect(
       (engine.sealStepWithEvents?.({
         request,
@@ -2621,9 +2692,14 @@ const summarized = (
       })).pipe(
         Stream.tap(reached.note),
         Stream.tap((event) => emitModelProgress(event, emit)),
-        Stream.provideService(EngineLike.Spend, { purpose: "compaction", frame: state.frame })
+        Stream.provideService(EngineLike.Spend, { purpose: "compaction", frame: state.frame }),
+        hearing
       )
-    ).pipe(Effect.map((collected) => Array.from(collected)))
+    ).pipe(
+      Effect.map((collected) => Array.from(collected)),
+      Effect.tapError(failing)
+    )
+    ended()
     const settledAt = yield* Clock.currentTimeMillis
     if (!events.some((event) => event.type === "settle")) {
       return yield* new HarnessError({
@@ -2861,7 +2937,8 @@ const compacted = (
   engine: EngineLike.EngineLike,
   emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>,
   judged: boolean,
-  taskOf: (window: ContextWindow.ContextWindow) => string
+  taskOf: (window: ContextWindow.ContextWindow) => string,
+  spent: FrameClock
 ): Effect.Effect<State, HarnessError | Model.ModelFailure> =>
   Effect.gen(function*() {
     const startedAt = yield* Clock.currentTimeMillis
@@ -2900,7 +2977,7 @@ const compacted = (
       marks?.map((mark) => mark.mark)
     ).pipe(Effect.orDie)
     const written = marks === undefined || marks.some((mark) => mark.mark === "squash")
-      ? yield* summarized(state, engine, emit, step)
+      ? yield* summarized(state, engine, emit, step, spent)
       : undefined
     const summary = written?.summary
     const contextWindow = yield* Compaction.apply(state.contextWindow, step, summary).pipe(Effect.orDie)
@@ -3024,6 +3101,14 @@ const seal = (
       // supplies a clock sees the duration it declared.
       const startedAt = yield* Clock.currentTimeMillis
       const reached = staged(startedAt)
+      const { failing, hearing, settled: ended } = unsettled(
+        state,
+        { attempt: attempt + 1, purpose: "frame", ...(reask === undefined ? {} : { reask }) },
+        startedAt,
+        reached,
+        emit,
+        spent
+      )
       const events = yield* Stream.runCollect(
         (engine.sealStepWithEvents?.({
           request,
@@ -3036,9 +3121,14 @@ const seal = (
         })).pipe(
           Stream.tap(reached.note),
           Stream.tap((event) => emitModelProgress(event, emit)),
-          Stream.provideService(EngineLike.Spend, { purpose: "frame", frame: state.frame })
+          Stream.provideService(EngineLike.Spend, { purpose: "frame", frame: state.frame }),
+          hearing
         )
-      ).pipe(Effect.map((collected) => Array.from(collected)))
+      ).pipe(
+        Effect.map((collected) => Array.from(collected)),
+        Effect.tapError(failing)
+      )
+      ended()
       const settledAt = yield* Clock.currentTimeMillis
       spent.modelMs += elapsed(startedAt, settledAt)
       if (!events.some((event) => event.type === "settle")) {
@@ -3635,7 +3725,7 @@ const frame = (
     const compactedState = yield* timedAs(
       spent,
       "compactionMs",
-      compacted(input.state, engine, emit, input.judged ?? false, taskOf)
+      compacted(input.state, engine, emit, input.judged ?? false, taskOf, spent)
     )
     // A run's first frame writes its own state section, before anything reads
     // the window; every later one opens on the section the frame before it
@@ -4665,6 +4755,8 @@ export const run = (
           }),
           Effect.onInterrupt(() =>
             Effect.gen(function*() {
+              // A model call the frame was still waiting on never settled.
+              if (spent.interrupted !== undefined) yield* spent.interrupted()
               yield* emit(new AgentEvent.Aborted({ eventType: eventType.aborted, reason: "Cell frame interrupted" }))
               yield* emit(
                 new AgentEvent.TurnClosed({

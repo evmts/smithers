@@ -399,6 +399,17 @@ describe("AgentEvent", () => {
         eventType: "flows.harness.model-selected.v1",
         seat: "secondary"
       }),
+      new AgentEvent.ModelFailed({
+        eventType: AgentEvent.eventType.modelFailed,
+        scope: "session-1",
+        frame: 3,
+        attempt: 1,
+        purpose: "frame",
+        code: "call_timeout",
+        durationMillis: 90_000,
+        stages: { firstEventMs: 1_200 },
+        tries: 2
+      }),
       new AgentEvent.SeatFailedOver({
         eventType: AgentEvent.eventType.seatFailedOver,
         from: "first",

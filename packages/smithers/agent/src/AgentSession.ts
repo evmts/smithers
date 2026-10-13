@@ -468,6 +468,10 @@ const lateFields: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   // `durationMillis` does.
   ["control.agent.model-requested", new Set(["reask"])],
   ["control.agent.model-retried", new Set(["elapsedMs", "httpStatus"])],
+  // A new record type, so nothing recorded can mismatch it. These three are
+  // readings of the attempt that failed, which a replayed failure takes again,
+  // and its identity is the call it ends and why: its coordinates and `code`.
+  ["control.agent.model-failed", new Set(["stages", "tries", "timing"])],
   ["control.agent.turn-closed", new Set(["frame", "time"])],
   ["control.agent.cell-settled", new Set(["work"])],
   [
@@ -1078,6 +1082,26 @@ export const trace = (
           // the name it gives it. `stages` above is what this process saw.
           ...(event.timing === undefined ? {} : { timing: event.timing }),
           ...(event.servedTier === undefined ? {} : { servedTier: event.servedTier })
+        }
+      }
+    case "model-failed":
+      // A call that began and did not settle (#3844): the keys of the request
+      // it ends, why it ended, and how far it got. Without it a call that
+      // spent its whole budget left a request and nothing after.
+      return {
+        eventType: "control.agent.model-failed",
+        payload: {
+          scope: event.scope,
+          frame: event.frame,
+          attempt: event.attempt,
+          purpose: event.purpose,
+          ...(event.reask === undefined ? {} : { reask: event.reask }),
+          code: event.code,
+          ...(event.httpStatus === undefined ? {} : { httpStatus: event.httpStatus }),
+          durationMillis: event.durationMillis,
+          stages: event.stages,
+          tries: event.tries,
+          ...(event.timing === undefined ? {} : { timing: event.timing })
         }
       }
     case "cell-produced":

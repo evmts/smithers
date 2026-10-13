@@ -25,6 +25,11 @@
  */
 export const unordered: ReadonlySet<string> = new Set([
   "control.agent.model-requested",
+  // The end of a call that did not settle, under the coordinates of the
+  // request it ends (`scope`, `frame`, `purpose`, `attempt`). It is written in
+  // the middle of a frame, ahead of whatever the failure does to the run, so
+  // taking an ordinal would move the park or abort rows a resumed run replays.
+  "control.agent.model-failed",
   "control.agent.decision-settled",
   // Written by the supervisor fiber off the loop's hot path, at whatever
   // ordinal the frame has reached when Jev answers; `scope` and `frame` are

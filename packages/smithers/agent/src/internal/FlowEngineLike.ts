@@ -8,6 +8,7 @@
  * @since 1.0.0-rc.0
  */
 
+import * as EngineLike from "@smthrs/harness/EngineLike"
 import * as Model from "@smthrs/model/Model"
 import * as ModelError from "@smthrs/model/ModelError"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
@@ -403,11 +404,21 @@ export const recordModelStep = (
             code: "transport",
             message: "The model response stream ended without a settlement"
           })
-        )).pipe(Effect.tapError(() =>
+        )).pipe(
+        Effect.tapError(() =>
           Effect.sync(() => {
             if (Object.keys(attemptUsage).length > 0) failedUsage.push(attemptUsage)
           })
-        ))
+        ),
+        // The failure is recorded and re-raised from its record, which is
+        // its schema and nothing else: the wire timing the model package
+        // attached to the live error ends here unless it is reported now.
+        Effect.tapError((error) =>
+          error instanceof ModelError.ModelError && error.timing !== undefined
+            ? Effect.flatMap(EngineLike.FailedTimings, (report) => report(error.timing!))
+            : Effect.void
+        )
+      )
 
     // Partial text from a failed attempt is unsafe to replay, but provider usage
     // is actual spend. Keep each attempt's final counters (not the sum of its

@@ -242,6 +242,24 @@ export const Spend = Context.Reference<Spend | undefined>("@smthrs/harness/Engin
 })
 
 /**
+ * Where a host reports the wire timing of a model try that failed.
+ *
+ * The model package attaches its timing to its error outside the error's
+ * schema, so an engine that records a failure and hands the controller the
+ * decoded copy has dropped it by the time the controller sees the failure. A
+ * host that sees the live error reports its timing here, and the controller,
+ * which provides this around each sealed step, writes the last one reported
+ * on the call's `model-failed` record. Outside a sealed step it does nothing.
+ *
+ * @category services
+ * @since 1.0.0-rc.1
+ */
+export const FailedTimings = Context.Reference<(timing: ModelEvent.Timing) => Effect.Effect<void>>(
+  "@smthrs/harness/EngineLike/FailedTimings",
+  { defaultValue: () => () => Effect.void }
+)
+
+/**
  * One measurement of the workspace the run is changing.
  *
  * The controller never interprets `digest`; it only asks whether two

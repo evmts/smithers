@@ -2584,6 +2584,65 @@ describe("where time and tokens went", () => {
     expect(row(new AgentEvent.ModelRetried(retried))).toEqual({ attempt: 1, code: "rate_limited", delayMillis: 400 })
   })
 
+  it("journals a model call that did not settle, without moving any row a resumed run replays", () => {
+    const failedCall = {
+      eventType: "flows.harness.model-failed.v1",
+      scope: "run-1",
+      frame: 9,
+      attempt: 2,
+      purpose: "frame",
+      reask: "compile_failed",
+      code: "call_timeout",
+      httpStatus: 504,
+      durationMillis: 90_000,
+      stages: { firstEventMs: 1_200, firstThinkingMs: 1_200 },
+      tries: 2,
+      timing: { attempts: 2, sentMs: 9, headersMs: 1_140, failedTries: [{ failedMs: 310, code: "provider_internal" }] }
+    } as const
+    const event = new AgentEvent.ModelFailed(failedCall)
+    const { eventType: _, ...journaled } = failedCall
+    expect(AgentSession.trace(event)).toEqual({ eventType: "control.agent.model-failed", payload: journaled })
+    expect(stored(event)).toEqual(row(event))
+
+    // It takes no ordinal: a run journaled before it existed replays the rows
+    // after a failed call (a park, an abort) at the ordinals they were given.
+    expect(unordered.has("control.agent.model-failed")).toBe(true)
+    // A replayed failure is the same record whatever the replay measured.
+    const replayed = new AgentEvent.ModelFailed({
+      ...failedCall,
+      durationMillis: 3,
+      stages: {},
+      tries: 1,
+      timing: undefined
+    })
+    expect(identityOf(replayed)).toBe(identityOf(event))
+    // A different call, or a different end of the same call, is another record.
+    expect(identityOf(new AgentEvent.ModelFailed({ ...failedCall, attempt: 3 }))).not.toBe(identityOf(event))
+    expect(identityOf(new AgentEvent.ModelFailed({ ...failedCall, code: "transport" }))).not.toBe(identityOf(event))
+
+    const bare = new AgentEvent.ModelFailed({
+      eventType: "flows.harness.model-failed.v1",
+      scope: "run-1",
+      frame: 0,
+      attempt: 1,
+      purpose: "compaction",
+      code: "interrupted",
+      durationMillis: 12,
+      stages: {},
+      tries: 1
+    })
+    expect(row(bare)).toEqual({
+      scope: "run-1",
+      frame: 0,
+      attempt: 1,
+      purpose: "compaction",
+      code: "interrupted",
+      durationMillis: 12,
+      stages: {},
+      tries: 1
+    })
+  })
+
   it("keeps a run journaled before these fields on the identities it was journaled under", () => {
     const pairs: ReadonlyArray<readonly [AgentEvent.AgentEvent, AgentEvent.AgentEvent]> = [
       [new AgentEvent.ModelSettled(settled), new AgentEvent.ModelSettled({ ...settled, ...staged })],

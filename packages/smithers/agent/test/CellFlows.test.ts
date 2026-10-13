@@ -1666,6 +1666,78 @@ describe("a retried model call says what the failed try took", () => {
     expect(retries(outcome)).toEqual([{ attempt: 1, code: "provider_internal", elapsedMs: 700, httpStatus: 502 }])
   })
 
+  it(
+    "records a call that failed for good through the real engine: its code, its status and how long it ran",
+    async () => {
+      const clock = moved()
+      const refused = Object.defineProperty(
+        new ModelError.ModelError({ code: "invalid_request", message: "bad request", httpStatus: 400 }),
+        "timing",
+        { value: { attempts: 1, sentMs: 4, headersMs: 880 }, enumerable: false, configurable: true }
+      )
+      const collected: Array<AgentEvent.AgentEvent> = []
+      const outcome = await drive(clock.under(
+        Effect.gen(function*() {
+          const agent = yield* Agent.Agent
+          yield* agent.run({
+            session: "session-1",
+            seat: Seat.make({
+              id: "first",
+              modelId: "first",
+              model: Model.make({
+                stream: () =>
+                  Stream.unwrap(Effect.sync(() => {
+                    clock.advance(90_000)
+                    return Stream.fail(refused)
+                  }))
+              }),
+              route,
+              contextWindowTokens: 0
+            }),
+            prompt: "do the task",
+            registry: registryOf([]),
+            capabilityEnvelope: [new Capability.CapabilityPattern({ action: "*", resource: "*" })],
+            maxFrames: 2
+          }).pipe(
+            Stream.runForEach((event) => Effect.sync(() => collected.push(event))),
+            Effect.provide(Layer.merge(Agent.layerDefaults, scriptedCompletionJudge))
+          )
+        }).pipe(Effect.provide(Agent.layer), Effect.provide(Safety.layer))
+      ))
+      expect(outcome._tag).toBe("failed")
+
+      const failedCalls = collected.flatMap((event) => event._tag === "model-failed" ? [event] : [])
+      expect(failedCalls).toEqual([
+        expect.objectContaining({
+          scope: "session-1",
+          frame: 0,
+          attempt: 1,
+          purpose: "frame",
+          code: "invalid_request",
+          httpStatus: 400,
+          durationMillis: 90_000,
+          tries: 1,
+          // The engine re-raises the failure from its record, which drops what
+          // the model package attached outside the error's schema; the port
+          // reports it beside the failure, and the record still has it.
+          timing: { attempts: 1, sentMs: 4, headersMs: 880 }
+        })
+      ])
+      expect(AgentSession.trace(failedCalls[0]!)).toMatchObject({
+        eventType: "control.agent.model-failed",
+        payload: {
+          frame: 0,
+          attempt: 1,
+          purpose: "frame",
+          code: "invalid_request",
+          durationMillis: 90_000,
+          timing: { attempts: 1, sentMs: 4, headersMs: 880 }
+        }
+      })
+    },
+    60_000
+  )
+
   it("names no status for a failure that carried none", async () => {
     const clock = moved()
     const outcome = await drive(clock.under(running({

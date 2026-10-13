@@ -12,6 +12,13 @@
     `lastOutputMs`), `tries`, `output` (`thinking`, `written`), and `timing`
     and `servedTier`, the model package's wire record of the same call.
     `control.agent.model-requested`: `reask`.
+    `control.agent.model-failed` is a new record: a model call that began
+    and did not settle, with `scope`, `frame`, `attempt`, `purpose`, `reask`,
+    `code`, `httpStatus`, `durationMillis`, `stages`, `tries` and `timing`. It
+    takes no ordinal in its frame, so a run journaled before it resumes with
+    every later row where it was. The engine port reports a failed try's wire
+    timing through `EngineLike.FailedTimings`, because the failure it re-raises
+    from its record no longer carries it.
     `control.agent.model-retried`: `elapsedMs` and `httpStatus`. Both retry
     emitters now fill them on `ModelEvent.Retry`: the boundary that retries a
     try on the same seat, and the failover to the next seat.

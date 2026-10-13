@@ -83,6 +83,15 @@
   (`Evaluator.Response.timing`). `Judgement.Asked` and `Supervisor.Reading`
   carry it (#3844).
 
+- `AgentEvent.ModelFailed` records a model call that began and did not
+  settle: the keys of its request, the failure's `code`, `httpStatus`,
+  `durationMillis`, the `stages` and `tries` it reached, and the model
+  package's wire `timing` when its error carried one. A call the run was
+  interrupted in is recorded with code `interrupted`. A host whose engine
+  hands on a decoded failure reports the timing through
+  `EngineLike.FailedTimings`. Exhaustive event matches must handle
+  `model-failed` (#3844).
+
 - `ExternalTranscript.decodeCodex` reads what Codex records outside its
   completed items: a message between agents (`agent_message`), whose encrypted
   body is one `encrypted` placeholder; a failed code-mode script with the

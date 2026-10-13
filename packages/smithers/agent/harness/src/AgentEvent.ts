@@ -532,6 +532,57 @@ export class ModelSettled extends Schema.TaggedClass<ModelSettled>(
 }) {}
 
 /**
+ * A model call that began and did not settle: it failed, or the run was
+ * interrupted inside it.
+ *
+ * `model-requested` says a call was asked and `model-settled` says what it
+ * answered, so a call that burned its whole budget and returned nothing left a
+ * request and silence, which is the call a reader most needs to see. This is
+ * its record, under the keys of the `model-requested` it ends. It is its own
+ * event because neither neighbour fits: every reader of `model-settled` takes
+ * it for an answer the model gave, and every reader of `model-retried` counts
+ * it as a try that was made again.
+ *
+ * `code` is the failure's own code where it has one (a `ModelError` code, a
+ * harness error code), its tag where it has none, and `interrupted` for a call
+ * the run was interrupted in. `durationMillis`, `stages` and `tries` are what
+ * `model-settled` would have carried, as far as the call got. `timing` is the
+ * model package's wire record of the failed call, which it attaches to its
+ * error outside the error's schema; a host whose engine hands on the decoded
+ * error and not the instance leaves it absent.
+ *
+ * @category events
+ * @since 1.0.0-rc.1
+ */
+export class ModelFailed extends Schema.TaggedClass<ModelFailed>(
+  "flows/harness/AgentEvent/ModelFailed"
+)("model-failed", {
+  eventType: Schema.Literal("flows.harness.model-failed.v1"),
+  /** The run's session. */
+  scope: Schema.String,
+  /** The controller's frame number for the turn the call belonged to. */
+  frame: NonNegativeSafeInt,
+  /** Which model call of that frame and purpose this was, counting from one. */
+  attempt: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+  /** What the call was for: the frame's own turn, or the compaction ahead of it. */
+  purpose: Schema.Literals(["frame", "compaction"]),
+  /** Why the frame was asking again, on its second call and later. */
+  reask: Schema.optional(Cell.RejectionCode),
+  /** Why the call did not settle. */
+  code: Schema.String,
+  /** The HTTP status that failed the call, when the failure carried one. */
+  httpStatus: Schema.optional(Schema.Number),
+  /** Wall-clock milliseconds from the sealed step being opened to its failure. */
+  durationMillis: NonNegativeSafeInt,
+  /** The stages the stream reached before it failed; empty when it reached none. */
+  stages: ModelStages,
+  /** Transport tries the sealed step took before it failed. */
+  tries: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+  /** The model package's wire record of the failed call, when its error carried one. */
+  timing: Schema.optional(ModelEvent.Timing)
+}) {}
+
+/**
  * The cell source recovered from one model settlement.
  *
  * The source itself is durable evidence: replay re-executes exactly this text,
@@ -1882,6 +1933,7 @@ export const AgentEvent = Schema.Union([
   ModelUnparked,
   ModelRetried,
   ModelSettled,
+  ModelFailed,
   CellProduced,
   CellRejectedInFrame,
   CellCallStarted,
@@ -1965,6 +2017,7 @@ export const eventType = {
   modelParked: "flows.harness.model-parked.v1",
   modelUnparked: "flows.harness.model-unparked.v1",
   modelRetried: "flows.harness.model-retried.v1",
+  modelFailed: "flows.harness.model-failed.v1",
   modelSettled: "flows.harness.model-settled.v1",
   mutationObserved: "flows.harness.mutation-observed.v1",
   narrowOnlyDemanded: "flows.harness.narrow-only-demanded.v1",
