@@ -1011,6 +1011,93 @@ overrode a removal, by segment digest), `removedTokens`, `unaligned` and
 (each with a `Suppression` reason) and `memory`; `SeatRouted.backups` and
 `panel`.
 
+Some events say where a run's time and tokens went. Every such field is
+optional and absent from journals written before it; every duration and
+offset is whole milliseconds on the injected `Clock`, measured by the attempt
+that did the work, so a replayed frame reports the replay's own readings:
+
+- `ModelSettled` carries the join keys of the `ModelRequested` it settles
+  (`scope`, `frame`, `attempt`, `purpose`), `stages` (offsets from the moment
+  the sealed step was opened to `firstEventMs`, `firstThinkingMs`,
+  `firstOutputMs` and `lastOutputMs`; a stage the stream never reached is
+  absent, and a retry notice is not a first event), `tries` (transport tries,
+  the one that settled included) and `output` (`thinking` and `written`
+  tokens: the provider's reasoning count and the rest of its output count).
+  Output is a text delta or a tool-call event. No stream event is journaled
+  for these: the offsets are noted as events pass and written once.
+  `timing` and `servedTier` are the model package's own record of the same
+  call, copied from its settle event: `ModelEvent.Timing` whole, and the tier
+  that served it. Both count from the same call, so `stages.firstOutputMs`
+  less `timing.firstOutputMs` is time the first output spent inside this
+  process.
+- `ModelRetried` carries `elapsedMs`, how long the failed try ran, and
+  `httpStatus`, the status that failed it, when the boundary that retried
+  reported them on its `ModelEvent.Retry`.
+- `ModelRequested.reask` and `ModelSettled.reask` name the `Cell.RejectionCode`
+  the attempt before this one was refused with, so a frame's second call says
+  why it was made.
+- `CompactionSettled` carries `scope` and `frame` (it is written ahead of its
+  frame's `TurnOpened`, so position files it under the frame before),
+  `durationMillis` for the whole compaction, `context` (`before` and `after`,
+  the window's estimated tokens), `marksCall` (the marks reading taken at
+  this boundary: `requests`, summed `usage`, `costUsd`, `costSource`,
+  `latencyMs`) and `summaryCall` (the summary call: `usage`, `costUsd`,
+  `costSource`, `durationMillis`, `stages`, `tries`, `output`). The summary
+  call is settled here and writes no `ModelSettled`: that event is a frame's
+  own answer. Marks a supervisor reading stored on an earlier frame were paid
+  there, as that frame's `DecisionSettled` rows of classifier
+  `compaction/marks`.
+- `SupervisorSettled` carries `triggers` (every `Supervisor.triggers` name
+  the reading fired, empty when none), `compact` (the context triggers it
+  handed on to compact the run at its next frame) or `compactSuppressed`
+  (why a context trigger it fired handed nothing on: `floor` for a context at
+  or under `Compaction.judgedAbove`, `unjudged` for a host with no real
+  judge), and `costUsd` with `costSource`, its `usage` priced under the
+  reading model's rate card. `nudged` already says whether a nudge was queued.
+- `SupervisorSettled.timing` and `DecisionSettled.timing` are the transport's
+  own record of where a reading's time went on the wire
+  (`Evaluator.Response.timing`), handed on whole. `Judgement.measured` keeps
+  it on `Asked.timing` and `Judgement.decision` writes it.
+- `SteeringDrained.compact` names the context triggers a boundary took from a
+  reading. A reading's `compact` that no boundary took compacted nothing.
+- `ClaimDemanded` carries `costUsd` and `costSource` for the completion check.
+- `TurnClosed` carries its `frame` and `time`: `wallMs` from the moment the
+  controller took the frame up to this event, split into `modelMs` (the
+  frame's own model calls, re-asks included), `cellMs` (the cell's
+  execution), `judgeMs` (what the loop itself waited on Jev: the run-start
+  relevance reading and the completion check), `compactionMs` (the compaction
+  ahead of the turn, its marks reading and summary call included) and
+  `otherMs` (workspace measurements, the steering drain, recorded
+  boundaries). The five parts add up to `wallMs`. A supervisor reading runs
+  beside the loop and is in none of them; its latency is on
+  `SupervisorSettled`.
+- `CellSettled.work` says what the cell amounted to: `kind` is `rejected` (a
+  reply the boundary refused, or a cell a limit cut off), `threw`,
+  `comment_only` (a settled cell whose source is nothing but comments),
+  `no_call` (it ran code and issued no flow call) or `calls`; `calls` counts
+  the flow calls the cell issued, refused ones included, and `callMs` sums
+  what they took. `CellCallSettled.durationMillis` is one call, from issue to
+  settlement.
+- `CellCallSettled.reason` is the `Cell.FailureKind` of a handler failure: its
+  `tag` and its own `code`, each only when it reads as an identifier. A
+  binding reports it through `Cell.Failures`, a `Context.Reference` the
+  controller provides around each flow call, and `Cell.failureKind` reads it
+  off the failure without trusting it. The failure's message stays as opaque
+  as it was: the cell is told what the binding's `publicError` selects and
+  nothing else, and the record carries names, never the failure's text.
+
+A host that keeps a spend ledger labels each charge from `EngineLike.Spend`, a
+`Context.Reference` the controller provides around every sealed step, every
+boundary that declares `RecordBoundary.usage` and every cell call. It holds
+the `purpose` (`EngineLike.SpendPurpose`: `frame`, `compaction`, `judge`,
+`marks`, `claim`, `relevance` or `reading`) and the `frame`; outside such a
+call it is `undefined`. The supervisor's boundary pays for the judge's reading,
+a relevance reading over recalled memory and a marks reading in one charge, so
+its label also carries `readings`: each metered reading's purpose, usage and
+model, read after the boundary's value is recorded. `Judgement.recorded` takes
+an optional `purpose` and labels its boundary with it. The reference labels
+and decides nothing: a host that never reads it charges exactly as before.
+
 Every member's `_tag` is the kebab-case discriminant `switch` and
 `Stream.filter` match on. `AgentEvent.eventType` is keyed by the camelCase
 property name and holds the journal event type, the one table `CellTurn`
