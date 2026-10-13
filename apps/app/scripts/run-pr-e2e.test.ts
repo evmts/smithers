@@ -1,8 +1,13 @@
-import { expect, test } from 'bun:test'
+import { expect, setDefaultTimeout, test } from 'bun:test'
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from './test-child'
+
+// One case starts up to ten Node processes and takes four seconds on an idle
+// machine; beside the rest of the unit suite it passes Bun's five-second
+// default (#3483). The child keeps test-child's own 30-second limit.
+setDefaultTimeout(60_000)
 
 for (const shard of [undefined, '1', '2', '3']) test(`browser runner preserves tiers for shard ${shard ?? 'local'}`, () => {
   const root = mkdtempSync(join(tmpdir(), 'browser-shard-'))

@@ -18,7 +18,7 @@ test("the unit target collects proof tests without collecting Playwright's sibli
     mkdirSync(join(root, "e2e/proof"), { recursive: true })
     writeFileSync(join(root, "proof/page.test.ts"), 'import { test, expect } from "bun:test"; test("proof unit collected", () => expect(1).toBe(1))')
     writeFileSync(join(root, "e2e/proof/j8.spec.ts"), 'throw new Error("Playwright proof must not run under Bun")')
-    const result = spawnSync(process.execPath, ["test", "--isolate", proofPath], { cwd: root, encoding: "utf8", timeout: 10_000 })
+    const result = spawnSync(process.execPath, ["test", "--isolate", proofPath], { cwd: root, encoding: "utf8", timeout: 60_000 })
     expect(result.error).toBeUndefined()
     expect(result.status).toBe(0)
     expect(result.stderr).toContain("proof unit collected")

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test"
+import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test"
 import { requiresMacOS } from "./RequiresMacOS"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -8,7 +8,12 @@ import * as HostService from "../../../packages/smithers/src/internal/backend/Ho
 const root = mkdtempSync(join(tmpdir(), "bundle-cli-"))
 const binary = join(root, "smthrs")
 
-// Compilation is fixture setup; each rejection keeps its own five-second deadline.
+// Each case starts the compiled binary. Beside the rest of the unit suite on a
+// CI runner that start alone passes Bun's five-second default (#3483), so the
+// deadline only has to catch a command that never returns.
+setDefaultTimeout(30_000)
+
+// Compilation is fixture setup.
 beforeAll(() => {
   expect(Bun.spawnSync(["bun", "build", "--compile", join(import.meta.dir, "bundle-cli.ts"), "--outfile", binary]).exitCode).toBe(0)
 }, 30_000)
