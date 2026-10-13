@@ -20,8 +20,12 @@ commit mode, the commit itself.
 What every trial records under its Harbor logs directory:
 
     smithers-run.json   seat, auth mode, route binding, harness revision, subject
-                        fingerprint, wall clock, tokens, exit status
-    trajectory.json     ATIF-v1.8 trajectory folded from the harness journal
+                        fingerprint, wall clock, tokens, exit status, tokens by
+                        purpose and where the time went
+    trajectory.json     ATIF-v1.8 trajectory folded from the harness journal:
+                        one step per model call the agent made, and every
+                        model call of the run, the judge's included, as a row
+                        (`calls.py`)
     smithers-run.log    the CLI's own stdout and stderr
     workspace/          the flow file and `.flows/control.db`, the journal itself
 
@@ -71,18 +75,17 @@ import json
 import os
 import re
 import shutil
-import sqlite3
 import subprocess
 import tempfile
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 try:
-    from . import accounts, plue_docker
+    from . import accounts, calls, plue_docker
 except ImportError:  # imported by file path (fixtures)
     import accounts  # type: ignore[no-redef]
+    import calls  # type: ignore[no-redef]
     import plue_docker  # type: ignore[no-redef]
 
 # Pier ships Harbor as a dependency, so under Pier both import; the runner
@@ -297,58 +300,12 @@ def cli_environment(base: dict[str, str], *, auth_mode: str, helper: Path | None
     return env
 
 
-JOURNAL_FILES = ("control.db", "engine.db")
-
-
-def journal_path(flows_dir: Path) -> Path | None:
-    """The database under `.flows/` that holds the agent's control events.
-
-    rc.1 writes them to `control.db`; the SWE-bench rig's archived journals
-    are `engine.db`. Whichever file carries a `control.agent.*` row is the
-    journal; a file that exists but carries none is not it.
-    """
-    for name in JOURNAL_FILES:
-        candidate = flows_dir / name
-        if not candidate.is_file():
-            continue
-        try:
-            connection = sqlite3.connect(f"file:{candidate}?mode=ro", uri=True)
-            try:
-                row = connection.execute(
-                    "select 1 from flows_journal_events where event_type like 'control.agent.%' limit 1"
-                ).fetchone()
-            finally:
-                connection.close()
-        except sqlite3.Error:
-            continue
-        if row is not None:
-            return candidate
-    return None
-
-
-def read_journal(path: Path) -> list[dict[str, Any]]:
-    """Every event of the run's journal, in sequence, payloads decoded."""
-    connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    try:
-        rows = connection.execute(
-            "select seq, emitted_at_ms, event_type, payload_json from flows_journal_events order by seq"
-        ).fetchall()
-    finally:
-        connection.close()
-    events = []
-    for seq, emitted_at_ms, event_type, payload_json in rows:
-        try:
-            payload = json.loads(payload_json)
-        except ValueError:
-            payload = {}
-        events.append({"seq": seq, "at": emitted_at_ms, "type": event_type, "payload": payload if isinstance(payload, dict) else {}})
-    return events
-
-
-def _iso(millis: int | None) -> str | None:
-    if millis is None:
-        return None
-    return datetime.fromtimestamp(millis / 1000, tz=timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+# Finding and reading the journal belongs to the module that folds it into
+# call rows (`calls.py`), which the report reads without this adapter.
+JOURNAL_FILES = calls.JOURNAL_FILES
+journal_path = calls.journal_path
+read_journal = calls.read_journal
+_iso = calls.iso
 
 
 def _text(value: Any) -> str:
@@ -359,23 +316,40 @@ def _text(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
+def _own_call(payload: dict[str, Any], requested: Any) -> bool:
+    """Whether a `model-settled` is the agent's own call. A call's purpose is
+    on its settle when the harness writes it there, else on its request; a
+    journal from before either names one made only the agent's own."""
+    purpose = payload.get("purpose", requested)
+    return not isinstance(purpose, str) or purpose == "frame"
+
+
 def summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
-    """Tokens, calls, route bindings and the run's own verdict, off the journal."""
+    """Tokens, calls, route bindings and the run's own verdict, off the journal.
+
+    `usage` and `modelCalls` are the agent's own calls, the figures Harbor
+    reads and every earlier report printed. `byPurpose` and `allPurposes`
+    add the compaction calls and the judge's readings (`calls.totals`);
+    `ledgerTokens` is the run's own count of all of them, and `time` is where
+    the wall clock went.
+    """
     usage = {"inputTokens": None, "cachedInputTokens": None, "outputTokens": None, "reasoningTokens": None}
     missing_usage = {name: False for name in usage}
     seat = None
-    frames = model_calls = calls = asks_refused = 0
+    frames = model_calls = cell_calls = asks_refused = 0
     bindings: list[Any] = []
     efforts: list[str] = []
     status = None
     output = None
     cause = None
+    requested = None
     for event in events:
         kind, payload = event["type"], event["payload"]
         if kind == "control.agent.turn-opened":
             frames += 1
             seat = payload.get("seat", seat)
         elif kind == "control.agent.model-requested":
+            requested = payload.get("purpose")
             # rc.1 journals the resolved route as `routeId`/`protocolId`/
             # `modelId`; an older host names it `binding`. Either is the proof
             # of which backend served the call, so both are kept.
@@ -391,6 +365,8 @@ def summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
             if isinstance(effort, str) and effort not in efforts:
                 efforts.append(effort)
         elif kind == "control.agent.model-settled":
+            if not _own_call(payload, requested):
+                continue
             model_calls += 1
             counters = payload.get("usage") or {}
             for name in usage:
@@ -400,7 +376,7 @@ def summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
                 else:
                     missing_usage[name] = True
         elif kind == "control.agent.cell-call-started":
-            calls += 1
+            cell_calls += 1
         elif kind == "control.agent.cell-call-settled":
             if payload.get("flowName") == "ask" and payload.get("outcome") != "success":
                 asks_refused += 1
@@ -415,14 +391,19 @@ def summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
     for name in usage:
         if missing_usage[name]:
             usage[name] = None
+    folded = calls.fold_journal(events)
     return {
         "cause": (cause.split("\n", 1)[0][:500] if isinstance(cause, str) else None),
         "seat": seat,
         "frames": frames,
         "modelCalls": model_calls,
-        "calls": calls,
+        "calls": cell_calls,
         "asksRefused": asks_refused,
         "usage": usage,
+        "byPurpose": folded["byPurpose"],
+        "allPurposes": folded["allPurposes"],
+        "ledgerTokens": folded["ledgerTokens"],
+        "time": folded["time"],
         "bindings": bindings,
         "efforts": efforts,
         "status": status,
@@ -435,12 +416,18 @@ def trajectory(events: list[dict[str, Any]], *, agent_name: str, agent_version: 
                session_id: str | None, extra: dict[str, Any] | None = None) -> dict[str, Any]:
     """Folds the harness journal into one ATIF-v1.8 trajectory.
 
-    One `user` step carries the instruction. Each model turn becomes one `agent`
-    step: its message is the reply the model settled with, its tool calls are
-    the flow calls the cell made, and the observation holds each call's result
-    in call order. Tokens ride on the step's metrics and are summed into
-    `final_metrics`, so Harbor's usage columns read them back without a
-    per-agent parser.
+    One `user` step carries the instruction. Each model call the agent made
+    becomes one `agent` step: its message is the reply the model settled with,
+    its tool calls are the flow calls the cell made, and the observation holds
+    each call's result in call order. A frame whose reply held no runnable cell
+    asks again, so it is two steps, the first marked `rejected`. Tokens ride
+    on the step's metrics and are summed into `final_metrics`, so Harbor's
+    usage columns read them back without a per-agent parser.
+
+    The steps and `final_metrics.total_*` are the agent's own calls. Every
+    model call of the run, the compaction calls and the judge's readings
+    included, is a row of `extra.calls`; `final_metrics.extra` sums the rows
+    by purpose and says where the wall clock went (`calls.fold_journal`).
     """
     steps: list[dict[str, Any]] = [{
         "step_id": 1,
@@ -453,6 +440,12 @@ def trajectory(events: list[dict[str, Any]], *, agent_name: str, agent_version: 
     settled: list[dict[str, Any]] = []
     totals = {"prompt": None, "completion": None, "cached": None}
     missing = {"prompt": False, "completion": False, "cached": False}
+    requested: dict[str, Any] = {}
+    requested_at: int | None = None
+
+    def open_turn(seq: int, at: int) -> None:
+        nonlocal turn
+        turn = {"seq": seq, "timestamp": _iso(at), "message": "", "cell": None, "metrics": None, "rejected": None}
 
     def close_turn() -> None:
         nonlocal turn, started, settled
@@ -482,8 +475,9 @@ def trajectory(events: list[dict[str, Any]], *, agent_name: str, agent_version: 
             "source": "agent",
             "message": turn.get("message") or "",
         }
-        if turn.get("cell"):
-            step["extra"] = {"cell": turn["cell"]}
+        noted = {name: turn[name] for name in ("cell", "rejected") if turn.get(name)}
+        if noted:
+            step["extra"] = noted
         if tool_calls:
             step["tool_calls"] = tool_calls
         if results:
@@ -496,12 +490,21 @@ def trajectory(events: list[dict[str, Any]], *, agent_name: str, agent_version: 
 
     for event in events:
         kind, payload = event["type"], event["payload"]
+        if kind == "control.agent.model-requested":
+            requested, requested_at = payload, event["at"]
         if kind == "control.agent.turn-opened":
             close_turn()
-            turn = {"seq": event["seq"], "timestamp": _iso(event["at"]), "message": "", "cell": None, "metrics": None}
+            open_turn(event["seq"], event["at"])
         elif turn is None:
             continue
         elif kind == "control.agent.model-settled":
+            if not _own_call(payload, requested.get("purpose")):
+                continue
+            if turn["metrics"] is not None:
+                # The frame asked again: this reply is its own call, so its
+                # own step. One step per frame lost the first reply's tokens.
+                close_turn()
+                open_turn(event["seq"], event["at"] if requested_at is None else requested_at)
             counters = payload.get("usage") or {}
             prompt = counters.get("inputTokens")
             completion = counters.get("outputTokens")
@@ -519,8 +522,14 @@ def trajectory(events: list[dict[str, Any]], *, agent_name: str, agent_version: 
                 "extra": {
                     "reasoning_tokens": counters.get("reasoningTokens"),
                     "duration_millis": payload.get("durationMillis"),
+                    "purpose": "frame",
+                    "frame": requested.get("frame"),
+                    "attempt": requested.get("attempt"),
                 },
             }
+            requested, requested_at = {}, None
+        elif kind == "control.agent.cell-rejected-in-frame":
+            turn["rejected"] = {"code": payload.get("code"), "message": payload.get("message")}
         elif kind == "control.agent.cell-produced":
             cell = payload.get("cell") or {}
             turn["cell"] = cell.get("text") if isinstance(cell, dict) else _text(cell)
@@ -532,12 +541,14 @@ def trajectory(events: list[dict[str, Any]], *, agent_name: str, agent_version: 
     for key in totals:
         if missing[key]:
             totals[key] = None
+    folded = calls.fold_journal(events)
 
     return {
         "schema_version": "ATIF-v1.8",
         "session_id": session_id,
         "agent": {"name": agent_name, "version": agent_version, "model_name": seat, "extra": extra or {}},
         "steps": steps,
+        "extra": {"calls": folded["calls"]},
         "final_metrics": {
             "total_prompt_tokens": totals["prompt"],
             "total_completion_tokens": totals["completion"],
@@ -550,6 +561,10 @@ def trajectory(events: list[dict[str, Any]], *, agent_name: str, agent_version: 
                     if totals["prompt"] is not None and totals["prompt"] > 0 and totals["cached"] is not None
                     else None
                 ),
+                "byPurpose": folded["byPurpose"],
+                "allPurposes": folded["allPurposes"],
+                "ledgerTokens": folded["ledgerTokens"],
+                "time": folded["time"],
             },
         },
     }

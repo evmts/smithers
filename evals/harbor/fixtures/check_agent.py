@@ -153,7 +153,8 @@ def check_journal() -> str:
     assert steps[0]["source"] == "user" and steps[0]["message"] == INSTRUCTION
     assert steps[1]["source"] == "agent" and len(steps[1]["tool_calls"]) == 2
     assert steps[1]["metrics"] == {"prompt_tokens": 1000, "completion_tokens": 50, "cached_tokens": 200,
-                                   "extra": {"reasoning_tokens": 10, "duration_millis": 1234}}
+                                   "extra": {"reasoning_tokens": 10, "duration_millis": 1234, "purpose": "frame",
+                                             "frame": None, "attempt": None}}
     assert steps[1]["extra"]["cell"] == "await bash({command: 'ls /app'})"
     ids = {call["tool_call_id"] for call in steps[1]["tool_calls"]}
     results = steps[1]["observation"]["results"]
@@ -161,9 +162,15 @@ def check_journal() -> str:
     assert results[1]["content"] == "exit 1" and results[1]["extra"]["outcome"] == "failure"
     assert steps[2]["tool_calls"][0]["function_name"] == "bash"
     assert steps[2]["observation"]["results"][0]["content"] == "print(1)"
-    assert document["final_metrics"] == {"total_prompt_tokens": 3000, "total_completion_tokens": 120,
-                                         "total_cached_tokens": 1100, "total_steps": 3,
-                                         "extra": {"cached_share": 1100 / 3000}}
+    final = document["final_metrics"]
+    assert {key: value for key, value in final.items() if key != "extra"} == {
+        "total_prompt_tokens": 3000, "total_completion_tokens": 120, "total_cached_tokens": 1100, "total_steps": 3}
+    assert final["extra"]["cached_share"] == 1100 / 3000
+    # This journal names no purpose and no judge, so every call is the agent's
+    # own and the totals by purpose are the totals (`check_calls.py`).
+    assert [row["purpose"] for row in document["extra"]["calls"]] == ["frame", "frame"]
+    assert final["extra"]["allPurposes"]["totalTokens"] == 3120 == final["extra"]["byPurpose"]["frame"]["totalTokens"]
+    assert final["extra"]["ledgerTokens"] is None and summary["byPurpose"] == final["extra"]["byPurpose"]
     def trial(usage: dict) -> dict:
         rows = [{"seq": 1, "at": 0, "type": "control.agent.turn-opened", "payload": {}},
                 {"seq": 2, "at": 1, "type": "control.agent.model-settled", "payload": {"usage": usage}}]
