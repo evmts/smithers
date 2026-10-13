@@ -53,6 +53,25 @@ const line = (entry_id: string, tone: TimelineLine["tone"]): TimelineLine => ({ 
 const toast = (id: string, status: Toast["status"], createdAt: number, extra: Partial<Toast> = {}): Toast =>
   ({ id, key: id, title: `Toast ${id}`, detail: "", status, createdAt, updatedAt: createdAt, ...extra })
 
+test("utility cards do not join the chat timeline, while recorded chat cards remain", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, silentAgent)
+  const base = { createdAt: 1, ordinal: 1, status: "active" as const }
+  const utilities: Card[] = [
+    { ...base, id: "docs", kind: "docs", title: "Quickstart", payload: { page: "quickstart", markdown: "# Quickstart" } },
+    { ...base, id: "wiki", kind: "world", title: "Wiki", payload: { documents: [] } },
+    { ...base, id: "issues", kind: "issue-list", title: "Issues", payload: { repo: "smithersai/smithers", filter: "open", issues: [] } },
+    { ...base, id: "new-issue", kind: "flow-form", title: "Open a GitHub issue", payload: { flow: "issue.new", via: "user", fields: [], draft: {}, given: {} } },
+  ]
+  const host = mount(<ControllerTestProvider controller={controller}><MessageScrollerProvider>
+    <ShellRail home={false} entries={[message("prompt", "user", "Inspect the build"), card("build", "active"), ...utilities.map((card): RailEntry => ({ kind: "card", card }))]} />
+  </MessageScrollerProvider></ControllerTestProvider>)
+  expect([...host.querySelectorAll(".timeline li")].map(row => row.getAttribute("data-entry"))).toEqual(["prompt", "build"])
+  // A requested card recorded with a real turn is part of that exchange.
+  const shared = sharedRailLines({ id: "main", entries: [{ id: "help", author: 1, authorLogin: "alice", runId: "help", prompt: "Open Quickstart", state: "completed", frames: [{ type: "card", runId: "help", card: utilities[0]! }] }] }, { role: "member" })
+  expect(shared.map(row => row.entry_id)).toEqual(["help:prompt", "help:answer", "docs"])
+})
+
 test("the mounted install rail reads the real seams and Hide runs toast.dismiss without removing the transcript", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "smithersai", admin: false, scopesPlain: null }).isPersisted.promise

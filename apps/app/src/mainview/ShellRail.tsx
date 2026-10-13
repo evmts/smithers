@@ -39,6 +39,11 @@ export type RailEntry =
   | { readonly kind: "init"; readonly message: InitMessage }
   | { readonly kind: "card"; readonly card: Card }
 
+/** Utility surfaces stay out of the rail; cards recorded in a chat turn use sharedRailLines. */
+const conversationRailEntry = (entry: RailEntry): boolean => entry.kind !== "card" ||
+  (entry.card.kind !== "docs" && entry.card.kind !== "world" && entry.card.kind !== "issue-list" &&
+    !(entry.card.kind === "flow-form" && entry.card.payload.flow === "issue.new"))
+
 const firstLine = (text: string): string => text.split("\n").find(line => line.trim() !== "")?.trim() ?? ""
 
 const toneGlyph = (tone: TimelineLine["tone"]): TimelineLine["glyph"] => ({ state: tone === "failed" ? "failed" : tone === "done" ? "merged" : tone === "live" ? "working" : tone === "attention" ? "needs_you" : "queued" })
@@ -236,7 +241,7 @@ export function ShellRail({ entries, home }: { readonly entries: ReadonlyArray<R
   const lines = [...new Map([
     ...(home && homeAnswer !== undefined ? [homeLine(homeAnswer)] : []),
     ...(controller.sharedConversation ? sharedRailLines(shared.conversation, { role }, shared.view?.last_seen_seq ?? 0) : []),
-    ...railLines(controller.sharedConversation ? entries.filter(entry => entry.kind === "card" || entry.kind === "entry" || entry.kind === "message" && (entry.message.origin === "external" || entry.message.action !== undefined || diagnosticVisible(entry.message, identities.find(identity => identity.id === "identity")?.login, controller.store.session().branchNavigation?.selected_branch ?? "main"))) : entries, { role })
+    ...railLines((controller.sharedConversation ? entries.filter(entry => entry.kind === "card" || entry.kind === "entry" || entry.kind === "message" && (entry.message.origin === "external" || entry.message.action !== undefined || diagnosticVisible(entry.message, identities.find(identity => identity.id === "identity")?.login, controller.store.session().branchNavigation?.selected_branch ?? "main"))) : entries).filter(conversationRailEntry), { role })
   ].map(line => [line.entry_id, line] as const)).values()].map(line => positions.get(line.entry_id) === undefined ? line : { ...line, fresh: sharedFresh(positions, line.entry_id, shared.view?.last_seen_seq ?? 0) })
   const timeline = timelineActions(lines, homeDispatch(controller))
   const band = useMessageBand(lines.map(line => line.entry_id), visible => {
