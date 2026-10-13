@@ -1365,6 +1365,14 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		gitHubMainPullService.UseInstallPolicy()
 	}
 	gitHubSyncedRepoService.SetPullMirror(gitHubMainPullService.PullMirror)
+	publicMirrors, err := services.ParsePublicMirrors(cfg.Server.PublicMirrors)
+	if err != nil {
+		return err
+	}
+	if len(publicMirrors) > 0 && !options.topology.hosted() {
+		// An install wraps one repository and its import, not the pull, creates main.
+		return errors.New("SMITHERS_PUBLIC_MIRRORS applies to a hosted deployment only")
+	}
 	gitHubWebhookEventWorker.SetMainPull(gitHubMainPullService)
 	// The mythical stack folds every main the pull brings in, admits every
 	// issue, works it on lane workspaces and proposes it to GitHub.
@@ -2670,6 +2678,10 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		gitHubImportWorker = startJoinedBackgroundWorker(func() {
 			gitHubImportService.Start(workerCtx)
 		})
+	}
+	if options.topology.workers() && len(publicMirrors) > 0 {
+		publicMirrorSeeder := services.NewPublicMirrorSeeder(pool, orgService, repoService, gitHubMainPullService, publicMirrors)
+		launchWorker(func() { publicMirrorSeeder.Start(workerCtx) })
 	}
 	if options.topology.workers() {
 		// The poll catches missed webhooks even where workflows are off.

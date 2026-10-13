@@ -923,7 +923,22 @@ func (s *RepoService) CreateOrgRepo(
 	if !membership.hasRole("owner") {
 		return db.Repository{}, errors.Forbidden("insufficient organization permissions")
 	}
+	return s.createOrgRepository(ctx, actor, org, name, description, isPublic, defaultBookmark, autoInit, requestStartedAt)
+}
 
+// createOrgRepository creates org's repository once the caller has decided
+// actor may: an organization owner (CreateOrgRepo), or the deployment seeding
+// a public mirror (PublicMirrorSeeder).
+func (s *RepoService) createOrgRepository(
+	ctx context.Context,
+	actor *db.User,
+	org db.Organization,
+	name, description string,
+	isPublic bool,
+	defaultBookmark string,
+	autoInit bool,
+	requestStartedAt time.Time,
+) (db.Repository, error) {
 	name = strings.TrimSpace(name)
 	defaultBookmark = normalizeDefaultBookmark(defaultBookmark)
 	if err := validateRepoName(name); err != nil {
@@ -989,7 +1004,7 @@ func (s *RepoService) CreateOrgRepo(
 		NotBefore:       requestStartedAt,
 	}
 	var repo db.Repository
-	err = authorizeRepoCreateThenCommit(ctx, s.billing, BillingOwnerTypeOrg, org.ID, !isPublic, func(commitCtx context.Context) error {
+	err := authorizeRepoCreateThenCommit(ctx, s.billing, BillingOwnerTypeOrg, org.ID, !isPublic, func(commitCtx context.Context) error {
 		var createErr error
 		repo, createErr = s.queries.CreateOrgRepo(commitCtx, createParams)
 		adopted := false
@@ -998,7 +1013,7 @@ func (s *RepoService) CreateOrgRepo(
 			case repositoryCreateErrorConflict:
 				return errors.Conflict(fmt.Sprintf("repository '%s' already exists", name))
 			case repositoryCreateErrorDefinitive:
-				slog.Error("failed to create org repository record", "org", orgName, "repo_name", name, "error", createErr)
+				slog.Error("failed to create org repository record", "org", org.Name, "repo_name", name, "error", createErr)
 				return errors.Internal("failed to create repository").WithCause(createErr)
 			case repositoryCreateErrorAmbiguous:
 				recovered, state, lookupErr := reconcileAmbiguousRepositoryCreate(commitCtx, s.queries.GetRepoByOwnerAndLowerName, org.Name, expected)
@@ -1007,7 +1022,7 @@ func (s *RepoService) CreateOrgRepo(
 				}
 				if state != repositoryCreateAdopted {
 					slog.Error("failed to reconcile ambiguous organization repository creation",
-						"org", orgName, "repo_name", name, "create_error", createErr, "lookup_error", lookupErr)
+						"org", org.Name, "repo_name", name, "create_error", createErr, "lookup_error", lookupErr)
 					return errors.Internal("failed to create repository")
 				}
 				repo = recovered

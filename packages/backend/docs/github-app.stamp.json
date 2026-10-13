@@ -5,7 +5,7 @@
     "path": "packages/backend/docs/github-app.md",
     "digest": "2c04d5216611ce86bede8e9ef6918f87bd95c36067aa317b9fea2bcee0800fc3"
   },
-  "closure": "ef735263c4aa12dce5c889ef41c358579792ada81388f597cd25d572df2d523a",
+  "closure": "c1a1dafac548e97ab0611d68a9545662cea5708b4af222a7aa7353b3849c0690",
   "inputs": [
     {
       "path": "docs/api/openapi/install.yaml",
@@ -49,7 +49,7 @@
     },
     {
       "path": "packages/backend/internal/compose/main.go",
-      "digest": "c3eba259f26db4210913b63edcce6977188195adb5b99246d965052e30d3d6b2"
+      "digest": "254ea44135cdc722e892ae0dff34228a570bb69e633f045da96a3c8712d5ebb2"
     },
     {
       "path": "packages/backend/internal/compose/runtime_helpers.go",
@@ -129,7 +129,7 @@
     },
     {
       "path": "packages/backend/internal/services/github_main_pull.go",
-      "digest": "a627e75a34eee5177b8860a0ccda8e844292940392053c15fa44500931ad6a6c"
+      "digest": "4c4ad479c4b51d42afa9a5c1f32a2515b84bc380caabadf8dc46d0888e06702f"
     },
     {
       "path": "packages/backend/internal/services/github_pull_diff.go",

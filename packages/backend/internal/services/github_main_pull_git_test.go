@@ -158,22 +158,7 @@ func TestGitHubMainPullTransfersThroughRealGit(t *testing.T) {
 	f.git(f.work, "push", "-q", smithers, b+":refs/heads/main", landing+":refs/heads/smithers/landing-7")
 	_ = c
 
-	backend := &cgi.Handler{Path: mustLookPath(t, "git"), Args: []string{"http-backend"}, Dir: root,
-		Env: []string{"GIT_PROJECT_ROOT=" + root, "GIT_HTTP_EXPORT_ALL=1", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=" + os.DevNull}}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if user, password, ok := r.BasicAuth(); !ok || user != "x-access-token" || password != "ghs_fixture" || !strings.HasPrefix(r.URL.Path, "/smithersai/smithers.git/") {
-			w.Header().Set("WWW-Authenticate", `Basic realm="github"`)
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		r.URL.Path = "/github.git/" + strings.TrimPrefix(r.URL.Path, "/smithersai/smithers.git/")
-		if r.Body != nil {
-			body, _ := io.ReadAll(r.Body)
-			r.Body, r.ContentLength, r.TransferEncoding = io.NopCloser(bytes.NewReader(body)), int64(len(body)), nil
-		}
-		backend.ServeHTTP(w, r)
-	}))
-	defer server.Close()
+	server := serveFixtureGitHub(t, root)
 
 	store := newFakeMainPullStore()
 	host := newGitBackedRepoHost(t, smithers)
@@ -212,6 +197,81 @@ func TestGitHubMainPullTransfersThroughRealGit(t *testing.T) {
 	assert.Contains(t, row.LastError, "diverged")
 	assert.Equal(t, diverged, f.git(smithers, "rev-parse", "refs/heads/main"), "a diverged main is never overwritten")
 	assert.NotContains(t, row.LastError, "ghs_fixture")
+}
+
+// serveFixtureGitHub serves root/github.git as smithersai/smithers over smart
+// HTTP, to the fixture installation token only.
+func serveFixtureGitHub(t *testing.T, root string) *httptest.Server {
+	t.Helper()
+	backend := &cgi.Handler{Path: mustLookPath(t, "git"), Args: []string{"http-backend"}, Dir: root,
+		Env: []string{"GIT_PROJECT_ROOT=" + root, "GIT_HTTP_EXPORT_ALL=1", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=" + os.DevNull}}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if user, password, ok := r.BasicAuth(); !ok || user != "x-access-token" || password != "ghs_fixture" || !strings.HasPrefix(r.URL.Path, "/smithersai/smithers.git/") {
+			w.Header().Set("WWW-Authenticate", `Basic realm="github"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		r.URL.Path = "/github.git/" + strings.TrimPrefix(r.URL.Path, "/smithersai/smithers.git/")
+		if r.Body != nil {
+			body, _ := io.ReadAll(r.Body)
+			r.Body, r.ContentLength, r.TransferEncoding = io.NopCloser(bytes.NewReader(body)), int64(len(body)), nil
+		}
+		backend.ServeHTTP(w, r)
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+// TestGitHubMainPullFillsAnEmptyRepositoryThroughRealGit creates main in a
+// Smithers repository that holds nothing, with GitHub's whole history, then
+// follows GitHub's next commit as an ordinary fast-forward.
+func TestGitHubMainPullFillsAnEmptyRepositoryThroughRealGit(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	root := t.TempDir()
+	f := &gitFixture{t: t, root: root, work: filepath.Join(root, "work")}
+	f.git(root, "init", "-q", "--initial-branch=main", f.work)
+	a := f.commit("a", "a.txt", "a")
+	f.git(f.work, "checkout", "-q", "-b", "side", a)
+	d := f.commit("d", "d.txt", "d")
+	f.git(f.work, "checkout", "-q", "main")
+	f.commit("c", "c.txt", "c")
+	f.git(f.work, "merge", "-q", "--no-ff", "-m", "merge side", d)
+	merge := f.git(f.work, "rev-parse", "HEAD")
+
+	github := f.bare("github.git")
+	f.git(f.work, "push", "-q", github, merge+":refs/heads/main", "side")
+	smithers := f.bare("smithers.git")
+	server := serveFixtureGitHub(t, root)
+
+	store := newFakeMainPullStore()
+	service := NewGitHubMainPullService(store, newGitBackedRepoHost(t, smithers), &fixtureTokens{}, nil)
+	service.gitHubGitBaseURL = func() string { return server.URL }
+	service.readPolicy = func(context.Context, string, string, string, string) (string, error) { return "pull", nil }
+	pull := func() {
+		t.Helper()
+		_, err := service.Request(context.Background(), 19)
+		require.NoError(t, err)
+		require.NoError(t, service.PollOnce(context.Background()))
+		row, err := store.GetGithubMainPull(context.Background(), 19)
+		require.NoError(t, err)
+		require.Equal(t, "synced", row.State, row.LastError)
+	}
+
+	pull()
+	assert.Equal(t, merge, f.git(smithers, "rev-parse", "refs/heads/main"))
+	assert.Equal(t, "4", f.git(smithers, "rev-list", "--count", "refs/heads/main"), "the whole history arrives, not a shallow tip")
+	assert.Equal(t, "refs/heads/main", f.git(smithers, "for-each-ref", "--format=%(refname)"), "no other GitHub branch is copied")
+	f.git(smithers, "fsck", "--connectivity-only", "--no-dangling")
+
+	next := f.commit("e", "e.txt", "e")
+	f.git(f.work, "push", "-q", github, next+":refs/heads/main")
+	pull()
+	assert.Equal(t, next, f.git(smithers, "rev-parse", "refs/heads/main"))
+	f.git(smithers, "fsck", "--connectivity-only", "--no-dangling")
 }
 
 type fixtureTokens struct{}

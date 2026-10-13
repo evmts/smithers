@@ -255,6 +255,11 @@ type ServerConfig struct {
 	// aliases are not interchangeable.
 	// Env: SMITHERS_SERVER_ALLOWED_ORIGINS (comma-separated).
 	AllowedOrigins []string `mapstructure:"allowed_origins"`
+	// PublicMirrors names the public GitHub repositories, as owner/repo, a
+	// hosted deployment always serves signed out under the same name. Each
+	// must declare `mirror: "pull"` in its .smithers/factory.json.
+	// Env: SMITHERS_PUBLIC_MIRRORS (comma-separated).
+	PublicMirrors []string `mapstructure:"public_mirrors"`
 	// TrustedProxyHops is the number of trailing X-Forwarded-For entries
 	// appended by trusted proxies in front of the server. 0 (default)
 	// ignores forwarding headers entirely; set 1 behind GCLB (GKE Ingress).
@@ -660,6 +665,7 @@ func Load(configFile string) (*Config, error) {
 		{"server.shutdown_timeout", "SMITHERS_SERVER_SHUTDOWN_TIMEOUT"},
 		{"server.ssh_host", "SMITHERS_SERVER_SSH_HOST"},
 		{"server.allowed_origins", "SMITHERS_SERVER_ALLOWED_ORIGINS"},
+		{"server.public_mirrors", "SMITHERS_PUBLIC_MIRRORS"},
 		{"server.trusted_proxy_hops", "SMITHERS_SERVER_TRUSTED_PROXY_HOPS"},
 		{"database.url", "SMITHERS_DATABASE_URL"},
 		{"database.max_conns", "SMITHERS_DATABASE_MAX_CONNS"},
@@ -893,6 +899,7 @@ func Load(configFile string) (*Config, error) {
 	cfg.RepoHost.PushHookCallbackToken = strings.TrimSpace(cfg.RepoHost.PushHookCallbackToken)
 	cfg.Auth.LFSSigningSecret = strings.TrimSpace(cfg.Auth.LFSSigningSecret)
 	cfg.Server.AllowedOrigins = splitCommaSeparatedList(cfg.Server.AllowedOrigins)
+	cfg.Server.PublicMirrors = splitCommaSeparatedList(cfg.Server.PublicMirrors)
 	if err := normalizeAgentAvailability(&cfg); err != nil {
 		return nil, err
 	}

@@ -28,7 +28,10 @@ import (
 // A repository whose declared GitHub policy is `mirror: "pull"` has one
 // writer of main: GitHub. When GitHub's branch named by the Smithers default
 // bookmark moves, Smithers fast-forwards that bookmark to exactly GitHub's tip
-// and writes nothing else. See github_main_pulls (migration 0024).
+// and writes nothing else. A hosted repository that does not hold the bookmark
+// yet gets it created at GitHub's tip, which is how a seeded public mirror
+// (public_mirror_seed.go) receives its history. See github_main_pulls
+// (migration 0024).
 
 const (
 	gitHubMainPullStateSynced  = "synced"
@@ -61,6 +64,8 @@ const (
 	gitHubMainPullFactoryPath   = ".smithers/factory.json"
 	gitHubMainPullFactoryLimit  = 4 << 20
 	defaultGitHubRawBaseURL     = "https://raw.githubusercontent.com"
+	// gitHubMainPullAbsent is the old value git sends when it creates a ref.
+	gitHubMainPullAbsent = "0000000000000000000000000000000000000000"
 )
 
 // GitHubMainPullStore is the durable state and repository lookup the pull uses.
@@ -593,7 +598,12 @@ func (s *GitHubMainPullService) pullSerialized(ctx context.Context, row db.Githu
 	if err != nil {
 		return fail("read Smithers " + branch + ": " + err.Error())
 	}
-	if smithersHead == "" {
+	// A hosted repository that holds no default bookmark yet is only behind:
+	// under the pull policy GitHub is that bookmark's one writer, so the pull
+	// creates it at GitHub's tip. An install's import creates main, never the
+	// pull.
+	creating := smithersHead == ""
+	if creating && s.install {
 		return fail("Smithers has no " + branch + " bookmark")
 	}
 	out.smithersHead = smithersHead
@@ -690,15 +700,22 @@ func (s *GitHubMainPullService) pullSerialized(ctx context.Context, row db.Githu
 		}
 		return nil
 	}
-	bridge, err := startGitHubMainPullBridge(ctx, s.host, owner, repository.Name, gitHubMainPullUpdate{repositoryID: repository.ID, ref: ref, old: smithersHead, writer: s.mainWriter()}, verify)
+	old, baseURL := smithersHead, ""
+	if creating {
+		old = gitHubMainPullAbsent
+	}
+	bridge, err := startGitHubMainPullBridge(ctx, s.host, owner, repository.Name, gitHubMainPullUpdate{repositoryID: repository.ID, ref: ref, old: old, writer: s.mainWriter()}, verify)
 	if err != nil {
 		return fail(err.Error())
 	}
 	defer bridge.Close()
 	bridgeURL := bridge.URL()
+	if !creating {
+		baseURL = bridgeURL
+	}
 	sanitize := func(err error) string { return sanitizeMirrorError(err, githubURL, bridgeURL) }
 
-	base, tip, err := s.git.Fetch(ctx, dir, bridgeURL, githubURL, ref)
+	base, tip, err := s.git.Fetch(ctx, dir, baseURL, githubURL, ref)
 	if err != nil {
 		return fail("fetch: " + sanitize(err))
 	}
@@ -717,9 +734,12 @@ func (s *GitHubMainPullService) pullSerialized(ctx context.Context, row db.Githu
 			return out
 		}
 	}
-	ancestor, err := s.git.IsAncestor(ctx, dir, smithersHead, tip)
-	if err != nil {
-		return fail("compare histories: " + sanitize(err))
+	// A created bookmark has no history to preserve.
+	ancestor := creating
+	if !creating {
+		if ancestor, err = s.git.IsAncestor(ctx, dir, smithersHead, tip); err != nil {
+			return fail("compare histories: " + sanitize(err))
+		}
 	}
 	if !ancestor {
 		if s.install {
@@ -865,25 +885,35 @@ func (cliGitHubMainPullGit) run(ctx context.Context, dir string, args ...string)
 	return out, nil
 }
 
+// Fetch reads Smithers' ref as the base and GitHub's as the tip. An empty
+// smithersURL means Smithers holds no such ref: the base is empty and GitHub's
+// whole history is fetched.
 func (g cliGitHubMainPullGit) Fetch(ctx context.Context, dir, smithersURL, githubURL, ref string) (string, string, error) {
 	if out, err := gitHubMainPullCommand(ctx, "init", "--quiet", "--bare", dir).CombinedOutput(); err != nil {
 		return "", "", gitHubMainPullCommandError("git init", err, out)
 	}
-	if _, err := g.run(ctx, dir, "fetch", "--quiet", "--no-tags", "--depth=1", smithersURL, "+"+ref+":refs/pull/base"); err != nil {
-		return "", "", err
+	revisions := []string{"refs/pull/tip"}
+	if smithersURL != "" {
+		if _, err := g.run(ctx, dir, "fetch", "--quiet", "--no-tags", "--depth=1", smithersURL, "+"+ref+":refs/pull/base"); err != nil {
+			return "", "", err
+		}
+		revisions = []string{"refs/pull/base", "refs/pull/tip"}
 	}
 	// --update-shallow accepts GitHub commits whose older parents are
 	// already in Smithers' history (e.g. a merged branch forked earlier).
 	if _, err := g.run(ctx, dir, "fetch", "--quiet", "--no-tags", "--update-shallow", githubURL, "+"+ref+":refs/pull/tip"); err != nil {
 		return "", "", err
 	}
-	out, err := g.run(ctx, dir, "rev-parse", "refs/pull/base", "refs/pull/tip")
+	out, err := g.run(ctx, dir, append([]string{"rev-parse"}, revisions...)...)
 	if err != nil {
 		return "", "", err
 	}
 	lines := strings.Fields(string(out))
-	if len(lines) != 2 {
+	if len(lines) != len(revisions) {
 		return "", "", errors.New("git rev-parse returned an unexpected result")
+	}
+	if smithersURL == "" {
+		return "", lines[0], nil
 	}
 	return lines[0], lines[1], nil
 }

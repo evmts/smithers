@@ -31,6 +31,7 @@ var allEnvKeys = []string{
 	"SMITHERS_SERVER_SHUTDOWN_TIMEOUT",
 	"SMITHERS_SERVER_SSH_HOST",
 	"SMITHERS_SERVER_ALLOWED_ORIGINS",
+	"SMITHERS_PUBLIC_MIRRORS",
 	"SMITHERS_SERVER_TRUSTED_PROXY_HOPS",
 	// Database
 	"SMITHERS_DATABASE_URL",
@@ -282,6 +283,7 @@ func TestLoad_ServerConfigEnvOverride(t *testing.T) {
 	t.Setenv("SMITHERS_SERVER_WRITE_TIMEOUT_SECS", "50")
 	t.Setenv("SMITHERS_SERVER_SHUTDOWN_TIMEOUT", "45s")
 	t.Setenv("SMITHERS_SERVER_ALLOWED_ORIGINS", "http://127.0.0.1:5173, http://localhost:5173")
+	t.Setenv("SMITHERS_PUBLIC_MIRRORS", "smithersai/smithers, jj-vcs/jj,")
 
 	cfg, err := Load("")
 	require.NoError(t, err)
@@ -290,6 +292,14 @@ func TestLoad_ServerConfigEnvOverride(t *testing.T) {
 	assert.Equal(t, 50, cfg.Server.WriteTimeoutSecs)
 	assert.Equal(t, "45s", cfg.Server.ShutdownTimeout)
 	assert.Equal(t, []string{"http://127.0.0.1:5173", "http://localhost:5173"}, cfg.Server.AllowedOrigins)
+	assert.Equal(t, []string{"smithersai/smithers", "jj-vcs/jj"}, cfg.Server.PublicMirrors)
+}
+
+// A deployment that names no public mirror seeds none.
+func TestLoad_PublicMirrorsDefaultToNone(t *testing.T) {
+	cfg, err := Load("")
+	require.NoError(t, err)
+	assert.Empty(t, cfg.Server.PublicMirrors)
 }
 
 // TestLoad_ServerSSHHostDefaults verifies default SSH host is "localhost".

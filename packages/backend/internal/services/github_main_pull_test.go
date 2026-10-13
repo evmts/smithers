@@ -341,10 +341,14 @@ type fakeMainPullGit struct {
 	fetchErr   error
 	skipPush   bool
 	githubMove string
+	// baseURLs are the Smithers remotes Fetch was given; empty means the
+	// pull found no bookmark to fetch as its base.
+	baseURLs []string
 }
 
-func (g *fakeMainPullGit) Fetch(context.Context, string, string, string, string) (string, string, error) {
+func (g *fakeMainPullGit) Fetch(_ context.Context, _, smithersURL, _, _ string) (string, string, error) {
 	g.fetches++
+	g.baseURLs = append(g.baseURLs, smithersURL)
 	if g.fetchErr != nil {
 		return "", "", g.fetchErr
 	}
@@ -363,7 +367,12 @@ func (g *fakeMainPullGit) Push(ctx context.Context, _, bridgeURL, commit, ref st
 	if g.skipPush {
 		return nil
 	}
-	return pushThroughBridge(ctx, bridgeURL, ref, g.h.host.bookmarkSnapshot("main"), commit)
+	old := g.h.host.bookmarkSnapshot("main")
+	if old == "" {
+		// git names an absent ref by the zero object id.
+		old = gitHubMainPullAbsent
+	}
+	return pushThroughBridge(ctx, bridgeURL, ref, old, commit)
 }
 
 func newPullHarness(t *testing.T) *pullHarness {
@@ -473,6 +482,75 @@ func TestGitHubMainPullFastForwardsOnlyMainToGitHubsCurrentTip(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, status.Fresh)
 	assert.False(t, status.Pending)
+}
+
+func TestGitHubMainPullCreatesTheBookmarkOfAnEmptyHostedRepository(t *testing.T) {
+	h := newPullHarness(t)
+	h.host.bookmarks = map[string]string{}
+	// Nothing in Smithers can be an ancestor; the pull must not ask.
+	h.git.ancestor = false
+	require.NoError(t, h.service.RequestForGitHub(context.Background(), "smithersai", "smithers"))
+	require.NoError(t, h.service.PollOnce(context.Background()))
+
+	row := h.row(t)
+	assert.Equal(t, "synced", row.State, row.LastError)
+	assert.Equal(t, pullNew, row.SmithersHead)
+	assert.Equal(t, pullNew, h.host.bookmarks["main"])
+	assert.Equal(t, []string{""}, h.git.baseURLs, "an absent bookmark has no base to fetch from Smithers")
+	require.Len(t, h.host.received, 1)
+	assert.Equal(t, repohost.ReceivePackCommand{OldOID: gitHubMainPullAbsent, NewOID: pullNew, RefName: "refs/heads/main"}, h.host.received[0])
+
+	// The next GitHub commit is an ordinary fast-forward from the created tip.
+	h.github, h.git.ancestor = "3333333333333333333333333333333333333333", true
+	require.NoError(t, h.service.RequestForGitHub(context.Background(), "smithersai", "smithers"))
+	require.NoError(t, h.service.PollOnce(context.Background()))
+	assert.Equal(t, h.github, h.host.bookmarks["main"])
+	assert.NotEmpty(t, h.git.baseURLs[1], "an existing bookmark is the base")
+}
+
+func TestGitHubMainPullLeavesAnEmptyRepositoryEmptyWithoutThePullPolicy(t *testing.T) {
+	h := newPullHarness(t)
+	h.host.bookmarks = map[string]string{}
+	h.policy = "push"
+	require.NoError(t, h.service.RequestForGitHub(context.Background(), "smithersai", "smithers"))
+	require.NoError(t, h.service.PollOnce(context.Background()))
+
+	assert.Equal(t, "skipped", h.row(t).State)
+	assert.Zero(t, h.git.fetches)
+	assert.Empty(t, h.host.bookmarks)
+}
+
+func TestGitHubMainPullOnAnInstallNeverCreatesMain(t *testing.T) {
+	h := newPullHarness(t)
+	h.host.bookmarks = map[string]string{}
+	qualifyMainPullFixture(h.service)
+	out := h.service.pull(t.Context(), db.GithubMainPull{RepositoryID: 19})
+
+	assert.Equal(t, "failed", out.state)
+	assert.Equal(t, "Smithers has no main bookmark", out.err)
+	assert.Zero(t, h.git.fetches)
+	assert.Zero(t, h.git.pushes)
+	assert.Empty(t, h.host.bookmarks)
+}
+
+func TestGitHubMainPullBridgeRefusesACreationThatIsNotTheObservedTip(t *testing.T) {
+	host := &fakeMainPullHost{bookmarks: map[string]string{}}
+	bridge, err := startGitHubMainPullBridge(context.Background(), host, "smithersai", "smithers",
+		gitHubMainPullUpdate{repositoryID: 19, ref: "refs/heads/main", old: gitHubMainPullAbsent}, nil)
+	require.NoError(t, err)
+	defer bridge.Close()
+	create := func(ref, new string) error {
+		return pushThroughBridge(context.Background(), bridge.URL(), ref, gitHubMainPullAbsent, new)
+	}
+
+	require.Error(t, create("refs/heads/main", pullNew), "nothing is permitted before the tip is observed")
+	bridge.allow(pullNew)
+	require.Error(t, create("refs/heads/other", pullNew), "only the default bookmark is created")
+	require.Error(t, create("refs/heads/main", pullOld), "only at GitHub's tip")
+	require.Error(t, pushThroughBridge(context.Background(), bridge.URL(), "refs/heads/main", pullOld, pullNew), "a creation is not an update")
+	assert.Empty(t, host.received)
+	require.NoError(t, create("refs/heads/main", pullNew))
+	assert.Equal(t, pullNew, host.bookmarks["main"])
 }
 
 func TestGitHubMainPullCoalescesDuplicateAndOutOfOrderRequests(t *testing.T) {
