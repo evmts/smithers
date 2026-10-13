@@ -45,7 +45,7 @@ function HeaderSelect({ label, list, flow, value, options, busy, failure, onOpen
     event.preventDefault()
   }}>
     <button type="button" className="crumb crumb-here" ref={trigger} aria-haspopup="true" aria-expanded={open} aria-label={value === null ? label : `${label} ${value}`}
-      onClick={() => { if (!open) onOpen?.(); setOpen(!open) }}>{value ?? label}<ChevronDown size={12} aria-hidden="true" />
+      onClick={() => { if (!open) onOpen?.(); setOpen(!open) }}><span className="crumb-label">{value ?? label}</span><ChevronDown size={12} aria-hidden="true" />
     </button>
     {open ? <>
       <div className="crumb-backdrop" onClick={() => setOpen(false)} />

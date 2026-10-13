@@ -744,6 +744,12 @@
 .session-navigation .crumbs > .tree { position: absolute; top: calc(100% + 2px); left: 0; width: 360px; max-width: calc(100vw - 24px); margin-top: 0; }
 /* A press outside an open header selector closes it. */
 .session-navigation .crumb-backdrop { position: fixed; inset: 0; }
+/* A long owner/repo or branch name keeps its chevron and ends in an ellipsis. The branch keeps its own width up to
+   under half the strip, so a short one is never cut; the repository takes what is left. */
+.session-navigation [data-header-select="repo.select"] { flex: 0 1 auto; min-width: 5ch; max-width: 48ch; }
+.session-navigation [data-header-select="branch"] { flex: 0 0 auto; max-width: min(48ch, 45%); }
+.session-navigation [data-header-select] .crumb-here { max-width: 100%; }
+.session-navigation .crumb-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 600px) {
 	.session-navigation .crumbs-host { right: 12px; left: 128px; }
 	.session-navigation .crumbs > .tree { position: fixed; top: calc(var(--session-strip, 44px) + 2px); left: 12px; }

@@ -3332,9 +3332,6 @@ button.mvp-node:focus-visible { outline: 2px solid var(--ring-border); outline-o
 
 /* Timeline (T-UI-08): a newly arrived line highlights once. */
 .timeline li[data-fresh] { animation: timeline-fresh 1.2s ease-out; }
-.timeline .tl-ok { color: var(--brand); }
-.timeline .tl-failed { color: var(--danger); }
-.timeline .toast-attention { color: var(--attention-text); }
 @keyframes timeline-fresh {
   from { background: var(--brand-soft); }
   to { background: transparent; }
