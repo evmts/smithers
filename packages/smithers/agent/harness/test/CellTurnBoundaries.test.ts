@@ -2058,7 +2058,14 @@ describe("CellTurn recorded observations", () => {
       expect(dispatches).toEqual(originalDispatches)
       expect(captures).toEqual(originalCaptures)
       expect(resolvedText(replay.events)).toBe("1")
-      expect(of(replay.events, "cell-settled")).toEqual(of(first.events, "cell-settled"))
+      // What each cell did, without how long its calls took: a replay is
+      // served their settlements and times itself.
+      const cells = (events: ReadonlyArray<AgentEvent.AgentEvent>) =>
+        of(events, "cell-settled").map(({ work, ...settled }) => ({
+          ...settled,
+          work: work === undefined ? undefined : { ...work, callMs: 0 }
+        }))
+      expect(cells(replay.events)).toEqual(cells(first.events))
       const settlementKey = [...records.keys()].find((key) => key.includes("cell-call:"))!
       const settlement = records.get(settlementKey)
       records.delete(settlementKey)

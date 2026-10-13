@@ -21,6 +21,8 @@
   - `control.agent.turn-closed`: `frame` and `time` (`wallMs`, `modelMs`,
     `cellMs`, `judgeMs`, `compactionMs`, `otherMs`; the last five add up to
     the first).
+  - `control.agent.cell-settled`: `work` (`kind`, `calls`, `callMs`).
+    `control.agent.cell-call-settled`: `durationMillis`.
   - `flows.agent.usage.v1` (`Budget.UsageRecord`): `purpose` and `frame`, read
     from `EngineLike.Spend` where the call is made, and `parts` (`purpose`,
     `spent`, `costUsd`) when one charge covers readings of more than one

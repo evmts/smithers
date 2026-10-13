@@ -2187,7 +2187,7 @@ describe("where time and tokens went", () => {
     JSON.parse(JSON.stringify(AgentSession.trace(event)!.payload)) as Record<string, unknown>
   /** The same row after the journal's write-path redaction. */
   const stored = (event: AgentEvent.AgentEvent): unknown => Redaction.make()(row(event))
-  const identity = (event: AgentEvent.AgentEvent) =>
+  const identityOf = (event: AgentEvent.AgentEvent) =>
     AgentSession.traceIdentity(4, 2, cell.digest, AgentSession.trace(event)!.eventType, row(event))
 
   const settled = {
@@ -2243,7 +2243,7 @@ describe("where time and tokens went", () => {
       })
     expect(row(requested("compile_failed"))["reask"]).toBe("compile_failed")
     expect(Object.hasOwn(row(requested()), "reask")).toBe(false)
-    expect(identity(requested("compile_failed"))).toBe(identity(requested()))
+    expect(identityOf(requested("compile_failed"))).toBe(identityOf(requested()))
   })
 
   const compaction = {
@@ -2372,6 +2372,27 @@ describe("where time and tokens went", () => {
     expect(row(new AgentEvent.TurnClosed(closed))).toEqual({ stopReason: "stop", outcome: "continue" })
   })
 
+  const ran = { eventType: "flows.harness.cell-settled.v1", cell: cell.digest, outcome } as const
+  const worked = { work: { kind: "calls", calls: 3, callMs: 1_460 } } as const
+  const called = {
+    eventType: "flows.harness.cell-call-settled.v1",
+    flowName: "bash",
+    identity,
+    result: new Cell.CallResult({ outcome: "success", value: { exitCode: 0 } })
+  } as const
+
+  it("journals what a cell amounted to, and how long each of its calls took", () => {
+    const settledCell = new AgentEvent.CellSettled({ ...ran, ...worked })
+    expect(row(settledCell)).toMatchObject(worked)
+    expect(stored(settledCell)).toEqual(row(settledCell))
+    expect(row(new AgentEvent.CellSettled(ran))).not.toHaveProperty("work")
+
+    const timed = new AgentEvent.CellCallSettled({ ...called, durationMillis: 651 })
+    expect(row(timed)).toMatchObject({ flowName: "bash", outcome: "success", durationMillis: 651 })
+    expect(stored(timed)).toEqual(row(timed))
+    expect(row(new AgentEvent.CellCallSettled(called))).not.toHaveProperty("durationMillis")
+  })
+
   it("keeps a run journaled before these fields on the identities it was journaled under", () => {
     const pairs: ReadonlyArray<readonly [AgentEvent.AgentEvent, AgentEvent.AgentEvent]> = [
       [new AgentEvent.ModelSettled(settled), new AgentEvent.ModelSettled({ ...settled, ...staged })],
@@ -2389,8 +2410,10 @@ describe("where time and tokens went", () => {
         new AgentEvent.SteeringDrained({ ...drain, compact: ["outdated_context"] })
       ],
       [new AgentEvent.ClaimDemanded(claim), new AgentEvent.ClaimDemanded({ ...claim, ...claimCost })],
-      [new AgentEvent.TurnClosed(closed), new AgentEvent.TurnClosed({ ...closed, ...split })]
+      [new AgentEvent.TurnClosed(closed), new AgentEvent.TurnClosed({ ...closed, ...split })],
+      [new AgentEvent.CellSettled(ran), new AgentEvent.CellSettled({ ...ran, ...worked })],
+      [new AgentEvent.CellCallSettled(called), new AgentEvent.CellCallSettled({ ...called, durationMillis: 651 })]
     ]
-    for (const [before, after] of pairs) expect(identity(after)).toBe(identity(before))
+    for (const [before, after] of pairs) expect(identityOf(after)).toBe(identityOf(before))
   })
 })

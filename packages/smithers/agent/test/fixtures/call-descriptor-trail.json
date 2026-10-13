@@ -84,6 +84,16 @@
         "text": "```cell\nconst page = await ctx.call(\"read\", { path: \"/repo/alpha.md\" })\nconst seen = await ctx.call(\"inspect\", { path: \"/repo/alpha.md\" })\nctx.done(page.startLine + \":\" + seen.note)\n```",
         "usage": {},
         "durationMillis": 0,
+        "scope": "session-1",
+        "frame": 0,
+        "attempt": 1,
+        "purpose": "frame",
+        "stages": {
+          "firstEventMs": 0,
+          "firstOutputMs": 0,
+          "lastOutputMs": 0
+        },
+        "tries": 1,
         "at": 400
       }
     },
@@ -142,6 +152,7 @@
           "totalLines": 2,
           "truncated": false
         },
+        "durationMillis": 0,
         "at": 700
       }
     },
@@ -184,6 +195,7 @@
         "value": {
           "note": "about /repo/alpha.md"
         },
+        "durationMillis": 0,
         "at": 900
       }
     },
@@ -211,6 +223,11 @@
             "output": "1:about /repo/alpha.md",
             "value": "1:about /repo/alpha.md"
           }
+        },
+        "work": {
+          "kind": "calls",
+          "calls": 2,
+          "callMs": 0
         },
         "at": 1100
       }
@@ -363,6 +380,15 @@
       "payload": {
         "stopReason": "stop",
         "outcome": "resolved",
+        "frame": 0,
+        "time": {
+          "wallMs": 0,
+          "modelMs": 0,
+          "cellMs": 0,
+          "judgeMs": 0,
+          "compactionMs": 0,
+          "otherMs": 0
+        },
         "at": 1700
       }
     },
@@ -462,6 +488,16 @@
         "text": "```cell\nconst seen = await ctx.call(\"write\", { path: \"/repo/alpha.md\" })\nconst other = await ctx.call(\"mystery\", { path: \"/repo/alpha.md\" })\nctx.done(seen.note + \"|\" + other.note)\n```",
         "usage": {},
         "durationMillis": 0,
+        "scope": "session-1",
+        "frame": 0,
+        "attempt": 1,
+        "purpose": "frame",
+        "stages": {
+          "firstEventMs": 0,
+          "firstOutputMs": 0,
+          "lastOutputMs": 0
+        },
+        "tries": 1,
         "at": 400
       }
     },
@@ -516,6 +552,7 @@
         "value": {
           "note": "about /repo/alpha.md"
         },
+        "durationMillis": 0,
         "at": 700
       }
     },
@@ -545,6 +582,7 @@
         "value": {
           "note": "about /repo/alpha.md"
         },
+        "durationMillis": 0,
         "at": 900
       }
     },
@@ -572,6 +610,11 @@
             "output": "about /repo/alpha.md|about /repo/alpha.md",
             "value": "about /repo/alpha.md|about /repo/alpha.md"
           }
+        },
+        "work": {
+          "kind": "calls",
+          "calls": 2,
+          "callMs": 0
         },
         "at": 1100
       }
@@ -724,6 +767,15 @@
       "payload": {
         "stopReason": "stop",
         "outcome": "resolved",
+        "frame": 0,
+        "time": {
+          "wallMs": 0,
+          "modelMs": 0,
+          "cellMs": 0,
+          "judgeMs": 0,
+          "compactionMs": 0,
+          "otherMs": 0
+        },
         "at": 1700
       }
     },

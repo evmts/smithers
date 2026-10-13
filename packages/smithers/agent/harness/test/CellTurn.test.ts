@@ -3780,6 +3780,72 @@ describe("CellTurn frame time", () => {
   })
 })
 
+describe("CellTurn cell classification", () => {
+  const work = (events: ReadonlyArray<AgentEvent.AgentEvent>) => of(events, "cell-settled").map((event) => event.work)
+  const reading = (maxFrames: number, revalidations?: number) =>
+    state({ maxFrames, ...(revalidations === undefined ? {} : { revalidations }) })
+
+  it("says a cell made calls, how many, and how long they took in all", async () => {
+    const { advance, clock } = manualClock()
+    const { events, failure } = await run({
+      state: reading(2),
+      script: [
+        emits(`await ctx.call("fs/list", { path: "a" })\nawait ctx.call("fs/list", { path: "b" })`),
+        emits(`ctx.done("done")`)
+      ],
+      calls: [
+        { _tag: "Success", value: ["a.ts"], taking: () => advance(500) },
+        { _tag: "Success", value: ["b.ts"], taking: () => advance(300) }
+      ],
+      clock
+    })
+    expect(failure).toBeUndefined()
+
+    expect(work(events)).toEqual([
+      { kind: "calls", calls: 2, callMs: 800 },
+      // `ctx.done` is the cell's transition, not a flow call.
+      { kind: "no_call", calls: 0, callMs: 0 }
+    ])
+    // Each call says how long it took, and they add up to the cell's total.
+    expect(of(events, "cell-call-settled").map((event) => event.durationMillis)).toEqual([500, 300])
+  })
+
+  it("tells a cell that is only comments from one that ran code and called nothing", async () => {
+    const { events } = await run({
+      state: reading(3),
+      script: [
+        emits(`// I will read the loader next.\n/* then the CLI */`),
+        emits(`const total = 1 + 1\nconsole.log(total)`),
+        emits(`ctx.done("done")`)
+      ]
+    })
+
+    expect(work(events).map((classified) => classified?.kind)).toEqual(["comment_only", "no_call", "no_call"])
+  })
+
+  it("says a cell threw, and counts the calls it made before it did", async () => {
+    const { events } = await run({
+      state: reading(2),
+      script: [
+        emits(`await ctx.call("fs/list", { path: "a" })\nthrow new Error("boom")`),
+        emits(`ctx.done("done")`)
+      ],
+      calls: [{ _tag: "Success", value: ["a.ts"] }]
+    })
+
+    expect(work(events)[0]).toEqual({ kind: "threw", calls: 1, callMs: 0 })
+  })
+
+  it("says a reply with no runnable cell was rejected, having run nothing", async () => {
+    const { events } = await run({
+      state: reading(1, 0),
+      script: [prose("I will look into it.")]
+    })
+
+    expect(work(events)).toEqual([{ kind: "rejected", calls: 0, callMs: 0 }])
+  })
+})
+
 describe("CellTurn spend purposes", () => {
   /** What the engine was told each paid call was for, in call order. */
   const purposes = (engine: ScriptedEngine.Fixture) =>

@@ -909,6 +909,35 @@ describe("AgentEvent", () => {
     expect(decoded).not.toHaveProperty("time")
   })
 
+  it("decodes a cell and a call settlement journaled before the cell was classified and the call timed", () => {
+    const decode = Schema.decodeUnknownSync(AgentEvent.AgentEvent)
+    const cell = decode({
+      _tag: "cell-settled",
+      eventType: "flows.harness.cell-settled.v1",
+      cell: "cell-digest",
+      outcome: { _tag: "settled", transition: { _tag: "continue" } }
+    })
+    const call = decode({
+      _tag: "cell-call-settled",
+      eventType: "flows.harness.cell-call-settled.v1",
+      flowName: "bash",
+      identity: {
+        session: "session-1",
+        frame: 0,
+        cell: "cell-digest",
+        ordinal: 0,
+        declaration: "declaration-digest",
+        layers: []
+      },
+      result: { outcome: "success", value: { exitCode: 0 } }
+    })
+
+    expect(cell).toMatchObject({ _tag: "cell-settled", cell: "cell-digest" })
+    expect(cell).not.toHaveProperty("work")
+    expect(call).toMatchObject({ _tag: "cell-call-settled", flowName: "bash" })
+    expect(call).not.toHaveProperty("durationMillis")
+  })
+
   it("refuses a payload that is not one of the union's tags", () => {
     const decoded = Schema.decodeUnknownResult(AgentEvent.AgentEvent)({
       _tag: "not-an-event",

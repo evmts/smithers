@@ -1052,6 +1052,13 @@ that did the work, so a replayed frame reports the replay's own readings:
   boundaries). The five parts add up to `wallMs`. A supervisor reading runs
   beside the loop and is in none of them; its latency is on
   `SupervisorSettled`.
+- `CellSettled.work` says what the cell amounted to: `kind` is `rejected` (a
+  reply the boundary refused, or a cell a limit cut off), `threw`,
+  `comment_only` (a settled cell whose source is nothing but comments),
+  `no_call` (it ran code and issued no flow call) or `calls`; `calls` counts
+  the flow calls the cell issued, refused ones included, and `callMs` sums
+  what they took. `CellCallSettled.durationMillis` is one call, from issue to
+  settlement.
 
 A host that keeps a spend ledger labels each charge from `EngineLike.Spend`, a
 `Context.Reference` the controller provides around every sealed step, every

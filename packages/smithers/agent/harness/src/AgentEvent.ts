@@ -595,7 +595,12 @@ export class CellCallSettled extends Schema.TaggedClass<CellCallSettled>(
   eventType: Schema.Literal("flows.harness.cell-call-settled.v1"),
   flowName: Schema.String,
   identity: Cell.CallIdentity,
-  result: Cell.CallResult
+  result: Cell.CallResult,
+  /**
+   * Wall-clock milliseconds from the call being issued to its settlement, on
+   * the injected clock. Absent from journals written before calls were timed.
+   */
+  durationMillis: Schema.optional(NonNegativeSafeInt)
 }) {}
 
 /**
@@ -635,7 +640,22 @@ export class CellSettled extends Schema.TaggedClass<CellSettled>(
   cell: Schema.String,
   outcome: Cell.Outcome,
   /** Absent in journals written before execution frontiers were recorded. */
-  boundary: Schema.optional(Sandbox.FrameBoundary)
+  boundary: Schema.optional(Sandbox.FrameBoundary),
+  /**
+   * What the cell amounted to, so a frame that moved nothing can be counted
+   * without reading its source. `kind` is `rejected` for a reply the boundary
+   * refused or a limit cut off, `threw` for a cell that raised,
+   * `comment_only` for a settled cell whose source is nothing but comments,
+   * `no_call` for one that ran code and issued no flow call, and `calls`
+   * otherwise. `calls` counts every flow call the cell issued, refused ones
+   * included, and `callMs` sums what they took, so concurrent calls can add
+   * up to more than the cell did. Absent from journals written before it.
+   */
+  work: Schema.optional(Schema.Struct({
+    kind: Schema.Literals(["rejected", "threw", "comment_only", "no_call", "calls"]),
+    calls: NonNegativeSafeInt,
+    callMs: NonNegativeSafeInt
+  }))
 }) {}
 
 /**

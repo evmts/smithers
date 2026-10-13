@@ -61,6 +61,10 @@
   into `modelMs`, `cellMs`, `judgeMs`, `compactionMs` and `otherMs`, which
   add up to `wallMs` (#3844).
 
+- `CellSettled.work` classifies a cell (`rejected`, `threw`, `comment_only`,
+  `no_call`, `calls`) and carries its call count and total call time, and
+  `CellCallSettled.durationMillis` times one call (#3844).
+
 - `ExternalTranscript.decodeCodex` reads what Codex records outside its
   completed items: a message between agents (`agent_message`), whose encrypted
   body is one `encrypted` placeholder; a failed code-mode script with the

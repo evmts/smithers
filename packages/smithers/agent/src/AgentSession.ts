@@ -465,6 +465,7 @@ const lateFields: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   // `durationMillis` does.
   ["control.agent.model-requested", new Set(["reask"])],
   ["control.agent.turn-closed", new Set(["frame", "time"])],
+  ["control.agent.cell-settled", new Set(["work"])],
   [
     "control.agent.model-settled",
     new Set(["scope", "frame", "attempt", "purpose", "reask", "stages", "tries", "output"])
@@ -1058,7 +1059,9 @@ export const trace = (
           // A failure message is free text a handler chose, and a compiler or
           // test runner writes megabytes of it.
           message: event.result.message === undefined ? undefined : tracedField(event.result.message),
-          value: tracedField(event.result.value)
+          value: tracedField(event.result.value),
+          // How long the call took, from issue to settlement (#3844).
+          ...(event.durationMillis === undefined ? {} : { durationMillis: event.durationMillis })
         }
       }
     case "cell-printed":
@@ -1075,7 +1078,9 @@ export const trace = (
         payload: {
           outcome: event.outcome._tag === "settled"
             ? { ...event.outcome, transition: tracedTransition(event.outcome.transition) }
-            : event.outcome
+            : event.outcome,
+          // What the cell amounted to: its kind, its calls and their time (#3844).
+          ...(event.work === undefined ? {} : { work: event.work })
         }
       }
     case "transition-applied":

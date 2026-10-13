@@ -40,6 +40,7 @@ import { StdError } from "@smthrs/std/StdError"
 import * as TestRunner from "@smthrs/std/TestRunner"
 import {
   Cause,
+  Clock,
   Context,
   Deferred,
   Effect,
@@ -1634,7 +1635,8 @@ describe("a call carries what its declaration says it does", () => {
    * every unrelated edit to a standard flow's source would otherwise rewrite
    * this fixture. The three measured durations are zeroed for the same reason:
    * a wall clock is not a fact about a declaration. Every other byte is the
-   * producer's.
+   * producer's, and every other reading of time in it is taken on the clock
+   * {@link stopped} holds.
    */
   const settle = () => {
     const identities = new Map<string, string>()
@@ -1654,6 +1656,31 @@ describe("a call carries what its declaration says it does", () => {
           .replaceAll(/"(durationMillis|latencyMs|elapsedMs)":\s*\d+/g, (_whole, field: string) => `"${field}": 0`)
       ) as A
   }
+
+  /**
+   * The run's clock held at one instant, so every reading the trail carries
+   * that is taken on it (a model call's stages, a frame's time split, how long
+   * a call took) is the zero this case declares and never the host's wall
+   * time. Waiting still waits: only what the clock reads is held.
+   */
+  const stopped = <A, E, R>(run: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+    Effect.provideServiceEffect(
+      run,
+      Clock.Clock,
+      Effect.map(Clock.Clock, (clock): Clock.Clock => {
+        const now = 1_791_894_346_000
+        const nanos = BigInt(now) * 1_000_000n
+        return {
+          currentTimeMillis: Effect.succeed(now),
+          currentTimeMillisUnsafe: () => now,
+          currentTimeNanos: Effect.succeed(nanos),
+          currentTimeNanosUnsafe: () => nanos,
+          monotonicTimeNanos: Effect.succeed(nanos),
+          monotonicTimeNanosUnsafe: () => nanos,
+          sleep: (duration) => clock.sleep(duration)
+        }
+      })
+    )
 
   /** The agent trail, as the run card stores a journal row. */
   const trail = (collected: ReadonlyArray<AgentEvent.AgentEvent>) => {
@@ -1722,7 +1749,7 @@ describe("a call carries what its declaration says it does", () => {
     const note = (input: { readonly path: string }) => Effect.succeed({ note: `about ${input.path}` })
 
     // Run one: the standard catalog beside a custom flow with its own words.
-    const declared = await drive(
+    const declared = await drive(stopped(
       collect({
         flows: [
           StandardFlows.filesystem(filesystem.services),
@@ -1736,13 +1763,13 @@ const seen = await ctx.call("inspect", { path: "/repo/alpha.md" })
 ctx.done(page.startLine + ":" + seen.note)`
         ]
       })
-    )
+    ))
     expect(declared._tag).toBe("completed")
 
     // Run two: a flow named `write` that reads, beside one that declares
     // nothing. The catalog refuses a duplicate name, so the standard `write`
     // is not offered here — which is what shadowing a standard name means.
-    const unnamed = await drive(
+    const unnamed = await drive(stopped(
       collect({
         flows: [
           FlowBinding.source("host/shadowed", [
@@ -1756,7 +1783,7 @@ const other = await ctx.call("mystery", { path: "/repo/alpha.md" })
 ctx.done(seen.note + "|" + other.note)`
         ]
       })
-    )
+    ))
     expect(unnamed._tag).toBe("completed")
 
     const stable = settle()

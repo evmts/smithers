@@ -227,8 +227,8 @@ const attempt = async (
 /**
  * The loop's own events from the `n`th opened turn on. Supervisor readings,
  * and the compaction marks they carry, settle off the hot path, and neither a model step's wall-clock duration, the
- * stages inside it, a frame's time split, nor a reading's latency is part of what it settled: a resumed run replays
- * the interrupted run's latency, which the uninterrupted run measured afresh.
+ * stages inside it, a frame's time split, how long a cell's calls took, nor a reading's latency is part of what it
+ * settled: a resumed run replays the interrupted run's latency, which the uninterrupted run measured afresh.
  */
 const suffix = (events: ReadonlyArray<AgentEvent.AgentEvent>, n: number) => {
   const opened = events.flatMap((event, index) => event._tag === "turn-opened" ? [index] : [])
@@ -244,6 +244,10 @@ const suffix = (events: ReadonlyArray<AgentEvent.AgentEvent>, n: number) => {
           ? { ...event, durationMillis: 0, summaryCall: undefined }
           : event._tag === "turn-closed"
           ? { ...event, time: undefined }
+          : event._tag === "cell-call-settled"
+          ? { ...event, durationMillis: 0 }
+          : event._tag === "cell-settled" && event.work !== undefined
+          ? { ...event, work: { ...event.work, callMs: 0 } }
           : "latencyMs" in event
           ? { ...event, latencyMs: 0 }
           : event

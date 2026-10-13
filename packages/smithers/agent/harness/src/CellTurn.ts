@@ -2306,7 +2306,9 @@ const callHandler = (
   live: Cell.LiveTree,
   callMs: number,
   replaying: boolean,
-  emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>
+  emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>,
+  /** What the cell's calls have taken so far, summed; see `AgentEvent.CellSettled.work`. */
+  took: { callMs: number }
 ): Sandbox.Handler =>
 (invocation) =>
   Effect.gen(function*() {
@@ -2404,6 +2406,7 @@ const callHandler = (
       )
     }
     yield* emit(new AgentEvent.CellCallStarted({ eventType: eventType.cellCallStarted, call }))
+    const issuedAt = yield* Clock.currentTimeMillis
     const result = yield* issued(
       engine,
       state,
@@ -2420,13 +2423,16 @@ const callHandler = (
       replaying,
       call
     )
+    const durationMillis = elapsed(issuedAt, yield* Clock.currentTimeMillis)
+    took.callMs += durationMillis
     if (result.outcome === "success") ledger.push(...TruncatedOutput.captures(call.flowName, result.value))
     yield* emit(
       new AgentEvent.CellCallSettled({
         eventType: eventType.cellCallSettled,
         flowName: call.flowName,
         identity: call.identity,
-        result
+        result,
+        durationMillis
       })
     )
     return result
@@ -2471,6 +2477,9 @@ const requested = (
       })
     )
   })
+
+/** Whether a cell's source is nothing but comments and whitespace. */
+const commentOnly = (source: string): boolean => source.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "").trim() === ""
 
 /** Whole milliseconds between two readings of the injected clock, never negative. */
 const elapsed = (from: number, to: number): number => Math.max(0, Math.round(to - from))
@@ -3071,6 +3080,8 @@ interface Evaluated {
   readonly captures: ReadonlyArray<TruncatedOutput.Capture>
   /** Withheld flows the cell called, which the next frame shows again. */
   readonly restored: ReadonlySet<string>
+  /** What the cell's calls took, summed. */
+  readonly callMs: number
 }
 
 /**
@@ -3116,6 +3127,7 @@ const evaluate = (
     const callMs = Sandbox.withDefaults(sandbox.capabilities, input.limits).callMs ?? Sandbox.defaultLimits.callMs
     const totalMs = Sandbox.withDefaults(sandbox.capabilities, input.limits).totalMs
     let replaying = false
+    const took = { callMs: 0 }
     const observing: Sandbox.Handler = (invocation) => {
       const handle = callHandler(
         state,
@@ -3129,7 +3141,8 @@ const evaluate = (
         live,
         callMs,
         replaying,
-        emit
+        emit,
+        took
       )
       const pending = engine.record({
         name: "steering-before-call",
@@ -3297,7 +3310,7 @@ const evaluate = (
         })
       }
     })
-    return { frame: settled, calls, minted, captures, restored }
+    return { frame: settled, calls, minted, captures, restored, callMs: took.callMs }
   })
 
 /**
@@ -3654,7 +3667,8 @@ const frame = (
         new AgentEvent.CellSettled({
           eventType: eventType.cellSettled,
           cell: "",
-          outcome: rejection
+          outcome: rejection,
+          work: { kind: "rejected", calls: 0, callMs: 0 }
         })
       )
       // A rejected cell is the fourth exit that continues the run, and it is
@@ -3752,7 +3766,20 @@ const frame = (
         eventType: eventType.cellSettled,
         cell: cell.digest,
         outcome,
-        ...(ran.frame.boundary === undefined ? {} : { boundary: ran.frame.boundary })
+        ...(ran.frame.boundary === undefined ? {} : { boundary: ran.frame.boundary }),
+        work: {
+          kind: outcome._tag === "rejected"
+            ? "rejected"
+            : outcome._tag === "raised"
+            ? "threw"
+            : commentOnly(cell.text)
+            ? "comment_only"
+            : ran.calls.length === 0
+            ? "no_call"
+            : "calls",
+          calls: ran.calls.length,
+          callMs: ran.callMs
+        }
       })
     )
 
