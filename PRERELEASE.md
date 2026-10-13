@@ -1,25 +1,35 @@
 # Prerelease status
 
 ```
-Updated       2026-10-10 13:10 PDT
-main          a27ba3dea9 (the rc.4 cut) and later
+Updated       2026-10-13 13:55 PDT
+main          26c19d50d7 (the rc.5 cut) and later
 
-Published     1.0.0-rc.4 on npm `next`, 13:00 PDT. Release run 38074210554,
-              tag v1.0.0-rc.4 → a27ba3dea9. 48 of 48 packages. `latest` stays
-              0.35.0, except @smthrs/canonical (its first publish at rc.2 set
-              latest=rc.2). `npm i smthrs@next` reports 1.0.0-rc.4.
-Journeys      a27ba3dea9: no failed row, every suite on try 1.
+Published     1.0.0-rc.5 on npm `next`, 13:43 PDT. Release run 38449135611,
+              tag v1.0.0-rc.5 → 26c19d50d7. 49 of 49 packages. `latest` did
+              not move: 0.35.0 for `smthrs` and @smthrs/cli, 1.0.0-rc.3 for
+              @smthrs/flows and @smthrs/platform-node, 1.0.0-rc.2 for
+              @smthrs/canonical. pnpm 11 holds a version back for a day, so
+              `pnpm add <name>@next` installs rc.4 until 10-14 13:43 PDT;
+              `@1.0.0-rc.5` installs now.
+Flows         The published quickstart runs from an empty directory on one
+              line: `npm install @smthrs/flows@next effect@4.0.0-rc.115`
+              (#3838). Run from npm after the publish under npm 11.19 and
+              pnpm 11.25: prints, then replays. The Release smoke runs it on
+              every candidate. rc.4 failed three times on the same steps.
+Journeys      1ae37f2b82 (18 commits before the cut): no failed row, every
+              suite on try 1. Not run on the cut commit.
               J1 21/0/0  J2 14/0/0  J3 14/0/5  J4 23/0/2  J5 21/0/0  J6 4/0/16
               J7 21/0/0  J8 7/0/2   J9 13/0/0  J10 40/0/0 J11 19/0/0
-Real install  Run 16 on 0ee534991b (16 commits before the cut), no patch:
+Real install  Not repeated for rc.5. Run 16 on 0ee534991b (before rc.4), no patch:
               T1 canary-sandbox#160 merged with the card's Merge, Plan done.
               The learning run completed after the merge (first time).
               T2 #161. One slot, nobody acting: T2's machine suspended in
               review, its review lane wrote "Review: approve" and retired.
               Both wiki refresh runs succeeded (first time). Relays: peak 7
               per VM, 0 refusals. Every slot freed; longest hold 2 min 34 s.
-Broken in     1. /review cannot finish on a real install. In rc.4 its coding
-rc.4             host exits (no coding model); the job fails cleanly and its
+Broken in     Not re-checked on rc.5.
+rc.4          1. /review cannot finish on a real install. In rc.4 its coding
+                 host exits (no coding model); the job fails cleanly and its
                  machine is released. On main (2c400d5d93, run 17) the host
                  starts and the run begins, then fails: the review machine's
                  image has no bubblewrap, so the confined git that reads the
