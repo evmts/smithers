@@ -26,7 +26,9 @@ export const TimelineZoomSchema = z.object({
   from: z.number().optional(),
   to: z.number().optional(),
   /** The title was written by the install's fast model (#3732), not taken from the run's first prompt or answer. */
-  written: z.boolean().optional()
+  written: z.boolean().optional(),
+  /** Exact semantic source identity; changes in a child summary invalidate a folded title. */
+  revision: z.string().optional()
 })
 
 /**

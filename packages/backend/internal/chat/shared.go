@@ -276,6 +276,9 @@ func (h *Handler) Conversation(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if h.Store.OnConversationRead != nil {
+		_ = h.Store.OnConversationRead(r.Context(), scope, branch)
+	}
 	writeJSON(w, http.StatusOK, result)
 }
 

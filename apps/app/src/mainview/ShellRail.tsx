@@ -29,6 +29,7 @@ import type { Card, Message, Toast } from "./state/AppState"
 import { diagnosticVisible } from "./state/AppState"
 import { useHome, type HomeAnswer } from "./cards/HomeContainer"
 import { Timeline } from "./Timeline"
+import { entrySummary, replyLabel } from "./TimelineSummary"
 import { ToastStack } from "./ToastStackView"
 import { foldedRuns, withTitles, zoomTimeline } from "./TimelineZoom"
 
@@ -77,8 +78,8 @@ export const railLines = (entries: ReadonlyArray<RailEntry>, viewer: Parameters<
   const text = firstLine(message.text)
   if (text === "") return []
   return [message.role === "user"
-    ? { entry_id: message.id, kind: "prompt", title: `“${text}”`, tone: "quiet", glyph: toneGlyph("quiet") }
-    : { entry_id: message.id, kind: "answer", title: text, tone: message.status === "failed" ? "failed" : "quiet", glyph: { actor: { kind: "agent", id: "smithers", agent: "smithers", avatar_url: PlaceholderAvatarUrl, color_index: 6 } } }]
+    ? { entry_id: message.id, kind: "prompt", title: "Prompt", tone: "quiet", glyph: toneGlyph("quiet") }
+    : { entry_id: message.id, kind: "answer", title: replyLabel(message.status === "failed" ? "failed" : "completed"), tone: message.status === "failed" ? "failed" : "quiet", glyph: { actor: { kind: "agent", id: "smithers", agent: "smithers", avatar_url: PlaceholderAvatarUrl, color_index: 6 } } }]
 })
 
 /** Each entry's time, where it has one: a folded timeline line shows its span (#3728). */
@@ -112,14 +113,13 @@ export const sharedRailLines = (conversation: SharedConversation | undefined, vi
   const color_index = (turn.author % 6) as 0 | 1 | 2 | 3 | 4 | 5
   const person = { login: turn.authorLogin, name: turn.authorLogin, avatar_url: PlaceholderAvatarUrl }
   const frames = turn.frames.filter(frame => frame.runId === turn.runId)
-  const text = frames.flatMap(frame => frame.type === "delta" && frame.kind === "text" ? [frame.text] : []).join("")
   const tone = turn.tone ?? (turn.state === "accepted" || turn.state === "running" ? "live" : turn.state === "failed" ? "failed" : turn.state === "completed" ? "done" : "quiet")
   if (turn.subject) return frames.flatMap(frame => frame.type === "card"
-    ? railLines([{ kind: "card", card: frame.card }], viewer).map(row => ({ ...row, title: turn.subject!.title, tone: turn.subject!.tone, glyph: { state: turn.subject!.state }, ...(turn.summary === undefined ? {} : { summary: turn.summary }), fresh: sharedFresh(positions, row.entry_id, lastSeen) }))
+    ? railLines([{ kind: "card", card: frame.card }], viewer).map(row => ({ ...row, title: turn.subject!.title, tone: turn.subject!.tone, glyph: { state: turn.subject!.state }, ...(entrySummary(turn.summary, "answer") === undefined ? {} : { summary: entrySummary(turn.summary, "answer") }), fresh: sharedFresh(positions, row.entry_id, lastSeen) }))
     : [])
   const rows: TimelineLine[] = [
-    { entry_id: `${turn.id}:prompt`, kind: "prompt", fresh: sharedFresh(positions, `${turn.id}:prompt`, lastSeen), title: turn.title ?? firstLine(turn.prompt), tone: "quiet", glyph: { actor: { kind: "person", ...person, color_index } } },
-    { entry_id: `${turn.id}:answer`, kind: "answer", ...(turn.summary === undefined ? {} : { summary: turn.summary }), fresh: sharedFresh(positions, `${turn.id}:answer`, lastSeen), title: firstLine(text) || turn.title || firstLine(turn.prompt), tone,
+    { entry_id: `${turn.id}:prompt`, kind: "prompt", fresh: sharedFresh(positions, `${turn.id}:prompt`, lastSeen), title: entrySummary(turn.summary, "prompt") ?? "Prompt", tone: "quiet", glyph: { actor: { kind: "person", ...person, color_index } } },
+    { entry_id: `${turn.id}:answer`, kind: "answer", fresh: sharedFresh(positions, `${turn.id}:answer`, lastSeen), title: entrySummary(turn.summary, "answer") ?? replyLabel(turn.state), tone,
       glyph: { actor: { kind: "agent", id: turn.runId, agent: "smithers", for_member: person, avatar_url: PlaceholderAvatarUrl, color_index } } }
   ]
   for (const frame of frames) {

@@ -64,8 +64,8 @@ const pack = (level: number, children: ReadonlyArray<Group | number>, cap: numbe
  */
 export const zoomLevels = (lines: ReadonlyArray<Pick<TimelineLine, "kind">>, cap: number = ZOOM_DEFAULTS.cap): Group[][] => {
   const startsWithPrompt = (node: Group | number): boolean => lines[firstLine(node)]?.kind === "prompt"
-  const levels = [pack(1, lines.map((_, index) => index), cap, child => { const kind = lines[child as number]!.kind; return kind === "prompt" || kind === "answer" })]
-  levels.push(pack(2, levels[0]!, cap, startsWithPrompt))
+  const levels = [pack(1, lines.map((_, index) => index), cap, child => { const kind = lines[child as number]!.kind; return kind === "prompt" })]
+  levels.push(pack(2, levels[0]!, cap, (child, size) => startsWithPrompt(child) && size * 2 >= cap))
   while (levels.length < 3 || levels.at(-1)!.length > cap) {
     levels.push(pack(levels.length + 1, levels.at(-1)!, cap, (child, size) => startsWithPrompt(child) && size * 2 >= cap))
   }
@@ -74,7 +74,6 @@ export const zoomLevels = (lines: ReadonlyArray<Pick<TimelineLine, "kind">>, cap
 
 const RANK: Record<TimelineLine["tone"], number> = { attention: 0, failed: 1, live: 2, done: 3, quiet: 4 }
 const GLYPH: Record<TimelineLine["tone"], "running" | "ok" | "attention" | "failed"> = { attention: "attention", failed: "failed", live: "running", done: "ok", quiet: "ok" }
-const plural = (count: number, word: string): string => `${count} ${word}${count === 1 ? "" : "s"}`
 
 /** One line standing for `group`: its first prompt (else answer) as title, what it holds as summary, its most urgent tone and act. */
 export const foldedLine = (lines: ReadonlyArray<TimelineLine>, group: Pick<Group, "level" | "first" | "last">, times?: ReadonlyMap<string, number>): TimelineLine => {
@@ -82,17 +81,12 @@ export const foldedLine = (lines: ReadonlyArray<TimelineLine>, group: Pick<Group
   const named = inside.find(line => line.kind === "prompt") ?? inside.find(line => line.kind === "answer") ?? inside[0]!
   const urgent = inside.reduce((best, line) => RANK[line.tone] < RANK[best.tone] ? line : best)
   const acting = inside.filter(line => line.action !== undefined).sort((left, right) => RANK[left.tone] - RANK[right.tone])[0]
-  const prompts = inside.filter(line => line.kind === "prompt").length
-  const answers = inside.filter(line => line.kind === "answer").length
-  const failed = inside.filter(line => line.tone === "failed").length
-  const summary = [prompts ? plural(prompts, "prompt") : "", answers ? plural(answers, "answer") : "",
-    inside.length - prompts - answers ? plural(inside.length - prompts - answers, "step") : "", failed ? `${failed} failed` : ""].filter(Boolean).join(" · ")
   const at = inside.map(line => times?.get(line.entry_id)).filter((time): time is number => time !== undefined && time > 0)
   return {
-    entry_id: inside[0]!.entry_id, kind: named.kind, title: named.title, summary, tone: urgent.tone, glyph: { event: GLYPH[urgent.tone] },
+    entry_id: inside[0]!.entry_id, kind: named.kind, title: group.level === 1 ? "Conversation activity" : "App activity", tone: urgent.tone, glyph: { event: GLYPH[urgent.tone] },
     ...(acting?.action === undefined ? {} : { action: acting.action }),
     ...(inside.some(line => line.fresh) ? { fresh: true } : {}),
-    zoom: { level: group.level, count: inside.length, last_entry_id: inside.at(-1)!.entry_id,
+    zoom: { level: group.level, count: inside.length, last_entry_id: inside.at(-1)!.entry_id, revision: JSON.stringify(inside.map(line => [line.kind, line.summary ?? line.title, line.tone])),
       ...(at.length === 0 ? {} : { from: Math.min(...at), to: Math.max(...at) }) }
   }
 }
@@ -133,6 +127,9 @@ export function zoomTimeline(lines: ReadonlyArray<TimelineLine>, band: readonly 
     else shown.push(node.first === node.last ? lines[node.first]! : foldedLine(lines, node, times))
   }
   levels.at(-1)!.forEach(show)
+  // Dense exchanges can exhaust the rail before the band. Fold their distant
+  // context more tightly while keeping every visible entry and the near radii.
+  if (shown.length > 60 && cap > 4) return zoomTimeline(lines, band, times, { ...options, cap: 4 })
   return shown
 }
 
@@ -141,7 +138,7 @@ export function zoomTimeline(lines: ReadonlyArray<TimelineLine>, band: readonly 
  * moves asks again. Undefined for a line that is not folded.
  */
 export const foldKey = (line: Pick<TimelineLine, "entry_id" | "zoom">): string | undefined =>
-  line.zoom === undefined ? undefined : JSON.stringify([line.entry_id, line.zoom.last_entry_id, line.zoom.count])
+  line.zoom === undefined ? undefined : JSON.stringify([line.entry_id, line.zoom.last_entry_id, line.zoom.count, ...(line.zoom.revision === undefined ? [] : [line.zoom.revision])])
 
 /** Each folded line among `shown` with its key and the lines it stands for, in order. */
 export const foldedRuns = (lines: ReadonlyArray<TimelineLine>, shown: ReadonlyArray<TimelineLine>): Array<{ readonly key: string; readonly lines: TimelineLine[] }> => {
@@ -158,5 +155,5 @@ export const foldedRuns = (lines: ReadonlyArray<TimelineLine>, shown: ReadonlyAr
 export const withTitles = (shown: ReadonlyArray<TimelineLine>, titles: ReadonlyMap<string, string>): TimelineLine[] => shown.map(line => {
   const key = foldKey(line)
   const title = key === undefined ? undefined : titles.get(key)
-  return title === undefined || line.zoom === undefined ? line : { ...line, title, zoom: { ...line.zoom, written: true } }
+  return title === undefined || line.zoom === undefined ? line : { ...line, title, summary: undefined, zoom: { ...line.zoom, written: true } }
 })

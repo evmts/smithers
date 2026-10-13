@@ -167,7 +167,7 @@ export function createSharedConversationSeam(ctx: ControllerContext, live?: Live
     leaseTimer = undefined
     if (disposed || !key) return
     const visible = timelineVisible && (typeof document === "undefined" || !document.hidden)
-    void saveView({ timeline_visible_until: visible ? new Date(Date.now() + 30_000).toISOString() : null })
+    void saveView({ timeline_visible_until: visible ? new Date(Date.now() + 30_000).toISOString() : null }).then(() => { if (visible && !disposed && key) return read() })
     if (visible) {
       leaseTimer = setTimeout(renewTimeline, 15_000)
       ctx.unref(leaseTimer)

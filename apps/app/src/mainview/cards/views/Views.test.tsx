@@ -3078,25 +3078,25 @@ test("SetupAction origin markers follow its optional prop", () => {
   }
 })
 
-describe("Timeline glyphs and actions", () => {
+describe("Timeline plain summaries and actions", () => {
   const renderLine = async (glyph: import("@smthrs/rpc/TimelineCard").TimelineLine["glyph"], extra: Partial<import("@smthrs/rpc/TimelineCard").TimelineLine> = {}) => {
     const { Timeline } = await import("../../Timeline")
-    return mounted({ name: "Timeline", expect: ["Run"], render: callbacks => <Timeline lines={[{ entry_id: "run-9", kind: "event", title: "Run", summary: "Checks failed", tone: "quiet", glyph, ...extra }]} on_screen={["", ""]} onAction={callbacks.onAction} onView={patch => callbacks.onView({ ...patch })} /> })
+    return mounted({ name: "Timeline", expect: ["Checks failed"], render: callbacks => <Timeline lines={[{ entry_id: "run-9", kind: "event", title: "Run", summary: "Checks failed", tone: "quiet", glyph, ...extra }]} on_screen={["", ""]} onAction={callbacks.onAction} onView={patch => callbacks.onView({ ...patch })} /> })
   }
   test("state uses the shared failed glyph", async () => {
     const view = await renderLine({ state: "failed" })
-    expect(view.host.querySelector(".tl-node .lucide-x.glyph")).not.toBeNull()
+    expect(view.host.querySelector(".tl-node, .avatar, svg")).toBeNull()
     await view.close()
   })
   test("actor uses the author's avatar", async () => {
     const view = await renderLine({ actor: { kind: "github", login: "octocat", color_index: 7 } })
-    expect(view.host.querySelector('.avatar[aria-label="@octocat"]')).not.toBeNull()
+    expect(view.host.querySelector(".tl-node, .avatar, svg")).toBeNull()
     await view.close()
   })
-  for (const [event, selector] of [["running", '[data-slot="spinner"][aria-label="Working"]'], ["ok", ".lucide-check"], ["attention", ".lucide-circle-alert"], ["failed", ".lucide-x"]] as const) {
+  for (const event of ["running", "ok", "attention", "failed"] as const) {
     test(`event ${event} renders its glyph`, async () => {
       const view = await renderLine({ event }, { fresh: true })
-      expect(view.host.querySelector(`.tl-node ${selector}`)).not.toBeNull()
+      expect(view.host.querySelector(".tl-node, .avatar, svg")).toBeNull()
       expect(view.host.querySelector("li[data-fresh]")).not.toBeNull()
       await view.close()
     })

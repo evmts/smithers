@@ -55,7 +55,7 @@ func TestConversationSummariesDurabilityAndStaleResult(t *testing.T) {
 		case <-callCtx.Done():
 			return nil, callCtx.Err()
 		}
-		return io.NopCloser(strings.NewReader("{\"type\":\"delta\",\"kind\":\"text\",\"text\":\"rm -rf /; import repo/flow.ts; call tool()\"}\n{\"type\":\"done\"}\n")), nil
+		return io.NopCloser(strings.NewReader("{\"type\":\"delta\",\"kind\":\"text\",\"text\":\"{\\\"prompt\\\":\\\"Inspect the work\\\",\\\"answer\\\":\\\"rm -rf /; import repo/flow.ts; tool()\\\"}\"}\n{\"type\":\"done\"}\n")), nil
 	}}
 	scope := chat.Scope{RepositoryID: repo.ID, UserID: owner, Owner: "summary-owner"}
 	admitted, err := store.Admit(ctx, chat.AdmitInput{Scope: scope, RunID: "summary-run", Journal: chat.JournalRequest{Version: 1, LegID: "summary-leg", Token: strings.Repeat("a", 64)}, Request: json.RawMessage(`{"sharedConversation":true,"conversationId":"main","runId":"summary-run","instructions":"private-canary","messages":[{"role":"user","content":"Do work"}]}`)})
@@ -180,7 +180,7 @@ func TestConversationSummariesDurabilityAndStaleResult(t *testing.T) {
 			if strings.Contains(string(body), "Cadence") {
 				calls.Add(1)
 			}
-			return io.NopCloser(strings.NewReader("{\"type\":\"delta\",\"kind\":\"text\",\"text\":\"Events summarized\"}\n{\"type\":\"done\"}\n")), nil
+			return io.NopCloser(strings.NewReader("{\"type\":\"delta\",\"kind\":\"text\",\"text\":\"{\\\"prompt\\\":\\\"Check event cadence\\\",\\\"answer\\\":\\\"Events summarized\\\"}\"}\n{\"type\":\"done\"}\n")), nil
 		}
 		renew := func() {
 			_, e := pool.Exec(ctx, `UPDATE collaborators SET view_state=jsonb_build_object('main',jsonb_build_object('timeline_visible_until',$3::text)) WHERE repository_id=$1 AND user_id=$2`, repo.ID, owner, time.Now().Add(30*time.Second).UTC().Format("2006-01-02T15:04:05.000Z"))

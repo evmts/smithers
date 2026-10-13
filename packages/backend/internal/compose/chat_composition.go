@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/ports"
 
 	"encoding/json"
@@ -150,5 +152,62 @@ func composeConversationSummaries(pool *pgxpool.Pool, jobStore *jobs.Store, stor
 	store.OnSharedCommit = func(ctx context.Context, tx pgx.Tx, change chat.SharedCommit) error {
 		return summaries.Admit(ctx, tx, change.TurnID, string(change.Previous))
 	}
+	store.OnConversationRead = func(ctx context.Context, scope chat.Scope, branch string) error {
+		return summaries.Backfill(ctx, scope.RepositoryID, scope.UserID, branch)
+	}
 	return summaries
+}
+
+// accountModelStream keeps hosted auxiliary work on the existing managed-credit
+// proxy. Each request has a real, owned lease; it never becomes a chat prompt.
+type accountModelStream struct {
+	pool  *pgxpool.Pool
+	store *chat.Store
+	host  ports.ModelStreamHost
+}
+
+func (h *accountModelStream) RunModelStream(ctx context.Context, grant ports.ModelStreamGrant) (io.ReadCloser, error) {
+	stream, err := h.host.RunModelStream(ctx, grant)
+	if !errors.Is(err, ports.ErrModelCredentialMissing) || grant.RepositoryID != 0 {
+		return stream, err
+	}
+	owner, repository, request := grant.OwnerID, grant.RepositoryID, grant.Request
+	if repository == 0 {
+		// Auxiliary work gets its own real turn and the existing managed-credit
+		// proxy. It is not a queued prompt and has no conversation publication.
+		user, err := db.New(h.pool).GetUserByID(ctx, owner)
+		if err != nil || user.ProhibitLogin {
+			return nil, fmt.Errorf("summary account unavailable")
+		}
+		scope := chat.Scope{UserID: owner, Owner: user.Username}
+		run := "timeline-summary-" + uuid.NewString()
+		var body map[string]any
+		if err := json.Unmarshal(request, &body); err != nil {
+			return nil, err
+		}
+		body["purpose"], body["runId"] = "timeline-summary", run
+		payload, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		admitted, err := h.store.Admit(ctx, chat.AdmitInput{Scope: scope, RunID: run, Journal: chat.JournalRequest{Version: 1, LegID: run, Token: strings.ReplaceAll(uuid.NewString(), "-", "")}, Request: payload})
+		if err != nil {
+			return nil, err
+		}
+		claimed, err := h.store.Claim(ctx, scope, admitted.TurnID, time.Minute)
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			frame, _ := json.Marshal(map[string]string{"runId": run, "type": "done", "reason": "stop"})
+			_, err := h.store.Commit(cleanup, chat.CommitInput{TurnID: admitted.TurnID, Generation: claimed.Generation, Token: claimed.Token, Expected: claimed.Cursor, Frames: []json.RawMessage{frame}})
+			if err != nil {
+				slog.Warn("summary turn cleanup failed", "turn", admitted.TurnID, "error", err)
+			}
+		}()
+		grant.Metered = &ports.ChatTurnGrant{TurnID: admitted.TurnID, OwnerID: owner, RunID: run, LegID: run, Generation: claimed.Generation, Token: claimed.Token, ExpiresAt: claimed.ExpiresAt, Request: request, ProducerBaseURL: "http://127.0.0.1"}
+	}
+	return h.host.RunModelStream(ctx, grant)
 }

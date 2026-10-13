@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -158,4 +159,28 @@ func TestHostMintsTheTurnCredentialForAManagedBinding(t *testing.T) {
 	_, err = host.RunModelTest(context.Background(), 7, json.RawMessage(`{}`))
 	require.ErrorIs(t, err, ports.ErrModelCredentialMissing)
 	require.False(t, used)
+}
+
+func TestAuxiliaryModelStreamRequiresMatchingLiveMeteredTurn(t *testing.T) {
+	var got Binding
+	used := false
+	stop := errors.New("stop at launch")
+	binding := Binding{Model: json.RawMessage(`{}`), CredentialName: ManagedCredentialName, CredentialOrigin: "https://api.example.test", Managed: true}
+	host, err := New(ownerResolving(binding, nil), recordingLauncher{got: &got, err: stop, used: &used})
+	require.NoError(t, err)
+	valid := ports.ChatTurnGrant{TurnID: "durable-summary-turn", OwnerID: 7, RepositoryID: 0, Generation: 1, Token: "sealed-producer-token", ExpiresAt: time.Now().Add(time.Minute), ProducerBaseURL: "http://127.0.0.1"}
+	for _, change := range []func(*ports.ChatTurnGrant){func(g *ports.ChatTurnGrant) { g.OwnerID = 8 }, func(g *ports.ChatTurnGrant) { g.RepositoryID = 9 }, func(g *ports.ChatTurnGrant) { g.Generation = 0 }, func(g *ports.ChatTurnGrant) { g.Token = "" }, func(g *ports.ChatTurnGrant) { g.TurnID = "" }, func(g *ports.ChatTurnGrant) { g.ExpiresAt = time.Now().Add(-time.Second) }} {
+		invalid := valid
+		change(&invalid)
+		used = false
+		stream, err := host.RunModelStream(t.Context(), ports.ModelStreamGrant{OwnerID: 7, Request: json.RawMessage(`{}`), Metered: &invalid})
+		require.Nil(t, stream)
+		require.ErrorIs(t, err, ports.ErrModelCredentialMissing)
+		require.False(t, used)
+	}
+	_, err = host.RunModelStream(t.Context(), ports.ModelStreamGrant{OwnerID: 7, Request: json.RawMessage(`{}`), Metered: &valid})
+	require.ErrorIs(t, err, stop)
+	require.True(t, used)
+	require.Equal(t, turncredential.Mint(valid.TurnID, valid.Generation, valid.Token), got.CredentialValue)
+	require.NotContains(t, got.CredentialValue, valid.Token)
 }

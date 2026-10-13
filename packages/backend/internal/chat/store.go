@@ -60,10 +60,11 @@ type SharedCommit struct {
 }
 
 type Store struct {
-	OnSharedCommit func(context.Context, pgx.Tx, SharedCommit) error
-	pool           *pgxpool.Pool
-	now            func() time.Time
-	latencies      *turnLatencies
+	OnSharedCommit     func(context.Context, pgx.Tx, SharedCommit) error
+	OnConversationRead func(context.Context, Scope, string) error
+	pool               *pgxpool.Pool
+	now                func() time.Time
+	latencies          *turnLatencies
 	// afterReplayHead is a test seam that runs between the head read and the
 	// batch reads of Replay.
 	afterReplayHead func()
@@ -1473,9 +1474,10 @@ func (s *Store) admitSharedCommit(ctx context.Context, tx pgx.Tx, turn turnRecor
 		return nil
 	}
 	var request struct {
-		Shared bool `json:"sharedConversation"`
+		Shared  bool `json:"sharedConversation"`
+		Private bool `json:"privateConversation"`
 	}
-	if json.Unmarshal(turn.Request, &request) != nil || !request.Shared {
+	if json.Unmarshal(turn.Request, &request) != nil || !(request.Shared || request.Private && turn.RepositoryID == 0) {
 		return nil
 	}
 	return s.OnSharedCommit(ctx, tx, SharedCommit{TurnID: turn.ID, RunID: turn.RunID, Branch: *turn.ConversationID, RepositoryID: turn.RepositoryID, Attempt: attempt, Revision: revision + 1, Previous: turn.State, State: state})

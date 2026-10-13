@@ -3267,8 +3267,8 @@ button.mvp-node:focus-visible { outline: 2px solid var(--ring-border); outline-o
 /* The timeline: one line per entry, a hairline through the nodes, the newest lines low. */
 .timeline { position: relative; min-height: 0; flex: 1; overflow-y: auto; -webkit-mask-image: linear-gradient(transparent, #000 14px, #000 calc(100% - 14px), transparent); mask-image: linear-gradient(transparent, #000 14px, #000 calc(100% - 14px), transparent); scrollbar-width: none; }
 .timeline > ol { position: relative; display: flex; min-height: 100%; flex-direction: column; justify-content: flex-end; margin: 0; padding: 12px 0; list-style: none; }
-.timeline > ol::before { position: absolute; top: 12px; bottom: 12px; left: 13px; width: 1.5px; background: var(--border); content: ""; }
-.timeline li > button, .tl-row { display: grid; width: 100%; grid-template-columns: 28px minmax(0, 1fr); align-items: start; gap: 6px; padding: 5px 8px 5px 0; border-radius: var(--r-1); text-align: left; }
+.tl-row { display: grid; width: 100%; grid-template-columns: 28px minmax(0, 1fr); align-items: start; gap: 6px; padding: 5px 8px 5px 0; border-radius: var(--r-1); text-align: left; }
+.timeline li > button { display: block; width: 100%; padding: 5px 8px; text-align: left; border-radius: var(--r-1); }
 .timeline li > button:hover, .tl-row:hover { background: var(--hover-subtle); }
 .tl-node { position: relative; z-index: 1; display: inline-flex; width: 28px; height: 20px; align-items: center; justify-content: center; background: var(--bg); color: var(--tone, var(--text-muted)); font-size: 10px; }
 .tl-text { display: flex; min-width: 0; flex-direction: column; }
@@ -3279,7 +3279,6 @@ button.mvp-node:focus-visible { outline: 2px solid var(--ring-border); outline-o
 .timeline li[data-tone="quiet"] .tl-text b { color: var(--text-muted); font-weight: 400; }
 /* The on-screen band reads as one continuous strip. */
 .timeline li[data-in-view] > button { border-radius: 0; background: var(--surface); box-shadow: inset 2px 0 0 var(--brand); }
-.timeline li[data-in-view] .tl-node { background: var(--surface); }
 .timeline li[data-in-view]:not(li[data-in-view] + li[data-in-view]) > button { border-top-left-radius: var(--r-1); border-top-right-radius: var(--r-1); }
 .timeline li[data-in-view]:not(:has(+ li[data-in-view])) > button { border-bottom-left-radius: var(--r-1); border-bottom-right-radius: var(--r-1); }
 .rail [data-tone="live"] .tl-node { animation: shell-live 1.8s ease-in-out infinite; }
@@ -3354,7 +3353,6 @@ button.mvp-node:focus-visible { outline: 2px solid var(--ring-border); outline-o
 .timeline li[data-zoom] > button { padding: 2px 8px 2px 0; }
 .timeline li[data-zoom="2"] > button { padding: 3px 8px 3px 0; }
 .timeline li[data-zoom="1"] > button { padding: 4px 8px 4px 0; }
-.tl-stack { display: block; flex: none; }
 .timeline li[data-zoom] .tl-text b { color: var(--text-muted); font-size: var(--fs-caption); font-weight: 400; line-height: 15px; }
 .timeline li[data-zoom="2"] .tl-text b { color: var(--text); font-size: var(--fs-caption); line-height: 16px; }
 .timeline li[data-zoom="1"] .tl-text b { color: var(--text); font-size: var(--fs-caption); font-weight: 500; line-height: 18px; }
@@ -3364,4 +3362,8 @@ button.mvp-node:focus-visible { outline: 2px solid var(--ring-border); outline-o
 .timeline li[data-zoom][data-tone="attention"] .tl-zoom { color: var(--attention-text); }
 .timeline li[data-zoom][data-tone="failed"] .tl-zoom { color: var(--danger); }
 /* A title the fast model wrote (#3732) leads with the written sparkle, inline with the words. */
-.tl-text b .written { display: inline; margin-right: 3px; }
+
+.timeline li[data-tone="attention"] .tl-text b { color: var(--attention-text); }
+.timeline li[data-tone="failed"] .tl-text b { color: var(--danger); }
+.timeline li[data-tone="live"] .tl-text b { animation: shell-live 1.8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .timeline li[data-tone="live"] .tl-text b { animation: none; } }

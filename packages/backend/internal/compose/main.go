@@ -2024,6 +2024,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	if modelStreamHost == nil {
 		modelStreamHost, _ = options.ChatHost.(ports.ModelStreamHost)
 	}
+	if modelStreamHost != nil && chatService != nil {
+		modelStreamHost = &accountModelStream{pool: pool, store: chatService.runtime.Handler.Store, host: modelStreamHost}
+	}
 	if modelStreamHost != nil {
 		modelStreamHandler = routes.NewModelStreamHandler(modelStreamHost)
 	}
@@ -2048,7 +2051,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		installQuiesce.Machines = workspaceService
 	}
 	var conversationSummaries *services.ConversationSummaries
-	if config.IsSingleOwner(cfg.Auth) && chatService != nil {
+	if chatService != nil {
 		conversationSummaries = composeConversationSummaries(pool, commandJobs, chatService.runtime.Handler.Store, modelStreamHost)
 	}
 	if conversationSummaries != nil && flow != nil {

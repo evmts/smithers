@@ -37,7 +37,7 @@ export interface TimelineTitleSeamOptions {
 export const TITLE_INSTRUCTIONS = [
   "You title one stretch of a coding conversation for its timeline.",
   "Reply with the title alone: at most 8 plain words saying what happened there, with no quotes, Markdown or trailing period.",
-  "Use the conversation's own words for the work. Never use the words thread, task, workflow, lane, sandbox or VM."
+  "Summarize both the person's intent and the observed outcomes. Broader stretches use broader labels. Never infer success from a request, copy an entry verbatim, or use the words thread, task, workflow, lane, sandbox or VM."
 ].join(" ")
 
 /** The most input lines one request carries: the first ones and the last few, with the count between them. */

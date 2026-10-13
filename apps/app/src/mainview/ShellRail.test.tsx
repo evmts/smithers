@@ -74,13 +74,13 @@ test("the mounted install rail reads the real seams and Hide runs toast.dismiss 
   const host = mount(<ControllerTestProvider controller={controller}><MessageScrollerProvider>
     <ShellRail home={true} entries={[card("checks-entry", "error", "Checks failed")]} />
   </MessageScrollerProvider></ControllerTestProvider>)
-  await waitFor(() => host.querySelector('[data-entry="home"] .tl-text b')?.textContent === "smithersai/smithers")
+  await waitFor(() => host.querySelector('[data-entry="home"] .tl-text b')?.textContent === "1 need you · 1 working")
   expect(controller.design.enabled).toBe(false)
   expect(reads).toContain("/api/auth/session")
   expect(reads).not.toContain("/api/user")
   expect(reads).toContain("/api/install")
   expect(reads).toContain("/api/todos")
-  expect(host.querySelector('[data-entry="home"] .tl-text')?.textContent).toBe("smithersai/smithers1 need you · 1 working")
+  expect(host.querySelector('[data-entry="home"] .tl-text')?.textContent).toBe("1 need you · 1 working")
   expect(host.querySelectorAll(".notice")).toHaveLength(1)
   click(host.querySelector('[aria-label="Hide Checks failed"]'))
   await waitFor(() => host.querySelectorAll(".notice").length === 0)
@@ -119,8 +119,8 @@ describe("ShellRail maps the conversation to the rail", () => {
       card("c1", "error"), card("c2", "acted"), card("c3", "active", "")
     ]
     expect(railLines(entries)).toEqual([
-      { entry_id: "m1", kind: "prompt", title: "“Fix the flaky test”", tone: "quiet", glyph: { state: "queued" } },
-      { entry_id: "m2", kind: "answer", title: "On it.", tone: "failed", glyph: { actor: { kind: "agent", id: "smithers", agent: "smithers", avatar_url: PlaceholderAvatarUrl, color_index: 6 } } },
+      { entry_id: "m1", kind: "prompt", title: "Prompt", tone: "quiet", glyph: { state: "queued" } },
+      { entry_id: "m2", kind: "answer", title: "Reply failed", tone: "failed", glyph: { actor: { kind: "agent", id: "smithers", agent: "smithers", avatar_url: PlaceholderAvatarUrl, color_index: 6 } } },
       { entry_id: "c1", kind: "card", title: "Build", tone: "failed", glyph: { state: "failed" } },
       { entry_id: "c2", kind: "card", title: "Build", tone: "done", glyph: { state: "merged" } },
       { entry_id: "c3", kind: "card", title: "status", tone: "quiet", glyph: { state: "queued" } }
@@ -287,7 +287,7 @@ test("the install shell keeps a missing TODO entry's notice visible without its 
   const host = mount(<ControllerTestProvider controller={controller}><MessageScrollerProvider>
     <ShellRail home={true} entries={[card("current-entry", "active", "Current conversation")]} />
   </MessageScrollerProvider></ControllerTestProvider>)
-  await waitFor(() => host.querySelector('[data-entry="home"] .tl-text b')?.textContent === "smithersai/smithers")
+  await waitFor(() => host.querySelector('[data-entry="home"] .tl-text b')?.textContent === "0 need you · 0 working")
   expect(controller.design.enabled).toBe(false)
   expect(host.querySelector(".notice")?.textContent).toContain("Checks failed")
   expect(host.querySelector('.notice [data-flow="todo.retry"]')).toBeNull()
@@ -365,7 +365,7 @@ test("install shared history feeds the rail with recorded actors and the transcr
   </MessageScrollerProvider></ControllerTestProvider>)
   await waitFor(() => host.querySelector('[data-entry="shared-1:answer"]') !== null)
   expect(host.querySelector('[data-entry="private-local"]')).toBeNull()
-  expect(host.querySelector('[data-entry="shared-1:prompt"] .tl-text b')?.textContent).toBe("Choose timeout")
+  expect(host.querySelector('[data-entry="shared-1:prompt"] .tl-text b')?.textContent).toBe("Prompt")
   expect(host.querySelector('[data-entry="shared-1:answer"]')?.getAttribute("data-tone")).toBe("live")
   const rows = sharedRailLines(shared, { role: "member" })
   expect(rows[0]!.glyph).toEqual({ actor: { kind: "person", login: "alice", name: "alice", avatar_url: PlaceholderAvatarUrl, color_index: 2 } })
@@ -443,10 +443,10 @@ test("unseen completed entries pin below and clear after the durable cursor catc
 
 test("a stored model summary leaves the deterministic title and tone intact", () => {
  const rows=sharedRailLines({ id:"main",entries:[{id:"turn",author:2,authorLogin:"alice",runId:"run",prompt:"Run tests",title:"Run tests",tone:"live",state:"running",summary:"Checked retry bounds",summary_rev:3,frames:[]}]},{role:"member"})
- expect(rows[1]!.title).toBe("Run tests")
+ expect(rows[1]!.title).toBe("Checked retry bounds")
  expect(rows[1]!.tone).toBe("live")
  const host=mount(<Timeline lines={rows} on_screen={["turn:prompt","turn:answer"]} onAction={()=>{}} onView={()=>{}} />)
- expect(host.querySelector('[data-summary][aria-label="Summary"]')?.textContent).toBe("Checked retry bounds")
+ expect(host.querySelector('[data-entry="turn:answer"] .tl-text b')?.textContent).toBe("Checked retry bounds")
 })
 
 
@@ -475,7 +475,7 @@ test("shared subject facts produce one line with host tone and a role-bound acti
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ title: "Shared entry", tone: "failed", summary: "Checks failed in retry.ts", action: { tag: "todo.retry", args: { n: "24" } } })
     const host = mount(<Timeline lines={rows} on_screen={["todo:24", "todo:24"]} onAction={() => {}} onView={() => {}} />)
-    expect(host.querySelector('[data-summary][aria-label="Summary"]')?.textContent).toBe("Checks failed in retry.ts")
+    expect(host.querySelector('[data-entry="todo:24"] .tl-text b')?.textContent).toBe("Checks failed in retry.ts")
     expect(railEdges([{ entry_id: "visible", kind: "prompt", title: "Earlier", tone: "quiet", glyph: { state: "queued" } }, ...rows], ["visible", "visible"]).below[0]?.detail).toBe("Checks failed in retry.ts")
   }
   expect(lines[0]?.summary).toBeUndefined()

@@ -39,9 +39,9 @@ test("C-UI-04: shared Starting entry has one host-derived line, keyboard jump an
   const timeline = page.getByRole("navigation", { name: "Timeline", exact: true })
   const line = timeline.locator('[data-entry="todo:24"]')
   await expect(line).toHaveCount(1)
-  await expect(line).toContainText("Starting entry")
+  await expect(line).toContainText("Preparing the greeting change")
   await expect(line).toHaveAttribute("data-tone", "live")
-  await expect(line.locator('[data-summary][aria-label="Summary"]')).toHaveText("Preparing the greeting change")
+  await expect(line.locator(".tl-text b")).toHaveText("Preparing the greeting change")
   await expect(timeline.locator('[data-entry="subject:prompt"], [data-entry="subject:answer"]')).toHaveCount(0)
   await line.getByRole("button").first().press("Enter")
   await expect(page.locator('[data-message-id="todo:24"]')).toBeInViewport()
@@ -220,7 +220,7 @@ test("C-UI-04: shared history supplies actor lines and keyboard jumps to the sha
   await installOwner(page)
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.route("**/api/conversations/main", route => route.fulfill({ json: { id: "main", entries: [{
-    id: "shared-alice", author: 2, authorLogin: "alice", runId: "alice-run", prompt: "Choose a timeout", title: "Choose a timeout", tone: "live", state: "running",
+    id: "shared-alice", author: 2, authorLogin: "alice", runId: "alice-run", prompt: "Choose a timeout", title: "Choose a timeout", tone: "live", state: "running", summary: JSON.stringify({v:2,prompt:"Choose timeout settings",answer:"Checking timeout behavior"}),
     frames: [{ runId: "alice-run", type: "delta", kind: "text", text: "Checking the timeout" }]
   }] } }))
   await page.route("**/api/conversations/main/view-state", route => route.fulfill({ json: { toasts_hidden: false } }))
@@ -228,8 +228,8 @@ test("C-UI-04: shared history supplies actor lines and keyboard jumps to the sha
   const timeline = page.getByRole("navigation", { name: "Timeline", exact: true })
   const prompt = timeline.locator('[data-entry="shared-alice:prompt"]')
   const answer = timeline.locator('[data-entry="shared-alice:answer"]')
-  await expect(prompt).toContainText("Choose a timeout")
-  await expect(answer).toContainText("Checking the timeout")
+  await expect(prompt).toContainText("Choose timeout settings")
+  await expect(answer).toContainText("Checking timeout behavior")
   await expect(answer).toHaveAttribute("data-tone", "live")
   await answer.getByRole("button").press("Enter")
   await expect(page.locator('[data-shared-turn="shared-alice"]')).toBeInViewport()

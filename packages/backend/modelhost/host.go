@@ -251,7 +251,11 @@ func (host *Host) RunModelStream(ctx context.Context, grant ports.ModelStreamGra
 	// Managed credit is metered against a durable chat turn; a model stream
 	// has none, so it runs only on the owner's own credential.
 	if binding.Managed {
-		return nil, fmt.Errorf("model stream has no chat turn to meter managed credit: %w", ports.ErrModelCredentialMissing)
+		turn := grant.Metered
+		if turn == nil || turn.OwnerID != grant.OwnerID || turn.RepositoryID != grant.RepositoryID || turn.TurnID == "" || turn.Generation <= 0 || turn.Token == "" || !turn.ExpiresAt.After(time.Now()) {
+			return nil, fmt.Errorf("model stream has no authorized turn to meter managed credit: %w", ports.ErrModelCredentialMissing)
+		}
+		binding.CredentialValue = turncredential.Mint(turn.TurnID, turn.Generation, turn.Token)
 	}
 	binding, stopFast, err := prepareFast(binding)
 	if err != nil {
@@ -265,6 +269,10 @@ func (host *Host) RunModelStream(ctx context.Context, grant ports.ModelStreamGra
 		TurnID: "model-stream-" + runID, OwnerID: grant.OwnerID, RepositoryID: grant.RepositoryID,
 		RunID: runID, LegID: runID, Generation: 1, Token: "model-stream",
 		ExpiresAt: time.Now().Add(15 * time.Minute), Request: requestBody, ProducerBaseURL: "http://127.0.0.1",
+	}
+	if binding.Managed {
+		chatGrant = *grant.Metered
+		chatGrant.Request = requestBody
 	}
 	lease, err := host.launcher.LaunchChatHost(ctx, chatGrant, binding)
 	if err != nil {

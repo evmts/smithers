@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { Window } from "happy-dom"
 import { fixtures } from "@smthrs/rpc/fixtures/Timeline"
 import type { TimelineLine } from "@smthrs/rpc/TimelineCard"
-import { spanOf, Timeline } from "./Timeline"
+import { followBand, spanOf, Timeline } from "./Timeline"
 
 /*
  * A zoomed line (T-UI-08 zoom, #3728) stands for a run of entries: it says how many and when, names itself for a
@@ -51,13 +51,13 @@ describe("a zoomed timeline line", () => {
       expect(item.querySelector(".tl-zoom time")!.textContent).toBe(span)
       // Named by what it shows: the title, then "N entries · span" (no aria-label; C-UI-02 caps a name at 12 words).
       expect(button.getAttribute("aria-label")).toBeNull()
-      expect(button.textContent).toContain(line.title)
+      expect(button.textContent).toContain(line.zoom ? line.title : line.summary ?? line.title)
       expect(button.textContent).toContain(`${count} entries · ${span}`)
       // The stacked node: one bar per level above the entry, capped at the coarsest look; no entry glyph beside it.
-      expect(item.querySelectorAll(".tl-node .tl-stack rect")).toHaveLength(Math.min(line.zoom.level, 3) + 1)
+      expect(item.querySelectorAll(".tl-node, svg, .avatar")).toHaveLength(0)
       expect(item.querySelector(".tl-node .lucide-check, .tl-node .lucide-x, .tl-node .lucide-circle-alert, .tl-node .avatar")).toBeNull()
       // The run's summary stays with the model; the count and span are the words.
-      expect(item.textContent).not.toContain(line.summary!)
+      expect(item.querySelectorAll(".tl-text > span:not(.tl-zoom)")).toHaveLength(0)
     }
     // The band and freshness read as before.
     expect([...body.querySelectorAll("li[data-in-view]")].map(item => item.getAttribute("data-entry"))).toEqual(["entry-756", "entry-757"])
@@ -73,7 +73,7 @@ describe("a zoomed timeline line", () => {
     const body = render([deep])
     const item = body.querySelector("li[data-entry]")!
     expect(item.getAttribute("data-zoom")).toBe("5")
-    expect(item.querySelectorAll(".tl-stack rect")).toHaveLength(4)
+    expect(item.querySelectorAll("svg, .tl-node")).toHaveLength(0)
     expect(body.querySelector('li[data-entry="entry-1"] button')!.textContent).toContain(`237 entries · ${CLOCK.formatRange(deep.zoom!.from!, deep.zoom!.to!)}`)
   })
 
@@ -102,9 +102,9 @@ describe("a zoomed timeline line", () => {
     const body = render([written, byId("entry-404"), ...fixtures.timeline.model.lines])
     const title = body.querySelector('li[data-entry="entry-1"] .tl-text b')!
     expect(title.textContent).toBe("Hardened webhook retries")
-    expect(title.firstElementChild!.matches("svg.written[aria-hidden=true]")).toBe(true)
+    expect(title.firstElementChild).toBeNull()
     expect(body.querySelector('li[data-entry="entry-1"] button')!.textContent).toContain("Hardened webhook retries")
-    expect(body.querySelectorAll(".written")).toHaveLength(1)
+    expect(body.querySelectorAll(".written")).toHaveLength(0)
     expect(body.querySelector('li[data-entry="entry-404"] .tl-text b')!.textContent).toBe(byId("entry-404").title)
   })
 
@@ -120,4 +120,28 @@ describe("a zoomed timeline line", () => {
     expect(body.querySelector('li[data-entry="entry-717"] button[data-flow]')).toBeNull()
     expect(body.querySelectorAll('li[data-entry="entry-717"] button')).toHaveLength(1)
   })
+})
+
+
+test("one concise primary summary replaces the copied title without any author or state icon", () => {
+ const body=render([{entry_id:"p",kind:"prompt",title:"Use the theme command to change my theme to dark",summary:"Switch to dark mode",tone:"quiet",glyph:{event:"ok"}}])
+ expect(body.querySelector("button")!.textContent).toBe("Switch to dark mode")
+ expect(body.querySelectorAll("svg,.avatar,.tl-node,[data-summary]")).toHaveLength(0)
+ expect(body.textContent).not.toContain("Use the theme command")
+})
+
+test("the rail follows a band below or above its own viewport without scrolling the transcript", () => {
+ const window=new Window(), rail=window.document.createElement("nav")
+ rail.innerHTML='<ol><li data-in-view></li><li data-in-view></li></ol>'
+ Object.defineProperty(rail,"clientHeight",{value:100})
+ const rows=rail.querySelectorAll("li")
+ Object.defineProperty(rows[0],"offsetTop",{value:250})
+ Object.defineProperty(rows[1],"offsetTop",{value:280})
+ Object.defineProperty(rows[1],"offsetHeight",{value:30})
+ followBand(rail as unknown as HTMLElement)
+ expect(rail.scrollTop).toBe(210)
+ rail.scrollTop=400
+ followBand(rail as unknown as HTMLElement)
+ expect(rail.scrollTop).toBe(250)
+ followBand(null)
 })

@@ -53,11 +53,11 @@ export const markOf = (state: State, me: string, entry: Entry): Mark | undefined
       ...(entry.acked === true || entry.secondary === undefined ? {} : { secondary: entry.secondary })
     }
   }
-  if (entry.kind === "user") return { id: entry.id, title: `“${entry.text}”`, summary: "", tone: "quiet", glyph: <MessageSquare size={12} aria-hidden="true" /> }
+  if (entry.kind === "user") return { id: entry.id, title: "Prompt", summary: "", tone: "quiet", glyph: <MessageSquare size={12} aria-hidden="true" /> }
   if (entry.kind === "agent") {
     /* Smithers' answer is an entry like any other: titled by its first line, marked by who answered (spec §14.5.1). */
     const who = entry.by ?? (entry.for === undefined ? STACK : `${entry.for}~smithers`)
-    return { id: entry.id, title: entry.text.split("\n")[0] ?? "", summary: "", tone: "quiet", glyph: <Avatar world={world} who={who} size={14} /> }
+    return { id: entry.id, title: "Reply completed", summary: "", tone: "quiet", glyph: <Avatar world={world} who={who} size={14} /> }
   }
   const { card } = entry
   switch (card.kind) {
@@ -281,8 +281,7 @@ export const Rail = ({ marks, inView, desktop, onJump, noticed = new Set<string>
         {list.filter(mark => pinned.has(mark.id)).map(mark => (
           <li key={mark.id} data-tone={mark.tone} data-pinned={direction}>
             <button type="button" className="mvp-tl-row" onClick={() => onJump(mark.id)} data-mock={`pin-${mark.id}`}>
-              <span className="mvp-tl-node">{mark.glyph}</span>
-              <span className="mvp-tl-text"><b>{mark.title}</b>{mark.summary === "" ? null : <span>{mark.summary}</span>}</span>
+                            <span className="mvp-tl-text"><b>{mark.summary || mark.title}</b></span>
             </button>
           </li>
         ))}
@@ -304,8 +303,7 @@ export const Rail = ({ marks, inView, desktop, onJump, noticed = new Set<string>
             <li key={mark.id} data-tone={mark.tone} data-event={mark.event || undefined} data-fresh={mark.fresh || undefined}
               data-in-view={index >= inView[0] && index <= inView[1] && mark.event !== true || undefined}>
               <button type="button" className="mvp-tl-row" onClick={() => onJump(mark.id)} data-mock={`tl-${mark.id}`}>
-                <span className="mvp-tl-node">{mark.glyph}</span>
-                <span className="mvp-tl-text"><b>{mark.title}</b>{mark.summary === "" ? null : <span>{mark.summary}</span>}</span>
+                                <span className="mvp-tl-text"><b>{mark.summary || mark.title}</b></span>
               </button>
               {mark.action === undefined && mark.secondary === undefined ? null : (
                 <span className="mvp-tl-actions">

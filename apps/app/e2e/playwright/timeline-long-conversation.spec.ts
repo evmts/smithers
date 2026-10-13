@@ -76,25 +76,27 @@ test("a long conversation's timeline zooms out with distance from the band, and 
   await expect.poll(async () => (await levels())[0]).toBe(0)
   const atStart = await levels()
   expect(atStart.at(-1)).toBeGreaterThanOrEqual(3)
-  const opening = rail.filter({ hasText: "Step 1: harden webhook retries" }).first()
+  const opening = page.locator('.timeline li[data-entry="long-0-prompt"]')
   await expect(opening).not.toHaveAttribute("data-zoom", /.*/)
-  const openingAt = await rail.evaluateAll(items => items.findIndex(item => item.textContent?.includes("Step 1: harden webhook retries")))
+  const openingAt = await rail.evaluateAll(items => items.findIndex(item => (item as HTMLElement).dataset.entry === "long-0-prompt"))
   expect(openingAt).toBeGreaterThanOrEqual(0)
   expect(openingAt).toBeLessThan(3)
+  await expect(opening).toBeInViewport()
 })
 
 test("the fast model titles a long conversation's folded lines, marked as written, and short lines keep their own (#3732)", async ({ page }) => {
   await openLongConversation(page, 1280, [])
   const folded = page.locator(".timeline > ol > li[data-zoom]")
   await expect.poll(async () => folded.count()).toBeGreaterThan(3)
-  await expect.poll(async () => folded.locator(".written").count(), { timeout: 15_000 }).toBe(await folded.count())
+  await expect.poll(async () => folded.locator(".tl-text b").allTextContents(), { timeout: 15_000 }).not.toContain("App activity")
+  await expect(page.locator(".timeline svg, .timeline .avatar, .timeline .tl-node, .timeline .written")).toHaveCount(0)
   for (const item of await folded.all()) {
     const count = /^(\d+) entries/.exec(await item.locator(".tl-zoom").innerText())![1]
     await expect(item.locator(".tl-text b")).toHaveText(`Fast title for ${count} entries`)
   }
   // Lines near the band are not folded: they keep their own titles and no mark.
   await expect(page.locator(".timeline > ol > li:not([data-zoom]) .written")).toHaveCount(0)
-  await expect(page.locator(".timeline > ol > li:not([data-zoom])", { hasText: "Turn 59 done: retries now cover store.ts." })).toBeVisible()
+  await expect(page.locator('.timeline li[data-entry="long-59-7"]')).toBeVisible()
 })
 
 test("below 1,180 px, where the timeline is hidden, no title is asked of the model (#3732)", async ({ page }) => {

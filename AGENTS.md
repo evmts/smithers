@@ -106,6 +106,14 @@ workspace graph changes, generated docs, benchmarks, and flow authoring.
 Read the scoped `AGENTS.md` for app, server, or TUI files. Keep `AGENTS.md`
 rules to behavior that applies throughout their directory trees.
 
+## Production iteration (Will, 2026-10-13)
+
+For development changes in this repository, commit and push directly to append-only
+`main` with jj, then deploy through the existing Deploy apps workflow so Will can
+test in the production app open in Arc. Do not open pull requests for this
+repository's development work. Product TODO approval and merge authorization
+remain enforced for customer repositories.
+
 ## Maintainer workflow (Will, 2026-09-24)
 
 - Keep communication brief; take ownership and ask only necessary questions.

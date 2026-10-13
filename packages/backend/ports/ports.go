@@ -135,6 +135,9 @@ type ModelStreamHost interface {
 }
 
 type ModelStreamGrant struct {
+	// Metered is an internal, leased durable turn for auxiliary model work.
+	// HTTP callers never supply it; managed credit still passes the turn proxy.
+	Metered      *ChatTurnGrant `json:"-"`
 	OwnerID      int64
 	RepositoryID int64
 	Request      json.RawMessage

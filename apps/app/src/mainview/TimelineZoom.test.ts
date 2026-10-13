@@ -42,8 +42,8 @@ describe("the levels", () => {
   test("level 1 starts at every prompt and answer; level 2 at every prompt; no group exceeds its cap", () => {
     const lines = [line(0, "prompt"), line(1, "answer"), line(2, "event"), line(3, "card"), line(4, "answer"), line(5, "prompt"), line(6, "event")]
     const [one, two, three] = zoomLevels(lines)
-    expect(one.map(group => [group.first, group.last])).toEqual([[0, 0], [1, 3], [4, 4], [5, 6]])
-    expect(two.map(group => [group.first, group.last])).toEqual([[0, 4], [5, 6]])
+    expect(one.map(group => [group.first, group.last])).toEqual([[0, 4], [5, 6]])
+    expect(two.map(group => [group.first, group.last])).toEqual([[0, 6]])
     expect(three.map(group => [group.first, group.last])).toEqual([[0, 6]])
   })
 
@@ -67,8 +67,8 @@ describe("the levels", () => {
   test("level 3 starts at a prompt only once it is half full, so a run of short exchanges shares one group", () => {
     const lines = Array.from({ length: 40 }, (_, id) => line(id, id % 2 === 0 ? "prompt" : "answer"))
     const [, two, three] = zoomLevels(lines)
-    expect(two).toHaveLength(20)
-    expect(three.map(group => group.children.length)).toEqual([4, 4, 4, 4, 4])
+    expect(two).toHaveLength(5)
+    expect(three.map(group => group.children.length)).toEqual([4, 1])
   })
 })
 
@@ -122,11 +122,11 @@ describe("a folded line", () => {
   test("is titled by its first prompt, else its first answer, else its first line, and counts what it holds", () => {
     const lines = [line(0, "event"), line(1, "answer"), line(2, "prompt"), line(3, "card", "failed"), line(4, "answer")]
     expect(foldedLine(lines, { level: 2, first: 0, last: 4 })).toMatchObject({
-      entry_id: "e0", kind: "prompt", title: "prompt 2", summary: "1 prompt · 2 answers · 2 steps · 1 failed",
+      entry_id: "e0", kind: "prompt", title: "App activity",
       zoom: { level: 2, count: 5, last_entry_id: "e4" }
     })
-    expect(foldedLine(lines, { level: 1, first: 0, last: 1 })).toMatchObject({ kind: "answer", title: "answer 1", summary: "1 answer · 1 step" })
-    expect(foldedLine(lines, { level: 1, first: 3, last: 3 })).toMatchObject({ kind: "card", title: "card 3", summary: "1 step · 1 failed" })
+    expect(foldedLine(lines, { level: 1, first: 0, last: 1 })).toMatchObject({ kind: "answer", title: "Conversation activity" })
+    expect(foldedLine(lines, { level: 1, first: 3, last: 3 })).toMatchObject({ kind: "card", title: "Conversation activity" })
   })
 
   test("takes its most urgent tone and act, so a far Needs you or failure still shows", () => {
@@ -145,8 +145,8 @@ describe("a folded line", () => {
   test("spans the times its entries carry, and none when they carry none", () => {
     const lines = [line(0, "prompt"), line(1, "answer"), line(2, "event")]
     const times = new Map([["e0", 3_000], ["e2", 9_000], ["e1", 0]])
-    expect(foldedLine(lines, { level: 1, first: 0, last: 2 }, times).zoom).toEqual({ level: 1, count: 3, last_entry_id: "e2", from: 3_000, to: 9_000 })
-    expect(foldedLine(lines, { level: 1, first: 0, last: 2 }).zoom).toEqual({ level: 1, count: 3, last_entry_id: "e2" })
+    expect(foldedLine(lines, { level: 1, first: 0, last: 2 }, times).zoom).toMatchObject({ level: 1, count: 3, last_entry_id: "e2", from: 3_000, to: 9_000 })
+    expect(foldedLine(lines, { level: 1, first: 0, last: 2 }).zoom).toMatchObject({ level: 1, count: 3, last_entry_id: "e2" })
   })
 })
 
@@ -170,7 +170,8 @@ describe("properties over random conversations", () => {
       // Walking away from the band, a folded line's level never drops back down; an unfolded line out there is a
       // lone entry (a group of one cannot fold).
       const [one] = zoomLevels(lines)
-      const lone = new Set(one.filter(group => group.first === group.last).map(group => `e${group.first}`))
+      const [compact] = zoomLevels(lines, 4)
+      const lone = new Set([...one,...compact].filter(group => group.first === group.last).map(group => `e${group.first}`))
       const away = [shown.slice(0, top).reverse(), shown.slice(bottom + 1)]
       for (const side of away) {
         let level = 0
@@ -205,7 +206,7 @@ describe("model titles (#3732)", () => {
   test("a folded line's key is its first and last entries and its count; an unfolded line has none", () => {
     expect(folds.length).toBeGreaterThan(2)
     const fold = folds[0]!
-    expect(foldKey(fold)).toBe(JSON.stringify([fold.entry_id, fold.zoom!.last_entry_id, fold.zoom!.count]))
+    expect(foldKey(fold)).toBe(JSON.stringify([fold.entry_id, fold.zoom!.last_entry_id, fold.zoom!.count, fold.zoom!.revision]))
     expect(foldKey({ entry_id: "e1", zoom: { level: 1, count: 3, last_entry_id: "e3" } })).toBe('["e1","e3",3]')
     // The same run grown by one entry is a new key, so its title is asked for again.
     expect(foldKey({ entry_id: "e1", zoom: { level: 1, count: 4, last_entry_id: "e4" } })).toBe('["e1","e4",4]')
@@ -248,4 +249,13 @@ describe("model titles (#3732)", () => {
     expect(withTitles(shown, stale)).toEqual(shown)
     expect(withTitles(shown, new Map())).toEqual(shown)
   })
+})
+
+
+test("a changed outcome invalidates its group summary even when every entry identity is unchanged", () => {
+ const before=[line(0,"prompt","quiet",{title:"Switch to dark mode"}),line(1,"answer","done",{title:"Theme changed"})]
+ const after=[before[0]!,{...before[1]!,title:"Theme change unavailable"}]
+ const group={level:1,first:0,last:1}
+ expect(foldKey(foldedLine(before,group))).not.toBe(foldKey(foldedLine(after,group)))
+ expect(foldedLine(after,group).zoom!.count).toBe(2)
 })

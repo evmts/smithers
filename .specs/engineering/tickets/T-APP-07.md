@@ -5,19 +5,19 @@ Spec: spec.md §3 (`chat_turns`), §4.1, §10.8.3, §11.5a (`agent:fast`), §11.
 Ready: 2026-10-03 smithers-8a sha256:f68c24a167db
 
 ## Goal
-The left edge maps the branch conversation a member is viewing: live work above the viewport pins top-left, live work and new entries below pin bottom-left, and on desktop a timeline between them shows one line per entry with a shared title, tone and state, plus at most one action derived for the viewer. Notable events also arrive as toasts, which each member can hide.
+The left edge maps the branch conversation a member is viewing: live work above the viewport pins top-left, live work and new entries below pin bottom-left, and on desktop a timeline between them shows one concise summary per entry with shared tone and state, plus at most one action derived for the viewer. Notable events also arrive as toasts, which each member can hide.
 
 ## Scope
 Land against the specified contracts. Keep each unavailable integration dark: T-COL-02 and T-APP-16 gate shared entry reads, publication and view-state writes; T-STK-01 gates TODO facts; T-APP-09 gates actor rendering; T-UI-08 gates the View cutover; T-CAT-01 gates command bindings; T-STK-04 and T-APP-04 gate Merge and its private confirmation; T-STK-05 gates Retry. With a provider absent, expose no action or write and retain the current renderer until the replacement can mount and delete it in one change. T-FLW-08 and T-FLW-07 gate summary calls and monitor integration; absent providers leave deterministic labels and the last summary intact. Enable each integration only after its tests below pass. No dependency must have landed to prepare or merge the dark change.
 
 In:
 - Entry fields on the `chat_turns` rows T-APP-16 stores: `title`, `tone`, `state`, and the facts the action needs (`needs_you.kind`, first in merge order, TODO number). Every member sees the same values.
-- Deterministic derivation in the host (§14.5.2), recomputed in the transaction that changes the subject: tone (live, attention, failed, done, quiet) and state (the TODO state word, Starting included, §4.1; else null). An entry without a run takes its title from its first line or its card title.
+- Deterministic derivation in the host (§14.5.2), recomputed in the transaction that changes the subject: tone (live, attention, failed, done, quiet) and state (the TODO state word, Starting included, §4.1; else null). Prompt and answer summaries describe intent and observed outcome separately. Pending entries use honest state labels; cards retain their semantic title.
 - Per-viewer action, computed in the client from the shared facts plus the viewer's role, never stored. A maintainer sees Merge on the first In review item and a member sees none. One function, `actionFor(entry, viewer)`, serves the rail, the Home card (T-APP-01) and toasts.
-- The rail: on desktop, one timeline line per entry (glyph, title; a prompt shows its author through T-APP-09); a band marks the entries on screen; a click scrolls to the entry; live entries above the band pin top, live or new entries below pin bottom; each line carries the viewer's action. Narrow screens show one pill per edge ("↑ 2 live above", "↓ 1 new below").
+- The rail: on desktop, one plain-text summary per entry, without author icons, initials, glyphs or Written sparkle (Will 2026-10-13); a band marks the entries on screen; a click scrolls to the entry; live entries above the band pin top, live or new entries below pin bottom; each line carries the viewer's action. Narrow screens show one pill per edge ("↑ 2 live above", "↓ 1 new below").
 - Toasts (§14.4.1): Needs you, an approval, a PR ready for review, a failure, a rebase conflict, and the merge of the viewer's own TODO, each with its one action, on the shared toast stack (`state/controller/failures.ts:236-285`, the 300 ms law), at most three plus "+N more", settled only by the real terminal event. Routing is derived in the client: the TODO's owner and the prompter for their own runs; presence recipients start in S2 (§10.8.3). Each toast is also a timeline entry.
 - Hiding: a per-conversation `toasts_hidden` flag in the member's view state (T-APP-16) plus one global preference. Hiding never hides the entry, the edge map or the Home card.
-- Summaries: the `agent:fast` summarizer (§14.5.3) for entry summaries and the monitor's `run_summaries` (§11.6.3), with the `timeline_visible` lease. Build this as a separate change after the core wiring. Phase titles and cell labels stay deterministic; model summaries and explanations are optional and marked as summaries. An absent or failed summary leaves the label alone. The binding product ruling in BRIEF2 governs this behavior; no further model-summary ruling gates it. C-J11-01 steps 8–9 qualify this change.
+- Summaries: the `agent:fast` summarizer (§14.5.3) for entry summaries and the monitor's `run_summaries` (§11.6.3), with the `timeline_visible` lease. Build this as a separate change after the core wiring. Phase titles and cell labels stay deterministic; model summaries are the timeline row’s primary text; monitor explanations remain optional. An absent or failed summary leaves an honest concise state label alone; copied transcript first lines never return. The binding product ruling in BRIEF2 governs this behavior; no further model-summary ruling gates it. C-J11-01 steps 8–9 qualify this change.
 
 Out:
 - Conversation storage and view-state infrastructure (T-APP-16); the Context line and Inspect (T-APP-17); browser notifications and permission prompts (T-APP-18); monitor layout, phase derivation, thrashing and scrubber (T-FLW-07); S2 presence and external-agent ingestion; command implementations, authorization and merge confirmation (T-CAT-01, T-STK-04, T-STK-05, T-APP-04). No new conversation, projection or admission tables; no repository flow loading, shell execution, machine wake, root step or installer change.
@@ -59,3 +59,18 @@ All behavioral expectations are committed literal cases reviewed by the owners, 
 4. Decisions: Will owns product changes; smithers-8a accepts ADRs/reservations; smithers-06, smithers-b8, smithers-38 and smithers-3f approve their named seams above.
 5. Owner pre-review questions (retain recorded answers; post hoc review per directive): smithers-06: Does the cutover remove every duplicate renderer? Are band, pills and summary fallback correct? smithers-b8: Do actions use production catalog dispatch and private merge confirmation? Do unavailable providers cause no effects? smithers-38: Does `actionFor` reuse the public enums and per-module API? Are View-only props TS types? smithers-3f: Are entry facts and summary admission atomic with the subject event? Does the worker enforce run/attempt/revision CAS? Do untrusted text and model output remain data with no repository or root execution?
 6. Security: smithers-3f reviews host data-only projection and tool-free model access; `conversation_summaries_test.go` proves injected execution text creates no process, import, command or machine request. No root steps or root inputs; both README hard rules remain enforced.
+
+## Timeline correction (Will, 2026-10-13)
+
+Prompt intent and reply outcomes get separate 3–8 word summaries. No author icons,
+verbatim first lines or duplicated titles. Farther away, a prompt groups with its
+reply/activity, then related exchanges, then broader stretches with truthful counts.
+The rail follows its visible band. The existing summary worker serves hosted
+account conversations as well as the install, backfills authorized history and
+persists a versioned pair in the existing summary string. Group source identities
+include child summaries so changed outcomes are retitled. Keep legacy plain
+summary decoding and all audience/attempt/revision fences. No new table or worker.
+
+Regression evidence must cover prompt/outcome separation, icon absence, honest
+pending/failed/stopped states, account isolation, historic backfill, revoked access,
+stale completion, grouping coverage/counts and the visible band staying in view.
