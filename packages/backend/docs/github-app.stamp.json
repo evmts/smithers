@@ -5,7 +5,7 @@
     "path": "packages/backend/docs/github-app.md",
     "digest": "2c04d5216611ce86bede8e9ef6918f87bd95c36067aa317b9fea2bcee0800fc3"
   },
-  "closure": "399e48bdb60bcd49da2d497131c4022b39911f3807833c65ce536b53b082e2c5",
+  "closure": "ef735263c4aa12dce5c889ef41c358579792ada81388f597cd25d572df2d523a",
   "inputs": [
     {
       "path": "docs/api/openapi/install.yaml",
@@ -49,7 +49,7 @@
     },
     {
       "path": "packages/backend/internal/compose/main.go",
-      "digest": "ce4e74d8314b29d7ad0a7803dd7700d5af86890fe8821130f3ae7de1a65cfddb"
+      "digest": "c3eba259f26db4210913b63edcce6977188195adb5b99246d965052e30d3d6b2"
     },
     {
       "path": "packages/backend/internal/compose/runtime_helpers.go",
