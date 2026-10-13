@@ -22,6 +22,12 @@ Verdict per trial:
     TAINTED            a host call references a forbidden path or name
     no-journal         the trial has no journal yet
 
+The journal keeps `{truncated, bytes, digest}` in place of an input too large
+to keep. A `bash` call journalled that way names no container, so it is listed
+as a host call: nothing shows it reached the task container. Its `target` is
+`unknown`, the trial's `unknownTargets` counts it, and the listing says the
+input was truncated, because neither its target nor its command was recorded.
+
 Exit status: 2 when any trial is TAINTED, else 0.
 """
 from __future__ import annotations
@@ -117,10 +123,19 @@ def text_of(given: dict) -> str:
     return json.dumps(given, ensure_ascii=False)
 
 
+def truncation(given: dict) -> dict | None:
+    """The size and digest the journal kept in place of an input too large to
+    keep (`tracedField` in `packages/smithers/agent/src/AgentSession.ts`),
+    else None. Whatever else the input held was not written."""
+    if given.get("truncated") is not True:
+        return None
+    return {"bytes": given.get("bytes"), "digest": given.get("digest")}
+
+
 def audit_trial(trial: Path, live: dict[str, Path]) -> dict:
     db, where = journal_of(trial, live)
     result = {"trial": f"{trial.parent.name}/{trial.name}", "journal": str(db) if db else None,
-              "journalState": where, "hostCalls": [], "containerCalls": 0}
+              "journalState": where, "hostCalls": [], "containerCalls": 0, "unknownTargets": 0}
     if db is None:
         result["verdict"] = "no-journal"
         return result
@@ -145,14 +160,41 @@ def audit_trial(trial: Path, live: dict[str, Path]) -> dict:
         text = text_of(given)
         hits = sorted({name for name, pattern in patterns.items() if pattern.search(text)})
         tainted = tainted or bool(hits)
-        result["hostCalls"].append({
+        listed = {
             "seq": call["seq"], "flow": flow,
             "command": given.get("command") or given.get("script") or given.get("path") or given.get("pattern") or text,
             "cwd": given.get("cwd"), "exitCode": call.get("exitCode"), "outcome": call.get("outcome"),
             "flags": hits,
-        })
+            "target": "host",
+        }
+        cut = truncation(given)
+        if cut is not None:
+            # Still a host call: a digest cannot show the call reached the
+            # container, and it cannot be read for a forbidden name either.
+            listed["truncated"] = cut
+            if flow == "bash":
+                listed["target"] = "unknown"
+                result["unknownTargets"] += 1
+        result["hostCalls"].append(listed)
     result["verdict"] = "TAINTED" if tainted else ("host-calls-benign" if result["hostCalls"] else "clean")
     return result
+
+
+def describe(call: dict) -> str:
+    """One listed host call as text. A call the journal kept only a digest of
+    says so, so its reader need not open the journal to learn why it has no
+    command."""
+    flags = f" FLAGS={','.join(call['flags'])}" if call["flags"] else ""
+    head = f"seq {call['seq']} {call['flow']} exit={call['exitCode']}"
+    cut = call.get("truncated")
+    if cut is None:
+        command = str(call["command"]).replace("\n", "\\n")
+        return f"{head} cwd={call['cwd']}{flags}: {command[:300]}"
+    size = f"{cut['bytes']:,}-byte " if isinstance(cut["bytes"], int) else ""
+    lost = "its container and command are" if call["target"] == "unknown" else "its path is"
+    target = "TARGET UNKNOWN" if call["target"] == "unknown" else "INPUT TRUNCATED"
+    return (f"{head} outcome={call['outcome']} cwd={call['cwd']}{flags} {target}: the journal kept a digest of this "
+            f"call's {size}input and nothing else, so {lost} not recorded: digest {cut['digest']}")
 
 
 def trials_of(paths: list[str]) -> list[Path]:
@@ -181,11 +223,11 @@ def main(argv: list[str]) -> int:
         print()
     else:
         for r in results:
-            print(f"{r['verdict']:<18} {r['trial']}  host={len(r['hostCalls'])} container={r['containerCalls']} journal={r['journalState']}")
+            unknown = f" unknown={r['unknownTargets']}" if r["unknownTargets"] else ""
+            print(f"{r['verdict']:<18} {r['trial']}  host={len(r['hostCalls'])} container={r['containerCalls']} "
+                  f"journal={r['journalState']}{unknown}")
             for c in r["hostCalls"]:
-                command = str(c["command"]).replace("\n", "\\n")
-                flags = f" FLAGS={','.join(c['flags'])}" if c["flags"] else ""
-                print(f"    seq {c['seq']} {c['flow']} exit={c['exitCode']} cwd={c['cwd']}{flags}: {command[:300]}")
+                print(f"    {describe(c)}")
         counts: dict[str, int] = {}
         for r in results:
             counts[r["verdict"]] = counts.get(r["verdict"], 0) + 1

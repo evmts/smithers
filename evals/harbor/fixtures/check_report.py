@@ -23,6 +23,7 @@ import check_calls  # noqa: E402
 import smithers_agent  # noqa: E402
 
 REPORT = HERE.parent / "report.py"
+AUDIT = HERE.parent / "audit_host_calls.py"
 SMITHERS = "evals.harbor.smithers_agent:SmithersAgent"
 BASELINE = "evals.harbor.codex_pool:PooledCodex"
 MODEL = "openai/gpt-6-sol"
@@ -56,7 +57,7 @@ class ReportCLI(unittest.TestCase):
 
     def trial(self, arm: str, task: str, *, reward: float | None = 1.0, exception: str | None = None,
               tokens: tuple = (1000, 800, 50), checksum: str | None = None, host_command: str | None = None,
-              config: dict | None = None, succeeded: int = 3) -> Path:
+              config: dict | None = None, succeeded: int = 3, refused_input: dict | None = None) -> Path:
         self.serial += 1
         directory = self.jobs[arm] / f"{task}__{arm[:1]}{self.serial:04d}"
         summary = self.jobs[arm] / "result.json"
@@ -97,24 +98,29 @@ class ReportCLI(unittest.TestCase):
         (directory / "result.json").write_text(json.dumps(result))
         (directory / "agent" / "trajectory.json").write_text("{}")
         if arm == "smithers":
-            self.journal(directory, host_command)
+            self.journal(directory, host_command, refused_input)
         else:
             (directory / "agent" / "codex-account.json").write_text(json.dumps({"containerCommands": reached}))
         return directory
 
-    def journal(self, trial: Path, host_command: str | None) -> None:
+    def journal(self, trial: Path, host_command: str | None, refused_input: dict | None = None) -> None:
+        """`refused_input` is the journalled input of one more `bash` call, which
+        the harness refused before it ran."""
         flows = trial / "agent" / "workspace" / ".flows"
         flows.mkdir(parents=True)
-        calls = [{"command": "ls /app", "container": "ws-1", "mode": "unhermetic"}]
+        ran = {"outcome": "success", "value": {"exitCode": 0}}
+        calls = [({"command": "ls /app", "container": "ws-1", "mode": "unhermetic"}, ran)]
         if host_command:
-            calls.append({"command": host_command, "mode": "unhermetic"})
+            calls.append(({"command": host_command, "mode": "unhermetic"}, ran))
+        if refused_input:
+            calls.append((refused_input, {"outcome": "failure", "code": "invalid_input", "message": "x"}))
         connection = sqlite3.connect(flows / "control.db")
         connection.execute(DDL)
         seq = 0
-        for index, given in enumerate(calls):
+        for index, (given, settled) in enumerate(calls):
             for kind, payload in (
                 ("control.agent.cell-call-started", {"callId": f"c{index}", "flowName": "bash", "input": given}),
-                ("control.agent.cell-call-settled", {"callId": f"c{index}", "outcome": "success", "value": {"exitCode": 0}}),
+                ("control.agent.cell-call-settled", {"callId": f"c{index}", **settled}),
             ):
                 connection.execute("insert into flows_journal_events values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                    ("r", seq, f"e{seq}", "f", seq, seq, kind, json.dumps(payload), "{}"))
@@ -218,6 +224,52 @@ class ReportCLI(unittest.TestCase):
         trial = self.trial("smithers", "task-001", host_command="uname -a")
         self.trial("baseline", "task-001")
         self.assert_refused(f"smithers: {trial.name} is not sealed: host-call audit host-calls-benign")
+
+    def test_a_truncated_input_stays_unsealed_and_the_audit_says_its_target_is_unknown(self) -> None:
+        """The journal keeps a digest in place of an input too large to keep,
+        which hides the call's container. Nothing shows it reached the task
+        container, so the trial stays unsealed; the output says why, so the
+        reader need not open the journal."""
+        marker = {"truncated": True, "bytes": 73_691, "digest": "ab" * 32}
+        self.paired(1)
+        trial = self.trial("smithers", "task-001", refused_input=marker)
+        self.trial("baseline", "task-001")
+        self.assert_refused(f"smithers: {trial.name} is not sealed: host-call audit host-calls-benign "
+                            "(target unknown for 1 call: the journal truncated its input)")
+        process = subprocess.run([sys.executable, "-B", str(AUDIT), str(trial)], text=True, capture_output=True, timeout=60)
+        self.assertEqual((process.returncode, process.stderr), (0, ""))
+        self.assertIn(f"host-calls-benign  {trial.parent.name}/{trial.name}  host=1 container=1 journal=kept unknown=1\n",
+                      process.stdout)
+        self.assertIn("    seq 2 bash exit=None outcome=failure cwd=None TARGET UNKNOWN: the journal kept a digest of this "
+                      f"call's 73,691-byte input and nothing else, so its container and command are not recorded: digest {'ab' * 32}\n",
+                      process.stdout)
+        (audit,) = json.loads(subprocess.run([sys.executable, "-B", str(AUDIT), str(trial), "--json"], text=True,
+                                             capture_output=True, timeout=60).stdout)
+        (call,) = audit["hostCalls"]
+        self.assertEqual((audit["verdict"], audit["unknownTargets"], call["target"], call["truncated"], call["outcome"]),
+                         ("host-calls-benign", 1, "unknown", {"bytes": 73_691, "digest": "ab" * 32}, "failure"))
+
+    def test_a_truncated_input_that_names_its_container_is_a_container_call(self) -> None:
+        self.paired(1)
+        trial = self.trial("smithers", "task-001",
+                           refused_input={"truncated": True, "bytes": 73_691, "digest": "ab" * 32, "container": "ws-1"})
+        self.trial("baseline", "task-001")
+        _, report = self.run_report(0, "--min-tasks", "2")
+        self.assertTrue(report["publishable"], report["refusals"])
+        (audit,) = json.loads(subprocess.run([sys.executable, "-B", str(AUDIT), str(trial), "--json"], text=True,
+                                             capture_output=True, timeout=60).stdout)
+        self.assertEqual((audit["verdict"], audit["containerCalls"], audit["unknownTargets"]), ("clean", 2, 0))
+
+    def test_a_host_call_is_listed_as_before(self) -> None:
+        self.paired(1)
+        trial = self.trial("smithers", "task-001", host_command="uname -a")
+        process = subprocess.run([sys.executable, "-B", str(AUDIT), str(trial)], text=True, capture_output=True, timeout=60)
+        self.assertIn(f"host-calls-benign  {trial.parent.name}/{trial.name}  host=1 container=1 journal=kept\n", process.stdout)
+        self.assertIn("    seq 2 bash exit=0 cwd=None: uname -a\n", process.stdout)
+        (audit,) = json.loads(subprocess.run([sys.executable, "-B", str(AUDIT), str(trial), "--json"], text=True,
+                                             capture_output=True, timeout=60).stdout)
+        self.assertEqual((audit["unknownTargets"], audit["hostCalls"][0]["target"]), (0, "host"))
+        self.assertNotIn("truncated", audit["hostCalls"][0])
 
     def test_extra_hosts_mounts_and_no_container_command_unseal(self) -> None:
         hosts = self.trial("baseline", "task-000", config={"agent": {"extra_allowed_hosts": ["example.com"]}})

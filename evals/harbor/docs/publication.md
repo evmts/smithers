@@ -23,6 +23,11 @@ A publishable run meets every rule:
 | Measured | Every scored trial reports input, cached and output tokens                                      |
 | Sealed   | No extra allowed hosts or mounts; a command exited 0 in the task container; host audit clean    |
 
+The journal keeps a digest in place of a call input too large to keep, which
+hides the call's container. The host audit lists such a call with
+`target: unknown`, the trial stays unsealed, and the refusal says the input was
+truncated.
+
 The pass rate is the mean verifier reward over every scored trial of the
 paired tasks. `report.json` names each trial and its `agent/trajectory.json`.
 

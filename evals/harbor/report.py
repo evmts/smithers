@@ -108,7 +108,13 @@ def seal(trial: Path, config: dict, result: dict, smithers: bool) -> list[str]:
     if smithers:
         audit = audit_host_calls.audit_trial(trial, {})
         if audit["verdict"] != "clean":
-            broken.append(f"host-call audit {audit['verdict']}")
+            # The audit cannot read a call the journal kept only a digest of.
+            # Saying so here saves opening the journal to learn why the trial
+            # is unsealed.
+            unknown = audit.get("unknownTargets") or 0
+            why = "" if not unknown else (f" (target unknown for {unknown} call{'' if unknown == 1 else 's'}: "
+                                          f"the journal truncated {'its' if unknown == 1 else 'their'} input)")
+            broken.append(f"host-call audit {audit['verdict']}{why}")
     return broken
 
 
