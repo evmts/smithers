@@ -46,11 +46,14 @@ export const appendRunTiming = (cli: Cli.Cli, runtime: Bridge.Runtime = {}): Cli
           const page = yield* control.list({ _tag: "runs", filters: { runId } })
           const run = page._tag === "runs" ? page.items.find((row) => row.runId === runId) : undefined
           if (run === undefined) throw unknownRun(runId)
-          const events = yield* BoundedEvents.collect(control.watch({ runId: run.runId, follow: false }), {
-            operation: "run timing",
-            subject: run.runId
-          })
-          return RunTiming.fold(events, run.runId)
+          const limits = { operation: "run timing", subject: run.runId }
+          // The plan's own events are journaled under the plan's id; with them the
+          // report counts from the plan's creation, not from the run's first event.
+          const planned = run.planId === undefined
+            ? []
+            : yield* BoundedEvents.collect(control.watch({ runId: `plan:${run.planId}`, follow: false }), limits)
+          const events = yield* BoundedEvents.collect(control.watch({ runId: run.runId, follow: false }), limits)
+          return RunTiming.fold([...planned, ...events], run.runId)
         }),
         c.options,
         runtime

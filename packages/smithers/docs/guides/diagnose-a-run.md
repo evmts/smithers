@@ -188,11 +188,14 @@ Wait by stage (seconds from the call's start)
 …
 ```
 
-- `Time` splits the wall time, from the run's first event to its last, into
-  model wait, cells, judge, compaction, and other. The parts sum to the wall.
-  `judge` is only the time a judge reading held the run up; a reading that
-  settles beside a model call adds nothing.
-- `Tokens` totals tokens and cost by purpose. The `run` row is their sum and
+- `Time` splits the wall time into model wait, cells, judge, compaction, and
+  other. The wall runs from the plan's creation, or from the run's first event
+  when the store holds no plan record, to the run's last event, and the parts
+  sum to it. `cells` is cell execution; the `Flow calls` line says how much of
+  it was inside flow calls. `judge` is only the time a judge reading held the
+  run up; a reading that settles beside a model call adds nothing.
+- `Tokens` totals tokens and cost by purpose: `frame`, `compaction`, `judge`,
+  `marks`, `claim`, `relevance`, and `reading`. The `run` row is their sum and
   matches the `Ledger` line.
 - `Model calls` has one row per call. A re-ask of a frame is its own row with
   `ask` 2. A call that never settled reads `unsettled`, with the time until the

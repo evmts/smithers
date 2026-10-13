@@ -291,6 +291,8 @@ describe("RunTiming.fold", () => {
   it("counts the calls that moved nothing, each compaction, and each judge reading that fired", () => {
     const report = RunTiming.fold(oldShape(), "run-1")
     expect(report.unmoved).toEqual({ calls: 3, durationMs: 60_000, spent: 7_600 })
+    // Cell time is 4.5 s; 2.5 s of it was inside the two flow calls.
+    expect(report.flowCalls).toEqual({ calls: 2, durationMs: 2_500 })
     expect(report.compactions).toEqual([
       { frame: 2, startMs: 50_000, durationMs: 10_000, marks: { kept: 1, squashed: 2, removed: 0 }, spent: 900 }
     ])
@@ -481,11 +483,12 @@ describe("RunTiming.fold", () => {
       ["frame", 1, 1_200],
       ["judge", 1, 500],
       ["marks", 1, 100],
-      ["claim", 0, 70]
+      // A labelled entry with no record beside it is still one reading.
+      ["claim", 1, 70]
     ])
     expect(report.spend[1]!.costUsd).toBeCloseTo(0.0005, 12)
     expect(report.spend[2]!.costUsd).toBeCloseTo(0.0001, 12)
-    expect(report.total).toMatchObject({ calls: 3, spent: 1_870 })
+    expect(report.total).toMatchObject({ calls: 4, spent: 1_870 })
     expect(report.ledger).toMatchObject({ entries: 3, spent: 1_870 })
     expect(report.total.costUsd).toBeCloseTo(report.ledger!.costUsd, 12)
   })
@@ -871,6 +874,41 @@ describe("RunTiming.fold", () => {
     expect(report.time.compactionMs).toBe(8_000)
   })
 
+  it("counts a spend the engine journaled for a reading the cell asked for, once", () => {
+    const j = journal()
+    const engine = (at: number, record: Record<string, unknown>) =>
+      j.push("control.engine.event", at, {
+        version: 1,
+        eventType: "flows.agent.usage.v1",
+        executionId: "run-1",
+        emittedAtMs: at,
+        payload: record
+      }, false)
+    j.run("running", 0)
+    j.requested(0, 0)
+    j.spend(990, "key1_a", 1_200, 0.01)
+    j.settled(1_000, 1_000, [1_000, 0, 200, 50], 0.01)
+    j.agent("cell-produced", 1_000)
+    j.agent("cell-call-started", 1_100, { callId: "c1", flowName: "jev" })
+    // The evaluator reading the cell asked for is in the ledger as an engine event, not on its own.
+    engine(1_400, { stepKey: "call-reading/key1_a/1", spent: 700, costUsd: 0.0003 })
+    j.agent("cell-call-settled", 1_500, { callId: "c1", flowName: "jev", outcome: "success" })
+    j.agent("cell-settled", 1_600)
+    // The same record again, and one the journal also holds on its own, are each one entry.
+    engine(1_700, { stepKey: "call-reading/key1_a/1", spent: 700, costUsd: 0.0003 })
+    engine(1_700, { stepKey: "key1_a", spent: 1_200, costUsd: 0.01 })
+    engine(1_800, { stepKey: "call-reading/key1_a/2", spent: 300, costUsd: 0.0001, purpose: "reading" })
+    j.run("completed", 2_000)
+    const report = RunTiming.fold(j.events, "run-1")
+    expect(report.spend.map((row) => [row.purpose, row.calls, row.spent])).toEqual([
+      ["frame", 1, 1_200],
+      ["reading", 2, 1_000]
+    ])
+    expect(report.ledger).toMatchObject({ entries: 3, spent: 2_200 })
+    expect(report.total).toMatchObject({ calls: 3, spent: 2_200 })
+    expect(report.total.costUsd).toBeCloseTo(report.ledger!.costUsd, 12)
+  })
+
   it("is total over an empty or malformed journal", () => {
     const empty = RunTiming.fold([], "run-1")
     expect(empty).toMatchObject({ wallMs: 0, calls: [], frames: [], spend: [], compactions: [] })
@@ -1147,6 +1185,7 @@ describe("RunTiming.render", () => {
     ])
     expect(text).toMatch(/^Moved nothing +3 of 4 settled calls · 60\.0 s · 7,600 tokens$/m)
     expect(text).toMatch(/^Cache share +35\.3 % of input$/m)
+    expect(text).toMatch(/^Flow calls +2 · 2\.5 s of the cells time$/m)
     expect(text).toMatch(/^Judge +5 readings · 2\.4 s latency · 1\.6 s holding the run$/m)
     expect(text).toMatch(/^Ledger +9 entries · 15,400 tokens · \$0\.0981$/m)
     expect(text).not.toContain("Wait by stage")

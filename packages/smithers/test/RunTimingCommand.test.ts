@@ -185,6 +185,46 @@ describe("runs show --timing", { timeout: 120_000 }, () => {
     expect(ports.watch).not.toHaveBeenCalled()
   })
 
+  it("counts from the plan's creation when the store holds the plan's events", async () => {
+    ports.list.mockReturnValue(
+      Effect.succeed({
+        _tag: "runs",
+        items: [{
+          runId: "run-1",
+          flowId: "demo/ship",
+          planId: "plan-7",
+          status: "completed",
+          createdAt: 0,
+          updatedAt: 9_000
+        }]
+      })
+    )
+    ports.watch.mockImplementation(({ runId }: { runId: string }) =>
+      Stream.fromIterable(
+        runId === "plan:plan-7"
+          ? [
+            { sequence: 0, kind: "control.plan.created", runId, occurredAt: -5_000, payload: { planId: "plan-7" } },
+            { sequence: 1, kind: "control.approval.approved", runId, occurredAt: -2_000, payload: {} }
+          ]
+          : events
+      )
+    )
+    const result = await invoke(["runs", "show", "run-1", "--timing", "--json"])
+    expect(ports.watch.mock.calls.map(([filter]) => filter)).toEqual([
+      { runId: "plan:plan-7", follow: false },
+      { runId: "run-1", follow: false }
+    ])
+    const report = JSON.parse(result.stdout) as RunTiming.Report
+    // Five seconds passed between planning the run and its first event.
+    expect(report).toMatchObject({
+      status: "completed",
+      wallMs: 14_000,
+      time: { modelMs: 7_000, cellsMs: 1_000, judgeMs: 0, compactionMs: 0, otherMs: 6_000 }
+    })
+    expect(report.frames[0]).toMatchObject({ frame: "start", wallMs: 5_500, otherMs: 5_500 })
+    expect(report.calls[0]).toMatchObject({ startMs: 5_500 })
+  })
+
   it("refuses a listing that is not a run listing", async () => {
     ports.list.mockReturnValue(Effect.succeed({ _tag: "flows", items: [] }))
     const result = await invoke(["runs", "show", "run-1", "--timing", "--json"])

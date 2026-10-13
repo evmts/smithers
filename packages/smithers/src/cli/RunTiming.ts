@@ -288,7 +288,7 @@ export interface Report {
   readonly status?: string
   readonly startedAt?: number
   readonly endedAt?: number
-  /** First to last event of the run; `time` and `frames` each sum to it. */
+  /** First to last event the fold was given; `time` and `frames` each sum to it. */
   readonly wallMs: number
   readonly time: Time
   /** By purpose; the rows sum to `total`. */
@@ -300,6 +300,8 @@ export interface Report {
   readonly cacheShare?: number
   readonly calls: ReadonlyArray<ModelCall>
   readonly frames: ReadonlyArray<Frame>
+  /** Flow calls the cells made, and the part of `time.cellsMs` spent inside them. */
+  readonly flowCalls: { readonly calls: number; readonly durationMs: number }
   /** Settled calls whose reply was rejected or whose frame left the workspace unchanged. */
   readonly unmoved: { readonly calls: number; readonly durationMs: number; readonly spent: number }
   readonly compactions: ReadonlyArray<Compaction>
@@ -309,7 +311,7 @@ export interface Report {
 }
 
 /** What an instant of the run is spent on, most specific first. */
-const parts = ["model", "compaction", "cells", "judge"] as const
+const parts = ["model", "compaction", "calls", "cells", "judge"] as const
 type Part = typeof parts[number]
 
 interface Interval {
@@ -383,7 +385,9 @@ const readingPurposes: Readonly<Record<string, string>> = {
  */
 const recordedFamilies: ReadonlySet<string> = new Set(["supervisor", "relevance", "completion"])
 
-const purposeOrder = ["frame", "compaction", "judge", "marks", "claim", "relevance"]
+const purposeOrder = ["frame", "compaction", "judge", "marks", "claim", "relevance", "reading"]
+
+const usageEvent = "flows.agent.usage.v1"
 
 /** Every number the fold may work out instead of read, and what it works it out from. */
 const derivations = {
@@ -522,8 +526,9 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
   const cellCalls = new Map<string, number>()
   const openCalls = new Map<string, number>()
   /** Spend the ledger recorded that no call or reading record accounts for, by purpose. */
-  const loose = new Map<string, { spent: number; costUsd: number }>()
+  const loose = new Map<string, { calls: number; spent: number; costUsd: number }>()
   const ledger = { entries: 0, spent: 0, costUsd: 0 }
+  const ledgered = new Set<string>()
   let batch: { spent: number; costUsd: number; purpose: string | undefined; readings: Array<Reading> } | undefined
   /** Readings journaled since the last ledger entry closed, which a later entry may pay for. */
   let unpaid: Array<Reading> = []
@@ -542,9 +547,10 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
     }
     return scope
   }
+  /** A ledger entry with no record beside it: one call of its purpose, when it names one. */
   const leave = (purpose: string, spent: number, costUsd: number): void => {
-    const row = loose.get(purpose) ?? { spent: 0, costUsd: 0 }
-    loose.set(purpose, { spent: row.spent + spent, costUsd: row.costUsd + costUsd })
+    const row = loose.get(purpose) ?? { calls: 0, spent: 0, costUsd: 0 }
+    loose.set(purpose, { calls: row.calls + 1, spent: row.spent + spent, costUsd: row.costUsd + costUsd })
   }
   const tokensOf = (paid: ReadonlyArray<Reading>): number =>
     paid.reduce((total, reading) => total + reading.input + reading.output, 0)
@@ -666,16 +672,30 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
     const scope = scopeOf(key)
     const step = asString(asRecord(payload.step).stepId)
 
-    if (event.kind === "flows.agent.usage.v1") {
-      const spent = count(payload.spent)
-      if (spent === undefined) continue
-      const costUsd = count(payload.costUsd) ?? 0
-      const purpose = asString(payload.purpose)
+    // The ledger journals a usage record on its own, or as an engine event
+    // when a flow call spent it. A step key is one entry whichever form holds it.
+    const usage = event.kind === usageEvent
+      ? payload
+      : event.kind === "control.engine.event" && payload.eventType === usageEvent
+      ? asRecord(payload.payload)
+      : undefined
+    if (usage !== undefined) {
+      const spent = count(usage.spent)
+      const stepKey = asString(usage.stepKey)
+      if (spent === undefined || (stepKey !== undefined && ledgered.has(stepKey))) continue
+      if (stepKey !== undefined) ledgered.add(stepKey)
+      const costUsd = count(usage.costUsd) ?? 0
+      // A reading the agent's own cell asked for is keyed `call-reading/` and has no record beside it.
+      const purpose = asString(usage.purpose) ?? (stepKey?.startsWith("call-reading/") ? "reading" : undefined)
       ledger.entries += 1
       ledger.spent += spent
       ledger.costUsd += costUsd
+      if (purpose === "reading") {
+        leave(purpose, spent, costUsd)
+        continue
+      }
       const reading = purpose === undefined
-        ? (asString(payload.stepKey) ?? "").startsWith("boundary-usage/")
+        ? stepKey?.startsWith("boundary-usage/") === true
         : !modelPurposes.has(purpose)
       if (reading) {
         settleBatch()
@@ -759,7 +779,7 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
         const id = `${key}\u0000${asString(payload.callId) ?? asString(payload.flowName) ?? ""}`
         const from = openCalls.get(id)
         openCalls.delete(id)
-        if (from !== undefined) intervals.push({ part: "cells", from, to: at })
+        if (from !== undefined) intervals.push({ part: "calls", from, to: at })
         break
       }
       case "compaction-settled": {
@@ -897,7 +917,14 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
   if (lastTurnClosed !== undefined && starts.length > 0 && lastTurnClosed >= starts.at(-1)![1].from) {
     spans.push({ key: "end", frame: "end", step: undefined, from: lastTurnClosed })
   }
-  const empty = (): Record<Part | "other", number> => ({ model: 0, compaction: 0, cells: 0, judge: 0, other: 0 })
+  const empty = (): Record<Part | "other", number> => ({
+    model: 0,
+    compaction: 0,
+    calls: 0,
+    cells: 0,
+    judge: 0,
+    other: 0
+  })
   const overall = empty()
   const perSpan = spans.map(empty)
   const clamp = (at: number): number => Math.min(end, Math.max(start, at))
@@ -908,7 +935,7 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
   }).sort((left, right) => left.at - right.at)
   const cuts = [...new Set([start, end, ...edges.map((edge) => edge.at), ...spans.map((entry) => clamp(entry.from))])]
     .sort((left, right) => left - right)
-  const active: Record<Part, number> = { model: 0, compaction: 0, cells: 0, judge: 0 }
+  const active: Record<Part, number> = { model: 0, compaction: 0, calls: 0, cells: 0, judge: 0 }
   let edge = 0
   let current = 0
   for (const [index, from] of cuts.entries()) {
@@ -925,7 +952,7 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
   }
   const frames = spans.flatMap((entry, index): Array<Frame> => {
     const split = perSpan[index]!
-    const wallMs = split.model + split.compaction + split.cells + split.judge + split.other
+    const wallMs = split.model + split.compaction + split.calls + split.cells + split.judge + split.other
     if (wallMs === 0 && typeof entry.frame === "string") return []
     return [{
       frame: entry.frame,
@@ -933,7 +960,7 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
       wallMs,
       modelMs: split.model,
       modelCalls: calls.filter((call) => call.frameKey === entry.key && call.purpose !== "compaction").length,
-      cellsMs: split.cells,
+      cellsMs: split.calls + split.cells,
       cellCalls: cellCalls.get(entry.key) ?? 0,
       judgeMs: split.judge,
       compactionMs: split.compaction,
@@ -980,6 +1007,7 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
   for (const [purpose, more] of loose) {
     if (purpose === "unattributed") continue
     const row = rowOf(purpose)
+    row.calls += more.calls
     row.spent += more.spent
     row.costUsd += more.costUsd
   }
@@ -1034,7 +1062,7 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
     wallMs: end - start,
     time: {
       modelMs: overall.model,
-      cellsMs: overall.cells,
+      cellsMs: overall.calls + overall.cells,
       judgeMs: overall.judge,
       compactionMs: overall.compaction,
       otherMs: overall.other
@@ -1084,6 +1112,7 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
       }
     }),
     frames,
+    flowCalls: { calls: [...cellCalls.values()].reduce((sum, calls) => sum + calls, 0), durationMs: overall.calls },
     unmoved: {
       calls: unmoved.length,
       durationMs: unmoved.reduce((sum, call) => sum + call.durationMs, 0),
@@ -1289,6 +1318,12 @@ export const render = (report: Report): string => {
     ])
   }
   if (report.cacheShare !== undefined) facts.push(["Cache share", `${percent(report.cacheShare)} % of input`])
+  if (report.flowCalls.calls > 0) {
+    facts.push([
+      "Flow calls",
+      `${whole(report.flowCalls.calls)} · ${seconds(report.flowCalls.durationMs)} s of the cells time`
+    ])
+  }
   if (report.judge.readings > 0) {
     facts.push([
       "Judge",
