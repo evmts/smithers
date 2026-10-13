@@ -254,7 +254,7 @@ const ChunkUsage = Schema.Struct({
 
 const ChatCompletionChunk = Schema.Struct({
   id: Schema.optional(Schema.String),
-  /** The tier that served the request; OpenAI repeats it on every chunk. */
+  /** The tier that served the request, on a chunk that carries it. */
   service_tier: Schema.optional(Schema.NullOr(Schema.String)),
   choices: Schema.optional(Schema.Array(Schema.Struct({
     index: Schema.optional(Schema.Number),
