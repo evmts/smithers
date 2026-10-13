@@ -151,10 +151,11 @@ before the usage chunk that ends the body, so that `settle` has no `closedMs`;
 a provider that sends usage on the `finish_reason` chunk has one.
 
 `Settle.servedTier` is the provider's own `service_tier`: the terminal
-Response object on OpenAI Responses (`response.created` only echoes the tier
-the request asked for), the chunk field on Chat Completions, and
-`usage.service_tier` on Anthropic Messages. It is absent when the provider
-names none.
+Response object on OpenAI Responses, the chunk field on Chat Completions, and
+`usage.service_tier` on Anthropic Messages. OpenAI documents the response
+value as the processing mode actually used, which may differ from the one
+requested, so the `response.created` snapshot, sent before any output, is not
+read. `servedTier` is absent when the provider names none.
 
 The same reading reaches three other places:
 

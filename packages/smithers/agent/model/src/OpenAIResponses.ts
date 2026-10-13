@@ -742,9 +742,10 @@ const stepEvent = (
       ...current,
       responseId: string(response?.id) ?? current.responseId
     }
-    // The tier that served the call. `response.created` only echoes the tier
-    // the request asked for (`auto` when it named none); the terminal Response
-    // object states the one actually used.
+    // The tier that served the call, read from the terminal Response object
+    // alone. OpenAI documents the response's `service_tier` as the processing
+    // mode actually used, which may differ from the one requested; the
+    // `response.created` snapshot is sent before any output and is not read.
     const servedTier = string(response?.["service_tier"])
     if (type === "response.incomplete") {
       // The event says WHY it is incomplete. `content_filter` is a refusal, not a
