@@ -7,8 +7,9 @@
 import { describe, expect, test } from "bun:test"
 import { createAppStore } from "../AppStore"
 import { scopedControllers } from "../ControllerTestScope"
-import { headerSelectionOf } from "../HeaderSelection"
+import { headerSelection } from "../HeaderSelection"
 import { memoryStorage, silentAgent, waitFor } from "../TestFixtures"
+import { BRANCH_PICKS_STORAGE_KEY, pickKey } from "./RepositoryBranchesSeam"
 
 const createAppController = scopedControllers()
 const cloud = { apiVersion: 1 as const, host: "cloud" as const, version: "test", buildSha: "test", capabilities: ["identity" as const, "agent" as const, "github" as const, "cloud" as const], authFlow: "redirect" as const, sandbox: null }
@@ -22,18 +23,22 @@ type Answer = (url: URL) => Response | undefined | Promise<Response | undefined>
 const harness = async (answer: Answer, login: string | null = "maya") => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const bookmarkReads: string[] = []
+  /** Every conversation this page addressed, by the branch in its path. */
+  const conversations: string[] = []
   const controller = createAppController(store, silentAgent, {
     bootstrap: cloud,
     fetchImpl: async input => {
       const url = new URL(String(input), "https://cloud.test")
       if (url.pathname.endsWith("/bookmarks")) bookmarkReads.push(`${url.pathname}?${url.searchParams.get("cursor") ?? ""}`)
+      const conversation = /^\/api\/conversations\/([^/]*)/.exec(url.pathname)
+      if (conversation) conversations.push(decodeURIComponent(conversation[1] ?? ""))
       return await answer(url) ?? Response.json({ code: "not_found", class: "user", message: "not found" }, { status: 404 })
     }
   })
   if (login !== null) await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login, admin: false, scopesPlain: null }).isPersisted.promise
   await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [repository("acme/api", "trunk"), repository("acme/web", "develop")] }).isPersisted.promise
-  const selection = () => headerSelectionOf({ session: store.session(), repositories: store.collections.repositories.values(), owner: login })
-  return { store, controller, bookmarkReads, selection }
+  const selection = () => headerSelection(controller)
+  return { store, controller, bookmarkReads, conversations, selection }
 }
 const branchesOf = (names: Readonly<Record<string, ReadonlyArray<string>>>): Answer => url => {
   const match = /^\/api\/repos\/([^/]+)\/([^/]+)\/bookmarks$/.exec(url.pathname)
@@ -42,6 +47,38 @@ const branchesOf = (names: Readonly<Record<string, ReadonlyArray<string>>>): Ans
 }
 
 describe("a branch off an install is a bookmark of the selected repository", () => {
+  test("picks are read from this browser's storage when the page opens and written back on a pick", async () => {
+    const values = new Map<string, string>([[BRANCH_PICKS_STORAGE_KEY, JSON.stringify({ [pickKey("maya", "acme/api")]: "docs", [pickKey("maya", "acme/web")]: "", broken: 7 })]])
+    const prior = Object.getOwnPropertyDescriptor(globalThis, "localStorage")
+    Object.defineProperty(globalThis, "localStorage", { configurable: true, value: { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value) }, removeItem: (key: string) => { values.delete(key) } } })
+    try {
+      const h = await harness(branchesOf({ "acme/api": ["trunk", "docs"], "acme/web": ["develop"] }))
+      await h.controller.commands.run("repo.select", "acme/api")
+      expect(h.selection()).toEqual({ repository: "acme/api", branch: "docs" })
+      await h.controller.commands.run("repo.select", "acme/web")
+      expect(h.selection()).toEqual({ repository: "acme/web", branch: "develop" })
+      await h.controller.commands.run("branch", "develop")
+      expect(JSON.parse(values.get(BRANCH_PICKS_STORAGE_KEY) ?? "{}")).toEqual({ [pickKey("maya", "acme/api")]: "docs", [pickKey("maya", "acme/web")]: "develop" })
+    } finally {
+      if (prior === undefined) Reflect.deleteProperty(globalThis, "localStorage")
+      else Object.defineProperty(globalThis, "localStorage", prior)
+    }
+  })
+
+  test("storage that throws keeps the picks for this page and never fails a pick", async () => {
+    const prior = Object.getOwnPropertyDescriptor(globalThis, "localStorage")
+    Object.defineProperty(globalThis, "localStorage", { configurable: true, value: { getItem: () => { throw new Error("blocked") }, setItem: () => { throw new Error("blocked") }, removeItem: () => {} } })
+    try {
+      const h = await harness(branchesOf({ "acme/api": ["trunk", "docs"] }))
+      await h.controller.commands.run("repo.select", "acme/api")
+      expect(await h.controller.commands.run("branch", "docs")).toEqual({ status: "executed", value: "Opened docs" })
+      expect(h.selection()).toEqual({ repository: "acme/api", branch: "docs" })
+    } finally {
+      if (prior === undefined) Reflect.deleteProperty(globalThis, "localStorage")
+      else Object.defineProperty(globalThis, "localStorage", prior)
+    }
+  })
+
   test("the seeded fixture is off on a hosted page: no mock branch or repository can be opened", async () => {
     const h = await harness(branchesOf({ "acme/api": ["trunk"] }))
     expect(h.controller.design.enabled).toBe(false)
@@ -62,8 +99,10 @@ describe("a branch off an install is a bookmark of the selected repository", () 
     expect(h.selection()).toEqual({ repository: "acme/api", branch: "trunk" })
 
     expect(await h.controller.commands.run("branch", "retry-webhooks")).toEqual({ status: "executed", value: "Opened retry-webhooks" })
-    expect(h.store.session().branchNavigation).toEqual({ owner: "maya", open: false, selected_branch: "retry-webhooks", nodes: [] })
+    expect(h.controller.repositoryBranches.pickOf("acme/api")).toBe("retry-webhooks")
     expect(h.selection()).toEqual({ repository: "acme/api", branch: "retry-webhooks" })
+    // The pick is the repository's alone: the conversation's branch was never written.
+    expect(h.store.session().branchNavigation).toBeUndefined()
     expect(h.controller.repositoryBranches.rows.get("acme/api")).toMatchObject({ id: "acme/api", state: "ready", names: ["docs", "retry-webhooks", "trunk"] })
   })
 
@@ -154,16 +193,32 @@ describe("a branch off an install is a bookmark of the selected repository", () 
     expect(h.controller.repositoryBranches.rows.get("acme/api")?.state).toBe("ready")
   })
 
-  test("picking keeps an open branch tree open and its nodes in place", async () => {
-    const h = await harness(branchesOf({ "acme/api": ["trunk", "docs"] }))
+  test("a hosted pick never changes the conversation the chat addresses: it stays main through picks and repository changes", async () => {
+    const h = await harness(branchesOf({ "acme/api": ["trunk", "docs"], "acme/web": ["develop"] }))
+    await waitFor(() => h.conversations.length > 0)
     await h.controller.commands.run("repo.select", "acme/api")
-    await h.controller.selectConversationBranch("trunk")
-    expect(h.store.session().branchNavigation?.open).toBe(true)
     await h.controller.commands.run("branch", "docs")
-    expect(h.store.session().branchNavigation).toEqual({ owner: "maya", open: true, selected_branch: "docs", nodes: [] })
+    await h.controller.commands.run("repo.select", "acme/web")
+    await h.controller.commands.run("branch", "develop")
+    await h.controller.commands.run("repo.select", "acme/api")
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(h.selection()).toEqual({ repository: "acme/api", branch: "docs" })
+    expect(h.store.session().branchNavigation).toBeUndefined()
+    expect([...new Set(h.conversations)]).toEqual(["main"])
   })
 
-  test("another repository drops the pick, names its own default and reads its branches; the same repository keeps the pick", async () => {
+  test("a pick leaves an open branch tree and the conversation's branch exactly as they were", async () => {
+    const h = await harness(branchesOf({ "acme/api": ["trunk", "docs"] }))
+    await h.controller.commands.run("repo.select", "acme/api")
+    await h.controller.selectConversationBranch("main")
+    const before = h.store.session().branchNavigation
+    expect(before).toEqual({ owner: "maya", open: true, selected_branch: "main", nodes: [] })
+    await h.controller.commands.run("branch", "docs")
+    expect(h.store.session().branchNavigation).toEqual(before)
+    expect(h.selection().branch).toBe("docs")
+  })
+
+  test("each repository keeps its own pick: another repository shows its default and reads its branches, and returning restores the pick", async () => {
     const h = await harness(branchesOf({ "acme/api": ["trunk", "docs"], "acme/web": ["develop", "docs"] }))
     await h.controller.commands.run("repo.select", "acme/api")
     await h.controller.commands.run("branch", "docs")
@@ -171,21 +226,23 @@ describe("a branch off an install is a bookmark of the selected repository", () 
     expect(h.selection()).toEqual({ repository: "acme/api", branch: "docs" })
 
     await h.controller.commands.run("repo.select", "acme/web")
-    expect(h.store.session().branchNavigation?.selected_branch).toBe("")
     expect(h.selection()).toEqual({ repository: "acme/web", branch: "develop" })
     await waitFor(() => h.controller.repositoryBranches.rows.get("acme/web")?.state === "ready")
     expect(h.controller.repositoryBranches.rows.get("acme/web")?.names).toEqual(["develop", "docs"])
+
+    await h.controller.commands.run("repo.select", "acme/api")
+    expect(h.selection()).toEqual({ repository: "acme/api", branch: "docs" })
   })
 
-  test("a pick left over from another repository gives way once the new repository's branches are known", async () => {
-    const h = await harness(branchesOf({ "acme/web": ["develop"] }))
-    await h.controller.commands.run("repo.select", "acme/web")
-    await h.controller.selectConversationBranch("main")
-    expect(h.selection().branch).toBe("main")
-    await h.controller.repositoryBranches.load("acme/web")
-    const names = h.controller.repositoryBranches.rows.get("acme/web")?.names
-    expect(headerSelectionOf({ session: h.store.session(), repositories: h.store.collections.repositories.values(), owner: "maya", ...(names ? { branches: names } : {}) }))
-      .toEqual({ repository: "acme/web", branch: "develop" })
+  test("a picked branch the repository no longer holds gives way to its default once its branches are read again", async () => {
+    const listed = ["trunk", "docs"]
+    const h = await harness(url => branchesOf({ "acme/api": listed })(url))
+    await h.controller.commands.run("repo.select", "acme/api")
+    await h.controller.commands.run("branch", "docs")
+    expect(h.selection().branch).toBe("docs")
+    listed.splice(listed.indexOf("docs"), 1)
+    await h.controller.repositoryBranches.load("acme/api")
+    expect(h.selection()).toEqual({ repository: "acme/api", branch: "trunk" })
   })
 
   test("another account sees none of the last account's branches, and a read begun before the change writes nothing", async () => {
@@ -208,15 +265,18 @@ describe("a branch off an install is a bookmark of the selected repository", () 
     release?.()
     await inFlight
     expect(h.controller.repositoryBranches.rows.size).toBe(0)
-    // Maya's pick is not Ben's: his header falls back to the repository's default.
-    expect(headerSelectionOf({ session: h.store.session(), repositories: h.store.collections.repositories.values(), owner: "ben" }).branch).not.toBe("docs")
+    // Maya's pick is not Ben's, and it is still hers when she signs back in.
+    expect(h.controller.repositoryBranches.pickOf("acme/api")).toBeUndefined()
+    await h.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, admin: false, scopesPlain: null }).isPersisted.promise
+    await h.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "maya", admin: false, scopesPlain: null }).isPersisted.promise
+    expect(h.controller.repositoryBranches.pickOf("acme/api")).toBe("docs")
   })
 
   test("a signed-out reader picks a branch of a public repository", async () => {
     const h = await harness(branchesOf({ "acme/api": ["trunk", "docs"] }), null)
     await h.controller.commands.run("repo.select", "acme/api")
     expect((await h.controller.commands.run("branch", "docs")).status).toBe("executed")
-    expect(h.store.session().branchNavigation).toMatchObject({ owner: null, open: false, selected_branch: "docs" })
+    expect(h.store.session().branchNavigation).toBeUndefined()
     expect(h.selection()).toEqual({ repository: "acme/api", branch: "docs" })
   })
 })

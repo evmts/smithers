@@ -1,13 +1,19 @@
 /*
  * The repository-branches seam: the branch names of a Cloud repository, read
- * from GET /api/repos/{owner}/{repo}/bookmarks (BookmarksSeam), for the
- * header's branch selector and the `branch` flow off an install. An install
- * lists its branches at /api/branches instead (BranchNavigationSeam).
+ * from GET /api/repos/{owner}/{repo}/bookmarks (BookmarksSeam), and the branch
+ * this browser picked in each one, for the header's branch selector and the
+ * `branch` flow off an install. An install lists its branches at /api/branches
+ * instead (BranchNavigationSeam) and has one conversation per branch.
+ *
+ * A hosted pick names a repository branch and nothing else. It is never
+ * written to the session's `branchNavigation.selected_branch`: that field is
+ * the conversation's branch, which a dozen readers address the conversation,
+ * its prompts and its cards by, and a hosted account has one conversation,
+ * `main` (packages/backend/internal/chat/branch.go).
  *
  * The rows are a view of the backend and live in a local-only collection:
- * nothing is persisted and nothing is invented. A repository that was never
- * read has no row. The one persisted fact is the pick itself, the session's
- * `branchNavigation.selected_branch` (HeaderSelection.ts).
+ * nothing is invented, and a repository that was never read has no row. The
+ * picks are kept per account and repository in this browser's storage.
  */
 import { createCollection, localOnlyCollectionOptions } from "@tanstack/db"
 import { randomUuid } from "../../runtime/RandomUuid"
@@ -27,19 +33,51 @@ export interface RepositoryBranches {
   readonly error?: string
 }
 
+/** The branch one account picked in one repository. */
+export interface RepositoryBranchPick {
+  /** {@link pickKey}. */
+  readonly id: string
+  readonly branch: string
+}
+
+/** Where the picks are kept in this browser. */
+export const BRANCH_PICKS_STORAGE_KEY = "smithers.header-branches"
+
+/** A pick belongs to one account (the empty owner is a signed-out reader) and one repository. */
+export const pickKey = (owner: string | null, repo: string): string => `${owner ?? ""}\n${repo}`
+
+/* Browser storage that never throws: a private window or blocked site data keeps the picks for this page only. */
+const readPicks = (): ReadonlyArray<RepositoryBranchPick> => {
+  try {
+    const saved: unknown = JSON.parse(globalThis.localStorage?.getItem(BRANCH_PICKS_STORAGE_KEY) ?? "{}")
+    if (saved === null || typeof saved !== "object" || Array.isArray(saved)) return []
+    return Object.entries(saved).flatMap(([id, branch]) => typeof branch === "string" && branch !== "" ? [{ id, branch }] : [])
+  } catch { return [] }
+}
+const writePicks = (picks: Iterable<RepositoryBranchPick>): void => {
+  try { globalThis.localStorage?.setItem(BRANCH_PICKS_STORAGE_KEY, JSON.stringify(Object.fromEntries([...picks].map(pick => [pick.id, pick.branch])))) }
+  catch { /* kept for this page */ }
+}
+
 const createRows = () => createCollection(localOnlyCollectionOptions<RepositoryBranches, string>({
   id: `repository-branches-${randomUuid()}`,
   getKey: row => row.id,
   initialData: []
 }))
+const createPicks = () => createCollection(localOnlyCollectionOptions<RepositoryBranchPick, string>({
+  id: `repository-branch-picks-${randomUuid()}`,
+  getKey: row => row.id,
+  initialData: [...readPicks()]
+}))
 export type RepositoryBranchRows = ReturnType<typeof createRows>
+export type RepositoryBranchPicks = ReturnType<typeof createPicks>
 
 type Loaded = { readonly names: ReadonlyArray<string> } | { readonly error: string }
 
 export const createRepositoryBranchesSeam = (ctx: SeamContext) => {
-  // The user's and the agent's bindings read one set of rows and share reads in flight.
-  const shared = actorSharedState(ctx, "repository-branches", () => ({ rows: createRows(), pending: new Map<string, Promise<Loaded>>(), epoch: 0 }))
-  const { rows, pending } = shared
+  // The user's and the agent's bindings read one set of rows and picks and share reads in flight.
+  const shared = actorSharedState(ctx, "repository-branches", () => ({ rows: createRows(), picks: createPicks(), pending: new Map<string, Promise<Loaded>>(), epoch: 0 }))
+  const { rows, picks, pending } = shared
   const put = (row: RepositoryBranches): void => {
     if (!rows.has(row.id)) { rows.insert(row); return }
     rows.update(row.id, draft => {
@@ -69,20 +107,20 @@ export const createRepositoryBranchesSeam = (ctx: SeamContext) => {
     return read
   }
 
-  const pick = async (name: string): Promise<void> => {
-    const account = owner()
-    const previous = ctx.store.session().branchNavigation
-    const kept = previous !== undefined && previous.owner === account ? previous : undefined
-    if (kept?.selected_branch === name) return
-    // The pick alone: the branch tree stays open or closed as it was.
-    await ctx.dispatch({ type: "branch.navigation.changed", actor: ctx.actor(), navigation: {
-      ...(kept ?? { open: false, nodes: [] }), owner: account, selected_branch: name
-    } }).isPersisted.promise
+  const pick = (repo: string, branch: string): void => {
+    const id = pickKey(owner(), repo)
+    if (picks.get(id)?.branch === branch) return
+    if (picks.has(id)) picks.update(id, draft => { draft.branch = branch })
+    else picks.insert({ id, branch })
+    writePicks(picks.values())
   }
 
   return {
     rows,
+    picks,
     load,
+    /** The branch this account picked in `repo`, if any. */
+    pickOf: (repo: string): string | undefined => picks.get(pickKey(owner(), repo))?.branch,
     /** The `branch` flow off an install: pick a branch the selected repository holds. */
     select: async (name: string): Promise<string | { readonly value: string }> => {
       const repo = activeRepositoryId(ctx.store)
@@ -97,17 +135,15 @@ export const createRepositoryBranchesSeam = (ctx: SeamContext) => {
       }
       if (!names.includes(name)) return `No branch ${name}`
       if (activeRepositoryId(ctx.store) !== repo) return "Branch unavailable"
-      await pick(name)
+      pick(repo, name)
       return { value: `Opened ${name}` }
     },
-    /** A new repository has its own branches: drop the pick made in the last one and read the new list. */
-    repositoryChanged: async (): Promise<void> => {
-      const previous = ctx.store.session().branchNavigation
-      if (previous !== undefined && previous.owner === owner() && previous.selected_branch !== "") await pick("")
+    /** A newly selected repository has its own branches and its own pick: read its list. */
+    repositoryChanged: (): void => {
       const repo = activeRepositoryId(ctx.store)
       if (repo !== null) void load(repo)
     },
-    /** Another account's branches are never shown: forget every row and every read in flight. */
+    /** Another account's branches are never shown: forget every row and every read in flight. Picks are kept per account. */
     clear: (): void => {
       shared.epoch += 1
       pending.clear()

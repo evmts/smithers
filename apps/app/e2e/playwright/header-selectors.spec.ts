@@ -83,8 +83,14 @@ test("a hosted page names no repository or branch until one is selected, then th
   await expect(branch(page).locator(".crumb-here")).toHaveText("docs")
 })
 
-test("the slash door and the pointer reach the same selection, and another repository brings its own default branch", async ({ page }) => {
+test("the slash door and the pointer reach the same selection, each repository keeps its own, and the chat keeps addressing main", async ({ page }) => {
   await installCloudFixture(page, { repos, bookmarks, orgs: [{ name: "acme" }, { name: "zeta" }] })
+  // A hosted account has one conversation, `main`: no pick may change the conversation the page addresses.
+  const conversations = new Set<string>()
+  page.on("request", request => {
+    const match = /\/api\/conversations\/([^/?]*)/.exec(new URL(request.url()).pathname)
+    if (match) conversations.add(decodeURIComponent(match[1] ?? ""))
+  })
   await page.goto("/?design=off")
   await repository(page).locator(".crumb-here").click()
   await repository(page).locator(".tree-row", { hasText: "acme/api" }).click()
@@ -109,4 +115,12 @@ test("the slash door and the pointer reach the same selection, and another repos
   await repository(page).locator(".tree-row", { hasText: "zeta/web" }).click()
   await expect(repository(page).locator(".crumb-here")).toHaveText("zeta/web")
   await expect(branch(page).locator(".crumb-here")).toHaveText("develop")
+
+  // Returning to the first repository restores the branch picked there.
+  await repository(page).locator(".crumb-here").click()
+  await repository(page).locator(".tree-row", { hasText: "acme/api" }).click()
+  await expect(branch(page).locator(".crumb-here")).toHaveText("retry-webhooks")
+
+  expect(conversations.size).toBeGreaterThan(0)
+  expect([...conversations]).toEqual(["main"])
 })

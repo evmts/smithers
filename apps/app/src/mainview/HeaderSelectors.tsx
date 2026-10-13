@@ -9,6 +9,7 @@ import type { FlowName } from "./flows/FlowName"
 import { accountOwnerOf } from "./state/AccountOwner"
 import { headerSelectionOf } from "./state/HeaderSelection"
 import { branchTree } from "./state/seams/BranchNavigationSeam"
+import { pickKey } from "./state/seams/RepositoryBranchesSeam"
 
 /** One row: its visible name and the argument line its flow parses. */
 interface HeaderOption { readonly id: string; readonly args: string }
@@ -63,9 +64,11 @@ function HeaderSelect({ label, list, flow, value, options, busy, failure, onOpen
 
 /**
  * The header's repository and branch, read from real state: the session's
- * selection, the repositories this account reaches, and the branches the
- * repository holds. `repo.select` and `branch` are the only writers, run
- * through the registry, so a slash, the agent and these buttons share a door.
+ * selection, the repositories this account reaches, the branches the
+ * repository holds and the one picked in it. `repo.select` and `branch` are
+ * the only writers, run through the registry, so a slash, the agent and these
+ * buttons share a door. Off an install the pick names a repository branch
+ * only; the conversation's branch is never changed by it.
  */
 export function HeaderSelectors() {
   const controller = useController()
@@ -73,6 +76,7 @@ export function HeaderSelectors() {
   const { data: repositories } = useLiveQuery(controller.store.collections.repositories)
   const { data: identities } = useLiveQuery(controller.store.collections.identitySessions)
   const { data: branchRows } = useLiveQuery(controller.repositoryBranches.rows)
+  const { data: picks } = useLiveQuery(controller.repositoryBranches.picks)
   const installed = useSyncExternalStore(controller.installSnapshots.subscribe, controller.installSnapshots.get, controller.installSnapshots.get).model?.repository
   const install = controller.bootstrap?.capabilities.includes("install") === true
   const session = sessions[0]
@@ -92,10 +96,11 @@ export function HeaderSelectors() {
     </div>
   }
 
-  const selected = headerSelectionOf({ session, repositories, owner })
+  const pickOf = (repo: string) => picks.find(row => row.id === pickKey(owner, repo))?.branch
+  const selected = headerSelectionOf({ session, repositories, owner, pickOf })
   const loaded = selected.repository === null ? undefined : branchRows.find(row => row.id === selected.repository)
-  // A pick the repository does not hold (made in another repository) gives way to its default.
-  const { repository, branch } = loaded?.state === "ready" ? headerSelectionOf({ session, repositories, owner, branches: loaded.names }) : selected
+  // A pick the repository no longer holds gives way to its default.
+  const { repository, branch } = loaded?.state === "ready" ? headerSelectionOf({ session, repositories, owner, pickOf, branches: loaded.names }) : selected
   const repositoryIds = [...new Set([...repositories.map(row => row.id), ...(repository === null ? [] : [repository])])].sort(byName)
   if (repositoryIds.length === 0) return null
   const fallback = repository === null ? undefined : repositories.find(row => row.id === repository)?.head?.bookmark

@@ -122,7 +122,7 @@ import { createDocsController } from "./controller/docs"
 import type { Docs } from "../../docs/Docs"
 import { bundledDocs } from "../../docs/bundled"
 import { createBranchNavigationSeam } from "./seams/BranchNavigationSeam"
-import { createRepositoryBranchesSeam, type RepositoryBranchRows } from "./seams/RepositoryBranchesSeam"
+import { createRepositoryBranchesSeam, type RepositoryBranchPicks, type RepositoryBranchRows } from "./seams/RepositoryBranchesSeam"
 import type { ChangeSeam } from "./seams/ChangeSeam"
 import { createChangeSeam } from "./seams/ChangeSeam"
 import type { CloudSeam } from "./seams/CloudSeam"
@@ -559,8 +559,8 @@ export interface AppController extends IssueFlowsController {
   readonly flowCards: (name?: string) => Promise<ReadonlyArray<import("@smthrs/rpc/FlowCard").FlowCard> | undefined>
   /** branch.fork on an install: POST /api/branches {from, name?} (spec §8.5); its value is the new scratch branch. A string is the refusal. Absent off an install, where the flow acts on the seeded world. */
   readonly selectConversationBranch: (name: string) => Promise<void>
-  /** A Cloud repository's branch names as last read (RepositoryBranchesSeam): the header's branch selector reads the rows and asks for a read when it opens. */
-  readonly repositoryBranches: { readonly rows: RepositoryBranchRows; readonly load: (repo: string) => Promise<unknown> }
+  /** A Cloud repository's branch names as last read and the branch picked in each (RepositoryBranchesSeam): the header's branch selector reads both and asks for a read when it opens. */
+  readonly repositoryBranches: { readonly rows: RepositoryBranchRows; readonly picks: RepositoryBranchPicks; readonly load: (repo: string) => Promise<unknown>; readonly pickOf: (repo: string) => string | undefined }
   readonly setBranchNavigationView: (patch: { selected_branch?: string; selected_archive?: string; previous_branch?: string; open?: boolean }) => Promise<void>
   readonly setCardTab: (id: string, tab: string) => void
   readonly branchControls?: import("./seams/BranchControlsSeam").BranchControls
@@ -1794,7 +1794,7 @@ export const createAppController = (
     const before = activeRepositoryId(store)
     const result = await selectRepoOnly(key)
     if (result === undefined && store.session().surface === "world") void readWikiForPane()
-    if (result === undefined && !installHost && !design.enabled && activeRepositoryId(store) !== before) await repositoryBranches.repositoryChanged()
+    if (result === undefined && !installHost && !design.enabled && activeRepositoryId(store) !== before) repositoryBranches.repositoryChanged()
     return result
   }
   const {
@@ -2849,7 +2849,7 @@ export const createAppController = (
     ...sharedActions,
     observeReviewConfirmation: issueFlows.observeReviewConfirmation,
     fileDocuments,
-    repositoryBranches: { rows: repositoryBranches.rows, load: repositoryBranches.load },
+    repositoryBranches: { rows: repositoryBranches.rows, picks: repositoryBranches.picks, load: repositoryBranches.load, pickOf: repositoryBranches.pickOf },
     store,
     privacyNotices: privacyActions.notices,
     controlFocus,

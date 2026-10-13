@@ -15,6 +15,7 @@ import { createAppStore } from "./state/AppStore"
 import { scopedControllers } from "./state/ControllerTestScope"
 import { memoryStorage, silentAgent, waitFor } from "./state/TestFixtures"
 import { installFixture } from "./state/seams/InstallFixtures.test-support"
+import { BRANCH_PICKS_STORAGE_KEY } from "./state/seams/RepositoryBranchesSeam"
 
 GlobalRegistrator.register()
 afterAll(async () => {
@@ -22,7 +23,8 @@ afterAll(async () => {
   await GlobalRegistrator.unregister()
 })
 const cleanups: Array<() => void> = []
-afterEach(() => { while (cleanups.length) cleanups.pop()?.() })
+// Picks are kept in this browser's storage: one test's pick must not open the next test's header.
+afterEach(() => { while (cleanups.length) cleanups.pop()?.(); localStorage.removeItem(BRANCH_PICKS_STORAGE_KEY) })
 const createAppController = scopedControllers()
 
 const mount = (node: ReactNode): HTMLElement => {
@@ -126,10 +128,11 @@ describe("the header on a hosted page", () => {
     expect(h.rows("branch").map(row => row.getAttribute("aria-current"))).toEqual(["true", null, null, null])
 
     click(h.rows("branch")[2])
-    await waitFor(() => h.store.session().branchNavigation?.selected_branch === "docs")
+    await waitFor(() => h.controller.repositoryBranches.pickOf("acme/api") === "docs")
     await settle()
     expect(crumbText(h.header())).toBe("acme/api/docs")
-    expect(h.store.session().branchNavigation?.open).toBe(false)
+    // The pick names a repository branch; the conversation's branch is untouched.
+    expect(h.store.session().branchNavigation).toBeUndefined()
     expect(h.rows("branch")).toEqual([])
   })
 
@@ -179,7 +182,7 @@ describe("the header on a hosted page", () => {
     expect(h.store.session().activeRepoKey ?? null).toBeNull()
   })
 
-  test("changing repository drops the branch picked in the last one", async () => {
+  test("each repository keeps its own pick, and a page opened later in this browser restores it", async () => {
     const h = await hosted({ repositories: [repository("acme/api", "trunk"), repository("zeta/web", "develop")], branches: { "acme/api": ["trunk", "docs"], "zeta/web": ["develop"] } })
     await h.controller.commands.run("repo.select", "acme/api")
     await h.controller.commands.run("branch", "docs")
@@ -190,6 +193,16 @@ describe("the header on a hosted page", () => {
     await waitFor(() => h.store.session().activeRepoKey === "zeta/web")
     await settle()
     expect(crumbText(h.header())).toBe("zeta/web/develop")
+    click(h.trigger("repo.select"))
+    click(h.rows("repo.select")[0])
+    await waitFor(() => h.store.session().activeRepoKey === "acme/api")
+    await settle()
+    expect(crumbText(h.header())).toBe("acme/api/docs")
+
+    const later = await hosted({ repositories: [repository("acme/api", "trunk")], branches: { "acme/api": ["trunk", "docs"] } })
+    await later.controller.commands.run("repo.select", "acme/api")
+    await settle()
+    expect(crumbText(later.header())).toBe("acme/api/docs")
   })
 })
 
