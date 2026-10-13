@@ -2273,6 +2273,7 @@ export const LEGACY_CARD_KINDS = [
 const retiredKinds = new Set<string>(LEGACY_CARD_KINDS)
 
 const retiredFlows = new Set<string>([
+  "chat.dictate",
   "commits.list",
   "commits.read",
   "flow.repo.choose",

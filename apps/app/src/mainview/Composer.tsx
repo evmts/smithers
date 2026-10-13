@@ -245,12 +245,6 @@ export function Composer({
       return
     }
     if (event.key === "Enter" && event.shiftKey) return
-    // Capture owns this Escape; leave the palette and Chat available below it.
-    if (event.key === "Escape" && controller.store.session().dictating) {
-      event.preventDefault()
-      controller.cancelDictation()
-      return
-    }
     // Input can arrive before the live-query render catches up. Keyboard
     // decisions must use the text under the caret, never the previous menu.
     const inputDraft = event.currentTarget.value

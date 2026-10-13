@@ -874,7 +874,7 @@
   },
   {
    "name": "input.mode",
-   "summary": "Choose Normal, Vim, or Dictation input mode"
+   "summary": "Choose Normal or Vim input mode"
   },
   {
    "name": "debug.reset",

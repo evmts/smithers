@@ -49,16 +49,8 @@ export const chatFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
     handler: () => actions.showChat()
   }),
   flow({ name: "chat.open", summary: "Open Chat using the selected input mode (C)", input: NoPayload,
-    agent: "never" as const, agentReason: "opening Chat and starting the selected microphone mode is the human's gesture",
+    agent: "never" as const, agentReason: "opening Chat is the human's focus gesture",
     handler: (_payload, _signal, _call, gesture) => gesture?.chatInputCurrent?.() === false ? undefined : actions.openChat() }),
-  flow({
-    name: "chat.dictate",
-    summary: "Start or stop dictation into the chat draft (⌘D)",
-    agent: "never" as const,
-    agentReason: "microphone capture is the human's explicit gesture",
-    input: NoPayload,
-    handler: () => actions.toggleDictation()
-  }),
   flow(RETRY),
   flow({
     name: "stop",

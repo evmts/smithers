@@ -280,7 +280,7 @@ const valueOf = (value: unknown): string | undefined => {
 }
 
 /** Chrome commands that render no card, so they leave a maximized card in place. */
-const OVER_MAXIMIZED_CARD: ReadonlySet<string> = new Set(["chat.open", "chat.dictate", "palette.open", "palette.actions", "theme", "input.mode"])
+const OVER_MAXIMIZED_CARD: ReadonlySet<string> = new Set(["chat.open", "palette.open", "palette.actions", "theme", "input.mode"])
 
 
 export const createCommandRegistry = (actions: CommandActions, agentActions: CommandActions = actions, lifecycle?: CommandLifecycle, resolveConfirmation?: (id: string, revision: string) => { name: string; args?: string } | undefined, authorizeClientCommand?: (name: string, signal?: AbortSignal) => Promise<CommandOutcome | undefined>): CommandRegistry => {

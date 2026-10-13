@@ -15,6 +15,7 @@ const createAppController = scopedControllers()
 
 // Literal oracle: mvp.md §8 and Appendix B Cut rows (2026-10-02), independent of the registry.
 const CUT_NAMES = [
+  "chat.dictate",
   "commits.list", "commits.read",
   "chat.clear",
   "tab.card",

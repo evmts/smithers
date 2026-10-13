@@ -1316,7 +1316,7 @@ describe("launch-law parity: every affordance is a command", () => {
         .filter(([, count]) => count > 0)
     )
     expect(counts).toEqual({
-      // Toast dismissal is owned by ToastStack; includes dock Close and dictation controls.
+      // Toast dismissal is owned by ToastStack; includes dock Close.
       // Close, Back and Next all dispatch onboarding.act through IntroSlidesShell.
       // The optional capability reel after the last lesson: its launch pill and its Back.
       // Delegates to the shared onboarding and existing app flows; the Command-K overlay is the summoned composer with no chrome of its own.

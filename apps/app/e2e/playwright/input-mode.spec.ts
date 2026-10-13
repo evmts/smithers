@@ -46,78 +46,34 @@ test('Chat Tab reaches Send and footer controls without trapping focus', async (
   await expect(copy).toBeFocused()
 })
 
-test('switching away from Dictation stops capture without reopening Chat', async ({ page }) => {
-  await page.addInitScript(() => {
+for (const speechSupported of [false, true]) test(`only Normal and Vim are offered when speech recognition is ${speechSupported ? 'available' : 'unavailable'}`, async ({ page }) => {
+  await page.addInitScript(supported => {
     const host = window as any
-    host.SpeechRecognition = class {
-      onend: any
-      start() { host.starts = (host.starts ?? 0) + 1 }
-      stop() { this.onend?.() }
-      abort() { host.aborts = (host.aborts ?? 0) + 1 }
-    }
-  })
+    delete host.SpeechRecognition
+    delete host.webkitSpeechRecognition
+    host.speechStarts = 0
+    if (supported) host.SpeechRecognition = class { start() { host.speechStarts++ } }
+  }, speechSupported)
   await page.goto('/')
-  await expect(page.getByRole('button', { name: 'Mode: Normal', exact: true })).toBeVisible()
-  await page.keyboard.press('m')
-  await page.getByRole('menuitemradio', { name: 'Dictation' }).click()
-  expect(await page.evaluate(() => (window as any).starts ?? 0)).toBe(0)
+  const mode = page.getByRole('button', { name: 'Mode: Normal', exact: true })
+  await mode.click()
+  await expect(page.getByRole('menuitemradio')).toHaveText(['Normal', 'Vim'])
+  await expect(page.getByRole('menuitemradio', { name: 'Dictation', exact: true })).toHaveCount(0)
+  await page.keyboard.press('End')
+  await expect(page.getByRole('menuitemradio', { name: 'Vim', exact: true })).toBeFocused()
+  await page.keyboard.press('Home')
+  await expect(page.getByRole('menuitemradio', { name: 'Normal', exact: true })).toBeFocused()
+  await page.keyboard.press('Enter')
   await page.keyboard.press('Meta+k')
-  await expect(page.getByTestId('composer-input')).toBeVisible()
-  await expect.poll(() => page.evaluate(() => (window as any).starts)).toBe(1)
-  await page.getByRole('button', { name: 'Mode: Dictation', exact: true }).click()
-  await page.getByRole('menuitemradio', { name: 'Normal' }).click()
-  await expect.poll(() => page.evaluate(() => (window as any).aborts)).toBe(1)
-  await expect(page.getByRole('button', { name: 'Stop dictation' })).toHaveCount(0)
-  await page.keyboard.press('Escape')
-  await page.keyboard.press('Meta+k')
-  await expect.poll(() => page.evaluate(() => (window as any).starts)).toBe(1)
-})
-
-test('Escape releases dictation before Chat and preserves the draft', async ({ page }) => {
-  await page.addInitScript(() => {
-    const host = window as any
-    host.SpeechRecognition = class {
-      onend: any
-      start() { host.starts = (host.starts ?? 0) + 1 }
-      stop() { this.onend?.() }
-      abort() { host.aborts = (host.aborts ?? 0) + 1 }
-    }
-  })
-  await page.goto('/')
-  await page.getByRole('button', { name: 'Mode: Normal', exact: true }).click()
-  await page.getByRole('menuitemradio', { name: 'Dictation', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Mode: Dictation', exact: true })).toBeVisible()
-  await page.keyboard.press('Meta+k')
-  await expect.poll(() => page.evaluate(() => (window as any).starts)).toBe(1)
   const input = page.getByTestId('composer-input')
-  await input.fill('keep this dictation draft')
-  await input.press('Escape')
-  await expect.poll(() => page.evaluate(() => (window as any).aborts)).toBe(1)
   await expect(input).toBeFocused()
-  await expect(input).toHaveValue('keep this dictation draft')
-  await expect(page.getByTestId('palette')).toBeVisible()
+  await input.fill('keep my typed draft')
   await input.press('Escape')
   await expect(input).toBeHidden()
-})
-
-test('unsupported Dictation is disabled with a reason and Chat stays in Normal mode', async ({ page }) => {
-  await page.addInitScript(() => { delete (window as any).SpeechRecognition; delete (window as any).webkitSpeechRecognition })
-  await page.goto('/')
-  await page.getByRole('button', { name: 'Mode: Normal', exact: true }).click()
-  const dictation = page.getByRole('menuitemradio', { name: 'Dictation', exact: true })
-  await expect(dictation).toHaveAttribute('aria-disabled', 'true')
-  await expect(dictation).toHaveAccessibleDescription('Dictation needs a browser with speech recognition')
-  await page.keyboard.press('End')
-  await expect(dictation).toBeFocused()
-  await page.keyboard.press('Enter')
-  await expect(page.getByRole('menu')).toBeVisible()
-  await page.keyboard.press('Escape')
   await page.keyboard.press('Meta+k')
-  await expect(page.getByTestId('composer-input')).toBeFocused()
-  await expect(page.getByRole('button', { name: 'Mode: Normal', exact: true })).toBeVisible()
-  await expect(page.getByText("/chat.open didn't run", { exact: true })).toHaveCount(0)
+  await expect(input).toHaveValue('keep my typed draft')
+  expect(await page.evaluate(() => (window as any).speechStarts)).toBe(0)
 })
-
 
 test('Vim roves into Chat in normal mode, inserts explicitly, and leaves on j or a second Escape', async ({ page }) => {
   await page.goto('/')

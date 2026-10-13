@@ -43,7 +43,7 @@ import { SignupSchema, type Signup } from "./LegacySignup"
 import { currentFlowName, FLOW_NAMES } from "../flows/FlowName"
 import { CloudWikiState } from "../wiki/CloudWikiState"
 import type { CommandIntent } from "./CommandIntent"
-import { INPUT_MODES,type InputMode } from "./InputMode"
+import { HISTORICAL_INPUT_MODES,type HistoricalInputMode } from "./InputMode"
 import type { PendingRecoveryScope } from "./PendingRecovery"
 import type { RuntimeApprovalSubmission,RuntimeRunObservation,RuntimeScope } from "./RuntimeProjection"
 import { CHAT_KINDS } from "./ChatTimeline"
@@ -609,6 +609,7 @@ const currentAction = <T extends { readonly flow: string; readonly args?: string
     ? { args: savedDocsRead(action.args) } : {})
 })
 const MessageActionSchema = MessageActionBaseSchema.transform(currentAction)
+  .transform(action => action.flow === "chat.dictate" ? undefined : action)
 const AnsweredActionSchema = MessageActionBaseSchema.extend({ answer: z.string(), answeredAt: z.number() }).transform(currentAction)
 
 export const MessageSchema = z.object({
@@ -776,7 +777,9 @@ export const ToastSchema = z.object({
   title: z.string(),
   status: z.enum(["running", "ok", "failed", "cancelled"]),
   detail: z.string(),
-  action: MessageActionBaseSchema.transform(currentAction).refine(action => z.enum(FLOW_NAMES).safeParse(action.flow).success).optional(),
+  action: MessageActionBaseSchema.transform(currentAction)
+    .refine(action => action.flow === "chat.dictate" || z.enum(FLOW_NAMES).safeParse(action.flow).success)
+    .transform(action => action.flow === "chat.dictate" ? undefined : action).optional(),
   answeredAction: AnsweredActionSchema.optional(),
   createdAt: z.number(),
   updatedAt: z.number()
@@ -1133,7 +1136,8 @@ export const SessionSchema = z.object({
    * Session state like the menus above, never a component's; all optional so
    * sessions persisted before the fields parse without a schema reset.
    */
-  inputMode: z.enum(INPUT_MODES).optional(),
+  // Decode-only dictation state is migrated by the input controller on boot.
+  inputMode: z.enum(HISTORICAL_INPUT_MODES).optional(),
   dictating: z.boolean().optional(),
   paletteOpen: z.boolean().optional(),
   paletteActionsRef: z.string().nullable().optional(),
@@ -1373,7 +1377,7 @@ export type AppTransition =
   | { type: "card.history.moved"; actor: Actor; id: string; delta: -1 | 1 }
   /** Boot-only restoration of one crash-recorded card projection and its local history. */
   | { type: "card.recovered"; actor: Actor; workspaceId: string; branchId: string; id: string; card: Card | null; history?: CardHistory }
-  | { type: "input.mode.changed"; actor: Actor; mode: InputMode }
+  | { type: "input.mode.changed"; actor: Actor; mode: HistoricalInputMode }
   | { type: "dictation.changed"; actor: Actor; listening: boolean }
   | { type: "prompt.queued"; actor: "user"; prompt: z.infer<typeof QueuedPromptSchema>; preserveDraft?: boolean }
   | { type: "prompt.removed"; actor: "user"; id: string; edit?: boolean }

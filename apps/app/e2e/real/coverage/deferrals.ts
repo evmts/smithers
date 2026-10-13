@@ -61,7 +61,7 @@ export const UNSCENARIOED_ACTIONS: Readonly<Record<Deferral, readonly string[]>>
   /** Acts only on this browser's UI or storage; no host contract to break. */
   browser: [
     "app.hint.dismiss", "card.history.back", "card.history.forward",
-    "chat", "chat.dictate",
+    "chat",
     "chat.queue", "chat.queue.edit", "chat.queue.remove", "chat.queue.restore", "chat.reload", "cloud.prompt", "flow.plan.select",
     "flow.plan.tab", "input.mode", "palette.actions", "palette.recent",
      "runs.coding.select", "runs.graph.execution", "runs.graph.follow", "runs.graph.select", "runs.graph.tab",

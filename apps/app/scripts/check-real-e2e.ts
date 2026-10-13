@@ -41,7 +41,7 @@ function joinDefault(root: string, child: string): string {
 {
   const baseline = {
     browser: [
-      "app.hint.dismiss", "card.history.back", "card.history.forward", "chat", "chat.dictate",
+      "app.hint.dismiss", "card.history.back", "card.history.forward", "chat",
       "chat.queue",
       "chat.queue.edit", "chat.queue.remove", "chat.queue.restore", "chat.reload",
       "cloud.prompt", "flow.plan.select", "flow.plan.tab", "input.mode",

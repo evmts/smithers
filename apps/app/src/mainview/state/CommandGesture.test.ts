@@ -75,7 +75,7 @@ test("queued mode receipts never replay an older preference over the latest gest
   } finally { held.resolve(); subscription.unsubscribe() }
 })
 
-test("input-mode selection never starts dictation before or after command acceptance", async () => {
+test("deferred dictation cannot change the input mode or access speech recognition", async () => {
   let starts = 0
   replaceGlobal("SpeechRecognition", class { start() { starts++ } abort() {} })
   const { controller, held } = await fixture()
@@ -83,8 +83,8 @@ test("input-mode selection never starts dictation before or after command accept
   const beforeReceipt = controller.store.session().inputMode
   expect(starts).toBe(0)
   held.resolve()
-  expect((await pending).status).toBe("executed")
-  expect(beforeReceipt).toBe("dictation")
+  expect((await pending).status).toBe("failed")
+  expect(beforeReceipt).toBe("normal")
   expect(starts).toBe(0)
   expect(controller.store.session().paletteOpen).not.toBe(true)
 })
@@ -125,7 +125,7 @@ test("failed preference storage rolls back the local mode and reports failure", 
   } finally { reject = false }
 })
 
-for (const outcome of ["accepted", "rejected", "dismissed"] as const) test(`Chat accepts typing before its receipt; ${outcome} controls later microphone capture`, async () => {
+for (const outcome of ["accepted", "rejected", "dismissed"] as const) test(`Chat accepts typing before its receipt; ${outcome} preserves the draft without microphone capture`, async () => {
   let starts = 0
   replaceGlobal("SpeechRecognition", class {
     start() { starts++ }
@@ -140,7 +140,7 @@ for (const outcome of ["accepted", "rejected", "dismissed"] as const) test(`Chat
   if (outcome === "dismissed") controller.closePalette()
   held.resolve()
   expect((await pending).status).toBe(outcome === "rejected" ? "failed" : "executed")
-  expect(starts).toBe(outcome === "accepted" ? 1 : 0)
+  expect(starts).toBe(0)
   expect(controller.store.session().draft).toBe("/account.show")
   expect(controller.store.session().paletteOpen).toBe(outcome !== "dismissed")
 })

@@ -94,8 +94,7 @@ export { Ack } from "./entries/Declare"
  */
 export const USER_ONLY_VISIBLE: ReadonlyArray<{ readonly name: string; readonly why: string }> = [
   { name: "settings", why: "host settings and credentials belong to the owner" },
-  { name: "chat.open", why: "opening Chat and starting the selected microphone mode is the human's gesture" },
-  { name: "chat.dictate", why: "microphone capture is the human's explicit gesture" },
+  { name: "chat.open", why: "opening Chat is the human's focus gesture" },
   { name: "chat.queue", why: "the prompt queue is the human's composer" },
   { name: "chat.send", why: "turn mechanics: the model is already the turn; sending would nest one" },
   { name: "stop", why: "turn mechanics: stopping the model's own turn from inside it" },

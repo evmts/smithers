@@ -56,7 +56,6 @@
       "section": "B.1",
       "ids": [
         "chat.copy-message",
-        "chat.dictate",
         "chat.open",
         "chat.reload",
         "chat"
@@ -1211,6 +1210,14 @@
       "status": "keep",
       "who": "P",
       "decision": "Owner, 2026-10-03: apps/app/AGENTS.md Login screen requires the Continue email door."
+    },
+    {
+      "section": "B.1",
+      "ids": [
+        "chat.dictate"
+      ],
+      "status": "cut",
+      "who": "–"
     }
   ],
   "publicIds": [

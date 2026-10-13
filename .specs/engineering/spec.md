@@ -1354,7 +1354,7 @@ Visible copy uses product words (mvp.md §3). The conformance lint bans these in
 
 ### 14.7 Keyboard and input
 
-Every P0 journey completes with the keyboard alone (§9 of mvp.md). Normal, Vim and dictation input are kept as built.
+Every P0 journey completes with the keyboard alone (§9 of mvp.md). Normal and Vim input are kept as built. Dictation is deferred until after release ([#3815](https://github.com/smithersai/smithers/issues/3815), Will, 2026-10-13).
 
 ---
 

@@ -1,64 +1,54 @@
 import { memoryStorage } from '../TestFixtures'
 import { expect, test } from 'bun:test'
 import { createAppStore } from '../AppStore'
+import { INPUT_MODES } from '../InputMode'
 import { createInputModeController } from './inputMode'
 
-test('mode persists without opening Chat; only the next Chat gesture starts dictation', async () => {
-  const data = new Map<string, string>()
-  const storage = { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value) }, removeItem: (key: string) => { data.delete(key) } }
+for (const mode of INPUT_MODES) test(`${mode} persists without opening Chat`, async () => {
+  const storage = memoryStorage()
   const store = await createAppStore({ kind: 'localStorage', storage })
-  let opens = 0, starts = 0, cancels = 0
+  let opens = 0
   const modes = createInputModeController(store, {
-    dictationAvailable: () => true,
     actor: () => 'user', openChat: async () => { opens++; store.dispatch({ type: 'palette.toggled', actor: 'user', open: true }) },
-    startDictation: () => { starts++; store.dispatch({ type: 'dictation.changed', actor: 'user', listening: true }) },
-    cancelDictation: () => { cancels++; store.dispatch({ type: 'dictation.changed', actor: 'user', listening: false }) },
   })
-  expect(store.session().inputMode).toBe('normal')
-  await modes.setInputMode('dictation')
-  expect({ opens, starts, cancels }).toEqual({ opens: 0, starts: 0, cancels: 0 })
+  await modes.setInputMode(mode)
+  expect(opens).toBe(0)
+  expect(store.session().paletteOpen).not.toBe(true)
   await modes.openChat()
-  await modes.openChat()
-  expect({ opens, starts }).toEqual({ opens: 2, starts: 1 })
-  await modes.setInputMode('vim')
-  expect(store.session().dictating).toBe(false)
-  await modes.openChat()
-  expect(starts).toBe(1)
-  expect(cancels).toBe(1)
+  expect(opens).toBe(1)
+  expect(store.session().inputMode).toBe(mode)
   await store.dispose?.()
   const restored = await createAppStore({ kind: 'localStorage', storage })
-  expect(restored.session().inputMode).toBe('vim')
+  expect(restored.session().inputMode).toBe(mode)
   await restored.dispose?.()
 })
 
-test('closing Chat while its open persists cannot start the microphone later', async () => {
-  const store = await createAppStore({ kind: 'localStorage', storage: memoryStorage() })
-  let finish!: () => void, starts = 0
-  const pending = new Promise<void>(resolve => { finish = resolve })
-  const modes = createInputModeController(store, {
-    dictationAvailable: () => true,
-    actor: () => 'user', cancelDictation: () => {}, startDictation: () => { starts++ },
-    openChat: async () => { store.dispatch({ type: 'palette.toggled', actor: 'user', open: true }); await pending },
-  })
-  await modes.setInputMode('dictation')
-  const opening = modes.openChat()
-  store.dispatch({ type: 'palette.toggled', actor: 'user', open: false })
-  finish(); await opening
-  expect(starts).toBe(0)
-  await store.dispose?.()
-})
+for (const mode of [...INPUT_MODES, 'dictation'] as const) test(`saved ${mode} and a stale capture remain readable and migrate without losing the draft`, async () => {
+  const storage = memoryStorage()
+  const first = await createAppStore({ kind: 'localStorage', storage })
+  await first.dispatch({ type: 'input.mode.changed', actor: 'user', mode }).isPersisted.promise
+  await first.dispatch({ type: 'dictation.changed', actor: 'user', listening: true }).isPersisted.promise
+  await first.dispatch({ type: 'composer.changed', actor: 'user', draft: 'keep my saved draft' }).isPersisted.promise
+  await first.dispose?.()
 
-test('an unavailable persisted Dictation preference falls back to Normal and never fails Chat', async () => {
-  const store = await createAppStore({ kind: 'localStorage', storage: memoryStorage() })
-  let starts = 0
-  const modes = createInputModeController(store, {
-    actor: () => 'user', cancelDictation: () => {}, startDictation: () => { starts++; return 'unavailable' },
-    openChat: async () => { store.dispatch({ type: 'palette.toggled', actor: 'user', open: true }) },
+  const restored = await createAppStore({ kind: 'localStorage', storage })
+  expect(restored.session().inputMode).toBe(mode)
+  expect(restored.session().dictating).toBe(true)
+  const modes = createInputModeController(restored, {
+    actor: () => 'user', openChat: async () => { restored.dispatch({ type: 'palette.toggled', actor: 'user', open: true }) },
   })
-  await store.dispatch({ type: 'input.mode.changed', actor: 'user', mode: 'dictation' }).isPersisted.promise
-  expect(await modes.openChat()).toBeUndefined()
-  expect(store.session().inputMode).toBe('normal')
-  expect(store.session().paletteOpen).toBe(true)
-  expect(starts).toBe(0)
-  await store.dispose?.()
+  const expected = mode === 'dictation' ? 'normal' : mode
+  expect(restored.session().inputMode).toBe(expected)
+  expect(restored.session().dictating).toBe(false)
+  expect(restored.session().paletteOpen).not.toBe(true)
+  expect(restored.session().draft).toBe('keep my saved draft')
+  await modes.openChat()
+  expect(restored.session().paletteOpen).toBe(true)
+  await restored.dispose?.()
+
+  const reloaded = await createAppStore({ kind: 'localStorage', storage })
+  expect(reloaded.session().inputMode).toBe(expected)
+  expect(reloaded.session().dictating).toBe(false)
+  expect(reloaded.session().draft).toBe('keep my saved draft')
+  await reloaded.dispose?.()
 })

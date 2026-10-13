@@ -382,10 +382,6 @@
       "door": "app"
     },
     {
-      "command": "chat.dictate",
-      "door": "app"
-    },
-    {
       "command": "chat.open",
       "door": "app"
     },
