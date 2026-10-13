@@ -401,6 +401,23 @@ describe("Telemetry.timedSpawner", () => {
     ])
   })
 
+  it("times a process whose caller reads only its exit code", async () => {
+    const result = await run(Effect.gen(function*() {
+      const fiber = yield* Effect.forkChild(inRun(Telemetry.timedSpawner(scripted()).exitCode(command)), {
+        startImmediately: true
+      })
+      yield* TestClock.adjust(230)
+      const exitCode = yield* Fiber.join(fiber)
+      return { exitCode: Number(exitCode), entries: yield* journaled }
+    }))
+
+    expect(result.exitCode).toBe(3)
+    // Nothing was read, so nothing was collected.
+    expect(result.entries.map((entry) => entry.payload)).toEqual([
+      { spawnMs: 30, runMs: 200, collectMs: 0, totalMs: 230, bytesOut: 0, exitCode: 3 }
+    ])
+  })
+
   it("passes a spawn that fails through unchanged and writes no record", async () => {
     const refused = systemError({ _tag: "NotFound", module: "ChildProcess", method: "spawn", description: "no docker" })
     const failing = makeSpawner(() => Effect.fail(refused))
