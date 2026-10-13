@@ -1745,3 +1745,30 @@ describe("a reader who scrolls inside the latest read owns the position", () => 
     expect(getViewport().scrollTop).toBe(890);
   });
 });
+
+
+test("Latest stays at the live edge when an older Docs heading remains the read target (#3813)", async () => {
+  const view = (version: number) => <MessageScrollerProvider scrollAnchor="bottom"
+    readAnchor={{ messageId: "docs", targetId: "https", version, requestId: version }}>
+    <MessageScrollerViewport><MessageScrollerContent>
+      <MessageScrollerItem messageId="docs"><div id="https" data-message-id="heading">HTTPS</div></MessageScrollerItem>
+      <MessageScrollerItem messageId="reply">A newer shared reply</MessageScrollerItem>
+    </MessageScrollerContent></MessageScrollerViewport>
+    <MessageScrollerButton behavior="auto">Latest</MessageScrollerButton>
+  </MessageScrollerProvider>;
+  geometryByMessageId.set("docs", { top: 20, height: 1800 });
+  geometryByMessageId.set("heading", { top: 1200, height: 30 });
+  geometryByMessageId.set("reply", { top: 1830, height: 600 });
+  await render(view(1), { scrollHeight: 2430, clientHeight: 600, scrollTop: 0 });
+  expect(getViewport().scrollTop).toBe(1190);
+  await act(async () => container!.querySelector<HTMLButtonElement>("button")!.click());
+  const content = container!.querySelector('[data-slot="message-scroller-content"]')!;
+  await act(async () => resizeCallbacks.get(content)!([], {} as ResizeObserver));
+  expect(getViewport().scrollTop).toBe(1830);
+  metrics().scrollHeight = 2700;
+  await act(async () => resizeCallbacks.get(content)!([], {} as ResizeObserver));
+  expect(getViewport().scrollTop).toBe(2100);
+  // An explicit later navigation can ask to read the earlier heading again.
+  await act(async () => root!.render(view(2)));
+  expect(getViewport().scrollTop).toBe(1190);
+});

@@ -327,7 +327,8 @@ function MessageScrollerProviderImpl({
       queuedJumpRef.current = null;
       turnAnchorRef.current = null;
       messageJumpRef.current = null;
-      activeReadRef.current = readAnchorRef.current ? { id: readAnchorRef.current.messageId, arrival: false } : null;
+      // Latest is the reader's chosen position; layout follows the edge until a new read requests another destination.
+      activeReadRef.current = readAnchorRef.current ? { id: readAnchorRef.current.messageId, arrival: false, moved: true } : null;
       setJumpTracking(anchoringRef.current);
       scrollViewportTo(viewport.scrollHeight, behavior);
       const bottom = measure(viewport);

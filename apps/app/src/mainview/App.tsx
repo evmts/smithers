@@ -1,4 +1,3 @@
-import { TranscriptOrder } from "./state/TranscriptOrder"
 import { rememberComposerFocus, restoreComposerFocus } from "./runtime/ComposerFocus"
 import { useSharedConversation } from "./state/useSharedConversation"
 import { useTodoRole } from "./cards/TodoCard"
@@ -94,7 +93,6 @@ function AppContent() {
       maximizedCardId: session.maximizedCardId,
       activeBranchId: session.activeBranchId,
       branchNavigation: session.branchNavigation,
-      transcriptAnchors: session.transcriptAnchors,
       devtoolsOpen: session.devtoolsOpen,
       paletteOpen: session.paletteOpen,
       inputMode: session.inputMode,
@@ -347,11 +345,8 @@ function AppContent() {
     : `${conversationTabId ?? "main"}:${session.activeRepoKey ?? ""}`
 
   const visibleEntries = entries.filter(entry => !controller.sharedConversation || entry.kind !== "message" || entry.message.id === authMessage?.id || entry.message.origin === "external" || entry.message.action !== undefined || diagnosticVisible(entry.message, identityRows[0]?.login, session.branchNavigation?.selected_branch ?? "main"))
-  const localEntries = visibleEntries.map(entry => ({ id: entryId(entry), value: entry }))
-  const orderedEntries = TranscriptOrder.merge(sharedConversation.conversation?.entries ?? [], localEntries, session.transcriptAnchors,
-    controller.sharedConversation ? TranscriptOrder.scope(identityRows[0], session) : undefined)
-  const latest = orderedEntries.at(-1)
-  const latestEntry = latest?.kind === "local" ? latest.entry.value : undefined
+  // A requested local read can target a retained card earlier in the transcript.
+  const latestEntry = visibleEntries.at(-1)
   const latestReadId = latestEntry === undefined ? undefined : entryId(latestEntry)
   const initialReadId = loginScreen ? "login" : repositoryNotice ? authMessage?.id : home ? HOME_ENTRY_ID : undefined
 
