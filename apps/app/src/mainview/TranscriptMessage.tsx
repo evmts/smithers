@@ -131,10 +131,10 @@ export function TranscriptMessage({ entry, streamingMessageId }: { entry: { kind
           // scrubToolEcho: a weak model's tool call written into prose
           // is wire debris, never content — stripped at render only;
           // the store and dev-tools keep the raw truth.
-          <Markdown
+          <div data-composer-prompt={entry.message.role === "user" ? entry.message.id : undefined}><Markdown
             className="message-markdown"
             content={external ? entry.message.text : scrubToolEcho(entry.message.text)}
-          />
+          /></div>
         ) :
         null}
       {!external && entry.kind === "message" && entry.message.role === "smithers" && entry.message.status === "complete" && entry.message.id !== streamingMessageId && !entry.message.action && scrubToolEcho(entry.message.text).trim() ? (() => {

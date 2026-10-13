@@ -11,6 +11,7 @@ import { actionForKey } from "./flows/SearchQuery"
 import type { PaletteDecision,PaletteRow } from "./SearchPalette"
 import { paletteKey,PaletteOverlay,paletteRows } from "./SearchPalette"
 import { restoreComposerFocus } from "./runtime/ComposerFocus"
+import { animateComposerSend } from "./runtime/ComposerSend"
 
 /** Stable Playwright handle; spread past ChatComposer's excess-property check. */
 const COMPOSER_INPUT_TEST_ID: Record<string, string> = { "data-testid": "composer-input" }
@@ -161,7 +162,6 @@ export function Composer({
       case "send":
         // Use the button's form submission, including its empty/busy guard.
         inputRef.current?.form?.requestSubmit()
-        inputRef.current?.focus()
         return true
       case "move":
         setSlashMenu({ draft: sourceKey, index: decision.index, dismissed: false, resultSelected: decision.resultSelected, moved: true })
@@ -345,7 +345,8 @@ export function Composer({
         onValueChange={controller.changeDraft}
         onSubmit={() => {
           // The input transition is synchronous; its React projection can lag.
-          controller.runCommand("chat.send", controller.store.session().draft.trim())
+          void animateComposerSend(inputRef.current, controller.store, () =>
+            controller.runCommandForResult("chat.send", controller.store.session().draft.trim()))
         }}
         onStop={() => controller.runCommand("stop")}
         submitWhileBusy

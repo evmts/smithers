@@ -95,9 +95,13 @@ export function createSharedPrompts(ctx: ControllerContext, source: SharedConver
   const submit = async (text: string, capturedDraft?: () => boolean): Promise<boolean> => {
     const owner = ctx.accountOwner(), at = branch(), prompt = text.trim()
     if (!owner || !prompt || at === "earlier" || ctx.store.collections.identitySessions.get("identity")?.state !== "signed-in") return false
-    const previous = ctx.store.session().sharedPrompts?.find(row => row.owner === owner && row.branch === at && row.prompt === prompt && row.state === "requested")
-    if (previous) { launch(previous); return true }
     const draftCurrent = capturedDraft ?? ctx.store.captureComposerDraft(text)
+    const previous = ctx.store.session().sharedPrompts?.find(row => row.owner === owner && row.branch === at && row.prompt === prompt && row.state === "requested")
+    if (previous) {
+      if (draftCurrent()) await save(previous, true)
+      launch(previous)
+      return true
+    }
     const editing = ctx.store.session().sharedPrompts?.find(row => row.owner === owner && row.branch === at && row.state === "editing")
     const row: SharedPrompt = { id: editing?.id ?? randomUuid(), ...(editing?.turnId ? { turnId: editing.turnId } : {}), owner, branch: at, prompt, state: "requested" }
     await persistThenLaunch(row, draftCurrent())

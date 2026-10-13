@@ -6,6 +6,12 @@ The application has a React browser renderer, served by `apps/server` or the ret
 
 `apps/app/src/mainview` owns chat, embedded surfaces, the flow registry, controller and store. `apps/app/src/mainview/chain` owns browser persistence and replay recovery. `apps/app/src/bun` owns the authenticated local HTTP host. Repository work, terminals and language servers run in the workspace backend.
 
+## Chat
+
+Chat closes when a prompt is requested locally, and the submitted text moves into
+its transcript entry without waiting for server admission. Reduced motion skips
+the animation. A later server receipt preserves a newly opened composer and draft.
+
 ## Coding evidence
 
 `apps/app/src/mainview/cards/CodingPlan.ts` derives the coding plan and outcome from recorded run evidence. The journal and persisted cursor remain authoritative.

@@ -1450,7 +1450,11 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           collections.sessions.update(SESSION_ID, (draft) => {
             const queued = draft.queuedPrompts?.some(item => item.id === transition.turnId)
             if (queued) draft.queuedPrompts = [...PromptQueue.remove(draft.queuedPrompts ?? [], transition.turnId)]
-            else if (!transition.preserveDraft) draft.draft = ""
+            else if (!transition.preserveDraft) {
+              draft.draft = ""
+              draft.paletteOpen = false
+              draft.paletteActionsRef = null
+            }
             draft.phase = "responding"
             // The turn belongs to the conversation it was asked in, whatever tab is active later.
             draft.turnTabId = conversationTabId ?? null
@@ -2222,7 +2226,11 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           collections.sessions.update(SESSION_ID, draft => {
             const rows = draft.sharedPrompts ?? []
             draft.sharedPrompts = [...rows.filter(row => row.id !== transition.request.id), transition.request]
-            if (transition.clearDraft) draft.draft = ""
+            if (transition.clearDraft) {
+              draft.draft = ""
+              draft.paletteOpen = false
+              draft.paletteActionsRef = null
+            }
           })
           break
 

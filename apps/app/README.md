@@ -35,6 +35,8 @@ They appear after 300 ms and stay running through launch and execution.
 The embedded run card retains the output.
 
 Enter submits or steers; Alt+Enter (or Queue) adds a FIFO follow-up.
+An accepted local prompt closes Chat immediately and animates the text into the
+transcript, without waiting for server admission. Reduced motion skips the animation.
 Alt+Up restores queued prompts to the editor. Items can also be edited or removed.
 The queue persists within its repository, workspace and conversation branch;
 Stop, failure or an interrupted reload pauses it until Resume.

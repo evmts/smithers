@@ -44,7 +44,9 @@ for (const stop of [false, true]) {
     await page.getByTestId("composer-send").click()
     await expect(page.locator('[data-shared-turn="button-turn"]')).toContainText(prompt)
     await expect(input).toHaveValue("")
+    await expect(input).toBeHidden()
     if (stop) {
+      await page.getByRole("button", { name: "Chat", exact: true }).click()
       const button = page.locator(".sui-chat-composer-stop")
       await expect(button).toBeVisible()
       await button.click()
