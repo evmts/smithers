@@ -118,8 +118,12 @@ rules to behavior that applies throughout their directory trees.
   on that install, and `issue-sweep` stops pushing straight to `main` (M-31).
   GitHub keeps `main`, issues, pull requests, reviews and checks (M-22). Do not
   build a parallel GitHub Actions factory.
-- Land and push work on `main`. Temporary worktrees are for one change and are
-  removed after landing; no permanent integration branches or history-rewrite lanes.
+- Commit and push repository maintenance directly to `main` with `jj`; do not
+  open PRs for maintenance (Will, 2026-10-13). This overrides PR-only landing
+  and agent `main` movement restrictions for source maintenance; the product's
+  TODO flow still follows its own contract. Temporary workspaces are for one
+  change and are removed after landing; no permanent integration branches or
+  history-rewrite lanes.
 - Reuse or create a GitHub issue for every actionable TODO, bug, blocker, or
   deferred requirement. Reconcile stale issues against evidence; never close an
   issue merely because code exists or a launch request was accepted.
