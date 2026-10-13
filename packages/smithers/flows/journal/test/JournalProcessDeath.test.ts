@@ -2,7 +2,7 @@
 import { layer as writerLayer } from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Effect, Layer, Option } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { spawn } from "node:child_process"
 import { existsSync } from "node:fs"
 import { mkdtemp, rm } from "node:fs/promises"

@@ -1,7 +1,7 @@
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Effect, Layer } from "effect"
-import type * as SqlClient from "effect/unstable/sql/SqlClient"
+import type * as SqlClient from "effect/sql/SqlClient"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"

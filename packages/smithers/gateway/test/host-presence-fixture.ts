@@ -2,8 +2,8 @@
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import * as ControlError from "@smthrs/control/ControlError"
 import { Effect, Layer } from "effect"
-import { HttpRouter, HttpServer } from "effect/unstable/http"
-import { RpcSerialization } from "effect/unstable/rpc"
+import { HttpRouter, HttpServer } from "effect/http"
+import { RpcSerialization } from "effect/rpc"
 import { createServer } from "node:http"
 import * as HostBranchPresence from "../src/HostBranchPresence.ts"
 const server = HttpRouter.serve(

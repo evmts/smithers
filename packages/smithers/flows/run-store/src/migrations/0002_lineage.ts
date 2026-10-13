@@ -18,7 +18,7 @@
 
 import * as Dialect from "@smthrs/database/Dialect"
 import * as Effect from "effect/Effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 
 /**
  * Adds `lineage_id` and `round_ordinal` to `flows_runs` and indexes the pair.

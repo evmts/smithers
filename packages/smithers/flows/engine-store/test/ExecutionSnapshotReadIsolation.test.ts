@@ -1,6 +1,6 @@
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Deferred, Effect, Fiber } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { expect, it } from "vitest"
 import { transaction } from "../src/internal/ExecutionSnapshotRead.ts"
 

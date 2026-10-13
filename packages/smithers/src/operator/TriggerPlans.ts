@@ -10,7 +10,7 @@ import { DurableWriter } from "@smthrs/database/DurableWriter"
 import * as Scheduler from "@smthrs/triggers/Scheduler"
 import { TriggerError } from "@smthrs/triggers/TriggerError"
 import { Effect, Layer, Schema } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { databaseLayer } from "./Store.ts"
 
 const prefix = "trigger-plan:"

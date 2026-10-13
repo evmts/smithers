@@ -6,10 +6,10 @@
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import type * as PlatformError from "effect/PlatformError"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { type ChildProcessHandle, makeHandle } from "effect/process/ChildProcessSpawner"
 import type * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { type ChildProcessHandle, makeHandle } from "effect/unstable/process/ChildProcessSpawner"
 
 type Spawn = (
   command: ChildProcess.StandardCommand

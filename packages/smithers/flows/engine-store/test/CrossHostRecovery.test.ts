@@ -11,7 +11,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Interpreter } from "@smthrs/flow"
 import { Effect } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
 import { once } from "node:events"
 import { existsSync, readFileSync } from "node:fs"

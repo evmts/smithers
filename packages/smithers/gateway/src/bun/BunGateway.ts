@@ -4,8 +4,8 @@
 
 import * as BunHttpServer from "@effect/platform-bun/BunHttpServer"
 import { Cause, Effect, Layer } from "effect"
-import type { HttpServer } from "effect/unstable/http/HttpServer"
-import type { ServeError } from "effect/unstable/http/HttpServerError"
+import type { HttpServer } from "effect/http/HttpServer"
+import type { ServeError } from "effect/http/HttpServerError"
 import { GatewayError } from "../GatewayError.ts"
 import type * as GatewayServer from "../GatewayServer.ts"
 import * as NativeGateway from "../internal/NativeGateway.ts"

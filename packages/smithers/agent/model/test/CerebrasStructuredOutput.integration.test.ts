@@ -12,7 +12,7 @@
  * instead of a bare skipped count that reads the same as covered work.
  */
 import { Effect, Layer, Redacted, Result, Schema, Stream } from "effect"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import type { TestContext } from "vitest"
 import { describe, expect, it } from "vitest"
 import * as ModelEvent from "../src/ModelEvent.ts"

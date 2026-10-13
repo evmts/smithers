@@ -1064,7 +1064,7 @@ export const make = (
                 // work; charging it under `key` would mark every later retry
                 // paid and bypass admission. Allocate before dispatch, and keep
                 // the identity fixed through accounting's transaction retries.
-                const receipt = yield* crypto.randomUUIDv4.pipe(
+                const receipt = yield* crypto.randomUUIDv4().pipe(
                   Effect.mapError((cause) => engineFailed("Could not allocate a model usage receipt", cause))
                 )
                 return yield* recordModelStep(
@@ -1238,7 +1238,7 @@ export const make = (
               // What this execution's evaluator readings paid is charged under
               // a receipt of its own, as an unsealed model invocation is: an
               // execution that re-runs after a crash paid again (#3010).
-              const receipt = yield* crypto.randomUUIDv4.pipe(
+              const receipt = yield* crypto.randomUUIDv4().pipe(
                 Effect.mapError((cause) => engineFailed("Could not allocate a call reading receipt", cause))
               )
               const readings = CallReadings.of({

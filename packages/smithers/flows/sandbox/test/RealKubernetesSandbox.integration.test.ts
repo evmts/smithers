@@ -1,7 +1,7 @@
 import { NodeChildProcessSpawner, NodeFileSystem } from "@effect/platform-node"
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Layer, Path, Stream } from "effect"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { spawnSync } from "node:child_process"
 import { afterAll, beforeAll } from "vitest"
 import * as KubernetesSandbox from "../src/KubernetesSandbox/index.ts"

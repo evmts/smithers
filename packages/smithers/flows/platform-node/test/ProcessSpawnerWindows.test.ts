@@ -1,7 +1,7 @@
 import * as ContainedSpawner from "@smthrs/kernel/ContainedSpawner"
 import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
 import { Effect, Layer } from "effect"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { expect, it, vi } from "vitest"
 
 it("installs the prepared Windows owner adapter with a contained spawner", async () => {

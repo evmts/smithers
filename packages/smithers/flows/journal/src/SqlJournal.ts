@@ -34,9 +34,9 @@ import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
+import * as SqlClient from "effect/sql/SqlClient"
+import type * as SqlError from "effect/sql/SqlError"
 import * as Stream from "effect/Stream"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
-import type * as SqlError from "effect/unstable/sql/SqlError"
 import { Consensus } from "./Consensus.ts"
 import { JournalInternalFault } from "./internal/JournalInternalFault.ts"
 import {
@@ -2637,7 +2637,7 @@ export const make = (
               ...(activeOptions.afterSequence === undefined ? {} : { afterSequence: activeOptions.afterSequence })
             }).pipe(Effect.andThen(Effect.succeed(
               stream(activeOptions).pipe(
-                Stream.scanEffect(activeProjection.initial, (state, entry) =>
+                Stream.scanEffect(() => activeProjection.initial, (state, entry) =>
                   Effect.suspend(() => activeProjection.reduce(state, entry)).pipe(
                     Effect.catchCause((cause) =>
                       Cause.hasInterruptsOnly(cause)

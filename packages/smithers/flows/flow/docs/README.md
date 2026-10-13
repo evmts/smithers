@@ -122,7 +122,7 @@ program.
 
 ## Where to go next
 
-- [Installation](./installation.md): the pinned `effect` version, the subpath
+- [Installation](./installation.md): the `effect` range, the subpath
   exports, and the packages a runnable composition adds.
 - [Quickstart](./quickstart.md): the same program end to end, including what
   happens on the second run.

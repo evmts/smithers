@@ -9,7 +9,7 @@
  */
 import * as BrowserJj from "@smthrs/jj/browser/BrowserJj"
 import { Effect, FileSystem, Layer, Path, PlatformError, Sink, Stream } from "effect"
-import { ChildProcessSpawner, make as makeSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
 import * as CommandLine from "../../src/CommandLine.ts"
 import * as HttpClient from "../../src/HttpClient.ts"
 import { runHostContract } from "./HostContract.ts"

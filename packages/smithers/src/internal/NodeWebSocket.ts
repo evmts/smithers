@@ -4,7 +4,7 @@
  */
 
 import { NodeWS } from "@effect/platform-node/NodeSocket"
-import type * as Socket from "effect/unstable/socket/Socket"
+import type * as Socket from "effect/socket/Socket"
 
 /**
  * Constructs the transport used by the CLI and its real-socket fault harness.

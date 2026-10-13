@@ -1,7 +1,7 @@
 /** Real child stores use the matrix backend, with an isolated identity per journal. */
 import { dropSchema } from "@smthrs/database/test/TestDatabase"
 import { Effect } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { randomUUID } from "node:crypto"
 import { join } from "node:path"
 import * as TestStores from "../../src/test/TestStores.ts"

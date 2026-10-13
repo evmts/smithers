@@ -28,7 +28,7 @@ whole composition.
 ## Install
 
 ```bash
-npm install @smthrs/flows@next effect@4.0.0-rc.115
+npm install @smthrs/flows@next effect
 ```
 
 That line is all a Node program needs. [Installation](./installation.md) covers

@@ -1,15 +1,15 @@
 import { afterAll, describe, expect, it } from "@effect/vitest"
 import { Effect, Exit, Fiber, PlatformError, Sink, Stream } from "effect"
-import * as Scope from "effect/Scope"
-import { TestClock } from "effect/testing"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
+import * as ChildProcess from "effect/process/ChildProcess"
 import {
   ChildProcessSpawner,
   ExitCode,
   make as makeSpawner,
   makeHandle,
   ProcessId
-} from "effect/unstable/process/ChildProcessSpawner"
+} from "effect/process/ChildProcessSpawner"
+import * as Scope from "effect/Scope"
+import { TestClock } from "effect/testing"
 import { chmodSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"

@@ -7,7 +7,7 @@
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import type { Work } from "../Sandbox/Work.ts"
 import { loadHostAdapter } from "./HostAdapter.ts"
 import { Conflicted, Merged, MergeError, type Outcome } from "./Outcome.ts"

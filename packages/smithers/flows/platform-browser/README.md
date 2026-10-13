@@ -2,9 +2,9 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact
-`4.0.0-rc.115` peer dependency. Keep the application on that version so
-all Smithers packages share one Effect runtime.
+This package declares `effect` as a `^4.0.4` peer dependency. Install one
+`effect` release in that range so all Smithers packages share one Effect
+runtime.
 
 **Documentation:** https://platform-browser.smithers.sh
 
@@ -25,7 +25,7 @@ no vendor code this package picked for you.
 
 Not on npm yet; install it from a source checkout as [Installation](docs/installation.md#install-the-package) describes.
 
-`effect` is a peer dependency pinned at exactly `4.0.0-rc.115`. The services
+`effect` is a peer dependency in the range `^4.0.4`. The services
 these adapters implement live in Effect 4, so Effect 3 does not satisfy it, and
 two copies of `effect` in one program are two sets of service tags.
 
@@ -43,8 +43,8 @@ import { configureSingle, fs } from "@zenfs/core"
 import { IndexedDB } from "@zenfs/dom"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { Bash } from "just-bash"
 
 await configureSingle({ backend: IndexedDB })

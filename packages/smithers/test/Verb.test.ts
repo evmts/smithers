@@ -123,7 +123,7 @@ describe("the shipped surface", () => {
     // Appendix B.6 is an install allowlist; callable library verbs need not be discovered.
     const { Cli } = await import("incur")
     const canonical = [...Cli.toCommands.get(makeCli({ environment: {} }) as never)!.keys()]
-    // `completions` is `effect/unstable/cli`'s own `--completions <shell>`
+    // `completions` is `effect/cli`'s own `--completions <shell>`
     // global flag, not a subcommand of ours.
     expect(Verb.subcommands.map((verb) => verb.name)).toEqual(
       Verb.shipped.filter((verb) => verb.name !== "completions").map((verb) => verb.name)

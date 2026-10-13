@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- A sealed action's step key no longer moves with the installed `effect` release: its declaration digest hashes `Node.representationIdentity` instead of `SchemaRepresentation.toJson`. A declaration whose success or error schema carries `Schema.brand` re-keys once. ([#3839](https://github.com/smithersai/smithers/issues/3839)).
+
 - Action retry exhaustion and expiration preserve the final declared failure
   for typed recovery. Retry docs now describe this behavior and the action
   span annotations `retry.stopReason` and `retry.attempt`.

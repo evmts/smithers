@@ -35,8 +35,8 @@ import { SyncRpcs } from "@smthrs/sync/SyncRpcs"
 import * as SyncServer from "@smthrs/sync/SyncServer"
 import { Effect, Layer, Option, Schema, Stream, type Types } from "effect"
 import * as ByteSize from "effect/ByteSize"
-import { Headers, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import { RpcSerialization, RpcServer } from "effect/unstable/rpc"
+import { Headers, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { RpcSerialization, RpcServer } from "effect/rpc"
 import { GatewayError, settingRefusal } from "./GatewayError.ts"
 import { GatewayRpcs } from "./GatewayRpcs.ts"
 import * as GatewaySchema from "./GatewaySchema.ts"
@@ -758,7 +758,7 @@ export const carriesRpcRequest = (
  * Enforces local Host/Origin policy and edge authentication before reading a
  * body or upgrading a socket, then validates RPC body size and framing.
  *
- * `effect/unstable/rpc` hands every decoded message to the server loop, and a
+ * `effect/rpc` hands every decoded message to the server loop, and a
  * body that decodes to something else — `{}`, `[]`, prose, nothing at all —
  * reached it as a message with no tag and died there, so the gateway answered
  * `500 Internal Server Error` with an empty body (release validation). That is the

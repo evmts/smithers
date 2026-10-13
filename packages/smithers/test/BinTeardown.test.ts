@@ -9,7 +9,7 @@
  * against the test runner's own arguments.
  */
 import { Cause, Effect, Exit } from "effect"
-import { CliError as EffectCliError } from "effect/unstable/cli"
+import { CliError as EffectCliError } from "effect/cli"
 import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"

@@ -5,7 +5,6 @@ import {
   Cause,
   Deferred,
   Effect,
-  Encoding,
   Exit,
   Fiber,
   FileSystem as EffectFileSystem,
@@ -16,6 +15,7 @@ import {
   Stream
 } from "effect"
 import * as ByteSize from "effect/ByteSize"
+import { Base64 } from "effect/encoding"
 import * as FileSystem from "../src/FileSystem.ts"
 import { emptyPolicy as closedPolicy } from "../src/GrantStore.ts"
 import { GrantStore } from "../src/GrantStore.ts"
@@ -1279,7 +1279,7 @@ describe("FileSystem binary writes", () => {
       yield* host[FileSystem.AtomicFileSystemTypeId].execute({
         operation: "writeFile",
         path: "/workspace/artifact.bin",
-        data: Encoding.encodeBase64(source)
+        data: Base64.encode(source)
       })
       expect(written).toEqual({ path: "/workspace/artifact.bin", data: source })
     })
@@ -1310,7 +1310,7 @@ describe("FileSystem binary writes", () => {
         expect(requests[0]).toMatchObject({
           operation: "writeFile",
           path: "/workspace/artifact.bin",
-          data: Encoding.encodeBase64(source)
+          data: Base64.encode(source)
         })
       }),
       host,

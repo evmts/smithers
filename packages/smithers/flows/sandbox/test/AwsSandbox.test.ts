@@ -1,14 +1,9 @@
 import { NodeChildProcessSpawner, NodeFileSystem } from "@effect/platform-node"
 import { afterAll, describe, expect, it } from "@effect/vitest"
 import { Effect, Exit, Layer, Logger, Path, PlatformError, Sink, Stream } from "effect"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner, ExitCode, make as makeSpawner, makeHandle } from "effect/process/ChildProcessSpawner"
 import * as Scope from "effect/Scope"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import {
-  ChildProcessSpawner,
-  ExitCode,
-  make as makeSpawner,
-  makeHandle
-} from "effect/unstable/process/ChildProcessSpawner"
 import { chmodSync, existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"

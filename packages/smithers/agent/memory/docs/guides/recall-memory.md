@@ -75,7 +75,7 @@ import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as RecallSemantic from "@smthrs/memory/RecallSemantic"
 import * as TestMemory from "@smthrs/memory/test/TestMemory"
 import { Effect } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 
 const program = Effect.gen(function*() {
   const sql = yield* Effect.service(SqlClient.SqlClient)

@@ -15,8 +15,8 @@ CommonJS with TypeScript declarations. Its only runtime dependencies are
 Composing a journal layer imports from both of them by name, so install them as
 direct dependencies rather than relying on them being hoisted.
 
-`effect` is a peer dependency pinned at `4.0.0-rc.115`. Install exactly that
-version: two copies of `effect` in one program are two sets of service tags, so
+`effect` is a peer dependency in the range `^4.0.4`. Install one `effect` in
+that range: two copies of `effect` in one program are two sets of service tags, so
 a journal layer built against one copy cannot be provided to a program holding
 the other, and the mismatch shows up as a missing service rather than as a
 version error.
@@ -29,7 +29,7 @@ On Node, `NodeDatabase.layer` provides the client and `DurableWriter.layer()`
 provides the writer. This composition selects the optional Node SQLite driver:
 
 ```bash
-pnpm add @effect/sql-sqlite-node@4.0.0-rc.115
+pnpm add @effect/sql-sqlite-node
 ```
 
 ```ts

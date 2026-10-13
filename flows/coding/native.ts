@@ -5,7 +5,7 @@ import { sourceRefusal } from "./source-refusal.ts"
 import * as Digest from "@smthrs/core/Digest"
 import { Action } from "@smthrs/flow"
 import { Cause, Context, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
+import { ChildProcess, ChildProcessSpawner } from "effect/process"
 
 import { helperPath } from "./helper.ts"
 import {

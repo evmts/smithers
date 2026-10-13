@@ -63,7 +63,7 @@ that the acquired session supports; container sessions support both below.
 
 ```ts
 import { ContainerSandbox, Sandbox, SandboxSupervision } from "@smthrs/sandbox"
-import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 
 // Supply the host spawner that runs the container CLI.
 declare const hostSpawner: ChildProcessSpawner["Service"]

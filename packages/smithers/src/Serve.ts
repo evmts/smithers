@@ -26,7 +26,7 @@
 import type * as GatewayServer from "@smthrs/gateway/GatewayServer"
 import type * as NodeGateway from "@smthrs/gateway/node/NodeGateway"
 import { Context, Effect, Option } from "effect"
-import type { ServeError } from "effect/unstable/http/HttpServerError"
+import type { ServeError } from "effect/http/HttpServerError"
 import { createHash } from "node:crypto"
 import { resolve } from "node:path"
 import * as CliError from "./CliError.ts"

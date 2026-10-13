@@ -2,7 +2,7 @@
 import { Preconditions, type VersionedFileSystem } from "@smthrs/std/Read"
 import { StdError } from "@smthrs/std/StdError"
 import { Cause, Effect, type FileSystem, PlatformError, Sink, Stream } from "effect"
-import { ChildProcess, type ChildProcessSpawner } from "effect/unstable/process"
+import { ChildProcess, type ChildProcessSpawner } from "effect/process"
 import { createHash } from "node:crypto"
 import { isAbsolute, relative, resolve, sep } from "node:path"
 import type { NativeOptions } from "./native.ts"

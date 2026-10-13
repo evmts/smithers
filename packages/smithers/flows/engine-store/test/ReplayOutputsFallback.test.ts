@@ -26,7 +26,7 @@ import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import { type Ownership, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import * as Effect from "effect/Effect"
-import * as Encoding from "effect/Encoding"
+import * as Base64 from "effect/encoding/Base64"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
@@ -138,7 +138,7 @@ const unconfined = (hostWrites: Array<string>) => {
               path: "dist/manifest.json",
               digest: sha256(bytes),
               sizeBytes: bytes.length,
-              content: Encoding.encodeBase64(bytes)
+              content: Base64.encode(bytes)
             }]
           },
           diffIdentity: "replay-fallback-unconfined",

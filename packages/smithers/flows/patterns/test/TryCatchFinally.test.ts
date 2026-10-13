@@ -415,4 +415,35 @@ describe("TryCatchFinally", () => {
 
       expect(finalized).toBe(1)
     }))
+
+  it.effect("keeps a finalizer failure on an interrupted body, even under a caller's recovery", () =>
+    Effect.gen(function*() {
+      // effect@4.0.4 drops a typed failure from an interrupted fiber's cause
+      // when the unwind passes a recovery handler (rc.115 kept it), which
+      // would leave no record that cleanup failed. A defect survives.
+      const fiber = yield* Effect.forkChild(
+        Effect.catch(
+          TryCatchFinally.run("request", {
+            try: () => Effect.never,
+            finally: () => Effect.fail("lock still held")
+          }),
+          () => Effect.succeed("recovered")
+        ),
+        { startImmediately: true }
+      )
+      yield* Fiber.interrupt(fiber)
+      const exit = yield* Fiber.await(fiber)
+
+      expect(Exit.hasInterrupts(exit)).toBe(true)
+      const defects = Exit.isFailure(exit)
+        ? exit.cause.reasons.flatMap((reason) => reason._tag === "Die" ? [reason.defect] : [])
+        : []
+      expect(defects).toHaveLength(1)
+      expect(defects[0]).toBeInstanceOf(PatternError)
+      expect((defects[0] as PatternError).code).toBe("finalizer_failed")
+      expect((defects[0] as PatternError).message).toBe(
+        "The TryCatchFinally finalizer failed after the protected body was interrupted"
+      )
+      expect((defects[0] as PatternError).cause).toBe("lock still held")
+    }))
 })

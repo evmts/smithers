@@ -33,6 +33,7 @@ import type { Action, FlowRuntime } from "@smthrs/flow"
 import * as BundlerTarget from "@smthrs/targets/BundlerTarget"
 import * as Exec from "@smthrs/targets/Exec"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import type * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import { randomUUID } from "node:crypto"
@@ -405,6 +406,22 @@ const assertSortedUnique = (values: ReadonlyArray<string>, what: string): void =
 const failureMessage = (cause: unknown): string => cause instanceof Error ? cause.message : String(cause)
 
 /**
+ * Removes one call's scratch tree. Effect removes a typed failure from an
+ * interrupted fiber's cause once the unwind passes a recovery handler, so a
+ * removal that fails during a stop leaves as a defect instead of vanishing.
+ */
+const releaseScratch = (
+  prepared: PreparedRun,
+  exit: Exit.Exit<unknown, unknown>
+): Effect.Effect<void, Exec.ExecError> => {
+  const removal = Effect.tryPromise({
+    try: () => Fs.rm(prepared.directory, { recursive: true, force: true }),
+    catch: (cause) => execError(prepared.argv, failureMessage(cause))
+  })
+  return Exit.hasInterrupts(exit) ? Effect.orDie(removal) : removal
+}
+
+/**
  * Resolves one module graph by running the workspace's own bundler.
  *
  * The settled result is validated row by row and its {@link
@@ -463,11 +480,7 @@ export const resolveGraph = (
           })
         )
       ),
-    (prepared) =>
-      Effect.tryPromise({
-        try: () => Fs.rm(prepared.directory, { recursive: true, force: true }),
-        catch: (cause) => execError(prepared.argv, failureMessage(cause))
-      })
+    releaseScratch
   )
 
 /**
@@ -521,11 +534,7 @@ export const runBuild = (
           })
         )
       ),
-    (prepared) =>
-      Effect.tryPromise({
-        try: () => Fs.rm(prepared.directory, { recursive: true, force: true }),
-        catch: (cause) => execError(prepared.argv, failureMessage(cause))
-      })
+    releaseScratch
   )
 
 /**

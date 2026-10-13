@@ -1,5 +1,5 @@
 import { Effect, Layer } from "effect"
-import { RpcTest } from "effect/unstable/rpc"
+import { RpcTest } from "effect/rpc"
 import { describe, expect, it, vi } from "vitest"
 import { Unauthorized } from "../src/ControlError.ts"
 import { anyAuthenticator, bearerAuthenticator, ControlRpcs, layerAuth } from "../src/ControlRpcs.ts"

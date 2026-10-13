@@ -14,8 +14,8 @@ import * as NodeServices from "@effect/platform-node/NodeServices"
 import { Fault } from "@smthrs/flow"
 import { Unreachable } from "@smthrs/kernel"
 import { Effect, Schema, Stream } from "effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { homedir } from "node:os"
 
 export class HostFailed extends Schema.TaggedError<HostFailed>()("issue-sweep/HostFailed", {

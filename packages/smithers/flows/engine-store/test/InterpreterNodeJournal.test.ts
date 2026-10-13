@@ -219,11 +219,17 @@ it("holds one row per node across a park and a resume", async () => {
 
     expect(observed.parked).toBe("suspended")
     expect(observed.status).toBe("completed")
-    // The walk that parked already announced four of the five nodes. The
-    // resumed walk re-derives every one of them, so without a replay-stable
-    // identity the journal would hold nine schedules for a five-node graph.
+    // The walk that parked already announced the four nodes that lead to the
+    // ask. `bindPlanned` demands its continuation beside its producer, so the
+    // walk announces the doubling too when the ask's fiber yields before it
+    // parks, and where a fiber yields is the runtime's business: Effect 4.0.4
+    // counts fewer operations for the same work than rc.115 did, which moved
+    // that yield out of a write transaction and let the fifth row commit. The
+    // resumed walk re-derives every node either way, so without a
+    // replay-stable identity the journal would hold nine or ten schedules for
+    // a five-node graph.
     const scheduledDuringPark = observed.duringPark.filter((row) => row.eventType === "flows.engine.node-scheduled")
-    expect(scheduledDuringPark).toHaveLength(4)
+    expect(scheduledDuringPark.filter((row) => row.payload["action"] !== "node-journal/double")).toHaveLength(4)
     const scheduled = observed.afterResume.filter((row) => row.eventType === "flows.engine.node-scheduled")
     const settled = observed.afterResume.filter((row) => row.eventType === "flows.engine.node-settled")
     expect(scheduled).toHaveLength(5)

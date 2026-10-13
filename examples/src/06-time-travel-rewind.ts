@@ -16,7 +16,7 @@ import { SqlTimeTravelStore, TimeTravel } from "@smthrs/time-travel"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { durableEngine, requirements } from "./durable-layer.ts"
 import { parkRun } from "./park-run.ts"
 

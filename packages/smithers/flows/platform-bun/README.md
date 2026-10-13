@@ -2,10 +2,9 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect`, `@effect/platform-node`,
-`@effect/platform-node-shared`, and `@effect/platform-bun` as exact
-`4.0.0-rc.115` peer dependencies. Keep the application on that version so
-all Smithers packages share one Effect runtime.
+This package declares `effect` as a `^4.0.4` peer dependency. Install one
+`effect` release in that range so all Smithers packages share one Effect
+runtime.
 
 **Documentation:** https://platform-bun.smithers.sh
 
@@ -25,11 +24,11 @@ package is that object for a process running on Bun.
 
 Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
 
-`@smthrs/platform-node`, `@effect/platform-node`,
-`@effect/platform-node-shared`, `@effect/platform-bun`, and `effect` are
-required peers, exactly as `package.json` declares them. Package managers that
-resolve required peers install all five automatically; all Effect versions are
-exact.
+`@smthrs/platform-node` and `effect` are required peers, as `package.json`
+declares them, with `effect` in the range `^4.0.4`. Package managers that
+resolve required peers install both automatically. `@effect/platform-bun`,
+`@effect/platform-node` and `@effect/platform-node-shared` are bundled
+privately, built from `effect@4.0.4`.
 
 The filesystem slot spawns the `smithers-jj-export` native helper. From a
 source checkout, build it with:
@@ -47,8 +46,8 @@ searched. Windows is unsupported.
 ```ts
 import { BunHost } from "@smthrs/platform-bun"
 import { Effect } from "effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 
 const program = Effect.gen(function*() {
   const spawner = yield* ChildProcessSpawner

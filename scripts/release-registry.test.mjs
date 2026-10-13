@@ -11,7 +11,12 @@ test("loopback registry serves packed metadata and verified bytes, and nothing e
   const root = await mkdtemp(join(tmpdir(), "smithers-registry-test-"))
   let registry
   try {
-    const manifest = { name: "@smthrs/example", version: "1.0.0-rc.0", dependencies: { effect: "4.0.0-rc.115" } }
+    const manifest = {
+      name: "@smthrs/example",
+      version: "1.0.0-rc.0",
+      dependencies: { "@effect/sql-sqlite-node": "4.0.4" },
+      peerDependencies: { effect: "^4.0.4" }
+    }
     await mkdir(join(root, "package"))
     await writeFile(join(root, "package/package.json"), JSON.stringify(manifest))
     execFileSync("tar", ["-czf", join(root, "example.tgz"), "-C", root, "package"])
@@ -21,6 +26,8 @@ test("loopback registry serves packed metadata and verified bytes, and nothing e
     const metadata = await response.json()
     const version = metadata.versions[manifest.version]
     assert.deepEqual(version.dependencies, manifest.dependencies)
+    // The range reaches the installer as written: it decides which Effect is accepted.
+    assert.deepEqual(version.peerDependencies, manifest.peerDependencies)
     const tarball = await fetch(version.dist.tarball)
     const bytes = Buffer.from(await tarball.arrayBuffer())
     assert.deepEqual(bytes, await readFile(join(root, "example.tgz")))

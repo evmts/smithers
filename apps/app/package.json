@@ -65,7 +65,7 @@
     "@tanstack/react-db": "0.3.7",
     "@xyflow/react": "^12.11.6",
     "dagre": "^0.8.5",
-    "effect": "4.0.0-rc.115",
+    "effect": "4.0.4",
     "lucide-react": "1.40.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
@@ -79,7 +79,7 @@
     "@smthrs/cli": "workspace:*"
   },
   "devDependencies": {
-    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/platform-node": "4.0.4",
     "@happy-dom/global-registrator": "^20.13.2",
     "@playwright/test": "1.62.1",
     "@smthrs/control": "workspace:*",

@@ -4,8 +4,8 @@
  * The host surface is a closed set of service tags: `FileSystem`, `Path`,
  * `ChildProcessSpawner`, `Jj`, and `HttpClient`. A program written against the
  * tags runs on any bundle that provides them. Note that `ChildProcessSpawner`
- * and `HttpClient` are Effect's own tags from `effect/unstable/process` and
- * `effect/unstable/http`. Smithers provides implementations of them rather
+ * and `HttpClient` are Effect's own tags from `effect/process` and
+ * `effect/http`. Smithers provides implementations of them rather
  * than a wrapper around them.
  *
  * This example runs one program on two bundles:
@@ -29,8 +29,8 @@ import * as TestHost from "@smthrs/testing/TestHost"
 import * as NodeHost from "@smthrs/platform-node/NodeHost"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 
 export interface Summary {
   readonly scriptedRead: string

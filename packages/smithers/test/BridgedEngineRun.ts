@@ -1,5 +1,5 @@
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 /**
  * The gateway read path over a run the engine executes AND reports.
  *

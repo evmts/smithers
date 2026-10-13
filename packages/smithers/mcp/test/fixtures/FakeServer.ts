@@ -10,7 +10,7 @@
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import { Effect, Queue, Ref, Sink, Stream } from "effect"
 import type { Scope } from "effect"
-import { makeHandle, ProcessId } from "effect/unstable/process/ChildProcessSpawner"
+import { makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
 import * as Rpc from "../../src/internal/Rpc.ts"
 import { fakeProcess, provideSpawner } from "./FakeProcess.ts"
 

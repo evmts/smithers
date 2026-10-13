@@ -34,7 +34,7 @@ import { join } from "node:path";
 import { Effect, Layer } from "effect";
 import * as NativeEquipment from "../../packages/smithers/src/internal/NativeEquipment.ts";
 import * as RequestExecutor from "@smthrs/model/RequestExecutor";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
 
 /** Live evals use the CLI's normal credential/alias resolver, rather than review-specific provider code. */
 const liveSeats = () => NativeEquipment.layerSeatResolver(process.env).pipe(

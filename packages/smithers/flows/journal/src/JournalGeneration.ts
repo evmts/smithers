@@ -6,7 +6,7 @@
 
 import * as Dialect from "@smthrs/database/Dialect"
 import * as Effect from "effect/Effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 
 /**
  * Installs the generation table idempotently. Both the SQL journal and time

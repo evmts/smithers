@@ -1,7 +1,7 @@
 import { expect, it } from "@effect/vitest"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Effect } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"

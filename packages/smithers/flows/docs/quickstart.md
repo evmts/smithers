@@ -21,15 +21,16 @@ it something to read:
 ```bash
 mkdir flows-quickstart && cd flows-quickstart
 npm init -y && npm pkg set type=module
-npm install @smthrs/flows@next effect@4.0.0-rc.115
+npm install @smthrs/flows@next effect
 mkdir -p workspace && echo "the note" > workspace/note.txt
 ```
 
 The project is `"type": "module"` because the program ends in a top-level
 `await`. `@smthrs/flows` installs the Node host and its SQLite driver. `effect`
-is on the line because the program imports it directly; it must be the version
-`@smthrs/flows` names as its peer. With pnpm, run `pnpm add` with the same two
-packages. [Installation](./installation.md) has the requirements in full.
+is on the line because the program imports it directly. `@smthrs/flows` accepts
+any `effect` in `^4.0.4`, so the line names no version and a project that
+already has one in that range keeps it. With pnpm, run `pnpm add` with the same
+two packages. [Installation](./installation.md) has the requirements in full.
 
 ## Declare the action and the flow
 

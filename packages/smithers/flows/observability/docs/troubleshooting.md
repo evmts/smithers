@@ -38,8 +38,8 @@ name and version of at most 1,024 UTF-16 code units, at most 256 attributes,
 attribute values that are strings of at most 65,536 code units, finite numbers,
 booleans, or homogeneous arrays of those with at most 256 elements. The complete
 resource must fit 128 KiB of OTLP JSON, including keys, identity, the SDK-added
-`telemetry.sdk.name` and `telemetry.sdk.language` fields, wrappers,
-escaping and UTF-8. Many individually valid values can exceed this budget;
+`telemetry.sdk.name`, `telemetry.sdk.language` and `telemetry.sdk.version`
+fields, wrappers, escaping and UTF-8. Many individually valid values can exceed this budget;
 remove or shorten attributes. The refusal names `attributes`, the measured
 lower bound in bytes and the limit, without retaining values. NUL and unpaired surrogates are
 refused anywhere. An empty `serviceName` is the common one, usually an

@@ -25,10 +25,10 @@
  */
 
 import { Clock, Duration, Effect, Exit, HashMap, Layer, Option, SynchronizedRef } from "effect"
-import * as Headers from "effect/unstable/http/Headers"
-import * as HttpServer from "effect/unstable/http/HttpServer"
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest"
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
+import * as Headers from "effect/http/Headers"
+import * as HttpServer from "effect/http/HttpServer"
+import * as HttpServerRequest from "effect/http/HttpServerRequest"
+import * as HttpServerResponse from "effect/http/HttpServerResponse"
 import { timingSafeEqual } from "node:crypto"
 import { type IntegrationError, isIntegrationError } from "../core/IntegrationError.ts"
 import { DEFAULT_API_BASE_URL, DEFAULT_REQUEST_TIMEOUT } from "./Config.ts"

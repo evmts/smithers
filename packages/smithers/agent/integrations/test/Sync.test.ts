@@ -1,7 +1,7 @@
 import * as Dialect from "@smthrs/database/Dialect"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Effect, Layer, Option } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 import { IntegrationError } from "../src/core/IntegrationError.ts"
 import { layerMemory, SourceStore } from "../src/core/SourceStore.ts"

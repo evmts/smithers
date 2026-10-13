@@ -79,8 +79,8 @@ import * as CacheStore from "@smthrs/step-cache/CacheStore"
 import * as CombinedCacheStore from "@smthrs/step-cache/CombinedCacheStore"
 import * as Migrations from "@smthrs/step-cache/Migrations"
 import * as RemoteCacheStore from "@smthrs/step-cache/RemoteCacheStore"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as Layer from "effect/Layer"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
 
 declare const token: string
 

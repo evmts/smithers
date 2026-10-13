@@ -836,29 +836,33 @@ export const scan = (
     }
 
     // The root manifest's declaration is the pin the report names; every
-    // declaration is judged. Exactly one version, `4.0.0-rc.115`, is
-    // acceptable: a range resolves to whatever is newest on install day, a
-    // later prerelease is one this release was never built against, and two
-    // manifests that disagree install two Effects.
+    // declaration is judged against what a migrated project declares in that
+    // field. A field that installs `effect` carries the one version this
+    // release is tested on: a range there resolves to whatever is newest on
+    // install day, and two manifests that disagree install two Effects. A
+    // `peerDependencies` entry is satisfied by whoever consumes the package,
+    // so it carries the range every published `@smthrs/*` library accepts.
     const rootDeclaration = effectDeclarations.find((entry) => entry.file === "package.json")
     const effectPin = (rootDeclaration ?? effectDeclarations[0])?.version
     for (const declaration of effectDeclarations) {
-      if (declaration.version === Versions.effectVersion) continue
+      const expected = Versions.effectPinFor(declaration.field)
+      if (declaration.version === expected) continue
       warnings.push({
         code: "effect-pin-conflict",
         file: declaration.file,
-        message:
-          `${declaration.field}."effect" is "${declaration.version}"; Smithers 1.0 requires exactly ${Versions.effectVersion}`
+        message: `${declaration.field}."effect" is "${declaration.version}"; a migrated project declares ${expected}`
       })
     }
-    const distinctPins = [...new Set(effectDeclarations.map((entry) => entry.version))].sort()
+    // A peer installs nothing, so only the fields that install can disagree.
+    const installed = effectDeclarations.filter((entry) => entry.field !== "peerDependencies")
+    const distinctPins = [...new Set(installed.map((entry) => entry.version))].sort()
     if (distinctPins.length > 1) {
       warnings.push({
         code: "effect-pin-conflict",
-        file: rootDeclaration?.file ?? effectDeclarations[0]!.file,
+        file: (installed.find((entry) => entry.file === "package.json") ?? installed[0]!).file,
         message: `the manifests declare effect as ${
           distinctPins.map((version) => `"${version}"`).join(", ")
-        }; one version, ${Versions.effectVersion}, has to be declared everywhere`
+        }; one version, ${Versions.effectVersion}, has to be installed everywhere`
       })
     }
 
@@ -880,7 +884,7 @@ export const scan = (
           code: "effect-pin-conflict",
           file: lockfile,
           message:
-            `"${lockfile}" resolves effect to "${resolved}"; Smithers 1.0 requires exactly ${Versions.effectVersion}`
+            `"${lockfile}" resolves effect to "${resolved}"; a migrated project resolves ${Versions.effectVersion}`
         })
       }
     }

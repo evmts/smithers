@@ -13,8 +13,8 @@
  */
 
 import { Cause, Context, Effect, Exit, Layer, Option, Schema, Semaphore } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
-import * as SqlError from "effect/unstable/sql/SqlError"
+import * as SqlClient from "effect/sql/SqlClient"
+import * as SqlError from "effect/sql/SqlError"
 import * as CommitScope from "./internal/CommitScope.ts"
 import * as WriteRetry from "./internal/WriteRetry.ts"
 
@@ -263,9 +263,12 @@ export const make = (sql: SqlClient.SqlClient, options?: WriteRetryOptions | und
               )
             })
           ).pipe(
-            // Effect SQL puts COMMIT errors on the defect channel. Only a
-            // successful outer body can reach COMMIT; intentional body defects
-            // and nested savepoint failures keep their original channels.
+            // Effect SQL fails a rejected COMMIT with a typed `SqlError`, and
+            // with defects when the rollback that follows it fails too. Both
+            // are this write's SQL failure, so the defects return to the typed
+            // channel. Only a successful outer body can reach COMMIT;
+            // intentional body defects and nested savepoint failures keep
+            // their original channels.
             Effect.catchCause((cause) =>
               Effect.failCause(
                 !nested && bodySucceeded

@@ -37,9 +37,9 @@
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Ref from "effect/Ref"
-import * as Migrator from "effect/unstable/sql/Migrator"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
-import type { SqlError } from "effect/unstable/sql/SqlError"
+import * as Migrator from "effect/sql/Migrator"
+import * as SqlClient from "effect/sql/SqlClient"
+import type { SqlError } from "effect/sql/SqlError"
 import * as WriteRetry from "./internal/WriteRetry.ts"
 
 /**

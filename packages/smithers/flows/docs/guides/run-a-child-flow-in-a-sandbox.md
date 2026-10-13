@@ -158,7 +158,7 @@ the directory is created:
 import { Sandbox } from "@smthrs/flows"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 
 const makeProvider = Effect.gen(function*() {
   const fs = yield* FileSystem.FileSystem

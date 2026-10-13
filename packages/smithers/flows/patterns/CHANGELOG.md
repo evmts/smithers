@@ -11,6 +11,7 @@
 
 ### Fixed
 
+- A `TryCatchFinally` finalizer that fails after the protected body was interrupted now raises a defect `PatternError { code: "finalizer_failed" }`. `effect@4.0.4` discards a typed failure from an interrupted cause when a caller recovers, so the cleanup failure left no record. ([#3839](https://github.com/smithersai/smithers/issues/3839)).
 - `Burndown.round` no longer settles an item whose work, or whose round, was
   interrupted without a recorded operator cancel, such as a host whose lease
   lapsed. The item gets a non-final `requeued` row, its claim is released with

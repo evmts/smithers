@@ -7,7 +7,7 @@
 import * as Dialect from "@smthrs/database/Dialect"
 import { RunStoreError } from "@smthrs/run-store/RunStore"
 import { Effect, Schema } from "effect"
-import type * as SqlClient from "effect/unstable/sql/SqlClient"
+import type * as SqlClient from "effect/sql/SqlClient"
 import type { Batch, Snapshot } from "../ExecutionSnapshot.ts"
 import * as Read from "./ExecutionSnapshotRead.ts"
 

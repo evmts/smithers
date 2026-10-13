@@ -21,12 +21,12 @@
  */
 
 import * as Effect from "effect/Effect"
-import * as Encoding from "effect/Encoding"
+import * as Base64Url from "effect/encoding/Base64Url"
+import * as Headers from "effect/http/Headers"
 import * as Layer from "effect/Layer"
 import * as Result from "effect/Result"
+import * as RpcMiddleware from "effect/rpc/RpcMiddleware"
 import * as Schema from "effect/Schema"
-import * as Headers from "effect/unstable/http/Headers"
-import * as RpcMiddleware from "effect/unstable/rpc/RpcMiddleware"
 import { causeText } from "./internal/CauseText.ts"
 import * as shareSigner from "./internal/ShareSigner.ts"
 import { SyncError } from "./SyncError.ts"
@@ -65,7 +65,7 @@ export const encodeCapability = (
         cause: causeText(encoded.failure)
       })
     )
-    : Effect.succeed(Encoding.encodeBase64Url(JSON.stringify(encoded.success)))
+    : Effect.succeed(Base64Url.encode(JSON.stringify(encoded.success)))
 }
 
 /**
@@ -76,7 +76,7 @@ export const encodeCapability = (
  * @since 0.1.0
  */
 export const decodeCapability = (value: string): Effect.Effect<WorkspaceShare.WorkspaceCapability, SyncError> => {
-  const text = Encoding.decodeBase64UrlString(value)
+  const text = Base64Url.decodeString(value)
   if (Result.isFailure(text)) {
     return Effect.fail(denied("The workspace capability header is not a capability"))
   }

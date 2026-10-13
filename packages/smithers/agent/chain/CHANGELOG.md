@@ -47,6 +47,13 @@
 
 ### Fixed
 
+- Interrupting a run while a `settleOnInterrupt` call is settling still
+  reports a receipt the journal refused. Effect 4.0.4 removes a typed failure
+  from an interrupted fiber's cause once the unwind passes a recovery handler,
+  so the journal failure was dropped and the run ended as a plain
+  interruption. The failure now leaves the stop as a defect, so the exit
+  carries both the interruption and the `JournalError`.
+
 - The four bridge messages both runner bindings answer with were spelled out
   at every use site: `ctx.call input must be JSON-serializable` in four
   places, `the link was aborted` in three, and the call-name and

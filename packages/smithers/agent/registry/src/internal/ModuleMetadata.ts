@@ -5,6 +5,7 @@
  * @since 0.1.0
  */
 
+import * as Node from "@smthrs/plan/Node"
 import * as Option from "effect/Option"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
@@ -1039,7 +1040,7 @@ const payloadDocument = (source: string, payload: string | undefined): Schema.Js
     : undefined
   return schema === undefined
     ? undefined
-    : Schema.decodeUnknownSync(Schema.Json)(Schema.toJsonSchemaDocument(schema))
+    : Schema.decodeUnknownSync(Schema.Json)(Node.schemaIdentity(schema))
 }
 
 /**

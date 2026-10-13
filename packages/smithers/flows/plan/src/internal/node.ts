@@ -33,6 +33,7 @@ import * as Schema from "effect/Schema"
 import type { Node } from "../Node.ts"
 import type * as Planned from "../Planned.ts"
 import { jsonMirror } from "./JsonMirror.ts"
+import { schemaIdentity } from "./SchemaIdentity.ts"
 
 /**
  * The runtime type identifier every node carries.
@@ -753,7 +754,7 @@ export const catch_ = (subject: string, protectedAst: NodeAst, failure: NodeAst,
     ...(filter === undefined
       ? {}
       : {
-        filter: Schema.toJsonSchemaDocument(filter, { onExcessProperty: "error" }),
+        filter: schemaIdentity(filter, { onExcessProperty: "error" }),
         filterIdentity: filterIdentity(filter)
       })
   }

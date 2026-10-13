@@ -58,7 +58,7 @@ import {
 } from "effect"
 import * as ByteSize from "effect/ByteSize"
 import type * as Crypto from "effect/Crypto"
-import { ExitCode, makeHandle, ProcessId } from "effect/unstable/process/ChildProcessSpawner"
+import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
 import { readFile, writeFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"

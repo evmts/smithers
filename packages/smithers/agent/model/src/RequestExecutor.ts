@@ -18,11 +18,19 @@ import { decodePermissionError } from "@smthrs/capability"
 import type * as Permission from "@smthrs/capability/Permission"
 import * as Redaction from "@smthrs/journal/Redaction"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
+import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
-import * as Encoding from "effect/Encoding"
+import * as Base64 from "effect/encoding/Base64"
+import * as Base64Url from "effect/encoding/Base64Url"
+import * as Exit from "effect/Exit"
+import * as Headers from "effect/http/Headers"
+import * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientError from "effect/http/HttpClientError"
+import * as HttpClientRequest from "effect/http/HttpClientRequest"
+import type * as HttpClientResponse from "effect/http/HttpClientResponse"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schedule from "effect/Schedule"
@@ -30,10 +38,7 @@ import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
 import * as Stream from "effect/Stream"
-import * as Headers from "effect/unstable/http/Headers"
-import type * as HttpClientError from "effect/unstable/http/HttpClientError"
-import type * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
-import type * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
+import * as Tracer from "effect/Tracer"
 import * as Auth from "./Auth.ts"
 import { classifyHttpStatus } from "./HttpStatusClassifier.ts"
 import { ModelError } from "./ModelError.ts"
@@ -339,8 +344,8 @@ const providerFields = (body: unknown): {
 const addSecret = (values: Set<string>, value: string): void => {
   if (value.length === 0) return
   values.add(value)
-  values.add(Encoding.encodeBase64(value))
-  values.add(Encoding.encodeBase64Url(value))
+  values.add(Base64.encode(value))
+  values.add(Base64Url.encode(value))
   values.add(encodeURIComponent(value))
   const json = encodeJsonString(value)
   // Encoding a string always emits its two JSON quotes, including for the
@@ -705,6 +710,73 @@ const transportError = (
   })
 }
 
+/**
+ * The request as a host's span namer may see it: the url with its credential
+ * values redacted and its appended parameters folded in, the headers redacted,
+ * and no body.
+ */
+const redactedRequest = (
+  request: HttpClientRequest.HttpClientRequest,
+  redactedNames: ReadonlyArray<string | RegExp>
+): HttpClientRequest.HttpClientRequest =>
+  HttpClientRequest.make(request.method)(redactedRequestUrl(request), {
+    headers: redactHeaders(request.headers, redactedNames)
+  })
+
+/**
+ * The tracer a request opens its HTTP span on: the caller's own, with the
+ * credential values a url can carry kept off the span.
+ *
+ * Routes refuse a url that names a credential, but the executor takes any
+ * request. The HTTP client writes the whole url on its span as `url.full` and
+ * `url.query`, and again in the failure it ends the span with on a `4xx`, a
+ * `5xx` or a transport error. Both are replaced by the redacted url this
+ * module already puts in its own errors.
+ */
+const withRedactedUrl = (
+  request: HttpClientRequest.HttpClientRequest,
+  redactedNames: ReadonlyArray<string | RegExp>
+) =>
+(tracer: Tracer.Tracer): Tracer.Tracer =>
+  Tracer.make({
+    ...tracer,
+    span(options) {
+      const span = tracer.span(options)
+      const end = span.end.bind(span)
+      const attribute = span.attribute.bind(span)
+      const url = redactedRequestUrl(request)
+      span.attribute = (key, value) =>
+        attribute(
+          key,
+          key === "url.full"
+            ? url
+            : key === "url.query"
+            ? url.split("#", 1)[0]!.split("?").slice(1).join("?")
+            : value
+        )
+      span.end = (endTime, exit) => {
+        if (exit._tag === "Success" || Cause.hasInterruptsOnly(exit.cause)) return end(endTime, exit)
+        const error = Cause.squash(exit.cause)
+        // A defect is not the request's failure, and is left as it was raised.
+        if (!HttpClientError.isHttpClientError(error)) return end(endTime, exit)
+        const status = error.response?.status
+        return end(
+          endTime,
+          Exit.fail(
+            status === undefined
+              ? transportError(error, redactedNames)
+              : new ModelError({
+                code: "unknown",
+                httpStatus: status,
+                message: `HTTP ${status} (${request.method} ${url})`
+              })
+          )
+        )
+      }
+      return span
+    }
+  })
+
 const mapHttpError = (
   error: HttpClientError.HttpClientError,
   redactedNames: ReadonlyArray<string | RegExp>
@@ -1025,6 +1097,11 @@ export const makeWith = (transport: Transport, options: MakeOptions = {}): Effec
           // answers many models and a grant for one is not a grant for the rest.
           KernelHttpClient.withModelCall(options.modelId),
           Effect.provideService(Headers.CurrentRedactedNames, redactedNames),
+          Effect.updateService(
+            HttpClient.SpanNameGenerator,
+            (name) => (sent) => name(redactedRequest(sent, redactedNames))
+          ),
+          Effect.updateService(Tracer.Tracer, withRedactedUrl(request, redactedNames)),
           Effect.mapError((error) => mapHttpError(error, redactedNames))
         )
         const answered = (responseStartMs === 0 ? started : started.pipe(

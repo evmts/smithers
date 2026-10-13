@@ -123,10 +123,10 @@ test("a relative specifier that stays inside its own package or outside every sr
 
 test("runtime imports allow validated private adapters without admitting unrelated dev dependencies", () => {
   const manifest = {
-    dependencies: { effect: "4.0.0-rc.115" },
+    dependencies: { effect: "4.0.4" },
     devDependencies: {
-      "@effect/platform-node": "4.0.0-rc.115",
-      "@effect/platform-node-shared": "4.0.0-rc.115",
+      "@effect/platform-node": "4.0.4",
+      "@effect/platform-node-shared": "4.0.4",
       typescript: "6.0.3",
     },
     smthrs: { privateEffectAdapters: ["@effect/platform-node", "@effect/platform-node-shared"] },
@@ -139,6 +139,19 @@ test("runtime imports allow validated private adapters without admitting unrelat
   assert.ok(dev.has("typescript"))
   assert.equal(dependencySets({ manifest: { ...manifest, smthrs: {} } }).runtime.has("@effect/platform-node"), false)
   assert.throws(() => dependencySets({ manifest: { ...manifest, devDependencies: {} } }), /must equal Effect/)
+  // A library takes Effect as a ranged peer and builds its adapters from the
+  // exact release it develops against.
+  const library = {
+    ...manifest,
+    dependencies: {},
+    peerDependencies: { effect: "^4.0.4" },
+    devDependencies: { ...manifest.devDependencies, effect: "4.0.4" },
+  }
+  assert.ok(dependencySets({ manifest: library }).runtime.has("@effect/platform-node"))
+  assert.throws(
+    () => dependencySets({ manifest: { ...library, peerDependencies: { effect: "4.0.4" } } }),
+    /Effect peer that starts at their build release/
+  )
 })
 
 // A colon never appears in an npm package name, so a scheme-prefixed specifier

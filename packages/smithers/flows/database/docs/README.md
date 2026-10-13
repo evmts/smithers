@@ -52,8 +52,8 @@ and migration ladder. See [SQLite and PostgreSQL](./concepts/sqlite-only.md).
 [GitHub](https://github.com/smithersai/smithers).
 
 It needs Node.js 26.4.0 or later for the built-in `node:sqlite` module, and
-`effect` and `@effect/sql-sqlite-node` at the exact version it is built
-against: two copies of `effect` in one tree split the `SqlClient` service
+one `effect` in the range `^4.0.4` with `@effect/sql-sqlite-node` at the
+same version: two copies of `effect` in one tree split the `SqlClient` service
 identity, and a writer built against one cannot see a client provided from the
 other. For those versions, the import subpaths, and the packages a real
 composition adds, see [Installation](./installation.md).
@@ -69,7 +69,7 @@ import * as Migrations from "@smthrs/database/Migrations"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 
 const notes: Migrations.MigrationSet = {
   namespace: "notes",

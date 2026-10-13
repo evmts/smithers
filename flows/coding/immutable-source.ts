@@ -1,7 +1,7 @@
 /** Shared private immutable-source boundary for command and semantic checks. */
 import * as Digest from "@smthrs/core/Digest"
 import { Effect, type FileSystem, Option, Path, Schema, Stream } from "effect"
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
+import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { NativeCoding, requestIdFor, SourceImport } from "./native.ts"
 import { CodingError, type Revision } from "./schema.ts"
 

@@ -257,7 +257,7 @@ The shipped command catalog.
 | `names`       | `ReadonlyArray<string>`                      | Every shipped command name.                                                                                                                                        |
 | `find`        | `(name: string) => Verb \| undefined`        | One shipped verb by name.                                                                                                                                          |
 
-`completions` is the only `builtin` entry: `effect/unstable/cli` provides it as
+`completions` is the only `builtin` entry: `effect/cli` provides it as
 the global `--completions <shell>` flag rather than as a subcommand.
 
 ## Unsupported

@@ -1,5 +1,5 @@
 import { Effect, Redacted } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import assert from "node:assert/strict"
 import { createServer } from "node:http"
 import { test } from "node:test"

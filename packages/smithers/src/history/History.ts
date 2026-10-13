@@ -21,7 +21,7 @@ import { forkWorkspaceName, type Position } from "@smthrs/time-travel/TimeTravel
 import type { CarriedChild, StepOverride } from "@smthrs/time-travel/TimeTravelStore"
 import { TimeTravelStore } from "@smthrs/time-travel/TimeTravelStore"
 import { Cause, Context, Effect, Exit, Layer, type Schema } from "effect"
-import { SqlClient } from "effect/unstable/sql/SqlClient"
+import { SqlClient } from "effect/sql/SqlClient"
 import { existsSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
 import * as CliError from "../CliError.ts"

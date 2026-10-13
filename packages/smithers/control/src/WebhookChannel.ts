@@ -5,7 +5,7 @@
  */
 
 import { Effect, type Redacted, Schema, Stream } from "effect"
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest"
+import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import { type Channel, Channels, type InboundResult, type RawInbound } from "./Channels.ts"
 import { InvalidInput, type Unauthorized } from "./ControlError.ts"
 import type { IdempotencyKey } from "./ControlSchema.ts"

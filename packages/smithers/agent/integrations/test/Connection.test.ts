@@ -3,7 +3,7 @@ import * as SqlCredentialStore from "@smthrs/control/SqlCredentialStore"
 import * as WebCryptoCipher from "@smthrs/control/WebCryptoCipher"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Effect, Redacted } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 import {
   ANY_CONTAINER,

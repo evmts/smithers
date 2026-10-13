@@ -15,8 +15,8 @@ import * as Action from "@smthrs/flow/Action"
 import * as FlowRuntime from "@smthrs/flow/FlowRuntime"
 import type * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import { Effect, Option } from "effect"
-import * as HttpClient from "effect/unstable/http/HttpClient"
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
+import * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientRequest from "effect/http/HttpClientRequest"
 
 /**
  * The proxy reads this header only from a flow host credential.

@@ -99,7 +99,7 @@ export const derived: ExecutionIdSource = {
  * @since 0.1.0
  */
 export const fresh: ExecutionIdSource = {
-  mint: () => Effect.flatMap(Crypto.Crypto, (crypto) => Effect.orDie(crypto.randomUUIDv4))
+  mint: () => Effect.flatMap(Crypto.Crypto, (crypto) => Effect.orDie(crypto.randomUUIDv4()))
 }
 
 /**

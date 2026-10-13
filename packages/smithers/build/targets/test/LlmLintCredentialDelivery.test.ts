@@ -1,3 +1,4 @@
+import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Schema from "effect/Schema"
@@ -234,7 +235,7 @@ it("pins the receiver contract that the scanner's discoveries encode to", async 
   })
   expect(JSON.stringify(document)).toBe(contractDocument)
   for (const value of [credential, ...values]) expect(contractDocument).not.toContain(value)
-  expect(Schema.toJsonSchemaDocument(LlmLint.CredentialDelivery, { onExcessProperty: "error" })).toEqual(contractSchema)
+  expect(Node.schemaIdentity(LlmLint.CredentialDelivery, { onExcessProperty: "error" })).toEqual(contractSchema)
   const [first] = document.discoveries
   for (
     const refused of [

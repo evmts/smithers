@@ -257,8 +257,11 @@ const deniedBy = (failure: unknown): PermissionDenied | undefined => {
  * the refusal carries it: a refusal beside another failure, defect, or
  * interruption is reported as text, so the typed error can never stand in for
  * a failure a caller would not recover from.
+ *
+ * Effect 4.0.4 records one interruption per interrupted fiber, so a child
+ * interrupted inside an action arrives here as two `Interrupt` reasons.
  */
-const deniedIn = (cause: Cause.Cause<unknown>): PermissionDenied | undefined => {
+export const deniedIn = (cause: Cause.Cause<unknown>): PermissionDenied | undefined => {
   if (cause.reasons.length !== 1) return undefined
   const reason = cause.reasons[0]!
   return Cause.isFailReason(reason)

@@ -379,8 +379,10 @@ export const action = Action.make("smithers/migrate-v1/Archive", {
 })
 
 /**
- * Pins `effect` to the version this release ships, wherever the manifest
- * already declares it.
+ * Pins `effect` to what this release ships, wherever the manifest already
+ * declares it: the supported range in `peerDependencies`, which the
+ * manifest's own consumer satisfies, and the tested version in every field
+ * that installs.
  *
  * In place rather than through {@link rewriteManifest}'s `add`, which would put
  * the name in `dependencies` and leave the copy in `devDependencies` behind.
@@ -392,8 +394,9 @@ const pinEffect = (text: string): string => {
     const map = manifest[field]
     if (typeof map !== "object" || map === null) continue
     const record = map as Record<string, string>
-    if (record["effect"] === undefined || record["effect"] === effectVersion) continue
-    record["effect"] = effectVersion
+    const pin = Versions.effectPinFor(field)
+    if (record["effect"] === undefined || record["effect"] === pin) continue
+    record["effect"] = pin
     moved = true
   }
   return moved ? `${JSON.stringify(manifest, null, 2)}\n` : text

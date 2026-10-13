@@ -9,7 +9,15 @@ import test from "node:test"
 import { pathToFileURL } from "node:url"
 import { parse, stringify } from "yaml"
 import { assertExportTargets, assertPackedExportTargets } from "./packed-export-targets.mjs"
-import { assertEffectPins, effectDeclarations, effectLockVersions, installedEffectResolutions } from "./check-single-effect-version.mjs"
+import {
+  assertEffectPins,
+  effectDeclarations,
+  effectLockVersions,
+  EXPECTED_EFFECT_VERSION,
+  installedEffectResolutions,
+  SUPPORTED_EFFECT_RANGE,
+  UNSUPPORTED_EFFECT_VERSION
+} from "./check-single-effect-version.mjs"
 import {
   assertBuilt,
   defaultBindings,
@@ -486,13 +494,17 @@ test("packsPath reads npm files globs the way npm packs them", () => {
 })
 
 
-test("every published library exposes the one Effect runtime as a peer", () => {
+test("every published library takes Effect as a ranged peer and every executable installs the tested release", () => {
   const manifests = readWorkspaceManifests()
   const published = packedWorkspaces.map((directory) => manifests.get(directory))
-  const pins = new Set(published.flatMap((manifest) =>
-    [manifest.dependencies?.effect, manifest.peerDependencies?.effect].filter((range) => typeof range === "string")
-  ))
-  assert.deepEqual([...pins], ["4.0.0-rc.115"], "one effect pin across the published set")
+  const peers = new Set(published.map((manifest) => manifest.peerDependencies?.effect).filter((range) => range !== undefined))
+  assert.deepEqual([...peers], [SUPPORTED_EFFECT_RANGE], "one supported Effect range across the published libraries")
+  const installed = published.filter((manifest) => manifest.dependencies?.effect !== undefined)
+  assert.deepEqual(
+    installed.map((manifest) => [manifest.name, manifest.dependencies.effect, manifest.peerDependencies?.effect]).sort(),
+    ["@smthrs/build-cli", "@smthrs/cli", "@smthrs/migrate"].map((name) => [name, EXPECTED_EFFECT_VERSION, undefined]),
+    "only the executables install Effect, at the tested release, and none of them also peers it"
+  )
   const misplaced = published
     .filter((manifest) => manifest.bin === undefined && manifest.dependencies?.effect !== undefined)
     .map((manifest) => manifest.name)
@@ -502,7 +514,12 @@ test("every published library exposes the one Effect runtime as a peer", () => {
 test("published adapters remain optional while executable SQLite and Bun host prerequisites are required", () => {
   const byName = new Map([...readWorkspaceManifests().values()].map((manifest) => [manifest.name, publicationManifest(manifest)]))
   const optional = {
-    "@smthrs/database": { "@effect/sql-sqlite-node": "4.0.0-rc.115" },
+    "@smthrs/database": {
+      "@effect/sql-sqlite-node": EXPECTED_EFFECT_VERSION, "@effect/sql-sqlite-bun": EXPECTED_EFFECT_VERSION,
+      "@effect/sql-pg": EXPECTED_EFFECT_VERSION
+    },
+    "@smthrs/kernel": { "@effect/vitest": EXPECTED_EFFECT_VERSION },
+    "@smthrs/testing": { "@effect/vitest": EXPECTED_EFFECT_VERSION },
     "@smthrs/flows": { "@smthrs/platform-bun": releaseVersion },
     "@smthrs/observability": {
       "@opentelemetry/exporter-logs-otlp-http": "0.222.0", "@opentelemetry/exporter-metrics-otlp-http": "0.222.0",
@@ -511,6 +528,14 @@ test("published adapters remain optional while executable SQLite and Bun host pr
     }
   }
   const peerRanges = {
+    // An optional Effect adapter has no range: the application picks it with
+    // its own Effect, and npm --strict-peer-deps refused a pinned application
+    // over a ranged one (scripts/check-single-effect-version.mjs). The tested
+    // release is what the package itself develops against.
+    "@effect/sql-sqlite-node": undefined,
+    "@effect/sql-sqlite-bun": undefined,
+    "@effect/sql-pg": undefined,
+    "@effect/vitest": undefined,
     "@opentelemetry/exporter-logs-otlp-http": ">=0.222.0 <0.300.0",
     "@opentelemetry/exporter-metrics-otlp-http": ">=0.222.0 <0.300.0",
     "@opentelemetry/exporter-trace-otlp-http": ">=0.222.0 <0.300.0",
@@ -522,25 +547,34 @@ test("published adapters remain optional while executable SQLite and Bun host pr
     const manifest = byName.get(name)
     for (const [peer, version] of Object.entries(peers)) {
       assert.equal(manifest.dependencies?.[peer], undefined, name + " must not force " + peer)
-      assert.equal(manifest.peerDependencies[peer], peerRanges[peer] ?? version)
+      assert.equal(manifest.peerDependencies[peer], peer in peerRanges ? peerRanges[peer] : version, name + " " + peer)
       assert.deepEqual(manifest.peerDependenciesMeta[peer], { optional: true })
       assert.equal(manifest.devDependencies[peer], version)
     }
   }
   // The barrel's NodeRuntime is the published quickstart, so its Node host and
   // SQLite driver install with it rather than waiting on an optional peer (#3838).
-  for (const [peer, version] of [["@smthrs/platform-node", releaseVersion], ["@effect/sql-sqlite-node", "4.0.0-rc.115"]]) {
+  // The driver is the tested release exactly: it peers `effect` from its own
+  // version up, so it is valid with any Effect the application picks in range,
+  // and a caret here would install a driver newer than that Effect (#2398).
+  for (const [peer, version] of [["@smthrs/platform-node", releaseVersion], ["@effect/sql-sqlite-node", EXPECTED_EFFECT_VERSION]]) {
     const flows = byName.get("@smthrs/flows")
     assert.equal(flows.dependencies[peer], version, "@smthrs/flows must install " + peer)
     assert.equal(flows.peerDependencies[peer], undefined)
     assert.equal(flows.peerDependenciesMeta[peer], undefined)
   }
-  for (const [name, peer, version] of [
-    ["@smthrs/cli", "@effect/sql-sqlite-node", "4.0.0-rc.115"],
-    ["@smthrs/platform-bun", "@smthrs/platform-node", releaseVersion]
-  ]) {
+  for (const [name, peer, version] of [["@smthrs/platform-bun", "@smthrs/platform-node", releaseVersion]]) {
     assert.equal(byName.get(name).peerDependencies[peer], version)
     assert.notEqual(byName.get(name).peerDependenciesMeta?.[peer]?.optional, true)
+  }
+  // An Effect adapter a package always needs is a dependency at the tested
+  // release, never a peer: it accepts any later Effect the application picks,
+  // and as a peer a strict install of a pinned application fails the day
+  // upstream publishes a newer adapter.
+  for (const [name, adapter] of [["@smthrs/cli", "@effect/sql-sqlite-node"], ["@smthrs/observability", "@effect/opentelemetry"]]) {
+    assert.equal(byName.get(name).dependencies[adapter], EXPECTED_EFFECT_VERSION, name + " must install " + adapter)
+    assert.equal(byName.get(name).peerDependencies?.[adapter], undefined)
+    assert.equal(byName.get(name).peerDependenciesMeta?.[adapter], undefined)
   }
   assert.equal(byName.get("@smthrs/observability").dependencies["@opentelemetry/sdk-logs"], "0.222.0")
   assert.equal(byName.get("@smthrs/observability").dependencies["@opentelemetry/sdk-metrics"], "2.11.0")
@@ -556,31 +590,50 @@ test("runtime evaluation owns scorers while testing delegates to the same pure g
   assert.equal(testing.dependencies["@smthrs/scorers"], releaseVersion)
 })
 
-test("the Effect checker refuses ranges and mismatched RCs in every dependency field", () => {
-  for (const section of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
-    for (const name of ["effect", "@effect/platform-node", "@effect/sql-sqlite-node", "@effect/new-adapter"]) {
-      for (const version of ["4.0.0-rc.111", "^4.0.0-rc.115", "~4.0.0-rc.115", "4.0.0-rc.113"]) {
-        const records = effectDeclarations({ [section]: { [name]: version } }, "fixture")
-        assert.equal(records.length, 1)
-        assert.throws(() => assertEffectPins(records), /Expected exact Effect-family RC/)
+test("the Effect checker takes the range in a published library's peers and the tested release in every other field", () => {
+  const pin = EXPECTED_EFFECT_VERSION
+  const range = SUPPORTED_EFFECT_RANGE
+  const library = { peerDependencies: { effect: range } }
+  const off = [UNSUPPORTED_EFFECT_VERSION, "^" + UNSUPPORTED_EFFECT_VERSION, "~" + pin, "4.0.3", "4.0.5", "^4.0.0", "*"]
+  for (const name of ["effect", "@effect/platform-node", "@effect/sql-sqlite-node", "@effect/sql-pg", "@effect/new-adapter"]) {
+    const only = (records, section) =>
+      records.filter((record) => record.name === name && record.source === `fixture (${section})`)
+    for (const section of ["dependencies", "devDependencies", "optionalDependencies"]) {
+      const records = (version) => only(effectDeclarations({ ...library, [section]: { [name]: version } }, "fixture"), section)
+      for (const version of [...off, range]) {
+        assert.equal(records(version).length, 1)
+        assert.throws(() => assertEffectPins(records(version)), /Effect-family entries off the release policy/, `${section} ${name}@${version}`)
       }
-      assert.doesNotThrow(() => assertEffectPins(effectDeclarations({ [section]: { [name]: "4.0.0-rc.115" } }, "fixture")))
+      assert.doesNotThrow(() => assertEffectPins(records(pin)), `${section} ${name}@${pin}`)
     }
+    const peers = (version) =>
+      only(effectDeclarations({ peerDependencies: { effect: range, [name]: version } }, "fixture"), "peerDependencies")
+    for (const version of [...off, pin]) {
+      assert.equal(peers(version).length, 1)
+      assert.throws(() => assertEffectPins(peers(version)), /Effect-family entries off the release policy/, `peer ${name}@${version}`)
+    }
+    assert.doesNotThrow(() => assertEffectPins(peers(range)), `peer ${name}@${range}`)
   }
 })
 
 test("the Effect checker reads scoped and duplicate lock entries independently of declarations", () => {
-  const pnpm = "packages:\n  effect@4.0.0-rc.115:\n  '@effect/platform-node@4.0.0-rc.111':\n" +
-    "snapshots:\n  '@effect/platform-node@4.0.0-rc.111(effect@4.0.0-rc.115)':\n"
+  // A lockfile resolves versions, never ranges: every entry is the tested
+  // release, on a stable line as on a release candidate, and for an adapter
+  // such as `@effect/sql-pg` that no list in the checker names.
+  const pin = EXPECTED_EFFECT_VERSION
+  const pnpm = `packages:\n  effect@${pin}:\n  '@effect/platform-node@4.0.3':\n  '@effect/sql-pg@4.0.5':\n` +
+    `snapshots:\n  '@effect/platform-node@4.0.3(effect@${pin})':\n  '@effect/language-service@0.87.2':\n`
   assert.deepEqual(effectLockVersions(pnpm, "pnpm").map(({ name, version }) => [name, version]), [
-    ["effect", "4.0.0-rc.115"], ["@effect/platform-node", "4.0.0-rc.111"], ["@effect/platform-node", "4.0.0-rc.111"]
+    ["effect", pin], ["@effect/platform-node", "4.0.3"], ["@effect/sql-pg", "4.0.5"], ["@effect/platform-node", "4.0.3"]
   ])
-  const bun = '"effect": ["effect@4.0.0-rc.115", ""], "@effect/platform-bun": ["@effect/platform-bun@4.0.0-rc.113", ""]'
+  const bun = `"effect": ["effect@${pin}", ""], "@effect/platform-bun": ["@effect/platform-bun@${UNSUPPORTED_EFFECT_VERSION}", ""], ` +
+    '"@effect/sql-sqlite-bun": ["@effect/sql-sqlite-bun@4.0.5", ""]'
   assert.deepEqual(effectLockVersions(bun, "bun").map(({ name, version }) => [name, version]), [
-    ["effect", "4.0.0-rc.115"], ["@effect/platform-bun", "4.0.0-rc.113"]
+    ["effect", pin], ["@effect/platform-bun", UNSUPPORTED_EFFECT_VERSION], ["@effect/sql-sqlite-bun", "4.0.5"]
   ])
-  assert.throws(() => assertEffectPins(effectLockVersions(pnpm, "pnpm")), /platform-node@4.0.0-rc.111/)
-  assert.throws(() => assertEffectPins(effectLockVersions(bun, "bun")), /platform-bun@4.0.0-rc.113/)
+  assert.throws(() => assertEffectPins(effectLockVersions(pnpm, "pnpm")), /platform-node@4\.0\.3 must be [\s\S]*sql-pg@4\.0\.5 must be/)
+  assert.throws(() => assertEffectPins(effectLockVersions(bun, "bun")), /platform-bun@4\.0\.0-rc\.\d+ must be [\s\S]*sql-sqlite-bun@4\.0\.5 must be/)
+  assert.doesNotThrow(() => assertEffectPins(effectLockVersions(`packages:\n  effect@${pin}:\n  '@effect/sql-pg@${pin}':\n`, "pnpm")))
 })
 
 test("installed package checks reject missing, malformed and same-version private Effect copies", async () => {
@@ -588,19 +641,21 @@ test("installed package checks reject missing, malformed and same-version privat
   try {
     await writeFile(join(root, "package.json"), "{}")
     const directory = "library"
-    const library = { name: "@smthrs/fixture", peerDependencies: { effect: "4.0.0-rc.115" } }
+    const library = { name: "@smthrs/fixture", peerDependencies: { effect: SUPPORTED_EFFECT_RANGE } }
     await mkdir(join(root, directory), { recursive: true })
     await writeFile(join(root, directory, "package.json"), JSON.stringify(library))
     const manifests = new Map([[directory, library]])
     assert.throws(() => installedEffectResolutions(root, manifests), /Cannot find module/)
     await mkdir(join(root, "node_modules/effect"), { recursive: true })
-    await writeFile(join(root, "node_modules/effect/package.json"), JSON.stringify({ name: "effect", version: "4.0.0-rc.115" }))
+    await writeFile(join(root, "node_modules/effect/package.json"), JSON.stringify({ name: "effect", version: EXPECTED_EFFECT_VERSION }))
     assert.equal(installedEffectResolutions(root, manifests).length, 1)
+    // The workspace installs the tested release, whatever range a peer accepts.
+    assert.doesNotThrow(() => assertEffectPins(installedEffectResolutions(root, manifests)))
     // Each installation has its own importer. Node caches prior resolutions,
     // so changing a previously resolved directory would test that cache.
     await mkdir(join(root, "duplicate/node_modules/effect"), { recursive: true })
     await writeFile(join(root, "duplicate/package.json"), JSON.stringify(library))
-    await writeFile(join(root, "duplicate/node_modules/effect/package.json"), JSON.stringify({ name: "effect", version: "4.0.0-rc.115" }))
+    await writeFile(join(root, "duplicate/node_modules/effect/package.json"), JSON.stringify({ name: "effect", version: EXPECTED_EFFECT_VERSION }))
     assert.throws(() => installedEffectResolutions(root, new Map([["duplicate", library]])), /different physical Effect instance/)
     await mkdir(join(root, "malformed/node_modules/effect"), { recursive: true })
     await writeFile(join(root, "malformed/package.json"), JSON.stringify(library))

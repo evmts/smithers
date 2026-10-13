@@ -13,9 +13,9 @@ import {
   supportsDestinationPinning
 } from "@smthrs/kernel/HttpClient"
 import { Context, Effect, Option } from "effect"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
-import * as HttpClient from "effect/unstable/http/HttpClient"
-import * as HttpClientError from "effect/unstable/http/HttpClientError"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientError from "effect/http/HttpClientError"
 import { lookup } from "node:dns/promises"
 import { BlockList, isIP } from "node:net"
 import * as StdError from "../StdError.ts"

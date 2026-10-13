@@ -1,6 +1,6 @@
 import { NodeServices } from "@effect/platform-node"
 import { Effect } from "effect"
-import * as KeyValueStore from "effect/unstable/persistence/KeyValueStore"
+import * as KeyValueStore from "effect/persistence/KeyValueStore"
 import * as Microsandbox from "microsandbox"
 import { spawn, spawnSync } from "node:child_process"
 import { accessSync, constants, mkdtempSync, rmSync } from "node:fs"

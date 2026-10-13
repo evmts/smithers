@@ -13,7 +13,7 @@ import type * as StandardFlows from "@smthrs/agent/StandardFlows"
 import * as Bash from "@smthrs/std/Bash"
 import { StdError } from "@smthrs/std/StdError"
 import { Effect, Fiber, Stream } from "effect"
-import { ChildProcess, type ChildProcessSpawner } from "effect/unstable/process"
+import { ChildProcess, type ChildProcessSpawner } from "effect/process"
 import { existsSync } from "node:fs"
 
 /** The installed client and the agent-only socket it dials (spec §9.5.3). */

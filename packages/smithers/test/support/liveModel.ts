@@ -4,7 +4,7 @@ import * as Model from "@smthrs/model/Model"
 import * as ModelError from "@smthrs/model/ModelError"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import { Effect, Layer, Stream } from "effect"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 
 const executor = RequestExecutor.layer.pipe(Layer.provide(FetchHttpClient.layer))
 export const liveModel = (seat: string): Model.Model =>

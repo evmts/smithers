@@ -1,7 +1,7 @@
 import { expect, it } from "@effect/vitest"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Effect } from "effect"
-import { SqlClient } from "effect/unstable/sql/SqlClient"
+import { SqlClient } from "effect/sql/SqlClient"
 import { execFileSync, spawnSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { mkdtempSync, rmSync } from "node:fs"

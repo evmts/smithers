@@ -19,8 +19,8 @@ the machine has to go through a tag the kernel is watching. A sixth capability
 smuggled in beside them would be authority nobody checked.
 
 Three of the five tags are Effect's own, from `effect/FileSystem`,
-`effect/Path`, and `effect/unstable/process/ChildProcessSpawner` and
-`effect/unstable/http/HttpClient`. Smithers provides implementations of them
+`effect/Path`, and `effect/process/ChildProcessSpawner` and
+`effect/http/HttpClient`. Smithers provides implementations of them
 rather than wrappers around them, so an ordinary Effect program runs on a
 Smithers host unchanged. `Jj` is the one Smithers tag, and it lives in
 [`@smthrs/jj`](/api/jj).

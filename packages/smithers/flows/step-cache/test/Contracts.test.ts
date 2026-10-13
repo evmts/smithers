@@ -49,7 +49,7 @@ const closure = (module: string): ReadonlySet<string> => {
 
 /** The SQL client and the transaction writer: what issuing a statement takes. */
 const isSqlStack = (specifier: string): boolean =>
-  specifier.startsWith("effect/unstable/sql/") || specifier === "@smthrs/database/DurableWriter"
+  specifier.startsWith("effect/sql/") || specifier === "@smthrs/database/DurableWriter"
 
 describe("service contracts", () => {
   it.effect("constructs and exercises the CacheStore stub", () =>

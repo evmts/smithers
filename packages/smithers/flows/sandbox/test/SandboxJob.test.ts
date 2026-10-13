@@ -20,8 +20,8 @@ describe("Sandbox.job retained lifecycle", () => {
 
 import * as CommandLine from "@smthrs/kernel/CommandLine"
 import { Fiber, FileSystem, Layer, Stream } from "effect"
-import * as KeyValueStore from "effect/unstable/persistence/KeyValueStore"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as KeyValueStore from "effect/persistence/KeyValueStore"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"

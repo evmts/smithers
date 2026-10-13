@@ -1,6 +1,6 @@
 /** Real transport lifecycle regressions for the CLI's Node WebSocket. */
 import { Cause, Effect, Exit, Fiber, Layer, Stream } from "effect"
-import { Socket } from "effect/unstable/socket"
+import { Socket } from "effect/socket"
 import { createServer } from "node:http"
 import type { Socket as NetSocket } from "node:net"
 import { describe, expect, it } from "vitest"

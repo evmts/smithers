@@ -21,9 +21,9 @@ import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Option from "effect/Option"
 import type { PlatformError } from "effect/PlatformError"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { type ChildProcessHandle, ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Stream from "effect/Stream"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { type ChildProcessHandle, ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 
 /**
  * The buffered result of one command. A non-zero exit is a result, not a

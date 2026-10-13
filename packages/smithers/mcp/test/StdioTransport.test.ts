@@ -1,6 +1,6 @@
 import { Deferred, Effect, Fiber, Queue, Ref, Sink, Stream } from "effect"
 import * as PlatformError from "effect/PlatformError"
-import { ExitCode, ProcessId } from "effect/unstable/process/ChildProcessSpawner"
+import { ExitCode, ProcessId } from "effect/process/ChildProcessSpawner"
 import { describe, expect, it, vi } from "vitest"
 import * as Rpc from "../src/internal/Rpc.ts"
 import * as StdioTransport from "../src/internal/StdioTransport.ts"

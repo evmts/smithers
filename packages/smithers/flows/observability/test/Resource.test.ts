@@ -1,11 +1,12 @@
 import { Cause, Effect, Layer, Result, Schema } from "effect"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { describe, expect, it } from "vitest"
 import * as BrowserOtel from "../src/BrowserOtel.ts"
 import * as NodeOtel from "../src/NodeOtel.ts"
 import * as Otel from "../src/Otel.ts"
 import * as Otlp from "../src/Otlp.ts"
 import * as Resource from "../src/Resource.ts"
+import { effectVersion } from "./fixtures/effectVersion.ts"
 import { boundaryResources, resourceBytes, sdkResourceBytes } from "./fixtures/resources.ts"
 
 const failureOf = async <A, E>(layer: Layer.Layer<A, E>) => {
@@ -89,6 +90,21 @@ describe("Resource configuration", () => {
       "service.version": "v1",
       text: "hello-😀"
     })
+  })
+
+  it("projects the SDK's three telemetry fields, which a caller attribute of the same name replaces", () => {
+    expect(Resource.configToAttributes({ serviceName: "service" })).toEqual({
+      "service.name": "service",
+      "telemetry.sdk.name": "@effect/opentelemetry",
+      "telemetry.sdk.language": "nodejs",
+      "telemetry.sdk.version": effectVersion
+    })
+    expect(
+      Resource.configToAttributes({
+        serviceName: "service",
+        attributes: { "telemetry.sdk.name": "host-sdk", "service.name": "overwritten" }
+      })
+    ).toMatchObject({ "service.name": "service", "telemetry.sdk.name": "host-sdk" })
   })
 
   it("accepts exact resource ceilings and rejects the next value", async () => {

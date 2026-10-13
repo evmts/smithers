@@ -560,7 +560,12 @@ export const layer: Layer.Layer<
             return receipt
           }).pipe(Effect.onExit((exit) =>
             claim?._tag === "Claimed" && Exit.isFailure(exit)
-              ? runtime.releaseRunKey(durableKey)
+              // Effect removes a typed failure from an interrupted fiber's
+              // cause once the unwind passes a recovery handler, so a release
+              // that fails during a stop leaves as a defect, never silently.
+              ? Exit.hasInterrupts(exit)
+                ? Effect.orDie(runtime.releaseRunKey(durableKey))
+                : runtime.releaseRunKey(durableKey)
               : Effect.void
           ))
         })

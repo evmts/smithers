@@ -13,7 +13,8 @@
 
 import * as Graph from "@smthrs/flow/Graph"
 import * as Effects from "@smthrs/plan/Effects"
-import * as Schema from "effect/Schema"
+import * as Node from "@smthrs/plan/Node"
+import type * as Schema from "effect/Schema"
 import { PatternError } from "../PatternError.ts"
 
 /**
@@ -220,7 +221,7 @@ export const intersectCapabilities = (
 
 const schemaDocument = (schema: Schema.Top): unknown | undefined => {
   try {
-    return Schema.toJsonSchemaDocument(schema, { onExcessProperty: "error" })
+    return Node.schemaIdentity(schema, { onExcessProperty: "error" })
   } catch {
     return undefined
   }

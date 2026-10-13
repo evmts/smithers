@@ -65,7 +65,7 @@ import * as Planned from "@smthrs/plan/Planned"
 import * as Context from "effect/Context"
 import * as Option from "effect/Option"
 import * as Predicate from "effect/Predicate"
-import * as Schema from "effect/Schema"
+import type * as Schema from "effect/Schema"
 import type * as Action from "./Action/Action.ts"
 import { TypeId as ActionTypeId } from "./Action/TypeId.ts"
 import * as Annotations from "./Flow/Annotations.ts"
@@ -321,12 +321,15 @@ const refusalMessage = (
  * transformation and needs the call re-keyed renames the declaration.
  * `@smthrs/core` carries the same algorithm and the same limit.
  *
+ * `Node.schemaIdentity` prints the document, not the installed `effect`: a
+ * release that prints a schema differently must not move the identity.
+ *
  * @private
  */
 const schemaIdentity = (schema: Schema.Top): unknown => {
   const cached = schemaDocuments.get(schema)
   if (cached !== undefined) return cached
-  const document = Schema.toJsonSchemaDocument(schema, { onExcessProperty: "error" })
+  const document = Node.schemaIdentity(schema, { onExcessProperty: "error" })
   schemaDocuments.set(schema, document)
   return document
 }

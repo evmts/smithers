@@ -5,7 +5,7 @@
 
 import { Model, ModelRequest, RequestExecutor, Route } from "@smthrs/model"
 import { Effect, Layer, Redacted, Result, Stream } from "effect"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import type { Engine } from "../ModelEngine.ts"
 
 /** A provider refusal: recorded as refused, never as clean or a generic failure. */

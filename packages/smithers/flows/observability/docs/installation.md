@@ -12,18 +12,18 @@ Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/m
 The package requires Node.js 26.4.0 or later and ships as both ESM and
 CommonJS with TypeScript declarations.
 
-## Pin the same Effect release
+## Install one Effect release
 
 Effect services are identified by module identity, so a composition that
 resolves two copies of `effect` splits its context and a provided layer stops
-satisfying a requirement. Pin `effect` at exactly `4.0.0-rc.115`.
+satisfying a requirement. Install one `effect` in the range `^4.0.4`.
 
 `Otlp` is written entirely against `effect`, including its HTTP client and its
-`effect/unstable/observability/Otlp` exporters. The required peers
-`@effect/opentelemetry@4.0.0-rc.115` and `@opentelemetry/api@1.9.1`, plus
-the logs and metrics dependencies, support
-the root `Otel` and `Resource` modules. They install with ordinary peer-aware
-package managers. The default install includes no HTTP exporters or trace SDK.
+`effect/observability/Otlp` exporters. The `@effect/opentelemetry@4.0.4`
+dependency, the required `@opentelemetry/api@1.9.1` peer, and the logs and
+metrics dependencies support the root `Otel` and `Resource` modules. They
+install with ordinary peer-aware package managers. `@effect/opentelemetry`
+4.0.4 accepts any `effect` in `^4.0.4`. The default install includes no HTTP exporters or trace SDK.
 
 `NodeOtel` selects the optional Node trace SDK and three HTTP exporters:
 
@@ -84,7 +84,7 @@ Effect's `HttpClient` and never touches a `node:` built-in.
 The exporter alone needs nothing else. Two features have a dependency:
 
 - `Otlp.layer` requires an Effect `HttpClient` from
-  `effect/unstable/http/HttpClient`. `Otlp.layerFetch` supplies the host's
+  `effect/http/HttpClient`. `Otlp.layerFetch` supplies the host's
   global `fetch` and is the usual choice; a Node host that wants Undici instead
   provides `NodeHttpClient.layerUndici`, re-exported by
   [`@smthrs/platform-node`](/api/platform-node) as `NodeHost.NodeHttpClient`.

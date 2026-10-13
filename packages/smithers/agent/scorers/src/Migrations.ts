@@ -7,7 +7,7 @@
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import * as Migrator from "effect/unstable/sql/Migrator"
+import * as Migrator from "effect/sql/Migrator"
 import { migration as scores } from "./migrations/0001_scores.ts"
 import { migration as jobs } from "./migrations/0002_score_jobs.ts"
 import { migration as failureCodes } from "./migrations/0003_score_failure_codes.ts"

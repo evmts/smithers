@@ -27,7 +27,7 @@ platform specific and lives at an explicit subpath.
 
 ```ts
 import * as DurableWriter from "@smthrs/database/DurableWriter"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 
 const insertNote = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient

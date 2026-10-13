@@ -2,9 +2,9 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact
-`4.0.0-rc.115` peer dependency. Keep the application on that version so
-all Smithers packages share one Effect runtime.
+This package declares `effect` as a `^4.0.4` peer dependency. Install one
+`effect` release in that range so all Smithers packages share one Effect
+runtime.
 
 **Documentation:** https://database.smithers.sh
 
@@ -25,16 +25,17 @@ service, unwrapped, so nothing here sits between a query and the driver.
 
 Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
 
-`effect` is a required exact peer. The optional exact peer
+`effect` is a required peer in the range `^4.0.4`. The optional peer
 `@effect/sql-sqlite-node` is required by `node/NodeDatabase` and
-`test/TestDatabase`, including the example below:
+`test/TestDatabase`, including the example below. Install it at the same
+version as your `effect`:
 
 ```sh
-pnpm add @effect/sql-sqlite-node@4.0.0-rc.115
+pnpm add @effect/sql-sqlite-node
 ```
 
-PostgreSQL configuration requires the optional `@effect/sql-pg@4.0.0-rc.115`
-peer. The driver-neutral root installs no SQL adapter. Two
+PostgreSQL configuration requires the optional `@effect/sql-pg`
+peer, at the same version as your `effect`. The driver-neutral root installs no SQL adapter. Two
 copies of `effect` in one tree split the `SqlClient` service identity and a
 writer built against one copy cannot see a client provided from the other. The
 Node driver needs Node.js 26.4.0 or later for its built-in `node:sqlite`
@@ -47,7 +48,7 @@ import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 
 const database = Layer.provideMerge(
   DurableWriter.layer(),

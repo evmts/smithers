@@ -7,7 +7,7 @@
 import * as Dialect from "@smthrs/database/Dialect"
 import * as JournalGeneration from "@smthrs/journal/JournalGeneration"
 import * as Effect from "effect/Effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { step } from "../internal/MigrationStep.ts"
 
 /**

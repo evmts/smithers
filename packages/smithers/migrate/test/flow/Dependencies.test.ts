@@ -13,6 +13,7 @@
  * @since 0.1.0
  */
 import { describe, expect, it } from "@effect/vitest"
+import * as Archive from "@smthrs/migrate/flow/Archive"
 import * as Cli from "@smthrs/migrate/flow/Cli"
 import * as Report from "@smthrs/migrate/Report"
 import ts from "@typescript/typescript6"
@@ -155,6 +156,9 @@ describe("the flow surface's dependency boundary", () => {
     // both on a bump, and this pins them until it does.
     expect(Report.tool.version).toBe(manifest.version)
     expect(Cli.version).toBe(manifest.version)
+    // What a migrated project installs is the release that migrated it.
+    expect(Archive.smithersVersion).toBe(manifest.version)
+    expect(Archive.pinFor("@smthrs/flows")).toBe(manifest.version)
     expect(manifest.version).toMatch(/^1\.0\.0-rc\.\d+$/)
   })
 

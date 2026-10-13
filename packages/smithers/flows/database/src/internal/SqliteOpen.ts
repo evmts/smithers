@@ -2,9 +2,8 @@
  * @since 1.0.0
  */
 
-import { Cause, Context, Duration, Effect, Exit, Layer, Schedule, Schema, Scope } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
-import type * as SqlConnection from "effect/unstable/sql/SqlConnection"
+import { Context, Duration, Effect, Layer, Schedule, Schema, Scope } from "effect"
+import * as SqlClient from "effect/sql/SqlClient"
 import { closeSync, openSync } from "node:fs"
 import * as ReadOnly from "./ReadOnly.ts"
 import * as ReleasePolicy from "./ReleasePolicy.ts"
@@ -330,57 +329,22 @@ const retryLockedOpen = <A>(self: Layer.Layer<A>): Layer.Layer<A> =>
     }))
   )
 
-// Effect rc.112 releases its transaction reservation when COMMIT fails,
-// without rolling back. Supply the same SQLite transaction commands with a
-// commit finalizer that recovers BEFORE releasing that reservation. Only this
-// driver layer owns the database lifetime, so it can discard the connection if
-// rollback itself fails. Keep upstream's nesting, serialization and tracing.
-const recoverFailedCommit = <A>(
-  self: Layer.Layer<SqlClient.SqlClient | A>,
-  spanAttributes: Readonly<Record<string, unknown>>,
-  readOnly: boolean
-): Layer.Layer<SqlClient.SqlClient | A> =>
-  Layer.fromBuild((memoMap, scope) => {
-    const driverScope = Scope.forkUnsafe(scope)
-    return Effect.map(Layer.buildWithMemoMap(self, memoMap, driverScope), (context) => {
-      const sql = Context.get(context, SqlClient.SqlClient)
-      const rollback = (conn: SqlConnection.Connection) =>
-        conn.executeUnprepared("ROLLBACK", [], undefined).pipe(
-          Effect.onExit((exit) => Exit.isFailure(exit) ? Scope.close(driverScope, exit) : Effect.void)
-        )
-      const withTransaction = SqlClient.makeWithTransaction({
-        transactionService: sql.transactionService,
-        spanAttributes: [...Object.entries(spanAttributes), ["db.system.name", "sqlite"]],
-        acquireConnection: Effect.flatMap(Scope.make(), (reservation) =>
-          Scope.provide(sql.reserve, reservation).pipe(
-            Effect.onExit((exit) => Exit.isFailure(exit) ? Scope.close(reservation, exit) : Effect.void),
-            Effect.map((conn) => [reservation, conn] as const)
-          )),
-        // A read-only connection takes no write lock: its transaction is one
-        // snapshot that a peer holding the writer never blocks.
-        begin: (conn) => conn.executeUnprepared(readOnly ? "BEGIN" : "BEGIN IMMEDIATE", [], undefined),
-        savepoint: (conn, id) => conn.executeUnprepared(`SAVEPOINT effect_sql_${id}`, [], undefined),
-        commit: (conn) =>
-          conn.executeUnprepared("COMMIT", [], undefined).pipe(
-            Effect.catchCause((commitCause) =>
-              Effect.flatMap(Effect.exit(rollback(conn)), (rolledBack) =>
-                // makeWithTransaction's orDie retains only the first typed
-                // error. Convert every reason here so failed cleanup survives.
-                Effect.failCause(Cause.fromReasons((Exit.isFailure(rolledBack)
-                  ? Cause.combine(commitCause, rolledBack.cause)
-                  : commitCause).reasons.map((reason) =>
-                    Cause.isFailReason(reason) ? Cause.makeDieReason(reason.error) : reason
-                  ))))
-            )
-          ),
-        rollback,
-        rollbackSavepoint: (conn, id) => conn.executeUnprepared(`ROLLBACK TO SAVEPOINT effect_sql_${id}`, [], undefined)
-      })
-      Object.assign(sql, { withTransaction })
-      if (readOnly) ReadOnly.mark(sql)
+/**
+ * Marks the client a read-only open built, and changes nothing else about it.
+ *
+ * The drivers recover a failed COMMIT themselves. Effect 4.0.4 reports it as a
+ * typed `SqlError`, rolls the transaction back before the connection is
+ * released, and, when that rollback fails too, refuses the connection until a
+ * later rollback succeeds. `DurableWriter` normalizes what comes out; nothing
+ * here replaces the client's own transaction.
+ */
+const markReadOnly = <A>(self: Layer.Layer<SqlClient.SqlClient | A>): Layer.Layer<SqlClient.SqlClient | A> =>
+  Layer.fromBuild((memoMap, scope) =>
+    Effect.map(Layer.buildWithMemoMap(self, memoMap, scope), (context) => {
+      ReadOnly.mark(Context.get(context, SqlClient.SqlClient))
       return context
     })
-  })
+  )
 
 /** Builds a driver only after checking the existing file, closing every failed attempt.
  * @since 1.0.0
@@ -390,9 +354,8 @@ export const layer = <A>(
   filename: string,
   inspect: InspectTables,
   client: Layer.Layer<SqlClient.SqlClient | A>,
-  spanAttributes: Readonly<Record<string, unknown>> = {},
   readOnly = false
 ): Layer.Layer<SqlClient.SqlClient | A> =>
   Layer.unwrap(
-    Effect.as(guardOpen(filename, inspect), recoverFailedCommit(retryLockedOpen(client), spanAttributes, readOnly))
+    Effect.as(guardOpen(filename, inspect), readOnly ? markReadOnly(retryLockedOpen(client)) : retryLockedOpen(client))
   )

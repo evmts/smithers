@@ -618,8 +618,10 @@ userinfo, query, or fragment. Anything else fails `make` with `invalid_cache`.
 The endpoint and its credentials are a capability, never an input: they are not
 hashed into a step key and never journaled.
 
-All names configured in `headers` are redacted case-insensitively in Effect
-HTTP tracing spans. Each request extends the caller's existing header
+Effect's HTTP client records no header on its tracing spans, so a cache request
+trace carries no credential. A host that sets `HttpClient.TracerHeaderFilter` to
+record headers gets every name configured in `headers` as `<redacted>`,
+matched case-insensitively. Each request extends the caller's existing header
 redaction policy locally, preserving its defaults and custom matchers.
 
 Each operation closes its HTTP response scope before returning, including

@@ -14,8 +14,8 @@ Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/m
 ## Requirements
 
 - Node.js 26.4.0 or later.
-- [`effect`](https://effect.website) 4.0.0-rc.115, the version this package is
-  built against. Execution, validation, and persistence use `Effect`; schemas
+- [`effect`](https://effect.website) `^4.0.4`. The package is built and
+  tested on 4.0.4. Execution, validation, and persistence use `Effect`; schemas
   use `effect/Schema`. Declaration and pure grading helpers are synchronous;
   [`Scorer.make` throws on invalid declarations](./troubleshooting.md#scorermake-threw-instead-of-failing).
 - [`@smthrs/core`](/api/core) for `Flow` and `Digest`. A scorer is a flow

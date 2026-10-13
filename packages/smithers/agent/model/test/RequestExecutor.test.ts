@@ -7,18 +7,18 @@ import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
+import * as Headers from "effect/http/Headers"
+import * as HttpBody from "effect/http/HttpBody"
+import * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientError from "effect/http/HttpClientError"
+import type * as HttpClientRequest from "effect/http/HttpClientRequest"
+import * as Request from "effect/http/HttpClientRequest"
+import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import * as Layer from "effect/Layer"
 import * as Random from "effect/Random"
 import type * as Scope from "effect/Scope"
 import * as TestClock from "effect/testing/TestClock"
 import * as Tracer from "effect/Tracer"
-import * as Headers from "effect/unstable/http/Headers"
-import * as HttpBody from "effect/unstable/http/HttpBody"
-import * as HttpClient from "effect/unstable/http/HttpClient"
-import * as HttpClientError from "effect/unstable/http/HttpClientError"
-import type * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
-import * as Request from "effect/unstable/http/HttpClientRequest"
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
 import { inspect } from "node:util"
 import { describe, expect, it } from "vitest"
 import { ModelError } from "../src/ModelError.js"
@@ -1930,7 +1930,11 @@ describe("RequestExecutor", () => {
     expect(serialized).toContain("public-value")
   })
 
-  it("redacts credential headers in the request span, keeping the caller's policy and public names", async () => {
+  // The HTTP client records a header on its span only when the host's
+  // `HttpClient.TracerHeaderFilter` admits it, and by default it admits none.
+  const tracedRequest = async (
+    recordHeaders: boolean
+  ): Promise<{ readonly traced: (name: string) => ReadonlyArray<unknown>; readonly attributes: string }> => {
     const spans: Array<Tracer.NativeSpan> = []
     const tracer = Tracer.make({
       span(options) {
@@ -1941,33 +1945,189 @@ describe("RequestExecutor", () => {
     })
     const requests: Array<HttpClientRequest.HttpClientRequest> = []
     const layer = executorLayer([{ status: 200, body: "{}" }], requests)
+    const traced = Effect.gen(function*() {
+      const executor = yield* RequestExecutor.RequestExecutor
+      return yield* execute(
+        executor,
+        request("https://provider.test/v1/models", "{}", {
+          "api-key": "traced-secret",
+          "x-tenant": "tenant-secret",
+          "x-public": "public-value"
+        })
+      )
+    }).pipe(
+      Effect.provide(layer),
+      Effect.provideService(Headers.CurrentRedactedNames, [/^x-tenant/i]),
+      Effect.provideService(Tracer.Tracer, tracer)
+    )
 
     await Effect.runPromise(
       Effect.scoped(
-        Effect.gen(function*() {
-          const executor = yield* RequestExecutor.RequestExecutor
-          return yield* execute(
-            executor,
-            request("https://provider.test/v1/models", "{}", {
-              "api-key": "traced-secret",
-              "x-tenant": "tenant-secret",
-              "x-public": "public-value"
-            })
-          )
-        }).pipe(
-          Effect.provide(layer),
-          Effect.provideService(Headers.CurrentRedactedNames, [/^x-tenant/i]),
-          Effect.provideService(Tracer.Tracer, tracer)
-        )
+        recordHeaders ? traced.pipe(Effect.provideService(HttpClient.TracerHeaderFilter, () => true)) : traced
       )
     )
 
-    const traced = (name: string): ReadonlyArray<unknown> =>
-      spans.map((span) => span.attributes.get(`http.request.header.${name}`)).filter((value) => value !== undefined)
+    expect(requests.map((sent) => sent.headers["api-key"])).toEqual(["traced-secret"])
+    expect(spans.filter((span) => span.kind === "client")).toHaveLength(1)
+    return {
+      traced: (name) =>
+        spans.map((span) => span.attributes.get(`http.request.header.${name}`)).filter((value) => value !== undefined),
+      attributes: JSON.stringify(spans.map((span) => Array.from(span.attributes)))
+    }
+  }
+
+  it("records no request header in the request span unless the host turns header capture on", async () => {
+    const { attributes, traced } = await tracedRequest(false)
+
+    expect(traced("api-key")).toEqual([])
+    expect(traced("x-tenant")).toEqual([])
+    expect(traced("x-public")).toEqual([])
+    expect(attributes).not.toContain("http.request.header.")
+    expect(attributes).not.toContain("http.response.header.")
+    expect(attributes).not.toContain("traced-secret")
+    expect(attributes).not.toContain("tenant-secret")
+  })
+
+  it("redacts credential headers in a request span that records headers, keeping the caller's policy and public names", async () => {
+    const { attributes, traced } = await tracedRequest(true)
 
     expect(traced("api-key")).toEqual(["<redacted>"])
     expect(traced("x-tenant")).toEqual(["<redacted>"])
     expect(traced("x-public")).toEqual(["public-value"])
+    expect(attributes).not.toContain("traced-secret")
+    expect(attributes).not.toContain("tenant-secret")
+  })
+
+  describe("a request whose url carries a credential", () => {
+    // Routes refuse such urls, but the executor takes any request, and a
+    // caller's can name a credential in its query, inline or appended.
+    const sent = Request.post("https://provider.test/v1/models?region=eu&api_key=embedded-secret").pipe(
+      Request.setUrlParam("access_token", "param-secret"),
+      Request.setUrlParam("page", "2")
+    )
+    const secrets = ["embedded-secret", "param-secret"]
+    const redactedUrl =
+      "https://provider.test/v1/models?region=eu&api_key=%3Credacted%3E&access_token=%3Credacted%3E&page=2"
+
+    /** One attempt, with every span it opened rendered the ways a reader could render it. */
+    const traced = async (
+      respond: (
+        attempted: HttpClientRequest.HttpClientRequest
+      ) => Effect.Effect<HttpClientResponse.HttpClientResponse, HttpClientError.HttpClientError>,
+      nameSpans?: (request: HttpClientRequest.HttpClientRequest) => string
+    ) => {
+      const spans: Array<Tracer.NativeSpan> = []
+      const tracer = Tracer.make({
+        span(options) {
+          const span = new Tracer.NativeSpan(options)
+          spans.push(span)
+          return span
+        }
+      })
+      const attempt = Effect.gen(function*() {
+        const executor = yield* RequestExecutor.makeWith(RequestExecutor.fixed(HttpClient.make(respond)), {
+          maxRetries: 0
+        })
+        return yield* execute(executor, sent)
+      }).pipe(Effect.provideService(Tracer.Tracer, tracer))
+      const exit = await Effect.runPromiseExit(
+        Effect.scoped(
+          nameSpans === undefined
+            ? attempt
+            : attempt.pipe(Effect.provideService(HttpClient.SpanNameGenerator, nameSpans))
+        )
+      )
+      const requests = spans.filter((span) => span.kind === "client")
+      expect(requests).toHaveLength(1)
+      const span = requests[0]!
+      // What a span ended with when it failed. A span that succeeded ends with
+      // the live response, which no exporter writes out.
+      const failureOf = (opened: Tracer.NativeSpan) =>
+        opened.status._tag === "Ended" && opened.status.exit._tag === "Failure" ? opened.status.exit.cause : undefined
+      const failures = spans.flatMap((opened) => failureOf(opened) ?? [])
+      const failure = failureOf(span)
+      return {
+        exit,
+        span,
+        spanFailure: failure === undefined ? undefined : Cause.squash(failure),
+        telemetry: [
+          inspect(
+            spans.map((opened) => ({
+              name: opened.name,
+              attributes: [...opened.attributes],
+              events: opened.events,
+              links: opened.links,
+              failure: failureOf(opened)
+            })),
+            { depth: 12 }
+          ),
+          ...failures.map((cause) => Cause.pretty(cause)),
+          JSON.stringify(
+            failures.flatMap((cause) => Cause.prettyErrors(cause).map((error) => [error.message, error.stack]))
+          ),
+          Exit.isFailure(exit) ? inspect(exit, { depth: 12 }) + JSON.stringify(exit) : ""
+        ].join("\n")
+      }
+    }
+
+    it.each([
+      { status: 200, failure: undefined },
+      { status: 400, failure: { code: "unknown", httpStatus: 400, message: `HTTP 400 (POST ${redactedUrl})` } },
+      { status: 503, failure: { code: "unknown", httpStatus: 503, message: `HTTP 503 (POST ${redactedUrl})` } }
+    ])(
+      "redacts it in the span of a request answered $status, and in the span's failure",
+      async ({ failure, status }) => {
+        const { span, spanFailure, telemetry } = await traced((attempted) =>
+          Effect.succeed(response(attempted, { status, body: "echoed param-secret and embedded-secret" }))
+        )
+
+        for (const secret of secrets) expect(telemetry).not.toContain(secret)
+        // The route is public and stays on the span, with the credential values gone.
+        expect(span.attributes.get("url.full")).toBe(redactedUrl)
+        expect(span.attributes.get("url.query")).toBe(redactedUrl.split("?")[1])
+        expect(span.attributes.get("url.path")).toBe("/v1/models")
+        expect(span.attributes.get("http.response.status_code")).toBe(status)
+        if (failure === undefined) expect(spanFailure).toBeUndefined()
+        else expect(spanFailure).toMatchObject({ _tag: "flows/model/ModelError", ...failure })
+      }
+    )
+
+    it("redacts it in the span of a request the transport failed, and in the span's failure", async () => {
+      const { exit, span, spanFailure, telemetry } = await traced((attempted) =>
+        Effect.fail(
+          new HttpClientError.HttpClientError({
+            reason: new HttpClientError.TransportError({
+              request: attempted,
+              description: "connect failed for param-secret",
+              cause: new Error("ECONNREFUSED embedded-secret")
+            })
+          })
+        )
+      )
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      for (const secret of secrets) expect(telemetry).not.toContain(secret)
+      expect(span.attributes.get("url.full")).toBe(redactedUrl)
+      expect(spanFailure).toMatchObject({ _tag: "flows/model/ModelError", code: "transport" })
+      expect((spanFailure as ModelError).message).toContain(`(POST ${redactedUrl}`)
+    })
+
+    it("hands a host's span namer the redacted request", async () => {
+      const { span, telemetry } = await traced(
+        (attempted) => Effect.succeed(response(attempted, { status: 200, body: "{}" })),
+        (named) => `${named.method} ${named.url} ${JSON.stringify(named.urlParams)} ${JSON.stringify(named.headers)}`
+      )
+
+      for (const secret of secrets) expect(telemetry).not.toContain(secret)
+      expect(span.name).toContain(`POST ${redactedUrl}`)
+    })
+
+    it("leaves a defect on the span as it was raised", async () => {
+      const { exit, spanFailure } = await traced(() => Effect.die(new Error("client bug")))
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(spanFailure).toMatchObject({ message: "client bug" })
+    })
   })
 
   it("describes a transport failure without a description, a cause, or headers", async () => {

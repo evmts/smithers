@@ -2,9 +2,9 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact
-`4.0.0-rc.115` peer dependency. Keep the application on that version so
-all Smithers packages share one Effect runtime.
+This package declares `effect` as a `^4.0.4` peer dependency. Install one
+`effect` release in that range so all Smithers packages share one Effect
+runtime.
 
 **Documentation:** https://plan.smithers.sh
 
@@ -31,10 +31,10 @@ Compiling asks Effect for its `Crypto` service, which a platform package
 supplies:
 
 ```bash
-pnpm add @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115
+pnpm add @effect/platform-node @effect/platform-node-shared
 ```
 
-Node.js 26.4.0 or later, and `effect` 4.0.0-rc.115 as a peer. Recording a plan
+Node.js 26.4.0 or later, and `effect` `^4.0.4` as a peer. Recording a plan
 is [`@smthrs/plan-store`](https://plan-store.smithers.sh), which owns the SQL
 and brings [`@smthrs/database`](https://database.smithers.sh) with it.
 

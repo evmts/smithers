@@ -15,9 +15,9 @@ Remote operations also require transport configuration and authentication.
 import { NodeHttpServer } from "@effect/platform-node"
 import * as ControlRpcs from "@smthrs/control/ControlRpcs"
 import * as ControlServer from "@smthrs/control/ControlServer"
+import { HttpRouter } from "effect/http"
 import * as Layer from "effect/Layer"
-import { HttpRouter } from "effect/unstable/http"
-import { RpcSerialization } from "effect/unstable/rpc"
+import { RpcSerialization } from "effect/rpc"
 import { createServer } from "node:http"
 
 const served = HttpRouter.serve(
@@ -53,8 +53,8 @@ requires an `Authorization` header on the WebSocket upgrade. An ordinary
 import { NodeHttpClient, NodeSocket } from "@effect/platform-node"
 import * as ControlClient from "@smthrs/control/ControlClient"
 import * as Layer from "effect/Layer"
-import { RpcSerialization } from "effect/unstable/rpc"
-import { Socket } from "effect/unstable/socket"
+import { RpcSerialization } from "effect/rpc"
+import { Socket } from "effect/socket"
 
 const credential = process.env["SMITHERS_CONTROL_TOKEN"] ?? ""
 const authenticatedSocket = Socket.layerWebSocket("ws://127.0.0.1:4000/rpc/ws").pipe(

@@ -556,7 +556,11 @@ export const run = (options: Options): Effect.Effect<Outcome.RunResult, RunError
                     Effect.andThen(Fiber.join(fiber)),
                     // A refused/interrupted binding has already journaled its
                     // observation. Journal failures must still escape the join.
-                    Effect.catchTag("/chain/Chain/LinkAborted", () => Effect.void)
+                    Effect.catchTag("/chain/Chain/LinkAborted", () => Effect.void),
+                    // Effect removes a typed failure from an interrupted
+                    // fiber's cause when the unwind passes a recovery handler,
+                    // and the runner's call loop has one. A defect is kept.
+                    Effect.orDie
                   )
                 ))
               })

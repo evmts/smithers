@@ -14,8 +14,8 @@ import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as RedactedLogger from "@smthrs/journal/RedactedLogger"
 import * as Redaction from "@smthrs/journal/Redaction"
 import { Cause, Console, Effect, Exit, Logger, References, Runtime } from "effect"
+import { CliError as EffectCliError, Command } from "effect/cli"
 import * as Layer from "effect/Layer"
-import { CliError as EffectCliError, Command } from "effect/unstable/cli"
 import * as CliError from "../CliError.ts"
 import { cli } from "../Command.ts"
 import * as ExecutionTarget from "../history/ExecutionTarget.ts"
@@ -103,7 +103,7 @@ const teardown: Runtime.Teardown = (exit, onExit) => {
 
   const error = Cause.squash(exit.cause)
   if (EffectCliError.isCliError(error)) {
-    // `effect/unstable/cli` renders its own help and usage output; only the
+    // `effect/cli` renders its own help and usage output; only the
     // status is this module's to decide.
     onExit(error._tag === "ShowHelp" && error.errors.length === 0 ? 0 : 2)
     return
@@ -149,7 +149,7 @@ const main = Effect.gen(function*() {
   const parsed = Argv.parse(argv)
   const presentation = Audience.fromArguments(argv)
   if (documentRequested(parsed)) {
-    // `effect/unstable/cli` renders the document and fails with `ShowHelp`
+    // `effect/cli` renders the document and fails with `ShowHelp`
     // before any handler runs, so the durable services the handlers declare
     // are never requested. Discharging them by type is what keeps the
     // document off the project, the registry, and the databases.

@@ -9,8 +9,8 @@ it("runs remote commands with and without guest environment in a browser runtime
     stdin: {
       contents: `
         import * as Effect from "effect/Effect"
-        import * as ChildProcess from "effect/unstable/process/ChildProcess"
-        import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+        import * as ChildProcess from "effect/process/ChildProcess"
+        import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
         import * as Remote from "./src/RemoteChildProcessSpawner/index.ts"
 
         globalThis.runBrowserProbe = async () => {

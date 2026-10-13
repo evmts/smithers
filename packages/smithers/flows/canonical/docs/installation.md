@@ -9,8 +9,8 @@ sidebar:
 
 Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
 
-[`effect`](https://effect.website) is a peer dependency, declared at exactly
-`4.0.0-rc.115`. Install it yourself at that version: it supplies the `Schema`
+[`effect`](https://effect.website) is a peer dependency, declared in the range
+`^4.0.4`. Install it yourself in that range: it supplies the `Schema`
 module the `Canonical` codec is built on, the examples in these pages import
 `effect/Schema` and `effect/Effect` directly, and two copies of `effect` in one
 program are two sets of service tags. Effect 3 does not satisfy that peer

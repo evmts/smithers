@@ -2,7 +2,7 @@ import * as Evaluator from "@smthrs/model/Evaluator"
 import { ModelError } from "@smthrs/model/ModelError"
 import type { ModelCredentialListing } from "@smthrs/rpc/ConfiguredModel"
 import { Effect, Redacted } from "effect"
-import { HttpClient } from "effect/unstable/http/HttpClient"
+import { HttpClient } from "effect/http/HttpClient"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import {
   localModelCatalog,

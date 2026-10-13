@@ -6,9 +6,9 @@
 
 import * as CommandLine from "@smthrs/kernel/CommandLine"
 import * as Effect from "effect/Effect"
+import * as KeyValueStore from "effect/persistence/KeyValueStore"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
-import * as KeyValueStore from "effect/unstable/persistence/KeyValueStore"
 import { encodeBase64 } from "../internal/base64.ts"
 import { pidDirectory } from "../internal/pidDirectory.ts"
 import { sessionSlug } from "../internal/sessionSlug.ts"

@@ -17,7 +17,7 @@ implement:
 
 ```ts
 import type { HostSuite } from "@smthrs/testing"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
+import * as ChildProcess from "effect/process/ChildProcess"
 
 const profile: HostSuite.HostProfile = {
   fileSystem: { supported: true },
@@ -69,7 +69,7 @@ A supported HTTP capability requires an explicit target, so the shared suite
 never invents a live network call:
 
 ```ts
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
+import * as HttpClientRequest from "effect/http/HttpClientRequest"
 
 const httpTransport = {
   supported: true,

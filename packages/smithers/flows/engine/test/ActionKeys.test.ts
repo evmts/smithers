@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
+import { Sha256 } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { DerivedKey } from "@smthrs/keys"
 import { Node } from "@smthrs/plan"
@@ -48,6 +49,75 @@ describe("action execution keys", () => {
       expect(yield* actionKey(action, "run", 1, undefined, "scope"))
         .toBe("key1_5ba06eea63e4a5187bb73bb4ea7951e5048014dd09e18c33d7408b80dc4bc124")
     }))
+
+  effect(
+    "keeps the rc.115 key for a declaration whose checks effect renamed after rc.115",
+    () =>
+      Effect.gen(function*() {
+        // effect@4.0.4 renamed isStartsWith, isLengthBetween and isIncludes (and
+        // three more) in the representation it encodes. The declaration digest
+        // must not move with the installed release, or every recorded sealed
+        // step behind such a schema re-keys. The literal is the key this action
+        // derived on effect@4.0.0-rc.115.
+        const action = Action.make({
+          name: "ActionKeys/renamed-checks",
+          success: Schema.String.check(Schema.isStartingWith("ord-")),
+          error: Schema.Struct({
+            ids: Schema.Array(Schema.String).check(Schema.isBetweenLength(1, 3)),
+            note: Schema.String.check(Schema.isIncluding("x"))
+          }),
+          idempotencyKey: "row",
+          execute: Effect.succeed("ord-1")
+        })
+        expect(yield* actionKey(action, "run", 1, undefined, "scope"))
+          .toBe("key1_840e188c5c26df4ba4b9cdfd7b5a8e543e28524b31840a8fae11529e63fc2f84")
+      })
+  )
+
+  effect(
+    "re-keys a declaration with a brand once, because effect@4.0.4 dropped brands from the AST",
+    () =>
+      Effect.gen(function*() {
+        // Under effect@4.0.0-rc.115 `Schema.brand` wrote a `brands` annotation
+        // into the representation; from 4.0.4 on a brand is not part of the AST,
+        // so nothing a step key reads can restore it. In this repository that
+        // re-keys the sealed steps of three build install declarations, all
+        // through `Sha256.Digest`: `smithers-build/install`, `install/link` and
+        // `install/fetch/pnpm`. Every other declaration keeps its key. This pins
+        // what changed and that nothing else did.
+        const rc115 = {
+          representation: {
+            _tag: "String",
+            checks: [{
+              _tag: "Filter",
+              representation: { id: "effect/schema/isPattern", payload: { source: "^[0-9a-f]{64}$", flags: "" } },
+              annotations: {
+                expected: "a 64-character lowercase hexadecimal SHA-256 digest",
+                arbitraryConstraint: { patterns: [{ source: "^[0-9a-f]{64}$", flags: "" }] },
+                brands: ["@smthrs/crypto/Sha256/Digest"]
+              },
+              aborted: false
+            }]
+          },
+          references: {}
+        }
+        const { brands: _brands, ...annotations } = rc115.representation.checks[0]!.annotations
+        expect(JSON.stringify(Node.representationIdentity(Sha256.Digest.ast))).toBe(JSON.stringify({
+          ...rc115,
+          representation: { ...rc115.representation, checks: [{ ...rc115.representation.checks[0]!, annotations }] }
+        }))
+        const action = Action.make({
+          name: "ActionKeys/branded",
+          success: Schema.Struct({ store: Sha256.Digest }),
+          idempotencyKey: "row",
+          execute: Effect.die("unused")
+        })
+        const key = yield* actionKey(action, "run", 1, undefined, "scope")
+        // The key this action derived on rc.115, and the one it derives now.
+        expect(key).not.toBe("key1_74c8862a35bde5cafe29effa5914ea0bf56540df0b3920271a603bebdcf1608a")
+        expect(key).toBe("key1_690b4cf451009c72a16a06e4f3df233b7c3ed88c9b7b8171be68a15da7ef7752")
+      })
+  )
 
   effect("memoizes declaration digests by both schema ASTs across action instances", () =>
     Effect.gen(function*() {
@@ -547,8 +617,8 @@ describe("action execution keys", () => {
       let spelledRuns = 0
       const success = Schema.String
       const declaration = yield* Schema.decodeUnknownEffect(DerivedKey)({
-        success: SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(success.ast)),
-        error: SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(Schema.Never.ast))
+        success: Node.representationIdentity(success.ast),
+        error: Node.representationIdentity(Schema.Never.ast)
       })
       const declared = Action.make({
         name: "ActionKeys/charge",

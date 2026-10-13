@@ -2,7 +2,7 @@
 import * as BunHttpServer from "@effect/platform-bun/BunHttpServer"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import { Cause, Effect, Exit, Layer, Logger } from "effect"
-import { HttpServer } from "effect/unstable/http"
+import { HttpServer } from "effect/http"
 import { createServer } from "node:http"
 import { beforeEach, expect, it, vi } from "vitest"
 import * as BunGateway from "../src/bun/BunGateway.ts"

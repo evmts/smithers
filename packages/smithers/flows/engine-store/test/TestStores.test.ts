@@ -11,7 +11,7 @@ import { AttemptStore } from "@smthrs/run-store/AttemptStore"
 import { RunStore } from "@smthrs/run-store/RunStore"
 import { CacheStore } from "@smthrs/step-cache/CacheStore"
 import { Effect, Option } from "effect"
-import { SqlClient } from "effect/unstable/sql/SqlClient"
+import { SqlClient } from "effect/sql/SqlClient"
 import * as TestStores from "../src/test/TestStores.ts"
 import * as PersistentDatabase from "./fixtures/PersistentDatabase.ts"
 

@@ -44,13 +44,13 @@ import {
   type PermissionErrorPayload
 } from "@smthrs/capability/Permission"
 import { Context, Effect, Layer, Option } from "effect"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
-import * as Headers from "effect/unstable/http/Headers"
-import * as HttpBody from "effect/unstable/http/HttpBody"
-import * as EffectHttpClient from "effect/unstable/http/HttpClient"
-import * as HttpClientError from "effect/unstable/http/HttpClientError"
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
-import * as UrlParams from "effect/unstable/http/UrlParams"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import * as Headers from "effect/http/Headers"
+import * as HttpBody from "effect/http/HttpBody"
+import * as EffectHttpClient from "effect/http/HttpClient"
+import * as HttpClientError from "effect/http/HttpClientError"
+import * as HttpClientRequest from "effect/http/HttpClientRequest"
+import * as UrlParams from "effect/http/UrlParams"
 import { GrantStore, type Service as GrantService } from "./GrantStore.ts"
 import { makeCapability } from "./internal/makeCapability.ts"
 
@@ -115,7 +115,7 @@ const invalidRequest = (request: HttpClientRequest.HttpClientRequest): HttpClien
  * @category services
  * @since 1.0.0-rc.0
  */
-export { HttpClient } from "effect/unstable/http/HttpClient"
+export { HttpClient } from "effect/http/HttpClient"
 
 /**
  * Constructs a client from a low-level request runner, keeping Effect's own
@@ -124,7 +124,7 @@ export { HttpClient } from "effect/unstable/http/HttpClient"
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export { make } from "effect/unstable/http/HttpClient"
+export { make } from "effect/http/HttpClient"
 
 /**
  * The model identity an outgoing request is made on behalf of, if any.

@@ -21,8 +21,8 @@
 import * as Memory from "@smthrs/agent/Memory"
 import { Fault } from "@smthrs/flow"
 import { Effect, FileSystem, Path, Schema, Stream } from "effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Labels from "./labels.ts"
 
 /** A landed-fix evaluation that could not read the repository. */

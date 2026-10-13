@@ -24,7 +24,7 @@ only with `SMITHERS_BACKEND=postgres`, which requires one of the two. Set
 Install the optional adapter alongside the database package:
 
 ```sh
-pnpm add @effect/sql-pg@4.0.0-rc.115
+pnpm add @effect/sql-pg
 ```
 
 Direct injection makes the schema explicit:

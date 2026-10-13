@@ -1,5 +1,5 @@
 import * as OtelResource from "@effect/opentelemetry/Resource"
-import * as OtlpResource from "effect/unstable/observability/OtlpResource"
+import * as OtlpResource from "effect/observability/OtlpResource"
 import * as Resource from "../../src/Resource.ts"
 
 /** Measure the actual upstream OTLP representation independently of admission. */

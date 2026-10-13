@@ -1,7 +1,7 @@
 /** Opt-in real k=3 evidence; never runs in the ordinary suite or during host burndown. */
 import { Deferred, Effect, Stream } from "effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import assert from "node:assert/strict"
 import { execFileSync, spawn } from "node:child_process"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"

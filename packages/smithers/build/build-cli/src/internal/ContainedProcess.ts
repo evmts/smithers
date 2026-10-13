@@ -5,8 +5,8 @@
 import { NodeChildProcessSpawner, NodeFileSystem, NodePath } from "@effect/platform-node"
 import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
 import { Cause, Data, Effect, Exit, Layer, Stream } from "effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { type ChildProcessHandle, ChildProcessSpawner, makeHandle } from "effect/unstable/process/ChildProcessSpawner"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { type ChildProcessHandle, ChildProcessSpawner, makeHandle } from "effect/process/ChildProcessSpawner"
 
 /** A bounded process operation failed, with its original cause retained.
  * @category errors

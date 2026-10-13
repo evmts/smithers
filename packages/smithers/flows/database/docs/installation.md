@@ -13,12 +13,13 @@ listed below are the worked examples of everything on this page.
 
 See [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
 
-`effect` is a required exact peer. The SQLite adapter is an optional exact
-peer, needed by `node/NodeDatabase` and `test/TestDatabase`, including the
-verification example below. Install it when selecting either subpath:
+`effect` is a required peer in the range `^4.0.4`. The SQLite adapter is an
+optional peer, needed by `node/NodeDatabase` and
+`test/TestDatabase`, including the verification example below. Install it,
+at the same version as your `effect`, when selecting either subpath:
 
 ```bash
-pnpm add @effect/sql-sqlite-node@4.0.0-rc.115
+pnpm add @effect/sql-sqlite-node
 ```
 
 The driver-neutral root needs no SQLite adapter. Mixing two copies
@@ -75,7 +76,7 @@ by hand. For the wiring, see
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as Effect from "effect/Effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 
 const check = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient

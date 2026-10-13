@@ -1,7 +1,7 @@
 import { Effect } from "effect"
+import * as SqlClient from "effect/sql/SqlClient"
+import * as SqlError from "effect/sql/SqlError"
 import { TestClock } from "effect/testing"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
-import * as SqlError from "effect/unstable/sql/SqlError"
 import * as MemoryStore from "../../src/MemoryStore.ts"
 import * as TestMemory from "../../src/test/TestMemory.ts"
 

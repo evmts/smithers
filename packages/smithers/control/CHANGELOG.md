@@ -74,6 +74,13 @@
 
 ### Fixed
 
+- A mutation that claims its run key and is stopped while it fails still
+  reports a failed release of that claim (#3839). Effect 4.0.4 removes a
+  typed failure from an interrupted fiber's cause once the unwind passes a
+  recovery handler, so the release's `PersistenceError` was dropped and the
+  caller saw a plain interruption over a claim that was never released. The
+  failure now leaves the stop as a defect, so the exit carries both.
+
 - Durable sequence allocation rejects missing, nonpositive, or unsafe numeric
   readbacks inside its transaction, so storage faults cannot create zero or
   rounded plan, run, or resume identities.

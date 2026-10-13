@@ -89,7 +89,7 @@
     "@smthrs/memory": "workspace:*",
     "@smthrs/model": "workspace:*",
     "@smthrs/registry": "workspace:*",
-    "effect": "4.0.0-rc.115",
+    "effect": "4.0.4",
     "quickjs-emscripten-core": "0.32.0"
   },
   "devDependencies": {

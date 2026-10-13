@@ -95,7 +95,7 @@ import {
 } from "effect"
 import type { Crypto, Path } from "effect"
 import * as Deferred from "effect/Deferred"
-import { SqlClient } from "effect/unstable/sql/SqlClient"
+import { SqlClient } from "effect/sql/SqlClient"
 import { createHash, randomUUID } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
 import { homedir, hostname } from "node:os"

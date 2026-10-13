@@ -1,6 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { describe, expect, it } from "@effect/vitest"
+import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import * as CacheEnvironment from "@smthrs/flow/CacheEnvironment"
@@ -12,7 +13,7 @@ import { Node } from "@smthrs/plan"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import { RunStore } from "@smthrs/run-store"
 import { Effect, Exit, FileSystem, Layer, Option, Schema } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { existsSync } from "node:fs"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -442,7 +443,15 @@ describe("declared capability ceilings at the guarded host boundary", () => {
                     deferredName: gate.name,
                     exit: Exit.succeed("ready")
                   })
-                  return yield* declaration.execute({ name: "restarted.txt" }, { executionId })
+                  const joined = yield* Effect.exit(declaration.execute({ name: "restarted.txt" }, { executionId }))
+                  if (Exit.isFailure(joined)) {
+                    // The completed deferred woke a drive of its own, and
+                    // closing this scope would interrupt it. Its settlement
+                    // is the outcome under test, so wait for it first.
+                    const runs = yield* RunStore.RunStore
+                    yield* TestDatabase.until(Effect.map(runs.get(executionId), (row) => row.status === "failed"))
+                  }
+                  return yield* joined
                 }
                 yield* declaration.execute({ name: "restarted.txt" }, { executionId, discard: true })
                 const runs = yield* RunStore.RunStore

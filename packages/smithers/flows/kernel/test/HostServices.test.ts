@@ -16,15 +16,15 @@ import {
   Sink,
   Stream
 } from "effect"
-import * as EffectHttpClient from "effect/unstable/http/HttpClient"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
+import * as EffectHttpClient from "effect/http/HttpClient"
+import * as ChildProcess from "effect/process/ChildProcess"
 import {
   ChildProcessSpawner as EffectChildProcessSpawner,
   ExitCode,
   make as makeSpawner,
   makeHandle,
   ProcessId
-} from "effect/unstable/process/ChildProcessSpawner"
+} from "effect/process/ChildProcessSpawner"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { isAbsolute, join, relative } from "node:path"
 import * as FileSystem from "../src/FileSystem.ts"

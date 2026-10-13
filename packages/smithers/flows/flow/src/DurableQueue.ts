@@ -20,10 +20,10 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Filter from "effect/Filter"
 import * as Layer from "effect/Layer"
+import * as PersistedQueue from "effect/persistence/PersistedQueue"
 import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import * as Tracer from "effect/Tracer"
-import * as PersistedQueue from "effect/unstable/persistence/PersistedQueue"
 import * as Action from "./Action/index.ts"
 import * as DurableDeferred from "./DurableDeferred.ts"
 import { annotateWaiting, type FlowInstance, type FlowRuntime } from "./FlowRuntime/index.ts"
@@ -367,7 +367,7 @@ const makeWorkerEffect = Effect.fnUntraced(function*<
           })
           let exit = yield* Effect.exit(f(item.payload))
           if (Exit.isFailure(exit)) {
-            const [reasons, interrupts] = Arr.partition(
+            const [interrupts, reasons] = Arr.partition(
               exit.cause.reasons,
               Filter.fromPredicate(Cause.isInterruptReason)
             )

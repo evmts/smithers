@@ -8,7 +8,7 @@
 
 import * as ChildProcessEnvironment from "@smthrs/kernel/ChildProcessEnvironment"
 import { Effect, Redacted as EffectRedacted } from "effect"
-import * as Headers from "effect/unstable/http/Headers"
+import * as Headers from "effect/http/Headers"
 import { ModelError } from "./ModelError.ts"
 
 /**

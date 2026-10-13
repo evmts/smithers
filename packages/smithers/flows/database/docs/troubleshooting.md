@@ -205,6 +205,17 @@ the failure's `cause`: it carries the result's type and up to eight key names,
 which usually names the driver that returned an unexpected shape. See
 [Read a write's affected-row count](./guides/count-affected-rows.md).
 
+### `SQLite connection cannot be reused after failed COMMIT cleanup`
+
+**Cause:** a COMMIT failed, and the rollback after it failed too. The write
+that hit it reports both failures. The transaction is still open on the
+connection, so the driver refuses the connection instead of running your next
+statement inside it. Every later statement asks for the rollback first.
+
+**Fix:** remove what made the rollback fail, which is usually the disk. The
+first rollback that succeeds discards the rejected rows and returns the
+connection, with no restart. A write fails with `unknown` until then.
+
 ## Composition mistakes
 
 ### A store cannot find `SqlClient` or `DurableWriter`
@@ -253,7 +264,7 @@ against the sets you compose. A gap where a block should be is the answer.
 `SMITHERS_POSTGRES_URL` selects PostgreSQL for native filename opens unless
 `SMITHERS_BACKEND=sqlite` is set. `DATABASE_URL` counts only with
 `SMITHERS_BACKEND=postgres`. An explicit PostgreSQL URL selects it directly.
-Install the optional `@effect/sql-pg` peer at the version pinned by this package.
+Install the optional `@effect/sql-pg` peer at the same version as your `effect`.
 
 Migrate the full composed set before starting stores. Independently racing
 package ladders can install a higher block before a lower package exists; the

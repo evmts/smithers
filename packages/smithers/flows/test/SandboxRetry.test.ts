@@ -18,10 +18,10 @@ import * as RemoteChildProcessSpawner from "@smthrs/sandbox/RemoteChildProcessSp
 import * as SandboxSupervision from "@smthrs/sandbox/SandboxSupervision"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Ref from "effect/Ref"
 import * as Schema from "effect/Schema"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { Action, Engine, Flow, Interpreter, RetryPolicy } from "../src/index.ts"
 
 const { ProviderError, TestRemote } = RemoteChildProcessSpawner

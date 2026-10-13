@@ -11,7 +11,7 @@ place the flow's processes and filesystem on one Cloud workspace.
 import { CloudSandbox } from "@smthrs/cli"
 import { Sandbox } from "@smthrs/sandbox"
 import { Effect } from "effect"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 
 const host = Effect.gen(function*() {
   const spawner = yield* ChildProcessSpawner

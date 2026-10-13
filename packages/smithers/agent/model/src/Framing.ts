@@ -5,8 +5,8 @@
  */
 
 import * as Effect from "effect/Effect"
+import * as Sse from "effect/encoding/Sse"
 import * as Stream from "effect/Stream"
-import * as Sse from "effect/unstable/encoding/Sse"
 import { ModelError } from "./ModelError.ts"
 
 /**

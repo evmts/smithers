@@ -35,7 +35,7 @@ declaration.
 
 Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
 
-`effect` is a peer dependency at exactly `4.0.0-rc.115`. `@effect/platform-node`
+`effect` is a peer dependency in the range `^4.0.4`. `@effect/platform-node`
 supplies the `FileSystem` and `Path` implementations the scan walks with; the
 package itself has no platform bindings. For the import forms and what a
 runnable composition adds, see [Installation](./installation.md).

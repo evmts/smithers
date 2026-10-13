@@ -9,9 +9,9 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import { Deferred, Effect, Fiber, Logger, Option, PlatformError, Ref, Schedule, Stream } from "effect"
+import { ChildProcess } from "effect/process"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { TestClock } from "effect/testing"
-import { ChildProcess } from "effect/unstable/process"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { elapsed } from "../src/internal/deadline.ts"
 import * as RemoteChildProcessSpawner from "../src/RemoteChildProcessSpawner/index.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"

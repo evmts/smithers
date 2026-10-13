@@ -23,8 +23,8 @@ import { ControlRpcs, layerNoopAuth } from "@smthrs/control/ControlRpcs"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
 import type { ApprovalPayload, ApprovalTarget, PlanCard } from "@smthrs/control/ControlSchema"
 import { RunStore } from "@smthrs/run-store"
-import { Effect, Fiber, Layer, Schema, type Scope, Stream } from "effect"
-import { RpcTest } from "effect/unstable/rpc"
+import { Effect, Fiber, Layer, Schema, type Scope, Stream, Tracer } from "effect"
+import { RpcTest } from "effect/rpc"
 import type * as GatewayProjection from "../src/GatewayProjection.ts"
 import { GatewayRpcs, SubmitApprovalOutput } from "../src/GatewayRpcs.ts"
 import * as GatewayServer from "../src/GatewayServer.ts"
@@ -465,6 +465,33 @@ describe("Projection.Snapshot and Projection.Subscribe", () => {
       const snapshot = yield* rpc["Projection.Snapshot"]({ selector: { _tag: "run-summary", runId } })
       expect(snapshot.cursor).toMatchObject({ projection: "run-summary", runId })
       expect(snapshot.rows).toHaveLength(1)
+    }).pipe(Effect.provide(served)))
+
+  // Effect names an RPC span for the procedure on the calling and the serving
+  // side, with no `RpcClient.` or `RpcServer.` prefix.
+  test("opens a client and a server span named for the procedure", () =>
+    Effect.gen(function*() {
+      const spans: Array<Tracer.NativeSpan> = []
+      const tracer = Tracer.make({
+        span(options) {
+          const span = new Tracer.NativeSpan(options)
+          spans.push(span)
+          return span
+        }
+      })
+      yield* Effect.gen(function*() {
+        const rpc = yield* RpcTest.makeClient(GatewayRpcs)
+        const runId = yield* launch
+        yield* rpc["Projection.Snapshot"]({ selector: { _tag: "run-summary", runId } })
+      }).pipe(Effect.provideService(Tracer.Tracer, tracer))
+
+      const calls = spans.filter((span) => span.name === "Projection.Snapshot")
+      expect(calls.map((span) => span.kind).sort()).toEqual(["client", "server"])
+      for (const span of calls) {
+        expect(span.attributes.get("rpc.system.name")).toBe("effect_rpc")
+        expect(span.attributes.get("rpc.method")).toBe("Projection.Snapshot")
+      }
+      expect(spans.filter((span) => /^Rpc(Client|Server)\./.test(span.name))).toEqual([])
     }).pipe(Effect.provide(served)))
 
   test("streams a subscription's snapshot frames through the RPC group", () =>

@@ -1,7 +1,7 @@
 import { NodeServices } from "@effect/platform-node"
 import { FlowRuntime } from "@smthrs/flow"
 import { Effect, FileSystem, Layer, Redacted, Schema } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
 import { createServer, type IncomingMessage } from "node:http"

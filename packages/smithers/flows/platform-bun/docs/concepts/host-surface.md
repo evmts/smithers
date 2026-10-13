@@ -9,13 +9,13 @@ Smithers programs do not call `node:fs`, `Bun.spawn`, or a global `fetch`.
 Everything that touches the outside world enters through a closed list of five
 Effect service tags, and a host bundle is the thing that fills them:
 
-| Slot            | Tag                                           |
-| --------------- | --------------------------------------------- |
-| Filesystem      | `effect/FileSystem`                           |
-| Path            | `effect/Path`                                 |
-| Child processes | `effect/unstable/process/ChildProcessSpawner` |
-| Version control | `Jj`, from [`@smthrs/jj`](/api/jj)            |
-| Network         | `effect/unstable/http/HttpClient`             |
+| Slot            | Tag                                  |
+| --------------- | ------------------------------------ |
+| Filesystem      | `effect/FileSystem`                  |
+| Path            | `effect/Path`                        |
+| Child processes | `effect/process/ChildProcessSpawner` |
+| Version control | `Jj`, from [`@smthrs/jj`](/api/jj)   |
+| Network         | `effect/http/HttpClient`             |
 
 The list is closed for one reason, owned by
 [`@smthrs/kernel`](/api/kernel): a service that is not on it cannot be
@@ -59,7 +59,7 @@ even though a Bun program reaches it through this package. Each key is the
 slot's stable identity in the closed list, which is likewise not always the
 specifier the tag comes from: the spawner key is
 `effect/process/ChildProcessSpawner` while its tag is imported from
-`effect/unstable/process/ChildProcessSpawner`.
+`effect/process/ChildProcessSpawner`.
 
 Nothing digests these values today. [`@smthrs/plan`](/api/plan)'s step key
 carries a `layers` component they are meant to feed, but no planner derives it

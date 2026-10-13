@@ -13,11 +13,11 @@
 import { CapabilityPattern } from "@smthrs/capability/Capability"
 import { type Flow, FlowRuntime } from "@smthrs/flow"
 import type { NonEmptyReadonlyArray } from "effect/Array"
+import * as HttpApiEndpoint from "effect/http-api/HttpApiEndpoint"
+import * as HttpApiGroup from "effect/http-api/HttpApiGroup"
+import * as Rpc from "effect/rpc/Rpc"
+import * as RpcGroup from "effect/rpc/RpcGroup"
 import * as Schema from "effect/Schema"
-import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint"
-import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup"
-import * as Rpc from "effect/unstable/rpc/Rpc"
-import * as RpcGroup from "effect/unstable/rpc/RpcGroup"
 import { isWellFormedUtf16 } from "./internal/Utf16.ts"
 
 /**
@@ -158,7 +158,7 @@ const executePayload = <Payload extends Flow.AnyStructSchema>(
  * ```ts
  * import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
  * import { Effect, Layer, Schema } from "effect"
- * import { RpcServer } from "effect/unstable/rpc"
+ * import { RpcServer } from "effect/rpc"
  * import { FlowEngine, FlowProxy, FlowProxyServer } from "@smthrs/engine"
  * import { Action, Flow, Interpreter } from "@smthrs/flow"
  *
@@ -277,7 +277,7 @@ export type ConvertRpcs<Flows extends Flow.Any, Prefix extends string> = Flows e
  * ```ts
  * import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
  * import { Effect, Layer, Schema } from "effect"
- * import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi"
+ * import { HttpApi, HttpApiBuilder } from "effect/http-api"
  * import { FlowEngine, FlowProxy, FlowProxyServer } from "@smthrs/engine"
  * import { Action, Flow, Interpreter } from "@smthrs/flow"
  *

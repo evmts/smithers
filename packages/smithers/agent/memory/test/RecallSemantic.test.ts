@@ -1,7 +1,7 @@
 import { DurableWriter } from "@smthrs/database/DurableWriter"
 import { Cause, Deferred, Effect, Exit, Fiber, Option, Scope, Stream } from "effect"
+import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { afterAll, describe, expect, it } from "vitest"
 import type { DatabaseService } from "../src/Database.ts"
 import * as Embedding from "../src/Embedding.ts"

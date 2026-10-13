@@ -163,7 +163,7 @@ describe("decodeGatewayResponse", () => {
 /*
  * The failure wire, produced by the installed Effect codec instead of by hand.
  *
- * `Rpc.exitSchema` (effect/unstable/rpc/Rpc) builds
+ * `Rpc.exitSchema` (effect/rpc/Rpc) builds
  * `Schema.Exit(success, error, Schema.Defect())` for every procedure and
  * `RpcServer` writes that JSON into the `Exit` frame, so encoding an `Exit`
  * with the same schema here is the shape a live workspace sends. A release of
@@ -224,6 +224,16 @@ describe("the encoded Exit wire", () => {
     expect(relay(Exit.interrupt(7))).toEqual({
       ok: false,
       error: { message: "The workspace cancelled the call.", detail: [{ _tag: "Interrupt", fiberId: 7 }] }
+    })
+  })
+
+  test("reads a cancellation that names no fiber", () => {
+    // Effect 4 types the wire's `fiberId` as `number | null | undefined`, and
+    // the codec writes `null` for an interrupt that names no fiber.
+    expect(encode(Exit.interrupt())).toEqual({ _tag: "Failure", cause: [{ _tag: "Interrupt", fiberId: null }] })
+    expect(relay(Exit.interrupt())).toEqual({
+      ok: false,
+      error: { message: "The workspace cancelled the call.", detail: [{ _tag: "Interrupt", fiberId: null }] }
     })
   })
 

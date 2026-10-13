@@ -14,7 +14,7 @@ it("typechecks the README lifecycle and supervision fences together", () => {
   expect(lifecycle).toBeDefined()
   expect(supervision).toBeDefined()
   checkFences([
-    "declare const spawner: import(\"effect/unstable/process/ChildProcessSpawner\").ChildProcessSpawner[\"Service\"]",
+    "declare const spawner: import(\"effect/process/ChildProcessSpawner\").ChildProcessSpawner[\"Service\"]",
     lifecycle!,
     supervision!
   ].join("\n"))

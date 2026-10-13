@@ -21,7 +21,7 @@ OpenTelemetry SDK. `@smthrs/observability/package.json` is exported.
 | `@smthrs/observability/NodeOtel`    | [src/NodeOtel.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/src/NodeOtel.ts)       | Node     |
 | `@smthrs/observability/BrowserOtel` | [src/BrowserOtel.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/src/BrowserOtel.ts) | browser  |
 
-The package is tested with `effect@4.0.0-rc.115`. Layers, services, and schemas
+The package is tested with `effect@4.0.4` and accepts `^4.0.4`. Layers, services, and schemas
 are Effect constructs: a `Layer` provides services, a scoped layer releases on
 scope close, and a schema decodes to an `Effect`.
 
@@ -38,7 +38,7 @@ await Effect.runPromise(program.pipe(Effect.provide(telemetry), Effect.orDie, Ef
 
 ## Otlp
 
-The default exporter. `Otlp` composes `effect/unstable/observability/Otlp` and
+The default exporter. `Otlp` composes `effect/observability/Otlp` and
 nothing else, so it allocates no OpenTelemetry SDK and never resolves a `node:`
 built-in. All three signals are JSON-serialized and posted below the configured
 base URL at `/v1/logs`, `/v1/metrics`, and `/v1/traces`.
@@ -115,8 +115,9 @@ const reservedBatchBytes: number // 909312 (888 KiB)
 ```
 
 The resource ceiling is 128 KiB. Another 8 KiB covers JSON wrappers and the
-instrumentation scope, which repeats the service name (at most 6 KiB after
-escaping). The remaining 888 KiB gives each record in the upstream 1,000-record
+instrumentation scope. A metrics request repeats the service name as its scope
+name (at most 6 KiB after escaping). Log and trace requests name their scope
+`effect` with the Effect version. The remaining 888 KiB gives each record in the upstream 1,000-record
 log or span batch about 909 bytes, several times a bare record. This guarantees
 room for ordinary signal batches, not arbitrary record sizes or metric registry
 cardinality.
@@ -192,10 +193,18 @@ package cannot read its own manifest on every runtime it supports.
 ### Delivery behavior
 
 Effect's exporter retries a transient failure three times, honoring a
-`retry-after` response header when one is present, then disables that exporter
-for 60 seconds and logs a `Debug` record. Export failure never fails the
-application effect and never surfaces as an unhandled rejection. Closing the
-layer's scope performs the final flush, bounded by `shutdownTimeout`.
+`retry-after` response header on any retried status when one is present, then
+disables that exporter for 60 seconds and logs a `Debug` record. Export failure
+never fails the application effect and never surfaces as an unhandled
+rejection. Closing the layer's scope performs the final flush, bounded by
+`shutdownTimeout`.
+
+The exporter acts on a response's status and `retry-after` header only. It
+never reads the response body: each exchange ends when the status arrives, so
+a collector that never finishes its answer cannot stall a signal.
+
+The shape of what a collector receives is in
+[Export to an OTLP collector](./guides/export-to-a-collector.md#what-the-collector-receives).
 
 ## Endpoint
 
@@ -317,10 +326,11 @@ const maximumResourceBytes: number // 131072 (128 KiB)
 ```
 
 The resource byte limit counts the complete OTLP JSON resource, including
-identity, SDK-added `telemetry.sdk.name` and `telemetry.sdk.language`, attribute
-keys, scalar and array wrappers, escaping, and UTF-8. SDK fields are reserved
-even for the default Effect exporter, and caller attributes that the SDK
-overwrites are conservatively counted too.
+identity, SDK-added `telemetry.sdk.name`, `telemetry.sdk.language` and
+`telemetry.sdk.version`, attribute keys, scalar and array wrappers, escaping,
+and UTF-8. The SDK's own values are reserved even for the default Effect
+exporter, and a caller attribute that replaces one of them is conservatively
+counted beside it.
 Counting stops at the first fragment over budget to bound intermediate
 allocations; the error reports the measured lower bound and byte limit at path
 `attributes`. Array-length errors report the measured element count and limit
@@ -678,6 +688,8 @@ const layerOtel: (options: Options) => Layer.Layer<never, Resource.InvalidResour
 
 Bridges Effect's tracer, logger, and metrics onto the supplied providers and
 the readers the `metricReader` factory returns, over the validated resource.
+Spans and log records carry the instrumentation scope `effect` with the Effect
+version.
 Each bridge is installed only when its provider or factory is supplied, and a
 factory that returns an empty array registers no reader at all.
 

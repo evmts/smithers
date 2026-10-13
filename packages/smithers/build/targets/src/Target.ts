@@ -1407,9 +1407,12 @@ export const make = <
   const errorSchema = options.error ?? Schema.Unknown
   const decodeSuccess = Schema.decodeUnknownSync(Schema.toType(successSchema))
   const schemaIdentity = freezeDocument({
-    attrs: Schema.toJsonSchemaDocument(options.attrs, { onExcessProperty: "error" }),
-    success: Schema.toJsonSchemaDocument(successSchema, { onExcessProperty: "error" }),
-    error: Schema.toJsonSchemaDocument(errorSchema, { onExcessProperty: "error" })
+    // Owned identity, not the installed emitter: it is part of every target's
+    // cache key (`Planner.targetKeyBody`), and a later effect release must
+    // not re-key it.
+    attrs: Node.schemaIdentity(options.attrs, { onExcessProperty: "error" }),
+    success: Node.schemaIdentity(successSchema, { onExcessProperty: "error" }),
+    error: Node.schemaIdentity(errorSchema, { onExcessProperty: "error" })
   })
   // The digest identifies the text of the functions a declaration passes in.
   // `Node.functionIdentity` is the wrong tool for that: for an uncaptured

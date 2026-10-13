@@ -6,9 +6,9 @@
 
 import * as Context from "effect/Context"
 import type * as Effect from "effect/Effect"
+import type { Signal } from "effect/process/ChildProcess"
 import type { Scope } from "effect/Scope"
 import type * as Stream from "effect/Stream"
-import type { Signal } from "effect/unstable/process/ChildProcess"
 import type { ProviderError } from "./ProviderError.ts"
 
 /**

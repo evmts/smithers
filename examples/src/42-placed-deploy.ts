@@ -20,8 +20,8 @@ import * as SecretProxy from "@smthrs/targets/SecretProxy"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import { FetchHttpClient, HttpRouter, type HttpServer } from "effect/unstable/http"
-import { RpcClient, RpcSerialization, RpcServer } from "effect/unstable/rpc"
+import { FetchHttpClient, HttpRouter, type HttpServer } from "effect/http"
+import { RpcClient, RpcSerialization, RpcServer } from "effect/rpc"
 import { durableEngine } from "./durable-layer.ts"
 
 /** Sends one release to the deploy endpoint with the deploy token. */

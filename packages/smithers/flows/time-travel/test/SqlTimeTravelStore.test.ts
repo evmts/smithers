@@ -4,7 +4,7 @@ import * as Migrations from "@smthrs/engine-store/Migrations"
 import { Journal, JournalEvent, SqlJournal } from "@smthrs/journal"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
 
 const owner = { hostId: "host-a", pid: 1234, nonce: "nonce" } as const

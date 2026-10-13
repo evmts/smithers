@@ -1,30 +1,28 @@
-# Deployment tool compatibility with Effect rc.115
+# Dependency patches
 
-These exact-version patches adapt the repository's private deployment tools to
-Effect `4.0.0-rc.115`. Alchemy and its Cloudflare runtime `2.0.0-beta.76`,
-alongside their Distilled `1.0.0-rc.8`
-dependencies still call the removed lowercase Config constructors. Alchemy also
-uses the former Config effect mapper and lowercase CLI constructors.
-
-The patches update those calls to the corresponding rc.115 APIs in both source
-and emitted JavaScript. They do not change Effect, resource declarations,
-credentials, provider endpoints or deployment behavior. The public `@smthrs/*`
-tarballs do not depend on these deployment packages and do not require these
-patches in consumer applications.
-
-`package.json#patchedDependencies` is used by Bun;
+`patchedDependencies` lists every patch in this directory twice:
+`package.json#patchedDependencies` is used by Bun and
 `pnpm-workspace.yaml#patchedDependencies` is used by pnpm. Keep their exact
 package versions and patch paths identical, and regenerate both lockfiles when
 a patch changes. Frozen installation must apply the checked-in patch bytes.
 
-Validate with the offline stack tests in
-`apps/site/scripts/deployment.test.mjs`, the documentation checks, and both
-package managers' frozen installs. These checks import and inspect stacks; they
-do not deploy infrastructure. Remove each patch when upgrading to an upstream
-version that uses the supported Effect APIs, and repeat these checks before
-deploying with that version.
+## Deployment tools need no patch
 
-# dprint static Linux binary
+The private deployment packages, `@smthrs/build-infra` and
+`@smthrs/bug-worker`, pin `alchemy` `2.0.0-beta.82`. It brings
+`@alchemy.run/*` `2.0.0-beta.82` and `@distilled.cloud/*` `1.0.0-rc.15`, which
+call the stable Effect 4 APIs. The ten patches that adapted `alchemy` and its
+Cloudflare runtime `2.0.0-beta.76` and `@distilled.cloud/*` `1.0.0-rc.8` to
+Effect `4.0.0-rc.115` are removed.
+
+After an Alchemy upgrade, run the offline stack tests in
+`apps/site/scripts/deployment.test.mjs`, the suites of both deployment
+packages, and both package managers' frozen installs before deploying with the
+new version. These checks import and inspect stacks; they do not deploy
+infrastructure. The public `@smthrs/*` tarballs do not depend on the
+deployment packages.
+
+## dprint static Linux binary
 
 `dprint@0.57.1.patch` makes the npm `dprint` wrapper run the static musl build
 on every Linux host with a musl build, instead of the glibc build. The glibc

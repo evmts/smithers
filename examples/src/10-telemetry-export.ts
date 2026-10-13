@@ -15,8 +15,8 @@
  *
  * 1. The OTLP export: every span the packages open (the flow lifecycle, the
  *    engine dispatch, run claims and heartbeats, journal writes, down to
- *    individual `sql.execute` statements) posts to `/v1/traces`, and every
- *    metric series to `/v1/metrics`.
+ *    individual SQL statements, each a span named for the database, `sqlite`
+ *    here) posts to `/v1/traces`, and every metric series to `/v1/metrics`.
  * 2. The durable journal: `Journal.entries` reads the run's lifecycle events
  *    in-process, no collector involved.
  * 3. The metric handles: `Metric.value` reads a counter in-process, no
@@ -37,7 +37,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as Schema from "effect/Schema"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { durableEngine } from "./durable-layer.ts"
 
 export const Pack = Action.make("examples/Pack", {

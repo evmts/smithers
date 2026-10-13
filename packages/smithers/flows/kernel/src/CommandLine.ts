@@ -1,7 +1,7 @@
 /**
  * @since 1.0.0-rc.0
  *
- * Rendering an `effect/unstable/process` `Command` back to a shell command
+ * Rendering an `effect/process` `Command` back to a shell command
  * line.
  *
  * Two callers need the same string and must agree on it exactly:
@@ -19,7 +19,7 @@
  * browser-safe side of the package.
  */
 
-import type * as ChildProcess from "effect/unstable/process/ChildProcess"
+import type * as ChildProcess from "effect/process/ChildProcess"
 import { isInheritedName } from "./ChildProcessEnvironment.ts"
 
 /** Tokens made only of these characters need no quoting in a POSIX shell. */

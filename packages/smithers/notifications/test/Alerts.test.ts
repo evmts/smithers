@@ -10,11 +10,12 @@
  */
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
-import { Cause, Duration, Effect, Exit, Fiber, Layer } from "effect"
+import { Cause, Duration, Effect, Exit, Fiber, Layer, Logger, References, Tracer } from "effect"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import * as HttpClient from "effect/http/HttpClient"
+import type * as HttpClientResponse from "effect/http/HttpClientResponse"
 import { TestClock } from "effect/testing"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
-import * as HttpClient from "effect/unstable/http/HttpClient"
-import type * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
+import { inspect } from "node:util"
 import { describe, expect, it } from "vitest"
 import * as Alerts from "../src/Alerts.ts"
 import * as NotificationQueue from "../src/NotificationQueue.ts"
@@ -601,6 +602,266 @@ describe("Alerts.layerWebhook", () => {
     expect(result._tag === "Failure" ? result.failure : result).toMatchObject({
       code: "sink_rejected",
       status: 307
+    })
+  })
+
+  /**
+   * One delivery through the shipped sink, with everything a reader of its
+   * telemetry could see: every span it opened, every log line it wrote at any
+   * level, and the result it returned.
+   */
+  const tracedDelivery = async (
+    options: Parameters<typeof Alerts.layerWebhook>[0],
+    answer: () => Response | Error,
+    recordHeaders = false
+  ) => {
+    const spans: Array<Tracer.NativeSpan> = []
+    const tracer = Tracer.make({
+      span(spanOptions) {
+        const span = new Tracer.NativeSpan(spanOptions)
+        spans.push(span)
+        return span
+      }
+    })
+    const logs: Array<unknown> = []
+    const logger = Logger.make((line) => {
+      logs.push({
+        message: line.message,
+        cause: Cause.pretty(line.cause),
+        annotations: line.fiber.getRef(References.CurrentLogAnnotations)
+      })
+    })
+    const sent: Array<{ readonly url: string; readonly headers: Headers }> = []
+    const fetch: typeof globalThis.fetch = async (url, init) => {
+      sent.push({ url: String(url), headers: new Headers(init?.headers) })
+      const answered = answer()
+      if (answered instanceof Error) throw answered
+      return answered
+    }
+    const delivery = Effect.gen(function*() {
+      const sink = yield* Alerts.Sink
+      return yield* Effect.result(sink.deliver({
+        runId,
+        condition: "stalled",
+        since: 0,
+        firedAt: 0,
+        severity: "warning",
+        coalescingKey: Alerts.coalescingKey(runId, "stalled")
+      }))
+    }).pipe(
+      Effect.provide(Alerts.layerWebhook(options)),
+      Effect.provideService(FetchHttpClient.Fetch, fetch),
+      Effect.provideService(Tracer.Tracer, tracer),
+      Effect.provide(Logger.layer([logger])),
+      Effect.provideService(References.MinimumLogLevel, "All")
+    )
+    const result = await Effect.runPromise(
+      recordHeaders ? delivery.pipe(Effect.provideService(HttpClient.TracerHeaderFilter, () => true)) : delivery
+    )
+    const requests = spans.filter((span) => span.kind === "client")
+    expect(requests.map((span) => span.name)).toEqual(["POST"])
+    const span = requests[0]!
+    const status = span.status
+    const failure = status._tag === "Ended" && status.exit._tag === "Failure" ? status.exit.cause : undefined
+    return {
+      result,
+      sent,
+      span,
+      attributes: Object.fromEntries(span.attributes),
+      /** The typed failure the span ended with, or `undefined` for a span that succeeded. */
+      spanFailure: failure === undefined ? undefined : Cause.squash(failure),
+      /** Everything recorded, rendered the ways an exporter, a log sink or a reader could render it. */
+      telemetry: [
+        inspect(
+          spans.map((opened) => ({
+            name: opened.name,
+            attributes: [...opened.attributes],
+            events: opened.events,
+            links: opened.links,
+            status: opened.status
+          })),
+          { depth: 12 }
+        ),
+        failure === undefined ? "" : Cause.pretty(failure),
+        failure === undefined
+          ? ""
+          : JSON.stringify(Cause.prettyErrors(failure).map((error) => [error.message, error.stack])),
+        inspect(logs, { depth: 12 }),
+        inspect(result, { depth: 12 }),
+        JSON.stringify(result)
+      ].join("\n")
+    }
+  }
+
+  // The HTTP client records a header on its span only when the host's
+  // `HttpClient.TracerHeaderFilter` admits it, and by default it admits none.
+  it.each([204, 503])("records no webhook header on the HTTP span of a delivery answered %s", async (status) => {
+    const { attributes, result, sent, telemetry } = await tracedDelivery(
+      {
+        url: "https://pager.test/alerts",
+        headers: { "x-pager-token": "SYNTHETIC_PAGER_SECRET", authorization: "Bearer SYNTHETIC_BEARER_SECRET" }
+      },
+      () => new Response(null, { status, headers: { "set-cookie": "session=SYNTHETIC_RESPONSE_SECRET" } })
+    )
+    expect(result._tag).toBe(status === 204 ? "Success" : "Failure")
+    // The credential went out on the wire, so the span is the only place left
+    // to keep it from.
+    expect(sent.map((request) => request.headers.get("x-pager-token"))).toEqual(["SYNTHETIC_PAGER_SECRET"])
+    expect(Object.keys(attributes).filter((key) => key.includes(".header."))).toEqual([])
+    expect(telemetry).not.toContain("_SECRET")
+  })
+
+  // A host that turns header capture on records every header of the delivery.
+  // The sink names its configured headers, and the headers a redirect answers
+  // with, as ones to redact: both can carry what the webhook is authorized by.
+  it("redacts the configured headers on an HTTP span that records headers", async () => {
+    const { attributes, sent, telemetry } = await tracedDelivery(
+      {
+        url: "https://pager.test/alerts",
+        headers: { "X-Pager-Token": "SYNTHETIC_PAGER_SECRET", authorization: "Bearer SYNTHETIC_BEARER_SECRET" }
+      },
+      () =>
+        new Response(null, {
+          status: 307,
+          headers: {
+            location: "https://pager.test/alerts/SYNTHETIC_MOVED_SECRET",
+            "content-location": "/alerts/SYNTHETIC_MOVED_SECRET",
+            "x-request-id": "request-7"
+          }
+        }),
+      true
+    )
+    expect(sent.map((request) => request.headers.get("x-pager-token"))).toEqual(["SYNTHETIC_PAGER_SECRET"])
+    expect(attributes).toMatchObject({
+      "http.request.header.x-pager-token": "<redacted>",
+      "http.request.header.authorization": "<redacted>",
+      "http.request.header.idempotency-key": Alerts.alertId({
+        since: 0,
+        coalescingKey: Alerts.coalescingKey(runId, "stalled")
+      }),
+      "http.response.header.location": "<redacted>",
+      "http.response.header.content-location": "<redacted>",
+      "http.response.header.x-request-id": "request-7"
+    })
+    expect(telemetry).not.toContain("_SECRET")
+  })
+
+  describe("a webhook url that is itself the credential", () => {
+    // Slack, Discord and PagerDuty put the secret in the path. Others take it
+    // in the query, and a url may carry basic-auth userinfo.
+    const url = "https://alerts-user:USERINFO_SECRET@hooks.pager.test:8443/services/T000/PATH_SECRET?token=QUERY_SECRET"
+    const secrets = ["USERINFO_SECRET", "PATH_SECRET", "QUERY_SECRET"]
+    const origin = {
+      "http.request.method": "POST",
+      "url.scheme": "https",
+      "server.address": "hooks.pager.test",
+      "server.port": 8443
+    }
+
+    it.each([
+      {
+        outcome: "a 204",
+        answer: () => new Response(null, { status: 204 }),
+        attributes: { ...origin, "http.response.status_code": 204 },
+        failure: undefined
+      },
+      {
+        outcome: "a 404",
+        answer: () => new Response(`no such hook: ${url}`, { status: 404 }),
+        attributes: { ...origin, "http.response.status_code": 404, "error.type": "404" },
+        failure: { code: "sink_rejected", status: 404, message: "Alert webhook answered 404" }
+      },
+      {
+        outcome: "a 503",
+        answer: () => new Response(null, { status: 503 }),
+        attributes: { ...origin, "http.response.status_code": 503, "error.type": "503" },
+        failure: { code: "sink_rejected", status: 503, message: "Alert webhook answered 503" }
+      },
+      {
+        outcome: "a transport error",
+        // A transport's own text names the address it could not reach.
+        answer: () => new TypeError(`fetch failed: connect ECONNREFUSED ${url}`),
+        attributes: origin,
+        failure: { code: "sink_unreachable", message: "Alert webhook could not be reached" }
+      }
+    ])(
+      "keeps the url's path, query and userinfo out of the span, its failure and the logs on $outcome",
+      async ({ answer, attributes, failure }) => {
+        const delivered = await tracedDelivery({ url }, answer)
+
+        // The page went to the url as configured.
+        expect(delivered.sent.map((request) => request.url)).toEqual([url])
+        for (const secret of secrets) expect(delivered.telemetry).not.toContain(secret)
+        // What is left is the request's method, scheme, host, port and answer.
+        expect(delivered.attributes).toEqual(attributes)
+        expect(delivered.span.status._tag).toBe("Ended")
+        if (failure === undefined) expect(delivered.spanFailure).toBeUndefined()
+        else expect(delivered.spanFailure).toMatchObject({ _tag: "/notifications/AlertError", ...failure })
+      }
+    )
+
+    it("names its span for the method even when the host names HTTP spans for their url", async () => {
+      const spans: Array<Tracer.NativeSpan> = []
+      const tracer = Tracer.make({
+        span(spanOptions) {
+          const span = new Tracer.NativeSpan(spanOptions)
+          spans.push(span)
+          return span
+        }
+      })
+      await Effect.runPromise(
+        Effect.gen(function*() {
+          const sink = yield* Alerts.Sink
+          yield* sink.deliver({
+            runId,
+            condition: "stalled",
+            since: 0,
+            firedAt: 0,
+            severity: "warning",
+            coalescingKey: Alerts.coalescingKey(runId, "stalled")
+          })
+        }).pipe(
+          Effect.provide(Alerts.layerWebhook({ url })),
+          Effect.provideService(FetchHttpClient.Fetch, async () => new Response(null, { status: 204 })),
+          Effect.provideService(Tracer.Tracer, tracer),
+          Effect.provideService(HttpClient.SpanNameGenerator, (request) => `${request.method} ${request.url}`)
+        )
+      )
+      expect(spans.filter((span) => span.kind === "client").map((span) => span.name)).toEqual(["POST"])
+    })
+
+    it.each([
+      { outcome: "a 503", answer: () => new Response(null, { status: 503 }), code: "sink_rejected" },
+      {
+        outcome: "a transport error",
+        answer: () => new TypeError(`fetch failed: connect ECONNREFUSED ${url}`),
+        code: "sink_unreachable"
+      }
+    ])("keeps the url out of the journal and the notification queue on $outcome", async ({ answer, code }) => {
+      const fetch: typeof globalThis.fetch = async () => {
+        const answered = answer()
+        if (answered instanceof Error) throw answered
+        return answered
+      }
+      const sink = Alerts.layerWebhook({ url }).pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch)(fetch)))
+      const observed = await Effect.runPromise(
+        Effect.gen(function*() {
+          const alerts = yield* Alerts.AlertRuntime
+          const journal = yield* Journal.Journal
+          const queue = yield* NotificationQueue.NotificationQueue
+          yield* parkForApproval
+          yield* TestClock.adjust("2 minutes")
+          const tick = yield* alerts.tick(runId)
+          const entries = yield* journal.entries({ runId: JournalEvent.RunId.make(runId), limit: 512 })
+          return { tick, entries: entries.entries, pending: yield* queue.pending(runId) }
+        }).pipe(Effect.provide(stack(sink)), Effect.scoped, Effect.orDie)
+      )
+
+      expect(observed.tick.failed.map((alert) => alert.condition)).toEqual(["waiting-approval"])
+      expect(observed.entries.find((entry) => entry.eventType === Alerts.failedEventType)?.payload)
+        .toMatchObject({ code })
+      const durable = inspect(observed, { depth: 12 }) + JSON.stringify(observed)
+      for (const secret of secrets) expect(durable).not.toContain(secret)
     })
   })
 

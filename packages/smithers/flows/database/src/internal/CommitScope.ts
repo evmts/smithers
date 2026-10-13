@@ -5,7 +5,7 @@
  */
 
 import { Context, Effect, Option } from "effect"
-import type * as SqlClient from "effect/unstable/sql/SqlClient"
+import type * as SqlClient from "effect/sql/SqlClient"
 
 /**
  * Registrations owned by one write attempt or nested savepoint.

@@ -8,11 +8,15 @@ const example = {
   name: "@smthrs/flows",
   version: "0.1.0",
   dependencies: {
-    "@smthrs/kernel": "0.1.0",
-    effect: "4.0.0-rc.115"
+    "@smthrs/kernel": "0.1.0"
+  },
+  // A library's Effect peer is a range the cut has no business moving.
+  peerDependencies: {
+    effect: "^4.0.4"
   },
   devDependencies: {
     "@smthrs/kernel": "workspace:*",
+    effect: "4.0.4",
     vitest: "5.0.0"
   }
 }
@@ -22,11 +26,14 @@ test("retarget moves the version and the exact workspace ranges together", () =>
     name: "@smthrs/flows",
     version: "0.1.0-next.0",
     dependencies: {
-      "@smthrs/kernel": "0.1.0-next.0",
-      effect: "4.0.0-rc.115"
+      "@smthrs/kernel": "0.1.0-next.0"
+    },
+    peerDependencies: {
+      effect: "^4.0.4"
     },
     devDependencies: {
       "@smthrs/kernel": "0.1.0-next.0",
+      effect: "4.0.4",
       vitest: "5.0.0"
     }
   })

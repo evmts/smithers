@@ -20,9 +20,9 @@ import * as ProcessConfinement from "@smthrs/kernel/ProcessConfinement"
 import * as BrowserChildProcessSpawner from "@smthrs/platform-browser/BrowserChildProcessSpawner"
 import * as BrowserFileSystem from "@smthrs/platform-browser/BrowserFileSystem"
 import { Effect, type FileSystem, Layer, Path, Random } from "effect"
+import type { HttpClient as EffectHttpClient } from "effect/http/HttpClient"
+import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { TestClock } from "effect/testing"
-import type { HttpClient as EffectHttpClient } from "effect/unstable/http/HttpClient"
-import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 
 /** POSIX-normalize so `/a/b`, `/a/b/`, and `/a/./b` are one key in the store. */
 const normalize = (path: string): string => {

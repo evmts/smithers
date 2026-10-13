@@ -13,6 +13,8 @@ import { spawn } from "node:child_process"
 import { readdirSync, readFileSync, realpathSync } from "node:fs"
 import { join } from "node:path"
 
+import { satisfies } from "semver"
+
 /**
  * Sends MCP `initialize` over stdio to `command args` and returns the
  * server's `serverInfo`. Rejects when the process exits, errors, answers with
@@ -99,12 +101,45 @@ export const installedEffectFamily = (root) => {
       manifest = JSON.parse(readFileSync(join(real, "package.json"), "utf8"))
     } catch { return }
     if (isEffectFamily(manifest.name ?? "") && !found.has(real)) {
-      found.set(real, { name: manifest.name, version: manifest.version, path: real })
+      found.set(real, {
+        name: manifest.name,
+        version: manifest.version,
+        path: real,
+        // What this package itself asks of `effect`; `effect` asks nothing.
+        effectPeer: manifest.peerDependencies?.effect
+      })
     }
     visit(join(real, "node_modules"))
   }
   visit(join(root, "node_modules"))
   return [...found.values()].sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version) || a.path.localeCompare(b.path))
+}
+
+/**
+ * Fails unless `root` resolved `effect` at `version` alone and every Effect
+ * adapter it resolved accepts that release through its own `effect` peer.
+ *
+ * This is the rule for an application that picked its own Effect inside the
+ * supported range. Its adapters need not share one version: a Smithers package
+ * installs an adapter at the tested release, and that adapter peers `effect`
+ * from its own version up, so it is correct beside any later Effect. An adapter
+ * newer than the Effect it runs on is the #2398 failure, and its peer says so.
+ * An adapter that states no `effect` peer cannot be shown to accept anything.
+ */
+export const assertEffectFamilyAccepts = (root, version) => {
+  const installed = installedEffectFamily(root)
+  if (!installed.some(({ name }) => name === "effect")) throw new Error(`${root}: no installed effect package`)
+  const wrong = installed.filter((entry) =>
+    entry.name === "effect"
+      ? entry.version !== version
+      : entry.effectPeer === undefined || !satisfies(version, entry.effectPeer)
+  )
+  if (wrong.length > 0) {
+    throw new Error(`Consumer resolved Effect-family packages that do not accept effect@${version}:\n` +
+      wrong.map(({ name, version: found, effectPeer, path }) =>
+        `  ${name}@${found}${name === "effect" ? "" : ` (peer effect ${effectPeer ?? "undeclared"})`} at ${path}`).join("\n"))
+  }
+  return installed
 }
 
 /**

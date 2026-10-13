@@ -23,7 +23,7 @@
 
 import * as Dialect from "@smthrs/database/Dialect"
 import * as Effect from "effect/Effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 
 /**
  * Adds `waiting_request` to `flows_runs`.

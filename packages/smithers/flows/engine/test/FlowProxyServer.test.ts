@@ -19,9 +19,9 @@ import {
   Schema,
   Scope
 } from "effect"
-import { Etag, HttpPlatform, HttpRouter } from "effect/unstable/http"
-import { HttpApi, HttpApiBuilder, HttpApiClient, HttpApiTest } from "effect/unstable/httpapi"
-import { Rpc, RpcClient, RpcGroup, RpcMessage, RpcSerialization, RpcServer, RpcTest } from "effect/unstable/rpc"
+import { Etag, HttpPlatform, HttpRouter } from "effect/http"
+import { HttpApi, HttpApiBuilder, HttpApiClient, HttpApiTest } from "effect/http-api"
+import { Rpc, RpcClient, RpcGroup, RpcMessage, RpcSerialization, RpcServer, RpcTest } from "effect/rpc"
 import { readFileSync } from "node:fs"
 import { FlowEngine, FlowProxy, FlowProxyServer } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"

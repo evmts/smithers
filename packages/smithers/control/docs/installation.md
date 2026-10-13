@@ -69,7 +69,7 @@ runtime. Its journal uses a real in-memory SQLite database, so the
 [Quickstart](./quickstart.md) adds the optional Node driver:
 
 ```bash
-pnpm add effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
+pnpm add effect @effect/sql-sqlite-node
 ```
 
 ### A durable composition
@@ -89,7 +89,7 @@ inside `effect`. A Node host adds the platform bindings and a serialization
 format:
 
 ```bash
-pnpm add @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115
+pnpm add @effect/platform-node @effect/platform-node-shared
 ```
 
 See [Serve the control plane over RPC](./guides/serve-over-rpc.md).

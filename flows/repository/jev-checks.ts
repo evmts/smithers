@@ -3,7 +3,7 @@ import { environmentDispatcher, layerRebuildableRequestExecutor, layerSeatEvalua
 import * as Classifier from "@smthrs/model/Classifier"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Layer, Result, Schema } from "effect"
-import type * as HttpClient from "effect/unstable/http/HttpClient"
+import type * as HttpClient from "effect/http/HttpClient"
 import { matchesGlob } from "node:path"
 import { CodingError } from "../coding/schema.ts"
 import type { Comparison, SemanticVerdict } from "./checks.ts"

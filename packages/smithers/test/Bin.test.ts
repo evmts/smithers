@@ -410,7 +410,7 @@ describe("smithers executable", processBudget, () => {
   /**
    * `--version` and `--help` are documents, not work. They resolved a project
    * root, scanned its `flows/` tree, and opened both SQLite databases before
-   * `effect/unstable/cli` decided the invocation only wanted a document. In
+   * `effect/cli` decided the invocation only wanted a document. In
    * the release validation that cost more than ten minutes: the invocation
    * directory held no project marker, the walk climbed to `$HOME`, and
    * discovery scanned the whole home tree.

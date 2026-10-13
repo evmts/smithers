@@ -140,7 +140,7 @@ https://smithers.sh/docs/reference/api/flow/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/flow/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/reference/flow.md)
 
-Install the package with its exact `effect` peer. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+Install the package with its `effect` peer. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
 
 ## Entry points
 
@@ -3719,7 +3719,7 @@ The `exports` map publishes the index, every module under `src` through the `./*
 
 The second row stands for every public module. The subpaths `./internal/*` and
 `./index` map to `null`, so neither resolves. Registry installs use the built
-ESM/CommonJS distribution, and `effect` is an exact peer at `4.0.0-rc.115`.
+ESM/CommonJS distribution, and `effect` is a peer in the range `^4.0.4`.
 
 ## Namespaces
 
@@ -7313,6 +7313,13 @@ resumable-upload `308` fails as an unexpected status, so credential headers
 never reach another origin. The complete server-side contract is in
 [Serve the artifact protocol](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/artifacts/docs/guides/serve-the-artifact-protocol.md).
 
+Effect's HTTP client opens one span per request, named for the request method.
+It records no request or response header, so a trace carries no credential. A
+host that sets `HttpClient.TracerHeaderFilter` to record headers gets every
+name configured in `headers` as `<redacted>`. A `4xx` or `5xx` answer ends the
+span as failed with the status in `error.type`, so a `HEAD` for an absent
+artifact shows a failed span although `has` returned `false`.
+
 ### Options
 
 | Field                         | Default    | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
@@ -8704,7 +8711,7 @@ const Canonical: Schema.decodeTo<
 ```
 
 The same serialization as an [`effect/Schema`](https://effect.website) codec,
-built against Effect 4: the package declares `effect@4.0.0-rc.115` as a peer
+built against Effect 4: the package declares `effect@^4.0.4` as a peer
 dependency.
 
 **Decoding** takes any value, canonicalizes it, and returns the document
@@ -8893,7 +8900,7 @@ Every export is a value, a schema, or a pure function. Enforcement, the
 `GrantStore`, the decorating layers, and the journal live in
 [`@smthrs/kernel`](/docs/reference/api/kernel/). This package's one runtime dependency is
 [`@smthrs/canonical`](/docs/reference/api/canonical/), which itself depends only on the shared
-`effect@4.0.0-rc.115` peer. Both the kernel and [`@smthrs/jj`](/docs/reference/api/jj/) can
+`effect@^4.0.4` peer. Both the kernel and [`@smthrs/jj`](/docs/reference/api/jj/) can
 therefore depend on it without a cycle, and a protected service names
 permission failures in its own interface.
 
@@ -10786,7 +10793,7 @@ The shipped command catalog.
 | `names`       | `ReadonlyArray<string>`                      | Every shipped command name.                                                                                                                                        |
 | `find`        | `(name: string) => Verb \| undefined`        | One shipped verb by name.                                                                                                                                          |
 
-`completions` is the only `builtin` entry: `effect/unstable/cli` provides it as
+`completions` is the only `builtin` entry: `effect/cli` provides it as
 the global `--completions <shell>` flag rather than as a subcommand.
 
 ## Unsupported
@@ -13015,7 +13022,7 @@ platform specific and lives at an explicit subpath.
 
 ```ts
 import * as DurableWriter from "@smthrs/database/DurableWriter"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 
 const insertNote = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
@@ -17162,7 +17169,7 @@ https://smithers.sh/docs/reference/api/gateway/
 
 > **Related APIs:** [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/sync`](/docs/reference/api/sync/)
 
-The gateway requires `effect` at `4.0.0-rc.115` as its only peer. Node and Bun adapters are bundled privately at the same version; hosts need no separate adapter install.
+The gateway requires `effect` in the range `^4.0.4` as its only peer. Node and Bun adapters are bundled privately, built from 4.0.4; hosts need no separate adapter install.
 
 The root entry point exports one namespace per module, and every local module is
 also importable from `@smthrs/gateway/<Module>`.
@@ -22292,7 +22299,7 @@ The `proc:spawn` decorator over Effect's own spawner tag.
 ### ChildProcessSpawner.ChildProcessSpawner and make
 
 ```ts
-export { ChildProcessSpawner, make } from "effect/unstable/process/ChildProcessSpawner"
+export { ChildProcessSpawner, make } from "effect/process/ChildProcessSpawner"
 ```
 
 Effect's tag and constructor, re-exported unchanged so the kernel namespace
@@ -22701,7 +22708,7 @@ client tag. There is no Smithers transport port beneath it.
 ### HttpClient.HttpClient and make
 
 ```ts
-export { HttpClient, make } from "effect/unstable/http/HttpClient"
+export { HttpClient, make } from "effect/http/HttpClient"
 ```
 
 Effect's tag and constructor, unchanged.
@@ -23343,6 +23350,16 @@ The result of one `tools/call`.
 Every numeric field must be a positive safe integer. Anything else fails with
 `protocol_error` naming the option, before the process is spawned or a request
 is sent.
+
+A `url` is treated as a secret past its host, because an MCP endpoint often
+carries its key in the path or the query. Each HTTP message opens one span
+named for its method, `POST` or `DELETE`, that records the method, scheme, host,
+port and answering status, never the path or the query. A span that failed
+ends with `MCP server "..." answered with HTTP N` or
+`MCP server "..." is not reachable; transport details withheld`. The span
+records no header. A host that sets `HttpClient.TracerHeaderFilter` to record
+headers gets `mcp-session-id`, the bearer `authorization`, and a redirect's
+`location` and `content-location` as `<redacted>`.
 
 The bootstrap child environment contains only `PATH`, `HOME`, `USER`, `LANG`,
 `LC_*`, `TERM`, `TMPDIR`, and `SHELL`. Other ambient names are withheld;
@@ -24647,7 +24664,7 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `openSmithersBackend`                    | none                                                                                         | none                                                                            | unsafe    |
 | `openSmithersStore`                      | none                                                                                         | none                                                                            | unsafe    |
 | `outputs.<key>`                          | `The planned value in scope`                                                                 | `@smthrs/plan/Node`                                                             | automatic |
-| `package.json`                           | `@smthrs/* at 1.0.0-rc.0 and effect at 4.0.0-rc.115`                                         | none                                                                            | automatic |
+| `package.json`                           | `@smthrs/* at the migrator's own version and effect at 4.0.4`                                | none                                                                            | automatic |
 | `parseNamespace`                         | `@smthrs/memory`                                                                             | `@smthrs/memory`                                                                | guided    |
 | `partitionDelegationV2AuthorFuel`        | none                                                                                         | none                                                                            | unsafe    |
 | `prometheusContentType`                  | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
@@ -24832,10 +24849,12 @@ refuses to `apply` a plan built over one (`scan` and `plan` still report it).
   a project already on the release candidate is not reported as old. Companion
   packages (`react`, `ai`, `@ai-sdk/*`, `zod`, `effect`, `xstate`) are recorded.
   Every `effect` declaration in every manifest is kept in `effectDeclarations`
-  with its file and field, and each one that is not exactly `4.0.0-rc.115`
-  raises `effect-pin-conflict` naming it: a range, a later prerelease, and two
-  manifests that disagree are each a version this release was not built
-  against. `Detect.resolvedEffectVersions(lock)` reads what a pnpm, bun, npm,
+  with its file and field, and each one that is not what a migrated project
+  declares raises `effect-pin-conflict` naming it. A field that installs
+  `effect` ends on exactly `4.0.4`, the version this release is tested on: a
+  range resolves to whatever is newest on install day, and two manifests that
+  disagree install two Effects. A `peerDependencies` entry ends on `^4.0.4`,
+  the range the published libraries accept. `Detect.resolvedEffectVersions(lock)` reads what a pnpm, bun, npm,
   or yarn lockfile resolved `effect` to, and a resolution other than the pin
   raises the same warning against the lockfile.
 - **Imports and pragmas**: every import specifier, read with the TypeScript
@@ -25646,8 +25665,8 @@ drives its implementation.
 | `withoutComments`                                       | `(text: string) => string`                                                                                    | JSONC without its comments, for parsing.                                                                              |
 | `pinFor`                                                | `(name: string) => string \| undefined`                                                                       | The version this release pins a package to.                                                                           |
 | `dependencyFields`                                      | `["dependencies", "devDependencies", "peerDependencies", "optionalDependencies", "overrides", "resolutions"]` | The six fields a postcondition checks.                                                                                |
-| `effectVersion`                                         | `"4.0.0-rc.115"`                                                                                              | The `effect` version this release was built against.                                                                  |
-| `smithersVersion`                                       | `"1.0.0-rc.0"`                                                                                                | The `@smthrs/*` version it adds.                                                                                      |
+| `effectVersion`                                         | `"4.0.4"`                                                                                                     | The `effect` version this release was built against.                                                                  |
+| `smithersVersion`                                       | the package's own version                                                                                     | The `@smthrs/*` version it adds: the release that ran the migration.                                                  |
 | `ManifestRewrite`, `ScriptRewrite`, `UnsupportedScript` | `interface` or `Schema.Struct`                                                                                | The rewrite inputs and what could not be rewritten.                                                                   |
 
 ### MigrateFlow
@@ -26190,8 +26209,19 @@ and the text kept on the error is capped at 16 KiB, reachable as
 names. `apiKeyHeader` and `bearer` set it automatically. Custom Auth values
 should list any credential headers outside the shared matcher. `Auth.withRedaction`
 adds these names and the shared matcher to `Headers.CurrentRedactedNames` while
-preserving the caller's policy. Routes apply it around signing and HTTP execution,
-so request traces redact these headers, including `chatgpt-account-id`.
+preserving the caller's policy. Routes apply it around signing and HTTP execution.
+
+The HTTP client records no request or response header on its span, so a request
+trace carries no credential. A host that sets `HttpClient.TracerHeaderFilter` to
+record headers gets these headers as `<redacted>`, including
+`chatgpt-account-id`.
+
+A route's endpoint cannot carry a credential, but the executor takes any
+request. On its HTTP span, a query parameter whose name is a credential reads
+`<redacted>` in `url.full` and `url.query`, and a span that failed ends with a
+`ModelError` naming that redacted url, never the HTTP client's own error, which
+prints the url as sent. A host's `HttpClient.SpanNameGenerator` receives the
+same redacted request.
 
 `RequestExecutor.errorSanitizer(request)` captures the signed request's credential
 values and active header policy. Routes retain that sanitizer through response
@@ -26514,8 +26544,8 @@ The wire protocol is the AI SDK gateway provider's own, as recorded on
 2026-09-17. Vercel may change it without notice; a changed response surfaces
 as `empty` or `invalid_answer`, never as a guessed answer. The request body
 is `{ state, questions, providerOptions: { gateway: { zeroDataRetention } } }`
-and the gateway key rides in the `authorization` header, which request traces
-redact.
+and the gateway key rides in the `authorization` header. Request traces record
+no header by default and redact this one when a host records headers.
 
 The encoded state must be a JSON value. Values that JSON would discard or
 reshape, including `undefined`, `bigint`, non-finite numbers, cycles and class
@@ -26995,13 +27025,13 @@ own `detectors` are merged over `defaultDetectors`.
 
 ### Sinks
 
-| Export                  | Signature                                                                                                  | What it is                                                                                                                                                                                                                                                                                                                                                                      |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SinkService`           | `{ deliver: (alert: Alert) => Effect.Effect<void, AlertError> }`                                           | Where a raised alert is sent. `deliver` MUST be idempotent on `alertId(alert)`, and MUST fail when the page did not go out.                                                                                                                                                                                                                                                     |
-| `Sink`                  | `Context.Service` under `/notifications/AlertSink`                                                         | The service tag.                                                                                                                                                                                                                                                                                                                                                                |
-| `layerNoop`             | `Layer<Sink>`                                                                                              | Accepts every alert and sends it nowhere. The admission and the delivery record still happen.                                                                                                                                                                                                                                                                                   |
-| `defaultWebhookTimeout` | `Duration.Duration`                                                                                        | Ten seconds.                                                                                                                                                                                                                                                                                                                                                                    |
-| `layerWebhook`          | `(options: { url: string; headers?: Record<string, string>; timeout?: Duration.Duration }) => Layer<Sink>` | POSTs each alert to one webhook using an owned Fetch client with redirects disabled and a scope per delivery. Injected `HttpClient` layers are not used. The body is the alert plus its `alertId`, and the same id is sent as an `Idempotency-Key` header, set after the caller's headers. A non-2xx answer is a failure; an endpoint that never answers fails after `timeout`. |
+| Export                  | Signature                                                                                                  | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SinkService`           | `{ deliver: (alert: Alert) => Effect.Effect<void, AlertError> }`                                           | Where a raised alert is sent. `deliver` MUST be idempotent on `alertId(alert)`, and MUST fail when the page did not go out.                                                                                                                                                                                                                                                                                                                                                                          |
+| `Sink`                  | `Context.Service` under `/notifications/AlertSink`                                                         | The service tag.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `layerNoop`             | `Layer<Sink>`                                                                                              | Accepts every alert and sends it nowhere. The admission and the delivery record still happen.                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `defaultWebhookTimeout` | `Duration.Duration`                                                                                        | Ten seconds.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `layerWebhook`          | `(options: { url: string; headers?: Record<string, string>; timeout?: Duration.Duration }) => Layer<Sink>` | POSTs each alert to one webhook using an owned Fetch client with redirects disabled and a scope per delivery. Injected `HttpClient` layers are not used. The body is the alert plus its `alertId`, and the same id is sent as an `Idempotency-Key` header, set after the caller's headers. A non-2xx answer is a failure; an endpoint that never answers fails after `timeout`. The delivery's HTTP span records the method, scheme, host, port and status, never the url's path, query or userinfo. |
 
 | Export        | Shape                                                                                                           |
 | ------------- | --------------------------------------------------------------------------------------------------------------- |
@@ -27094,7 +27124,7 @@ OpenTelemetry SDK. `@smthrs/observability/package.json` is exported.
 | `@smthrs/observability/NodeOtel`    | [src/NodeOtel.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/src/NodeOtel.ts)       | Node     |
 | `@smthrs/observability/BrowserOtel` | [src/BrowserOtel.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/src/BrowserOtel.ts) | browser  |
 
-The package is tested with `effect@4.0.0-rc.115`. Layers, services, and schemas
+The package is tested with `effect@4.0.4` and accepts `^4.0.4`. Layers, services, and schemas
 are Effect constructs: a `Layer` provides services, a scoped layer releases on
 scope close, and a schema decodes to an `Effect`.
 
@@ -27111,7 +27141,7 @@ await Effect.runPromise(program.pipe(Effect.provide(telemetry), Effect.orDie, Ef
 
 ## Otlp
 
-The default exporter. `Otlp` composes `effect/unstable/observability/Otlp` and
+The default exporter. `Otlp` composes `effect/observability/Otlp` and
 nothing else, so it allocates no OpenTelemetry SDK and never resolves a `node:`
 built-in. All three signals are JSON-serialized and posted below the configured
 base URL at `/v1/logs`, `/v1/metrics`, and `/v1/traces`.
@@ -27188,8 +27218,9 @@ const reservedBatchBytes: number // 909312 (888 KiB)
 ```
 
 The resource ceiling is 128 KiB. Another 8 KiB covers JSON wrappers and the
-instrumentation scope, which repeats the service name (at most 6 KiB after
-escaping). The remaining 888 KiB gives each record in the upstream 1,000-record
+instrumentation scope. A metrics request repeats the service name as its scope
+name (at most 6 KiB after escaping). Log and trace requests name their scope
+`effect` with the Effect version. The remaining 888 KiB gives each record in the upstream 1,000-record
 log or span batch about 909 bytes, several times a bare record. This guarantees
 room for ordinary signal batches, not arbitrary record sizes or metric registry
 cardinality.
@@ -27265,10 +27296,18 @@ package cannot read its own manifest on every runtime it supports.
 ### Delivery behavior
 
 Effect's exporter retries a transient failure three times, honoring a
-`retry-after` response header when one is present, then disables that exporter
-for 60 seconds and logs a `Debug` record. Export failure never fails the
-application effect and never surfaces as an unhandled rejection. Closing the
-layer's scope performs the final flush, bounded by `shutdownTimeout`.
+`retry-after` response header on any retried status when one is present, then
+disables that exporter for 60 seconds and logs a `Debug` record. Export failure
+never fails the application effect and never surfaces as an unhandled
+rejection. Closing the layer's scope performs the final flush, bounded by
+`shutdownTimeout`.
+
+The exporter acts on a response's status and `retry-after` header only. It
+never reads the response body: each exchange ends when the status arrives, so
+a collector that never finishes its answer cannot stall a signal.
+
+The shape of what a collector receives is in
+[Export to an OTLP collector](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/docs/guides/export-to-a-collector.md#what-the-collector-receives).
 
 ## Endpoint
 
@@ -27390,10 +27429,11 @@ const maximumResourceBytes: number // 131072 (128 KiB)
 ```
 
 The resource byte limit counts the complete OTLP JSON resource, including
-identity, SDK-added `telemetry.sdk.name` and `telemetry.sdk.language`, attribute
-keys, scalar and array wrappers, escaping, and UTF-8. SDK fields are reserved
-even for the default Effect exporter, and caller attributes that the SDK
-overwrites are conservatively counted too.
+identity, SDK-added `telemetry.sdk.name`, `telemetry.sdk.language` and
+`telemetry.sdk.version`, attribute keys, scalar and array wrappers, escaping,
+and UTF-8. The SDK's own values are reserved even for the default Effect
+exporter, and a caller attribute that replaces one of them is conservatively
+counted beside it.
 Counting stops at the first fragment over budget to bound intermediate
 allocations; the error reports the measured lower bound and byte limit at path
 `attributes`. Array-length errors report the measured element count and limit
@@ -27751,6 +27791,8 @@ const layerOtel: (options: Options) => Layer.Layer<never, Resource.InvalidResour
 
 Bridges Effect's tracer, logger, and metrics onto the supplied providers and
 the readers the `metricReader` factory returns, over the validated resource.
+Spans and log records carry the instrumentation scope `effect` with the Effect
+version.
 Each bridge is installed only when its provider or factory is supplied, and a
 factory that returns an empty array registers no reader at all.
 
@@ -29405,7 +29447,7 @@ The node reference a branch arm's symbolic subject carries, and the prefix each 
 
 ### Engine members
 
-`flowCall`, `actionCall`, `declaration`, `continuation`, `mapper`, `predicate`, `catchFilter`, and `functionIdentity` exist for [`@smthrs/flow`](/docs/reference/api/flow/), which owns flow and action authoring. They are supported names, not authoring API.
+`flowCall`, `actionCall`, `declaration`, `continuation`, `mapper`, `predicate`, `catchFilter`, `functionIdentity`, `schemaIdentity`, and `representationIdentity` exist for [`@smthrs/flow`](/docs/reference/api/flow/), which owns flow and action authoring. They are supported names, not authoring API.
 
 ```ts
 const flowCall: <A = unknown, E = never, R = never>(
@@ -29429,9 +29471,19 @@ const mapper: (ast: Ast) => ((value: unknown) => unknown) | undefined
 const predicate: (ast: Ast) => ((value: unknown) => boolean) | undefined
 const catchFilter: (ast: Ast) => Schema.Top | undefined
 const functionIdentity: (operation: unknown) => FunctionIdentity
+const schemaIdentity: (schema: Schema.Top, options?: SchemaIdentityOptions) => SchemaIdentity
+type SchemaIdentity = JsonSchema.Document<"draft-2020-12">
+type SchemaIdentityOptions = { readonly onExcessProperty?: "ignore" | "error" | undefined }
+const representationIdentity: (ast: SchemaAST.AST) => Schema.Json
 ```
 
 `flowCall` and `actionCall` validate nothing: an unknown tag becomes a call node the graph keeps as a leaf. `declaration`, `continuation`, `mapper`, `predicate`, and `catchFilter` answer `undefined` for the wrong variant and for an AST rehydrated from JSON, whose side tables did not survive serialization. `functionIdentity` throws a `TypeError` when handed anything but a function.
+
+`schemaIdentity` returns the document a schema contributes to a step key: what the callee of a call accepts and produces, and what a `catch` filters on. The document has the shape of `Schema.toJsonSchemaDocument(schema, options)`, and this package prints it. `onExcessProperty` has the meaning and the default it has there; a step key takes the identity under `"error"`, which closes every object over the keys it declares. The installed `effect` does not, because `effect` is a peer range and a later release prints a different document for the same schema: for a string, `effect@4.0.4` prints `minLength: 3` for `isMinLength(5)` where `effect@4.0.0-rc.115` printed `minLength: 5`, adds a `minimum` and a `maximum` to `Schema.Int`, and prints an `isPattern` pattern only when the expression has the `u` flag. A document that moved with the dependency would re-key every recorded step. `schemaIdentity` prints what `effect@4.0.0-rc.115` printed, under every release this package supports. Use it for identity only. A JSON Schema you show to a model or a person comes from `Schema.toJsonSchemaDocument`.
+
+The identity has three limits. A built-in check such as `Schema.isMinLength` contributes the constraint its name and arguments state, so a `toJsonSchema` annotation passed to a built-in check is not read; one on a `Schema.makeFilter` check is. `Schema.brand` contributes nothing, because from `effect@4.0.4` on a brand is not part of the schema: a declaration that uses one schema with an `identifier`, or one recursive schema, both with and without a brand got two definitions under `effect@4.0.0-rc.115` and gets one now, so it re-keys once. And a codec's behavior contributes nothing, so an author who changes what a transformation does renames the declaration to re-key its calls. `schemaIdentity` throws `Node.SchemaIdentityError`, tagged `@smthrs/plan/SchemaIdentityError`, for a schema that has no JSON Schema form, such as a record keyed by a number.
+
+`representationIdentity` returns what a sealed action's step key folds in for its success and error schemas: `SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(ast))` as `effect@4.0.0-rc.115` wrote it. A later release renamed six built-in checks, `isStartsWith`, `isEndsWith`, `isIncludes`, `isLengthBetween`, `isSizeBetween` and `isPropertiesLengthBetween`; the identity writes their rc.115 ids back. A brand cannot be written back, so a sealed action whose success or error schema carries `Schema.brand` re-keys once. `representationIdentity` throws for an AST that has no representation, such as one with a `Schema.makeFilter` check.
 
 ## Planned
 
@@ -30159,7 +30211,7 @@ https://smithers.sh/docs/reference/api/platform-browser/
 ```ts
 import { BrowserServices } from "@smthrs/platform-browser"
 import * as Effect from "effect/Effect"
-import { ChildProcess } from "effect/unstable/process"
+import { ChildProcess } from "effect/process"
 
 const makeProgram = (options: Parameters<typeof BrowserServices.layer>[0]) =>
   Effect.scoped(ChildProcess.make`ls -la`).pipe(
@@ -30362,8 +30414,8 @@ https://smithers.sh/docs/reference/api/platform-bun/
 ```ts
 import { BunHost } from "@smthrs/platform-bun"
 import * as Effect from "effect/Effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 
 const program = Effect.gen(function*() {
   const spawner = yield* ChildProcessSpawner
@@ -30371,10 +30423,9 @@ const program = Effect.gen(function*() {
 }).pipe(Effect.provide(BunHost.layer))
 ```
 
-`@effect/platform-bun` is a required peer at exactly `4.0.0-rc.115` because
-this barrel and `BunHost` import it at module load. It is installed alongside
-the package by package managers that resolve required peers. The Effect Node
-platform packages and `effect` are also exact peers at `4.0.0-rc.115`.
+This barrel and `BunHost` import `@effect/platform-bun` at module load. It
+and the Effect Node platform packages are bundled privately, built from
+`effect@4.0.4`. `effect` is a required peer in the range `^4.0.4`.
 
 :::warning
 This entry point is Node-only in the browser-bundle sense: it falls back to the
@@ -30536,7 +30587,7 @@ describe that substitution:
 A key is the slot's stable identity in [`@smthrs/kernel`](/docs/reference/api/kernel/)'s closed
 list, which is not always the specifier the tag is imported from: the spawner
 slot is `effect/process/ChildProcessSpawner` while its tag comes from
-`effect/unstable/process/ChildProcessSpawner`. The keys are written as literals
+`effect/process/ChildProcessSpawner`. The keys are written as literals
 rather than positions in that list, so reordering it cannot silently pair a slot
 with another slot's implementation. Nothing digests the record yet:
 [`@smthrs/plan`](/docs/reference/api/plan/)'s step key carries a `layers` component these values
@@ -30635,8 +30686,8 @@ https://smithers.sh/docs/reference/api/platform-node/
 ```ts
 import { NodeHost } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 
 const program = Effect.gen(function*() {
   const spawner = yield* ChildProcessSpawner
@@ -34287,8 +34338,8 @@ services. The smallest composition adapts a spawn-only provider onto
 ```ts
 import { RemoteChildProcessSpawner } from "@smthrs/sandbox"
 import * as Effect from "effect/Effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 
 const provider = RemoteChildProcessSpawner.TestRemote.make({
   scripts: { "echo hi": { stdout: "hi" } }
@@ -36480,8 +36531,10 @@ userinfo, query, or fragment. Anything else fails `make` with `invalid_cache`.
 The endpoint and its credentials are a capability, never an input: they are not
 hashed into a step key and never journaled.
 
-All names configured in `headers` are redacted case-insensitively in Effect
-HTTP tracing spans. Each request extends the caller's existing header
+Effect's HTTP client records no header on its tracing spans, so a cache request
+trace carries no credential. A host that sets `HttpClient.TracerHeaderFilter` to
+record headers gets every name configured in `headers` as `<redacted>`,
+matched case-insensitively. Each request extends the caller's existing header
 redaction policy locally, preserving its defaults and custom matchers.
 
 Each operation closes its HTTP response scope before returning, including

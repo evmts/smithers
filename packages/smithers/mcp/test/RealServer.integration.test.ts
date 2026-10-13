@@ -11,7 +11,7 @@
 import { NodeServices } from "@effect/platform-node"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import { Deferred, Effect, Fiber, Redacted, Schema, Sink, Stream } from "effect"
-import { ProcessId } from "effect/unstable/process/ChildProcessSpawner"
+import { ProcessId } from "effect/process/ChildProcessSpawner"
 import { execFileSync } from "node:child_process"
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"

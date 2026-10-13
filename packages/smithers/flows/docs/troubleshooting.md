@@ -15,11 +15,11 @@ package, is the first section. The full schemas are in the [API reference](./api
 
 **Cause and fix.** The package named decides it:
 
-| Package named                                                            | Cause                                                                                                     | Fix                                                                  |
-| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `effect`                                                                 | Your program imports `effect/...` and the project does not declare it. pnpm links only declared packages. | Add `effect` at the version [Installation](./installation.md) names. |
-| `@smthrs/platform-node`, `@effect/sql-sqlite-node`                       | `@smthrs/flows` 1.0.0-rc.4 or earlier, which left the Node host to the program.                           | `npm install @smthrs/flows@next`                                     |
-| `@smthrs/platform-bun`, `@effect/platform-bun`, `@effect/sql-sqlite-bun` | `@smthrs/flows/BunRuntime` without its packages.                                                          | Install the [Bun](./installation.md#bun-durable-execution) line.     |
+| Package named                                                            | Cause                                                                                                     | Fix                                                                      |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `effect`                                                                 | Your program imports `effect/...` and the project does not declare it. pnpm links only declared packages. | `npm install effect`. [Installation](./installation.md) names the range. |
+| `@smthrs/platform-node`, `@effect/sql-sqlite-node`                       | `@smthrs/flows` 1.0.0-rc.4 or earlier, which left the Node host to the program.                           | `npm install @smthrs/flows@next`                                         |
+| `@smthrs/platform-bun`, `@effect/platform-bun`, `@effect/sql-sqlite-bun` | `@smthrs/flows/BunRuntime` without its packages.                                                          | Install the [Bun](./installation.md#bun-durable-execution) line.         |
 
 ## RuntimeConfigurationError
 

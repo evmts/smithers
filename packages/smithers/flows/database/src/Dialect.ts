@@ -3,8 +3,8 @@
  */
 
 import { Effect } from "effect"
-import type { SqlClient } from "effect/unstable/sql/SqlClient"
-import type { Fragment } from "effect/unstable/sql/Statement"
+import type { SqlClient } from "effect/sql/SqlClient"
+import type { Fragment } from "effect/sql/Statement"
 import * as ReadOnly from "./internal/ReadOnly.ts"
 
 /**

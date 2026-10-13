@@ -5,9 +5,9 @@
  */
 
 import type * as PlatformError from "effect/PlatformError"
+import type * as ChildProcess from "effect/process/ChildProcess"
 import * as Sink from "effect/Sink"
 import * as Stream from "effect/Stream"
-import type * as ChildProcess from "effect/unstable/process/ChildProcess"
 
 /**
  * Shared encoder for turning captured interpreter text back into bytes.

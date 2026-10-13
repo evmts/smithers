@@ -20,9 +20,11 @@ import * as Evaluator from "@smthrs/model/Evaluator"
 import { Registry } from "@smthrs/registry"
 import * as Container from "@smthrs/std/Container"
 import { Cause, Deferred, Effect, Exit, Fiber, FileSystem, Layer, Option } from "effect"
-import { HttpServer } from "effect/unstable/http"
+import { HttpServer } from "effect/http"
 import { existsSync, fstatSync, readdirSync, statSync } from "node:fs"
 import { link, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { createServer } from "node:http"
+import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
@@ -933,5 +935,111 @@ describe("Application remote endpoint resolution", () => {
     // An operator who pastes the RPC URL and one who pastes the origin must
     // land on the same endpoint rather than on `/rpc/rpc`.
     expect(results).toEqual(["system/test", "system/test", "system/test"])
+  })
+})
+
+/*
+ * The control mount reads newline-delimited frames (`RpcSerialization.layerNdjson`
+ * in `layerServer`). Effect 4.0.4's reader skips a line it cannot parse, where
+ * the release candidates answered the whole body with one `Defect` frame and no
+ * `Exit`. These cases pin what a caller of `/rpc` gets from the installed codec.
+ */
+describe("NodeControl control mount framing", () => {
+  const request = JSON.stringify({ _tag: "Request", id: "1", tag: "List", payload: { _tag: "flows" }, headers: [] })
+
+  const answers = (bodies: ReadonlyArray<string>) =>
+    Effect.runPromise(
+      Effect.gen(function*() {
+        const server = yield* HttpServer.HttpServer
+        const address = server.address
+        if (address._tag !== "InetAddressV4") return yield* Effect.fail(new Error("expected a TCP control server"))
+        const post = (body: string) =>
+          Effect.promise(async () => {
+            const response = await fetch(`http://127.0.0.1:${address.port}/rpc`, {
+              method: "POST",
+              headers: { "content-type": "application/ndjson" },
+              body,
+              signal: AbortSignal.timeout(10_000)
+            })
+            const frames = (await response.text()).split("\n").filter((line) => line !== "")
+            return { status: response.status, frames: frames.map((line) => JSON.parse(line) as unknown) }
+          })
+        return yield* Effect.forEach(bodies, post)
+      }).pipe(
+        Effect.provide(NodeControl.layerServerNoopAuth({ port: 0 }).pipe(Layer.provide(TestControl.layer()))),
+        Effect.scoped
+      )
+    )
+
+  it("answers a request that arrives beside a line it cannot read", async () => {
+    const answered = { _tag: "Exit", requestId: "1", exit: { _tag: "Success", value: { _tag: "flows" } } }
+    const [alone, before, after, between] = await answers([
+      `${request}\n`,
+      `not json\n${request}\n`,
+      `${request}\nnot json\n`,
+      `{"_tag":"Request","id":\n${request}\n<html>\n`
+    ])
+
+    expect(alone).toMatchObject({ status: 200, frames: [answered] })
+    // The unreadable line is dropped, and the request beside it runs once.
+    expect(before).toEqual(alone)
+    expect(after).toEqual(alone)
+    expect(between).toEqual(alone)
+  })
+
+  it("answers a body with no readable frame with nothing, and keeps serving", async () => {
+    const [garbage, truncated, next] = await answers(["not json\n", `${request.slice(0, 20)}\n`, `${request}\n`])
+
+    // No frame was read, so no request ran and there is no outcome to report.
+    expect(garbage).toEqual({ status: 200, frames: [] })
+    expect(truncated).toEqual({ status: 200, frames: [] })
+    expect(next).toMatchObject({ status: 200, frames: [{ _tag: "Exit", requestId: "1", exit: { _tag: "Success" } }] })
+  })
+
+  // The other end of the same codec: the remote client `layerControl` builds.
+  it("reads the outcome beside an unreadable answer line, and fails an answer that has none", async () => {
+    const refusal = { _tag: "/control/FlowNotFound", code: "flow_not_found", flowId: "system/test" }
+    const outcome = (requestId: unknown) =>
+      JSON.stringify({ _tag: "Exit", requestId, exit: { _tag: "Failure", cause: [{ _tag: "Fail", error: refusal }] } })
+    const planAgainst = async (answer: (requestId: unknown) => string) => {
+      const origin = createServer((incoming, response) => {
+        let body = ""
+        incoming.on("data", (chunk: Buffer) => {
+          body += chunk.toString("utf8")
+        })
+        incoming.on("end", () => {
+          // The client also posts frames that carry no request (an empty body);
+          // only a `Request` frame gets the scripted answer.
+          const line = body.split("\n")[0] ?? ""
+          const frame = line === "" ? undefined : JSON.parse(line) as { readonly _tag: string; readonly id: unknown }
+          response.writeHead(200, { "content-type": "application/ndjson" })
+          response.end(frame?._tag === "Request" ? answer(frame.id) : "")
+        })
+      })
+      await new Promise<void>((resolve) => origin.listen(0, "127.0.0.1", resolve))
+      try {
+        const { port } = origin.address() as AddressInfo
+        const exit = await Effect.runPromiseExit(
+          Effect.flatMap(ControlService.Control, (control) => control.plan({ flowId: "system/test", input: {} })).pipe(
+            Effect.provide(NodeControl.layerControl({ remote: `http://127.0.0.1:${port}` })),
+            Effect.scoped,
+            Effect.provide(NodeServices.layer),
+            // A client left waiting on a frame that never comes fails here instead of hanging the suite.
+            Effect.timeout("10 seconds")
+          )
+        )
+        return Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit.value
+      } finally {
+        origin.closeAllConnections()
+        await new Promise((resolve) => origin.close(resolve))
+      }
+    }
+
+    expect(await planAgainst((requestId) => `<html>\n${outcome(requestId)}\n`)).toMatchObject(refusal)
+    expect(await planAgainst(() => "<html>captive portal</html>\n")).toMatchObject({
+      _tag: "/control/TransportError",
+      code: "transport_error",
+      message: "The control response could not be decoded."
+    })
   })
 })

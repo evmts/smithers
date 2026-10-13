@@ -1,6 +1,6 @@
 import { Deferred, Effect, Sink, Stream } from "effect"
 import type * as PlatformError from "effect/PlatformError"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
+import * as ChildProcess from "effect/process/ChildProcess"
 import * as Native from "node:child_process"
 import NativeMutable from "node:child_process"
 import { EventEmitter } from "node:events"

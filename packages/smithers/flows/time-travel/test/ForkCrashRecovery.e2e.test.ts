@@ -6,8 +6,8 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
+import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { execFileSync, spawn } from "node:child_process"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"

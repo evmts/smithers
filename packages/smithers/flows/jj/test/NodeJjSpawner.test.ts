@@ -13,16 +13,16 @@ import { afterEach, beforeEach, describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as PlatformError from "effect/PlatformError"
-import * as Sink from "effect/Sink"
-import * as Stream from "effect/Stream"
-import type * as EffectChildProcess from "effect/unstable/process/ChildProcess"
+import type * as EffectChildProcess from "effect/process/ChildProcess"
 import {
   ChildProcessSpawner,
   ExitCode,
   make as makeSpawner,
   makeHandle,
   ProcessId
-} from "effect/unstable/process/ChildProcessSpawner"
+} from "effect/process/ChildProcessSpawner"
+import * as Sink from "effect/Sink"
+import * as Stream from "effect/Stream"
 import { execFileSync, spawn } from "node:child_process"
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"

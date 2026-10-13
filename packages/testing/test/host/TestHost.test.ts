@@ -4,9 +4,9 @@ import * as HttpClient from "@smthrs/kernel/HttpClient"
 import * as ProcessConfinement from "@smthrs/kernel/ProcessConfinement"
 import * as BrowserFileSystem from "@smthrs/platform-browser/BrowserFileSystem"
 import { Clock, Effect, FileSystem, Random, Stream } from "effect"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { TestClock } from "effect/testing"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import * as TestHost from "../../src/TestHost.ts"
 
 const decoder = new TextDecoder()

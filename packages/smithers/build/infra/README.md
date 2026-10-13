@@ -186,9 +186,12 @@ Run the development script without `--stage`:
 pnpm run deploy:dev
 ```
 
-Alchemy uses its default `dev_$USER` stage. Development stages get independent
-D1, R2, and Worker resources and use a `workers.dev` URL instead of claiming
-the production custom domain.
+The deploy wrapper names the `dev_$USER` stage for any command that has no
+`--stage`. It does not use Alchemy's own default, which is `live_$USER`: a
+stage's resources and state are recorded under its name, so a different default
+would deploy a second development stack. Pass `--stage <name>` to deploy
+another stage. Development stages get independent D1, R2, and Worker resources
+and use a `workers.dev` URL instead of claiming the production custom domain.
 
 ## Verify the service
 

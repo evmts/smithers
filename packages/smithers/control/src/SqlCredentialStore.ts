@@ -17,7 +17,7 @@
 
 import { DurableWriter } from "@smthrs/database/DurableWriter"
 import { Effect, Layer, Option } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { CredentialConflict, Unavailable } from "./ControlError.ts"
 import * as CredentialStore from "./CredentialStore.ts"
 import { initial } from "./migrations/0001_control_tables.ts"

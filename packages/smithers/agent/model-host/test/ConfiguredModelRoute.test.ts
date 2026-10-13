@@ -2,7 +2,7 @@ import * as Evaluator from "@smthrs/model/Evaluator"
 import { planModelBinding } from "@smthrs/rpc/ConfiguredModel"
 import type { ModelProtocol } from "@smthrs/rpc/ConfiguredModel"
 import { Effect, Layer, Redacted, Result } from "effect"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { describe, expect, test } from "vitest"
 import { toEvaluatorLayer, withRoute } from "../src/ConfiguredModelRoute.ts"
 

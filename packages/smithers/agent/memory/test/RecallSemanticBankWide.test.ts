@@ -1,7 +1,7 @@
 import { DurableWriter } from "@smthrs/database/DurableWriter"
 import { Effect, Stream } from "effect"
+import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 import * as Embedding from "../src/Embedding.ts"
 import { digest } from "../src/internal/Digest.ts"

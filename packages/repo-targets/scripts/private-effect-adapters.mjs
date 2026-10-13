@@ -27,6 +27,28 @@ const specifier = (from, to) => {
 }
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex")
 
+/**
+ * The exact Effect release an owner builds its private adapters from.
+ *
+ * An executable installs `effect` itself, at one exact release. A library
+ * takes `effect` from its application as a ranged peer and develops against
+ * one exact release, so its development dependency is the build input. A
+ * vendored adapter keeps the requirement the upstream package states, `effect`
+ * from its own release up, so a library's peer has to start exactly there: a
+ * lower floor would run the bundled adapter on an Effect it was not built for.
+ */
+const adapterEffectVersion = (manifest) => {
+  const installed = manifest.dependencies?.effect
+  const version = installed ?? manifest.devDependencies?.effect
+  if (typeof version !== "string" || !/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(version)) {
+    throw new Error("Private adapters require exact Effect identity")
+  }
+  if (installed === undefined && manifest.peerDependencies?.effect !== "^" + version) {
+    throw new Error("Private adapters require an Effect peer that starts at their build release")
+  }
+  return version
+}
+
 /** Returns the declared private adapter build inputs, never inferred runtime edges. */
 export const privateEffectAdapters = (manifest) => {
   const declared = manifest.smthrs?.privateEffectAdapters
@@ -37,10 +59,7 @@ export const privateEffectAdapters = (manifest) => {
     throw new Error("Invalid private Effect adapter declaration")
   }
   if (declared.length === 0) return []
-  const version = manifest.dependencies?.effect ?? manifest.peerDependencies?.effect
-  if (typeof version !== "string" || !/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(version)) {
-    throw new Error("Private adapters require exact Effect identity")
-  }
+  const version = adapterEffectVersion(manifest)
   if (!declared.includes("@effect/platform-node-shared")) {
     throw new Error("Private adapters require the pinned shared adapter")
   }
@@ -127,7 +146,7 @@ export const buildPrivateEffectAdapters = async (packageRoot, { distRoot = join(
   if (declared.length === 0) return
   const require = createRequire(join(packageRoot, "package.json")),
     { build } = require("esbuild")
-  const vendor = join(distRoot, "vendor"), version = manifest.dependencies?.effect ?? manifest.peerDependencies.effect
+  const vendor = join(distRoot, "vendor"), version = adapterEffectVersion(manifest)
   const adapters = new Map(), entryPoints = {}, inputs = [], notices = [], ordinary = new Map()
   for (const name of declared) {
     const path = await realpath(require.resolve(name + "/package.json")), root = dirname(path)

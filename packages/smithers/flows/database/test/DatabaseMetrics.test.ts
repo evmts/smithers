@@ -5,9 +5,9 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Fiber, Metric } from "effect"
+import * as SqlClient from "effect/sql/SqlClient"
+import * as SqlError from "effect/sql/SqlError"
 import { TestClock } from "effect/testing"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
-import * as SqlError from "effect/unstable/sql/SqlError"
 import * as DatabaseMetrics from "../src/DatabaseMetrics.ts"
 import * as DurableWriter from "../src/DurableWriter.ts"
 

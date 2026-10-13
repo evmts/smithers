@@ -202,6 +202,13 @@ resumable-upload `308` fails as an unexpected status, so credential headers
 never reach another origin. The complete server-side contract is in
 [Serve the artifact protocol](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/artifacts/docs/guides/serve-the-artifact-protocol.md).
 
+Effect's HTTP client opens one span per request, named for the request method.
+It records no request or response header, so a trace carries no credential. A
+host that sets `HttpClient.TracerHeaderFilter` to record headers gets every
+name configured in `headers` as `<redacted>`. A `4xx` or `5xx` answer ends the
+span as failed with the status in `error.type`, so a `HEAD` for an absent
+artifact shows a failed span although `has` returned `false`.
+
 ### Options
 
 | Field                         | Default    | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                |

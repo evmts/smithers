@@ -18,7 +18,7 @@
 
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Effect } from "effect"
-import { SqlClient } from "effect/unstable/sql/SqlClient"
+import { SqlClient } from "effect/sql/SqlClient"
 import * as CliError from "../CliError.ts"
 
 /**

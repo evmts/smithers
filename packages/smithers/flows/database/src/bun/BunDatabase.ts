@@ -6,7 +6,7 @@
 import type * as SqliteClient from "@effect/sql-sqlite-bun/SqliteClient"
 import { Database } from "bun:sqlite"
 import { Effect, Layer } from "effect"
-import type * as SqlClient from "effect/unstable/sql/SqlClient"
+import type * as SqlClient from "effect/sql/SqlClient"
 import { statSync } from "node:fs"
 import * as BunSqliteClient from "../internal/BunSqliteClient.ts"
 import * as PostgresSelection from "../internal/PostgresSelection.ts"
@@ -53,7 +53,11 @@ const client = (options: BunDatabaseOptions): Layer.Layer<SqlClient.SqlClient> =
       options.filename,
       sqlite?.readonly !== true && sqlite?.readwrite !== false && sqlite?.create !== false
     )
-    return BunSqliteClient.layer({ ...sqlite, filename: options.filename })
+    return BunSqliteClient.layer({ ...sqlite, filename: options.filename }).pipe(
+      // As on Node, a failed open or PRAGMA is a typed `SqlError`, and
+      // `SqliteOpen` reads the driver's raw throw off the defect channel.
+      Layer.catch((error): Layer.Layer<SqlClient.SqlClient> => Layer.effectContext(Effect.die(error.reason.cause)))
+    )
   }))
 
 /** Provides a scoped Bun SQL client; no Node subprocess or secondary ledger.
@@ -66,7 +70,6 @@ export const layer = (options: BunDatabaseOptions): Layer.Layer<SqlClient.SqlCli
     options.filename,
     readTableNames,
     client(readOnly ? { ...options, sqlite: { ...options.sqlite, readonly: true, disableWAL: true } } : options),
-    options.sqlite?.spanAttributes,
     readOnly
   )
 }

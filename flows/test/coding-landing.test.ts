@@ -1,6 +1,6 @@
 import { Effect, Exit, Fiber, ManagedRuntime, Redacted } from "effect"
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { TestClock } from "effect/testing"
-import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import assert from "node:assert/strict"
 import { createServer } from "node:http"
 import { test } from "node:test"

@@ -14,14 +14,14 @@ import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as ProcessConfinement from "@smthrs/kernel/ProcessConfinement"
 import * as Workspace from "@smthrs/kernel/Workspace"
 import { Effect, Layer, Path, Sink, Stream } from "effect"
-import type * as ChildProcess from "effect/unstable/process/ChildProcess"
+import type * as ChildProcess from "effect/process/ChildProcess"
 import {
   ChildProcessSpawner as HostChildProcessSpawner,
   ExitCode,
   make as makeSpawner,
   makeHandle,
   ProcessId
-} from "effect/unstable/process/ChildProcessSpawner"
+} from "effect/process/ChildProcessSpawner"
 import * as Exec from "../src/internal/Exec.ts"
 
 const spawned: Array<ChildProcess.Command> = []

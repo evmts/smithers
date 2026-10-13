@@ -1,5 +1,5 @@
 import { Cause, Effect, Exit, Stream } from "effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
+import * as ChildProcess from "effect/process/ChildProcess"
 import * as Native from "node:child_process"
 import NativeMutable from "node:child_process"
 import { randomUUID } from "node:crypto"

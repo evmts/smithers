@@ -37,7 +37,7 @@ export interface Verb {
   /** The reserved system-flow id, for the verbs the control catalog reserves. */
   readonly flowId?: `system/${string}` | undefined
   /**
-   * Whether `effect/unstable/cli` provides this one itself. `completions` is a
+   * Whether `effect/cli` provides this one itself. `completions` is a
    * built-in global flag (`--completions <shell>`), not a subcommand, so it is
    * part of the shipped surface without being part of the command tree.
    */
@@ -119,7 +119,7 @@ export const shipped: ReadonlyArray<Verb> = [
 
 /**
  * The verbs that are subcommands of the command tree, which is every shipped
- * verb except the ones `effect/unstable/cli` provides as built-in flags.
+ * verb except the ones `effect/cli` provides as built-in flags.
  *
  * @category constants
  * @since 1.0.0

@@ -12,7 +12,7 @@ different packages on purpose.
 
 A flow execution opens spans without being asked. The flow lifecycle, the
 engine dispatch, a run claim, a heartbeat, a journal write, down to individual
-`sql.execute` statements: each is a span on Effect's own tracer. Alongside
+SQL statements: each is a span on Effect's own tracer. Alongside
 them, each store package declares and updates its own metric handles on its hot
 paths: `JournalMetrics` in [`@smthrs/journal`](/api/journal), `RunStoreMetrics`
 in [`@smthrs/run-store`](/api/run-store), `CacheStoreMetrics` in
@@ -23,6 +23,36 @@ in [`@smthrs/run-store`](/api/run-store), `CacheStoreMetrics` in
 None of those packages allocates an exporter. Effect's tracer and metric
 registry are collection points; with no exporter installed they collect and
 discard, at a cost close to zero.
+
+## Spans Effect names
+
+A Smithers package names its own spans for the operation, such as
+`RunStore.claim` or `Journal.emitDurable`. Effect names the spans of the SQL,
+HTTP and RPC clients those packages use:
+
+| Span            | Name                                               | Kind               | What it carries                                                                                                              |
+| --------------- | -------------------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| SQL statement   | The database system: `sqlite` or `postgresql`      | `client`           | `db.system.name`, `db.query.text` and `effect.sql.method`                                                                    |
+| SQL transaction | `sql.transaction`                                  | `internal`         | The events `effect.sql.transaction.commit`, `effect.sql.transaction.savepoint` and `effect.sql.transaction.rollback`         |
+| HTTP request    | The request method, such as `POST`                 | `client`           | `http.request.method`, `url.full`, `url.path`, `url.scheme`, `server.address`, `server.port` and `http.response.status_code` |
+| RPC call        | The procedure's tag, such as `Projection.Snapshot` | `client`, `server` | `rpc.system.name` (`effect_rpc`) and `rpc.method`                                                                            |
+
+On an HTTP request span, `server.address` is the host name without the scheme,
+and `server.port` is always present, as the scheme's default when the URL names
+none.
+
+An HTTP request span records no request or response header. A host that wants
+them provides `HttpClient.TracerHeaderFilter`. The model, artifact and
+step-cache packages add their credential header names to
+`Headers.CurrentRedactedNames`, so a recorded credential header of theirs reads
+`<redacted>`. Every other recorded header keeps its value, apart from the names
+Effect redacts itself, such as `authorization`, `cookie`, `set-cookie` and
+`x-api-key`.
+
+A `4xx` or `5xx` answer ends an HTTP request span as failed, with the status in
+`error.type`. That holds even where the calling package treats the status as an
+ordinary answer: a shared-cache miss is a failed `GET` span with `error.type`
+`404` inside a lookup span that succeeded.
 
 ## This package is the exporter
 

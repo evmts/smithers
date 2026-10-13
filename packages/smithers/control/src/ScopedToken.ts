@@ -20,7 +20,8 @@
  * @since 1.0.0
  */
 
-import { Effect, Encoding, Result, Schema } from "effect"
+import { Effect, Result, Schema } from "effect"
+import { Base64Url, Hex } from "effect/encoding"
 import { Unauthorized } from "./ControlError.ts"
 import { type Authenticator, bearerCredential, type Call } from "./ControlRpcs.ts"
 import type { Principal } from "./ControlSchema.ts"
@@ -174,7 +175,7 @@ export const mint = (options: MintOptions): Effect.Effect<Minted> =>
       return Effect.die(new Error("A scoped token needs a positive lifetime"))
     }
     const now = options.now?.() ?? Date.now()
-    const id = Encoding.encodeHex(crypto.getRandomValues(new Uint8Array(12)))
+    const id = Hex.encode(crypto.getRandomValues(new Uint8Array(12)))
     const claims: Claims = {
       v: 1,
       id,
@@ -184,11 +185,11 @@ export const mint = (options: MintOptions): Effect.Effect<Minted> =>
       iat: now,
       exp: now + Math.floor(options.ttlMillis)
     }
-    const body = Encoding.encodeBase64Url(JSON.stringify(encodeClaims(claims)))
+    const body = Base64Url.encode(JSON.stringify(encodeClaims(claims)))
     return Effect.promise(async () => {
       const key = await hmacKey(options.key, "sign")
       const signature = new Uint8Array(await subtle().sign("HMAC", key, encoder.encode(`${prefix}.${body}`)))
-      return { token: `${prefix}.${body}.${Encoding.encodeBase64Url(signature)}`, claims }
+      return { token: `${prefix}.${body}.${Base64Url.encode(signature)}`, claims }
     })
   })
 
@@ -209,7 +210,7 @@ export const verify = (key: string, token: string, now: number): Effect.Effect<C
     if (key.length === 0 || parts.length !== 3 || parts[0] !== prefix || parts[1]!.length === 0) {
       return refused("A valid scoped token is required")
     }
-    const signature = Encoding.decodeBase64Url(parts[2]!)
+    const signature = Base64Url.decode(parts[2]!)
     if (Result.isFailure(signature)) return refused("A valid scoped token is required")
     return Effect.promise(async () => {
       const hmac = await hmacKey(key, "verify")
@@ -217,7 +218,7 @@ export const verify = (key: string, token: string, now: number): Effect.Effect<C
     }).pipe(
       Effect.flatMap((valid) => {
         if (!valid) return refused("A valid scoped token is required")
-        const text = Encoding.decodeBase64UrlString(parts[1]!)
+        const text = Base64Url.decodeString(parts[1]!)
         if (Result.isFailure(text)) return refused("A valid scoped token is required")
         let parsed: unknown
         try {

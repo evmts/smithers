@@ -19,7 +19,7 @@
  */
 
 import { Cause, Duration, Effect, Metric, Schedule } from "effect"
-import * as SqlError from "effect/unstable/sql/SqlError"
+import * as SqlError from "effect/sql/SqlError"
 import * as DatabaseMetrics from "../DatabaseMetrics.ts"
 // Type-only, so the module graph stays one-way: `DurableWriter` imports this
 // file at runtime, this file borrows only its code union.

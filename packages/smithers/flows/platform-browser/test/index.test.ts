@@ -7,7 +7,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import { Effect, FileSystem, Path } from "effect"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as NodeFsPromises from "node:fs/promises"
 import * as BrowserChildProcessSpawner from "../src/BrowserChildProcessSpawner/index.ts"
 import * as BrowserFileSystem from "../src/BrowserFileSystem/index.ts"

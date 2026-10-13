@@ -1,6 +1,6 @@
 /** Immutable native commit capture, without moving the editing checkout. */
 import { Effect, Path, Schema, Stream } from "effect"
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
+import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { contained, ExportedTree, type ImmutableSourceOptions, runSourceProcess } from "../coding/immutable-source.ts"
 import { normalizePath } from "../coding/planning-sources.ts"
 import { CodingError, type Revision } from "../coding/schema.ts"

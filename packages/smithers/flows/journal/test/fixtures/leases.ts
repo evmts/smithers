@@ -7,7 +7,7 @@
  * writing the row the strategy's `guard` reads. The conformance suite drives
  * the same fence through the strategy's public operations instead.
  */
-import type * as SqlClient from "effect/unstable/sql/SqlClient"
+import type * as SqlClient from "effect/sql/SqlClient"
 import type { OwnerId } from "../../src/OwnerId.ts"
 
 /** Makes `holder` the run's owner, replacing whoever held it before. */

@@ -1,7 +1,7 @@
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Context, Effect, Layer } from "effect"
-import { SqlClient } from "effect/unstable/sql/SqlClient"
+import { SqlClient } from "effect/sql/SqlClient"
 import { execFile } from "node:child_process"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"

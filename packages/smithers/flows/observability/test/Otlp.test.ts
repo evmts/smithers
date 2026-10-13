@@ -1,15 +1,20 @@
 import { describe, expect, it } from "@effect/vitest"
+import * as Cause from "effect/Cause"
 import * as ConfigProvider from "effect/ConfigProvider"
+import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import * as Layer from "effect/Layer"
 import * as Logger from "effect/Logger"
 import * as Metric from "effect/Metric"
+import * as OtlpExporter from "effect/observability/OtlpExporter"
 import * as References from "effect/References"
 import { TestClock } from "effect/testing"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
-import * as OtlpExporter from "effect/unstable/observability/OtlpExporter"
 import { readFileSync } from "node:fs"
 import { Otlp, Resource } from "../src/index.ts"
+import { effectVersion } from "./fixtures/effectVersion.ts"
 import { boundaryResources, resourceBytes, sdkResourceBytes } from "./fixtures/resources.ts"
 
 interface RecordedRequest {
@@ -62,6 +67,25 @@ const runExportingTimed = <A, E, R>(
     Effect.provide(TestClock.layer())
   )
 
+interface ExportedSpan {
+  readonly name: string
+  readonly status: { readonly code: number; readonly message?: string }
+  readonly attributes: ReadonlyArray<{ readonly key: string; readonly value: Record<string, unknown> }>
+}
+
+/** Every span the collector received, in export order. */
+const exportedSpans = (requests: ReadonlyArray<RecordedRequest>): ReadonlyArray<ExportedSpan> =>
+  requests.filter((request) => request.url.endsWith("/v1/traces")).flatMap((request) =>
+    (request.body as {
+      readonly resourceSpans: ReadonlyArray<{
+        readonly scopeSpans: ReadonlyArray<{ readonly spans: ReadonlyArray<ExportedSpan> }>
+      }>
+    }).resourceSpans.flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans))
+  )
+
+/** Lets the recording transport's promises settle between clock adjustments. */
+const settle = Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)))
+
 const resourceAttributes = (request: RecordedRequest): Record<string, unknown> => {
   const body = request.body as {
     readonly resourceMetrics: ReadonlyArray<{
@@ -97,6 +121,101 @@ describe("Otlp", () => {
       const attributes = resourceAttributes(exports[0]!)
       expect(attributes["service.name"]).toBe(Otlp.defaultServiceName)
       expect(attributes["service.version"]).toBe(Otlp.defaultServiceVersion)
+    }))
+
+  // The shape `docs/guides/export-to-a-collector.md` tells an operator to expect.
+  it.effect("exports the documented resource, scope, log record and metric shapes", () =>
+    Effect.gen(function*() {
+      const collector = recordingFetch()
+      yield* runExporting(
+        Effect.gen(function*() {
+          yield* Effect.logWarning("shape record", Cause.fail(new Error("shape cause"))).pipe(
+            Effect.annotateLogs({ phase: "shape" }),
+            Effect.withLogSpan("shape-log-span")
+          )
+          yield* Effect.void.pipe(Effect.withSpan("shape-span"))
+          yield* Metric.update(Metric.timer("shape_timer"), Duration.millis(12))
+          yield* Metric.update(Metric.histogram("shape_histogram", { boundaries: [1, 10, 100] }), 500)
+        }),
+        Otlp.layerFetch({
+          baseUrl: "https://collector.invalid:4318",
+          serviceName: "shape",
+          attributes: { "deployment.environment.name": "test" },
+          headers: { "user-agent": "shape-host/1" },
+          exportInterval: "1 hour"
+        }),
+        collector.fetch
+      ).pipe(Effect.provide(Logger.layer([])))
+
+      interface Attribute {
+        readonly key: string
+        readonly value: Record<string, unknown>
+      }
+      interface Group {
+        readonly resource: { readonly attributes: ReadonlyArray<Attribute> }
+        readonly scopeLogs?: ReadonlyArray<{
+          readonly scope: unknown
+          readonly logRecords: ReadonlyArray<{ readonly attributes: ReadonlyArray<Attribute> }>
+        }>
+        readonly scopeSpans?: ReadonlyArray<{ readonly scope: unknown }>
+        readonly scopeMetrics?: ReadonlyArray<{
+          readonly scope: unknown
+          readonly metrics: ReadonlyArray<{
+            readonly name: string
+            readonly unit: string
+            readonly histogram: { readonly dataPoints: ReadonlyArray<Record<string, unknown>> }
+          }>
+        }>
+      }
+      const signal = (name: "Logger" | "Metrics" | "Tracer"): Group => {
+        const request = collector.requests.find((candidate) =>
+          candidate.url.endsWith(`/v1/${name === "Logger" ? "logs" : name === "Metrics" ? "metrics" : "traces"}`)
+        )!
+        expect(request.headers.get("user-agent")).toBe(
+          `shape-host/1 OTel-OTLP-Exporter-JavaScript-Effect-Otlp${name}/${effectVersion}`
+        )
+        const group = Object.values(request.body as Record<string, ReadonlyArray<Group>>)[0]![0]!
+        expect(group.resource.attributes.map((attribute) => [attribute.key, attribute.value.stringValue])).toEqual([
+          ["telemetry.sdk.name", "effect"],
+          ["telemetry.sdk.language", "nodejs"],
+          ["telemetry.sdk.version", effectVersion],
+          ["deployment.environment.name", "test"],
+          ["service.name", "shape"],
+          ["service.version", Otlp.defaultServiceVersion]
+        ])
+        return group
+      }
+
+      const logs = signal("Logger").scopeLogs![0]!
+      expect(logs.scope).toEqual({ name: "effect", version: effectVersion })
+      const record = Object.fromEntries(
+        logs.logRecords[0]!.attributes.map((attribute) => [attribute.key, attribute.value])
+      )
+      expect(Object.keys(record).sort()).toEqual([
+        "effect.fiberId",
+        "effect.log_span.shape-log-span",
+        "exception.message",
+        "exception.stacktrace",
+        "exception.type",
+        "phase"
+      ])
+      expect(record.phase).toEqual({ stringValue: "shape" })
+      expect(record["effect.fiberId"]!.intValue).toBeTypeOf("number")
+      expect(record["effect.log_span.shape-log-span"]!.intValue).toBeTypeOf("number")
+      expect(record["exception.type"]).toEqual({ stringValue: "Error" })
+      expect(record["exception.message"]).toEqual({ stringValue: "shape cause" })
+      expect(record["exception.stacktrace"]!.stringValue).toContain("shape cause")
+
+      expect(signal("Tracer").scopeSpans![0]!.scope).toEqual({ name: "effect", version: effectVersion })
+
+      const metrics = signal("Metrics").scopeMetrics![0]!
+      expect(metrics.scope).toEqual({ name: "shape" })
+      expect(metrics.metrics.find((metric) => metric.name === "shape_timer")!.unit).toBe("ms")
+      expect(metrics.metrics.find((metric) => metric.name === "shape_histogram")!.histogram.dataPoints[0])
+        .toMatchObject({
+          explicitBounds: [1, 10, 100],
+          bucketCounts: [0, 0, 0, 1]
+        })
     }))
 
   it.effect("preserves a collector base path for every signal and sends auth in headers", () =>
@@ -308,6 +427,120 @@ describe("Otlp", () => {
       expect(snapshots.restarted).toBe(5)
       expect(snapshots.reused).toEqual({ active: 0, aborted: 5 })
       expect(active).toBe(0)
+    }))
+
+  it.effect("delivers every batch to a collector that never ends its response, reading none of the body", () =>
+    Effect.gen(function*() {
+      let opened = 0
+      let pulls = 0
+      let cancelled = 0
+      const logPosts: Array<string> = []
+      const endlessFetch: typeof globalThis.fetch = (input, init) => {
+        if (String(input).endsWith("/v1/logs")) logPosts.push(new TextDecoder().decode(init?.body as Uint8Array))
+        opened++
+        const body = new ReadableStream<Uint8Array>({
+          // Paced, so a reader of this body fails the assertions below
+          // instead of starving the event loop.
+          pull(controller) {
+            pulls++
+            controller.enqueue(new Uint8Array(1024))
+            return new Promise((resolve) => setTimeout(resolve, 1))
+          },
+          cancel() {
+            cancelled++
+          }
+        }, { highWaterMark: 0 })
+        init?.signal?.addEventListener("abort", () => void body.cancel(), { once: true })
+        return Promise.resolve(new Response(body, { status: 200 }))
+      }
+      yield* runExportingTimed(
+        Effect.gen(function*() {
+          for (let batch = 0; batch < 3; batch++) {
+            yield* Effect.logInfo(`endless-body batch ${batch}`)
+            yield* TestClock.adjust("1 second")
+            yield* settle
+            // Each interval delivers its own batch: the one before it is not
+            // still waiting on a body that never ends.
+            expect(logPosts).toHaveLength(batch + 1)
+            expect(logPosts[batch]).toContain(`endless-body batch ${batch}`)
+          }
+        }),
+        Otlp.layerFetch({
+          baseUrl: "http://collector.invalid:4318",
+          exportInterval: "1 second",
+          shutdownTimeout: "1 second"
+        }),
+        endlessFetch
+      ).pipe(Effect.provide(Logger.layer([])))
+      yield* settle
+      expect(opened).toBeGreaterThanOrEqual(3)
+      expect(pulls).toBe(0)
+      expect(cancelled).toBe(opened)
+    }))
+
+  it.effect.each([429, 503])(
+    "waits the retry-after of a %s before each of three retries, then gives the batch up",
+    (status) =>
+      Effect.gen(function*() {
+        // Only the trace collector is busy, so no other signal is still
+        // waiting out a retry when the scope closes.
+        const traces: Array<string> = []
+        const busyFetch: typeof globalThis.fetch = (input, init) => {
+          if (!String(input).endsWith("/v1/traces")) return Promise.resolve(new Response("{}"))
+          traces.push(new TextDecoder().decode(init?.body as Uint8Array))
+          return Promise.resolve(new Response("try later", { status, headers: { "retry-after": "30" } }))
+        }
+        yield* runExportingTimed(
+          Effect.gen(function*() {
+            yield* Effect.void.pipe(Effect.withSpan("observability_retry_after"))
+            // The interval posts the batch at one second. Without the header
+            // the three retries would follow one second apart.
+            for (const [elapsed, requests] of [[5, 1], [25, 1], [5, 2], [30, 3], [30, 4], [120, 4]] as const) {
+              yield* TestClock.adjust(`${elapsed} seconds`)
+              yield* settle
+              expect(traces).toHaveLength(requests)
+            }
+          }),
+          Otlp.layerFetch({
+            baseUrl: "http://collector.invalid:4318",
+            exportInterval: "1 second",
+            shutdownTimeout: "1 second"
+          }),
+          busyFetch
+        ).pipe(Effect.provide(Logger.layer([])))
+        for (const body of traces) expect(body).toContain("observability_retry_after")
+      })
+  )
+
+  it.effect("fails an answer that is no HTTP status without retrying it", () =>
+    Effect.gen(function*() {
+      const posts: Array<string> = []
+      // A browser reports a refused redirect as status 0.
+      const client = HttpClient.make((request, url) =>
+        Effect.sync(() => {
+          posts.push(url.pathname)
+          return HttpClientResponse.fromWeb(request, Response.error())
+        })
+      )
+      const result = yield* Effect.gen(function*() {
+        yield* Effect.void.pipe(Effect.withSpan("observability_status_zero"))
+        yield* TestClock.adjust("10 seconds")
+        yield* settle
+        return "application-completed"
+      }).pipe(
+        Effect.provide(
+          Otlp.layer({
+            baseUrl: "http://collector.invalid:4318",
+            exportInterval: "1 second",
+            shutdownTimeout: "1 second"
+          }).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient)(client)))
+        ),
+        Effect.provideService(Metric.MetricRegistry, new Map()),
+        Effect.provide(TestClock.layer()),
+        Effect.provide(Logger.layer([]))
+      )
+      expect(result).toBe("application-completed")
+      expect(posts.filter((path) => path === "/v1/traces")).toHaveLength(1)
     }))
 
   it.effect("discards oversized serialized batches with a loss diagnostic", () =>
@@ -531,15 +764,56 @@ describe("Otlp", () => {
         Otlp.layerFetch({ baseUrl: "http://127.0.0.1:4318" }),
         collector.fetch
       )
-      const traces = JSON.stringify(collector.requests.filter((request) => request.url.endsWith("/v1/traces")))
+      const traceRequests = collector.requests.filter((request) => request.url.endsWith("/v1/traces"))
+      const traces = JSON.stringify(traceRequests)
       expect(traces).toContain("observability_redacted_failure")
       expect(traces).toContain("upstream refused")
       expect(traces).toContain("exception.stacktrace")
       expect(traces).toMatch(/exception\.type.{0,40}Error/)
       expect(traces).toContain("request.count")
       expect(traces).not.toContain("sk-ant-api03-synthetic-secret-value-0123456789")
-      expect(traces).toContain("status.interrupted")
-      expect(traces).toContain("observability_succeeded")
+      // Redaction rebuilds a failure and leaves the other two outcomes as they
+      // were: OTLP status 2 is an error, 0 is unset and 1 is ok.
+      const spans = exportedSpans(collector.requests)
+      expect(spans.map((span) => [span.name, span.status])).toEqual([
+        ["observability_redacted_failure", { code: 2, message: expect.stringContaining("upstream refused") }],
+        ["observability_interrupted", { code: 0 }],
+        ["observability_succeeded", { code: 1 }]
+      ])
+      expect(spans[1]!.attributes).toEqual([{ key: "effect.fiber.interrupted", value: { boolValue: true } }])
+    }))
+
+  // Effect's HTTP client ends the span of a 4xx or 5xx answer itself, before
+  // the request's effect completes. The collector still receives it once.
+  it.effect("exports one failed span, with no header, for an HTTP request the server answered 503", () =>
+    Effect.gen(function*() {
+      const collector = recordingFetch()
+      const upstream = HttpClient.make((request) =>
+        Effect.succeed(HttpClientResponse.fromWeb(
+          request,
+          new Response(null, { status: 503, headers: { "set-cookie": "session=synthetic-upstream-cookie" } })
+        ))
+      )
+      yield* runExporting(
+        upstream.get("https://upstream.invalid/resource", {
+          headers: { "x-upstream-token": "synthetic-upstream-token" }
+        }).pipe(Effect.asVoid, Effect.orDie),
+        Otlp.layerFetch({ baseUrl: "http://127.0.0.1:4318" }),
+        collector.fetch
+      )
+      const spans = exportedSpans(collector.requests)
+      expect(spans.map((span) => [span.name, span.status])).toEqual([
+        ["GET", { code: 2, message: expect.stringContaining("503") }]
+      ])
+      const attributes = Object.fromEntries(spans[0]!.attributes.map((attribute) => [attribute.key, attribute.value]))
+      expect(attributes["error.type"]).toEqual({ stringValue: "503" })
+      expect(attributes["http.response.status_code"]).toEqual({ intValue: 503 })
+      expect(attributes["server.address"]).toEqual({ stringValue: "upstream.invalid" })
+      expect(Object.keys(attributes).filter((key) => key.startsWith("http.request.header."))).toEqual([])
+      expect(Object.keys(attributes).filter((key) => key.startsWith("http.response.header."))).toEqual([])
+      const exported = JSON.stringify(collector.requests)
+      expect(exported).not.toContain("synthetic-upstream-token")
+      expect(exported).not.toContain("synthetic-upstream-cookie")
     }))
 
   it("parseHeaders decodes percent escapes and skips malformed pairs", () => {

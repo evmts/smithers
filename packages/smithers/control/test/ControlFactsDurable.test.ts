@@ -1,6 +1,6 @@
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { Effect, Stream } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"

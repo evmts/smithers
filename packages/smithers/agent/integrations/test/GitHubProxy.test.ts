@@ -5,7 +5,7 @@
  */
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import { Context, Effect, Exit, Layer, Scope } from "effect"
-import * as HttpServer from "effect/unstable/http/HttpServer"
+import * as HttpServer from "effect/http/HttpServer"
 import { execFile } from "node:child_process"
 import { createServer } from "node:http"
 import { fileURLToPath } from "node:url"

@@ -1,6 +1,6 @@
 import { NotificationQueue } from "@smthrs/notifications"
 import { Effect, Layer, Stream } from "effect"
-import { RpcTest } from "effect/unstable/rpc"
+import { RpcTest } from "effect/rpc"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
 import { isControlError } from "../src/ControlClient.ts"

@@ -17,9 +17,9 @@
 import * as ChildProcessEnvironment from "@smthrs/kernel/ChildProcessEnvironment"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import * as Effect from "effect/Effect"
+import * as ChildProcess from "effect/process/ChildProcess"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
 import * as StdError from "../StdError.ts"
 
 /**

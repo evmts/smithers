@@ -17,7 +17,7 @@
  *
  * A failure `cause` is Effect's array of reasons — `{_tag:"Fail",error}`,
  * `{_tag:"Die",defect}`, `{_tag:"Interrupt",fiberId}` (`ExitEncoded` in
- * `effect/unstable/rpc/RpcMessage`) — and `gatewayFrames.test.ts` pins that shape
+ * `effect/rpc/RpcMessage`) — and `gatewayFrames.test.ts` pins that shape
  * against the installed codec.
  */
 
@@ -71,7 +71,7 @@ const isTyped = (record: Record<string, unknown>): boolean =>
 /**
  * The typed error inside an encoded cause. Effect's RPC protocol encodes a
  * failure cause as an array of reasons, `[{ _tag: "Fail", error }]`
- * (`effect/unstable/rpc/RpcMessage` `ResponseExitDieEncoded` is the `Die`
+ * (`effect/rpc/RpcMessage` `ResponseExitDieEncoded` is the `Die`
  * twin), so the first `Fail` reason's error is the typed refusal. A bare
  * record is read too: the record itself when it carries a code or a
  * `/control/...` tag, else the `error` it wraps.

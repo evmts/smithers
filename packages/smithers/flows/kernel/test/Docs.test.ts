@@ -1,5 +1,5 @@
 import * as Capability from "@smthrs/capability/Capability"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
+import * as ChildProcess from "effect/process/ChildProcess"
 import { globSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { tmpdir } from "node:os"

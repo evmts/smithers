@@ -196,7 +196,8 @@ the flow tag, payload, and declaration side table in every one of them.
 ## The engine members
 
 `Node.flowCall`, `actionCall`, `declaration`, `continuation`, `mapper`,
-`predicate`, `catchFilter`, and `functionIdentity` exist for
+`predicate`, `catchFilter`, `functionIdentity`, `schemaIdentity`, and
+`representationIdentity` exist for
 [`@smthrs/flow`](/api/flow), which owns flow and action authoring. They are
 supported names, not authoring API: they validate nothing, and several of them
 answer `undefined` for an AST that was rehydrated from JSON, because the side

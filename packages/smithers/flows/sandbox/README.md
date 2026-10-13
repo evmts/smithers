@@ -2,9 +2,9 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact
-`4.0.0-rc.115` peer dependency. Keep the application on that version so
-all Smithers packages share one Effect runtime.
+This package declares `effect` as a `^4.0.4` peer dependency. Install one
+`effect` release in that range so all Smithers packages share one Effect
+runtime.
 
 **Documentation:** https://sandbox.smithers.sh
 
@@ -68,8 +68,8 @@ owns no host access of its own.
 ```ts
 import { RemoteChildProcessSpawner } from "@smthrs/sandbox"
 import { Effect } from "effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 
 const provider = RemoteChildProcessSpawner.TestRemote.make({
   scripts: { "echo hi": { stdout: "hi" } }

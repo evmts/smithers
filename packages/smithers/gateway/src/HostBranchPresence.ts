@@ -13,7 +13,7 @@ import * as BranchShare from "@smthrs/sync/BranchShare"
 import { SyncError } from "@smthrs/sync/SyncError"
 import { SyncAuth } from "@smthrs/sync/SyncRpcs"
 import { Effect, Layer, Redacted, Stream } from "effect"
-import { RpcServer } from "effect/unstable/rpc"
+import { RpcServer } from "effect/rpc"
 import type { Config } from "./RuntimeBridge.ts"
 
 /**

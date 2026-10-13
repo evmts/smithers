@@ -26,6 +26,7 @@
  */
 
 import * as Digest from "@smthrs/core/Digest"
+import * as Node from "@smthrs/core/Node"
 import * as Flows from "@smthrs/memory/Flows"
 import type * as MemoryError from "@smthrs/memory/MemoryError"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
@@ -62,9 +63,9 @@ export const contractDigest = (contract: Contract): string =>
   Digest.digest(Digest.canonical({
     description: contract.description,
     effects: { ...contract.effects },
-    input: Schema.toJsonSchemaDocument(contract.input, { onExcessProperty: "error" }),
+    input: Node.schemaIdentity(contract.input, { onExcessProperty: "error" }),
     name: contract.name,
-    output: Schema.toJsonSchemaDocument(contract.output, { onExcessProperty: "error" })
+    output: Node.schemaIdentity(contract.output, { onExcessProperty: "error" })
   }))
 
 /**

@@ -22,6 +22,7 @@ import * as Node from "@smthrs/plan/Node"
 import * as NodeHost from "@smthrs/platform-node/NodeHost"
 import { DirectorySandbox, RemoteChildProcessSpawner, Sandbox } from "@smthrs/sandbox"
 import * as ByteSize from "effect/ByteSize"
+import * as Cause from "effect/Cause"
 import * as Crypto from "effect/Crypto"
 import * as Deferred from "effect/Deferred"
 import * as Duration from "effect/Duration"
@@ -31,9 +32,9 @@ import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as PlatformError from "effect/PlatformError"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { spawnSync } from "node:child_process"
 import {
   existsSync,
@@ -2011,5 +2012,20 @@ describe("the guest runner in process", () => {
     await Guest.run(childEntry, environment)
     const result = resultOf(environment)
     expect(result.status === "failed" && result.error).toContain("interrupted")
+    expect(result.status === "failed" && result.denied).toBeUndefined()
+  })
+
+  it("reports a refusal only when it is the cause's one reason", () => {
+    const refusal = permissionDenied(
+      new Capability({ action: "fs:write", resource: "/outside" }),
+      "outside capability ceiling"
+    )
+    expect(Guest.deniedIn(Cause.fail(refusal))).toEqual(refusal)
+    expect(Guest.deniedIn(Cause.die(refusal))).toEqual(refusal)
+    // One interrupted fiber, and the two an action's interruption yields on Effect 4.0.4.
+    expect(Guest.deniedIn(Cause.interrupt())).toBeUndefined()
+    expect(Guest.deniedIn(Cause.combine(Cause.interrupt(1), Cause.interrupt(2)))).toBeUndefined()
+    expect(Guest.deniedIn(Cause.combine(Cause.fail(refusal), Cause.interrupt()))).toBeUndefined()
+    expect(Guest.deniedIn(Cause.fail(new Error("not a refusal")))).toBeUndefined()
   })
 })

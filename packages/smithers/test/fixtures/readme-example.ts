@@ -12,7 +12,7 @@
  */
 import { Command, NodeControl, Version } from "@smthrs/cli"
 import { Effect } from "effect"
-import { Command as Cli } from "effect/unstable/cli"
+import { Command as Cli } from "effect/cli"
 
 const config = NodeControl.makeConfig(
   ["--remote", "http://127.0.0.1:3000"],

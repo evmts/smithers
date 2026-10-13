@@ -1,7 +1,7 @@
 import { Seat } from "@smthrs/agent"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import { Effect, Stream } from "effect"
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
+import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"

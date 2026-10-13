@@ -15,7 +15,7 @@ import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import * as KernelWorkspace from "@smthrs/kernel/Workspace"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Effect from "effect/Effect"
-import * as Encoding from "effect/Encoding"
+import * as Base64 from "effect/encoding/Base64"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
@@ -31,7 +31,7 @@ const written = (path: string) => ({
   path,
   digest: sha256(bytes),
   sizeBytes: bytes.length,
-  content: Encoding.encodeBase64(bytes)
+  content: Base64.encode(bytes)
 })
 
 const evidence = (

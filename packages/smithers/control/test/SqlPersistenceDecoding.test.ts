@@ -5,7 +5,7 @@
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { RunStore } from "@smthrs/run-store"
 import { Effect } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 import * as Cancellation from "../src/Cancellation.ts"
 import { ClaimLost, PersistenceError } from "../src/ControlError.ts"

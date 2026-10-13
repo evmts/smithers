@@ -9,7 +9,7 @@ import * as Journal from "@smthrs/journal/Journal"
 import * as JournalEvent from "@smthrs/journal/JournalEvent"
 import type * as RunStore from "@smthrs/run-store/RunStore"
 import { Cause, Effect, Option, Schema } from "effect"
-import type { SqlClient } from "effect/unstable/sql/SqlClient"
+import type { SqlClient } from "effect/sql/SqlClient"
 
 /**
  * Existing native and control durability used to bind retries.

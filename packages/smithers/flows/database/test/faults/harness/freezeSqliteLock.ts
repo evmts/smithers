@@ -17,7 +17,7 @@
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 
 /**
  * A held write lock.

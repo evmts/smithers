@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 
-import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 
 /**
  * The AWS CLI and its Session Manager plugin, over an injected spawner.

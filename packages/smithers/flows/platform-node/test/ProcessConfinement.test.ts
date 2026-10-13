@@ -1,7 +1,7 @@
 /** Fake platform facts exercise foreign argv; all preparation uses a real filesystem. */
 import * as KernelConfinement from "@smthrs/kernel/ProcessConfinement"
 import { Deferred, Effect, Fiber, Logger, type Scope, Stream } from "effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
+import * as ChildProcess from "effect/process/ChildProcess"
 import NodeFs from "node:fs"
 import { syncBuiltinESMExports } from "node:module"
 import * as NodeOs from "node:os"

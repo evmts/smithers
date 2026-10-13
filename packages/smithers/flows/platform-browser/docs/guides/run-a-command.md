@@ -13,8 +13,8 @@ the divergences are stated rather than hidden.
 
 ```ts
 import * as Effect from "effect/Effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 
 const counted = Effect.flatMap(
   ChildProcessSpawner,

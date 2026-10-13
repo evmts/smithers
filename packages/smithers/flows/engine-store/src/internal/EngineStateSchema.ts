@@ -20,7 +20,7 @@
 import { isReadOnly } from "@smthrs/database/Dialect"
 import type { Service as WriterService } from "@smthrs/database/DurableWriter"
 import * as Effect from "effect/Effect"
-import type * as SqlClient from "effect/unstable/sql/SqlClient"
+import type * as SqlClient from "effect/sql/SqlClient"
 
 /**
  * SQL dialects a statement is known to be accepted by, verbatim.

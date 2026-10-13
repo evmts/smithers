@@ -16,12 +16,12 @@ Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/m
 - One copy of `effect` in the resolved tree. A second copy makes a `Layer`
   built against one fail to satisfy a requirement declared against the other.
 
-`effect` is the only peer, pinned to `4.0.0-rc.115`. Node and Bun adapters
-are bundled privately at the same version, including their shared implementation.
+`effect` is the only peer, in the range `^4.0.4`. Node and Bun adapters
+are bundled privately, built from 4.0.4, including their shared implementation.
 Hosts need no separate adapter install:
 
 ```bash
-pnpm add effect@4.0.0-rc.115
+pnpm add effect@^4.0.4
 ```
 
 Use `@smthrs/gateway/node/NodeGateway` on Node or

@@ -50,7 +50,7 @@ accident:
 
 ```ts
 import type { HostSuite } from "@smthrs/testing"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
+import * as ChildProcess from "effect/process/ChildProcess"
 
 const profile: HostSuite.HostProfile = {
   fileSystem: { supported: true },

@@ -12,14 +12,14 @@ import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Clock, Effect, Exit, Fiber, Schema, Sink, Stream, Tracer } from "effect"
 import { PlatformError, systemError } from "effect/PlatformError"
 import { TestClock } from "effect/testing"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
+import * as ChildProcess from "effect/process/ChildProcess"
 import {
   type ChildProcessSpawner,
   ExitCode,
   make as makeSpawner,
   makeHandle,
   ProcessId
-} from "effect/unstable/process/ChildProcessSpawner"
+} from "effect/process/ChildProcessSpawner"
 import { describe, expect, it } from "vitest"
 import * as Telemetry from "../src/internal/Telemetry.ts"
 

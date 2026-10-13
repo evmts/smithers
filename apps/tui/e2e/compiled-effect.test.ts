@@ -22,8 +22,8 @@ it("preserves public Effect module identity and encoded values, and refuses a ve
       `
       import { Schema } from "effect"
       import * as SchemaSubpath from "effect/Schema"
-      import { Headers } from "effect/unstable/http"
-      import * as HeadersSubpath from "effect/unstable/http/Headers"
+      import { Headers } from "effect/http"
+      import * as HeadersSubpath from "effect/http/Headers"
       export { Schema, SchemaSubpath, Headers, HeadersSubpath }
     `
     )
@@ -33,7 +33,7 @@ it("preserves public Effect module identity and encoded values, and refuses a ve
       files: {
         "probe.ts": `${compiledEffectRuntime(require)}
           const host = await import(${JSON.stringify(require.resolve("effect"))})
-          const http = await import(${JSON.stringify(require.resolve("effect/unstable/http"))})
+          const http = await import(${JSON.stringify(require.resolve("effect/http"))})
           const project = await import(process.argv[2])
           const codec = host.Schema.toCodecJson(host.Schema.Struct({ value: project.Schema.String }))
           console.log(JSON.stringify({

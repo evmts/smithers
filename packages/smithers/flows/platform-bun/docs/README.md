@@ -39,8 +39,8 @@ is Effect's Node spawner re-exported; contained POSIX variants use
 
 Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
 
-`@effect/platform-bun` is a required peer at exactly `4.0.0-rc.115`. Package
-managers install it with the other required Effect peers. The filesystem slot
+`effect` is a required peer in the range `^4.0.4`. `@effect/platform-bun` is
+bundled privately, built from `effect@4.0.4`. The filesystem slot
 also needs the `smithers-jj-export` helper, and every complete bundle needs
 jj 0.39.0 or later because it probes jj while the layer is built.
 [Installation](./installation.md) covers all three and the import forms.
@@ -54,8 +54,8 @@ decides what fills them:
 import { BunHost } from "@smthrs/platform-bun"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 
 const program = Effect.gen(function*() {
   const fs = yield* FileSystem.FileSystem

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import { Effect, FileSystem, Path } from "effect"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { vi } from "vitest"
 import * as BrowserServices from "../src/BrowserServices.ts"
 

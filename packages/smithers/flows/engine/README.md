@@ -2,9 +2,9 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact
-`4.0.0-rc.115` peer dependency. Keep the application on that version so
-all Smithers packages share one Effect runtime.
+This package declares `effect` as a `^4.0.4` peer dependency. Install one
+`effect` release in that range so all Smithers packages share one Effect
+runtime.
 
 **Documentation:** https://engine.smithers.sh
 
@@ -17,9 +17,8 @@ durable persistence over the same seam.
 Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
 
 Built on [Effect](https://effect.website): flows, actions, and the engine are
-Effect values you compose as layers. `effect` is a peer dependency pinned to
-one exact version per release, listed under `peerDependencies` in
-`package.json`.
+Effect values you compose as layers. `effect` is a peer dependency in the
+range `^4.0.4`, listed under `peerDependencies` in `package.json`.
 
 ## Mental model
 

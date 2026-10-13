@@ -125,6 +125,9 @@ body under a 401 from the rest. The reasoning is in
 A body naming a procedure that does not exist is _not_ this error. It reaches
 the mount and the RPC protocol reports the defect itself.
 
+A line that is not JSON beside a framed request is not this error either. The
+parser skips that line and the mount acts on the request.
+
 ### 413 request_too_large
 
 **Symptom** `POST /rpc exceeds the 1048576-byte request limit`.

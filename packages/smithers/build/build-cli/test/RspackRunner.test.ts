@@ -12,7 +12,9 @@
  * loudly rather than skipping.
  */
 import * as BundlerTarget from "@smthrs/targets/BundlerTarget"
+import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import { spawnSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
@@ -321,4 +323,56 @@ describe("rsbuild-mini end to end", () => {
       await Fs.rm(NodePath.join(workspace, configPath), { force: true })
     }
   }, 120_000)
+  // Effect 4.0.4 removes a typed failure from an interrupted fiber's cause once
+  // the unwind passes a recovery handler, as every caller's error mapping is.
+  // A scratch tree the runner could not remove must still reach the caller.
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0).each(["resolve", "build"] as const)(
+    "reports a scratch tree it could not remove after interrupting a %s child",
+    async (kind) => {
+      const configPath = "waiting-locked.config.mjs"
+      const readyPath = NodePath.join(workspace, "child-ready")
+      await Fs.writeFile(
+        NodePath.join(workspace, configPath),
+        [
+          "import { writeFileSync } from \"node:fs\"",
+          `writeFileSync(${JSON.stringify(readyPath)}, String(process.pid))`,
+          "await new Promise(() => setInterval(() => {}, 1000))",
+          "export default {}"
+        ].join("\n")
+      )
+      const effect: Effect.Effect<unknown, { readonly stderr: string }> = kind === "resolve"
+        ? resolveGraph(options(), { configPath, entries: ["main.ts"], mode: "development" })
+        : runBuild(options(), { configPath, environment: "web", mode: "development", env: {}, outDirs: ["dist"] })
+      const fiber = Effect.runFork(effect.pipe(Effect.mapError((error) => error)))
+      try {
+        await expect.poll(() => existsSync(readyPath) && readFileSync(readyPath, "utf8") !== "", { timeout: 60_000 })
+          .toBe(true)
+        // The per-call tree lives in the scratch directory; a read-only scratch
+        // directory makes removing it fail.
+        await Fs.chmod(scratch, 0o500)
+        await Effect.runPromise(Fiber.interrupt(fiber))
+        const exit = await Effect.runPromise(Fiber.await(fiber))
+        expect(Exit.isFailure(exit)).toBe(true)
+        if (Exit.isFailure(exit)) {
+          expect(Cause.hasInterrupts(exit.cause)).toBe(true)
+          const reported = exit.cause.reasons.flatMap((reason) =>
+            reason._tag === "Die" ? [reason.defect] : reason._tag === "Fail" ? [reason.error] : []
+          )
+          expect(reported).toContainEqual(expect.objectContaining({
+            _tag: "smithers-build/ExecError",
+            stderr: expect.stringMatching(/EACCES|EPERM/)
+          }))
+        }
+      } finally {
+        await Fs.chmod(scratch, 0o700)
+        await Effect.runPromise(Fiber.interrupt(fiber))
+        for (const entry of await Fs.readdir(scratch)) {
+          if (entry !== "rspack-cache") await Fs.rm(NodePath.join(scratch, entry), { recursive: true, force: true })
+        }
+        await Fs.rm(readyPath, { force: true })
+        await Fs.rm(NodePath.join(workspace, configPath), { force: true })
+      }
+    },
+    120_000
+  )
 })

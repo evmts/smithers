@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { readFileSync } from "node:fs"
+import { inspect } from "node:util"
 import * as ts from "typescript"
 import { describe, expect, it } from "vitest"
 import { Canonical, CanonicalError, canonicalize } from "../src/index.ts"
@@ -82,13 +83,24 @@ describe("documented diagnostic boundaries", () => {
     expect(reportingExample("issueOf")(new Error(secretText))).toBe("canonicalization_failed")
   })
 
-  it("retains the rejected input only when reportInput is true", () => {
+  it("retains the rejected input on the issue only when reportInput is true, and prints it in neither case", () => {
     const input = { [secretKey]: secretText, value: NaN }
-    const rendered = (options: { readonly reportInput?: boolean }): string =>
-      JSON.stringify(Effect.runSync(Effect.flip(Schema.decodeUnknownEffect(Canonical)(input, options))))
-    expect(rendered({})).not.toContain(secretText)
-    expect(rendered({ reportInput: false })).not.toContain(secretText)
-    expect(rendered({ reportInput: true })).toContain(secretText)
+    const failed = (options: { readonly reportInput?: boolean }): Schema.SchemaError =>
+      Effect.runSync(Effect.flip(Schema.decodeUnknownEffect(Canonical)(input, options)))
+    const retained = (options: { readonly reportInput?: boolean }): string => JSON.stringify(failed(options).issue)
+    expect(retained({})).not.toContain(secretText)
+    expect(retained({ reportInput: false })).not.toContain(secretText)
+    expect(retained({ reportInput: true })).toContain(secretText)
+    // Effect 4.0.4 gave `SchemaError` a `toJSON`, which rc.115 lacked: the
+    // error now prints its tag and message, whatever its issue retains.
+    for (const options of [{}, { reportInput: false }, { reportInput: true }]) {
+      const error = failed(options)
+      expect(JSON.parse(JSON.stringify(error))).toEqual({
+        _tag: "SchemaError",
+        message: "canonical_nan: NaN at $.value"
+      })
+      expect(inspect(error, { depth: null })).not.toContain(secretText)
+    }
   })
 
   it("demonstrates that reportInput false does not redact paths or custom messages", () => {

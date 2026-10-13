@@ -42,7 +42,7 @@ import { CacheStore } from "@smthrs/step-cache"
 import * as Effect from "effect/Effect"
 import * as HashMap from "effect/HashMap"
 import * as HashSet from "effect/HashSet"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 
 /**
  * The journal event type the fold reads.

@@ -11,8 +11,8 @@
  */
 
 import { Context, Effect, FileSystem, Layer, Path } from "effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner"
+import * as ChildProcess from "effect/process/ChildProcess"
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner"
 import * as Containment from "./internal/Containment.ts"
 
 /**

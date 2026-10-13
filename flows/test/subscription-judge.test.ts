@@ -1,9 +1,9 @@
 /** Standalone flow hosts share the native Jev judge and subscription backup. */
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Layer } from "effect"
-import * as HttpClient from "effect/unstable/http/HttpClient"
-import * as HttpClientError from "effect/unstable/http/HttpClientError"
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
+import * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientError from "effect/http/HttpClientError"
+import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import assert from "node:assert/strict"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"

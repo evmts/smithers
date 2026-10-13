@@ -32,7 +32,7 @@ specifier:
 ## Requirements
 
 - Node.js 26.4.0 or later.
-- [`effect`](https://effect.website) 4.0.0-rc.115, which supplies the `Effect`,
+- [`effect`](https://effect.website) `^4.0.4`, which supplies the `Effect`,
   `Schema`, `Layer`, `Metric`, and SQL client types this package's signatures
   use.
 - [`@smthrs/canonical`](/api/canonical) for RFC 8785 JSON and
@@ -109,7 +109,7 @@ top of that pair is [compose a durable step cache](./guides/compose-a-store.md).
 
 A composition that also reaches a shared tier adds an `HttpClient`
 implementation, which `RemoteCacheStore` requires. `FetchHttpClient.layer` from
-`effect/unstable/http/FetchHttpClient` is the usual one.
+`effect/http/FetchHttpClient` is the usual one.
 
 Most hosts never build this composition by hand.
 [`@smthrs/engine-store`](/api/engine-store) already composes the step cache,

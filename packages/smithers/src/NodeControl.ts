@@ -21,11 +21,11 @@ import type * as Registry from "@smthrs/registry/Registry"
 
 import { Effect, Layer, Redacted, Result, Schema } from "effect"
 
-import { HttpRouter } from "effect/unstable/http"
+import { HttpRouter } from "effect/http"
 
-import { RpcSerialization } from "effect/unstable/rpc"
+import { RpcSerialization } from "effect/rpc"
 
-import { Socket } from "effect/unstable/socket"
+import { Socket } from "effect/socket"
 
 import { existsSync, readFileSync } from "node:fs"
 

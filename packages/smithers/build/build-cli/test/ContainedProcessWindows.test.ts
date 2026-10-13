@@ -1,7 +1,7 @@
 import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
 import { Effect, PlatformError, Sink, Stream } from "effect"
-import type * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { type ChildProcessHandle, ExitCode, makeHandle, ProcessId } from "effect/unstable/process/ChildProcessSpawner"
+import type * as ChildProcess from "effect/process/ChildProcess"
+import { type ChildProcessHandle, ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
 import { afterEach, expect, it, vi } from "vitest"
 
 const state = vi.hoisted(() => ({
@@ -11,7 +11,7 @@ const state = vi.hoisted(() => ({
 vi.mock("@effect/platform-node", async (original) => {
   const actual = await original<typeof import("@effect/platform-node")>()
   const { Effect, Layer } = await import("effect")
-  const { ChildProcessSpawner, make } = await import("effect/unstable/process/ChildProcessSpawner")
+  const { ChildProcessSpawner, make } = await import("effect/process/ChildProcessSpawner")
   return {
     ...actual,
     NodeChildProcessSpawner: {

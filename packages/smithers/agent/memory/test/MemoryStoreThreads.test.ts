@@ -1,5 +1,5 @@
 import { Crypto, Effect } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 import * as MemoryStore from "../src/MemoryStore.ts"
 import * as TestMemory from "../src/test/TestMemory.ts"
@@ -12,7 +12,7 @@ describe("MemoryStore threads and messages", () => {
         const crypto = yield* Crypto.Crypto
         const unavailable = new Error("random source unavailable")
         const failingCrypto = Object.assign(Object.create(crypto) as Crypto.Crypto, {
-          randomUUIDv4: Effect.fail(unavailable)
+          randomUUIDv4: () => Effect.fail(unavailable)
         })
         const store = yield* MemoryStore.make.pipe(Effect.provideService(Crypto.Crypto, failingCrypto))
         const failure = yield* Effect.flip(store.createThread({ namespace }))

@@ -3,14 +3,14 @@ import { describe, expect, it } from "@effect/vitest"
 import * as Capability from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
 import { Deferred, Effect, Fiber, Layer, Option, Path, type PlatformError, Sink, Stream } from "effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
+import * as ChildProcess from "effect/process/ChildProcess"
 import {
   ChildProcessSpawner as HostChildProcessSpawner,
   ExitCode,
   make as makeSpawner,
   makeHandle,
   ProcessId
-} from "effect/unstable/process/ChildProcessSpawner"
+} from "effect/process/ChildProcessSpawner"
 import * as ChildProcessSpawner from "../src/ChildProcessSpawner.ts"
 import * as CommandLine from "../src/CommandLine.ts"
 import { emptyPolicy as closedPolicy } from "../src/GrantStore.ts"

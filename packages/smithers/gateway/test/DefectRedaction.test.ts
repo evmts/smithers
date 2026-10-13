@@ -6,7 +6,7 @@
 import { SyncAuth as SyncAuthTag } from "@smthrs/sync/SyncRpcs"
 import * as SyncServer from "@smthrs/sync/SyncServer"
 import { Cause, Effect, Layer, Logger, Stream } from "effect"
-import { HttpServer } from "effect/unstable/http"
+import { HttpServer } from "effect/http"
 import { describe, expect, it } from "vitest"
 import { GatewayError } from "../src/GatewayError.ts"
 import type * as GatewayServer from "../src/GatewayServer.ts"

@@ -16,7 +16,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { Effect, Layer, Stream } from "effect"
 import type * as FileSystem from "effect/FileSystem"
 import type * as Path from "effect/Path"
-import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import {
   existsSync,
   mkdirSync,

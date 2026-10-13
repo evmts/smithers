@@ -1,6 +1,6 @@
 /** PostgreSQL run inventory; requires the package-owned postgresInventory target. */
 import { Effect } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 import { ControlRuntime, type RunQuery } from "../src/ControlRuntime.ts"
 import { durable, fileBundle } from "./DurableStack.ts"

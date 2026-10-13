@@ -1,6 +1,6 @@
 /** Private staged /usr/local/bin/smithers-coding-host entry for an owning Plue workspace. */
 import { Effect, FileSystem, Layer, Redacted } from "effect"
-import type { HttpClient } from "effect/unstable/http"
+import type { HttpClient } from "effect/http"
 import { mkdirSync } from "node:fs"
 import { resolve } from "node:path"
 import { parseArgs } from "node:util"

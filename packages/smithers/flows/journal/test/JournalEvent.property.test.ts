@@ -33,12 +33,12 @@ const sourceSeq = (value: number): SourceSeqType => value as SourceSeqType
 describe("JournalEvent properties", () => {
   it("Entry survives encode-then-decode for arbitrary envelopes", async () => {
     const asserts = new TestSchema.Asserts(Entry)
-    await asserts.verifyLosslessTransformation({ runs: params.numRuns, seed: params.seed })
+    await asserts.verifyRoundTrip({ runs: params.numRuns, seed: params.seed })
   })
 
   it("Input survives encode-then-decode for arbitrary submissions", async () => {
     const asserts = new TestSchema.Asserts(Input)
-    await asserts.verifyLosslessTransformation({ runs: params.numRuns, seed: params.seed })
+    await asserts.verifyRoundTrip({ runs: params.numRuns, seed: params.seed })
   })
 
   it.each([

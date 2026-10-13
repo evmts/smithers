@@ -30,19 +30,18 @@ or one you add, and depends on it with a workspace specifier:
 
 ## Peers
 
-`@effect/platform-node`, `@effect/platform-node-shared`, and `effect` are peer
-dependencies, so your project pins their versions rather than inheriting a
-second copy. `@smthrs/platform-node` declares `4.0.0-rc.115` for all three:
+`effect` is the one peer dependency, in the range `^4.0.4`, so your project
+picks its version rather than inheriting a second copy:
 
 ```bash
-pnpm add @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115 effect@4.0.0-rc.115
+pnpm add effect
 ```
 
-The shared adapter peer keeps the Node implementation on the same Effect
-release candidate. The upstream Node adapter uses a caret for that dependency,
-which otherwise permits a later shared adapter with an incompatible Effect peer.
-Package managers that install peers automatically resolve the exact version
-from this package's manifest.
+`@effect/platform-node` and `@effect/platform-node-shared` are bundled
+privately, built from `effect@4.0.4`, so your project installs neither for
+this package. The upstream Node adapter uses a caret for its shared adapter,
+which otherwise permits a later shared adapter with an incompatible Effect
+peer. Bundling both keeps the Node implementation on one Effect release.
 
 Its own runtime dependencies, [`@smthrs/jj`](/api/jj) and
 [`@smthrs/kernel`](/api/kernel), resolve from the same workspace.

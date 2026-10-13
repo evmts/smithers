@@ -1,8 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Cause, Deferred, Effect, Exit, Fiber, Option, Random, Result } from "effect"
+import * as SqlClient from "effect/sql/SqlClient"
+import * as SqlError from "effect/sql/SqlError"
 import { TestClock } from "effect/testing"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
-import * as SqlError from "effect/unstable/sql/SqlError"
 import * as Dialect from "../src/Dialect.ts"
 import type { WriteRetryOptions } from "../src/DurableWriter.ts"
 import * as DurableWriter from "../src/DurableWriter.ts"
@@ -23,7 +23,7 @@ const unknownSqlError = (cause: unknown): SqlError.SqlError =>
  * The defect a driver rollback failure actually reaches a caller as.
  *
  * Effect's transaction wrapper runs `Effect.orDie(options.rollback(conn))`
- * (effect/unstable/sql/SqlClient.ts), and `rollback` fails with `SqlError`, so
+ * (effect/sql/SqlClient.ts), and `rollback` fails with `SqlError`, so
  * the value on the defect channel is that `SqlError` — never a bare `Error`.
  */
 const rollbackDefect = (): SqlError.SqlError => unknownSqlError(new Error("cannot rollback - no transaction is active"))

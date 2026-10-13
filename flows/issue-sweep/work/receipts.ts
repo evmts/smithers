@@ -1,6 +1,6 @@
 /** Host-local durable job handles and collection receipts; values contain no credentials. */
 import { Effect, Layer, Schema } from "effect"
-import { KeyValueStore } from "effect/unstable/persistence"
+import { KeyValueStore } from "effect/persistence"
 import { createHash, randomUUID } from "node:crypto"
 import { promises as fs } from "node:fs"
 import { dirname, join, resolve } from "node:path"

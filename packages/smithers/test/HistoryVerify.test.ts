@@ -8,7 +8,7 @@ import { Control, ControlRuntime } from "@smthrs/control"
 import type { RunId } from "@smthrs/control/ControlSchema"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Effect, Layer } from "effect"
-import { SqlClient } from "effect/unstable/sql/SqlClient"
+import { SqlClient } from "effect/sql/SqlClient"
 import { Cli } from "incur"
 import { randomUUID } from "node:crypto"
 import {

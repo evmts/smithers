@@ -15,7 +15,10 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, it } from "node:test"
 
-import { EXPECTED_EFFECT_VERSION as effectVersion } from "../check-single-effect-version.mjs"
+import {
+  EXPECTED_EFFECT_VERSION as effectVersion,
+  SUPPORTED_EFFECT_RANGE as effectRange
+} from "../check-single-effect-version.mjs"
 import { retarget } from "../set-release-version.mjs"
 import { libraryPackages } from "../workspace-packages.mjs"
 import { repoRoot as root } from "../workspace-packages.mjs"
@@ -255,7 +258,7 @@ describe("the workspace package contract", () => {
     assert.deepEqual(actual, expected)
   })
 
-  it("keeps Effect as an exact peer of every library", () => {
+  it("keeps Effect as a ranged peer of every library and the tested release in every executable", () => {
     for (const entry of publishable) {
       const { manifest } = entry
       if (manifestNotExposed.has(manifest.name)) continue
@@ -275,8 +278,8 @@ describe("the workspace package contract", () => {
       }
       assert.equal(
         manifest.peerDependencies?.effect,
-        effectVersion,
-        `${manifest.name} must share the exact Effect runtime supplied by its host`
+        effectRange,
+        `${manifest.name} must accept the Effect runtime its host supplies, anywhere in the supported range`
       )
       assert.equal(
         manifest.dependencies?.effect,
@@ -295,7 +298,16 @@ describe("the workspace package contract", () => {
     const owners = publishable.filter(({ manifest }) => manifest.smthrs?.privateEffectAdapters)
     assert.equal(owners.length, 7)
     for (const { manifest } of owners) {
-      assert.equal(manifest.dependencies?.effect ?? manifest.peerDependencies?.effect, effectVersion)
+      // An executable installs the release its adapters are built from. A
+      // library builds them from the release it develops against, and its
+      // peer starts there.
+      if (effectRuntimeOwners.has(manifest.name)) {
+        assert.equal(manifest.dependencies?.effect, effectVersion)
+      } else {
+        assert.equal(manifest.peerDependencies?.effect, effectRange)
+        assert.equal(manifest.devDependencies?.effect, effectVersion)
+        assert.equal(effectRange, "^" + effectVersion)
+      }
       assert.ok(manifest.smthrs.privateEffectAdapters.includes("@effect/platform-node-shared"))
       assert.ok(manifest.files.includes("dist/vendor/**"))
       for (const name of manifest.smthrs.privateEffectAdapters) {

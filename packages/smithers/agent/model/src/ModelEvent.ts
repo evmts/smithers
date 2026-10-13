@@ -12,6 +12,14 @@ import { Effect, Schema } from "effect"
 import { AssistantMessage, StopReason, ToolCallPart } from "./ModelRequest.ts"
 
 /**
+ * `Object.assign` for a schema's statics, defining each one instead of assigning
+ * it. Effect 4.0 serves `make` from a prototype getter that has no setter, so
+ * assigning over it throws.
+ */
+const withStatics = <S extends object, Statics extends object>(schema: S, statics: Statics): S & Statics =>
+  Object.defineProperties(schema, Object.getOwnPropertyDescriptors(statics)) as S & Statics
+
+/**
  * Token counts a provider reports for one request. Every field is
  * optional: providers disagree on which counters they expose, and a missing
  * count is not a zero count.
@@ -20,7 +28,7 @@ import { AssistantMessage, StopReason, ToolCallPart } from "./ModelRequest.ts"
  * @since 0.1.0
  * @slop
  */
-export const Usage = Object.assign(
+export const Usage = withStatics(
   Schema.Struct({
     inputTokens: Schema.optional(Schema.Number),
     outputTokens: Schema.optional(Schema.Number),

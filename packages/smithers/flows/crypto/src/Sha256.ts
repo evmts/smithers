@@ -256,7 +256,9 @@ export const digest = (input: string | Uint8Array): Effect.Effect<Digest, Sha256
         "The injected Crypto service returned a non-Effect SHA-256 operation"
       ))
     }
-    const hostDigest: unknown = yield* operation.pipe(
+    // `Effect.isEffect` vouches for the shape and leaves every channel unknown.
+    // The Crypto contract types a digest as needing no services.
+    const hostDigest: unknown = yield* (operation as Effect.Effect<unknown, unknown>).pipe(
       Effect.mapError(hostFailure),
       Effect.catchDefect((cause) => Effect.fail(hostFailure(cause)))
     )

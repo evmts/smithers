@@ -51,8 +51,8 @@ A missing helper refuses confined operations, including MCP flow discovery.
 ```ts
 import { NodeHost } from "@smthrs/platform-node"
 import { Effect } from "effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 
 const program = Effect.gen(function*() {
   const spawner = yield* ChildProcessSpawner

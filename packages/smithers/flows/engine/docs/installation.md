@@ -14,8 +14,8 @@ author against: `Flow`, `Action`, `DurableDeferred`, `DurableClock`, and
 `RetryPolicy` are all declared there. Install it explicitly so your own imports
 resolve.
 
-`effect` is the peer everything is built on. This release pins
-`effect@4.0.0-rc.115`; install the same version, because two copies of `effect`
+`effect` is the peer everything is built on. This release accepts
+`effect@^4.0.4`; install one `effect` in that range, because two copies of `effect`
 in one process split the service context and a flow authored against one
 instance is not runnable by an engine holding the other.
 
@@ -40,7 +40,7 @@ browser program provides its own; a Node program provides
 `@effect/platform-node`:
 
 ```bash
-pnpm add @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115
+pnpm add @effect/platform-node @effect/platform-node-shared
 ```
 
 `@effect/platform-node` supplies the runtime `Crypto` service used by every

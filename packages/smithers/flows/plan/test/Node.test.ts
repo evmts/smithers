@@ -330,7 +330,11 @@ describe("Node", () => {
       "Catch"
     )
 
-    expect(ast.filter).toEqual(Schema.toJsonSchemaDocument(error, { onExcessProperty: "error" }))
+    expect(ast.filter).toEqual({
+      dialect: "draft-2020-12",
+      schema: { type: "string", enum: ["recoverable"] },
+      definitions: {}
+    })
     expect(Node.catchFilter(ast)).toBe(error)
   })
 

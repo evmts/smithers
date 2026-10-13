@@ -4,7 +4,7 @@
 
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import { Effect, FileSystem, Layer, Path } from "effect"
-import type { SqlClient } from "effect/unstable/sql/SqlClient"
+import type { SqlClient } from "effect/sql/SqlClient"
 import * as Migrations from "./ControlDatabaseMigrations.ts"
 
 /** Uses injected filesystem and path services, and opens only the supplied SQL adapter.

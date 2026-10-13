@@ -47,7 +47,7 @@ Node-only import. `@smthrs/sync/test/TestSocket` is an in-memory socket pair
 and runs anywhere. Install the optional SQLite driver when using `TestSync`:
 
 ```bash
-pnpm add @effect/sql-sqlite-node@4.0.0-rc.115
+pnpm add @effect/sql-sqlite-node
 ```
 
 `@smthrs/sync/internal/*` is not exported. A path under it fails to resolve.
@@ -59,11 +59,11 @@ A follower needs a transport. `SyncClient.layer` derives its RPC client from
 serialization:
 
 ```bash
-pnpm add @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115
+pnpm add @effect/platform-node @effect/platform-node-shared
 ```
 
 A browser follower needs no extra package: the WebSocket protocol and the JSON
-serialization both come from `effect/unstable/rpc`.
+serialization both come from `effect/rpc`.
 
 ## What a server adds
 

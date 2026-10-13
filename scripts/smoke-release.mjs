@@ -15,8 +15,8 @@
  * ERR_MODULE_NOT_FOUND in the consumer's project.
  * Separate empty npm and pnpm consumers install `@smthrs/cli` alone with empty
  * package cache, answers MCP `initialize` from the installed `smthrs --mcp`,
- * and holds every Effect-family package it resolved to the pinned version: a
- * fresh resolver taking a third-party caret edge past the pin is how
+ * and holds every Effect-family package it resolved to the tested version: a
+ * fresh resolver taking a third-party caret edge past it is how
  * `smithers-orchestrator@0.32.0` failed before its handshake (#2398).
  * Separate npm and pnpm consumers then certify default libraries, selected
  * Node/browser/Bun adapters and migration install shapes

@@ -5,7 +5,7 @@ area: api
 order: 10
 ---
 
-Install the package with its exact `effect` peer. Not on npm yet; see [Installation](../installation.md#use-the-libraries).
+Install the package with its `effect` peer. Not on npm yet; see [Installation](../installation.md#use-the-libraries).
 
 ## Entry points
 

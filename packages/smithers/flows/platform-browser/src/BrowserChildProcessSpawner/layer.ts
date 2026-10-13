@@ -7,7 +7,7 @@
 import type * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import type * as Path from "effect/Path"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import type { JustBashLike } from "./JustBashLike.ts"
 import { make } from "./make.ts"
 

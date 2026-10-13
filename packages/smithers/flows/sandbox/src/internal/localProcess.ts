@@ -5,8 +5,8 @@
  */
 
 import * as Effect from "effect/Effect"
+import type { ChildProcessHandle } from "effect/process/ChildProcessSpawner"
 import * as Stream from "effect/Stream"
-import type { ChildProcessHandle } from "effect/unstable/process/ChildProcessSpawner"
 import type { RemoteProcess } from "../RemoteChildProcessSpawner/Provider.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import { concat } from "./concat.ts"

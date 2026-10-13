@@ -4,9 +4,9 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
+import * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import * as Metric from "effect/Metric"
-import * as HttpClient from "effect/unstable/http/HttpClient"
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
 import * as ArtifactStore from "../src/ArtifactStore.ts"
 import * as ArtifactStoreMetrics from "../src/ArtifactStoreMetrics.ts"
 import * as CombinedArtifacts from "../src/CombinedArtifacts.ts"

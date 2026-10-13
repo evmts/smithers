@@ -196,11 +196,12 @@ sealed model requests.
 ## The error message contains my input
 
 A schema issue retains the rejected value only when the decode is given
-`reportInput: true`. In `effect@4.0.0-rc.115` nothing retains it by default,
+`reportInput: true`. In `effect@4.0.4` nothing retains it by default,
 and this package adds no parse options of its own, so a plain decode is not
 where your input came from. Pass `reportInput: false`, or annotate a schema you
 own with `parseOptions: { reportInput: false }`, to hold that policy against a
-caller who asks for retention.
+caller who asks for retention. A retained value is on `error.issue`; printing
+or serializing the `SchemaError` itself gives its `_tag` and `message` only.
 
 Neither redacts the custom issue message or a thrown `CanonicalError`, which is
 the usual source. Those carry the path and the original exception text whatever

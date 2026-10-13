@@ -6,7 +6,7 @@
 
 import { NotificationError } from "@smthrs/notifications/NotificationQueue"
 import { Context, Effect, Layer, Schema, SchemaTransformation } from "effect"
-import { Rpc, RpcGroup, RpcMiddleware } from "effect/unstable/rpc"
+import { Rpc, RpcGroup, RpcMiddleware } from "effect/rpc"
 import {
   AlreadyResolved,
   ClaimLost,

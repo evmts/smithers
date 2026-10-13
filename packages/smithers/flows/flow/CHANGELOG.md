@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- A call's step key no longer moves with the installed `effect` release: the graph takes each callee's schema identity from `@smthrs/plan`'s `Node.schemaIdentity`, which prints what `effect@4.0.0-rc.115` printed. ([#3839](https://github.com/smithersai/smithers/issues/3839)).
 - Preserve dynamic flow expansion and declaration source mappings when a bundled host loads project flows. ([#1991](https://github.com/smithersai/smithers/issues/1991)).
 
 ## [Unreleased]

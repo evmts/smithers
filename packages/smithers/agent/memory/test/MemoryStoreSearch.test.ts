@@ -1,7 +1,7 @@
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Effect, Option } from "effect"
+import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 import * as MemoryStore from "../src/MemoryStore.ts"
 import { literalFtsQuery } from "../src/RecallFts.ts"

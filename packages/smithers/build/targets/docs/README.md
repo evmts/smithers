@@ -52,7 +52,7 @@ Install it alongside the binary that runs what it declares. Not on npm yet; see 
 ```
 
 It ships dual ESM/CommonJS output, targets Node.js 26.4.0 or later, and takes
-the exact Effect RC as a peer dependency.
+`effect` in the range `^4.0.4` as a peer dependency.
 
 ## The shortest real example
 

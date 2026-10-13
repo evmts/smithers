@@ -8,8 +8,8 @@ import * as OtelResource from "@effect/opentelemetry/Resource"
 import type { Attributes as OtelAttributes } from "@opentelemetry/api"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as OtlpResource from "effect/observability/OtlpResource"
 import * as Schema from "effect/Schema"
-import * as OtlpResource from "effect/unstable/observability/OtlpResource"
 import { schemaIssueMessage, schemaIssuePath } from "./internal/schemaIssuePath.ts"
 
 /**
@@ -57,11 +57,12 @@ export const maximumAttributes = 256
  *
  * The measure is the OTLP `Resource` message the exporters place in every
  * request, `{"attributes":[{"key":…,"value":{…}}],"droppedAttributesCount":0}`
- * with service identity and SDK-added `telemetry.sdk.name` and
- * `telemetry.sdk.language` included, after JSON escaping and UTF-8 encoding.
- * These SDK fields are conservatively reserved even for the default Effect
- * exporter. Caller attributes overwritten by SDK identity or metadata are
- * still counted. It is the bound the per-field limits cannot express: 256
+ * with service identity and SDK-added `telemetry.sdk.name`,
+ * `telemetry.sdk.language` and `telemetry.sdk.version` included, after JSON
+ * escaping and UTF-8 encoding. The SDK's own values are reserved even for the
+ * default Effect exporter, whose values are shorter. A caller attribute that
+ * replaces an SDK field, or that service identity overwrites, is counted
+ * beside it. It is the bound the per-field limits cannot express: 256
  * attributes at the string ceiling would encode to 16 MiB, and the resource
  * rides in every export request, so the default transport, which discards a
  * request over 1 MiB, would deliver nothing at all. 128 KiB admits one

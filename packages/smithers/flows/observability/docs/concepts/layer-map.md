@@ -24,7 +24,7 @@ switches layers instead of branching around a missing one.
 
 ## Why `Otlp` is the default
 
-`Otlp` composes only `effect/unstable/observability/Otlp`, so it adds no
+`Otlp` composes only `effect/observability/Otlp`, so it adds no
 OpenTelemetry SDK to the process, and it delivers over Effect's `HttpClient`
 rather than a platform transport. That makes it the cheapest wiring and the
 only one that runs unchanged in Node, in Bun, and in a browser.
@@ -59,9 +59,10 @@ passes that validated resource to provider factories and the metric producer;
 factories must use it when constructing tracer and logger providers.
 
 Already-created providers retain their own resources. For those providers,
-`Otel.layerOtel`'s resource option sets only the metric resource and tracer
-instrumentation scope. Construct them with the intended resource before
-injection to give all three signals the same service identity.
+`Otel.layerOtel`'s resource option sets only the metric resource. Construct
+them with the intended resource before injection to give all three signals the
+same service identity. Spans and log records carry the instrumentation scope
+`effect` with the Effect version, whatever the resource.
 
 `Resource.layer` provides the resource on its own, for a composition that
 assembles the rest itself.

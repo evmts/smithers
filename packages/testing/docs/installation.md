@@ -9,9 +9,10 @@ sidebar:
 
 Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
 
-[`effect`](https://effect.website) is a required peer dependency at exactly
-`4.0.0-rc.115`. Two copies of `effect` in one program are two sets of service
-tags, so the version is pinned rather than ranged.
+[`effect`](https://effect.website) is a required peer dependency in the range
+`^4.0.4`. Two copies of `effect` in one program are two sets of service
+tags, so the package takes `effect` from your project and never installs its
+own.
 
 The package requires Node.js 26.4.0 or later and ships as both ESM and
 CommonJS with TypeScript declarations. The `@smthrs/*` packages the assertions
@@ -27,11 +28,11 @@ in production.
 ## Install the vitest peers only if you use the adapter
 
 `vitest` and `@effect/vitest` are optional peer dependencies. Only the
-`Vitest` module imports them, and `@effect/vitest` is pinned the same way
-`effect` is:
+`Vitest` module imports them. Install `@effect/vitest` at the same version as
+your `effect`:
 
 ```bash
-pnpm add -D vitest@5.0.0 @effect/vitest@4.0.0-rc.115
+pnpm add -D vitest@5.0.0 @effect/vitest
 ```
 
 Every other module works under any runner, because an assertion is an ordinary

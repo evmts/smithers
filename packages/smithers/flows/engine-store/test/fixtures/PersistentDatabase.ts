@@ -2,7 +2,7 @@
 import * as PostgresDatabase from "@smthrs/database/postgres/PostgresDatabase"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Effect } from "effect"
-import { SqlClient } from "effect/unstable/sql/SqlClient"
+import { SqlClient } from "effect/sql/SqlClient"
 import { randomUUID } from "node:crypto"
 
 export const filename = (sqlitePath: string): string => {

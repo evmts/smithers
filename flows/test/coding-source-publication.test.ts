@@ -1,7 +1,7 @@
 import { NodeServices } from "@effect/platform-node"
 import { Fault } from "@smthrs/flow"
 import { Effect, Layer, Sink, Stream } from "effect"
-import { ChildProcessSpawner } from "effect/unstable/process"
+import { ChildProcessSpawner } from "effect/process"
 import assert from "node:assert/strict"
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"

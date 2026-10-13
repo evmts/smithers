@@ -20,9 +20,9 @@
  */
 
 import * as NodeServices from "@effect/platform-node/NodeServices"
+import { Command, Flag } from "effect/cli"
 import * as Console from "effect/Console"
 import * as Effect from "effect/Effect"
-import { Command, Flag } from "effect/unstable/cli"
 import type { MigrateError } from "../MigrateError.ts"
 import * as CommandModule from "./Command.ts"
 

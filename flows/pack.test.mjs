@@ -296,7 +296,7 @@ describe("the CLI the staged prompt bodies teach", () => {
    * `smthrs <verb> --help`, once per verb path.
    *
    * These bodies are shipped instructions: an agent reads one and runs the
-   * command it names. `effect/unstable/cli` answers an undeclared flag with
+   * command it names. `effect/cli` answers an undeclared flag with
    * exit 2 and a usage dump, so a prompt that teaches a flag the parser does
    * not have hands the operator a failure instead of an install line. The
    * parser's own listing is the authority, read from the binary in this tree.
@@ -357,7 +357,7 @@ describe("the CLI the staged prompt bodies teach", () => {
         assert.ok(
           listing.stdout.includes(flag),
           `\`smthrs ${path}\` does not declare ${flag}, which ${name} tells the operator to run; ` +
-            "effect/unstable/cli exits 2 on an undeclared flag",
+            "effect/cli exits 2 on an undeclared flag",
         );
       }
     }

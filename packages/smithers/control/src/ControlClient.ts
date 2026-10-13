@@ -5,8 +5,8 @@
  */
 
 import { Cause, Effect, Layer, Result, Schema, Stream } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/unstable/http"
-import { RpcClient, RpcClientError } from "effect/unstable/rpc"
+import { HttpClient, HttpClientRequest } from "effect/http"
+import { RpcClient, RpcClientError } from "effect/rpc"
 import { Control, make } from "./Control.ts"
 import { type ControlError, ControlErrorSchema, TransportError, Unauthorized } from "./ControlError.ts"
 import { ControlRpcs } from "./ControlRpcs.ts"

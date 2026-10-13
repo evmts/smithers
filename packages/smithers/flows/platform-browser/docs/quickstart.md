@@ -47,8 +47,8 @@ so the same code runs under [`NodeHost`](/api/platform-node) or
 ```ts
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 
 const program = Effect.gen(function*() {
   const fileSystem = yield* FileSystem.FileSystem

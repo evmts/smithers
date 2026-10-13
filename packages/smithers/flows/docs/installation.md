@@ -8,7 +8,7 @@ sidebar:
 ## Install the package
 
 ```bash
-npm install @smthrs/flows@next effect@4.0.0-rc.115
+npm install @smthrs/flows@next effect
 ```
 
 The `next` tag carries the 1.0 release candidates. With pnpm, run `pnpm add`
@@ -26,11 +26,12 @@ declares.
 - Node.js 26.4.0 or later with local SQLite, which is what `package.json`
   declares in `engines`. That is what durable execution needs, and it is also
   what runs a `.ts` file directly, with no build step.
-- [`effect`](https://effect.website) 4.0.0-rc.115, as an exact peer dependency.
-  This is an Effect library throughout: a flow's payload and result are Effect
-  schemas, an action's implementation is an `Effect`, and a host is a `Layer`.
-  Pin the same version in the consuming project, so the service tags and
-  schemas this package exports are the same classes the project constructs.
+- [`effect`](https://effect.website) in the range `^4.0.4`, as a peer
+  dependency. This is an Effect library throughout: a flow's payload and result
+  are Effect schemas, an action's implementation is an `Effect`, and a host is
+  a `Layer`. Install one `effect` in the consuming project, so the service
+  tags and schemas this package exports are the same classes the project
+  constructs. A project already on Effect 4.0.4 or later keeps its version.
 
 The package ships as ESM and CommonJS with TypeScript declarations.
 
@@ -105,9 +106,9 @@ Stand a durable runtime up and run a flow on it in the
 ## Bun durable execution
 
 ```bash
-bun add @smthrs/flows@next effect@4.0.0-rc.115 @smthrs/platform-bun@next \
-  @effect/platform-bun@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115 \
-  @effect/sql-sqlite-bun@4.0.0-rc.115
+bun add @smthrs/flows@next effect @smthrs/platform-bun@next \
+  @effect/platform-bun @effect/platform-node-shared \
+  @effect/sql-sqlite-bun
 ```
 
 Then import `@smthrs/flows/BunRuntime`. Its `layerHost`, `layer`, `make` and

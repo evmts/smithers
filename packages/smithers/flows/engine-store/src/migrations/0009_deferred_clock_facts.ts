@@ -7,7 +7,7 @@
 import { FlowEngine } from "@smthrs/engine"
 import * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as Effect from "effect/Effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { EventTypes } from "../EventTypes.ts"
 
 interface ClockRow {

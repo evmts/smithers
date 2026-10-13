@@ -20,7 +20,6 @@
 import { permissionDenied, type PermissionError, toPlatformError } from "@smthrs/capability/Permission"
 import {
   Effect,
-  Encoding,
   FileSystem as EffectFileSystem,
   Layer,
   Option,
@@ -31,6 +30,7 @@ import {
   Sink,
   Stream
 } from "effect"
+import { Base64 } from "effect/encoding"
 import * as Batch from "./FileSystemBatch.ts"
 import { GrantStore } from "./GrantStore.ts"
 import { makeCapability } from "./internal/makeCapability.ts"
@@ -387,7 +387,7 @@ export const withIsolatedFileSystem = (
       rename: (request) => fileSystem.rename(request.from, request.to),
       stat: (request) => fileSystem.stat(request.path),
       writeFile: (request) =>
-        Encoding.decodeBase64(request.data).pipe(
+        Base64.decode(request.data).pipe(
           Effect.fromResult,
           Effect.orDie,
           Effect.flatMap((data) => fileSystem.writeFile(request.path, data, request.options))
@@ -622,7 +622,7 @@ export const confined = (
           return run({
             operation: "writeFile",
             path: normalize(value),
-            data: Encoding.encodeBase64(data),
+            data: Base64.encode(data),
             options
           })
         }
@@ -1462,7 +1462,7 @@ export const layer: Layer.Layer<
           return atomicOne("fs:write", value, "writeFile", {
             operation: "writeFile",
             path: normalize(value),
-            data: Encoding.encodeBase64(bytes),
+            data: Base64.encode(bytes),
             options: captured
           })
         })

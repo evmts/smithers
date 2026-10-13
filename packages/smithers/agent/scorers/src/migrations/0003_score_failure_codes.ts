@@ -14,7 +14,7 @@
 
 import * as Dialect from "@smthrs/database/Dialect"
 import * as Effect from "effect/Effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 
 /**
  * Rebuilds the score table with a failure code and the tightened checks.

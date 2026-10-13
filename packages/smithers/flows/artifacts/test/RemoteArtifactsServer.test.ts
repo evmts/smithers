@@ -16,8 +16,8 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as Layer from "effect/Layer"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
 import { createServer, type Server } from "node:http"
 import * as ArtifactStore from "../src/ArtifactStore.ts"
 import * as RemoteArtifacts from "../src/RemoteArtifacts.ts"

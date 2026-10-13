@@ -2,9 +2,9 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact `4.0.0-rc.115` direct dependency.
-It bundles the private `@effect/platform-node` adapter pinned to `4.0.0-rc.115` as a development dependency. `@effect/sql-sqlite-node` is the required peer
-dependency, at `4.0.0-rc.115`; `@effect/sql-pg` is an optional peer for PostgreSQL. Keep the application on that version so
+This package declares `effect` as an exact `4.0.4` direct dependency.
+It bundles the private `@effect/platform-node` adapter pinned to `4.0.4` as a development dependency. `@effect/sql-sqlite-node` is a direct
+dependency, at `4.0.4`; `@effect/sql-pg` is an optional peer for PostgreSQL. Keep the application on that version so
 all Smithers packages share one Effect runtime.
 
 **Documentation:** https://cli.smithers.sh
@@ -117,7 +117,7 @@ The native host runs flows and completion judgments on configured subscription s
 ```ts
 import { Command, NodeControl, Version } from "@smthrs/cli"
 import { Effect } from "effect"
-import { Command as Cli } from "effect/unstable/cli"
+import { Command as Cli } from "effect/cli"
 
 const config = NodeControl.makeConfig(
   ["--remote", "http://127.0.0.1:3000"],

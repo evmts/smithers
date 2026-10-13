@@ -454,8 +454,19 @@ and the text kept on the error is capped at 16 KiB, reachable as
 names. `apiKeyHeader` and `bearer` set it automatically. Custom Auth values
 should list any credential headers outside the shared matcher. `Auth.withRedaction`
 adds these names and the shared matcher to `Headers.CurrentRedactedNames` while
-preserving the caller's policy. Routes apply it around signing and HTTP execution,
-so request traces redact these headers, including `chatgpt-account-id`.
+preserving the caller's policy. Routes apply it around signing and HTTP execution.
+
+The HTTP client records no request or response header on its span, so a request
+trace carries no credential. A host that sets `HttpClient.TracerHeaderFilter` to
+record headers gets these headers as `<redacted>`, including
+`chatgpt-account-id`.
+
+A route's endpoint cannot carry a credential, but the executor takes any
+request. On its HTTP span, a query parameter whose name is a credential reads
+`<redacted>` in `url.full` and `url.query`, and a span that failed ends with a
+`ModelError` naming that redacted url, never the HTTP client's own error, which
+prints the url as sent. A host's `HttpClient.SpanNameGenerator` receives the
+same redacted request.
 
 `RequestExecutor.errorSanitizer(request)` captures the signed request's credential
 values and active header policy. Routes retain that sanitizer through response
@@ -778,8 +789,8 @@ The wire protocol is the AI SDK gateway provider's own, as recorded on
 2026-09-17. Vercel may change it without notice; a changed response surfaces
 as `empty` or `invalid_answer`, never as a guessed answer. The request body
 is `{ state, questions, providerOptions: { gateway: { zeroDataRetention } } }`
-and the gateway key rides in the `authorization` header, which request traces
-redact.
+and the gateway key rides in the `authorization` header. Request traces record
+no header by default and redact this one when a host records headers.
 
 The encoded state must be a JSON value. Values that JSON would discard or
 reshape, including `undefined`, `bigint`, non-finite numbers, cycles and class

@@ -10,7 +10,7 @@ import { Plan } from "@smthrs/plan"
 import { OwnerId } from "@smthrs/run-store/Ownership"
 import { Context, Effect, Layer, Option, Schema } from "effect"
 import type * as Crypto from "effect/Crypto"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 
 const Natural = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const Positive = Schema.Int.check(Schema.isGreaterThan(0))

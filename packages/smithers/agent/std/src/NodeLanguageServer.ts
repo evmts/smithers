@@ -12,7 +12,7 @@
 import * as ChildProcessEnvironment from "@smthrs/kernel/ChildProcessEnvironment"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import { Clock, Deferred, Effect, Fiber, Layer, Option, Queue, type Scope, Semaphore, Stream } from "effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
+import * as ChildProcess from "effect/process/ChildProcess"
 import { createHash } from "node:crypto"
 import * as NodeFs from "node:fs"
 import * as NodePath from "node:path"

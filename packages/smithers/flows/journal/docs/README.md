@@ -15,7 +15,7 @@ own: no other Smithers package is required.
 
 Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
 
-`effect` is a peer dependency at exactly `4.0.0-rc.115`. Two copies of `effect`
+`effect` is a peer dependency in the range `^4.0.4`. Two copies of `effect`
 in one program are two sets of service tags, so a journal layer built against
 one copy cannot be provided to a program holding the other.
 

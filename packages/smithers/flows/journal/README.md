@@ -2,9 +2,9 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact
-`4.0.0-rc.115` peer dependency. Keep the application on that version so
-all Smithers packages share one Effect runtime.
+This package declares `effect` as a `^4.0.4` peer dependency. Install one
+`effect` release in that range so all Smithers packages share one Effect
+runtime.
 
 **Documentation:** https://journal.smithers.sh
 
@@ -23,7 +23,7 @@ package is required.
 
 Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
 
-`effect` is a peer dependency at exactly `4.0.0-rc.115`. Two copies of `effect`
+`effect` is a peer dependency in the range `^4.0.4`. Two copies of `effect`
 in one program are two sets of service tags, so a journal layer built against
 one copy cannot be provided to a program holding the other.
 

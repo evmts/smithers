@@ -6,8 +6,8 @@
 
 import * as Dialect from "@smthrs/database/Dialect"
 import { Effect, Option, Path, Schema } from "effect"
-import type { SqlClient } from "effect/unstable/sql/SqlClient"
-import type { SqlError } from "effect/unstable/sql/SqlError"
+import type { SqlClient } from "effect/sql/SqlClient"
+import type { SqlError } from "effect/sql/SqlError"
 
 /** Corrupt ancestry cannot grant permission to execute a workspace.
  * @since 1.0.0

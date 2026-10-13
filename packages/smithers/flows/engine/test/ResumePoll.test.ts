@@ -2,7 +2,7 @@ import { expect, it } from "@effect/vitest"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Layer, Schema } from "effect"
-import { RpcTest } from "effect/unstable/rpc"
+import { RpcTest } from "effect/rpc"
 import { FlowEngine, FlowProxy, FlowProxyServer, Hosts } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
 

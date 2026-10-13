@@ -2,7 +2,7 @@
 import * as BunDatabase from "@smthrs/database/bun/BunDatabase"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import { Crypto, Effect, Layer } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { createHash, randomBytes } from "node:crypto"
 import * as MemoryStore from "../../src/MemoryStore.ts"
 

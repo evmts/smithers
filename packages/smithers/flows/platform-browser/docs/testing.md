@@ -60,8 +60,8 @@ does:
 ```ts
 import { BrowserChildProcessSpawner, BrowserServices } from "@smthrs/platform-browser"
 import * as Effect from "effect/Effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as NodeFsPromises from "node:fs/promises"
 
 /** The stub from the previous section. */
@@ -88,7 +88,7 @@ different from the one that runs:
 
 ```ts
 import * as CommandLine from "@smthrs/kernel/CommandLine"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
+import * as ChildProcess from "effect/process/ChildProcess"
 
 const command = ChildProcess.make("echo", ["a b", "it's"])
 

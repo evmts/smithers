@@ -42,7 +42,7 @@ face the same rules:
 
 ```ts
 import { SyncRpcs } from "@smthrs/sync/SyncRpcs"
-import * as RpcServer from "effect/unstable/rpc/RpcServer"
+import * as RpcServer from "effect/rpc/RpcServer"
 
 const mount = RpcServer.layer(SyncRpcs, { disableFatalDefects: true }).pipe(
   Layer.provide(SyncServer.layerHandlers),

@@ -78,6 +78,14 @@ so a trace shows which tier answered:
 A remote lookup nests inside the combined one, so the shared tier's latency is
 visible as its own child rather than folded into the local read.
 
+Each request to the shared tier is a further child span from Effect's HTTP
+client, named for the request method: `GET`, `PUT`, or `DELETE`. A `4xx` or
+`5xx` answer ends that span as failed with the status in `error.type`, so a
+shared-tier miss shows a failed `GET` span with `error.type` `404` inside a
+`RemoteCacheStore.get` span that succeeded. Count misses from the counters
+above, not from failed HTTP spans. The span records no request or response
+header.
+
 ## Interpreting a two-tier hit rate
 
 `RemoteCacheStore` updates no counters. A lookup that `CombinedCacheStore`

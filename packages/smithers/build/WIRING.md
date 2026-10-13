@@ -7,12 +7,12 @@ install step.
 
 ## Compile-time dependencies
 
-| Dependency       | Version        | Use                                            |
-| ---------------- | -------------- | ---------------------------------------------- |
-| `effect`         | `4.0.0-rc.115` | Effects, schemas, layers, files, and processes |
-| `@smthrs/flow`   | `1.0.0-rc.0`   | Actions, flows, annotations, and file inputs   |
-| `@smthrs/plan`   | `1.0.0-rc.0`   | Planned nodes                                  |
-| `@smthrs/crypto` | `1.0.0-rc.0`   | SHA-256 digests                                |
+| Dependency       | Version      | Use                                            |
+| ---------------- | ------------ | ---------------------------------------------- |
+| `effect`         | `4.0.4`      | Effects, schemas, layers, files, and processes |
+| `@smthrs/flow`   | `1.0.0-rc.0` | Actions, flows, annotations, and file inputs   |
+| `@smthrs/plan`   | `1.0.0-rc.0` | Planned nodes                                  |
+| `@smthrs/crypto` | `1.0.0-rc.0` | SHA-256 digests                                |
 
 The build CLI additionally uses the Smithers engine, action implementations,
 and Node platform services declared in `../build-cli/package.json`.

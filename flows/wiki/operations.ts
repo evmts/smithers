@@ -505,7 +505,7 @@ export const operations = (
         ? { seal: yield* hmac(yield* sealKey(fs, root, true), sealMessage(artifactDigest)) }
         : {}
       const crypto = yield* Crypto.Crypto
-      const stage = path.join(root, `.staging-${yield* crypto.randomUUIDv4}`)
+      const stage = path.join(root, `.staging-${yield* crypto.randomUUIDv4()}`)
       yield* fs.makeDirectory(stage)
       yield* Effect.gen(function*() {
         for (const [name, text] of Object.entries(files)) {
@@ -531,7 +531,7 @@ export const operations = (
               yield* verifyExisting
             })
           ))}
-        const pointer = path.join(root, `.current-${yield* crypto.randomUUIDv4}.json`)
+        const pointer = path.join(root, `.current-${yield* crypto.randomUUIDv4()}.json`)
         yield* fs.writeFileString(
           pointer,
           JSON.stringify(

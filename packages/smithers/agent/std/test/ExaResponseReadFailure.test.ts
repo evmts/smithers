@@ -1,7 +1,7 @@
 import * as Credential from "@smthrs/control/Credential"
 import * as HttpClient from "@smthrs/kernel/HttpClient"
 import { Effect, Layer, Redacted } from "effect"
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
+import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import { expect, it } from "vitest"
 import * as ExaWebSearch from "../src/ExaWebSearch.ts"
 import * as WebSearch from "../src/WebSearch.ts"

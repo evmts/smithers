@@ -11,7 +11,7 @@
  * environment only.
  */
 import { Effect, type FileSystem, Layer, Schema } from "effect"
-import { ChildProcessSpawner } from "effect/unstable/process"
+import { ChildProcessSpawner } from "effect/process"
 import { runSourceProcess } from "./immutable-source.ts"
 import type { LandingCandidate, LocalLander, LocalPull, PullChecks } from "./landing-schema.ts"
 import { Landing, type LocalLanding } from "./landing.ts"

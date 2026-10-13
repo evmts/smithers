@@ -10,7 +10,7 @@ puts the failure in an Effect error channel instead, as a `SchemaError` whose
 message carries the same code and path. Use the schema when the surrounding
 code is Effect, and the function when it is not.
 
-Every example here is Effect 4. The package declares `effect@4.0.0-rc.115` as a
+Every example here is Effect 4. The package declares `effect@^4.0.4` as a
 peer dependency, and modules such as `effect/SchemaGetter` and
 `effect/SchemaIssue` exist only in that line. See
 [Installation](../installation.md).
@@ -93,7 +93,7 @@ Canonicalized values can contain secrets, including in member names. Treat
 every path segment, `message`, and original `cause` text as caller-controlled
 and potentially sensitive.
 
-**Input retention is opt-in.** In `effect@4.0.0-rc.115` a schema issue keeps
+**Input retention is opt-in.** In `effect@4.0.4` a schema issue keeps
 the rejected value only when the decode is given `reportInput: true`, and this
 package adds no parse options of its own. Writing `reportInput: false` changes
 nothing on a bare decode; write it to hold that policy against an option a
@@ -106,6 +106,11 @@ decode(value, { reportInput: false })
 Pin it on a schema you own with
 `.annotate({ parseOptions: { reportInput: false } })`, so no caller can turn
 retention on.
+
+A retained value lives on the error's `issue`. `JSON.stringify(error)` and
+`console.log(error)` print a `SchemaError`'s `_tag` and `message` only, so a
+retained value reaches a log through code that reads or serializes
+`error.issue`.
 
 `reportInput` governs the retained input and nothing else. Whatever it is set
 to, the custom issue message still carries the path and the original getter or

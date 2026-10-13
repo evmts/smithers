@@ -63,7 +63,7 @@ and lists its subcommands; use `--help` to request help with exit 0.
 `Verb.shipped` is the catalog. Every entry carries its `--help` line, its
 aliases, and the reserved `system/` flow id when the control catalog reserves
 one. `Verb.subcommands` is the same list minus `completions`, which
-`effect/unstable/cli` provides as the global `--completions <shell>` flag
+`effect/cli` provides as the global `--completions <shell>` flag
 rather than as a subcommand.
 
 The contract is that a verb either ships with a handler or is removed and says
@@ -93,7 +93,7 @@ Every verb accepts the shared flag set, declared once on the root command:
 | `--mcp-config` | path | The JSON array of MCP servers the local executor projects into a run's flow catalog. |
 | `--backend` | name | Hidden. `sqlite` is a no-op; any other value exits 1. |
 
-`effect/unstable/cli` adds `--help`, `--version`, `--wizard`,
+`effect/cli` adds `--help`, `--version`, `--wizard`,
 `--completions <shell>`, and `--log-level <level>`.
 
 `--root`, `--remote`, and `--mcp-config` are read from raw argv

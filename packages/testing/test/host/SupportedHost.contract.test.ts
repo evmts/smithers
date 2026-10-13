@@ -25,9 +25,9 @@ import * as CommandLine from "@smthrs/kernel/CommandLine"
 import { runHostContract } from "@smthrs/kernel/test/contract"
 import * as BrowserFileSystem from "@smthrs/platform-browser/BrowserFileSystem"
 import { Effect, Layer, Path, Sink, Stream } from "effect"
-import * as EffectHttpClient from "effect/unstable/http/HttpClient"
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
-import type * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
+import * as EffectHttpClient from "effect/http/HttpClient"
+import * as HttpClientRequest from "effect/http/HttpClientRequest"
+import type * as HttpClientResponse from "effect/http/HttpClientResponse"
 import { runInNewContext } from "node:vm"
 
 import {
@@ -36,7 +36,7 @@ import {
   make as makeSpawner,
   makeHandle,
   ProcessId
-} from "effect/unstable/process/ChildProcessSpawner"
+} from "effect/process/ChildProcessSpawner"
 import { expect } from "vitest"
 import { makeMemoryFs } from "../../src/TestHost.ts"
 

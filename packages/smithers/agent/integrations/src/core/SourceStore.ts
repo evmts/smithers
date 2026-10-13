@@ -41,8 +41,8 @@
 
 import { affectedRows, DurableWriter } from "@smthrs/database/DurableWriter"
 import { Context, Effect, Layer, Option, Ref, Schema, Semaphore } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
-import type { Fragment } from "effect/unstable/sql/Statement"
+import * as SqlClient from "effect/sql/SqlClient"
+import type { Fragment } from "effect/sql/Statement"
 import * as CursorStore from "./CursorStore.ts"
 import { IntegrationError, isIntegrationError } from "./IntegrationError.ts"
 import * as SourceRecord from "./SourceRecord.ts"

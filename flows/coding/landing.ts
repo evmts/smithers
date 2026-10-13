@@ -4,7 +4,7 @@
  * lander from `local-landing.ts` for a host without a repository binding.
  */
 import { Cause, Context, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
 import {
   AppendObservation,
   AppendPreparation,

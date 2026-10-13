@@ -110,7 +110,7 @@ is what a test harness wants:
 
 ```ts
 import { Effect } from "effect"
-import { HttpServer } from "effect/unstable/http"
+import { HttpServer } from "effect/http"
 
 const baseUrl = Effect.map(HttpServer.HttpServer, (server) => {
   if (server.address._tag !== "InetAddressV4" && server.address._tag !== "InetAddressV6") {

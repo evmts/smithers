@@ -9,8 +9,8 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import { Deferred, Effect, Fiber, PlatformError, Ref, Stream } from "effect"
-import { ChildProcess } from "effect/unstable/process"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { ChildProcess } from "effect/process"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { spawn as spawnNode } from "node:child_process"
 import { once } from "node:events"
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"

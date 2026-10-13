@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, Path } from "effect"
-import { SqlClient } from "effect/unstable/sql/SqlClient"
+import { SqlClient } from "effect/sql/SqlClient"
 import assert from "node:assert/strict"
 import * as WorkspaceRouting from "../../src/internal/WorkspaceRouting.ts"
 

@@ -94,7 +94,7 @@ export const makeIncarnation = (pid: number | undefined, crypto: Crypto.Crypto):
       return {
         hostId,
         pid: yield* incarnationId,
-        nonce: yield* crypto.randomUUIDv4.pipe(Effect.orDie)
+        nonce: yield* crypto.randomUUIDv4().pipe(Effect.orDie)
       } satisfies OwnerId
     })
   })

@@ -21,7 +21,7 @@ with a stable code instead of omitting the service:
 ```ts
 import { CommandLine } from "@smthrs/kernel"
 import { Effect, Layer, PlatformError } from "effect"
-import { ChildProcessSpawner, make as makeSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
 
 const layerSpawnerUnsupported: Layer.Layer<ChildProcessSpawner> = Layer.succeed(ChildProcessSpawner)(
   makeSpawner((command) =>
@@ -93,7 +93,7 @@ behavioral contract every host bundle must satisfy. It registers Vitest cases,
 so install the peers first:
 
 ```bash
-pnpm add -D @effect/vitest@4.0.0-rc.115 vitest@5.0.0
+pnpm add -D @effect/vitest vitest@5.0.0
 ```
 
 Then declare, per slot, whether your bundle supports the capability and what it
@@ -102,7 +102,7 @@ answers when it does not:
 ```ts
 import { runHostContract } from "@smthrs/kernel/test/contract"
 import { Layer } from "effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
+import * as ChildProcess from "effect/process/ChildProcess"
 
 runHostContract("MyHost", Layer.mergeAll(fs, path, spawner, jj, http), {
   fileSystem: {

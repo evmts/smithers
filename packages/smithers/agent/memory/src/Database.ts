@@ -5,7 +5,7 @@
  */
 
 import type { Service as DurableWriterService } from "@smthrs/database/DurableWriter"
-import type * as SqlClient from "effect/unstable/sql/SqlClient"
+import type * as SqlClient from "effect/sql/SqlClient"
 
 /**
  * Query and serialized-write capabilities required by memory SQL adapters.

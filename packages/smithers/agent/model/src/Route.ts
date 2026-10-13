@@ -8,8 +8,8 @@
  */
 
 import { Clock, Effect, Exit, Layer, Redacted, Result, Schema, Stream } from "effect"
+import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import type * as SchemaIssue from "effect/SchemaIssue"
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
 import * as AnthropicMessages from "./AnthropicMessages.ts"
 import * as Auth from "./Auth.ts"
 import * as CanonicalJson from "./CanonicalJson.ts"

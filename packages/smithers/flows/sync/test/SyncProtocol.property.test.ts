@@ -4,9 +4,9 @@
  *
  * @since 0.1.0
  */
+import * as Arbitrary from "effect/Arbitrary"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as Arbitrary from "effect/unstable/arbitrary/Arbitrary"
 import * as FastCheck from "fast-check"
 import { describe, expect, it } from "vitest"
 import * as SyncProtocol from "../src/SyncProtocol.ts"
@@ -28,7 +28,7 @@ const checkGenerated = <A>(arbitrary: Arbitrary.Arbitrary<A>, property: (value: 
   if (failure !== undefined) throw new Error(failure)
 }
 
-// TestSchema.Asserts#verifyLosslessTransformation is not usable here: its
+// TestSchema.Asserts#verifyRoundTrip is not usable here: its
 // deepStrictEqual distinguishes the null-prototype objects TaggedStruct
 // decoding produces from the generated samples, an upstream strictness that is
 // not a wire-contract property. The round trip is asserted structurally.

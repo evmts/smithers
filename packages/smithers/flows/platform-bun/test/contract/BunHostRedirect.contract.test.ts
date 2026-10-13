@@ -8,8 +8,8 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
-import { HttpClient } from "effect/unstable/http/HttpClient"
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
+import { HttpClient } from "effect/http/HttpClient"
+import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import { createServer, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
 import * as BunHost from "../../src/BunHost.ts"

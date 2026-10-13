@@ -1,26 +1,38 @@
 /** Disposable npm/pnpm consumers of unchanged release manifests or candidate bytes. */
 import assert from "node:assert/strict"
-import { execFileSync, spawn } from "node:child_process"
+import { execFile, execFileSync, spawn } from "node:child_process"
 import { createHash } from "node:crypto"
 import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
+import { promisify } from "node:util"
 
 import { build as bundle } from "esbuild"
-import { valid } from "semver"
-import { EXPECTED_EFFECT_VERSION } from "./check-single-effect-version.mjs"
-import { assertEffectFamilyInstalled, mcpInitialize } from "./release-mcp-handshake.mjs"
+import { satisfies, valid } from "semver"
+import {
+  EXPECTED_EFFECT_VERSION,
+  SUPPORTED_EFFECT_RANGE,
+  UNSUPPORTED_EFFECT_VERSION
+} from "./check-single-effect-version.mjs"
+import { assertEffectFamilyAccepts, assertEffectFamilyInstalled, mcpInitialize } from "./release-mcp-handshake.mjs"
 import { captureProcess } from "./release-process.mjs"
 import { releaseRegistry } from "./release-registry.mjs"
 import { isMain, repoRoot } from "./workspace-packages.mjs"
 
-// The one Effect pin every published manifest carries; declared once for the whole release line.
+// The Effect release the repository is tested on, and what every pinned profile
+// installs. The published libraries accept the range above it; both are
+// declared once, beside the gate that holds the manifests to them.
 const effect = EXPECTED_EFFECT_VERSION
-/** The published RC one below the pin: an exact library peer must refuse it. */
-export const adjacentEffectVersion = effect.replace(/-rc\.(\d+)$/, (_, rc) => "-rc." + (Number(rc) - 1))
+const isEffectFamily = (name) => name === "effect" || name.startsWith("@effect/")
 const literally = (text) => new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+/** The package a registry spec names, with or without a scope, a version, a range or a tag. */
+export const specName = (spec) => {
+  // A leading `@` opens a scope. Any later one starts the version.
+  const at = spec.indexOf("@", 1)
+  return at === -1 ? spec : spec.slice(0, at)
+}
 /** Consumer requests must select this candidate, including a future stable cut. */
 export const candidateVersion = (entries) => {
   const versions = new Set(entries.map((entry) => entry.version))
@@ -35,15 +47,19 @@ export const releasePackageManager =
   JSON.parse(readFileSync(resolve(import.meta.dirname, "../package.json"), "utf8")).packageManager
 const stores = new Map()
 /** Reuse the workspace's package cache from external consumers without linking its dependencies. */
-export const consumerCacheFlags = (manager, workspace = repoRoot) => {
-  if (manager === "npm") return ["--prefer-offline"]
+export const consumerCacheFlags = (manager, workspace = repoRoot, { offline = true } = {}) => {
+  // `--prefer-offline` answers a tag or a range from metadata cached on an
+  // earlier day. An install that must see what the registry serves now passes
+  // `offline: false`: it reads fresh metadata and still reuses package bytes.
+  const metadata = offline ? ["--prefer-offline"] : []
+  if (manager === "npm") return metadata
   if (manager !== "pnpm") throw new Error(`Unsupported release package manager: ${manager}`)
   if (!stores.has(workspace)) {
     const store = execFileSync("pnpm", ["store", "path"], { cwd: workspace, encoding: "utf8" }).trim()
     if (!isAbsolute(store)) throw new Error(`pnpm store path did not return an absolute directory: ${store}`)
     stores.set(workspace, store)
   }
-  return ["--prefer-offline", "--store-dir", stores.get(workspace), "--reporter=append-only"]
+  return [...metadata, "--store-dir", stores.get(workspace), "--reporter=append-only"]
 }
 const installedConsumerDirectory = resolve(import.meta.dirname, "fixtures/installed-consumer")
 const runners = ["vitest", "@effect/vitest", "@smthrs/testing"]
@@ -198,6 +214,41 @@ export const migrationProfiles = (entries) => {
   ]
 }
 
+/**
+ * A profile moved onto another Effect release: the application's own `effect`
+ * and every Effect adapter it selects, which it picks at the same version. The
+ * adapters a Smithers package installs for itself stay where its manifest puts
+ * them.
+ */
+export const onEffect = (profile, version, label = version) => ({
+  ...profile,
+  name: profile.name + "-effect-" + label,
+  // The installed program is the same one; only the Effect under it moved.
+  probe: profile.probe ?? profile.name,
+  effect: version,
+  dependencies: Object.fromEntries(
+    Object.entries(profile.dependencies).map(([name, spec]) => [name, isEffectFamily(name) ? version : spec])
+  )
+})
+
+/**
+ * The version the registry serves as `effect@latest` now. `--prefer-online`
+ * revalidates the cached metadata, so a release published an hour ago counts.
+ * It runs outside the workspace, where a consumer's own install reads the same
+ * registry configuration, and it reads stdout alone: npm prints its notices on
+ * stderr.
+ */
+export const latestEffectVersion = async ({ env = process.env } = {}) => {
+  const { stdout } = await promisify(execFile)(
+    "npm",
+    ["view", "effect", "dist-tags.latest", "--prefer-online"],
+    { cwd: tmpdir(), env, encoding: "utf8" }
+  )
+  const version = stdout.trim()
+  assert.equal(valid(version), version, "npm view effect dist-tags.latest did not answer one version: " + stdout)
+  return version
+}
+
 /** Only walk package directories and their nested modules; symlinks are not copies. */
 export const physicalPackages = (consumer) => {
   const packages = []
@@ -225,12 +276,30 @@ export const physicalPackages = (consumer) => {
   return packages
 }
 
+/**
+ * One physical Effect, inside the supported range, that every installed Effect
+ * adapter accepts. This is what an application on any supported release must
+ * get, so it is all the quickstart and an `effect@latest` profile can assert.
+ */
+export const assertSupportedEffect = (consumer, label) => {
+  const copies = physicalPackages(consumer).filter(({ manifest }) => manifest.name === "effect")
+  assert.equal(copies.length, 1, label + ": expected exactly one physical Effect copy")
+  const version = copies[0].manifest.version
+  assert.equal(
+    satisfies(version, SUPPORTED_EFFECT_RANGE),
+    true,
+    label + ": installed effect@" + version + " is outside the supported range " + SUPPORTED_EFFECT_RANGE
+  )
+  return { version, copies, family: assertEffectFamilyAccepts(consumer, version) }
+}
+
 export const assertConsumerTree = (consumer, profile) => {
   const installed = physicalPackages(consumer)
-  const copies = installed.filter(({ manifest }) => manifest.name === "effect")
-  assert.equal(copies.length, 1, profile.name + ": expected exactly one physical Effect copy")
-  const family = assertEffectFamilyInstalled(consumer, effect)
-  assert.equal(copies[0].manifest.version, effect)
+  const { copies, version, family: accepting } = assertSupportedEffect(consumer, profile.name)
+  // A pinned profile also holds every Effect package to the tested release. A
+  // profile moved onto another release holds the application's Effect to it.
+  const family = profile.effect === undefined ? assertEffectFamilyInstalled(consumer, effect) : accepting
+  assert.equal(version, profile.effect ?? effect, profile.name + ": installed another Effect release")
   const names = new Set(installed.map(({ manifest }) => manifest.name))
   for (const name of profile.absent ?? []) {
     assert.equal(names.has(name), false, profile.name + ": unrelated " + name + " installed")
@@ -416,7 +485,8 @@ export const runConsumerProfile = async (profile, manager, registryUrl, { runtim
     const args = [
       "install",
       "--ignore-scripts",
-      ...consumerCacheFlags(manager),
+      // A release the registry published today is not in yesterday's metadata.
+      ...consumerCacheFlags(manager, repoRoot, { offline: profile.effect === undefined }),
       ...(manager === "npm" ? ["--no-audit", "--no-fund", "--strict-peer-deps"] : ["--strict-peer-dependencies"])
     ]
     if (profile.omitOptional) args.push(manager === "npm" ? "--omit=optional" : "--no-optional")
@@ -440,8 +510,9 @@ export const runConsumerProfile = async (profile, manager, registryUrl, { runtim
         await readFile(join(installedConsumerDirectory, "consumer-boundary.mjs"))
       )
       await writeFile(join(consumer, "dependency-adapters.mjs"), await readFile(fixture))
-      await successful(process.execPath, ["dependency-adapters.mjs", profile.name], consumer)
-      if (profile.name === "browser") {
+      const probe = profile.probe ?? profile.name
+      await successful(process.execPath, ["dependency-adapters.mjs", probe], consumer)
+      if (probe === "browser") {
         await bundle({
           absWorkingDir: consumer,
           bundle: true,
@@ -455,11 +526,11 @@ export const runConsumerProfile = async (profile, manager, registryUrl, { runtim
           }
         })
       }
-      if (profile.name === "bun") await successful("bun", ["dependency-adapters.mjs", profile.name], consumer)
+      if (probe === "bun") await successful("bun", ["dependency-adapters.mjs", probe], consumer)
     }
     console.log(
-      "consumer ok " + manager + " " + profile.name + ": " + tree.count + " packages; one Effect; " +
-        (profile.absent?.length ?? 0) + " absent adapters"
+      "consumer ok " + manager + " " + profile.name + ": " + tree.count + " packages; one Effect, " +
+        (profile.effect ?? effect) + "; " + (profile.absent?.length ?? 0) + " absent adapters"
     )
     return { manager, managerVersion, profile: profile.name, ...tree }
   } finally {
@@ -509,15 +580,21 @@ export const importedPackages = (program) => [
  * The install line plus the pasted quickstart, from an empty directory (#3838).
  * Nothing is preinstalled: the project declares exactly what the install line
  * names, so a package the program reaches only through an optional peer fails
- * here the way it fails for a stranger. The second run proves the replay the
+ * here the way it fails for a stranger. The line names `effect` without a
+ * version, so the install reads fresh registry metadata and gets the Effect a
+ * stranger gets today, `effect@latest` (#3839); the project must then hold one
+ * physical Effect inside the supported range. The second run proves the replay the
  * page promises by changing the file the first run read. `env` is the smoke's
  * CLI environment: a final pack runs on its own packaged native helper, and a
- * pre-helper rehearsal on the configured source helper.
+ * pre-helper rehearsal on the configured source helper. `latestEffect`, when
+ * given, is the release npm calls latest: an npm install must get exactly it.
+ * pnpm 11 holds a release younger than its `minimumReleaseAge`, so a pnpm
+ * install is held to the range only and reports what it got.
  */
 export const runQuickstartConsumer = async (
   manager,
   registryUrl,
-  { quickstart = readQuickstart(), env = process.env } = {}
+  { quickstart = readQuickstart(), env = process.env, latestEffect } = {}
 ) => {
   assert.ok(manager === "npm" || manager === "pnpm", "Unsupported release package manager: " + manager)
   const consumer = await mkdtemp(join(tmpdir(), "smthrs-release-quickstart-" + manager + "-"))
@@ -535,13 +612,17 @@ export const runQuickstartConsumer = async (
       await successful(manager, [
         ...installed.slice(1),
         "--ignore-scripts",
-        ...consumerCacheFlags(manager),
+        ...consumerCacheFlags(manager, repoRoot, { offline: false }),
         ...(manager === "npm" ? ["--no-audit", "--no-fund"] : [])
       ], consumer)
     }
     const declared = Object.keys(JSON.parse(await readFile(join(consumer, "package.json"), "utf8")).dependencies).sort()
-    const named = quickstart.packages.map((spec) => spec.slice(0, spec.lastIndexOf("@"))).sort()
+    const named = quickstart.packages.map(specName).sort()
     assert.deepEqual(declared, named, "the project declares exactly the packages on the install line")
+    const { version: effectVersion } = assertSupportedEffect(consumer, manager + " quickstart")
+    if (manager === "npm" && latestEffect !== undefined) {
+      assert.equal(effectVersion, latestEffect, "npm quickstart installed effect@" + effectVersion + ", not latest " + latestEffect)
+    }
     await writeFile(join(consumer, "quickstart.ts"), quickstart.program)
     const [command, ...args] = quickstart.run
     assert.equal(command, "node", "the quickstart runs under node")
@@ -554,25 +635,32 @@ export const runQuickstartConsumer = async (
       // A replayed step answers from the journal, so the next run must not see this.
       await writeFile(join(consumer, "workspace/note.txt"), "changed after the " + attempt + "\n")
     }
-    console.log("quickstart ok " + manager + " " + managerVersion + ": " + installed.join(" ") + "; printed and replayed")
-    return { manager, managerVersion, install: installed.join(" "), declared, runs }
+    console.log(
+      "quickstart ok " + manager + " " + managerVersion + ": " + installed.join(" ") + "; one Effect, " + effectVersion +
+        "; printed and replayed"
+    )
+    return { manager, managerVersion, install: installed.join(" "), declared, effect: effectVersion, runs }
   } finally {
     await rm(consumer, { recursive: true, force: true })
   }
 }
 
-export const refuseIncompatibleRc = async (manager, registryUrl, entries) => {
+/**
+ * An application on an Effect outside the supported range is told so at
+ * install time. The refused version is the last release candidate, which is
+ * what a project that followed the earlier exact pin still declares.
+ */
+export const refuseUnsupportedEffect = async (manager, registryUrl, entries) => {
   const firstParty = candidateVersion(entries)
-  const consumer = await mkdtemp(join(tmpdir(), "smithers-k-incompatible-" + manager + "-"))
+  const consumer = await mkdtemp(join(tmpdir(), "smithers-k-unsupported-effect-" + manager + "-"))
   try {
     await writeFile(join(consumer, ".npmrc"), "@smthrs:registry=" + registryUrl + "\n")
-    // Adjacent published RC, deliberately incompatible with the exact library peer.
     await writeFile(
       join(consumer, "package.json"),
       JSON.stringify({
         private: true,
         packageManager: releasePackageManager,
-        dependencies: { "@smthrs/database": firstParty, effect: adjacentEffectVersion }
+        dependencies: { "@smthrs/database": firstParty, effect: UNSUPPORTED_EFFECT_VERSION }
       })
     )
     await successful(manager, ["--version"], consumer)
@@ -582,12 +670,12 @@ export const refuseIncompatibleRc = async (manager, registryUrl, entries) => {
       ...consumerCacheFlags(manager),
       ...(manager === "npm" ? ["--strict-peer-deps", "--no-audit", "--no-fund"] : ["--strict-peer-dependencies"])
     ], consumer)
-    assert.notEqual(result.exit, 0, "incompatible RC must be refused")
+    assert.notEqual(result.exit, 0, "effect@" + UNSUPPORTED_EFFECT_VERSION + " must be refused")
     assert.equal(result.signal, null)
     assert.match(result.output, manager === "npm" ? /ERESOLVE/ : /ERR_PNPM_PEER_DEP_ISSUES/)
-    assert.match(result.output, literally(effect))
-    assert.match(result.output, literally(adjacentEffectVersion))
-    return { manager, exit: result.exit }
+    assert.match(result.output, literally(SUPPORTED_EFFECT_RANGE))
+    assert.match(result.output, literally(UNSUPPORTED_EFFECT_VERSION))
+    return { manager, exit: result.exit, effect: UNSUPPORTED_EFFECT_VERSION, range: SUPPORTED_EFFECT_RANGE }
   } finally {
     await rm(consumer, { recursive: true, force: true })
   }
@@ -605,8 +693,14 @@ export const runConsumerMatrix = async (directory, entries, {
   const results = []
   const failures = []
   try {
+    // The Node profile is the application that picks its own Effect adapters,
+    // so it is the one that also runs on `effect@latest` as the registry
+    // serves it now (#3839). Today's release is read once for both managers.
+    const node = profiles.find((profile) => profile.name === "node")
+    const latestEffect = node === undefined && !quickstart ? undefined : await latestEffectVersion()
+    const latest = node === undefined ? [] : [onEffect(node, latestEffect, "latest")]
     for (const manager of managers) {
-      for (const profile of profiles) {
+      for (const profile of [...profiles, ...latest]) {
         try {
           results.push(await runConsumerProfile(profile, manager, registry.url, { runtime }))
         } catch (cause) {
@@ -616,13 +710,15 @@ export const runConsumerMatrix = async (directory, entries, {
         }
       }
       try {
-        results.push({ incompatible: await refuseIncompatibleRc(manager, registry.url, entries) })
+        results.push({ unsupported: await refuseUnsupportedEffect(manager, registry.url, entries) })
       } catch (cause) {
-        failures.push(new Error(manager + " incompatible RC: " + cause.message, { cause }))
+        const error = new Error(manager + " unsupported Effect: " + cause.message, { cause })
+        failures.push(error)
+        console.error(error.message)
       }
       if (quickstart) {
         try {
-          results.push({ quickstart: await runQuickstartConsumer(manager, registry.url, { env }) })
+          results.push({ quickstart: await runQuickstartConsumer(manager, registry.url, { env, latestEffect }) })
         } catch (cause) {
           const error = new Error(manager + " quickstart: " + cause.message, { cause })
           failures.push(error)
@@ -633,8 +729,10 @@ export const runConsumerMatrix = async (directory, entries, {
     console.log(JSON.stringify({
       consumerMatrix: {
         profilesPassed: results.filter((result) => result.profile !== undefined).length,
-        incompatibleRefusals: results.filter((result) => result.incompatible !== undefined).length,
+        effectLatest: latest[0]?.effect ?? null,
+        unsupportedEffectRefusals: results.filter((result) => result.unsupported !== undefined).length,
         quickstartsPassed: results.filter((result) => result.quickstart !== undefined).length,
+        quickstartEffect: [...new Set(results.flatMap((result) => result.quickstart?.effect ?? []))],
         failures: failures.length
       },
       node: process.version

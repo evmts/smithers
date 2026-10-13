@@ -9,10 +9,11 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
-import { Effect, Encoding, Layer, Redacted, Stream } from "effect"
+import { Effect, Layer, Redacted, Stream } from "effect"
+import { Base64Url } from "effect/encoding"
+import * as RpcClient from "effect/rpc/RpcClient"
+import * as RpcTest from "effect/rpc/RpcTest"
 import { TestClock } from "effect/testing"
-import * as RpcClient from "effect/unstable/rpc/RpcClient"
-import * as RpcTest from "effect/unstable/rpc/RpcTest"
 import * as BranchProtocol from "../src/BranchProtocol.ts"
 import * as BranchShare from "../src/BranchShare.ts"
 import * as RunCatalog from "../src/RunCatalog.ts"
@@ -137,8 +138,8 @@ describe("SyncAuth", () => {
           yield* TestClock.adjust(1_000)
           const expiredError = yield* withHeader(expiredHeader)
           const garbage = yield* withHeader("!!!not-base64url!!!")
-          const notJson = yield* withHeader(Encoding.encodeBase64Url("not json"))
-          const notCapability = yield* withHeader(Encoding.encodeBase64Url(JSON.stringify({ nope: true })))
+          const notJson = yield* withHeader(Base64Url.encode("not json"))
+          const notCapability = yield* withHeader(Base64Url.encode(JSON.stringify({ nope: true })))
           return [forgedError, expiredError, garbage, notJson, notCapability].map((error) => (error as SyncError).code)
         })
       )

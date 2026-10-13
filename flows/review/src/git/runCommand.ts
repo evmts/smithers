@@ -1,5 +1,5 @@
 import { Effect, Stream } from "effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
+import * as ChildProcess from "effect/process/ChildProcess"
 import { io, runIo } from "../io.ts"
 
 export interface CommandResult {

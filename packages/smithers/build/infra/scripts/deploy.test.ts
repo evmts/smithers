@@ -6,7 +6,7 @@ import * as NodePath from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import { stateSyncVariable } from "../deployment.ts"
-import { deploy as deployWrapper, type DeployOptions, resolveDeployOptions } from "./deploy.ts"
+import { deploy as deployWrapper, type DeployOptions, developmentStage, resolveDeployOptions } from "./deploy.ts"
 import { defaultStateDirectory, redactAlchemyState } from "./redact-state.ts"
 import { memoryStateBucket, type StateBucket } from "./remote-state.ts"
 import { acquireStateOwnership } from "./state-ownership.ts"
@@ -207,6 +207,47 @@ describe("deploy wrapper", () => {
       vi.unstubAllEnvs()
       stdout.mockRestore()
     }
+  })
+
+  // Alchemy's default stage moved from `dev_$USER` to `live_$USER`. A stage's
+  // resources and state are recorded under its name, so `pnpm run deploy:dev`
+  // left to that default would deploy a second development stack.
+  it("names the dev_$USER stage for a command that names none", async () => {
+    const argvFile = NodePath.join(directory, "recorded-stage-argv.json")
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
+    vi.stubEnv("SMITHERS_DEPLOY_ARGV_FILE", argvFile)
+    vi.stubEnv("USER", "ada")
+    const recorded = async (args: ReadonlyArray<string>): Promise<unknown> => {
+      const code = await deploy(args, {
+        cli: script("record-argv"),
+        cwd: directory,
+        stateDirectory: stateDirectory("stage-argv-state"),
+        redact: async () => 0
+      })
+      expect(code).toBe(0)
+      return JSON.parse(readFileSync(argvFile, "utf8"))
+    }
+    try {
+      // `pnpm run deploy:dev` runs `deploy.ts` with no arguments.
+      expect(await recorded([])).toEqual(["deploy", "alchemy.run.ts", "--stage", "dev_ada"])
+      // The stage follows the caller's own arguments, which keep their places.
+      expect(await recorded(["--", "--yes"])).toEqual(["deploy", "alchemy.run.ts", "--yes", "--stage", "dev_ada"])
+      // A stage the caller named is the only one Alchemy sees, in either spelling.
+      expect(await recorded(["--stage", "pr-1347"])).toEqual(["deploy", "alchemy.run.ts", "--stage", "pr-1347"])
+      expect(await recorded(["--stage=prod", "--dry-run"])).toEqual(["deploy", "alchemy.run.ts", "--stage=prod", "--dry-run"])
+    } finally {
+      vi.unstubAllEnvs()
+      stdout.mockRestore()
+    }
+  })
+
+  it("derives the development stage from the deploying user", () => {
+    expect(developmentStage({ USER: "ada", USERNAME: "grace" })).toBe("dev_ada")
+    // Windows names the user in USERNAME.
+    expect(developmentStage({ USERNAME: "grace" })).toBe("dev_grace")
+    // No user, or an empty one, must not collapse every such machine onto `dev_`.
+    expect(developmentStage({})).toBe("dev_unknown")
+    expect(developmentStage({ USER: "", USERNAME: "" })).toBe("dev_unknown")
   })
 
   // The pinned CLI imports every provider at startup, so one provider that

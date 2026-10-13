@@ -2,7 +2,7 @@ import * as DurableWriter from "@smthrs/database/DurableWriter"
 import type { DatabaseService } from "@smthrs/memory/Database"
 import * as RecallSemantic from "@smthrs/memory/RecallSemantic"
 import { Effect } from "effect"
-import type * as SqlClient from "effect/unstable/sql/SqlClient"
+import type * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 
 describe("public consumer surface", () => {

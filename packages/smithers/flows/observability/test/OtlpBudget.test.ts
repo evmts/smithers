@@ -1,8 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Deferred, Effect, Logger, Metric } from "effect"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as Otlp from "../src/Otlp.ts"
 import * as Resource from "../src/Resource.ts"
+import { effectVersion } from "./fixtures/effectVersion.ts"
 import { boundaryResources } from "./fixtures/resources.ts"
 
 type Body = Record<
@@ -107,8 +108,13 @@ describe("OTLP usable signal capacity", () => {
         expect(requests).toHaveLength(3)
         for (const body of requests) {
           const group = Object.values(body)[0]![0]!
-          const scope = group.scopeLogs?.[0]?.scope ?? group.scopeSpans?.[0]?.scope ?? group.scopeMetrics?.[0]?.scope
-          expect(scope).toEqual({ name: resource.serviceName })
+          // Metrics repeat the explicit service name as their scope name, never
+          // the oversized `service.name` attribute it replaced. Logs and traces
+          // name their scope for Effect and its version.
+          if (group.scopeMetrics) expect(group.scopeMetrics[0]!.scope).toEqual({ name: resource.serviceName })
+          for (const scope of [group.scopeLogs?.[0]?.scope, group.scopeSpans?.[0]?.scope]) {
+            if (scope !== undefined) expect(scope).toEqual({ name: "effect", version: effectVersion })
+          }
           if (group.scopeLogs) group.scopeLogs[0]!.logRecords = []
           if (group.scopeSpans) group.scopeSpans[0]!.spans = []
           if (group.scopeMetrics) group.scopeMetrics[0]!.metrics = []

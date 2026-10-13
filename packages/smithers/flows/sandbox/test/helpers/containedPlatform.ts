@@ -3,7 +3,7 @@ import * as ContainedSpawner from "@smthrs/kernel/ContainedSpawner"
 import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
 import * as ProcessReaper from "@smthrs/platform-node/ProcessReaper"
 import { Effect, Layer, Path } from "effect"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 
 export const rawPlatform = Layer.provideMerge(
   NodeChildProcessSpawner.layer,

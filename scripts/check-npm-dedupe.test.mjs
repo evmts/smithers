@@ -19,6 +19,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 
 import { SINGLETONS, copiesOf, maxPackagesFrom, optionalPeersOf, resolveConsumerTree, resolveConsumerProfiles } from "./check-npm-dedupe.mjs"
+import { EXPECTED_EFFECT_VERSION } from "./check-single-effect-version.mjs"
 import { assertConsumerTree } from "./release-consumers.mjs"
 import { repoRoot } from "./workspace-packages.mjs"
 
@@ -56,9 +57,9 @@ it("requires exactly one physical Effect copy at the zero, one, and two-copy bou
           ? join(root, "node_modules/effect")
           : join(root, "node_modules/parent/node_modules/effect")
         await mkdir(directory, { recursive: true })
-        await writeFile(join(directory, "package.json"), JSON.stringify({ name: "effect", version: "4.0.0-rc.115" }))
+        await writeFile(join(directory, "package.json"), JSON.stringify({ name: "effect", version: EXPECTED_EFFECT_VERSION }))
       }
-      const profile = { name: "boundary-" + count, dependencies: { effect: "4.0.0-rc.115" } }
+      const profile = { name: "boundary-" + count, dependencies: { effect: EXPECTED_EFFECT_VERSION } }
       if (count === 1) assert.equal(assertConsumerTree(root, profile).effectCopies.length, 1)
       else assert.throws(() => assertConsumerTree(root, profile), /expected exactly one physical Effect copy/)
     } finally {
@@ -76,7 +77,7 @@ it("distinguishes optional library peers from a selected executable's requiremen
   assert.deepEqual(optionalPeersOf([library, { name: "runtime" }]), ["renderer"])
 })
 
-it("isolates each default library and the CLI on npm and pnpm, and refuses an incompatible Effect RC", { timeout: 10 * 60_000 }, async () => {
+it("isolates each default library and the CLI on npm and pnpm, and refuses an Effect below the supported range", { timeout: 10 * 60_000 }, async () => {
   const results = await resolveConsumerProfiles()
   for (const manager of ["npm", "pnpm"]) {
     const profiles = results.filter((result) => result.manager === manager)
@@ -88,7 +89,7 @@ it("isolates each default library and the CLI on npm and pnpm, and refuses an in
       assert.ok(profile.resolutions.length > 0)
       if (manager === "pnpm") assert.equal(profile.managerVersion, "11.25.0", "consumer must use the release toolchain, including on Node 22")
     }
-    assert.equal(results.filter((result) => result.incompatible?.manager === manager).length, 1)
+    assert.equal(results.filter((result) => result.unsupported?.manager === manager).length, 1)
   }
 })
 

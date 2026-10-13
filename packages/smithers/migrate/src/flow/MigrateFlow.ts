@@ -33,14 +33,15 @@ import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Path from "effect/Path"
+import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Schema from "effect/Schema"
-import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { createHash } from "node:crypto"
 import * as Checks from "../Checks.ts"
 import * as Detect from "../Detect.ts"
 import * as Fs from "../internal/Fs.ts"
 import * as Ts from "../internal/Ts.ts"
 import { isTsconfig } from "../internal/Tsconfig.ts"
+import * as Versions from "../internal/Versions.ts"
 import { io, make, MigrateError } from "../MigrateError.ts"
 import * as Report from "../Report.ts"
 import * as RunState from "../RunState.ts"
@@ -644,11 +645,12 @@ export const postconditions = (
           const map = parsed[field]
           if (typeof map !== "object" || map === null) continue
           const version = (map as Record<string, string>)["effect"]
-          if (version === undefined || version === Archive.effectVersion) continue
+          const expected = Versions.effectPinFor(field)
+          if (version === undefined || version === expected) continue
           pins.push({
             file,
             line: 1,
-            message: `${field}."effect" is ${version}; 1.0 runs on ${Archive.effectVersion}`
+            message: `${field}."effect" is ${version}; the migration writes ${expected}`
           })
         }
       }

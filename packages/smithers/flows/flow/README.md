@@ -2,9 +2,9 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact
-`4.0.0-rc.115` peer dependency. Keep the application on that version so
-all Smithers packages share one Effect runtime.
+This package declares `effect` as a `^4.0.4` peer dependency. Install one
+`effect` release in that range so all Smithers packages share one Effect
+runtime.
 
 **Documentation:** https://flow.smithers.sh
 
@@ -46,7 +46,7 @@ none of which the flow's author arranges.
 
 Not on npm yet; see [Installation](./docs/installation.md#use-the-libraries).
 
-Node.js 26.4.0 or later. `effect` is a peer at exactly `4.0.0-rc.115`: two copies of
+Node.js 26.4.0 or later. `effect` is a peer in the range `^4.0.4`: two copies of
 `effect` in one program are two sets of service tags.
 
 Running a flow adds an engine and a platform crypto service.

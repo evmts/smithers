@@ -177,76 +177,92 @@ describe("Detect.scan over jsx-single", () => {
       expect(empty.globalState).toEqual([])
     }))
 
-  it.effect("judges every effect declaration against the exact release pin, manifests and lockfiles alike", () =>
+  it.effect("judges every effect declaration against what a migrated project declares, manifests and lockfiles alike", () =>
     Effect.gen(function*() {
       const root = copyFixture("jsx-single")
       const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
         dependencies: Record<string, string>
         devDependencies?: Record<string, string>
+        peerDependencies?: Record<string, string>
       }
-      // A range, a later prerelease, and a second manifest that disagrees:
-      // each is a version this release was not built against.
-      manifest.dependencies["effect"] = "^4.0.0-rc.115"
-      manifest.devDependencies = { effect: "4.0.0-rc.999" }
+      // A range where the project installs effect, the last release candidate,
+      // an exact version where a consumer installs it, and a second manifest
+      // that disagrees.
+      manifest.dependencies["effect"] = "^4.0.4"
+      manifest.devDependencies = { effect: "4.0.0-rc.115" }
+      manifest.peerDependencies = { effect: "4.0.4" }
       writeFileSync(join(root, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`)
       mkdirSync(join(root, "packages", "member"), { recursive: true })
       writeFileSync(
         join(root, "packages", "member", "package.json"),
-        `${JSON.stringify({ name: "member", dependencies: { effect: "4.0.0-rc.107" } })}\n`
+        `${JSON.stringify({ name: "member", dependencies: { effect: "4.0.3" } })}\n`
       )
       writeFileSync(
         join(root, "pnpm-lock.yaml"),
-        "lockfileVersion: '9.0'\n\npackages:\n\n  effect@4.0.0-rc.107:\n    resolution: {integrity: sha512-x}\n\n  '@effect/platform-node@4.0.0-rc.115':\n    resolution: {integrity: sha512-y}\n"
+        "lockfileVersion: '9.0'\n\npackages:\n\n  effect@4.0.3:\n    resolution: {integrity: sha512-x}\n\n  '@effect/platform-node@4.0.4':\n    resolution: {integrity: sha512-y}\n"
       )
 
       const detection = yield* detect(root)
 
-      expect(detection.effectPin).toBe("^4.0.0-rc.115")
+      expect(detection.effectPin).toBe("^4.0.4")
       expect(detection.effectDeclarations).toEqual([
-        { file: "package.json", field: "dependencies", version: "^4.0.0-rc.115" },
-        { file: "package.json", field: "devDependencies", version: "4.0.0-rc.999" },
-        { file: "packages/member/package.json", field: "dependencies", version: "4.0.0-rc.107" }
+        { file: "package.json", field: "dependencies", version: "^4.0.4" },
+        { file: "package.json", field: "devDependencies", version: "4.0.0-rc.115" },
+        { file: "package.json", field: "peerDependencies", version: "4.0.4" },
+        { file: "packages/member/package.json", field: "dependencies", version: "4.0.3" }
       ])
       const conflicts = detection.warnings.filter((warning) => warning.code === "effect-pin-conflict")
       expect(conflicts.map((warning) => `${warning.file}: ${warning.message}`)).toEqual([
-        "package.json: dependencies.\"effect\" is \"^4.0.0-rc.115\"; Smithers 1.0 requires exactly 4.0.0-rc.115",
-        "package.json: devDependencies.\"effect\" is \"4.0.0-rc.999\"; Smithers 1.0 requires exactly 4.0.0-rc.115",
-        "packages/member/package.json: dependencies.\"effect\" is \"4.0.0-rc.107\"; Smithers 1.0 requires exactly 4.0.0-rc.115",
-        "package.json: the manifests declare effect as \"4.0.0-rc.107\", \"4.0.0-rc.999\", \"^4.0.0-rc.115\"; one version, 4.0.0-rc.115, has to be declared everywhere",
-        "pnpm-lock.yaml: \"pnpm-lock.yaml\" resolves effect to \"4.0.0-rc.107\"; Smithers 1.0 requires exactly 4.0.0-rc.115"
+        "package.json: dependencies.\"effect\" is \"^4.0.4\"; a migrated project declares 4.0.4",
+        "package.json: devDependencies.\"effect\" is \"4.0.0-rc.115\"; a migrated project declares 4.0.4",
+        "package.json: peerDependencies.\"effect\" is \"4.0.4\"; a migrated project declares ^4.0.4",
+        "packages/member/package.json: dependencies.\"effect\" is \"4.0.3\"; a migrated project declares 4.0.4",
+        // The peer installs nothing, so it is not one of the versions that disagree.
+        "package.json: the manifests declare effect as \"4.0.0-rc.115\", \"4.0.3\", \"^4.0.4\"; one version, 4.0.4, has to be installed everywhere",
+        "pnpm-lock.yaml: \"pnpm-lock.yaml\" resolves effect to \"4.0.3\"; a migrated project resolves 4.0.4"
       ])
 
-      // The exact pin everywhere is the one shape that earns no warning.
-      manifest.dependencies["effect"] = "4.0.0-rc.115"
-      manifest.devDependencies = { effect: "4.0.0-rc.115" }
+      // The tested version wherever effect is installed, and the supported
+      // range in a peer, is the one shape that earns no warning.
+      manifest.dependencies["effect"] = "4.0.4"
+      manifest.devDependencies = { effect: "4.0.4" }
+      manifest.peerDependencies = { effect: "^4.0.4" }
       writeFileSync(join(root, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`)
       writeFileSync(
         join(root, "packages", "member", "package.json"),
-        `${JSON.stringify({ name: "member", dependencies: { effect: "4.0.0-rc.115" } })}\n`
+        `${JSON.stringify({ name: "member", dependencies: { effect: "4.0.4" } })}\n`
       )
       writeFileSync(
         join(root, "pnpm-lock.yaml"),
-        "packages:\n\n  effect@4.0.0-rc.115:\n    resolution: {integrity: sha512-x}\n"
+        "packages:\n\n  effect@4.0.4:\n    resolution: {integrity: sha512-x}\n"
       )
       const pinned = yield* detect(root)
       expect(pinned.warnings.filter((warning) => warning.code === "effect-pin-conflict")).toEqual([])
+
+      // A manifest that only peers effect installs none, so it cannot disagree.
+      writeFileSync(
+        join(root, "packages", "member", "package.json"),
+        `${JSON.stringify({ name: "member", peerDependencies: { effect: "^4.0.4" } })}\n`
+      )
+      const peered = yield* detect(root)
+      expect(peered.warnings.filter((warning) => warning.code === "effect-pin-conflict")).toEqual([])
     }))
 
   it("reads the version each lockfile dialect resolved effect to", () => {
     expect(
       Detect.resolvedEffectVersions(
-        "  effect@4.0.0-rc.115:\n  '@effect/platform-node@4.0.0-rc.115':\n  redux-effect@1.2.3:\n"
+        "  effect@4.0.4:\n  '@effect/platform-node@4.0.4':\n  redux-effect@1.2.3:\n"
       )
     )
-      .toEqual(["4.0.0-rc.115"])
+      .toEqual(["4.0.4"])
     expect(Detect.resolvedEffectVersions("\"effect\": [\"effect@4.0.0-rc.107\", \"\", {}, \"sha512-x\"],"))
       .toEqual(["4.0.0-rc.107"])
     expect(
       Detect.resolvedEffectVersions("\"node_modules/effect\": {\n  \"version\": \"3.19.0\",\n  \"resolved\": \"x\"\n}")
     )
       .toEqual(["3.19.0"])
-    expect(Detect.resolvedEffectVersions("\"effect@npm:^4.0.0-rc.115\":\n  version: 4.0.0-rc.115\n  resolution: x\n"))
-      .toEqual(["4.0.0-rc.115"])
+    expect(Detect.resolvedEffectVersions("\"effect@npm:^4.0.4\":\n  version: 4.0.4\n  resolution: x\n"))
+      .toEqual(["4.0.4"])
     expect(Detect.resolvedEffectVersions("nothing here")).toEqual([])
   })
 

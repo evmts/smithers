@@ -4228,11 +4228,32 @@ export const make = (
               Effect.catchTag(
                 "@smthrs/flow/FlowExecutionNotFound",
                 () => Effect.succeed(Option.some({ _tag: "NotFound" }))
+              ),
+              Effect.flatMap((published) =>
+                Option.isSome(published) && published.value._tag === "Suspended"
+                  ? Effect.map(driven(runId), (driving) => driving ? Option.none() : published)
+                  : Effect.succeed(published)
               )
             ),
           attempts
         )
       })
+
+    /**
+     * Whether a round holds the execution right now.
+     *
+     * The engine claims a parked round in one write and replaces the
+     * `Suspended` result the round before it left in the next. Between the two
+     * `poll` still answers `Suspended` for an execution that is running, and a
+     * second resume seam that read it there claimed the run a second time. The
+     * claim and owner columns are set by the first write, so a row holding
+     * either is still live, not a park, whatever result it shows.
+     */
+    const driven = (runId: string): Effect.Effect<boolean, unknown> =>
+      engineRuns.get(runId).pipe(
+        Effect.map((row) => row.owner !== null || row.claim !== null),
+        Effect.catch((error) => error.code === "not_found_row" ? Effect.succeed(false) : Effect.fail(error))
+      )
 
     /**
      * Re-drives one execution `takeUpResume` has already found parked here and

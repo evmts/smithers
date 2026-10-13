@@ -131,11 +131,36 @@ describe("MigrateFlow.postconditions", () => {
       const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
         dependencies: Record<string, string>
       }
-      manifest.dependencies["effect"] = "4.0.0-rc.115"
+      manifest.dependencies["effect"] = "4.0.4"
       writeFileSync(join(root, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`)
 
       const dependenciesAfter = yield* MigrateFlow.postconditions(root, dependencies)
       expect(dependenciesAfter.every((check) => check.ok)).toBe(true)
+
+      // A peer is installed by the package's own consumer, so it ends on the
+      // supported range: the exact version there is a finding, the range is not.
+      const pinCheck = "effect is pinned to the version this release ships"
+      writeFileSync(
+        join(root, "package.json"),
+        `${JSON.stringify({ ...manifest, peerDependencies: { effect: "4.0.4" } }, null, 2)}\n`
+      )
+      const exactPeer = yield* MigrateFlow.postconditions(root, dependencies)
+      expect(exactPeer.find((check) => check.name === pinCheck)?.findings.map((finding) => finding.message))
+        .toEqual(["peerDependencies.\"effect\" is 4.0.4; the migration writes ^4.0.4"])
+      writeFileSync(
+        join(root, "package.json"),
+        `${JSON.stringify({ ...manifest, peerDependencies: { effect: "^4.0.4" } }, null, 2)}\n`
+      )
+      const rangedPeer = yield* MigrateFlow.postconditions(root, dependencies)
+      expect(rangedPeer.every((check) => check.ok)).toBe(true)
+      // And a range where the project installs effect is a finding.
+      writeFileSync(
+        join(root, "package.json"),
+        `${JSON.stringify({ ...manifest, dependencies: { ...manifest.dependencies, effect: "^4.0.4" } }, null, 2)}\n`
+      )
+      const rangedInstall = yield* MigrateFlow.postconditions(root, dependencies)
+      expect(rangedInstall.find((check) => check.name === pinCheck)?.findings.map((finding) => finding.message))
+        .toEqual(["dependencies.\"effect\" is ^4.0.4; the migration writes 4.0.4"])
 
       delete manifest.dependencies["smthrs"]
       writeFileSync(join(root, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`)

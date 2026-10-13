@@ -1,6 +1,6 @@
 # @smthrs/gateway
 
-The gateway requires `effect` at `4.0.0-rc.115` as its only peer. Node and Bun adapters are bundled privately at the same version; hosts need no separate adapter install.
+The gateway requires `effect` in the range `^4.0.4` as its only peer. Node and Bun adapters are bundled privately, built from 4.0.4; hosts need no separate adapter install.
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
@@ -16,10 +16,10 @@ The mounts, the bind and credential policy, the projections and their rows, the 
 
 Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
 
-Node 26.4.0 or later is required. `effect@4.0.0-rc.115` is a required peer.
+Node 26.4.0 or later is required. `effect@^4.0.4` is a required peer.
 
 ```bash
-pnpm add @smthrs/gateway effect@4.0.0-rc.115
+pnpm add @smthrs/gateway effect
 ```
 
 ## Public API

@@ -62,6 +62,7 @@ const seededSources = {
   "packages/smithers/flows/database/src/internal/ReleasePolicy.ts": "export const releaseVersion = \"0.1.0\"\n",
   "packages/smithers/flows/observability/src/Otlp.ts": "export const defaultServiceVersion = \"0.1.0\"\n",
   "packages/smithers/migrate/src/flow/Cli.ts": "export const version = \"0.1.0\"\n",
+  "packages/smithers/migrate/src/internal/Versions.ts": "export const smithersVersion = \"0.1.0\"\n",
   "packages/smithers/migrate/src/Report.ts":
     "export const tool = { name: \"@smthrs/migrate\", version: \"0.1.0\" } as const\n",
   "packages/smithers/mcp/src/McpClient.ts": "export const clientInfo = { name: \"smithers\", version: \"0.1.0\" }\n",
@@ -111,13 +112,13 @@ const seed = () => {
   write(
     root,
     "packages/smithers/package.json",
-    json({ name: "@smthrs/cli", version: "0.1.0", dependencies: { "@smthrs/kernel": "0.1.0", effect: "4.0.0-rc.115" } })
+    json({ name: "@smthrs/cli", version: "0.1.0", dependencies: { "@smthrs/kernel": "0.1.0", effect: "4.0.4" } })
   )
   write(root, "packages/kernel/package.json", json({ name: "@smthrs/kernel", version: "0.1.0" }))
   write(root, "packages/private/package.json", json({ name: "@smthrs/tooling", private: true, version: "0.0.0" }))
   for (const path of versionedTemplates) {
     write(root, path, json({ name: "__APP_NAME__", private: true, version: "0.0.0",
-      dependencies: { "@smthrs/kernel": "0.1.0", effect: "4.0.0-rc.115" },
+      dependencies: { "@smthrs/kernel": "0.1.0", effect: "4.0.4" },
       devDependencies: { "@smthrs/cli": "workspace:*" } }))
   }
   for (const [path, text] of Object.entries(seededSources)) write(root, path, text)
@@ -245,12 +246,12 @@ test("a cut bumps every manifest, retargets internal ranges, and writes the sect
 
     assert.equal(manifest(root, "packages/smithers/package.json").version, "0.2.0")
     assert.equal(manifest(root, "packages/smithers/package.json").dependencies["@smthrs/kernel"], "0.2.0")
-    assert.equal(manifest(root, "packages/smithers/package.json").dependencies.effect, "4.0.0-rc.115")
+    assert.equal(manifest(root, "packages/smithers/package.json").dependencies.effect, "4.0.4")
     assert.equal(manifest(root, "packages/kernel/package.json").version, "0.2.0")
     assert.equal(manifest(root, "packages/private/package.json").version, "0.0.0", "a private manifest is not bumped")
     for (const path of versionedTemplates) {
       assert.deepEqual(manifest(root, path), { name: "__APP_NAME__", private: true, version: "0.0.0",
-        dependencies: { "@smthrs/kernel": "0.2.0", effect: "4.0.0-rc.115" },
+        dependencies: { "@smthrs/kernel": "0.2.0", effect: "4.0.4" },
         devDependencies: { "@smthrs/cli": "0.2.0" } })
     }
     for (const [path, text] of Object.entries(seededSources)) {

@@ -4,7 +4,7 @@ import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as JournalMigrations from "@smthrs/journal/Migrations"
 import * as RunMigrations from "@smthrs/run-store/Migrations"
 import * as Effect from "effect/Effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
 
 describe("history authority in a minimal composition", () => {

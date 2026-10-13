@@ -31,7 +31,7 @@ import * as Otlp from "@smthrs/observability/Otlp"
 import { Clock, Effect, Exit, Option, Schema, Stream } from "effect"
 import type * as Layer from "effect/Layer"
 import type * as Tracer from "effect/Tracer"
-import { type ChildProcessSpawner, make as makeSpawner, makeHandle } from "effect/unstable/process/ChildProcessSpawner"
+import { type ChildProcessSpawner, make as makeSpawner, makeHandle } from "effect/process/ChildProcessSpawner"
 import { packageVersion } from "../Version.ts"
 
 /**

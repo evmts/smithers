@@ -1,8 +1,8 @@
 /** Executed as emitted ESM by Node, never by the test runner's module loader. */
 import { Destination } from "@smthrs/kernel/HttpClient"
 import { Effect } from "effect"
-import * as HttpClient from "effect/unstable/http/HttpClient"
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
+import * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import { strict as assert } from "node:assert"
 import * as EgressHttpClient from "../../src/EgressHttpClient.ts"
 

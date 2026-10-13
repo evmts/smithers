@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Cause, Duration, Effect, Fiber, Layer, Result } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { fstatSync, readdirSync, statSync } from "node:fs"
 import { DatabaseSync } from "node:sqlite"
 import * as DurableWriter from "../src/DurableWriter.ts"

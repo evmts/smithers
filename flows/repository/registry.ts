@@ -1,5 +1,6 @@
 /** Bundled declarations are available before a repository has written any flows. */
 import * as Digest from "@smthrs/core/Digest"
+import * as Node from "@smthrs/core/Node"
 import type * as RuntimeFlow from "@smthrs/flow/Flow"
 import type * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as Descriptor from "@smthrs/registry/Descriptor"
@@ -567,10 +568,10 @@ export const bindRepositoryRegistry = (
         ...descriptor,
         budget: { tokens: deploymentTokens, milliseconds: deploymentMinutes * 60000 },
         input: new Descriptor.SchemaRefInline({
-          document: JSON.parse(JSON.stringify(Schema.toJsonSchemaDocument(schemas.input)))
+          document: JSON.parse(JSON.stringify(Node.schemaIdentity(schemas.input)))
         }),
         output: new Descriptor.SchemaRefInline({
-          document: JSON.parse(JSON.stringify(Schema.toJsonSchemaDocument(schemas.output)))
+          document: JSON.parse(JSON.stringify(Node.schemaIdentity(schemas.output)))
         }),
         frontmatter: { ...descriptor.frontmatter, repositoryHostPolicy: policy }
       }) :

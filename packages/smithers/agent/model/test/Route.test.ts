@@ -1,9 +1,9 @@
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
 import { Effect, Layer, Redacted, Result, Schema, Stream, Tracer } from "effect"
-import * as Sse from "effect/unstable/encoding/Sse"
-import * as HttpClient from "effect/unstable/http/HttpClient"
-import type * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
+import * as Sse from "effect/encoding/Sse"
+import * as HttpClient from "effect/http/HttpClient"
+import type * as HttpClientRequest from "effect/http/HttpClientRequest"
+import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import * as Auth from "../src/Auth.ts"
@@ -1244,15 +1244,18 @@ describe("Route.stream terminal events", () => {
 })
 
 describe("Route.stream credential safety", () => {
-  // A successful call is enough to leak a key: the HTTP client writes every
-  // request header onto its client span, and its default redaction policy
-  // names `authorization` and `x-api-key` alone.
-  it.each([
+  const credentialHeaders = [
     ["api-key", "a name the shared matcher recognizes"],
     ["chatgpt-account-id", "an account identity the ChatGPT route must not trace"],
     ["Ocp-Apim-Subscription-Key", "a name only the auth itself knows is a credential"]
-  ])("keeps %s out of the request span (%s)", async (headerName) => {
-    const key = "traced-secret-value"
+  ] as const
+  const key = "traced-secret-value"
+
+  /** One successful call, with every span it opened. */
+  const tracedCall = async (
+    headerName: string,
+    recordHeaders: boolean
+  ): Promise<{ readonly attribute: (name: string) => ReadonlyArray<unknown>; readonly attributes: string }> => {
     const spans: Array<Tracer.NativeSpan> = []
     const tracer = Tracer.make({
       span(options) {
@@ -1261,37 +1264,70 @@ describe("Route.stream credential safety", () => {
         return span
       }
     })
+    const sent: Array<string | undefined> = []
     const client = HttpClient.make((httpRequest) =>
-      Effect.succeed(HttpClientResponse.fromWeb(httpRequest, sseResponse(["[DONE]"])))
+      Effect.sync(() => {
+        sent.push(httpRequest.headers[headerName.toLowerCase()])
+        return HttpClientResponse.fromWeb(httpRequest, sseResponse(["[DONE]"]))
+      })
     )
+    const call = Effect.gen(function*() {
+      const executor = yield* RequestExecutor.makeWith(RequestExecutor.fixed(client))
+      const model = yield* Route.toModel(
+        Route.make({
+          providerName: "openai",
+          id: "traced",
+          protocol,
+          endpoint: endpoint({ url: "https://example.test" }),
+          auth: Auth.apiKeyHeader(headerName, Redacted.make(key)),
+          framing: Framing.sse,
+          headers: { "x-public": "yes" }
+        })
+      ).pipe(Effect.provideService(RequestExecutor.RequestExecutor, executor))
+      yield* model.stream(request).pipe(Stream.runDrain)
+    }).pipe(Effect.provideService(Tracer.Tracer, tracer))
 
     await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function*() {
-          const executor = yield* RequestExecutor.makeWith(RequestExecutor.fixed(client))
-          const model = yield* Route.toModel(
-            Route.make({
-              providerName: "openai",
-              id: "traced",
-              protocol,
-              endpoint: endpoint({ url: "https://example.test" }),
-              auth: Auth.apiKeyHeader(headerName, Redacted.make(key)),
-              framing: Framing.sse,
-              headers: { "x-public": "yes" }
-            })
-          ).pipe(Effect.provideService(RequestExecutor.RequestExecutor, executor))
-          yield* model.stream(request).pipe(Stream.runDrain)
-        }).pipe(Effect.provideService(Tracer.Tracer, tracer))
-      )
+      Effect.scoped(recordHeaders ? call.pipe(Effect.provideService(HttpClient.TracerHeaderFilter, () => true)) : call)
     )
 
-    const attribute = (name: string): ReadonlyArray<unknown> =>
-      spans.map((span) => span.attributes.get(`http.request.header.${name}`)).filter((value) => value !== undefined)
+    // The credential went out on the wire, so the span is the only place left
+    // to keep it from.
+    expect(sent).toEqual([key])
+    expect(spans.some((span) => span.kind === "client")).toBe(true)
+    return {
+      attribute: (name) =>
+        spans.map((span) => span.attributes.get(`http.request.header.${name}`)).filter((value) => value !== undefined),
+      attributes: JSON.stringify(spans.map((span) => Array.from(span.attributes)))
+    }
+  }
 
-    expect(attribute(headerName.toLowerCase())).toEqual(["<redacted>"])
-    expect(attribute("x-public")).toEqual(["yes"])
-    expect(JSON.stringify(spans.map((span) => Array.from(span.attributes)))).not.toContain(key)
+  // The HTTP client records a header on its client span only when the host's
+  // `HttpClient.TracerHeaderFilter` admits it, and by default it admits none.
+  it.each(credentialHeaders)("records no header, so keeps %s out of the request span (%s)", async (headerName) => {
+    const { attribute, attributes } = await tracedCall(headerName, false)
+
+    expect(attribute(headerName.toLowerCase())).toEqual([])
+    expect(attribute("x-public")).toEqual([])
+    expect(attributes).not.toContain("http.request.header.")
+    expect(attributes).not.toContain("http.response.header.")
+    expect(attributes).not.toContain(key)
   })
+
+  // A host that turns header capture on writes every request header onto the
+  // client span, and the HTTP client's own redaction policy names
+  // `authorization` and `x-api-key` alone. A successful call would then be
+  // enough to leak a key.
+  it.each(credentialHeaders)(
+    "keeps %s out of a request span that records headers (%s)",
+    async (headerName) => {
+      const { attribute, attributes } = await tracedCall(headerName, true)
+
+      expect(attribute(headerName.toLowerCase())).toEqual(["<redacted>"])
+      expect(attribute("x-public")).toEqual(["yes"])
+      expect(attributes).not.toContain(key)
+    }
+  )
   const credential = "sk-inline-stream-credential-0123456789"
 
   // Every built-in family reports a mid-stream failure over HTTP 200, so the

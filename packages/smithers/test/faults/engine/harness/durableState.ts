@@ -15,7 +15,7 @@ import * as NodeHost from "@smthrs/platform-node/NodeHost"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
-import { SqlClient } from "effect/unstable/sql/SqlClient"
+import { SqlClient } from "effect/sql/SqlClient"
 
 const storage = (filename: string) =>
   NodeRuntime.storage(filename).pipe(

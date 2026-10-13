@@ -34,8 +34,8 @@ import type {
   ModelTestFailure
 } from "@smthrs/rpc/ConfiguredModel"
 import { Layer, Redacted } from "effect"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
-import type { HttpClient } from "effect/unstable/http/HttpClient"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import type { HttpClient } from "effect/http/HttpClient"
 
 /**
  * Model values stay behind this host-only interface. Listing and planning

@@ -2,7 +2,7 @@
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { rewriteManifest } from "@smthrs/migrate/flow/Archive"
 import { Effect } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { spawn } from "node:child_process"
 import { cp, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"

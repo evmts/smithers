@@ -10,15 +10,15 @@ import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import * as Headers from "effect/http/Headers"
+import * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientError from "effect/http/HttpClientError"
+import * as HttpClientRequest from "effect/http/HttpClientRequest"
+import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import * as Layer from "effect/Layer"
 import { TestClock } from "effect/testing"
 import * as Tracer from "effect/Tracer"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
-import * as Headers from "effect/unstable/http/Headers"
-import * as HttpClient from "effect/unstable/http/HttpClient"
-import * as HttpClientError from "effect/unstable/http/HttpClientError"
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
 import * as ArtifactStore from "../src/ArtifactStore.ts"
 import * as RemoteArtifacts from "../src/RemoteArtifacts.ts"
 import { bytes, sha256, text, withCrypto } from "./Crypto.ts"
@@ -174,60 +174,110 @@ describe("construction", () => {
 })
 
 describe("HTTP exchange lifetime and tracing", () => {
-  it.effect.each(["success", "status", "transport"] as const)(
-    "redacts custom credentials in completed HTTP spans on %s",
+  const modes = ["success", "status", "transport"] as const
+
+  /** One `has` exchange against a stub tier, with every span it opened. */
+  const tracedExchange = (mode: typeof modes[number], recordHeaders: boolean) =>
+    Effect.gen(function*() {
+      const spans: Array<Tracer.NativeSpan> = []
+      const tracer = Tracer.make({
+        span(options) {
+          const span = new Tracer.NativeSpan(options)
+          spans.push(span)
+          return span
+        }
+      })
+      const sent: Array<HttpClientRequest.HttpClientRequest> = []
+      const client = HttpClient.make((request) => {
+        sent.push(request)
+        return mode === "transport"
+          ? Effect.fail(
+            new HttpClientError.HttpClientError({
+              reason: new HttpClientError.TransportError({ request })
+            })
+          )
+          : Effect.succeed(HttpClientResponse.fromWeb(
+            request,
+            new Response(null, {
+              status: mode === "status" ? 503 : 200
+            })
+          ))
+      }).pipe(HttpClient.mapRequest(HttpClientRequest.setHeaders({
+        "x-host-secret": "host-secret-value",
+        "x-public": "public-value"
+      })))
+      const hostRules = [...(yield* Headers.CurrentRedactedNames), /^x-host-/]
+      const exchange = Effect.gen(function*() {
+        const store = yield* RemoteArtifacts.make({
+          endpoint: "https://cache.example.com",
+          headers: { "X-Auth-Token": "custom-secret-value", authorization: "Bearer secret-value" }
+        })
+        const result = yield* store.has(digest).pipe(Effect.exit)
+        expect(yield* Headers.CurrentRedactedNames).toEqual(hostRules)
+        return result
+      }).pipe(
+        Effect.provideService(HttpClient.HttpClient, client),
+        Effect.provideService(Headers.CurrentRedactedNames, hostRules),
+        Effect.provideService(Tracer.Tracer, tracer)
+      )
+      const exit = yield* (recordHeaders
+        ? exchange.pipe(Effect.provideService(HttpClient.TracerHeaderFilter, () => true))
+        : exchange)
+      expect(exit._tag).toBe(mode === "success" ? "Success" : "Failure")
+      // The credentials went out on the wire, so the span is the only place
+      // left to keep them from.
+      expect(sent.map((request) => request.headers["x-auth-token"])).toEqual(["custom-secret-value"])
+      // The HTTP client names its span for the request method.
+      const httpSpans = spans.filter((candidate) => candidate.kind === "client" && candidate.name === "HEAD")
+      expect(httpSpans).toHaveLength(1)
+      const span = httpSpans[0]!
+      expect(span.status._tag).toBe("Ended")
+      return { span, attributes: JSON.stringify(spans.map((opened) => [...opened.attributes])) }
+    })
+
+  it.effect.each(modes)(
+    "records no header in completed HTTP spans on %s unless the host turns header capture on",
     (mode) =>
       Effect.gen(function*() {
-        const spans: Array<Tracer.NativeSpan> = []
-        const tracer = Tracer.make({
-          span(options) {
-            const span = new Tracer.NativeSpan(options)
-            spans.push(span)
-            return span
-          }
-        })
-        const client = HttpClient.make((request) =>
-          mode === "transport"
-            ? Effect.fail(
-              new HttpClientError.HttpClientError({
-                reason: new HttpClientError.TransportError({ request })
-              })
-            )
-            : Effect.succeed(HttpClientResponse.fromWeb(
-              request,
-              new Response(null, {
-                status: mode === "status" ? 503 : 200
-              })
-            ))
-        ).pipe(HttpClient.mapRequest(HttpClientRequest.setHeaders({
-          "x-host-secret": "host-secret-value",
-          "x-public": "public-value"
-        })))
-        const hostRules = [...(yield* Headers.CurrentRedactedNames), /^x-host-/]
-        const exit = yield* Effect.gen(function*() {
-          const store = yield* RemoteArtifacts.make({
-            endpoint: "https://cache.example.com",
-            headers: { "X-Auth-Token": "custom-secret-value", authorization: "Bearer secret-value" }
-          })
-          const result = yield* store.has(digest).pipe(Effect.exit)
-          expect(yield* Headers.CurrentRedactedNames).toEqual(hostRules)
-          return result
-        }).pipe(
-          Effect.provideService(HttpClient.HttpClient, client),
-          Effect.provideService(Headers.CurrentRedactedNames, hostRules),
-          Effect.provideService(Tracer.Tracer, tracer)
+        const { attributes } = yield* tracedExchange(mode, false)
+        expect(attributes).not.toContain("http.request.header.")
+        expect(attributes).not.toContain("http.response.header.")
+        expect(attributes).not.toContain("secret-value")
+      })
+  )
+
+  it.effect.each(modes)(
+    "redacts custom credentials in completed HTTP spans that record headers on %s",
+    (mode) =>
+      Effect.gen(function*() {
+        const { attributes, span } = yield* tracedExchange(mode, true)
+        expect(span.attributes.get("http.request.header.x-auth-token")).toBe("<redacted>")
+        expect(span.attributes.get("http.request.header.authorization")).toBe("<redacted>")
+        expect(span.attributes.get("http.request.header.x-host-secret")).toBe("<redacted>")
+        expect(span.attributes.get("http.request.header.x-public")).toBe("public-value")
+        expect(attributes).not.toContain("secret-value")
+      })
+  )
+
+  // The tier's answer is a value to the store, but the HTTP client marks the
+  // span of a 4xx or 5xx answer failed, with the status as `error.type`.
+  it.effect.each(
+    [
+      { mode: "success", failed: false, errorType: undefined },
+      { mode: "status", failed: true, errorType: "503" },
+      { mode: "transport", failed: true, errorType: undefined }
+    ] as const
+  )(
+    "ends the HTTP span of a $mode exchange as failed: $failed",
+    ({ errorType, failed, mode }) =>
+      Effect.gen(function*() {
+        const { span } = yield* tracedExchange(mode, false)
+        const status = span.status
+        expect(status._tag === "Ended" && status.exit._tag).toBe(failed ? "Failure" : "Success")
+        expect(span.attributes.get("error.type")).toBe(errorType)
+        expect(span.attributes.get("http.response.status_code")).toBe(
+          mode === "transport" ? undefined : mode === "status" ? 503 : 200
         )
-        expect(exit._tag).toBe(mode === "success" ? "Success" : "Failure")
-        const httpSpans = spans.filter((span) => span.name === "http.client HEAD")
-        expect(httpSpans).toHaveLength(1)
-        for (const span of httpSpans) {
-          expect(span.status._tag).toBe("Ended")
-          expect(span.attributes.get("http.request.header.x-auth-token")).toBe("<redacted>")
-          expect(span.attributes.get("http.request.header.authorization")).toBe("<redacted>")
-          expect(span.attributes.get("http.request.header.x-host-secret")).toBe("<redacted>")
-          expect(span.attributes.get("http.request.header.x-public")).toBe("public-value")
-        }
-        expect(JSON.stringify(spans.map((span) => [...span.attributes]))).not.toContain("secret-value")
       })
   )
 

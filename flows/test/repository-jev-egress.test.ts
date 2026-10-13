@@ -1,8 +1,8 @@
 /** Subscription judgments must use the sandbox's configured egress proxy. */
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Layer } from "effect"
-import * as HttpClient from "effect/unstable/http/HttpClient"
-import * as HttpClientError from "effect/unstable/http/HttpClientError"
+import * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientError from "effect/http/HttpClientError"
 import assert from "node:assert/strict"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"

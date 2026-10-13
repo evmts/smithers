@@ -11,8 +11,8 @@
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import { Effect, Layer, Sink, Stream } from "effect"
 import type { Scope } from "effect"
-import type * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { makeHandle } from "effect/unstable/process/ChildProcessSpawner"
+import type * as ChildProcess from "effect/process/ChildProcess"
+import { makeHandle } from "effect/process/ChildProcessSpawner"
 
 export type HandleOptions = Parameters<typeof makeHandle>[0]
 

@@ -35,8 +35,8 @@ import * as ScopedToken from "@smthrs/control/ScopedToken"
 import { SyncAuth as SyncAuthTag } from "@smthrs/sync/SyncRpcs"
 import * as SyncServer from "@smthrs/sync/SyncServer"
 import { Deferred, Effect, Fiber, Layer, Logger, Schema, type Scope, Stream } from "effect"
-import { HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import { RpcClient, RpcSerialization } from "effect/unstable/rpc"
+import { HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { RpcClient, RpcSerialization } from "effect/rpc"
 import { readFileSync } from "node:fs"
 import { createServer } from "node:http"
 import { connect } from "node:net"
@@ -558,9 +558,26 @@ describe("the RPC body a mount will act on", () => {
     expect(GatewayServer.carriesRpcRequest(ndjson, request)).toBe(true)
     expect(GatewayServer.carriesRpcRequest(ndjson, "{}")).toBe(false)
     expect(GatewayServer.carriesRpcRequest(ndjson, "")).toBe(false)
-    // A complete line that is not JSON is what makes the parser throw; an
-    // unterminated one is buffered and simply yields no message.
+    // The parser skips a complete line that is not JSON, and buffers an
+    // unterminated one. Either way the body yields no message.
     expect(GatewayServer.carriesRpcRequest(ndjson, "not json\n")).toBe(false)
+    expect(GatewayServer.carriesRpcRequest(ndjson, "not json")).toBe(false)
+    // Beside a framed request the line is skipped the same way, by this
+    // predicate and by the mount, which reads the body through the same parser.
+    expect(GatewayServer.carriesRpcRequest(ndjson, `not json\n${request}`)).toBe(true)
+    expect(GatewayServer.carriesRpcRequest(ndjson, `${request}not json\n`)).toBe(true)
+    // A line that is JSON and no message still refuses the whole body.
+    expect(GatewayServer.carriesRpcRequest(ndjson, `42\n${request}`)).toBe(false)
+  })
+
+  it("refuses a body the composed serialization's parser throws on", () => {
+    // Unframed JSON has no line to skip: text that is not JSON fails the parse.
+    const json = RpcSerialization.json
+    const request = JSON.stringify({ _tag: "Request", id: 1, tag: "List", payload: {}, headers: [] })
+
+    expect(GatewayServer.carriesRpcRequest(json, request)).toBe(true)
+    expect(GatewayServer.carriesRpcRequest(json, "not json")).toBe(false)
+    expect(GatewayServer.carriesRpcRequest(json, "{}")).toBe(false)
   })
 
   it("leaves a binary framing to the mount, since its body is not text", () => {
@@ -991,6 +1008,25 @@ describe("the assembled gateway over a real loopback bind", () => {
         })
       }).pipe(Effect.provide(served())))
   }
+
+  test("acts on the framed request in a body whose other line is not JSON", () =>
+    Effect.gen(function*() {
+      const url = yield* baseUrl
+      const response = yield* Effect.promise(() =>
+        fetch(`${url}/rpc`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: `not json\n${exactBody}`
+        })
+      )
+
+      // The mount skips the line it cannot parse and answers the request: the
+      // protocol itself reports the procedure that does not exist.
+      expect(response.status).toBe(200)
+      const answer = JSON.parse((yield* Effect.promise(() => response.text())).split("\n")[0]!)
+      expect(answer).toMatchObject({ _tag: "Exit", exit: { _tag: "Failure" } })
+      expect(JSON.stringify(answer)).toContain("NoSuchProcedure")
+    }).pipe(Effect.provide(served())))
 
   test("refuses a malformed body on every RPC mount, not only /rpc", () =>
     Effect.gen(function*() {

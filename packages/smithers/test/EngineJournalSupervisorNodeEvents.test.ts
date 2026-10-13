@@ -1,4 +1,4 @@
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 /**
  * The graph a real engine run drove, arriving in the CONTROL journal.
  *

@@ -36,10 +36,10 @@ describe("Archive.rewriteManifest", () => {
     const manifest = JSON.parse(text) as { dependencies: Record<string, string> }
 
     expect(manifest.dependencies).toEqual({
-      "@smthrs/agent": "1.0.0-rc.0",
-      "@smthrs/engine": "1.0.0-rc.0",
-      "@smthrs/flow": "1.0.0-rc.0",
-      "@smthrs/plan": "1.0.0-rc.0",
+      "@smthrs/agent": Archive.smithersVersion,
+      "@smthrs/engine": Archive.smithersVersion,
+      "@smthrs/flow": Archive.smithersVersion,
+      "@smthrs/plan": Archive.smithersVersion,
       effect: "4.0.0-beta.105"
     })
     expect(text.endsWith("\n")).toBe(true)
@@ -51,7 +51,42 @@ describe("Archive.rewriteManifest", () => {
       add: ["effect"]
     })
     expect((JSON.parse(text) as { dependencies: Record<string, string> }).dependencies.effect)
-      .toBe("4.0.0-rc.115")
+      .toBe("4.0.4")
+  })
+
+  it("pins effect to the tested version where a manifest installs it and to the supported range where it peers it", () => {
+    const before = {
+      name: "library",
+      dependencies: { effect: "^3.19.0", left: "1.0.0" },
+      devDependencies: { effect: "4.0.0-rc.115" },
+      peerDependencies: { effect: "4.0.0-rc.115", react: "^19.0.0" },
+      optionalDependencies: { effect: "latest" },
+      overrides: { effect: "^4.0.4" },
+      resolutions: { effect: "*" }
+    }
+    for (const kind of ["dependencies", "project"] as const) {
+      const after = Archive.rewritten("package.json", JSON.stringify(before), {}, kind)
+      expect(JSON.parse(after!.text)).toEqual({
+        name: "library",
+        dependencies: { effect: "4.0.4", left: "1.0.0" },
+        devDependencies: { effect: "4.0.4" },
+        // The package's own consumer installs this one, inside the range
+        // every published Smithers library accepts.
+        peerDependencies: { effect: "^4.0.4", react: "^19.0.0" },
+        optionalDependencies: { effect: "4.0.4" },
+        overrides: { effect: "4.0.4" },
+        resolutions: { effect: "4.0.4" }
+      })
+      // A manifest already on those declarations is returned byte for byte.
+      expect(Archive.rewritten("package.json", after!.text, {}, kind)!.text).toBe(after!.text)
+    }
+    // The reverse is rewritten too: a range where effect is installed, an
+    // exact version where it is peered.
+    const reversed = JSON.stringify({ dependencies: { effect: "^4.0.4" }, peerDependencies: { effect: "4.0.4" } })
+    expect(JSON.parse(Archive.rewritten("package.json", reversed, {}, "dependencies")!.text)).toEqual({
+      dependencies: { effect: "4.0.4" },
+      peerDependencies: { effect: "^4.0.4" }
+    })
   })
 
   it("rewrites `smithers up <file>` into the canonical flow start command", () => {

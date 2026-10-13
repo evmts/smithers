@@ -2,53 +2,104 @@
 /**
  * Bun SQLite client whose raw writes report affected rows.
  *
- * Adapted from `@effect/sql-sqlite-bun@4.0.0-rc.115` `SqliteClient.make`. That
- * driver runs every statement through `.all()`, so `.raw` on INSERT, UPDATE and
+ * Adapted from `@effect/sql-sqlite-bun@4.0.4` `SqliteClient.make`. That driver
+ * runs every statement through `.all()`, so `.raw` on INSERT, UPDATE and
  * DELETE yields `[]` and `DurableWriter.affectedRows` fails `unsupported`
  * (issue #2419). Like `@effect/sql-sqlite-node`, a statement without result
  * columns runs through `.run()` here and `.raw` returns
- * `{ changes, lastInsertRowid }`. Delete this module once the upstream driver
- * does the same. `BunSqliteClient.test.ts` measures it over a `bun:sqlite` shim;
- * agent/memory `NativeBunAffectedRows.test.ts` runs it under real Bun.
+ * `{ changes, lastInsertRowid }`. Everything else follows the upstream file:
+ * the open and its PRAGMAs fail as a typed `SqlError`, a `file:` name opens as
+ * a URI, the WAL switch is retried for the busy timeout, and a failed COMMIT
+ * is rolled back before the connection is lent again. Delete this module once
+ * the upstream driver reports affected rows. `BunSqliteClient.test.ts`
+ * measures it over a `bun:sqlite` shim; `NativeBunSqliteClient.test.ts` and
+ * agent/memory `NativeBunAffectedRows.test.ts` run it under real Bun.
  *
  * @since 1.0.0
  */
 
 import type { SqliteClientConfig } from "@effect/sql-sqlite-bun/SqliteClient"
-import { Database } from "bun:sqlite"
+import { constants, Database } from "bun:sqlite"
+import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
-import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
-import * as Scope from "effect/Scope"
+import * as Reactivity from "effect/reactivity/Reactivity"
+import * as Schedule from "effect/Schedule"
+import type * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
+import * as Client from "effect/sql/SqlClient"
+import type { Connection } from "effect/sql/SqlConnection"
+import { classifySqliteError, SqlError } from "effect/sql/SqlError"
+import * as Statement from "effect/sql/Statement"
 import * as Stream from "effect/Stream"
-import * as Reactivity from "effect/unstable/reactivity/Reactivity"
-import * as Client from "effect/unstable/sql/SqlClient"
-import type { Connection } from "effect/unstable/sql/SqlConnection"
-import { classifySqliteError, SqlError } from "effect/unstable/sql/SqlError"
-import * as Statement from "effect/unstable/sql/Statement"
 
 const MAX_BUSY_TIMEOUT = 2_147_483_647
+const NANOS_PER_MILLI = BigInt(1_000_000)
+
+const failed = (cause: unknown, message: string, operation: string): SqlError =>
+  new SqlError({ reason: classifySqliteError(cause, { message, operation }) })
+
+/** The connection, and whether SQLite still holds a transaction open on it. */
+interface BunConnection extends Connection {
+  readonly isTransaction: () => boolean
+}
 
 const make = (
   options: SqliteClientConfig
-): Effect.Effect<Client.SqlClient, never, Scope.Scope | Reactivity.Reactivity> =>
+): Effect.Effect<Client.SqlClient, SqlError, Scope.Scope | Reactivity.Reactivity> =>
   Effect.gen(function*() {
     const readonly = options.readonly === true
-    const db = new Database(options.filename, {
-      readonly,
-      readwrite: readonly ? false : options.readwrite ?? true,
-      create: readonly ? false : options.create ?? true
-    })
-    yield* Effect.addFinalizer(() => Effect.sync(() => db.close()))
+    const readwrite = readonly ? false : options.readwrite ?? true
+    const create = readonly ? false : options.create ?? true
+    const db = yield* Effect.acquireRelease(
+      Effect.try({
+        try: () =>
+          new Database(
+            options.filename,
+            // Bun reads a `file:` name as a URI only when the open flags say so.
+            options.filename.startsWith("file:")
+              ? constants.SQLITE_OPEN_URI |
+                (readonly ? constants.SQLITE_OPEN_READONLY : 0) |
+                (readwrite || create ? constants.SQLITE_OPEN_READWRITE : 0) |
+                (create ? constants.SQLITE_OPEN_CREATE : 0)
+              : { readonly, readwrite, create }
+          ),
+        catch: (cause) => failed(cause, "Failed to open database", "connect")
+      }),
+      (db) => Effect.sync(() => db.close())
+    )
     const busyTimeout = Math.min(
       MAX_BUSY_TIMEOUT,
       Math.max(0, Math.round(Duration.toMillis(options.busyTimeout ?? Duration.seconds(5))))
     )
-    db.run(`PRAGMA busy_timeout = ${busyTimeout};`)
-    if (options.disableWAL !== true && !readonly) db.run("PRAGMA journal_mode = WAL;")
+    const configure = (sql: string) =>
+      Effect.try({
+        try: () => db.run(sql),
+        catch: (cause) => failed(cause, "Failed to configure database", "connect")
+      })
+    yield* configure(`PRAGMA busy_timeout = ${busyTimeout};`)
+    if (options.disableWAL !== true && !readonly) {
+      // Switching to WAL can fail with SQLITE_BUSY without invoking the busy
+      // handler, so retry it until busyTimeout has elapsed. Each attempt's
+      // native busy wait is limited to the remaining time.
+      const deadline = (yield* Clock.monotonicTimeNanos) + BigInt(busyTimeout) * NANOS_PER_MILLI
+      const remainingMillis = Effect.map(
+        Clock.monotonicTimeNanos,
+        (now) => Math.max(0, Number((deadline - now) / NANOS_PER_MILLI))
+      )
+      yield* remainingMillis.pipe(
+        Effect.flatMap((remaining) => configure(`PRAGMA busy_timeout = ${remaining};`)),
+        Effect.andThen(configure("PRAGMA journal_mode = WAL;")),
+        Effect.retry({
+          while: (error) =>
+            error.reason._tag === "LockTimeoutError" && Effect.map(remainingMillis, (remaining) => remaining > 0),
+          schedule: Schedule.spaced("10 millis")
+        })
+      )
+      yield* configure(`PRAGMA busy_timeout = ${busyTimeout};`)
+    }
 
     const execute = <A>(
       operation: string,
@@ -63,9 +114,7 @@ const make = (
           statement.safeIntegers(Context.get(fiber.context, Client.SafeIntegers))
           return Effect.succeed(run(statement, params as Array<any>))
         } catch (cause) {
-          return Effect.fail(
-            new SqlError({ reason: classifySqliteError(cause, { message: "Failed to execute statement", operation }) })
-          )
+          return Effect.fail(failed(cause, "Failed to execute statement", operation))
         }
       })
 
@@ -80,7 +129,8 @@ const make = (
         return { changes: result.changes, lastInsertRowid: result.lastInsertRowid }
       })
 
-    const connection: Connection = {
+    const connection: BunConnection = {
+      isTransaction: () => db.inTransaction,
       execute: (sql, params, transformRows) =>
         transformRows ? Effect.map(rows(sql, params), transformRows) : rows(sql, params),
       executeRaw: raw,
@@ -90,17 +140,17 @@ const make = (
       executeStream: () => Stream.die("executeStream not implemented")
     }
 
-    const semaphore = yield* Semaphore.make(1)
+    const { acquirer, onCommitFailure, transactionAcquirer } = Client.makeSqliteAcquirers({
+      connection: Effect.succeed(connection),
+      semaphore: yield* Semaphore.make(1),
+      isTransaction: (conn) => conn.isTransaction()
+    })
     return yield* Client.make({
-      acquirer: semaphore.withPermits(1)(Effect.succeed(connection)),
+      acquirer,
       compiler: Statement.makeCompilerSqlite(options.transformQueryNames),
-      transactionAcquirer: Effect.uninterruptibleMask((restore) => {
-        const scope = Context.getUnsafe(Fiber.getCurrent()!.context, Scope.Scope)
-        return Effect.as(
-          Effect.tap(restore(semaphore.take(1)), () => Scope.addFinalizer(scope, semaphore.release(1))),
-          connection
-        )
-      }),
+      transactionAcquirer,
+      onCommitFailure,
+      releaseSavepoint: (name) => `RELEASE SAVEPOINT ${name}`,
       beginTransaction: readonly ? "BEGIN" : "BEGIN IMMEDIATE",
       spanAttributes: [
         ...(options.spanAttributes ? Object.entries(options.spanAttributes) : []),
@@ -116,5 +166,5 @@ const make = (
  * @since 1.0.0
  * @category layers
  */
-export const layer = (config: SqliteClientConfig): Layer.Layer<Client.SqlClient> =>
+export const layer = (config: SqliteClientConfig): Layer.Layer<Client.SqlClient, SqlError> =>
   Layer.effect(Client.SqlClient, make(config)).pipe(Layer.provide(Reactivity.layer))

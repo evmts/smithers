@@ -1,5 +1,5 @@
 import { ConfigProvider, Effect, Logger, Metric } from "effect"
-import * as OtlpResource from "effect/unstable/observability/OtlpResource"
+import * as OtlpResource from "effect/observability/OtlpResource"
 import type { ClientRequest, IncomingMessage, RequestOptions } from "node:http"
 import { createRequire, syncBuiltinESMExports } from "node:module"
 import { Readable, Writable } from "node:stream"

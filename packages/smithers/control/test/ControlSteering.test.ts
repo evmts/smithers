@@ -10,7 +10,7 @@
  */
 import { NotificationQueue } from "@smthrs/notifications"
 import { Effect, type Layer, Stream } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
 import { ControlRuntime } from "../src/ControlRuntime.ts"

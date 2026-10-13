@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Layer, Path } from "effect"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { runInNewContext } from "node:vm"
 import * as GuardedSpawner from "../src/ChildProcessSpawner.ts"
 import * as ContainedSpawner from "../src/ContainedSpawner.ts"

@@ -391,12 +391,12 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "effect": "4.0.0-rc.115",
+    "effect": "4.0.4",
     "typescript": "7.0.2",
-    "undici": "8.10.2",
+    "undici": "8.11.2",
     "redis": "6.2.1",
-    "@types/ws": "8.18.1",
-    "ws": "8.21.3"
+    "@types/ws": "8.18.2",
+    "ws": "8.22.0"
   },
   "optionalDependencies": {
     "@smthrs/agent": "1.0.0-rc.5",
@@ -414,7 +414,7 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/vitest": "4.0.0-rc.115",
+    "@effect/vitest": "4.0.4",
     "@eslint/js": "9.39.5",
     "@types/node": "26.4.1",
     "@typescript/typescript6": "6.0.2",
@@ -429,8 +429,8 @@
     "madge": "8.0.0",
     "typescript-eslint": "8.69.0",
     "vitest": "5.0.0",
-    "@effect/platform-node": "4.0.0-rc.115",
-    "@effect/platform-node-shared": "4.0.0-rc.115",
-    "effect": "4.0.0-rc.115"
+    "@effect/platform-node": "4.0.4",
+    "@effect/platform-node-shared": "4.0.4",
+    "effect": "4.0.4"
   }
 }

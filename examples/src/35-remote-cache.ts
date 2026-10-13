@@ -23,7 +23,7 @@ import * as RemoteCacheStore from "@smthrs/step-cache/RemoteCacheStore"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { createServer, type Server } from "node:http"
 import { stubJj } from "./durable-layer.ts"
 

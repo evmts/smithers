@@ -1,6 +1,6 @@
 import { Model, ModelEvent, ModelRequest, RequestExecutor, Route } from "@smthrs/model"
 import { Effect, Layer, Redacted, Result, Stream } from "effect"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as http from "node:http"
 import { describe, expect, it } from "vitest"
 import * as Budget from "../src/Budget.ts"

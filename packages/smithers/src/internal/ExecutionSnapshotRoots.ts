@@ -5,7 +5,7 @@
 
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Effect, Schema } from "effect"
-import { SqlClient } from "effect/unstable/sql/SqlClient"
+import { SqlClient } from "effect/sql/SqlClient"
 import { existsSync } from "node:fs"
 
 class SnapshotRootError extends Schema.TaggedError<SnapshotRootError>()(

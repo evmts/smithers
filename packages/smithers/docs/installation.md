@@ -52,9 +52,9 @@ install from the source checkout using [Install the CLI](#install-the-cli).
 `bin/smithers.mjs`. Do not install both packages globally: npm refuses the
 second `smthrs` link.
 
-The executable declares `@effect/sql-sqlite-node@4.0.0-rc.115` as a required
-peer because its default runtime opens SQLite. Modern npm and pnpm install
-that peer with the CLI, along with its required Effect Node adapter. The
+The executable depends on `@effect/sql-sqlite-node@4.0.4` because its
+default runtime opens SQLite, so every package manager installs it with the
+CLI. The
 database library itself keeps SQLite optional for driver-neutral consumers.
 
 Confirm what you got, and what the registry offers, with the CLI itself:

@@ -10,6 +10,14 @@
 import { Schema } from "effect"
 
 /**
+ * `Object.assign` for a schema's statics, defining each one instead of assigning
+ * it. Effect 4.0 serves `make` from a prototype getter that has no setter, so
+ * assigning over it throws.
+ */
+const withStatics = <S extends object, Statics extends object>(schema: S, statics: Statics): S & Statics =>
+  Object.defineProperties(schema, Object.getOwnPropertyDescriptors(statics)) as S & Statics
+
+/**
  * A plain JSON object. Unlike `Schema.Record`, decoding starts from
  * `Schema.Json`, so class instances such as `Date` and `Map` cannot be
  * accepted as empty records.
@@ -69,7 +77,7 @@ export type StopReason = typeof StopReason.Type
  * @since 0.1.0
  * @slop
  */
-export const SystemPart = Object.assign(
+export const SystemPart = withStatics(
   Schema.Struct({ type: Schema.Literal("text"), text: Schema.String }).annotate({
     identifier: "flows/model/SystemPart"
   }),
@@ -92,7 +100,7 @@ export type SystemPart = typeof SystemPart.Type
  * @since 0.1.0
  * @slop
  */
-export const TextPart = Object.assign(
+export const TextPart = withStatics(
   Schema.Struct({ type: Schema.Literal("text"), text: Schema.String }).annotate({ identifier: "flows/model/TextPart" }),
   { make: (input: { readonly text: string }): TextPart => ({ type: "text", text: input.text }) }
 )
@@ -114,7 +122,7 @@ export type TextPart = typeof TextPart.Type
  * @since 0.1.0
  * @slop
  */
-export const ThinkingPart = Object.assign(
+export const ThinkingPart = withStatics(
   Schema.Struct({
     type: Schema.Literal("thinking"),
     text: Schema.String,
@@ -146,7 +154,7 @@ export type ThinkingPart = typeof ThinkingPart.Type
  * @since 0.1.0
  * @slop
  */
-export const ToolCallPart = Object.assign(
+export const ToolCallPart = withStatics(
   Schema.Struct({
     type: Schema.Literal("tool-call"),
     id: Schema.String,
@@ -178,7 +186,7 @@ export type ToolCallPart = typeof ToolCallPart.Type
  * @since 0.1.0
  * @slop
  */
-export const ToolResultPart = Object.assign(
+export const ToolResultPart = withStatics(
   Schema.Struct({
     type: Schema.Literal("tool-result"),
     toolCallId: Schema.String,
@@ -302,7 +310,7 @@ export class ToolMessage extends Schema.Class<ToolMessage>("flows/model/ToolMess
  * @since 0.1.0
  * @slop
  */
-export const Message = Object.assign(
+export const Message = withStatics(
   Schema.Union([UserMessage, AssistantMessage, ToolMessage]).pipe(Schema.toTaggedUnion("role")),
   {
     make: (message: Message): Message => message,

@@ -85,7 +85,7 @@ const localValues = new Set([
   "--token-offset"
 ])
 
-// The literals `effect/unstable/cli` accepts after a boolean flag.
+// The literals `effect/cli` accepts after a boolean flag.
 const literals: Record<string, boolean | undefined> = {
   true: true,
   "1": true,

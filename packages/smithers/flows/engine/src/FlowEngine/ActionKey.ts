@@ -9,13 +9,13 @@ import { firstPath as schemaErrorPath } from "@smthrs/canonical/IssuePath"
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
 import { Action, Flow, StepIdentity } from "@smthrs/flow"
 import { DerivedKey, type StoredKey } from "@smthrs/keys"
+import * as Node from "@smthrs/plan/Node"
 import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import type * as SchemaAST from "effect/SchemaAST"
-import * as SchemaRepresentation from "effect/SchemaRepresentation"
 
 /**
  * Extracts the hermetic boundary descriptor from an action's metadata when
@@ -114,7 +114,13 @@ export const uncanonicalKey = (
 // hashes so a failed Crypto operation can be retried with a working service.
 const declarations = new WeakMap<SchemaAST.AST, WeakMap<SchemaAST.AST, StoredKey>>()
 
-/** SHA-256 of the canonical success/error declaration document (issue #120). */
+/**
+ * SHA-256 of the canonical success/error declaration document (issue #120).
+ *
+ * The document is `Node.representationIdentity`, not the installed
+ * `SchemaRepresentation.toJson`: `effect` is a peer range, and a release that
+ * encodes a schema differently would re-key every recorded sealed step.
+ */
 const declarationDigest = Effect.fnUntraced(function*(action: Action.AnyWithProps) {
   const success = action.successSchema.ast
   const error = action.errorSchema.ast
@@ -122,8 +128,8 @@ const declarationDigest = Effect.fnUntraced(function*(action: Action.AnyWithProp
   const cached = errors?.get(error)
   if (cached !== undefined) return cached
   const digest = yield* Schema.decodeUnknownEffect(DerivedKey)({
-    success: SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(success)),
-    error: SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(error))
+    success: Node.representationIdentity(success),
+    error: Node.representationIdentity(error)
   })
   if (errors === undefined) {
     errors = new WeakMap()

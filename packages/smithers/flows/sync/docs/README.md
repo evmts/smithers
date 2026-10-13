@@ -63,9 +63,9 @@ import type { JournalEvent } from "@smthrs/journal"
 import * as SyncClient from "@smthrs/sync/SyncClient"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as RpcClient from "effect/rpc/RpcClient"
+import * as RpcSerialization from "effect/rpc/RpcSerialization"
 import * as Stream from "effect/Stream"
-import * as RpcClient from "effect/unstable/rpc/RpcClient"
-import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization"
 
 const runId = "build-42" as JournalEvent.RunId
 

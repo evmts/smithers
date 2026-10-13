@@ -2,7 +2,7 @@
  * Permission-aware process spawning.
  *
  * Smithers has no shell service of its own — process execution is Effect's
- * `effect/unstable/process`. The only thing the kernel adds is the
+ * `effect/process`. The only thing the kernel adds is the
  * `proc:spawn` capability check and the host confinement wrapper, applied to
  * the one primitive every other helper is derived from.
  *
@@ -25,8 +25,8 @@
 import { toPlatformError } from "@smthrs/capability/Permission"
 import { Effect, FileSystem, Layer, Option, Path, type Scope } from "effect"
 import { type PlatformError, systemError } from "effect/PlatformError"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner, make as makeSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
 import * as CommandLine from "./CommandLine.ts"
 import { GrantStore } from "./GrantStore.ts"
 import * as Containment from "./internal/Containment.ts"
@@ -200,7 +200,7 @@ const environmentNames = (command: ChildProcess.StandardCommand): ReadonlyArray<
  * @category services
  * @since 1.0.0-rc.0
  */
-export { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+export { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 
 /**
  * Derives the full six-method surface from one `spawn`, so `exitCode`,
@@ -210,7 +210,7 @@ export { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export { make } from "effect/unstable/process/ChildProcessSpawner"
+export { make } from "effect/process/ChildProcessSpawner"
 
 /**
  * Constructs an unavailable spawner stub.

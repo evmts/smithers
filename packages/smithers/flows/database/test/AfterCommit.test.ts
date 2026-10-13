@@ -1,8 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Context, Deferred, Effect, Fiber, Layer } from "effect"
+import * as SqlClient from "effect/sql/SqlClient"
+import * as SqlError from "effect/sql/SqlError"
 import { TestClock } from "effect/testing"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
-import * as SqlError from "effect/unstable/sql/SqlError"
 import * as DurableWriter from "../src/DurableWriter.ts"
 import * as TestDatabase from "../src/test/TestDatabase.ts"
 

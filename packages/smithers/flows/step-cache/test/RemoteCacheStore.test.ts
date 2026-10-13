@@ -6,16 +6,16 @@ import { describe, expect, it, vi } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import * as Headers from "effect/http/Headers"
+import * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientError from "effect/http/HttpClientError"
+import * as HttpClientRequest from "effect/http/HttpClientRequest"
+import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import { TestClock } from "effect/testing"
 import * as Tracer from "effect/Tracer"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
-import * as Headers from "effect/unstable/http/Headers"
-import * as HttpClient from "effect/unstable/http/HttpClient"
-import * as HttpClientError from "effect/unstable/http/HttpClientError"
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
 import * as CacheStore from "../src/CacheStore.ts"
@@ -110,7 +110,8 @@ describe("lookups", () => {
       expect(tier.calls[0]!.headers["authorization"]).toBe("Bearer original")
     }))
 
-  it.effect("redacts configured credential headers only within cache HTTP spans", () =>
+  /** A lookup, a publication, an eviction, then one request outside the cache, with every client span. */
+  const tracedOperations = (recordHeaders: boolean) =>
     Effect.gen(function*() {
       const spans: Array<Tracer.NativeSpan> = []
       const tracer = Tracer.make({
@@ -139,7 +140,7 @@ describe("lookups", () => {
         headers: { "X-Cache-Token": "synthetic-cache-secret", "x-cache-key": "second-secret" }
       }).pipe(Effect.provideService(HttpClient.HttpClient, client))
       const names = yield* Headers.CurrentRedactedNames
-      yield* Effect.gen(function*() {
+      const operations = Effect.gen(function*() {
         yield* store.get(entry.keyDigest)
         yield* store.put(entry)
         yield* store.evict(entry.keyDigest)
@@ -150,12 +151,45 @@ describe("lookups", () => {
         Effect.provideService(Headers.CurrentRedactedNames, [...names, /^x-tenant-/]),
         Effect.provideService(Tracer.Tracer, tracer)
       )
+      yield* (recordHeaders
+        ? operations.pipe(Effect.provideService(HttpClient.TracerHeaderFilter, () => true))
+        : operations)
       const clientSpans = spans.filter((span) => span.kind === "client")
       expect(clientSpans).toHaveLength(4)
       expect(requests.map((request) => request.method)).toEqual(["GET", "PUT", "DELETE", "GET"])
+      // The credentials went out on the wire, so the span is the only place
+      // left to keep them from.
       for (let index = 0; index < 3; index++) {
         expect(requests[index]!.headers["x-cache-token"]).toBe("synthetic-cache-secret")
         expect(requests[index]!.headers["x-cache-key"]).toBe("second-secret")
+      }
+      expect(yield* Headers.CurrentRedactedNames).toEqual(names)
+      const attributes = JSON.stringify(clientSpans.map((span) => [...span.attributes]))
+      for (const secret of ["default-secret", "caller-secret", "synthetic-cache-secret", "second-secret"]) {
+        expect(attributes).not.toContain(secret)
+      }
+      return { clientSpans, attributes }
+    })
+
+  it.effect("records no header in cache HTTP spans unless the host turns header capture on", () =>
+    Effect.gen(function*() {
+      const { attributes, clientSpans } = yield* tracedOperations(false)
+      expect(attributes).not.toContain("http.request.header.")
+      expect(attributes).not.toContain("http.response.header.")
+      // The HTTP client names each span for the request method. A miss and an
+      // eviction of an absent entry answer 404, which marks their spans failed.
+      expect(clientSpans.map((span) => [span.name, span.attributes.get("error.type")])).toEqual([
+        ["GET", "404"],
+        ["PUT", undefined],
+        ["DELETE", "404"],
+        ["GET", "404"]
+      ])
+    }))
+
+  it.effect("redacts configured credential headers only within cache HTTP spans that record headers", () =>
+    Effect.gen(function*() {
+      const { clientSpans } = yield* tracedOperations(true)
+      for (let index = 0; index < 3; index++) {
         expect(clientSpans[index]!.attributes.get("http.request.header.x-cache-token")).toBe("<redacted>")
         expect(clientSpans[index]!.attributes.get("http.request.header.x-cache-key")).toBe("<redacted>")
       }
@@ -165,7 +199,6 @@ describe("lookups", () => {
         expect(span.attributes.get("http.request.header.x-public")).toBe("public-value")
       }
       expect(clientSpans[3]!.attributes.get("http.request.header.x-cache-token")).toBe("public-control")
-      expect(yield* Headers.CurrentRedactedNames).toEqual(names)
     }))
 
   it.effect("rejects accessor-backed headers without invoking them", () =>

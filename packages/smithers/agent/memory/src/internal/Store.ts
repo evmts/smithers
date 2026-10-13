@@ -6,7 +6,7 @@
 
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import type * as SqlClient from "effect/unstable/sql/SqlClient"
+import type * as SqlClient from "effect/sql/SqlClient"
 import { MemoryError } from "../MemoryError.ts"
 import type { Fact, ListNotesInput, Note, NoteStatus, Provenance, SearchRowsInput, Thread } from "../MemoryStore.ts"
 import * as Namespace from "../Namespace.ts"
@@ -79,7 +79,7 @@ export interface NoteRow {
 }
 
 /**
- * A composable SQL condition. `effect/unstable/sql` publishes no entry point
+ * A composable SQL condition. `effect/sql` publishes no entry point
  * for its `Statement` module, so the type is read back off `sql.literal`.
  *
  * @category models

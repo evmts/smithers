@@ -13,7 +13,7 @@ import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs
 import { Jj } from "@smthrs/kernel"
 import { RunStore } from "@smthrs/run-store"
 import { Cause, Effect, Exit, Layer, Option, Schema } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"

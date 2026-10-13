@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import * as ExecutionSnapshot from "../src/ExecutionSnapshot.ts"
 import { fixture, onFile, state } from "./ExecutionSnapshotFixture.ts"
 

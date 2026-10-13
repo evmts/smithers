@@ -9,9 +9,9 @@ sidebar:
 
 Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
 
-`effect` is a peer dependency declared at exactly `4.0.0-rc.115`, so install it
-yourself at that version. The services these adapters implement live in Effect 4
-(`effect/FileSystem`, `effect/Path`, and `effect/unstable/process`), Effect 3
+`effect` is a peer dependency in the range `^4.0.4`, so install it
+yourself in that range. The services these adapters implement live in Effect 4
+(`effect/FileSystem`, `effect/Path`, and `effect/process`), Effect 3
 does not satisfy the peer range, and two copies of `effect` in one program are
 two sets of service tags.
 

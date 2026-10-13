@@ -5,7 +5,7 @@
  */
 
 import * as Layer from "effect/Layer"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import type { Provider } from "../RemoteChildProcessSpawner/Provider.ts"
 import { make } from "./make.ts"
 import type { Options } from "./Options.ts"

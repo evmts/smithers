@@ -1,13 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
-import {
-  Effect,
-  Encoding,
-  FileSystem as EffectFileSystem,
-  Option,
-  Path as EffectPath,
-  PlatformError,
-  Stream
-} from "effect"
+import { Effect, FileSystem as EffectFileSystem, Option, Path as EffectPath, PlatformError, Stream } from "effect"
+import { Base64 } from "effect/encoding"
 import * as FileSystem from "../src/FileSystem.ts"
 import { emptyPolicy as closedPolicy } from "../src/GrantStore.ts"
 import { GrantStore } from "../src/GrantStore.ts"
@@ -128,7 +121,7 @@ describe("FileSystem.confined", () => {
         path: "/alias/a.txt"
       })
       expect(viaConfined.requests.find((request) => request.operation === "writeFile")).toMatchObject({
-        data: Encoding.encodeBase64(new Uint8Array([1, 2]))
+        data: Base64.encode(new Uint8Array([1, 2]))
       })
     }).pipe(Effect.provide(EffectPath.layer)))
 

@@ -1,6 +1,6 @@
 /** Scoped adapter for retained asynchronous review algorithms. Every operation uses caller-owned guarded services. */
 import { Effect, type FileSystem } from "effect"
-import type * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner"
+import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner"
 import { AsyncLocalStorage } from "node:async_hooks"
 
 export interface Io {

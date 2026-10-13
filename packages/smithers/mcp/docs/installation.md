@@ -17,8 +17,8 @@ Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/m
 ## Requirements
 
 - Node.js 26.4.0 or later.
-- [`effect`](https://effect.website) 4.0.0-rc.115, a peer dependency and the
-  version this package is built against. Connection and tool-call operations
+- [`effect`](https://effect.website) in the range `^4.0.4`, a peer dependency.
+  The package is built and tested on 4.0.4. Connection and tool-call operations
   return an `Effect`, and every schema is an `effect/Schema`. `McpFlows.mcp`
   is synchronous and returns a `FlowBinding.Source`; `Diagnostics.layer` is a
   `Layer` constructor.
@@ -40,7 +40,7 @@ caller's environment:
 On Node, `@effect/platform-node` provides the spawner:
 
 ```bash
-pnpm add @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115
+pnpm add @effect/platform-node @effect/platform-node-shared
 ```
 
 ```ts

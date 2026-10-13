@@ -4,22 +4,47 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import test from "node:test"
-import { EXPECTED_EFFECT_VERSION } from "./check-single-effect-version.mjs"
+import { satisfies } from "semver"
+import {
+  EXPECTED_EFFECT_VERSION,
+  SUPPORTED_EFFECT_RANGE,
+  UNSUPPORTED_EFFECT_VERSION
+} from "./check-single-effect-version.mjs"
 import {
   adapterProfiles,
-  adjacentEffectVersion,
   assertConsumerTree,
   candidateVersion,
   consumerCacheFlags,
   importedPackages,
+  latestEffectVersion,
   migrationProfiles,
   minimalProfiles,
+  onEffect,
   readQuickstart,
+  refuseUnsupportedEffect,
   runConsumerProfile,
   runQuickstartConsumer,
+  specName,
 } from "./release-consumers.mjs"
 import { releaseRegistry } from "./release-registry.mjs"
 import { repoRoot } from "./workspace-packages.mjs"
+
+/**
+ * Makes `url` the default registry of both package managers and returns the
+ * undo. pnpm 11 reads `pnpm_config_registry` and ignores npm's variable, so
+ * setting npm's alone left every pnpm consumer here resolving `effect` from
+ * the public registry, or from a warm store, instead of from the fixture.
+ */
+const useRegistry = (url) => {
+  const names = ["npm_config_registry", "pnpm_config_registry"]
+  const previous = names.map((name) => process.env[name])
+  for (const name of names) process.env[name] = url
+  return () =>
+    names.forEach((name, index) => {
+      if (previous[index] === undefined) delete process.env[name]
+      else process.env[name] = previous[index]
+    })
+}
 
 test("external pnpm consumers retain the workspace's configured store and report cache reuse", () => {
   const root = mkdtempSync(join(tmpdir(), "smithers-release-store-"))
@@ -50,6 +75,13 @@ test("external pnpm consumers retain the workspace's configured store and report
       "an external project uses the populated store, including its version suffix"
     )
     assert.deepEqual(consumerCacheFlags("npm", root), ["--prefer-offline"])
+    // An install that follows a tag reads today's metadata and keeps the store.
+    assert.deepEqual(consumerCacheFlags("npm", root, { offline: false }), [])
+    assert.deepEqual(consumerCacheFlags("pnpm", root, { offline: false }), [
+      "--store-dir",
+      actualStore,
+      "--reporter=append-only"
+    ])
     assert.throws(() => consumerCacheFlags("unknown", root), /Unsupported release package manager/)
   } finally {
     rmSync(root, { recursive: true, force: true })
@@ -78,16 +110,64 @@ test("every library, adapter and migration profile selects the supplied candidat
   }
 })
 
-test("the incompatible consumer requests the published RC one below the pin", () => {
-  const [, rc] = /-rc\.(\d+)$/.exec(EXPECTED_EFFECT_VERSION)
-  assert.equal(adjacentEffectVersion, EXPECTED_EFFECT_VERSION.replace(/-rc\.\d+$/, "-rc." + (Number(rc) - 1)))
-  assert.notEqual(adjacentEffectVersion, EXPECTED_EFFECT_VERSION)
+test("the refused Effect is outside the supported range and the tested release is inside it", () => {
+  assert.equal(satisfies(UNSUPPORTED_EFFECT_VERSION, SUPPORTED_EFFECT_RANGE), false)
+  assert.equal(satisfies(EXPECTED_EFFECT_VERSION, SUPPORTED_EFFECT_RANGE), true)
 })
 
-// Release logic that reads the pin imports it from check-single-effect-version.mjs.
-// A second literal is the drift the exact-pin gate exists to stop: a bump there
-// left these files asserting the old RC until a release rehearsal failed.
-test("the release consumer matrix and the package contract declare no Effect RC of their own", () => {
+test("a profile moved onto another Effect moves the application's Effect packages and nothing else", () => {
+  const [node] = adapterProfiles([{ version: "1.0.0" }]).filter((profile) => profile.name === "node")
+  const moved = onEffect(node, "4.9.0", "latest")
+  assert.equal(moved.name, "node-effect-latest")
+  // The copied adapter probe still runs the Node program.
+  assert.equal(moved.probe, "node")
+  assert.equal(onEffect(moved, "4.9.1").probe, "node")
+  assert.equal(moved.effect, "4.9.0")
+  for (const [name, spec] of Object.entries(moved.dependencies)) {
+    const family = name === "effect" || name.startsWith("@effect/")
+    assert.equal(spec, family ? "4.9.0" : node.dependencies[name], name)
+  }
+  assert.deepEqual(
+    Object.keys(moved.dependencies).filter((name) => moved.dependencies[name] === "4.9.0").sort(),
+    ["@effect/platform-node", "@effect/platform-node-shared", "@effect/sql-sqlite-node", "effect"]
+  )
+  assert.deepEqual([moved.absent, moved.imports], [node.absent, node.imports])
+  // The pinned profile is untouched: it keeps installing the tested release.
+  assert.equal(node.effect, undefined)
+  assert.equal(node.dependencies.effect, EXPECTED_EFFECT_VERSION)
+})
+
+test("a registry spec names its package with or without a scope, a version, a range or a tag", () => {
+  for (
+    const [spec, name] of [
+      ["effect", "effect"],
+      ["effect@4.0.4", "effect"],
+      ["effect@^4.0.4", "effect"],
+      ["effect@latest", "effect"],
+      ["@smthrs/flows", "@smthrs/flows"],
+      ["@smthrs/flows@next", "@smthrs/flows"],
+      ["@smthrs/flows@1.0.0-rc.5", "@smthrs/flows"],
+      ["@effect/sql-sqlite-bun", "@effect/sql-sqlite-bun"],
+      ["@effect/sql-sqlite-bun@>=4.0.4 <5", "@effect/sql-sqlite-bun"]
+    ]
+  ) assert.equal(specName(spec), name, spec)
+})
+
+// Release logic that reads the Effect release or its supported range imports
+// them from check-single-effect-version.mjs. A second literal is the drift that
+// gate exists to stop: a bump there left these files asserting the old RC until
+// a release rehearsal failed.
+test("the release consumer matrix and the package contract declare no Effect version of their own", () => {
+  // The files name other packages' versions, so only Effect's are refused: any
+  // release candidate, and the tested release with or without a range operator.
+  const tested = EXPECTED_EFFECT_VERSION.replaceAll(".", "\\.")
+  const restated = new RegExp(`\\d+\\.\\d+\\.\\d+-rc\\.\\d+|(?<![\\d.])${tested}(?![\\d.])`, "g")
+  assert.deepEqual("0.4.0.44 14.0.4 4.0.40".match(restated), null, "a longer version is another package's")
+  assert.deepEqual(`effect@${EXPECTED_EFFECT_VERSION} ${SUPPORTED_EFFECT_RANGE} ${UNSUPPORTED_EFFECT_VERSION}`.match(restated), [
+    EXPECTED_EFFECT_VERSION,
+    EXPECTED_EFFECT_VERSION,
+    UNSUPPORTED_EFFECT_VERSION
+  ])
   for (
     const file of [
       "release-consumers.mjs",
@@ -96,8 +176,8 @@ test("the release consumer matrix and the package contract declare no Effect RC 
       "repo-contract/package-contract.test.mjs"
     ]
   ) {
-    const literals = readFileSync(join(import.meta.dirname, file), "utf8").match(/\d+\.\d+\.\d+-rc\.\d+/g) ?? []
-    assert.deepEqual(literals, [], `${file} hand-restates a release-line version: ${literals.join(", ")}`)
+    const literals = readFileSync(join(import.meta.dirname, file), "utf8").match(restated) ?? []
+    assert.deepEqual(literals, [], `${file} hand-restates an Effect version: ${literals.join(", ")}`)
   }
 })
 
@@ -170,7 +250,7 @@ test("candidate selection rejects empty, mixed and non-exact versions", () => {
 test("consumer requests resolve against a stable-only candidate registry", async () => {
   const root = mkdtempSync(join(tmpdir(), "smithers-consumer-version-"))
   let registry
-  const previousRegistry = process.env.npm_config_registry
+  let restoreRegistry = () => {}
   try {
     const version = "1.0.0"
     const entries = []
@@ -184,7 +264,7 @@ test("consumer requests resolve against a stable-only candidate registry", async
           version,
           type: "module",
           main: "index.js",
-          dependencies: { effect: EXPECTED_EFFECT_VERSION }
+          peerDependencies: { effect: SUPPORTED_EFFECT_RANGE }
         })
       )
       writeFileSync(join(directory, "package/index.js"), "export const installed = true\n")
@@ -220,7 +300,7 @@ test("consumer requests resolve against a stable-only candidate registry", async
     }])
     // All package bytes, including the minimal Effect identity fixture, come
     // from loopback. No existing publication or external install is needed.
-    process.env.npm_config_registry = registry.url
+    restoreRegistry = useRegistry(registry.url)
     const profiles = [minimalProfiles(entries)[0]]
     for (const profile of profiles) {
       for (const [name, requested] of Object.entries(profile.dependencies)) {
@@ -237,8 +317,7 @@ test("consumer requests resolve against a stable-only candidate registry", async
       assert.equal(installed.effectCopies.length, 1)
     }
   } finally {
-    if (previousRegistry === undefined) delete process.env.npm_config_registry
-    else process.env.npm_config_registry = previousRegistry
+    restoreRegistry()
     await registry?.close()
     rmSync(root, { recursive: true, force: true })
   }
@@ -250,16 +329,36 @@ test("consumer tree refuses an off-pin Effect-family dependency even with one co
     const install = (name, version) => {
       const directory = join(consumer, "node_modules", name)
       mkdirSync(directory, { recursive: true })
-      writeFileSync(join(directory, "package.json"), JSON.stringify({ name, version }))
+      // An adapter on the Effect release line peers `effect` from its own version up.
+      const peer = name === "effect" ? {} : { peerDependencies: { effect: "^" + version } }
+      writeFileSync(join(directory, "package.json"), JSON.stringify({ name, version, ...peer }))
     }
+    const [earlier, later] = ["4.0.3", "4.1.0"]
     install("effect", EXPECTED_EFFECT_VERSION)
-    install("@effect/platform-node-shared", adjacentEffectVersion)
     const profile = { name: "off-pin-family", dependencies: { effect: EXPECTED_EFFECT_VERSION } }
+    // An adapter that needs a later Effect than the installed one: #2398.
+    install("@effect/platform-node-shared", later)
+    assert.throws(() => assertConsumerTree(consumer, profile), /do not accept effect@/)
+    // An earlier adapter accepts this Effect, and a pinned profile still
+    // holds the whole family to the tested release.
+    install("@effect/platform-node-shared", earlier)
     assert.throws(() => assertConsumerTree(consumer, profile), /Effect-family packages off/)
     install("@effect/platform-node-shared", EXPECTED_EFFECT_VERSION)
     const actual = assertConsumerTree(consumer, profile)
     assert.equal(actual.effectCopies.length, 1)
     assert.equal(actual.effectFamily.length, 2)
+    // A profile moved onto a later Effect keeps the adapter built for the
+    // tested release, and fails when the tree holds some other Effect.
+    assert.throws(() => assertConsumerTree(consumer, onEffect(profile, later)), /installed another Effect release/)
+    install("effect", later)
+    assert.equal(assertConsumerTree(consumer, onEffect(profile, later)).effectFamily.length, 2)
+    assert.throws(() => assertConsumerTree(consumer, profile), /Effect-family packages off/)
+    // An Effect below the range is refused whatever the profile asked for.
+    install("effect", UNSUPPORTED_EFFECT_VERSION)
+    for (const asked of [profile, onEffect(profile, UNSUPPORTED_EFFECT_VERSION)]) {
+      assert.throws(() => assertConsumerTree(consumer, asked), /is outside the supported range/)
+    }
+    install("effect", EXPECTED_EFFECT_VERSION)
     const nested = join(consumer, "node_modules/nested/node_modules/effect")
     mkdirSync(nested, { recursive: true })
     writeFileSync(
@@ -273,6 +372,105 @@ test("consumer tree refuses an off-pin Effect-family dependency even with one co
   }
 })
 
+/** Packs fixture packages into `directory` and returns their release-manifest entries. */
+const packFixtures = (directory, manifests) =>
+  manifests.map((manifest) => {
+    const name = manifest.name.replace("/", "-")
+    mkdirSync(join(directory, name, "package"), { recursive: true })
+    writeFileSync(join(directory, name, "package/package.json"), JSON.stringify({ type: "module", main: "index.js", ...manifest }))
+    writeFileSync(join(directory, name, "package/index.js"), "export const installed = true\n")
+    execFileSync("tar", ["-czf", join(directory, name + ".tgz"), "-C", join(directory, name), "package"])
+    return { name: manifest.name, version: manifest.version, filename: name + ".tgz" }
+  })
+
+/** Serves each roster from a loopback registry that is also the default registry while `body` runs. */
+const withRegistries = async (prefix, rosters, body) => {
+  const root = mkdtempSync(join(tmpdir(), prefix))
+  let restoreRegistry = () => {}
+  const registries = []
+  try {
+    for (const [name, manifests] of Object.entries(rosters)) {
+      const directory = join(root, name)
+      const entries = packFixtures(directory, manifests)
+      const registry = await releaseRegistry(directory, entries)
+      registries.push(registry)
+      restoreRegistry()
+      restoreRegistry = useRegistry(registry.url)
+      await body(name, registry, entries.filter((entry) => entry.name.startsWith("@smthrs/")))
+    }
+  } finally {
+    restoreRegistry()
+    for (const registry of registries) await registry.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+}
+
+test("each manager refuses an Effect below the supported range, and the gate fails when a library admits it", { timeout: 5 * 60_000 }, async () => {
+  const version = "1.0.0"
+  // Each registry holds the refused release alone, so no other Effect can be installed in its place.
+  const roster = (peer) => [
+    { name: "@smthrs/database", version, peerDependencies: { effect: peer } },
+    { name: "effect", version: UNSUPPORTED_EFFECT_VERSION }
+  ]
+  await withRegistries("smithers-unsupported-effect-", {
+    ranged: roster(SUPPORTED_EFFECT_RANGE),
+    // What an over-wide peer would publish: the old release candidate installs cleanly.
+    admitting: roster(">=" + UNSUPPORTED_EFFECT_VERSION)
+  }, async (name, registry, entries) => {
+    for (const manager of ["npm", "pnpm"]) {
+      const run = refuseUnsupportedEffect(manager, registry.url, entries)
+      if (name === "ranged") {
+        const refusal = await run
+        assert.notEqual(refusal.exit, 0, manager)
+        assert.deepEqual(
+          { ...refusal, exit: undefined },
+          { manager, exit: undefined, effect: UNSUPPORTED_EFFECT_VERSION, range: SUPPORTED_EFFECT_RANGE }
+        )
+      } else {
+        await assert.rejects(run, /must be refused/, manager + " installed an Effect the range excludes")
+      }
+    }
+  })
+})
+
+test("a profile runs on the Effect the registry tags latest, beside the adapter a library pins", { timeout: 5 * 60_000 }, async () => {
+  const version = "1.0.0"
+  // A release after the tested one, as the registry will serve it one day.
+  const later = "4.9.0"
+  assert.equal(satisfies(later, SUPPORTED_EFFECT_RANGE), true)
+  await withRegistries("smithers-effect-latest-", {
+    later: [
+      // The published shape: a ranged peer, and a driver at the tested release exactly.
+      {
+        name: "@smthrs/database",
+        version,
+        dependencies: { "@effect/sql-sqlite-node": EXPECTED_EFFECT_VERSION },
+        peerDependencies: { effect: SUPPORTED_EFFECT_RANGE }
+      },
+      { name: "@effect/sql-sqlite-node", version: EXPECTED_EFFECT_VERSION, peerDependencies: { effect: "^" + EXPECTED_EFFECT_VERSION } },
+      { name: "effect", version: later }
+    ]
+  }, async (_name, registry, entries) => {
+    assert.equal(await latestEffectVersion(), later, "read from the registry, not from this repository's pin")
+    const pinned = {
+      name: "application",
+      dependencies: { "@smthrs/database": candidateVersion(entries), effect: EXPECTED_EFFECT_VERSION },
+      imports: ["@smthrs/database"]
+    }
+    const profile = onEffect(pinned, await latestEffectVersion(), "latest")
+    for (const manager of ["npm", "pnpm"]) {
+      const installed = await runConsumerProfile(profile, manager, registry.url)
+      assert.equal(installed.profile, "application-effect-latest")
+      assert.equal(installed.effectCopies.length, 1, manager)
+      assert.deepEqual(
+        installed.effectFamily.map((entry) => entry.name + "@" + entry.version),
+        ["@effect/sql-sqlite-node@" + EXPECTED_EFFECT_VERSION, "effect@" + later],
+        manager + " keeps the driver the library pins beside the application's later Effect"
+      )
+    }
+  })
+})
+
 // #3838: rc.4's quickstart needed five packages its install line never named.
 const flowsPages = () => {
   const directory = join(repoRoot, "packages/smithers/flows")
@@ -283,7 +481,9 @@ const flowsPages = () => {
 
 test("the Flows quickstart imports only the packages its one install line names", () => {
   const quickstart = readQuickstart()
-  assert.deepEqual(quickstart.packages, ["@smthrs/flows@next", "effect@" + EXPECTED_EFFECT_VERSION])
+  // `effect` carries no version: the line installs the release the registry
+  // calls latest, which the supported range has to admit (#3839).
+  assert.deepEqual(quickstart.packages, ["@smthrs/flows@next", "effect"])
   assert.deepEqual(importedPackages(quickstart.program), ["@smthrs/flows", "effect"])
   assert.deepEqual(quickstart.run, ["node", "quickstart.ts"])
   assert.equal(quickstart.printed, "the note")
@@ -322,7 +522,7 @@ test("every Flows page states the manifest's Node floor and none says the packag
 
 test("the quickstart consumer passes only when the install line brings what the program imports", { timeout: 5 * 60_000 }, async () => {
   const root = mkdtempSync(join(tmpdir(), "smithers-quickstart-gate-"))
-  const previousRegistry = process.env.npm_config_registry
+  let restoreRegistry = () => {}
   const registries = []
   try {
     const version = "1.0.0"
@@ -334,7 +534,7 @@ test("the quickstart consumer passes only when the install line brings what the 
       return { name: manifest.name, version: manifest.version, filename: name + ".tgz" }
     }
     // A fixture engine: the host journals the first read, as the real one does.
-    const candidate = (name, flowsEdges) => {
+    const candidate = (name, flowsEdges, latestEffect = EXPECTED_EFFECT_VERSION) => {
       const directory = join(root, name)
       return [
         pack(directory, "flows", {
@@ -353,12 +553,13 @@ test("the quickstart consumer passes only when the install line brings what the 
           ].join("\n")
         }),
         pack(directory, "effect", {
-          name: "effect", version: EXPECTED_EFFECT_VERSION, type: "module",
+          name: "effect", version: latestEffect, type: "module",
           exports: { "./package.json": "./package.json", "./*": "./*.js" }
         }, { "Effect.js": "export const succeed = (value) => value\n" })
       ].map((entry) => ({ ...entry, directory }))
     }
-    const install = "npm install @smthrs/flows@next effect@" + EXPECTED_EFFECT_VERSION
+    // The page's own shape: `effect` with no version is whatever the registry tags latest.
+    const install = "npm install @smthrs/flows@next effect"
     const quickstart = {
       commands: ["npm init -y && npm pkg set type=module", install, 'mkdir -p workspace && echo "the note" > workspace/note.txt'],
       install,
@@ -366,7 +567,7 @@ test("the quickstart consumer passes only when the install line brings what the 
       program: [
         'import { read } from "@smthrs/flows/NodeRuntime"',
         'import * as Effect from "effect/Effect"',
-        // A warm pnpm store may serve the published Effect for this version.
+        // The fixture Effect is this one function.
         'if (typeof Effect.succeed !== "function") throw new Error("effect did not resolve")',
         'console.log(read("workspace/note.txt"))',
         ''
@@ -374,25 +575,37 @@ test("the quickstart consumer passes only when the install line brings what the 
       run: ["node", "quickstart.ts"],
       printed: "the note"
     }
-    const peer = { effect: EXPECTED_EFFECT_VERSION }
+    const peer = { effect: SUPPORTED_EFFECT_RANGE }
     const cases = [
       ["declared", { dependencies: { "@smthrs/platform-node": version }, peerDependencies: peer }, undefined],
       // rc.4's shape: the import resolves only if the program installs the peer.
       ["optional peer", {
         peerDependencies: { ...peer, "@smthrs/platform-node": version },
         peerDependenciesMeta: { "@smthrs/platform-node": { optional: true } }
-      }, /Cannot find package '@smthrs\/platform-node'/]
+      }, /Cannot find package '@smthrs\/platform-node'/],
+      // The line installs whatever the registry tags latest. An Effect the
+      // range does not admit stops npm at install; pnpm installs it with a
+      // warning, so the gate reads the tree.
+      ["latest below the range", { dependencies: { "@smthrs/platform-node": version }, peerDependencies: peer },
+        /ERESOLVE|installed effect@\S+ is outside the supported range/, UNSUPPORTED_EFFECT_VERSION]
     ]
-    for (const [name, edges, refusal] of cases) {
-      const entries = candidate(name.replace(" ", "-"), edges)
+    for (const [name, edges, refusal, latestEffect] of cases) {
+      const entries = candidate(name.replaceAll(" ", "-"), edges, latestEffect)
       const registry = await releaseRegistry(entries[0].directory, entries)
       registries.push(registry)
-      process.env.npm_config_registry = registry.url
+      restoreRegistry()
+      restoreRegistry = useRegistry(registry.url)
       for (const manager of ["npm", "pnpm"]) {
         const run = runQuickstartConsumer(manager, registry.url, { quickstart })
         if (refusal === undefined) {
           const result = await run
           assert.deepEqual(result.declared, ["@smthrs/flows", "effect"], manager + " " + name)
+          assert.equal(result.effect, EXPECTED_EFFECT_VERSION, manager + " " + name + " installs the registry's latest Effect")
+          // The matrix passes what npm calls latest. npm must install exactly
+          // it; pnpm may hold a young release back, so it is held to the range.
+          const held = runQuickstartConsumer(manager, registry.url, { quickstart, latestEffect: "4.9.9" })
+          if (manager === "npm") await assert.rejects(held, /npm quickstart installed effect@\S+, not latest 4\.9\.9/)
+          else assert.equal((await held).effect, EXPECTED_EFFECT_VERSION)
           assert.deepEqual(result.runs, ["the note", "the note"], manager + " " + name)
           assert.equal(result.install.startsWith(manager === "npm" ? "npm install " : "pnpm add "), true)
         } else {
@@ -401,8 +614,7 @@ test("the quickstart consumer passes only when the install line brings what the 
       }
     }
   } finally {
-    if (previousRegistry === undefined) delete process.env.npm_config_registry
-    else process.env.npm_config_registry = previousRegistry
+    restoreRegistry()
     for (const registry of registries) await registry.close()
     rmSync(root, { recursive: true, force: true })
   }

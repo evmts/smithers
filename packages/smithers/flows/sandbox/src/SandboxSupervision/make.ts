@@ -10,17 +10,17 @@ import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as PlatformError from "effect/PlatformError"
-import * as Ref from "effect/Ref"
-import * as Schedule from "effect/Schedule"
-import * as Scope from "effect/Scope"
-import * as Semaphore from "effect/Semaphore"
-import * as Stream from "effect/Stream"
 import {
   type ChildProcessHandle,
   type ChildProcessSpawner,
   make as makeSpawner,
   makeHandle
-} from "effect/unstable/process/ChildProcessSpawner"
+} from "effect/process/ChildProcessSpawner"
+import * as Ref from "effect/Ref"
+import * as Schedule from "effect/Schedule"
+import * as Scope from "effect/Scope"
+import * as Semaphore from "effect/Semaphore"
+import * as Stream from "effect/Stream"
 import { elapsed } from "../internal/deadline.ts"
 import { platformFailure } from "../internal/platformReason.ts"
 import { makeOpened } from "../RemoteChildProcessSpawner/layer.ts"

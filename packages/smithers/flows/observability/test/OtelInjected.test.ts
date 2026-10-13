@@ -6,6 +6,7 @@ import { Effect, Metric } from "effect"
 import { describe, expect, it, vi } from "vitest"
 import * as Otel from "../src/Otel.ts"
 import * as Resource from "../src/Resource.ts"
+import { effectVersion } from "./fixtures/effectVersion.ts"
 
 /**
  * The injected-provider branches of `Otel.layerOtel`. `Otel.test.ts` asserts
@@ -63,6 +64,12 @@ describe("Otel.layerOtel with injected providers", () => {
       expect(traceExporter.getFinishedSpans().map((span) => span.name)).toEqual(["injected-span"])
       expect(logExporter.getFinishedLogRecords().map((record) => record.body)).toEqual(["injected record"])
       expect(exportedCounters(metricExporter)).toEqual([["injected.records", [3]]])
+      // Borrowed providers keep their own resource, and the bridge names the
+      // scope of every span and log record for Effect, not for the resource.
+      const scope = { name: "effect", version: effectVersion }
+      expect(traceExporter.getFinishedSpans()[0]!.instrumentationScope).toMatchObject(scope)
+      expect(logExporter.getFinishedLogRecords()[0]!.instrumentationScope).toMatchObject(scope)
+      expect(logExporter.getFinishedLogRecords()[0]!.attributes["effect.fiberId"]).toBeTypeOf("number")
     } finally {
       await tracerProvider.shutdown()
       await loggerProvider.shutdown()

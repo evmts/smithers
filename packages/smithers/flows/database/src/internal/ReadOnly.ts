@@ -2,7 +2,7 @@
  * @since 1.0.0
  */
 
-import type { SqlClient } from "effect/unstable/sql/SqlClient"
+import type { SqlClient } from "effect/sql/SqlClient"
 
 const clients = new WeakSet<SqlClient>()
 

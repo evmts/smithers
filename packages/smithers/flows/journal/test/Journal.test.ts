@@ -3,9 +3,9 @@ import { DatabaseError, DurableWriter, type Service as WriterService } from "@sm
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Deferred, Effect, Fiber, Layer, PubSub, Schema, Stream, Tracer } from "effect"
 import type * as Scope from "effect/Scope"
+import * as SqlClient from "effect/sql/SqlClient"
+import type * as Statement from "effect/sql/Statement"
 import { TestClock } from "effect/testing"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
-import type * as Statement from "effect/unstable/sql/Statement"
 import { EntriesOptions, Journal, JournalError, maxEntriesLimit } from "../src/Journal.ts"
 import {
   Entry,

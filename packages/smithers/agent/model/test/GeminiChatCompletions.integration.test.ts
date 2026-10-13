@@ -7,7 +7,7 @@
  * the ordinary suite into billable provider traffic.
  */
 import { Effect, Layer, Redacted, Result, Stream } from "effect"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { describe, expect, it } from "vitest"
 import * as ModelEvent from "../src/ModelEvent.ts"
 import * as ModelRequest from "../src/ModelRequest.ts"

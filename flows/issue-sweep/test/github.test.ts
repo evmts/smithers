@@ -1,7 +1,7 @@
 import { Capability } from "@smthrs/kernel"
 import * as CommandLine from "@smthrs/kernel/CommandLine"
 import { Option } from "effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
+import * as ChildProcess from "effect/process/ChildProcess"
 import assert from "node:assert/strict"
 import test from "node:test"
 import { claimTool } from "../flow.ts"

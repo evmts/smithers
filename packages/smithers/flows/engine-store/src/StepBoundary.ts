@@ -16,7 +16,7 @@ import * as FileSet from "@smthrs/plan/FileSet"
 import * as Context from "effect/Context"
 import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
-import * as Encoding from "effect/Encoding"
+import * as Base64 from "effect/encoding/Base64"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Path from "effect/Path"
@@ -680,7 +680,7 @@ export const makeFileSystem = (
             path,
             digest,
             sizeBytes: bytes.length,
-            content: Encoding.encodeBase64(bytes)
+            content: Base64.encode(bytes)
           } satisfies MaterializedOutput,
           inlinedBytes: bytes.length
         }
@@ -720,7 +720,7 @@ export const makeFileSystem = (
     if (current) return
     let bytes: Uint8Array
     if (output.content !== undefined) {
-      const decoded = Encoding.decodeBase64(output.content)
+      const decoded = Base64.decode(output.content)
       if (Result.isFailure(decoded)) {
         // Inline content is cache-origin bytes: an undecodable payload is a
         // tampered durable row, classified exactly like a digest mismatch so

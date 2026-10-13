@@ -1,5 +1,5 @@
 import { Deferred, Effect, Fiber, type Layer } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 import { PersistenceError, RunNotFound } from "../src/ControlError.ts"
 import { ControlRuntime } from "../src/ControlRuntime.ts"

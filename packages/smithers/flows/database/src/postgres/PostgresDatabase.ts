@@ -5,9 +5,9 @@
 import * as PgClient from "@effect/sql-pg/PgClient"
 import * as PgTypes from "@effect/sql-pg/PgTypes"
 import { Effect, Layer, Redacted, Result, Scope } from "effect"
-import * as Reactivity from "effect/unstable/reactivity/Reactivity"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
-import type { Compiler } from "effect/unstable/sql/Statement"
+import * as Reactivity from "effect/reactivity/Reactivity"
+import * as SqlClient from "effect/sql/SqlClient"
+import type { Compiler } from "effect/sql/Statement"
 import * as ReadOnly from "../internal/ReadOnly.ts"
 import { UnsupportedDatabase } from "../internal/SqliteOpen.ts"
 

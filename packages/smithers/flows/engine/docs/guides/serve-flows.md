@@ -48,7 +48,7 @@ server:
 ```ts
 import { FlowProxy, FlowProxyServer } from "@smthrs/engine"
 import * as Layer from "effect/Layer"
-import { RpcServer } from "effect/unstable/rpc"
+import { RpcServer } from "effect/rpc"
 
 class ReviewRpcs extends FlowProxy.toRpcGroup(flows, { prefix: "flows_" }) {}
 
@@ -78,7 +78,7 @@ retry or resume the same execution.
 The HTTP form adds a group to an `HttpApi` and binds it the same way:
 
 ```ts
-import { HttpApi } from "effect/unstable/httpapi"
+import { HttpApi } from "effect/http-api"
 
 class ProxyApi extends HttpApi.make("proxy").add(
   FlowProxy.toHttpApiGroup("flows", flows)

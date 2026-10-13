@@ -23,7 +23,7 @@ request an operator resolves.
 - A test runner, for the second half:
 
 ```bash
-pnpm add -D @effect/vitest@4.0.0-rc.115 vitest@5.0.0
+pnpm add -D @effect/vitest vitest@5.0.0
 ```
 
 ## Build the raw host

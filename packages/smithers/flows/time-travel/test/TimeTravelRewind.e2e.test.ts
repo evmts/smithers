@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { FlowEngine } from "@smthrs/engine"
 import * as Effect from "effect/Effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { execFileSync } from "node:child_process"
 import { writeFileSync } from "node:fs"
 import { readFile, writeFile } from "node:fs/promises"

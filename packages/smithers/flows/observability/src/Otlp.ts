@@ -5,7 +5,7 @@
  * `Metric` counters on their hot paths; what they deliberately do not do is
  * ship an exporter. This module is that exporter: one layer that installs
  * Effect's own OTLP logger, metrics exporter, and tracer
- * (`effect/unstable/observability/Otlp`) against a collector endpoint, with
+ * (`effect/observability/Otlp`) against a collector endpoint, with
  * the flows service identity filled in. Nothing beyond `effect` is involved;
  * no OpenTelemetry SDK dependency.
  *
@@ -25,21 +25,21 @@ import * as ConfigProvider from "effect/ConfigProvider"
 import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import * as Headers from "effect/http/Headers"
+import type * as HttpBody from "effect/http/HttpBody"
+import * as HttpClient from "effect/http/HttpClient"
+import type * as HttpClientRequest from "effect/http/HttpClientRequest"
+import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import * as Layer from "effect/Layer"
 import * as Logger from "effect/Logger"
 import * as Metric from "effect/Metric"
+import * as Otlp from "effect/observability/Otlp"
 import * as Option from "effect/Option"
 import * as References from "effect/References"
 import * as Schema from "effect/Schema"
 import * as Semaphore from "effect/Semaphore"
 import * as Tracer from "effect/Tracer"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
-import * as Headers from "effect/unstable/http/Headers"
-import type * as HttpBody from "effect/unstable/http/HttpBody"
-import * as HttpClient from "effect/unstable/http/HttpClient"
-import type * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
-import * as Otlp from "effect/unstable/observability/Otlp"
 import * as Endpoint from "./Endpoint.ts"
 import * as Resource from "./Resource.ts"
 
@@ -80,9 +80,11 @@ const maxInFlight = 4
 export const maxRequestBytes = 1024 * 1024
 const requestTimeout = "10 seconds"
 const diagnosticIntervalMillis = 60_000
-// The envelope around the resource in every request repeats `service.name` as
-// the instrumentation scope name: at most 1,024 code units, at most six bytes
-// each once JSON-escaped, so under 8 KiB together with the envelope's own keys.
+// The envelope around the resource in a metrics request repeats `service.name`
+// as the instrumentation scope name: at most 1,024 code units, at most six
+// bytes each once JSON-escaped, so under 8 KiB together with the envelope's own
+// keys. Log and trace requests name their scope `effect` with the Effect
+// version instead, which is smaller.
 /**
  * Reserved bytes for request wrappers and the escaped instrumentation scope.
  * @category transport
@@ -95,8 +97,9 @@ export const maximumEnvelopeBytes = 8 * 1024
  *
  * The transport discards a request over 1 MiB, and the resource rides in every
  * request, so the largest resource `Resource.decode` admits
- * (`Resource.maximumResourceBytes`, 128 KiB) and the envelope that repeats the
- * service name (under 8 KiB) come off the top. The 888 KiB left gives each
+ * (`Resource.maximumResourceBytes`, 128 KiB) and the envelope, which in a
+ * metrics request repeats the service name (under 8 KiB), come off the top.
+ * The 888 KiB left gives each
  * record of a full 1,000-record logger or tracer batch about 900 bytes, three
  * to four times a bare log record or span, and gives the metrics snapshot room
  * for several thousand series. Every resource the decoder accepts therefore
@@ -111,10 +114,42 @@ export const reservedBatchBytes = maxRequestBytes - Resource.maximumResourceByte
 
 type DiscardReason = "oversized" | "stalled" | "saturated"
 
+/**
+ * A collector's answer reduced to what the exporter acts on: its status and
+ * its `retry-after` delay, with no body.
+ *
+ * `Response` refuses a status outside 200 to 599 and a malformed header value.
+ * Neither is a collector's answer, so `Response.error()` reports it as status
+ * 0, which the exporter fails without retrying. A browser already reports a
+ * refused redirect that way.
+ */
+const withoutBody = (response: HttpClientResponse.HttpClientResponse): HttpClientResponse.HttpClientResponse => {
+  const retryAfter = response.headers["retry-after"]
+  let answer: Response
+  try {
+    answer = new Response(null, {
+      status: response.status,
+      headers: retryAfter === undefined ? {} : { "retry-after": retryAfter }
+    })
+  } catch {
+    answer = Response.error()
+  }
+  return HttpClientResponse.fromWeb(response.request, answer)
+}
+
 const boundedClient = Layer.effect(
   HttpClient.HttpClient,
   Effect.gen(function*() {
-    const client = yield* HttpClient.HttpClient
+    // The exporter reads every response body to its end, after the deadline
+    // and the in-flight limit below have let the request go. A collector that
+    // never ended its answer would stall that signal and grow the buffered
+    // body without bound. So the exchange ends here: the exporter receives the
+    // status and retry delay, and closing the scope aborts the transport with
+    // the body unread.
+    const client = HttpClient.transformResponse(
+      HttpClient.withScope(yield* HttpClient.HttpClient),
+      (exchange) => exchange.pipe(Effect.map(withoutBody), Effect.scoped)
+    )
     const clock = yield* Clock
     // The loggers installed when this transport is acquired. The OTLP logger
     // the same acquisition installs does not exist yet, so a diagnostic pinned
@@ -329,6 +364,8 @@ export interface Options {
  * once a minute a `Warn` record with code `otlp_export_discarded` names the
  * reason, the request size, and the running total through the loggers that
  * were installed when the layer was acquired, never through this exporter.
+ * A collector's response body is never read: the exporter acts on the status
+ * and the `retry-after` header, and the exchange ends when they arrive.
  *
  * **Details**
  *

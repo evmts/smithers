@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Stream } from "effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
+import * as ChildProcess from "effect/process/ChildProcess"
 import { once } from "node:events"
 import { existsSync, readdirSync, statSync } from "node:fs"
 import type { Socket } from "node:net"

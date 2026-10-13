@@ -8,9 +8,9 @@
 
 import * as Dialect from "@smthrs/database/Dialect"
 import * as Effect from "effect/Effect"
-import type * as SqlClient from "effect/unstable/sql/SqlClient"
-import type * as SqlError from "effect/unstable/sql/SqlError"
-import type { Fragment, Statement } from "effect/unstable/sql/Statement"
+import type * as SqlClient from "effect/sql/SqlClient"
+import type * as SqlError from "effect/sql/SqlError"
+import type { Fragment, Statement } from "effect/sql/Statement"
 import type { DatabaseService } from "../Database.ts"
 import type { Kind } from "../Namespace.ts"
 import { literalFtsQuery } from "./FtsQuery.ts"

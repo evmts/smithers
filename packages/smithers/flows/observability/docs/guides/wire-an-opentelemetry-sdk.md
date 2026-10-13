@@ -140,8 +140,11 @@ your exporters and give them to the provider you build.
 
 You can still pass existing providers directly. The layer cannot change the
 resource they captured at construction. In that form, the resource option
-controls only metrics and tracer instrumentation scope, not log or span resource
-attributes. Construct both providers with the intended resource before injection,
+controls only the metric resource, not log or span resource attributes.
+Whichever form you use, spans and log records carry the instrumentation scope
+`effect` with the Effect version, and the span status and log attributes
+described in
+[What the collector receives](./export-to-a-collector.md#what-the-collector-receives). Construct both providers with the intended resource before injection,
 or use the factories above to receive the validated resource.
 
 Each of the three is optional and each is bridged only when supplied, so a
@@ -173,14 +176,17 @@ const resource = Resource.layer({
 `Resource.configToAttributes` is the pure projection of the same configuration
 into OpenTelemetry attributes, for code that needs the attribute record rather
 than a layer. It reads no environment variables: attributes come from your
-configuration and the SDK's fixed `telemetry.sdk.name` and
-`telemetry.sdk.language` fields, which are included in the admission budget.
+configuration and the SDK's `telemetry.sdk.name`, `telemetry.sdk.language` and
+`telemetry.sdk.version` fields, which are included in the admission budget. An
+attribute of yours with one of those three names replaces the SDK's value.
 
 ## Default OTLP export limits
 
 `Otlp.layer` and `Otlp.layerFetch` share a limit of four active HTTP requests
 across logs, traces, and metrics within each layer acquisition. Each request has
 a ten-second timeout that interrupts the transport and aborts a stalled fetch.
+A request ends when the collector's status arrives: the response body is not
+read, so a collector that never finishes its answer holds no slot.
 `shutdownTimeout` separately bounds the final scope flush.
 
 Logs and traces flush at 1,000 records or the export interval. The transport has

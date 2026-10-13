@@ -31,9 +31,11 @@
 import { dual } from "effect/Function"
 import type * as Pipeable from "effect/Pipeable"
 import type * as Schema from "effect/Schema"
+import type * as SchemaAST from "effect/SchemaAST"
 import type * as Types from "effect/Types"
 import { GraphBuildError } from "./GraphBuildError.ts"
 import * as internal from "./internal/node.ts"
+import * as internalSchemaIdentity from "./internal/SchemaIdentity.ts"
 import * as Planned from "./Planned.ts"
 
 /**
@@ -842,6 +844,83 @@ export const catchFilter = (ast: Ast): Schema.Top | undefined => ast._tag === "C
  * @slop
  */
 export const functionIdentity = (operation: unknown): FunctionIdentity => internal.functionIdentity(operation)
+
+/**
+ * The document a schema's identity is: JSON-Schema-shaped, and the same bytes
+ * under every `effect` release this package supports.
+ *
+ * @since 1.0.0
+ * @category engine
+ */
+export type SchemaIdentity = internalSchemaIdentity.Document
+
+/**
+ * The one option a schema's identity is taken under: whether an object closes
+ * over the keys it declares (`"error"`) or leaves others open (`"ignore"`,
+ * the default). It has the meaning it has in `Schema.toJsonSchemaDocument`.
+ *
+ * @since 1.0.0
+ * @category engine
+ */
+export type SchemaIdentityOptions = internalSchemaIdentity.Options
+
+/**
+ * The refusal `schemaIdentity` and `representationIdentity` raise for a schema
+ * a step key cannot be derived from. Its message is the one
+ * `effect@4.0.0-rc.115` gave for the same schema, where it gave one.
+ *
+ * @since 1.0.0
+ * @category errors
+ */
+export const SchemaIdentityError = internalSchemaIdentity.SchemaIdentityError
+
+/**
+ * The type of {@link SchemaIdentityError}.
+ *
+ * @since 1.0.0
+ * @category errors
+ */
+export type SchemaIdentityError = internalSchemaIdentity.SchemaIdentityError
+
+/**
+ * Identifies a schema by the constraints it documents, so a call re-keys when
+ * what its callee accepts or produces changes, and a catch re-keys when its
+ * filter does.
+ *
+ * The document is what `Schema.toJsonSchemaDocument(schema, options)`
+ * returned under `effect@4.0.0-rc.115`. It is printed by this package, not by
+ * the installed `effect`, because a later release prints a different document
+ * for the same schema and a moved identity re-keys every recorded step. Use
+ * it wherever the document is hashed, compared or pinned; a JSON Schema shown
+ * to a model or a person comes from `Schema.toJsonSchemaDocument`.
+ *
+ * Reserved for the packages that derive identities. Authors never call it; it
+ * throws for a schema that has no JSON Schema form.
+ *
+ * @since 1.0.0
+ * @category engine
+ */
+export const schemaIdentity = (schema: Schema.Top, options?: SchemaIdentityOptions): SchemaIdentity =>
+  internalSchemaIdentity.schemaIdentity(schema, options)
+
+/**
+ * Identifies a schema AST by its encoded representation, the material a
+ * sealed action's step key folds in for its success and error schemas.
+ *
+ * The value is what `SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(ast))`
+ * returned under `effect@4.0.0-rc.115`, so a later `effect` release does not
+ * re-key recorded steps. The one exception is `Schema.brand`: from
+ * `effect@4.0.4` on a brand is not part of the AST, so a declaration with a
+ * brand re-keys once.
+ *
+ * Reserved for the packages that derive step keys. Authors never call it; it
+ * throws for an AST that has no representation.
+ *
+ * @since 1.0.0
+ * @category engine
+ */
+export const representationIdentity = (ast: SchemaAST.AST): Schema.Json =>
+  internalSchemaIdentity.representationIdentity(ast)
 
 /**
  * Binds a frozen plain copy of inert captures as the callback's this receiver.

@@ -19,7 +19,7 @@ import type { ApprovalPayload, ApprovalTarget, PlanCard } from "@smthrs/control/
 import { DurableWriter } from "@smthrs/database/DurableWriter"
 import { RunStore } from "@smthrs/run-store/RunStore"
 import { Deferred, Effect, Fiber, Schema, type Scope, Stream } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import type * as GatewayProjection from "../src/GatewayProjection.ts"
 import * as GatewaySchema from "../src/GatewaySchema.ts"
 import { make, maxDurationRuns, Projections } from "../src/Projections.ts"

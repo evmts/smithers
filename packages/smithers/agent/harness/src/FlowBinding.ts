@@ -43,6 +43,7 @@
 import * as Permission from "@smthrs/capability/Permission"
 import * as Digest from "@smthrs/core/Digest"
 import type * as Effects from "@smthrs/core/Effects"
+import * as Node from "@smthrs/core/Node"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Registry from "@smthrs/registry/Registry"
 import type { Context, Schema as SchemaTypes } from "effect"
@@ -176,7 +177,9 @@ const withoutRejectedNulls = (input: unknown, keys: ReadonlySet<PropertyKey>): u
  */
 const document = (schema: SchemaTypes.Top): Schema.Json | undefined => {
   try {
-    return JSON.parse(JSON.stringify(Schema.toJsonSchemaDocument(schema, { onExcessProperty: "error" }))) as Schema.Json
+    // A descriptor's documents enter its declaration digest, so they are the
+    // owned identity rather than what the installed effect prints.
+    return JSON.parse(JSON.stringify(Node.schemaIdentity(schema, { onExcessProperty: "error" }))) as Schema.Json
   } catch {
     return undefined
   }

@@ -12,7 +12,7 @@ Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/m
 ## Requirements
 
 - Node.js 26.4.0 or later. The package's `engines` field enforces this floor.
-- [Effect](https://effect.website) 4.0.0-rc.115, exactly. It is a peer
+- [Effect](https://effect.website) in the range `^4.0.4`. It is a peer
   dependency so the application and Smithers share one Effect runtime.
 
 The package ships as ESM and CommonJS with TypeScript declarations. Its
@@ -25,14 +25,14 @@ The `TestMemory` layer uses a real in-memory SQLite database. Add its optional
 Node driver before following the quickstart:
 
 ```bash
-pnpm add @effect/sql-sqlite-node@4.0.0-rc.115
+pnpm add @effect/sql-sqlite-node
 ```
 
 A store backed by a database file needs the database package and its selected
 Node adapters:
 
 ```bash
-pnpm add @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
+pnpm add @effect/platform-node @effect/platform-node-shared @effect/sql-sqlite-node
 ```
 
 - `@smthrs/database` supplies the SQLite client and the durable writer. It is

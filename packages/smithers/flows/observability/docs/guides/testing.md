@@ -18,8 +18,8 @@ network:
 ```ts
 import * as Otlp from "@smthrs/observability/Otlp"
 import * as Effect from "effect/Effect"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as Metric from "effect/Metric"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
 
 const recordingFetch = () => {
   const requests: Array<{ url: string; body: string }> = []

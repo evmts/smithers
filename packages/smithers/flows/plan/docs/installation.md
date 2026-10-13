@@ -8,8 +8,8 @@ sidebar:
 ## Requirements
 
 - Node.js 26.4.0 or later.
-- `effect` 4.0.0-rc.115. The package's schemas, layers, and error classes are
-  Effect values, so the version has to match the one your application uses.
+- `effect` `^4.0.4`. The package's schemas, layers, and error classes are
+  Effect values, so it uses the one `effect` your application installs.
 
 ## Install
 
@@ -19,7 +19,7 @@ That is enough to build node graphs, compile plans, and diff them. Compiling
 asks for Effect's `Crypto` service, which a platform package supplies:
 
 ```bash
-pnpm add @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115
+pnpm add @effect/platform-node @effect/platform-node-shared
 ```
 
 `@smthrs/crypto`, `@smthrs/canonical` and [`@smthrs/keys`](/api/keys) arrive as

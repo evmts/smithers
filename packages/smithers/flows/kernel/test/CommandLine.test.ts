@@ -3,7 +3,7 @@
  * and the line the browser interpreter actually runs. Those two must never
  * disagree, so the rendering rules get their own cases.
  */
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
+import * as ChildProcess from "effect/process/ChildProcess"
 import { describe, expect, it } from "vitest"
 import * as CommandLine from "../src/CommandLine.ts"
 

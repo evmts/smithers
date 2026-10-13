@@ -5,7 +5,7 @@
 import { NodeServices } from "@effect/platform-node"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Context, Effect, Layer } from "effect"
-import { SqlClient } from "effect/unstable/sql/SqlClient"
+import { SqlClient } from "effect/sql/SqlClient"
 import { resolve } from "node:path"
 import { databasePath } from "../internal/ControlDatabasePath.ts"
 import * as DatabaseLocation from "../internal/DatabaseLocation.ts"

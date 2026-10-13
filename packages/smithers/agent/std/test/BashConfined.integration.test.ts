@@ -8,7 +8,7 @@ import * as KernelChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as Workspace from "@smthrs/kernel/Workspace"
 import { Effect, Fiber, Layer, type Path } from "effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
+import * as ChildProcess from "effect/process/ChildProcess"
 import {
   chmodSync,
   existsSync,

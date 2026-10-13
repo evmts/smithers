@@ -3,7 +3,7 @@ import * as NodeChildProcessSpawner from "@effect/platform-node/NodeChildProcess
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { Effect, FileSystem, Layer } from "effect"
-import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner"
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner"
 import { withIo } from "../src/io.ts"
 export const testIo = <A>(operation: () => Promise<A>): Promise<A> =>
   Effect.runPromise(

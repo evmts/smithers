@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, Scope } from "effect"
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
+import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import { execFileSync } from "node:child_process"
 import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { createSecureServer, type ServerHttp2Session, type ServerHttp2Stream } from "node:http2"

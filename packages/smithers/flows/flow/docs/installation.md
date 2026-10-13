@@ -1,6 +1,6 @@
 ---
 title: "Installation"
-description: "Install @smthrs/flow, its runtime requirements and pinned effect version, its import forms, and the packages a runnable composition adds."
+description: "Install @smthrs/flow, its runtime requirements and effect range, its import forms, and the packages a runnable composition adds."
 sidebar:
   order: 1
 ---
@@ -9,8 +9,8 @@ sidebar:
 
 `@smthrs/flow` is not on npm yet. Link the source packages as described in [Use the libraries](#use-the-libraries).
 
-`effect` is a runtime dependency of this package and installs with it. Add it to
-your own dependencies at the same version anyway: your declarations import
+`effect` is a peer dependency of this package, in the range `^4.0.4`. Add one
+`effect` in that range to your own dependencies: your declarations import
 `effect/Schema` and your implementations import `effect/Effect` directly, and two
 copies of `effect` in one program are two sets of service tags.
 
@@ -23,7 +23,7 @@ from, and the canonical JSON checks applied to values.
 
 ## Use the libraries
 
-First [install the source checkout](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli). The checkout's `examples` workspace carries the packages used by the flow tutorials and their pinned `effect@4.0.0-rc.115`.
+First [install the source checkout](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli). The checkout's `examples` workspace carries the packages used by the flow tutorials and their pinned `effect@4.0.4`.
 
 Create a project beside the checkout:
 

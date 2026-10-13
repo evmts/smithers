@@ -1,7 +1,7 @@
 import { sourceRefusal } from "../coding/source-refusal.ts"
 /** Reserved repository/gateway credentials stay inside this host-owned service. */
 import { Context, Effect, Layer, Redacted, Schema, Stream } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
 import type { Options as RepositoryBinding } from "../coding/landing.ts"
 import { CodingError } from "../coding/schema.ts"
 import { approvedText, pinApprovedSubject } from "./approved-text.ts"

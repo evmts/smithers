@@ -21,10 +21,11 @@
 
 import { isRecord } from "@smthrs/canonical/Record"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
-import { Deferred, Effect, Option, type Redacted, type Scope, Stream } from "effect"
-import * as HttpClient from "effect/unstable/http/HttpClient"
-import type * as HttpClientError from "effect/unstable/http/HttpClientError"
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
+import { Cause, Deferred, Effect, Exit, Option, type Redacted, type Scope, Stream, Tracer } from "effect"
+import * as Headers from "effect/http/Headers"
+import * as HttpClient from "effect/http/HttpClient"
+import type * as HttpClientError from "effect/http/HttpClientError"
+import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import type { McpError } from "../McpError.ts"
 import * as DiagnosticReporter from "./DiagnosticReporter.ts"
 import * as JsonLimits from "./JsonLimits.ts"
@@ -80,6 +81,68 @@ const endpointOf = (url: string): URL | undefined => {
   return parsed
 }
 
+/**
+ * Header names a host that records HTTP headers on spans must not see in
+ * clear: the session id every later message is authorized by, and the headers
+ * of a redirect, which name the endpoint under another address.
+ */
+const redactedHeaderNames: ReadonlyArray<string> = ["mcp-session-id", "location", "content-location"]
+
+/**
+ * The span attributes of an exchange that say nothing of the url's path or
+ * query: the method, the origin and the answer.
+ */
+const originAttributes: ReadonlySet<string> = new Set([
+  "http.request.method",
+  "url.scheme",
+  "server.address",
+  "server.port",
+  "http.response.status_code",
+  "error.type"
+])
+
+const isHeaderAttribute = (key: string): boolean =>
+  key.startsWith("http.request.header.") || key.startsWith("http.response.header.")
+
+/**
+ * The tracer an exchange opens its HTTP span on: the caller's own, with
+ * nothing of the request left on the span.
+ *
+ * An MCP endpoint is often a capability url, with its key in the path or the
+ * query. The HTTP client writes the whole url on its span and again in the
+ * failure it ends the span with, and the answer or the transport error it ends
+ * with holds the request. So only the attributes that name the method, the
+ * origin and the answer are kept, with the headers a host chose to record, and
+ * the span ends with the outcome alone: nothing on success, the refusing
+ * status, or that the server could not be reached.
+ */
+const withoutRequest = (server: string) => (tracer: Tracer.Tracer): Tracer.Tracer =>
+  Tracer.make({
+    ...tracer,
+    span(options) {
+      const span = tracer.span(options)
+      const end = span.end.bind(span)
+      const attribute = span.attribute.bind(span)
+      span.attribute = (key, value) => {
+        if (originAttributes.has(key) || isHeaderAttribute(key)) attribute(key, value)
+      }
+      span.end = (endTime, exit) => {
+        if (exit._tag === "Success") return end(endTime, Exit.void)
+        if (Cause.hasInterruptsOnly(exit.cause)) return end(endTime, exit)
+        const status = span.attributes.get("http.response.status_code")
+        return end(
+          endTime,
+          Exit.fail(
+            typeof status === "number"
+              ? Limits.protocolError(server, `MCP server "${server}" answered with HTTP ${status}`)
+              : Transport.closed(server, "is not reachable; transport details withheld")
+          )
+        )
+      }
+      return span
+    }
+  })
+
 const utf8 = new TextEncoder()
 
 const mediaType = (header: string | undefined): string => (header ?? "").split(";")[0]!.trim().toLowerCase()
@@ -117,6 +180,15 @@ export const connect = (
     // Each message runs in its own scope, which aborts the HTTP request and
     // releases its body however the exchange ends.
     const client = HttpClient.withScope(yield* HttpClient.HttpClient)
+    /** Sends one HTTP message, keeping the endpoint and the session id out of its span. */
+    const send = (request: HttpClientRequest.HttpClientRequest) =>
+      client.execute(request).pipe(
+        Effect.updateService(Headers.CurrentRedactedNames, (names) => [...names, ...redactedHeaderNames]),
+        // A host may name HTTP spans for their url. This one is named for its
+        // method, as the client names it by default.
+        Effect.provideService(HttpClient.SpanNameGenerator, (sent) => sent.method),
+        Effect.updateService(Tracer.Tracer, withoutRequest(server))
+      )
     const scope = yield* Effect.scope
     const closing = yield* Deferred.make<void>()
 
@@ -199,7 +271,7 @@ export const connect = (
         ))
         const sentSession = sessionId !== undefined
         if (dispatched !== undefined) dispatched.value = true
-        const response = yield* Effect.mapError(client.execute(request), unreachable)
+        const response = yield* Effect.mapError(send(request), unreachable)
         if (response.status === 404 && sentSession) {
           return yield* Effect.fail(Transport.closed(server, "ended the session; reconnect to continue"))
         }
@@ -387,7 +459,7 @@ export const connect = (
         if (sessionId === undefined) return ended
         return Effect.andThen(
           ended,
-          Effect.scoped(Effect.flatMap(authorize(withSession(HttpClientRequest.delete(endpoint))), client.execute))
+          Effect.scoped(Effect.flatMap(authorize(withSession(HttpClientRequest.delete(endpoint))), send))
             .pipe(
               Effect.timeout(sessionCloseMs),
               Effect.ignore

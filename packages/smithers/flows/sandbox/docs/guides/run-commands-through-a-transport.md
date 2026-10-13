@@ -15,8 +15,8 @@ filesystem on the same session.
 ```ts
 import { RemoteChildProcessSpawner } from "@smthrs/sandbox"
 import * as Effect from "effect/Effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 
 const provider = RemoteChildProcessSpawner.TestRemote.make({
   scripts: { "echo hi": { stdout: "hi" } }

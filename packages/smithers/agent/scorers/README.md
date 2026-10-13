@@ -24,7 +24,7 @@ runner. Runtime evaluation code imports scorers directly.
 Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
 
 It needs Node.js 26.4.0 or later and
-[`effect`](https://effect.website) 4.0.0-rc.115, plus
+[`effect`](https://effect.website) `^4.0.4`, plus
 [`@smthrs/database`](https://database.smithers.sh) when you persist
 observations.
 

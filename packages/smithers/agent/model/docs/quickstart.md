@@ -71,7 +71,7 @@ environment first.
 ```ts
 import { Model, ModelEvent, ModelRequest, RequestExecutor, Route } from "@smthrs/model"
 import { Effect, Layer, Redacted, Result, Stream } from "effect"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 
 const route = Result.getOrThrow(
   Route.anthropic({ apiKey: Redacted.make(process.env["ANTHROPIC_API_KEY"] ?? "") })

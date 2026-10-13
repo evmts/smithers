@@ -17,7 +17,7 @@ import * as EngineMigrations from "@smthrs/engine-store/Migrations"
 import { Migrations } from "@smthrs/journal"
 import { Migrations as RunStoreMigrations, RunStore } from "@smthrs/run-store"
 import { type Crypto, Effect, Layer } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 import {
   AlreadyResolved,

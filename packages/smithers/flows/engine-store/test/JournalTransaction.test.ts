@@ -18,8 +18,8 @@ import * as SqlJournal from "@smthrs/journal/SqlJournal"
 import * as RunStore from "@smthrs/run-store/RunStore"
 import { Effect, Layer, PubSub } from "effect"
 import type * as Scope from "effect/Scope"
+import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
 import * as Migrations from "../src/Migrations.ts"
 
 const runId = (value: string): RunId => value as RunId

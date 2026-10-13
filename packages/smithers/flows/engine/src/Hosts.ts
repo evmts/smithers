@@ -13,9 +13,9 @@ import type * as Placement from "@smthrs/plan/Placement"
 import * as Context from "effect/Context"
 import type * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import type * as Rpc from "effect/rpc/Rpc"
+import type * as RpcGroup from "effect/rpc/RpcGroup"
 import type * as Scope from "effect/Scope"
-import type * as Rpc from "effect/unstable/rpc/Rpc"
-import type * as RpcGroup from "effect/unstable/rpc/RpcGroup"
 
 /**
  * Where one placement runs.

@@ -150,6 +150,16 @@ Every numeric field must be a positive safe integer. Anything else fails with
 `protocol_error` naming the option, before the process is spawned or a request
 is sent.
 
+A `url` is treated as a secret past its host, because an MCP endpoint often
+carries its key in the path or the query. Each HTTP message opens one span
+named for its method, `POST` or `DELETE`, that records the method, scheme, host,
+port and answering status, never the path or the query. A span that failed
+ends with `MCP server "..." answered with HTTP N` or
+`MCP server "..." is not reachable; transport details withheld`. The span
+records no header. A host that sets `HttpClient.TracerHeaderFilter` to record
+headers gets `mcp-session-id`, the bearer `authorization`, and a redirect's
+`location` and `content-location` as `<redacted>`.
+
 The bootstrap child environment contains only `PATH`, `HOME`, `USER`, `LANG`,
 `LC_*`, `TERM`, `TMPDIR`, and `SHELL`. Other ambient names are withheld;
 entries in `env` are explicit declarations and are applied last.

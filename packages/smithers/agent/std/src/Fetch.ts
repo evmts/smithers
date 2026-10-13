@@ -5,8 +5,8 @@
  */
 
 import * as Effect from "effect/Effect"
+import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import * as Schema from "effect/Schema"
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
 import { capability, envelope } from "./internal/Declaration.ts"
 import { execute, Response, Timeout } from "./internal/Http.ts"
 

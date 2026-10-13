@@ -43,7 +43,7 @@ packages use:
 ```ts
 import { DatabaseError } from "@smthrs/database/DurableWriter"
 import * as Schema from "effect/Schema"
-import * as SqlError from "effect/unstable/sql/SqlError"
+import * as SqlError from "effect/sql/SqlError"
 
 const isConstraint = (cause: unknown): boolean =>
   Schema.is(DatabaseError)(cause)

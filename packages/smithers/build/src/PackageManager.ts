@@ -16,7 +16,7 @@
  * Selecting Bun rather than pnpm is a layer swap, exactly as
  * `docs/specs/Specs/Object Model.md` requires of every host-facing service.
  *
- * Host access is Effect's own: `effect/unstable/process/ChildProcessSpawner`
+ * Host access is Effect's own: `effect/process/ChildProcessSpawner`
  * for commands and `effect/FileSystem` for reads. The platform arrives as a
  * layer construction option rather than from `globalThis.process`, because
  * this module has to stay browser-bundleable even though the managers it
@@ -32,10 +32,10 @@ import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import * as BoundedOutput from "./internal/boundedOutput.ts"
 import * as Diagnostics from "./internal/diagnostic.ts"
 import { normalizePlatform } from "./internal/platform.ts"

@@ -17,8 +17,8 @@
 // then assert on the resolved lockfile.
 // Individual library and CLI profiles additionally install the unchanged
 // manifests on npm and pnpm, inspect physical copies and native resolution,
-// and prove unrelated optional adapters stay absent. An adjacent incompatible
-// Effect RC must be refused by each manager's strict peer check.
+// and prove unrelated optional adapters stay absent. An Effect below the
+// supported range must be refused by each manager's strict peer check.
 //
 // The install reads registry metadata, so this gate needs the network.
 //

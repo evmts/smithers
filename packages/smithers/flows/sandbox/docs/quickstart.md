@@ -30,8 +30,8 @@ Create `quickstart.ts`. Nothing in this effect knows where it runs:
 import { SandboxHealth } from "@smthrs/sandbox"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 
 /** Writes a file, measures it with a process, and asks whether the machine is alive. */
 const countBytes = Effect.gen(function*() {

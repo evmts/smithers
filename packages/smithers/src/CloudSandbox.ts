@@ -6,7 +6,7 @@
 
 import { CommandSandbox, RemoteChildProcessSpawner, type Sandbox } from "@smthrs/sandbox"
 import { Duration, Effect, Schedule } from "effect"
-import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { createHash } from "node:crypto"
 import { APIError, Client, object } from "./internal/backend/Client.ts"
 import { workspaceSshPrefix } from "./internal/backend/WorkspaceSsh.ts"

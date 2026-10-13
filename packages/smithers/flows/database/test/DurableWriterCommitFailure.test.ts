@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Cause, Effect, Exit, Result } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
-import * as SqlError from "effect/unstable/sql/SqlError"
+import * as SqlClient from "effect/sql/SqlClient"
+import * as SqlError from "effect/sql/SqlError"
 import { expectTypeOf } from "vitest"
 import * as DurableWriter from "../src/DurableWriter.ts"
 import * as NodeDatabase from "../src/node/NodeDatabase.ts"
@@ -28,6 +28,34 @@ const deferredCommit = Effect.gen(function*() {
   return { failed, rows, next, parents, published }
 }).pipe(Effect.provide(NodeDatabase.layer({ filename: ":memory:" })))
 
+/**
+ * A deferred foreign key that rejects the next COMMIT of a `child` row, on a
+ * connection whose ROLLBACK fails for as long as `failing` stays set.
+ */
+const rejectedCommitWithFailingRollback = (sql: SqlClient.SqlClient) =>
+  Effect.gen(function*() {
+    yield* sql`PRAGMA foreign_keys = ON`
+    yield* sql`CREATE TABLE parent (id INTEGER PRIMARY KEY)`
+    yield* sql`CREATE TABLE child (parent_id INTEGER REFERENCES parent(id) DEFERRABLE INITIALLY DEFERRED)`
+    const rollbackError = new SqlError.SqlError({
+      reason: SqlError.classifySqliteError(Object.assign(new Error("rollback failed"), { code: "SQLITE_IOERR" }))
+    })
+    const rollback = { attempts: 0, failing: true }
+    yield* Effect.scoped(Effect.map(sql.reserve, (conn) => {
+      const execute = conn.executeUnprepared.bind(conn)
+      Object.assign(conn, {
+        executeUnprepared: (...args: Parameters<typeof execute>) => {
+          if (args[0] === "ROLLBACK" && rollback.failing) {
+            rollback.attempts += 1
+            return Effect.fail(rollbackError)
+          }
+          return execute(...args)
+        }
+      })
+    }))
+    return rollback
+  })
+
 describe("DurableWriter COMMIT failures", () => {
   it.effect("rolls back rejected rows before reusing the connection", () =>
     Effect.gen(function*() {
@@ -49,29 +77,11 @@ describe("DurableWriter COMMIT failures", () => {
       expect(error).toMatchObject({ code: "constraint" })
     }))
 
-  it.effect("discards the database connection when COMMIT recovery cannot roll back", () =>
+  it.effect("refuses the connection until a rollback succeeds when COMMIT recovery cannot roll back", () =>
     Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
       const writer = DurableWriter.make(sql)
-      yield* sql`PRAGMA foreign_keys = ON`
-      yield* sql`CREATE TABLE parent (id INTEGER PRIMARY KEY)`
-      yield* sql`CREATE TABLE child (parent_id INTEGER REFERENCES parent(id) DEFERRABLE INITIALLY DEFERRED)`
-      const rollbackError = new SqlError.SqlError({
-        reason: SqlError.classifySqliteError(Object.assign(new Error("rollback failed"), { code: "SQLITE_IOERR" }))
-      })
-      let rollbacks = 0
-      yield* Effect.scoped(Effect.map(sql.reserve, (conn) => {
-        const execute = conn.executeUnprepared.bind(conn)
-        Object.assign(conn, {
-          executeUnprepared: (...args: Parameters<typeof execute>) => {
-            if (args[0] === "ROLLBACK") {
-              rollbacks += 1
-              return Effect.fail(rollbackError)
-            }
-            return execute(...args)
-          }
-        })
-      }))
+      const rollback = yield* rejectedCommitWithFailingRollback(sql)
       const failed = yield* Effect.exit(writer.write(sql`INSERT INTO child VALUES (999)`))
       expect(Exit.isFailure(failed)).toBe(true)
       if (!Exit.isFailure(failed)) return
@@ -80,18 +90,28 @@ describe("DurableWriter COMMIT failures", () => {
         expect.objectContaining({ code: "constraint" }),
         expect.objectContaining({ code: "io" })
       ]))
-      expect(rollbacks).toBe(1)
-      // A fresh statement must fail because the native database was closed,
-      // rather than expose the rejected transaction or wait on a leaked lease.
+      expect(rollback.attempts).toBe(1)
+      // A fresh statement must fail rather than expose the rejected
+      // transaction or wait on a leaked lease. It asks for the rollback first.
       const read = yield* Effect.exit(sql`SELECT * FROM child`)
       expect(Exit.isFailure(read)).toBe(true)
-      if (Exit.isFailure(read)) expect(Cause.pretty(read.cause)).toContain("database is not open")
+      if (Exit.isFailure(read)) {
+        expect(Cause.pretty(read.cause)).toContain("SQLite connection cannot be reused after failed COMMIT cleanup")
+      }
       let ran = false
       const next = yield* Effect.exit(writer.write(Effect.sync(() => {
         ran = true
       })))
       expect(Exit.isFailure(next)).toBe(true)
       expect(ran).toBe(false)
+      // One attempt per refused acquisition, and none of them replayed.
+      expect(rollback.attempts).toBe(3)
+      // The first rollback that goes through returns the connection, without
+      // the rejected row.
+      rollback.failing = false
+      expect(yield* sql`SELECT * FROM child`).toEqual([])
+      yield* writer.write(sql`INSERT INTO parent VALUES (1)`)
+      expect(yield* sql`SELECT * FROM parent`).toEqual([{ id: 1 }])
     }).pipe(Effect.provide(NodeDatabase.layer({ filename: ":memory:" }))))
 
   it.effect("rolls back a defective COMMIT while preserving its defect", () =>
@@ -121,22 +141,16 @@ describe("DurableWriter COMMIT failures", () => {
     Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
       const writer = DurableWriter.make(sql)
-      const reserve = sql.reserve
-      const failure = new SqlError.SqlError({ reason: new SqlError.UnknownError({ cause: "acquisition failed" }) })
-      let released = false
-      Object.assign(sql, {
-        reserve: Effect.acquireRelease(Effect.void, () =>
-          Effect.sync(() => {
-            released = true
-          })).pipe(
-            Effect.andThen(Effect.fail(failure))
-          )
-      })
-      const error = yield* Effect.flip(writer.write(Effect.void))
-      expect(error).toBeInstanceOf(DurableWriter.DatabaseError)
-      expect(error.cause).toBe(failure)
-      expect(released).toBe(true)
-      Object.assign(sql, { reserve })
+      const rollback = yield* rejectedCommitWithFailingRollback(sql)
+      yield* Effect.exit(writer.write(sql`INSERT INTO child VALUES (999)`))
+      // Every acquisition is now refused. One that kept the connection's
+      // permit would leave the next waiting on it forever.
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const error = yield* Effect.flip(writer.write(Effect.void))
+        expect(error).toBeInstanceOf(DurableWriter.DatabaseError)
+        expect(SqlError.isSqlError(error.cause) && error.cause.reason._tag).toBe("ConnectionError")
+      }
+      rollback.failing = false
       yield* writer.write(Effect.void)
     }).pipe(Effect.provide(NodeDatabase.layer({ filename: ":memory:" }))))
 

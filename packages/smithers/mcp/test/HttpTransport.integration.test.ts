@@ -13,10 +13,11 @@ import { Rule } from "@smthrs/capability/Permission"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
 import * as Workspace from "@smthrs/kernel/Workspace"
-import { Effect, Exit, Fiber, Layer, Redacted, Scope } from "effect"
-import type * as HttpClient from "effect/unstable/http/HttpClient"
+import { Cause, Effect, Exit, Fiber, Layer, Logger, Redacted, References, Scope, Tracer } from "effect"
+import * as HttpClient from "effect/http/HttpClient"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
+import { inspect } from "node:util"
 import { afterEach, describe, expect, it } from "vitest"
 import * as Diagnostics from "../src/Diagnostics.ts"
 import * as HttpTransport from "../src/internal/HttpTransport.ts"
@@ -176,6 +177,243 @@ describe("McpClient over Streamable HTTP", () => {
       "Bearer token-4",
       "Bearer token-5"
     ])
+  })
+
+  // The HTTP client records a header on its span only when the host's
+  // `HttpClient.TracerHeaderFilter` admits it, and by default it admits none.
+  it("records neither the bearer token nor the session id on its HTTP spans", async () => {
+    const remote = await listen({ session: "session-synthetic-secret" })
+    const spans: Array<Tracer.NativeSpan> = []
+    const tracer = Tracer.make({
+      span(options) {
+        const span = new Tracer.NativeSpan(options)
+        spans.push(span)
+        return span
+      }
+    })
+    const authProvider: McpClient.AuthProvider = { token: Effect.succeed(Redacted.make("token-synthetic-secret")) }
+    await run(
+      Effect.gen(function*() {
+        const client = yield* connect(remote.url, { authProvider })
+        return yield* client.callTool("add", { a: 2, b: 3 })
+      }).pipe(Effect.provideService(Tracer.Tracer, tracer))
+    )
+    // Both went out on the wire, so the span is the only place left to keep
+    // them from.
+    expect(remote.hits.at(-1)).toMatchObject({
+      authorization: "Bearer token-synthetic-secret",
+      session: "session-synthetic-secret"
+    })
+    const exchanges = spans.filter((span) => span.kind === "client")
+    expect(exchanges.map((span) => span.name)).toEqual(["POST", "POST", "POST", "POST", "DELETE"])
+    const attributes = JSON.stringify(exchanges.map((span) => [...span.attributes]))
+    expect(attributes).not.toContain("http.request.header.")
+    expect(attributes).not.toContain("http.response.header.")
+    expect(attributes).not.toContain("synthetic-secret")
+  })
+
+  // A host that turns header capture on records every header of an exchange.
+  // The session id is what every later message is authorized by, so the
+  // transport names it as a header to redact, in both directions.
+  it("redacts the session id and the bearer token on HTTP spans that record headers", async () => {
+    const remote = await listen({ session: "session-synthetic-secret" })
+    const spans: Array<Tracer.NativeSpan> = []
+    const tracer = Tracer.make({
+      span(options) {
+        const span = new Tracer.NativeSpan(options)
+        spans.push(span)
+        return span
+      }
+    })
+    const authProvider: McpClient.AuthProvider = { token: Effect.succeed(Redacted.make("token-synthetic-secret")) }
+    await run(
+      Effect.gen(function*() {
+        const client = yield* connect(remote.url, { authProvider })
+        return yield* client.callTool("add", { a: 2, b: 3 })
+      }).pipe(
+        Effect.provideService(Tracer.Tracer, tracer),
+        Effect.provideService(HttpClient.TracerHeaderFilter, () => true)
+      )
+    )
+    expect(remote.hits.at(-1)).toMatchObject({
+      authorization: "Bearer token-synthetic-secret",
+      session: "session-synthetic-secret"
+    })
+    const exchanges = spans.filter((span) => span.kind === "client")
+    expect(exchanges.map((span) => span.name)).toEqual(["POST", "POST", "POST", "POST", "DELETE"])
+    // The server issues the id in its answer to `initialize`, and every later
+    // message carries it back.
+    expect(exchanges.map((span) => span.attributes.get("http.response.header.mcp-session-id"))).toEqual([
+      "<redacted>",
+      undefined,
+      undefined,
+      undefined,
+      undefined
+    ])
+    expect(exchanges.map((span) => span.attributes.get("http.request.header.mcp-session-id"))).toEqual([
+      undefined,
+      "<redacted>",
+      "<redacted>",
+      "<redacted>",
+      "<redacted>"
+    ])
+    for (const span of exchanges) {
+      expect(span.attributes.get("http.request.header.authorization")).toBe("<redacted>")
+      expect(span.attributes.get("http.request.header.accept")).not.toBe("<redacted>")
+    }
+    // The protocol version is public, and recorded as sent.
+    expect(exchanges[2]!.attributes.get("http.request.header.mcp-protocol-version")).toBe("2025-06-18")
+    expect(JSON.stringify(exchanges.map((span) => [...span.attributes]))).not.toContain("synthetic-secret")
+  })
+
+  describe("a server url that carries a secret", () => {
+    // An MCP endpoint is often a capability url: the key sits in the path or
+    // the query, and the transport sends no other credential.
+    const secrets = ["PATH_SECRET", "QUERY_SECRET"]
+    const secretUrl = (origin: string) => `${origin}/s/PATH_SECRET/mcp?api_key=QUERY_SECRET`
+
+    /** One connect and tool call, with every span, log line and failure it produced. */
+    const traced = async (url: string) => {
+      const spans: Array<Tracer.NativeSpan> = []
+      const tracer = Tracer.make({
+        span(options) {
+          const span = new Tracer.NativeSpan(options)
+          spans.push(span)
+          return span
+        }
+      })
+      const logs: Array<unknown> = []
+      const logger = Logger.make((line) => {
+        logs.push({ message: line.message, cause: Cause.pretty(line.cause) })
+      })
+      const exit = await Effect.runPromiseExit(
+        Effect.scoped(add(url)).pipe(
+          Effect.provide(NodeHttpClient.layerUndici),
+          Effect.provideService(Tracer.Tracer, tracer),
+          Effect.provide(Logger.layer([logger])),
+          Effect.provideService(References.MinimumLogLevel, "All")
+        )
+      )
+      const exchanges = spans.filter((span) => span.kind === "client")
+      const failures = exchanges.flatMap((span) =>
+        span.status._tag === "Ended" && span.status.exit._tag === "Failure" ? [span.status.exit.cause] : []
+      )
+      return {
+        exit,
+        exchanges,
+        spanFailures: failures.map((cause) => Cause.squash(cause)),
+        /** Everything recorded, rendered the ways an exporter, a log sink or a reader could render it. */
+        telemetry: [
+          inspect(
+            spans.map((span) => ({
+              name: span.name,
+              attributes: [...span.attributes],
+              events: span.events,
+              links: span.links,
+              status: span.status
+            })),
+            { depth: 12 }
+          ),
+          ...failures.map((cause) => Cause.pretty(cause)),
+          JSON.stringify(
+            failures.flatMap((cause) => Cause.prettyErrors(cause).map((error) => [error.message, error.stack]))
+          ),
+          inspect(logs, { depth: 12 }),
+          inspect(exit, { depth: 12 }),
+          JSON.stringify(exit)
+        ].join("\n")
+      }
+    }
+
+    it("keeps the url's path and query out of every span on success", async () => {
+      const remote = await listen()
+      const { exchanges, exit, spanFailures, telemetry } = await traced(secretUrl(remote.origin))
+
+      expect(Exit.isSuccess(exit)).toBe(true)
+      for (const secret of secrets) expect(telemetry).not.toContain(secret)
+      // What is left is each exchange's method, scheme, host, port and answer.
+      const port = Number(new URL(remote.origin).port)
+      expect(exchanges.map((span) => [span.name, Object.fromEntries(span.attributes)])).toEqual(
+        (["POST", "POST", "POST", "POST", "DELETE"] as const).map((method, index) => [method, {
+          "http.request.method": method,
+          "url.scheme": "http",
+          "server.address": "127.0.0.1",
+          "server.port": port,
+          "http.response.status_code": index === 1 ? 202 : 200
+        }])
+      )
+      expect(spanFailures).toEqual([])
+    })
+
+    it.each([404, 503])(
+      "keeps the url out of the span that failed with a %s, and out of its failure",
+      async (status) => {
+        const remote = await listen({
+          override: (message, response) => {
+            if (message.method !== "tools/call") return false
+            response.writeHead(status).end(`no such tool at ${secretUrl(remote.origin)}`)
+            return true
+          }
+        })
+        const { exchanges, exit, spanFailures, telemetry } = await traced(secretUrl(remote.origin))
+
+        expect(Exit.isFailure(exit)).toBe(true)
+        for (const secret of secrets) expect(telemetry).not.toContain(secret)
+        expect(exchanges[3]!.attributes.get("http.response.status_code")).toBe(status)
+        expect(exchanges[3]!.attributes.get("error.type")).toBe(String(status))
+        expect(spanFailures).toEqual([
+          new McpError({
+            code: "protocol_error",
+            message: `MCP server "remote" answered with HTTP ${status}`,
+            server: "remote"
+          })
+        ])
+      }
+    )
+
+    it("keeps the url out of the span and the failure of a server that cannot be reached", async () => {
+      const remote = await listen()
+      const [server] = servers
+      await new Promise<void>((resolve) => server!.close(() => resolve()))
+      servers.clear()
+      const { exchanges, exit, spanFailures, telemetry } = await traced(secretUrl(remote.origin))
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      for (const secret of secrets) expect(telemetry).not.toContain(secret)
+      expect(exchanges.map((span) => span.name)).toEqual(["POST"])
+      expect(spanFailures).toEqual([
+        new McpError({
+          code: "connection_closed",
+          message: "MCP server \"remote\" is not reachable; transport details withheld",
+          server: "remote"
+        })
+      ])
+    })
+
+    it("names its spans for the method even when the host names HTTP spans for their url", async () => {
+      const remote = await listen()
+      const spans: Array<Tracer.NativeSpan> = []
+      const tracer = Tracer.make({
+        span(options) {
+          const span = new Tracer.NativeSpan(options)
+          spans.push(span)
+          return span
+        }
+      })
+      await run(
+        add(secretUrl(remote.origin)).pipe(
+          Effect.provideService(Tracer.Tracer, tracer),
+          Effect.provideService(HttpClient.SpanNameGenerator, (request) => `${request.method} ${request.url}`)
+        )
+      )
+      expect(spans.filter((span) => span.kind === "client").map((span) => span.name)).toEqual([
+        "POST",
+        "POST",
+        "POST",
+        "POST",
+        "DELETE"
+      ])
+    })
   })
 
   it("reads replies from an event stream, answering server requests on the way", async () => {

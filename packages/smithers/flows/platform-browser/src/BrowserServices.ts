@@ -23,7 +23,7 @@ import type { FileSystem } from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as EffectPath from "effect/Path"
 import type * as PlatformError from "effect/PlatformError"
-import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as BrowserChildProcessSpawner from "./BrowserChildProcessSpawner/index.ts"
 import * as BrowserFileSystem from "./BrowserFileSystem/index.ts"
 

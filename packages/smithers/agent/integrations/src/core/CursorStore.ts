@@ -11,7 +11,7 @@
  */
 
 import { Context, Effect, Layer, Ref } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { IntegrationError } from "./IntegrationError.ts"
 
 /**

@@ -1,7 +1,7 @@
 import { expect, it } from "@effect/vitest"
 import { JournalEvent } from "@smthrs/journal"
 import { Effect, Layer, Stream } from "effect"
-import * as RpcClientError from "effect/unstable/rpc/RpcClientError"
+import * as RpcClientError from "effect/rpc/RpcClientError"
 import * as SyncClient from "../src/SyncClient.ts"
 import * as SyncServer from "../src/SyncServer.ts"
 import * as TestSocket from "../src/test/TestSocket.ts"

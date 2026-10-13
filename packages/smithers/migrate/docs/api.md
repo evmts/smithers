@@ -482,7 +482,7 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `openSmithersBackend`                    | none                                                                                         | none                                                                            | unsafe    |
 | `openSmithersStore`                      | none                                                                                         | none                                                                            | unsafe    |
 | `outputs.<key>`                          | `The planned value in scope`                                                                 | `@smthrs/plan/Node`                                                             | automatic |
-| `package.json`                           | `@smthrs/* at 1.0.0-rc.0 and effect at 4.0.0-rc.115`                                         | none                                                                            | automatic |
+| `package.json`                           | `@smthrs/* at the migrator's own version and effect at 4.0.4`                                | none                                                                            | automatic |
 | `parseNamespace`                         | `@smthrs/memory`                                                                             | `@smthrs/memory`                                                                | guided    |
 | `partitionDelegationV2AuthorFuel`        | none                                                                                         | none                                                                            | unsafe    |
 | `prometheusContentType`                  | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
@@ -667,10 +667,12 @@ refuses to `apply` a plan built over one (`scan` and `plan` still report it).
   a project already on the release candidate is not reported as old. Companion
   packages (`react`, `ai`, `@ai-sdk/*`, `zod`, `effect`, `xstate`) are recorded.
   Every `effect` declaration in every manifest is kept in `effectDeclarations`
-  with its file and field, and each one that is not exactly `4.0.0-rc.115`
-  raises `effect-pin-conflict` naming it: a range, a later prerelease, and two
-  manifests that disagree are each a version this release was not built
-  against. `Detect.resolvedEffectVersions(lock)` reads what a pnpm, bun, npm,
+  with its file and field, and each one that is not what a migrated project
+  declares raises `effect-pin-conflict` naming it. A field that installs
+  `effect` ends on exactly `4.0.4`, the version this release is tested on: a
+  range resolves to whatever is newest on install day, and two manifests that
+  disagree install two Effects. A `peerDependencies` entry ends on `^4.0.4`,
+  the range the published libraries accept. `Detect.resolvedEffectVersions(lock)` reads what a pnpm, bun, npm,
   or yarn lockfile resolved `effect` to, and a resolution other than the pin
   raises the same warning against the lockfile.
 - **Imports and pragmas**: every import specifier, read with the TypeScript
@@ -1481,8 +1483,8 @@ drives its implementation.
 | `withoutComments`                                       | `(text: string) => string`                                                                                    | JSONC without its comments, for parsing.                                                                              |
 | `pinFor`                                                | `(name: string) => string \| undefined`                                                                       | The version this release pins a package to.                                                                           |
 | `dependencyFields`                                      | `["dependencies", "devDependencies", "peerDependencies", "optionalDependencies", "overrides", "resolutions"]` | The six fields a postcondition checks.                                                                                |
-| `effectVersion`                                         | `"4.0.0-rc.115"`                                                                                              | The `effect` version this release was built against.                                                                  |
-| `smithersVersion`                                       | `"1.0.0-rc.0"`                                                                                                | The `@smthrs/*` version it adds.                                                                                      |
+| `effectVersion`                                         | `"4.0.4"`                                                                                                     | The `effect` version this release was built against.                                                                  |
+| `smithersVersion`                                       | the package's own version                                                                                     | The `@smthrs/*` version it adds: the release that ran the migration.                                                  |
 | `ManifestRewrite`, `ScriptRewrite`, `UnsupportedScript` | `interface` or `Schema.Struct`                                                                                | The rewrite inputs and what could not be rewritten.                                                                   |
 
 ### MigrateFlow

@@ -1,6 +1,6 @@
 import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
 import { Deferred, Effect, Fiber, PlatformError, Sink, Stream } from "effect"
-import { ExitCode, makeHandle, ProcessId } from "effect/unstable/process/ChildProcessSpawner"
+import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
 import { afterEach, expect, it, vi } from "vitest"
 import * as ContainedProcess from "../src/internal/ContainedProcess.ts"
 

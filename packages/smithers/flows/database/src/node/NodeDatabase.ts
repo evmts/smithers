@@ -4,7 +4,7 @@
 
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient"
 import { type Duration, Effect, Layer } from "effect"
-import type * as SqlClient from "effect/unstable/sql/SqlClient"
+import type * as SqlClient from "effect/sql/SqlClient"
 import { statSync } from "node:fs"
 import { DatabaseSync } from "node:sqlite"
 import * as PostgresSelection from "../internal/PostgresSelection.ts"
@@ -75,7 +75,12 @@ const client = (options: NodeDatabaseOptions): Layer.Layer<SqlClient.SqlClient> 
       busyTimeout: options.busyTimeout ?? options.sqlite?.busyTimeout ??
         (options.readOnly || options.sqlite?.readonly ? 1_000 : 0),
       filename: options.filename
-    })
+    }).pipe(
+      // Effect 4.0 reports a failed open or PRAGMA as a typed `SqlError`.
+      // `SqliteOpen` classifies the driver's raw throw as a defect, so the
+      // wrapped cause is re-raised as one.
+      Layer.catch((error): Layer.Layer<SqlClient.SqlClient> => Layer.effectContext(Effect.die(error.reason.cause)))
+    )
   }))
 
 /** Provides the Node SQLite client with the shared schema guard and open retries.
@@ -98,7 +103,6 @@ export const layer = (options: NodeDatabaseOptions): Layer.Layer<SqlClient.SqlCl
       options.filename,
       readTableNames,
       client(readOnly ? { ...options, sqlite: { ...options.sqlite, readonly: true, disableWAL: true } } : options),
-      options.sqlite?.spanAttributes,
       readOnly
     )
   }))

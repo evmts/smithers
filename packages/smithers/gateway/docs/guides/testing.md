@@ -26,8 +26,8 @@ pnpm add -D \
   @smthrs/journal@1.0.0-rc.0 \
   @smthrs/notifications@1.0.0-rc.0 \
   @smthrs/registry@1.0.0-rc.0 \
-  effect@4.0.0-rc.115 \
-  @effect/sql-sqlite-node@4.0.0-rc.115
+  effect \
+  @effect/sql-sqlite-node
 ```
 
 ```ts
@@ -88,7 +88,7 @@ in the package source.
 ```ts
 import * as NodeGateway from "@smthrs/gateway/node/NodeGateway"
 import { Effect, Layer } from "effect"
-import { HttpServer } from "effect/unstable/http"
+import { HttpServer } from "effect/http"
 
 const served = NodeGateway.layer(health, { host: "127.0.0.1", port: 0 }).pipe(Layer.provideMerge(stack(filename)))
 

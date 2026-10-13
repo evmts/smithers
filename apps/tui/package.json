@@ -16,7 +16,7 @@
     "lint": "eslint src --max-warnings=0 && dprint check"
   },
   "dependencies": {
-    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/platform-node": "4.0.4",
     "@opentui/core": "0.5.11",
     "@opentui/react": "0.5.11",
     "@smthrs/agent": "workspace:*",
@@ -36,7 +36,7 @@
     "@smthrs/sandbox": "workspace:*",
     "@smthrs/std": "workspace:*",
     "diff": "9.0.0",
-    "effect": "4.0.0-rc.115",
+    "effect": "4.0.4",
     "react": "19.2.8",
     "string-width": "7.2.0",
     "@smthrs/ui": "workspace:*"

@@ -8,7 +8,7 @@ import type * as Snapshot from "@smthrs/engine-store/ExecutionSnapshot"
 import * as ExecutionSnapshot from "@smthrs/engine-store/ExecutionSnapshot"
 import { ExecutionFact, Redaction } from "@smthrs/journal"
 import { Effect, Schema } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 
 /** One transaction holds the batch and all ancestry reads at the same source revision.
  * @since 1.0.0

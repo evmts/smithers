@@ -27,7 +27,7 @@ Then depend on it through the workspace protocol in your package's
 ## Runtime requirements
 
 - Node.js 26.4.0 or later, from the package's `engines` field.
-- `effect` 4.0.0-rc.115. Suites, runs, baselines, and gates are all `Effect`
+- `effect` `^4.0.4`. Suites, runs, baselines, and gates are all `Effect`
   values, so every program composes with the `effect` library directly.
 - `@smthrs/core` supplies `Flow` values. `@smthrs/scorers` supplies scorers,
   bindings, and the pure `@smthrs/scorers/ScoreGate` grading contract, including

@@ -9,10 +9,11 @@
  * @since 1.0.0
  */
 
-import { Duration, Effect, Layer, Option } from "effect"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
-import * as HttpClient from "effect/unstable/http/HttpClient"
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
+import { Cause, Duration, Effect, Exit, Layer, Option, Tracer } from "effect"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import * as Headers from "effect/http/Headers"
+import * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import { alertId } from "./AlertPolicy.ts"
 import { AlertError, Sink } from "./AlertSink.ts"
 
@@ -74,6 +75,71 @@ const followingNoRedirects = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.E
       })
   )
 
+const rejected = (status: number): AlertError =>
+  new AlertError({ code: "sink_rejected", status, message: `Alert webhook answered ${status}` })
+
+/**
+ * The span attributes of a delivery that say nothing of the url's path, query
+ * or userinfo: the method, the origin and the answer.
+ */
+const originAttributes: ReadonlySet<string> = new Set([
+  "http.request.method",
+  "url.scheme",
+  "server.address",
+  "server.port",
+  "http.response.status_code",
+  "error.type"
+])
+
+const isHeaderAttribute = (key: string): boolean =>
+  key.startsWith("http.request.header.") || key.startsWith("http.response.header.")
+
+/**
+ * The headers of a redirect that name where the endpoint moved, which is the
+ * same secret under another address.
+ */
+const redirectHeaderNames: ReadonlyArray<string> = ["location", "content-location"]
+
+/**
+ * The tracer a delivery opens its HTTP span on: the caller's own, with nothing
+ * of the request left on the span.
+ *
+ * A webhook url is a credential. Slack, Discord and PagerDuty put the secret
+ * in the path, others take it in the query, and a url may carry basic-auth
+ * userinfo. The HTTP client writes the whole url on its span and again in the
+ * failure it ends the span with, and the answer or the transport error it ends
+ * with holds the request. So only the attributes that name the method, the
+ * origin and the answer are kept, with the headers a host chose to record, and
+ * the span ends with the outcome alone: nothing on success, the refusing
+ * status, or that the endpoint could not be reached.
+ */
+const withoutRequest = (tracer: Tracer.Tracer): Tracer.Tracer =>
+  Tracer.make({
+    ...tracer,
+    span(options) {
+      const span = tracer.span(options)
+      const end = span.end.bind(span)
+      const attribute = span.attribute.bind(span)
+      span.attribute = (key, value) => {
+        if (originAttributes.has(key) || isHeaderAttribute(key)) attribute(key, value)
+      }
+      span.end = (endTime, exit) => {
+        if (exit._tag === "Success") return end(endTime, Exit.void)
+        if (Cause.hasInterruptsOnly(exit.cause)) return end(endTime, exit)
+        const status = span.attributes.get("http.response.status_code")
+        return end(
+          endTime,
+          Exit.fail(
+            typeof status === "number"
+              ? rejected(status)
+              : new AlertError({ code: "sink_unreachable", message: "Alert webhook could not be reached" })
+          )
+        )
+      }
+      return span
+    }
+  })
+
 /**
  * A sink that POSTs each alert to one webhook.
  *
@@ -90,6 +156,13 @@ const followingNoRedirects = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.E
  * its Fetch transport; an externally supplied `HttpClient` is not used.
  * Each delivery has its own scope, which aborts the request and releases any
  * unread response body on completion, failure, timeout, or interruption.
+ *
+ * The url is treated as a credential, because a webhook's secret usually is
+ * its path or query. The delivery's HTTP span is named for the method and
+ * records the scheme, host, port and answering status, never the path, the
+ * query or userinfo, and it fails with the same url-free reason the sink
+ * returns. A host that records HTTP headers on spans gets every name in
+ * `headers`, and a redirect's `location`, as `<redacted>`.
  *
  * A non-2xx response is a failure, not a delivery, and an endpoint that never
  * answers is a failure after `timeout`. Paging is exactly the case where a
@@ -114,6 +187,12 @@ export const layerWebhook = (
       const url = yield* Effect.orDie(webhookUrl(options.url))
       const client = HttpClient.withScope(yield* HttpClient.HttpClient)
       const timeout = options.timeout ?? defaultWebhookTimeout
+      // `Headers.isRedactedName` compares a string matcher against an
+      // already-lowercased header name without lowercasing the matcher.
+      const redactedNames = [
+        ...Object.keys(options.headers ?? {}).map((name) => name.toLowerCase()),
+        ...redirectHeaderNames
+      ]
       return {
         deliver: (alert) =>
           client.execute(
@@ -125,16 +204,15 @@ export const layerWebhook = (
             )
           ).pipe(
             followingNoRedirects,
+            Effect.updateService(Headers.CurrentRedactedNames, (names) => [...names, ...redactedNames]),
+            // A host may name HTTP spans for their url. This one is named for
+            // its method, as the client names it by default.
+            Effect.provideService(HttpClient.SpanNameGenerator, (request) => request.method),
+            Effect.updateService(Tracer.Tracer, withoutRequest),
             Effect.flatMap((response) =>
               response.status >= 200 && response.status < 300
                 ? Effect.void
-                : Effect.fail(
-                  new AlertError({
-                    code: "sink_rejected",
-                    status: response.status,
-                    message: `Alert webhook answered ${response.status}`
-                  })
-                )
+                : Effect.fail(rejected(response.status))
             ),
             Effect.timeout(timeout),
             Effect.scoped,

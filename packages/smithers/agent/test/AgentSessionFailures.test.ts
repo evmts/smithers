@@ -1618,6 +1618,95 @@ describe("the executor's resume bridge", () => {
     expect(claimed).toEqual([])
   })
 
+  /*
+   * The engine claims a parked round in one write and replaces the round's
+   * `Suspended` result in the next, so `poll` answers `Suspended` in between for
+   * an execution that is running. Effect 4.0.4 moved a scheduler yield into that
+   * gap, and the port an approval calls then claimed a run the journal bridge
+   * had already re-driven. The row says which it is: a round holds it, or none.
+   */
+  it.each([
+    { holder: "its owner", owner: { hostId: "host", pid: 1, nonce: "round" }, claim: null },
+    { holder: "its claim", owner: null, claim: { hostId: "host", pid: 1, nonce: "round" } }
+  ])("waits out a `Suspended` result on an execution a round holds through $holder", async ({ claim, owner }) => {
+    const record = recorder()
+    const resumed: Array<string> = []
+    const claimed: Array<string> = []
+    let polls = 0
+    const held: RunStore.RunRow = {
+      runId: "run-held",
+      status: "running",
+      owner,
+      heartbeatAtMs: 1,
+      createdAtMs: 1,
+      startedAtMs: 1,
+      finishedAtMs: null,
+      claim,
+      claimedAtMs: 1,
+      parentRunId: null,
+      cancelRequestedAtMs: null,
+      stateJson: "{}"
+    }
+    const outcome = await withExecutor(record, {
+      runs: { get: () => Effect.succeed(held) },
+      engine: (engine) =>
+        ({
+          ...engine,
+          // The round's second write lands between the first poll and the next.
+          poll: () => Effect.sync(() => Option.some({ _tag: polls++ === 0 ? "Suspended" : "Complete" })),
+          resume: (_flow: unknown, id: string) => Effect.sync(() => void resumed.push(id))
+        }) as unknown as EngineService,
+      runtime: {
+        resume: (id) =>
+          Effect.sync(() => {
+            claimed.push(id)
+            return launchInput.run
+          })
+      }
+    }, (executor) => executor.resumeRun({ runId: "run-held" }))
+
+    expect(outcome).toBe("unknown")
+    expect(polls).toBe(2)
+    expect(claimed).toEqual([])
+    expect(resumed).toEqual([])
+  })
+
+  it("takes up a `Suspended` result on an execution no round holds", async () => {
+    const record = recorder()
+    const resumed: Array<string> = []
+    const drove = Deferred.makeUnsafe<void>()
+    const parked: RunStore.RunRow = {
+      runId: "run-released",
+      status: "suspended",
+      owner: null,
+      heartbeatAtMs: null,
+      createdAtMs: 1,
+      startedAtMs: 1,
+      finishedAtMs: null,
+      claim: null,
+      claimedAtMs: null,
+      parentRunId: null,
+      cancelRequestedAtMs: null,
+      stateJson: JSON.stringify({ flowName: "agent/run", result: { _tag: "Suspended" } })
+    }
+    const outcome = await withExecutor(record, {
+      runs: { get: () => Effect.succeed(parked) },
+      engine: (engine) =>
+        ({
+          ...engine,
+          poll: () => Effect.succeed(Option.some({ _tag: "Suspended" })),
+          resume: (_flow: unknown, id: string) =>
+            Effect.sync(() => {
+              resumed.push(id)
+              Deferred.doneUnsafe(drove, Effect.void)
+            })
+        }) as unknown as EngineService
+    }, (executor) => Effect.tap(executor.resumeRun({ runId: "run-released" }), () => Deferred.await(drove)))
+
+    expect(outcome).toBe("resuming")
+    expect(resumed).toEqual(["run-released"])
+  })
+
   it("keeps following the journal after the engine refuses one re-drive", async () => {
     const record = recorder()
     const resumed: Array<string> = []

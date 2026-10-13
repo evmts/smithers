@@ -165,7 +165,7 @@ const Proto = {
       Crypto.Crypto,
       (crypto) =>
         Effect.flatMap(
-          Effect.orDie(crypto.randomUUIDv4),
+          Effect.orDie(crypto.randomUUIDv4()),
           (executionId) => this.execute(payload, { executionId, discard: true })
         )
     )

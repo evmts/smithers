@@ -8,7 +8,7 @@
 
 import { Control as ControlService, type ControlSchema } from "@smthrs/control"
 import { Console, Effect, Option, Stream } from "effect"
-import { type Argument, Command, Flag } from "effect/unstable/cli"
+import { type Argument, Command, Flag } from "effect/cli"
 import * as ClaudeMirror from "../ClaudeMirror.ts"
 import * as CliError from "../CliError.ts"
 import * as Forensics from "../Forensics.ts"

@@ -80,8 +80,8 @@ explicitly and says so:
 ```ts
 import * as BrowserJj from "@smthrs/jj/browser/BrowserJj"
 import { BrowserServices } from "@smthrs/platform-browser"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as Layer from "effect/Layer"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
 
 const layer = Layer.mergeAll(
   BrowserServices.layer({ bash, fs: fs.promises }),

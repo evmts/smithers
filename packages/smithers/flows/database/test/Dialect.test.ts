@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
-import { SqlClient } from "effect/unstable/sql/SqlClient"
+import { SqlClient } from "effect/sql/SqlClient"
 import * as Dialect from "../src/Dialect.ts"
 import * as TestDatabase from "../src/test/TestDatabase.ts"
 

@@ -28,14 +28,10 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import * as PlatformError from "effect/PlatformError"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { type ChildProcessHandle, ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
 import * as Schedule from "effect/Schedule"
 import * as Scope from "effect/Scope"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import {
-  type ChildProcessHandle,
-  ChildProcessSpawner,
-  make as makeSpawner
-} from "effect/unstable/process/ChildProcessSpawner"
 import * as CommandLine from "./CommandLine.ts"
 import * as Containment from "./internal/Containment.ts"
 import * as Pipeline from "./internal/Pipeline.ts"

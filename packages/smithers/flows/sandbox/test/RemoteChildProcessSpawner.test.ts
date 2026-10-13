@@ -1,8 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Deferred, Effect, Exit, Fiber, PlatformError, Ref, Sink, Stream } from "effect"
+import { ChildProcess } from "effect/process"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Scope from "effect/Scope"
-import { ChildProcess } from "effect/unstable/process"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { Buffer } from "node:buffer"
 import * as RemoteChildProcessSpawner from "../src/RemoteChildProcessSpawner/index.ts"
 

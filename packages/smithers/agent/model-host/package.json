@@ -37,7 +37,7 @@
     "@smthrs/memory": "workspace:*",
     "@smthrs/model": "workspace:*",
     "@smthrs/rpc": "workspace:*",
-    "effect": "4.0.0-rc.115",
+    "effect": "4.0.4",
     "zod": "4.5.4",
     "@smthrs/cli": "workspace:*"
   },

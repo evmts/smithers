@@ -7,7 +7,7 @@
 import * as Dialect from "@smthrs/database/Dialect"
 import type { RunStoreError } from "@smthrs/run-store/RunStore"
 import { Context, Effect, Layer, Schema } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import * as Read from "./internal/ExecutionSnapshotRead.ts"
 import * as Relations from "./internal/ExecutionSnapshotRelations.ts"
 

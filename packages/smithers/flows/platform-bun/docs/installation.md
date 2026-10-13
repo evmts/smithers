@@ -13,19 +13,18 @@ Version 1.0.0-rc.0 is not on npm yet. Until it is published, take the package
 from [the repository](https://github.com/smithersai/smithers); the rest of this
 page applies either way.
 
-The manifest declares five required peers, none optional:
+The manifest declares two required peers, neither optional:
 
-| Peer                           | Version        | Why                                                        |
-| ------------------------------ | -------------- | ---------------------------------------------------------- |
-| `effect`                       | `4.0.0-rc.115` | The runtime every service tag belongs to.                  |
-| `@effect/platform-bun`         | `4.0.0-rc.115` | Imported at module load by the root entry and `BunHost`.   |
-| `@effect/platform-node`        | `4.0.0-rc.115` | The Node adapters the bundle falls back to off Bun.        |
-| `@effect/platform-node-shared` | `4.0.0-rc.115` | The shared adapter implementation both Effect bundles use. |
-| `@smthrs/platform-node`        | `1.0.0-rc.0`   | The atomic filesystem slot and the containment machinery.  |
+| Peer                    | Version      | Why                                                       |
+| ----------------------- | ------------ | --------------------------------------------------------- |
+| `effect`                | `^4.0.4`     | The runtime every service tag belongs to.                 |
+| `@smthrs/platform-node` | `1.0.0-rc.0` | The atomic filesystem slot and the containment machinery. |
 
-Package managers that resolve required peers install all five automatically;
-the command above pins them so a lockfile records the versions. All Effect
-versions are exact so the host shares one compatible Effect runtime.
+Package managers that resolve required peers install both automatically.
+Install one `effect` in that range so the host shares one Effect runtime.
+`@effect/platform-bun`, `@effect/platform-node` and
+`@effect/platform-node-shared` are bundled privately, built from
+`effect@4.0.4`.
 
 ## Supported runtimes
 

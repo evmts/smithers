@@ -210,7 +210,7 @@ checks in order:
 4. Refuses a body carrying no RPC request message with 400
    `malformed_request`.
 
-The fourth check exists because `effect/unstable/rpc` hands every decoded
+The fourth check exists because `effect/rpc` hands every decoded
 message to the server loop, and a body that decodes to something else, `{}`,
 `[]`, prose, or nothing at all, reached it as a message with no tag and died
 there. The gateway answered `500 Internal Server Error` with an empty body,

@@ -148,7 +148,7 @@ cache misses that re-publish. There is no compatibility shim.
 ## Prior art
 
 The contract's ergonomics follow Effect's own `KeyValueStore`
-(`effect/unstable/persistence/KeyValueStore`): one small set of total
+(`effect/persistence/KeyValueStore`): one small set of total
 operations over one address space, so a memory, filesystem, or network
 implementation is the same shape. `findMissing` is Bazel's
 `MissingDigestsFinder`, one batched round trip whose result is guaranteed to be

@@ -2,7 +2,7 @@
  * The removal surface for 0.x commands and flags.
  *
  * A verb that 0.x had and rc.0 does not must fail with a sentence that names
- * the replacement, not with a usage error. `effect/unstable/cli` answers an
+ * the replacement, not with a usage error. `effect/cli` answers an
  * unknown subcommand with exit 2 and a "did you mean" list, which tells an
  * operator nothing about why `smthrs rewind` stopped existing. So every
  * removed verb is registered as a hidden subcommand whose only behaviour is

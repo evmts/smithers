@@ -5,8 +5,8 @@
  */
 import { type MicrosandboxSandbox, Sandbox } from "@smthrs/sandbox"
 import { Deferred, Effect, Exit, Fiber, FileSystem, Stream } from "effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Microsandbox from "microsandbox"
 import assert from "node:assert/strict"
 import { execFileSync, spawn, spawnSync } from "node:child_process"

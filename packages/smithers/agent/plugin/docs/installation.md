@@ -9,9 +9,9 @@ sidebar:
 
 Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
 
-Install `effect` explicitly at `4.0.0-rc.115`. The kernel depends on it, but your
+Install `effect` explicitly, in the range `^4.0.4`. The kernel depends on it, but your
 plugins import `Effect`, `Layer`, and `Option` directly, so `effect` belongs in
-your own dependency list at the release the kernel is built against. A different
+your own dependency list, inside the range the kernel accepts. A different
 `effect` major gives you two copies of the runtime and two sets of service tags.
 
 The package requires Node.js 26.4.0 or later and ships as both ESM and

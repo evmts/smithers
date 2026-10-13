@@ -19,7 +19,7 @@ import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
 import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
-import * as Encoding from "effect/Encoding"
+import * as Base64Url from "effect/encoding/Base64Url"
 import * as Exit from "effect/Exit"
 import * as Filter from "effect/Filter"
 import { dual } from "effect/Function"
@@ -249,7 +249,7 @@ export const into: {
           // Untraced because completion encoding is called for each deferred result.
           Effect.fnUntraced(function*(exit) {
             if (Exit.isFailure(exit)) {
-              const [reasons, interrupts] = Arr.partition(
+              const [interrupts, reasons] = Arr.partition(
                 exit.cause.reasons,
                 Filter.fromPredicate(Cause.isInterruptReason)
               )
@@ -396,7 +396,7 @@ export class TokenParsed extends Schema.Class<TokenParsed>(
    * @since 0.1.0
    */
   get asToken(): Token {
-    return Encoding.encodeBase64Url(
+    return Base64Url.encode(
       JSON.stringify([this.flowName, this.executionId, this.deferredName])
     ) as Token
   }

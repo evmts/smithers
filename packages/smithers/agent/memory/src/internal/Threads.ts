@@ -69,7 +69,7 @@ export const make = (database: DatabaseService, crypto: Crypto.Crypto): Pick<
   const createThread: Service["createThread"] = (input) =>
     Effect.gen(function*() {
       const { namespace } = yield* resolveNamespace(input.namespace)
-      const id = input.id ?? (yield* crypto.randomUUIDv4.pipe(
+      const id = input.id ?? (yield* crypto.randomUUIDv4().pipe(
         Effect.mapError((cause) => error("store", "could not generate memory thread id", cause))
       ))
       yield* validateNonEmpty(id, "threadId", ["id"])

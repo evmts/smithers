@@ -2,9 +2,9 @@
 import { Action } from "@smthrs/flow"
 import { Jj } from "@smthrs/jj"
 import { Effect, FileSystem, Schema, Stream } from "effect"
-import { HttpClient } from "effect/unstable/http/HttpClient"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { HttpClient } from "effect/http/HttpClient"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 
 export const Payload = Schema.Struct({ marker: Schema.String, written: Schema.String, url: Schema.String })
 export const Outcomes = Schema.Struct({

@@ -3,7 +3,7 @@
  * @since 1.0.0
  */
 
-import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 
 // The registry key also works when a service crosses the ESM/CJS projections.
 // This declares a trusted lifecycle contract; it cannot prove a supplied

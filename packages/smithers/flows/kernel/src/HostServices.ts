@@ -17,8 +17,8 @@
 
 import { Jj as JjPort } from "@smthrs/jj"
 import { FileSystem as EffectFileSystem, Layer, Path as EffectPath } from "effect"
-import { HttpClient as HttpClientPort } from "effect/unstable/http/HttpClient"
-import { ChildProcessSpawner as ChildProcessSpawnerPort } from "effect/unstable/process/ChildProcessSpawner"
+import { HttpClient as HttpClientPort } from "effect/http/HttpClient"
+import { ChildProcessSpawner as ChildProcessSpawnerPort } from "effect/process/ChildProcessSpawner"
 import * as ChildProcessSpawner from "./ChildProcessSpawner.ts"
 import * as FileSystem from "./FileSystem.ts"
 import * as HttpClient from "./HttpClient.ts"
@@ -60,7 +60,7 @@ import * as Path from "./Path.ts"
  * swappable via `Effect.provideService`, and never decorated here — a `Clock`
  * or a `Random` carries no host authority to guard, so they are not ours to
  * define. `ChildProcessSpawner` is the same story one layer out: process spawning is
- * `effect/unstable/process`, and the slot holds Effect's tag rather than a
+ * `effect/process`, and the slot holds Effect's tag rather than a
  * Smithers wrapper around it.
  *
  * @category models

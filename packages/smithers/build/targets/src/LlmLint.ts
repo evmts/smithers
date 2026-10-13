@@ -907,8 +907,9 @@ export interface CredentialDiscovery {
  * file contents, provider output or diagnostics. `file` is a normalized
  * workspace path and `name` a credential name or kind, either of which may
  * carry a `<credential:kind:n>` placeholder where it spelled a detected value.
- * Receivers in other languages pin its JSON Schema, `Schema.toJsonSchemaDocument`
- * with `onExcessProperty: "error"`.
+ * Receivers in other languages pin its JSON Schema, `Node.schemaIdentity` from
+ * `@smthrs/plan/Node` with `onExcessProperty: "error"`: the document that does
+ * not change with the installed `effect` release.
  * @category schemas
  * @since 1.0.0
  */

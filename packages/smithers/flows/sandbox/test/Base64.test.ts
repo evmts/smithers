@@ -4,11 +4,12 @@
  * `KubernetesSandbox`, `CloudflareSandbox`, and `AwsSandbox` all carry file
  * contents across a text-only transport as base64, so "the session promises
  * bytes" is true only as far as this pair is. It is judged against
- * `effect/Encoding`, the implementation the rest of the workspace uses for the
+ * `effect/encoding/Base64`, the implementation the rest of the workspace uses for the
  * same job, rather than against a transcript of itself.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Encoding, Result } from "effect"
+import { Effect, Result } from "effect"
+import { Base64 } from "effect/encoding"
 import { decodeBase64, decodeBase64Bytes, encodeBase64, encodeBase64Bytes } from "../src/internal/base64.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 
@@ -27,7 +28,7 @@ const bytesOf = (seed: number, length: number): Uint8Array => {
 }
 
 describe("internal base64", () => {
-  it("agrees with effect/Encoding on every generated payload", () => {
+  it("agrees with effect/encoding/Base64 on every generated payload", () => {
     const payloads: Array<Uint8Array> = [
       new Uint8Array(0),
       // Every byte value, so a signed-vs-unsigned slip cannot hide.
@@ -39,8 +40,8 @@ describe("internal base64", () => {
 
     for (const payload of payloads) {
       const encoded = encodeBase64(payload)
-      expect(encoded).toBe(Encoding.encodeBase64(payload))
-      const decoded = Encoding.decodeBase64(encoded)
+      expect(encoded).toBe(Base64.encode(payload))
+      const decoded = Base64.decode(encoded)
       expect(Result.isSuccess(decoded)).toBe(true)
       expect(Array.from(Result.getOrThrow(decoded))).toEqual(Array.from(payload))
       expect(decoder.decode(encodeBase64Bytes(payload))).toBe(encoded)
@@ -70,10 +71,10 @@ describe("internal base64", () => {
   it.effect("reports a payload the oracle refuses in the provider vocabulary", () =>
     Effect.gen(function*() {
       for (const garbage of ["!!!!", "AAAA=AAA", "A"]) {
-        // Whatever `effect/Encoding` refuses, this refuses, and it refuses it
+        // Whatever `effect/encoding/Base64` refuses, this refuses, and it refuses it
         // as a `ProviderError` rather than by throwing whatever the decoder
         // threw.
-        expect(Result.isFailure(Encoding.decodeBase64(garbage))).toBe(true)
+        expect(Result.isFailure(Base64.decode(garbage))).toBe(true)
         const error = yield* Effect.flip(decodeBase64(garbage, "the file /tmp/x"))
         expect(error).toBeInstanceOf(ProviderError)
         expect(error.code).toBe("unknown")

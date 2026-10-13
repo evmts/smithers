@@ -11,7 +11,7 @@
  * records the code it resumed on. An exact run lookup reports the drift.
  */
 import { Effect, Exit } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { expect, it } from "vitest"
 import { Control, type Service as ControlService } from "../src/Control.ts"
 import { CodeDrift, PersistenceError, RunNotFound } from "../src/ControlError.ts"

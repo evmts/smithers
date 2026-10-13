@@ -17,8 +17,8 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
-    "@effect/platform-node": "4.0.0-rc.115",
-    "@effect/platform-node-shared": "4.0.0-rc.115",
+    "@effect/platform-node": "4.0.4",
+    "@effect/platform-node-shared": "4.0.4",
     "@smthrs/agent": "workspace:*",
     "@smthrs/capability": "workspace:*",
     "@smthrs/control": "workspace:*",
@@ -46,7 +46,7 @@
     "@smthrs/testing": "workspace:*",
     "@smthrs/time-travel": "workspace:*",
     "@types/react": "^19.2.18",
-    "effect": "4.0.0-rc.115",
+    "effect": "4.0.4",
     "typescript": "~5.9.3"
   },
   "dependencies": {

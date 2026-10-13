@@ -96,7 +96,7 @@ For fetch options such as `credentials: "omit"`, provide
 `FetchHttpClient.RequestInit` around the whole exporting effect:
 
 ```ts
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 
 const outcome = program.pipe(
   Effect.provide(telemetry),
@@ -141,13 +141,36 @@ const telemetry = collectorUrl === undefined
   : Otlp.layerFetch({ baseUrl: collectorUrl, serviceName: "deploy-status" })
 ```
 
+## What the collector receives
+
+Every request is OTLP/HTTP JSON. Its `user-agent` is
+`OTel-OTLP-Exporter-JavaScript-Effect-OtlpTracer/` and the Effect version, with
+`OtlpLogger` or `OtlpMetrics` for the other two signals, after any `user-agent`
+you set in `headers`.
+
+| Part        | What it carries                                                                                                                                                                                                                                               |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Resource    | `telemetry.sdk.name` (`effect`), `telemetry.sdk.language` (`nodejs` or `webjs`) and `telemetry.sdk.version` (the Effect version), then your `attributes`, `service.name` and `service.version`.                                                               |
+| Scope       | Spans and log records name their scope `effect`, with the Effect version. Metrics name their scope for your service.                                                                                                                                          |
+| Spans       | Status `1` on success. Status `2` on failure, with the first error's message and one `exception` event per error. Status `0` and the attribute `effect.fiber.interrupted` on interruption. Failure text and string attributes are redacted before they leave. |
+| Log records | Your annotations as attributes, plus `effect.fiberId` and, for each log span, `effect.log_span.<label>` holding the elapsed milliseconds as a number. A record logged with a cause adds `exception.type`, `exception.message` and `exception.stacktrace`.     |
+| Metrics     | Counters, gauges and histograms under the names the producing package declares. A timer's unit is `ms`. A histogram lists every boundary it declares in `explicitBounds` and counts values above the last one in a final bucket.                              |
+
+The names of the spans themselves are in
+[Instrumentation and export](../concepts/instrumentation-and-export.md#spans-effect-names).
+
 ## What happens when the collector is down
 
 Export failure never fails your program, and it never surfaces as a rejected
 promise. Effect's exporter retries a transient failure three times, honoring a
-`retry-after` response header when one is present, then disables that exporter
-for 60 seconds and logs a `Debug` record saying so. Spans and records produced
-inside that window are dropped, and delivery resumes afterwards.
+`retry-after` response header on any retried status when one is present, then
+disables that exporter for 60 seconds and logs a `Debug` record saying so.
+Spans and records produced inside that window are dropped, and delivery resumes
+afterwards.
+
+The exporter reads a response's status and `retry-after` header and nothing
+else. Each exchange ends when the status arrives, so a collector that accepts a
+batch and never finishes its answer does not hold up the next one.
 
 Two consequences worth planning for:
 

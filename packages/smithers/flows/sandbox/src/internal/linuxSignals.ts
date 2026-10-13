@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 
-import type { Signal } from "effect/unstable/process/ChildProcess"
+import type { Signal } from "effect/process/ChildProcess"
 
 /**
  * The Linux numbering. Guests are Linux, so a name's number is the guest's

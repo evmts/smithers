@@ -7,8 +7,8 @@
  * of `item_reference` ids, and keep every credential out of the sealed view.
  */
 import { Effect, Redacted, Result, Schema, Stream } from "effect"
-import type * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
+import type * as HttpClientRequest from "effect/http/HttpClientRequest"
+import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import { describe, expect, it } from "vitest"
 import * as Auth from "../src/Auth.ts"
 import * as CanonicalJson from "../src/CanonicalJson.ts"

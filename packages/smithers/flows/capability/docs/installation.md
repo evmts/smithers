@@ -14,9 +14,9 @@ CommonJS with TypeScript declarations. It has one runtime dependency,
 [`@smthrs/canonical`](/api/canonical), which supplies the record guard
 `Permission.isPermissionError` validates payloads with.
 
-[`effect`](https://effect.website) is a peer dependency pinned at
-`effect@4.0.0-rc.115`. It supplies the `Schema`, `Option`, and `PlatformError`
-types on the exported surface. Install exactly that version: two copies of
+[`effect`](https://effect.website) is a peer dependency in the range
+`effect@^4.0.4`. It supplies the `Schema`, `Option`, and `PlatformError`
+types on the exported surface. Install one `effect` in that range: two copies of
 `effect` in one program are two sets of service tags.
 
 ## Import forms

@@ -1,5 +1,5 @@
 import { Effect, Redacted } from "effect"
-import * as Headers from "effect/unstable/http/Headers"
+import * as Headers from "effect/http/Headers"
 import { describe, expect, it } from "vitest"
 import * as Auth from "../src/Auth.ts"
 

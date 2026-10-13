@@ -1,8 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http"
 import { Otlp } from "../src/index.ts"
 

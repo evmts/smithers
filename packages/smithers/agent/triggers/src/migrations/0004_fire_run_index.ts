@@ -1,7 +1,7 @@
 /** @since 1.0.0-rc.1 */
 
 import * as Effect from "effect/Effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 
 /**
  * Indexes `flows_trigger_fires` by `run_id`, so a fires listing filtered to

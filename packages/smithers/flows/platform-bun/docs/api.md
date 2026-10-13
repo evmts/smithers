@@ -6,8 +6,8 @@ description: "Every export of @smthrs/platform-bun: the BunHost layers and their
 ```ts
 import { BunHost } from "@smthrs/platform-bun"
 import * as Effect from "effect/Effect"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 
 const program = Effect.gen(function*() {
   const spawner = yield* ChildProcessSpawner
@@ -15,10 +15,9 @@ const program = Effect.gen(function*() {
 }).pipe(Effect.provide(BunHost.layer))
 ```
 
-`@effect/platform-bun` is a required peer at exactly `4.0.0-rc.115` because
-this barrel and `BunHost` import it at module load. It is installed alongside
-the package by package managers that resolve required peers. The Effect Node
-platform packages and `effect` are also exact peers at `4.0.0-rc.115`.
+This barrel and `BunHost` import `@effect/platform-bun` at module load. It
+and the Effect Node platform packages are bundled privately, built from
+`effect@4.0.4`. `effect` is a required peer in the range `^4.0.4`.
 
 :::warning
 This entry point is Node-only in the browser-bundle sense: it falls back to the
@@ -180,7 +179,7 @@ describe that substitution:
 A key is the slot's stable identity in [`@smthrs/kernel`](/api/kernel)'s closed
 list, which is not always the specifier the tag is imported from: the spawner
 slot is `effect/process/ChildProcessSpawner` while its tag comes from
-`effect/unstable/process/ChildProcessSpawner`. The keys are written as literals
+`effect/process/ChildProcessSpawner`. The keys are written as literals
 rather than positions in that list, so reordering it cannot silently pair a slot
 with another slot's implementation. Nothing digests the record yet:
 [`@smthrs/plan`](/api/plan)'s step key carries a `layers` component these values

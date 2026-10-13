@@ -6,7 +6,7 @@
 
 import { RunStoreError } from "@smthrs/run-store/RunStore"
 import { Context, Effect, Layer, Schema } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import type { Position } from "./ExecutionSnapshot.ts"
 import * as Read from "./internal/ExecutionSnapshotRead.ts"
 

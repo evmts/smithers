@@ -5,7 +5,7 @@
  */
 
 import * as Effect from "effect/Effect"
-import * as Encoding from "effect/Encoding"
+import * as Base64 from "effect/encoding/Base64"
 import * as Result from "effect/Result"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 
@@ -21,7 +21,7 @@ const encoder = new TextEncoder()
  * byte path through this pair, so "the session promises bytes" stays true
  * whatever the transport underneath is willing to carry.
  *
- * The transform itself is `effect/Encoding`, which the workspace already uses
+ * The transform itself is `effect/encoding/Base64`, which the workspace already uses
  * for exactly this job in `@smthrs/kernel`. The pair here exists for the
  * provider-shaped error surface and the wrapped-payload tolerance below, not
  * for a second base64 implementation.
@@ -29,7 +29,7 @@ const encoder = new TextEncoder()
  * @category constructors
  * @since 0.1.0
  */
-export const encodeBase64 = (content: Uint8Array): string => Encoding.encodeBase64(content)
+export const encodeBase64 = (content: Uint8Array): string => Base64.encode(content)
 
 /**
  * Encodes bytes as base64 and returns the text as bytes, ready to be written
@@ -55,7 +55,7 @@ export const decodeBase64 = (
   what: string
 ): Effect.Effect<Uint8Array, ProviderError> =>
   Effect.suspend(() => {
-    const decoded = Encoding.decodeBase64(encoded.replaceAll(/\s/g, ""))
+    const decoded = Base64.decode(encoded.replaceAll(/\s/g, ""))
     return Result.isFailure(decoded)
       ? Effect.fail(
         new ProviderError({

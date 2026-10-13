@@ -1,4 +1,5 @@
 /** Intersects selected peer contracts without dropping alternatives.
+ * An optional peer declared in peerDependenciesMeta alone counts as `*`.
  * The complete release smoke selects all optional adapters by default.
  * Minimal consumers pass optionalPeers: [] and may include first-party peers.
  */
@@ -14,7 +15,13 @@ export const peerRangesOf = (manifests, { optionalPeers = "all", includeFirstPar
   }
   const peers = new Map()
   for (const manifest of consumers) {
-    for (const [name, range] of Object.entries(manifest.peerDependencies ?? {})) {
+    // An optional peer named only in peerDependenciesMeta takes any version:
+    // the consumer picks it, and its own peers constrain it.
+    const declared = { ...manifest.peerDependencies }
+    for (const [name, meta] of Object.entries(manifest.peerDependenciesMeta ?? {})) {
+      if (meta?.optional === true && declared[name] === undefined) declared[name] = "*"
+    }
+    for (const [name, range] of Object.entries(declared)) {
       if (!includeFirstParty && name.startsWith("@smthrs/")) continue
       if (optionalPeers !== "all" && !selected.has(name)) continue
       const previous = peers.get(name)

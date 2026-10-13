@@ -7,8 +7,8 @@
  */
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import { Cause, Effect, Exit, Layer, Option, Sink, Stream } from "effect"
-import type * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ExitCode, makeHandle, ProcessId } from "effect/unstable/process/ChildProcessSpawner"
+import type * as ChildProcess from "effect/process/ChildProcess"
+import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import * as Checkpoints from "../src/Checkpoints.ts"

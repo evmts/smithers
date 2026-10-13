@@ -10,11 +10,11 @@ import { CapabilityPattern } from "@smthrs/capability/Capability"
 import * as Data from "effect/Data"
 import * as Effect from "effect/Effect"
 import type * as Exit from "effect/Exit"
+import type { ExitEncoded } from "effect/rpc/RpcMessage"
 import * as Schema from "effect/Schema"
 import * as SchemaIssue from "effect/SchemaIssue"
 import * as SchemaParser from "effect/SchemaParser"
 import * as Transformation from "effect/SchemaTransformation"
-import type { ExitEncoded } from "effect/unstable/rpc/RpcMessage"
 
 const ResultTypeId = "@smthrs/flow/Flow/Result"
 

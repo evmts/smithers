@@ -194,7 +194,9 @@ export const make = <R = never>(options: MakeOptions<R>): TryCatchFinallyFlow<R>
  * `PatternError { code: "finalizer_failed" }`; a body failure outranks it, so
  * cleanup trouble never hides the reason the body failed. When both fail the
  * cleanup failure is kept behind the body failure on the same cause rather
- * than dropped, so a lock left held still has a record.
+ * than dropped, so a lock left held still has a record. After an interruption
+ * the cleanup failure is a defect, because a typed failure on an interrupted
+ * cause is discarded by a caller's recovery handler.
  *
  * @category combinators
  * @since 0.1.0
@@ -231,15 +233,23 @@ export const run = <I, A, E, R, B = A, E2 = never, R2 = never, E3 = never, R3 = 
   return Effect.onExit(guarded, (exit) =>
     Effect.matchEffect(finalize(input), {
       onFailure: (error) =>
-        Effect.fail(
-          new PatternError({
-            code: "finalizer_failed",
-            message: Exit.isSuccess(exit)
-              ? "The TryCatchFinally finalizer failed after the protected body succeeded"
-              : "The TryCatchFinally finalizer failed after the protected body failed",
-            cause: error
-          })
-        ),
+        Exit.hasInterrupts(exit)
+          ? Effect.die(
+            new PatternError({
+              code: "finalizer_failed",
+              message: "The TryCatchFinally finalizer failed after the protected body was interrupted",
+              cause: error
+            })
+          )
+          : Effect.fail(
+            new PatternError({
+              code: "finalizer_failed",
+              message: Exit.isSuccess(exit)
+                ? "The TryCatchFinally finalizer failed after the protected body succeeded"
+                : "The TryCatchFinally finalizer failed after the protected body failed",
+              cause: error
+            })
+          ),
       onSuccess: () => Effect.void
     }))
 }

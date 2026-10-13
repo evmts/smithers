@@ -9,7 +9,7 @@ import * as Effect from "effect/Effect"
 import * as Latch from "effect/Latch"
 import * as Queue from "effect/Queue"
 import * as Scope from "effect/Scope"
-import * as Socket from "effect/unstable/socket/Socket"
+import * as Socket from "effect/socket/Socket"
 
 /**
  * A predicate or byte transformation installed between the two socket ends.

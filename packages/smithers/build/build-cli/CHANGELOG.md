@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- An interrupted bundler resolve or build still reports a scratch tree it
+  could not remove (#3839). Effect 4.0.4 removes a typed failure from an
+  interrupted fiber's cause once the unwind passes a recovery handler, so the
+  removal's `ExecError` was dropped and the caller saw a plain interruption.
+  The failure now leaves the stop as a defect, so the exit carries both.
+
 - Check-mode targets leave declared `hostDirectories` out of the gitignored
   census and link them into the scratch copy instead of copying them. A large
   or read-only host cache, such as Go's module cache, no longer refuses a

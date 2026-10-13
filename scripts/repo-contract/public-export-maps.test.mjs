@@ -286,7 +286,7 @@ import * as Kernel from '@smthrs/kernel/ProcessConfinement';
 import * as Native from '@smthrs/platform-node/ProcessConfinement';
 import * as Sandbox from '@smthrs/platform-node/ProcessSandbox';
 import {Effect} from 'effect';
-import * as ChildProcess from 'effect/unstable/process/ChildProcess';
+import * as ChildProcess from 'effect/process/ChildProcess';
 const command=ChildProcess.make('fixture',[]);
 const profile={workspaceRoot:process.cwd(),reads:[],writes:[],readOnly:[],network:'none'};
 // Noop is an explicit opt-out, tested solely for command identity.

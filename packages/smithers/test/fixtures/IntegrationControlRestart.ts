@@ -8,7 +8,7 @@ import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as MemoryMigrations from "@smthrs/memory/Migrations"
 import * as TimeTravelMigrations from "@smthrs/time-travel/Migrations"
 import { Effect, Layer } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 
 const [operation, filename] = process.argv.slice(2)
 if (filename === undefined) throw new Error("A database filename is required")

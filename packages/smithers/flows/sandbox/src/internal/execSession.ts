@@ -6,9 +6,9 @@
 
 import * as CommandLine from "@smthrs/kernel/CommandLine"
 import * as Effect from "effect/Effect"
+import type { ChildProcessHandle } from "effect/process/ChildProcessSpawner"
 import type * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
-import type { ChildProcessHandle } from "effect/unstable/process/ChildProcessSpawner"
 import type { RemoteProcess } from "../RemoteChildProcessSpawner/Provider.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import type { Session } from "../Sandbox/Session.ts"

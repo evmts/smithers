@@ -2,9 +2,9 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact
-`4.0.0-rc.115` peer dependency. Keep the application on that version so
-all Smithers packages share one Effect runtime.
+This package declares `effect` as a `^4.0.4` peer dependency. Install one
+`effect` release in that range so all Smithers packages share one Effect
+runtime.
 
 **Documentation:** https://registry.smithers.sh
 
@@ -34,7 +34,7 @@ discovery never evaluates them.
 
 Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
 
-`effect` is a peer dependency at exactly `4.0.0-rc.115`. `@effect/platform-node`
+`effect` is a peer dependency in the range `^4.0.4`. `@effect/platform-node`
 supplies the `FileSystem` and `Path` implementations the scan walks with; this
 package has no platform bindings of its own.
 

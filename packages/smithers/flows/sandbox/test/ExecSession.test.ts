@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Exit, Sink, Stream } from "effect"
+import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
 import * as Scope from "effect/Scope"
-import { ExitCode, makeHandle, ProcessId } from "effect/unstable/process/ChildProcessSpawner"
 import { envPrefix } from "../src/internal/envPrefix.ts"
 import { execSession, type ExecSessionOptions } from "../src/internal/execSession.ts"
 import type { GatheredRun } from "../src/internal/localProcess.ts"

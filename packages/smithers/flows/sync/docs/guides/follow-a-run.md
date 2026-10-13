@@ -18,9 +18,9 @@ serialization:
 ```ts
 import * as SyncClient from "@smthrs/sync/SyncClient"
 import * as Layer from "effect/Layer"
-import * as RpcClient from "effect/unstable/rpc/RpcClient"
-import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization"
-import type * as Socket from "effect/unstable/socket/Socket"
+import * as RpcClient from "effect/rpc/RpcClient"
+import * as RpcSerialization from "effect/rpc/RpcSerialization"
+import type * as Socket from "effect/socket/Socket"
 
 export const clientLayer: Layer.Layer<SyncClient.SyncClient, never, Socket.Socket> = SyncClient.layer.pipe(
   Layer.provide(RpcClient.layerProtocolSocket()),
@@ -41,7 +41,7 @@ positive safe integer:
 ```ts
 import { SyncRpcs } from "@smthrs/sync/SyncRpcs"
 import * as Effect from "effect/Effect"
-import * as RpcClient from "effect/unstable/rpc/RpcClient"
+import * as RpcClient from "effect/rpc/RpcClient"
 
 const makeClient = Effect.flatMap(
   RpcClient.make(SyncRpcs),

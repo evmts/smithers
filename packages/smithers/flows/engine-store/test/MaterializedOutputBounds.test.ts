@@ -18,7 +18,7 @@ import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as Effect from "effect/Effect"
-import * as Encoding from "effect/Encoding"
+import * as Base64 from "effect/encoding/Base64"
 import type * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as StepBoundary from "../src/StepBoundary.ts"
@@ -196,7 +196,7 @@ describe("materialized outputs are digest-referenced and bounded (issue #113)", 
                 path: "artifact.bin",
                 digest: "d",
                 sizeBytes: 5,
-                content: Encoding.encodeBase64(encoder.encode("small"))
+                content: Base64.encode(encoder.encode("small"))
               }]
             },
             diffIdentity: "malformed-address"
@@ -273,7 +273,7 @@ describe("the aggregate inline payload is bounded (issue #122)", () => {
       // individually fits the per-output bound.
       expect(outputs[2]!.content).toBeUndefined()
       expect(outputs[2]!.digest).toBe(sha256(contents[2]!))
-      expect(JSON.stringify(evidence)).not.toContain(Encoding.encodeBase64(encoder.encode(contents[2]!)))
+      expect(JSON.stringify(evidence)).not.toContain(Base64.encode(encoder.encode(contents[2]!)))
       expect(host.files.has(blobPath(".objects", sha256(contents[2]!)))).toBe(true)
       // Replay round-trips the mixed inline/reference evidence.
       host.files.delete("a.bin")
@@ -328,7 +328,7 @@ describe("blob writes are atomic and materialization is digest-verified (issue #
             path: "artifact.bin",
             digest: sha256("real"),
             sizeBytes: 4,
-            content: Encoding.encodeBase64(encoder.encode("fake"))
+            content: Base64.encode(encoder.encode("fake"))
           }]
         },
         diffIdentity: "tampered"

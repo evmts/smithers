@@ -26,7 +26,7 @@ import {
  * @since 0.1.0
  */
 export interface Options {
-  /** Validated resource for metrics, tracer scope, and provider factories. */
+  /** Validated resource for metrics and provider factories. */
   readonly resource: ResourceConfiguration
   /**
    * Borrowed: the layer bridges onto this provider and never flushes or shuts
@@ -60,7 +60,8 @@ export interface Options {
  * layer acquires. Factories run during layer acquisition after resource
  * validation, and the provider factories receive the metric resource.
  * Already-created providers keep the resource captured at construction; the
- * resource option only sets metrics and tracer instrumentation scope for them.
+ * resource option only sets the metric resource for them. Spans and log
+ * records carry the instrumentation scope `effect` with the Effect version.
  * Ownership splits: callers own provider flushing and shutdown, including
  * factory-built providers, while the layer scope shuts down every reader the
  * `metricReader` factory returned. No exporter is allocated by this module.

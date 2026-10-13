@@ -9,7 +9,7 @@
  * launch index rather than a projection that only lives in memory.
  */
 import { Effect, Layer, Stream } from "effect"
-import { RpcTest } from "effect/unstable/rpc"
+import { RpcTest } from "effect/rpc"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
 import { type ControlError, RunNotFound } from "../src/ControlError.ts"

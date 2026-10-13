@@ -114,8 +114,8 @@ that authority onto its port, so the request, body, status code, and
 connection are all real and only TLS termination is missing:
 
 ```ts
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as Layer from "effect/Layer"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
 
 /** The real fetch transport, with a declared HTTPS authority mapped to `port`. */
 const transport = (port: number) =>

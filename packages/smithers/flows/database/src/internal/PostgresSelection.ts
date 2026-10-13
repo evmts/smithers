@@ -3,7 +3,7 @@
  */
 
 import { Effect, Layer } from "effect"
-import type { SqlClient } from "effect/unstable/sql/SqlClient"
+import type { SqlClient } from "effect/sql/SqlClient"
 import { createHash } from "node:crypto"
 import { basename, resolve } from "node:path"
 import { UnsupportedDatabase } from "./SqliteOpen.ts"

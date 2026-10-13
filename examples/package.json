@@ -38,11 +38,11 @@
     "@smthrs/sync": "workspace:*",
     "@smthrs/targets": "workspace:*",
     "@smthrs/time-travel": "workspace:*",
-    "effect": "4.0.0-rc.115"
+    "effect": "4.0.4"
   },
   "devDependencies": {
-    "@effect/platform-node": "4.0.0-rc.115",
-    "@effect/vitest": "4.0.0-rc.115",
+    "@effect/platform-node": "4.0.4",
+    "@effect/vitest": "4.0.4",
     "@smthrs/jj": "workspace:*",
     "@smthrs/testing": "workspace:*",
     "@types/node": "26.4.1",

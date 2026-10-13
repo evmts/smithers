@@ -157,12 +157,11 @@ describe("cancel requests reach parked runs (issue #27)", () => {
           yield* store.requestCancel("cancel-parked-resume", nowMs)
 
           // An unrelated resume arrives (operator poke). The activation guard
-          // must observe the pending cancel before the flow body re-runs.
-          yield* executeUntilParked(engine, EventFlow, {
-            executionId: "cancel-parked-resume",
-            payload: {},
-            discard: true
-          }, ["cancelled"])
+          // must observe the pending cancel before the flow body re-runs. A
+          // resume queues behind the drive that parked the run, which can
+          // still be settling; a second discarded admission would join that
+          // drive and drive nothing (AdmissionDrive pins that coalescing).
+          yield* engine.resume(EventFlow, "cancel-parked-resume")
           const row = yield* store.get("cancel-parked-resume")
           return { runsAfterSuspend, bodyRuns, row }
         })

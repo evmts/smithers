@@ -16,7 +16,7 @@
 import { NodeServices } from "@effect/platform-node"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import { Deferred, Effect, Fiber, Layer } from "effect"
-import type * as ChildProcess from "effect/unstable/process/ChildProcess"
+import type * as ChildProcess from "effect/process/ChildProcess"
 import { execFileSync } from "node:child_process"
 import {
   accessSync,

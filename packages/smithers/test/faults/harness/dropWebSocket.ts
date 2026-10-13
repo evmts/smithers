@@ -9,7 +9,7 @@
  *
  * @since 1.0.0
  */
-import type * as Socket from "effect/unstable/socket/Socket"
+import type * as Socket from "effect/socket/Socket"
 import * as NodeWebSocket from "../../../src/internal/NodeWebSocket.ts"
 
 /**

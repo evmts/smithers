@@ -6,7 +6,7 @@ import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as ByteSize from "effect/ByteSize"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
-import * as Encoding from "effect/Encoding"
+import * as Base64 from "effect/encoding/Base64"
 import * as Fiber from "effect/Fiber"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
@@ -1167,7 +1167,7 @@ describe("StepBoundary.layer (filesystem-backed)", () => {
             outputs: [{
               path: "output.txt",
               digest: sha256("recorded"),
-              content: Encoding.encodeBase64(encoder.encode("recorded"))
+              content: Base64.encode(encoder.encode("recorded"))
             }]
           },
           diffIdentity: "probe-refused"
@@ -1414,7 +1414,7 @@ describe("StepBoundary stays importable from a browser bundle (issue #114)", () 
     // The module exports the contract schemas, the service tag, and
     // `layerTest` — all of which a browser composition must import — so a
     // module-scope node: dependency would drag Node builtins into every
-    // bundle. Base64 goes through the platform-neutral `effect/Encoding`.
+    // bundle. Base64 goes through the platform-neutral `effect/encoding/Base64`.
     const fs = await import("node:fs/promises")
     const url = await import("node:url")
     const source = await fs.readFile(

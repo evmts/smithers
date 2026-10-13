@@ -5,9 +5,9 @@
  */
 
 import { Effect, Layer } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
-import type { SqlError } from "effect/unstable/sql/SqlError"
-import type { Fragment } from "effect/unstable/sql/Statement"
+import * as SqlClient from "effect/sql/SqlClient"
+import type { SqlError } from "effect/sql/SqlError"
+import type { Fragment } from "effect/sql/Statement"
 import { randomUUID } from "node:crypto"
 import * as DurableWriter from "../DurableWriter.ts"
 import * as NodeDatabase from "../node/NodeDatabase.ts"

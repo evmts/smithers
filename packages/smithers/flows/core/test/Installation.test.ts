@@ -5,14 +5,17 @@ import manifest from "../package.json" with { type: "json" }
 const guide = readFileSync(new URL("../docs/installation.md", import.meta.url), "utf8")
 
 describe("Installation dependency contract", () => {
-  it("installs and identifies the exact Effect peer from the manifest", () => {
+  it("identifies the Effect range the manifest peers", () => {
     const effect = `effect@${manifest.peerDependencies.effect}`
+    // A range an application's own effect has to fall in, never one version.
+    expect(manifest.peerDependencies.effect).toMatch(/^\^\d+\.\d+\.\d+$/)
 
     expect(guide).toContain(
       "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries"
     )
     expect(guide).not.toContain("@smthrs/core@next")
-    expect(guide).toContain(`\`${effect}\` as an exact peer dependency`)
+    expect(guide).toContain(`\`${effect}\` as a peer dependency`)
+    expect(guide).not.toContain("exact peer")
     expect(guide).not.toContain("it is a dependency, not a peer")
   })
 

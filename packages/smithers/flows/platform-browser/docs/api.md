@@ -6,7 +6,7 @@ description: "Every public export of @smthrs/platform-browser: the entry points,
 ```ts
 import { BrowserServices } from "@smthrs/platform-browser"
 import * as Effect from "effect/Effect"
-import { ChildProcess } from "effect/unstable/process"
+import { ChildProcess } from "effect/process"
 
 const makeProgram = (options: Parameters<typeof BrowserServices.layer>[0]) =>
   Effect.scoped(ChildProcess.make`ls -la`).pipe(

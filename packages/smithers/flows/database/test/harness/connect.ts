@@ -8,7 +8,7 @@
  * @since 1.0.0
  */
 import { Context, Effect, Layer, type Scope } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 
 /**
  * Builds `layer` and returns the `SqlClient` it provides.

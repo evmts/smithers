@@ -8,7 +8,7 @@ import * as Sha256 from "@smthrs/crypto/Sha256"
 import { OwnerId } from "@smthrs/journal/OwnerId"
 import { RunStatus, RunStoreError } from "@smthrs/run-store/RunStore"
 import { Cause, Effect, Exit, Option, Schema } from "effect"
-import type * as SqlClient from "effect/unstable/sql/SqlClient"
+import type * as SqlClient from "effect/sql/SqlClient"
 import type { Batch } from "../ExecutionSnapshot.ts"
 import { RunState } from "../RunState.ts"
 

@@ -18,8 +18,8 @@ import * as ObservedClock from "./ObservedClock.ts"
  * it could not append instead of reporting a health it never proved.
  */
 import { Effect, Fiber } from "effect"
+import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
 import { PersistenceError } from "../src/ControlError.ts"

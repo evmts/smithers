@@ -62,7 +62,7 @@ export const intoResult = <A, E, R>(
             instance.handoff ?? new Complete({ exit: Exit.succeed(value) })
           ),
         onFailure: (cause): Effect.Effect<Result<A, E>> => {
-          const [reasons, interrupts] = Arr.partition(
+          const [interrupts, reasons] = Arr.partition(
             cause.reasons,
             Filter.fromPredicate(Cause.isInterruptReason)
           )

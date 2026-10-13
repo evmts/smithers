@@ -14,7 +14,7 @@ import {
 import type { GrantStoreError } from "@smthrs/capability/Permission"
 import { Context, Effect, Layer, type Path, type Scope } from "effect"
 import type { PlatformError } from "effect/PlatformError"
-import type * as ChildProcess from "effect/unstable/process/ChildProcess"
+import type * as ChildProcess from "effect/process/ChildProcess"
 import type { Policy, PolicyRule, Service as GrantService } from "./GrantStore.ts"
 
 /** Workspace-relative trees; `.` names the workspace. No path opens its parent.

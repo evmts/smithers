@@ -49,6 +49,31 @@ Each delivery has its own scope. Completion, refusal, timeout, and interruption
 abort the request and release any unread response body. Delivery depends on the
 response status, so a body that never ends does not delay completion.
 
+## What a trace shows
+
+A webhook url is a credential: Slack, Discord and PagerDuty put the secret in
+the path, and other receivers take it in the query. The sink keeps it out of
+telemetry. Each delivery opens one HTTP span named `POST` that records:
+
+| Attribute                   | Value                                          |
+| --------------------------- | ---------------------------------------------- |
+| `http.request.method`       | `POST`                                         |
+| `url.scheme`                | `https` or `http`                              |
+| `server.address`            | The endpoint's host name                       |
+| `server.port`               | The endpoint's port                            |
+| `http.response.status_code` | The answering status, when there was an answer |
+| `error.type`                | The status again, for a `4xx` or `5xx` answer  |
+
+The span never records the url's path, query or userinfo. It fails with the
+reason the sink returns: `Alert webhook answered 503`, or
+`Alert webhook could not be reached` when no answer came. A delivery that hit
+`timeout` ends its span as interrupted.
+
+The span records no header. A host that sets `HttpClient.TracerHeaderFilter` to
+record headers gets every name in `headers` as `<redacted>`, and the `location`
+and `content-location` of a redirect too, because they name where the endpoint
+moved.
+
 ## What the request looks like
 
 The body is the alert plus its `alertId`, and the same id is sent as an

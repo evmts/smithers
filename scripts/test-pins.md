@@ -35,11 +35,13 @@ exists, so bundling establishes no durable-engine support. The
 [support matrix](../apps/site/docs/reference/support-matrix.md#runtimes) states
 the status of each runtime, platform and storage combination.
 
-The substrate is a release candidate: every release-1 engine manifest pins
-`effect` to exactly `4.0.0-rc.115`. An upstream defect against that pin is not
-fixed by a patch range. `scripts/check-single-effect-version.mjs` enforces the
-one pin across the workspace, and a candidate that moves it records the move as
-a breaking change in [CHANGELOG.md](../CHANGELOG.md).
+The repository is built and tested on one Effect release: every development
+dependency, both override blocks and both lockfiles pin `effect` to exactly
+`4.0.4`. A published library accepts the range `^4.0.4` from its application
+as a peer. `scripts/check-single-effect-version.mjs` enforces the one tested
+version across the workspace and the range in the published peers, and a
+candidate that moves either records the move in
+[CHANGELOG.md](../CHANGELOG.md).
 
 The alpha control server defaults to loopback (`127.0.0.1`). A non-loopback
 bind requires the explicit `--listen`/`listen: true` opt-in and does not add

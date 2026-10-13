@@ -3,7 +3,7 @@ import { Action, DurableDeferred, DurableQueue, Flow, FlowRuntime, Interpreter, 
 import { Node } from "@smthrs/plan"
 import { Cause, Context, Effect, Exit, Layer, Option, Schema, SchemaGetter } from "effect"
 import type * as Crypto from "effect/Crypto"
-import { PersistedQueue } from "effect/unstable/persistence"
+import { PersistedQueue } from "effect/persistence"
 import { withCrypto } from "./Crypto.ts"
 import { layerMemory, makeInstance } from "./MemoryFlowRuntime.ts"
 

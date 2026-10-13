@@ -120,6 +120,23 @@ export const resolveDeployOptions = (options: DeployOptions): ResolvedDeployOpti
   remoteState: options.remoteState ?? (() => remoteStateFromEnvironment())
 })
 
+/**
+ * The stage a deployment that names none goes to: `dev_$USER`.
+ *
+ * A stage's resources and state are recorded under its name. Alchemy's own
+ * default was `dev_$USER` and is now `live_$USER`, so a run that left the
+ * choice to Alchemy would deploy a second development stack beside the one
+ * `pnpm run deploy:dev` already made. The wrapper names the stage instead.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const developmentStage = (environment: NodeJS.ProcessEnv = process.env): string =>
+  `dev_${environment["USER"] || environment["USERNAME"] || "unknown"}`
+
+const namesStage = (args: ReadonlyArray<string>): boolean =>
+  args.some((arg) => arg === "--stage" || arg.startsWith("--stage="))
+
 const runAlchemy = (
   command: { readonly cli: string; readonly cwd: string },
   args: ReadonlyArray<string>,
@@ -130,7 +147,9 @@ const runAlchemy = (
     try {
       // pnpm forwards the `--` in `pnpm run deploy -- --yes` literally, and
       // Alchemy reads every argument after it as a positional, so drop it.
-      const alchemyArgs = args.filter((arg) => arg !== "--")
+      const forwarded = args.filter((arg) => arg !== "--")
+      // Appended, so the caller's own arguments keep their positions.
+      const alchemyArgs = namesStage(forwarded) ? forwarded : [...forwarded, "--stage", developmentStage()]
       child = spawn(process.execPath, [command.cli, "deploy", "alchemy.run.ts", ...alchemyArgs], {
         cwd: command.cwd,
         detached: process.platform !== "win32",

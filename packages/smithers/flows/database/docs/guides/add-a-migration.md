@@ -18,7 +18,7 @@ use:
 
 ```ts
 import * as Effect from "effect/Effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 
 /**
  * Creates the `flows_selection_suspected_edges` table.
@@ -113,7 +113,7 @@ import { describe, expect, it } from "@effect/vitest"
 import * as Migrations from "@smthrs/database/Migrations"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as Effect from "effect/Effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 
 describe("migrations", () => {
   it.effect("creates every table and reruns idempotently", () =>

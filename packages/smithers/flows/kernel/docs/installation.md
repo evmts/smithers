@@ -33,8 +33,8 @@ or one you add under `packages/`, and depends on it with a workspace specifier:
 The package requires Node.js 26.4.0 or later and ships as ESM, CommonJS, and
 TypeScript declarations. Its Smithers dependencies install with it:
 [`@smthrs/capability`](/api/capability), [`@smthrs/jj`](/api/jj), and
-[`@smthrs/journal`](/api/journal). The host supplies the exact
-`effect@4.0.0-rc.115` peer so the library never installs a second runtime.
+[`@smthrs/journal`](/api/journal). The host supplies the
+`effect@^4.0.4` peer so the library never installs a second runtime.
 
 The root entry point carries no Node built-ins. A package test bundles the
 whole root dependency graph for the browser and asserts that no
@@ -89,7 +89,7 @@ in the consuming workspace package:
 ```
 
 `test/contract` registers Vitest cases, so importing it requires the declared
-peers, `@effect/vitest@4.0.0-rc.115` and `vitest@5.0.0`. Both are optional: a
+peers, `@effect/vitest` at the same version as your `effect` and `vitest@5.0.0`. Both are optional: a
 consumer that imports only the kernel or `test/TestGrantStore` needs neither.
 See [Testing](./testing.md) for what each one covers.
 

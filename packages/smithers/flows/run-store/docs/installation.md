@@ -15,8 +15,8 @@ CommonJS with TypeScript declarations. Its dependencies install with it:
 [`@smthrs/journal`](/api/journal) for the `OwnerId` fencing token, and
 [`@smthrs/observability`](/api/observability) for the shared throughput metric.
 
-[`effect`](https://effect.website) is a peer dependency pinned at
-`4.0.0-rc.115`, so install exactly that version. Two copies of `effect` in one
+[`effect`](https://effect.website) is a peer dependency in the range
+`^4.0.4`, so install one `effect` in that range. Two copies of `effect` in one
 program are two sets of service tags, and a store layer built against one copy
 cannot be provided to a program holding the other: the mismatch surfaces as a
 missing service rather than as a version error.
@@ -37,7 +37,7 @@ installed alongside.
 The stores are written against the driver-neutral `@smthrs/database` contract,
 so they carry no database of their own. A composition supplies two services:
 
-- `SqlClient.SqlClient` from `effect/unstable/sql/SqlClient`, which the SQL
+- `SqlClient.SqlClient` from `effect/sql/SqlClient`, which the SQL
   driver provides. `@smthrs/database/node/NodeDatabase` opens a `node:sqlite`
   database.
 - `DurableWriter` from `@smthrs/database`, which serializes and retries the
@@ -52,7 +52,7 @@ Using `NodeDatabase` or the in-memory `TestRunStore` helper selects the optional
 Node SQLite driver:
 
 ```bash
-pnpm add @effect/sql-sqlite-node@4.0.0-rc.115
+pnpm add @effect/sql-sqlite-node
 ```
 
 Both `RunStore.layer` and `AttemptStore.layer` require exactly those two, and

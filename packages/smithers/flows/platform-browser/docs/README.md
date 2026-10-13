@@ -48,8 +48,8 @@ import { configureSingle, fs } from "@zenfs/core"
 import { IndexedDB } from "@zenfs/dom"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { Bash } from "just-bash"
 
 await configureSingle({ backend: IndexedDB })

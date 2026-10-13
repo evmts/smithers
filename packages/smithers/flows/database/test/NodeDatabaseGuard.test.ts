@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { Cause, Effect, type Exit, Layer, Result } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { existsSync, statSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"

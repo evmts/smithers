@@ -46,7 +46,7 @@ import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import type * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import * as ArtifactRoots from "./internal/ArtifactRoots.ts"
 
 /**

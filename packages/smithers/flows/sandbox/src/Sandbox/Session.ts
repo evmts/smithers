@@ -6,8 +6,8 @@
 
 import type * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
+import type { Signal } from "effect/process/ChildProcess"
 import type { Scope } from "effect/Scope"
-import type { Signal } from "effect/unstable/process/ChildProcess"
 import type { RemoteOptions, RemoteProcess } from "../RemoteChildProcessSpawner/Provider.ts"
 import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 

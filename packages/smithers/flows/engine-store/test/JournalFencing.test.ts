@@ -6,8 +6,8 @@ import { Input, type RunId, type Seq, type SourceId, type SourceSeq } from "@smt
 import type { OwnerId } from "@smthrs/journal/OwnerId"
 import * as SqlJournal from "@smthrs/journal/SqlJournal"
 import { Deferred, Effect, Layer } from "effect"
+import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
 import * as Migrations from "../src/Migrations.ts"
 
 const runId = (value: string): RunId => value as RunId

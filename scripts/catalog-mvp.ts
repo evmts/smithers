@@ -1,7 +1,7 @@
 /** Generate shipped metadata without invoking a command or importing repository flow bodies. */
 import { readFileSync, writeFileSync, renameSync } from "node:fs"
 import { resolve } from "node:path"
-import { Schema } from "effect"
+import * as Node from "@smthrs/plan/Node"
 import { baseFlows, adminFlows, type CommandActions } from "smithers-app/mainview/flows/Flows"
 import { httpProjections } from "@smthrs/ui/app-operations/http"
 import { nameOf } from "smithers-app/mainview/flows/registry"
@@ -23,7 +23,9 @@ export const generateCatalog = () => {
     return { name, slash: m.slash ?? null, cli: m.cli ?? null, journey: m.journey ?? [], group: m.group ?? "",
       visibility: m.visibility ?? "hidden", actors: m.actors ?? [], minimumRole: m.minimumRole ?? "member", credentialScope: m.credentialScope ?? "write:repository",
       agent: m.agent ?? "never", summary: m.summary, http: m.http ?? null, ...("client" in m && m.client ? { client: m.client } : {}),
-      payload: Schema.toJsonSchemaDocument(entry.input) }
+      // The owned identity: the CLI validates arguments against this document and
+      // the backend pins it, so it must not change with the installed effect.
+      payload: Node.schemaIdentity(entry.input) }
   }).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
 }
 /** Appendix C is the build-time authority for deterministic Inspect labels. */

@@ -19,12 +19,27 @@ const sourceRequire = createRequire(join(root, "packages/smithers/package.json")
 const sourceManifest = JSON.parse(await readFile(join(root, "packages/smithers/package.json"), "utf8"))
 const version = sourceManifest.dependencies.effect
 const adapters = ["@effect/platform-bun", "@effect/platform-node", "@effect/platform-node-shared"]
+// What the bundled adapters import besides Effect, at the versions the CLI
+// manifest installs. Read from that manifest, so the real-adapter test below
+// also fails when an Effect bump moves an adapter's own dependency and the
+// owners' manifests do not follow.
+const ordinary = Object.fromEntries(
+  ["undici", "redis", "ws", "@types/ws"].map((name) => [name, sourceManifest.dependencies[name]])
+)
 const manifest = () => ({
   type: "module",
   smthrs: { privateEffectAdapters: adapters },
-  dependencies: { effect: version, undici: "8.10.2", redis: "6.2.1", ws: "8.21.3", "@types/ws": "8.18.1" },
+  dependencies: { effect: version, ...ordinary },
   devDependencies: Object.fromEntries(adapters.map((name) => [name, version]))
 })
+/** A library owner: Effect is its application's, as a ranged peer, and one exact release in development. */
+const library = () => {
+  const input = manifest()
+  delete input.dependencies.effect
+  input.peerDependencies = { effect: "^" + version }
+  input.devDependencies.effect = version
+  return input
+}
 const fixture = async (body) => {
   const directory = await mkdtemp(join(await realpath(tmpdir()), "smithers-private-adapter-test-"))
   try {
@@ -61,10 +76,26 @@ test("private adapter declarations reject incomplete, mutable, and consumer reso
     input.dependencies.effect = value
     assert.throws(() => privateEffectAdapters(input), /exact Effect/)
   }
-  const peer = manifest()
-  peer.peerDependencies = { effect: peer.dependencies.effect }
-  delete peer.dependencies.effect
-  assert.deepEqual(privateEffectAdapters(peer), adapters)
+  assert.deepEqual(privateEffectAdapters(library()), adapters)
+  // A library builds from the exact release it develops against, never from
+  // the range its peer accepts.
+  for (const value of [undefined, "^" + version, "~" + version, "workspace:*"]) {
+    const input = library()
+    input.devDependencies.effect = value
+    assert.throws(() => privateEffectAdapters(input), /exact Effect/, String(value))
+  }
+  // Its peer starts at that release: the reverse, an exact peer, would refuse
+  // every later Effect the bundled adapter accepts, and a lower floor would
+  // run the adapter on an Effect it was not built for.
+  for (const value of [undefined, version, "^4.0.0", "~" + version, ">=" + version, "*"]) {
+    const input = library()
+    input.peerDependencies.effect = value
+    assert.throws(() => privateEffectAdapters(input), /Effect peer that starts at their build release/, String(value))
+  }
+  // An executable installs the release itself, so a peer beside it is not read.
+  const executable = manifest()
+  executable.peerDependencies = { effect: "*" }
+  assert.deepEqual(privateEffectAdapters(executable), adapters)
   const noShared = manifest()
   noShared.smthrs.privateEffectAdapters = [adapters[1]]
   assert.throws(() => privateEffectAdapters(noShared), /pinned shared/)
@@ -265,15 +296,12 @@ test("private adapter capture refuses wrong versions, undeclared external depend
     await assert.rejects(buildPrivateEffectAdapters(path), /identity differs/)
     await writeFile(packagePath, JSON.stringify({ ...original, dependencies: { "@effect/uncaptured": version } }))
     await assert.rejects(buildPrivateEffectAdapters(path), /Uncaptured adapter dependency/)
-    await writeFile(packagePath, JSON.stringify({ ...original, dependencies: { ws: "8.21.3" } }))
+    await writeFile(packagePath, JSON.stringify({ ...original, dependencies: { ws: ordinary.ws } }))
     const wrong = manifest()
     wrong.dependencies.ws = "0.0.0"
     await writeFile(join(path, "package.json"), JSON.stringify(wrong))
     await assert.rejects(buildPrivateEffectAdapters(path), /external dependency is not exact/)
-    const peer = manifest()
-    peer.peerDependencies = { effect: version }
-    delete peer.dependencies.effect
-    await writeFile(join(path, "package.json"), JSON.stringify(peer))
+    await writeFile(join(path, "package.json"), JSON.stringify(library()))
     await writeFile(
       packagePath,
       JSON.stringify({

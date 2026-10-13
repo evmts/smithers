@@ -32,8 +32,8 @@ const ports = vi.hoisted(() => ({
 // worktree, or listener. The bug consent cases drive the unified `bug` verb
 // through its typed command; routing-only cases use a bounded handler.
 vi.mock("../src/Command.ts", () => ({ cli: "legacy" }))
-vi.mock("effect/unstable/cli", async (load) => {
-  const actual = await load<typeof import("effect/unstable/cli")>()
+vi.mock("effect/cli", async (load) => {
+  const actual = await load<typeof import("effect/cli")>()
   return { ...actual, Command: { ...actual.Command, runWith: ports.runWith } }
 })
 vi.mock("../src/NodeControl.ts", async (load) => {

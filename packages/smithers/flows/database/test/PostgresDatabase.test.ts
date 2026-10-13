@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Context, Effect, Exit, Fiber, Layer, Scope } from "effect"
-import { SqlClient } from "effect/unstable/sql/SqlClient"
+import { SqlClient } from "effect/sql/SqlClient"
 import { randomUUID } from "node:crypto"
 import * as Dialect from "../src/Dialect.ts"
 import * as DurableWriter from "../src/DurableWriter.ts"

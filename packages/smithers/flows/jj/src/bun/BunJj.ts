@@ -9,7 +9,7 @@
  */
 
 import type * as Layer from "effect/Layer"
-import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import type { Jj, JjError } from "../Jj.ts"
 import * as NodeJj from "../node/NodeJj.ts"
 

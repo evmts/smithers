@@ -14,7 +14,7 @@
  * machine was the one the workspace asked for. Both are now one service that
  * anything needing an interpreter takes as a dependency.
  *
- * Host access is Effect's own: `effect/unstable/process/ChildProcessSpawner`
+ * Host access is Effect's own: `effect/process/ChildProcessSpawner`
  * for the version probe. Platform facts arrive as layer construction options.
  * The live service defaults to the host environment when available and forwards
  * only executable-lookup variables. No Node imports are needed, so this module
@@ -26,9 +26,9 @@
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Schema from "effect/Schema"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import * as BoundedOutput from "./internal/boundedOutput.ts"
 import * as Diagnostics from "./internal/diagnostic.ts"
 import { normalizePlatform } from "./internal/platform.ts"

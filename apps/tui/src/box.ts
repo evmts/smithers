@@ -11,8 +11,8 @@ import { ProviderError } from "@smthrs/sandbox/RemoteChildProcessSpawner"
 import { Effect, Layer, Stream } from "effect"
 import * as ServiceContext from "effect/Context"
 import type * as PlatformError from "effect/PlatformError"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { instructionNames } from "./context.ts"
 
 export interface Box {

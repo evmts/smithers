@@ -7,7 +7,7 @@
  * flood is stopped while streaming, before signature verification.
  */
 import { Cause, Effect, Exit, Layer, Redacted, Schema, Stream } from "effect"
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest"
+import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import { describe, expect, it } from "vitest"
 import * as Channels from "../src/Channels.ts"
 import { InvalidInput, Unauthorized } from "../src/ControlError.ts"

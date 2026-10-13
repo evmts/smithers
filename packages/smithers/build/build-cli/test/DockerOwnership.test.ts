@@ -1,6 +1,6 @@
 import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
 import { Cause, Deferred, Effect, Exit, Fiber, Scope, Sink, Stream } from "effect"
-import { ExitCode, makeHandle, ProcessId } from "effect/unstable/process/ChildProcessSpawner"
+import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import * as DockerExec from "../src/DockerExec.ts"
 import * as PackageTree from "../src/PackageTree.ts"

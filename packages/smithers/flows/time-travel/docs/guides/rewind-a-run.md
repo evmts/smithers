@@ -103,7 +103,7 @@ The audit row is the durable record of the attempt, and it outlives the call:
 
 ```ts
 import * as Effect from "effect/Effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 
 const audited = Effect.gen(function*() {
   const sql = yield* Effect.service(SqlClient.SqlClient)

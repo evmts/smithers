@@ -8,8 +8,8 @@ sidebar:
 ## Requirements
 
 - Node.js 26.4.0 or later.
-- `effect` 4.0.0-rc.115. The package's schemas, layers, and error classes are
-  Effect values, so the version has to match the one your application uses.
+- `effect` `^4.0.4`. The package's schemas, layers, and error classes are
+  Effect values, so it uses the one `effect` your application installs.
 
 ## Install
 
@@ -19,7 +19,7 @@ The store writes to SQL, so a composition also needs the SQLite client, the
 durable writer, and Effect's `Crypto` service:
 
 ```bash
-pnpm add @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115 effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
+pnpm add @effect/platform-node @effect/platform-node-shared effect @effect/sql-sqlite-node
 ```
 
 [`@smthrs/plan`](/api/plan), [`@smthrs/database`](/api/database) and

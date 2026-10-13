@@ -25,7 +25,7 @@
  * still validated locally. Provider acceptance is not a cast.
  *
  * Reference consulted: the `generateObject` function from Effect's
- * `effect/unstable/ai/LanguageModel` module, which
+ * `effect/ai/LanguageModel` module, which
  * sends `responseFormat: { type: "json", schema }` and then decodes the result
  * with the same schema, failing `AiError.InvalidOutputError` on mismatch. The
  * decode-and-fail-typed half is copied. The provider `responseFormat` half is
@@ -38,6 +38,7 @@
  */
 
 import * as Digest from "@smthrs/core/Digest"
+import * as Node from "@smthrs/core/Node"
 import * as Fault from "@smthrs/flow/Fault"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
@@ -184,7 +185,10 @@ export const maxIssues = 5
  * @slop
  */
 export const jsonSchema = (schema: Schema.Top): unknown => {
-  const document = Schema.toJsonSchemaDocument(schema, { onExcessProperty: "error" })
+  // The digest below keys a step with it and the instructions put it in a
+  // model request, so it is the owned identity: a later effect release must
+  // not change either.
+  const document = Node.schemaIdentity(schema, { onExcessProperty: "error" })
   return Object.keys(document.definitions).length > 0
     ? { ...document.schema, $defs: document.definitions }
     : document.schema

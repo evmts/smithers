@@ -2,7 +2,7 @@
  * the engine keeps immutable preimage references in its existing journal.
  */
 import { Cause, Effect, Layer, Schema, Stream } from "effect"
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
+import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import * as Jj from "../../packages/smithers/flows/jj/src/Jj.ts"
 import * as NodeJj from "../../packages/smithers/flows/jj/src/node/NodeJj.ts"
 import { helperPath } from "./helper.ts"

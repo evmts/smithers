@@ -13,7 +13,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Migrations as RunStoreMigrations, RunStore } from "@smthrs/run-store"
 import { Effect, Layer } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 import * as SqlControlRuntime from "../src/SqlControlRuntime.ts"
 

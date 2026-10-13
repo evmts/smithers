@@ -19,13 +19,17 @@ it.effect("exports granular spans and metrics from one added layer", () =>
     expect(summary.result).toBe("dist/server.tar")
 
     // The export is granular: flow lifecycle, engine dispatch, store
-    // operations, and individual SQL statements all arrive as spans.
+    // operations, and individual SQL statements all arrive as spans. Effect
+    // names a statement's span for the database system and a transaction's
+    // span `sql.transaction`.
     expect(summary.spanNames).toContain("examples/Ship.execute")
     expect(summary.spanNames).toContain("FlowEngine.actionExecute")
     expect(summary.spanNames).toContain("ActionPersistence.execute")
     expect(summary.spanNames).toContain("RunStore.claim")
     expect(summary.spanNames).toContain("Journal.emitDurable")
-    expect(summary.spanNames).toContain("sql.execute")
+    expect(summary.spanNames).toContain("sqlite")
+    expect(summary.spanNames).toContain("sql.transaction")
+    expect(summary.spanNames).not.toContain("sql.execute")
 
     expect(summary.metricNames).toContain("flows_engine_dispatches")
     expect(summary.metricNames).toContain("flows_engine_dispatch_duration")

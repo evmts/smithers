@@ -577,12 +577,13 @@ describe("FlowEngineLike.make", () => {
       const engine = yield* FlowEngineLike.make({ model: countingModel(calls), route: staticRoute() }).pipe(
         Effect.provideService(Crypto.Crypto, {
           ...crypto,
-          randomUUIDv4: Effect.fail(PlatformError.systemError({
-            module: "Crypto",
-            method: "randomUUIDv4",
-            _tag: "Unknown",
-            description: "injected entropy failure"
-          }))
+          randomUUIDv4: () =>
+            Effect.fail(PlatformError.systemError({
+              module: "Crypto",
+              method: "randomUUIDv4",
+              _tag: "Unknown",
+              description: "injected entropy failure"
+            }))
         })
       )
       return yield* Stream.runCollect(engine.sealStep(step("no-identity")))
@@ -2009,12 +2010,13 @@ describe("FlowEngineLike.CallReadings (#3010)", () => {
         .pipe(
           Effect.provideService(Crypto.Crypto, {
             ...crypto,
-            randomUUIDv4: Effect.fail(PlatformError.systemError({
-              module: "Crypto",
-              method: "randomUUIDv4",
-              _tag: "Unknown",
-              description: "injected entropy failure"
-            }))
+            randomUUIDv4: () =>
+              Effect.fail(PlatformError.systemError({
+                module: "Crypto",
+                method: "randomUUIDv4",
+                _tag: "Unknown",
+                description: "injected entropy failure"
+              }))
           })
         )
       return yield* port.call(readingCall(0))
