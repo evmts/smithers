@@ -339,7 +339,7 @@
 }
 
 .app-shell .smithers-composer .sui-chat-composer-input {
-	padding: 0 0 6px;
+	padding: var(--sp-2) var(--sp-3);
 	color: var(--text);
 	font-family: var(--font-ui);
 	font-size: var(--fs-md);
