@@ -2476,6 +2476,45 @@ const requested = (
 const elapsed = (from: number, to: number): number => Math.max(0, Math.round(to - from))
 
 /**
+ * Where one frame's wall time has gone so far, added to as the frame runs and
+ * read once, when its turn closes.
+ *
+ * A stopwatch beside the frame and nothing it reads: it is not controller
+ * state, no key or digest sees it, and a replayed frame measures the replay.
+ */
+interface FrameClock {
+  /** When the controller took the frame up, ahead of its compaction and its turn. */
+  readonly startedAt: number
+  modelMs: number
+  cellMs: number
+  judgeMs: number
+  compactionMs: number
+}
+
+/** Runs `effect` and adds the time it took to one part of the frame's clock. */
+const timedAs = <A, E, R>(
+  clock: FrameClock,
+  part: "cellMs" | "judgeMs" | "compactionMs",
+  effect: Effect.Effect<A, E, R>
+): Effect.Effect<A, E, R> =>
+  Effect.gen(function*() {
+    const from = yield* Clock.currentTimeMillis
+    const value = yield* effect
+    clock[part] += elapsed(from, yield* Clock.currentTimeMillis)
+    return value
+  })
+
+/** The frame's time split as its closing event carries it; the parts add up to the wall time. */
+const frameTime = (frame: number, clock: FrameClock): Effect.Effect<Pick<AgentEvent.TurnClosed, "frame" | "time">> =>
+  Effect.map(Clock.currentTimeMillis, (now) => {
+    const { cellMs, compactionMs, judgeMs, modelMs } = clock
+    const parts = modelMs + cellMs + judgeMs + compactionMs
+    // The parts are measured inside the interval the wall time spans.
+    const wallMs = Math.max(elapsed(clock.startedAt, now), parts)
+    return { frame, time: { wallMs, modelMs, cellMs, judgeMs, compactionMs, otherMs: wallMs - parts } }
+  })
+
+/**
  * Notes when one model call's stream reached each stage and how many
  * transport tries it took, as its events pass.
  *
@@ -2941,7 +2980,8 @@ interface Sealed {
 const seal = (
   state: State,
   engine: EngineLike.EngineLike,
-  emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>
+  emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>,
+  spent: FrameClock
 ): Effect.Effect<Sealed, HarnessError | Model.ModelFailure> =>
   Effect.gen(function*() {
     let contextWindow = state.contextWindow
@@ -2970,6 +3010,7 @@ const seal = (
         )
       ).pipe(Effect.map((collected) => Array.from(collected)))
       const settledAt = yield* Clock.currentTimeMillis
+      spent.modelMs += elapsed(startedAt, settledAt)
       if (!events.some((event) => event.type === "settle")) {
         return yield* new HarnessError({
           code: "model_failed",
@@ -3326,6 +3367,8 @@ interface Settling {
   readonly facts: Frame.StateChanges
   /** Whether the frame changed files, and the labels of the checks it ran. */
   readonly written: { readonly mutated: boolean; readonly checks: ReadonlyArray<string> }
+  /** Where the frame's time has gone, read when its turn closes. */
+  readonly spent: FrameClock
 }
 
 /**
@@ -3412,7 +3455,8 @@ const close = (
       new AgentEvent.TurnClosed({
         eventType: eventType.turnClosed,
         stopReason: settling.answer.stopReason,
-        outcome
+        outcome,
+        ...(yield* frameTime(settling.state.frame, settling.spent))
       })
     )
     if (outcome === "resolved") {
@@ -3547,12 +3591,17 @@ const frame = (
   emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>,
   readCompletion: typeof CompletionClaim.read,
   supervision: Supervision.Handle,
-  taskOf: (window: ContextWindow.ContextWindow) => string
+  taskOf: (window: ContextWindow.ContextWindow) => string,
+  spent: FrameClock
 ): Effect.Effect<Step, HarnessError | Sandbox.SandboxError | Model.ModelFailure, Evaluator.Evaluator> =>
   Effect.gen(function*() {
     // Compaction happens before the turn opens, so the digest the turn records
     // is the one the sealed step is actually keyed on.
-    const compactedState = yield* compacted(input.state, engine, emit, input.judged ?? false, taskOf)
+    const compactedState = yield* timedAs(
+      spent,
+      "compactionMs",
+      compacted(input.state, engine, emit, input.judged ?? false, taskOf)
+    )
     // A run's first frame writes its own state section, before anything reads
     // the window; every later one opens on the section the frame before it
     // wrote. See `frozen`.
@@ -3574,7 +3623,7 @@ const frame = (
     )
     if (sectioned._tag === "Failure") return yield* Effect.fail(sectioned.failure)
 
-    const { answer, cell: sealed, contextWindow } = yield* seal(state, engine, emit)
+    const { answer, cell: sealed, contextWindow } = yield* seal(state, engine, emit, spent)
     const settling = (
       boundary: string,
       printed: string,
@@ -3595,7 +3644,8 @@ const frame = (
       boundary,
       printed,
       facts,
-      written
+      written,
+      spent
     })
 
     if (sealed._tag === "Failure") {
@@ -3668,16 +3718,20 @@ const frame = (
         (Option.isNone(state.workspace) || !state.workspace.value.complete)
       ? state.workspace
       : yield* witness(engine, state, cell.digest, "open")
-    const ran = yield* evaluate(
-      input,
-      state,
-      sealed.success,
-      engine,
-      sandbox,
-      realm,
-      opened,
-      steering,
-      emit
+    const ran = yield* timedAs(
+      spent,
+      "cellMs",
+      evaluate(
+        input,
+        state,
+        sealed.success,
+        engine,
+        sandbox,
+        realm,
+        opened,
+        steering,
+        emit
+      )
     )
     const outcome = yield* Cell.decodeOutcome(ran.frame.outcome)
     const printed = printsObservation(ran.frame.prints)
@@ -4039,51 +4093,56 @@ const frame = (
       // `Frame.judgeCompletion` for the five demands, their order, and the
       // three things that leave no frame to ask in.
       const services = yield* Effect.context<Evaluator.Evaluator>()
-      const judged = yield* engine.record({
-        name: "completion-judgement",
-        identity: {
-          session: state.session,
-          frame: state.frame,
-          boundary: `completion-judgement:${cell.digest}`
-        },
-        success: RecordedCompletion,
-        // The claim brake's reading, whole and by sentence, is paid model
-        // work: the run's budget accounts it like any sealed step (#2681). A
-        // bounce carries the reading as its demand and leaves `observed` empty.
-        usage: (judgement) =>
-          paidUsage([
-            (judgement.observed ?? (judgement.demand?.event._tag === "claim-demanded" ? judgement.demand.event : null))
-              ?.usage
-          ]),
-        // A replay uses the entire original decision. Re-evaluating even an
-        // accepted claim can invent a demand and execute additional work.
-        execute: Frame.judgeCompletion(
-          state,
-          accounting,
-          contextWindow,
-          transition.output,
-          readCompletion
-        ).pipe(
-          Effect.provideContext(services),
+      const judged = yield* timedAs(
+        spent,
+        "judgeMs",
+        engine.record({
+          name: "completion-judgement",
+          identity: {
+            session: state.session,
+            frame: state.frame,
+            boundary: `completion-judgement:${cell.digest}`
+          },
+          success: RecordedCompletion,
+          // The claim brake's reading, whole and by sentence, is paid model
+          // work: the run's budget accounts it like any sealed step (#2681). A
+          // bounce carries the reading as its demand and leaves `observed` empty.
+          usage: (judgement) =>
+            paidUsage([
+              (judgement.observed ??
+                (judgement.demand?.event._tag === "claim-demanded" ? judgement.demand.event : null))
+                ?.usage
+            ]),
+          // A replay uses the entire original decision. Re-evaluating even an
+          // accepted claim can invent a demand and execute additional work.
+          execute: Frame.judgeCompletion(
+            state,
+            accounting,
+            contextWindow,
+            transition.output,
+            readCompletion
+          ).pipe(
+            Effect.provideContext(services),
+            Effect.map((judgement) => ({
+              observed: judgement.observed ?? null,
+              demand: judgement.demand ?? null,
+              unproven: judgement.unproven ?? null,
+              decision: judgement.decision ?? null,
+              sentenceDecision: judgement.sentenceDecision ?? null,
+              unfinishedDecision: judgement.unfinishedDecision ?? null
+            }))
+          )
+        }).pipe(
+          Effect.provideService(EngineLike.Spend, { purpose: "claim", frame: state.frame }),
           Effect.map((judgement) => ({
-            observed: judgement.observed ?? null,
-            demand: judgement.demand ?? null,
-            unproven: judgement.unproven ?? null,
-            decision: judgement.decision ?? null,
-            sentenceDecision: judgement.sentenceDecision ?? null,
-            unfinishedDecision: judgement.unfinishedDecision ?? null
+            observed: judgement.observed ?? undefined,
+            demand: judgement.demand ?? undefined,
+            unproven: judgement.unproven ?? undefined,
+            decision: judgement.decision ?? undefined,
+            sentenceDecision: judgement.sentenceDecision ?? undefined,
+            unfinishedDecision: judgement.unfinishedDecision ?? undefined
           }))
         )
-      }).pipe(
-        Effect.provideService(EngineLike.Spend, { purpose: "claim", frame: state.frame }),
-        Effect.map((judgement) => ({
-          observed: judgement.observed ?? undefined,
-          demand: judgement.demand ?? undefined,
-          unproven: judgement.unproven ?? undefined,
-          decision: judgement.decision ?? undefined,
-          sentenceDecision: judgement.sentenceDecision ?? undefined,
-          unfinishedDecision: judgement.unfinishedDecision ?? undefined
-        }))
       )
       // The claim brake's reading when it issued no demand. It is the one
       // demand whose non-demanding readings are journaled, because it is the
@@ -4463,6 +4522,14 @@ export const run = (
           )
           return
         }
+        // The frame's stopwatch, started before anything the frame waits on.
+        const spent: FrameClock = {
+          startedAt: yield* Clock.currentTimeMillis,
+          modelMs: 0,
+          cellMs: 0,
+          judgeMs: 0,
+          compactionMs: 0
+        }
         const catalog = input.refreshFlows === undefined ? input.flows : yield* engine.record({
           name: "flow-catalog",
           identity: { session: current.session, frame: current.frame, boundary: "flow-catalog" },
@@ -4470,7 +4537,7 @@ export const run = (
           execute: input.refreshFlows
         })
         current = judged && current.frame === 0
-          ? yield* withheld(current, catalog, input, engine, emit, taskOf)
+          ? yield* timedAs(spent, "judgeMs", withheld(current, catalog, input, engine, emit, taskOf))
           : current
         // The journaled catalog stays whole; what the frame shows leaves out
         // what the run-start reading withheld.
@@ -4503,7 +4570,8 @@ export const run = (
           emit,
           readCompletion,
           supervision,
-          taskOf
+          taskOf,
+          spent
         ).pipe(
           Effect.catch((error) => {
             const request = permissionRequired(error)
@@ -4527,7 +4595,8 @@ export const run = (
                 new AgentEvent.TurnClosed({
                   eventType: eventType.turnClosed,
                   stopReason: "error",
-                  outcome: "suspended"
+                  outcome: "suspended",
+                  ...(yield* frameTime(current.frame, spent))
                 })
               )
               return {
@@ -4552,7 +4621,8 @@ export const run = (
                 new AgentEvent.TurnClosed({
                   eventType: eventType.turnClosed,
                   stopReason: "aborted",
-                  outcome: "aborted"
+                  outcome: "aborted",
+                  ...(yield* frameTime(current.frame, spent))
                 })
               )
             })

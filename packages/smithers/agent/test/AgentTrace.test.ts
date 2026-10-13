@@ -2357,6 +2357,21 @@ describe("where time and tokens went", () => {
     expect(row(new AgentEvent.ClaimDemanded(claim))).not.toHaveProperty("costUsd")
   })
 
+  const closed = { eventType: "flows.harness.turn-closed.v1", stopReason: "stop", outcome: "continue" } as const
+  const split = {
+    frame: 4,
+    time: { wallMs: 181_612, modelMs: 179_316, cellMs: 1_460, judgeMs: 793, compactionMs: 0, otherMs: 43 }
+  } as const
+
+  it("journals where a frame's wall time went on its closing record, in parts that add up", () => {
+    const event = new AgentEvent.TurnClosed({ ...closed, ...split })
+    expect(row(event)).toEqual({ stopReason: "stop", outcome: "continue", ...split })
+    expect(stored(event)).toEqual(row(event))
+    const { otherMs, wallMs, ...parts } = row(event)["time"] as Record<string, number>
+    expect(Object.values(parts).reduce((sum, part) => sum + part, 0) + otherMs!).toBe(wallMs)
+    expect(row(new AgentEvent.TurnClosed(closed))).toEqual({ stopReason: "stop", outcome: "continue" })
+  })
+
   it("keeps a run journaled before these fields on the identities it was journaled under", () => {
     const pairs: ReadonlyArray<readonly [AgentEvent.AgentEvent, AgentEvent.AgentEvent]> = [
       [new AgentEvent.ModelSettled(settled), new AgentEvent.ModelSettled({ ...settled, ...staged })],
@@ -2373,7 +2388,8 @@ describe("where time and tokens went", () => {
         new AgentEvent.SteeringDrained(drain),
         new AgentEvent.SteeringDrained({ ...drain, compact: ["outdated_context"] })
       ],
-      [new AgentEvent.ClaimDemanded(claim), new AgentEvent.ClaimDemanded({ ...claim, ...claimCost })]
+      [new AgentEvent.ClaimDemanded(claim), new AgentEvent.ClaimDemanded({ ...claim, ...claimCost })],
+      [new AgentEvent.TurnClosed(closed), new AgentEvent.TurnClosed({ ...closed, ...split })]
     ]
     for (const [before, after] of pairs) expect(identity(after)).toBe(identity(before))
   })

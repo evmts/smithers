@@ -1042,6 +1042,16 @@ that did the work, so a replayed frame reports the replay's own readings:
 - `SteeringDrained.compact` names the context triggers a boundary took from a
   reading. A reading's `compact` that no boundary took compacted nothing.
 - `ClaimDemanded` carries `costUsd` and `costSource` for the completion check.
+- `TurnClosed` carries its `frame` and `time`: `wallMs` from the moment the
+  controller took the frame up to this event, split into `modelMs` (the
+  frame's own model calls, re-asks included), `cellMs` (the cell's
+  execution), `judgeMs` (what the loop itself waited on Jev: the run-start
+  relevance reading and the completion check), `compactionMs` (the compaction
+  ahead of the turn, its marks reading and summary call included) and
+  `otherMs` (workspace measurements, the steering drain, recorded
+  boundaries). The five parts add up to `wallMs`. A supervisor reading runs
+  beside the loop and is in none of them; its latency is on
+  `SupervisorSettled`.
 
 A host that keeps a spend ledger labels each charge from `EngineLike.Spend`, a
 `Context.Reference` the controller provides around every sealed step, every

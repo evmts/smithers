@@ -252,7 +252,10 @@ describe("CellTurn completion over unread calls", () => {
 
     expect(of(original.events, "unobserved-demanded")).toHaveLength(1)
     expect(of(replay.events, "unobserved-demanded")).toEqual(of(original.events, "unobserved-demanded"))
-    expect(of(replay.events, "turn-closed")).toEqual(of(original.events, "turn-closed"))
+    // How the frame ended, without how long it took: a replay times itself.
+    const closed = (events: ReadonlyArray<AgentEvent.AgentEvent>) =>
+      of(events, "turn-closed").map(({ time: _, ...ended }) => ended)
+    expect(closed(replay.events)).toEqual(closed(original.events))
     expect(JSON.stringify(of(replay.events, "unobserved-demanded"))).not.toContain("changed since")
     expect(replay.outcome._tag).toBe("Failure")
   })

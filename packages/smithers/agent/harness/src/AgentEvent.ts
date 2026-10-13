@@ -1742,7 +1742,30 @@ export class TurnClosed extends Schema.TaggedClass<TurnClosed>(
 )("turn-closed", {
   eventType: Schema.Literal("flows.harness.turn-closed.v1"),
   stopReason: ModelRequest.StopReason,
-  outcome: Schema.Literals(["continue", "resolved", "aborted", "suspended"])
+  outcome: Schema.Literals(["continue", "resolved", "aborted", "suspended"]),
+  /** The controller's frame this closes. Absent, like {@link time}, from journals written before it was carried. */
+  frame: Schema.optional(NonNegativeSafeInt),
+  /**
+   * Where the frame's wall time went, in whole milliseconds on the injected
+   * clock, from the moment the controller took the frame up to this event.
+   * The five parts add up to `wallMs`.
+   *
+   * `judgeMs` is what the loop itself waited on Jev: the run-start relevance
+   * reading and the completion check. A supervisor reading runs beside the
+   * loop and costs the frame nothing; its own latency is on
+   * `supervisor-settled`. `compactionMs` is the whole compaction ahead of the
+   * turn, its marks reading and summary call included, and `modelMs` is the
+   * frame's own model calls, re-asks included.
+   */
+  time: Schema.optional(Schema.Struct({
+    wallMs: NonNegativeSafeInt,
+    modelMs: NonNegativeSafeInt,
+    cellMs: NonNegativeSafeInt,
+    judgeMs: NonNegativeSafeInt,
+    compactionMs: NonNegativeSafeInt,
+    /** Everything else: workspace measurements, the steering drain, recorded boundaries. */
+    otherMs: NonNegativeSafeInt
+  }))
 }) {}
 
 /**

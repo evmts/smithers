@@ -896,6 +896,19 @@ describe("AgentEvent", () => {
     expect(claim).not.toHaveProperty("costSource")
   })
 
+  it("decodes a turn's closing event journaled before it carried its frame and time split", () => {
+    const decoded = Schema.decodeUnknownSync(AgentEvent.AgentEvent)({
+      _tag: "turn-closed",
+      eventType: "flows.harness.turn-closed.v1",
+      stopReason: "stop",
+      outcome: "continue"
+    })
+
+    expect(decoded).toMatchObject({ _tag: "turn-closed", stopReason: "stop", outcome: "continue" })
+    expect(decoded).not.toHaveProperty("frame")
+    expect(decoded).not.toHaveProperty("time")
+  })
+
   it("refuses a payload that is not one of the union's tags", () => {
     const decoded = Schema.decodeUnknownResult(AgentEvent.AgentEvent)({
       _tag: "not-an-event",

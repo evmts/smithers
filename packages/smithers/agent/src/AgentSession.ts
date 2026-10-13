@@ -464,6 +464,7 @@ const lateFields: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   // differ between the attempt that measured them and a replay of it, the way
   // `durationMillis` does.
   ["control.agent.model-requested", new Set(["reask"])],
+  ["control.agent.turn-closed", new Set(["frame", "time"])],
   [
     "control.agent.model-settled",
     new Set(["scope", "frame", "attempt", "purpose", "reask", "stages", "tries", "output"])
@@ -1503,7 +1504,13 @@ export const trace = (
     case "turn-closed":
       return {
         eventType: "control.agent.turn-closed",
-        payload: { stopReason: event.stopReason, outcome: event.outcome }
+        payload: {
+          stopReason: event.stopReason,
+          outcome: event.outcome,
+          // The frame this closes and where its wall time went (#3844).
+          ...(event.frame === undefined ? {} : { frame: event.frame }),
+          ...(event.time === undefined ? {} : { time: event.time })
+        }
       }
     case "permission-required":
       return { eventType: "control.agent.permission-required", payload: { request: event.request } }

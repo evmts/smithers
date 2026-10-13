@@ -3658,6 +3658,128 @@ describe("CellTurn completion check cost", () => {
   })
 })
 
+describe("CellTurn frame time", () => {
+  /** A scripted step whose settlement arrives `millis` after the call was opened. */
+  const taking = (
+    advance: (millis: number) => void,
+    millis: number,
+    step: ScriptedModel.Step
+  ): ScriptedModel.Step =>
+    arrives(advance, step.events.map((event) => [event.type === "settle" ? millis : 0, event] as const))
+  /** A steering source whose every drain takes `millis`: bookkeeping no other part claims. */
+  const draining = (advance: (millis: number) => void, millis: number): Layer.Layer<Steering.Source> =>
+    Steering.layer({
+      read: () => Effect.succeed(Steering.empty()),
+      drain: () =>
+        Effect.sync(() => {
+          advance(millis)
+          return { inserts: [], seatChanges: [], remaining: Steering.empty(), queued: false, duplicate: false }
+        })
+    })
+  const times = (events: ReadonlyArray<AgentEvent.AgentEvent>) =>
+    of(events, "turn-closed").map(({ frame, time }) => ({ frame, ...time }))
+
+  it("splits each frame's wall time into model wait, cell, judge, compaction and the rest, and the parts add up", async () => {
+    const { advance, clock } = manualClock()
+    const { events, failure } = await run({
+      state: CellTurn.make({
+        session: "session-1",
+        seat: "anthropic:test-model",
+        modelParams: ModelRequest.GenerationParams.make(),
+        layers: [],
+        capabilityEnvelope: ["fs:read:**"].map(pattern),
+        placement: Option.none(),
+        contextWindow: tasked,
+        maxFrames: 2
+      }),
+      script: [
+        taking(advance, 2_000, emits(`await ctx.call("fs/list", { path: "." })`)),
+        taking(advance, 1_000, emits(`ctx.done("The query string is kept.")`))
+      ],
+      calls: [{ _tag: "Success", value: ["a.ts"], taking: () => advance(500) }],
+      steering: draining(advance, 40),
+      evaluator: metered(
+        confidentEvaluator,
+        advance,
+        () => ({ millis: 793, usage: { inputTokens: 100, outputTokens: 5 } })
+      ),
+      clock
+    })
+    expect(failure).toBeUndefined()
+
+    expect(times(events)).toEqual([
+      // The model answered in 2 s, the cell's one call took 500 ms, and the
+      // boundary's steering drain took the 40 ms nothing else accounts for.
+      { frame: 0, wallMs: 2_540, modelMs: 2_000, cellMs: 500, judgeMs: 0, compactionMs: 0, otherMs: 40 },
+      // The last frame drains nothing; its completion check took 793 ms.
+      { frame: 1, wallMs: 1_793, modelMs: 1_000, cellMs: 0, judgeMs: 793, compactionMs: 0, otherMs: 0 }
+    ])
+    for (const { compactionMs, cellMs, judgeMs, modelMs, otherMs, wallMs } of times(events)) {
+      expect(modelMs! + cellMs! + judgeMs! + compactionMs! + otherMs!).toBe(wallMs)
+    }
+  })
+
+  it("counts a frame's re-ask in its model wait, and a compaction ahead of it apart from both", async () => {
+    const { advance, clock } = manualClock()
+    const { events, failure } = await run({
+      script: [
+        // The compaction's summary call, then a reply with no cell, then the re-ask.
+        taking(advance, 4_000, prose("the compacted summary")),
+        taking(advance, 700, prose("I will look into it.")),
+        taking(advance, 300, emits(`ctx.done("done")`))
+      ],
+      state: CellTurn.make({
+        session: "session-1",
+        seat: "anthropic:test-model",
+        modelParams: ModelRequest.GenerationParams.make(),
+        layers: ["layer-a"],
+        capabilityEnvelope: [],
+        placement: Option.none(),
+        contextWindow: crowded,
+        contextWindowTokens: 40_000,
+        maxFrames: 1,
+        revalidations: 1
+      }),
+      flows: [],
+      clock
+    })
+    expect(failure).toBeUndefined()
+
+    expect(times(events)).toEqual([
+      { frame: 0, wallMs: 5_000, modelMs: 1_000, cellMs: 0, judgeMs: 0, compactionMs: 4_000, otherMs: 0 }
+    ])
+    // The same milliseconds the call records themselves hold.
+    expect(of(events, "model-settled").map((event) => event.durationMillis)).toEqual([700, 300])
+    expect(of(events, "compaction-settled").map((event) => event.durationMillis)).toEqual([4_000])
+  })
+
+  it("counts the run-start relevance reading as the first frame's judge time", async () => {
+    const { advance, clock } = manualClock()
+    const { events } = await run({
+      state: state({ maxFrames: 1 }),
+      script: [taking(advance, 2_000, emits(`ctx.done("done")`))],
+      evaluator: metered(
+        Evaluator.layerScripted((request) =>
+          Object.fromEntries(
+            Object.keys(request.questions).map((id) => [id, { probability: id.startsWith("unnecessary") ? 0.1 : 0.01 }])
+          )
+        ),
+        advance,
+        (request) =>
+          Object.hasOwn(request.questions, "unnecessary_0")
+            ? { millis: 611, usage: { inputTokens: 1_426, outputTokens: 24 } }
+            : undefined
+      ),
+      judged: true,
+      clock
+    })
+
+    expect(times(events)).toEqual([
+      { frame: 0, wallMs: 2_611, modelMs: 2_000, cellMs: 0, judgeMs: 611, compactionMs: 0, otherMs: 0 }
+    ])
+  })
+})
+
 describe("CellTurn spend purposes", () => {
   /** What the engine was told each paid call was for, in call order. */
   const purposes = (engine: ScriptedEngine.Fixture) =>

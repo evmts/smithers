@@ -25,6 +25,11 @@ export type CallStep =
      * tree afterwards.
      */
     readonly tree?: string | undefined
+    /**
+     * Runs as the call is issued, before it settles: where a case moves its
+     * clock to say how long the call took.
+     */
+    readonly taking?: (() => void) | undefined
   }
   | { readonly _tag: "Failure"; readonly message: string }
   | { readonly _tag: "PermissionRequired"; readonly request: Permission.PermissionRequired }
@@ -152,6 +157,7 @@ export const make = (
         switch (step._tag) {
           case "Success":
             if (step.tree !== undefined) workspace.value = step.tree
+            step.taking?.()
             return Effect.succeed(new Cell.CallResult({ outcome: "success", value: step.value }))
           case "Failure":
             return Effect.succeed(

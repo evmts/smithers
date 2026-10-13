@@ -57,6 +57,10 @@
   host's spend ledger reads it to label what it charges; nothing else changes.
   `Judgement.recorded` accepts an optional `purpose` (#3844).
 
+- `TurnClosed` carries its `frame` and `time`: the frame's wall time split
+  into `modelMs`, `cellMs`, `judgeMs`, `compactionMs` and `otherMs`, which
+  add up to `wallMs` (#3844).
+
 - `ExternalTranscript.decodeCodex` reads what Codex records outside its
   completed items: a message between agents (`agent_message`), whose encrypted
   body is one `encrypted` placeholder; a failed code-mode script with the
