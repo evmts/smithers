@@ -447,6 +447,12 @@ export interface MakeOptions<State extends Schema.Codec<any, any>, Qs extends Qu
   /** The state each question is asked about. It is encoded before it is sent. */
   readonly state: State
   readonly questions: Qs
+  /**
+   * How a generation seat asked to judge reads these questions' words, where
+   * it reads them otherwise than Jev does; see `Evaluator.Request.seatNote`.
+   * It is no part of the questions: the digest does not cover it.
+   */
+  readonly seatNote?: string | undefined
 }
 
 /**
@@ -476,7 +482,7 @@ export const make = <const Id extends string, State extends Schema.Codec<any, an
   id: Id,
   options: MakeOptions<State, Qs>
 ): Classifier<Id, State, Qs> => {
-  const { description, questions, state } = options
+  const { description, questions, seatNote, state } = options
   // The encoded questions, not the questions: a class instance is not JSON,
   // and hashing the wire form is what keeps a digest — and every durable call
   // key and sealed-key preimage that folds it in — where it already is.
@@ -489,9 +495,11 @@ export const make = <const Id extends string, State extends Schema.Codec<any, an
       const encoded = yield* encodeState(value).pipe(
         Effect.mapError((error) => new ClassifierError({ code: "invalid_question", message: error.message }))
       )
-      const response = yield* evaluator.evaluate({ state: encoded, questions }).pipe(
-        Effect.mapError(fromEvaluatorError)
-      )
+      const response = yield* evaluator.evaluate({
+        state: encoded,
+        questions,
+        ...(seatNote === undefined ? {} : { seatNote })
+      }).pipe(Effect.mapError(fromEvaluatorError))
       // An answer this classifier cannot decode was still paid for.
       return yield* decodeAnswers(questions, response.answers).pipe(
         Effect.mapError((error) =>

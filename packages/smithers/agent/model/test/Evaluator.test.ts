@@ -254,6 +254,27 @@ describe("Evaluator.layerVercelGateway", () => {
     expect(modelCall).toBe("typesafe-ai/jev")
   })
 
+  it("never sends Jev a request's seat note", async () => {
+    const sent: Array<Sent> = []
+    const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("vck_test") }).pipe(
+      Layer.provide(httpLayer(sent, () => json(recorded)))
+    )
+    const result = await Effect.runPromise(
+      Effect.flatMap(
+        Evaluator.Evaluator,
+        (evaluator) => evaluator.evaluate({ state, questions, seatNote: "Read an outcome as a command's output." })
+      ).pipe(Effect.provide(layer))
+    )
+
+    expect(result.answers).toEqual(recorded.answers)
+    expect(JSON.parse((sent[0] as Sent).body)).toEqual({
+      state,
+      questions,
+      providerOptions: { gateway: { zeroDataRetention: true } }
+    })
+    expect(JSON.stringify(sent[0])).not.toContain("Read an outcome")
+  })
+
   it.each([0, 2, -1, 1.5, true, false, null])(
     "wraps the JSON primitive %j without changing its meaning",
     async (state) => {

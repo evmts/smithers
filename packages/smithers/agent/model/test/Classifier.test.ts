@@ -364,6 +364,33 @@ describe("Classifier.evaluate", () => {
     expect(seen).toEqual([{ state: { at: "2026-09-17T00:00:00.000Z" }, questions: Dated.questions }])
   })
 
+  it("hands its seat note to the evaluator with every request, outside the digest", async () => {
+    const seen: Array<Evaluator.Request> = []
+    const declaration = {
+      description: "Whether a file must change for the task, and its role.",
+      state: Relevance.state,
+      questions: Relevance.questions
+    }
+    const Noted = Classifier.make("triage/relevance", {
+      ...declaration,
+      seatNote: "Here a role is the file's part in the fix."
+    })
+    const layer = Evaluator.layerScripted((request) => {
+      seen.push(request)
+      return good
+    })
+
+    success(await run(Noted.evaluate(state), layer))
+    success(await run(Relevance.evaluate(state), layer))
+
+    expect(seen).toEqual([
+      { state, questions: Relevance.questions, seatNote: "Here a role is the file's part in the fix." },
+      { state, questions: Relevance.questions }
+    ])
+    // The note is no part of the questions: a journaled digest and every key that folds it in stay where they are.
+    expect(Noted.digest).toBe(Relevance.digest)
+  })
+
   it("fails a state its schema does not encode as invalid_question", async () => {
     const Bounded = Classifier.make("bounded", {
       description: "A state with a check.",

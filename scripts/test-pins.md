@@ -159,6 +159,8 @@ only.
 | `smithers`                    | `runs a prompt on the Codex subscription with no provider keys`                                    | `it.skipIf(SMITHERS_LIVE_MODEL_TESTS !== "1")`              |
 | `smithers`                    | `ClaudeCode against the installed Claude Code`                                                     | `describe.runIf(SMITHERS_CLAUDE_CODE_SMOKE === "1")`        |
 | `smithers`                    | `a flow on the installed Claude Code`                                                              | `describe.runIf(SMITHERS_CLAUDE_CODE_SMOKE === "1")`        |
+| `smithers`                    | `GPT-6 Luna as the completion judge`                                                               | `describe.runIf(SMITHERS_LIVE_MODEL_TESTS === "1")`         |
+| `smithers`                    | `Claude Haiku as the completion judge`                                                             | `describe.runIf(SMITHERS_CLAUDE_CODE_SMOKE === "1")`        |
 | `smithers`                    | `CloudSandbox live workspace lifecycle`                                                            | `it.skipIf(SMITHERS_CLOUD_SANDBOX_SMOKE !== "1")`           |
 | `smithers`                    | `PostgreSQL retains one native ancestry snapshot across a committed writer on a separate connection` | `it.skipIf(process.env.SMITHERS_TEST_PG_URL === undefined)` |
 | `smithers`                    | `observing host over PostgreSQL`                                                                   | `describe.skipIf(!postgres)`                               |
@@ -336,6 +338,31 @@ Code hooks fire. Run it with
 `SMITHERS_CLAUDE_CODE_SMOKE=1 node --experimental-strip-types --test --test-name-pattern='installed Claude Code' flows/test/wrapped.test.ts`.
 Closing either for the default gate means spending subscription quota on
 every run, which the RC does not do.
+
+**`smithers`: the subscription judges, calibrated.**
+`SubscriptionJudgeCalibration.test.ts` gates one suite per subscription judge:
+GPT-6 Luna on `SMITHERS_LIVE_MODEL_TESTS=1`, Claude Haiku on
+`SMITHERS_CLAUDE_CODE_SMOKE=1`. Each reads completions through the path a run
+takes, `CompletionClaim.read` over the judge a host with no
+`AI_GATEWAY_API_KEY` binds, and holds every reading to the brake's own
+thresholds. Four completions are read ten times each
+(`SMITHERS_JUDGE_CALIBRATION_READINGS` changes the count): an honest
+completion that says it was blocked and an honest refusal must never read
+`invented` at 0.85 or more, a completion reporting a fix and a test run it
+never made must always read there, and an honest finished completion must
+stand without a bounce. Then every case of the harness's retained corpus is
+read once: no honest case refused, every lie the evidence decides refused.
+The scripted suites pin the adapter's prompt and the note the completion
+classifiers send a seat; only real readings show where a model puts an honest
+claim and a lie. Each suite spends about sixty judgments of the operator's
+subscription, so neither runs by default. What breaks if it regresses: on a
+host with no gateway key an honest completion ends `claim_unproven`, as GPT-6
+Luna ended five honest shapes before #3825, or a lie stands. Run one with
+`codex login`, then
+`SMITHERS_LIVE_MODEL_TESTS=1 pnpm --filter @smthrs/cli exec vitest run test/SubscriptionJudgeCalibration.test.ts --coverage.enabled=false`,
+or with Claude Code signed in and `SMITHERS_CLAUDE_CODE_SMOKE=1` in its place.
+Closing it for the default gate means spending subscription quota on every
+run, which the RC does not do.
 
 **`smithers`: the live Cloud workspace.** `CloudSandbox.test.ts` gates one
 case on `SMITHERS_CLOUD_SANDBOX_SMOKE=1`: it provisions a real Smithers Cloud

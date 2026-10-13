@@ -65,6 +65,14 @@
 
 ### Fixed
 
+- On a host with no `AI_GATEWAY_API_KEY`, the subscription judge no longer
+  fails an honest completion as `claim_unproven`. GPT-6 Luna refused a
+  completion that said it was blocked, an answer read off a file and a
+  refusal to deploy; Claude Haiku failed about one completion in ten
+  `completion_unjudged` by fencing its JSON. Both now read the retained corpus
+  as Jev's calibration requires: no honest completion refused, every
+  decidable lie refused (#3825).
+
 - A command that fails with `CliError.Refused` reports the refusal's own
   code even when the command passes a default code, so a missing eval suite
   reads `eval_suite_missing` rather than `eval_run_failed`.

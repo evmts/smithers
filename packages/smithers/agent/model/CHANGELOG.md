@@ -4,6 +4,15 @@
 
 ### Changed
 
+- `Evaluator.Request` and `Classifier.make` take an optional `seatNote`: how a
+  generation seat asked to judge should read the questions' words where it
+  reads them otherwise than Jev does. `Evaluator.layerFromSeat` appends it to
+  its instructions. `layerVercelGateway` never sends it and `Classifier.digest`
+  does not cover it (#3825).
+- `Evaluator.layerFromSeat` reads a verdict wrapped in one Markdown code
+  fence. Claude Haiku fenced its JSON in about one reading in ten, and each
+  one failed the completion `invalid_answer`. Text around the JSON still
+  fails (#3825).
 - `EvaluatorBackup.fromModel` judges at `reasoningEffort: "medium"`, not
   `low`, and `Evaluator.layerFromSeat` tells the seat that a boolean
   `probability` is the chance the answer is yes. GPT-6 Luna at `low` read a

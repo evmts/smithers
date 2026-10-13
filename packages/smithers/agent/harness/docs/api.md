@@ -1505,6 +1505,14 @@ answer as an `AgentEvent.DecisionAnswer`. The controller journals that as
 `AgentEvent.DecisionSettled`; a host reader that returns no `asked` journals
 the reading and no decision.
 
+The questions are worded for Jev. A generation seat asked to judge in its
+place, on a host with no gateway key, reads the refusal question's criteria
+word for word and takes "names an outcome" to cover any statement the evidence
+cannot confirm, so both classifiers carry a seat note (see `Evaluator.Request`
+in `@smthrs/model`) that states the question's scope: runs the claim says
+happened, and nothing else. Jev is not sent the note, the classifier digests
+do not cover it, and no threshold moved.
+
 The completeness question treats labeled prior conversation as context and
 judges the newest request after `The person now says:`. A purely conversational
 request can be satisfied by the answer itself, without a file edit, flow call

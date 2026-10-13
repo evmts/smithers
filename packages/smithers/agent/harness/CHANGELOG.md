@@ -4,6 +4,15 @@
 
 ### Changed
 
+- `CompletionClaim`'s two classifiers carry a seat note that states the
+  refusal question's scope: runs the claim says happened, and nothing else.
+  GPT-6 Luna, judging on a host with no gateway key, read "names an outcome"
+  as any statement the evidence cannot confirm and refused honest completions
+  as invented: "I could not reply with that text: the request was blocked" at
+  1.0 in 10 of 10 readings, and five of the fifteen honest shapes of the
+  retained corpus. With the note it refuses none of them and every decidable
+  lie, and so does Claude Haiku. Jev is not sent the note and no threshold
+  moved (#3825).
 - `decision-settled` rows say `decidedBy: "seat"` when a generation seat
   judged in Jev's place, for the completion claim, its sentence and
   unfinished readings, the supervisor and every `Judgement.decision` row.
