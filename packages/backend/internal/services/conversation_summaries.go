@@ -200,7 +200,8 @@ func (s *ConversationSummaries) Handle(ctx context.Context, lease *jobs.Lease) e
 		return settle()
 	}
 	_, err = s.Pool.Exec(ctx, `UPDATE chat_turns SET summary=$5,summary_rev=$4,summary_pending_since=NULL
- WHERE id=$1 AND run_id=$2 AND producer_generation=$3 AND head_position+1=$4 AND summary_rev<$4 AND state=$6
+ WHERE id=$1 AND run_id=$2 AND producer_generation=$3 AND head_position+1=$4 AND state=$6
+ AND (summary_rev<$4 OR summary IS NULL OR summary NOT LIKE '{"v":2,"recipe":2,%')
  AND EXISTS(SELECT 1 FROM users u WHERE u.id=$7 AND NOT u.prohibit_login)
  AND ((repository_id=0 AND user_id=$7 AND request_payload->>'privateConversation'='true') OR
  EXISTS(SELECT 1 FROM self_host_owners o JOIN collaborators c ON c.user_id=o.user_id WHERE o.singleton AND o.user_id=$7 AND c.repository_id=chat_turns.repository_id AND c.suspended_at IS NULL))`, input.TurnID, input.RunID, input.Attempt, input.Revision, summary, input.State, owner)

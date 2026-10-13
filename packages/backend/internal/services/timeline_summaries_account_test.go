@@ -20,7 +20,7 @@ import (
 )
 
 func TestHostedTimelineSummariesBackfillAndIsolation(t *testing.T) {
-	for _, outcome := range []string{"written", "slow", "retry", "revoked", "stale"} {
+	for _, outcome := range []string{"written", "legacy", "old-recipe", "slow", "retry", "revoked", "stale"} {
 		t.Run(outcome, func(t *testing.T) {
 			pool, _ := postgresfixture.NewProductDatabase(t)
 			ctx := t.Context()
@@ -47,6 +47,14 @@ func TestHostedTimelineSummariesBackfillAndIsolation(t *testing.T) {
 				return turn.TurnID
 			}
 			turn := admit(owner, "timeline-owner", "owner-run")
+			if outcome == "legacy" || outcome == "old-recipe" {
+				previous := "literal prior summary"
+				if outcome == "old-recipe" {
+					previous = `{"v":2,"prompt":"Raw prompt","answer":"No action taken"}`
+				}
+				_, err = pool.Exec(ctx, `UPDATE chat_turns SET summary=$2,summary_rev=head_position+1 WHERE id=$1`, turn, previous)
+				require.NoError(t, err)
+			}
 			_ = admit(other, "timeline-other", "other-run")
 			entered, release := make(chan struct{}, 1), make(chan struct{})
 			var attempts atomic.Int64
