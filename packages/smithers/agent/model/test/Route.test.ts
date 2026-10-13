@@ -33,6 +33,15 @@ const TestBody = Schema.Struct({
 })
 const TestEvent = Schema.Record(Schema.String, Schema.Unknown)
 
+// These tests run on the real clock, so a settle event is compared without the
+// reading it carries. `WireTiming.test.ts` asserts every offset on a test clock.
+const untimed = (events: ReadonlyArray<ModelEvent.ModelEvent>): ReadonlyArray<ModelEvent.ModelEvent> =>
+  events.map((event) => {
+    if (event.type !== "settle") return event
+    const { timing: _timing, ...settle } = event
+    return settle
+  })
+
 const kernelHttpClientLayer = (
   client: HttpClient.HttpClient
 ): Layer.Layer<KernelHttpClient.HttpClient> => Layer.succeed(KernelHttpClient.HttpClient)(client)
@@ -742,7 +751,7 @@ describe("Route.prepare", () => {
       )
     )
 
-    expect(Array.from(events)).toEqual([
+    expect(untimed(Array.from(events))).toEqual([
       { type: "text-start", id: "msg_1" },
       { type: "text-delta", id: "msg_1", text: "wired" },
       { type: "text-end", id: "msg_1" },
@@ -994,7 +1003,7 @@ describe("Route.stream", () => {
       executorOf(() => sseResponse(["{\"done\":true}", "{\"unreached\":true}"]))
     )
 
-    expect(events).toEqual([{ type: "settle", stopReason: "stop" }])
+    expect(untimed(events)).toEqual([{ type: "settle", stopReason: "stop" }])
   })
 
   it("reads one validated snapshot, not the caller's object, after signing begins", async () => {
@@ -1168,7 +1177,7 @@ describe("Route.stream terminal events", () => {
         inputTokens: 88,
         outputTokens: 4096
       }])
-      expect(events.filter((event) => event.type === "settle")).toEqual([{
+      expect(untimed(events).filter((event) => event.type === "settle")).toEqual([{
         type: "settle",
         stopReason: reason === "tool_calls" ? "tool-calls" : reason
       }])
@@ -1228,7 +1237,7 @@ describe("Route.stream terminal events", () => {
       ).pipe(Effect.timeout("2 seconds"))
     ).then((chunk) => Array.from(chunk))
 
-    expect(events.at(-1)).toEqual(last)
+    expect(untimed(events).at(-1)).toEqual(last)
     expect(events.filter((event) => event.type === "settle")).toHaveLength(1)
     expect(cancelled).toBe(true)
   })

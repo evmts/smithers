@@ -10,6 +10,7 @@
 
 import * as Fault from "@smthrs/flow/Fault"
 import { Schema } from "effect"
+import type { Timing } from "./ModelEvent.ts"
 
 /**
  * The provider-neutral failure vocabulary. A consumer branches on these
@@ -149,6 +150,14 @@ export class ModelError extends Schema.TaggedError<ModelError>()("flows/model/Mo
    * kept here.
    */
   declare readonly bodyTruncated: boolean | undefined
+  /**
+   * Where the failed call's time went on the wire, present only on an error a
+   * route raised: the tries it made, when each was sent and failed, and how
+   * far the response got. Outside the schema and non-enumerable, like
+   * {@link body}: a reading is a diagnostic of one failure, not part of what
+   * the failure is.
+   */
+  declare readonly timing: Timing | undefined
 
   /** @category getters @since 0.1.0 */
   get retryable(): boolean {

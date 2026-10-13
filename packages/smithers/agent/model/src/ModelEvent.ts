@@ -316,7 +316,7 @@ export const FailedTry = Schema.Struct({
   sentMs: Schema.optional(Schema.Number),
   /** The try failed. */
   failedMs: Schema.Number,
-  /** Why: a `ModelError` code, or the tag of a kernel permission failure. */
+  /** Why: a `ModelError` code, or the code of a kernel permission failure. */
   code: Schema.String,
   /** The HTTP status that failed it, when a response carried one. */
   httpStatus: Schema.optional(Schema.Number)

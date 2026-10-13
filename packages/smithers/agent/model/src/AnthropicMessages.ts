@@ -163,7 +163,9 @@ const AnthropicUsage = Schema.Struct({
   input_tokens: Schema.optional(Schema.Number),
   output_tokens: Schema.optional(Schema.Number),
   cache_creation_input_tokens: Schema.optional(Schema.NullOr(Schema.Number)),
-  cache_read_input_tokens: Schema.optional(Schema.NullOr(Schema.Number))
+  cache_read_input_tokens: Schema.optional(Schema.NullOr(Schema.Number)),
+  /** The tier that served the request: `standard`, `priority` or `batch`. */
+  service_tier: Schema.optional(Schema.NullOr(Schema.String))
 })
 
 const ContentBlock = Schema.Struct({
@@ -252,6 +254,7 @@ interface State {
   readonly stopReason: StopReason | undefined
   readonly settled: boolean
   readonly responseId: string | undefined
+  readonly servedTier: string | undefined
 }
 
 const initial = (): State => ({
@@ -261,7 +264,8 @@ const initial = (): State => ({
   usageEmitted: false,
   stopReason: undefined,
   settled: false,
-  responseId: undefined
+  responseId: undefined,
+  servedTier: undefined
 })
 
 // =============================================================================
@@ -666,7 +670,8 @@ const onMessageStart = (state: State, event: AnthropicEvent): StepResult => ({
   state: {
     ...state,
     usage: mergeUsage(state.usage, mapUsage(event.message?.usage)),
-    responseId: event.message?.id ?? state.responseId
+    responseId: event.message?.id ?? state.responseId,
+    servedTier: event.message?.usage?.service_tier ?? state.servedTier
   },
   events: []
 })
@@ -890,6 +895,7 @@ const onMessageDelta = (state: State, event: AnthropicEvent): StepResult => {
     state: {
       ...state,
       usage,
+      servedTier: event.usage?.service_tier ?? state.servedTier,
       usageEmitted: state.usageEmitted || hasUsage,
       stopReason: event.delta?.stop_reason === undefined
         ? state.stopReason
@@ -941,7 +947,8 @@ const onMessageStop = (state: State): Result.Result<StepResult, ModelError> =>
         ModelEvent.Settle({
           type: "settle",
           stopReason: state.stopReason ?? "unknown",
-          responseId: state.responseId
+          responseId: state.responseId,
+          ...(state.servedTier === undefined ? {} : { servedTier: state.servedTier })
         })
       ]
     }

@@ -149,6 +149,41 @@ describe("Model.withGenAiSpan", () => {
     expect(span.status._tag).toBe("Ended")
   })
 
+  it("records where the call's time went and the tier that served it, from the settlement", async () => {
+    const { spans, tracer } = collect()
+    await Effect.runPromise(
+      Stream.runDrain(
+        Stream.fromIterable(
+          [{
+            type: "settle",
+            stopReason: "stop",
+            servedTier: "priority",
+            timing: {
+              startedAt: 1_760_000_000_000,
+              attempts: 2,
+              requestBytes: 48_211,
+              headersMs: 2_190,
+              firstOutputMs: 7_480,
+              failedTries: [{ sentMs: 10, failedMs: 760, code: "provider_internal", httpStatus: 503 }]
+            }
+          }] as const
+        ).pipe(Model.withGenAiSpan(request))
+      ).pipe(Effect.provideService(Tracer.Tracer, tracer))
+    )
+    expect(Object.fromEntries(spans[0]!.attributes)).toEqual({
+      "gen_ai.operation.name": "chat",
+      "gen_ai.request.model": "model",
+      "gen_ai.response.finish_reasons": ["stop"],
+      "smithers.model.served_tier": "priority",
+      "smithers.model.attempts": 2,
+      "smithers.model.request_bytes": 48_211,
+      "smithers.model.headers_ms": 2_190,
+      "smithers.model.first_output_ms": 7_480,
+      // The failed tries are their reasons, in order.
+      "smithers.model.failed_tries": ["provider_internal"]
+    })
+  })
+
   const costOf = async (modelId: string, events: ReadonlyArray<ModelEvent>) => {
     const { spans, tracer } = collect()
     await Effect.runPromise(

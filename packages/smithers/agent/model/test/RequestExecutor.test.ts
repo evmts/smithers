@@ -472,6 +472,77 @@ describe("RequestExecutor", () => {
     expect(requests).toHaveLength(3)
   })
 
+  it("tells the caller when each try leaves and when, why and with what status one fails", async () => {
+    // A retry inside `execute` returns the same response a single slow try
+    // would. `onTry` is how a caller tells the two apart.
+    const requests: Array<HttpClientRequest.HttpClientRequest> = []
+    const layer = executorLayer([
+      { status: 503, body: "busy" },
+      { status: 200, body: "ok" }
+    ], requests)
+    const tries: Array<RequestExecutor.TryEvent> = []
+
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          yield* TestClock.setTime(NOW)
+          const executor = yield* RequestExecutor.RequestExecutor
+          const fiber = yield* execute(executor, request(), { onTry: (event) => tries.push(event) }).pipe(
+            Effect.forkChild
+          )
+
+          yield* Effect.yieldNow
+          expect(requests).toHaveLength(1)
+          yield* TestClock.adjust(500)
+
+          return yield* Fiber.join(fiber)
+        }).pipe(
+          Effect.provide(layer),
+          Effect.provide(TestClock.layer()),
+          Effect.provideService(Random.Random, {
+            nextDoubleUnsafe: () => 0.5,
+            nextIntUnsafe: () => 0
+          }),
+          Effect.provideService(HttpClient.TracerDisabledWhen, () => true)
+        )
+      )
+    )
+
+    expect(result.status).toBe(200)
+    expect(tries).toEqual([
+      { type: "sent", at: NOW },
+      { type: "failed", sentAt: NOW, at: NOW, code: "provider_internal", httpStatus: 503 },
+      // The answered try reports that it left, and nothing more.
+      { type: "sent", at: NOW + 500 }
+    ])
+  })
+
+  it("reports a kernel refusal by its own code, with no HTTP status", async () => {
+    const deniedClient = HttpClient.make((attempted) =>
+      Effect.fail(
+        KernelHttpClient.toHttpClientError({
+          request: attempted,
+          error: new Permission.PermissionDenied({
+            capability: Capability.make("model:call", "provider.test/test-model"),
+            reason: "denied by policy"
+          })
+        })
+      )
+    )
+    const tries: Array<RequestExecutor.TryEvent> = []
+
+    await run(
+      Effect.gen(function*() {
+        const executor = yield* RequestExecutor.RequestExecutor
+        return yield* execute(executor, request(), { onTry: (event) => tries.push(event) }).pipe(Effect.flip)
+      }),
+      RequestExecutor.layer.pipe(Layer.provide(Layer.succeed(KernelHttpClient.HttpClient)(deniedClient)))
+    )
+
+    expect(tries.map((event) => event.type)).toEqual(["sent", "failed"])
+    expect(tries[1]).toMatchObject({ code: "permission_denied", httpStatus: undefined })
+  })
+
   it("classifies explicit quota before retry and retains its reset", async () => {
     const requests: Array<HttpClientRequest.HttpClientRequest> = []
     const layer = executorLayer([

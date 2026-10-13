@@ -121,6 +121,60 @@ provider answered.
 | `ModelEvent`                                      | union      | The tagged union of all of the above, with a constructor per member attached (for example `ModelEvent.TextStart({ type: "text-start", id })`) and `settledMessage` attached.                                                                                                                                                                                                                                                     |
 | `settledMessage(events)`                          | destructor | Folds an iterable of events into `{ message: AssistantMessage, usage: Usage }`. No `settle` event means interruption, represented as `stopReason: "aborted"` rather than an exception. Partial tool-call argument text is preserved verbatim; validate arguments before executing a tool.                                                                                                                                        |
 
+### Wire timing
+
+`Route.toModel` and `Route.layer` time every call and put the reading on its
+`settle` event as `timing`. Offsets are whole milliseconds from `startedAt`,
+read on Effect's `Clock`, so a `TestClock` controls every value.
+
+| Field             | The moment                                                                                                                                                  |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `startedAt`       | The call started, in epoch milliseconds. Every offset below counts from here.                                                                               |
+| `attempts`        | Not a moment: how many HTTP tries the call made, including the answered one.                                                                                |
+| `requestBytes`    | Not a moment: the size of the request body.                                                                                                                 |
+| `preparedMs`      | The request was validated and encoded to the bytes that are sent.                                                                                           |
+| `signedMs`        | `Auth.sign` answered: the credential was resolved and the request signed. After a refresh, the second signature.                                            |
+| `sentMs`          | The answered try's request was handed to the HTTP client. The client does not report the socket write, so the upload lies between this and `headersMs`.     |
+| `headersMs`       | The response status and headers arrived.                                                                                                                    |
+| `firstEventMs`    | The first framed provider event arrived, of any kind.                                                                                                       |
+| `firstThinkingMs` | The first `thinking-start` or `thinking-delta` event. Absent when the call emitted none.                                                                    |
+| `firstOutputMs`   | The first `text-delta` or `tool-call-delta` event. Absent when the call emitted none.                                                                       |
+| `lastOutputMs`    | The last `text-delta` or `tool-call-delta` event. Absent when the call emitted none.                                                                        |
+| `completedMs`     | The protocol settled: `response.completed` or `response.incomplete`, `message_stop`, or a Chat Completions `finish_reason`.                                 |
+| `closedMs`        | The route stopped reading the response: at the protocol's terminal event, or at the end of the body. Absent on a settle read before that, see below.        |
+| `failedTries`     | Each try that failed before the answered one: `sentMs`, `failedMs`, `code`, and `httpStatus` when a response carried one. Absent when the first try worked. |
+
+A stage that was not observed is absent, never zero. A custom
+`RequestExecutor` that does not call `onTry` leaves out `attempts`, `sentMs`,
+and `failedTries`. Chat Completions settles on `finish_reason`, one chunk
+before the usage chunk that ends the body, so that `settle` has no `closedMs`;
+a provider that sends usage on the `finish_reason` chunk has one.
+
+`Settle.servedTier` is the provider's own `service_tier`: the terminal
+Response object on OpenAI Responses (`response.created` only echoes the tier
+the request asked for), the chunk field on Chat Completions, and
+`usage.service_tier` on Anthropic Messages. It is absent when the provider
+names none.
+
+The same reading reaches three other places:
+
+- A call that fails carries it as `error.timing` on its `ModelError`, with the
+  failed tries and how far the response got. Like `error.body` it is outside
+  the schema and non-enumerable.
+- The `flows/model/Route.stream` span ends when the response starts, so it
+  carries the request's half as `smithers.model.attempts`,
+  `smithers.model.request_bytes`, `smithers.model.prepared_ms`,
+  `smithers.model.signed_ms`, `smithers.model.sent_ms`,
+  `smithers.model.headers_ms`, and `smithers.model.failed_tries` (the failed
+  tries' codes, in order). `Model.withGenAiSpan` puts every stage of the
+  settle event's reading on the `chat` span under the same names, with
+  `smithers.model.served_tier`.
+- `SMITHERS_WIRE_TRACE` writes it to the call's response line; see
+  [Troubleshooting](./troubleshooting.md#latency).
+
+A `Model` that is not built from a route, such as a wrapped CLI, fills only
+the stages it can observe.
+
 ## `ModelError`
 
 The provider-neutral failure vocabulary. Branch on `code`; provider message
@@ -145,7 +199,8 @@ these fields:
 The failed provider response body is reachable as `error.body`, capped at
 16 KiB, with `error.bodyTruncated` set when the cap bites. Both live outside
 the error's schema and are non-enumerable, so a journal never copies a
-provider body into run state.
+provider body into run state. An error a route raised also carries
+`error.timing`, the failed call's [wire timing](#wire-timing), the same way.
 
 The codes and their retryability:
 
@@ -333,19 +388,20 @@ the frames.
 Executes provider requests with bounded retries, quota classification, and
 credential-safe diagnostics.
 
-| Export                          | Kind                      | Behavior                                                                                                                                                                                                                                               |
-| ------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `RequestExecutor`               | service interface and tag | `execute(request, options)` answers the response, failing with `RequestError`. It requires a `Scope`: the caller's scope owns the successful response body. Tag id `/model/RequestExecutor`.                                                           |
-| `ExecuteOptions`                | interface                 | `{ modelId, classifyError? }`: the per-request policy the composed route supplies. Every request is wrapped in the kernel's `model:call` capability check for this `modelId`.                                                                          |
-| `ErrorClassifier`               | type                      | `(status, body) => ModelError`: protocol-specific classification for a failed HTTP response.                                                                                                                                                           |
-| `RequestError`                  | type                      | `ModelError \| PermissionRequired \| PermissionDenied \| GrantStoreError`. Kernel permission failures keep their original classes across the model boundary.                                                                                           |
-| `Transport`                     | interface                 | `{ client, rebuild }`: the kernel HTTP client every request goes through, and the host's way of replacing it.                                                                                                                                          |
-| `fixed(client)`                 | constructor               | A transport whose rebuild answers the same client.                                                                                                                                                                                                     |
-| `rebuildAfter`                  | constant                  | `3`: how many consecutive transport failures replace the client. A destroyed connection pool is the failure waiting does not repair. Any success, and any non-transport failure, resets the counter, which is shared by every request on the executor. |
-| `MakeOptions`                   | interface                 | `{ maxRetries? }`: retries after the first attempt. Defaults to `2`; `0` makes `execute` a single attempt. A negative count is `0`.                                                                                                                    |
-| `makeWith(transport, options?)` | constructor               | `Effect<RequestExecutor>` over a transport it may replace, bounded by `MakeOptions`.                                                                                                                                                                   |
-| `make`                          | constructor               | `Effect<RequestExecutor, never, HttpClient>` around the kernel HTTP client in context.                                                                                                                                                                 |
-| `layer`                         | layer                     | `Layer<RequestExecutor, never, HttpClient>`: provides the executor, requiring the kernel HTTP client.                                                                                                                                                  |
+| Export                          | Kind                      | Behavior                                                                                                                                                                                                                                                                              |
+| ------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RequestExecutor`               | service interface and tag | `execute(request, options)` answers the response, failing with `RequestError`. It requires a `Scope`: the caller's scope owns the successful response body. Tag id `/model/RequestExecutor`.                                                                                          |
+| `ExecuteOptions`                | interface                 | `{ modelId, classifyError?, onTry? }`: the per-request policy the composed route supplies. Every request is wrapped in the kernel's `model:call` capability check for this `modelId`. `onTry` observes each HTTP try and cannot change what is sent or retried.                       |
+| `TryEvent`                      | type                      | What `onTry` is told, in epoch milliseconds on the executor's `Clock`: `{ type: "sent", at }` when a try's request is handed to the HTTP client, after any retry wait, and `{ type: "failed", sentAt, at, code, httpStatus? }` when one fails. The answered try reports `sent` alone. |
+| `ErrorClassifier`               | type                      | `(status, body) => ModelError`: protocol-specific classification for a failed HTTP response.                                                                                                                                                                                          |
+| `RequestError`                  | type                      | `ModelError \| PermissionRequired \| PermissionDenied \| GrantStoreError`. Kernel permission failures keep their original classes across the model boundary.                                                                                                                          |
+| `Transport`                     | interface                 | `{ client, rebuild }`: the kernel HTTP client every request goes through, and the host's way of replacing it.                                                                                                                                                                         |
+| `fixed(client)`                 | constructor               | A transport whose rebuild answers the same client.                                                                                                                                                                                                                                    |
+| `rebuildAfter`                  | constant                  | `3`: how many consecutive transport failures replace the client. A destroyed connection pool is the failure waiting does not repair. Any success, and any non-transport failure, resets the counter, which is shared by every request on the executor.                                |
+| `MakeOptions`                   | interface                 | `{ maxRetries? }`: retries after the first attempt. Defaults to `2`; `0` makes `execute` a single attempt. A negative count is `0`.                                                                                                                                                   |
+| `makeWith(transport, options?)` | constructor               | `Effect<RequestExecutor>` over a transport it may replace, bounded by `MakeOptions`.                                                                                                                                                                                                  |
+| `make`                          | constructor               | `Effect<RequestExecutor, never, HttpClient>` around the kernel HTTP client in context.                                                                                                                                                                                                |
+| `layer`                         | layer                     | `Layer<RequestExecutor, never, HttpClient>`: provides the executor, requiring the kernel HTTP client.                                                                                                                                                                                 |
 
 The kernel HTTP boundary returns structural permission data. The executor uses
 `@smthrs/capability`’s `decodePermissionError` to reconstruct the yieldable error

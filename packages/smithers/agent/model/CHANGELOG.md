@@ -42,6 +42,29 @@
   never zero. `ModelEvent.Retry` gains optional `elapsedMs` and `httpStatus`.
   Records written before these fields decode unchanged (#3840).
 
+- Every call made through `Route.toModel` or `Route.layer` is timed on
+  Effect's `Clock`, and its `settle` event carries the reading as `timing`
+  for all three protocols. `servedTier` is the provider's `service_tier`.
+  A retry inside `RequestExecutor` is no longer invisible: `timing.attempts`
+  counts the tries and `timing.failedTries` says when each failed one was
+  sent, when it failed, with which code and HTTP status. No event is added,
+  moved or removed, and nothing sent to a provider changes (#3840).
+- `RequestExecutor.ExecuteOptions` takes an optional `onTry`, told when each
+  HTTP try is handed to the client and when one fails
+  (`RequestExecutor.TryEvent`). It observes; it cannot change what is retried.
+- A `ModelError` a route raises carries the failed call's reading as
+  `error.timing`, non-enumerable and outside the schema like `error.body`.
+- `SMITHERS_WIRE_TRACE` appends a second line per call when the call ends,
+  however it ends: `kind: "response"`, the outcome, HTTP status, timing,
+  usage, response id, served tier, and the provider's request id and
+  processing-time headers. The request line gains `kind: "request"`, and both
+  carry `call`, which pairs them. Neither holds a credential or a request
+  header.
+- The `flows/model/Route.stream` span carries the request's half of the
+  reading as `smithers.model.*` attributes, and `Model.withGenAiSpan` puts
+  the settle event's whole reading and `smithers.model.served_tier` on the
+  `chat` span.
+
 - `ModelError.isTerminalRefusal` shares the quota cooldown classification with
   agent hosts and failure copy. Recoverable quota cards retain Wait for reset.
 

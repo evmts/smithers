@@ -453,7 +453,8 @@ const providerError = (
 
 const settle = (
   state: State,
-  stopReason: StopReason
+  stopReason: StopReason,
+  servedTier: string | undefined
 ): { readonly state: State; readonly events: ReadonlyArray<ModelEvent.ModelEvent> } =>
   state.settled
     ? { state, events: [] }
@@ -464,6 +465,7 @@ const settle = (
           type: "settle",
           stopReason,
           responseId: state.responseId,
+          ...(servedTier === undefined ? {} : { servedTier }),
           ...(state.itemIds.length === 0 ? {} : { itemIds: state.itemIds })
         })
       ]
@@ -740,6 +742,10 @@ const stepEvent = (
       ...current,
       responseId: string(response?.id) ?? current.responseId
     }
+    // The tier that served the call. `response.created` only echoes the tier
+    // the request asked for (`auto` when it named none); the terminal Response
+    // object states the one actually used.
+    const servedTier = string(response?.["service_tier"])
     if (type === "response.incomplete") {
       // The event says WHY it is incomplete. `content_filter` is a refusal, not a
       // token budget, and `StopReason` already distinguishes the two.
@@ -751,13 +757,18 @@ const stepEvent = (
       )
       const terminal = settle(
         { ...identified, tools: flushed.state },
-        reason === "content_filter" ? "content-filter" : "length"
+        reason === "content_filter" ? "content-filter" : "length",
+        servedTier
       )
       return { state: terminal.state, events: [...events, ...closed, ...terminal.events] }
     }
     const closed = closeOpenCalls(identified, response)
     if (closed instanceof ModelError) return closed
-    const terminal = settle(closed.state, Object.keys(closed.state.toolNames).length === 0 ? "stop" : "tool-calls")
+    const terminal = settle(
+      closed.state,
+      Object.keys(closed.state.toolNames).length === 0 ? "stop" : "tool-calls",
+      servedTier
+    )
     return { state: terminal.state, events: [...events, ...closed.events, ...terminal.events] }
   }
   if (type === "response.failed" || type === "error") {

@@ -127,14 +127,14 @@ message is audit data; never execute it.
 ## Prompt cache
 
 **Cached input stops growing across a conversation.** Set
-`SMITHERS_WIRE_TRACE` to a file path and rerun. Each outgoing request
-appends one JSON line with the route, the `prompt_cache_key` body field, the
-`session-id` header, `affinity` (whether a remembered `x-codex-turn-state`
-rides along), a short hash of the instructions, a hash and kind for
-each input item, and `commonPrefixItems`: how many leading input items match
-the previous request on the same cache key. The line never contains the
-signed credential or item content. Compare it with the usage the stream
-reports:
+`SMITHERS_WIRE_TRACE` to a file path and rerun. Each call appends two JSON
+lines, paired by `call`. The `request` line has the route, the
+`prompt_cache_key` body field, the `session-id` header, `affinity` (whether a
+remembered `x-codex-turn-state` rides along), a short hash of the
+instructions, a hash and kind for each input item, and `commonPrefixItems`:
+how many leading input items match the previous request on the same cache
+key. Neither line contains the signed credential, a request header, or item
+content. Compare the `request` line with the `usage` on the `response` line:
 
 - `cacheKey` or `sessionIdHeader` is `null`: the request named no cache
   identity, and the provider may spread the conversation across machines.
@@ -148,3 +148,56 @@ reports:
   frame whose new stable items are smaller than one block plus the trailing
   state section reads back the same count as the frame before. Make each
   frame add a few thousand tokens before reading a flat count as a defect.
+
+## Latency
+
+**A call waits a long time before its first token.** Set
+`SMITHERS_WIRE_TRACE` to a file path and rerun. The `response` line of each
+call is written when the call ends, however it ends:
+
+```json
+{
+  "kind": "response",
+  "call": 12,
+  "outcome": "settled",
+  "status": 200,
+  "servedTier": "default",
+  "timing": {
+    "attempts": 1,
+    "requestBytes": 48211,
+    "preparedMs": 4,
+    "signedMs": 9,
+    "sentMs": 9,
+    "headersMs": 912,
+    "firstEventMs": 930,
+    "firstThinkingMs": 1480,
+    "firstOutputMs": 7460,
+    "lastOutputMs": 9020,
+    "completedMs": 9066,
+    "closedMs": 9066
+  },
+  "usage": { "inputTokens": 21040, "outputTokens": 388, "cachedInputTokens": 19968 },
+  "headers": { "x-request-id": "req_..." }
+}
+```
+
+Every offset is milliseconds from the start of the call. Read the gaps:
+
+- `signedMs` is large: resolving the credential took the time. A token store
+  that refreshes or reads a file on every call shows here.
+- `sentMs` is far past `signedMs`, or `attempts` is above 1: the call was
+  retried. `timing.failedTries` says when each try was sent, when it failed,
+  and why.
+- `headersMs` is far past `sentMs`: the upload and the provider's wait before
+  it starts answering. Compare with `requestBytes`.
+- `firstOutputMs` is far past `firstEventMs`: the model was thinking.
+  `firstThinkingMs` says when it started, and `usage.reasoningTokens` how
+  much.
+- `closedMs` is far past `lastOutputMs`: the provider held the stream open
+  after it finished writing.
+
+`outcome` is `settled`, `ended` (the body ended with no settlement),
+`interrupted`, or the `ModelError` code that ended the call. `headers` holds
+only the provider's request id and its own processing time, when it sends
+them. The same `timing` is on the call's `settle` event without the trace; see
+the [API reference](./api.md#wire-timing).

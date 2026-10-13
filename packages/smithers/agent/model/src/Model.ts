@@ -10,6 +10,7 @@
 
 import type { GrantStoreError, PermissionDenied, PermissionRequired } from "@smthrs/capability/Permission"
 import { Context, Effect, Layer, Stream } from "effect"
+import * as CallTiming from "./internal/CallTiming.ts"
 import type { ModelError } from "./ModelError.ts"
 import { ModelError as ModelErrorClass } from "./ModelError.ts"
 import type { ModelEvent, Usage } from "./ModelEvent.ts"
@@ -90,8 +91,12 @@ export const makeNoop = (overrides: Partial<Model> = {}): Model =>
  * `gen_ai.request.model`, the declared `gen_ai.provider.name`, the provider's `gen_ai.usage.input_tokens` and
  * `gen_ai.usage.output_tokens` as they stream in, the call's USD cost so far as
  * `gen_ai.usage.cost` when the model is priced (see {@link Pricing.cost}), and
- * `gen_ai.response.finish_reasons` from the settlement. Prompt and response
- * content never reach the span.
+ * `gen_ai.response.finish_reasons` from the settlement. When the settlement
+ * says where the call's time went it also carries each stage as
+ * `smithers.model.<stage>` (`smithers.model.headers_ms`,
+ * `smithers.model.first_output_ms`, `smithers.model.attempts`) and the tier
+ * that served it as `smithers.model.served_tier`. Prompt and response content
+ * never reach the span.
  *
  * @category tracing
  * @since 1.0.0
@@ -124,7 +129,9 @@ export const withGenAiSpan =
             case "settle":
               return Effect.annotateCurrentSpan({
                 "gen_ai.response.finish_reasons": [event.stopReason],
-                ...(event.responseId === undefined ? {} : { "gen_ai.response.id": event.responseId })
+                ...(event.responseId === undefined ? {} : { "gen_ai.response.id": event.responseId }),
+                ...(event.servedTier === undefined ? {} : { "smithers.model.served_tier": event.servedTier }),
+                ...(event.timing === undefined ? {} : CallTiming.attributes(event.timing))
               })
             default:
               return Effect.void

@@ -7,7 +7,7 @@
  * @since 0.1.0
  */
 
-import { Effect, Layer, Redacted, Result, Schema, Stream } from "effect"
+import { Clock, Effect, Exit, Layer, Redacted, Result, Schema, Stream } from "effect"
 import type * as SchemaIssue from "effect/SchemaIssue"
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
 import * as AnthropicMessages from "./AnthropicMessages.ts"
@@ -15,10 +15,11 @@ import * as Auth from "./Auth.ts"
 import * as CanonicalJson from "./CanonicalJson.ts"
 import * as Endpoint from "./Endpoint.ts"
 import * as Framing from "./Framing.ts"
+import * as CallTiming from "./internal/CallTiming.ts"
 import * as WireTrace from "./internal/WireTrace.ts"
 import * as Model from "./Model.ts"
 import { ModelError } from "./ModelError.ts"
-import type { ModelEvent } from "./ModelEvent.ts"
+import { type ModelEvent, type Settle, settledMessage, type Timing, type Usage } from "./ModelEvent.ts"
 import { type ModelRequest, ModelRequest as ModelRequestSchema } from "./ModelRequest.ts"
 import * as OpenAIChatCompletions from "./OpenAIChatCompletions.ts"
 import * as OpenAIResponses from "./OpenAIResponses.ts"
@@ -262,24 +263,49 @@ const rememberAffinity = (slot: string, value: string): void => {
   if (affinity.size > affinityLimit) affinity.delete(affinity.keys().next().value!)
 }
 
+/**
+ * What one call's wire trace line and failure are written from, filled in as
+ * the call runs.
+ */
+interface Call {
+  readonly timing: CallTiming.CallTiming
+  /** The wire trace's number for the call, when it is traced. */
+  traced: number | undefined
+  status: number | undefined
+  headers: Readonly<Record<string, string>> | undefined
+  usage: Usage
+  settled: Settle | undefined
+}
+
+// A failed call's reading rides on its error the way a provider body does:
+// outside the schema, so a journal and a comparison see what they always saw.
+const timed = (error: Model.ModelFailure, timing: Timing): Model.ModelFailure =>
+  error instanceof ModelError && Object.isExtensible(error)
+    ? Object.defineProperty(error, "timing", { value: timing, enumerable: false, configurable: true })
+    : error
+
 const stream = <Body, Frame, Event, State>(
   route: Route<Body, Frame, Event, State>,
   executor: RequestExecutor.RequestExecutor,
-  request: ModelRequest
+  request: ModelRequest,
+  call: Call
 ): Stream.Stream<ModelEvent, Model.ModelFailure> =>
   Stream.scoped(
     Stream.unwrap(
       Effect.fn("flows/model/Route.stream")(function*() {
+        const { timing } = call
         const { prepared, request: snapshot } = yield* compile(route, request)
+        timing.prepared(prepared.body.byteLength)
         const affinityHeader = route.protocol.affinityHeader
         let traced = false
         const attempt = Effect.gen(function*() {
           const signed = yield* route.auth.sign({ ...prepared.publicHeaders })
+          timing.signed()
           const slot = affinityHeader === undefined ? undefined : affinitySlot(prepared, snapshot, signed)
           const token = slot === undefined ? undefined : affinity.get(slot)
           if (!traced) {
             traced = true
-            WireTrace.record({ ...prepared, affinity: token !== undefined })
+            call.traced = WireTrace.record({ ...prepared, affinity: token !== undefined })
           }
           const signedHeaders = {
             ...signed,
@@ -291,8 +317,12 @@ const stream = <Body, Frame, Event, State>(
           const sanitize = yield* RequestExecutor.errorSanitizer(httpRequest)
           const response = yield* executor.execute(httpRequest, {
             modelId: snapshot.modelId,
-            classifyError: route.protocol.classifyError
+            classifyError: route.protocol.classifyError,
+            onTry: timing.onTry
           })
+          timing.headers()
+          call.status = response.status
+          call.headers = response.headers
           const returned = slot === undefined ? undefined : response.headers[affinityHeader!.toLowerCase()]
           if (returned !== undefined && returned !== "") rememberAffinity(slot!, returned)
           return { response, sanitize }
@@ -311,8 +341,13 @@ const stream = <Body, Frame, Event, State>(
               (error): error is ModelError => error instanceof ModelError && error.code === "authentication",
               () => Effect.andThen(refresh, attempt)
             )
-          ))
+          )).pipe(
+            // This span ends when the response starts, so it carries the
+            // request's half of the reading, a refusal's or a stall's included.
+            Effect.ensuring(Effect.suspend(() => Effect.annotateCurrentSpan(CallTiming.attributes(timing.read()))))
+          )
         const decodeEvent = Schema.decodeUnknownEffect(route.protocol.stream.event)
+        const terminal = route.protocol.stream.terminal
         const events = route.framing.frame(
           response.stream.pipe(
             // The code is the contract and the transport's own text is not:
@@ -330,8 +365,9 @@ const stream = <Body, Frame, Event, State>(
               ? new ModelError({ code: "transport", message: "Model response stream failed" })
               : error
           ),
-          Stream.mapEffect((frame) =>
-            decodeEvent(frame).pipe(
+          Stream.mapEffect((frame) => {
+            timing.frame()
+            return decodeEvent(frame).pipe(
               Effect.mapError((error) =>
                 withPath(
                   "invalid_provider_output",
@@ -340,10 +376,18 @@ const stream = <Body, Frame, Event, State>(
                 )
               )
             )
-          ),
-          route.protocol.stream.terminal === undefined
+          }),
+          terminal === undefined
             ? (framed) => framed
-            : Stream.takeUntil(route.protocol.stream.terminal)
+            // The route reads nothing after the terminal frame: the response
+            // stream closes with it, before the protocol steps it.
+            : Stream.takeUntil((event) => {
+              const last = terminal(event)
+              if (last) timing.closed()
+              return last
+            }),
+          // A body that ends without one closes here, ahead of the halt hook.
+          Stream.onEnd(Effect.sync(timing.closed))
         )
         return events.pipe(
           Stream.mapAccumEffect(
@@ -355,11 +399,76 @@ const stream = <Body, Frame, Event, State>(
           ),
           // Keep the signed attempt's policy after the HTTP effect completes,
           // including when refresh replaced the original credential.
-          Stream.mapError(sanitize)
+          Stream.mapError(sanitize),
+          // The settle event carries the reading as it stands when the
+          // protocol settles. Chat Completions settles on `finish_reason`,
+          // one chunk before the usage that ends the body, so that settle is
+          // read before the stream closes and has no `closedMs`.
+          Stream.map((event): ModelEvent => {
+            timing.event(event)
+            if (event.type === "usage") call.usage = settledMessage([{ type: "usage", ...call.usage }, event]).usage
+            if (event.type !== "settle") return event
+            call.settled = { ...event, timing: timing.read() }
+            return call.settled
+          })
         )
       })()
     )
   )
+
+/**
+ * One measured call: the stream above, started on the caller's `Clock`.
+ *
+ * The call starts here. Every offset its settle event reports counts from
+ * this instant, the body's encoding included. However it ends, its wire trace
+ * line is written here; a call that fails closes where it failed, and its
+ * error says so.
+ */
+const measured = <Body, Frame, Event, State>(
+  route: Route<Body, Frame, Event, State>,
+  executor: RequestExecutor.RequestExecutor,
+  request: ModelRequest
+): Stream.Stream<ModelEvent, Model.ModelFailure> =>
+  Stream.unwrap(Effect.map(Clock.clockWith(Effect.succeed), (clock) => {
+    const timing = CallTiming.start(clock)
+    const call: Call = {
+      timing,
+      traced: undefined,
+      status: undefined,
+      headers: undefined,
+      usage: {},
+      settled: undefined
+    }
+    let failure: string | undefined
+    return stream(route, executor, request, call).pipe(
+      Stream.mapError((error) => {
+        failure = error.code
+        timing.closed()
+        return timed(error, timing.read())
+      }),
+      Stream.onExit((exit) =>
+        Effect.sync(() => {
+          timing.closed()
+          WireTrace.recordResponse(call.traced, () => {
+            const reading = timing.read()
+            return {
+              routeId: route.id,
+              protocolId: route.protocol.id,
+              outcome: failure ??
+                (call.settled !== undefined ? "settled" : Exit.isSuccess(exit) ? "ended" : "interrupted"),
+              stopReason: call.settled?.stopReason,
+              status: call.status ?? reading.failedTries?.at(-1)?.httpStatus,
+              timing: reading,
+              usage: call.usage,
+              responseId: call.settled?.responseId,
+              servedTier: call.settled?.servedTier,
+              headers: call.headers
+            }
+          }, clock.currentTimeMillisUnsafe())
+        })
+      )
+    )
+  }))
 
 /**
  * Composes Protocol × Endpoint × Auth × Framing into a route value.
@@ -384,7 +493,7 @@ export const toModel = <Body, Frame, Event, State>(
 ): Effect.Effect<Model.Model, never, RequestExecutor.RequestExecutor> =>
   Effect.gen(function*() {
     const executor = yield* RequestExecutor.RequestExecutor
-    return Model.make({ providerName: config.providerName, stream: (request) => stream(config, executor, request) })
+    return Model.make({ providerName: config.providerName, stream: (request) => measured(config, executor, request) })
   })
 
 /**

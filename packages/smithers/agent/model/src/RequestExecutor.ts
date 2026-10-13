@@ -763,7 +763,38 @@ export type ErrorClassifier = (status: number, body: string) => ModelError
 export interface ExecuteOptions {
   readonly modelId: string
   readonly classifyError?: ErrorClassifier | undefined
+  /**
+   * Told of each HTTP try as it is handed to the client, and again if it
+   * fails. A retry inside `execute` is otherwise invisible to the caller: one
+   * slow call and two tries with a wait between them return the same response.
+   * Observation only; it cannot change what is sent or what is retried.
+   */
+  readonly onTry?: ((event: TryEvent) => void) | undefined
 }
+
+/**
+ * One HTTP try of a call as the executor saw it. Instants are epoch
+ * milliseconds on the executor's `Clock`.
+ *
+ * `sent` is the moment the request is handed to the HTTP client, after any
+ * retry wait and any client rebuild: the client reports nothing between that
+ * and the response's status line. `failed` carries the try's own `sentAt`, the
+ * failure's `code` (a `ModelError` code or a kernel permission code) and the
+ * HTTP status when a response carried one. The try whose response `execute`
+ * returns reports `sent` alone, and so does a try that was interrupted.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type TryEvent =
+  | { readonly type: "sent"; readonly at: number }
+  | {
+    readonly type: "failed"
+    readonly sentAt: number
+    readonly at: number
+    readonly code: string
+    readonly httpStatus?: number | undefined
+  }
 
 /**
  * Failures from provider execution. Kernel permission failures retain their
@@ -987,6 +1018,8 @@ export const makeWith = (transport: Transport, options: MakeOptions = {}): Effec
         const client = http
         const on = generation
         const redactedNames = [...yield* Headers.CurrentRedactedNames, SENSITIVE_NAME]
+        const sentAt = yield* Clock.currentTimeMillis
+        options.onTry?.({ type: "sent", at: sentAt })
         const started = client.execute(request).pipe(
           // `model:call` on this model, not a plain `net:*` effect: the same host
           // answers many models and a grant for one is not a grant for the rest.
@@ -994,7 +1027,7 @@ export const makeWith = (transport: Transport, options: MakeOptions = {}): Effec
           Effect.provideService(Headers.CurrentRedactedNames, redactedNames),
           Effect.mapError((error) => mapHttpError(error, redactedNames))
         )
-        const response = yield* (responseStartMs === 0 ? started : started.pipe(
+        const answered = (responseStartMs === 0 ? started : started.pipe(
           Effect.timeoutOrElse({
             duration: Duration.millis(responseStartMs),
             orElse: () =>
@@ -1022,7 +1055,18 @@ export const makeWith = (transport: Transport, options: MakeOptions = {}): Effec
             })
           )
         )
-        return yield* statusError(request, redactedNames, options.classifyError)(response)
+        return yield* Effect.flatMap(answered, statusError(request, redactedNames, options.classifyError)).pipe(
+          Effect.tapError((error) =>
+            Effect.map(Clock.currentTimeMillis, (at) =>
+              options.onTry?.({
+                type: "failed",
+                sentAt,
+                at,
+                code: error.code,
+                httpStatus: (error as { readonly httpStatus?: number | undefined }).httpStatus
+              }))
+          )
+        )
       })
 
     return RequestExecutor.of({

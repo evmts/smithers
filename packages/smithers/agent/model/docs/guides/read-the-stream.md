@@ -96,6 +96,27 @@ stays truthful and resumable. Every built-in lowering omits an aborted or
 errored assistant turn from the next request rather than replaying content
 the provider will reject, so a transcript containing one continues cleanly.
 
+## Where the call's time went
+
+A call made through a route says where its time went. The `settle` event
+carries `timing`, in whole milliseconds from the start of the call:
+
+```ts
+yield * Stream.runForEach(model.stream(request), (event) => {
+  if (event.type !== "settle" || event.timing === undefined) return Effect.void
+  const { attempts, headersMs, firstOutputMs, lastOutputMs } = event.timing
+  // headersMs: the provider started answering.
+  // firstOutputMs - headersMs: the wait for the first written piece.
+  // attempts > 1: event.timing.failedTries says when and why a try failed.
+  return Effect.log({ attempts, headersMs, firstOutputMs, lastOutputMs, servedTier: event.servedTier })
+})
+```
+
+A stage that did not happen is absent: a call with no thinking has no
+`firstThinkingMs`, and a call that wrote nothing has no `firstOutputMs`.
+`servedTier` is the service tier the provider says served the call. The
+[API reference](../api.md#wire-timing) defines every field.
+
 ## Tool calls need validation before execution
 
 Tool-call arguments arrive as JSON text in fragments. Two policies cover the

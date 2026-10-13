@@ -254,6 +254,8 @@ const ChunkUsage = Schema.Struct({
 
 const ChatCompletionChunk = Schema.Struct({
   id: Schema.optional(Schema.String),
+  /** The tier that served the request; OpenAI repeats it on every chunk. */
+  service_tier: Schema.optional(Schema.NullOr(Schema.String)),
   choices: Schema.optional(Schema.Array(Schema.Struct({
     index: Schema.optional(Schema.Number),
     delta: Schema.optional(ChunkDelta),
@@ -282,6 +284,7 @@ export interface State {
   readonly settled: boolean
   readonly usage?: typeof ChunkUsage.Type
   readonly responseId?: string
+  readonly servedTier?: string
 }
 
 const TEXT_ID = "text-0"
@@ -321,7 +324,8 @@ const settle = (
         ModelEvent.ModelEvent.Settle({
           type: "settle",
           stopReason,
-          ...(state.responseId === undefined ? {} : { responseId: state.responseId })
+          ...(state.responseId === undefined ? {} : { responseId: state.responseId }),
+          ...(state.servedTier === undefined ? {} : { servedTier: state.servedTier })
         })
       ]
     }
@@ -409,7 +413,8 @@ const stepEvent = (
   let current: State = {
     ...state,
     ...(event.usage === undefined || event.usage === null ? {} : { usage: event.usage }),
-    ...(event.id === undefined ? {} : { responseId: event.id })
+    ...(event.id === undefined ? {} : { responseId: event.id }),
+    ...(event.service_tier === undefined || event.service_tier === null ? {} : { servedTier: event.service_tier })
   }
   if (delta?.content !== undefined && delta.content !== null && delta.content !== "") {
     if (!current.textOpen) {
