@@ -326,8 +326,10 @@ describe("RunTiming.fold", () => {
       purpose: "frame",
       servedTier: "priority",
       timing: {
+        startedAt: 1_791_000_000_000,
         attempts: 3,
         requestBytes: 12_345,
+        preparedMs: 3,
         signedMs: 5,
         sentMs: 9,
         headersMs: 2_100,
@@ -336,7 +338,12 @@ describe("RunTiming.fold", () => {
         firstOutputMs: 7_400,
         lastOutputMs: 9_800,
         completedMs: 9_900,
-        closedMs: 9_950
+        closedMs: 9_950,
+        failedTries: [{ sentMs: 4, failedMs: 600, code: "transport" }, {
+          failedMs: 1_900,
+          code: "rate_limit",
+          httpStatus: 429
+        }]
       }
     })
     j.run("completed", 10_000)
@@ -345,12 +352,18 @@ describe("RunTiming.fold", () => {
       purpose: "frame",
       // The wire's own count wins over the retries the harness happened to see.
       tries: 3,
+      failedTries: [{ sentMs: 4, failedMs: 600, code: "transport" }, {
+        failedMs: 1_900,
+        code: "rate_limit",
+        httpStatus: 429
+      }],
       waitMs: 2_300,
       thinkingMs: 5_100,
       writingMs: 2_400,
       requestBytes: 12_345,
       servedTier: "priority",
       stages: {
+        preparedMs: 3,
         signedMs: 5,
         sentMs: 9,
         headersMs: 2_100,
@@ -508,6 +521,112 @@ describe("RunTiming.fold", () => {
       settled: true
     }])
     expect(report.time.modelMs).toBe(4_000)
+  })
+
+  it("reads what a judge reading fired, did and cost from a reading that records them", () => {
+    const j = journal()
+    j.run("running", 0)
+    j.requested(0, 0)
+    j.spend(4_990, "key1_a", 1_200, 0.01)
+    j.settled(5_000, 5_000, [1_000, 0, 200, 50], 0.01)
+    j.spend(5_290, "boundary-usage/a", 600, 0.0009)
+    j.agent("supervisor-settled", 5_300, {
+      frame: 0,
+      latencyMs: 200,
+      crossed: false,
+      nudged: false,
+      triggers: ["outdated_context", "irrelevant_context"],
+      compact: ["outdated_context"],
+      costUsd: 0.0004,
+      usage: jev(400, 100)
+    })
+    j.agent("decision-settled", 5_300, { frame: 0, classifier: "compaction/marks", latencyMs: 150, usage: jev(90, 10) })
+    j.spend(6_290, "boundary-usage/b", 400, 0.0003)
+    j.agent("supervisor-settled", 6_300, {
+      frame: 1,
+      latencyMs: 200,
+      triggers: ["outdated_context"],
+      compactSuppressed: "floor",
+      costUsd: 0.0003,
+      usage: jev(300, 100)
+    })
+    j.spend(7_290, "boundary-usage/c", 40, 0)
+    // No trigger fired, and a monitor still nudged the run.
+    j.agent("supervisor-settled", 7_300, { frame: 2, latencyMs: 200, triggers: [], nudged: true, usage: jev(10, 10) })
+    j.agent("supervisor-settled", 7_400, { frame: 2, latencyMs: 50, triggers: [], nudged: false, usage: jev(10, 10) })
+    j.spend(7_990, "boundary-usage/d", 1_000, 0.002)
+    j.agent("claim-demanded", 8_000, {
+      latencyMs: 500,
+      nextFrame: 3,
+      demanded: true,
+      costUsd: 0.002,
+      usage: jev(900, 100)
+    })
+    j.run("completed", 9_000)
+    const report = RunTiming.fold(j.events, "run-1")
+    expect(report.judge.fired).toEqual([
+      {
+        frame: 0,
+        purpose: "judge",
+        startMs: 5_100,
+        latencyMs: 200,
+        fired: ["outdated_context", "irrelevant_context", "compact"]
+      },
+      {
+        frame: 1,
+        purpose: "judge",
+        startMs: 6_100,
+        latencyMs: 200,
+        fired: ["outdated_context", "compact suppressed: floor"]
+      },
+      { frame: 2, purpose: "judge", startMs: 7_100, latencyMs: 200, fired: ["nudged"] },
+      { frame: 2, purpose: "claim", startMs: 7_500, latencyMs: 500, fired: ["demanded"] }
+    ])
+    const rows = Object.fromEntries(report.spend.map((row) => [row.purpose, row]))
+    // A reading's own recorded cost is its cost; the ledger entry's remainder goes to the reading that has none.
+    expect(rows.judge!.costUsd).toBeCloseTo(0.0004 + 0.0003, 12)
+    expect(rows.marks!.costUsd).toBeCloseTo(0.0005, 12)
+    expect(rows.claim!.costUsd).toBeCloseTo(0.002, 12)
+    expect(report.total.costUsd).toBeCloseTo(report.ledger!.costUsd, 12)
+    expect(report.derived.map((entry) => entry.field)).not.toContain("judge fired")
+    // The marks reading has no price of its own, so its cost is still worked out.
+    expect(report.derived.map((entry) => entry.field)).toContain("reading cost")
+  })
+
+  it("reads a compaction's cause and duration from a record that carries them", () => {
+    const j = journal()
+    j.run("running", 0)
+    j.requested(1_000, 0, { purpose: "compaction" })
+    j.settled(8_000, 7_000, [5_000, 0, 900, 0], 0.03, { purpose: "compaction" })
+    j.agent("compaction-settled", 10_000, {
+      causes: ["outdated_context", "window"],
+      durationMillis: 9_500,
+      marks: { kept: 2, squashed: 1, removed: 3 }
+    })
+    j.requested(10_000, 0)
+    j.settled(12_000, 2_000, [600, 0, 100, 0], 0.001)
+    j.run("completed", 12_000)
+    const report = RunTiming.fold(j.events, "run-1")
+    expect(report.compactions).toEqual([{
+      frame: 0,
+      startMs: 500,
+      durationMs: 9_500,
+      cause: "outdated_context, window",
+      marks: { kept: 2, squashed: 1, removed: 3 },
+      spent: 5_900
+    }])
+    // A settled summary call is a row like any other, and its time is compaction time.
+    expect(report.calls).toMatchObject([
+      { purpose: "compaction", settled: true, durationMs: 7_000, usage: { input: 5_000, written: 900 } },
+      { purpose: "frame", settled: true }
+    ])
+    expect(report.time).toEqual({ modelMs: 2_000, cellsMs: 0, judgeMs: 0, compactionMs: 9_500, otherMs: 500 })
+    expect(report.spend.map((row) => [row.purpose, row.calls, row.spent])).toEqual([["frame", 1, 700], [
+      "compaction",
+      1,
+      5_900
+    ]])
+    expect(report.derived.map((entry) => entry.field)).not.toContain("compaction total")
   })
 
   it("is total over an empty or malformed journal", () => {
@@ -761,6 +880,7 @@ describe("RunTiming.render", () => {
       timing: {
         attempts: 2,
         requestBytes: 12_345,
+        preparedMs: 3,
         signedMs: 5,
         sentMs: 9,
         headersMs: 2_100,
@@ -795,12 +915,12 @@ describe("RunTiming.render", () => {
     ])
     // Only the call that carries timing; milliseconds matter before the first token.
     expect(table(text, "Wait by stage (seconds from the call's start)")).toEqual({
-      header: ["#", "signed", "sent", "headers", "first event", "first thinking", "first output"],
-      rows: [["1", "0.005", "0.009", "2.100", "2.150", "2.300", "7.400"]]
+      header: ["#", "prepared", "signed", "sent", "headers", "1st event", "1st thinking", "1st output"],
+      rows: [["1", "0.003", "0.005", "0.009", "2.100", "2.150", "2.300", "7.400"]]
     })
     expect(table(text, "After the first output (seconds from the call's start)")).toEqual({
-      header: ["#", "last output", "completed", "closed", "request bytes", "tier"],
-      rows: [["1", "9.800", "9.900", "9.950", "12,345", "priority"]]
+      header: ["#", "last output", "completed", "closed", "tries", "request bytes", "tier"],
+      rows: [["1", "9.800", "9.900", "9.950", "2", "12,345", "priority"]]
     })
   })
 

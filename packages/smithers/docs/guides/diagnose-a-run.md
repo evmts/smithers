@@ -182,9 +182,9 @@ Model calls (seconds)
 2      1    1    frame   25.8   27.3   7.0    2.4   17.7
 
 Wait by stage (seconds from the call's start)
-#  signed   sent  headers  first event  first thinking  first output
-1   0.006  0.011    2.840        2.905           7.310        12.480
-2   0.005  0.012    2.610        2.660           7.020         9.440
+#  prepared  signed   sent  headers  1st event  1st thinking  1st output
+1     0.004   0.006  0.011    2.840      2.905         7.310      12.480
+2     0.003   0.005  0.012    2.610      2.660         7.020       9.440
 …
 ```
 
