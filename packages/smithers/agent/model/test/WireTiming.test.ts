@@ -422,6 +422,76 @@ describe("wire timing on the settle event", () => {
   })
 })
 
+describe("the served tier", () => {
+  it("OpenAI Responses: a response cut off at the token budget still names the tier that served it", async () => {
+    const events = await collect(openai, [{
+      headersAfterMs: 10,
+      body: [[
+        4,
+        sse({
+          type: "response.incomplete",
+          response: { id: "resp_6", service_tier: "flex", incomplete_details: { reason: "max_output_tokens" } }
+        })
+      ]]
+    }])
+
+    expect(settleOf(events)).toMatchObject({ stopReason: "length", responseId: "resp_6", servedTier: "flex" })
+  })
+
+  it("Anthropic Messages: the tier on the final usage replaces the one the message started with", async () => {
+    const events = await collect(anthropic, [{
+      headersAfterMs: 10,
+      body: [
+        [
+          1,
+          sse({ type: "message_start", message: { id: "msg_2", usage: { input_tokens: 4, service_tier: "standard" } } })
+        ],
+        [
+          1,
+          sse({
+            type: "message_delta",
+            delta: { stop_reason: "end_turn" },
+            usage: { output_tokens: 2, service_tier: "priority" }
+          })
+        ],
+        [1, sse({ type: "message_stop" })]
+      ]
+    }])
+
+    expect(settleOf(events).servedTier).toBe("priority")
+  })
+
+  it("Anthropic Messages: a stream that names no tier settles without one", async () => {
+    const events = await collect(anthropic, [{
+      headersAfterMs: 10,
+      body: [
+        [1, sse({ type: "message_start", message: { id: "msg_3", usage: { input_tokens: 4, service_tier: null } } })],
+        [1, sse({ type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 2 } })],
+        [1, sse({ type: "message_stop" })]
+      ]
+    }])
+
+    expect(settleOf(events)).not.toHaveProperty("servedTier")
+  })
+
+  it("Chat Completions: a null tier on a chunk is no tier", async () => {
+    const events = await collect(chat, [{
+      headersAfterMs: 10,
+      body: [[
+        1,
+        sse({
+          id: "chatcmpl_3",
+          service_tier: null,
+          choices: [{ index: 0, delta: { content: "ok" }, finish_reason: "stop" }],
+          usage: { prompt_tokens: 1, completion_tokens: 1 }
+        })
+      ]]
+    }])
+
+    expect(settleOf(events)).not.toHaveProperty("servedTier")
+  })
+})
+
 describe("wire timing across tries", () => {
   it("a retried call reports two attempts and when and why the first one failed", async () => {
     const tries: ReadonlyArray<Try> = [
