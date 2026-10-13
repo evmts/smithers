@@ -17,6 +17,11 @@ import unittest
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent))
+
+import check_calls  # noqa: E402
+import smithers_agent  # noqa: E402
+
 REPORT = HERE.parent / "report.py"
 SMITHERS = "evals.harbor.smithers_agent:SmithersAgent"
 BASELINE = "evals.harbor.codex_pool:PooledCodex"
@@ -116,6 +121,26 @@ class ReportCLI(unittest.TestCase):
                 seq += 1
         connection.commit()
         connection.close()
+
+    def recorded(self, arm: str, task: str, *, minutes: float) -> Path:
+        """A trial with the records a real one keeps: the Smithers arm's
+        trajectory as the adapter folds it, the baseline's Codex session log,
+        and the runner's timing of the agent."""
+        if arm == "smithers":
+            directory = self.trial(arm, task, tokens=(26_000, 17_000, 2_600))
+            document = smithers_agent.trajectory(check_calls.journal(), agent_name="smithers", agent_version="test",
+                                                 seat="openai:seat-model", instruction="i", session_id="s")
+            (directory / "agent" / "trajectory.json").write_text(json.dumps(document))
+        else:
+            directory = self.trial(arm, task, tokens=(39_000, 34_000, 900))
+            sessions = directory / "agent" / "sessions" / "2026" / "01" / "01"
+            sessions.mkdir(parents=True)
+            (sessions / "rollout-2026-01-01T00-00-00-fixture.jsonl").write_text("\n".join(check_calls.session()) + "\n")
+        result = json.loads((directory / "result.json").read_text())
+        result["agent_execution"] = {"started_at": "2026-10-01T00:00:00Z",
+                                     "finished_at": f"2026-10-01T00:{int(minutes):02d}:{round(minutes % 1 * 60):02d}Z"}
+        (directory / "result.json").write_text(json.dumps(result))
+        return directory
 
     def paired(self, tasks: int, *, solved: dict[str, int] | None = None) -> None:
         solved = solved or {"smithers": tasks, "baseline": tasks}
@@ -299,6 +324,95 @@ class ReportCLI(unittest.TestCase):
         self.paired(1)
         (self.jobs["baseline"] / "result.json").write_text(json.dumps({"n_total_trials": 2}))
         self.assert_refused("baseline: 1 trials retained; the job planned 2")
+
+    def test_the_comparison_says_where_each_arm_s_time_and_tokens_went(self) -> None:
+        for task in ("task-000", "task-001"):
+            self.recorded("smithers", task, minutes=10)
+            self.recorded("baseline", task, minutes=4.5)
+        text, report = self.run_report(0, "--min-tasks", "2")
+        ours, theirs = (report["comparison"]["arms"][arm] for arm in ("smithers", "baseline"))
+        self.assertEqual((ours["trials"], ours["sources"], theirs["sources"]), (2, {"trajectory": 2}, {"session": 2}))
+        self.assertEqual((ours["modelCalls"], ours["secondsPerCall"], ours["cacheShare"]), (10, 10.9, 0.6538))
+        self.assertEqual((theirs["modelCalls"], theirs["secondsPerCall"], theirs["cacheShare"]), (6, 6.0, 0.8718))
+        self.assertEqual((ours["thinkingTokens"], ours["writtenTokens"], ours["weightedTokens"], ours["agentMinutes"]),
+                         (2_000, 3_200, 63_000, 20.0))
+        self.assertEqual((theirs["thinkingTokens"], theirs["writtenTokens"], theirs["weightedTokens"], theirs["agentMinutes"]),
+                         (800, 1_000, 31_200, 9.0))
+        self.assertEqual(ours["time"], {"spanMs": 140_000, "modelMs": 109_000, "compactionMs": 20_000, "commandsMs": 6_600,
+                                        "judgeMs": 2_800, "otherMs": 1_600})
+        self.assertEqual(theirs["time"], {"spanMs": 43_000, "modelMs": 36_000, "compactionMs": 0, "commandsMs": 5_000,
+                                          "judgeMs": 0, "otherMs": 2_000})
+        self.assertEqual((ours["compactions"], ours["judgeReadings"], theirs["compactions"], theirs["judgeReadings"]),
+                         (2, 8, 2, 0))
+        self.assertEqual({purpose: total["totalTokens"] for purpose, total in ours["byPurpose"].items()},
+                         {"frame": 57_200, "compaction": 18_000, "judge": 6_480, "marks": 4_080, "claim": 52_400,
+                          "relevance": 2_840, "reading": 1_520})
+        self.assertEqual((ours["allPurposes"]["totalTokens"], ours["ledgerTokens"]), (142_520, 142_520))
+        self.assertEqual(ours["fit"]["calls"], 8)
+        self.assertEqual(theirs["fit"], {"calls": 6, "fixedSeconds": 16.0, "msPerThinkingToken": 0.0,
+                                         "msPerWrittenToken": -60.0, "r2": 1.0}, "three distinct requests, fitted exactly")
+        self.assertEqual(theirs["session"], {"cliVersions": ["0.160.0"], "models": ["seat-model"], "efforts": ["xhigh"],
+                                             "summaries": ["none"]})
+        first = report["comparison"]["tasks"][0]
+        self.assertEqual((first["task"], first["smithers"]["modelCalls"], first["baseline"]["modelCalls"]),
+                         ("terminal-bench/task-000", 5, 3))
+        self.assertEqual((first["smithers"]["weightedTokens"], first["baseline"]["agentMinutes"]), (31_500, 4.5))
+        for line in (
+            "| Model calls | 10 | 6 |", "| Seconds per call | 10.9 | 6.0 |", "| Cache share | 65.4% | 87.2% |",
+            "| Weighted tokens | 0.06M | 0.03M |", "| Agent minutes | 20.0 | 9.0 |", "| Model wait | 109.0 s | 36.0 s |",
+            "| Commands | 6.6 s | 5.0 s |", "| Judge | 2.8 s | 0.0 s |", "| Compaction | 20.0 s | 0.0 s |",
+            "| Other | 1.6 s | 2.0 s |", "| Compactions | 2 | 2 |", "| Judge readings | 8 | 0 |",
+            "| Milliseconds per written token | " + f"{ours['fit']['msPerWrittenToken']:,.1f}" + " | -60.0 |",
+            "| Smithers | compaction | 2 | n/a | n/a | n/a | 18,000 | 20.0 |",
+            "| Smithers | judge | 2 | 6,000 | n/a | 480 | 6,480 | 0.5 |",
+            "| Baseline | frame | 6 | 78,000 | 68,000 | 1,800 | 79,800 | 36.0 |",
+            "- Smithers: 18,000 compaction tokens are recorded as a sum, with no input, cached or output count.",
+            "- Smithers: 2 frame calls report no tokens and are in no total.",
+            "- Baseline: Codex CLI 0.160.0; effort xhigh; summary none.",
+            "| terminal-bench/task-000 | 5 / 3 | 10.9 / 6.0 | 65.4% / 87.2% | 10.0 / 4.5 | 0.03M / 0.02M | 54.5 s / 18.0 s | "
+            "3.3 s / 2.5 s | 1.4 s / 0.0 s | 10.0 s / 0.0 s | 0.8 s / 1.0 s |",
+        ):
+            self.assertIn(line + "\n", text)
+        self.assertNotIn("ledgers hold", text, "the rows sum to the run's ledger, so nothing is said")
+        self.assertEqual(report["results"]["smithers"]["tokens"], {"input": 52_000, "cached": 34_000, "output": 5_200},
+                         "the scored token columns are the agent's own calls, as before")
+
+    def test_an_old_trajectory_and_a_trial_with_no_call_record_still_report(self) -> None:
+        old = self.trial("smithers", "task-000", tokens=(3_900, 1_100, 120))
+        (old / "agent" / "trajectory.json").write_text(json.dumps({"schema_version": "ATIF-v1.8", "steps": [
+            {"step_id": 1, "source": "user", "message": "i"},
+            {"step_id": 2, "source": "agent", "timestamp": "2026-10-01T00:00:00.000Z", "message": "a",
+             "metrics": {"prompt_tokens": 1_000, "completion_tokens": 50, "cached_tokens": 200,
+                         "extra": {"reasoning_tokens": None, "duration_millis": 12_000}}},
+            {"step_id": 3, "source": "agent", "timestamp": "2026-10-01T00:00:13.000Z", "message": "b",
+             "metrics": {"prompt_tokens": 2_000, "completion_tokens": 70, "cached_tokens": 900,
+                         "extra": {"reasoning_tokens": 20, "duration_millis": 8_000}}},
+        ], "final_metrics": {"total_prompt_tokens": 3_900, "total_completion_tokens": 120, "total_cached_tokens": 1_100}}))
+        self.trial("baseline", "task-000")
+        text, report = self.run_report(0, "--min-tasks", "1")
+        ours, theirs = (report["comparison"]["arms"][arm] for arm in ("smithers", "baseline"))
+        self.assertEqual((ours["sources"], ours["modelCalls"], ours["secondsPerCall"], ours["splitTrials"]),
+                         ({"steps": 1}, 2, 10.0, 0))
+        self.assertEqual((ours["time"]["modelMs"], ours["time"]["commandsMs"], ours["fit"], ours["unlistedInputTokens"]),
+                         (20_000, None, None, 900))
+        self.assertEqual((ours["weightedTokens"], ours["agentMinutes"]), (round(2_800 + 110 + 960), None))
+        self.assertEqual((theirs["sources"], theirs["modelCalls"], theirs["cacheShare"], theirs["weightedTokens"]),
+                         ({"None": 1}, 0, None, round(200 + 80 + 400)))
+        for line in ("| Model calls | 2 | 0 |", "| Seconds per call | 10.0 | n/a |", "| Model wait | 20.0 s | n/a |",
+                     "| Commands | n/a | n/a |", "| Fixed seconds per call | n/a | n/a |",
+                     "- Smithers: the time split is recorded for 0 of 1 trials.",
+                     "- Smithers: 900 input tokens are in a trajectory total and in no row.",
+                     "- Baseline: the time split is recorded for 0 of 1 trials."):
+            self.assertIn(line + "\n", text)
+
+    def test_a_refused_report_still_says_where_time_went(self) -> None:
+        self.recorded("smithers", "task-000", minutes=10)
+        self.recorded("baseline", "task-000", minutes=4.5)
+        report = self.assert_refused("1 paired tasks; 50 required")
+        self.assertEqual(report["comparison"]["arms"]["smithers"]["modelCalls"], 5)
+        text = (self.root / "out" / "nested" / "report.md").read_text()
+        self.assertIn("## Where time and tokens went\n", text)
+        self.assertIn("| Model calls | 5 | 3 |\n", text)
 
     def test_missing_job_directory_is_refused(self) -> None:
         missing = self.root / "nowhere"

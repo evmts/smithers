@@ -26,6 +26,14 @@ A publishable run meets every rule:
 The pass rate is the mean verifier reward over every scored trial of the
 paired tasks. `report.json` names each trial and its `agent/trajectory.json`.
 
+Both files also say where each arm's time and tokens went, for every paired
+task and overall: model calls, seconds per call, cache share, the wall clock
+split into model wait, commands, judge, compaction and the rest, tokens by
+purpose, and the fit of call seconds on thinking and written tokens. In
+`report.json` this is `comparison`. It is read from each scored trial's own
+record and changes no score; a refused report carries it too. The
+[adapter README](../README.md#where-time-and-tokens-went) defines each number.
+
 Run [benchmark health](health.md) while a job runs. The full paired
 Terminal-Bench 4.0 run is tracked in
 [#1917](https://github.com/smithersai/smithers/issues/1917) and publication

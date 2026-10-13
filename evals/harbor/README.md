@@ -29,6 +29,7 @@ adapter's own logic and is the only thing here CI runs.
 | `prompt.md`               | The one flow file every task runs; the instruction is pasted verbatim                                             |
 | `audit_host_calls.py`     | Per-trial audit of `bash` calls that ran on the host, not the task container: clean / host-calls-benign / TAINTED |
 | `report.py`               | The publishable paired report of two finished jobs; refuses an unsealed, unfinished or under-50-task run          |
+| `calls.py`                | Every model call of a trial as one row, for either arm: totals by purpose, the time split and the fit             |
 | `verify.sh`               | Offline checks for the adapter, containment, ownership, resources and health                                      |
 | `fixtures/check_*.py`     | Behavioral fixtures run by `verify.sh`                                                                            |
 
@@ -303,13 +304,99 @@ Under the trial's `agent/` directory:
 | `smithers-run.json` | seat, auth mode, route bindings off the journal, harness revision, subject fingerprint, wall clock, tokens, exit status, phase |
 | `trajectory.json`   | ATIF-v1.8 trajectory folded from the harness journal; Harbor reads the token totals off it                                     |
 | `smithers-run.log`  | the CLI's stdout and stderr                                                                                                    |
-| `workspace/`        | the flow file and `.flows/engine.db`, the journal itself                                                                       |
+| `workspace/`        | the flow file and `.flows/control.db`, the journal itself                                                                      |
+
+The trajectory holds one step for each model call the agent made. A frame
+whose reply held no runnable cell asks the model again, so it is two steps,
+the first marked `extra.rejected`. Every model call of the run, the judge's
+included, is a row of `extra.calls`.
 
 Runs on the ChatGPT subscription are subscription-billed: `cost_usd` is left
 unset rather than priced. `evals/swebench/prices.ts` carries the API list
 price for `gpt-6-sol` ($2 in, $0.20 cached, $10 out per 1M tokens, standard
 tier, short context) for the api-key arm; quote it against a subscription run
 only as what the tokens would have cost.
+
+### Where time and tokens went
+
+`calls.py` folds a trial's record into one row per model call, the same row
+for both arms, and prints them:
+
+```sh
+python3 -B evals/harbor/calls.py <trial-dir>... [--json]
+```
+
+| Field                                         | Meaning                                                              |
+| --------------------------------------------- | -------------------------------------------------------------------- |
+| `purpose`                                     | What the call was for; see the next table                            |
+| `start`, `end`, `durationMs`                  | When the call ran, UTC, and its whole milliseconds                   |
+| `inputTokens`, `cachedTokens`, `outputTokens` | The provider's counts                                                |
+| `thinkingTokens`, `writtenTokens`             | Output split into reasoning and everything else                      |
+| `totalTokens`                                 | Input + output                                                       |
+| `settled`                                     | `false` when the record holds no settle for the call                 |
+| `frame`, `attempt`, `retries`, `rejected`     | Smithers arm: where the call sits in the run, and how it went        |
+| `timing`                                      | Stage offsets from the call's start, in milliseconds, when recorded  |
+| `derived`                                     | The fields computed from event times or the ledger, not read as such |
+
+| Purpose      | The call                                                             |
+| ------------ | -------------------------------------------------------------------- |
+| `frame`      | The agent's own call. Every Codex request is one                     |
+| `compaction` | A compaction summary call                                            |
+| `judge`      | A supervisor reading                                                 |
+| `marks`      | A compaction-marks reading                                           |
+| `claim`      | A completion check                                                   |
+| `relevance`  | The reading that picks context before frame 0                        |
+| `reading`    | An evaluator reading the agent's own cell asked for (the `jev` flow) |
+
+- **Smithers arm.** The adapter folds the journal into the rows and writes
+  them to `extra.calls` of `trajectory.json`. A trial recorded before the rows
+  existed is folded from its kept journal, else from its trajectory's steps,
+  which hold the agent's own calls only.
+- **Codex arm.** The rows are read from `agent/sessions/**/rollout-*.jsonl`. A
+  request starts at the previous tool output, or the user's message, and ends
+  at its `token_usage_record`. The session's effort, summary setting and CLI
+  version come from `turn_context` and `session_meta`; no id in the log is
+  copied. `timing.firstItemMs` is when the log shows the reply's first item, a
+  message's start or a reasoning block's end: an upper bound on the wait
+  before the first token.
+
+What each total includes:
+
+| Total                                                                                       | Includes                                                                                             |
+| ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `n_input_tokens`, `n_cache_tokens`, `n_output_tokens`; `final_metrics.total_*`; `run.usage` | The agent's own calls (`frame`) only, as before, so they compare with earlier reports                |
+| Weighted tokens                                                                             | Uncached input + 0.1 x cached input + 8 x output of those same calls                                 |
+| `byPurpose`                                                                                 | Calls, tokens and milliseconds for each purpose                                                      |
+| `allPurposes`                                                                               | Every purpose summed: the run's total                                                                |
+| `ledgerTokens`                                                                              | The harness's own count of every spend (`flows.agent.usage.v1`); it equals `allPurposes.totalTokens` |
+
+`byPurpose`, `allPurposes`, `ledgerTokens` and `time` are in `run` of
+`smithers-run.json` and in `final_metrics.extra` of the trajectory. A
+difference between the ledger and the rows is a spend no row lists. A
+compaction call has no settle record: its row is unsettled, its time is the
+time to `compaction-settled`, and its tokens are the ledger's one sum
+(`unsplitTokens`), with no input, cached or output count. A call with no
+token figure at all is counted in `tokenless` and is in no total.
+
+`time` splits the record's span, first event to last, and counts a second
+once, for the first of these that was running: the agent's own model call
+(`modelMs`), a compaction call (`compactionMs`), a command (`commandsMs`), a
+judge reading (`judgeMs`); the rest is `otherMs`. A judge reading that ran
+under a model call is therefore model wait, and `judgeMs` is the time the
+judge held the run. Every reading's own latency is `durationMs` in
+`byPurpose`. `wallSec` is longer than the span by the CLI's own start and
+exit.
+
+The fit is least squares of call seconds on thinking and written tokens over
+the agent's own settled calls:
+
+    seconds = fixedSeconds + thinkingTokens x msPerThinkingToken / 1000 + writtenTokens x msPerWrittenToken / 1000
+
+Fewer than four calls, or counts that move together, have no fit.
+
+`report.py` writes all of this for both arms, over every paired task and for
+each one, to `report.md` and to `comparison` in `report.json`. A refused
+report carries it too; it carries no pass rate.
 
 ## What the smoke showed, and what is not yet right
 

@@ -28,11 +28,19 @@ The pass rate is the mean reward over every scored trial of the paired tasks.
 Attempts per task are equal, so it is also the mean of the per-task means.
 The report reads only the two job directories: running it twice over the
 same files writes the same bytes.
+
+Beside the scores, and in a refused report too, `comparison` says where each
+arm's time and tokens went, per paired task and overall: model calls, seconds
+per call, cache share, the wall clock split into model wait, commands, judge,
+compaction and the rest, tokens by purpose, and the least-squares fit of call
+seconds on thinking and written tokens. It is read from each scored trial's
+own record (`calls.py`) and changes no score.
 """
 from __future__ import annotations
 
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -40,9 +48,11 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 import audit_host_calls  # noqa: E402
+import calls  # noqa: E402
 import outcome  # noqa: E402
 
 MIN_TASKS = 50
+ARMS = ("smithers", "baseline")
 SMITHERS_AGENT = "evals.harbor.smithers_agent:SmithersAgent"
 TOKENS = ("n_input_tokens", "n_cache_tokens", "n_output_tokens")
 # Trial config fields that must stay at Harbor's defaults: each one changes
@@ -102,6 +112,17 @@ def seal(trial: Path, config: dict, result: dict, smithers: bool) -> list[str]:
     return broken
 
 
+def agent_minutes(result: dict) -> float | None:
+    """Minutes the runner timed the agent for: `agent_execution` in `result.json`."""
+    stamps = result.get("agent_execution") or {}
+    try:
+        started, finished = (datetime.fromisoformat(str(stamps[name]).replace("Z", "+00:00"))
+                             for name in ("started_at", "finished_at"))
+    except (KeyError, ValueError):
+        return None
+    return (finished - started).total_seconds() / 60
+
+
 def read_trials(job: Path, smithers: bool) -> list[dict]:
     rows = []
     for trial in sorted(job.iterdir()) if job.is_dir() else []:
@@ -126,6 +147,8 @@ def read_trials(job: Path, smithers: bool) -> list[dict]:
                          "kwargs": (config.get("agent") or {}).get("kwargs") or {},
                          "environment": environment_identity(config.get("environment") or {})},
             "seal": seal(trial, config, result, smithers) if outcome.is_healthy(kind) else [],
+            "dir": trial,
+            "minutes": agent_minutes(result),
             "startedAt": result.get("started_at"),
             "finishedAt": result.get("finished_at"),
             "harnessRevision": (agent_result.get("metadata") or {}).get("harness_revision"),
@@ -162,6 +185,36 @@ def describe(job: Path) -> dict:
         "environment": environment_identity(environment),
         "environmentSpec": json.dumps(environment, sort_keys=True),
         "attempts": config.get("n_attempts", 1),
+    }
+
+
+def side(rows: list[dict]) -> dict:
+    """One arm's cost over `rows`, its scored trials: the runner's agent minutes
+    and its token columns weighted as every earlier report weighted them, then
+    what the trials' own records say call by call (`calls.breakdown`)."""
+    minutes = [row["minutes"] for row in rows if row["minutes"] is not None]
+    weights = [calls.weighted(*(value if _is_count(value) else None for value in (row["tokens"][name] for name in TOKENS)))
+               for row in rows]
+    known = [value for value in weights if value is not None]
+    return {
+        "agentMinutes": round(sum(minutes), 2) if minutes else None,
+        "weightedTokens": round(sum(known)) if known else None,
+        **calls.breakdown([row["read"] for row in rows]),
+    }
+
+
+def compare(by_task: dict[str, dict[str, list[dict]]], paired: list[str]) -> dict | None:
+    """Where time and tokens went, for each paired task and over all of them."""
+    if not paired:
+        return None
+    for task in paired:
+        for arm in ARMS:
+            for row in by_task[task][arm]:
+                row["read"] = calls.read_trial(row["dir"])
+    return {
+        "weights": calls.WEIGHTS,
+        "arms": {arm: side([row for task in paired for row in by_task[task][arm]]) for arm in ARMS},
+        "tasks": [{"task": task, **{arm: side(by_task[task][arm]) for arm in ARMS}} for task in paired],
     }
 
 
@@ -260,6 +313,7 @@ def build(smithers_job: Path, baseline_job: Path, min_tasks: int = MIN_TASKS) ->
         "arms": arms,
         "pairedTasks": len(paired),
         "results": results if not refusals else None,
+        "comparison": compare(by_task, paired),
         "unplaceable": unplaceable,
         "window": {"from": stamps[0], "to": stamps[-1]} if stamps else None,
         "tasks": [
@@ -276,12 +330,110 @@ def _percent(value: float | None) -> str:
     return "n/a" if value is None else f"{value * 100:.1f}%"
 
 
+def _figure(value: Any, form: str = ",.0f", unit: str = "") -> str:
+    return "n/a" if value is None else f"{value:{form}}{unit}"
+
+
+def _scaled(value: Any, scale: float, form: str, unit: str = "") -> str:
+    return "n/a" if value is None else f"{value / scale:{form}}{unit}"
+
+
+# Each row of the comparison: its label, and how to read it off one side.
+MEASURES = (
+    ("Model calls", lambda side: _figure(side["modelCalls"])),
+    ("Seconds per call", lambda side: _figure(side["secondsPerCall"], ",.1f")),
+    ("Cache share", lambda side: _scaled(side["cacheShare"], 0.01, ".1f", "%")),
+    ("Thinking tokens", lambda side: _figure(side["thinkingTokens"])),
+    ("Written tokens", lambda side: _figure(side["writtenTokens"])),
+    ("Weighted tokens", lambda side: _scaled(side["weightedTokens"], 1e6, ",.2f", "M")),
+    ("Agent minutes", lambda side: _figure(side["agentMinutes"], ",.1f")),
+    ("Model wait", lambda side: _scaled(side["time"]["modelMs"], 1000, ",.1f", " s")),
+    ("Commands", lambda side: _scaled(side["time"]["commandsMs"], 1000, ",.1f", " s")),
+    ("Judge", lambda side: _scaled(side["time"]["judgeMs"], 1000, ",.1f", " s")),
+    ("Compaction", lambda side: _scaled(side["time"]["compactionMs"], 1000, ",.1f", " s")),
+    ("Other", lambda side: _scaled(side["time"]["otherMs"], 1000, ",.1f", " s")),
+    ("Compactions", lambda side: _figure(side["compactions"])),
+    ("Judge readings", lambda side: _figure(side["judgeReadings"])),
+)
+FIT = (
+    ("Calls fitted", "calls", ",.0f"),
+    ("Fixed seconds per call", "fixedSeconds", ",.1f"),
+    ("Milliseconds per thinking token", "msPerThinkingToken", ",.1f"),
+    ("Milliseconds per written token", "msPerWrittenToken", ",.1f"),
+    ("R squared", "r2", ".2f"),
+)
+PER_TASK = ("Model calls", "Seconds per call", "Cache share", "Agent minutes", "Weighted tokens", "Model wait",
+            "Commands", "Judge", "Compaction", "Other")
+
+
+def _caveats(arm: str, side: dict) -> list[str]:
+    """What a reader must know before trusting one side's rows."""
+    found = []
+    if side["splitTrials"] != side["trials"]:
+        found.append(f"- {arm}: the time split is recorded for {side['splitTrials']} of {side['trials']} trials.")
+    for purpose, total in side["byPurpose"].items():
+        if total["unsplitTokens"]:
+            found.append(f"- {arm}: {total['unsplitTokens']:,} {purpose} tokens are recorded as a sum, with no input, "
+                         "cached or output count.")
+        if total["tokenless"]:
+            found.append(f"- {arm}: {total['tokenless']} {purpose} calls report no tokens and are in no total.")
+    if side["ledgerTokens"] is not None and side["ledgerTokens"] != side["allPurposes"]["totalTokens"]:
+        found.append(f"- {arm}: the runs' ledgers hold {side['ledgerTokens']:,} tokens and the rows "
+                     f"{side['allPurposes']['totalTokens']:,}.")
+    if side["unlistedInputTokens"]:
+        found.append(f"- {arm}: {side['unlistedInputTokens']:,} input tokens are in a trajectory total and in no row.")
+    session = side.get("session")
+    if session:
+        found.append(f"- {arm}: Codex CLI {', '.join(session['cliVersions']) or 'unrecorded'}; effort "
+                     f"{', '.join(session['efforts']) or 'unrecorded'}; summary {', '.join(session['summaries']) or 'unrecorded'}.")
+    return found
+
+
+def render_comparison(report: dict) -> list[str]:
+    comparison = report.get("comparison")
+    if not comparison:
+        return []
+    arms = comparison["arms"]
+    weights = comparison["weights"]
+    lines = ["## Where time and tokens went", "", "| | Smithers | Baseline |", "| --- | --- | --- |"]
+    lines += [f"| {label} | {read(arms['smithers'])} | {read(arms['baseline'])} |" for label, read in MEASURES]
+    lines += [f"| {label} | {_figure((arms['smithers']['fit'] or {}).get(key), form)} | "
+              f"{_figure((arms['baseline']['fit'] or {}).get(key), form)} |" for label, key, form in FIT]
+    lines += ["",
+              f"- Model calls, seconds per call, cache share and the fit count each agent's own calls. Weighted tokens are "
+              f"uncached input + {weights['cached']:g} x cached input + {weights['output']:g} x output of those calls.",
+              "- The five times split each record's span and count a second once: a judge reading that ran under a "
+              "model call is model wait.",
+              "- The fit is call seconds = fixed + thinking tokens x a + written tokens x b, by least squares."]
+    lines += [line for arm, name in (("smithers", "Smithers"), ("baseline", "Baseline")) for line in _caveats(name, arms[arm])]
+    lines += ["", "### Tokens by purpose", "", "| Arm | Purpose | Calls | Input | Cached | Output | Total | Seconds |",
+              "| --- | --- | --- | --- | --- | --- | --- | --- |"]
+    for arm, name in (("smithers", "Smithers"), ("baseline", "Baseline")):
+        for purpose, total in arms[arm]["byPurpose"].items():
+            lines.append(f"| {name} | {purpose} | {total['calls']:,} | {_figure(total['inputTokens'])} | "
+                         f"{_figure(total['cachedTokens'])} | {_figure(total['outputTokens'])} | {total['totalTokens']:,} | "
+                         f"{total['durationMs'] / 1000:,.1f} |")
+    measures = dict(MEASURES)
+    lines += ["", "### Per task", "", "Smithers / baseline.", "", "| Task | " + " | ".join(PER_TASK) + " |",
+              "| --- |" + " --- |" * len(PER_TASK)]
+    for row in comparison["tasks"]:
+        lines.append(f"| {row['task']} | " + " | ".join(
+            f"{measures[label](row['smithers'])} / {measures[label](row['baseline'])}" for label in PER_TASK) + " |")
+    lines += ["", "### Fit per task", "", "Smithers / baseline.", "", "| Task | " + " | ".join(label for label, _, _ in FIT) + " |",
+              "| --- |" + " --- |" * len(FIT)]
+    for row in comparison["tasks"]:
+        lines.append(f"| {row['task']} | " + " | ".join(
+            f"{_figure((row['smithers']['fit'] or {}).get(key), form)} / {_figure((row['baseline']['fit'] or {}).get(key), form)}"
+            for _, key, form in FIT) + " |")
+    return lines + [""]
+
+
 def render(report: dict) -> str:
     arms = report["arms"]
     lines = [f"# {arms['smithers']['dataset']}: Smithers vs {arms['baseline']['agent']}", ""]
     if not report["publishable"]:
         lines += ["**Not publishable.**", ""] + [f"- {reason}" for reason in report["refusals"]] + [""]
-        return "\n".join(lines)
+        return "\n".join(lines + render_comparison(report))
     lines += ["| Arm | Pass rate | Solved | Input tokens | Cached tokens | Output tokens |",
               "| --- | --- | --- | --- | --- | --- |"]
     for arm in ("smithers", "baseline"):
@@ -310,7 +462,7 @@ def render(report: dict) -> str:
     for row in report["tasks"]:
         lines.append(f"| {row['task']} | {' '.join(str(r) for r in row['smithers']['rewards'])} | "
                      f"{' '.join(str(r) for r in row['baseline']['rewards'])} |")
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines + [""] + render_comparison(report))
 
 
 def main(argv: list[str]) -> int:
