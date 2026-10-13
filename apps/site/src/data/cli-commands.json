@@ -1750,6 +1750,11 @@
               "description": "Suppress progress messages",
               "type": "boolean"
             },
+            "timing": {
+              "default": false,
+              "description": "Report where the run's time and tokens went",
+              "type": "boolean"
+            },
             "verbose": {
               "default": false,
               "description": "Show redacted diagnostic details",

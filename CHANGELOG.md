@@ -5,6 +5,104 @@ release (what changed and why it matters, with screenshots and examples), see
 the release notes at
 [smithers.sh/changelogs/1.0.0-rc.0](https://smithers.sh/changelogs/1.0.0-rc.0).
 
+## 1.0.0-rc.5 (2026-10-13)
+
+<!-- commits:1.0.0-rc.5 -->
+
+78 commits since [v1.0.0-rc.4](https://github.com/smithersai/smithers/commit/15870d7515).
+
+### ✨ Features
+
+- **cli:** read the stages, tries and compaction records the harness now journals (#3842) ([5f7cc01bcf](https://github.com/smithersai/smithers/commit/5f7cc01bcf626456613e7973036107be4b8e61a3))
+- **cli:** read the wire's prepared stage and failed tries, and what a judge reading fired and cost (#3842) ([49ecc5ef07](https://github.com/smithersai/smithers/commit/49ecc5ef072e14d61847783eda50497287433c0e))
+- **model:** a judge reading says what it cost: wire timing beside its usage (#3840) ([b3707d8fbd](https://github.com/smithersai/smithers/commit/b3707d8fbd04cd238ee6d96d55171202214f6efc))
+- **evals:** report the median offset of each stage a model call reaches (#3843) ([be74313703](https://github.com/smithersai/smithers/commit/be743137034ea12e71bb0f3da3533568857f7107))
+- **evals:** read the harness's stage, try and compaction records into the call rows (#3843) ([1493648aef](https://github.com/smithersai/smithers/commit/1493648aef19649a371e52d22630568ca328e96d))
+- **model:** every routed call times itself on the wire and says so on its settle event (#3840) ([eb7a985ea5](https://github.com/smithersai/smithers/commit/eb7a985ea518ff6cb89960ec9154891c2c70adf6))
+- **cli:** print where a run's time and tokens went with runs show --timing (#3842) ([8812a220ef](https://github.com/smithersai/smithers/commit/8812a220ef337b7e4aa3f4400745696979a8538e))
+- **evals:** compare both benchmark arms call by call in the paired report (#3843) ([a943e8d869](https://github.com/smithersai/smithers/commit/a943e8d8696ddabf575362de317afce7c028fe9e))
+- **evals:** record every model call of a benchmark trial as a row (#3843) ([084590cdb4](https://github.com/smithersai/smithers/commit/084590cdb483d5dbaff768084ef9174c2411be4d))
+- **harness:** record a compaction's cause, duration, context sizes and what its calls spent (#3844) ([13d27cfa55](https://github.com/smithersai/smithers/commit/13d27cfa55aea4253eff6d2866e7e3eaca795e77))
+- **harness:** record model call stages, tries and join keys on model-settled (#3844) ([8b49c297d7](https://github.com/smithersai/smithers/commit/8b49c297d7e3788d8dbefc245bd3692fff3e0f4a))
+- **model:** the settle event can carry a call's wire timing and served tier (#3840) ([1ae37f2b82](https://github.com/smithersai/smithers/commit/1ae37f2b82ad3ffa8f25d137094ce5a750ea7daa))
+- **chat:** trace producer stages and inspect stuck turns (#3812) ([0f7edabf28](https://github.com/smithersai/smithers/commit/0f7edabf28640002706189701ae97e3d0cbdd3c0))
+- **app:** archive a chat and browse archived chats as a tree (#3827) ([bea46b2135](https://github.com/smithersai/smithers/commit/bea46b21350200b6ac6b8dd6fe88327ea5d8027f))
+- **chat:** show working details and normal reply identity (#3822) ([7f68b0f2d8](https://github.com/smithersai/smithers/commit/7f68b0f2d8a8798d6c1d83329ecedb00c1d25c13))
+- **app:** concise icon-free Timeline summaries (#3501) ([96af170274](https://github.com/smithersai/smithers/commit/96af170274081d6c9518a92743386dea5f32c459))
+
+### 🐛 Bug fixes
+
+- **flows:** make the published quickstart run from one install line (#3838) ([7ccdca221a](https://github.com/smithersai/smithers/commit/7ccdca221a542593cd2f9b9153a67ea7fd121e06))
+- **app:** keep standalone utility cards out of the chat Timeline (#3501) ([c32a58ea51](https://github.com/smithersai/smithers/commit/c32a58ea51e4459debda6a44a6332a4cc66a620d))
+- **app:** give History its view story and mark archived text as content (#3827) ([29887a0f84](https://github.com/smithersai/smithers/commit/29887a0f84e85ac1b5f641db5fd228ee5fea4c05))
+- **chat:** replace outdated Timeline summaries without transcript changes (#3501) ([bca08a7f89](https://github.com/smithersai/smithers/commit/bca08a7f89721a19f638843c51bd0cfdea569ab0))
+- **app:** restore unit gates blocking the chat UI deployment (#3836) ([34d4fc75a6](https://github.com/smithersai/smithers/commit/34d4fc75a6c86f343c1302757860bda766b52e11))
+- **ui:** keep Latest at the edge and preserve explicit Docs reads (#3813) ([24f7c94418](https://github.com/smithersai/smithers/commit/24f7c94418ff4f62fa7b4c4587eca5804ea155fc))
+- **app:** retry slow Timeline summaries and preserve reply-check outcomes (#3501) ([c7324e25aa](https://github.com/smithersai/smithers/commit/c7324e25aac11f8a89f67b3872cfeaeff469e5a2))
+- **judge:** a subscription judge no longer refuses an honest completion as invented (#3825) ([27833c49e5](https://github.com/smithersai/smithers/commit/27833c49e544fb249cea5e8cacc13c135f1a1755))
+- **app:** header selector names end in an ellipsis and keep their chevron (#3829) ([0b368b9d32](https://github.com/smithersai/smithers/commit/0b368b9d32c3fd75d0da7836250aa7a6e4dbd3ab))
+- **app:** a hosted branch pick never changes the conversation's branch (#3829) ([093779dfd1](https://github.com/smithersai/smithers/commit/093779dfd14ee3e38a527d8cb3436c13537aefcc))
+- **app:** header selects a real repository and branch; no mock main on hosted pages (#3829) ([26a2caa87a](https://github.com/smithersai/smithers/commit/26a2caa87a7f73d9223937c379b92088d8598e3a))
+- **model:** finish Cerebras streams with inline usage (#3812) ([521499f3ca](https://github.com/smithersai/smithers/commit/521499f3ca26dfca3120cd8a4015c5a1f6685984))
+- **app:** interleave private cards with shared replies (#3813) ([33c76716af](https://github.com/smithersai/smithers/commit/33c76716afea99f75b44750f3fa52d9db17a53a0))
+- **smithers:** a host with no gateway key judges on its subscription (#3806) ([bee560b1c4](https://github.com/smithersai/smithers/commit/bee560b1c456d8abb604c85245009e4ecf3989f8))
+- **app:** dismiss Chat and animate submitted prompts (#3819) ([eecbbf1938](https://github.com/smithersai/smithers/commit/eecbbf193858828337e3255d243502ed5f7129ce))
+- **app:** defer broken dictation until after release (#3816) ([4f28734e9a](https://github.com/smithersai/smithers/commit/4f28734e9a1b6262e12828cd908ff4ab0d7c9804))
+- **harness:** the judge is consulted about compaction only above 200,000 tokens (#3809) ([e7a697e0b1](https://github.com/smithersai/smithers/commit/e7a697e0b1e78fabdb30c3b768f8ede4210a9477))
+- **app:** pad command palette chat input (#3814) ([7f439bcbda](https://github.com/smithersai/smithers/commit/7f439bcbdace39483e9b7c46bc93c42882c81d83))
+- **app:** recognize validated browser shards in test inventory (#3811) ([39cd7bfd4b](https://github.com/smithersai/smithers/commit/39cd7bfd4b2fabccd30be5bd63535ff0b18f9abb))
+- **app:** finish Command shortcuts when macOS omits keyup (#3810) ([0e89ab996c](https://github.com/smithersai/smithers/commit/0e89ab996c31c2bb59493c942b645360080957dc))
+- **codex:** subscription seats call the model directly again (#3808) ([70f632e205](https://github.com/smithersai/smithers/commit/70f632e205c01687451b53f63dbb4e81d2bef48c))
+- **ci:** run distribution contracts without ripgrep (#3460) ([bde11a4e5b](https://github.com/smithersai/smithers/commit/bde11a4e5b638af770355409b5a7134fc8ab1649))
+- **chat:** retain replies and expose hosted prompt queues (#3446) ([3803ee4c6c](https://github.com/smithersai/smithers/commit/3803ee4c6c58e01f5ce615d91d7cb488fe672bbc))
+- **chat:** restore account-owned hosted model conversations (#3148) ([871babfda6](https://github.com/smithersai/smithers/commit/871babfda625a288e2b0ab91a2a8c46d3aa25589))
+- **app:** keep production startup out of the demo world (#3804) ([445ac1df26](https://github.com/smithersai/smithers/commit/445ac1df268d748a1ce18f5c5defc39eaf67525e))
+- **cli:** a sealed host reaches its one container again (#3802) ([7688150e0a](https://github.com/smithersai/smithers/commit/7688150e0abb36c3e061e5ebb9c9c3d77ee4e0e0))
+- **harbor:** seal fixture runs under dash, where set -o pipefail exits the shell (#3801) ([a878f51ef9](https://github.com/smithersai/smithers/commit/a878f51ef9ce301882065147163c01fcff211a62))
+- **harbor:** codex arm defaults to xhigh and records its effort; document the budget rule (#3800) ([c249108df4](https://github.com/smithersai/smithers/commit/c249108df4c417fd9950a7d384b5f75e4105c10f))
+- **harbor:** seal the stock Codex arm to the ChatGPT route under Pier and record the proof (#3801) ([a68f533947](https://github.com/smithersai/smithers/commit/a68f533947f0686c0223c939732e7729e0595d17))
+- **harbor:** budget from the task's agent timeout; flow effort xhigh (#3800) ([b866e69cc1](https://github.com/smithersai/smithers/commit/b866e69cc1a6ea1efddad7d66dd663aadce23d35))
+- **agent:** lift the stream idle bound at xhigh and max effort (#3798) ([2577de531e](https://github.com/smithersai/smithers/commit/2577de531ec84de5be396e9676ce0187997a34e1))
+- **deploy:** publish the app from Cloud release refs (#3483) (#3769) ([78a8694012](https://github.com/smithersai/smithers/commit/78a86940120b6882e9b3e264c175d47270f28a4a))
+- **backend:** read background setup receipts through preparation (#3786) ([a34d15d49d](https://github.com/smithersai/smithers/commit/a34d15d49d5e68702fa9c56c2d0dc6b96510210a))
+- **review:** retry merged lane stops and settle failed starts (#3776) ([3f029585cd](https://github.com/smithersai/smithers/commit/3f029585cdf627f67d99cb0d94ddeb53d2913870))
+- **backend:** separate background machine service authority (#3786) ([14097f1e4b](https://github.com/smithersai/smithers/commit/14097f1e4b6b507063c636b719c671e8c9932b25))
+- **ci:** supervise app test children and shard browser gates (#3763, #3778) ([740ea377cb](https://github.com/smithersai/smithers/commit/740ea377cb31300fcd1a3de7983503bc6c1dc51c))
+- **gates:** check cut freshness and isolate test lanes (#3764, #3770) ([d840aad9e8](https://github.com/smithersai/smithers/commit/d840aad9e8263f870a6c2c736a398aa878bbaf5d))
+- **review:** provision confined hosts and retain failure causes (#3783) ([a75ec00800](https://github.com/smithersai/smithers/commit/a75ec008006212c56604a3f0fe5bf721693750c7))
+- **backend:** isolate compose gate workers and branch capture proofs (#3775) ([c3f26a6e82](https://github.com/smithersai/smithers/commit/c3f26a6e828f6b97741242e9d4af92080864d21f))
+- **backend:** settle Bring in from the machine's own capture (#3789) ([2385bb0a07](https://github.com/smithersai/smithers/commit/2385bb0a07e13684cc701cbc6eb0980c2d96b83e))
+- **backend:** refuse person entry to background machines (#3786) ([6fa66a2a62](https://github.com/smithersai/smithers/commit/6fa66a2a6257d0ac4e444493b747637067ce73b9))
+- **faults:** recover the sealed check on its retained branch (#3459) ([9dd3a3fdaa](https://github.com/smithersai/smithers/commit/9dd3a3fdaaadd3c9db2858f41269490fed44f221))
+- **testkit:** the fixture database pool is sized like the product's, not by the host's CPU count (#3775) ([c1704a21b7](https://github.com/smithersai/smithers/commit/c1704a21b7b205faa9e064857f506ea3154d9f6d))
+- **checks:** bind wiki citations to the real-machine journey (#3465) ([95c5e26540](https://github.com/smithersai/smithers/commit/95c5e26540ae1355022015fe241798f0edfbd269))
+- **wiki:** enable plan citations for fresh installs (#3465) ([b7e9c44692](https://github.com/smithersai/smithers/commit/b7e9c44692e0d751885d0a1fc4038556ffa0a866))
+- **faults:** share native builds and qualify Retry after attachment (#3459) ([8ea2f4d61d](https://github.com/smithersai/smithers/commit/8ea2f4d61db42c4d7249c2fbf4d29f3cc85b2233))
+- **flowhost:** every flow host starts through one configuration; a review host gets the install's coding seat (#3783) ([2c400d5d93](https://github.com/smithersai/smithers/commit/2c400d5d93a856704fa7a724819948ee8f46d73a))
+- **journal:** installing the generation table takes PostgreSQL's schema writer lock (#3764) ([b0756e88cc](https://github.com/smithersai/smithers/commit/b0756e88ccb06fddda760ca2aea19b5c76c90f01))
+
+### 📝 Documentation
+
+- **backend:** restamp the GitHub App page from a clean checkout (#3764) ([a62426904d](https://github.com/smithersai/smithers/commit/a62426904d986dc87ddb7070ecb5ddbfb87203fa))
+- **model:** the Chat Completions chunk tier comment claims only what the provider documents (#3840) ([a11423a10a](https://github.com/smithersai/smithers/commit/a11423a10a33b2859f178887186f4ef0c1ca2c55))
+- **model:** say what OpenAI documents about the served tier, not what the created event holds (#3840) ([c85a35aefd](https://github.com/smithersai/smithers/commit/c85a35aefd39b88f4cd46c07a4a988b0bf8206cf))
+- **agents:** deploy validated main changes for production testing (#3820) ([99ceeba079](https://github.com/smithersai/smithers/commit/99ceeba079c0357d9fc820867b361b74d28e4dbe))
+- **release:** 1.0.0-rc.4 published; run 16 and 17 results ([d981293f86](https://github.com/smithersai/smithers/commit/d981293f862719e86135f8bd8dd19589278ab0a2))
+
+### 📦 Other changes
+
+- **style(gateway):** dprint-format RuntimeBridge and its test ([cd716bff95](https://github.com/smithersai/smithers/commit/cd716bff95de2888d6e5cbc9f9417dd275d0f33c))
+- **test(model):** the served tier per protocol: a cut-off response, a final-usage tier, and no tier (#3840) ([ccfd9c0471](https://github.com/smithersai/smithers/commit/ccfd9c0471c768729fd8a459b33b1739f8b03df5))
+- **test(app):** assert Chat closes before reopening during admission (#3835) ([96897ac0a6](https://github.com/smithersai/smithers/commit/96897ac0a650180fcdb8cec2c22c629a4711d1c9))
+- **test(app):** assert the specific conversation refusal (#3832) ([752358836f](https://github.com/smithersai/smithers/commit/752358836f4c3998149bd9334079726031d90db8))
+- **test(wrapped):** the flow launches the installed Claude Code on a read-only task (#3805) ([7b4b5bdb15](https://github.com/smithersai/smithers/commit/7b4b5bdb150aeeb76ace4be8b66e3a236098e724))
+- **test(smithers):** a flow runs to completion on the signed-in Claude Code (#3805) ([92f0b552cd](https://github.com/smithersai/smithers/commit/92f0b552cd89bd58a22ab0ca814246b5de6dac7b))
+- **ci(release):** give shared backend gates a fresh prerelease lane (#3775) ([985b52e717](https://github.com/smithersai/smithers/commit/985b52e71792777f0e53445d2b0b97ae207529de))
+- **ci(backend):** give the shared Go backend suite the time its compose package takes (#3775) ([400ef02194](https://github.com/smithersai/smithers/commit/400ef021942888a1bde40bc00a676b93cd172715))
+- **test(journeys):** resolve every host model from install seats (#3792) ([605a9926e4](https://github.com/smithersai/smithers/commit/605a9926e4b6e7d60a1fabaa2b5f6a50414df038))
+
+<!-- /commits:1.0.0-rc.5 -->
+
 ## 1.0.0-rc.4 (2026-10-10)
 
 <!-- commits:1.0.0-rc.4 -->
