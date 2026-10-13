@@ -36,6 +36,8 @@ export type CommandActions =
     | "store"
     // Document resources are card data, never command actions.
     | "fileDocuments"
+    // The header's branch rows are view data; the `branch` flow reaches the seam through openBranch.
+    | "repositoryBranches"
     // Control focus is the composition root's DOM-owned projection, never a flow's act.
     | "controlFocus"
     | "formFocus"

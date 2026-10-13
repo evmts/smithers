@@ -7,6 +7,19 @@ never borrow a user's bearer token or cookie.
 
 ## Available repositories
 
+> **Status, 2026-10-13.** This section describes the curated catalog the
+> Worker used to serve. Production no longer serves it. Since 3e008358ac49 the
+> Worker proxies `/api/*` to the shared backend (`src/edge.ts`), and the backend
+> answers `GET /api/public/repos` from product data: every public, unarchived
+> repository on Smithers Cloud, newest first, at most 100
+> (`packages/backend/internal/db/public_catalog.go`), with an empty
+> `comingSoon`. The roster in `src/publicRepoCatalog.ts` still names the app
+> document the site prerenders, the coming-soon cards and the canary's mirror,
+> but it does not decide the response. A roster repository that is not on
+> Smithers Cloud under its own name opens the app's "isn't on Smithers yet"
+> notice, which is what `https://smithers.sh/smithersai/smithers` shows today
+> ([#3830](https://github.com/smithersai/smithers/issues/3830)).
+
 `GET /api/public/repos` is the public site's catalog, served by the app Worker
 at `https://canary.smithers.sh`. The shared roster in
 `src/publicRepoCatalog.ts` lists `smithersai/smithers` alone at launch. The

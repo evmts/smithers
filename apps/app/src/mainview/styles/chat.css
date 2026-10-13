@@ -742,6 +742,8 @@
 .session-navigation .crumb { max-width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-navigation .crumb-here > svg { flex: none; color: var(--text-muted); }
 .session-navigation .crumbs > .tree { position: absolute; top: calc(100% + 2px); left: 0; width: 360px; max-width: calc(100vw - 24px); margin-top: 0; }
+/* A press outside an open header selector closes it. */
+.session-navigation .crumb-backdrop { position: fixed; inset: 0; }
 @media (max-width: 600px) {
 	.session-navigation .crumbs-host { right: 12px; left: 128px; }
 	.session-navigation .crumbs > .tree { position: fixed; top: calc(var(--session-strip, 44px) + 2px); left: 12px; }

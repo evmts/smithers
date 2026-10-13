@@ -122,6 +122,7 @@ import { createDocsController } from "./controller/docs"
 import type { Docs } from "../../docs/Docs"
 import { bundledDocs } from "../../docs/bundled"
 import { createBranchNavigationSeam } from "./seams/BranchNavigationSeam"
+import { createRepositoryBranchesSeam, type RepositoryBranchRows } from "./seams/RepositoryBranchesSeam"
 import type { ChangeSeam } from "./seams/ChangeSeam"
 import { createChangeSeam } from "./seams/ChangeSeam"
 import type { CloudSeam } from "./seams/CloudSeam"
@@ -558,6 +559,8 @@ export interface AppController extends IssueFlowsController {
   readonly flowCards: (name?: string) => Promise<ReadonlyArray<import("@smthrs/rpc/FlowCard").FlowCard> | undefined>
   /** branch.fork on an install: POST /api/branches {from, name?} (spec §8.5); its value is the new scratch branch. A string is the refusal. Absent off an install, where the flow acts on the seeded world. */
   readonly selectConversationBranch: (name: string) => Promise<void>
+  /** A Cloud repository's branch names as last read (RepositoryBranchesSeam): the header's branch selector reads the rows and asks for a read when it opens. */
+  readonly repositoryBranches: { readonly rows: RepositoryBranchRows; readonly load: (repo: string) => Promise<unknown> }
   readonly setBranchNavigationView: (patch: { selected_branch?: string; selected_archive?: string; previous_branch?: string; open?: boolean }) => Promise<void>
   readonly setCardTab: (id: string, tab: string) => void
   readonly branchControls?: import("./seams/BranchControlsSeam").BranchControls
@@ -1079,6 +1082,9 @@ export const createAppController = (
       return { name: body.name, id: body.machine.id }
     } catch { return "Branch unavailable" }
   }
+  // Off an install a branch is one of the selected Cloud repository's bookmarks; the seeded fixture keeps its own door.
+  const repositoryBranches = actors.pair(seamCtx, (context) => createRepositoryBranchesSeam(context))
+  ctx.onDispose(ctx.onAccountChange(repositoryBranches.clear))
   const openBranch: AppController["openBranch"] = installHost ? async target => {
     if (target === "main") { await selectConversationBranch("main"); return { value: "Opened main" } }
     const branch = await readBranchIdentity(target)
@@ -1086,7 +1092,7 @@ export const createAppController = (
     await selectConversationBranch(branch.name)
     await presentCard("branch", branch.name, branch.id)
     return { value: `Opened ${branch.name}` }
-  } : undefined
+  } : design.enabled ? undefined : repositoryBranches.select
   // An install composes Sleep, Wake and Rebase now behind POST /api/branches/{b}; the server authorizes each and
   // refuses one whose provider it did not compose. Other hosts have no branch machine and bind none.
   const branchControlOptions = services.branchControlOptions ?? (installHost ? { ready: () => true } : undefined)
@@ -1785,8 +1791,10 @@ export const createAppController = (
   const { listCloudWiki, openCloudWiki, retryCloudWiki, attachWorldEditor,
     setWikiSpace, setWikiPageView, loadWikiIndex, readWikiForPane, openWikiPage, showWikiHistory, createCloudWikiPage, saveWikiAnswer, renameCloudWikiPage, deleteCloudWikiPage, attachCloudWiki, wikiIndexes } = cloudWiki
   const selectRepo: TabsController["selectRepo"] = async (key) => {
+    const before = activeRepositoryId(store)
     const result = await selectRepoOnly(key)
     if (result === undefined && store.session().surface === "world") void readWikiForPane()
+    if (result === undefined && !installHost && !design.enabled && activeRepositoryId(store) !== before) await repositoryBranches.repositoryChanged()
     return result
   }
   const {
@@ -2841,6 +2849,7 @@ export const createAppController = (
     ...sharedActions,
     observeReviewConfirmation: issueFlows.observeReviewConfirmation,
     fileDocuments,
+    repositoryBranches: { rows: repositoryBranches.rows, load: repositoryBranches.load },
     store,
     privacyNotices: privacyActions.notices,
     controlFocus,

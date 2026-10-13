@@ -180,6 +180,7 @@ describe("the controller's command surface", () => {
       "installSnapshots",
       "todoList",
       "fileDocuments",
+      "repositoryBranches",
       "flowCatalog",
       "membersRole",
       "membersRoster",

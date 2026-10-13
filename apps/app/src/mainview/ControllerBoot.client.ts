@@ -89,7 +89,8 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
           bootstrap: runtime.bootstrap,
           // The browser journey host builds with --mode test; production
           // islands use the real backend even when it has no install routes.
-          designFixture: import.meta.env.MODE === "test",
+          // A journey that checks what a hosted page renders opts out with ?design=off.
+          designFixture: import.meta.env.MODE === "test" && new URLSearchParams(window.location.search).get("design") !== "off",
           repositoryApp: store.savedStoreUnavailable ? undefined : requested ?? undefined,
           frameHistory: createBrowserFrameHistory(window, { keepUrl: options.keepUrl === true || setupEntry }),
         }

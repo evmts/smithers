@@ -81,8 +81,8 @@ export interface TodoSeamOptions {
 /** GET /api/todos as Home reads it where this host serves no `home` topic (T-APP-01): every TODO card, or why the read failed. */
 export interface TodoListSnapshot {
   readonly todos?: ReadonlyArray<TodoCard>
-  /** `forbidden` drops the list; `internal`, `invalid` and `unreachable` keep the last list read. */
-  readonly error?: "forbidden" | "internal" | "invalid" | "unreachable"
+  /** `forbidden` drops the list, as does `absent` (a 404: this host serves no TODOs); `internal`, `invalid` and `unreachable` keep the last list read. */
+  readonly error?: "forbidden" | "absent" | "internal" | "invalid" | "unreachable"
 }
 export interface TodoListSnapshots {
   readonly get: () => TodoListSnapshot
@@ -516,6 +516,7 @@ export const createTodoSeam = (ctx: SeamContext, options: TodoSeamOptions = {}) 
       const body: unknown = response.ok ? await response.json() : undefined
       const parsed = Array.isArray(body) ? TodoCardSchema.array().safeParse(body.map(value => todoActors(value, options.actors?.()))) : undefined
       next = response.status === 401 || response.status === 403 ? { error: "forbidden" }
+        : response.status === 404 ? { error: "absent" }
         : !response.ok ? { ...shared.list.snapshot, error: "internal" }
         : parsed?.success ? { todos: parsed.data } : { ...shared.list.snapshot, error: "invalid" }
     } catch { next = { ...shared.list.snapshot, error: "unreachable" } }

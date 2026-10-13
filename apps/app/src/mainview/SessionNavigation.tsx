@@ -8,6 +8,7 @@ import { flowSelector } from "./flows/FlowAction"
 import { SHORTCUT_KEYS } from "./ShortcutButton"
 import { bindPressActions } from "./runtime/PressActions"
 import { BranchCrumbs } from "./BranchTree"
+import { HeaderSelectors } from "./HeaderSelectors"
 import { catalogRepositoryOf } from "./state/RepoContext"
 import { useDesign, useDesignWorldOf } from "./state/seams/DesignWorld/hooks"
 import { designBranchTree, shellViewsOf } from "./state/seams/DesignWorld/shell"
@@ -18,8 +19,8 @@ export const SessionNavigationFallback = () => <header className="session-naviga
 /** Mode selection is a local keyboard preference. */
 export const modeShortcut = (event: KeyboardEvent): boolean => !event.repeat && !event.isComposing && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && event.key.toLowerCase() === SHORTCUT_KEYS.mode && !(event.target as Element | null)?.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"])')
 
-/** `owner/repo / main / <branch> ▾`: parent crumbs go up, the last opens the branch tree. */
-function Crumbs() {
+/** MOCK SEAM (delete with state/seams/DesignWorld): the seeded world's crumbs, mounted only where that world is enabled. */
+function DesignCrumbs() {
   const controller = useController()
   const design = useDesign()
   const world = useDesignWorldOf(design)
@@ -34,6 +35,11 @@ function Crumbs() {
     <BranchCrumbs nodes={nodes} view={{ selected_branch: at }}
       onAction={(tag, input) => { controller.commands.submit({ name: tag, payload: input ?? {}, actor: "user" }) }} onView={() => {}} />
   </div>
+}
+
+/** The repository and branch: real selectors, or the seeded crumbs where the design fixture stands in for a host. */
+function Crumbs() {
+  return useDesign().enabled ? <DesignCrumbs /> : <HeaderSelectors />
 }
 
 /** One global logo and navigation surface. */

@@ -1004,6 +1004,23 @@ describe("TodoSeam — the TODO list Home reads where no `home` topic is served 
     return { seam, calls, close: () => { disposed = true; finalizers.forEach(fn => fn()) } }
   }
 
+  test("a host that serves no TODOs answers absent and drops the list it held", async () => {
+    const last = deferred<Response>()
+    const h = await listHarness([() => json([fixtures.queued.model], 200), () => new Response("404 page not found", { status: 404 }), () => last.promise])
+    try {
+      const seen: Array<{ readonly n?: ReadonlyArray<number>; readonly error?: string }> = []
+      const leave = h.seam.list.subscribe(() => {
+        const snapshot = h.seam.list.get()
+        seen.push({ ...(snapshot.todos ? { n: snapshot.todos.map(todo => todo.n) } : {}), ...(snapshot.error ? { error: snapshot.error } : {}) })
+      })
+      await waitFor(() => h.calls.length === 3)
+      leave()
+      expect(seen).toEqual([{ n: [fixtures.queued.model.n] }, { error: "absent" }])
+      expect(h.seam.list.get()).toEqual({ error: "absent" })
+      last.resolve(json([], 200))
+    } finally { h.close() }
+  })
+
   test("the first reader reads at once and again until it leaves; a refusal drops the list, a failure keeps the last one", async () => {
     const last = deferred<Response>()
     const h = await listHarness([

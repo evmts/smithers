@@ -213,6 +213,7 @@ const DELEGATED_HANDLERS: Readonly<Record<string, readonly string[]>> = {
   "../Timeline.tsx": ["onClick={jump}"],
   "../ToastStackView.tsx": ["onClick={press}", "onClick={hide}", "onClick={disclose}"],
   "../InputModeMenu.tsx": ["open ? close() : setOpen(true)", "latest.current.onChange(value)"], // transient menu; selection is input.mode at both mounts
+  "../HeaderSelectors.tsx": ["if (!open) onOpen?.(); setOpen(!open)", "onClick={() => setOpen(false)}"], // transient menu open and outside-press close; a row runs repo.select or branch
   "../cards/FlowCard.tsx": ["sendRunCommand("],
   "../cards/RunTraceCard.tsx": ["sendRunCommand("], // the original onRunCommand prop, before the frame wrapper
   "../cards/FlowFormCards.tsx": ["cancel.onClick()"], // card.dismiss after the keyboard focus handoff; the full submit handler is inspected
@@ -1343,6 +1344,7 @@ describe("launch-law parity: every affordance is a command", () => {
       "../WikiDeleteDialog.tsx": 1, // The Wiki confirmation moved to the shared shell; its command remains wiki.delete.confirm.
       "../HelpBubble.tsx": 1,
       "../InputModeMenu.tsx": 2,
+      "../HeaderSelectors.tsx": 3, // The header's repository and branch selectors: the menu button, the outside-press close, and a row (repo.select or branch).
       "../cards/ApprovalCard.tsx": 2,
       "../cards/CodingVibeCard.tsx": 1,
       "../cards/RepositoryChoiceCard.tsx": 2,

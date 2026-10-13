@@ -24,6 +24,13 @@ T1 builds the SPA through `playwright/webserver.ts`, runs
 and drives it with headless Chromium. Individual specs use `page.route`
 and `page.routeWebSocket` for their fixture seams.
 
+That build uses `--mode test`, which turns on the seeded design fixture
+(`state/seams/DesignWorld`): every page shows `acme/api` and its seeded
+rows. Production never mounts that fixture. A spec that checks what a hosted
+page renders opens `/?design=off`, which keeps the fixture off for that page
+load (`playwright/header-selectors.spec.ts`). The app rewrites the address
+bar, so ask again with `page.goto("/?design=off")` instead of `page.reload()`.
+
 ## The showcase (`showcase/`)
 
 One file per case, `showcase/cases/<id>.case.ts`, default-exporting

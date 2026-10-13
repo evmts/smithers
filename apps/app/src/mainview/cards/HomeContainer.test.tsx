@@ -541,6 +541,37 @@ test("Home from GET /api/todos: a TODO in review whose PR rebuilds keeps its row
   expect(markup).not.toContain('data-flow="merge"')
 })
 
+test("a hosted page whose host serves no TODOs shows no Home card, with or without a repository; other failures and an install stay visible", () => {
+  const base = seeded(MAYA).controller
+  let snapshot: TodoListSnapshot = { error: "absent" }
+  let activeRepoKey: string | null = "acme/api"
+  const host = (capabilities: ReadonlyArray<string>) => ({ ...base, design: createDesignWorld({ enabled: false }),
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities, authFlow: "redirect", sandbox: null },
+    store: { ...base.store, session: () => ({ activeRepoKey }) }, todoList: { get: () => snapshot, subscribe: () => () => {} } }) as unknown as AppController
+  const render = (controller: AppController) => renderToStaticMarkup(<ControllerTestProvider controller={controller}><HomeCard /></ControllerTestProvider>)
+  const hosted = host(["identity", "agent", "cloud"])
+  const install = host(["install"])
+  try {
+    // Production's hosted backend answers 404 for /api/todos: there is no stack, so no `main` row, counts or machines.
+    expect(render(hosted)).toBe("")
+    activeRepoKey = null
+    expect(render(hosted)).toBe("")
+    // A stack that exists and failed stays visible on a hosted page with a repository.
+    activeRepoKey = "acme/api"
+    snapshot = { error: "internal" }
+    expect(render(hosted)).toContain("Stack unavailable")
+    snapshot = { error: "forbidden" }
+    expect(render(hosted)).toContain("Stack access refused")
+    // An install always has a stack: a missing route there is a failure to show.
+    snapshot = { error: "absent" }
+    expect(render(install)).toContain("Stack unavailable")
+  } finally {
+    hosted.design.dispose()
+    install.design.dispose()
+    base.design.dispose()
+  }
+})
+
 test("an install's Home reads its rows from GET /api/todos: nothing until the list answers, then the rows, never the seed", () => {
   const install = installFixture(); install.capacity = 2; install.repository = { owner: "local-owner", name: "demo" }
   let snapshot: TodoListSnapshot = {}
