@@ -436,3 +436,35 @@ func TestATurnOnARetainedFailedMachineDoesNotPromiseARetry(t *testing.T) {
 	require.Equal(t, agentSessionNoCapacityMessage, agentSessionFailureReasonForError(
 		&pkgerrors.APIError{Status: http.StatusServiceUnavailable, Code: pkgerrors.CodeNoCapacity, Message: "full"}))
 }
+
+// The third retained machine, and the only one whose owner can undo it: a
+// branch machine a failed flow-host release (ReleaseFailedFlowHostMachine) or
+// a box-host stop left `stopped`. branchMachineCompatible refuses the join for
+// as long as the row is stopped, so the dispatch never reaches the wake that
+// would have started it — waiting changes nothing and retrying the turn alone
+// changes nothing, but starting the machine does. #3892 typed the `failed`
+// sibling and left this one on the fallback's "try again in a moment", which
+// promises exactly the retry the join refuses.
+func TestATurnOnAStoppedBranchMachineNamesTheStart(t *testing.T) {
+	stopped := fmt.Errorf("create agent workspace: %w",
+		branchMachineCompatible(db.Workspace{Status: "stopped", UserID: 7}, db.CreateWorkspaceParams{}, 7))
+	require.Equal(t, agentSessionBranchMachineStoppedMessage, agentSessionFailureReasonForError(stopped),
+		"a turn on a stopped branch machine says so; starting the machine is the action that helps")
+	require.NotContains(t, agentSessionBranchMachineStoppedMessage, "try again in a moment",
+		"the join refuses for as long as the row is stopped, so a retry alone cannot work")
+	require.NotEqual(t, agentSessionBranchMachineStoppedMessage, agentSessionBranchMachineFailedMessage,
+		"a machine its owner stopped and a machine a provision failed are different causes")
+	require.NotEqual(t, agentSessionBranchMachineStoppedMessage, agentSessionStartFailureMessage)
+
+	// The refusal's own HTTP shape is unchanged: both retained machines still
+	// answer the same conflict and the same message.
+	var api *pkgerrors.APIError
+	require.ErrorAs(t, stopped, &api)
+	require.Equal(t, http.StatusConflict, api.Status)
+	require.Equal(t, "branch machine is retained; recover it before joining", api.Message)
+
+	// A failed provision keeps the sentence #3892 gave it.
+	require.Equal(t, agentSessionBranchMachineFailedMessage, agentSessionFailureReasonForError(
+		fmt.Errorf("create agent workspace: %w",
+			branchMachineCompatible(db.Workspace{Status: "failed", UserID: 7}, db.CreateWorkspaceParams{}, 7))))
+}

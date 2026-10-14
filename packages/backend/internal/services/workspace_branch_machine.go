@@ -265,6 +265,12 @@ const branchMachineRetainedMessage = "branch machine is retained; recover it bef
 // replaced or deleted, which is the difference a dispatch reports.
 var errBranchMachineRetainedFailure = errors.New("branch machine retained after a failed provision")
 
+// errBranchMachineStopped marks the same refusal when the retained machine is
+// stopped rather than a failed provision. A stop is the one retained state its
+// owner can undo, so a dispatch names the start instead of a retry the join
+// refuses for as long as the row is stopped.
+var errBranchMachineStopped = errors.New("branch machine retained while stopped")
+
 func branchMachineCompatible(row db.Workspace, arg db.CreateWorkspaceParams, owner int64) error {
 	if row.RebuildRequiredAt.Valid {
 		return pkgerrors.New(pkgerrors.CodeWorkspaceRebuildRequired, "branch machine requires rebuild")
@@ -283,7 +289,12 @@ func branchMachineCompatible(row db.Workspace, arg db.CreateWorkspaceParams, own
 			pkgerrors.Conflict(branchMachineRetainedMessage))
 	}
 	if row.Status == "stopped" {
-		return pkgerrors.Conflict(branchMachineRetainedMessage)
+		// Also permanent for a retry: the join is refused for as long as the
+		// row is stopped, so the dispatch never reaches the wake that would
+		// have started the machine. Starting it is what makes the next turn
+		// join, and that is what the sentinel lets a dispatch say.
+		return fmt.Errorf("%w: %w", errBranchMachineStopped,
+			pkgerrors.Conflict(branchMachineRetainedMessage))
 	}
 	if arg.SourceCommit != "" && arg.SourceCommit != row.SourceCommit ||
 		arg.SourceSnapshotID.Valid && arg.SourceSnapshotID != row.SourceSnapshotID ||
