@@ -77,6 +77,23 @@ interface LandingDetail extends LandingRow {
 }
 
 /**
+ * GitHub's merge fact beside a closed pull request.
+ *
+ * [#3880](https://github.com/smithersai/smithers/issues/3880): GitHub states a
+ * merged pull request as `state: "closed"`, with `merged: true` on the detail
+ * and only `merged_at` on a list row (verified on roninjin10/e2e-verify#6,
+ * 2026-10-14), so taking `state` verbatim rendered a merged pull request as
+ * CLOSED. A closed row carrying the fact is `merged`; a closed row without it
+ * stays closed, and no other state is touched — plue's own landing row already
+ * says "merged" (services/landing.go `landingStateMerged`, written with
+ * `merged_at`), so the platform's words pass through unchanged.
+ */
+const mergedState = (value: Record<string, unknown>, state: string): string =>
+  state.toLowerCase() === "closed" && (value.merged === true || typeof value.merged_at === "string")
+    ? "merged"
+    : state
+
+/**
  * One landing row, read defensively (multi parseLanding, loosened): number and
  * title are required, everything else degrades instead of failing the payload.
  */
@@ -87,7 +104,7 @@ const parseLandingRow = (value: unknown): LandingRow | null => {
   return {
     number: value.number,
     title: value.title,
-    state: typeof value.state === "string" && value.state !== "" ? value.state : "unknown",
+    state: mergedState(value, typeof value.state === "string" && value.state !== "" ? value.state : "unknown"),
     author: isRecord(value.author) ? stringOrNull(value.author.login)
       : isRecord(value.user) ? stringOrNull(value.user.login) : null,
     updatedAt: stringOrNull(value.updated_at)
