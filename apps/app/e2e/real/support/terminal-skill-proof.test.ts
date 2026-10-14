@@ -1,16 +1,31 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, setDefaultTimeout, test } from "bun:test"
 import { spawnSync } from "node:child_process"
 import { terminalSkillProof } from "./terminal-skill-proof"
+
+/*
+ * Every case runs the proof script in a real CPython, one to six launches per test, so the budget is the launches'
+ * own rather than bun:test's 5 s default. On a loaded runner a launch costs far more than the ~30 ms it costs idle,
+ * and the default read these real launches as hangs (gate 1, runs 38556009956 and 38558094099). Each launch is also
+ * bounded in turn: a wedged interpreter is killed and named, instead of silently spending the test's budget and
+ * outliving it.
+ */
+setDefaultTimeout(60_000)
+const LAUNCH_BUDGET_MS = 20_000
 
 const transcript = (command: string, content: unknown, isError: boolean) => [
   { message: { content: [{ type: "tool_use", name: "Bash", id: "call", input: { command } }] } },
   { message: { content: [{ type: "tool_result", tool_use_id: "call", content, is_error: isError }] } },
   { type: "result", subtype: "success", is_error: false }
 ]
-const run = (messages: unknown[], expected = ["todo new"], confirmation: string | undefined = "todo new", refusal?: { code: string; message: string }) =>
-  spawnSync("/usr/bin/python3", ["-c", terminalSkillProof(expected, refusal ? undefined : confirmation, refusal)], {
-    input: messages.map(message => JSON.stringify(message)).join("\n"), encoding: "utf8"
+const run = (messages: unknown[], expected = ["todo new"], confirmation: string | undefined = "todo new", refusal?: { code: string; message: string }) => {
+  const result = spawnSync("/usr/bin/python3", ["-c", terminalSkillProof(expected, refusal ? undefined : confirmation, refusal)], {
+    input: messages.map(message => JSON.stringify(message)).join("\n"), encoding: "utf8", timeout: LAUNCH_BUDGET_MS, killSignal: "SIGKILL"
   })
+  // A launch that never finishes is the proof failing, not the receipt passing: name it rather than leave the
+  // caller reading a status of null.
+  if (result.error) throw new Error(`The proof interpreter did not finish within ${LAUNCH_BUDGET_MS} ms: ${result.error.message}`)
+  return result
+}
 const pending = { confirmation: "private-card-1", state: "pending", message: "Waiting for ben to confirm" }
 
 describe("installed Claude skill execution receipts", () => {

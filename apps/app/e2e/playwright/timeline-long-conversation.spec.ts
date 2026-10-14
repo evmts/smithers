@@ -102,12 +102,17 @@ test("the fast model titles a long conversation's folded lines, marked as writte
    * carries a readable count AND the fast model's title for that count, and
    * the failure names the lines that do not.
    */
-  const mistitled = async () => folded.evaluateAll(items => items.flatMap(item => {
-    const count = /(\d+)\s*entries/.exec(item.querySelector(".tl-zoom")?.textContent?.trim() ?? "")?.[1]
-    const title = item.querySelector(".tl-text b")?.textContent?.trim() ?? ""
-    return count !== undefined && title === `Fast title for ${count} entries` ? []
-      : [`${item.getAttribute("data-entry") ?? "?"}: ${count ?? "no count"} / ${title}`]
-  }))
+  const mistitled = async () => folded.evaluateAll(items => {
+    // A rail that holds no folded line is not every folded line titled: the count is part of the claim, or a rail
+    // that emptied between the poll above and this one would read as a pass.
+    if (items.length <= 3) return [`only ${items.length} folded lines`]
+    return items.flatMap(item => {
+      const count = /(\d+)\s*entries/.exec(item.querySelector(".tl-zoom")?.textContent?.trim() ?? "")?.[1]
+      const title = item.querySelector(".tl-text b")?.textContent?.trim() ?? ""
+      return count !== undefined && title === `Fast title for ${count} entries` ? []
+        : [`${item.getAttribute("data-entry") ?? "?"}: ${count ?? "no count"} / ${title}`]
+    })
+  })
   await expect.poll(mistitled, { timeout: 15_000 }).toEqual([])
   // Lines near the band are not folded: they keep their own titles and no mark.
   await expect(page.locator(".timeline > ol > li:not([data-zoom]) .written")).toHaveCount(0)

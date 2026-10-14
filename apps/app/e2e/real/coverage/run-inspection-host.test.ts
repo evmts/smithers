@@ -1,12 +1,20 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from "bun:test"
 import { execFileSync } from "node:child_process"
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { deployedSource, HOST_PIN_CONTEXT_ENV, hostProducer, readHostPin } from "../run-inspection/revisions"
 
+/*
+ * These cases build real repositories: each one runs a handful of real `git` processes, so the budget is theirs
+ * rather than bun:test's 5 s default, which read them as hangs on a loaded runner (gate 1, run 38558094099). Each
+ * launch is bounded in turn, so a wedged `git` is killed and named instead of spending the test's budget unseen.
+ */
+setDefaultTimeout(60_000)
+const GIT_BUDGET_MS = 20_000
+
 const git = (cwd: string, ...args: string[]): string =>
-  execFileSync("git", ["-c", "user.email=e2e@example.invalid", "-c", "user.name=e2e", ...args], { cwd, encoding: "utf8" }).trim()
+  execFileSync("git", ["-c", "user.email=e2e@example.invalid", "-c", "user.name=e2e", ...args], { cwd, encoding: "utf8", timeout: GIT_BUDGET_MS, killSignal: "SIGKILL" }).trim()
 
 describe("run-inspection source evidence on a git-only clone", () => {
   let root = ""

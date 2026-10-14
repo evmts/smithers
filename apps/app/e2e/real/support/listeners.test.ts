@@ -1,8 +1,16 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test"
 import { spawnSync } from "node:child_process"
 import { createServer as createHttpServer } from "node:http"
 import { createServer, type AddressInfo, type Server } from "node:net"
-import { connect, descendants, exchange, listenerReport, listeners, loopbackOnly, parseListeners, processTree } from "./listeners"
+import { connect, descendants, exchange, listenerReport, listeners, loopbackOnly, parseListeners, PROBE_TIMEOUT_MS, processTree } from "./listeners"
+
+/*
+ * The probes here read a real `lsof` and `ps`, which listeners.ts allows PROBE_TIMEOUT_MS to answer. A read slower
+ * than bun:test's 5 s default is the probe working, not a hang, and judging it at 5 s timed these tests out on
+ * gate 1 (runs 38556009956 and 38558094099) while the probe itself had not yet given up. The budget is the probe's
+ * own bound and some room to assert on what it returned.
+ */
+setDefaultTimeout(PROBE_TIMEOUT_MS + 15_000)
 
 const listening = (server: Server, address = "127.0.0.1"): Promise<number> =>
   new Promise(resolve => server.listen(0, address, () => resolve((server.address() as AddressInfo).port)))
@@ -40,19 +48,25 @@ describe("the process tree", () => {
     expect(descendants(999, table)).toEqual([999])
   })
 
+  // The child the tree is read against. Reaped after the test whatever ended it, so one that is abandoned (a timed
+  // out test never reaches its own `finally`) cannot outlive the suite that spawned it.
+  let held: ReturnType<typeof Bun.spawn> | undefined
+  afterEach(async () => {
+    const child = held
+    held = undefined
+    if (child === undefined) return
+    child.kill("SIGKILL")
+    await child.exited
+  })
+
   test("of this process holds this process and a child, and neither its parent nor the ps that read it", async () => {
-    const child = Bun.spawn(["/bin/sleep", "30"])
-    try {
-      const tree = processTree(process.pid)
-      expect(tree).toContain(process.pid)
-      expect(tree).toContain(child.pid)
-      expect(tree).not.toContain(process.ppid)
-      // Every process in the tree is still running: the short-lived ps is not among them.
-      for (const pid of tree) expect(() => process.kill(pid, 0)).not.toThrow()
-    } finally {
-      child.kill()
-      await child.exited
-    }
+    const child = held = Bun.spawn(["/bin/sleep", "30"])
+    const tree = processTree(process.pid)
+    expect(tree).toContain(process.pid)
+    expect(tree).toContain(child.pid)
+    expect(tree).not.toContain(process.ppid)
+    // Every process in the tree is still running: the short-lived ps is not among them.
+    for (const pid of tree) expect(() => process.kill(pid, 0)).not.toThrow()
   })
 })
 

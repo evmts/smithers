@@ -15,7 +15,7 @@ import { connect as tcpConnect } from "node:net"
 export type Listener = { readonly command: string; readonly pid: number; readonly address: string; readonly port: number }
 
 /** A probe that outlives this is killed and throws, as the test-child wrapper's own 30 s bound did. */
-const PROBE_TIMEOUT_MS = 30_000
+export const PROBE_TIMEOUT_MS = 30_000
 
 const LSOF = process.env.SMITHERS_LSOF ?? (process.platform === "darwin" ? "/usr/sbin/lsof" : "lsof")
 
