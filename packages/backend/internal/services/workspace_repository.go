@@ -500,9 +500,7 @@ func (s *WorkspaceService) writeRuntimeRepositoryReceipt(ctx context.Context, ro
 	if err != nil {
 		return err
 	}
-	preparer, ok := s.runtime.(interface {
-		WriteRepositoryReceipt(context.Context, string, []byte) error
-	})
+	preparer, ok := s.runtime.(workspaceapi.WorkspaceRepositoryReceiptWriter)
 	if !ok {
 		return pkgerrors.Internal("workspace repository receipt writer unavailable")
 	}

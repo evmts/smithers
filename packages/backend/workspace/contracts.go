@@ -536,6 +536,16 @@ type WorkspaceCompareWriter interface {
 	CompareWriteFiles(ctx context.Context, workspaceID string, changes []FileMutation) (*FileWriteResult, error)
 }
 
+// WorkspaceRepositoryReceiptWriter commits the repository-initialization
+// receipt of a prepared checkout. It is preparation-only and takes no
+// caller-selected path: the receipt must exist before the working copy admits
+// its daemon, so it cannot go through WorkspaceCompareWriter, and the product
+// has no other way to write it. A runtime without it refuses every workspace
+// once its guest is already booted, so every runtime implements it.
+type WorkspaceRepositoryReceiptWriter interface {
+	WriteRepositoryReceipt(ctx context.Context, workspaceID string, content []byte) error
+}
+
 // ErrReadFileUnavailable refuses reads when the runtime cannot provide its
 // admitted working-copy file service.
 var ErrReadFileUnavailable = errors.New("workspace file read unavailable")
