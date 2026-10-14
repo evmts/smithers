@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 // agentSessionFailureReasonKey is the single metadata key a failed session
@@ -23,6 +25,13 @@ const agentSessionNoCapacityMessage = "The agent pool is full right now. Nothing
 // the machine this turn needs is on its way (#3886).
 const agentSessionMachineStartingMessage = "The branch's machine is still starting. Nothing ran; start the agent again once it is awake."
 
+// agentSessionMachineMissingMessage is what a session says when the branch's
+// machine no longer exists. Unlike a full pool or a machine that is still
+// starting, waiting changes nothing and retrying changes nothing: the box is
+// gone and only a fresh one can run the turn, so this sentence must not borrow
+// agentSessionStartFailureMessage's "try again in a moment".
+const agentSessionMachineMissingMessage = "The branch's machine no longer exists. Nothing ran; create the box again, and retrying this turn will not bring it back."
+
 // agentSessionStartFailureMessage is the fallback for every other reason a
 // dispatch could not start. The specific cause stays in the operator log and
 // the run's last_error; the owner of the session gets a true sentence instead
@@ -38,15 +47,20 @@ const agentSessionLoopRetiredMessage = "Cloud agents are not available on this d
 
 // agentSessionFailureReasonForError classifies a dispatch failure into the one
 // sentence the session shows. The distinguished causes are the ones a user acts
-// on differently — by waiting rather than retrying at once: a pool with no
-// room, and a branch machine another request is already starting. Everything
-// else is the fallback, with its cause in the operator log.
+// on differently: a pool with no room and a branch machine another request is
+// already starting are both worth waiting for, and a machine that no longer
+// exists is worth neither waiting nor retrying. Everything else is the
+// fallback, with its cause in the operator log.
 func agentSessionFailureReasonForError(err error) string {
 	if isNoCapacityError(err) {
 		return agentSessionNoCapacityMessage
 	}
 	if errors.Is(err, errWorkspaceProvisionInProgress) {
 		return agentSessionMachineStartingMessage
+	}
+	var apiErr *pkgerrors.APIError
+	if errors.As(err, &apiErr) && apiErr.Code == pkgerrors.CodeWorkspaceVMMissing {
+		return agentSessionMachineMissingMessage
 	}
 	return agentSessionStartFailureMessage
 }

@@ -326,3 +326,40 @@ func TestAFanOutTurnSaysTheMachineIsStillStarting(t *testing.T) {
 	require.Equal(t, agentSessionStartFailureMessage,
 		agentSessionFailureReasonForError(pkgerrors.Internal("create sandbox: connection refused")))
 }
+
+// A branch machine can vanish under a row that still reads `running`: the
+// controller's placement store loses the sandbox, so every later inspect
+// answers 404 not_found and the workspace's recovery error is
+// CodeWorkspaceVMMissing. That error reached the fallback sentence, which
+// promises a retry that can never work — the machine is gone and only a fresh
+// box brings one back.
+//
+// Production 2026-10-14 14:49Z, API e227f1ae / public 46187b04: repository
+// 112645's box 8bdcfa88 read `running` with vm_id 8bdcfa88 while the
+// controller answered
+//
+//	create agent workspace: inspect workspace runtime: microsandbox api
+//	returned status 404 (not_found): sandbox resource was not found
+//
+// and the turn said only "The agent could not be started. Nothing ran; try
+// again in a moment." Four further turns on that repository said the same.
+func TestATurnOnAVanishedMachineSaysTheMachineIsGone(t *testing.T) {
+	missing := fmt.Errorf("create agent workspace: %w",
+		pkgerrors.New(pkgerrors.CodeWorkspaceVMMissing,
+			"workspace VM no longer exists; run `smithers workspace create` to provision a fresh workspace"))
+	require.Equal(t, agentSessionMachineMissingMessage, agentSessionFailureReasonForError(missing),
+		"a turn whose machine no longer exists says so; a fresh box is the action that helps")
+	require.NotContains(t, agentSessionMachineMissingMessage, "try again in a moment",
+		"retrying cannot recreate a machine the fleet has lost")
+	require.NotEqual(t, agentSessionMachineMissingMessage, agentSessionStartFailureMessage)
+	require.NotEqual(t, agentSessionMachineMissingMessage, agentSessionMachineStartingMessage)
+
+	// A machine that is merely still starting, a full pool and everything else
+	// keep the sentences they already had.
+	require.Equal(t, agentSessionMachineStartingMessage, agentSessionFailureReasonForError(
+		fmt.Errorf("create agent workspace: %w", workspaceProvisionInProgress(nil))))
+	require.Equal(t, agentSessionNoCapacityMessage, agentSessionFailureReasonForError(
+		&pkgerrors.APIError{Status: http.StatusServiceUnavailable, Code: pkgerrors.CodeNoCapacity, Message: "full"}))
+	require.Equal(t, agentSessionStartFailureMessage,
+		agentSessionFailureReasonForError(pkgerrors.Internal("create sandbox: connection refused")))
+}
