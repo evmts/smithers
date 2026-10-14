@@ -17,6 +17,8 @@ import type { ContextPreflightFrame, ContextPreflightInput, ContextPreflightResu
 import type { DocsPage } from "@smthrs/rpc/DocsPages"
 import type { AgentTurnFrame, FetchLike, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import { Duration, Effect } from "effect"
+import { inertCallbackTransport, observeCallbackTransport } from "./CallbackTransport.ts"
+import type { CallbackTransport } from "./CallbackTransport.ts"
 import { runContextPreflight } from "./ContextPreflight.ts"
 import { createHostDiagnostics } from "./HostDiagnostics.ts"
 import type { HostDiagnostics } from "./HostDiagnostics.ts"
@@ -156,19 +158,22 @@ export class DurableChatProducer {
   private readonly fetchImpl: FetchLike
   private readonly diagnostics: HostDiagnostics
   private readonly deadlineMillis: number
+  private readonly transport: CallbackTransport
 
   constructor(
     callbackBaseUrl: string,
     grant: DurableChatGrant,
     fetchImpl: FetchLike = fetch.bind(globalThis),
     diagnostics: HostDiagnostics = createHostDiagnostics({ turnId: grant.turnId }),
-    deadlineMillis: number = CHAT_CALLBACK_DEADLINE_MS
+    deadlineMillis: number = CHAT_CALLBACK_DEADLINE_MS,
+    transport: CallbackTransport = inertCallbackTransport
   ) {
     this.callbackBaseUrl = callbackBaseUrl
     this.grant = grant
     this.fetchImpl = fetchImpl
     this.diagnostics = diagnostics
     this.deadlineMillis = deadlineMillis
+    this.transport = transport
     this.cursor = AgentTurnCursorSchema.parse(grant.cursor)
   }
 
@@ -181,20 +186,23 @@ export class DurableChatProducer {
       // worker observed: one says the host reached its own request, the other
       // only that something opened a tunnel.
       const settle = this.diagnostics.begin("chat_callback", { step: "provider_started" })
+      const probe = this.transport.begin()
       let status = 0
       let timedOut = false
       return bounded(
         (deadlineSignal) =>
           Effect.tryPromise({
             try: (signal) =>
-              this.fetchImpl(url, {
-                method: "POST",
-                // The fiber's interruption cancels a turn; the bound's own
-                // signal ends an attempt that overran. Either closes this
-                // request.
-                signal: AbortSignal.any([signal, deadlineSignal]),
-                headers: { authorization: `Bearer ${this.grant.token}` }
-              }),
+              probe.run(() =>
+                this.fetchImpl(url, {
+                  method: "POST",
+                  // The fiber's interruption cancels a turn; the bound's own
+                  // signal ends an attempt that overran. Either closes this
+                  // request.
+                  signal: AbortSignal.any([signal, deadlineSignal]),
+                  headers: { authorization: `Bearer ${this.grant.token}` }
+                })
+              ),
             catch: unreachable("provider_started")
           }).pipe(
             Effect.tap((response) =>
@@ -218,8 +226,12 @@ export class DurableChatProducer {
         }
       ).pipe(
         // The record carries why the attempt ended, so a reader of the guest's
-        // own log tells a bound that fired from a status the journal answered.
-        Effect.ensuring(Effect.sync(() => settle({ status, ...(timedOut ? { timedOut: true } : {}) })))
+        // own log tells a bound that fired from a status the journal answered,
+        // and reads the phase that bound fired in from the dispatcher's own
+        // records rather than inferring it.
+        Effect.ensuring(
+          Effect.sync(() => settle({ status, ...(timedOut ? { timedOut: true } : {}), ...probe.fields() }))
+        )
       )
     })
   }
@@ -304,6 +316,7 @@ export class DurableChatProducer {
     })
     const invoke = Effect.suspend(() => {
       const settle = this.diagnostics.begin("chat_callback", { step: "commit", batch: expected.batch + 1 })
+      const probe = this.transport.begin()
       let status = 0
       let timedOut = false
       // The deadline covers the receipt as well as the response: a journal
@@ -314,12 +327,14 @@ export class DurableChatProducer {
         (deadlineSignal) =>
           Effect.tryPromise({
             try: (signal) =>
-              this.fetchImpl(new URL("/internal/chat/commit", this.callbackBaseUrl), {
-                method: "POST",
-                signal: AbortSignal.any([signal, deadlineSignal]),
-                headers: { "content-type": "application/json", authorization: `Bearer ${this.grant.token}` },
-                body
-              }),
+              probe.run(() =>
+                this.fetchImpl(new URL("/internal/chat/commit", this.callbackBaseUrl), {
+                  method: "POST",
+                  signal: AbortSignal.any([signal, deadlineSignal]),
+                  headers: { "content-type": "application/json", authorization: `Bearer ${this.grant.token}` },
+                  body
+                })
+              ),
             catch: unreachable("commit")
           }).pipe(
             Effect.tap((response) =>
@@ -335,7 +350,9 @@ export class DurableChatProducer {
           timedOut = true
         }
       ).pipe(
-        Effect.ensuring(Effect.sync(() => settle({ status, ...(timedOut ? { timedOut: true } : {}) })))
+        Effect.ensuring(
+          Effect.sync(() => settle({ status, ...(timedOut ? { timedOut: true } : {}), ...probe.fields() }))
+        )
       )
     })
     return invoke.pipe(
@@ -396,10 +413,45 @@ export const runDurableChatTurn = (
   },
   docs?: ReadonlyArray<DocsPage>,
   diagnostics: HostDiagnostics = createHostDiagnostics({ turnId: grant.turnId })
-): Effect.Effect<void, Model.ModelFailure | ProducerError> => {
-  const producer = new DurableChatProducer(callbackBaseUrl, grant, fetchImpl, diagnostics)
-  const write = (frame: AgentTurnFrame) => producer.write(frame)
-  return Effect.gen(function*() {
+): Effect.Effect<void, Model.ModelFailure | ProducerError> =>
+  // The dispatcher's records for this turn's callbacks, observed for exactly
+  // as long as the turn runs: an attempt that ends without an answer reports
+  // the phase it reached, so an operator reading the guest's own log tells a
+  // request the dispatcher never took from one whose connection never came up
+  // from one whose bytes the journal already has.
+  Effect.acquireUseRelease(
+    Effect.sync(() => observeCallbackTransport(callbackBaseUrl)),
+    (observer) => runTurn(model, grant, options, callbackBaseUrl, fetchImpl, observer, preflight, docs, diagnostics),
+    (observer) => Effect.sync(() => observer.close())
+  )
+
+const runTurn = (
+  model: Model.Model,
+  grant: DurableChatGrant,
+  options: ModelTurnOptions,
+  callbackBaseUrl: string,
+  fetchImpl: FetchLike,
+  observer: CallbackTransport,
+  preflight:
+    | {
+      readonly input: ContextPreflightInput
+      readonly model: Model.Model
+      readonly options: ModelTurnOptions
+    }
+    | undefined,
+  docs: ReadonlyArray<DocsPage> | undefined,
+  diagnostics: HostDiagnostics
+): Effect.Effect<void, Model.ModelFailure | ProducerError> =>
+  Effect.gen(function*() {
+    const producer = new DurableChatProducer(
+      callbackBaseUrl,
+      grant,
+      fetchImpl,
+      diagnostics,
+      CHAT_CALLBACK_DEADLINE_MS,
+      observer
+    )
+    const write = (frame: AgentTurnFrame) => producer.write(frame)
     // The guest's own runtime build, written before this turn's first
     // callback. Why a commit attempt never put a socket on the wire is still
     // open, and its one untested variable is the Node build the guest runs —
@@ -462,4 +514,3 @@ export const runDurableChatTurn = (
       return
     }
   })
-}

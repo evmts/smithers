@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Added
+
+- A hosted turn's journal callbacks now record the transport phase each attempt
+  reached (#3812). An unanswered callback was a single fact — `chat_callback
+  pending` — that a request the dispatcher never took, a connection that never
+  came up, a DNS lookup that never returned and a journal that took the bytes
+  and said nothing all produce alike; production turn 2d851bdd ended on exactly
+  that ambiguity, and its guest's IPv4 socket table, read once at 180 s,
+  could not separate them either. The producer now reads Node's own `undici`
+  diagnostics channels, scoped to this turn's callback origin, and each
+  attempt's end record carries how far it got (`none`, `created`, `sent`,
+  `responded`, `received`), whether its socket was reused, how many connections
+  its origin began, completed and failed while it was open, and a failure's
+  short code. Nothing it writes names a path, header, body, destination or
+  credential. `test/CallbackTransport.test.ts` pins each phase against a real
+  journal over real sockets, including a reused keep-alive connection, a
+  cancelled commit and a retry the journal answers `duplicate`.
+
 ### Fixed
 
 - The journal callback bound now covers the receipt, not just the request
