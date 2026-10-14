@@ -374,19 +374,21 @@ export const runDurableChatTurn = (
 ): Effect.Effect<void, Model.ModelFailure | ProducerError> => {
   const producer = new DurableChatProducer(callbackBaseUrl, grant, fetchImpl, diagnostics)
   const write = (frame: AgentTurnFrame) => producer.write(frame)
-  // The guest's own runtime build, written before this turn's first callback.
-  // Why a commit attempt never put a socket on the wire is still open, and
-  // its one untested variable is the Node build the guest runs — which fixes
-  // the bundled undici this fetch goes through. A stalled turn is read from
-  // this log while its sandbox is still alive, so the answer has to already be
-  // in the same log rather than raced for afterwards once the turn ends and
-  // the sandbox is deleted. Version strings only.
-  diagnostics.record("host_runtime", "start", {
-    node: process.versions.node,
-    platform: process.platform,
-    arch: process.arch
-  })
   return Effect.gen(function*() {
+    // The guest's own runtime build, written before this turn's first
+    // callback. Why a commit attempt never put a socket on the wire is still
+    // open, and its one untested variable is the Node build the guest runs —
+    // which fixes the bundled undici this fetch goes through. A stalled turn
+    // is read from this log while its sandbox is still alive, so the answer
+    // has to already be in the same log rather than raced for afterwards once
+    // the turn ends and the sandbox is deleted. Version strings only, and
+    // written when the turn runs rather than when its Effect is built, so one
+    // record means one turn.
+    diagnostics.record("host_runtime", "start", {
+      node: process.versions.node,
+      platform: process.platform,
+      arch: process.arch
+    })
     // Shared prompt admission must never degrade to a transcript-only answer
     // while the authorized host context provider is unavailable.
     if (grant.request.sharedConversation === true && preflight === undefined) {

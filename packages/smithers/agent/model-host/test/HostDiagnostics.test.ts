@@ -278,6 +278,19 @@ describe("the guest runtime a turn reports", () => {
     expect(sink.lines.indexOf(runtime!)).toBeLessThan(
       sink.lines.findIndex((line) => line.event === "chat_callback")
     )
+    // One record per turn that RAN: building the Effect writes nothing.
+    const unrun = collector()
+    runDurableChatTurn(
+      Model.make({ stream: () => Stream.never }),
+      grant,
+      { modelId: "m" },
+      "http://host.test/",
+      () => Promise.resolve(new Response(null, { status: 403 })),
+      undefined,
+      undefined,
+      createHostDiagnostics({ turnId: grant.turnId, write: unrun.write })
+    )
+    expect(unrun.phase("host_runtime", "start")).toHaveLength(0)
   })
 })
 
