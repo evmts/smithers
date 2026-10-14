@@ -989,6 +989,8 @@ export const createAppController = (
   // Missing host capabilities are not demo permission. Remove this fixture
   // composition when the DesignWorld journey fixtures are retired.
   const design = createDesignWorld({ enabled: !installHost && (services.designFixture === true || services.bootstrap === undefined) })
+  /** Whether this host serves the issues doors from its repository's own tracker: the mirror of `hostIssues()` in `flows/entries/subjects.ts`. */
+  const hostServesIssues = !design.enabled && (installHost || services.bootstrap?.capabilities.includes("cloud") === true)
   ctx.onDispose(design.dispose)
   const gitHubSyncSeam = createGitHubSyncSeam({ ready: () => !installHost || installSignedIn(), http: installHost ? (path, init) => seamCtx.http(`${baseUrl.replace(/\/$/, "")}${path}`, init) : undefined })
   const gitHubSyncRetry = createGitHubSyncRetry(ctx, gitHubSyncSeam)
@@ -1572,8 +1574,17 @@ export const createAppController = (
   const searchSeam = actors.pair(seamCtx, (context, select) =>
     createSearchSeam(context, { registry: () => commands, readStack: select(repositoryHistory).readStack,
       heldStack: select(repositoryHistory).heldStack,
-      /* A real host's issue index is the repository's tracker, not the cards left on the screen (#3891); the seeded preview has no tracker to ask. */
-      ...(design.enabled ? {} : { readIssues: select(issuesSeam).readIssueRows }) }))
+      /*
+       * A real host's issue index is the repository's tracker, not the cards
+       * left on the screen (#3891). The live read belongs to the hosts that
+       * DECLARE the issues door — `install` and `cloud`, the same fence
+       * `hostIssues()` puts under `/issue` and `/issues`
+       * (flows/entries/subjects.ts) — never "the design fixture is off": the
+       * Bun host in offline mode is a bootstrap with neither capability and no
+       * tracker to ask, and a search that asked anyway read that host's own 404
+       * back as the tracker's answer. Same class as #3879 and #3831.
+       */
+      ...(hostServesIssues ? { readIssues: select(issuesSeam).readIssueRows } : {}) }))
   const egressSeam = actors.pair(seamCtx, (context) => createEgressSeam(context, withToast))
   ctx.onDispose(workspaceSeam.dispose)
   /* Lane change: the change/diff cards and their acts. */

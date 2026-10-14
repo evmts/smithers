@@ -55,6 +55,8 @@ const json = (payload: Record<string, unknown>) => JSON.stringify(payload)
 const CLOUD_ISSUE_DOOR = "Use /issues.create on Smithers Cloud."
 const NO_ISSUE_DOOR = "Opening an issue needs the GitHub App install or Smithers Cloud."
 const NO_COMMENT_DOOR = "Commenting on an issue needs the GitHub App install or Smithers Cloud."
+/** An install's GitHub comment is a member confirmation the server performs (backend compose/member_commands.go); the browser has no port for it. */
+const INSTALL_COMMENT_DOOR = "Commenting on a GitHub issue is a member confirmation on this install, not an app write yet."
 
 export const subjectFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => {
   const design = actions.design
@@ -126,6 +128,14 @@ export const subjectFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
     flow({ name: "issue.comment",   slash: "/issue.comment", cli: ["issue","comment"], journey: ["J2"], group: "Issues", visibility: "core", actors: ["person","app_agent","external_agent"], minimumRole: "member", http: {"method":"POST","path":"/api/issues/{number}/comments"}, summary: "Comment on an issue", args: "#n <text>", discloseToAgent: true,
       grammar: numbered("body"), agent: "confirm", input: Schema.Struct({ number: Schema.Number, body: Schema.NonEmptyString }),
       form: { submitLabel: "Comment", fields: { number: { label: "Issue" }, body: { label: "Comment" } }, args: json },
+      /*
+       * The handler's own refusals, stated BEFORE the confirm step
+       * (flows/Commands.ts), the way `issue.new`'s preflight states its own.
+       * A `confirm` door reached by an agent otherwise answers "asked the user
+       * to confirm" and posts a confirmation message for a write this host
+       * cannot perform, so the person authorizes a refusal.
+       */
+      preflight: () => cloudIssueWrites() ? undefined : install() ? INSTALL_COMMENT_DOOR : design.enabled ? undefined : NO_COMMENT_DOOR,
       handler: ({ number, body }) => {
         /*
          * Cloud comments on the repository's own issue — the one `/issue` just
@@ -135,7 +145,7 @@ export const subjectFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
          * it says so rather than writing the fixture.
          */
         if (cloudIssueWrites()) return actions.commentOnIssue(number, body)
-        if (install()) return "Commenting on a GitHub issue is a member confirmation on this install, not an app write yet."
+        if (install()) return INSTALL_COMMENT_DOOR
         if (!design.enabled) return NO_COMMENT_DOOR
         return commentIssue(design, number, body, design.viewer()) ? { value: `Commented on #${number}` } : `No issue #${number}`
       } }),

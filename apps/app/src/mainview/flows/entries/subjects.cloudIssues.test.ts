@@ -220,3 +220,26 @@ test("the seeded design preview still searches its own world and asks no backend
     expect(h.calls).toEqual([])
   } finally { await h.controller.dispose() }
 })
+
+/*
+ * #3891 again, on the host the live read must NOT reach. `search.issues`'s
+ * live index is the issues door's own read, so it belongs to the hosts that
+ * declare that door — `install` and `cloud` — exactly as `hostIssues()` fences
+ * `/issue` and `/issues` above it. The design FIXTURE being off is not the
+ * same question: the Bun host in offline mode (`apps/app/src/bun/server.ts`,
+ * `cloud: cloudUpstream !== null`) serves a bootstrap with neither capability
+ * and no tracker at all, and `/issue 5` there asks for nothing. A search that
+ * asks anyway reaches a route the host does not serve and reads its 404 back
+ * to the person as the tracker's answer — the mirror of #3879 and #3831, where
+ * one condition stood in for the door.
+ */
+test("a host that serves neither Cloud issues nor an install is not asked for an issue index either", async () => {
+  const h = await hosted({ bootstrap: WITHOUT_CLOUD, routes: cloudRoutes })
+  try {
+    expect(h.controller.design.enabled).toBe(false)
+    const outcome = await h.controller.runCommandForResult("search.issues", TITLE)
+    expect(h.calls).toEqual([])
+    expect(outcome).toMatchObject({ status: "executed" })
+    expect(outcome.status === "executed" ? outcome.value ?? "" : "").not.toContain("failed (404)")
+  } finally { await h.controller.dispose() }
+})

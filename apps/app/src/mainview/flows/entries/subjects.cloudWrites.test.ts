@@ -235,3 +235,39 @@ test("a typed /issue n over an open list reads the Cloud door and navigates the 
     expect([...h.store.collections.cards.keys()].filter(id => id.startsWith("design:"))).toEqual([])
   } finally { await h.controller.dispose() }
 })
+
+/*
+ * The same refusal, asked by the agent. `/issue.new` states its unavailability
+ * in `preflight`, which Commands.ts runs BEFORE the confirm step, so an agent
+ * that asks for a door this host does not serve reads the refusal. Its sibling
+ * `/issue.comment` stated the same refusals from the HANDLER, which runs only
+ * after the person has confirmed: the agent was answered "asked the user to
+ * confirm", a confirmation message was posted to the transcript, and the write
+ * the person authorized could never happen. A door that cannot write must say
+ * so before it asks anyone to authorize it.
+ */
+test("an agent asking /issue.comment on a host with no comment door reads the refusal, and no one is asked to authorize it", async () => {
+  for (const [bootstrap, refusal] of [
+    [INSTALL, "Commenting on a GitHub issue is a member confirmation on this install, not an app write yet."],
+    [WITHOUT_CLOUD, "Commenting on an issue needs the GitHub App install or Smithers Cloud."]
+  ] as const) {
+    const h = await hosted({ bootstrap })
+    try {
+      const before = seedState(h.controller as never)
+      expect(await h.controller.commands.runForAgent("issue.comment", "#5 Agent comment")).toEqual({ status: "failed", error: refusal })
+      /* Nothing authorized, nothing written, nothing seeded. */
+      expect([...h.store.collections.messages.values()].filter(message => message.action?.flow === "issue.comment")).toEqual([])
+      expect(h.calls.filter(call => call.method !== "GET")).toEqual([])
+      expect(seedState(h.controller as never)).toBe(before)
+    } finally { await h.controller.dispose() }
+  }
+})
+
+test("an agent asking /issue.comment where the door does write is still the person's confirmation", async () => {
+  const h = await hosted({ routes: { [`POST ${ISSUES}/5/comments`]: postedComment } })
+  try {
+    expect(await h.controller.commands.runForAgent("issue.comment", "#5 Agent comment"))
+      .toMatchObject({ status: "executed", value: expect.stringContaining("asked the user to confirm") })
+    expect(h.calls.filter(call => call.method !== "GET")).toEqual([])
+  } finally { await h.controller.dispose() }
+})
