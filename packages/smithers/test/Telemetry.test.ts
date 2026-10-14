@@ -3,6 +3,8 @@
  * what the start-up clock and the timed spawner measure under a controlled
  * clock, and what a reader may rely on when decoding one.
  */
+import { digestSync } from "@smthrs/crypto"
+import * as Action from "@smthrs/flow/Action"
 import * as FlowRuntime from "@smthrs/flow/FlowRuntime"
 import * as Journal from "@smthrs/journal/Journal"
 import * as JournalEvent from "@smthrs/journal/JournalEvent"
@@ -80,6 +82,30 @@ describe("Telemetry.record", () => {
     expect(result.entries).toEqual([
       { eventType: "flows.host.sign-in.v1", payload: signIn, sourceId: "@smthrs/cli/Telemetry" }
     ])
+  })
+
+  it("keys the record to the engine step it was measured in, as the engine's attempt events name that step", async () => {
+    const stepKey = "key1_014ebbc9368c55eb0f17a18aa8286ee1f46125c4a27eab1ef3bd7379fa4f6aa6"
+    const stepKeyDigest = digestSync(stepKey)
+    const { entries, spans } = await run(
+      traced(
+        Effect.gen(function*() {
+          yield* inRun(Telemetry.record(Telemetry.signInEvent, signIn)).pipe(
+            Effect.provideService(Action.CurrentInvocationKey, stepKey),
+            Effect.withSpan("Auth.sign")
+          )
+          return yield* journaled
+        })
+      ).pipe(Effect.map(({ spans, value }) => ({ entries: value, spans })))
+    )
+
+    expect(entries.map((entry) => entry.payload)).toEqual([{ ...signIn, stepKeyDigest }])
+    expect(stepKeyDigest).toMatch(/^[0-9a-f]{64}$/)
+    expect(Schema.decodeUnknownSync(Telemetry.SignIn)(entries[0]!.payload).stepKeyDigest).toBe(stepKeyDigest)
+    // The engine already names the step on its spans; the record's own fields are what it adds.
+    expect(Object.keys(spans.find((span) => span.name === "Auth.sign")!.attributes)).not.toContain(
+      "flows.host.sign-in.v1.stepKeyDigest"
+    )
   })
 
   it("writes nothing for a fiber that serves no run", async () => {
@@ -265,6 +291,86 @@ describe("Telemetry.makeStartUp", () => {
     expect(entries.map((entry) => entry.payload)).toEqual([
       { processStartedAtMs: 500, totalMs: 300, stages: [{ stage: "boot", ms: 0 }, { stage: "request", ms: 300 }] }
     ])
+  })
+
+  const host = { hostId: "test-host", pid: 4242 }
+
+  /** The host's own stream in the journal, where a process writes its lifetime. */
+  const lifetimes = Effect.gen(function*() {
+    const journal = yield* Journal.Journal
+    const page = yield* journal.entries({ runId: JournalEvent.RunId.make("flows.host:test-host"), limit: 64 })
+    return page.entries.map((entry) => ({ eventType: entry.eventType, payload: entry.payload }))
+  })
+
+  it("journals the lifetime of a process that sent no model request, with the stages it reached", async () => {
+    const entries = await run(Effect.gen(function*() {
+      yield* TestClock.setTime(1_000)
+      const startUp = Telemetry.makeStartUp(1_000)
+      for (const [stage, millis] of stages.slice(0, 4)) {
+        yield* TestClock.adjust(millis)
+        yield* startUp.mark(stage)
+      }
+      // The command does its work, then its host closes.
+      yield* TestClock.adjust(250)
+      yield* startUp.ended(yield* Journal.Journal, host)
+      return yield* lifetimes
+    }))
+
+    expect(entries).toEqual([{
+      eventType: "flows.host.lifetime.v1",
+      payload: {
+        pid: 4242,
+        processStartedAtMs: 1_000,
+        endedAtMs: 2_550,
+        stages: [
+          { stage: "boot", ms: 400 },
+          { stage: "project", ms: 150 },
+          { stage: "journal", ms: 50 },
+          { stage: "executor", ms: 700 }
+        ]
+      }
+    }])
+    expect(Schema.decodeUnknownSync(Telemetry.Lifetime, { onExcessProperty: "error" })(entries[0]!.payload)).toEqual(
+      entries[0]!.payload
+    )
+  })
+
+  it("journals the first model request among the stages of a process that sent one", async () => {
+    const entries = await run(Effect.gen(function*() {
+      const startUp = Telemetry.makeStartUp(0)
+      yield* TestClock.adjust(100)
+      yield* startUp.mark("executor")
+      yield* TestClock.adjust(40)
+      yield* inRun(startUp.firstRequest)
+      yield* TestClock.adjust(5_000)
+      yield* startUp.ended(yield* Journal.Journal, host)
+      return yield* lifetimes
+    }))
+
+    expect(entries.map((entry) => entry.payload)).toEqual([{
+      pid: 4242,
+      processStartedAtMs: 0,
+      endedAtMs: 5_140,
+      stages: [{ stage: "executor", ms: 100 }, { stage: "request", ms: 40 }]
+    }])
+  })
+
+  it("writes one lifetime for each host a process closes, and none of them fails the close", async () => {
+    const result = await run(Effect.gen(function*() {
+      const startUp = Telemetry.makeStartUp(0)
+      const journal = yield* Journal.Journal
+      yield* startUp.ended(journal, host)
+      yield* TestClock.adjust(10)
+      yield* startUp.ended(journal, host)
+      const refused = yield* Effect.exit(startUp.ended(
+        { emitDurableUnfenced: () => Effect.die(new Error("journal closed")) } as unknown as Journal.Service,
+        host
+      ))
+      return { ended: (yield* lifetimes).map((entry) => (entry.payload as Telemetry.Lifetime).endedAtMs), refused }
+    }))
+
+    expect(result.ended).toEqual([0, 10])
+    expect(Exit.isSuccess(result.refused)).toBe(true)
   })
 
   it("sets each stage on the span open at the first request", async () => {

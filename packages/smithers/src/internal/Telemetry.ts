@@ -11,14 +11,22 @@
  * times them: turning a subscription login into a credential ({@link SignIn}),
  * the process's way from its start to its first model request
  * ({@link StartUp}), and each process a sealed host starts in its container
- * ({@link Command}). Every duration is whole milliseconds.
+ * ({@link Command}). Every duration is whole milliseconds, and each record
+ * names the engine step it was measured in.
+ *
+ * A fourth belongs to no run: when the process started and when its host
+ * closed ({@link Lifetime}), written to the control journal's host stream by
+ * every process that builds an executor, a `plan` or an `approve` included.
  *
  * @since 1.0.0
  */
 
+import { digestSync } from "@smthrs/crypto"
+import * as Action from "@smthrs/flow/Action"
 import * as FlowRuntime from "@smthrs/flow/FlowRuntime"
 import * as Journal from "@smthrs/journal/Journal"
 import * as JournalEvent from "@smthrs/journal/JournalEvent"
+import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
 import * as Otlp from "@smthrs/observability/Otlp"
 import { Clock, Effect, Exit, Option, Schema, Stream } from "effect"
 import type * as Layer from "effect/Layer"
@@ -74,7 +82,9 @@ export const SignIn = Schema.Struct({
   refreshOutcome: Schema.optional(Schema.Literals(["rotated", "unchanged", "failed"])),
   totalMs: Schema.Finite,
   /** Whether the resolution ended with a credential. */
-  ok: Schema.Boolean
+  ok: Schema.Boolean,
+  /** The engine step the record was measured in, as `flows.engine.attempt-started` names it. */
+  stepKeyDigest: Schema.optional(Schema.String)
 })
 
 /**
@@ -115,7 +125,9 @@ export const Command = Schema.Struct({
   collectMs: Schema.Finite,
   totalMs: Schema.Finite,
   bytesOut: Schema.Finite,
-  exitCode: Schema.optional(Schema.Finite)
+  exitCode: Schema.optional(Schema.Finite),
+  /** The engine step the record was measured in, as `flows.engine.attempt-started` names it. */
+  stepKeyDigest: Schema.optional(Schema.String)
 })
 
 /**
@@ -148,7 +160,9 @@ export const startUpEvent = "flows.host.start-up.v1"
 export const StartUp = Schema.Struct({
   processStartedAtMs: Schema.Finite,
   totalMs: Schema.Finite,
-  stages: Schema.Array(Schema.Struct({ stage: Schema.String, ms: Schema.Finite }))
+  stages: Schema.Array(Schema.Struct({ stage: Schema.String, ms: Schema.Finite })),
+  /** The engine step the record was measured in, as `flows.engine.attempt-started` names it. */
+  stepKeyDigest: Schema.optional(Schema.String)
 })
 
 /**
@@ -158,6 +172,43 @@ export const StartUp = Schema.Struct({
  * @since 1.0.0
  */
 export type StartUp = typeof StartUp.Type
+
+/**
+ * The journal event a host process's lifetime is written to.
+ *
+ * @category records
+ * @since 1.0.0
+ */
+export const lifetimeEvent = "flows.host.lifetime.v1"
+
+/**
+ * When a host process started and when its host closed, with the start-up
+ * stages it reached ({@link StartUpClock.ended}).
+ *
+ * It is written to the control journal's host stream (`flows.host:<host>`),
+ * not to a run's: a process that plans or approves serves no run. `endedAtMs`
+ * is the last moment the process could write, with its executor closed and
+ * only the control database still open, so the process's exit follows it
+ * closely. `stages` are as {@link StartUp} holds them, and include `request`
+ * only for a process that sent a model request.
+ *
+ * @category records
+ * @since 1.0.0
+ */
+export const Lifetime = Schema.Struct({
+  pid: Schema.Finite,
+  processStartedAtMs: Schema.Finite,
+  endedAtMs: Schema.Finite,
+  stages: Schema.Array(Schema.Struct({ stage: Schema.String, ms: Schema.Finite }))
+})
+
+/**
+ * One decoded {@link Lifetime} record.
+ *
+ * @category records
+ * @since 1.0.0
+ */
+export type Lifetime = typeof Lifetime.Type
 
 /** The journal source every record this module writes is attributed to. */
 const recordSource = JournalEvent.SourceId.make("@smthrs/cli/Telemetry")
@@ -174,6 +225,12 @@ const isAttribute = (value: unknown): value is string | number | boolean =>
  * whose `eventType` is the one given here. It goes through the journal's lossy
  * channel: a record the journal drops or refuses is not written and nothing
  * fails. A fiber that serves no run has no journal to write to.
+ *
+ * The journaled record also carries `stepKeyDigest`, the engine step the fiber
+ * runs under. The engine's `flows.engine.attempt-started` and
+ * `attempt-finished` events of the same execution carry the same digest and
+ * bracket the step, so a sign-in is matched to its model call and a command to
+ * its cell call.
  *
  * Each string, number and boolean field is also set on `span`, or on the span
  * open here, as `<eventType>.<field>`.
@@ -197,6 +254,7 @@ export const record = (
     const journal = yield* Effect.serviceOption(Journal.Journal)
     const instance = yield* Effect.serviceOption(FlowRuntime.FlowInstance)
     if (Option.isNone(journal) || Option.isNone(instance)) return false
+    const stepKey = yield* Action.CurrentInvocationKey
     // A record the journal refuses costs the record and nothing else.
     const written = yield* Effect.exit(Effect.suspend(() =>
       journal.value.emitLossy(
@@ -204,7 +262,7 @@ export const record = (
           runId: JournalEvent.RunId.make(instance.value.executionId),
           sourceId: recordSource,
           eventType,
-          payload
+          payload: stepKey === undefined ? payload : { ...payload, stepKeyDigest: digestSync(stepKey) }
         })
       )
     ))
@@ -245,6 +303,14 @@ export interface StartUpClock {
    * for the next one.
    */
   readonly firstRequest: Effect.Effect<void>
+  /**
+   * Writes the process's {@link Lifetime} to `journal`'s host stream. A host
+   * calls it as it closes; a write the journal refuses does not fail the close.
+   */
+  readonly ended: (
+    journal: Journal.Service,
+    host: { readonly hostId: string; readonly pid: number }
+  ) => Effect.Effect<void>
 }
 
 /**
@@ -285,9 +351,26 @@ export const makeStartUp = (processStartedAtMs: number): StartUpClock => {
         Object.fromEntries(closing.stages.map((entry) => [`${startUpEvent}.stage.${entry.stage}`, entry.ms]))
       )
       written = yield* record(startUpEvent, closing)
+      if (written) close("request", at)
     }))
   })
-  return { mark, firstRequest }
+  const ended: StartUpClock["ended"] = (journal, host) =>
+    Effect.flatMap(
+      Clock.currentTimeMillis,
+      (now) =>
+        Effect.asVoid(Effect.exit(Effect.suspend(() =>
+          journal.emitDurableUnfenced(
+            new JournalEvent.Input({
+              runId: ProcessLedger.hostRunId(host.hostId),
+              // One source per process: two processes closing at once never share a sequence.
+              sourceId: JournalEvent.SourceId.make(`${recordSource}/${host.pid}/${origin}`),
+              eventType: lifetimeEvent,
+              payload: { pid: host.pid, processStartedAtMs: origin, endedAtMs: now, stages: [...stages] }
+            })
+          )
+        )))
+    )
+  return { mark, firstRequest, ended }
 }
 
 /**

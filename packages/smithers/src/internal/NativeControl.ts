@@ -1417,6 +1417,13 @@ export const make = (
     // one is in hand, so a run that rebuilds many times still holds one pool.
     const registration = Layer.effect(ControlExecutor.ControlExecutor)(
       Effect.gen(function*() {
+        // The process's lifetime is journaled as this host closes. Registered
+        // first, so it is written after everything opened below has closed,
+        // while the control journal is still open.
+        const lifetimeJournal = yield* Journal.Journal.pipe(Effect.provide(engine.journal))
+        yield* Effect.addFinalizer(() =>
+          Telemetry.startUp.ended(lifetimeJournal, { hostId: hostname(), pid: process.pid })
+        )
         // Read immediately before loading the configured module catalog, inside
         // the native registration scope that owns this host's engine lifecycle.
         const revisionBefore = yield* readCatalogRevision()

@@ -14,11 +14,14 @@ import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import { Effect, Layer, Schema, Stream } from "effect"
 import type * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
+import { spawn } from "node:child_process"
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
-import { tmpdir } from "node:os"
+import { hostname, tmpdir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
+import { fileURLToPath } from "node:url"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import * as Application from "../src/Application.ts"
 import * as Telemetry from "../src/internal/Telemetry.ts"
@@ -87,14 +90,34 @@ interface Native {
   readonly payload: unknown
 }
 
+/** The host stream's lifetime records in a project's control journal. */
+const lifetimesOf = (
+  root: string
+): ReadonlyArray<{ readonly stream: string; readonly lifetime: Telemetry.Lifetime }> => {
+  const database = new DatabaseSync(NodeControl.databasePath(root), { readOnly: true })
+  try {
+    return database.prepare(
+      "SELECT run_id, payload_json FROM flows_journal_events WHERE event_type = ? ORDER BY emitted_at_ms"
+    ).all(Telemetry.lifetimeEvent).map((row) => ({
+      stream: String(row["run_id"]),
+      lifetime: Schema.decodeUnknownSync(Telemetry.Lifetime, { onExcessProperty: "error" })(
+        JSON.parse(String(row["payload_json"]))
+      )
+    }))
+  } finally {
+    database.close()
+  }
+}
+
 const observed: {
   kinds: ReadonlyArray<string>
   native: ReadonlyArray<Native>
+  lifetimes: ReturnType<typeof lifetimesOf>
   spans: ReadonlyArray<Span>
   exported: string
   journaled: string
   sent: number
-} = { kinds: [], native: [], spans: [], exported: "", journaled: "", sent: 0 }
+} = { kinds: [], native: [], lifetimes: [], spans: [], exported: "", journaled: "", sent: 0 }
 
 const scratch = realpathSync(mkdtempSync(join(tmpdir(), "smithers-host-timing-")))
 const hostPath = process.env.PATH
@@ -199,6 +222,8 @@ beforeAll(async () => {
   observed.native = events.filter((event) => event.kind === "control.engine.event").map((event) =>
     event.payload as unknown as Native
   )
+  // The host has closed: its lifetime is in the control journal.
+  observed.lifetimes = lifetimesOf(root)
   observed.journaled = JSON.stringify(events)
   observed.exported = JSON.stringify(received)
   const value = (attribute: any): unknown =>
@@ -243,6 +268,9 @@ const mirrored = (eventType: string, span: Span): Record<string, unknown> =>
 
 const whole = (millis: number) => Number.isInteger(millis) && millis >= 0
 
+/** A record's measurements, without the step it is keyed to. */
+const measured = <A extends { readonly stepKeyDigest?: string | undefined }>({ stepKeyDigest: _, ...rest }: A) => rest
+
 describe("a run's journal on a sealed host with a subscription seat", () => {
   it("completes: two frames, one command in the container", () => {
     expect(observed.kinds.at(-1)).toBe("control.run.completed")
@@ -261,13 +289,31 @@ describe("a run's journal on a sealed host with a subscription seat", () => {
       lockWaitMs: 0,
       refreshed: false,
       totalMs: expect.any(Number),
-      ok: true
+      ok: true,
+      stepKeyDigest: expect.any(String)
     })
     for (const signIn of signIns) {
       expect([signIn.readMs, signIn.lockWaitMs, signIn.totalMs, signIn.refreshMs ?? 0].every(whole)).toBe(true)
       // What it waited on and ran is inside the whole.
       expect(signIn.totalMs).toBeGreaterThanOrEqual(signIn.lockWaitMs + (signIn.refreshMs ?? 0))
     }
+  })
+
+  it("keys each sign-in to its model call and each container process to its cell call", () => {
+    const signIns = records(Telemetry.signInEvent, Telemetry.SignIn).map((signIn) => signIn.stepKeyDigest)
+    const commands = records(Telemetry.commandEvent, Telemetry.Command).map((command) => command.stepKeyDigest)
+    // The engine brackets every step with attempt events that carry the step's digest.
+    const attempts = observed.native.filter((event) => event.eventType === "flows.engine.attempt-started").map((
+      event
+    ) => (event.payload as { readonly stepKeyDigest: string }).stepKeyDigest)
+
+    expect(new Set(signIns).size).toBe(2)
+    for (const digest of signIns) expect(attempts).toContain(digest)
+    // The one bash call is one step: its three processes share a digest, and it is no model call's.
+    expect(new Set(commands).size).toBe(1)
+    expect(attempts).toContain(commands[0])
+    expect(signIns).not.toContain(commands[0])
+    expect(records(Telemetry.startUpEvent, Telemetry.StartUp)[0]!.stepKeyDigest).toBe(signIns[0])
   })
 
   it("holds one record per process started in the container, its parts adding up", () => {
@@ -304,8 +350,65 @@ describe("a run's journal on a sealed host with a subscription seat", () => {
     expect(observed.kinds.indexOf("control.agent.model-requested")).toBeGreaterThanOrEqual(0)
   })
 
+  it("holds the process's lifetime in the host stream once the host has closed", () => {
+    const [startUp] = records(Telemetry.startUpEvent, Telemetry.StartUp)
+
+    expect(observed.lifetimes.map((entry) => entry.stream)).toEqual([`flows.host:${hostname()}`])
+    const { lifetime } = observed.lifetimes[0]!
+    expect(lifetime).toMatchObject({ pid: process.pid, processStartedAtMs: startUp!.processStartedAtMs })
+    // The same clock as the start-up record, read again at the close.
+    expect(lifetime.stages).toEqual(startUp!.stages)
+    expect(lifetime.endedAtMs).toBeGreaterThanOrEqual(lifetime.processStartedAtMs + startUp!.totalMs)
+  })
+
   it("holds no token, account id or refresh token anywhere", () => {
     for (const secret of secrets) expect(observed.journaled).not.toContain(secret)
+    for (const secret of secrets) expect(JSON.stringify(observed.lifetimes)).not.toContain(secret)
+  })
+})
+
+describe("a process that sends no model request", { timeout: 240_000 }, () => {
+  it("journals its own start, the stages it reached and its close", async () => {
+    const root = join(scratch, "planned")
+    mkdirSync(join(root, "flows", "survey"), { recursive: true })
+    writeFileSync(
+      join(root, "flows", "survey", "flow.mdx"),
+      "---\nname: survey\ndescription: Lists the task's files.\nmodel: openai:gpt-4o-mini\n---\n\nList the files.\n"
+    )
+    const before = Date.now()
+
+    // The real executable, as the benchmark starts it: `plan` is a process of its own.
+    const planned = await new Promise<{ readonly status: number | null; readonly output: string }>((resolve) => {
+      const child = spawn(
+        process.execPath,
+        [
+          "--no-warnings",
+          "--import",
+          fileURLToPath(new URL("./fixtures/scripted-native-host.ts", import.meta.url)),
+          fileURLToPath(new URL("../src/bin.ts", import.meta.url)),
+          "--json",
+          "plan",
+          "survey"
+        ],
+        { cwd: root, env: { HOME: root, PATH: hostPath, CI: "1" }, stdio: ["ignore", "pipe", "pipe"] }
+      )
+      let output = ""
+      child.stdout.on("data", (chunk) => output += chunk)
+      child.stderr.on("data", (chunk) => output += chunk)
+      child.once("close", (status) => resolve({ status, output }))
+    })
+
+    expect(planned.status, planned.output).toBe(0)
+    const lifetimes = lifetimesOf(root)
+    expect(lifetimes).toHaveLength(1)
+    const { lifetime } = lifetimes[0]!
+    expect(lifetime.stages.map((stage) => stage.stage)).toEqual(["boot", "project", "journal", "executor"])
+    expect(lifetime.pid).not.toBe(process.pid)
+    // It started after this test asked for it, and closed after every stage it reached.
+    expect(lifetime.processStartedAtMs).toBeGreaterThanOrEqual(before)
+    expect(lifetime.endedAtMs).toBeGreaterThanOrEqual(
+      lifetime.processStartedAtMs + lifetime.stages.reduce((sum, stage) => sum + stage.ms, 0)
+    )
   })
 })
 
@@ -333,13 +436,13 @@ describe("the run's spans at an OTLP collector", () => {
   it("carry each sign-in on its Auth.sign span", () => {
     const signed = spansNamed("Auth.sign").map((span) => mirrored(Telemetry.signInEvent, span))
 
-    expect(signed).toEqual(records(Telemetry.signInEvent, Telemetry.SignIn))
+    expect(signed).toEqual(records(Telemetry.signInEvent, Telemetry.SignIn).map(measured))
   })
 
   it("carry each container process on a Command.exec span", () => {
     const executed = spansNamed("Command.exec").map((span) => mirrored(Telemetry.commandEvent, span))
 
-    expect(executed).toEqual(records(Telemetry.commandEvent, Telemetry.Command))
+    expect(executed).toEqual(records(Telemetry.commandEvent, Telemetry.Command).map(measured))
   })
 
   it("carry the start-up on the span of the first model request", () => {
