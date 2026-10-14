@@ -127,6 +127,59 @@ agentTest("asked for a flow that labels new issues, the agent opens the form wit
  * (smithersai/smithers#3876, #3871), and search.issues indexes only the issue
  * cards the conversation has already opened.
  */
+/*
+ * The author's-screen leg of a screen-only READ, which the command list alone
+ * does not cover: `/help` upserts a fixed card, a search upserts the card for
+ * the flow that ran, and that card is the WHOLE act — a screen-only request
+ * carries nothing back to the turn.
+ *
+ * Root's 2026-10-14 10:09:46Z turn on smithers.sh asked for the supported
+ * `search.issues` act over an issue already on the person's screen and got a
+ * tool row, NO card, and an answer that invented an issue, its repository, its
+ * labels, a description and reproduction steps
+ * ([#3878](https://github.com/smithersai/smithers/issues/3878)). The seam
+ * suppressed the card because the hosted instruction arrives through the agent
+ * actor projection, which §6 keeps cardless for the browser agent loop's own
+ * tool call.
+ *
+ * The row does not pin WHICH `search.*` mode the model picks — that is the
+ * model's to choose from the ask — only that the mode it ran painted its own
+ * card on the author's screen, with the turn's own durable frames beside it.
+ */
+agentTest("asked to search on the person's screen, the agent's search paints that flow's own results card", scenario("agent.acts.search.screen", {
+  capabilities: ["agent", "identity", "cloud"],
+  coverage: [
+    "action:chat.send", "action:search", "host:production", "path:success", "door:agent",
+    "dimension:assistant-acts", "dimension:screen-only", "dimension:no-remote-side-effect",
+    "evidence:rendered-search-results-card-and-reply"
+  ],
+  description: "Ask the deployed Cloud agent to run a read-only search on the author's own screen and require its durable call frames for that search.* flow, the rendered search-results card for the same flow, and no launched run."
+}), async ({ page }, testInfo) => {
+  await bootWorkspace(page)
+  const traffic = await captureTurnTraffic(page)
+  const { reply, launches } = await askAgent(
+    page,
+    "Search this app for \"redaction\" and put the results on my screen. Do not create, edit or delete anything."
+  )
+  const frames = parseTurnFrames(await traffic.read())
+  await testInfo.attach("agent-acts-search-reply", { body: Buffer.from(JSON.stringify({ reply, launches, frames }, null, 2)), contentType: "application/json" })
+  // The turn's own committed pair: only a host that offered a search.* flow and
+  // ran it writes this, and the settled frame names the instruction the
+  // author's browser acts on.
+  const searched = frames.filter((frame) => typeof frame.name === "string" && frame.name.startsWith("search"))
+  const flow = searched[0]?.name
+  expect(flow, `the agent replied ${JSON.stringify(reply)} and ran ${JSON.stringify(frames.map((frame) => frame.name))}`).toBeDefined()
+  expect(searched.filter((frame) => frame.name === flow).map((frame) => frame.type).slice(0, 2)).toEqual(["call.started", "call.settled"])
+  const settled: unknown = JSON.parse(JSON.stringify(searched.find((frame) => frame.type === "call.settled" && frame.name === flow)))
+  expect(settled).toMatchObject({ name: flow, verdict: "run", ui: { command: flow } })
+  // The act itself: the card that flow upserts, on the author's own screen.
+  await expect(page.getByTestId(`card-search-${flow}`)).toBeVisible({ timeout: 30_000 })
+  // The host told it this screen is one it cannot see, so the answer names no row.
+  expect(reply).not.toMatch(/\bLabels?:|\bRepository:|\bSteps to [Rr]eproduce\b/)
+  expect(reply).not.toMatch(/\/docs\b/)
+  expect(launches).toEqual([])
+})
+
 agentTest("asked what it can do here, the agent runs the app's own command list on the person's screen", scenario("agent.acts.help", {
   capabilities: ["agent", "identity", "cloud"],
   coverage: [
