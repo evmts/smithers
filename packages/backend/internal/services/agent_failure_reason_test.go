@@ -15,6 +15,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
 )
 
 // A session that could not start must say why. Before this, the dispatch
@@ -362,4 +363,32 @@ func TestATurnOnAVanishedMachineSaysTheMachineIsGone(t *testing.T) {
 		&pkgerrors.APIError{Status: http.StatusServiceUnavailable, Code: pkgerrors.CodeNoCapacity, Message: "full"}))
 	require.Equal(t, agentSessionStartFailureMessage,
 		agentSessionFailureReasonForError(pkgerrors.Internal("create sandbox: connection refused")))
+}
+
+// The sibling of a vanished machine: a branch whose row still names the
+// snapshot it boots from, whose snapshot the provider no longer has. The
+// restore on the dispatch's own create answers CodeSnapshotNotFound
+// (unavailableWorkspaceSnapshot, reached from ensureWorkspaceRunning's
+// restore arm and from the async provisioner), and that restore is terminal:
+// the row is marked provision-failed, so the turn that follows cannot succeed
+// either. It reached the fallback sentence, which promises a retry in a
+// moment that nothing can make work.
+func TestATurnWhoseSnapshotIsGoneSaysTheSnapshotIsGone(t *testing.T) {
+	gone := fmt.Errorf("create agent workspace: %w",
+		pkgerrors.New(pkgerrors.CodeSnapshotNotFound,
+			"workspace snapshot is unavailable; run `smithers workspace create` to provision a fresh workspace").
+			WithCause(workspaceapi.ErrWorkspaceNotFound))
+	require.Equal(t, agentSessionSnapshotMissingMessage, agentSessionFailureReasonForError(gone),
+		"a turn whose snapshot is gone says so; a fresh box is the action that helps")
+	require.NotContains(t, agentSessionSnapshotMissingMessage, "try again in a moment",
+		"retrying cannot restore a snapshot the provider no longer has")
+	require.NotEqual(t, agentSessionSnapshotMissingMessage, agentSessionMachineMissingMessage,
+		"a missing snapshot and a missing machine are different causes")
+	require.NotEqual(t, agentSessionSnapshotMissingMessage, agentSessionStartFailureMessage)
+
+	// The causes that are worth waiting for keep their own sentences.
+	require.Equal(t, agentSessionMachineStartingMessage, agentSessionFailureReasonForError(
+		fmt.Errorf("create agent workspace: %w", workspaceProvisionInProgress(nil))))
+	require.Equal(t, agentSessionStartFailureMessage,
+		agentSessionFailureReasonForError(pkgerrors.Internal("restore snapshot: connection refused")))
 }
