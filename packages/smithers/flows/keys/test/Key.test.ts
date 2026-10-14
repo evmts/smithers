@@ -1,7 +1,7 @@
 // Deep reviewed and polished by a human on 2026-08-31.
 
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Cause, Crypto, Effect, Exit, Layer, PlatformError, Schema, SchemaIssue } from "effect"
+import { Cause, Crypto, Deferred, Effect, Exit, Fiber, Layer, PlatformError, Schema, SchemaIssue } from "effect"
 import { inspect } from "node:util"
 import { describe, expect, it } from "vitest"
 import * as Keys from "../src/index.ts"
@@ -248,6 +248,75 @@ describe("key derivation", () => {
         expect(error.message).not.toContain(secret)
       }
     })
+  })
+
+  it("does not invoke Crypto for input that cannot be canonicalized", () => {
+    let calls = 0
+    // An instrumented host proves ordering without invoking any external service.
+    const host = Crypto.make({
+      randomBytes: (size) => new Uint8Array(size),
+      digest: () => {
+        calls++
+        return Effect.succeed(new Uint8Array(32))
+      }
+    })
+    const error = Effect.runSync(Effect.flip(
+      Keys.deriveKey(1n).pipe(Effect.provideService(Crypto.Crypto, host))
+    ))
+    expect(error.code).toBe("canonicalization_failed")
+    expect(calls).toBe(0)
+  })
+
+  it.each([0, 31, 33, 64])("rejects a host digest of %i bytes and allows a subsequent valid derivation", (size) => {
+    // Malformed host output cannot be produced by a conforming platform service.
+    const host = Crypto.make({
+      randomBytes: (length) => new Uint8Array(length),
+      digest: () => Effect.succeed(new Uint8Array(size))
+    })
+    const error = Effect.runSync(Effect.flip(
+      Keys.deriveKey({ domain: "test/host-output", version: 1 }).pipe(
+        Effect.provideService(Crypto.Crypto, host)
+      )
+    ))
+    expect(error).toBeInstanceOf(Keys.KeyDerivationError)
+    expect(error.code).toBe("digest_failed")
+    expect(error.cause).toMatchObject({ code: "invalid_digest" })
+    const recovered = derive({ domain: "test/host-output", version: 1 })
+    expect(Schema.decodeUnknownSync(Keys.StoredKey)(recovered)).toBe(recovered)
+  })
+
+  it("interrupts a pending digest, runs host cleanup, and permits recovery", async () => {
+    let cleaned = false
+    const exit = await Effect.runPromise(Effect.gen(function*() {
+      const started = yield* Deferred.make<void>()
+      // A suspended host gives deterministic cancellation with no wall-clock sleeps.
+      const host = Crypto.make({
+        randomBytes: (size) => new Uint8Array(size),
+        digest: () =>
+          Deferred.succeed(started, undefined).pipe(
+            Effect.andThen(Effect.never),
+            Effect.ensuring(Effect.sync(() => {
+              cleaned = true
+            }))
+          )
+      })
+      const fiber = yield* Effect.forkChild(
+        Keys.deriveKey({ domain: "test/cancellation", version: 1 }).pipe(
+          Effect.provideService(Crypto.Crypto, host)
+        )
+      )
+      yield* Deferred.await(started)
+      yield* Fiber.interrupt(fiber)
+      return yield* Fiber.await(fiber)
+    }))
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      expect(Cause.hasInterrupts(exit.cause)).toBe(true)
+      expect(Cause.hasFails(exit.cause)).toBe(false)
+    }
+    expect(cleaned).toBe(true)
+    const recovered = derive({ domain: "test/cancellation", version: 1 })
+    expect(Schema.decodeUnknownSync(Keys.StoredKey)(recovered)).toBe(recovered)
   })
 
   it("reports a missing Crypto service as an Effect configuration defect", () => {
