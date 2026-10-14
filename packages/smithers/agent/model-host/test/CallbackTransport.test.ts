@@ -417,6 +417,48 @@ describe("a journal callback's transport phase", () => {
     expect(outside.fields()).toEqual({ transport: "none" })
   })
 
+  test("a repeated close leaves another turn's observer attributing", async () => {
+    // The subscription is shared and taken down by the last observer to close.
+    // Closing one twice must not count twice: it would drop the channels under
+    // a turn that is still running, and that turn's commits would then report
+    // `none` — the reading that clears everything below this host of a fault
+    // that is in fact still unattributed.
+    const journal = await startJournal()
+    const first = observeCallbackTransport(journal.baseUrl)
+    const second = observeCallbackTransport(journal.baseUrl)
+    first.close()
+    first.close()
+    const lines: Array<Record<string, unknown>> = []
+    const producer = producerFor(journal.baseUrl, lines, second)
+    await Effect.runPromise(producer.write(delta("a")))
+    second.close()
+    expect(attemptsOf(lines)).toEqual(["received"])
+  })
+
+  test("an attempt begun after its observer closed claims no phase at all", async () => {
+    // A closed observer is not watching, so its attempts report nothing rather
+    // than `none`: the request may well have reached the dispatcher, and this
+    // observer is in no position to say it did not.
+    const journal = await startJournal()
+    const watching = observeCallbackTransport(journal.baseUrl)
+    const closedObserver = observeCallbackTransport(journal.baseUrl)
+    closedObserver.close()
+    const attempt = closedObserver.begin()
+    await attempt.run(async () => {
+      const answered = await fetch(new URL("/internal/chat/commit", journal.baseUrl), { method: "POST", body: "{}" })
+      await answered.text()
+    })
+    expect(attempt.fields()).toEqual({})
+    // The observer still open is unaffected by the other's close.
+    const live = watching.begin()
+    await live.run(async () => {
+      const answered = await fetch(new URL("/internal/chat/commit", journal.baseUrl), { method: "POST", body: "{}" })
+      await answered.text()
+    })
+    expect(live.fields().transport).toBe("received")
+    watching.close()
+  })
+
   test("ignores every record of a request no attempt made", async () => {
     // The host's other callbacks reach the same origin outside any attempt,
     // and a failure of one of them belongs to no attempt either.

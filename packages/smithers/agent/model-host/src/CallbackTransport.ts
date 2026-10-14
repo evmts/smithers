@@ -32,6 +32,14 @@ import type { HostDiagnosticFields } from "./HostDiagnostics.ts"
  * an abort that lands after the journal's headers must not read as an attempt
  * that never got them.
  *
+ * What `created` does not separate: a name that never resolved and a SYN that
+ * was never answered both leave an attempt here with one connection begun and
+ * none ended, because the dispatcher publishes its connection record before
+ * the lookup and reports nothing further until one of them finishes. A
+ * connection that *fails* names itself (`connectCode`, so `ENOTFOUND` reads
+ * apart from `ECONNREFUSED`); one that hangs does not. Separating those two
+ * needs a resolver record this host does not take.
+ *
  * @category models
  * @since 1.0.0-rc.1
  */
@@ -85,11 +93,16 @@ interface AttemptState {
   /** The callback origin, as the dispatcher spells it. */
   readonly origin: string
   /**
-   * The host and port this attempt's connection is made to: the callback's
-   * own until the dispatcher says otherwise, and the proxy's once a request
-   * through one is seen. A guest reaches its journal through the sandbox's
-   * egress proxy, and a connection there belongs to the proxy, not to the
-   * journal.
+   * The host and port the dispatcher spells for this attempt's connection,
+   * which is whatever its own request record names. A guest reaches its
+   * journal through the sandbox's egress proxy, and the two proxy shapes
+   * spell it differently: a tunnelled request (the production one — the
+   * guest's Node runs with `NODE_USE_ENV_PROXY=1` and CONNECTs for every
+   * scheme) keeps the journal's own origin and dials it by name through the
+   * tunnel, while a plain-HTTP proxied request names the proxy as its origin
+   * and carries the journal's URL as its path. Taking the host from the
+   * record rather than from the callback URL matches `connectParams.host` in
+   * both, so the connection counts are not silently always zero in one.
    */
   dialHost: string
   /** Set once this attempt has claimed its request, so it claims no second one. */
@@ -273,9 +286,18 @@ export const inertCallbackTransport: CallbackTransport = {
 export const observeCallbackTransport = (callbackBaseUrl: string): ObservedCallbackTransport => {
   const url = new URL(callbackBaseUrl)
   const mine = new Set<AttemptState>()
+  // Closing is counted once however often it is asked for. The subscription is
+  // shared, so a second `close` would drop another turn's observer with it and
+  // leave that turn reporting `none` — the one reading that clears everything
+  // below this host. A false `none` is worse than no record at all.
+  let closed = false
   listen()
   return {
     begin: () => {
+      // A closed observer attributes nothing, even while another observer
+      // holds the channels up: its attempts are no longer being watched, so
+      // they report only what they can prove.
+      if (closed) return inertCallbackTransport.begin()
       const state: AttemptState = {
         origin: url.origin,
         dialHost: url.host,
@@ -301,6 +323,8 @@ export const observeCallbackTransport = (callbackBaseUrl: string): ObservedCallb
       }
     },
     close: () => {
+      if (closed) return
+      closed = true
       for (const state of mine) open.delete(state)
       mine.clear()
       stopListening()
