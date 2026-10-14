@@ -177,6 +177,12 @@ when the task names an `[agent] user`. When it names none and the image's
 runner chowns the file to the CLI's user. Without that the CLI cannot read
 it, falls back to `api.openai.com`, and fails with `AgentAuthenticationError`.
 
+Harbor installs `curl bash nodejs npm ripgrep` all together when any one
+command is missing. `PooledCodex` asks the package manager only for the
+missing ones, so an image's own Node.js stays: Debian's npm cannot install
+beside NodeSource's nodejs (SWE-bench Pro V2 openlibrary), and apt-get's exit
+100 ended the trial in setup.
+
 **An infrastructure failure is never a score.** Both agents apply one policy:
 
 - A usage limit (`rate_limited: The usage limit has been reached`,

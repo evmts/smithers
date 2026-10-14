@@ -22,6 +22,8 @@ What is pinned, and why each one matters:
     user and the image's `USER` is not root, so the runner chowns the
     root-owned 0600 `auth.json` to the CLI's user (#3862). Without it the CLI
     falls back to api.openai.com and the trial fails authentication.
+  - The stock Codex arm installs only the system packages whose commands the
+    image lacks: an image with its own Node.js keeps it (#3863).
   - On Smithers Cloud: the plue `docker` shim translates the harness's
     `docker exec` argv into one `smithers workspace exec` call, the workspace
     id is the container, the shim goes first on PATH, and the account pool
@@ -523,6 +525,69 @@ def check_codex_runs_as_image_user() -> str:
     return f"checked under {codex_pool.Codex.__module__.split('.')[0]}"
 
 
+class Image:
+    """A task image that answers `command -v` for the commands it ships,
+    names apt-get as its package manager, and records each install."""
+
+    def __init__(self, commands: set[str]):
+        self.default_user = None
+        self.commands = commands
+        self.installs: list[str] = []
+
+    async def exec(self, command, cwd=None, env=None, timeout_sec=None, user=None):
+        import re
+        import types
+        code, stdout = 0, ""
+        if "for manager in" in command:
+            stdout = "apt-get"
+        elif "apt-get install" in command:
+            self.installs.append(command.split("apt-get install -y ", 1)[1])
+        else:
+            asked = re.findall(r"command -v (\S+)", command)
+            code = 0 if asked and all(name in self.commands for name in asked) else 1
+        return types.SimpleNamespace(return_code=code, stdout=stdout, stderr="")
+
+
+def check_codex_installs_only_what_is_missing() -> str:
+    """The stock arm asks the package manager only for the commands the image
+    lacks. Harbor installs all of `curl bash nodejs npm ripgrep` when any one is
+    missing; SWE-bench Pro V2 openlibrary ships NodeSource's nodejs, Debian's
+    npm cannot install beside it, apt-get exits 100 and the trial died in
+    setup (nyc-01, 2026-10-14; #3863)."""
+    sys.path.insert(0, str(HERE.parent.parent.parent))
+    try:
+        from evals.harbor import codex_pool
+    except ImportError:
+        return "harbor not importable; install not checked"
+    if not hasattr(codex_pool.Codex, "ensure_system_dependencies"):
+        return "not checked (Pier installs the CLI at image build)"
+    import asyncio
+
+    stock = ("curl", "bash", "nodejs", "npm", "ripgrep")
+
+    def installs(commands: set[str], dependencies: tuple[str, ...] = stock) -> list[str]:
+        with tempfile.TemporaryDirectory() as directory:
+            pooled = codex_pool.PooledCodex(logs_dir=Path(directory), model_name="openai/gpt-6-sol")
+            image = Image(commands)
+            asyncio.run(pooled.ensure_system_dependencies(image, dependencies))
+        return image.installs
+
+    openlibrary = {"curl", "bash", "node", "npm"}
+    assert installs(openlibrary) == ["ripgrep"], "the image's own nodejs and npm are left alone"
+    assert installs(openlibrary | {"rg"}) == [], "nothing missing, nothing installed"
+    assert installs(set()) == ["curl bash nodejs npm ripgrep"], "a bare image gets every package, in one call"
+    assert installs({"curl", "bash", "rg"}) == ["nodejs npm"], installs({"curl", "bash", "rg"})
+    # Harbor's own rules stand: a package installed every time, an unknown name refused.
+    assert installs(openlibrary | {"rg"}, stock + ("ca_certificates",)) == ["ca-certificates"]
+    try:
+        installs(openlibrary, ("curl", "no-such-dependency"))
+    except ValueError as error:
+        assert "no-such-dependency" in str(error), error
+    else:
+        raise AssertionError("an unknown dependency is refused")
+    return "checked"
+
+
 def check_container_survival() -> None:
     """A task container that died during the run cannot be graded: tb4-confirm-A2
     mp-checkpoint 7FU4pw3's VM was gone ("workspace VM no longer exists"), the
@@ -824,8 +889,9 @@ if __name__ == "__main__":
     check_container_gate()
     check_codex_usage()
     image_user = check_codex_runs_as_image_user()
+    install = check_codex_installs_only_what_is_missing()
     check_container_survival()
     check_accounts()
     revision = check_harness_revision()
     print(f"check_agent.py: prompt, environment, journal fold, helper lookup, names, plue shim, plue environment and account pool hold; "
-          f"stock arm's image user {image_user}; harness revision {revision}; trajectory {validation}.")
+          f"stock arm's image user {image_user}; its install {install}; harness revision {revision}; trajectory {validation}.")

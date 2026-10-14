@@ -38,6 +38,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import shlex
 import shutil
 import sys
 from collections.abc import Iterator
@@ -181,6 +182,24 @@ class PooledCodex(Codex):
         self._account = await asyncio.to_thread(self._pool.lease, self.logs_dir.parent.name)
         self._write_account()
         await super().setup(environment)
+
+    async def ensure_system_dependencies(self, environment: BaseEnvironment, dependencies: tuple[str, ...]) -> None:
+        """Harbor: ask the package manager only for the dependencies whose
+        commands the image lacks. Harbor installs every one of them when any
+        is missing, and Debian's npm cannot install beside an image's own
+        Node.js (SWE-bench Pro V2 openlibrary ships NodeSource's): apt-get
+        exits 100 and the trial dies in setup. An unknown or always-installed
+        dependency goes to Harbor as is. Pier installs at image build and
+        never calls this."""
+        missing = []
+        for dependency in dependencies:
+            spec = self.SYSTEM_PACKAGES.get(dependency)
+            if spec is not None and spec.commands and not spec.always_install:
+                check = " && ".join(f"command -v {shlex.quote(command)} >/dev/null 2>&1" for command in spec.commands)
+                if (await environment.exec(command=check, user="root")).return_code == 0:
+                    continue
+            missing.append(dependency)
+        await super().ensure_system_dependencies(environment, tuple(missing))
 
     def network_allowlist(self):
         """Pier: every host the task container may reach, through Pier's
