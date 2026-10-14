@@ -11,7 +11,6 @@ import * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Clock, Effect, Exit, Fiber, Schema, Sink, Stream, Tracer } from "effect"
 import { PlatformError, systemError } from "effect/PlatformError"
-import { TestClock } from "effect/testing"
 import * as ChildProcess from "effect/process/ChildProcess"
 import {
   type ChildProcessSpawner,
@@ -20,6 +19,7 @@ import {
   makeHandle,
   ProcessId
 } from "effect/process/ChildProcessSpawner"
+import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import * as Telemetry from "../src/internal/Telemetry.ts"
 
