@@ -5,7 +5,7 @@
  * the per-member view topic lands (mvp.md §7.2).
  */
 import { Schema } from "effect"
-import { flow, type CommandActions } from "./Declare"
+import { cloudBoxesHeld, flow, type CommandActions } from "./Declare"
 import type { FlowEntry } from "../registry"
 import type { Grammar } from "../SlashPayload"
 import { goToBranch, shellViewsOf } from "../../state/seams/DesignWorld/shell"
@@ -40,7 +40,7 @@ export const shellFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
     ]),
     handler: async ({ name: target, operation, workspaceId, bookmark, repo, kind, snapshot, recoveryOf }) => {
       if (operation === "workspace-view") return workspaceId === undefined || actions.live || actions.bootstrap?.capabilities.includes("install") ? "Branch unavailable" : actions.viewWorkspace(workspaceId)
-      if (operation === "workspace-open") return actions.bootstrap?.capabilities.includes("install") || !actions.design.enabled ? "Branch unavailable" : actions.openWorkspace(bookmark, repo, kind, snapshot, recoveryOf)
+      if (operation === "workspace-open") return cloudBoxesHeld(actions) ? actions.openWorkspace(bookmark, repo, kind, snapshot, recoveryOf) : "Branch unavailable"
       if (target === undefined) return "Choose a branch"
       if (actions.openBranch) return actions.openBranch(target)
       if (!branchSeedAvailable(actions)) return "Branch unavailable"

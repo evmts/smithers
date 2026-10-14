@@ -75,7 +75,8 @@ test("Make TODO drafts from the open GitHub issue card and never launches a work
   expect(await flows.runIssueImplementation(7)).toBe("Open the issue again to check permission to make a TODO.")
   const legacy = { number: 7, repo: REPO, title: "Tracker issue", state: "open" as const, author: "ada", issueBody: "Legacy", labels: [], comments: [] }
   await store.dispatch({ type: "card.upsert", actor: "user", card: { id: "issue-legacy", kind: "issue", title: legacy.title, status: "active", createdAt: 1, ordinal: 1, payload: legacy } }).isPersisted.promise
-  expect(await flows.runIssueImplementation(7)).toBe("Open the issue again to check permission to make a TODO.")
+  // The legacy tracker's card is another source, and says so rather than asking for a reopen that cannot satisfy the read (#3864).
+  expect(await flows.runIssueImplementation(7)).toBe("Open GitHub issue #7 before making a TODO. The open Smithers Cloud issue is a different source.")
   const github = { ...legacy, title: "Webhooks fail on 502", author: "ben", issueBody: "Webhooks fail on 502", source: "github" as const,
     htmlUrl: "https://github.com/owner/repo/issues/7", makeTodoAllowed: true, issueDigest: "a".repeat(64), todoAuthorizationScope: JSON.stringify([store.collections.identitySessions.get("identity"), ""]),
     comments: [{ author: "alice", commentBody: "retry at most 5 times", createdAt: null }] }
@@ -165,5 +166,71 @@ for (const change of ["scope", "revision", "server"] as const) test(`Make TODO r
     expect(await result).toBeDefined()
   }
   expect(drafts).toBe(0)
+  await store.dispose?.()
+})
+
+/*
+ * #3864. On the hosted app a person creates an issue with /issues.create and
+ * opens it: that card is a Smithers Cloud issue, while Make TODO drafts from
+ * the install's GitHub issue. The Cloud card's refusal names the source, so
+ * reopening the issue — which can never produce a GitHub card — is not
+ * offered as the way out, and no install read is attempted for it.
+ */
+test("a freshly created Cloud issue refuses Make TODO by source, and the install GitHub issue still drafts", async () => {
+  const { store, ctx } = await setup()
+  const installReads: string[] = []
+  const created = { number: 5, title: "Overnight-browser-20261014-0017", state: "open", body: "Reproduction", author: { login: "will" }, updated_at: "2026-10-14T00:17:00Z" }
+  let maintainer = true
+  const http: SeamContext["http"] = async (input, init) => {
+    const url = String(input)
+    if (url.startsWith("/api/issues/5")) {
+      installReads.push(url)
+      return Response.json({ issue_digest: "b".repeat(64), make_todo_allowed: maintainer,
+        issue: { number: 5, title: created.title, body: created.body, state: "open", user: { login: "will" } }, comments: [] })
+    }
+    if (url === "/api/repos/owner/repo/issues" && init?.method === "POST") return Response.json(created, { status: 201 })
+    if (url.startsWith("/api/repos/owner/repo/issues/5/comments")) return Response.json([])
+    if (url.startsWith("/api/repos/owner/repo/issues/5")) return Response.json(created)
+    return ctx.http(input, init)
+  }
+  const hosted: SeamContext = { ...ctx, http }
+  const drafted: unknown[] = []
+  const controller = createIssueFlowsController(hosted,
+    { requireBox: () => undefined, listWorkspaceWorkflows: async () => { throw Error("Make TODO reads no catalog") }, runWorkflow: async () => { throw Error("Make TODO launches nothing") } },
+    { draftFromIssue: async source => { drafted.push(source); return { value: "Drafted" } } })
+  const issues = createIssuesSeam(hosted)
+  expect(await issues.createIssue(created.title, REPO)).toBeUndefined()
+  const card = [...store.collections.cards.values()].find(row => row.kind === "issue" && row.payload.number === 5)
+  expect(card?.kind === "issue" && (card.payload.source ?? "smithers-cloud")).toBe("smithers-cloud")
+
+  // The card the person has open is the Cloud issue: the refusal says so, twice, and reads no install issue.
+  const refusal = `Open GitHub issue #5 before making a TODO. The open Smithers Cloud issue is a different source.`
+  expect(await controller.issueTodoRefusal(5, REPO)).toBe(refusal)
+  await issues.viewIssue(5, REPO)
+  expect(await controller.issueTodoRefusal(5, REPO)).toBe(refusal)
+  expect(await controller.runIssueImplementation(5, REPO)).toBe(refusal)
+  expect(installReads).toEqual([])
+  expect(drafted).toEqual([])
+
+  // The install's GitHub issue is the source Make TODO reads; its fences stay.
+  const github = { number: 5, repo: REPO, title: created.title, state: "open" as const, author: "will", issueBody: created.body, labels: [], comments: [],
+    source: "github" as const, htmlUrl: "https://github.com/owner/repo/issues/5", makeTodoAllowed: true, issueDigest: "b".repeat(64),
+    todoAuthorizationScope: JSON.stringify([store.collections.identitySessions.get("identity"), ""]) }
+  await store.dispatch({ type: "card.upsert", actor: "user", card: { id: "issue-github-owner/repo-5", kind: "issue", title: github.title, status: "active", createdAt: 9, ordinal: 9, payload: github } }).isPersisted.promise
+  expect(await controller.issueTodoRefusal(5, REPO)).toBeUndefined()
+  expect(await controller.runIssueImplementation(5, REPO)).toEqual({ value: "Drafted" })
+  expect(drafted).toHaveLength(1)
+  expect(installReads.length).toBeGreaterThan(0)
+
+  // A current server denial refuses, whatever the card retained.
+  maintainer = false
+  expect(await controller.issueTodoRefusal(5, REPO)).toBe("Only a maintainer can make a TODO from this issue.")
+
+  // Another repository owns neither card, so its #5 is neither authorized nor named as the Cloud source.
+  maintainer = true
+  await store.dispatch({ type: "workspaces.loaded", actor: "system", repoId: "other/repo", workspaces: [] }).isPersisted.promise
+  expect(await controller.issueTodoRefusal(5, "other/repo")).toBe("Open the issue again to check permission to make a TODO.")
+  expect(await controller.runIssueImplementation(5, "other/repo")).toBe("Open the issue again to check permission to make a TODO.")
+  expect(drafted).toHaveLength(1)
   await store.dispose?.()
 })

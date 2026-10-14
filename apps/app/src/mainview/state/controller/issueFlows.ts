@@ -69,7 +69,10 @@ export const createIssueFlowsController = (
     if ("error" in resolved) return resolved.error
     const issue = cards().find(card => card.kind === "issue" && card.payload.source === "github" && card.payload.repo === resolved.repo && card.payload.number === number)
     if (backgroundDraft && issue?.kind !== "issue") return undefined // The background read authorizes before writing a private Draft.
-    if (issue?.kind !== "issue") return "Open the issue again to check permission to make a TODO."
+    // Reopening a Smithers Cloud issue can never satisfy this read, so the refusal names the source instead of asking for it again.
+    if (issue?.kind !== "issue") return cards().some(card => card.kind === "issue" && card.payload.source !== "github" && card.payload.repo === resolved.repo && card.payload.number === number)
+      ? `Open GitHub issue #${number} before making a TODO. The open Smithers Cloud issue is a different source.`
+      : "Open the issue again to check permission to make a TODO."
     const scope = issueAuthorizationScope(ctx)
     const selection = ctx.store.session().activeRepoKey
     const validate = (payload: IssuePayload, digest?: string): string | undefined => {

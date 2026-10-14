@@ -4,7 +4,7 @@
  * the aggregator order.
  */
 import { Schema } from "effect"
-import { flow } from "./Declare"
+import { cloudBoxesHeld, flow } from "./Declare"
 import type { FlowEntry, Namespace } from "../registry"
 import type { CommandActions } from "./Declare"
 
@@ -24,6 +24,6 @@ export const branchesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry>
     },
     form: { fields: { operation: { hidden: true } }, args: payload => JSON.stringify(payload) },
     input: Schema.Struct({ repo: Schema.optional(Schema.String), operation: Schema.optional(Schema.Literal("workspace")) }),
-    handler: ({ repo, operation }) => operation === "workspace" && !actions.bootstrap?.capabilities.includes("install") && actions.design.enabled ? actions.listWorkspaces(repo) : actions.listBookmarks()
+    handler: ({ repo, operation }) => operation === "workspace" && cloudBoxesHeld(actions) ? actions.listWorkspaces(repo) : actions.listBookmarks()
   })
 ]

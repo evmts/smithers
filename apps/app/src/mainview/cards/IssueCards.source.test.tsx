@@ -96,3 +96,40 @@ test("an empty conversations list says conversations, not issues", () => {
   const issues = render(<IssueListCardBody card={{ ...card, payload: { ...card.payload, kind: "issue" } }} onRunCommand={() => {}} />)
   expect(issues.querySelector(".ghc-empty")?.textContent).toBe("No open issues in will/flows.")
 })
+
+/*
+ * #3864: the hosted card offered Make TODO's flow on a Smithers Cloud issue,
+ * whose source the flow refuses. Each half offers only its own source's acts.
+ */
+const navFlows = (host: HTMLElement) =>
+  [...host.querySelectorAll<HTMLElement>('nav[aria-label="Issue actions"] [data-flow]')].map(node => [node.dataset.flow, node.textContent])
+
+test("a Smithers Cloud issue card offers its own flows and never Make TODO's GitHub act", () => {
+  const card = CardSchema.parse({ ...base, kind: "issue", payload: {
+    repo: "will/flows", number: 5, title: "Overnight browser", source: "smithers-cloud",
+    state: "open", author: "will", issueBody: "Details", labels: [], comments: []
+  } })
+  if (card.kind !== "issue") throw Error("Wrong card")
+  const host = render(<IssueCardBody card={card} onRunCommand={() => { throw Error("Rendering runs nothing") }} />)
+  expect(navFlows(host)).toEqual([["issue.flows", "Issue flows"], ["issue.repro", "Research / repro"], ["issue.poc", "Proof of concept"], ["issue.add-flow", "Add flow"]])
+  expect(host.querySelector('[data-flow="todo.from-issue"]')).toBeNull()
+  expect(host.textContent).not.toContain("Implement")
+  // The acts it keeps stay reachable by keyboard.
+  for (const button of host.querySelectorAll<HTMLButtonElement>('nav[aria-label="Issue actions"] button')) {
+    button.focus()
+    expect(document.activeElement).toBe(button)
+  }
+})
+
+test("an install GitHub issue card keeps Make TODO and offers no Cloud-source flow", () => {
+  const card = CardSchema.parse({ ...base, kind: "issue", payload: {
+    repo: "will/flows", number: 5, title: "Overnight browser", source: "github", htmlUrl: "https://github.com/will/flows/issues/5",
+    state: "open", author: "will", issueBody: "Details", labels: [], comments: [], makeTodoAllowed: true, issueDigest: "a".repeat(64)
+  } })
+  if (card.kind !== "issue") throw Error("Wrong card")
+  const open = render(<IssueCardBody card={card} onRunCommand={() => { throw Error("Rendering runs nothing") }} />)
+  expect(navFlows(open)).toEqual([["todo.from-issue", "Make TODO"]])
+  // A closed GitHub issue drafts nothing, so it offers nothing.
+  const closed = render(<IssueCardBody card={{ ...card, payload: { ...card.payload, state: "closed" } }} onRunCommand={() => { throw Error("Rendering runs nothing") }} />)
+  expect(navFlows(closed)).toEqual([])
+})

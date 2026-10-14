@@ -245,3 +245,25 @@ export const CodePosition = Schema.Struct({
   column: Schema.Number,
   repo: Schema.optional(Schema.String)
 })
+
+/**
+ * Whether this host serves the Smithers Cloud boxes a flow operation acts on.
+ *
+ * The retired `box.list` and `box.open` declared `runtime: ["cloud"]`, so the
+ * bootstrap's own capability was their door; #3434 folded them into `branches`
+ * and `branch` operations, whose one flow cannot declare a runtime for a
+ * subset of its union. The door moves into the handler unchanged: the `cloud`
+ * capability, never the design FIXTURE. An install serves its own
+ * branch-and-machine path instead (`controller/workflows.ts`
+ * `selectedWorkflowBinding`), and a composition with no bootstrap at all is
+ * the seeded design world.
+ *
+ * [#3865](https://github.com/smithersai/smithers/issues/3865): gating these on
+ * `design.enabled` refused every real box on the hosted app — which serves
+ * `cloud` with the fixture off — with "Branch unavailable", before
+ * `openWorkspace`'s own sign-in and scope fences could answer.
+ */
+export const cloudBoxesHeld = (actions: Pick<CommandActions, "bootstrap" | "design">): boolean =>
+  actions.bootstrap === undefined
+    ? actions.design.enabled
+    : !actions.bootstrap.capabilities.includes("install") && actions.bootstrap.capabilities.includes("cloud")

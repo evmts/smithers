@@ -587,7 +587,8 @@ describe("box.open public recovery doors", () => {
     const actionsFor = (actor: "user" | "smithers") => new Proxy({}, {
       get: (_target, property: string) => {
         if (property === "bootstrap") return { ...EVERYTHING, capabilities: EVERYTHING.capabilities.filter(x => x !== "install") }
-        if (property === "design") return { enabled: true }
+        // Production shape (#3865): a host that serves `cloud` has the design fixture OFF.
+        if (property === "design") return { enabled: false }
         if (property === "snapshot") return () => ({ surface: "chat", typing: false, hasConnectors: false, admin: false, signedOut })
         if (property === "repositoryFlows") return () => undefined
         if (property === "knownRepositories") return () => new Set(["o/r"])
