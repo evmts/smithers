@@ -8,6 +8,8 @@ import { createAppStore } from "../AppStore"
 import { memoryStorage, settle, waitFor } from "../TestFixtures"
 import type { SeamContext } from "./SeamContext"
 import { createTodoSeam, todoRequestRefusal, type DraftEntry, type TodoEntry, type TodoReceipt, type TodoTopics, type TodoSeamOptions } from "./TodoSeam"
+import { TODOS_PATH } from "@smthrs/rpc/TodoCommands"
+import { createOperationalFailureReporter } from "../OperationalFailures"
 import { IssueDraftRefused } from "./IssueTodoDraft"
 import type { TodoCard } from "@smthrs/rpc/TodoCard"
 import { fixtures } from "../../../../../../packages/rpc/test/fixtures/Todo"
@@ -1710,19 +1712,19 @@ describe("TodoSeam — a refused Commit names what refused it", () => {
       expect(h.draft().payload.request?.error).toBe("TODOs are not a door on this Smithers host (POST /api/todos answered 404).")
       expect(h.outcomes.at(-1)).toMatchObject({ status: "failed", detail: "TODOs are not a door on this Smithers host (POST /api/todos answered 404)." })
       const report = h.reports.at(-1)
-      expect(report?.scope).toBe("todo.request.todo_route_absent")
+      expect(report?.scope).toBe("todo.request.todo_route_absent POST /api/todos 404")
       expect(String((report?.error as Error).message)).toContain("POST /api/todos answered 404 (create, key ")
     } finally { h.close() }
   })
 
   test("the route family's gate says which door the host does not serve, not just that a feature is off", async () => {
-    const h = await harness(() => Promise.resolve(json({ code: "forbidden", class: "user", fault: "user", message: "feature not available" }, 403)))
+    const h = await harness(() => Promise.resolve(json({ code: "forbidden", class: "permission", fault: "user", message: "feature not available" }, 403)))
     try {
       await h.seam.newTodo({ text })
       expect(await h.seam.newTodo({ text, cardId: h.draft().id })).toEqual({ value: "Requested" })
       await waitFor(() => h.draft().payload.request?.state === "failed")
       expect(h.draft().payload.request?.error).toBe("TODOs are not available on this Smithers host (POST /api/todos answered 403).")
-      expect(h.reports.at(-1)?.scope).toBe("todo.request.feature_not_available")
+      expect(h.reports.at(-1)?.scope).toBe("todo.request.feature_not_available POST /api/todos 403")
     } finally { h.close() }
   })
 
@@ -1735,7 +1737,7 @@ describe("TodoSeam — a refused Commit names what refused it", () => {
       expect(h.draft().payload.request?.error).toBe(
         "The TODO request failed (POST /api/todos answered 503). Something on Smithers' side failed. Not your fault, and nothing your request could have changed."
       )
-      expect(h.reports.at(-1)?.scope).toBe("todo.request.todo_refused")
+      expect(h.reports.at(-1)?.scope).toBe("todo.request.todo_refused POST /api/todos 503")
     } finally { h.close() }
   })
 
@@ -1762,16 +1764,75 @@ describe("TodoSeam — a refused Commit names what refused it", () => {
 })
 
 test("a door that is not a TODO route does not claim TODOs are missing", () => {
-  expect(todoRequestRefusal("POST", "/api/terminals/terminal-A/commands", 404, undefined)).toEqual({
+  expect(todoRequestRefusal("POST", "/api/terminals/terminal-A/commands", 404, undefined, null)).toEqual({
     code: "todo_route_absent",
     sentence: "This Smithers host does not serve that door (POST /api/terminals/terminal-A/commands answered 404)."
   })
-  expect(todoRequestRefusal("POST", "/api/branches/main", 403, "feature not available")).toEqual({
+  expect(todoRequestRefusal("POST", "/api/branches/main", 403, "feature not available", "forbidden")).toEqual({
     code: "feature_not_available",
     sentence: "This Smithers host does not serve that door (POST /api/branches/main answered 403)."
   })
-  expect(todoRequestRefusal("POST", "/api/todos/12/answer", 404, undefined)).toEqual({
+  expect(todoRequestRefusal("POST", "/api/todos/12/answer", 404, undefined, null)).toEqual({
     code: "todo_route_absent",
     sentence: "TODOs are not a door on this Smithers host (POST /api/todos/12/answer answered 404)."
   })
+})
+
+/*
+ * The gate is classified the way every other upstream gate in this codebase is
+ * (@smthrs/rpc/UpstreamProse `isCloudScopeRefusal`): on plue's machine-readable
+ * verdict, with the sentence matched whole. `APIError.Code` is documented as
+ * always present and as the field clients branch on, so a 403 arriving without
+ * it, or with the sentence in different case, did NOT come from
+ * `middleware.FeatureFlagGate` — and may not be renamed after the TODO family.
+ */
+test("only plue's own forbidden verdict plus its exact sentence is the route-family gate", () => {
+  const gate = todoRequestRefusal("POST", TODOS_PATH, 403, "feature not available", "forbidden")
+  expect(gate).toEqual({
+    code: "feature_not_available",
+    sentence: "TODOs are not available on this Smithers host (POST /api/todos answered 403)."
+  })
+  // Surrounding whitespace is forgiven, because nothing reads the sentence untrimmed.
+  expect(todoRequestRefusal("POST", TODOS_PATH, 403, "  feature not available\n", "forbidden")).toEqual(gate)
+
+  for (
+    const [stated, verdict] of [
+      ["feature not available", null],
+      ["feature not available", "org_membership_required"],
+      ["Feature not available", "forbidden"],
+      ["feature not available for this repository", "forbidden"]
+    ] as ReadonlyArray<readonly [string, string | null]>
+  ) {
+    // Not the gate: the refusal keeps the words its author wrote, unrenamed.
+    expect(todoRequestRefusal("POST", TODOS_PATH, 403, stated, verdict)).toEqual({ code: "todo_refused", sentence: stated })
+  }
+  // A 403 with no words at all is still not the gate; it earns the shared verdict.
+  expect(todoRequestRefusal("POST", TODOS_PATH, 403, undefined, "forbidden").code).toBe("todo_refused")
+})
+
+/*
+ * The failure ring deduplicates on `[seam, lost, subject]` for 60 s
+ * (state/OperationalFailures.ts), so the classification alone is not a usable
+ * subject: two different refused doors would fold into one record and the
+ * second one's route would never reach a reader. The wire facts travel in the
+ * subject for exactly that reason.
+ */
+test("two different refused doors are two different reports, not one deduplicated line", async () => {
+  const h = await harness(() => Promise.resolve(new Response("404 page not found", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } })))
+  try {
+    await h.seam.newTodo({ text: "Verify the overnight queue" })
+    await h.seam.newTodo({ text: "Verify the overnight queue", cardId: h.draft().id })
+    await waitFor(() => h.draft().payload.request?.state === "failed")
+    await h.seam.applyTodoProjection(12, fixtures.failed.model)
+    await h.seam.amendTodo({ n: 12, text: "Another prompt" })
+    await waitFor(() => h.todo().payload.requests.some(request => request.state === "failed"))
+    const subjects = h.reports.map(report => report.scope)
+    expect(subjects).toEqual([
+      "todo.request.todo_route_absent POST /api/todos 404",
+      "todo.request.todo_route_absent PATCH /api/todos/12 404"
+    ])
+    const ring = createOperationalFailureReporter({ now: () => 1_000 })
+    for (const report of h.reports) ring.report("seam.failure", report.error, report.scope)
+    expect(ring.recent().map(record => record.subject)).toEqual(subjects)
+  } finally { h.close() }
 })

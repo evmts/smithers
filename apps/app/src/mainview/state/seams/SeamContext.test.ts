@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { refusalLead } from "@smthrs/rpc/RefusalCopy"
 import { refusalOf } from "@smthrs/rpc/Refusal"
-import { refusalWords, readErrorMessage, readGitHubRefusal } from "./SeamContext"
+import { FEATURE_NOT_AVAILABLE, isFeatureGateRefusal, refusalWords, readErrorMessage, readGitHubRefusal } from "./SeamContext"
 
 /*
  * §28.5: no debug string is ever visible to a user. An upstream's raw body is
@@ -86,5 +86,47 @@ describe("a refusal that is not the reader's to fix speaks in product words", ()
     const broken = await readGitHubRefusal(new Response(JSON.stringify({ message: "secondary: upstream EOF" }), { status: 502 }), "Reading pull requests failed (502)")
     expect(broken.line).not.toContain("upstream EOF")
     expect(broken.line.startsWith("Reading pull requests failed (502).")).toBe(true)
+  })
+})
+
+/*
+ * `middleware.FeatureFlagGate` writes HTTP 403 and plue's own envelope:
+ * `{"code":"forbidden","class":"permission","fault":"user","message":"feature
+ * not available"}` (`pkg/errors.WriteError`, `registry.go` `CodeForbidden`).
+ * `APIError.Code` is documented as always present and as the field clients
+ * branch on, and `isCloudScopeRefusal` (@smthrs/rpc/UpstreamProse) already
+ * classifies plue's sibling gate exactly that way: on the verdict, with the
+ * sentence matched WHOLE only because three gates share `forbidden`.
+ */
+describe("the route-family gate is classified on plue's verdict, never on English alone", () => {
+  test("the gate's own answer, and surrounding whitespace forgiven", () => {
+    expect(isFeatureGateRefusal(403, FEATURE_NOT_AVAILABLE, "forbidden")).toBe(true)
+    expect(isFeatureGateRefusal(403, "  feature not available\n", "forbidden")).toBe(true)
+  })
+
+  test("a 403 carrying no verdict never classifies, whatever English it holds", () => {
+    expect(isFeatureGateRefusal(403, FEATURE_NOT_AVAILABLE, undefined)).toBe(false)
+    expect(isFeatureGateRefusal(403, FEATURE_NOT_AVAILABLE, null)).toBe(false)
+    expect(isFeatureGateRefusal(403, FEATURE_NOT_AVAILABLE, "")).toBe(false)
+  })
+
+  test("the other refusals that share the forbidden verdict are not this gate", () => {
+    for (const message of ["insufficient token scope", "repository-bound token cannot access resources outside its repository", "write access to this repository is required"]) {
+      expect(isFeatureGateRefusal(403, message, "forbidden")).toBe(false)
+    }
+    expect(isFeatureGateRefusal(403, FEATURE_NOT_AVAILABLE, "org_membership_required")).toBe(false)
+  })
+
+  test("the sentence is matched whole and in the case the gate writes it", () => {
+    for (const message of ["Feature not available", "FEATURE NOT AVAILABLE", "feature not available for this repository", "this feature is not available"]) {
+      expect(isFeatureGateRefusal(403, message, "forbidden")).toBe(false)
+    }
+  })
+
+  test("only a 403 is the gate, and a missing message is never it", () => {
+    for (const status of [401, 404, 429, 500, null]) {
+      expect(isFeatureGateRefusal(status, FEATURE_NOT_AVAILABLE, "forbidden")).toBe(false)
+    }
+    expect(isFeatureGateRefusal(403, undefined, "forbidden")).toBe(false)
   })
 })

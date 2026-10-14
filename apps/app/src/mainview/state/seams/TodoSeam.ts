@@ -59,20 +59,28 @@ const projectedLine = (line: { readonly message: string }): string => line.messa
  *   came from the router instead: `404 page not found` as `text/plain`, which
  *   is plumbing with no contract with this product (§28.5). It is the one case
  *   no input and no retry can fix — this host serves no TODOs.
- * - The route-family gate refused it (`isFeatureGateRefusal`): the host serves
- *   TODOs, but its feature policy has the family switched off.
+ * - The route-family gate refused it (`isFeatureGateRefusal`, matched on plue's
+ *   own verdict): the host serves TODOs, but its feature policy has the family
+ *   switched off.
  * - Anything else that answered without words of its own, which keeps the
  *   shared verdict for its status and now also names the route and status.
  *
  * `code` is the app's own classification, reported for diagnostics beside the
  * request's idempotency key; it is never shown to a person and never confused
- * with a code the wire stated.
+ * with a code the wire stated — `stated` and `verdict` are the wire's own
+ * `message` and `code`.
  */
 export const todoRequestRefusal = (
   method: string,
   route: string,
   status: number,
-  stated: string | undefined
+  stated: string | undefined,
+  /*
+   * Required, not optional: the gate is told apart by the verdict, so a call
+   * that could forget it would silently classify plue's gate as an ordinary
+   * refusal — the misclassification this function exists to remove.
+   */
+  verdict: string | null
 ): { readonly code: "todo_route_absent" | "feature_not_available" | "todo_refused"; readonly sentence: string } => {
   const wire = `${method} ${route} answered ${status}`
   /*
@@ -81,7 +89,7 @@ export const todoRequestRefusal = (
    * the family the route belongs to rather than claiming TODOs every time.
    */
   const family = route.startsWith(TODOS_PATH) ? "TODOs" : undefined
-  if (isFeatureGateRefusal(status, stated)) {
+  if (isFeatureGateRefusal(status, stated, verdict)) {
     return {
       code: "feature_not_available",
       sentence: family === undefined
@@ -489,7 +497,8 @@ export const createTodoSeam = (ctx: SeamContext, options: TodoSeamOptions = {}) 
           if (todo) await write({ ...todo, payload: { ...todo.payload, answerDraft: String(request.body.answer), answeredBy: result.answered_by } })
         }
         const stated = typeof result.message === "string" && result.message.trim() !== "" ? result.message : undefined
-        const refusal = todoRequestRefusal(method, route, response.status, stated)
+        const verdict = typeof result.code === "string" ? result.code : null
+        const refusal = todoRequestRefusal(method, route, response.status, stated, verdict)
         const fault = refusal.code === "todo_refused" && stated !== undefined &&
             (result.class === "infra" || result.class === "capacity")
           ? `${refusal.sentence} Not your fault.`
@@ -500,10 +509,17 @@ export const createTodoSeam = (ctx: SeamContext, options: TodoSeamOptions = {}) 
          * reader needs, and nothing a person reads: the classification, the
          * route, the status and the request's own idempotency key. A refusal
          * plue authored a sentence for is already explained and is not reported.
+         *
+         * The wire facts are part of the SUBJECT, not only of the message: the
+         * failure ring keys its 60-second deduplication on `[seam, lost,
+         * subject]` (state/OperationalFailures.ts), so a classification alone
+         * would fold a refused `POST /api/todos` and a refused
+         * `POST /api/branches/<branch>` into one record and keep only the
+         * first one's route. Two different doors are two different records.
          */
         if (stated === undefined || refusal.code === "feature_not_available") {
           ctx.report?.(
-            `todo.request.${refusal.code}`,
+            `todo.request.${refusal.code} ${method} ${route} ${response.status}`,
             new Error(`${method} ${route} answered ${response.status} (${request.operation}, key ${request.key})`)
           )
         }

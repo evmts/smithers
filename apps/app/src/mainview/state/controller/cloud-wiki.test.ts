@@ -654,7 +654,7 @@ describe("attachment bytes read under one account", () => {
 })
 
 describe("Save to wiki on a host whose Wiki is switched off", () => {
-  const gated = async (status: number, message: string) => {
+  const gated = async (status: number, message: string, body?: unknown) => {
     const store = await createAppStore({ kind: "localStorage", storage: memory() })
     await signIn(store)
     await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: repo, org: "owner", name: "repo", ownerKind: "user", head: null }] }).isPersisted.promise
@@ -665,7 +665,8 @@ describe("Save to wiki on a host whose Wiki is switched off", () => {
       const path = new URL(String(input), "http://test").pathname
       if (init?.method === "POST" && path.endsWith("/wiki")) {
         writes.push(path)
-        return Response.json({ code: "forbidden", class: "user", fault: "user", message }, { status })
+        // plue's own gate body, field for field (pkg/errors `WriteError`, registry `CodeForbidden`).
+        return Response.json(body ?? { code: "forbidden", class: "permission", fault: "user", message }, { status })
       }
       if (path.endsWith("/navigation/index")) return Response.json({ pages: [], folders: [], tags: [] })
       return new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode(": connected\n\n")) } }), { headers: { "content-type": "text/event-stream" } })
@@ -688,6 +689,50 @@ describe("Save to wiki on a host whose Wiki is switched off", () => {
     expect(reported).toHaveLength(1)
     expect(reported[0]?.subject).toMatch(/^answer-[0-9a-f-]+ 403 forbidden$/)
     expect(reported[0]?.message).toContain("CloudWikiError: The Wiki is not available on this Smithers host.")
+  })
+
+  /*
+   * Opening the saved page is a second act against a second route, and a
+   * refused read cannot un-create the page the POST already created. ROOT
+   * could not confirm page creation from the screen, so this pins which part
+   * of the door reports what: the request stays `completed` with no error, the
+   * refused read-back is a toast refusal and nothing else, and no failed-save
+   * line is invented for a page that exists.
+   */
+  test("a page the Wiki created stays saved when reading it back is refused", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memory() })
+    await signIn(store)
+    await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: repo, org: "owner", name: "repo", ownerKind: "user", head: null }] }).isPersisted.promise
+    await store.dispatch({ type: "repo.selected", actor: "user", id: repo }).isPersisted.promise
+    const writes: Array<{ slug: string }> = []
+    const reads: string[] = []
+    const settlements: unknown[] = []
+    const services: AppServices = { fetchImpl: async (input, init) => {
+      const path = new URL(String(input), "http://test").pathname
+      if (init?.method === "POST" && path.endsWith("/wiki")) {
+        const body = JSON.parse(String(init.body)) as { slug: string; title: string }
+        writes.push(body)
+        return Response.json({ id: 42, slug: body.slug, title: body.title, path: `${body.title}.md`, revision: 1,
+          author: { id: 1, login: "will" }, created_at: "2026-10-05T00:00:00Z", updated_at: "2026-10-05T00:00:00Z" })
+      }
+      if (path.endsWith("/document")) { reads.push(path); return Response.json({ message: "internal error" }, { status: 500 }) }
+      if (path.endsWith("/navigation/index")) return Response.json({ pages: [], folders: [], tags: [] })
+      return new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode(": connected\n\n")) } }), { headers: { "content-type": "text/event-stream" } })
+    } }
+    const ctx = createControllerContext(store, silentAgent, services)
+    ctx.withToast = async (_key, _title, _done, work) => { const result = await work(); settlements.push(result); return result }
+    ctx.resolveToast = () => {}
+    cleanup.push(() => ctx.dispose())
+    const wiki = createCloudWikiController(ctx, () => 1)
+    expect(await wiki.saveWikiAnswer("Queue guide", "# Answer")).toEqual({ value: "Requested" })
+    await until(() => settlements.some(settlement => typeof settlement === "string"))
+    expect(reads).toEqual([`/api/repos/owner/repo/wiki/${writes[0]!.slug}/document`])
+    expect(store.session().wikiSaves?.[0]).toMatchObject({ state: "completed", name: "Queue guide" })
+    expect(store.session().wikiSaves?.[0]?.error).toBeUndefined()
+    // The read's own refusal, and no second sentence claiming the save failed.
+    expect(settlements.filter(settlement => typeof settlement === "string"))
+      .toEqual(["Reading or saving this Wiki page failed (500). That's a bug in Smithers, not something you did."])
+    expect(ctx.failures.recent().filter(failure => failure.seam === "wiki.save")).toEqual([])
   })
 
   test("a refusal the Wiki handler wrote itself still reads in the handler's own words", async () => {

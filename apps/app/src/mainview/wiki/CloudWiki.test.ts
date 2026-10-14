@@ -116,7 +116,7 @@ describe("the wiki spaces transport (#1922)", () => {
     const calls: string[] = []
     const transport = makeCloudWikiTransport({ baseUrl: "", http: async (url) => {
       calls.push(url)
-      return Response.json({ code: "forbidden", class: "user", fault: "user", message: "feature not available" }, { status: 403 })
+      return Response.json({ code: "forbidden", class: "permission", fault: "user", message: "feature not available" }, { status: 403 })
     } })
     const result = await Effect.runPromise(Effect.result(
       transport.create("owner/repo", "public", { title: "Overnight verification queue guide", body: "# Answer", slug: "answer-1", path: "Overnight verification queue guide.md" })
@@ -131,9 +131,34 @@ describe("the wiki spaces transport (#1922)", () => {
     }
   })
 
+  /*
+   * `APIError.Code` is documented as always on the wire and as the field
+   * clients branch on, and this codebase classifies every other upstream gate
+   * on that verdict (@smthrs/rpc/UpstreamProse `isCloudScopeRefusal`). A 403
+   * that carries no verdict, or whose sentence differs by case, came from
+   * something other than `middleware.FeatureFlagGate` and may not be renamed
+   * after the Wiki.
+   */
+  test("a 403 that is not plue's gate verdict is never renamed after the Wiki", async () => {
+    for (
+      const body of [
+        { class: "permission", fault: "user", message: "feature not available" },
+        { code: "org_membership_required", class: "permission", fault: "user", message: "feature not available" },
+        { code: "forbidden", class: "permission", fault: "user", message: "Feature not available" }
+      ]
+    ) {
+      const transport = makeCloudWikiTransport({ baseUrl: "", http: async () => Response.json(body, { status: 403 }) })
+      const result = await Effect.runPromise(Effect.result(transport.create("owner/repo", "public", { title: "T", body: "", slug: "s", path: "T.md" })))
+      expect(result._tag).toBe("Failure")
+      if (result._tag === "Failure") {
+        expect((result.failure as { sentence?: string }).sentence).not.toBe(WIKI_FEATURE_UNAVAILABLE)
+      }
+    }
+  })
+
   test("a 403 the handler itself wrote keeps the handler's own words, never the Wiki's gate sentence", async () => {
     const transport = makeCloudWikiTransport({ baseUrl: "", http: async () =>
-      Response.json({ code: "forbidden", class: "user", fault: "user", message: "write access to this repository is required" }, { status: 403 }) })
+      Response.json({ code: "forbidden", class: "permission", fault: "user", message: "write access to this repository is required" }, { status: 403 }) })
     const result = await Effect.runPromise(Effect.result(transport.create("owner/repo", "public", { title: "T", body: "", slug: "s", path: "T.md" })))
     expect(result._tag).toBe("Failure")
     if (result._tag === "Failure") expect((result.failure as { sentence?: string }).sentence).toBe("write access to this repository is required")

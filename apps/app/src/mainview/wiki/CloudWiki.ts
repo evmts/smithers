@@ -230,7 +230,7 @@ export const makeCloudWikiTransport = (
         if (!value.ok) {
           const failure = await cloudFailure(value, `Reading or saving this Wiki page failed (${value.status}).`)
           throw new CloudWikiError({
-            sentence: isFeatureGateRefusal(value.status, failure.refusal.message) ? WIKI_FEATURE_UNAVAILABLE : failure.error,
+            sentence: isFeatureGateRefusal(value.status, failure.refusal.message, failure.code) ? WIKI_FEATURE_UNAVAILABLE : failure.error,
             status: value.status,
             ...(failure.code === null ? {} : { code: failure.code })
           })

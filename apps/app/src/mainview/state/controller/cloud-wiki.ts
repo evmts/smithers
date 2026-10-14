@@ -740,10 +740,16 @@ export const createCloudWikiController = (ctx: ControllerContext, nextOrdinal: (
          * reads: which status and which code the Wiki route answered, against
          * this request's own slug. Without it a host whose Wiki is switched off
          * and a page that genuinely conflicted are the same line in the ring.
+         *
+         * Reported for EVERY failed save, including the one the transport
+         * never classified. "Could not save to Wiki." is the only sentence
+         * here that names no cause, so it is the one a reader cannot diagnose
+         * from the screen — leaving it out of the ring would make the least
+         * explained failure the only invisible one.
          */
-        if (error instanceof CloudWikiError) {
-          ctx.failures.report("wiki.save", error, `${slug} ${error.status ?? "no status"} ${error.code ?? "no code"}`)
-        }
+        ctx.failures.report("wiki.save", error, error instanceof CloudWikiError
+          ? `${slug} ${error.status ?? "no status"} ${error.code ?? "no code"}`
+          : `${slug} unclassified`)
         await saveRequest({ ...request, state: "failed", error: message })
         return message
       }

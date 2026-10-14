@@ -206,12 +206,18 @@ export const issueAuthorizationScope = (ctx: SeamContext): string =>
   JSON.stringify([ctx.store.collections.identitySessions.get("identity"), ctx.issueAuthorizationScope?.() ?? ""])
 
 /**
- * The exact body the backend's route-family gate writes
- * (`packages/backend/internal/middleware/feature_flag.go`): HTTP 403 and
- * `{"message":"feature not available"}`. That file states the message is the
- * string clients branch on, and this is the branch.
+ * The exact sentence the backend's route-family gate writes
+ * (`packages/backend/internal/middleware/feature_flag.go`), beside the verdict
+ * `WriteError` always puts on the wire with it: HTTP 403,
+ * `{"code":"forbidden","class":"permission","fault":"user","message":"feature
+ * not available"}`. The gate's file states the sentence is fixed; the
+ * `APIError` field comment states the verdict is always present and is the
+ * field clients branch on.
  */
 export const FEATURE_NOT_AVAILABLE = "feature not available"
+
+/** plue's verdict for all three of its `forbidden` gates (pkg/errors/registry.go `CodeForbidden`). */
+const FORBIDDEN_CODE = "forbidden"
 
 /**
  * Whether a refused response is that gate rather than the handler behind it.
@@ -221,6 +227,19 @@ export const FEATURE_NOT_AVAILABLE = "feature not available"
  * that recognizes the gate says which of ITS doors the host does not serve, and
  * says it without claiming the person did anything wrong: no input, no retry
  * and no other repository changes the answer.
+ *
+ * Classified the way this codebase classifies every other upstream gate
+ * (@smthrs/rpc/UpstreamProse `isCloudScopeRefusal`): on plue's machine-readable
+ * verdict, with the sentence matched WHOLE only to tell this gate's `forbidden`
+ * apart from the other two that share that verdict. A body carrying no verdict
+ * never classifies, whatever English it holds, and the sentence is never
+ * case-folded — a 403 that merely says "Feature not available" came from
+ * something other than this gate, and renaming its refusal after the Wiki or
+ * the TODO family would be a guess dressed as a fact.
  */
-export const isFeatureGateRefusal = (status: number | null, message: string | undefined): boolean =>
-  status === 403 && message?.trim().toLowerCase() === FEATURE_NOT_AVAILABLE
+export const isFeatureGateRefusal = (
+  status: number | null,
+  message: string | undefined,
+  code: string | null | undefined
+): boolean =>
+  status === 403 && code === FORBIDDEN_CODE && message?.trim() === FEATURE_NOT_AVAILABLE
