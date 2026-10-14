@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -85,4 +86,68 @@ type fullPoolRuntime struct{ deadPrimaryRuntime }
 
 func (*fullPoolRuntime) Capabilities() workspaceapi.WorkspaceCapabilities {
 	return workspaceapi.WorkspaceCapabilities{}
+}
+
+// A dispatched agent turn names no workspace size: CreateAgentWorkspace builds
+// its CreateWorkspaceInput without Resources, because a branch machine's size
+// belongs to the branch, not the turn. The create path's size check resolved
+// an unnamed size through resolveWorkspaceResources, so "no preference" read
+// as "exactly this deployment's default" and any branch machine of another
+// size answered
+//
+//	workspace <id> exists with different resources; delete it or choose another name
+//
+// A branch machine is the only machine its repository has, so neither option
+// exists. Production 2026-10-14 10:31Z, API 464674fb: workspace 1d7209c4 was
+// running at 1 vCPU — the only shape the full fleet could place — and session
+// aaf35487's turn was refused by this and nothing else. smithers#3877.
+func TestAnUnsizedTurnTakesTheBranchMachineAsItIs(t *testing.T) {
+	sized := sizedWorkspace("container", 1, 4096, 32768)
+	service := newWorkspaceServiceForTests(resourceIdentityStore(), WithWorkspaceResources(4096, 2))
+
+	require.NoError(t, service.refuseJoinedMachineSizeMismatch(sized, CreateWorkspaceInput{JoinsAnyMachineSize: true}),
+		"a dispatched turn joins the machine the branch has")
+
+	// Everything else keeps the contract exactly as it was.
+	var api *pkgerrors.APIError
+	require.ErrorAs(t, service.refuseJoinedMachineSizeMismatch(sized, CreateWorkspaceInput{}), &api,
+		"an ordinary create that names no size still gets this deployment's default, or a refusal")
+	assert.Equal(t, 409, api.Status)
+	require.ErrorAs(t, service.refuseJoinedMachineSizeMismatch(sized, CreateWorkspaceInput{Resources: WorkspaceResources{CPUs: resourcePtr(4)}}), &api,
+		"a request that names a size never silently reuses another")
+	require.NoError(t, service.refuseJoinedMachineSizeMismatch(sized, CreateWorkspaceInput{Resources: WorkspaceResources{CPUs: resourcePtr(1)}}),
+		"naming the size the machine already has is no mismatch")
+}
+
+// The flag above is only worth anything if the dispatch path sets it, so
+// assert the wiring against a real sized branch machine rather than the
+// helper alone. The attach that follows fails on the absent session row; the
+// size check is what must not be the refusal.
+func TestAgentWorkspaceJoinIsNotRefusedByTheBranchMachinesSize(t *testing.T) {
+	f := newBranchMachineFixture(t)
+	const branch = "sized/main"
+	sized := f.machine(t, db.CreateWorkspaceParams{
+		TargetBookmark: branch, Status: "running",
+		VcpuCount: pgtype.Int4{Int32: 1, Valid: true},
+		MemoryMb:  pgtype.Int4{Int32: 4096, Valid: true},
+		DiskMb:    pgtype.Int4{Int32: 32768, Valid: true},
+	})
+	f.exec(t, `UPDATE workspaces SET vm_id='vm-sized' WHERE id=$1`, sized.ID)
+
+	const session = "11111111-1111-4111-8111-111111111111"
+	f.exec(t, `INSERT INTO agent_sessions (id, repository_id, user_id, status) VALUES ($1,$2,$3,'active')`,
+		session, f.repo, f.user)
+
+	runtime := &fullPoolRuntime{deadPrimaryRuntime{state: workspaceapi.WorkspaceRunning}}
+	svc := f.service(nil, WithWorkspaceRuntime(runtime), WithWorkspaceResources(4096, 2))
+
+	_, err := svc.CreateAgentWorkspace(context.Background(), CreateAgentWorkspaceInput{
+		RepositoryID: f.repo, UserID: f.user, SourceBookmark: branch, SessionID: session,
+	})
+	if err != nil {
+		require.NotContains(t, err.Error(), "exists with different resources",
+			"a dispatched turn names no size, so the branch machine's own size cannot refuse it")
+		require.NotContains(t, err.Error(), "agent session binding denied",
+			"the fixture must reach the size check it is about")
+	}
 }

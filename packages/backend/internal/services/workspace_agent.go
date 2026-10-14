@@ -72,6 +72,8 @@ func (s *WorkspaceService) CreateAgentWorkspace(ctx context.Context, input Creat
 	row, err := s.CreateWorkspace(ctx, CreateWorkspaceInput{
 		RepositoryID: input.RepositoryID, UserID: input.UserID,
 		RepoOwner: input.RepoOwner, RepoName: input.RepoName, SourceBookmark: input.SourceBookmark,
+		// The turn runs on the branch's machine as the branch sized it.
+		JoinsAnyMachineSize: true,
 	})
 	if err != nil {
 		return AgentWorkspaceResult{}, err

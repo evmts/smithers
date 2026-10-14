@@ -205,6 +205,15 @@ func (s *WorkspaceService) resolveWorkspaceResources(r WorkspaceResources) Works
 	}
 	return r
 }
+// refuseJoinedMachineSizeMismatch is the create path's size check. A caller
+// that joins any size skips it; see CreateWorkspaceInput.JoinsAnyMachineSize.
+func (s *WorkspaceService) refuseJoinedMachineSizeMismatch(row db.Workspace, input CreateWorkspaceInput) error {
+	if input.JoinsAnyMachineSize {
+		return nil
+	}
+	return s.refuseWorkspaceResourceMismatch(row, input.Resources)
+}
+
 func (s *WorkspaceService) refuseWorkspaceResourceMismatch(row db.Workspace, requested WorkspaceResources) error {
 	actual := s.resolveWorkspaceResources(workspaceResourcesResponse(row))
 	desired := s.resolveWorkspaceResources(requested)

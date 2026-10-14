@@ -690,7 +690,7 @@ func (s *WorkspaceService) CreateWorkspace(ctx context.Context, input CreateWork
 		if err != nil {
 			return WorkspaceResponse{}, err
 		}
-		if err := s.refuseWorkspaceResourceMismatch(workspace, input.Resources); err != nil {
+		if err := s.refuseJoinedMachineSizeMismatch(workspace, input); err != nil {
 			return WorkspaceResponse{}, err
 		}
 		if err = s.withWorkspaceMutationAuthority(ctx, workspace, input.UserID, func(authCtx context.Context) error {
@@ -814,7 +814,7 @@ func (s *WorkspaceService) CreateWorkspaceAsync(ctx context.Context, input Creat
 		if err != nil {
 			return WorkspaceResponse{}, err
 		}
-		if err := s.refuseWorkspaceResourceMismatch(workspace, input.Resources); err != nil {
+		if err := s.refuseJoinedMachineSizeMismatch(workspace, input); err != nil {
 			return WorkspaceResponse{}, err
 		}
 		if err = s.withWorkspaceMutationAuthority(ctx, workspace, input.UserID, func(authCtx context.Context) error {
