@@ -28,6 +28,30 @@ func retryDelay(generation int64) time.Duration {
 	return min(time.Second<<min(generation-1, 6), time.Minute)
 }
 
+// chatTurnResourceKind attributes every sandbox allocation a turn makes to
+// the turn that asked for it.
+//
+// Nothing did, until now. The sandbox provider stamps each controller
+// mutation with the resource link its caller put on the context, and the
+// product's other owners set one: a workspace's create carries
+// resource_kind=workspace with the box's id, so the controller's own refusal
+// line names the box that is waiting. A chat turn's create carried no link at
+// all, so its refusals arrived anonymous — of the 589 "sandbox creation
+// deferred: the fleet is full" lines the controller wrote between 12:28:00Z
+// and 12:35:00Z on 2026-10-14, around production turn f413964a, 441 name the
+// workspace waiting and 7 a snapshot bake, while 141 name nothing at all, and
+// no record that outlives the turn says which turn any of those 141 was for. That is why that turn's first generation cannot be
+// explained: it spent 300 s in sandbox_create, was interrupted for making no
+// progress, and was recorded as a host that stalled, and no evidence that
+// survives the turn says whether the fleet ever answered its create.
+//
+// The link is attribution only: the kind is the controller's own lower
+// snake case, the id is the turn's, and the fleet already stores both on the
+// instance row for every other owner. It carries no prompt, no token and no
+// person.
+
+const chatTurnResourceKind = "chat_turn"
+
 // codeHostNoCapacity names a turn whose host could not be launched because no
 // sandbox host in the fleet had room for it. It is kept apart from
 // host_failed: nothing of the turn ran, so the refusal is a deferral and not
@@ -280,6 +304,10 @@ func (d *Dispatcher) runOne(parent context.Context, candidate Candidate) {
 	ctx, cancel := context.WithCancel(parent)
 	progress := newTurnProgress(grant, d.logger)
 	ctx = ports.WithChatProgress(ctx, progress.observe)
+	// Every sandbox this attempt asks the fleet for is this turn's, including
+	// the ones the fleet refuses: a refusal that names the turn is the only
+	// record of a launch that leaves nothing behind.
+	ctx = sandbox.WithResourceLink(ctx, chatTurnResourceKind, grant.TurnID)
 	ports.ReportChatProgress(ctx, ports.ChatStageDispatch, "")
 	d.mu.Lock()
 	d.running[candidate.TurnID] = runningTurn{generation: grant.Generation, cancel: cancel}
