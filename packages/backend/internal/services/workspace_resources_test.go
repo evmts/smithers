@@ -212,26 +212,48 @@ func TestApplyWorkspaceResourcesOverridesOnlyPersistedFields(t *testing.T) {
 	assert.Nil(t, req.RootfsSizeMB)
 }
 
+// resourceIdentityQuerier is the mock querier plus the repository identity
+// every sized workspace spec resolves its source from. A spec for a row that
+// names a repository is only complete with that slug, so the narrow double
+// must answer it (smithers#3867).
+type resourceIdentityQuerier struct{ *mockWorkspaceQuerier }
+
+func (q *resourceIdentityQuerier) GetRepoOwnerSlugAndNameByID(context.Context, int64) (db.GetRepoOwnerSlugAndNameByIDRow, error) {
+	return db.GetRepoOwnerSlugAndNameByIDRow{OwnerSlug: "alice", RepoName: "demo"}, nil
+}
+
+func resourceIdentityStore() WorkspaceQuerier {
+	return &resourceIdentityQuerier{mockWorkspaceQuerier: &mockWorkspaceQuerier{}}
+}
+
 func TestRuntimeWorkspaceSpecCarriesPersistedSize(t *testing.T) {
 	t.Parallel()
-	sized := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceRuntime(&resourceRuntime{caps: workspaceapi.WorkspaceCapabilities{Resources: true, ResourcesDisk: true}}))
+	sized := newWorkspaceServiceForTests(resourceIdentityStore(), WithWorkspaceRuntime(&resourceRuntime{caps: workspaceapi.WorkspaceCapabilities{Resources: true, ResourcesDisk: true}}))
 	spec, err := sized.runtimeWorkspaceSpec(context.Background(), sizedWorkspace("container", 4, 8192, 20480))
 	require.NoError(t, err)
 	assert.Equal(t, &workspaceapi.WorkspaceResources{VCPUCount: 4, MemoryMB: 8192, DiskMB: 20480}, spec.Resources)
+	require.NotNil(t, spec.Source, "a spec for a row that names a repository carries its source")
+	assert.Equal(t, "alice/demo", spec.Source.Repository)
 
 	unsized, err := sized.runtimeWorkspaceSpec(context.Background(), sizedWorkspace("container", 0, 0, 0))
 	require.NoError(t, err)
 	assert.Nil(t, unsized.Resources)
 
-	noDisk := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceRuntime(&resourceRuntime{caps: workspaceapi.WorkspaceCapabilities{Resources: true}}))
+	noDisk := newWorkspaceServiceForTests(resourceIdentityStore(), WithWorkspaceRuntime(&resourceRuntime{caps: workspaceapi.WorkspaceCapabilities{Resources: true}}))
 	_, err = noDisk.runtimeWorkspaceSpec(context.Background(), sizedWorkspace("container", 0, 0, 32768))
 	assert.ErrorContains(t, err, "this workspace runtime does not accept resources.disk_gib")
 	_, err = noDisk.runtimeWorkspaceSpec(context.Background(), sizedWorkspace("container", 4, 8192, 0))
 	require.NoError(t, err)
 
-	plain := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceRuntime(&resourceRuntime{}))
+	plain := newWorkspaceServiceForTests(resourceIdentityStore(), WithWorkspaceRuntime(&resourceRuntime{}))
 	_, err = plain.runtimeWorkspaceSpec(context.Background(), sizedWorkspace("container", 4, 0, 0))
 	assert.ErrorContains(t, err, "this workspace runtime does not accept resources")
+
+	// A store that cannot resolve repositories is a real refusal, not the
+	// shape of an ordinary spec: keep it reachable and distinct.
+	anonymous := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceRuntime(&resourceRuntime{caps: workspaceapi.WorkspaceCapabilities{Resources: true, ResourcesDisk: true}}))
+	_, err = anonymous.runtimeWorkspaceSpec(context.Background(), sizedWorkspace("container", 4, 8192, 20480))
+	assert.ErrorContains(t, err, "workspace store cannot resolve repositories")
 }
 
 type resourceRuntime struct {

@@ -66,7 +66,7 @@ func TestRuntimeWorkspaceBootsItsPinnedImage(t *testing.T) {
 			if tc.resolver != nil {
 				options = append(options, WithWorkspaceEnvironmentImages(tc.resolver))
 			}
-			service := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, options...)
+			service := newWorkspaceServiceForTests(resourceIdentityStore(), options...)
 			row := sampleDBWorkspace("ws-lane")
 			row.Status, row.VmID, row.Kind, row.EnvironmentClosureHash = "starting", "", tc.kind, tc.closure
 			_, err := service.ensureRuntimeWorkspaceRunningLocked(ctx, row, row.UserID)
