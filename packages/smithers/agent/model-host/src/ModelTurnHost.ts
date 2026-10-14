@@ -20,6 +20,8 @@ import { composeAgentInstructions } from "@smthrs/rpc/AgentContext"
 import { cutModelCredential, modelCredentialParts } from "@smthrs/rpc/ConfiguredModel"
 import type { AgentChatMessage, AgentTurnFrame, AgentTurnUsage, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import { Effect, Stream } from "effect"
+import { createHostDiagnostics } from "./HostDiagnostics.ts"
+import type { HostDiagnostics } from "./HostDiagnostics.ts"
 
 /**
  * Provider route and output controls for one model turn.
@@ -217,7 +219,8 @@ export const runModelTurn = <E>(
   turn: StartAgentTurnRequest,
   options: ModelTurnOptions,
   write: FrameWriter<E>,
-  host?: HostLeg
+  host?: HostLeg,
+  diagnostics: HostDiagnostics = createHostDiagnostics()
 ): Effect.Effect<HeldToolCalls | undefined, Model.ModelFailure | ModelError | E> => {
   const text = new StreamingCredentialCutter(options.credential)
   const reasoning = new StreamingCredentialCutter(options.credential)
@@ -299,13 +302,27 @@ export const runModelTurn = <E>(
         return Effect.void
     }
   }
-  return Stream.runForEach(model.stream(providerRequest(turn, options)), visit).pipe(
+  // The gap this closes: an upstream response can complete while the guest
+  // consumes none of it. Counting what this process actually took off the
+  // stream separates a provider that did not answer from a stream whose bytes
+  // never reached the application.
+  let consumed = 0
+  let characters = 0
+  const observe = (event: ModelEvent.ModelEvent): Effect.Effect<void, ModelError | E> => {
+    consumed += 1
+    if (consumed === 1) diagnostics.record("model_stream", "first_event", { kind: event.type })
+    if (event.type === "text-delta" || event.type === "thinking-delta") characters += event.text.length
+    return visit(event)
+  }
+  const endStream = diagnostics.begin("model_stream")
+  return Stream.runForEach(model.stream(providerRequest(turn, options)), observe).pipe(
     Effect.flatMap(() =>
       settled
         ? Effect.succeed(outcome)
         : Effect.fail(
           new ModelError({ code: "invalid_provider_output", message: "model stream ended without settlement" })
         )
-    )
+    ),
+    Effect.ensuring(Effect.sync(() => endStream({ events: consumed, characters, settled })))
   )
 }

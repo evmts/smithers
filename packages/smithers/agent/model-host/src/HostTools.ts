@@ -66,6 +66,7 @@ import {
 import { Effect } from "effect"
 import { z } from "zod"
 import type { DurableChatGrant } from "./DurableChatProducer.ts"
+import type { HostDiagnostics } from "./HostDiagnostics.ts"
 import { runModelTurn } from "./ModelTurnHost.ts"
 import type { FrameWriter, HeldToolCall, ModelTurnOptions } from "./ModelTurnHost.ts"
 
@@ -981,7 +982,8 @@ export const runHostTurn = <E>(
   grant: DurableChatGrant,
   options: ModelTurnOptions,
   write: FrameWriter<E>,
-  transport: HostTransport
+  transport: HostTransport,
+  diagnostics?: HostDiagnostics
 ): Effect.Effect<void, Model.ModelFailure | ModelError | E> =>
   Effect.gen(function*() {
     const offered = offeredCommands(grant, transport)
@@ -995,7 +997,7 @@ export const runHostTurn = <E>(
     let usage: AgentTurnUsage | undefined
     let ordinal = 0
     for (let link = 0;; link += 1) {
-      const held = yield* runModelTurn(model, request, options, write, { usage })
+      const held = yield* runModelTurn(model, request, options, write, { usage }, diagnostics)
       if (held === undefined) return
       usage = held.usage
       // The last leg's calls would have no leg left to read their results.

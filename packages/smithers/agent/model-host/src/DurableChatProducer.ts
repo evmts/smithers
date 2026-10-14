@@ -18,6 +18,8 @@ import type { DocsPage } from "@smthrs/rpc/DocsPages"
 import type { AgentTurnFrame, FetchLike, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import { Effect } from "effect"
 import { runContextPreflight } from "./ContextPreflight.ts"
+import { createHostDiagnostics } from "./HostDiagnostics.ts"
+import type { HostDiagnostics } from "./HostDiagnostics.ts"
 import { apiCaller, runHostTurn, sourceLister, sourceReader } from "./HostTools.ts"
 import { CommitRefused, ProducerUnreachable, ProviderStartRefused, ReceiptMismatch } from "./ModelHostError.ts"
 import type { ProducerError } from "./ModelHostError.ts"
@@ -95,15 +97,18 @@ export class DurableChatProducer {
   private readonly callbackBaseUrl: string
   private readonly grant: DurableChatGrant
   private readonly fetchImpl: FetchLike
+  private readonly diagnostics: HostDiagnostics
 
   constructor(
     callbackBaseUrl: string,
     grant: DurableChatGrant,
-    fetchImpl: FetchLike = fetch.bind(globalThis)
+    fetchImpl: FetchLike = fetch.bind(globalThis),
+    diagnostics: HostDiagnostics = createHostDiagnostics({ turnId: grant.turnId })
   ) {
     this.callbackBaseUrl = callbackBaseUrl
     this.grant = grant
     this.fetchImpl = fetchImpl
+    this.diagnostics = diagnostics
     this.cursor = AgentTurnCursorSchema.parse(grant.cursor)
   }
 
@@ -111,24 +116,37 @@ export class DurableChatProducer {
     const url = new URL("/internal/chat/provider-started", this.callbackBaseUrl)
     url.searchParams.set("turnId", this.grant.turnId)
     url.searchParams.set("generation", String(this.grant.generation))
-    return Effect.tryPromise({
-      try: (signal) =>
-        this.fetchImpl(url, {
-          method: "POST",
-          signal,
-          headers: { authorization: `Bearer ${this.grant.token}` }
-        }),
-      catch: unreachable("provider_started")
-    }).pipe(
-      Effect.flatMap((response) =>
-        response.ok ? Effect.void : Effect.fail(
-          new ProviderStartRefused({
-            status: response.status,
-            message: `chat provider start refused (${response.status})`
+    return Effect.suspend(() => {
+      // A callback this guest attempted is not the same fact as a connection a
+      // worker observed: one says the host reached its own request, the other
+      // only that something opened a tunnel.
+      const settle = this.diagnostics.begin("chat_callback", { step: "provider_started" })
+      let status = 0
+      return Effect.tryPromise({
+        try: (signal) =>
+          this.fetchImpl(url, {
+            method: "POST",
+            signal,
+            headers: { authorization: `Bearer ${this.grant.token}` }
+          }),
+        catch: unreachable("provider_started")
+      }).pipe(
+        Effect.tap((response) =>
+          Effect.sync(() => {
+            status = response.status
           })
+        ),
+        Effect.ensuring(Effect.sync(() => settle({ status }))),
+        Effect.flatMap((response) =>
+          response.ok ? Effect.void : Effect.fail(
+            new ProviderStartRefused({
+              status: response.status,
+              message: `chat provider start refused (${response.status})`
+            })
+          )
         )
       )
-    )
+    })
   }
 
   writePreflight(
@@ -209,16 +227,28 @@ export class DurableChatProducer {
       expected,
       frames: [frame]
     })
-    const invoke = Effect.tryPromise({
-      try: (signal) =>
-        this.fetchImpl(new URL("/internal/chat/commit", this.callbackBaseUrl), {
-          method: "POST",
-          signal,
-          headers: { "content-type": "application/json", authorization: `Bearer ${this.grant.token}` },
-          body
-        }),
-      catch: unreachable("commit")
-    }).pipe(Effect.flatMap(commitReply))
+    const invoke = Effect.suspend(() => {
+      const settle = this.diagnostics.begin("chat_callback", { step: "commit", batch: expected.batch + 1 })
+      let status = 0
+      return Effect.tryPromise({
+        try: (signal) =>
+          this.fetchImpl(new URL("/internal/chat/commit", this.callbackBaseUrl), {
+            method: "POST",
+            signal,
+            headers: { "content-type": "application/json", authorization: `Bearer ${this.grant.token}` },
+            body
+          }),
+        catch: unreachable("commit")
+      }).pipe(
+        Effect.tap((response) =>
+          Effect.sync(() => {
+            status = response.status
+          })
+        ),
+        Effect.ensuring(Effect.sync(() => settle({ status }))),
+        Effect.flatMap(commitReply)
+      )
+    })
     return invoke.pipe(
       Effect.catch(() => invoke),
       Effect.flatMap((reply) =>
@@ -270,9 +300,10 @@ export const runDurableChatTurn = (
     readonly model: Model.Model
     readonly options: ModelTurnOptions
   },
-  docs?: ReadonlyArray<DocsPage>
+  docs?: ReadonlyArray<DocsPage>,
+  diagnostics: HostDiagnostics = createHostDiagnostics({ turnId: grant.turnId })
 ): Effect.Effect<void, Model.ModelFailure | ProducerError> => {
-  const producer = new DurableChatProducer(callbackBaseUrl, grant, fetchImpl)
+  const producer = new DurableChatProducer(callbackBaseUrl, grant, fetchImpl, diagnostics)
   const write = (frame: AgentTurnFrame) => producer.write(frame)
   return Effect.gen(function*() {
     // Shared prompt admission must never degrade to a transcript-only answer
@@ -319,7 +350,7 @@ export const runDurableChatTurn = (
         api: apiCaller(callbackBaseUrl, grant, fetchImpl),
         docs
       }
-      yield* runHostTurn(model, prepared, options, write, transport)
+      yield* runHostTurn(model, prepared, options, write, transport, diagnostics)
       return
     }
   })

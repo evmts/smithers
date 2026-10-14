@@ -4,6 +4,15 @@
 
 ### Added
 
+- A hosted chat turn records what it consumed and what it called back (#3812).
+  `@smthrs/model-host` writes bounded diagnostics to the guest's own standard
+  error: the provider stream it subscribed, that stream's first event and the
+  events and characters it took off it, and each `provider-started` and
+  `commit` callback the host attempted, by batch, with its answer. An operation
+  that has not finished repeats as pending, so a turn stuck between an upstream
+  response and a journal commit is readable while it is still stuck. A record
+  carries counts, flags and short tokens only.
+
 - A run's records say where its time and tokens went (#3844). Every field is
   optional on read and listed as late in the trail's identity, so a run
   journaled before it resumes without re-publishing its prefix.
