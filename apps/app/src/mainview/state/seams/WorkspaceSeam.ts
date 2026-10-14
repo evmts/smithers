@@ -599,8 +599,10 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
    * list is allowed to speak for it: a box the host still serves joins the
    * load with its own fresh facts, a 404 is a real absence and the prune
    * stands, and a refusal proves nothing — the row is kept as it stands and
-   * the code is reported. No box is matched by name and no repository outside
-   * this account's own inventory is read.
+   * the code is reported. Every read is the box's exact id under the
+   * repository the row itself is bound to; no box is matched by name, and the
+   * orphan probe below, which has no row to read a repository from, asks only
+   * repositories this account's own inventory holds.
    */
   const confirmUnlisted = (
     listed: ReadonlySet<string>,
@@ -608,8 +610,19 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     current: () => boolean
   ): Effect.Effect<ReadonlyArray<CloudWorkspaceInput>> => Effect.gen(function*() {
     const keep: Array<CloudWorkspaceInput> = []
+    /*
+     * WHICH rows the window reaches is not left to the collection's order
+     * (which is its keys', so the id decides). For a box that has not settled
+     * the detail read IS its state refresh — a queued box's
+     * `waiting_for_machine` reaches its card on no other read — so those rows
+     * are asked first, and the most recently observed of them before the
+     * rest. A settled row has nothing moving to miss (#3882).
+     */
     const unlisted = [...ctx.store.collections.cloudWorkspaces.values()]
       .filter((row) => (repo === undefined || row.repoId === repo) && !listed.has(row.id))
+      .sort((left, right) =>
+        (UNSETTLED.has(left.status) ? 0 : 1) - (UNSETTLED.has(right.status) ? 0 : 1) ||
+        right.revision - left.revision)
     /*
      * The window bounds the READS, not the inventory. A row it never reached
      * was never asked, and an unasked box is not an absent one — on the
@@ -643,6 +656,16 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     const repositories = [...ctx.store.collections.repositories.keys()]
       .sort((left, right) => (left === active ? -1 : right === active ? 1 : 0))
       .slice(0, MAX_ID_PROBE_REPOS)
+    /*
+     * An inventory holding no repositories has answered nothing, so there is
+     * no id to retire against it. `loadRepositories` and this refresh are
+     * started together on sign-in, so the repositories are routinely still in
+     * flight when the first list completes — retiring an orphaned id there
+     * retired it with no read at all, and the card kept "This box is not
+     * available." for the rest of the session on exactly the silence this
+     * probe exists to refuse (#3882).
+     */
+    if (repositories.length === 0) return keep
     const orphans = [...ctx.store.collections.cards.values()].flatMap((card) =>
       card.kind === "branch" && BOX_ID.test(card.payload.id) && !listed.has(card.payload.id) &&
       !ctx.store.collections.cloudWorkspaces.has(card.payload.id) &&
@@ -650,11 +673,24 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     for (const id of orphans) {
       if (!current()) return keep
       const probe = `${account}:${id}`
-      unlistedProbes.add(probe)
-      /* Only a repository that ANSWERED has spoken: an unreachable one leaves the id to the next list. */
-      let answered = true
+      /*
+       * Only a repository that ANSWERED has spoken, and only `404` is an
+       * answer about this box: one repository has to have declined it, and
+       * none of them may have been unreachable, before the id is retired.
+       */
+      let declined = false
+      let unreachable = false
       let found: CloudWorkspaceInput | null = null
       for (const repoId of repositories) {
+        /*
+         * The id is recorded only where the reads below REACHED an answer for
+         * it. A probe this one left unfinished — the account signed out, a
+         * newer list superseded it, the seam was disposed — recorded nothing,
+         * so the id is as open as one a repository could not answer; marking
+         * it before the reads retired it on a lifetime event instead of on
+         * evidence. The cost is that two overlapping lists can each read the
+         * same id once; the reads are idempotent GETs and bounded per list.
+         */
         if (!current()) return keep
         const answer = yield* askBox(repoId, id)
         if ("error" in answer) {
@@ -666,8 +702,8 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
            * answer that proves the box exists as an absence would retire the
            * id for the rest of the session.
            */
-          if (answer.status === 404) continue
-          answered = false
+          if (answer.status === 404) { declined = true; continue }
+          unreachable = true
           ctx.report?.(`box.orphan.${answer.code ?? answer.status ?? "unreachable"}`, answer.error)
           continue
         }
@@ -675,7 +711,8 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
         if (found !== null) break
       }
       if (found !== null) keep.push(found)
-      else if (!answered) unlistedProbes.delete(probe)
+      /* Served, or declined by every repository that answered: both are answers, and both retire the id. */
+      if (found !== null || (declined && !unreachable)) unlistedProbes.add(probe)
     }
     return keep
   })

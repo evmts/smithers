@@ -35,6 +35,20 @@ export const branchSeedAvailable = (host: {
     : host.bootstrap === undefined ? !host.live : !host.bootstrap.capabilities.includes("install")
 
 /**
+ * `unknown_topic` and `unsupported` name a host WITHOUT the topic; every other
+ * code is a stream that refused for its own reason. One predicate, because
+ * every reader of a live code has to agree: the branch card's optional streams
+ * counted `unknown_topic` as a refusal while its own `optionalData` did not,
+ * and a branch the host HAD served was thrown away for a stream nobody was
+ * waiting for ([#3882](https://github.com/smithersai/smithers/issues/3882)).
+ */
+export const hostWithoutTopic = (error?: string): boolean => error === "unknown_topic" || error === "unsupported"
+
+/** A stream's own refusal, or nothing where it has none to state. */
+export const topicRefusalOf = (error?: string): string | undefined =>
+  error === undefined || hostWithoutTopic(error) ? undefined : error
+
+/**
  * What a branch card may honestly say when it holds no branch to render: the
  * stage of the source that would have answered, never a machine state.
  *
@@ -61,7 +75,8 @@ export const branchCardStage = (
   observations: ReadonlyArray<{ readonly phase: "loading" | "ready" | "failed"; readonly error?: string; readonly revision: number }> | undefined,
   topicError?: string
 ): BranchCardStage => {
-  if (topicError !== undefined && topicError !== "unknown_topic" && topicError !== "unsupported") return { kind: "failed", error: topicError }
+  const refused = topicRefusalOf(topicError)
+  if (refused !== undefined) return { kind: "failed", error: refused }
   const latest = [...(observations ?? [])].sort((left, right) => right.revision - left.revision)[0]
   if (latest === undefined || latest.phase === "loading") return { kind: "loading" }
   if (latest.phase === "failed") return { kind: "failed", error: latest.error ?? "Smithers Cloud's box list could not be read." }

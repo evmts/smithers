@@ -503,6 +503,37 @@ describe("workspace seam list", () => {
     expect(kept.filter((id) => asked.includes(id))).toEqual([])
   })
 
+  /*
+   * WHICH boxes the window reaches is not the collection's insertion order.
+   * For a box that has not settled the detail read IS its state refresh, and
+   * the newest row — the box a human just opened and is watching — is the
+   * LAST one the collection holds, so insertion order put exactly that box
+   * last in line for the only read that could carry its stage (#3882).
+   */
+  test("the confirmation window asks the boxes whose state is still moving first", async () => {
+    const settled = Array.from({ length: 26 }, (_, index) => ({ ...wsRow, id: `ws-${index}`, name: `w${index}` }))
+    const queued: CloudWorkspaceInput = { ...wsRow, id: "ws-queued", name: "queued", status: "pending", provisioningStage: null }
+    const { store, seam, requests } = await harness({
+      "api/repos/will/smithers/workspaces": json(200, []),
+      ...Object.fromEntries(settled.map((row) => [
+        `api/repos/will/smithers/workspaces/${row.id}`, json(200, { ...WS_RUNNING, id: row.id, name: row.name })
+      ])),
+      "api/repos/will/smithers/workspaces/ws-queued": json(200, {
+        ...WS_RUNNING, id: "ws-queued", name: "queued", status: "starting", provisioning_stage: "waiting_for_machine"
+      })
+    })
+    for (const row of settled) await seedWorkspace(store, row)
+    /* Seeded last, exactly where a box a human just opened is held. */
+    await seedWorkspace(store, queued)
+    await seam.listWorkspaces("will/smithers")
+    const asked = requests.filter((request) => request.includes("/workspaces/ws-"))
+    expect(asked.length).toBe(25)
+    expect(asked).toContain("GET api/repos/will/smithers/workspaces/ws-queued")
+    /* The box's own answer reached the row: the stage the card needs, not the stale status. */
+    expect(workspacesOf(store).find((row) => row.id === "ws-queued"))
+      .toEqual(expect.objectContaining({ status: "starting", provisioningStage: "waiting_for_machine" }))
+  })
+
   test("a refused read of the box proves no absence: the row stands and the code is reported", async () => {
     const reported: Array<string> = []
     const { store, seam, ctx } = await harness({
@@ -599,6 +630,83 @@ describe("workspace seam list", () => {
     /* An unreachable repository never said the box is gone, so the id is still open. */
     expect(requests.filter((request) => request.endsWith(box)).length).toBe(2)
     expect(reported).toEqual(["box.orphan.service_unavailable", "box.orphan.service_unavailable"])
+  })
+
+  /*
+   * The repositories and this refresh are started TOGETHER on sign-in
+   * (`reloadRepositoriesWhenSignedIn` fires `loadRepositories` and
+   * `refreshWorkspaces` in the same breath), so a first list routinely
+   * completes while the repository inventory is still in flight. An inventory
+   * with nothing in it has answered nothing about any box — retiring the id
+   * there retired it with NO read at all, and the orphaned card then read
+   * "This box is not available." for the rest of the session: the exact
+   * failure the probe exists to answer (#3882).
+   */
+  test("an inventory that holds no repositories yet retires no orphaned id", async () => {
+    const box = "f5eb95e2-4c78-4568-88cc-79b2dfd934be"
+    const { store, seam, requests } = await harness({
+      "api/user/workspaces": json(200, []),
+      [`api/repos/will/smithers/workspaces/${box}`]: json(200, { ...WS_RUNNING, id: box, status: "starting" })
+    })
+    /* The repositories have not answered yet. */
+    await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [] }).isPersisted.promise
+    await store.dispatch({ type: "card.upsert", actor: "user", card: {
+      id: `branch:${box}`, kind: "branch", title: "main", status: "active", createdAt: 1, ordinal: 0, payload: { id: box }
+    } }).isPersisted.promise
+    await seam.listWorkspaces()
+    /* Nothing to ask, so nothing was asked — and nothing was concluded. */
+    expect(requests.filter((request) => request.endsWith(box))).toEqual([])
+    await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [
+      { id: "will/smithers", org: "will", ownerKind: "user", name: "smithers", head: { bookmark: "main", changeId: "qupxosqw", commitId: "c0ffee1" } }
+    ] }).isPersisted.promise
+    await seam.listWorkspaces()
+    /* The inventory arrived, the id is still open, and the box answers for itself. */
+    expect(requests.filter((request) => request.endsWith(box))).toEqual([`GET api/repos/will/smithers/workspaces/${box}`])
+    expect(workspacesOf(store)).toEqual([expect.objectContaining({ id: box, repoId: "will/smithers", status: "starting" })])
+  })
+
+  /*
+   * A probe is recorded by what it ANSWERED, never by having been started.
+   * Signing out (or a newer list, or a dispose) mid-probe ends the reads with
+   * nothing established, and an id marked up front was then retired on that
+   * lifetime event alone — the card kept "This box is not available." for the
+   * rest of the session for a box no repository had declined (#3882).
+   */
+  test("an orphaned id a cut-short probe never finished stays open for the next list", async () => {
+    const box = "e4eb95e2-4c78-4568-88cc-79b2dfd934be"
+    let signOut: (() => Promise<void>) | undefined
+    const { store, seam, requests } = await harness({
+      "api/user/workspaces": json(200, []),
+      /* The repositories are read in key order, so `will/bench` is the first asked. */
+      [`api/repos/will/bench/workspaces/${box}`]: async () => {
+        /* The account goes away between the first repository's answer and the second's. */
+        await signOut?.()
+        signOut = undefined
+        return json(404, { code: "not_found", message: "workspace not found" })
+      },
+      [`api/repos/will/smithers/workspaces/${box}`]: json(404, { code: "not_found", message: "workspace not found" })
+    })
+    const signedIn = async (): Promise<void> => void await store.dispatch({ type: "cloud.session.loaded", actor: "system",
+      state: "signed-in", username: "will", expiresAt: null, scopes: null }).isPersisted.promise
+    signOut = async () => void await store.dispatch({ type: "cloud.session.loaded", actor: "system",
+      state: "signed-out", username: null, expiresAt: null, scopes: null }).isPersisted.promise
+    await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [
+      { id: "will/smithers", org: "will", ownerKind: "user", name: "smithers", head: { bookmark: "main", changeId: "qupxosqw", commitId: "c0ffee1" } },
+      { id: "will/bench", org: "will", ownerKind: "user", name: "bench", head: { bookmark: "main", changeId: "qupxosqw", commitId: "c0ffee1" } }
+    ] }).isPersisted.promise
+    await store.dispatch({ type: "card.upsert", actor: "user", card: {
+      id: `branch:${box}`, kind: "branch", title: "main", status: "active", createdAt: 1, ordinal: 0, payload: { id: box }
+    } }).isPersisted.promise
+    await seam.listWorkspaces()
+    /* One repository answered before the account went: the second was never asked. */
+    expect(requests.filter((request) => request.endsWith(box))).toEqual([`GET api/repos/will/bench/workspaces/${box}`])
+    await signedIn()
+    await seam.listWorkspaces()
+    /* The id was never declined by every repository, so the next list asks all of them. */
+    expect(requests.filter((request) => request.endsWith(box)).length).toBe(3)
+    /* Now every repository has answered gone, and the id is retired. */
+    await seam.listWorkspaces()
+    expect(requests.filter((request) => request.endsWith(box)).length).toBe(3)
   })
 
   /*

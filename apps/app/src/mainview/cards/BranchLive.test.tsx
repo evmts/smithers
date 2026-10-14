@@ -209,3 +209,38 @@ test("a refused stream names its refusal even where the branch topic is simply n
     expect(host.querySelector("[data-flow]")).toBeNull()
   } finally { await act(async () => root.unmount()); live.dispose(); controller.design.dispose() }
 })
+
+/*
+ * `unknown_topic` and `unsupported` are the same fact on an OPTIONAL stream:
+ * this host does not serve that topic. Everywhere else the app reads a live
+ * code it says so (`flows/entries/branch.ts`, the Home card's `NO_PROVIDER`,
+ * `branchCardStage`), and this card's own `optionalData` already answers []
+ * for both — but `refused` counted `unknown_topic` as a refusal, so a branch
+ * the host HAD served was thrown away and the card spun on a stream nobody
+ * was waiting for. A served branch outranks a topic that was never there
+ * (#3882).
+ */
+test("a served branch renders where an optional stream's topic is simply not served", async () => {
+  const socket: LiveSocket = { readyState: 0, onopen: null, onclose: null, onmessage: null, send: () => {}, close: () => {} }
+  const live = new LiveChannel({ socket: () => socket })
+  const controller = { live, design: createDesignWorld({ enabled: false, timers: { set: () => 0, clear: () => {} } }) } as unknown as AppController
+  const host = document.createElement("div"), root = createRoot(host)
+  const card = { id: "branch:b-retry", kind: "branch", title: "Branch", status: "active", createdAt: 1, ordinal: 1, payload: { id: "b-retry" } } as const
+  const err = async (id: number, code: string) => act(async () => socket.onmessage?.({ data: JSON.stringify({ t: "err", id, code }) }))
+  try {
+    await act(async () => root.render(<ControllerTestProvider controller={controller}>{CARD_RENDERERS.branch.render(card, actions)}</ControllerTestProvider>))
+    socket.readyState = 1; socket.onopen?.()
+    await act(async () => socket.onmessage?.({ data: JSON.stringify({ t: "snap", id: 1, cursor: 1, data: {
+      id: "b-retry", name: "Captured live branch", machine: { state: "asleep" }, presence: [], terminals: [], ssh_line: "ssh -p 2222 live@localhost"
+    } }) }))
+    await err(2, "unknown_topic")
+    await err(3, "unknown_topic")
+    /* The branch's own topic answered, so the card renders the branch. */
+    expect(host.textContent).toContain("Captured live branch")
+    expect(host.textContent).toContain("Asleep")
+    expect(host.querySelector("[data-branch-stage]")).toBeNull()
+    expect(host.textContent).not.toContain("Loading this box.")
+    /* No seed row stands in for the streams that were never served. */
+    expect(host.textContent).not.toContain("Retry failed webhooks")
+  } finally { await act(async () => root.unmount()); live.dispose(); controller.design.dispose() }
+})

@@ -8,7 +8,7 @@ import type { MachineState } from "@smthrs/rpc/CardPrimitives"
 import type { CloudWorkspaceRow } from "../state/AppState"
 import { cloudBoxesHeld } from "../flows/entries/Declare"
 import { useBranchPresence, useTopic } from "../state/useTopic"
-import { branchCardStage, branchModel, branchSeedAvailable, projectBranch, projectBranchActivity, type BranchCardStage } from "../state/seams/BranchSeam"
+import { branchCardStage, branchModel, branchSeedAvailable, hostWithoutTopic, projectBranch, projectBranchActivity, topicRefusalOf, type BranchCardStage } from "../state/seams/BranchSeam"
 import { useController } from "../ControllerContext"
 import { cardActions, type CardActionDefinition, type CardCommandDispatch } from "../flows/cardActions"
 import type { CardActions, CardFamily, CardOf } from "./CardFamily"
@@ -246,14 +246,14 @@ export const LiveBranchBody = ({ card, actions }: { readonly card: CardOf<"branc
   // An unserved optional stream must not hide the composed branch roster.
   // Permission failures and malformed snapshots still refuse the projection;
   // no seed rows stand in for unavailable activity or changed files. A stream
-  // that has not answered yet is empty for now, exactly like one answered
-  // `unsupported` — #3865: holding the whole card back for it rendered a
+  // that has not answered yet is empty for now, exactly like one whose topic
+  // the host does not serve at all — #3865: holding the whole card back for it rendered a
   // served branch as nothing at all. Subscribed and silent is one of those
   // not-yet answers: the channel holds a snapshot with no data for it, and
   // reading that as the rows refused the projection just the same (#3882).
   const optionalData = (snapshot: typeof activity) =>
-    snapshot === undefined || snapshot.error === "unsupported" || snapshot.data === undefined ? [] : snapshot.data
-  const refused = (snapshot: typeof activity) => snapshot?.error !== undefined && snapshot.error !== "unsupported"
+    snapshot === undefined || hostWithoutTopic(snapshot.error) || snapshot.data === undefined ? [] : snapshot.data
+  const refused = (snapshot: typeof activity) => topicRefusalOf(snapshot?.error) !== undefined
   const base = branch?.error || refused(activity) || refused(files) ? undefined
     : branchModel(branch?.data, optionalData(activity), optionalData(files), card.payload.id, { roster: roster?.model?.members.map(member => ({ ...member, id: member.login })) })
   const todos = useSyncExternalStore(controller.todoList?.subscribe ?? (() => () => {}),
@@ -264,7 +264,7 @@ export const LiveBranchBody = ({ card, actions }: { readonly card: CardOf<"branc
   useBranchPresence(card.payload.id, controller.live)
   // Outside an install, an unanswered or absent provider keeps the existing seed visible.
   if (branchSeedAvailable(controller) && branch?.data === undefined
-    && (branch?.error === undefined || branch.error === "unknown_topic" || branch.error === "unsupported")) return <DesignBranchBody card={card} actions={actions} />
+    && topicRefusalOf(branch?.error) === undefined) return <DesignBranchBody card={card} actions={actions} />
   const providers = new Set<CatalogTag>()
   if (typeof controller.showTodo === "function") providers.add("todo")
   if (controller.branchFiles?.available()) providers.add("file")
@@ -296,9 +296,7 @@ export const LiveBranchBody = ({ card, actions }: { readonly card: CardOf<"branc
      * this host does not serve the topic, so `forbidden` on the activity stream
      * reads failed with its own word instead of pending forever (#3882).
      */
-    const names = (error?: string): boolean => error !== undefined && error !== "unknown_topic" && error !== "unsupported"
-    const refusal = names(branch?.error) ? branch?.error
-      : names(activity?.error) ? activity?.error : names(files?.error) ? files?.error : branch?.error
+    const refusal = topicRefusalOf(branch?.error) ?? topicRefusalOf(activity?.error) ?? topicRefusalOf(files?.error) ?? branch?.error
     return <BranchStageBody card={card} source="live-topic" stage={branchCardStage([], refusal)} />
   }
   return <BranchView model={model} actions={bindings.actions} gestures={bindings.gestures}
