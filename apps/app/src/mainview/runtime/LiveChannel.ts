@@ -83,6 +83,8 @@ export class LiveChannel {
   private timer?: unknown
   private nextId = 1
   private attempt = 0
+  /** True once a handshake on this host has reached `open`, so the channel knows the deployment serves `/api/live`. */
+  private served = false
   private disposed = false
   constructor(private readonly options: LiveChannelOptions = {}) {}
   private readonly documents = new Map<string, Set<(event: DocumentEvent) => void>>()
@@ -188,6 +190,7 @@ export class LiveChannel {
       socket.onopen = () => {
         if (this.socket !== socket) return
         this.attempt = 0
+        this.served = true
         for (const [topic, entry] of this.topics) this.sub(topic, entry)
         const where = [...this.presenceOwners.values()].at(-1)
         if (where) this.presence(where)
@@ -218,10 +221,22 @@ export class LiveChannel {
       }
     } catch { this.retry() }
   }
+  /**
+   * A reconnect ladder with two ceilings, because the two failures it covers
+   * are not alike. A socket that opened and dropped is a blip: retry fast, up
+   * to five seconds. A socket that has never opened on this host says the
+   * deployment does not serve `/api/live` at all — the hosted, many-owner
+   * boundary installs the route only for a single-owner install (backend
+   * compose/router.go) — so the fast ladder would refuse and log forever,
+   * once every few seconds, for as long as the tab stays open. Those attempts
+   * ramp to a minute instead, which still recovers a route that appears later
+   * without turning a by-design absence into standing console noise.
+   */
   private retry() {
     if (!this.hasTransportTopics() || this.disposed) return
-    const cap = Math.min(5000, 250 * 2 ** Math.min(this.attempt++, 5))
-    const delay = Math.max(250, Math.min(5000, cap * (0.5 + (this.options.random ?? Math.random)() / 2)))
+    const ceiling = this.served ? 5000 : 60000
+    const cap = Math.min(ceiling, 250 * 2 ** Math.min(this.attempt++, 8))
+    const delay = Math.max(250, Math.min(ceiling, cap * (0.5 + (this.options.random ?? Math.random)() / 2)))
     this.timer = (this.options.schedule ?? setTimeout)(() => { this.timer = undefined; this.connect() }, delay)
   }
   private receive(raw: unknown) {

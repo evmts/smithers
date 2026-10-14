@@ -267,15 +267,50 @@ describe("live channel", () => {
     expect(updates).toBe(3)
     channel.dispose()
   })
-  test("failed reconnects stay between 250ms and 5s; final release cancels retry", () => {
+  test("reconnects after a served socket dropped stay between 250ms and 5s; final release cancels retry", () => {
     const { channel, sockets, timers } = harness()
     const release = channel.subscribe("home", () => {})
+    // The first socket opens, so the channel knows this host serves /api/live.
+    sockets[0]!.open()
     for (let i = 0; i < 9; i++) { sockets[i]!.drop(); timers[i]!.run() }
     expect(timers.map(timer => timer.ms)).toEqual([250, 500, 1000, 2000, 4000, 5000, 5000, 5000, 5000])
     sockets[9]!.drop(); release()
     expect(timers[9]!.cancelled).toBe(true)
     timers[9]!.run()
     expect(sockets).toHaveLength(10)
+    channel.dispose()
+  })
+  // A hosted, many-owner deployment installs no /api/live (backend
+  // compose/router.go gates it on a single-owner install), so every handshake
+  // is refused with 404. On the five-second ladder a signed-in tab logged a
+  // failed handshake about every three seconds for as long as it stayed open.
+  // A socket that never opened ramps to a minute instead.
+  test("reconnects that never opened ramp to a minute instead of hammering every few seconds", () => {
+    const { channel, sockets, timers } = harness()
+    channel.subscribe("home", () => {})
+    for (let i = 0; i < 10; i++) { sockets[i]!.drop(); timers[i]!.run() }
+    expect(timers.map(timer => timer.ms)).toEqual([250, 500, 1000, 2000, 4000, 8000, 16000, 32000, 60000, 60000])
+    // One minute of a fresh tab's life costs at most three refused handshakes.
+    const withinFirstMinute = timers.reduce(
+      (held, timer) => held.total + timer.ms > 60000 ? held : { total: held.total + timer.ms, count: held.count + 1 },
+      { total: 0, count: 0 }
+    )
+    expect(withinFirstMinute.count).toBeLessThanOrEqual(8)
+    channel.dispose()
+  })
+  test("a socket that opened once keeps the fast ladder for later drops", () => {
+    const { channel, sockets, timers } = harness()
+    channel.subscribe("home", () => {})
+    // Refused twice, so the slow ladder is in force...
+    sockets[0]!.drop(); timers[0]!.run()
+    sockets[1]!.drop(); timers[1]!.run()
+    expect(timers.map(timer => timer.ms)).toEqual([250, 500])
+    // ...then the route appears and the next drop recovers on the fast one.
+    sockets[2]!.open()
+    sockets[2]!.drop(); timers[2]!.run()
+    expect(timers[2]!.ms).toBe(250)
+    for (let i = 3; i < 9; i++) { sockets[i]!.drop(); timers[i]!.run() }
+    expect(timers.slice(2).map(timer => timer.ms)).toEqual([250, 500, 1000, 2000, 4000, 5000, 5000])
     channel.dispose()
   })
   test("unknown deltas request a snapshot; malformed frames and unowned ids change nothing", () => {
