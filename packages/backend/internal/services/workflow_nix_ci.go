@@ -574,8 +574,11 @@ func (w *WorkflowSandboxSchedulerWorker) executeNixCITask(
 	if err != nil {
 		message := "failed to provision NixOS CI guest"
 		logger.Error(message, "error", err)
-		if errors.Is(err, ErrCISecretChannelUnavailable) {
+		switch {
+		case errors.Is(err, ErrCISecretChannelUnavailable):
 			message = err.Error()
+		case isNoCapacityError(err):
+			message = nixCINoCapacityMessage
 		}
 		w.appendNixCILog(ctx, task, "system", message)
 		outcome := nixCITaskFailed
@@ -648,6 +651,19 @@ func (w *WorkflowSandboxSchedulerWorker) executeNixCITask(
 // Provisioning — and only provisioning — is retried: a guest that never
 // booted is infrastructure, while a command that ran and failed is a real CI
 // result. A secret with no channel into the guest fails before any boot.
+// nixCINoCapacityMessage is what a run's own log says when the sandbox pool had
+// no room for its guest: the honest answer the workspace path already gives
+// (workspaceNoCapacityMessage), in product vocabulary rather than the
+// provider's "no healthy Microsandbox worker has sufficient capacity".
+//
+// Before this, a full pool and a broken guest image wrote the same line --
+// "failed to provision NixOS CI guest" -- and the cause reached only the server
+// log. Production run 17448 of the smoke canary (2026-10-14 06:05Z) failed with
+// exactly that line while the fleet was refusing every reservation, so neither
+// the person reading the run nor the canary that reported it could tell a busy
+// pool from an outage.
+const nixCINoCapacityMessage = "The CI pool is full right now. Nothing ran; start the run again in a moment."
+
 func (w *WorkflowSandboxSchedulerWorker) provisionNixCIGuest(
 	ctx context.Context,
 	task nixCITask,

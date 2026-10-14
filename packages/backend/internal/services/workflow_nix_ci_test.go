@@ -404,6 +404,36 @@ func TestNixCIRun_GuestProvisionFailureFailsTheTask(t *testing.T) {
 	assert.Equal(t, []int64{42}, queries.markFailureIDs)
 }
 
+// Regression (production 2026-10-14, plue#823): run 17448 of the smoke canary
+// failed with one system log line, "failed to provision NixOS CI guest", while
+// the sandbox fleet was refusing every reservation with no_capacity. The cause
+// reached only the server log, so the run's own reader — and the production
+// canary that reports on it — could not tell a busy pool from a broken guest
+// image. A full pool says so, in the same product vocabulary the workspace
+// path already uses, and still never leaks the provider's internal sentence.
+func TestNixCIRun_FullPoolSaysThePoolIsFullInTheRunLog(t *testing.T) {
+	queries := nixCIQuerier([]db.WorkflowTask{nixCITaskRow(1, 11, "build", nil)})
+	guests := &fakeNixCIGuests{polls: map[string]int{}, scripts: map[string]nixCIGuestScript{"build": {exitCode: "0"}}}
+	worker, client := newNixCIWorker(t, queries, guests)
+	client.createVMFn = func(_ context.Context, _ sandbox.CreateRequest) (sandbox.CreateResult, error) {
+		return sandbox.CreateResult{}, &sandbox.StatusError{
+			StatusCode: 503, ErrorCode: "no_capacity", Provider: "microsandbox",
+			Message: "no healthy Microsandbox worker has sufficient capacity",
+		}
+	}
+
+	require.NoError(t, worker.PollOnce(context.Background()))
+
+	assert.Equal(t, map[int64]string{1: "failed"}, nixCITaskStatuses(queries))
+	system := nixCISystemLogs(queries)
+	require.Len(t, system, 1)
+	assert.Equal(t, nixCINoCapacityMessage, system[0])
+	assert.NotContains(t, system[0], "Microsandbox",
+		"a run's log never names the internal component")
+	assert.NotContains(t, system[0], "failed to provision",
+		"a full pool is not a provisioning defect")
+}
+
 func TestNixCIRun_RunWithoutTaskGraphFailsWithoutBootingAVM(t *testing.T) {
 	// Invoked flows run on the flow plane (InvokedFlowService). A
 	// sandbox-plane run without tasks has nothing to run: it fails without
