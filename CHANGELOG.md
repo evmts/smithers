@@ -5,6 +5,90 @@ release (what changed and why it matters, with screenshots and examples), see
 the release notes at
 [smithers.sh/changelogs/1.0.0-rc.0](https://smithers.sh/changelogs/1.0.0-rc.0).
 
+## 1.0.0-rc.7 (2026-10-14)
+
+<!-- commits:1.0.0-rc.7 -->
+
+61 commits since [v1.0.0-rc.6](https://github.com/smithersai/smithers/commit/7f568aee23).
+
+### ✨ Features
+
+- **model-host:** a journal callback records the transport phase it reached (#3812) ([a1998682a1](https://github.com/smithersai/smithers/commit/a1998682a165d31c45b10c1797634de82e014624))
+
+### 🐛 Bug fixes
+
+- **flows:** measure declared reads under the workspace root, not the process cwd (#3911) ([04cff043dc](https://github.com/smithersai/smithers/commit/04cff043dcd29b7adb53ac7247fde66c2c2018bd))
+- **ui:** the markdown editor keeps every image's alt text (#3903) ([ee7a702714](https://github.com/smithersai/smithers/commit/ee7a702714f8ed6a5b2d747979418710842ef1f1))
+- **std:** bash keeps the start and the end of long output (#3904) ([8e2c7b06e2](https://github.com/smithersai/smithers/commit/8e2c7b06e20dfc416c432678dae0e7f4c922d0b3))
+- **server:** a retired docs-site page lands on its own file on GitHub (#3510) ([8265a4d6f6](https://github.com/smithersai/smithers/commit/8265a4d6f6b111740fd4d8fec16ba74718c37901))
+- **workspace:** a turn on a stopped branch machine names the start, not a retry (#3892) ([830fdf7016](https://github.com/smithersai/smithers/commit/830fdf70169cbf04a17cd0d1a8290483faaa6154))
+- **workspace:** a wake whose machine is gone answers the recovery row, not a bug (#3890) ([efe8bea779](https://github.com/smithersai/smithers/commit/efe8bea7792813d022f9ffc107269989d0bed78f))
+- **app:** an orphaned box id is retired by an answer, never by an empty inventory (#3882) ([c787094776](https://github.com/smithersai/smithers/commit/c78709477682d4c1c257d0d8706f1b918527bf1a))
+- **app:** the issue index and the comment door answer for the host that serves them (#3891) ([4882c66c88](https://github.com/smithersai/smithers/commit/4882c66c88267531f28686371fbf4fb6c6859f86))
+- **flows:** the pnpm install line names approve-builds esbuild, and the release gate runs pnpm as the page says (#3838) ([6f56cc0f71](https://github.com/smithersai/smithers/commit/6f56cc0f7170539dcd13d7055a074c7ae7faa0a2))
+- **agent:** a turn on a branch machine retained after a failed provision promises no retry (#3892) ([9c703c1eba](https://github.com/smithersai/smithers/commit/9c703c1ebaffb831aee1ab46e50533257a23c3b5))
+- **app:** the two answer doors are withdrawn where this origin does not mount them (#3887) ([6d1fcb5630](https://github.com/smithersai/smithers/commit/6d1fcb5630c90990b389c780288e34b799af01f9))
+- **app:** a refresh of the box list does not take back the recovery it already made (#3882) ([5997b989af](https://github.com/smithersai/smithers/commit/5997b989afd4c0a826e0cb1781715e751bacf95f))
+- **agent:** a turn whose snapshot is gone says so, and promises no retry (#3890) ([d9410b65d3](https://github.com/smithersai/smithers/commit/d9410b65d3701f1e6c84745861c372b54643699d))
+- **chat:** the attribution note names both places the lost 300 s could be (#3812) ([76a7c91489](https://github.com/smithersai/smithers/commit/76a7c914897ebd610aafc54327f036ff6d747a92))
+- **app:** search.issues asks the repository's tracker instead of the cards left on the screen (#3891) ([a43386ecfd](https://github.com/smithersai/smithers/commit/a43386ecfd320e8759257b218d85b228e8fe8e24))
+- **chat:** the attribution constant's note is attached to it (#3812) ([3ce013d73a](https://github.com/smithersai/smithers/commit/3ce013d73abc96c9c52270d027063bac750928e0))
+- **agent:** a turn whose branch machine is gone says so, and promises no retry (#3890) ([30390f9a03](https://github.com/smithersai/smithers/commit/30390f9a0387e20521df54af9f7dc77e93f574be))
+- **app:** an owner-scoped box list cannot delete a box the host still serves (#3882) ([a555c032b6](https://github.com/smithersai/smithers/commit/a555c032b6356d621b6d555d6ed338d17ee610e5))
+- **chat:** a turn's sandbox work is attributed to the turn (#3812) ([b572e1c33e](https://github.com/smithersai/smithers/commit/b572e1c33e473bf4d3b96fb23e531c88d7e72827))
+- **model-host:** a failed callback tells the API the phase it died in (#3812) ([bf1a6f4330](https://github.com/smithersai/smithers/commit/bf1a6f4330cf834e94f3ba1a30c83385ea9f98dc))
+- **app:** a door switched off between pages keeps the pages it already served (#3889) ([c3ca2649ad](https://github.com/smithersai/smithers/commit/c3ca2649ada07dd6482c0c5060aee373eee445e0))
+- **app:** the merged pull request fixture states the created_at GitHub states (#3880) ([62e7ece046](https://github.com/smithersai/smithers/commit/62e7ece046e1cb26dea979e99c96360874f0adf1))
+- **app:** the seams' two raw-failure guards are green again, by tag and by accessor (#3887) ([d491619b4e](https://github.com/smithersai/smithers/commit/d491619b4eb2096c11560ca79044f7bf67a387e3))
+- **app:** the switched-off door is recognized in the envelope the Worker restates it in (#3889) ([55537e1679](https://github.com/smithersai/smithers/commit/55537e167995ad35de8d1d3ec6b5e8fd7cb34dd0))
+- **app:** a Cloud core write names the door it has instead of writing the seeded world and claiming GitHub (#3831) ([286b49cb95](https://github.com/smithersai/smithers/commit/286b49cb959d072034cae84ae6404d48c21be7ec))
+- **app:** Activity asks each door in its own query vocabulary, and a feature this host switched off is not unchecked activity (#3889) ([0035d72c5c](https://github.com/smithersai/smithers/commit/0035d72c5c15293b289f5e2fddec2c779d6e72ff))
+- **model-host:** a callback's record says whether its name resolved (#3812) ([8c49f8e83f](https://github.com/smithersai/smithers/commit/8c49f8e83f3629c48ca44e4495d44fa22b6b5d68))
+- **app:** the route-family gate is recognized by plue's verdict, not by its English (#3887) ([387b0dc175](https://github.com/smithersai/smithers/commit/387b0dc175b0693144aec86a3a446a79b6498097))
+- **agent:** a turn the sandbox quota parks says it is waiting (#3888) ([339733eb92](https://github.com/smithersai/smithers/commit/339733eb920c93d58b3b0792df1cf2044109a540))
+- **chat:** only a turn that never started a provider is told nothing was lost (#3812) ([e258eca353](https://github.com/smithersai/smithers/commit/e258eca353a1b499659de9ff14797982ce36aca1))
+- **app:** a refused door that is not a TODO route stops claiming TODOs are missing (#3887) ([45e13f47a9](https://github.com/smithersai/smithers/commit/45e13f47a908a1cf83303cdd92945073d357dd5b))
+- **ci:** the deploy ref names the full-sha requirement the checkout actually has ([4253a9edc0](https://github.com/smithersai/smithers/commit/4253a9edc059923bb92be8b590b08460288001bb))
+- **agent:** a turn refused because the branch's machine is already starting says so (#3886) ([2ffec3e361](https://github.com/smithersai/smithers/commit/2ffec3e361087e710a25be00c70348e8fdce8e6d))
+- **app:** an answer door that cannot work says which door, which route and which status (#3887) ([2c2cf09717](https://github.com/smithersai/smithers/commit/2c2cf097177fbd7fd226406d52ca81792c77acbf))
+- **chat:** a full sandbox fleet defers a turn instead of failing its host (#3812) ([46187b049e](https://github.com/smithersai/smithers/commit/46187b049e7f5ca9b9f6492ebae8b5334ef883a0))
+- **workspace:** a branch machine with no guest takes the size its owner asks for (#3885) ([cdefa8be9e](https://github.com/smithersai/smithers/commit/cdefa8be9e2331d3b63624408ec694872f6ed6d4))
+- **rpc,model-host,app:** Smithers' own subject follows the documentation command (#3881) ([bb9ad92663](https://github.com/smithersai/smithers/commit/bb9ad926631f84dc75ddfca37969cee50ccad3b0))
+- **app:** the real-process proofs are judged by their own launches, and every child is bounded (#3884) ([6dbfd8f58b](https://github.com/smithersai/smithers/commit/6dbfd8f58b00cca77ca4ba188de6d79a4291911d))
+- **app:** the folded Timeline lines are read in one shot, not a round trip each (#3884) ([5bd6b6909e](https://github.com/smithersai/smithers/commit/5bd6b6909ed122df2867b3bcae8bbeb9b4d46ba0))
+- **model-host:** a closed transport observer never reports a phase it did not watch (#3812) ([20e461e482](https://github.com/smithersai/smithers/commit/20e461e4824abd459ff2ca92c8e88c6d02786a81))
+- **workspace:** a box the pool deferred says it is waiting for a machine (#3874) ([4fd714c9b5](https://github.com/smithersai/smithers/commit/4fd714c9b57ebd91977e2c31717405a0b02bada3))
+- **rpc:** the conversation rule licenses the world, and leaves Smithers' own subject to docs (#3881) ([0061790946](https://github.com/smithersai/smithers/commit/0061790946c765d241205ba9721fabc5c923234b))
+- **evals:** a cancelled trial stops its Smithers CLI (#3883) ([3795f5a96a](https://github.com/smithersai/smithers/commit/3795f5a96a3fcef4d79de1a537b26e709f7a0804))
+- **app:** a box card with no row of its own says which stage it is in, never nothing (#3882) ([ffb4a0d926](https://github.com/smithersai/smithers/commit/ffb4a0d926c97cef95836e8e340fc7bd8d332781))
+
+### 📝 Documentation
+
+- **flows:** reach time travel, plan inspection and remote steps from the Flows pages (#3907) ([4fc31571f1](https://github.com/smithersai/smithers/commit/4fc31571f135f8e3726c9262ea571c63c04f1101))
+- **evals:** `docker exec` gets umask 0022 only where containerd runs as its own service ([1532d3026d](https://github.com/smithersai/smithers/commit/1532d3026dca2edb47ab0121e553373cf1fc39b6))
+- **flows:** the Flows pages say what a grant guards, what a crash costs, and drop product content (#3838) ([51964dda71](https://github.com/smithersai/smithers/commit/51964dda7170e1a393ca3b665753c229f6c0fd26))
+- **flows:** a changed flow reruns only what changed, and its plan prints before anything runs (#3893) ([c39bc8d887](https://github.com/smithersai/smithers/commit/c39bc8d887698173036df3f2bbc0b64b0e7add4f))
+- **flows:** a launch reader installs with npm or pnpm 11 and every link resolves on GitHub (#3838) ([72fd647206](https://github.com/smithersai/smithers/commit/72fd647206e98b87751bf0674be180a615f153eb))
+- **prerelease:** 1.0.0-rc.6 on npm next, on stable Effect 4 (#3839) ([9d4566b525](https://github.com/smithersai/smithers/commit/9d4566b525ada35d6ff95fa03276f1dba0307cbd))
+- **app:** the box-list comment claims the mechanism, not a header nobody recorded (#3882) ([5c5248a3d4](https://github.com/smithersai/smithers/commit/5c5248a3d4c6465bf603faf6246d3952ef3c532c))
+
+### 🧹 Chores
+
+- **build:** regenerate the target index so //:targetIndex passes on main (#3838) ([b44b175f69](https://github.com/smithersai/smithers/commit/b44b175f69f44800e1541f39fbc8e61469e426c0))
+
+### 📦 Other changes
+
+- **style(flows,model-host):** format the three files that held //...:fmt red on main ([d48d3940da](https://github.com/smithersai/smithers/commit/d48d3940da63d1b37a3cfbbd969f1221b0570807))
+- **test(chat):** the turn resource kind is pinned to the value the controller accepts (#3812) ([64d2c4e3fd](https://github.com/smithersai/smithers/commit/64d2c4e3fd98900942296bbe4f84c76ff33088f4))
+- **test(app):** the production shape, proven through the real list and the renderer together (#3882) ([f315d24c9d](https://github.com/smithersai/smithers/commit/f315d24c9d504e17e776b3affae71498b21c19d7))
+- **test(app):** the Activity door is repo.overview, and a repo-bound card keeps its own repository (#3889) ([4ff74de7b0](https://github.com/smithersai/smithers/commit/4ff74de7b049952329858102b809683983467322))
+- **test(app):** a typed /issue n over an open list is pinned as one pane, read from the repository's own door (#3831) ([ddf20af11f](https://github.com/smithersai/smithers/commit/ddf20af11f3788728538b2a1e031db4ed90e164c))
+- **test(app):** which search.* flows this fixture indexes is pinned, so a refusal cannot pass (#3878) ([387974cd46](https://github.com/smithersai/smithers/commit/387974cd46bb8bbcb6b4dd4aefe044b012f0a88d))
+- **test(app):** the stage a box card states holds its ordering rule across list scopes (#3882) ([7748483281](https://github.com/smithersai/smithers/commit/774848328187c8921d46279a2d2f3bfdaf1c025a))
+- **test(app):** a production row proves the author's-screen leg of a screen-only search (#3878) ([186d7f50b5](https://github.com/smithersai/smithers/commit/186d7f50b53538364d19301bdd413bcdf2837b9e))
+
+<!-- /commits:1.0.0-rc.7 -->
+
 ## 1.0.0-rc.6 (2026-10-14)
 
 <!-- commits:1.0.0-rc.6 -->

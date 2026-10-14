@@ -33,7 +33,7 @@ every durable host does. Every output block is real output from
 mkdir rewind && cd rewind
 npm init -y && npm pkg set type=module
 npm install @smthrs/flows@next effect
-npm install @smthrs/time-travel@1.0.0-rc.6 @smthrs/jj@1.0.0-rc.6
+npm install @smthrs/time-travel@1.0.0-rc.7 @smthrs/jj@1.0.0-rc.7
 jj git init workspace && mkdir -p workspace/.flows/forks
 ```
 

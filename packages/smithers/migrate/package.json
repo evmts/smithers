@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/migrate",
   "type": "module",
-  "version": "1.0.0-rc.6",
+  "version": "1.0.0-rc.7",
   "license": "MIT",
   "smthrs": {
     "group": "agent",
@@ -399,18 +399,18 @@
     "ws": "8.22.0"
   },
   "optionalDependencies": {
-    "@smthrs/agent": "1.0.0-rc.6",
-    "@smthrs/core": "1.0.0-rc.6",
-    "@smthrs/engine": "1.0.0-rc.6",
-    "@smthrs/flow": "1.0.0-rc.6",
-    "@smthrs/harness": "1.0.0-rc.6",
-    "@smthrs/journal": "1.0.0-rc.6",
-    "@smthrs/kernel": "1.0.0-rc.6",
-    "@smthrs/model": "1.0.0-rc.6",
-    "@smthrs/plan": "1.0.0-rc.6",
-    "@smthrs/platform-node": "1.0.0-rc.6",
-    "@smthrs/registry": "1.0.0-rc.6",
-    "@smthrs/canonical": "1.0.0-rc.6"
+    "@smthrs/agent": "1.0.0-rc.7",
+    "@smthrs/core": "1.0.0-rc.7",
+    "@smthrs/engine": "1.0.0-rc.7",
+    "@smthrs/flow": "1.0.0-rc.7",
+    "@smthrs/harness": "1.0.0-rc.7",
+    "@smthrs/journal": "1.0.0-rc.7",
+    "@smthrs/kernel": "1.0.0-rc.7",
+    "@smthrs/model": "1.0.0-rc.7",
+    "@smthrs/plan": "1.0.0-rc.7",
+    "@smthrs/platform-node": "1.0.0-rc.7",
+    "@smthrs/registry": "1.0.0-rc.7",
+    "@smthrs/canonical": "1.0.0-rc.7"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
