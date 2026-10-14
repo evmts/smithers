@@ -1,6 +1,6 @@
 import type { Locator, Page } from "@playwright/test"
 import { authenticatedTest } from "./auth-permissions/profile"
-import { bootWorkspace, nextTurnResponse } from "./chat-tools/ui"
+import { bootWorkspace, captureTurnTraffic, nextTurnResponse, parseTurnFrames } from "./chat-tools/ui"
 import { scenario } from "./coverage/types"
 import { appEntryPath, command, expect, test } from "./support/test"
 
@@ -118,8 +118,11 @@ agentTest("asked for a flow that labels new issues, the agent opens the form wit
  * list issues right now, but I can show you the documentation using the /docs
  * command" (2026-10-14, account 8 on smithers.sh) while the person's own
  * /issues.list worked. This row proves the screen door itself with the
- * smallest read-only act on it, /help: the model's call runs on the person's
- * screen and the app renders the card. It does not prove an issue read —
+ * smallest read-only act on it, /help: the turn's own durable frames carry
+ * the request the host ran and the instruction it wrote for the author's
+ * screen, and the app renders the Commands card that instruction opens. The
+ * card is upserted under one id, so its presence is never counted — the
+ * frames are what belong to this turn. It does not prove an issue read —
  * a Cloud account conversation has no repository-bound issue door
  * (smithersai/smithers#3876, #3871), and search.issues indexes only the issue
  * cards the conversation has already opened.
@@ -131,17 +134,27 @@ agentTest("asked what it can do here, the agent runs the app's own command list 
     "dimension:assistant-acts", "dimension:screen-only", "dimension:tool-loop", "dimension:no-remote-side-effect",
     "evidence:rendered-commands-card-and-reply"
   ],
-  description: "Ask the deployed Cloud agent what it can do and require the rendered Commands card from its own /help call, a reply with no how-to, and no launched run."
+  description: "Ask the deployed Cloud agent for the app's own command list and require its durable /help request and result frames, the rendered Commands card, no /docs deflection, and no launched run."
 }), async ({ page }, testInfo) => {
   await bootWorkspace(page)
-  const cards = page.locator('.smithers-card[data-kind="commands"]')
-  const before = await cards.count()
+  const traffic = await captureTurnTraffic(page)
   const { reply, launches } = await askAgent(
     page,
-    "Show me the commands you can run in this chat by running the app's own command list. Do not create, edit or delete anything."
+    "Run the app's own command list in this chat and tell me what it rendered. Do not create, edit or delete anything."
   )
-  await testInfo.attach("agent-acts-reply", { body: Buffer.from(JSON.stringify({ reply, launches }, null, 2)), contentType: "application/json" })
-  await expect(cards, `the agent replied ${JSON.stringify(reply)}`).toHaveCount(before + 1, { timeout: 30_000 })
-  expect(reply).not.toMatch(HOW_TO)
+  const frames = parseTurnFrames(await traffic.read())
+  await testInfo.attach("agent-acts-reply", { body: Buffer.from(JSON.stringify({ reply, launches, frames }, null, 2)), contentType: "application/json" })
+  // The tool request and its result, on the turn's own committed journal: only
+  // a host that offered /help and ran it writes this pair, and the settled
+  // frame carries the instruction the author's own browser acts on.
+  const calls = frames.filter((frame) => frame.name === "help").map((frame) => frame.type)
+  expect(calls.slice(0, 2), `the agent replied ${JSON.stringify(reply)}`).toEqual(["call.started", "call.settled"])
+  const settled: unknown = JSON.parse(JSON.stringify(frames.find((frame) => frame.type === "call.settled" && frame.name === "help")))
+  expect(settled).toMatchObject({ name: "help", verdict: "run", ui: { command: "help" } })
+  // What that instruction opens on the person's own screen.
+  await expect(page.getByTestId("card-commands")).toBeVisible({ timeout: 30_000 })
+  // Not HOW_TO: a command list legitimately says what the person can run. The
+  // deflection this row exists to catch is the /docs page offered instead.
+  expect(reply).not.toMatch(/\/docs\b/)
   expect(launches).toEqual([])
 })

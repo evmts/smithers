@@ -515,8 +515,8 @@ const accountConversation = (grant: DurableChatGrant): boolean =>
  * single-owner install), and withholding these flows there left its agent
  * with `docs` and a how-to for every act a person can take on their own
  * screen — live, asked to list a repository's issues, it answered "I can't
- * list issues right now, but I can show you the documentation". Only a turn
- * with neither an API nor an author's own screen offers them.
+ * list issues right now, but I can show you the documentation". A turn with
+ * neither an API nor an author's own screen is offered none of them.
  */
 const uiCommand = (row: CatalogDescriptor, command: UiInstructionCommand): Bind => (grant) =>
   grant.api === undefined && !accountConversation(grant) ? undefined : (args) =>
