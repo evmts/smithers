@@ -90,10 +90,25 @@ test("the fast model titles a long conversation's folded lines, marked as writte
   await expect.poll(async () => folded.count()).toBeGreaterThan(3)
   await expect.poll(async () => folded.locator(".tl-text b").allTextContents(), { timeout: 15_000 }).not.toContain("App activity")
   await expect(page.locator(".timeline svg, .timeline .avatar, .timeline .tl-node, .timeline .written")).toHaveCount(0)
-  for (const item of await folded.all()) {
-    const count = /^(\d+) entries/.exec(await item.locator(".tl-zoom").innerText())![1]
-    await expect(item.locator(".tl-text b")).toHaveText(`Fast title for ${count} entries`)
-  }
+  /*
+   * One atomic read per attempt, over every folded line at once. A line at a
+   * time cost a round trip each and named an index by position, so on a loaded
+   * runner the dozen reads either outlived the test's own budget or asked for
+   * a line the next render no longer held, and the pending read waited out the
+   * whole 60 s
+   * ([#3884](https://github.com/smithersai/smithers/issues/3884): gate 3 of
+   * Deploy apps 38543421985 and 38559954551, both on this line and nothing
+   * else). The claim is unchanged and a little stricter: every folded line
+   * carries a readable count AND the fast model's title for that count, and
+   * the failure names the lines that do not.
+   */
+  const mistitled = async () => folded.evaluateAll(items => items.flatMap(item => {
+    const count = /(\d+)\s*entries/.exec(item.querySelector(".tl-zoom")?.textContent?.trim() ?? "")?.[1]
+    const title = item.querySelector(".tl-text b")?.textContent?.trim() ?? ""
+    return count !== undefined && title === `Fast title for ${count} entries` ? []
+      : [`${item.getAttribute("data-entry") ?? "?"}: ${count ?? "no count"} / ${title}`]
+  }))
+  await expect.poll(mistitled, { timeout: 15_000 }).toEqual([])
   // Lines near the band are not folded: they keep their own titles and no mark.
   await expect(page.locator(".timeline > ol > li:not([data-zoom]) .written")).toHaveCount(0)
   await expect(page.locator('.timeline li[data-entry="long-59-7"]')).toBeVisible()
