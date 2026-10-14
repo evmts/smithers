@@ -95,6 +95,26 @@ func (e *StatusError) Error() string {
 	}
 }
 
+// NoCapacityCode is the code a provider returns, with HTTP 503, when no host
+// in its fleet has room for a request. It is a transient deferral and never a
+// verdict on the request or on a guest: the refusal lands before anything
+// runs, nothing is charged, and the same request can succeed unchanged once a
+// slot frees. It is the provider-side spelling of the product's own
+// no_capacity error code.
+const NoCapacityCode = "no_capacity"
+
+// IsNoCapacity reports whether err is a provider capacity refusal, however it
+// is wrapped. Both envelope spellings are read, because a provider may publish
+// the code as a bare `error` field or inside the structured `error.code`.
+func IsNoCapacity(err error) bool {
+	var status *StatusError
+	if !errors.As(err, &status) {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(status.Code), NoCapacityCode) ||
+		strings.EqualFold(strings.TrimSpace(status.ErrorCode), NoCapacityCode)
+}
+
 // State is the sandbox lifecycle state.
 type State string
 

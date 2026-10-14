@@ -1199,6 +1199,11 @@ func cancelledFrame(runID string) json.RawMessage {
 	return value
 }
 
+// hostNoCapacityMessage is read by the person whose turn ran out of attempts
+// while every sandbox host was busy. Their conversation and its history are
+// untouched: the launch was refused before anything ran.
+const hostNoCapacityMessage = "Every model host is busy right now. Nothing in this conversation was lost; send the message again in a moment."
+
 func errorFrame(runID, message string) json.RawMessage {
 	value, _ := json.Marshal(map[string]any{"runId": runID, "type": "done", "error": message})
 	return value
@@ -1430,6 +1435,12 @@ func (s *Store) stopProducerWith(ctx context.Context, grant ProducerGrant, code 
 	}
 	if code == "credential_missing" {
 		frame, _ = json.Marshal(map[string]any{"runId": turn.RunID, "type": "done", "code": "credential_missing", "error": "Model credential missing."})
+	}
+	if code == codeHostNoCapacity {
+		// No host ever started, so the default receipt's verdict on the host
+		// would be wrong. Say what happened, that nothing was lost, and what
+		// to do, as the workspace pool's own full-pool refusal does.
+		frame = errorFrame(turn.RunID, hostNoCapacityMessage)
 	}
 	if refused != "" {
 		frame = errorFrame(turn.RunID, refused)

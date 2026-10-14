@@ -139,6 +139,7 @@ func TestDispatcherRecordsHostFailureCause(t *testing.T) {
 // tested without waiting out the production backoff.
 func fastRetries(dispatcher *Dispatcher) {
 	dispatcher.backoff = func(int64) time.Duration { return 0 }
+	dispatcher.capacityBackoff = func(int64) time.Duration { return 0 }
 	dispatcher.scan = 20 * time.Millisecond
 }
 

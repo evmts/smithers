@@ -1199,12 +1199,8 @@ func isHardResumeFailure(err error) bool {
 // was, so the VM and its disk are untouched and resumable the moment a slot
 // frees up.
 func isNoCapacityError(err error) bool {
-	var statusErr *sandbox.StatusError
-	if errors.As(err, &statusErr) {
-		if strings.EqualFold(strings.TrimSpace(statusErr.Code), string(pkgerrors.CodeNoCapacity)) ||
-			strings.EqualFold(strings.TrimSpace(statusErr.ErrorCode), string(pkgerrors.CodeNoCapacity)) {
-			return true
-		}
+	if sandbox.IsNoCapacity(err) {
+		return true
 	}
 	var apiErr *pkgerrors.APIError
 	return errors.As(err, &apiErr) && apiErr.Code == pkgerrors.CodeNoCapacity
