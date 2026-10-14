@@ -56,7 +56,7 @@ const mergedDetail = {
   number: 6, title: "AutoPR webhook test webhook-auto-161219", body: "Automated pull request.",
   state: "closed", merged: true, merged_at: "2026-07-08T20:15:14Z", draft: false,
   user: { login: "roninjin10" }, head: { ref: "auto-pr-webhook-auto-161219" }, base: { ref: "main" },
-  created_at: "2026-07-08T16:12:19Z", updated_at: "2026-07-08T20:15:14Z"
+  created_at: "2026-07-08T20:14:25Z", updated_at: "2026-07-08T20:15:14Z"
 }
 /** The same pull request in `?state=all` list form: no `merged` key, `merged_at` set. */
 const mergedRow = {
