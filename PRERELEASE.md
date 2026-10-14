@@ -1,33 +1,43 @@
 # Prerelease status
 
 ```
-Updated       2026-10-13 13:55 PDT
-main          26c19d50d7 (the rc.5 cut) and later
+Updated       2026-10-14 09:30 PDT
+main          1f59760eb6 (the rc.6 cut) and later
 
-Published     1.0.0-rc.5 on npm `next`, 13:43 PDT. Release run 38449135611,
-              tag v1.0.0-rc.5 → 26c19d50d7. 49 of 49 packages. `latest` did
-              not move: 0.35.0 for `smthrs` and @smthrs/cli, 1.0.0-rc.3 for
-              @smthrs/flows and @smthrs/platform-node, 1.0.0-rc.2 for
-              @smthrs/canonical. pnpm 11 holds a version back for a day, so
-              `pnpm add <name>@next` installs rc.4 until 10-14 13:43 PDT;
-              `@1.0.0-rc.5` installs now.
-Flows         The published quickstart runs from an empty directory on one
-              line: `npm install @smthrs/flows@next effect@4.0.0-rc.115`
-              (#3838). Run from npm after the publish under npm 11.19 and
-              pnpm 11.25: prints, then replays. The Release smoke runs it on
-              every candidate. rc.4 failed three times on the same steps.
-Journeys      1ae37f2b82 (18 commits before the cut): no failed row, every
-              suite on try 1. Not run on the cut commit.
-              J1 21/0/0  J2 14/0/0  J3 14/0/5  J4 23/0/2  J5 21/0/0  J6 4/0/16
-              J7 21/0/0  J8 7/0/2   J9 13/0/0  J10 40/0/0 J11 19/0/0
-Real install  Not repeated for rc.5. Run 16 on 0ee534991b (before rc.4), no patch:
+Published     1.0.0-rc.6 on npm `next`, 2026-10-14. Release run 38558094192,
+              tag v1.0.0-rc.6 → 1f59760eb6. 49 of 49 packages. `latest` did
+              not move: 0.35.0 for `smthrs`, 1.0.0-rc.3 for @smthrs/flows.
+              The run's gates and backend lanes failed, as on rc.5; the
+              publish lane passed. pnpm 11 holds a version back for a day, so
+              `pnpm add <name>@next` installs rc.5 until 10-15; add
+              `--config.minimumReleaseAge=0` or `@1.0.0-rc.6` to get it now.
+Effect        Stable Effect 4 (#3839). Every package accepts `effect ^4.0.4`;
+              rc.115 is refused at install. Step identity carries over from
+              rc.5 except the three repository declarations that use
+              `Sha256.Digest`, which get new keys once.
+Flows         The quickstart runs from an empty directory on one line:
+              `npm install @smthrs/flows@next effect`. Run from npm after the
+              publish: npm installs effect 4.0.4, one copy, prints, then
+              replays. pnpm 11.25 does the same after
+              `pnpm approve-builds esbuild`; without it `pnpm add` exits 1 with
+              ERR_PNPM_IGNORED_BUILDS (docs and gate fixed in 6f56cc0f71,
+              after the cut).
+Journeys      aa1d018b2f (the port plus 12 commits, before the cut). 9 of 11
+              suites clean. J5 and J7 failed only on "Too many open files":
+              the nyc-02 lane user was at its 128 inotify instances during the
+              benchmark run, not a code fault. Not run on the cut commit.
+              J1 21/0/0  J2 14/0/0  J3 14/0/5  J4 23/0/2  J5 18/1/0  J6 4/0/16
+              J7 15/6/0  J8 7/0/2   J9 13/0/0  J10 40/0/0 J11 19/0/0
+Deploy        Not proven: alchemy moved to 2.0.0-beta.82 with the port. Run a
+              plan against real state before the next production deploy.
+Real install  Not repeated for rc.5 or rc.6. Run 16 on 0ee534991b (before rc.4), no patch:
               T1 canary-sandbox#160 merged with the card's Merge, Plan done.
               The learning run completed after the merge (first time).
               T2 #161. One slot, nobody acting: T2's machine suspended in
               review, its review lane wrote "Review: approve" and retired.
               Both wiki refresh runs succeeded (first time). Relays: peak 7
               per VM, 0 refusals. Every slot freed; longest hold 2 min 34 s.
-Broken in     Not re-checked on rc.5.
+Broken in     Not re-checked on rc.5 or rc.6.
 rc.4          1. /review cannot finish on a real install. In rc.4 its coding
                  host exits (no coding model); the job fails cleanly and its
                  machine is released. On main (2c400d5d93, run 17) the host
