@@ -9,6 +9,7 @@ import {
   ACCOUNT_NUMBERS_LINE,
   AGENT_NAME_LINE,
   ASSISTANT_ACTS_LINE,
+  CONVERSATION_IS_NOT_A_COMMAND_LINE,
   FAILED_RESULT_LINE,
   RUN_IS_NOT_RESULT_LINE,
   WORKFLOW_LAUNDERING_RULE
@@ -1031,7 +1032,9 @@ describe("an install's host runs the catalog commands its grant allows, as the t
         expect(system).toContain(line)
       }
       for (const line of WORKFLOW_LAUNDERING_RULE) expect(system).toContain(line)
-      expect(system).toContain("Everything this list lacks is a can't-yet. You cannot send or draft email")
+      expect(system).toContain(
+        "Everything this list lacks is an ACT you cannot take yet; it is never a subject you cannot discuss. You cannot send or draft email"
+      )
       expect(system).toContain(files)
     }
     // A turn that cannot list is never told to.
@@ -2265,13 +2268,63 @@ describe("a Cloud account conversation asks for a new flow with its form", () =>
     for (const line of [ASSISTANT_ACTS_LINE, FLOW_NEW_LINE, DOCS_LINE]) expect(cloud).toContain(line)
     // The rule sits after the commands it names and before the can't-yets.
     expect(cloud.indexOf(FLOW_NEW_COMMAND_LINE)).toBeLessThan(cloud.indexOf(FLOW_NEW_LINE))
-    expect(cloud.indexOf(FLOW_NEW_LINE)).toBeLessThan(cloud.indexOf("Everything this list lacks is a can't-yet."))
+    expect(cloud.indexOf(FLOW_NEW_LINE)).toBeLessThan(cloud.indexOf("Everything this list lacks is an ACT"))
     // A turn that cannot ask for the form is never told it is on the person's screen.
     for (const turn of [install, grant, https]) {
       const system = await told(turn)
       expect(system).toContain(ASSISTANT_ACTS_LINE)
       expect(system).not.toContain(FLOW_NEW_LINE)
       expect(system).not.toContain("form is on their screen")
+    }
+  })
+
+  /*
+   * THE OTHER HALF of the act rule: what the turn may SAY.
+   *
+   * Root sent two fresh Cloud prompts on 2026-10-14 after API 464674fb/d85fef7b
+   * was serving. A ten-section, ~1500-word guide to debugging distributed
+   * message queues came back "I'm sorry, but I can't create that guide for
+   * you." in 5 seconds (10:36Z, turn cd45c4a4-3ded-4114-82d8-12d32cda7f7b);
+   * "explain what a message queue is, in ten numbered sections" came back "I
+   * can't do that yet; you could try /docs." in 4 seconds (10:37Z). No
+   * transport stall: an isolated long-reply probe had just passed.
+   *
+   * A controlled probe over this exact path reproduced both sentences against
+   * the real provider, and the same provider answered 10,830 bytes in 23
+   * sections once the host prompt was removed — naming the reason itself:
+   * "I'm unable to provide that explanation because it isn't a supported
+   * command." The prompt's act rules were being read as a whitelist of
+   * SUBJECTS. This pins the boundary in the prompt the host actually sends.
+   * It proves what the turn is TOLD, not what a model does with it: the
+   * provider evidence is the probe's, and it lives beside this change.
+   */
+  test("the instructions bound the can't-yets to acts: writing in this chat needs no command", async () => {
+    const told = async (turn: DurableChatGrant) => {
+      const provider = model([])
+      await runWithDocs(turn, provider, producer((path) => file(path, JOURNEY), stackRoutes), PAGES)
+      return systemText(provider.requests[0])
+    }
+    const cloud = await told(account)
+    expect(cloud).toContain(CONVERSATION_IS_NOT_A_COMMAND_LINE)
+    // It bounds the two lines the refusals read as a subject whitelist, so it sits between them.
+    expect(cloud.indexOf(ASSISTANT_ACTS_LINE)).toBeLessThan(cloud.indexOf(CONVERSATION_IS_NOT_A_COMMAND_LINE))
+    expect(cloud.indexOf(CONVERSATION_IS_NOT_A_COMMAND_LINE)).toBeLessThan(cloud.indexOf("Everything this list lacks"))
+    // The unscoped sentence that licensed "it isn't a supported command" is gone from every grant.
+    for (const turn of [account, install, grant, https]) {
+      const system = await told(turn)
+      expect(system).not.toContain("Everything this list lacks is a can't-yet.")
+      expect(system).toContain(
+        "Everything this list lacks is an ACT you cannot take yet; it is never a subject you cannot discuss."
+      )
+      expect(system).toContain(CONVERSATION_IS_NOT_A_COMMAND_LINE)
+      // The act rule's own refusal clause names an act, not a request it could simply answer.
+      expect(system).toContain(
+        "When they ask you to ACT — to change something, or to reach something outside this conversation — and no command does it, say so in one sentence."
+      )
+      // Every external fence stands, unchanged.
+      expect(system).toContain("You cannot send or draft email")
+      expect(system).toContain("push to a branch or open a pull request — not directly, and not through a run")
+      for (const line of WORKFLOW_LAUNDERING_RULE) expect(system).toContain(line)
     }
   })
 
@@ -2466,5 +2519,59 @@ describe("a Cloud account conversation runs the screen-only flows for its author
     })
     // A count and a flag only: no command, payload, destination or credential.
     expect(JSON.stringify(offered)).not.toContain("search")
+  })
+
+  /*
+   * WHICH prompt the turn read, in the same channel.
+   *
+   * The two benign refusals of 2026-10-14 10:36Z and 10:37Z were
+   * indistinguishable in the journal from a provider that answered nothing,
+   * and the instructions the turn actually read were the one thing no frame
+   * carried: the host REPLACES them, so the request's own text proves nothing.
+   * A digest and a length tell two prompt revisions apart without putting one
+   * line of the prompt, or one word the person wrote, into a log.
+   */
+  test("the turn records the SHAPE of the prompt it read: lengths, counts and a digest, never its text", async () => {
+    const read = async (turn: DurableChatGrant) => {
+      const lines: Array<string> = []
+      const provider = model([])
+      await Effect.runPromise(
+        runDurableChatTurn(
+          provider.model,
+          turn,
+          { modelId: "m" },
+          "http://callback.test",
+          producer((path) => file(path, JOURNEY)).fetchImpl,
+          undefined,
+          PAGES,
+          createHostDiagnostics({ turnId: turn.turnId, write: (line) => lines.push(line) })
+        )
+      )
+      const record = lines.map((line) => JSON.parse(line) as Record<string, unknown>)
+        .find((row) => row.event === "host_tools" && row.phase === "prompt")
+      return { record, system: systemText(provider.requests[0]) }
+    }
+    const { record, system } = await read(account)
+    expect(record).toMatchObject({
+      diagnostic: HOST_DIAGNOSTIC_MARKER,
+      turnId: account.turnId,
+      phase: "prompt",
+      replaced: true,
+      instructionBytes: system.length,
+      appended: false,
+      appendedBytes: 0,
+      context: false,
+      messages: 1
+    })
+    // The digest identifies the revision and carries none of its text back.
+    expect(record?.instructionSha).toBe(createHash("sha256").update(system).digest("hex").slice(0, 12))
+    expect(record?.instructionLines).toBe(system.split("\n").length)
+    const serialized = JSON.stringify(record)
+    for (const leak of ["JOURNEY", "search", "flow.new", "can't-yet", "Smithers,"]) {
+      expect(serialized, `the record must not carry ${leak}`).not.toContain(leak)
+    }
+    // A turn the host owns no prompt for says so, and still reports its shape.
+    const bare = await read({ ...sourceless, request: { ...question, messages: [] } })
+    expect(bare.record).toMatchObject({ replaced: true, messages: 0 })
   })
 })

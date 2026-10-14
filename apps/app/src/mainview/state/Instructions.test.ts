@@ -8,6 +8,7 @@
  */
 import { describe, expect, test } from "bun:test"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
+import { CONVERSATION_IS_NOT_A_COMMAND_LINE } from "@smthrs/rpc/AgentInstructions"
 import { cloudCapabilities, localCapabilities } from "@smthrs/rpc/HostCapabilities"
 import { executeAgentToolCall } from "../flows/agentTools"
 import { scopedControllers } from "./ControllerTestScope"
@@ -21,6 +22,30 @@ const createAppController = scopedControllers()
 const honesty = (): InstructionHonesty => ({
   github: { connected: false, login: null, repositories: null },
   localRepositories: [], localRepositoriesAvailable: false
+})
+
+/*
+ * BOTH DOORS, ONE RULE.
+ *
+ * The app agent's standing rules are shared (@smthrs/rpc/AgentInstructions) so
+ * the browser's own prompt and the model host's hosted turns cannot disagree
+ * about what the agent is. They did disagree about prose: the hosted prompt
+ * carried an act rule whose refusal clause named anything "not in your
+ * commands", and two live Cloud turns refused a plain ten-section explanation
+ * of message queues (2026-10-14 10:36Z and 10:37Z). The boundary — commands
+ * and can't-yets are ACTS, never subjects — now travels with the shared rules,
+ * so this door states it too, and neither door's can't-yet sentence reads as a
+ * whitelist of subjects.
+ */
+test("the browser prompt says writing in the chat needs no command, and scopes its can't-yets to acts", () => {
+  const prompt = smithersInstructions([], honesty())
+  expect(prompt.split(CONVERSATION_IS_NOT_A_COMMAND_LINE)).toHaveLength(2)
+  expect(prompt).not.toContain("Everything the catalog lacks is a can't-yet")
+  expect(prompt).toContain("Everything the catalog lacks is an ACT you cannot take yet, never a subject you cannot discuss")
+  // The external fences are untouched: each named effect still refuses.
+  expect(prompt).toContain("You cannot send or draft email")
+  expect(prompt).toContain("push to a branch or open a pull request — not directly, and not through a run")
+  expect(prompt).toContain("Asked to write or explain something about one of them, write it: the subject is never the fence.")
 })
 
 test("the browser host line is present once and names no retired download door", () => {

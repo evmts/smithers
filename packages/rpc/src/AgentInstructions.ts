@@ -41,7 +41,31 @@ export const ASK_IS_PERMISSION_LINE =
  * @category constants
  */
 export const ASSISTANT_ACTS_LINE =
-  "You are the person's assistant: you do the work with your commands, they do not do it themselves. When they ask for something one of your commands carries out, run that command in the same turn, however the request is phrased (\"can we …\", \"how do I …\", \"help me …\"), and never answer with steps for them to carry out: no \"you can …\", no \"run /…\", no \"define the flow source …\". When they ask you to do something that is not in your commands, say so in one sentence."
+  "You are the person's assistant: you do the work with your commands, they do not do it themselves. When they ask for something one of your commands carries out, run that command in the same turn, however the request is phrased (\"can we …\", \"how do I …\", \"help me …\"), and never answer with steps for them to carry out: no \"you can …\", no \"run /…\", no \"define the flow source …\". When they ask you to ACT — to change something, or to reach something outside this conversation — and no command does it, say so in one sentence."
+
+/**
+ * Writing in the chat is not an act, and no catalog gates it.
+ *
+ * Two live Smithers Cloud turns refused plain prose. Asked for a ten-section,
+ * ~1500-word guide to debugging distributed message queues, the model answered
+ * "I'm sorry, but I can't create that guide for you." in 5 seconds (account 8
+ * on smithers.sh, 2026-10-14 10:36Z); asked to explain what a message queue is
+ * in ten numbered sections, "I can't do that yet; you could try /docs." in 4
+ * seconds (10:37Z). A controlled probe reproduced both against the real
+ * provider through the host path, with the SAME provider answering 10,830
+ * bytes in 23 sections once the host prompt was removed — and it named the
+ * reason in its own words: "I'm unable to provide that explanation because it
+ * isn't a supported command."
+ *
+ * The act rule above and the can't-yet sentence below are about EFFECTS, and
+ * the model was reading them as a whitelist of SUBJECTS. This line draws that
+ * boundary. It grants nothing: every external effect is still a can't-yet, and
+ * the sentence that says so is unchanged.
+ * @since 1.0.0
+ * @category constants
+ */
+export const CONVERSATION_IS_NOT_A_COMMAND_LINE =
+  "Writing in this chat is always yours to do, and no command gates it. Answering a question, explaining how something works, teaching a subject, comparing options, summarizing, translating, reviewing text, doing arithmetic, and drafting prose or code the person reads here are not acts and need no catalog entry: answer in full, in the shape and at the length they asked for, however long that is. The commands and the can't-yets are about ACTS — effects outside this conversation — never about subjects you may discuss. So never refuse an explanation, a guide, an essay, or any piece of writing because no command covers it, never cut one short for that reason, and never hand it off to docs or to a slash command: docs is for how Smithers itself works, not for the world."
 
 /**
  * An announced act has its tool call in the same turn.
@@ -125,7 +149,7 @@ export const namedCantYets = (fileReaders: ReadonlyArray<string>): ReadonlyArray
 export const cantYetsSentence = (cantYets: ReadonlyArray<string>): string =>
   `You cannot ${
     cantYets.join("; ")
-  }. When the user asks for one of those, say plainly that you can't do it yet and name the one honest next step that IS in the catalog — never offer, imply, or let the user believe you can do it.`
+  }. When the user asks you to DO one of those, say plainly that you can't do it yet and name the one honest next step that IS in the catalog — never offer, imply, or let the user believe you can do it. Asked to write or explain something about one of them, write it: the subject is never the fence.`
 
 /**
  * One command as a system prompt lists it: `- /name args — summary`. A confirm command says that it only asks.

@@ -37,6 +37,7 @@ import {
   ASK_IS_PERMISSION_LINE,
   ASSISTANT_ACTS_LINE,
   cantYetsSentence,
+  CONVERSATION_IS_NOT_A_COMMAND_LINE,
   FAILED_RESULT_LINE,
   namedCantYets,
   RUN_IS_NOT_RESULT_LINE,
@@ -64,6 +65,7 @@ import {
   UiInstructionFrameSchema
 } from "@smthrs/rpc/UiInstruction"
 import { Effect } from "effect"
+import { createHash } from "node:crypto"
 import { z } from "zod"
 import type { DurableChatGrant } from "./DurableChatProducer.ts"
 import type { HostDiagnostics } from "./HostDiagnostics.ts"
@@ -846,6 +848,7 @@ const hostInstructions = (offered: ReadonlyArray<Offered>, docs: ReadonlyArray<D
     TOOL_CHANNEL_LINE,
     ASK_IS_PERMISSION_LINE,
     ASSISTANT_ACTS_LINE,
+    CONVERSATION_IS_NOT_A_COMMAND_LINE,
     ANNOUNCED_ACT_LINE,
     RUN_IS_NOT_RESULT_LINE,
     FAILED_RESULT_LINE,
@@ -869,7 +872,9 @@ const hostInstructions = (offered: ReadonlyArray<Offered>, docs: ReadonlyArray<D
     ...(offered.some(({ command, asked }) => asked === true && command.name === "flow.new") ? [FLOW_NEW_LINE] : []),
     ...(offered.some(({ command }) => command.name === "docs") ? [docsReadLine(docs)] : []),
     "",
-    `Everything this list lacks is a can't-yet. ${cantYetsSentence(namedCantYets(reads))}`,
+    `Everything this list lacks is an ACT you cannot take yet; it is never a subject you cannot discuss. ${
+      cantYetsSentence(namedCantYets(reads))
+    }`,
     ...WORKFLOW_LAUNDERING_RULE
   ].join("\n")
 }
@@ -1028,6 +1033,31 @@ export const runHostTurn = <E>(
     if (grant.agentInstructions !== undefined) {
       request = { ...request, instructions: request.instructions + "\n\n" + grant.agentInstructions }
     }
+    /*
+     * WHICH prompt this turn read, as shape only.
+     *
+     * A turn that answers "I can't do that yet" reads in the journal exactly
+     * like a provider stall or a model that had nothing to say, and the
+     * instructions it actually read are the one thing no frame carries. Two
+     * live account turns refused a plain ten-section explanation of message
+     * queues (2026-10-14 10:36Z and 10:37Z) and the only way to tell which
+     * prompt revision they read was to guess from the deploy. These are
+     * lengths, counts, flags and a prompt DIGEST — never a line of the prompt,
+     * never a credential, and never a word the person wrote.
+     */
+    diagnostics?.record("host_tools", "prompt", {
+      replaced: offered.length > 0,
+      instructionBytes: request.instructions.length,
+      instructionLines: request.instructions.split("\n").length,
+      instructionSha: createHash("sha256").update(request.instructions).digest("hex").slice(0, 12),
+      appended: grant.agentInstructions !== undefined,
+      appendedBytes: grant.agentInstructions?.length ?? 0,
+      context: request.context !== undefined,
+      contextVersion: request.context?.version ?? 0,
+      capabilities: request.context?.capabilities.length ?? 0,
+      limitations: request.context?.limitations.length ?? 0,
+      messages: request.messages.length
+    })
     let usage: AgentTurnUsage | undefined
     let ordinal = 0
     for (let link = 0;; link += 1) {

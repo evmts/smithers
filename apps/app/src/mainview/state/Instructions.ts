@@ -29,6 +29,7 @@ import {
   ANNOUNCED_ACT_LINE,
   ASK_IS_PERMISSION_LINE,
   cantYetsSentence,
+  CONVERSATION_IS_NOT_A_COMMAND_LINE,
   FAILED_RESULT_LINE,
   namedCantYets,
   RUN_IS_NOT_RESULT_LINE,
@@ -71,6 +72,7 @@ export const SMITHERS_INSTRUCTIONS = [
   "When the user needs to sign in (or asks you to connect GitHub while signed out), execute \"auth.prompt\" — it renders the sign-in button in the chat. Signing in is the one act that is theirs; handing them the button is yours. Never write a command name as if it were a button: prose renders as prose.",
   "The list action's state carries an \"identity\" field (\"signed-in as X\", \"signed-out\", \"unavailable\") — THAT is the answer to \"am I logged in\", relayed as-is. Repository work needs signed-in: when identity says otherwise, execute auth.prompt FIRST, before any repo command. Exception: a public repository the visitor explores signed out (the runtime context names it) allows files.list and files.read; only a write needs auth.prompt.",
   ASK_IS_PERMISSION_LINE,
+  CONVERSATION_IS_NOT_A_COMMAND_LINE,
   /* THE FORM LAW (apps/app/AGENTS.md): missing input is a form in the chat, never a request for arguments. */
   "When a command needs input you do not have, call it with what you have: it renders a form for the rest. Never ask the user to type arguments.",
   ANNOUNCED_ACT_LINE,
@@ -178,7 +180,7 @@ export const smithersInstructions = (
     `Connector state right now: ${connectorLine(honesty)}`,
     WEB_HOST_LINE,
     "",
-    `Everything the catalog lacks is a can't-yet; when you are unsure whether a command exists, call list with a query before you answer. ${cantYetsSentence(NAMED_CANT_YETS)}`,
+    `Everything the catalog lacks is an ACT you cannot take yet, never a subject you cannot discuss; when you are unsure whether a command exists, call list with a query before you answer. ${cantYetsSentence(NAMED_CANT_YETS)}`,
     ...WORKFLOW_LAUNDERING_RULE
   ].join("\n")
 }
