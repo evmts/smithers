@@ -125,6 +125,21 @@ export const truncateBytes = (
 }
 
 /**
+ * Joins the start and the end of a stream cut in the middle around one line
+ * naming the bytes cut between them.
+ *
+ * The line stands alone, so a start that stops mid-line is ended before it.
+ * Only the line's own newlines are added; `droppedBytes` counts printed bytes.
+ *
+ * @category rendering
+ * @since 1.0.0-rc.5
+ */
+export const elideMiddle = (start: string, droppedBytes: number, end: string): string =>
+  `${start}${start === "" || start.endsWith("\n") ? "" : "\n"}[${droppedBytes} ${
+    droppedBytes === 1 ? "byte" : "bytes"
+  } omitted]\n${end}`
+
+/**
  * Splits on LF without counting a terminal LF as a line.
  * Carriage returns remain part of each line, including the CR in CRLF, so
  * joining a page with LF preserves its bytes except for the final LF.

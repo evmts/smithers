@@ -241,9 +241,9 @@ envelope `bash` declares for every call.
 | Output                                     | Type                           | Meaning                                                                            |
 | ------------------------------------------ | ------------------------------ | ---------------------------------------------------------------------------------- |
 | `exitCode`                                 | number                         | The command's exit code, including non-zero.                                       |
-| `stdout`, `stderr`                         | string                         | Captured streams, tail kept when truncated.                                        |
+| `stdout`, `stderr`                         | string                         | Captured streams; start and end kept when truncated.                               |
 | `stdoutTruncated`, `stderrTruncated`       | boolean                        | Whether that stream is a fragment.                                                 |
-| `stdoutDroppedBytes`, `stderrDroppedBytes` | number                         | Bytes omitted from the start.                                                      |
+| `stdoutDroppedBytes`, `stderrDroppedBytes` | number                         | Bytes omitted from the middle.                                                     |
 | `invalidProbe`                             | `Probe.InvalidProbe`, optional | Reserved for independently confirmed launch failures; not inferred from exit code. |
 
 `Bash.Input` and `Bash.Output` are also exported as TypeScript types alongside

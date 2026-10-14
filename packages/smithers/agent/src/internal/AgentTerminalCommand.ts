@@ -74,6 +74,10 @@ class Capture {
   }
   private state: "text" | "escape" | "csi" | "string" | "stringEscape" = "text"
   private cr = false
+  // Bash's bound: whole characters up to the first 15,000 bytes, then the
+  // last bytes of the 30,000 left, so the middle is what gets dropped.
+  private head = ""
+  private headBytes = 0
   private tail = ""
   private dropped = 0
   private readonly encoder = new TextEncoder()
@@ -110,10 +114,20 @@ class Capture {
         }
       }
     }
+    // The head stays open until a character first spills past it.
+    if (this.tail === "") {
+      const bytesIn = this.encoder.encode(plain)
+      let cut = Math.min(15_000 - this.headBytes, bytesIn.length)
+      while (cut > 0 && (bytesIn[cut]! & 0xc0) === 0x80) cut--
+      this.head += new TextDecoder().decode(bytesIn.subarray(0, cut))
+      this.headBytes += cut
+      plain = new TextDecoder().decode(bytesIn.subarray(cut))
+    }
+    const room = 30_000 - this.headBytes
     const bytesOut = this.encoder.encode(this.tail + plain)
-    if (bytesOut.length <= 30_000) this.tail += plain
+    if (bytesOut.length <= room) this.tail += plain
     else {
-      let start = bytesOut.length - 30_000
+      let start = bytesOut.length - room
       while ((bytesOut[start]! & 0xc0) === 0x80) start++
       this.dropped += start
       this.tail = new TextDecoder().decode(bytesOut.subarray(start))
@@ -124,7 +138,7 @@ class Capture {
     this.write(new Uint8Array(), true)
     return {
       exitCode,
-      stdout: this.tail,
+      stdout: this.dropped > 0 ? Bash.elideMiddle(this.head, this.dropped, this.tail) : this.head + this.tail,
       stderr: "",
       stdoutTruncated: this.dropped > 0,
       stderrTruncated: false,

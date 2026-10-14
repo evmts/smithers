@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import * as Grouping from "../src/internal/Grouping.ts"
-import { notice, slice, sourceLines, truncateBytes } from "../src/internal/Text.ts"
+import { elideMiddle, notice, slice, sourceLines, truncateBytes } from "../src/internal/Text.ts"
 
 const bytes = (value: string): number => new TextEncoder().encode(value).byteLength
 
@@ -98,6 +98,19 @@ describe("Text", () => {
     for (const text of ["", "alpha", "alpha\n", "alpha\nbeta\n", "alpha\nbeta", "alpha\n\n", "alpha\r\nbeta\r\n"]) {
       expect(slice(text, { offset: 1, limit: 2_000 }).totalLines, text).toBe(Grouping.sourceLines(text).length)
     }
+  })
+
+  it.each([
+    {
+      start: "MARKER-HEAD xx",
+      dropped: 10_025,
+      end: "xx MARKER-TAIL\n",
+      text: "MARKER-HEAD xx\n[10025 bytes omitted]\nxx MARKER-TAIL\n"
+    },
+    { start: "line\n", dropped: 1, end: "next", text: "line\n[1 byte omitted]\nnext" },
+    { start: "", dropped: 4, end: "", text: "[4 bytes omitted]\n" }
+  ])("puts the omitted middle of $start on a line of its own", ({ start, dropped, end, text }) => {
+    expect(elideMiddle(start, dropped, end)).toBe(text)
   })
 
   it.each(["head", "tail"] as const)("drops a whole four-byte scalar from a three-byte %s budget", (keep) => {

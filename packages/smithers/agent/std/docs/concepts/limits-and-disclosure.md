@@ -84,17 +84,20 @@ caller paging a large directory could see one entry twice and another never.
 `stdoutTruncated`, `stderrTruncated`, and `tailTruncated` are not display
 details. A truncated capture is a fragment of what the process printed, and
 [`@smthrs/harness`](/api/harness) reads these flags to refuse a later write of
-those exact bytes: writing a captured tail over a file replaces the file with
-the end of a log. Read the flag before writing captured output anywhere, and set
+those exact bytes: writing a captured fragment over a file replaces the file
+with a piece of a log. Read the flag before writing captured output anywhere, and set
 it in your own handler whenever you cut a capture: a consumer that cannot tell a
 fragment from the whole writes the fragment.
 
 `stdoutDroppedBytes`, `stderrDroppedBytes`, and `tailDroppedBytes` count what
 the process actually produced beyond the capture. Capture is bounded where the
 stream is read rather than after it is read, so a command that prints gigabytes
-costs the bound instead of the whole of what it printed. `bash` keeps the tail
-of each stream, because a failing command prints its verdict last; `read`,
-`fetch`, and `http-post` keep the head.
+costs the bound instead of the whole of what it printed. `bash` keeps the
+first and last 15,000 bytes of each stream and puts one line such as
+`[10025 bytes omitted]` where the middle was, because a search prints its
+matches first and a failing command prints its verdict last. Its dropped-bytes
+count is the size of that middle. `test` keeps the tail; `read`, `fetch`, and
+`http-post` keep the head.
 
 Every caller-supplied command (`bash`, `test`, `shell_command`) passes a capture
 bound. The internal `git` plumbing behind `Checkpoints` and `TestRun`'s baseline

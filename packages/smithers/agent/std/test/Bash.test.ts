@@ -1,4 +1,6 @@
 import { NodePath } from "@effect/platform-node"
+import * as NodeChildProcessSpawner from "@effect/platform-node/NodeChildProcessSpawner"
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import { Cause, Effect, Exit, Fiber, Layer, Option, Path, Schema, Sink, Stream } from "effect"
 import type * as ChildProcess from "effect/process/ChildProcess"
@@ -158,7 +160,7 @@ describe("Bash", () => {
     })
   })
 
-  it("caps stdout and stderr independently and retains each multibyte tail", async () => {
+  it("caps stdout and stderr independently and keeps each multibyte start and end", async () => {
     const stdout = `${"🙂".repeat(7_501)}TAIL`
     const stderr = `${"é".repeat(15_002)}END`
     const result = await execute(Effect.provide(
@@ -173,17 +175,16 @@ describe("Bash", () => {
       })
     ))
 
-    const encoder = new TextEncoder()
-    expect(result.stdoutTruncated).toBe(true)
-    expect(result.stderrTruncated).toBe(true)
-    expect(result.stdout.endsWith("TAIL")).toBe(true)
-    expect(result.stderr.endsWith("END")).toBe(true)
-    expect(encoder.encode(result.stdout)).toHaveLength(MAX_SHELL_OUTPUT_BYTES)
-    expect(encoder.encode(result.stderr).byteLength).toBeLessThanOrEqual(MAX_SHELL_OUTPUT_BYTES)
-    expect(result.stdoutDroppedBytes).toBe(8)
-    expect(result.stderrDroppedBytes).toBe(8)
-    expect(result.stdoutDroppedBytes).toBe(encoder.encode(stdout).byteLength - encoder.encode(result.stdout).byteLength)
-    expect(result.stderrDroppedBytes).toBe(encoder.encode(stderr).byteLength - encoder.encode(result.stderr).byteLength)
+    // The stdout cut falls between characters at both ends; the stderr tail
+    // starts inside an "é", which is dropped whole rather than half-decoded.
+    expect(result).toMatchObject({
+      stdout: `${"🙂".repeat(3_750)}\n[8 bytes omitted]\n${"🙂".repeat(3_749)}TAIL`,
+      stderr: `${"é".repeat(7_500)}\n[8 bytes omitted]\n${"é".repeat(7_498)}END`,
+      stdoutTruncated: true,
+      stderrTruncated: true,
+      stdoutDroppedBytes: 8,
+      stderrDroppedBytes: 8
+    })
   })
 
   it("passes the shell output budget into capture before reading oversized streams", async () => {
@@ -197,16 +198,105 @@ describe("Bash", () => {
 
       expect(exec).toHaveBeenCalledWith(
         "oversized-capture",
-        expect.objectContaining({ maxCaptureBytes: MAX_SHELL_OUTPUT_BYTES })
+        expect.objectContaining({ maxCaptureBytes: MAX_SHELL_OUTPUT_BYTES, overflow: "ends" })
       )
-      expect(new TextEncoder().encode(result.stdout).byteLength).toBeLessThanOrEqual(MAX_SHELL_OUTPUT_BYTES)
-      expect(result.stdout.endsWith("TAIL")).toBe(true)
-      expect(result.stdoutDroppedBytes).toBe(
-        new TextEncoder().encode(stdout).byteLength - new TextEncoder().encode(result.stdout).byteLength
-      )
+      const half = MAX_SHELL_OUTPUT_BYTES / 2
+      expect(result.stdout).toBe(`${stdout.slice(0, half)}\n[90004 bytes omitted]\n${stdout.slice(-half)}`)
+      expect(result.stdoutDroppedBytes).toBe(stdout.length - MAX_SHELL_OUTPUT_BYTES)
     } finally {
       exec.mockRestore()
     }
+  })
+
+  /**
+   * A long stream keeps its first and last 15,000 bytes, and one line names the
+   * bytes cut between them. These run real processes, because the cut is made
+   * on the bytes a process printed as they arrive.
+   */
+  describe.skipIf(process.platform === "win32")("long output from a real process", () => {
+    const spawning = Layer.merge(
+      Layer.provide(NodeChildProcessSpawner.layer, Layer.merge(NodeFileSystem.layer, Path.layer)),
+      Path.layer
+    )
+    const half = MAX_SHELL_OUTPUT_BYTES / 2
+    const bytes = (text: string): number => new TextEncoder().encode(text).byteLength
+    const run = (input: Bash.Input) => execute(Effect.provide(Bash.run(input), spawning))
+    /** Node prints exactly these strings, so every byte offset below is known. */
+    const printing = (stdout: string, stderr = "") =>
+      run({
+        mode: "unhermetic",
+        interpreter: "node",
+        script: `process.stdout.write(${JSON.stringify(stdout)}); process.stderr.write(${JSON.stringify(stderr)})`
+      })
+
+    it("keeps the start and the end of stdout and names the omitted middle", async () => {
+      const printed = `MARKER-HEAD\n${"x".repeat(40_000)}\nMARKER-TAIL\n`
+      const result = await run({
+        mode: "unhermetic",
+        command: "printf 'MARKER-HEAD\\n'; head -c 40000 /dev/zero | tr '\\0' x; printf '\\nMARKER-TAIL\\n'"
+      })
+
+      const middle = bytes(printed) - MAX_SHELL_OUTPUT_BYTES
+      expect(middle).toBe(10_025)
+      expect(result.stdout.startsWith("MARKER-HEAD\n")).toBe(true)
+      expect(result.stdout.endsWith("\nMARKER-TAIL\n")).toBe(true)
+      expect(result.stdout.split("\n")).toContain("[10025 bytes omitted]")
+      expect(result.stdout).toBe(`${printed.slice(0, half)}\n[10025 bytes omitted]\n${printed.slice(-half)}`)
+      expect(result.stdoutDroppedBytes).toBe(bytes(printed.slice(half, -half)))
+      expect(result).toMatchObject({
+        exitCode: 0,
+        stdoutTruncated: true,
+        stdoutDroppedBytes: middle,
+        stderr: "",
+        stderrTruncated: false,
+        stderrDroppedBytes: 0
+      })
+    })
+
+    it("returns a stream of exactly the limit whole", async () => {
+      const printed = `MARKER-HEAD\n${"x".repeat(MAX_SHELL_OUTPUT_BYTES - 25)}\nMARKER-TAIL\n`
+      expect(bytes(printed)).toBe(MAX_SHELL_OUTPUT_BYTES)
+      const result = await printing(printed)
+
+      expect(result.stdout).toBe(printed)
+      expect(result).toMatchObject({ stdoutTruncated: false, stdoutDroppedBytes: 0 })
+    })
+
+    it("cuts a stream one byte over the limit by that one byte", async () => {
+      const printed = `MARKER-HEAD\n${"x".repeat(MAX_SHELL_OUTPUT_BYTES - 24)}\nMARKER-TAIL\n`
+      const result = await printing(printed)
+
+      expect(result.stdout).toBe(`${printed.slice(0, half)}\n[1 byte omitted]\n${printed.slice(-half)}`)
+      expect(result).toMatchObject({ stdoutTruncated: true, stdoutDroppedBytes: 1 })
+    })
+
+    it("cuts on whole characters and counts a split character as omitted", async () => {
+      // Byte 15,000 is the second byte of "é", and the tail's first byte is
+      // the second byte of "€", so both whole characters fall in the middle.
+      const start = "a".repeat(half - 1)
+      const end = "b".repeat(half - 2)
+      const middle = `é${"x".repeat(10_000)}€`
+      const result = await printing(`${start}${middle}${end}`)
+
+      expect(result.stdout).toBe(`${start}\n[10005 bytes omitted]\n${end}`)
+      expect(result.stdout).not.toContain("�")
+      expect(result.stdoutDroppedBytes).toBe(bytes(middle))
+      expect(result.stdoutTruncated).toBe(true)
+    })
+
+    it("keeps the start and the end of stderr on the same terms", async () => {
+      const printed = `MARKER-HEAD\n${"x".repeat(40_000)}\nMARKER-TAIL\n`
+      const result = await printing("ok", printed)
+
+      expect(result.stderr).toBe(`${printed.slice(0, half)}\n[10025 bytes omitted]\n${printed.slice(-half)}`)
+      expect(result).toMatchObject({
+        stdout: "ok",
+        stdoutTruncated: false,
+        stdoutDroppedBytes: 0,
+        stderrTruncated: true,
+        stderrDroppedBytes: bytes(printed.slice(half, -half))
+      })
+    })
   })
 
   it("maps shell timeouts to the typed timeout error", async () => {

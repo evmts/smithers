@@ -159,15 +159,25 @@ channel.
 | Field                                      | Meaning                                                     |
 | ------------------------------------------ | ----------------------------------------------------------- |
 | `exitCode`                                 | The command's exit code.                                    |
-| `stdout`, `stderr`                         | The captured streams, tail-first when truncated.            |
+| `stdout`, `stderr`                         | The captured streams; start and end when truncated.         |
 | `stdoutTruncated`, `stderrTruncated`       | Whether that stream is a fragment.                          |
-| `stdoutDroppedBytes`, `stderrDroppedBytes` | Bytes omitted from the start.                               |
+| `stdoutDroppedBytes`, `stderrDroppedBytes` | Bytes omitted from the middle.                              |
 | `invalidProbe`                             | Present when the shell refused to start the command at all. |
 
-Each stream is bounded at 30,000 bytes and the tail is kept, because a failing
-command prints its verdict last. Never write a truncated stream to a file: it is
-the end of a log, not the content it came from. `@smthrs/harness` reads the
-`Truncated` flags to refuse exactly that.
+Each stream is bounded at 30,000 bytes: its first 15,000 and its last 15,000.
+A search prints its matches first and a failing command prints its verdict
+last, so both survive. One line stands where the middle was:
+
+```text
+MARKER-HEAD
+xxxxxxxxxxxx
+[10025 bytes omitted]
+xxxxxxxxxxxx
+MARKER-TAIL
+```
+
+Never write a truncated stream to a file: it is a fragment, not the content it
+came from. `@smthrs/harness` reads the `Truncated` flags to refuse exactly that.
 
 `timeoutMs` defaults to `Bash.DEFAULT_TIMEOUT_MS`, ten minutes.
 

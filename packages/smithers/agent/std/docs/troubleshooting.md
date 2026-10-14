@@ -260,11 +260,11 @@ runs. The server would have run workspace-written code on the host.
 absolute path, not a launcher. For typescript-language-server, also pin
 `initializationOptions: { tsserver: { path } }` to a host copy.
 
-## A write of captured output replaced a file with a log tail
+## A write of captured output replaced a file with a fragment
 
 **What happened.** A truncated `stdout`, `stderr`, or `tail` was written to a
-file. Those fields are fragments: the capture keeps the tail of what the process
-printed, not the whole of it.
+file. Those fields are fragments: `bash` keeps the start and the end of what the
+process printed and `test` keeps the tail, never the whole of it.
 
 **What to change.** Check `stdoutTruncated`, `stderrTruncated`, or
 `tailTruncated` before writing captured output anywhere.

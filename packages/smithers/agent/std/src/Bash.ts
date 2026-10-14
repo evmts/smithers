@@ -27,7 +27,7 @@ import { capability, envelope } from "./internal/Declaration.ts"
 import * as Diagnostics from "./internal/Diagnostics.ts"
 import { outsideEnvelope } from "./internal/EnvelopePrecheck.ts"
 import * as Exec from "./internal/Exec.ts"
-import { MAX_SHELL_OUTPUT_BYTES, truncateBytes } from "./internal/Text.ts"
+import { elideMiddle as elide, MAX_SHELL_OUTPUT_BYTES } from "./internal/Text.ts"
 import * as Probe from "./Probe.ts"
 import * as StdError from "./StdError.ts"
 import * as TreeFingerprint from "./TreeFingerprint.ts"
@@ -173,10 +173,12 @@ export type Input = typeof Input.Type
 export const Output = Schema.Struct({
   exitCode: Schema.Number.annotate({ description: "Command exit code, including non-zero codes" }),
   stdout: Schema.String.annotate({
-    description: "Captured stdout; only the tail, and not the whole output, when stdoutTruncated is true"
+    description:
+      "Captured stdout; when stdoutTruncated is true, only its start and end, with one line naming the bytes omitted between them"
   }),
   stderr: Schema.String.annotate({
-    description: "Captured stderr; only the tail, and not the whole output, when stderrTruncated is true"
+    description:
+      "Captured stderr; when stderrTruncated is true, only its start and end, with one line naming the bytes omitted between them"
   }),
   stdoutTruncated: Schema.Boolean.annotate({
     description:
@@ -186,8 +188,8 @@ export const Output = Schema.Struct({
     description:
       "Whether stderr exceeded the capture limit, leaving stderr a fragment that must not be written to a file"
   }),
-  stdoutDroppedBytes: Schema.Number.annotate({ description: "UTF-8 bytes omitted from the start of stdout" }),
-  stderrDroppedBytes: Schema.Number.annotate({ description: "UTF-8 bytes omitted from the start of stderr" }),
+  stdoutDroppedBytes: Schema.Number.annotate({ description: "UTF-8 bytes omitted from the middle of stdout" }),
+  stderrDroppedBytes: Schema.Number.annotate({ description: "UTF-8 bytes omitted from the middle of stderr" }),
   invalidProbe: Schema.optional(
     Probe.InvalidProbe.annotate({
       description: "Reserved for a confirmed launch failure; an exit code alone does not establish one"
@@ -208,6 +210,17 @@ export const Output = Schema.Struct({
  * @since 1.0.0
  */
 export type Output = typeof Output.Type
+
+/**
+ * The text of a stream cut to its start and end: the start, one line naming
+ * the bytes omitted between them, and the end. A host that captures output
+ * itself, such as a terminal behind {@link inTerminal}, cuts with this so every
+ * {@link Output} reads the same.
+ *
+ * @category rendering
+ * @since 1.0.0-rc.5
+ */
+export const elideMiddle: (start: string, droppedBytes: number, end: string) => string = elide
 
 /**
  * Static conservative effect envelope for the bash flow.
@@ -500,6 +513,7 @@ export const run = Effect.fn("Bash.run")(function*(
     ...(spawned.env === undefined ? {} : { env: spawned.env }),
     timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     maxCaptureBytes: MAX_SHELL_OUTPUT_BYTES,
+    overflow: "ends",
     ...(spawned.args === undefined ? {} : { args: spawned.args }),
     ...(spawned.stdin === undefined ? {} : { stdin: spawned.stdin })
   }).pipe(Effect.mapError((error) => Exec.toStdError(spawned.quoted, error)))
@@ -507,18 +521,16 @@ export const run = Effect.fn("Bash.run")(function*(
   // A command on this host may have changed files a language server holds
   // open; a container's files are not the ones it was sent.
   if (!contained) yield* Diagnostics.refresh
-  const stdout = truncateBytes(result.stdout, MAX_SHELL_OUTPUT_BYTES, { keep: "tail" })
-  const stderr = truncateBytes(result.stderr, MAX_SHELL_OUTPUT_BYTES, { keep: "tail" })
   // Exit codes alone cannot establish whether the shell refused to launch a
   // command or a launched runner chose that status after executing tests.
   return {
     exitCode: result.exitCode,
-    stdout: stdout.text,
-    stderr: stderr.text,
-    stdoutTruncated: result.stdoutDroppedBytes > 0 || stdout.truncated,
-    stderrTruncated: result.stderrDroppedBytes > 0 || stderr.truncated,
-    stdoutDroppedBytes: result.stdoutDroppedBytes + stdout.droppedBytes,
-    stderrDroppedBytes: result.stderrDroppedBytes + stderr.droppedBytes,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    stdoutTruncated: result.stdoutDroppedBytes > 0,
+    stderrTruncated: result.stderrDroppedBytes > 0,
+    stdoutDroppedBytes: result.stdoutDroppedBytes,
+    stderrDroppedBytes: result.stderrDroppedBytes,
     ...(mutated === undefined ? {} : { mutated })
   }
 })

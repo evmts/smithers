@@ -156,6 +156,30 @@ describe.skipIf(process.platform === "win32")("Exec capture", () => {
       expect(result.stdoutDroppedBytes).toBe(12)
     }).pipe(Effect.provide(host)), 30_000)
 
+  it.live.each([
+    { printed: "abcdefghij", max: 10, stdout: "abcdefghij", dropped: 0 },
+    { printed: "abcdefghijklmnop", max: 10, stdout: "abcde\n[6 bytes omitted]\nlmnop", dropped: 6 },
+    // Both cuts split an "é": the head drops its lead byte, the tail skips its
+    // continuation byte, and both count as omitted.
+    { printed: "é".repeat(9), max: 6, stdout: "é\n[14 bytes omitted]\né", dropped: 14 },
+    { printed: `aé${"x".repeat(10)}yz`, max: 6, stdout: "aé\n[9 bytes omitted]\nxyz", dropped: 9 },
+    { printed: `ab€${"x".repeat(10)}yz`, max: 6, stdout: "ab\n[12 bytes omitted]\nxyz", dropped: 12 },
+    { printed: `a€${"x".repeat(10)}yz`, max: 6, stdout: "a\n[12 bytes omitted]\nxyz", dropped: 12 },
+    { printed: `🙂${"x".repeat(10)}yz`, max: 6, stdout: "[13 bytes omitted]\nxyz", dropped: 13 },
+    { printed: `🙂${"x".repeat(10)}yz`, max: 8, stdout: "🙂\n[8 bytes omitted]\nxxyz", dropped: 8 },
+    { printed: `ab\n${"x".repeat(10)}yz`, max: 6, stdout: "ab\n[9 bytes omitted]\nxyz", dropped: 9 }
+  ])(
+    "keeps both ends of $printed within $max bytes under overflow ends",
+    ({ printed, max, stdout, dropped }) =>
+      Effect.gen(function*() {
+        const result = yield* Exec.exec(print(printed), { maxCaptureBytes: max, overflow: "ends" })
+        expect(result.stdout).toBe(stdout)
+        expect(result.stdout).not.toContain("\uFFFD")
+        expect(result.stdoutDroppedBytes).toBe(dropped)
+      }).pipe(Effect.provide(host)),
+    30_000
+  )
+
   it.live("bounds stderr on the same terms as stdout", () =>
     Effect.gen(function*() {
       const result = yield* Exec.exec(

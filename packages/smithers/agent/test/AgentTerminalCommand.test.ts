@@ -264,18 +264,25 @@ describe("registered terminal command result contract", () => {
     expect(await f.commands.run(input, controller().signal)).toEqual(expected("é界\nend\t!"))
   })
 
-  it("retains a bounded UTF-8 tail and exact dropped byte count", async () => {
-    const f = fixture([output("a".repeat(29_999)), output("界tail"), status])
+  it("keeps a bounded UTF-8 start and end and the exact dropped byte count", async () => {
+    const f = fixture([output("MARKER-HEAD" + "a".repeat(29_988)), output("界MARKER-TAIL"), status])
     expect(await f.commands.run(input, controller().signal)).toEqual({
-      ...expected("a".repeat(29_993) + "界tail"),
+      ...expected("MARKER-HEAD" + "a".repeat(14_989) + "\n[13 bytes omitted]\n" + "a".repeat(14_986) + "界MARKER-TAIL"),
       stdoutTruncated: true,
-      stdoutDroppedBytes: 6
+      stdoutDroppedBytes: 13
     })
     const unicode = fixture([output("a界".repeat(10_000)), status])
     const result = await unicode.commands.run(input, controller().signal)
-    expect(result.stdout).toBe("a界".repeat(7_500))
+    expect(result.stdout).toBe("a界".repeat(3_750) + "\n[10000 bytes omitted]\n" + "a界".repeat(3_750))
     expect(result.stdoutDroppedBytes).toBe(10_000)
     expect(result.stdoutTruncated).toBe(true)
+  })
+
+  it("returns output of exactly 30,000 bytes whole across frames", async () => {
+    const f = fixture([output("a".repeat(14_999)), output("界"), output("b".repeat(14_998)), status])
+    expect(await f.commands.run(input, controller().signal)).toEqual(
+      expected("a".repeat(14_999) + "界" + "b".repeat(14_998))
+    )
   })
 
   it("strips VT string variants, malformed sequences and ordinary control bytes", async () => {
@@ -292,7 +299,7 @@ describe("registered terminal command result contract", () => {
   it("keeps scalar boundaries and flushes incomplete UTF-8 at command exit", async () => {
     const f = fixture([output("界".repeat(10_000) + "x"), status])
     expect(await f.commands.run(input, controller().signal)).toEqual({
-      ...expected("界".repeat(9_999) + "x"),
+      ...expected("界".repeat(5_000) + "\n[3 bytes omitted]\n" + "界".repeat(4_999) + "x"),
       stdoutTruncated: true,
       stdoutDroppedBytes: 3
     })

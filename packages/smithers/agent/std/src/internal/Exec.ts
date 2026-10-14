@@ -21,6 +21,7 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import * as StdError from "../StdError.ts"
+import { elideMiddle } from "./Text.ts"
 
 /**
  * Failure codes a buffered execution can report, matching the codes the
@@ -66,9 +67,9 @@ export interface ExecResult {
   readonly stdout: string
   readonly stderr: string
   readonly exitCode: number
-  /** UTF-8 bytes dropped from the head of stdout to stay inside the capture bound. */
+  /** UTF-8 bytes of stdout dropped to stay inside the capture bound; see `overflow`. */
   readonly stdoutDroppedBytes: number
-  /** UTF-8 bytes dropped from the head of stderr to stay inside the capture bound. */
+  /** UTF-8 bytes of stderr dropped to stay inside the capture bound; see `overflow`. */
   readonly stderrDroppedBytes: number
 }
 
@@ -97,17 +98,25 @@ export interface ExecOptions {
    */
   readonly stdin?: string | undefined
   /**
-   * Bytes retained per captured stream. A stream that prints more keeps its
-   * tail and reports what it dropped, so a command printing gigabytes costs a
-   * bounded amount of memory rather than the whole of what it printed.
+   * Bytes retained per captured stream. A stream that prints more keeps what
+   * `overflow` names and reports what it dropped, so a command printing
+   * gigabytes costs a bounded amount of memory rather than the whole of what it
+   * printed.
    *
    * Absent means unbounded, which is what a caller wants when it needs every
    * byte a tool produced (`rg --files`, `git worktree list`).
    */
   readonly maxCaptureBytes?: number | undefined
-  /** Defaults to `tail`; `refuse` fails if either stream exceeds the bound. */
-  readonly overflow?: "tail" | "refuse" | undefined
+  /**
+   * What a stream past the bound keeps. `tail`, the default, keeps its last
+   * bytes. `ends` keeps its first and last halves and puts one line naming the
+   * dropped bytes where the middle was. `refuse` fails if either stream exceeds
+   * the bound.
+   */
+  readonly overflow?: Overflow | undefined
 }
+
+type Overflow = "tail" | "ends" | "refuse"
 
 /** One captured stream: the text kept, and the bytes dropped to keep it bounded. */
 interface Capture {
@@ -121,70 +130,143 @@ interface Tail {
   dropped: number
 }
 
+/** A stream's first bytes and its last ones: what `overflow: "ends"` keeps. */
+interface Ends {
+  readonly head: Array<Uint8Array>
+  headBytes: number
+  readonly tail: Tail
+}
+
 const decoder = new TextDecoder("utf-8")
+
+const emptyTail = (): Tail => ({ chunks: [], bytes: 0, dropped: 0 })
+
+/** A UTF-8 continuation byte is `10xxxxxx`; every other byte starts a character. */
+const isContinuation = (byte: number): boolean => (byte & 0b1100_0000) === 0b1000_0000
+
+const join = (chunks: ReadonlyArray<Uint8Array>, size: number): Uint8Array => {
+  const bytes = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return bytes
+}
+
+/** Appends one chunk and drops from the front whatever no longer fits. */
+const keepTail = (state: Tail, chunk: Uint8Array, maxBytes: number): void => {
+  if (chunk.byteLength === 0) return
+  state.chunks.push(chunk)
+  state.bytes += chunk.byteLength
+  while (state.bytes > maxBytes && state.chunks.length > 0) {
+    const excess = state.bytes - maxBytes
+    const first = state.chunks[0]!
+    if (first.byteLength <= excess) {
+      state.chunks.shift()
+      state.bytes -= first.byteLength
+      state.dropped += first.byteLength
+    } else {
+      state.chunks[0] = first.subarray(excess)
+      state.bytes -= excess
+      state.dropped += excess
+    }
+  }
+}
 
 /**
  * Joins the retained chunks and decodes them, skipping the partial code point a
  * dropped head can leave behind.
  *
- * A UTF-8 continuation byte is `10xxxxxx`, and a code point is at most four
- * bytes, so at most three leading continuation bytes can precede the first
- * whole character. Skipping them is counted as dropped rather than decoded to a
- * replacement character the process never printed.
+ * A code point is at most four bytes, so at most three leading continuation
+ * bytes can precede the first whole character. Skipping them is counted as
+ * dropped rather than decoded to a replacement character the process never
+ * printed.
  */
 const decodeTail = (state: Tail): Capture => {
-  const bytes = new Uint8Array(state.bytes)
-  let offset = 0
-  for (const chunk of state.chunks) {
-    bytes.set(chunk, offset)
-    offset += chunk.byteLength
-  }
+  const bytes = join(state.chunks, state.bytes)
   if (state.dropped === 0) return { text: decoder.decode(bytes), droppedBytes: 0 }
   let start = 0
-  while (start < bytes.byteLength && start < 3 && (bytes[start]! & 0b1100_0000) === 0b1000_0000) start++
+  while (start < bytes.byteLength && start < 3 && isContinuation(bytes[start]!)) start++
   return { text: decoder.decode(bytes.subarray(start)), droppedBytes: state.dropped + start }
+}
+
+/**
+ * The length of a cut head without the character the cut left unfinished.
+ *
+ * Its last character starts at the last byte that is not a continuation byte,
+ * and that byte says how many bytes the character needs. One that needs more
+ * than the head holds is dropped, for the same reason {@link decodeTail} skips
+ * a partial code point.
+ */
+const wholeLength = (bytes: Uint8Array): number => {
+  for (let back = 1; back <= Math.min(3, bytes.byteLength); back++) {
+    const byte = bytes[bytes.byteLength - back]!
+    if (isContinuation(byte)) continue
+    const width = byte >= 0b1111_0000 ? 4 : byte >= 0b1110_0000 ? 3 : byte >= 0b1100_0000 ? 2 : 1
+    return width > back ? bytes.byteLength - back : bytes.byteLength
+  }
+  return bytes.byteLength
+}
+
+/**
+ * Decodes a stream kept by its ends. A stream that fit is decoded whole;
+ * otherwise each end is cut on a character boundary and one line naming every
+ * byte between them stands where the middle was.
+ */
+const decodeEnds = (state: Ends): Capture => {
+  if (state.tail.dropped === 0) {
+    const whole = join([...state.head, ...state.tail.chunks], state.headBytes + state.tail.bytes)
+    return { text: decoder.decode(whole), droppedBytes: 0 }
+  }
+  const head = join(state.head, state.headBytes)
+  const kept = wholeLength(head)
+  const tail = decodeTail(state.tail)
+  const droppedBytes = head.byteLength - kept + tail.droppedBytes
+  return { text: elideMiddle(decoder.decode(head.subarray(0, kept)), droppedBytes, tail.text), droppedBytes }
 }
 
 const boundedTail = <E>(
   stream: Stream.Stream<Uint8Array, E>,
   maxBytes: number,
-  overflow: "tail" | "refuse" | undefined
+  overflow: Overflow | undefined
 ): Effect.Effect<Capture, E> =>
-  Stream.runFold(
-    stream,
-    (): Tail => ({ chunks: [], bytes: 0, dropped: 0 }),
-    (state, chunk) => {
-      if (chunk.byteLength === 0) return state
-      state.chunks.push(chunk)
-      state.bytes += chunk.byteLength
-      while (state.bytes > maxBytes && state.chunks.length > 0) {
-        const excess = state.bytes - maxBytes
-        const first = state.chunks[0]!
-        if (first.byteLength <= excess) {
-          state.chunks.shift()
-          state.bytes -= first.byteLength
-          state.dropped += first.byteLength
-        } else {
-          state.chunks[0] = first.subarray(excess)
-          state.bytes -= excess
-          state.dropped += excess
-        }
-      }
-      return state
-    }
-  ).pipe(Effect.map((state) =>
+  Stream.runFold(stream, emptyTail, (state, chunk) => {
+    keepTail(state, chunk, maxBytes)
+    return state
+  }).pipe(Effect.map((state) =>
     overflow === "refuse" && state.dropped > 0
       ? { text: "", droppedBytes: state.dropped }
       : decodeTail(state)
   ))
 
+/**
+ * Keeps the first half of the bound and the last half. The head fills first,
+ * and every byte after it passes through the tail, which drops from its front:
+ * what falls out of the tail is the middle.
+ */
+const boundedEnds = <E>(stream: Stream.Stream<Uint8Array, E>, maxBytes: number): Effect.Effect<Capture, E> => {
+  const headBytes = Math.floor(maxBytes / 2)
+  return Stream.runFold(stream, (): Ends => ({ head: [], headBytes: 0, tail: emptyTail() }), (state, chunk) => {
+    const taken = Math.min(headBytes - state.headBytes, chunk.byteLength)
+    if (taken > 0) {
+      state.head.push(chunk.subarray(0, taken))
+      state.headBytes += taken
+    }
+    keepTail(state.tail, chunk.subarray(taken), maxBytes - headBytes)
+    return state
+  }).pipe(Effect.map(decodeEnds))
+}
+
 const capture = <E>(
   stream: Stream.Stream<Uint8Array, E>,
   maxBytes: number | undefined,
-  overflow: "tail" | "refuse" | undefined
+  overflow: Overflow | undefined
 ): Effect.Effect<Capture, E> =>
   maxBytes === undefined
     ? Effect.map(Stream.mkString(Stream.decodeText(stream)), (text) => ({ text, droppedBytes: 0 }))
+    : overflow === "ends"
+    ? boundedEnds(stream, maxBytes)
     : boundedTail(stream, maxBytes, overflow)
 
 const unbounded = (

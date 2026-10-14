@@ -108,7 +108,7 @@ test("output is bounded like Bash and signals keep the shell's 128+n status", as
   const big = await h.run({ command: "big", mode: "unhermetic" })
   assert.equal(big.outcome, "success")
   const value = big.value as { stdout: string; stdoutTruncated: boolean; stdoutDroppedBytes: number }
-  assert.equal(value.stdout.length, 30_000)
+  assert.equal(value.stdout, `${"y".repeat(15_000)}\n[170000 bytes omitted]\n${"y".repeat(15_000)}`)
   assert.equal(value.stdoutTruncated, true)
   assert.equal(value.stdoutDroppedBytes, 170_000)
   const terminated = await h.run({ command: "terminated", mode: "unhermetic" })
