@@ -161,7 +161,15 @@ const DesignBranchBody = ({ card, actions }: { readonly card: CardOf<"branch">; 
   const controller = useController()
   const world = useDesignWorld()
   const branch = branchOf(world, card.payload.id)
-  if (branch === undefined) return <BranchStageBody card={card} stage={{ kind: "absent" }} source="design-seed" />
+  /*
+   * The seeded world answers for a branch only where it IS the authority. Off
+   * an install with the design fixture off — a hosted page whose bootstrap has
+   * not answered — it holds no rows at all, and reading that silence as the
+   * box's absence would tell a native retest "This box is not available."
+   * about a box nothing has looked for yet (#3882).
+   */
+  if (branch === undefined) return <BranchStageBody card={card} source="design-seed"
+    stage={branchSeedAvailable(controller) ? { kind: "absent" } : { kind: "loading" }} />
   const item = branch.item === undefined ? undefined : todoOf(world, branch.item)
   const submit = (name: string, payload: Record<string, unknown>) =>
     controller.submitCommand({ name, payload, actor: "user", originCardId: card.id })
@@ -282,8 +290,15 @@ export const LiveBranchBody = ({ card, actions }: { readonly card: CardOf<"branc
   if (!model) {
     if (branchSeedAvailable(controller)) return <DesignBranchBody card={card} actions={actions} />
     if (cloudBoxesHeld(controller) && controller.store !== undefined) return <CloudBoxBody card={card} actions={actions} />
-    /* An install's own `branch:<id>`, or a bootstrap that has not answered yet. */
-    const refusal = branch?.error ?? (refused(activity) ? activity?.error : refused(files) ? files?.error : undefined)
+    /*
+     * An install's own `branch:<id>`, or a bootstrap that has not answered yet.
+     * A stream that refused for its own reason outranks a code that only says
+     * this host does not serve the topic, so `forbidden` on the activity stream
+     * reads failed with its own word instead of pending forever (#3882).
+     */
+    const names = (error?: string): boolean => error !== undefined && error !== "unknown_topic" && error !== "unsupported"
+    const refusal = names(branch?.error) ? branch?.error
+      : names(activity?.error) ? activity?.error : names(files?.error) ? files?.error : branch?.error
     return <BranchStageBody card={card} source="live-topic" stage={branchCardStage([], refusal)} />
   }
   return <BranchView model={model} actions={bindings.actions} gestures={bindings.gestures}

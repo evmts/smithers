@@ -177,3 +177,35 @@ test("/branch T2 mounts live facts and its Fork enters the production dispatcher
     expect(controller.design.enabled).toBe(false)
   } finally { await act(async () => root.unmount()); await controller.dispose(); live.dispose() }
 })
+
+/*
+ * The three branch streams answer separately, and the card's stage is read
+ * from all three. A host that does not serve `branch:<id>` has not refused
+ * anything — that reads pending — but a stream that refused for its own reason
+ * has, and its word must survive the quieter code beside it rather than
+ * leaving the card spinning on a refusal it already knows about (#3882).
+ */
+test("a refused stream names its refusal even where the branch topic is simply not served", async () => {
+  const socket: LiveSocket = { readyState: 0, onopen: null, onclose: null, onmessage: null, send: () => {}, close: () => {} }
+  const live = new LiveChannel({ socket: () => socket })
+  const controller = { live, design: createDesignWorld({ enabled: false, timers: { set: () => 0, clear: () => {} } }) } as unknown as AppController
+  const host = document.createElement("div"), root = createRoot(host)
+  const card = { id: "branch:b-retry", kind: "branch", title: "Branch", status: "active", createdAt: 1, ordinal: 1, payload: { id: "b-retry" } } as const
+  const err = async (id: number, code: string) => act(async () => socket.onmessage?.({ data: JSON.stringify({ t: "err", id, code }) }))
+  try {
+    await act(async () => root.render(<ControllerTestProvider controller={controller}>{CARD_RENDERERS.branch.render(card, actions)}</ControllerTestProvider>))
+    socket.readyState = 1; socket.onopen?.()
+    await err(1, "unknown_topic")
+    /* A host without the topic is not a refusal: nothing has answered yet. */
+    expect(host.querySelector('[data-branch-stage="loading"]')).not.toBeNull()
+    await err(2, "forbidden")
+    const view = host.querySelector('[data-branch-stage]')
+    expect(view?.getAttribute("data-branch-stage")).toBe("failed")
+    expect(view?.getAttribute("data-branch-source")).toBe("live-topic")
+    expect(view?.getAttribute("data-branch-id")).toBe("b-retry")
+    expect(host.textContent).toContain("forbidden")
+    /* Still no invented machine state and no act. */
+    expect(view?.getAttribute("data-machine")).toBe("unknown")
+    expect(host.querySelector("[data-flow]")).toBeNull()
+  } finally { await act(async () => root.unmount()); live.dispose(); controller.design.dispose() }
+})

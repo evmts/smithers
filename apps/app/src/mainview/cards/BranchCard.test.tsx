@@ -168,6 +168,22 @@ describe("branch card mount", () => {
     expect(html).toContain('data-machine="unknown"')
     expect(html).not.toContain("data-flow=")
   })
+
+  /* With the design fixture off the seeded world holds no rows at all, so its
+   * silence says nothing about a box: before a host answers, the card is
+   * pending and never claims the box is gone (#3882). */
+  test("a card rendered before any host answers reads pending, never absent", () => {
+    const design = createDesignWorld({ enabled: false, timers: still, viewer: MAYA })
+    try {
+      const html = renderToStaticMarkup(<ControllerTestProvider controller={controller(design).controller}>
+        {CARD_RENDERERS.branch.render(card("0b0c0d0e-0000-4000-8000-000000003882") as Extract<Card, { kind: "branch" }>, actions)}
+      </ControllerTestProvider>)
+      expect(html).toContain('data-branch-stage="loading"')
+      expect(html).toContain("Loading this box.")
+      expect(html).not.toContain("This box is not available.")
+      expect(html).not.toContain("data-flow=")
+    } finally { design.dispose() }
+  })
 })
 
 test("an install Branch never renders the seeded model without its live topics", () => {

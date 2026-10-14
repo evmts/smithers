@@ -362,14 +362,16 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
     return `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}${rest}`
   }
 
-  const { runtime, watching, lifecycle, workspaceEpochs, recoveryFlights } = actorSharedState(ctx, "workspace", () => {
+  const { runtime, watching, lifecycle, workspaceEpochs, recoveryFlights, unlistedProbes } = actorSharedState(ctx, "workspace", () => {
     const runtime = ManagedRuntime.make(Layer.empty)
     const watching = Effect.runSync(FiberMap.make<string, void>().pipe(Scope.provide(runtime.scope)))
     return {
       runtime, watching,
       lifecycle: { disposed: false },
       recoveryFlights: new Map<string, Promise<unknown>>(),
-      workspaceEpochs: new Map<string, number>()
+      workspaceEpochs: new Map<string, number>(),
+      /** `<account>:<box id>`: an orphaned card's id is asked of this account's repositories once. */
+      unlistedProbes: new Set<string>()
     }
   })
   const { get, send: sendJson } = createCloudClient(ctx)
@@ -555,6 +557,127 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
 
   /* ---- the list load (listWorkspaces, delete's aftermath, a 404 mid-watch) ---- */
 
+  /** A box id plue minted: only a UUID names a box the detail route can be asked about. */
+  const BOX_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  /** One read per box the list left out, and only the first page of them. */
+  const MAX_UNLISTED_CONFIRMS = 25
+  /** An orphaned card names no repository, so the account's own repositories are asked, newest selection first. */
+  const MAX_ID_PROBE_REPOS = 12
+
+  /** The exact box, in its own repository: the only read that can prove a box absent. */
+  const askBox = (repoId: string, workspaceId: string) =>
+    read(repoPath(repoId, `/workspaces/${encodeURIComponent(workspaceId)}`))
+
+  /** The row as a load writes it: the collection's own facts, minus the reducer's bookkeeping. */
+  const heldInput = (row: CloudWorkspaceRow): CloudWorkspaceInput => {
+    const { updatedAt: _updatedAt, revision: _revision, ...input } = row
+    return input
+  }
+
+  /*
+   * Both inventory lists are OWNER-scoped on the wire — plue's
+   * `ListUserWorkspacesAcrossRepos` and `ListWorkspacesByRepo` both filter
+   * `workspaces.user_id = <the signed-in user>` — while
+   * `GET /api/repos/{owner}/{repo}/workspaces/{id}` is REPOSITORY-read
+   * scoped. So a list's silence is not a box's absence: a box in this
+   * person's repository that another identity owns (on the hosted deployment
+   * every box is owned by the machine account) is readable by its exact id
+   * and named by no list this person can run.
+   *
+   * Deleting the row on that silence took the box's state, its repository
+   * binding and the app's only way to ask again, and left the card saying
+   * "This box is not available." about a box that was `starting`
+   * ([#3882](https://github.com/smithersai/smithers/issues/3882):
+   * `a8eb95e2-4c78-4568-88cc-79b2dfd934be` on `roninjin10/e2e-verify`,
+   * confirmed `starting` by its own detail route while both list routes
+   * answered `x-total-count: 0`).
+   *
+   * So every box the list did not name is ASKED, by its exact id, before the
+   * list is allowed to speak for it: a box the host still serves joins the
+   * load with its own fresh facts, a 404 is a real absence and the prune
+   * stands, and a refusal proves nothing — the row is kept as it stands and
+   * the code is reported. No box is matched by name and no repository outside
+   * this account's own inventory is read.
+   */
+  const confirmUnlisted = (
+    listed: ReadonlySet<string>,
+    repo: string | undefined,
+    current: () => boolean
+  ): Effect.Effect<ReadonlyArray<CloudWorkspaceInput>> => Effect.gen(function*() {
+    const keep: Array<CloudWorkspaceInput> = []
+    const unlisted = [...ctx.store.collections.cloudWorkspaces.values()]
+      .filter((row) => (repo === undefined || row.repoId === repo) && !listed.has(row.id))
+    /*
+     * The window bounds the READS, not the inventory. A row it never reached
+     * was never asked, and an unasked box is not an absent one — on the
+     * hosted deployment every branch machine is unlisted, so pruning the
+     * overflow would delete real boxes in bulk on the same bad evidence this
+     * confirmation exists to refuse.
+     */
+    for (const row of unlisted.slice(MAX_UNLISTED_CONFIRMS)) keep.push(heldInput(row))
+    for (const row of unlisted.slice(0, MAX_UNLISTED_CONFIRMS)) {
+      if (!current()) return keep
+      const answer = yield* askBox(row.repoId, row.id)
+      if (!("error" in answer)) {
+        keep.push(parseWorkspaceWire(answer.body, row.repoId) ?? heldInput(row))
+        continue
+      }
+      /* Gone is the one answer that lets the list's silence stand. */
+      if (answer.status === 404) continue
+      ctx.report?.(`box.unlisted.${answer.code ?? answer.status ?? "unreachable"}`, answer.error)
+      keep.push(heldInput(row))
+    }
+    if (repo !== undefined) return keep
+    /*
+     * A card whose row an earlier load already deleted holds no repository to
+     * ask, so its exact id is asked of the repositories this account holds —
+     * the active selection's first — until one answers. Once per box per
+     * signed-in account: a box that answered 404 everywhere is absent and the
+     * card's own word already says so.
+     */
+    const account = ctx.store.collections.cloudSessions.get("cloud")?.username ?? ""
+    const active = ctx.store.session().activeRepoKey?.split("#")[0]
+    const repositories = [...ctx.store.collections.repositories.keys()]
+      .sort((left, right) => (left === active ? -1 : right === active ? 1 : 0))
+      .slice(0, MAX_ID_PROBE_REPOS)
+    const orphans = [...ctx.store.collections.cards.values()].flatMap((card) =>
+      card.kind === "branch" && BOX_ID.test(card.payload.id) && !listed.has(card.payload.id) &&
+      !ctx.store.collections.cloudWorkspaces.has(card.payload.id) &&
+      !unlistedProbes.has(`${account}:${card.payload.id}`) ? [card.payload.id] : [])
+    for (const id of orphans) {
+      if (!current()) return keep
+      const probe = `${account}:${id}`
+      unlistedProbes.add(probe)
+      /* Only a repository that ANSWERED has spoken: an unreachable one leaves the id to the next list. */
+      let answered = true
+      let found: CloudWorkspaceInput | null = null
+      for (const repoId of repositories) {
+        if (!current()) return keep
+        const answer = yield* askBox(repoId, id)
+        if ("error" in answer) {
+          /*
+           * Only 404 says this repository does not hold the box: plue keys the
+           * detail read on (id, repository_id) and answers `NotFound` before
+           * any access check, so a 403 is reachable only once the row HAS been
+           * found and `requireWorkspaceAccess` declined it. Reading the one
+           * answer that proves the box exists as an absence would retire the
+           * id for the rest of the session.
+           */
+          if (answer.status === 404) continue
+          answered = false
+          ctx.report?.(`box.orphan.${answer.code ?? answer.status ?? "unreachable"}`, answer.error)
+          continue
+        }
+        found = parseWorkspaceWire(answer.body, repoId)
+        if (found !== null) break
+      }
+      if (found !== null) keep.push(found)
+      else if (!answered) unlistedProbes.delete(probe)
+    }
+    return keep
+  })
+
+
   /** One page of a list route: its body and the next page's seam path (cursor form), or the honest error. */
   const getListPage = (
     pagePath: string,
@@ -659,14 +782,23 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
         }
       })
       : parsed
+    /*
+     * The list's silence is checked against the boxes themselves before it
+     * replaces the inventory, so an owner-scoped list cannot delete a box the
+     * host still serves (#3882).
+     */
+    const confirmed = yield* confirmUnlisted(new Set(workspaces.map((row) => row.id)), repo, current)
+    if (!current()) return SIGN_OUT_REFUSAL
+    if (!latest()) return fail("A newer box list was requested. Try again.")
+    const loaded = confirmed.length === 0 ? workspaces : [...workspaces, ...confirmed]
     ctx.dispatch({
       type: "workspaces.loaded",
       actor: "system",
       requestId,
-      workspaces,
+      workspaces: loaded,
       ...(repo === undefined ? {} : { repoId: repo })
     })
-    return workspaces
+    return loaded
   })
   const loadList = (...args: Parameters<typeof loadListEffect>) => runtime.runPromise(loadListEffect(...args)).catch((cause) => {
     if (lifecycle.disposed) return SIGN_OUT_REFUSAL

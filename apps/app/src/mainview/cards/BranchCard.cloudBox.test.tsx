@@ -202,3 +202,57 @@ test("a pruned row restores the card the moment the box is listed again", async 
     expect(view?.getAttribute("data-machine")).toBe("awake")
   } finally { await h.dispose() }
 })
+
+/*
+ * Root's own shape, which no fixture above reached: the card and its box were
+ * SAVED, and the app was opened again. Both collections are persisted, so a
+ * reopened session finds the row and the card renders the box — and it is the
+ * NEW session's first box list, not the save, that takes the row away. A
+ * fresh-store fixture proved the renderer; only a reopen proves the saved card
+ * a native retest actually loads (#3882).
+ */
+test("a saved card renders its box after the app is opened again, and the next list leaves it a stage", async () => {
+  const storage = memoryStorage()
+  const saved = await createAppStore({ kind: "localStorage", storage })
+  await saved.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "roninjin10", admin: false, scopesPlain: null }).isPersisted.promise
+  await saved.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "roninjin10", expiresAt: null, scopes: null }).isPersisted.promise
+  await saved.dispatch({ type: "workspace.updated", actor: "system", workspace: box({ status: "running" }) }).isPersisted.promise
+  await saved.dispatch({ type: "card.upsert", actor: "user", card }).isPersisted.promise
+  await saved.dispose?.()
+
+  const store = await createAppStore({ kind: "localStorage", storage })
+  const controller = createAppController(store, unavailableAgent, {
+    bootstrap: HOSTED,
+    toastDebounceMs: 0,
+    live: { subscribe: () => () => {}, getSnapshot: () => undefined },
+    fetchImpl: async () => json(404, { code: "not_found", message: "no stub" })
+  })
+  const host = document.body.appendChild(document.createElement("div"))
+  const root = createRoot(host)
+  try {
+    /* The reopened session holds both rows, and the card finds its own. */
+    expect(store.collections.cards.get(`branch:${BOX}`)?.payload).toEqual({ id: BOX })
+    expect(store.collections.cloudWorkspaces.get(BOX)?.status).toBe("running")
+    await act(async () => root.render(<ControllerTestProvider controller={controller}>{CARD_RENDERERS.branch.render(card, actions as never)}</ControllerTestProvider>))
+    expect(host.querySelector('[data-kind="branch"]')?.getAttribute("data-machine")).toBe("awake")
+    expect(host.querySelector("[data-branch-stage]")).toBeNull()
+
+    /* The first list of the new session no longer names it. */
+    await act(async () => {
+      await store.dispatch({ type: "workspaces.loaded", actor: "system", repoId: REPO, workspaces: [] }).isPersisted.promise
+    })
+    const view = host.querySelector('[data-kind="branch"]')
+    expect(view?.getAttribute("data-branch-stage")).toBe("absent")
+    expect(view?.getAttribute("data-branch-source")).toBe("cloud-row")
+    expect(view?.getAttribute("data-branch-id")).toBe(BOX)
+    expect(view?.getAttribute("data-machine")).toBe("unknown")
+    expect(host.textContent).toContain("This box is not available.")
+    /* The card itself is kept: a box one list omitted can be listed again. */
+    expect(store.collections.cards.get(`branch:${BOX}`)).not.toBeUndefined()
+  } finally {
+    await act(async () => root.unmount())
+    host.remove()
+    await controller.dispose()
+    await store.dispose?.()
+  }
+})

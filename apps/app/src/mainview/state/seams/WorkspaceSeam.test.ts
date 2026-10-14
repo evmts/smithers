@@ -341,13 +341,20 @@ describe("workspace seam list", () => {
     expect(copiesOf(store).map((copy) => copy.id)).toEqual(["workspace:ws-1"])
   })
 
-  test("an empty list is a fact: the scope empties", async () => {
-    const { store, seam } = await harness({
-      "api/user/workspaces": json(200, [])
+  /*
+   * Both list routes are owner-scoped on the wire, so their silence is
+   * checked against the box itself: a 404 from the box's own detail route is
+   * the absence, and only then does the scope empty (#3882).
+   */
+  test("an empty list is a fact once the box's own route answers 404: the scope empties", async () => {
+    const { store, seam, requests } = await harness({
+      "api/user/workspaces": json(200, []),
+      "api/repos/will/smithers/workspaces/ws-1": json(404, { code: "not_found", message: "workspace not found" })
     })
     await seedWorkspace(store)
     const result = await seam.listWorkspaces()
     expect(result).toEqual({ value: "No boxes." })
+    expect(requests).toContain("GET api/repos/will/smithers/workspaces/ws-1")
     expect(workspacesOf(store)).toEqual([])
   })
 
@@ -386,15 +393,24 @@ describe("workspace seam list", () => {
     const repoRows = Array.from({ length: 101 }, (_, index) => ({ ...WS_RUNNING, id: `ws-${index}`, name: `w${index}` }))
     const { store, seam, urls } = await harness({
       "api/user/workspaces": (url) => pageOf(url, userRows, "/api/user/workspaces"),
-      "api/repos/will/smithers/workspaces": (url) => pageOf(url, repoRows, "/api/repos/will/smithers/workspaces")
+      "api/repos/will/smithers/workspaces": (url) => pageOf(url, repoRows, "/api/repos/will/smithers/workspaces"),
+      /* The 29 rows the repository's shorter inventory leaves out are asked, by id, and answered gone. */
+      ...Object.fromEntries(Array.from({ length: 29 }, (_, index) => [
+        `api/repos/will/smithers/workspaces/ws-${101 + index}`,
+        json(404, { code: "not_found", message: "workspace not found" })
+      ]))
     })
     await seam.listWorkspaces()
     expect(workspacesOf(store).length).toBe(130)
     expect(urls).toEqual(["GET api/user/workspaces?limit=100", "GET api/user/workspaces?limit=100&cursor=100"])
     urls.length = 0
     await seam.listWorkspaces("will/smithers")
-    expect(workspacesOf(store).length).toBe(101)
-    expect(urls).toEqual(["GET api/repos/will/smithers/workspaces?limit=100", "GET api/repos/will/smithers/workspaces?limit=100&cursor=100"])
+    /* 101 listed, 25 of the 29 omitted asked and answered gone, the 4 the window never reached kept. */
+    expect(workspacesOf(store).length).toBe(105)
+    const pages = urls.filter((url) => !url.includes("/workspaces/ws-"))
+    expect(pages).toEqual(["GET api/repos/will/smithers/workspaces?limit=100", "GET api/repos/will/smithers/workspaces?limit=100&cursor=100"])
+    /* The rows the shorter inventory left out are asked by id, bounded: 29 omitted, 25 read. */
+    expect(urls.length - pages.length).toBe(25)
   })
 
   test("the per-user list follows plue#503's cursor Link header", async () => {
@@ -432,12 +448,162 @@ describe("workspace seam list", () => {
   })
 
   /*
+   * #3882, the production failure root reported on the deployed bundle: box
+   * `a8eb95e2-4c78-4568-88cc-79b2dfd934be` on `roninjin10/e2e-verify` read
+   * "This box is not available." while its own detail route answered 200
+   * `starting`. Both inventory list routes are OWNER-scoped on plue's wire
+   * (`ListUserWorkspacesAcrossRepos` and `ListWorkspacesByRepo` filter
+   * `workspaces.user_id = <the signed-in user>`) and both answered
+   * `x-total-count: 0`, because that box belongs to another identity in the
+   * person's own repository. An owner-scoped list cannot speak for it, so its
+   * silence must not delete the row, the box's repository binding and the
+   * app's only way to ask again.
+   */
+  test("a box the list cannot name is asked by its id, and a box the host still serves is kept", async () => {
+    const { store, seam, requests } = await harness({
+      "api/user/workspaces": json(200, []),
+      "api/repos/will/smithers/workspaces/ws-1": json(200, { ...WS_RUNNING, status: "starting" })
+    })
+    await seedWorkspace(store)
+    await seam.listWorkspaces()
+    expect(requests).toContain("GET api/repos/will/smithers/workspaces/ws-1")
+    /* Its own facts, not the stale row: the status the box answered with. */
+    expect(workspacesOf(store)).toEqual([expect.objectContaining({ id: "ws-1", repoId: "will/smithers", status: "starting" })])
+    expect(copiesOf(store).map((copy) => copy.id)).toEqual(["workspace:ws-1"])
+  })
+
+  /*
+   * The confirmation window bounds the READS, never the inventory: a row the
+   * window did not reach has not been asked, and an unasked box is not an
+   * absent one. On the hosted deployment every branch machine is unlisted
+   * (plue owns those rows as `smithers-machines`), so pruning the overflow
+   * would delete real boxes by the dozen.
+   */
+  test("a box past the confirmation window is kept unasked, never deleted", async () => {
+    const overflow = Array.from({ length: 27 }, (_, index) => ({ ...wsRow, id: `ws-${index}`, name: `w${index}` }))
+    const { store, seam, requests } = await harness({
+      "api/repos/will/smithers/workspaces": json(200, []),
+      ...Object.fromEntries(overflow.map((row) => [
+        `api/repos/will/smithers/workspaces/${row.id}`,
+        json(404, { code: "not_found", message: "workspace not found" })
+      ]))
+    })
+    for (const row of overflow) await seedWorkspace(store, row)
+    await seam.listWorkspaces("will/smithers")
+    const asked = requests.flatMap((request) => request.includes("/workspaces/ws-") ? [request.split("/").pop()!] : [])
+    expect(asked.length).toBe(25)
+    /* The 25 asked answered gone and went; the 2 the window never reached are exactly what is left. */
+    const kept = workspacesOf(store).map((row) => row.id)
+    expect(kept.length).toBe(2)
+    expect(kept.filter((id) => asked.includes(id))).toEqual([])
+  })
+
+  test("a refused read of the box proves no absence: the row stands and the code is reported", async () => {
+    const reported: Array<string> = []
+    const { store, seam, ctx } = await harness({
+      "api/repos/will/smithers/workspaces": json(200, []),
+      "api/repos/will/smithers/workspaces/ws-1": json(403, { code: "forbidden", class: "permission", fault: "user", message: "insufficient scope" })
+    })
+    ;(ctx as { report?: (subject: string, error: unknown) => void }).report = (subject) => void reported.push(subject)
+    await seedWorkspace(store)
+    await seam.listWorkspaces("will/smithers")
+    expect(workspacesOf(store)).toEqual([expect.objectContaining({ id: "ws-1", status: "running" })])
+    expect(reported).toEqual(["box.unlisted.forbidden"])
+  })
+
+  /*
+   * The card an earlier load already orphaned holds no repository to ask, so
+   * its exact id is asked of the repositories this account holds. Only a UUID
+   * is asked (an install's `branch:<name>` card names no Cloud box), only this
+   * account's own repositories are read, and nothing is matched by name.
+   */
+  test("an orphaned box card's id is asked of the account's own repositories", async () => {
+    const box = "a8eb95e2-4c78-4568-88cc-79b2dfd934be"
+    const { store, seam, requests } = await harness({
+      "api/user/workspaces": json(200, []),
+      [`api/repos/will/smithers/workspaces/${box}`]: json(200, { ...WS_RUNNING, id: box, status: "starting" })
+    })
+    await store.dispatch({ type: "card.upsert", actor: "user", card: {
+      id: `branch:${box}`, kind: "branch", title: "main", status: "active", createdAt: 1, ordinal: 0, payload: { id: box }
+    } }).isPersisted.promise
+    /* An install's branch card is not a box id and is never asked about. */
+    await store.dispatch({ type: "card.upsert", actor: "user", card: {
+      id: "branch:main", kind: "branch", title: "main", status: "active", createdAt: 1, ordinal: 1, payload: { id: "main" }
+    } }).isPersisted.promise
+    await seam.listWorkspaces()
+    expect(requests).toEqual(["GET api/user/workspaces", `GET api/repos/will/smithers/workspaces/${box}`])
+    expect(workspacesOf(store)).toEqual([expect.objectContaining({ id: box, repoId: "will/smithers", status: "starting" })])
+  })
+
+  test("an orphaned id no repository serves is asked once per account", async () => {
+    const box = "b1eb95e2-4c78-4568-88cc-79b2dfd934be"
+    const { store, seam, requests } = await harness({
+      "api/user/workspaces": json(200, []),
+      [`api/repos/will/smithers/workspaces/${box}`]: json(404, { code: "not_found", message: "workspace not found" })
+    })
+    await store.dispatch({ type: "card.upsert", actor: "user", card: {
+      id: `branch:${box}`, kind: "branch", title: "main", status: "active", createdAt: 1, ordinal: 0, payload: { id: box }
+    } }).isPersisted.promise
+    await seam.listWorkspaces()
+    await seam.listWorkspaces()
+    expect(requests.filter((request) => request.endsWith(box)).length).toBe(1)
+    expect(workspacesOf(store)).toEqual([])
+    /* The card itself is kept: a box one list omitted can be listed again. */
+    expect(store.collections.cards.get(`branch:${box}`)).not.toBeUndefined()
+  })
+
+  /*
+   * A 403 is the one refusal that proves the box IS there: plue keys the
+   * detail read on (id, repository_id) — `GetWorkspaceByRepo` — and answers
+   * `NotFound` when the repository does not hold the row, so "access denied"
+   * is only reachable once the row has been found and
+   * `requireWorkspaceAccess` declined it. Reading that as "not in this
+   * repository" would retire the id for the whole session on the single
+   * answer that says the box exists.
+   */
+  test("a repository that refuses an orphaned id never proves it absent", async () => {
+    const box = "d3eb95e2-4c78-4568-88cc-79b2dfd934be"
+    const reported: Array<string> = []
+    const { store, seam, requests, ctx } = await harness({
+      "api/user/workspaces": json(200, []),
+      [`api/repos/will/smithers/workspaces/${box}`]: json(403, { code: "forbidden", class: "permission", fault: "user", message: "access denied" })
+    })
+    ;(ctx as { report?: (subject: string, error: unknown) => void }).report = (subject) => void reported.push(subject)
+    await store.dispatch({ type: "card.upsert", actor: "user", card: {
+      id: `branch:${box}`, kind: "branch", title: "main", status: "active", createdAt: 1, ordinal: 0, payload: { id: box }
+    } }).isPersisted.promise
+    await seam.listWorkspaces()
+    await seam.listWorkspaces()
+    expect(requests.filter((request) => request.endsWith(box)).length).toBe(2)
+    expect(reported).toEqual(["box.orphan.forbidden", "box.orphan.forbidden"])
+  })
+
+  test("an orphaned id no repository could answer is asked again by the next list", async () => {
+    const box = "c2eb95e2-4c78-4568-88cc-79b2dfd934be"
+    const reported: Array<string> = []
+    const { store, seam, requests, ctx } = await harness({
+      "api/user/workspaces": json(200, []),
+      [`api/repos/will/smithers/workspaces/${box}`]: json(503, { code: "service_unavailable", message: "upstream down" })
+    })
+    ;(ctx as { report?: (subject: string, error: unknown) => void }).report = (subject) => void reported.push(subject)
+    await store.dispatch({ type: "card.upsert", actor: "user", card: {
+      id: `branch:${box}`, kind: "branch", title: "main", status: "active", createdAt: 1, ordinal: 0, payload: { id: box }
+    } }).isPersisted.promise
+    await seam.listWorkspaces()
+    await seam.listWorkspaces()
+    /* An unreachable repository never said the box is gone, so the id is still open. */
+    expect(requests.filter((request) => request.endsWith(box)).length).toBe(2)
+    expect(reported).toEqual(["box.orphan.service_unavailable", "box.orphan.service_unavailable"])
+  })
+
+  /*
    * Critique finding 2 (tabs): a workspace the list no longer carries takes
    * its terminal tabs with it, in the same transaction as the row.
    */
   test("a scope replace closes the terminal tabs of the workspaces it dropped", async () => {
     const { store, seam } = await harness({
-      "api/repos/will/smithers/workspaces": json(200, [{ ...WS_RUNNING, id: "ws-2", name: "bench" }])
+      "api/repos/will/smithers/workspaces": json(200, [{ ...WS_RUNNING, id: "ws-2", name: "bench" }]),
+      "api/repos/will/smithers/workspaces/ws-1": json(404, { code: "not_found", message: "workspace not found" })
     })
     await seedWorkspace(store)
     await seedWorkspace(store, { ...wsRow, id: "ws-2", name: "bench" })
