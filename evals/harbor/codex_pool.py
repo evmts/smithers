@@ -16,7 +16,9 @@ next account from `accounts.Pool` for each trial instead, records the label
 `SmithersAgent`: a usage limit takes the account out of rotation and re-runs
 the trial whole on the next healthy account (every re-run in `requeue.log`),
 and when none is left the pool pauses and then raises, so a dry seat is never
-scored. Everything else is Harbor's Codex agent unchanged.
+scored. A task that names no user in an image whose `USER` is not root runs
+as that image's uid, so the runner chowns `auth.json` to the CLI's user
+(`image_uid`). Everything else is Harbor's Codex agent unchanged.
 
 Under Pier the same class is Pier's Codex agent, and the task container is
 sealed to the ChatGPT-subscription route:
@@ -34,9 +36,11 @@ the trial's metadata. A web search in the CLI's transcript also reads
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import shutil
 import sys
+from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -96,6 +100,42 @@ def web_searches(output: str) -> int:
     """Web searches the CLI completed. The model backend runs them, so they
     reach the internet whatever the task container's network is."""
     return sum(1 for item in completed_items(output) if item.get("type") == "web_search")
+
+
+async def image_uid(environment: BaseEnvironment) -> int | None:
+    """The uid the task image runs commands as, when the trial names no user
+    and that uid is not root; None otherwise.
+
+    Harbor and Pier upload `auth.json` as root with mode 0600 and chown it
+    only when `default_user` is set. A task that names no `[agent] user` in
+    an image whose `USER` is not root (TB4 rs-archive-clone: `agent`,
+    risk-scorer-replay: `nobody`) leaves the CLI unable to read it, so it
+    falls back to api.openai.com and fails authentication (#3862)."""
+    if getattr(environment, "default_user", None) is not None:
+        return None
+    try:
+        result = await environment.exec(command="id -u", timeout_sec=60)
+    except Exception:  # no answer: leave the run as Harbor would run it
+        return None
+    uid = (getattr(result, "stdout", None) or "").strip()
+    if getattr(result, "return_code", None) != 0 or not uid.isdigit() or int(uid) == 0:
+        return None
+    return int(uid)
+
+
+@contextlib.contextmanager
+def default_user(environment: BaseEnvironment, user: int | None) -> Iterator[None]:
+    """Run as `user` for the block, when there is one. The save and restore
+    of Harbor 0.23.0's `with_default_user`, which Pier 0.3.1 lacks."""
+    if user is None:
+        yield
+        return
+    previous = environment.default_user
+    environment.default_user = user
+    try:
+        yield
+    finally:
+        environment.default_user = previous
 
 
 def session_efforts(sessions: Path) -> list[str]:
@@ -173,6 +213,11 @@ class PooledCodex(Codex):
         return self._account.auth
 
     async def run(self, instruction: str, environment: BaseEnvironment, context: AgentContext) -> None:
+        # As the image's own user, so the runner chowns `auth.json` to it.
+        with default_user(environment, await image_uid(environment)):
+            await self._run_pooled(instruction, environment, context)
+
+    async def _run_pooled(self, instruction: str, environment: BaseEnvironment, context: AgentContext) -> None:
         self._seal = {**await self._prove_seal(environment), "webSearches": 0}
         self._write_account()
         attempt = 0

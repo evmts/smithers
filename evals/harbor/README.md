@@ -170,6 +170,13 @@ recorded per trial (`smithers-run.json` `account`, `codex-account.json` for
 the stock arm). The stock arm is
 `-a evals.harbor.codex_pool:PooledCodex --ak version=0.155.1`.
 
+Harbor and Pier upload `auth.json` as root with mode 0600 and chown it only
+when the task names an `[agent] user`. When it names none and the image's
+`USER` is not root (TB4 `rs-archive-clone`: `agent`, `risk-scorer-replay`:
+`nobody`), `PooledCodex` runs the trial as the uid `id -u` reports, so the
+runner chowns the file to the CLI's user. Without that the CLI cannot read
+it, falls back to `api.openai.com`, and fails with `AgentAuthenticationError`.
+
 **An infrastructure failure is never a score.** Both agents apply one policy:
 
 - A usage limit (`rate_limited: The usage limit has been reached`,
@@ -215,8 +222,9 @@ The full benchmark drops the `-i` filters and raises `-n`. Use an absolute
 directory when it copies artifacts into the verifier container, and the copy
 falls back to a slower tar stream.
 
-A `-i` filter takes the dataset's full task name (`terminal-bench/<task>`);
-a bare name matches nothing.
+With `-d`, a `-i` filter takes the registry's full task name
+(`terminal-bench/<task>`), and a bare name matches nothing. With `-p`, it
+takes the bare task directory name (`rs-archive-clone`).
 
 DeepSWE 1.1 runs through Pier, not Harbor: on Smithers Cloud, Harbor's
 `PlueEnvironment` refuses DeepSWE's agent-phase network policy. Download the

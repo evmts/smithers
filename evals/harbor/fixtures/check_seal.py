@@ -216,7 +216,7 @@ def check_pooled_codex() -> str:
         order: list[str] = []
 
         async def execute(command, **kwargs):
-            order.append("probe" if "seal-probe" in command else "other")
+            order.append("uid" if command == "id -u" else "probe" if "seal-probe" in command else "other")
             return types.SimpleNamespace(return_code=0, stdout=probe, stderr=None)
 
         async def ran(self, instruction, environment, context):
@@ -242,7 +242,7 @@ def check_pooled_codex() -> str:
     assert record["sealed"] is True and metadata["sealed"] is True, (record, metadata)
     assert record["seal"]["allowlist"] == ["auth.openai.com", "chatgpt.com"], record
     assert record["seal"]["webSearches"] == 0, record
-    assert order[:2] == ["probe", "cli"], f"the seal is proven before the CLI starts: {order}"
+    assert order[:3] == ["uid", "probe", "cli"], f"the seal is proven before the CLI starts: {order}"
     assert record["account"] == "codex-2" and record["containerCommands"] == {"attempted": 1, "succeeded": 1}, record
 
     with tempfile.TemporaryDirectory() as directory:

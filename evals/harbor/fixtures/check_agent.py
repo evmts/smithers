@@ -18,6 +18,10 @@ What is pinned, and why each one matters:
     the two validators ATIF enforces. When Harbor is importable the trajectory
     is validated by its own pydantic model as well, and the check says so.
   - The compose project name is sanitized the way Docker Compose does it.
+  - The stock Codex arm runs as the image's own uid when the task names no
+    user and the image's `USER` is not root, so the runner chowns the
+    root-owned 0600 `auth.json` to the CLI's user (#3862). Without it the CLI
+    falls back to api.openai.com and the trial fails authentication.
   - On Smithers Cloud: the plue `docker` shim translates the harness's
     `docker exec` argv into one `smithers workspace exec` call, the workspace
     id is the container, the shim goes first on PATH, and the account pool
@@ -421,6 +425,104 @@ def check_codex_usage() -> None:
         assert (logs / "trajectory.json").is_file(), "Harbor writes the stock arm's trajectory"
 
 
+class Container:
+    """A task container that records every command and upload. With no
+    `-u`, a command runs as the image's `USER` (`image_uid`), as `docker exec`
+    does; `root` is uid 0."""
+
+    def __init__(self, image_uid: int, default_user: str | int | None = None, id_fails: bool = False):
+        import types
+        self.image_uid = image_uid
+        self.default_user = default_user
+        self.id_fails = id_fails
+        self.capabilities = types.SimpleNamespace(mounted=True)
+        self.calls: list[tuple[str, str, str | int | None]] = []
+
+    async def exec(self, command, cwd=None, env=None, timeout_sec=None, user=None):
+        import types
+        user = user if user is not None else self.default_user
+        self.calls.append(("exec", command, user))
+        if command.strip() == "id -u":
+            if self.id_fails:
+                raise RuntimeError("container went away")
+            uid = self.image_uid if user is None else 0 if user == "root" else int(user)
+            return types.SimpleNamespace(return_code=0, stdout=f"{uid}\n", stderr="")
+        return types.SimpleNamespace(return_code=0, stdout="", stderr="")
+
+    async def upload_file(self, source, target):
+        self.calls.append(("upload", str(target), "root"))
+
+
+def check_codex_runs_as_image_user() -> str:
+    """The stock arm's CLI can read its `auth.json` in an image whose `USER`
+    is not root. rs-archive-clone (`USER agent`) and risk-scorer-replay
+    (`USER nobody`) name no `[agent] user`, so `default_user` is None; Harbor
+    uploads `auth.json` as root, mode 0600, and chowns it only when
+    `default_user` is set. The CLI then fell back to api.openai.com and the
+    trial ended in `AgentAuthenticationError` within 90 s (#3862)."""
+    sys.path.insert(0, str(HERE.parent.parent.parent))
+    try:
+        from evals.harbor import codex_pool
+    except ImportError:
+        return "harbor not importable; image user not checked"
+    import asyncio
+    import types
+
+    def trial(container: Container) -> list[tuple[str, str, str | int | None]]:
+        with tempfile.TemporaryDirectory() as directory:
+            logs = Path(directory) / "agent"
+            logs.mkdir()
+            (logs / "codex.txt").write_text(
+                '{"type":"item.completed","item":{"type":"command_execution","exit_code":0}}\n')
+            home = Path(directory) / "seat"
+            home.mkdir()
+            (home / "auth.json").write_text("{}")
+            seat = accounts.Account("codex-2", home)
+            pooled = codex_pool.PooledCodex(logs_dir=logs, model_name="openai/gpt-6-sol")
+            pooled._pool = types.SimpleNamespace(lease=lambda trial="": seat)
+            pooled._account = seat  # what setup() leases before the CLI is installed
+            asyncio.run(pooled.run("fix it", container, codex_pool.AgentContext()))
+        return container.calls
+
+    def auth_owner(calls) -> list[str]:
+        """Who each root `chown <owner> …/auth.json` hands the file to."""
+        owners = []
+        for kind, command, user in calls:
+            words = command.replace(";", " ").split()
+            if kind == "exec" and user == "root" and "chown" in words and words[-1].endswith("/auth.json"):
+                owners.append(words[words.index("chown") + 1])
+        return owners
+
+    def cli_user(calls):
+        users = [user for kind, command, user in calls if kind == "exec" and "codex exec" in command]
+        assert len(users) == 1, calls
+        return users[0]
+
+    for name, uid in (("agent", 1000), ("nobody", 65534)):
+        container = Container(uid)
+        calls = trial(container)
+        uploaded = [target for kind, target, _ in calls if kind == "upload" and target.endswith("/auth.json")]
+        assert len(uploaded) == 1, calls
+        assert auth_owner(calls) == [str(uid)], f"USER {name}: auth.json stays root's 0600: {calls}"
+        assert cli_user(calls) == uid, f"USER {name}: the CLI runs as the image's own uid: {calls}"
+        assert container.default_user is None, "the trial's default user is restored after the run"
+
+    # A root image: nothing to chown, and the CLI runs as before.
+    container = Container(0)
+    calls = trial(container)
+    assert auth_owner(calls) == [] and cli_user(calls) is None, calls
+    # A task that names its user: Harbor's own chown, and no uid probe.
+    container = Container(1000, default_user="agent")
+    calls = trial(container)
+    assert auth_owner(calls) == ["agent"] and cli_user(calls) == "agent", calls
+    assert not [c for c in calls if c[1].strip() == "id -u"], calls
+    # A probe that fails leaves the run as it was; the CLI's own exit decides.
+    container = Container(1000, id_fails=True)
+    calls = trial(container)
+    assert auth_owner(calls) == [] and cli_user(calls) is None, calls
+    return f"checked under {codex_pool.Codex.__module__.split('.')[0]}"
+
+
 def check_container_survival() -> None:
     """A task container that died during the run cannot be graded: tb4-confirm-A2
     mp-checkpoint 7FU4pw3's VM was gone ("workspace VM no longer exists"), the
@@ -721,8 +823,9 @@ if __name__ == "__main__":
     check_plue_env()
     check_container_gate()
     check_codex_usage()
+    image_user = check_codex_runs_as_image_user()
     check_container_survival()
     check_accounts()
     revision = check_harness_revision()
     print(f"check_agent.py: prompt, environment, journal fold, helper lookup, names, plue shim, plue environment and account pool hold; "
-          f"harness revision {revision}; trajectory {validation}.")
+          f"stock arm's image user {image_user}; harness revision {revision}; trajectory {validation}.")
