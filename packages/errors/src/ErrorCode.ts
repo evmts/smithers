@@ -96,6 +96,8 @@ Object.freeze(smithersErrorCodes)
 /**
  * Whether `code` is one this package documents.
  *
+ * @param code - Any value to classify; inherited keys and non-strings are rejected.
+ * @returns Whether the value is an own key of the frozen catalog.
  * @category refinements
  * @since 1.0.0
  */
@@ -105,6 +107,8 @@ export const isSmithersErrorCode = (code: unknown): code is SmithersErrorCode =>
 /**
  * The definition for `code`, or `undefined` when it is not a documented code.
  *
+ * @param code - Any value to look up in the closed catalog.
+ * @returns The frozen definition itself, or `undefined` for an unknown value.
  * @category getters
  * @since 1.0.0
  */

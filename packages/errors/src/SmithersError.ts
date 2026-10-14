@@ -96,6 +96,16 @@ export class SmithersError<Tag extends string = string> extends Data.Error<Smith
    */
   declare readonly details: Readonly<Record<string, unknown>> | undefined
 
+  /**
+   * Constructs a tagged integration failure with a frozen shallow context copy.
+   *
+   * @param code - A code from the closed error catalog.
+   * @param summary - Human-readable text; trailing documentation suffixes are removed.
+   * @param details - Context already redacted by the caller; nested values remain shared.
+   * @param options - The reported name, documentation switch, and verbatim cause.
+   * @throws {TypeError} When the code is outside the documented catalog.
+   * @since 1.0.0
+   */
   constructor(
     code: SmithersErrorCode,
     summary: string,
@@ -142,7 +152,13 @@ export class SmithersError<Tag extends string = string> extends Data.Error<Smith
     if (cause !== undefined) hidden(this, "cause", cause)
   }
 
-  /** Only the enumerable fields, as `JSON.stringify` shows a plain `Error`. */
+  /**
+   * Returns enumerable own fields without adding the message, stack, or cause.
+   * Nested context values remain shared and are not redacted.
+   *
+   * @returns A new record containing the enumerable own fields.
+   * @since 1.0.0
+   */
   override toJSON(): Record<string, unknown> {
     return Object.fromEntries(Object.entries(this))
   }
@@ -163,6 +179,8 @@ Object.defineProperty(SmithersError.prototype, Symbol.for("nodejs.util.inspect.c
  * This refinement uses `instanceof` only. It does not detect an instance
  * produced by a duplicate copy of this package.
  *
+ * @param value - Any value to classify using this module's constructor identity.
+ * @returns Whether the value is an instance of this class or one of its subclasses.
  * @category refinements
  * @since 1.0.0
  */
@@ -182,6 +200,8 @@ export const isSmithersError = (value: unknown): value is SmithersError => value
  * read is inside a `try`, so an inspection that throws answers `false` instead
  * of escaping and replacing the failure being classified.
  *
+ * @param value - Any value to inspect, including errors from another module copy.
+ * @returns Whether the required structural fields match; throwing inspection returns `false`.
  * @category refinements
  * @since 1.0.0
  */
