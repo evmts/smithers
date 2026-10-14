@@ -564,6 +564,67 @@ func TestAdminUserService_DeleteUser(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to suspend user")
 	})
+
+	t.Run("refuses the installation owner before any suspend", func(t *testing.T) {
+		t.Parallel()
+
+		suspended := false
+		q := &mockAdminUserQuerier{
+			getUserByLowerUsernameFn: func(ctx context.Context, lowerUsername string) (db.User, error) {
+				return makeDBUser(41, "owner", true), nil
+			},
+			isSelfHostOwnerFn: func(ctx context.Context, userID int64) (bool, error) {
+				assert.Equal(t, int64(41), userID)
+				return true, nil
+			},
+			suspendUserFn: func(ctx context.Context, id int64) error {
+				suspended = true
+				return nil
+			},
+		}
+
+		auditor := &mockAdminAuditor{}
+		svc := NewAdminUserService(q, WithAdminAuditor(auditor))
+		err := svc.DeleteUser(adminAuditTestContext(), "owner")
+		require.Error(t, err)
+		apiErr, ok := err.(*pkgerrors.APIError)
+		require.True(t, ok, "expected *APIError, got %T", err)
+		assert.Equal(t, 409, apiErr.Status)
+		assert.Equal(t, "cannot suspend the installation owner", apiErr.Message)
+		assert.False(t, suspended, "the refusal lands before the suspend")
+		assert.Empty(t, auditor.events, "a refused suspend writes no audit event")
+	})
+
+	// An unreadable binding must not read as "not the owner": the suspend
+	// is irreversible, so the check fails closed.
+	t.Run("fails closed when the owner check errors", func(t *testing.T) {
+		t.Parallel()
+
+		suspended := false
+		q := &mockAdminUserQuerier{
+			getUserByLowerUsernameFn: func(ctx context.Context, lowerUsername string) (db.User, error) {
+				return makeDBUser(42, "someone", false), nil
+			},
+			isSelfHostOwnerFn: func(ctx context.Context, userID int64) (bool, error) {
+				return false, errors.New("connection reset")
+			},
+			suspendUserFn: func(ctx context.Context, id int64) error {
+				suspended = true
+				return nil
+			},
+		}
+
+		auditor := &mockAdminAuditor{}
+		svc := NewAdminUserService(q, WithAdminAuditor(auditor))
+		err := svc.DeleteUser(adminAuditTestContext(), "someone")
+		require.Error(t, err)
+		apiErr, ok := err.(*pkgerrors.APIError)
+		require.True(t, ok, "expected *APIError, got %T", err)
+		assert.Equal(t, 500, apiErr.Status)
+		assert.Contains(t, err.Error(), "failed to verify installation owner")
+		assert.False(t, suspended, "an unverified binding never reaches the suspend")
+		assert.Empty(t, auditor.events)
+	})
 }
 
 func TestAdminUserService_SetUserAdmin(t *testing.T) {
