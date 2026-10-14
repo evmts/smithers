@@ -39,6 +39,11 @@ const transformation = Schema.Unknown.pipe(
  * values. Prefer {@link deriveKey} when typed operational failures are useful;
  * this schema maps them to redacted schema issues for composition.
  *
+ * Decoding requires Crypto and reads input when the decoding effect runs.
+ * Canonicalization and digest failures become schema errors; interruption is
+ * preserved. Encoding always fails because the input cannot be reconstructed.
+ * Enclosing schemas must also disable input reporting to redact their input.
+ *
  * @category transformations
  * @since 1.0.0
  */

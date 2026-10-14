@@ -14,7 +14,9 @@ const keyV1Pattern = /^key1_[0-9a-f]{64}$/
  * The exact persisted representation produced by the version-one derivation.
  *
  * Decoding validates and returns the input unchanged. It performs no hashing
- * and requires no `Crypto` service.
+ * and requires no `Crypto` service. Encoding validates the same wire format.
+ * Both directions reject anything except `key1_` and exactly 64 lowercase
+ * hexadecimal characters with a schema error.
  *
  * @category schemas
  * @since 1.0.0

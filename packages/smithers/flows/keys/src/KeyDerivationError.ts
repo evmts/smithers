@@ -30,7 +30,8 @@ export type KeyDerivationErrorCode = typeof KeyDerivationErrorCode.Type
 /**
  * A safe, typed failure from canonicalization or injected hashing.
  *
- * `message` never contains the input. `cause` retains the original schema or
+ * Errors produced by `deriveKey` have a message that never contains the input.
+ * Direct constructors must supply their own safe message. `cause` retains the original schema or
  * crypto failure for in-process diagnostics. It is a non-enumerable runtime
  * property, not a schema field, so encoding the error for a journal or an API
  * carries only `_tag`, `code`, and `message`: a canonicalization cause can
@@ -46,6 +47,13 @@ export class KeyDerivationError extends Schema.TaggedError<KeyDerivationError>()
     message: Schema.String
   }
 ) {
+  /**
+   * Creates a derivation failure with a diagnostic cause kept out of encoding.
+   *
+   * @param props - Stable failure code, safe public message, and optional runtime cause.
+   * @param options - Schema construction options used to validate the public fields.
+   * @since 1.0.0
+   */
   constructor(
     props: { readonly code: KeyDerivationErrorCode; readonly message: string; readonly cause?: unknown },
     options?: Schema.MakeOptions

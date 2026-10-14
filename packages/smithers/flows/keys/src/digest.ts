@@ -15,6 +15,11 @@ import type { StoredKey } from "./StoredKey.ts"
  * Keeping prefix knowledge here prevents consumers from guessing at the wire
  * format with `slice` or delimiter searches.
  *
+ * This accessor trusts the stored-key brand and performs no runtime validation.
+ * Validate received strings with `StoredKey` before calling it.
+ *
+ * @param key - A previously validated stored key.
+ * @returns The 64-character lowercase hexadecimal SHA-256 payload.
  * @category accessors
  * @since 1.0.0
  */

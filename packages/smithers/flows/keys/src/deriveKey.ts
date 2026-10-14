@@ -28,6 +28,14 @@ const derivationFailure = (
  * Callers should include a stable domain and version in structured key
  * material when identities from different protocols must not overlap.
  *
+ * Execution reads the input lazily; rerunning the effect canonicalizes it
+ * again. Keep mutable input stable when the same identity is required.
+ * Failures use `canonicalization_failed` for unsupported input and
+ * `digest_failed` for a failed hash. Interruption is preserved.
+ *
+ * @param input - Material accepted by Canonical, including its JSON erasure rules.
+ * @returns An effect requiring Crypto that produces a validated version-one key
+ * or fails with KeyDerivationError. A missing Crypto service is a defect.
  * @category derivation
  * @since 1.0.0
  */
