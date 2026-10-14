@@ -175,6 +175,18 @@ describe("bestTau", () => {
       MemoryCalibration.bestTau([{ p: 0.3, needed: true }, { p: 0.2, needed: false }], null, { miss: 1, extra: 3 })
     ).toBe(0.3)
   })
+
+  it("returns a grid threshold whose own cost is the least, when tau(costs) is off the grid", () => {
+    // tau is 2/3. A needed label at 0.667 clears 2/3 but not 0.67, so 0.67
+    // costs one miss and 0.66, the nearest free grid step, costs nothing.
+    const costs = { miss: 1, extra: 2 }
+    const needed = [{ p: 0.667, needed: true }]
+
+    const found = MemoryCalibration.bestTau(needed, null, costs)
+
+    expect(found).toBe(0.66)
+    expect(MemoryCalibration.expectedCost(needed, null, found, costs)).toBe(0)
+  })
 })
 
 describe("refit", () => {

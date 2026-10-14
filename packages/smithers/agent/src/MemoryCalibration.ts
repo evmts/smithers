@@ -229,9 +229,12 @@ export const bestTau = (
   table: ReadonlyArray<number> | null,
   costs: typeof Costs.Type
 ): number => {
+  // Only grid steps are candidates: `tau(costs)` itself is often off the grid
+  // (2/3), and returning it rounded would return a threshold whose cost was
+  // never measured. It only breaks ties.
   const ideal = tau(costs)
-  let best = ideal
-  let bestCost = expectedCost(labels, table, ideal, costs)
+  let best = 0
+  let bestCost = Number.POSITIVE_INFINITY
   for (let step = 0; step <= 100; step++) {
     const t = step / 100
     const cost = expectedCost(labels, table, t, costs)
@@ -240,7 +243,7 @@ export const bestTau = (
       bestCost = cost
     }
   }
-  return Number(best.toFixed(2))
+  return best
 }
 
 /**
