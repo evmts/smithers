@@ -43,8 +43,15 @@ func retryDelay(generation int64) time.Duration {
 // no record that outlives the turn says which turn any of those 141 was for.
 // That is why that turn's first generation cannot be explained: it spent
 // 300 s in sandbox_create, was interrupted for making no progress, and was
-// recorded as a host that stalled, and no evidence that survives the turn
-// says whether the fleet ever answered its create.
+// recorded as a host that stalled. Two things happen under that one stage —
+// the owner's sandbox entitlement is read, which is four database queries on
+// the turn's own context with no deadline, and then the create is sent — and
+// no evidence that survives the turn says which of them the 300 s was spent
+// in. The provider's own create ladder is ruled out either way: seven
+// attempts with a 250 ms doubling is at most ~17 s, which is what generations
+// 2 and 3 measured. A create that reaches the controller now says so against
+// the turn; one that never arrives leaves that record empty, and those are
+// different facts for the first time.
 //
 // The link is attribution only: the kind is the controller's own lower snake
 // case, the id is the turn's, and the fleet already stores both on the
