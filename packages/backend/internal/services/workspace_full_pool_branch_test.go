@@ -151,3 +151,80 @@ func TestAgentWorkspaceJoinIsNotRefusedByTheBranchMachinesSize(t *testing.T) {
 			"the fixture must reach the size check it is about")
 	}
 }
+
+// A full pool is a deferral, not a failure (#3874) — but a deferral that
+// records NOTHING is indistinguishable from a wedged box. Production
+// 2026-10-14: workspace a8eb95e2 sat on `Waking` for more than fifteen
+// minutes after an explicit open, with the worker logging ERROR `async
+// workspace provisioning failed` every 20-25 s and the row carrying no stage,
+// no reason and no queue place, so the cause read as UNCLASSIFIED to an
+// operator reading production.
+//
+// waitForMachine, which owns the waiting_for_machine stage and the
+// "Waiting for a machine · #2" place, cannot reach a hosted deployment at all:
+// it needs the runtime to satisfy workspaceMachineQueue (Request /
+// CancelAdmission / AdmissionSnapshot), which only the in-process
+// microsandbox.Runtime does. The hosted runtime's admission queue is the
+// controller's, out of process, so `queue, ok := ...; if !ok { return cause }`
+// returns immediately and the stage is never written.
+//
+// So the asynchronous provisioner records the deferral itself, on the one
+// field the workspace response already carries.
+func TestAFullPoolRecordsTheWaitItLeavesTheBoxIn(t *testing.T) {
+	full := &sandbox.StatusError{StatusCode: http.StatusServiceUnavailable, Code: "no_capacity", Message: "no healthy worker has sufficient capacity"}
+
+	t.Run("a box with no guest records the wait and stays startable", func(t *testing.T) {
+		f := newBranchMachineFixture(t)
+		machine := f.machine(t, db.CreateWorkspaceParams{TargetBookmark: "deferred/main", Status: "starting"})
+		require.Empty(t, machine.VmID, "nothing is created before the pool answers")
+		svc := f.service(nil)
+
+		svc.provisionWorkspaceAsyncWithStart(context.Background(), machine, CreateWorkspaceSessionInput{},
+			func(context.Context, db.Workspace, CreateWorkspaceSessionInput) (db.Workspace, error) {
+				return db.Workspace{}, runtimeOperationError("inspect workspace runtime", full)
+			})
+		require.NoError(t, svc.WaitForProvisioning(context.Background()))
+
+		after, err := f.q.GetWorkspace(context.Background(), machine.ID)
+		require.NoError(t, err)
+		assert.NotEqual(t, "failed", after.Status, "a full pool is never a terminal verdict (#3874)")
+		assert.Equal(t, workspaceWaitingForMachine, after.ProvisioningStage,
+			"a queued box says it is waiting for a machine; without this the card is an unexplained 'Waking'")
+	})
+
+	t.Run("the wait is retired when the box actually runs", func(t *testing.T) {
+		f := newBranchMachineFixture(t)
+		machine := f.machine(t, db.CreateWorkspaceParams{TargetBookmark: "retired/main", Status: "starting"})
+		svc := f.service(nil)
+		svc.setWorkspaceProvisioningStageBestEffort(context.Background(), machine.ID, workspaceWaitingForMachine)
+
+		deferred, err := f.q.GetWorkspace(context.Background(), machine.ID)
+		require.NoError(t, err)
+		require.Equal(t, workspaceWaitingForMachine, deferred.ProvisioningStage)
+
+		svc.provisionWorkspaceAsyncWithStart(context.Background(), deferred, CreateWorkspaceSessionInput{},
+			func(ctx context.Context, row db.Workspace, _ CreateWorkspaceSessionInput) (db.Workspace, error) {
+				running, runErr := f.q.UpdateWorkspaceStatus(ctx, db.UpdateWorkspaceStatusParams{ID: row.ID, Status: "running"})
+				return running, runErr
+			})
+		require.NoError(t, svc.WaitForProvisioning(context.Background()))
+
+		after, err := f.q.GetWorkspace(context.Background(), machine.ID)
+		require.NoError(t, err)
+		assert.Equal(t, "running", after.Status)
+		assert.Empty(t, after.ProvisioningStage, "a box that runs is not waiting for a machine")
+	})
+
+	t.Run("a stage another path owns is never overwritten by a success", func(t *testing.T) {
+		f := newBranchMachineFixture(t)
+		machine := f.machine(t, db.CreateWorkspaceParams{TargetBookmark: "owned-stage/main", Status: "starting"})
+		svc := f.service(nil)
+
+		svc.clearFullPoolDeferral(context.Background(), db.Workspace{ID: machine.ID, ProvisioningStage: "environment_setup"})
+
+		after, err := f.q.GetWorkspace(context.Background(), machine.ID)
+		require.NoError(t, err)
+		assert.Empty(t, after.ProvisioningStage,
+			"the row is untouched: clearFullPoolDeferral writes nothing for a stage it did not set")
+	})
+}

@@ -1644,20 +1644,20 @@ func (s *WorkspaceService) provisionWorkspaceAsyncWithStart(ctx context.Context,
 		defer s.recoverAsyncProvision(ctx, workspace, "async")
 		provisionCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), workspaceProvisionTimeout)
 		defer cancel()
-		_, err := start(provisionCtx, workspace, input)
+		started, err := start(provisionCtx, workspace, input)
 		if isNoCapacityError(err) {
 			// A full host queues a workspace with no machine yet in the
 			// runtime's admission queue instead of failing it.
 			err = s.waitForMachine(provisionCtx, workspace, err, func(ctx context.Context, current db.Workspace) error {
-				_, err := start(ctx, current, input)
-				return err
+				var startErr error
+				started, startErr = start(ctx, current, input)
+				return startErr
 			})
 		}
 		if err != nil {
 			if errors.Is(err, errWorkspaceProvisionInProgress) || errors.Is(err, errWorkspaceMachineWaitEnded) {
 				return
 			}
-			slog.Error("async workspace provisioning failed", "workspace_id", workspace.ID, "error", err)
 			// A full pool is never a provisioning failure. 'failed' is a
 			// terminal verdict — the UI renders a dead box, the
 			// stranded-'starting' reaper DELETES a failed row's VM, and a
@@ -1668,13 +1668,13 @@ func (s *WorkspaceService) provisionWorkspaceAsyncWithStart(ctx context.Context,
 			// back on the next open. A box with no VM yet has nothing to park,
 			// so its row simply stays where it is, non-terminal, exactly as
 			// ensureRuntimeWorkspaceRunningLocked already leaves it on the
-			// synchronous path; the next open provisions it.
+			// synchronous path; the next open provisions it. Either way the row
+			// records the wait, so the box is never an unexplained 'Waking'.
 			if isNoCapacityError(err) {
-				if strings.TrimSpace(workspace.VmID) != "" {
-					s.suspendWorkspaceAfterNoCapacity(provisionCtx, workspace)
-				}
+				s.deferWorkspaceForFullPool(provisionCtx, workspace)
 				return
 			}
+			slog.Error("async workspace provisioning failed", "workspace_id", workspace.ID, "error", err)
 			// Drive the row to a TERMINAL 'failed' status. Without this the row
 			// keeps its non-terminal status and pollers (the multi client only
 			// stops on state 'failed'/'error') hang until their own 4-minute
@@ -1683,6 +1683,7 @@ func (s *WorkspaceService) provisionWorkspaceAsyncWithStart(ctx context.Context,
 			// swallow the write.
 			s.markWorkspaceProvisionFailed(provisionCtx, workspace, err)
 		} else {
+			s.clearFullPoolDeferral(provisionCtx, started)
 			s.completeRecoveredSessions(provisionCtx, workspace.ID)
 		}
 	}()

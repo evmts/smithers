@@ -495,9 +495,7 @@ func completedWorkspaceReceipt(data []byte, workspaceID string, repositoryID int
 // of through branch setup: review and learning Restore, and the manual main
 // machine. Without it a Flow host start on that machine waits forever.
 func writeSetupReceipt(ctx context.Context, runtime any, workspaceID string, repositoryID int64, revision string, unavailable error) error {
-	writer, ok := runtime.(interface {
-		WriteRepositoryReceipt(context.Context, string, []byte) error
-	})
+	writer, ok := runtime.(workspaceapi.WorkspaceRepositoryReceiptWriter)
 	if !ok {
 		return unavailable
 	}

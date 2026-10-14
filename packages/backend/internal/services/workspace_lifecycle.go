@@ -1260,6 +1260,53 @@ func (s *WorkspaceService) suspendWorkspaceAfterNoCapacity(ctx context.Context, 
 	return updated
 }
 
+// deferWorkspaceForFullPool is the asynchronous provisioner's verdict when the
+// pool had no room. A full pool is a deferral, not a failure (#3874), so the
+// row stays non-terminal — but a row that records nothing at all is an
+// unexplained 'Waking' for as long as the pool is full, which is how this
+// condition reached production unclassified on 2026-10-14 (workspace a8eb95e2,
+// >15 min with no stage, no reason and no queue place).
+//
+// So the deferral is recorded twice, in the two places someone looks:
+//
+//   - on the row, as the provisioning stage waiting_for_machine, the stage the
+//     in-process queue already uses for exactly this wait. It is the one field
+//     the workspace response carries (provisioning_stage) that can say "the
+//     pool is full" without claiming a terminal verdict, and it reaches a
+//     hosted runtime, which cannot satisfy workspaceMachineQueue at all
+//     because its admission queue is the controller's, out of process.
+//   - in the log, as WARN with error_code=no_capacity and the workspace's own
+//     id, so a queued box is correlated by id and does not appear in an error
+//     query. This is the doctrine plue#829/#832 applied to the controller: a
+//     deferral is not an ERROR.
+//
+// A box that already HAS a guest is additionally parked, because that guest is
+// intact and comes back on the next open.
+func (s *WorkspaceService) deferWorkspaceForFullPool(ctx context.Context, workspace db.Workspace) {
+	slog.Warn("workspace provisioning deferred: the pool is full",
+		"workspace_id", workspace.ID,
+		"repository_id", workspace.RepositoryID,
+		"error_code", "no_capacity",
+		"stage", workspaceWaitingForMachine,
+		"vm_id", workspace.VmID)
+	s.setWorkspaceProvisioningStageBestEffort(ctx, workspace.ID, workspaceWaitingForMachine)
+	if strings.TrimSpace(workspace.VmID) != "" {
+		s.suspendWorkspaceAfterNoCapacity(ctx, workspace)
+	}
+}
+
+// clearFullPoolDeferral retires the stage deferWorkspaceForFullPool wrote once
+// the workspace actually runs. It clears ONLY that stage: every other stage
+// belongs to the path that wrote it (toolchain_bootstrap, environment_setup,
+// ready, the start-cleanup receipts), and a provisioning success must not
+// overwrite one of those.
+func (s *WorkspaceService) clearFullPoolDeferral(ctx context.Context, workspace db.Workspace) {
+	if workspace.ProvisioningStage != workspaceWaitingForMachine {
+		return
+	}
+	s.setWorkspaceProvisioningStageBestEffort(ctx, workspace.ID, "")
+}
+
 // refuseResumeForNoCapacity is the single verdict every resume path takes when
 // the pool is full: park the row, touch nothing else, and hand the caller a
 // retryable 503 with a Retry-After.
