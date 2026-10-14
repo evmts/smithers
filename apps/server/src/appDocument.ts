@@ -64,7 +64,7 @@ export const comingSoonDocumentPath = (pathname: string): string | undefined => 
  * become a GitHub owner. Keep this the one routing reservation list.
  */
 export const RESERVED_SITE_SEGMENTS: ReadonlyArray<string> = [
-  "404", "_astro", "api", "blog", "changelogs", "demo", "docs", "download", "pricing", "privacy", "refunds", "terms", "w"
+  "404", "_astro", "api", "blog", "changelogs", "demo", "docs", "download", "migration", "pricing", "privacy", "refunds", "terms", "w"
 ]
 
 /** GitHub owner and repository slugs, with exactly two segments outside the site's routes. */
