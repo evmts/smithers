@@ -15,6 +15,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
 
 type erasureFixture struct {
@@ -27,6 +28,131 @@ type erasureFixture struct {
 	creditAccount        int64
 	aEmail, aSnapshot    string
 	bRelease             int64
+}
+
+// Erasing the immutable install owner must fail before providers or identity
+// rows change. Account erasure is not an installation reset.
+func TestAdminEraseUserRefusesInstallOwnerBeforeTeardown(t *testing.T) {
+	for _, active := range []bool{true, false} {
+		for _, bound := range []bool{true, false} {
+			t.Run(fmt.Sprintf("active=%t/bound=%t", active, bound), func(t *testing.T) {
+				pool, _ := postgresfixture.NewProductDatabase(t)
+				f := seedErasureFixture(t, pool)
+				ctx := ContextWithAdminAuditActor(t.Context(), AdminAuditActor{UserID: f.admin, Username: "ops-admin"})
+				_, err := pool.Exec(ctx, `INSERT INTO self_host_owners(user_id) VALUES($1)`, f.a)
+				require.NoError(t, err)
+				_, err = pool.Exec(ctx, `UPDATE users SET is_active=$2 WHERE id=$1`, f.a, active)
+				require.NoError(t, err)
+				setup := &InstallSetupService{Pool: pool}
+				require.NoError(t, setup.Initialize(ctx))
+				snapshot := func() string {
+					var state string
+					require.NoError(t, pool.QueryRow(ctx, `SELECT concat_ws('|',
+						(SELECT u::text FROM users u WHERE id=$1),
+						(SELECT jsonb_agg(s ORDER BY key)::text FROM install_settings s),
+						(SELECT o::text FROM self_host_owners o))`, f.a).Scan(&state))
+					return fmt.Sprint(state, userReferences(t, pool, f.a))
+				}
+				before := snapshot()
+				svc, seen := newErasureService(pool)
+				req := EraseUserRequest{RequestedAt: time.Now()}
+				if bound {
+					req.UserID = f.a
+				}
+				result, err := svc.EraseUser(ctx, f.aName, req)
+				var apiErr *pkgerrors.APIError
+				require.ErrorAs(t, err, &apiErr)
+				require.Equal(t, 409, apiErr.Status)
+				require.Equal(t, "cannot erase the installation owner", apiErr.Message)
+				require.Zero(t, result)
+				require.Empty(t, seen.repos)
+				require.Empty(t, seen.vms)
+				require.Empty(t, seen.snapshots)
+				require.Equal(t, before, snapshot(), "identity, owned resources and setup settings remain intact")
+				var started int
+				require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM audit_log WHERE event_type='admin.user.erase_started' AND target_id=$1`, f.a).Scan(&started))
+				require.Zero(t, started, "a refused erase never starts teardown")
+				if active {
+					owner, err := db.New(pool).GetSelfHostOwner(ctx)
+					require.NoError(t, err)
+					require.Equal(t, f.a, owner.ID)
+					sessions := &InstallSetupSessions{Pool: pool, Setup: setup}
+					session, err := sessions.ClaimOwner(ctx, owner, "owner-after-refused-erase", time.Now().Add(time.Hour))
+					require.NoError(t, err, "the existing owner can still sign in")
+					require.Equal(t, f.a, session.UserID)
+					_, err = sessions.Exchange(ctx, "old-setup-token")
+					require.ErrorAs(t, err, &apiErr)
+					require.Equal(t, pkgerrors.CodeSetupClosed, apiErr.Code)
+				}
+				// The guard protects exactly the bound owner: an ordinary
+				// account on the same install still erases.
+				other, err := svc.EraseUser(ctx, f.bName, EraseUserRequest{RequestedAt: time.Now(), UserID: f.b})
+				require.NoError(t, err, "a non-owner erase keeps its semantics while an owner is bound")
+				require.Equal(t, f.b, other.UserID)
+				require.True(t, strings.HasPrefix(other.Tombstone, "erased-"))
+				require.Equal(t, []string{f.bName + "/" + f.bRepoName}, seen.repos)
+			})
+		}
+	}
+}
+
+// A claim that commits after the pre-teardown guard read must still not
+// brick the install: the erase transaction reads the binding again under the
+// lock ClaimOwner holds, before it replaces the identity row.
+func TestAdminEraseUserRefusesAnOwnerBoundDuringTeardown(t *testing.T) {
+	pool, _ := postgresfixture.NewProductDatabase(t)
+	f := seedErasureFixture(t, pool)
+	ctx := ContextWithAdminAuditActor(t.Context(), AdminAuditActor{UserID: f.admin, Username: "ops-admin"})
+	user, err := db.New(pool).GetUserByLowerUsername(ctx, f.aName)
+	require.NoError(t, err)
+	// The claim lands after EraseUser's own guard has already read no owner.
+	_, err = pool.Exec(ctx, `INSERT INTO self_host_owners(user_id) VALUES($1)`, f.a)
+	require.NoError(t, err)
+	svc, _ := newErasureService(pool)
+	result := EraseUserResult{UserID: user.ID, Tombstone: erasedUserPrefixFor(f.aName) + fmt.Sprint(user.ID)}
+	err = svc.eraseUserRows(ctx, user, &result, EraseUserRequest{RequestedAt: time.Now()}, nil)
+	var apiErr *pkgerrors.APIError
+	require.ErrorAs(t, err, &apiErr)
+	require.Equal(t, 409, apiErr.Status)
+	require.Equal(t, "cannot erase the installation owner", apiErr.Message)
+	var username string
+	var active bool
+	require.NoError(t, pool.QueryRow(ctx, `SELECT username,is_active FROM users WHERE id=$1`, f.a).Scan(&username, &active))
+	require.Equal(t, f.aName, username, "the identity row is not replaced")
+	require.True(t, active)
+}
+
+// Suspension sets deleted_at, which no endpoint clears, so suspending the
+// owner strands the installation exactly as an owner erase would.
+func TestAdminDeleteUserRefusesInstallOwner(t *testing.T) {
+	pool, _ := postgresfixture.NewProductDatabase(t)
+	f := seedErasureFixture(t, pool)
+	ctx := ContextWithAdminAuditActor(t.Context(), AdminAuditActor{UserID: f.admin, Username: "ops-admin"})
+	_, err := pool.Exec(ctx, `INSERT INTO self_host_owners(user_id) VALUES($1)`, f.a)
+	require.NoError(t, err)
+	svc := NewAdminUserService(db.New(pool))
+
+	err = svc.DeleteUser(ctx, f.aName)
+	var apiErr *pkgerrors.APIError
+	require.ErrorAs(t, err, &apiErr)
+	require.Equal(t, 409, apiErr.Status)
+	require.Equal(t, "cannot suspend the installation owner", apiErr.Message)
+	var active, prohibit bool
+	var deletedAt *time.Time
+	require.NoError(t, pool.QueryRow(ctx, `SELECT is_active,prohibit_login,deleted_at FROM users WHERE id=$1`, f.a).Scan(&active, &prohibit, &deletedAt))
+	require.True(t, active, "the owner can still sign in")
+	require.False(t, prohibit)
+	require.Nil(t, deletedAt)
+	var suspended int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM audit_log WHERE event_type='admin.user.suspend' AND target_id=$1`, f.a).Scan(&suspended))
+	require.Zero(t, suspended, "a refused suspend writes no audit event")
+
+	// An ordinary account on the same install still suspends.
+	require.NoError(t, svc.DeleteUser(ctx, f.bName))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT is_active,prohibit_login,deleted_at FROM users WHERE id=$1`, f.b).Scan(&active, &prohibit, &deletedAt))
+	require.False(t, active)
+	require.True(t, prohibit)
+	require.NotNil(t, deletedAt)
 }
 
 // seedErasureFixture seeds user A with owned data across the data classes an

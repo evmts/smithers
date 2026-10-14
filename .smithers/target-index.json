@@ -38707,6 +38707,36 @@
     }
   },
   {
+    "label": "//flows:codingHostBundle",
+    "package": "flows",
+    "name": "codingHostBundle",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "flows/test/coding-host-bundle.test.ts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/build.mjs"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "flows/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//flows:codingHostInputs",
     "package": "flows",
     "name": "codingHostInputs",

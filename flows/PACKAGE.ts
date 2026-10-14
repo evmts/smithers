@@ -86,6 +86,16 @@ const recording = Smithers.NodeTest({
   deps: [],
   cwd
 })
+// The bundle shim check reads the coding host's build script and the flow
+// sources it may bundle, so it declares those, not the suite's fixtures. It
+// also scans packages/smithers, which owns its own sources; this target does
+// not re-declare another package's tree.
+const codingHostBundle = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//flows/test/coding-host-bundle.test.ts")]),
+  srcs: [sources, Smithers.file("//flows/coding/build.mjs")],
+  deps: [],
+  cwd
+})
 const issueSweep = Smithers.NodeTest({
   runner: Smithers.testRunner([
     Smithers.file("//flows/issue-sweep/test/decide.test.ts"),
@@ -727,6 +737,7 @@ export const Package = Smithers.Package({
     codingNativeBun,
     codingBundle,
     codingBundleBun,
+    codingHostBundle,
     egress,
     fixtures,
     pack,

@@ -45,3 +45,18 @@ func (q *Queries) GetSelfHostOwner(ctx context.Context) (User, error) {
 	)
 	return i, err
 }
+
+const isSelfHostOwner = `-- name: IsSelfHostOwner :one
+SELECT EXISTS (
+    SELECT 1 FROM self_host_owners
+    WHERE singleton = TRUE AND user_id = $1::bigint
+)::boolean
+`
+
+// Account erasure protects the immutable binding even if its user is inactive.
+func (q *Queries) IsSelfHostOwner(ctx context.Context, userID int64) (bool, error) {
+	row := q.db.QueryRow(ctx, isSelfHostOwner, userID)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}

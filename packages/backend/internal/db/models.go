@@ -413,6 +413,23 @@ type ChatAccountView struct {
 	ViewState      json.RawMessage `json:"view_state"`
 }
 
+type ChatArchive struct {
+	ID                   string          `json:"id"`
+	RepositoryID         int64           `json:"repository_id"`
+	OwnerID              pgtype.Int8     `json:"owner_id"`
+	ArchivedBy           pgtype.Int8     `json:"archived_by"`
+	SourceConversationID string          `json:"source_conversation_id"`
+	Repository           pgtype.Text     `json:"repository"`
+	Branch               pgtype.Text     `json:"branch"`
+	Title                string          `json:"title"`
+	Summary              pgtype.Text     `json:"summary"`
+	Runs                 json.RawMessage `json:"runs"`
+	EntryCount           int32           `json:"entry_count"`
+	FirstAt              time.Time       `json:"first_at"`
+	LastAt               time.Time       `json:"last_at"`
+	ArchivedAt           time.Time       `json:"archived_at"`
+}
+
 type ChatTurn struct {
 	ID                     string             `json:"id"`
 	RepositoryID           int64              `json:"repository_id"`

@@ -91,8 +91,13 @@ func erasedUserPrefixFor(lowerUsername string) string {
 // ledger and tax rows are kept; comments and other contributions in
 // repositories the user does not own stay attributed to the tombstone.
 // Erasing an already-erased user changes nothing and succeeds. Every call
-// writes an admin.user.erase audit event; an erase that destroys anything
-// first writes an admin.user.erase_started receipt.
+// that reaches teardown writes an admin.user.erase audit event; an erase that
+// destroys anything first writes an admin.user.erase_started receipt. A
+// refusal writes neither, so no erase event ever names a request that changed
+// nothing.
+// The installation owner is refused before teardown and before the repeated
+// erase succeeds, including an inactive or already-erased owner. Account
+// erasure neither transfers ownership nor resets install setup.
 //
 // The request resolves to one account: see resolveErasureTarget.
 func (s *AdminUserService) EraseUser(ctx context.Context, username string, req EraseUserRequest) (EraseUserResult, error) {
@@ -110,6 +115,13 @@ func (s *AdminUserService) EraseUser(ctx context.Context, username string, req E
 	user, err := resolveErasureTarget(ctx, q, lower, req)
 	if err != nil {
 		return EraseUserResult{}, err
+	}
+	owner, err := q.IsSelfHostOwner(ctx, user.ID)
+	if err != nil {
+		return EraseUserResult{}, pkgerrors.Internal("failed to verify installation owner").WithCause(err)
+	}
+	if owner {
+		return EraseUserResult{}, pkgerrors.Conflict("cannot erase the installation owner")
 	}
 	if isErasedUser(user) {
 		result := EraseUserResult{UserID: user.ID, Tombstone: user.Username, AlreadyErased: true}
@@ -187,6 +199,20 @@ func (s *AdminUserService) eraseUserRows(ctx context.Context, user db.User, resu
 	}
 	defer tx.Rollback(context.WithoutCancel(ctx))
 	q := db.New(tx)
+
+	// A claim that commits while teardown runs would bind the account this
+	// erase is destroying, so the binding is read again here, under the lock
+	// ClaimOwner holds, before the identity row is replaced.
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", installSetupOwnerLockID); err != nil {
+		return pkgerrors.Internal("failed to lock the installation owner").WithCause(err)
+	}
+	owner, err := q.IsSelfHostOwner(ctx, userID)
+	if err != nil {
+		return pkgerrors.Internal("failed to verify installation owner").WithCause(err)
+	}
+	if owner {
+		return pkgerrors.Conflict("cannot erase the installation owner")
+	}
 
 	live, err := q.AdminCountUserLiveResources(ctx, userID)
 	if err != nil {

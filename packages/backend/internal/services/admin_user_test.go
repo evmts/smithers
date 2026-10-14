@@ -25,6 +25,7 @@ type mockAdminUserQuerier struct {
 	createUserFn                   func(ctx context.Context, arg db.CreateUserParams) (db.User, error)
 	getUserByLowerUsernameFn       func(ctx context.Context, lowerUsername string) (db.User, error)
 	adminGetUserForSuspensionFn    func(ctx context.Context, lowerUsername string) (db.User, error)
+	isSelfHostOwnerFn              func(ctx context.Context, userID int64) (bool, error)
 	suspendUserFn                  func(ctx context.Context, id int64) error
 	setUserAdminFn                 func(ctx context.Context, arg db.SetUserAdminParams) error
 	setUserSuspendedFn             func(ctx context.Context, arg db.SetUserSuspendedParams) (db.User, error)
@@ -65,6 +66,13 @@ func (m *mockAdminUserQuerier) AdminGetUserForSuspension(ctx context.Context, lo
 		return m.adminGetUserForSuspensionFn(ctx, lowerUsername)
 	}
 	return db.User{}, nil
+}
+
+func (m *mockAdminUserQuerier) IsSelfHostOwner(ctx context.Context, userID int64) (bool, error) {
+	if m.isSelfHostOwnerFn != nil {
+		return m.isSelfHostOwnerFn(ctx, userID)
+	}
+	return false, nil
 }
 
 func (m *mockAdminUserQuerier) SuspendUser(ctx context.Context, id int64) error {

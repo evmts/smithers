@@ -20,6 +20,7 @@ type AdminUserQuerier interface {
 	CreateUser(ctx context.Context, arg db.CreateUserParams) (db.User, error)
 	GetUserByLowerUsername(ctx context.Context, lowerUsername string) (db.User, error)
 	AdminGetUserForSuspension(ctx context.Context, lowerUsername string) (db.User, error)
+	IsSelfHostOwner(ctx context.Context, userID int64) (bool, error)
 	SuspendUser(ctx context.Context, id int64) error
 	SetUserAdmin(ctx context.Context, arg db.SetUserAdminParams) error
 	SetUserSuspended(ctx context.Context, arg db.SetUserSuspendedParams) (db.User, error)
@@ -213,7 +214,10 @@ func (s *AdminUserService) CreateUser(ctx context.Context, input AdminCreateUser
 // DeleteUser suspends a user by username as an admin operation.
 // Sets deleted_at, is_active=false, and prohibit_login=true to preserve all
 // collaboration history while preventing future access.
-// Returns NotFound if the user does not exist.
+// Returns NotFound if the user does not exist, and Conflict for the
+// installation owner: deleted_at closes every sign-in and no endpoint clears
+// it, so suspending the owner would strand the installation the same way an
+// owner erase would.
 func (s *AdminUserService) DeleteUser(ctx context.Context, username string) error {
 	username = strings.TrimSpace(username)
 	if username == "" {
@@ -226,6 +230,14 @@ func (s *AdminUserService) DeleteUser(ctx context.Context, username string) erro
 			return pkgerrors.NotFound("user not found")
 		}
 		return pkgerrors.Internal("failed to look up user").WithCause(err)
+	}
+
+	owner, err := s.queries.IsSelfHostOwner(ctx, user.ID)
+	if err != nil {
+		return pkgerrors.Internal("failed to verify installation owner").WithCause(err)
+	}
+	if owner {
+		return pkgerrors.Conflict("cannot suspend the installation owner")
 	}
 
 	err = s.queries.SuspendUser(ctx, user.ID)
