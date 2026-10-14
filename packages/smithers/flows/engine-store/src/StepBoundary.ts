@@ -496,12 +496,14 @@ export interface FileSystemOptions {
    */
   readonly maxTotalInlineBytes?: number | undefined
   /**
-   * The workspace root cache replay confines its writes, removals, and prune
-   * walk to. A filesystem already confined to a root (the kernel-guarded
-   * layer's service, or a `confined` view) keeps its own root and ignores
-   * this. Otherwise it defaults to the process working directory, the root a
-   * path-based host resolves `prepare` and `settle` against. {@link layer}
-   * passes the kernel `Workspace` root when one is in context.
+   * The workspace root every declared path resolves against: `prepare` and
+   * `settle` measure under it, and cache replay confines its writes, removals,
+   * and prune walk to it. A filesystem already confined to a root (the
+   * kernel-guarded layer's service, or a `confined` view) keeps its own root
+   * and ignores this. Otherwise it defaults to the process working directory,
+   * the root a path-based host resolves a relative path against. {@link layer}
+   * passes the kernel `Workspace` root when one is in context, which is the
+   * root a step's own FileSystem resolves against (issue #3911).
    */
   readonly root?: string | undefined
 }
@@ -573,7 +575,16 @@ export const makeFileSystem = (
     const digest = yield* Schema.decodeUnknownEffect(Sha256)(bytes).pipe(Effect.orDie)
     return { digest, bytes } satisfies MeasuredDigest
   })
-  const readDigest = (path: string) => readDigestFrom(fs, path)
+  // Declared paths are workspace-relative. A confined filesystem resolves them
+  // against its own root, but a path-based host resolves them against the
+  // process working directory, where a same-named file would answer the dirty
+  // check and let a stale declaration serve a cache hit (issue #3911). Such a
+  // host is handed each path resolved against the configured root; results
+  // stay keyed by the declared path.
+  const readRoot = KernelFileSystem.confinedRoot(fs) === undefined ? options.root : undefined
+  const hostPath = (path: string): string => readRoot === undefined ? path : platformPath.resolve(readRoot, path)
+  const enumeration: FileEnumeration.EnumerationOptions = readRoot === undefined ? {} : { resolve: hostPath }
+  const readDigest = (path: string) => readDigestFrom(fs, hostPath(path))
   const batch = KernelFileSystem.batch(fs)
   const measurements = Effect.fn("StepBoundary.measurements")(
     function*(paths: ReadonlyArray<string>, content: boolean) {
@@ -594,7 +605,7 @@ export const makeFileSystem = (
         const response = yield* batch.execute(
           paths.slice(offset, offset + batch.maxSize).map((path) => ({
             operation: "digest",
-            path,
+            path: hostPath(path),
             content
           }))
         ).pipe(Effect.mapError(hostFailure))
@@ -636,10 +647,14 @@ export const makeFileSystem = (
   // workspace-relative expansion and let a tree replay delete dotfiles the
   // producer wrote.
   const expandGlob = Effect.fn("StepBoundary.expandGlob")(function*(glob: FileSet.Glob) {
-    return yield* FileEnumeration.expandGlob(fs, glob).pipe(Effect.mapError(hostFailure))
+    return yield* FileEnumeration.expandGlob(fs, glob, enumeration).pipe(Effect.mapError(hostFailure))
   })
-  const treeEntries = Effect.fn("StepBoundary.treeEntries")(function*(host: FileSystem.FileSystem, path: string) {
-    return yield* FileEnumeration.entriesUnder(host, path).pipe(Effect.mapError(hostFailure))
+  const treeEntries = Effect.fn("StepBoundary.treeEntries")(function*(
+    host: FileSystem.FileSystem,
+    path: string,
+    resolution: FileEnumeration.EnumerationOptions
+  ) {
+    return yield* FileEnumeration.entriesUnder(host, path, resolution).pipe(Effect.mapError(hostFailure))
   })
   // Replay writes and deletes what evidence names, so the lexical check alone
   // is not a boundary: a symlink planted on a lexically valid path would carry
@@ -647,7 +662,7 @@ export const makeFileSystem = (
   // its prune walk go through a view pinned to the root, where each call is
   // one descriptor-relative, no-follow request and a symlink anywhere on the
   // path is refused rather than followed. `prepare` and `settle` only read,
-  // and keep the caller's filesystem.
+  // and keep the caller's filesystem, rooted through `hostPath`.
   const replayRoot = KernelFileSystem.confinedRoot(fs) ?? options.root ?? "."
   const replayHost: Effect.Effect<FileSystem.FileSystem, UnsupportedBoundary> = KernelFileSystem.isConfinable(fs)
     ? KernelFileSystem.confined(fs, replayRoot).pipe(
@@ -849,7 +864,7 @@ export const makeFileSystem = (
         if (typeof entry === "string") outputPaths.push(entry)
         else if (entry._tag === "Glob") outputPaths.push(...yield* expandGlob(entry))
         else {
-          const files = (yield* treeEntries(fs, entry.path)).files
+          const files = (yield* treeEntries(fs, entry.path, enumeration)).files
           outputPaths.push(...files)
           treeMembers.push({ path: entry.path, files })
         }
@@ -1007,7 +1022,7 @@ export const makeFileSystem = (
             .map((output) => output.path)
             .filter((path) => path.startsWith(prefix))
         )
-        const entries = yield* treeEntries(host, tree.path)
+        const entries = yield* treeEntries(host, tree.path, {})
         for (const path of entries.files) {
           if (!recorded.has(path)) yield* host.remove(path).pipe(Effect.mapError(hostFailure))
         }

@@ -376,16 +376,16 @@ interface Service {
 }
 ```
 
-| Export              | Signature                                                                                                | Meaning                                                                                                                       |
-| ------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `StepBoundary`      | `Context.Service<Service>`                                                                               | Service tag.                                                                                                                  |
-| `make`              | `(service: Service) => Service`                                                                          | Brands an implementation, so a wrong shape is reported where it is written.                                                   |
-| `makeFileSystem`    | `(fs: FileSystem, path: Path, artifacts: ArtifactStore.Service, options?: FileSystemOptions) => Service` | The production boundary.                                                                                                      |
-| `layer`             | `Layer<Service, never, FileSystem \| Path \| ArtifactStore>`                                             | Provides it, confining replay to the kernel `Workspace` root when one is in context. Resolves that root with the host `Path`. |
-| `layerTest`         | `(options?: TestOptions) => Layer<Service>`                                                              | Deterministic in-memory boundary.                                                                                             |
-| `exactReads`        | `(descriptor: FileBoundary) => ReadonlyArray<FileInput>`                                                 | Exact read inputs, ignoring declarations that still need expansion.                                                           |
-| `readSetMatches`    | `(prepared: PreparedBoundary) => boolean`                                                                | Whether the measured snapshot still matches the declaration.                                                                  |
-| `referencedDigests` | `(evidence: BoundaryEvidence) => ReadonlyArray<ArtifactStore.Digest>`                                    | The digests the evidence references rather than inlines. Evidence from a foreign implementation yields the empty list.        |
+| Export              | Signature                                                                                                | Meaning                                                                                                                                     |
+| ------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `StepBoundary`      | `Context.Service<Service>`                                                                               | Service tag.                                                                                                                                |
+| `make`              | `(service: Service) => Service`                                                                          | Brands an implementation, so a wrong shape is reported where it is written.                                                                 |
+| `makeFileSystem`    | `(fs: FileSystem, path: Path, artifacts: ArtifactStore.Service, options?: FileSystemOptions) => Service` | The production boundary.                                                                                                                    |
+| `layer`             | `Layer<Service, never, FileSystem \| Path \| ArtifactStore>`                                             | Provides it, rooting measurement and replay at the kernel `Workspace` root when one is in context. Resolves that root with the host `Path`. |
+| `layerTest`         | `(options?: TestOptions) => Layer<Service>`                                                              | Deterministic in-memory boundary.                                                                                                           |
+| `exactReads`        | `(descriptor: FileBoundary) => ReadonlyArray<FileInput>`                                                 | Exact read inputs, ignoring declarations that still need expansion.                                                                         |
+| `readSetMatches`    | `(prepared: PreparedBoundary) => boolean`                                                                | Whether the measured snapshot still matches the declaration.                                                                                |
+| `referencedDigests` | `(evidence: BoundaryEvidence) => ReadonlyArray<ArtifactStore.Digest>`                                    | The digests the evidence references rather than inlines. Evidence from a foreign implementation yields the empty list.                      |
 
 ### Schemas
 
@@ -400,11 +400,11 @@ interface Service {
 
 ### FileSystemOptions
 
-| Field                 | Default | Meaning                                                                                                                      |
-| --------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `maxInlineBytes`      | 1 MiB   | The largest single output inlined into the evidence. Anything larger is stored by digest reference.                          |
-| `maxTotalInlineBytes` | 8 MiB   | The largest aggregate inline payload one settle may fold in. Past it, an output is spilled even though it individually fits. |
-| `root`                | cwd     | The root replay confines writes and removals to. A filesystem already confined to a root keeps its own.                      |
+| Field                 | Default | Meaning                                                                                                                                                                                 |
+| --------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `maxInlineBytes`      | 1 MiB   | The largest single output inlined into the evidence. Anything larger is stored by digest reference.                                                                                     |
+| `maxTotalInlineBytes` | 8 MiB   | The largest aggregate inline payload one settle may fold in. Past it, an output is spilled even though it individually fits.                                                            |
+| `root`                | cwd     | The root declared paths resolve against: `prepare` and `settle` measure under it, and replay confines writes and removals to it. A filesystem already confined to a root keeps its own. |
 
 `replayOutputs` writes and deletes what the evidence names, so it confines its
 own mutations instead of trusting the composition. Every write, removal, probe,
@@ -413,7 +413,10 @@ one descriptor-relative, no-follow request per call against the pinned root. A
 symlink on a replayed path (a parent, the final component, or a member of a
 replayed tree) refuses with `UnsupportedBoundary`, and so does a host with no
 descriptor-relative executor or isolation attestation, before any host call.
-`prepare` and `settle` only read and keep the caller's filesystem.
+`prepare` and `settle` only read and keep the caller's filesystem, but hand a
+path-based host each declared path resolved against `root`, the root a step's
+own FileSystem resolves against. A same-named file in the process working
+directory therefore never answers the dirty check (issue #3911).
 
 ### TestOptions
 

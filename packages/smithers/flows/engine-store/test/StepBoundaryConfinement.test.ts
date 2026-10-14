@@ -169,6 +169,77 @@ describe("StepBoundary replay confinement", () => {
       }
     }))
 
+  /**
+   * Issue #3911: `prepare` and `settle` handed the raw host workspace-relative
+   * paths, which a path-based host resolves against the process working
+   * directory. A same-named file there answered the dirty check, so a stale
+   * declaration passed and a cache hit served a result computed from other
+   * bytes. Every measurement resolves against the workspace root, the root the
+   * step's own FileSystem sees.
+   */
+  it.effect("measures reads and writes under the workspace root, not the process working directory", () =>
+    Effect.gen(function*() {
+      const paths = fixture()
+      const cwd = join(paths.base, "cwd")
+      const plant = (root: string, files: Record<string, string>) => {
+        for (const [path, content] of Object.entries(files)) {
+          mkdirSync(join(root, path, ".."), { recursive: true })
+          writeFileSync(join(root, path), content)
+        }
+      }
+      plant(paths.workspace, {
+        "docs/a.md": "workspace",
+        "docs/only-workspace.md": "w",
+        "out/result": "built",
+        "dist/x.txt": "tree"
+      })
+      plant(cwd, { "docs/a.md": "cwd", "docs/only-cwd.md": "c", "out/result": "stale", "dist/y.txt": "other" })
+      const previous = process.cwd()
+      process.chdir(cwd)
+      try {
+        const measured = yield* withCrypto(
+          Effect.gen(function*() {
+            const boundary = yield* StepBoundary.StepBoundary
+            const exact = (digest: string) =>
+              boundary.prepare({ readSet: [{ path: "docs/a.md", digest }], writeSet: [], boundaryMode: "hard" })
+            const workspaceDeclared = yield* exact(sha256("workspace"))
+            const cwdDeclared = yield* exact(sha256("cwd"))
+            const globbed = yield* boundary.prepare({
+              readSet: [{ _tag: "Glob", include: ["docs/**"] }],
+              writeSet: [],
+              boundaryMode: "hard"
+            })
+            const settled = yield* boundary.settle(
+              yield* boundary.prepare({
+                readSet: [],
+                writeSet: ["out/result", { _tag: "TreeArtifact", path: "dist" }],
+                boundaryMode: "hard"
+              })
+            )
+            return { workspaceDeclared, cwdDeclared, globbed, settled }
+          }).pipe(Effect.provide(productionHost(paths.workspace)))
+        )
+        expect(measured.workspaceDeclared.readSnapshot).toEqual([{ path: "docs/a.md", digest: sha256("workspace") }])
+        expect(StepBoundary.readSetMatches(measured.workspaceDeclared)).toBe(true)
+        expect(StepBoundary.readSetMatches(measured.cwdDeclared)).toBe(false)
+        expect(measured.globbed.readSnapshot).toEqual([
+          { path: "docs/a.md", digest: sha256("workspace") },
+          { path: "docs/only-workspace.md", digest: sha256("w") }
+        ])
+        expect(measured.settled.deviation).toBeUndefined()
+        expect(measured.settled.declaredOutputs).toMatchObject({
+          outputs: [
+            { path: "dist/x.txt", digest: sha256("tree") },
+            { path: "out/result", digest: sha256("built") }
+          ],
+          trees: [{ path: "dist" }]
+        })
+      } finally {
+        process.chdir(previous)
+        paths.dispose()
+      }
+    }))
+
   it.effect("pins replay to a Windows drive root through the host Path", () =>
     Effect.gen(function*() {
       const root = "D:\\a\\kernel"
