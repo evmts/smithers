@@ -4,7 +4,7 @@ import type { AgentTurnCursor } from "@smthrs/rpc/AgentTurnJournal"
 import type { StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import { Duration, Effect, Fiber, Stream } from "effect"
 import { describe, expect, test, vi } from "vitest"
-import { DurableChatProducer } from "../src/DurableChatProducer.ts"
+import { DurableChatProducer, runDurableChatTurn } from "../src/DurableChatProducer.ts"
 import { createHostDiagnostics, HOST_DIAGNOSTIC_MARKER } from "../src/HostDiagnostics.ts"
 import { runModelTurn } from "../src/ModelTurnHost.ts"
 
@@ -239,6 +239,45 @@ describe("callback attempt diagnostics", () => {
     await Effect.runPromise(producer.providerStarted())
     expect(sink.phase("chat_callback", "begin")[0]).toMatchObject({ step: "provider_started" })
     expect(sink.phase("chat_callback", "end")[0]).toMatchObject({ step: "provider_started", status: 204 })
+  })
+})
+
+// Why a commit attempt never put a socket on the wire is still open, and the
+// guest's own Node and undici build is the one variable the transport
+// experiments could not control for. Ten post-release production turns failed
+// to answer it, because each finished before its sandbox could be read and a
+// finished turn's sandbox is deleted at once. The build therefore has to be in
+// the same log the stall itself is read from, written before the first
+// callback is attempted rather than raced for afterwards.
+describe("the guest runtime a turn reports", () => {
+  test("is recorded before this turn's first callback, as version strings", async () => {
+    const sink = collector()
+    // A turn whose journal refuses its very first callback: the record has to
+    // be there for the turns that fail, which are the ones being read.
+    const exit = await Effect.runPromiseExit(
+      runDurableChatTurn(
+        Model.make({ stream: () => Stream.fromIterable([{ type: "settle", stopReason: "stop" } as const]) }),
+        grant,
+        { modelId: "m" },
+        "http://host.test/",
+        () => Promise.resolve(new Response(null, { status: 403 })),
+        undefined,
+        undefined,
+        createHostDiagnostics({ turnId: grant.turnId, write: sink.write })
+      )
+    )
+    expect(exit._tag).toBe("Failure")
+    const [runtime] = sink.phase("host_runtime", "start")
+    expect(runtime).toMatchObject({
+      turnId: "turn",
+      node: process.versions.node,
+      platform: process.platform,
+      arch: process.arch
+    })
+    // Before the first attempt, so a stalled turn's log carries it.
+    expect(sink.lines.indexOf(runtime!)).toBeLessThan(
+      sink.lines.findIndex((line) => line.event === "chat_callback")
+    )
   })
 })
 
