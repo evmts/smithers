@@ -925,7 +925,7 @@ serves a fixed list; `makeNoop` records nothing; `layer`, `layerCells`, and
 `import * as AgentEvent from "@smthrs/harness/AgentEvent"`
 
 The serializable events a harness adapter emits, one schema class per event
-and `AgentEvent.AgentEvent` as the tagged union of all 45. The controller
+and `AgentEvent.AgentEvent` as the tagged union of all 46. The controller
 journals them in order: `DisciplineArmed` once at the start, the frame cycle
 (`TurnOpened`, `ModelRequested`, `ModelDelta`, `ModelRetried`, `ModelSettled`,
 `CellProduced`, `CellRejectedInFrame`, `CellCallStarted`, `CellCallSettled`,
@@ -1030,6 +1030,18 @@ that did the work, so a replayed frame reports the replay's own readings:
   that served it. Both count from the same call, so `stages.firstOutputMs`
   less `timing.firstOutputMs` is time the first output spent inside this
   process.
+- `ModelFailed` is a model call that began and did not settle: it failed, or
+  the run was interrupted in it. It carries the keys of the `ModelRequested`
+  it ends (`scope`, `frame`, `attempt`, `purpose`, `reask`), `code` (the
+  failure's code, its tag where it has none, `interrupted` for an
+  interruption), `httpStatus`, `durationMillis`, and the `stages` and `tries`
+  a settlement would have carried, as far as the call got. `timing` is the
+  model package's wire record of the failed call, read off its error. An
+  engine that records the failure and hands on its decoded copy has dropped
+  it, so a host reports it through `EngineLike.FailedTimings`, a
+  `Context.Reference` the controller provides around each sealed step, and
+  the last one reported is what the record carries. Exhaustive matches on the
+  event union must handle `model-failed`.
 - `ModelRetried` carries `elapsedMs`, how long the failed try ran, and
   `httpStatus`, the status that failed it, when the boundary that retried
   reported them on its `ModelEvent.Retry`.
