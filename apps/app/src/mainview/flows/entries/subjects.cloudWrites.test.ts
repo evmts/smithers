@@ -204,3 +204,34 @@ test("the hosted app's /wiki.page asks the repository's own wiki, and seeds no p
     expect([...h.store.collections.cards.keys()].filter(id => id.startsWith("design:"))).toEqual([])
   } finally { await h.controller.dispose() }
 })
+
+/*
+ * The read beside these writes, pinned because a typed `/issue 5` looked like
+ * it did nothing on the hosted app (2026-10-14): the view on screen did not
+ * change. It is not a missing lookup and not a palette argument that was
+ * dropped — the command reads the repository's own issue and navigates the
+ * repository pane IN PLACE, keeping the card id and the transcript ordinal
+ * `/issues` gave it, so a pane that has scrolled away refreshes where it is.
+ * Whether that card is brought back into view is presentation, not source.
+ */
+test("a typed /issue n over an open list reads the Cloud door and navigates the same pane card in place", async () => {
+  const h = await hosted({ routes: {
+    [`GET ${ISSUES}`]: [existingIssue],
+    [`GET ${ISSUES}/5`]: existingIssue,
+    [`GET ${ISSUES}/5/comments`]: [postedComment],
+    [`GET /api/repos/roninjin10/e2e-verify/issue-views`]: [],
+    [`GET /api/user/github-repos/roninjin10/e2e-verify/issues`]: []
+  } })
+  try {
+    expect(await h.controller.runCommandForResult("issues")).toMatchObject({ status: "executed" })
+    const list = h.store.collections.cards.get(`issues-${REPO}`)
+    expect(list).toMatchObject({ kind: "issue-list" })
+    h.calls.length = 0
+    expect(await h.controller.runCommandForResult("issue", "5")).toMatchObject({ status: "executed" })
+    expect(h.calls.map(call => `${call.method} ${call.path}`)).toEqual([`GET ${ISSUES}/5`, `GET ${ISSUES}/5/comments`])
+    /* The same card, the same place: one pane, not a second row and not a seeded card. */
+    const pane = h.store.collections.cards.get(`issues-${REPO}`)
+    expect(pane).toMatchObject({ kind: "issue", ordinal: list!.ordinal, payload: { repo: REPO, number: 5, title: existingIssue.title } })
+    expect([...h.store.collections.cards.keys()].filter(id => id.startsWith("design:"))).toEqual([])
+  } finally { await h.controller.dispose() }
+})
