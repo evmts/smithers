@@ -2,22 +2,26 @@
 
 T-DOC-04 ([#3510](https://github.com/smithersai/smithers/issues/3510)) retires the 48
 generated `<slug>.smithers.sh` library sites. A small separate Worker answers their
-hostnames with a 301 to the package's colocated `docs/` folder on GitHub:
+hostnames with a 301 to the same page in the package's colocated `docs/` folder on
+GitHub, or to the folder when the path names no page:
 
 ```
-https://engine.smithers.sh/concepts/retries/
-  -> 301 https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/engine/docs
+https://flows.smithers.sh/quickstart/
+  -> 301 https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/quickstart.md
+https://flows.smithers.sh/
+  -> 301 https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/docs
 ```
 
 | Piece | File |
 | --- | --- |
-| Slug roster and map, from the workspace package list | `scripts/package-docs.mjs` (`node scripts/package-docs.mjs` prints it) |
-| The Worker's copy of the map (generated) | `src/docsRedirectMap.ts` (`node scripts/package-docs.mjs --write`) |
+| Slug roster, folder map and page map, from the workspace package list and each package's `docs/` | `scripts/package-docs.mjs` (`node scripts/package-docs.mjs` prints both maps) |
+| The Worker's copy of the maps (generated) | `src/docsRedirectMap.ts` (`node scripts/package-docs.mjs --write`; `pnpm docs:sync` runs it) |
+| Generator tests and the map's freshness against the docs | `scripts/package-docs-redirect.test.mjs` (`//scripts:packageDocs`; `pnpm docs:check` runs `--check`) |
 | Handler (pure decision, pass-through, DNS check) | `src/docsRedirect.ts` |
 | Entry (default export only; workerd refuses other exports) | `src/docsRedirectWorker.ts` |
 | Config: name, 48 routes, `UNKNOWN_SLUGS` switch | `wrangler.docs-redirect.jsonc` |
 | Unit and workerd tests | `src/docsRedirect.test.ts`, `src/docsRedirect.workerd.test.ts` |
-| Live acceptance probe (5 URLs, 301 + exact Location) | `node scripts/package-docs-redirect-probe.mjs` |
+| Live acceptance probe (11 URLs: 301, exact Location, target 200) | `node scripts/package-docs-redirect-probe.mjs` |
 
 This Worker is not `smithers-mvp-web`. The Deploy apps workflow does not deploy it,
 and deploying it never touches the shared edge.
@@ -26,8 +30,9 @@ and deploying it never touches the shared edge.
 
 ```
                        route <slug>.smithers.sh/*  (48, one per retired site)
-  flow.smithers.sh ──▶ smithers-docs-redirect ──▶ 301 DOCS_REDIRECTS.get("flow")
-                       (outranks the old site Worker's Custom Domain)
+  flow.smithers.sh ──▶ smithers-docs-redirect ──▶ 301 DOCS_PAGES.get("flow").get(<page path>)
+                       (outranks the old site      ?? DOCS_REDIRECTS.get("flow")
+                        Worker's Custom Domain)
 
   any other host ────▶ not routed here; unchanged
 ```
@@ -46,11 +51,43 @@ and deploying it never touches the shared edge.
    retired hostnames; each npm name is looked up in the package list, so a moved
    package moves its target. A slug whose package or `docs/` folder disappears fails
    the build.
-3. **The Location comes from the map only.** The Host selects a key; the path, query
-   and every header are dropped. Every target is under
+3. **The Location comes from the maps only.** The Host selects a slug and the path is
+   only a lookup key into that slug's page map; the query and every header are dropped.
+   No request text is copied into the answer, and every target is under
    `https://github.com/smithersai/smithers/`, so this is not an open redirect.
 4. **Unknown slugs are off by default** (`UNKNOWN_SLUGS: "off"`). Today an unknown name
    has no DNS record (NXDOMAIN) and never reaches Cloudflare. See "Unknown slugs".
+
+## Page paths
+
+The old sites were Starlight builds of each package's `docs/` folder, synced by
+`apps/docs/shared/sync-content.mjs` (deleted in `0e0626222d`; read it at its parent).
+The generator rebuilds the same routes from the files each `docs/` folder holds now,
+and maps each to its file on GitHub:
+
+| `docs/` file | Old path | Location |
+| --- | --- | --- |
+| `README.md` | `/` | `tree/main/<dir>/docs` (GitHub renders the README under the listing) |
+| `quickstart.md`, `installation.md`, `troubleshooting.md`, any top-level `x.md` | `/x/` | `blob/main/<dir>/docs/x.md` |
+| `guides/x.md`, `concepts/x.md`, any `a/b/x.md` | `/guides/x/`, `/concepts/x/`, `/a/b/x/` | `blob/main/<dir>/docs/<file>` |
+| `api.md` | `/reference/api/` | `blob/main/<dir>/docs/api.md` |
+| `a/README.md` (`cli`'s `reference/cli/`) | `/a/` | `tree/main/<dir>/docs/a` |
+
+No page set its own `slug` frontmatter. When the sites were retired (2026-10-06) they
+served 715 pages, and each had its file; a page whose file was deleted since lands on
+the folder, and a page added since gets a path too.
+
+The URL parser resolves `.` and `..` segments first. The Worker then percent-decodes the
+path, drops a trailing `index.html`, adds the trailing slash, and looks the result up, so
+`/quickstart`, `/quickstart/` and `/quickstart/index.html` are one page. Any path under
+`/reference/api/` is the API page, as each site had one API page. Every other path lands
+on the folder, including a `..` that appears only after decoding, since no key holds one.
+
+Generation fails on a symlink in a `docs/` folder, on two files that claim one path
+(`api.md` and `reference/api.md`, or `x.md` and `x/README.md`), and on a path that is not
+lowercase `[a-z0-9_.-]` segments. A page added, renamed or removed changes the map:
+`pnpm docs:sync` regenerates it, and `pnpm docs:check` and `//scripts:packageDocs` fail
+while it is stale, so a Location never names a file that no longer exists.
 
 ## Hostname inventory, 2026-10-06
 
@@ -107,7 +144,7 @@ from a clean `apps/server` checkout of origin/main:
 ```sh
 bun test src/docsRedirect.test.ts src/docsRedirect.workerd.test.ts
 CLOUDFLARE_API_TOKEN=<token> bun x wrangler deploy -c wrangler.docs-redirect.jsonc
-node ../../scripts/package-docs-redirect-probe.mjs   # 4/5: the unknown slug needs DNS
+node ../../scripts/package-docs-redirect-probe.mjs   # 10/11: the unknown slug needs DNS
 ```
 
 Then rerun the snapshot above and compare it with the inventory. After the probe
@@ -153,4 +190,4 @@ To turn it on, in one change:
 1. DNS: proxied `AAAA * 100::` and `TXT * "smithers-unclaimed=docs-redirect"`.
 2. `wrangler.docs-redirect.jsonc`: add `{ "pattern": "*.smithers.sh/*", "zone_id": "8ebd98d2f0dc7d8db2e61f31ebc19c14" }`
    and set `UNKNOWN_SLUGS` to `"txt-marker"`; update the config test.
-3. Deploy, run the probe (5/5), rerun the snapshot and compare every inventoried host.
+3. Deploy, run the probe (11/11), rerun the snapshot and compare every inventoried host.

@@ -66542,6 +66542,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/server/src/docsRedirectMap.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/errors/package.json"
       },
       {

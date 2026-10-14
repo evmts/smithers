@@ -1170,7 +1170,8 @@ const packageDocs = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//scripts/package-docs.test.mjs"), Smithers.file("//scripts/package-docs-redirect.test.mjs")]),
   timeout: "30m",
   cache: false,
-  srcs: [...sources, Smithers.file("//pnpm-workspace.yaml"), ...packageDocInputs],
+  // package-docs-redirect.test.mjs holds the Worker's generated page map to the docs it is built from.
+  srcs: [...sources, Smithers.file("//pnpm-workspace.yaml"), Smithers.file("//apps/server/src/docsRedirectMap.ts"), ...packageDocInputs],
   deps: []
 })
 

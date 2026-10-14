@@ -294,7 +294,9 @@ describe("ci conformance", () => {
     // 8d308dcf21): the public model price sheet in apps/site is generated from
     // packages/backend/modelprice, so the documentation drift gate needs Go.
     // The Drift job's ubuntu-latest image provides `go`, and go.mod's
-    // `go 1.26.8` line makes it fetch that release.
+    // `go 1.26.8` line makes it fetch that release. `docs:sync` regenerates,
+    // and `docs:check` holds, apps/server/src/docsRedirectMap.ts: the retired
+    // docs sites' page map is built from the package docs/ folders (#3510).
     //
     // `release:*` are operator entry points into the `flows` workspace's
     // release-support program (release.yml and release-auth.yml call the same
@@ -312,8 +314,8 @@ describe("ci conformance", () => {
       circular: "pnpm --recursive --if-present run circular",
       "deploy:dry": "pnpm --filter smithers-server run deploy:dry",
       "docs:check":
-        "go run ./packages/backend/modelprice/cmd/generate -check && node scripts/package-docs.test.mjs",
-      "docs:sync": "pnpm --filter @smithers/site run sync:docs",
+        "go run ./packages/backend/modelprice/cmd/generate -check && node scripts/package-docs.mjs --check && node scripts/package-docs.test.mjs",
+      "docs:sync": "pnpm --filter @smithers/site run sync:docs && node scripts/package-docs.mjs --write",
       dev: "pnpm --filter smithers-app run start",
       commit: "node scripts/commit.mjs",
       deploy: "pnpm --filter smithers-server run deploy",

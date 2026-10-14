@@ -5,7 +5,8 @@
  * Until 2026-10 every row below was an Astro site on `<slug>.smithers.sh`. The
  * sites are gone; each package's colocated `docs/` folder on GitHub replaces
  * its site, and one Worker (`apps/server/src/docsRedirect.ts`) answers the old
- * hostnames with a 301 to that folder.
+ * hostnames with a 301 to the page's file in that folder, or to the folder
+ * when the path names no page.
  *
  * The slugs are frozen. They are the hostnames that served a docs site, and the
  * only hostnames the redirect Worker may claim: a slug derived from today's
@@ -18,7 +19,7 @@
  *   node scripts/package-docs.mjs --write   regenerate apps/server/src/docsRedirectMap.ts
  *   node scripts/package-docs.mjs --check   fail if that module drifted
  */
-import { existsSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { isMain, repoRoot, workspacePackages } from "./workspace-packages.mjs"
 
@@ -90,25 +91,118 @@ export const legacySites = [
 ]
 
 /**
- * slug -> `https://github.com/smithersai/smithers/tree/main/<package-dir>/docs`,
- * resolved against the workspace package list. Throws when a slug's package is
- * gone or has no docs/ folder, so a broken target never ships.
+ * [slug, package dir] for every legacy site, resolved against the workspace
+ * package list. Throws when a slug's package is gone or has no docs/ folder,
+ * so a broken target never ships.
+ *
+ * @param {string} root
+ * @returns {ReadonlyArray<readonly [string, string]>}
+ */
+const legacyDirs = (root) => {
+  const byName = new Map(workspacePackages(root).map((entry) => [entry.name, entry.dir]))
+  return legacySites.map(([slug, name]) => {
+    const dir = byName.get(name)
+    if (dir === undefined) throw new Error(`${slug}.${ZONE}: no workspace package is named ${name}`)
+    if (!existsSync(join(root, dir, "docs"))) throw new Error(`${slug}.${ZONE}: ${dir} has no docs/ folder`)
+    return /** @type {const} */ ([slug, dir])
+  })
+}
+
+/**
+ * slug -> `https://github.com/smithersai/smithers/tree/main/<package-dir>/docs`:
+ * where a path that names no page lands.
  *
  * @param {string} [root]
  * @returns {Readonly<Record<string, string>>}
  */
-export const buildRedirectMap = (root = repoRoot) => {
-  const byName = new Map(workspacePackages(root).map((entry) => [entry.name, entry.dir]))
-  /** @type {Record<string, string>} */
-  const map = {}
-  for (const [slug, name] of legacySites) {
-    const dir = byName.get(name)
-    if (dir === undefined) throw new Error(`${slug}.${ZONE}: no workspace package is named ${name}`)
-    if (!existsSync(join(root, dir, "docs"))) throw new Error(`${slug}.${ZONE}: ${dir} has no docs/ folder`)
-    map[slug] = `${REPOSITORY_URL}/tree/main/${dir}/docs`
-  }
-  return map
+export const buildRedirectMap = (root = repoRoot) =>
+  Object.fromEntries(legacyDirs(root).map(([slug, dir]) => [slug, `${REPOSITORY_URL}/tree/main/${dir}/docs`]))
+
+/**
+ * The path the retired site served one docs file at. The sites routed files
+ * the way apps/docs/shared/sync-content.mjs (deleted in 0e0626222d) synced
+ * them into Starlight:
+ *
+ *   README.md          -> /
+ *   api.md             -> /reference/api/
+ *   guides/x.md        -> /guides/x/
+ *   reference/cli/README.md -> /reference/cli/
+ *
+ * An `index.md` routed like a README. No page set its own `slug` frontmatter.
+ *
+ * @param {string} file docs-relative posix path of a Markdown file
+ */
+export const sitePathOf = (file) => {
+  const output = file === "api.md" ? "reference/api.md" : file.replace(/(^|\/)README\.md$/, "$1index.md")
+  const page = output.slice(0, -".md".length)
+  if (page === "index") return "/"
+  return page.endsWith("/index") ? `/${page.slice(0, -"index".length)}` : `/${page}/`
 }
+
+/** The shape every page path has: lowercase segments, as the sites' routes did. */
+const PAGE_PATH = /^\/(?:[a-z0-9_.-]+\/)*$/
+
+/**
+ * Every Markdown file under `<root>/<dir>/docs`, docs-relative, posix, sorted.
+ * A symlink fails: its GitHub page is the link, not the file it names.
+ *
+ * @param {string} root
+ * @param {string} dir
+ */
+const docsFiles = (root, dir) => {
+  /** @type {Array<string>} */
+  const found = []
+  /** @param {string} rel */
+  const walk = (rel) => {
+    for (const entry of readdirSync(join(root, dir, "docs", rel), { withFileTypes: true })) {
+      const path = rel === "" ? entry.name : `${rel}/${entry.name}`
+      if (entry.isSymbolicLink()) throw new Error(`${dir}/docs/${path}: a symlink cannot be a redirect target`)
+      if (entry.isDirectory()) walk(path)
+      else if (entry.isFile() && entry.name.endsWith(".md")) found.push(path)
+    }
+  }
+  walk("")
+  return found.sort()
+}
+
+/**
+ * One package's old page paths -> each page's file on GitHub, from the files
+ * its docs/ folder holds now. A README lands on its folder, which GitHub shows
+ * with the README rendered below the listing; every other page lands on its
+ * file. Throws when a file has no plain lowercase path or two files claim one.
+ *
+ * @param {string} root
+ * @param {string} dir
+ * @returns {Readonly<Record<string, string>>}
+ */
+export const pagesOf = (root, dir) => {
+  /** @type {Map<string, string>} */
+  const claimed = new Map()
+  /** @type {Array<[string, string]>} */
+  const pages = []
+  for (const file of docsFiles(root, dir)) {
+    const path = sitePathOf(file)
+    if (!PAGE_PATH.test(path)) throw new Error(`${dir}/docs/${file}: page path ${path} is not lowercase [a-z0-9_.-] segments`)
+    const other = claimed.get(path)
+    if (other !== undefined) throw new Error(`${dir}/docs/${file} and ${other} both claim ${path}`)
+    claimed.set(path, file)
+    const folder = file.replace(/(^|\/)(?:README|index)\.md$/, "")
+    pages.push([path, folder !== file
+      ? `${REPOSITORY_URL}/tree/main/${dir}/docs${folder === "" ? "" : `/${folder}`}`
+      : `${REPOSITORY_URL}/blob/main/${dir}/docs/${file}`])
+  }
+  return Object.fromEntries(pages.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+}
+
+/**
+ * slug -> old page path -> that page's file on GitHub: every page each legacy
+ * package's docs/ folder holds.
+ *
+ * @param {string} [root]
+ * @returns {Readonly<Record<string, Readonly<Record<string, string>>>>}
+ */
+export const buildPageMap = (root = repoRoot) =>
+  Object.fromEntries(legacyDirs(root).map(([slug, dir]) => [slug, pagesOf(root, dir)]))
 
 /**
  * The retired sites as the apps/site scripts read them (llms index, API docs
@@ -132,36 +226,58 @@ export const sites = (() => {
 /** @type {Readonly<Record<string, string>> | undefined} */
 let checkoutMap
 /**
- * The map over this checkout, built on first use so that importing this
- * module (for `sites`, say) never requires every package's docs/ folder.
+ * The folder map over this checkout, built on first use so that importing
+ * this module (for `sites`, say) never requires every package's docs/ folder.
  */
 export const redirectMapOf = () => (checkoutMap ??= buildRedirectMap())
 
+/** @type {Readonly<Record<string, Readonly<Record<string, string>>>> | undefined} */
+let checkoutPages
+/** The page map over this checkout, built on first use. */
+export const pageMapOf = () => (checkoutPages ??= buildPageMap())
+
 /**
- * The Location the deployed redirect answers for `url`: the slug's docs folder,
- * or the README for any other single-label smithers.sh host.
+ * The Location the deployed Worker answers on `slug` for a request that names
+ * old page `path`: that page's file, or with a null `path` the docs folder.
+ * A null `slug` is a host outside the roster, which lands on the README.
+ * Throws for a page this checkout does not map, so a caller never expects a
+ * page that would land on the folder.
  *
- * @param {string} url
+ * @param {string | null} slug
+ * @param {string | null} path
  */
-export const redirectLocation = (url) => {
-  const slug = new URL(url).hostname.slice(0, -`.${ZONE}`.length)
-  const map = redirectMapOf()
-  return Object.hasOwn(map, slug) ? map[slug] : README_URL
+export const expectedLocation = (slug, path) => {
+  if (slug === null) return README_URL
+  if (!Object.hasOwn(redirectMapOf(), slug)) throw new Error(`${slug}.${ZONE} is not a retired docs site`)
+  if (path === null) return redirectMapOf()[slug]
+  const pages = pageMapOf()[slug]
+  if (!Object.hasOwn(pages, path)) throw new Error(`${slug}.${ZONE}${path} names no page in this checkout`)
+  return pages[path]
 }
 
 export const GENERATED_MODULE = join(repoRoot, "apps/server/src/docsRedirectMap.ts")
 
 /**
- * The Worker's copy of the map, as TypeScript source.
+ * The Worker's copy of both maps, as TypeScript source.
  *
  * @param {Readonly<Record<string, string>>} map
+ * @param {Readonly<Record<string, Readonly<Record<string, string>>>>} pages
  */
-export const renderModule = (map) => [
+export const renderModule = (map, pages) => [
   "// Generated by scripts/package-docs.mjs. Do not edit; run: node scripts/package-docs.mjs --write",
   "",
   "/** Retired docs-site slug -> its package's docs/ folder on GitHub (T-DOC-04, #3510). */",
   "export const DOCS_REDIRECTS: ReadonlyMap<string, string> = new Map([",
   ...Object.entries(map).map(([slug, url]) => `  [${JSON.stringify(slug)}, ${JSON.stringify(url)}],`),
+  "])",
+  "",
+  "/** Retired docs-site slug -> each page path that site served -> the page's docs file on GitHub. */",
+  "export const DOCS_PAGES: ReadonlyMap<string, ReadonlyMap<string, string>> = new Map([",
+  ...Object.entries(pages).flatMap(([slug, paths]) => [
+    `  [${JSON.stringify(slug)}, new Map([`,
+    ...Object.entries(paths).map(([path, url]) => `    [${JSON.stringify(path)}, ${JSON.stringify(url)}],`),
+    "  ])],"
+  ]),
   "])",
   "",
   `export const README_URL = ${JSON.stringify(README_URL)}`,
@@ -171,13 +287,13 @@ export const renderModule = (map) => [
 if (isMain(import.meta)) {
   const flag = process.argv[2]
   if (flag === "--write") {
-    writeFileSync(GENERATED_MODULE, renderModule(redirectMapOf()))
+    writeFileSync(GENERATED_MODULE, renderModule(redirectMapOf(), pageMapOf()))
   } else if (flag === "--check") {
-    if (readFileSync(GENERATED_MODULE, "utf8") !== renderModule(redirectMapOf())) {
+    if (readFileSync(GENERATED_MODULE, "utf8") !== renderModule(redirectMapOf(), pageMapOf())) {
       console.error("apps/server/src/docsRedirectMap.ts is stale: node scripts/package-docs.mjs --write")
       process.exitCode = 1
     }
   } else {
-    console.log(JSON.stringify(redirectMapOf(), null, 2))
+    console.log(JSON.stringify({ folders: redirectMapOf(), pages: pageMapOf() }, null, 2))
   }
 }

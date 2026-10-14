@@ -17,11 +17,24 @@ const runtime = new Miniflare(convertV4MiniflareOptions({
 }))
 try {
   const docs = "https://github.com/smithersai/smithers/tree/main/packages/smithers/flows"
+  const flows = "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs"
   for (const [url, location] of [
     ["https://flow.smithers.sh/", `${docs}/flow/docs`],
-    ["https://engine.smithers.sh/concepts/retries/", `${docs}/engine/docs`],
+    ["https://engine.smithers.sh/concepts/retries/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/concepts/retries.md"],
     ["https://smithers-patterns.smithers.sh/", `${docs}/patterns/docs`],
-    ["https://smithers-sync.smithers.sh/..%2f..%2fevil?next=//evil.example", `${docs}/sync/docs`]
+    ["https://smithers-sync.smithers.sh/..%2f..%2fevil?next=//evil.example", `${docs}/sync/docs`],
+    ["https://flows.smithers.sh/quickstart/", `${flows}/quickstart.md`],
+    ["https://flows.smithers.sh/quickstart", `${flows}/quickstart.md`],
+    ["https://flows.smithers.sh/quickstart/index.html?utm_source=npm", `${flows}/quickstart.md`],
+    ["https://flows.smithers.sh/guides/stand-up-a-node-runtime/", `${flows}/guides/stand-up-a-node-runtime.md`],
+    ["https://flows.smithers.sh/concepts/aggregate-surface/", `${flows}/concepts/aggregate-surface.md`],
+    ["https://flows.smithers.sh/reference/api/", `${flows}/api.md`],
+    ["https://flows.smithers.sh/reference/api/flow/", `${flows}/api.md`],
+    ["https://flows.smithers.sh/quick%73tart/", `${flows}/quickstart.md`],
+    ["https://flows.smithers.sh/no-such-page/", "https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/docs"],
+    ["https://flows.smithers.sh/../../x/", "https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/docs"],
+    ["https://flows.smithers.sh/..%2f..%2fquickstart/", "https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/docs"],
+    ["https://flows.smithers.sh/", "https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/docs"]
   ]) {
     const response = await runtime.dispatchFetch(url, { redirect: "manual" })
     assert.equal(response.status, 301, url)

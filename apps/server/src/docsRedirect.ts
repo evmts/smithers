@@ -1,5 +1,5 @@
 import * as Effect from "effect/Effect"
-import { DOCS_REDIRECTS, README_URL } from "./docsRedirectMap"
+import { DOCS_PAGES, DOCS_REDIRECTS, README_URL } from "./docsRedirectMap"
 import { fetchWithDeadline, readBoundedJson, Transport } from "./Http"
 
 /*
@@ -7,10 +7,12 @@ import { fetchWithDeadline, readBoundedJson, Transport } from "./Http"
  * `smithers-docs-redirect` (wrangler.docs-redirect.jsonc, entry
  * src/docsRedirectWorker.ts), never the shared edge. docs/docs-redirect.md is the runbook: inventory, routes, DNS.
  *
- * `<slug>.smithers.sh/<any path>` answers 301 to the slug's package docs/
- * folder on GitHub. The Location comes from DOCS_REDIRECTS alone: the Host
- * picks a key and the path is dropped, so no part of the request reaches the
- * answer and the target is always the smithersai/smithers repository.
+ * `<slug>.smithers.sh/<page path>` answers 301 to that page's file in the
+ * slug's package docs/ folder on GitHub, and any other path to the folder.
+ * The Location is always a value of the generated maps: the Host picks a slug,
+ * the path is only a lookup key into DOCS_PAGES, and the query is dropped, so
+ * no request text reaches the answer and the target is always the
+ * smithersai/smithers repository.
  *
  * Every other request passes through unchanged. The default config attaches
  * only the per-slug routes, so nothing else reaches this Worker. The opt-in
@@ -39,14 +41,41 @@ export type DocsRedirectDecision =
 
 const LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/
 
-/** What a request URL asks for, from its hostname alone. */
+/** Where every old site served its API reference; a path under it meant that page. */
+const API_PAGE = "/reference/api/"
+
+/**
+ * A URL path in DOCS_PAGES key form: percent-decoded, a trailing `index.html`
+ * dropped, ending in a slash. Undefined when it does not decode. The URL
+ * parser has already resolved `.` and `..` segments.
+ */
+export const pageKey = (pathname: string): string | undefined => {
+  let path: string
+  try {
+    path = decodeURIComponent(pathname)
+  } catch {
+    return undefined
+  }
+  if (path.endsWith("/index.html")) path = path.slice(0, -"index.html".length)
+  return path.endsWith("/") ? path : `${path}/`
+}
+
+const pageLocation = (slug: string, pathname: string): string | undefined => {
+  const pages = DOCS_PAGES.get(slug)
+  const key = pageKey(pathname)
+  if (pages === undefined || key === undefined) return undefined
+  return pages.get(key) ?? (key.startsWith(API_PAGE) ? pages.get(API_PAGE) : undefined)
+}
+
+/** What a request URL asks for: the hostname picks the site, the path picks a page. */
 export const decide = (url: URL): DocsRedirectDecision => {
   const hostname = url.hostname
   if (!hostname.endsWith(ZONE_SUFFIX)) return { kind: "pass" }
   const label = hostname.slice(0, -ZONE_SUFFIX.length)
   if (!LABEL.test(label)) return { kind: "pass" }
-  const location = DOCS_REDIRECTS.get(label)
-  return location === undefined ? { kind: "unknown-slug", hostname } : { kind: "redirect", location }
+  const folder = DOCS_REDIRECTS.get(label)
+  if (folder === undefined) return { kind: "unknown-slug", hostname }
+  return { kind: "redirect", location: pageLocation(label, url.pathname) ?? folder }
 }
 
 const permanent = (location: string): Response =>

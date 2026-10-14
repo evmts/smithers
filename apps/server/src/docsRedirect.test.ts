@@ -3,10 +3,10 @@ import { fileURLToPath } from "node:url"
 import { describe, expect, test } from "bun:test"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import { buildRedirectMap, legacySites, README_URL as SCRIPT_README_URL, renderModule } from "../../../scripts/package-docs.mjs"
-import { answerIsUnclaimed, decide, handleDocsRedirect, UNCLAIMED_MARKER } from "./docsRedirect"
+import { legacySites, README_URL as SCRIPT_README_URL } from "../../../scripts/package-docs.mjs"
+import { answerIsUnclaimed, decide, handleDocsRedirect, pageKey, UNCLAIMED_MARKER } from "./docsRedirect"
 import type { DocsRedirectEnv } from "./docsRedirect"
-import { DOCS_REDIRECTS, README_URL } from "./docsRedirectMap"
+import { DOCS_PAGES, DOCS_REDIRECTS, README_URL } from "./docsRedirectMap"
 import { Transport, transportFrom } from "./Http"
 import { parseWranglerConfig } from "./wranglerConfig"
 
@@ -33,13 +33,90 @@ const ON: DocsRedirectEnv = { UNKNOWN_SLUGS: "txt-marker" }
 const dnsAnswer = (hostname: string, data: string, status = 0) =>
   Response.json({ Status: status, Answer: [{ name: `${hostname}.`, type: 16, TTL: 300, data: JSON.stringify(data) }] })
 
-describe("known slugs", () => {
-  test("a slug and a deep path answer 301 to exactly that package's docs folder", async () => {
-    const { response, seen } = await run(new Request("https://engine.smithers.sh/concepts/retries/?x=1#y"), OFF)
-    expect(response.status).toBe(301)
-    expect(response.headers.get("location")).toBe("https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/engine/docs")
-    expect(seen).toEqual([])
+const FLOWS = `${REPO}blob/main/packages/smithers/flows/docs`
+const FLOWS_FOLDER = `${REPO}tree/main/packages/smithers/flows/docs`
+
+/** The Location one request answers with, asserting a 301 that never reached the network. */
+const locationOf = async (url: string) => {
+  const { response, seen } = await run(new Request(url), OFF)
+  expect(response.status).toBe(301)
+  expect(seen).toEqual([])
+  return response.headers.get("location")
+}
+
+describe("pages", () => {
+  test("each kind of old page path lands on its file in the package's docs folder", async () => {
+    for (const [path, location] of [
+      ["/quickstart/", `${FLOWS}/quickstart.md`],
+      ["/installation/", `${FLOWS}/installation.md`],
+      ["/troubleshooting/", `${FLOWS}/troubleshooting.md`],
+      ["/guides/stand-up-a-node-runtime/", `${FLOWS}/guides/stand-up-a-node-runtime.md`],
+      ["/concepts/aggregate-surface/", `${FLOWS}/concepts/aggregate-surface.md`],
+      ["/reference/api/", `${FLOWS}/api.md`],
+      ["/", FLOWS_FOLDER]
+    ]) expect(await locationOf(`https://flows.smithers.sh${path}`)).toBe(location!)
   })
+
+  test("a path with or without its trailing slash or index.html names the same page", async () => {
+    for (const path of ["/quickstart", "/quickstart/", "/quickstart/index.html"]) {
+      expect(await locationOf(`https://flows.smithers.sh${path}`)).toBe(`${FLOWS}/quickstart.md`)
+    }
+    for (const path of ["", "/", "/index.html"]) expect(await locationOf(`https://flows.smithers.sh${path}`)).toBe(FLOWS_FOLDER)
+  })
+
+  test("any path under /reference/api/ was the API page", async () => {
+    for (const path of ["/reference/api", "/reference/api/flow/", "/reference/api/a/b/c/index.html"]) {
+      expect(await locationOf(`https://flows.smithers.sh${path}`)).toBe(`${FLOWS}/api.md`)
+    }
+  })
+
+  test("a nested README lands on its folder; another package's pages land in that package", async () => {
+    expect(await locationOf("https://cli.smithers.sh/reference/cli/")).toBe(`${REPO}tree/main/packages/smithers/docs/reference/cli`)
+    expect(await locationOf("https://cli.smithers.sh/reference/cli/seats/")).toBe(`${REPO}blob/main/packages/smithers/docs/reference/cli/seats.md`)
+    expect(await locationOf("https://engine.smithers.sh/concepts/retries/?x=1#y"))
+      .toBe(`${REPO}blob/main/packages/smithers/flows/engine/docs/concepts/retries.md`)
+  })
+
+  test("a path that names no page lands on the docs folder", async () => {
+    for (const path of ["/nope/", "/guides/", "/quickstart/extra/", "/QUICKSTART/", "/quickstart.md", "//quickstart/"]) {
+      expect(await locationOf(`https://flows.smithers.sh${path}`)).toBe(FLOWS_FOLDER)
+    }
+  })
+
+  test("the query never reaches the Location", async () => {
+    for (const query of ["?x=1", "?next=//evil.example", "?%0d%0aSet-Cookie:x=1", "?/../../x/"]) {
+      expect(await locationOf(`https://flows.smithers.sh/quickstart/${query}`)).toBe(`${FLOWS}/quickstart.md`)
+      expect(await locationOf(`https://flows.smithers.sh/nope/${query}`)).toBe(FLOWS_FOLDER)
+    }
+  })
+
+  test("encoded characters decode to a lookup key and nothing more", async () => {
+    // An encoded letter is the page it spells; the URL parser resolves %2e%2e as `..`.
+    expect(await locationOf("https://flows.smithers.sh/quick%73tart/")).toBe(`${FLOWS}/quickstart.md`)
+    expect(await locationOf("https://flows.smithers.sh/guides%2Fstand-up-a-node-runtime/")).toBe(`${FLOWS}/guides/stand-up-a-node-runtime.md`)
+    expect(await locationOf("https://flows.smithers.sh/%2e%2e/%2e%2e/quickstart/")).toBe(`${FLOWS}/quickstart.md`)
+    // Decoded traversal, malformed escapes and control characters name no page.
+    for (const path of ["/..%2f..%2fquickstart/", "/guides/..%2Fquickstart/", "/%E0%A4%A/", "/%ZZ/", "/quickstart%00/", "/%0d%0aSet-Cookie:x=1/"]) {
+      expect(await locationOf(`https://flows.smithers.sh${path}`)).toBe(FLOWS_FOLDER)
+    }
+  })
+
+  test("path traversal resolves before the lookup and never leaves the map", async () => {
+    expect(await locationOf("https://flows.smithers.sh/../../x/")).toBe(FLOWS_FOLDER)
+    expect(await locationOf("https://flows.smithers.sh/guides/../quickstart/")).toBe(`${FLOWS}/quickstart.md`)
+    expect(await locationOf("https://flows.smithers.sh/../../../../etc/passwd")).toBe(FLOWS_FOLDER)
+  })
+
+  test("pageKey decodes, drops index.html and ends in a slash", () => {
+    expect(pageKey("/quickstart")).toBe("/quickstart/")
+    expect(pageKey("/quickstart/index.html")).toBe("/quickstart/")
+    expect(pageKey("/index.html")).toBe("/")
+    expect(pageKey("/a%2Fb")).toBe("/a/b/")
+    expect(pageKey("/%E0%A4%A")).toBeUndefined()
+  })
+})
+
+describe("known slugs", () => {
 
   test("the legacy aliases keep their old hostnames", async () => {
     for (const [host, dir] of [["smithers-patterns", "packages/smithers/flows/patterns"], ["smithers-sync", "packages/smithers/flows/sync"], ["cli", "packages/smithers"]]) {
@@ -65,6 +142,22 @@ describe("known slugs", () => {
       expect(new URL(location).host).toBe("github.com")
     }
     expect(README_URL).toBe(`${REPO}blob/main/README.md`)
+  })
+
+  test("every page Location is a file or folder inside that slug's own docs folder", () => {
+    expect([...DOCS_PAGES.keys()]).toEqual([...DOCS_REDIRECTS.keys()])
+    for (const [slug, pages] of DOCS_PAGES) {
+      const folder = DOCS_REDIRECTS.get(slug)!
+      const files = folder.replace("/tree/main/", "/blob/main/")
+      expect(pages.get("/")).toBe(folder)
+      for (const [path, location] of pages) {
+        expect(path).toMatch(/^\/(?:[a-z0-9_.-]+\/)*$/)
+        expect(location === folder || location.startsWith(`${folder}/`) ||
+          (location.startsWith(`${files}/`) && location.endsWith(".md"))).toBe(true)
+        expect(location).not.toContain("..")
+        expect(new URL(location).host).toBe("github.com")
+      }
+    }
   })
 
   test("hostname casing and an explicit default port select the same slug", async () => {
@@ -157,9 +250,9 @@ describe("unknown slugs", () => {
 describe("the map, the routes and the package list agree", () => {
   const config = parseWranglerConfig(readFileSync(fileURLToPath(new URL("../wrangler.docs-redirect.jsonc", import.meta.url)), "utf8"))
 
-  test("docsRedirectMap.ts is what scripts/package-docs.mjs generates from the package list", () => {
-    const generated = readFileSync(fileURLToPath(new URL("./docsRedirectMap.ts", import.meta.url)), "utf8")
-    expect(generated).toBe(renderModule(buildRedirectMap()))
+  // scripts/package-docs-redirect.test.mjs holds docsRedirectMap.ts to a fresh generation:
+  // its target declares every docs file the map is built from.
+  test("docsRedirectMap.ts carries the generator's README target", () => {
     expect(README_URL).toBe(SCRIPT_README_URL)
   })
 
@@ -182,8 +275,10 @@ describe("the map, the routes and the package list agree", () => {
     for (const other of others) expect(hosts).not.toContain(other === "smithers.sh" ? other : `${other}.smithers.sh`)
   })
 
-  test("decide reads the hostname only", () => {
+  test("decide: the hostname picks the site, the path only a page of it", () => {
     expect(decide(new URL("https://flow.smithers.sh/anything"))).toEqual({ kind: "redirect", location: DOCS_REDIRECTS.get("flow")! })
+    expect(decide(new URL("https://flow.smithers.sh/quickstart/"))).toEqual({ kind: "redirect", location: DOCS_PAGES.get("flow")!.get("/quickstart/")! })
+    expect(decide(new URL("https://build.smithers.sh/quickstart/"))).toEqual({ kind: "unknown-slug", hostname: "build.smithers.sh" })
     expect(decide(new URL("https://nope.smithers.sh/"))).toEqual({ kind: "unknown-slug", hostname: "nope.smithers.sh" })
     expect(decide(new URL("https://a.b.smithers.sh/"))).toEqual({ kind: "pass" })
   })

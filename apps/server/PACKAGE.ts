@@ -19,7 +19,8 @@ const sources = [
   Smithers.glob("//apps/server/src/**/*.ts"),
   Smithers.glob("//apps/server/scripts/**/*.ts"),
   Smithers.file("//flows/rollout/runtime.ts"),
-  // src/docsRedirect.test.ts regenerates the redirect map from the package list.
+  // src/docsRedirect.test.ts reads the slug roster from scripts/package-docs.mjs, which loads the
+  // package list on import. The map's freshness against the docs is //scripts:packageDocs.
   Smithers.file("//scripts/package-docs.mjs"),
   Smithers.file("//scripts/workspace-packages.mjs"),
   Smithers.file("//pnpm-workspace.yaml"),
