@@ -19,13 +19,25 @@
   phase against a real journal over real sockets, including a reused keep-alive
   connection, a cancelled commit and a retry the journal answers `duplicate`.
 
-  Two limits this record does not close. A connection that *fails* names itself,
-  so `ENOTFOUND` reads apart from `ECONNREFUSED`, but a name that never resolves
-  and a SYN that is never answered both report `created` with one connection
-  begun and none ended: telling those apart needs a resolver record the host
-  does not take. And the connection counts belong to the callback origin rather
-  than to one request, so a turn's other callbacks to the same origin are
-  counted by whichever attempts are open alongside them.
+  That record now carries the resolution too, so `created` separates the two
+  faults it used to merge (#3812). A name that never resolves and a SYN that is
+  never answered both report one connection begun and none ended; the socket
+  that dial created tells them apart, because it reports the name's answer
+  before the connection is attempted. `lookupBegan` without `lookupEnded` is a
+  name still in the resolver, `lookupEnded` with no connection ended is a name
+  answered and a connection that never came up, `lookupCode` names a resolution
+  that failed, and a dial to an address records no resolution at all — which
+  makes that last reading unambiguous on its own. `net.client.socket` carries no
+  origin, so a socket is attributed only when the dispatcher created it in the
+  same synchronous turn as the dial this observer counted, and one that arrives
+  later is left alone rather than guessed at.
+
+  Two limits remain. A hang after the name is answered is a connection the
+  kernel is still retrying, and whether that is a dropped SYN, a silent
+  middlebox or a filtered route is in no record this host takes. And the
+  connection and resolution counts belong to the callback origin rather than to
+  one request, so a turn's other callbacks to the same origin are counted by
+  whichever attempts are open alongside them.
 
 ### Fixed
 

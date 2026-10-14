@@ -475,6 +475,102 @@ describe("a journal callback's transport phase", () => {
   })
 })
 
+describe("a callback dial's resolution", () => {
+  /** The journal of `startJournal`, reached by a name rather than its address. */
+  const byName = (baseUrl: string) => baseUrl.replace("//127.0.0.1:", "//localhost:")
+
+  test("records the name it resolved before the connection it opened", async () => {
+    // `created` with one connection begun and none ended was two faults at
+    // once: a name still in the resolver, and a SYN nothing answered. The
+    // socket the dial created separates them, and a good commit by name shows
+    // both halves finishing.
+    const journal = await startJournal()
+    const baseUrl = byName(journal.baseUrl)
+    const lines: Array<Record<string, unknown>> = []
+    const transport = observeCallbackTransport(baseUrl)
+    const producer = producerFor(baseUrl, lines, transport)
+    await Effect.runPromise(producer.write(delta("a")))
+    transport.close()
+    expect(attemptsOf(lines)).toEqual(["received"])
+    expect(lines[0]?.lookupBegan).toBe(1)
+    expect(lines[0]?.lookupEnded).toBe(1)
+    expect(lines[0]?.connectEnded).toBe(1)
+    expect(lines[0]?.lookupCode).toBeUndefined()
+  })
+
+  test("separates a name that was answered from a connection that never came up", async () => {
+    // The reading the production stall needed: the resolver finished and the
+    // connection did not, so the fault is below the name and not in it.
+    const closed = byName(await closedBaseUrl())
+    const lines: Array<Record<string, unknown>> = []
+    const transport = observeCallbackTransport(closed)
+    const producer = producerFor(closed, lines, transport)
+    await Effect.runPromise(Effect.exit(producer.write(delta("a"))))
+    transport.close()
+    expect(attemptsOf(lines)).toEqual(["created", "created"])
+    expect(lines[0]?.lookupBegan).toBe(1)
+    expect(lines[0]?.lookupEnded).toBe(1)
+    expect(lines[0]?.lookupCode).toBeUndefined()
+    expect(lines[0]?.connectEnded).toBe(0)
+    expect(lines[0]?.connectCode).toBe("ECONNREFUSED")
+  })
+
+  test("records no resolution for a dial that has no name to resolve", async () => {
+    // A dial to an address resolves nothing, and a resolution it never began
+    // would read as one that never returned — the fault this record exists to
+    // rule out. Its absence is also a fact: `created` with a connection begun
+    // and no lookup is the connection, with nothing to blame on a resolver.
+    const closed = await closedBaseUrl()
+    const lines: Array<Record<string, unknown>> = []
+    const transport = observeCallbackTransport(closed)
+    const producer = producerFor(closed, lines, transport)
+    await Effect.runPromise(Effect.exit(producer.write(delta("a"))))
+    transport.close()
+    expect(lines[0]?.connectBegan).toBe(1)
+    expect(lines[0]?.lookupBegan).toBeUndefined()
+    expect(lines[0]?.lookupEnded).toBeUndefined()
+    expect(lines[0]?.lookupCode).toBeUndefined()
+  })
+
+  test("names a resolution that failed, apart from a connection that failed", async () => {
+    // A name with no answer and a port with no listener are different faults
+    // at different layers, and both ended as `created` before this record.
+    // The code the resolver gave is the whole of what is kept.
+    const baseUrl = "http://callback.invalid:8080"
+    const lines: Array<Record<string, unknown>> = []
+    const transport = observeCallbackTransport(baseUrl)
+    const producer = producerFor(baseUrl, lines, transport)
+    await Effect.runPromise(Effect.exit(producer.write(delta("a"))))
+    transport.close()
+    expect(attemptsOf(lines)).toEqual(["created", "created"])
+    expect(lines[0]?.lookupBegan).toBe(1)
+    expect(lines[0]?.lookupEnded).toBe(1)
+    expect(typeof lines[0]?.lookupCode).toBe("string")
+    expect(lines[0]?.connectEnded).toBe(0)
+  })
+
+  test("claims no socket another origin's dial created", async () => {
+    // `net.client.socket` names no origin, so a socket is this attempt's only
+    // when the dispatcher created it in the same turn as the dial this
+    // observer counted. Another origin's dial, by name, must leave no
+    // resolution behind on this attempt.
+    const journal = await startJournal()
+    const other = await startJournal()
+    const transport = observeCallbackTransport(journal.baseUrl)
+    const attempt = transport.begin()
+    await attempt.run(async () => {
+      const answered = await fetch(new URL("/internal/chat/commit", byName(other.baseUrl)), {
+        method: "POST",
+        body: "{}"
+      })
+      await answered.text()
+    })
+    const fields = attempt.fields()
+    transport.close()
+    expect(fields).toEqual({ transport: "none" })
+  })
+})
+
 describe("the inert transport", () => {
   test("runs the request and adds no field a caller cannot stand behind", async () => {
     const attempt = inertCallbackTransport.begin()

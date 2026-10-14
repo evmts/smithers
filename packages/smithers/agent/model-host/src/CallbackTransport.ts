@@ -21,6 +21,7 @@
 
 import { AsyncLocalStorage } from "node:async_hooks"
 import { subscribe, unsubscribe } from "node:diagnostics_channel"
+import { isIP } from "node:net"
 import type { HostDiagnosticFields } from "./HostDiagnostics.ts"
 
 /**
@@ -32,13 +33,20 @@ import type { HostDiagnosticFields } from "./HostDiagnostics.ts"
  * an abort that lands after the journal's headers must not read as an attempt
  * that never got them.
  *
- * What `created` does not separate: a name that never resolved and a SYN that
+ * What `created` separates, and how: a name that never resolved and a SYN that
  * was never answered both leave an attempt here with one connection begun and
  * none ended, because the dispatcher publishes its connection record before
- * the lookup and reports nothing further until one of them finishes. A
- * connection that *fails* names itself (`connectCode`, so `ENOTFOUND` reads
- * apart from `ECONNREFUSED`); one that hangs does not. Separating those two
- * needs a resolver record this host does not take.
+ * the lookup and reports nothing further until one of them finishes. The
+ * socket that dial created tells them apart — `lookupBegan` without
+ * `lookupEnded` is a name still in the resolver, and `lookupEnded` without a
+ * connection ended is a name answered and a connection that never came up. A
+ * dial to an address records no lookup at all, which leaves that reading
+ * unambiguous on its own. A connection that *fails* also names itself
+ * (`connectCode`, so `ENOTFOUND` reads apart from `ECONNREFUSED`).
+ *
+ * What it still does not separate: a hang after the name is answered is a
+ * connection the kernel is retrying, and whether that is a dropped SYN, a
+ * silent middlebox or a filtered route is not in any record this host takes.
  *
  * @category models
  * @since 1.0.0-rc.1
@@ -115,6 +123,9 @@ interface AttemptState {
   connectEnded: number
   connectFailed: number
   connectCode: string | undefined
+  lookupBegan: number
+  lookupEnded: number
+  lookupCode: string | undefined
 }
 
 interface RequestMessage {
@@ -127,7 +138,12 @@ interface ErrorMessage extends RequestMessage {
   readonly error: { readonly name: string; readonly code: unknown }
 }
 interface ConnectMessage {
-  readonly connectParams: { readonly host: string }
+  readonly connectParams: { readonly host: string; readonly hostname: string }
+}
+interface ClientSocketMessage {
+  readonly socket: {
+    readonly once: (event: string, listener: (error: { readonly code?: unknown } | null) => void) => unknown
+  }
 }
 interface ConnectErrorMessage extends ConnectMessage {
   readonly error: { readonly code: unknown }
@@ -208,9 +224,46 @@ const forOrigin = (message: unknown, count: (state: AttemptState) => void): void
   for (const state of open) if (state.dialHost === connectParams.host) count(state)
 }
 
+// The socket a dial created, for exactly as long as claiming it is certain.
+// `net.client.socket` carries no origin, so it is attributable only by when it
+// arrives: the dispatcher publishes its dial record and then creates the socket
+// inside one synchronous turn, with no point between them where another dial's
+// socket could be published. A claim is therefore taken by the first socket
+// after it and dropped at the end of that turn; a socket that arrives later is
+// somebody else's and is left alone rather than guessed at.
+let dialling: ReadonlyArray<AttemptState> | undefined
+
 const onBeforeConnect = (message: unknown): void => {
+  const dialled: Array<AttemptState> = []
   forOrigin(message, (state) => {
     state.connectBegan += 1
+    dialled.push(state)
+  })
+  // A dial to an address has no name to resolve, and recording a resolution it
+  // never began would read as one that never returned.
+  if (dialled.length === 0 || isIP((message as ConnectMessage).connectParams.hostname) !== 0) return
+  dialling = dialled
+  queueMicrotask(() => {
+    dialling = undefined
+  })
+}
+
+// The resolver record `created` needed. A name that never resolves and a SYN
+// that is never answered both leave an attempt at `created` with one connection
+// begun and none ended; the socket its dial created says which, because it
+// emits `lookup` once the name is answered, before the connection is attempted.
+const onClientSocket = (message: unknown): void => {
+  const dialled = dialling
+  dialling = undefined
+  if (dialled === undefined) return
+  const { socket } = message as ClientSocketMessage
+  for (const state of dialled) state.lookupBegan += 1
+  socket.once("lookup", (error) => {
+    const code = error === null ? undefined : codeOf(error.code)
+    for (const state of dialled) {
+      state.lookupEnded += 1
+      if (code !== undefined) state.lookupCode = code
+    }
   })
 }
 
@@ -236,7 +289,8 @@ const channels: ReadonlyArray<readonly [string, (message: unknown) => void]> = [
   ["undici:request:error", onError],
   ["undici:client:beforeConnect", onBeforeConnect],
   ["undici:client:connected", onConnected],
-  ["undici:client:connectError", onConnectError]
+  ["undici:client:connectError", onConnectError],
+  ["net.client.socket", onClientSocket]
 ]
 
 // Subscribing is global, so turns share one subscription and the last observer
@@ -258,6 +312,8 @@ const report = (state: AttemptState): HostDiagnosticFields => ({
   ...(state.connectBegan === 0 ? {} : { connectBegan: state.connectBegan, connectEnded: state.connectEnded }),
   ...(state.connectFailed === 0 ? {} : { connectFailed: state.connectFailed }),
   ...(state.connectCode === undefined ? {} : { connectCode: state.connectCode }),
+  ...(state.lookupBegan === 0 ? {} : { lookupBegan: state.lookupBegan, lookupEnded: state.lookupEnded }),
+  ...(state.lookupCode === undefined ? {} : { lookupCode: state.lookupCode }),
   ...(state.errorName === undefined ? {} : { errorName: state.errorName }),
   ...(state.errorCode === undefined ? {} : { errorCode: state.errorCode })
 })
@@ -278,7 +334,8 @@ export const inertCallbackTransport: CallbackTransport = {
  *
  * Only this host's own callback origin is attributed. Nothing it records
  * names a path, a header, a body or a destination: the phase, the connection
- * counts, the socket-reuse flag and a failure's short code are all of it.
+ * and resolution counts, the socket-reuse flag and a failure's short code are
+ * all of it.
  *
  * @category constructors
  * @since 1.0.0-rc.1
@@ -309,7 +366,10 @@ export const observeCallbackTransport = (callbackBaseUrl: string): ObservedCallb
         connectBegan: 0,
         connectEnded: 0,
         connectFailed: 0,
-        connectCode: undefined
+        connectCode: undefined,
+        lookupBegan: 0,
+        lookupEnded: 0,
+        lookupCode: undefined
       }
       open.add(state)
       mine.add(state)
