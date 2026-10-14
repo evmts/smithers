@@ -8,7 +8,12 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: Release tag or commit to deploy (must be on origin/main)
+        # actions/checkout resolves anything that is not a 40-character sha as
+        # a branch or tag name, so an abbreviated sha fetches refs/heads/<sha>*,
+        # finds nothing, and every gate job dies inside checkout after ~36 s
+        # with a bare "git failed with exit code 1" (run 38568963075). Name the
+        # requirement here, where the operator reads it.
+        description: Release tag, or a commit as its full 40-character sha, on origin/main
         required: true
         type: string
 

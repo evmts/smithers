@@ -171,7 +171,14 @@ describe("canary probes are wired into a gate", () => {
     const deploy = Bun.YAML.parse(readWorkflow("apps-deploy.yml")) as DeployWorkflow
     expect(deploy.on.push?.branches).toBeUndefined()
     expect(deploy.on.push?.tags).toEqual(["v*"])
-    expect(deploy.on.workflow_dispatch?.inputs.ref).toEqual({ description: "Release tag or commit to deploy (must be on origin/main)", required: true, type: "string" })
+    /*
+     * The description has to name the full-sha requirement: actions/checkout
+     * reads anything shorter as a branch or tag name, so an abbreviated sha
+     * fetches refs/heads/<sha>* and every gate job dies inside checkout with a
+     * bare git exit 1 (run 38568963075, head 6dbfd8f58b00 abbreviated).
+     */
+    expect(deploy.on.workflow_dispatch?.inputs.ref).toEqual({ description: "Release tag, or a commit as its full 40-character sha, on origin/main", required: true, type: "string" })
+    expect(deploy.on.workflow_dispatch?.inputs.ref).toMatchObject({ description: expect.stringContaining("full 40-character sha") })
     for (const job of [deploy.jobs.gate, deploy.jobs.deploy]) expect(job.steps[0]?.with?.ref).toBe("${{ inputs.ref || github.ref }}")
     expect(deploy.jobs.deploy.steps.find(step => step.id === "mode")?.run).not.toContain("github.event_name")
     expect(deploy.concurrency).toEqual({ group: "apps-deploy", "cancel-in-progress": false })
