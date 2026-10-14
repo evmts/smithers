@@ -450,14 +450,19 @@ describe("workspace seam list", () => {
   /*
    * #3882, the production failure root reported on the deployed bundle: box
    * `a8eb95e2-4c78-4568-88cc-79b2dfd934be` on `roninjin10/e2e-verify` read
-   * "This box is not available." while its own detail route answered 200
-   * `starting`. Both inventory list routes are OWNER-scoped on plue's wire
-   * (`ListUserWorkspacesAcrossRepos` and `ListWorkspacesByRepo` filter
-   * `workspaces.user_id = <the signed-in user>`) and both answered
-   * `x-total-count: 0`, because that box belongs to another identity in the
-   * person's own repository. An owner-scoped list cannot speak for it, so its
-   * silence must not delete the row, the box's repository binding and the
-   * app's only way to ask again.
+   * "This box is not available." while the product worker had its row at
+   * `no_capacity` / `waiting_for_machine`.
+   *
+   * Both inventory list routes are OWNER-scoped
+   * (`ListUserWorkspacesAcrossRepos` and `ListWorkspacesByRepo` both filter
+   * `workspaces.user_id`, `db/workspace.sql.go`) and a branch machine's row is
+   * written with `arg.UserID = GetBranchMachineOwner(ctx)` — the
+   * `smithers-machines` service user — with the person given a share instead
+   * (`services/workspace_branch_machine.go`). The detail route is keyed on
+   * `(id, repository_id)` with no `user_id`
+   * (`services/workspace.go:loadWorkspaceWithAccess`). So an owner-scoped list
+   * cannot speak for that box, and its silence must not delete the row, the
+   * box's repository binding and the app's only way to ask again.
    */
   test("a box the list cannot name is asked by its id, and a box the host still serves is kept", async () => {
     const { store, seam, requests } = await harness({

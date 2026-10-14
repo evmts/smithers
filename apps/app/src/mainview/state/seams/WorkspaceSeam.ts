@@ -586,11 +586,14 @@ export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = 
    *
    * Deleting the row on that silence took the box's state, its repository
    * binding and the app's only way to ask again, and left the card saying
-   * "This box is not available." about a box that was `starting`
+   * "This box is not available." about a box that was provisioning
    * ([#3882](https://github.com/smithersai/smithers/issues/3882):
-   * `a8eb95e2-4c78-4568-88cc-79b2dfd934be` on `roninjin10/e2e-verify`,
-   * confirmed `starting` by its own detail route while both list routes
-   * answered `x-total-count: 0`).
+   * `a8eb95e2-4c78-4568-88cc-79b2dfd934be` on `roninjin10/e2e-verify`, which
+   * the product worker had at `no_capacity` / `waiting_for_machine` while the
+   * card above it claimed the box was gone. The two routes' scopes above are
+   * read from this repository's own source; no capture of the live list
+   * responses for that box was kept, so this comment claims the mechanism and
+   * the observed card, not a header value nobody recorded).
    *
    * So every box the list did not name is ASKED, by its exact id, before the
    * list is allowed to speak for it: a box the host still serves joins the
