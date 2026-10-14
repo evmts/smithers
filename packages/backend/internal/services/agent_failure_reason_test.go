@@ -392,3 +392,47 @@ func TestATurnWhoseSnapshotIsGoneSaysTheSnapshotIsGone(t *testing.T) {
 	require.Equal(t, agentSessionStartFailureMessage,
 		agentSessionFailureReasonForError(pkgerrors.Internal("restore snapshot: connection refused")))
 }
+
+// A branch machine whose provision failed is retained, not replaced:
+// GetBranchWorkspace deliberately returns "excluded-index sources and retained
+// failures; none permit replacement", so branchMachineCompatible refuses every
+// later join with a conflict. That conflict is untyped, so it reached the
+// fallback sentence and every turn on the branch promised a retry in a moment
+// that nothing can make work: the join is refused for as long as the row
+// exists, resume answers its own "create a fresh workspace" conflict, and
+// DELETE answers "branch is retained".
+//
+// Production 2026-10-14 15:44Z, API e8ffa8a3 / public 46187b04: repository
+// 112554's box 4cdaa484 read `failed`, stage `start_cleanup_complete`, and a
+// turn dispatched on that repository failed with only "The agent could not be
+// started. Nothing ran; try again in a moment."
+// (journeys/continuation6/receipts/02-failed-box-turn.json and
+// 04-failed-box-state.json).
+func TestATurnOnARetainedFailedMachineDoesNotPromiseARetry(t *testing.T) {
+	retained := fmt.Errorf("create agent workspace: %w",
+		branchMachineCompatible(db.Workspace{Status: "failed", UserID: 7}, db.CreateWorkspaceParams{}, 7))
+	require.Equal(t, agentSessionBranchMachineFailedMessage, agentSessionFailureReasonForError(retained),
+		"a turn on a branch machine that is a retained failure says so; recovering the machine is the action that helps")
+	require.NotContains(t, agentSessionBranchMachineFailedMessage, "try again in a moment",
+		"retrying cannot un-fail a machine the branch keeps")
+	require.NotEqual(t, agentSessionBranchMachineFailedMessage, agentSessionStartFailureMessage)
+	require.NotEqual(t, agentSessionBranchMachineFailedMessage, agentSessionMachineMissingMessage,
+		"a machine the fleet lost and a machine the branch retains are different causes")
+
+	// The refusal's own HTTP shape is unchanged: the route still answers the
+	// same conflict and the same message.
+	var api *pkgerrors.APIError
+	require.ErrorAs(t, retained, &api)
+	require.Equal(t, http.StatusConflict, api.Status)
+	require.Equal(t, "branch machine is retained; recover it before joining", api.Message)
+
+	// Every other cause keeps the sentence it already had, including the
+	// sibling refusals branchMachineCompatible answers for a machine that is
+	// merely sized differently or owned elsewhere.
+	require.Equal(t, agentSessionStartFailureMessage, agentSessionFailureReasonForError(
+		branchMachineCompatible(db.Workspace{Status: "running", UserID: 8}, db.CreateWorkspaceParams{}, 7)))
+	require.Equal(t, agentSessionMachineStartingMessage, agentSessionFailureReasonForError(
+		fmt.Errorf("create agent workspace: %w", workspaceProvisionInProgress(nil))))
+	require.Equal(t, agentSessionNoCapacityMessage, agentSessionFailureReasonForError(
+		&pkgerrors.APIError{Status: http.StatusServiceUnavailable, Code: pkgerrors.CodeNoCapacity, Message: "full"}))
+}

@@ -255,6 +255,16 @@ func branchMachineSizeDiffers(row db.Workspace, arg db.CreateWorkspaceParams) bo
 		arg.DiskMb.Valid && arg.DiskMb != row.DiskMb
 }
 
+// branchMachineRetainedMessage is the one refusal a machine the branch retains
+// answers, for a failed provision and for a stop alike.
+const branchMachineRetainedMessage = "branch machine is retained; recover it before joining"
+
+// errBranchMachineRetainedFailure marks that refusal when the retained machine
+// is a failed provision rather than a stopped one. A stop is the owner's own
+// action and its machine can still be started; a failure cannot be joined,
+// replaced or deleted, which is the difference a dispatch reports.
+var errBranchMachineRetainedFailure = errors.New("branch machine retained after a failed provision")
+
 func branchMachineCompatible(row db.Workspace, arg db.CreateWorkspaceParams, owner int64) error {
 	if row.RebuildRequiredAt.Valid {
 		return pkgerrors.New(pkgerrors.CodeWorkspaceRebuildRequired, "branch machine requires rebuild")
@@ -262,8 +272,18 @@ func branchMachineCompatible(row db.Workspace, arg db.CreateWorkspaceParams, own
 	if row.UserID != owner {
 		return pkgerrors.Conflict("branch machine owner requires migration")
 	}
-	if row.Status == "failed" || row.Status == "stopped" {
-		return pkgerrors.Conflict("branch machine is retained; recover it before joining")
+	if row.Status == "failed" {
+		// A retained failure refuses every later join, and GetBranchWorkspace
+		// returns it on purpose ("none permit replacement"), so the refusal is
+		// permanent: resume answers its own "create a fresh workspace"
+		// conflict and DELETE answers "branch is retained". The sentinel is
+		// what the agent dispatch classifies on, so a turn stops promising a
+		// retry that cannot work (#3890's rule). The HTTP shape is unchanged.
+		return fmt.Errorf("%w: %w", errBranchMachineRetainedFailure,
+			pkgerrors.Conflict(branchMachineRetainedMessage))
+	}
+	if row.Status == "stopped" {
+		return pkgerrors.Conflict(branchMachineRetainedMessage)
 	}
 	if arg.SourceCommit != "" && arg.SourceCommit != row.SourceCommit ||
 		arg.SourceSnapshotID.Valid && arg.SourceSnapshotID != row.SourceSnapshotID ||

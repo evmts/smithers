@@ -40,6 +40,15 @@ const agentSessionMachineMissingMessage = "The branch's machine no longer exists
 // moment" either.
 const agentSessionSnapshotMissingMessage = "The branch's machine cannot be restored: its snapshot is no longer available. Nothing ran; create the box again, and retrying this turn will not restore it."
 
+// agentSessionBranchMachineFailedMessage is what a session says when the
+// branch's machine is retained after a failed provision. GetBranchWorkspace
+// returns such a row on purpose and "none permit replacement", so the join
+// branchMachineCompatible refuses is refused for as long as the row exists:
+// waiting changes nothing, retrying changes nothing, and there is no second
+// machine to create instead. Like the two losses above, this sentence must not
+// borrow agentSessionStartFailureMessage's "try again in a moment".
+const agentSessionBranchMachineFailedMessage = "The branch's machine is retained after a failed provision and can no longer be joined. Nothing ran; this branch needs its machine recovered, and retrying this turn will not recover it."
+
 // agentSessionStartFailureMessage is the fallback for every other reason a
 // dispatch could not start. The specific cause stays in the operator log and
 // the run's last_error; the owner of the session gets a true sentence instead
@@ -56,16 +65,20 @@ const agentSessionLoopRetiredMessage = "Cloud agents are not available on this d
 // agentSessionFailureReasonForError classifies a dispatch failure into the one
 // sentence the session shows. The distinguished causes are the ones a user acts
 // on differently: a pool with no room and a branch machine another request is
-// already starting are both worth waiting for, and the two permanent losses —
-// a machine that no longer exists, and a snapshot the provider can no longer
-// restore — are worth neither waiting nor retrying. Everything else is the
-// fallback, with its cause in the operator log.
+// already starting are both worth waiting for, and the three permanent losses
+// — a machine that no longer exists, a snapshot the provider can no longer
+// restore, and a machine the branch retains after a failed provision — are
+// worth neither waiting nor retrying. Everything else is the fallback, with
+// its cause in the operator log.
 func agentSessionFailureReasonForError(err error) string {
 	if isNoCapacityError(err) {
 		return agentSessionNoCapacityMessage
 	}
 	if errors.Is(err, errWorkspaceProvisionInProgress) {
 		return agentSessionMachineStartingMessage
+	}
+	if errors.Is(err, errBranchMachineRetainedFailure) {
+		return agentSessionBranchMachineFailedMessage
 	}
 	var apiErr *pkgerrors.APIError
 	if errors.As(err, &apiErr) {
