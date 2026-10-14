@@ -60,7 +60,15 @@ export const wikiFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
     "wiki.attach": ({ path, repo }, _signal, _call, gesture) => actions.attachCloudWiki(path ?? "", repo, gesture),
     "wiki.pane": () => actions.showWikiPane()
   }), flow({
-    name: "wiki.save",  slash: "/wiki.save", cli: ["wiki","save"], journey: ["J9"], group: "Wiki", visibility: "core", actors: ["person","app_agent","external_agent"], minimumRole: "member", http: null, summary: "Save this answer as a page", args: "<name>",
+    /*
+     * `door: "wiki"` is the repository Wiki route family, which
+     * `compose/router.go` refuses per request through
+     * `FeatureFlagGate(cfg.FeatureFlags.Wiki)`. No bootstrap row states that
+     * flag, so the door is withdrawn only once THIS origin has answered a Wiki
+     * call with the gate's own verdict (flows/DoorAvailability.ts): a host
+     * whose Wiki is enabled never answers that way and keeps the door.
+     */
+    name: "wiki.save", door: "wiki",  slash: "/wiki.save", cli: ["wiki","save"], journey: ["J9"], group: "Wiki", visibility: "core", actors: ["person","app_agent","external_agent"], minimumRole: "member", http: null, summary: "Save this answer as a page", args: "<name>",
     agent: "run", input: Schema.Struct({ name: Schema.NonEmptyString, text: Schema.optional(Schema.String) }),
     grammar: args => {
       if (!args?.trim().startsWith("{")) return { payload: args?.trim() ? { name: args.trim() } : {} }

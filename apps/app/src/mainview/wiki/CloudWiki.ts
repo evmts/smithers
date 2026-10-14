@@ -221,7 +221,18 @@ export class CloudWikiTransport extends Context.Service<CloudWikiTransport, {
 export const WIKI_FEATURE_UNAVAILABLE = "The Wiki is not available on this Smithers host."
 
 export const makeCloudWikiTransport = (
-  config: { readonly http: SeamFetch; readonly baseUrl: string }
+  config: {
+    readonly http: SeamFetch
+    readonly baseUrl: string
+    /**
+     * Called when THIS origin refuses a Wiki call with the route family's gate
+     * verdict — the host's own statement that it serves no Wiki
+     * (flows/DoorAvailability.ts). Every call goes through `response`, so a
+     * refused index read settles the door before anyone presses Save. Optional:
+     * a transport fixture needs no ledger.
+     */
+    readonly onFeatureGate?: () => void
+  }
 ): typeof CloudWikiTransport.Service => {
   const { url } = createCloudClient(config)
   const response = (path: string, init?: RequestInit) =>
@@ -230,8 +241,16 @@ export const makeCloudWikiTransport = (
         const value = await config.http(url(path), { ...init, signal })
         if (!value.ok) {
           const failure = await cloudFailure(value, `Reading or saving this Wiki page failed (${value.status}).`)
+          /*
+           * Read once: the sentence decides what the person sees AND tells the
+           * page that this origin serves no Wiki (flows/DoorAvailability.ts).
+           * `statedWords` keeps the raw refusal-text read in the module that
+           * owns the shape (@smthrs/rpc/Refusal).
+           */
+          const gated = isFeatureGateRefusal(value.status, statedWords(failure.refusal), failure.code)
+          if (gated) config.onFeatureGate?.()
           throw new CloudWikiError({
-            sentence: isFeatureGateRefusal(value.status, statedWords(failure.refusal), failure.code) ? WIKI_FEATURE_UNAVAILABLE : failure.error,
+            sentence: gated ? WIKI_FEATURE_UNAVAILABLE : failure.error,
             status: value.status,
             ...(failure.code === null ? {} : { code: failure.code })
           })

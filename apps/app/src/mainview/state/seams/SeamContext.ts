@@ -15,6 +15,7 @@ import { clientRefusal, refusalOf } from "@smthrs/rpc/Refusal"
 import type { Refusal } from "@smthrs/rpc/Refusal"
 import { refusalLine, refusalSentence } from "@smthrs/rpc/RefusalCopy"
 import type { FailureController } from "../controller/failures"
+import type { DoorLedger } from "../../flows/DoorAvailability"
 import type { AppStore } from "../AppStore"
 
 export type SeamFetch = (input: string, init?: RequestInit) => Promise<Response>
@@ -53,6 +54,14 @@ export interface SeamContext {
    * product sentence; the raw error goes here and never onto the screen.
    */
   readonly report?: (subject: string, error: unknown) => void
+  /**
+   * Record that this origin's own answer proved a door family absent here
+   * (flows/DoorAvailability.ts): the router never mounted the family, or the
+   * family's gate refused it with plue's verdict. Every trigger then refuses
+   * that door with the catalog's sentence instead of opening a form again.
+   * Optional so a seam fixture need not supply it.
+   */
+  readonly recordAbsentDoor?: DoorLedger["record"]
 }
 
 /**

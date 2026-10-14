@@ -150,6 +150,7 @@ import type { RepositoriesSeam } from "./seams/RepositoriesSeam"
 import { createRepositoriesSeam } from "./seams/RepositoriesSeam"
 import { createRepositoryFlowsSeam } from "./seams/RepositoryFlowsSeam"
 import { refusalWords, type SeamContext } from "./seams/SeamContext"
+import type { DoorFamily } from "../flows/DoorAvailability"
 import type { PaletteAnswer,SearchSeam } from "./seams/SearchSeam"
 import { createSearchSeam } from "./seams/SearchSeam"
 import type { SecretsSeam } from "./seams/SecretsSeam"
@@ -633,6 +634,12 @@ export interface AppController extends IssueFlowsController {
   readonly readFile: FilesSeam["readFile"]
   /* Code intelligence (docs/code-intel/PLAN.md §4): the three code.* reads against the local language server (seams/CodeIntelSeam.ts). */
   readonly codeIntelligenceAvailable?: () => boolean
+  /**
+   * Whether this origin's own answers proved a door family absent here
+   * (flows/DoorAvailability.ts). The catalog reads it, so the answer buttons,
+   * the palette, the slash line and a direct form submit agree.
+   */
+  readonly doorFamilyAbsent?: (family: DoorFamily) => boolean
   readonly codeHover: CodeIntelSeam["hover"]
   readonly codeDefinition: CodeIntelSeam["definition"]
   readonly codeDiagnostics: CodeIntelSeam["diagnostics"]
@@ -938,6 +945,7 @@ export const createAppController = (
     promptSignIn: (summary) => promptSignIn(true, { summary }),
     promptCloudSignIn: () => promptCloudSignIn(true),
     report: (subject, error) => ctx.failures.report("seam.failure", error, subject),
+    recordAbsentDoor: ctx.doors.record,
     checkout: services.bootstrap?.capabilities.includes("billing.checkout") ?? false
   }
   const installSeam = actors.pair(seamCtx, context => createInstallSeam(context, withToast, { topic: services.installTopic ?? (services.live ? {
@@ -2548,6 +2556,7 @@ export const createAppController = (
         ? filesSeam.branchFiles.open(path, undefined, anchor?.line)
         : filesSeam.readFile(path, repo, anchor, ref) : filesSeam.readFile,
     codeIntelligenceAvailable: () => services.daemonLsp?.ready() === true,
+    doorFamilyAbsent: ctx.doors.absent,
     codeHover,
     codeDefinition,
     codeDiagnostics,
@@ -2856,10 +2865,26 @@ export const createAppController = (
     const early = privacyActions.before({ name, actor: "user", source: "command" }, args)
     if (early !== undefined) return { accepted: true, result: Promise.resolve(early) }
     if (commands.find(name) === undefined) {
+      /*
+       * A DECLARED flow this origin has no door for is refused with the
+       * catalog's own sentence, the same one `/name` and the answer button
+       * say (`Commands.explainAbsent`, flows/DoorAvailability.ts). This is the
+       * direct door — a card action, the palette, a programmatic run — so
+       * without this it was the one trigger that could still be pressed into
+       * "This action is no longer available", which names neither the door nor
+       * the reason. A name no host declares keeps that generic answer.
+       */
+      const absent = commands.explainAbsent(name)
       const key = `command.unavailable.${name}`
-      store.dispatch({ type: "toast.shown", actor: "system", key, title: "This action is no longer available" })
-      resolveToast(key, { status: "failed", detail: "This action is no longer available" })
-      return { accepted: false, result: Promise.resolve({ status: "unknown-command" }) }
+      const detail = absent?.reason ?? "This action is no longer available"
+      store.dispatch({ type: "toast.shown", actor: "system", key, title: detail })
+      resolveToast(key, { status: "failed", detail })
+      return {
+        accepted: false,
+        result: Promise.resolve(absent === undefined
+          ? { status: "unknown-command" }
+          : { status: "unavailable", door: absent.door, reason: absent.reason, action: null })
+      }
     }
     /* Everything the door says from here on belongs to this press (controller/spokenLines.ts). */
     const saidBefore = latestOrdinal(store.collections)

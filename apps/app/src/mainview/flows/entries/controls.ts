@@ -6,9 +6,18 @@ import { bind, type CommandActions, type Handlers } from "./Declare"
 import type { Refusal } from "@smthrs/rpc/Refusal"
 const unavailable: Refusal = { code: null, rawCode: "not_available", fault: "infra", status: 503,
   origin: "client", retryAfter: null, message: "Not available yet" }
+/*
+ * The in-card controls that act on a TODO belong to the `/api/todos*` route
+ * family (`seams/TodoSeam` `controlTodo`/`preapproveTodo` both POST
+ * `/api/todos/{n}`), so they declare the same `door` as the typed TODO flows
+ * (flows/DoorAvailability.ts). Declared here rather than in the shared
+ * operation (`@smthrs/ui/app-operations/controls`), because which routes an
+ * ORIGIN mounts is the app's question, not the catalog's.
+ */
+const TODO_DOOR = { door: "todo" } as const
 export const pendingControlFlows = (actions: CommandActions) => bind(pendingControls.map(operation => operation.name === "branch.rebase-now"
   ? { ...operation, grammar: branchCommandField("branch"), args: "<branch>", discloseToAgent: true } : operation.name === "todo.takeover"
-  ? { ...operation, grammar: parseTodoArgs(), form: { submitLabel: "Take over", args: (payload: Readonly<Record<string, unknown>>) => JSON.stringify(payload) } } : operation.name === "branch.bring-in"
+  ? { ...operation, ...TODO_DOOR, grammar: parseTodoArgs(), form: { submitLabel: "Take over", args: (payload: Readonly<Record<string, unknown>>) => JSON.stringify(payload) } } : operation.name === "branch.bring-in"
   ? { ...operation, grammar: (args: string | undefined) => args?.trim() ? carriedPayload(operation.name)(args) : { payload: {} }, form: { args: (payload: Readonly<Record<string, unknown>>) => JSON.stringify(payload) }, confirm: "bring in this outside push", confirmArgs: (payload: Readonly<Record<string, unknown>>) => JSON.stringify(payload) }
   : operation.name === "branch.discard-foreign"
   ? { ...operation, grammar: (args: string | undefined) => args?.trim() ? carriedPayload(operation.name)(args) : { payload: {} },
@@ -20,6 +29,7 @@ export const pendingControlFlows = (actions: CommandActions) => bind(pendingCont
         preflight: (_payload: unknown, invoker?: "user" | "agent" | "system") => invoker === "agent" || invoker === "system" ? "Confirmation execution unavailable." : undefined }
     : operation.name === "main.reset-to-github"
     ? { ...operation, grammar: carriedPayload(operation.name), form: { submitLabel: operation.summary, args: (payload: Readonly<Record<string, unknown>>) => JSON.stringify(payload) } }
+    : operation.name.startsWith("todo.") ? { ...operation, ...TODO_DOOR }
     : operation),
   Object.fromEntries(pendingControls.map(operation => [operation.name, operation.name === "todo.preapprove" || operation.name === "todo.unapprove" ? (input: { n: number }) => actions.preapproveTodo(input.n, operation.name === "todo.preapprove")
     : operation.name === "todo.takeover" ? (input: { n: number }) => actions.controlTodo(input.n, "takeover")

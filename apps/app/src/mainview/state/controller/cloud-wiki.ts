@@ -72,7 +72,9 @@ const canonicalJson = (value: unknown): string => JSON.stringify(value, (_key, i
 /** A controller scope owns handles and fibers; all document bytes and pending edits belong to TanStack DB. */
 export const createCloudWikiController = (ctx: ControllerContext, nextOrdinal: () => number) => {
   const shared = actorSharedState(ctx, "cloudWiki", () => {
-    const transport = makeCloudWikiTransport({ http: ctx.http, baseUrl: ctx.baseUrl })
+    const transport = makeCloudWikiTransport({ http: ctx.http, baseUrl: ctx.baseUrl,
+      /* The gate's verdict is the host's own word that it serves no Wiki; every trigger reads it (flows/DoorAvailability.ts). */
+      onFeatureGate: () => ctx.doors.record("wiki") })
     const documents = new Map<string, LiveDocProvider>()
     const prepared = new Map<string, CloudWikiState["pending"]>()
     const editors = new Map<string, Map<string, MarkdownEditorHandle>>()

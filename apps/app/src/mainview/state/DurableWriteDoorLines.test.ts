@@ -148,7 +148,13 @@ const reachEveryDoor = async (): Promise<ReadonlyArray<Reached>> => {
       fetchImpl: async () => Response.json({}, { status: 404 }),
       bootstrap: {
         apiVersion: 1, host: "cloud", version: "test", buildSha: "test",
-        capabilities: ["agent", "identity", "cloud", "billing.balance", "chat.archive"], authFlow: "redirect", sandbox: null
+        /*
+         * `install` too: the inventory below includes the TODO family's doors,
+         * and a host that mounts `/api/todos*` is single-owner, so its own
+         * bootstrap says `install` (flows/DoorAvailability.ts). Without it this
+         * fixture claimed a host that serves a door it does not mount.
+         */
+        capabilities: ["agent", "identity", "cloud", "billing.balance", "chat.archive", "install"], authFlow: "redirect", sandbox: null
       }
     })
     try {

@@ -311,7 +311,17 @@ export function Composer({
       // exact registered name. Frame gestures and menu toggles use this path:
       // hidden means unlisted, never nonexistent or unreachable by keyboard.
       if (inputQuery !== undefined && inputSlashRows.length === 0) {
-        if (controller.commands.find(inputQuery) !== undefined) {
+        /*
+         * A DECLARED flow this origin has no door for is dispatched too, so
+         * the one run path answers it with the catalog's own sentence
+         * (`Commands.explainAbsent`, flows/DoorAvailability.ts). Without this
+         * the typed name was the one trigger that answered with silence: the
+         * withdrawn flow is out of the menu, so `find` misses it and Enter
+         * used to do nothing at all. A name no host declares still does
+         * nothing, because there is nothing honest to say about it.
+         */
+        if (controller.commands.find(inputQuery) !== undefined ||
+          controller.commands.explainAbsent(inputQuery) !== undefined) {
           runSlashCommand(inputQuery, inputDraft)
         }
         event.preventDefault()

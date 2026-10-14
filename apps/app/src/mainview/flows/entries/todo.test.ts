@@ -219,7 +219,14 @@ test("a configured host dispatches Draft, TODO and reviewed Merge to real routes
   const calls: { path: string; body?: unknown; key?: string | null }[] = []
   const topics = new Map<string, (model: unknown) => void>()
   const controller = createAppController(store, unavailable, {
-    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: [], authFlow: "none", sandbox: null },
+    /*
+     * A host that mounts `/api/todos` is single-owner, so its bootstrap says
+     * `install`: `compose/router.go` mounts the family under
+     * `config.IsSingleOwner(cfg.Auth)`, and `compose/bootstrap.go` emits
+     * `install` from the handler `compose/main.go` assigns under exactly that
+     * condition. The fixture states what such a host actually sends.
+     */
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "none", sandbox: null },
     todoTopics: { subscribe: (topic, receive) => { topics.set(topic, receive); return () => { topics.delete(topic) } } },
     fetchImpl: async (input, init) => {
       const path = new URL(String(input), "https://install.test").pathname

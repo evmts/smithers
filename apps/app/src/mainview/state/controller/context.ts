@@ -1,5 +1,6 @@
 import { WORK_NOTICE_DELAY_MS, NOTICE_SETTLE_MS } from "@smthrs/ui/notification-policy"
 import { createOperationalFailureReporter, type OperationalFailureReporter } from "../OperationalFailures"
+import { createDoorLedger, type DoorLedger } from "../../flows/DoorAvailability"
 import { Effect } from "effect"
 import { failureDetail } from "@smthrs/rpc/UserFailure"
 import { readErrorMessage } from "../seams/SeamContext"
@@ -91,6 +92,13 @@ export interface ControllerContext {
   readonly workflowPollMs: number
   readonly workflowPreparationTimeoutMs: number
   readonly failures: OperationalFailureReporter
+  /**
+   * What this ORIGIN's own answers proved about its door families
+   * (flows/DoorAvailability.ts). In memory for the page's lifetime: not
+   * persisted, and not cleared with an account generation, because a route
+   * family a host does not mount is a property of the host.
+   */
+  readonly doors: DoorLedger
   readonly netRing: NetEntry[]
   readonly toastRuns: Map<string, number>
   readonly pumpPokes: Map<string, () => void>
@@ -168,6 +176,7 @@ export const createControllerContext = (
    */
   const netRing: NetEntry[] = []
   const failures = createOperationalFailureReporter({ clientErrors: services.clientErrors })
+  const doors = createDoorLedger()
   const accountOwner = (): string | null | undefined => accountOwnerOf(store.collections.identitySessions.get("identity"))
   let owner = accountOwner()
   let provider = store.collections.identitySessions.get("identity")?.provider
@@ -219,6 +228,7 @@ export const createControllerContext = (
     workflowPreparationTimeoutMs: services.workflowPreparationTimeoutMs ?? 21 * 60_000,
     netRing,
     failures,
+    doors,
     toastRuns: new Map<string, number>(),
     pumpPokes: new Map<string, () => void>(),
     runPumps: new Map<string, { stopped: boolean }>(),

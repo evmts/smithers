@@ -20,6 +20,7 @@
 import type * as FlowBinding from "@smthrs/harness/FlowBinding"
 import type { AppBootstrap, RuntimeCapability } from "@smthrs/rpc/AppBootstrap"
 import type { Schema } from "effect"
+import { doorFamilyAbsent, type DoorFamily } from "./DoorAvailability"
 import type { Grammar } from "./SlashPayload"
 import * as account from "./entries/account"
 import * as admin from "./entries/admin"
@@ -71,6 +72,13 @@ import type { OperationMetadata } from "@smthrs/ui/app-operations"
  * `agentReason`; `workflow` names the flow a run card belongs to.
  */
 export interface FlowMetadata extends OperationMetadata<RuntimeCapability, AppBootstrap["host"]> {
+  /**
+   * The route family this flow IS, when the family is one a host either mounts
+   * or does not (`flows/DoorAvailability.ts`). Declaring it is what makes
+   * `available`, `absentDoor` and the answer doors read one rule: the host's
+   * own statement about the family, never the flow's hopes for it.
+   */
+  readonly door?: DoorFamily
   /** Authoritative catalog fields supplied by the operation provider (T-CAT-01). */
   readonly visibility?: "core" | "advanced" | "in-card" | "hidden"
   readonly group?: string
@@ -204,9 +212,22 @@ export type MissingDoor = "cloud.pat" | "origin"
  * native door is named only on the cloud host; on the native host a
  * missing door is always one the launch could grow.
  */
-export const absentDoor = (metadata: FlowMetadata, bootstrap: AppBootstrap): MissingDoor | undefined => {
+export const absentDoor = (
+  metadata: FlowMetadata,
+  bootstrap: AppBootstrap,
+  /** The proofs this origin's own answers left; see `flows/DoorAvailability.ts`. */
+  refused?: (family: DoorFamily) => boolean,
+  /** Whether the seeded design world answers this page's doors (admits only). */
+  seeded?: boolean
+): MissingDoor | undefined => {
   const { hosts, runtime = [], runtimeAny } = metadata
   if (hosts !== undefined && !hosts.includes(bootstrap.host)) return undefined
+  /*
+   * A door family this host does not serve is a door this origin could grow,
+   * never the native app's: both families are server routes, and the desktop
+   * shell reaches the same origin's API.
+   */
+  if (doorFamilyAbsent(metadata.door, { bootstrap, refused, seeded })) return "origin"
   const has = (capability: FlowCapability): boolean => flowCapabilityHeld(bootstrap, capability)
   const missing = runtime.filter((capability) => !has(capability))
   const alternatives = runtimeAny !== undefined && runtimeAny.length > 0 && !runtimeAny.some(has) ? runtimeAny : []

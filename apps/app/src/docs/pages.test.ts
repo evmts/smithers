@@ -53,8 +53,15 @@ const member: CommandState = {
 }
 const discovery = {
   debugApi: { available: () => false },
+  /*
+   * These pages are the INSTALL's quickstart and flows reference (M-09: the
+   * hosted origin is post-MVP), and an install's own bootstrap says `install`.
+   * The row is what makes the TODO family a door at all
+   * (flows/DoorAvailability.ts), so a fixture without it would withdraw the
+   * very flows these pages document.
+   */
   bootstrap: { apiVersion: 1, host: "local", version: "docs-test", buildSha: "docs-test",
-    capabilities: [], authFlow: "none", sandbox: null },
+    capabilities: ["install"], authFlow: "none", sandbox: null },
   snapshot: () => member,
   repositoryFlows: () => undefined
 }

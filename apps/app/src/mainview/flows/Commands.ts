@@ -51,6 +51,7 @@ import {
   requirementIds,
   visible
 } from "./registry"
+import { doorFamilyAbsent } from "./DoorAvailability"
 import type { Parsed } from "./SlashPayload"
 import { payloadFor, unknownFlag } from "./SlashPayload"
 import { assembleArgs, formFieldsFor, publicFormPayload } from "@smthrs/ui/flow-form"
@@ -347,6 +348,13 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     if (["code.hover", "code.definition", "code.diagnostics"].includes(nameOf(entry)) && actions.codeIntelligenceAvailable?.() !== true) return false
     const bootstrap = actions.bootstrap
     const { hosts } = entry.metadata
+    /*
+     * A route family this origin does not mount (flows/DoorAvailability.ts).
+     * Asked BEFORE the loading shortcut below, because a refusal this origin
+     * already answered is true whether or not a bootstrap has arrived — and
+     * answered only as `absent`, so a family nothing has settled stays offered.
+     */
+    if (doorFamilyAbsent(entry.metadata.door, { bootstrap, refused: actions.doorFamilyAbsent, seeded: actions.design.enabled })) return false
     // A host-scoped flow exists only where the bootstrap names its host: no bootstrap, no host, no flow.
     if (hosts !== undefined && (bootstrap === undefined || !hosts.includes(bootstrap.host))) return false
     if (bootstrap === undefined) return true
@@ -393,7 +401,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     if (bootstrap === undefined || find(name) !== undefined) return undefined
     const declared = base.find((entry) => nameOf(entry) === name) ?? leaves().find((entry) => nameOf(entry) === name)
     if (declared === undefined) return undefined
-    const missing = absentDoor(declared.metadata, bootstrap)
+    const missing = absentDoor(declared.metadata, bootstrap, actions.doorFamilyAbsent, actions.design.enabled)
     if (missing === undefined) return undefined
     const door: AbsentDoor = missing === "cloud.pat" && namespaceOf(name) === "cloud" ? "cloud.session" : missing
     return { door, reason: absentReason(name, door) }

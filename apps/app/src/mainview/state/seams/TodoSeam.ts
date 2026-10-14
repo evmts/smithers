@@ -533,6 +533,16 @@ export const createTodoSeam = (ctx: SeamContext, options: TodoSeamOptions = {}) 
          * `POST /api/branches/<branch>` into one record and keep only the
          * first one's route. Two different doors are two different records.
          */
+        /*
+         * The two classifications that are the HOST's own statement about the
+         * family — the router never mounted it, or its gate refused it — are
+         * recorded so no trigger offers that door again on this page
+         * (flows/DoorAvailability.ts). Only a `/api/todos*` route states it:
+         * the terminal append and branch foreign-change doors travel through
+         * here too, and their refusals say nothing about TODOs.
+         */
+        if (route.startsWith(TODOS_PATH) &&
+          (refusal.code === "todo_route_absent" || refusal.code === "feature_not_available")) ctx.recordAbsentDoor?.("todo")
         if (stated === undefined || refusal.code === "feature_not_available") {
           ctx.report?.(
             `todo.request.${refusal.code} ${method} ${route} ${response.status}`,
