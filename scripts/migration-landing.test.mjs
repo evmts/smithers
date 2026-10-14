@@ -8,6 +8,12 @@ import { test } from 'node:test'
 
 const root = resolve(import.meta.dirname, '..')
 const go = spawnSync('which', ['go'], { encoding: 'utf8' }).stdout.trim()
+// A shim must not be re-entered by the tool it execs. `which git` can name a
+// wrapper that searches PATH itself, and with the shim directory first on PATH
+// that wrapper finds the shim and execs it again, forever: this gate test then
+// spins on a CPU instead of reporting a verdict. Every shim therefore hands
+// the real tool the PATH this test was invoked with, which holds no shims.
+const outerPath = `PATH='${(process.env.PATH ?? '').replaceAll("'", `'\\''`)}'\nexport PATH\n`
 const invoke = (cwd, bin, args, extra = {}) => {
  const env = { ...process.env, ...extra, HOME: join(cwd, '.git/test-home') }
  for (const key of Object.keys(env)) {
@@ -94,10 +100,10 @@ for (const vcs of ['git', 'jj']) for (const defect of ['duplicate', 'gap', 'drif
    const log = join(tools, 'commands.log')
    const realGit = ok(dir, 'which', ['git'])
    const realSmithers = ok(dir, 'which', ['smthrs'])
-   writeFileSync(join(tools, 'smthrs'), `#!/bin/sh\nprintf '%s\\n' "smthrs $*" >> '${log}'\nexec '${realSmithers}' "$@"\n`, { mode: 0o755 })
-   writeFileSync(join(tools, 'go'), `#!/bin/sh\nprintf '%s\\n' "go $*" >> '${log}'\nexec '${go}' "$@"\n`, { mode: 0o755 })
+   writeFileSync(join(tools, 'smthrs'), `#!/bin/sh\n${outerPath}printf '%s\\n' "smthrs $*" >> '${log}'\nexec '${realSmithers}' "$@"\n`, { mode: 0o755 })
+   writeFileSync(join(tools, 'go'), `#!/bin/sh\n${outerPath}printf '%s\\n' "go $*" >> '${log}'\nexec '${go}' "$@"\n`, { mode: 0o755 })
    // Local VCS mutations use Git. The jj protocol fixture avoids requiring or executing jj.
-   writeFileSync(join(tools, 'git'), `#!/bin/sh\nif [ "$1" = push ]; then echo PUSH >> '${log}'; exit 0; fi\nif [ "$1" = fetch ]; then exec '${realGit}' update-ref refs/remotes/origin/main HEAD; fi\nexec '${realGit}' "$@"\n`, { mode: 0o755 })
+   writeFileSync(join(tools, 'git'), `#!/bin/sh\n${outerPath}if [ "$1" = push ]; then echo PUSH >> '${log}'; exit 0; fi\nif [ "$1" = fetch ]; then exec '${realGit}' update-ref refs/remotes/origin/main HEAD; fi\nexec '${realGit}' "$@"\n`, { mode: 0o755 })
    if (vcs === 'jj') {
     mkdirSync(join(dir, '.jj'))
     writeFileSync(join(tools, 'jj'), `#!/bin/sh\ncase "$*" in\n *conflicts*) exit 0;;\n 'diff --summary') exit 0;;\n 'git push '*) echo PUSH >> '${log}';;\n 'git fetch '*) exit 0;;\n log*) echo 0123456789abcdef;;\n *) echo unexpected-jj-command >&2; exit 1;;\nesac\n`, { mode: 0o755 })
@@ -131,8 +137,8 @@ test('helper regeneration precedes mandatory push gates in the same production c
   const log = join(tools, 'commands.log')
   const realGit = ok(dir, 'which', ['git'])
   const realSQLC = ok(dir, 'which', ['sqlc'])
-  for (const [name, real] of [['go', go], ['sqlc', realSQLC]]) writeFileSync(join(tools, name), `#!/bin/sh\nprintf '%s\\n' "${name} $*" >> '${log}'\nexec '${real}' "$@"\n`, { mode: 0o755 })
-  writeFileSync(join(tools, 'git'), `#!/bin/sh\nif [ "$1" = push ]; then echo PUSH >> '${log}'; exit 0; fi\nif [ "$1" = fetch ]; then exec '${realGit}' update-ref refs/remotes/origin/main HEAD; fi\nexec '${realGit}' "$@"\n`, { mode: 0o755 })
+  for (const [name, real] of [['go', go], ['sqlc', realSQLC]]) writeFileSync(join(tools, name), `#!/bin/sh\n${outerPath}printf '%s\\n' "${name} $*" >> '${log}'\nexec '${real}' "$@"\n`, { mode: 0o755 })
+  writeFileSync(join(tools, 'git'), `#!/bin/sh\n${outerPath}if [ "$1" = push ]; then echo PUSH >> '${log}'; exit 0; fi\nif [ "$1" = fetch ]; then exec '${realGit}' update-ref refs/remotes/origin/main HEAD; fi\nexec '${realGit}' "$@"\n`, { mode: 0o755 })
   const env = { PATH: `${tools}:${process.env.PATH}`, SMITHERS_MIGRATION_TICKET: 'T-TEST-01' }
   ok(dir, 'node', ['scripts/renumber-migration.mjs', 'packages/backend/db/product/migrations/0009_reserved.sql'], env)
   ok(dir, 'node', ['scripts/commit.mjs', '--push', '--test', 'true'], env)
@@ -174,7 +180,7 @@ test('production helper isolates Go and sqlc from database and publication crede
   const log = join(tools, 'isolated.log')
   const realSQLC = ok(dir, 'which', ['sqlc'])
   for (const [name, real] of [['go', go], ['sqlc', realSQLC]]) {
-   writeFileSync(join(tools, name), `#!/bin/sh\nfor key in DATABASE_URL SMITHERS_TEST_DATABASE_URL PGPASSWORD PGPASSFILE PGSERVICE PGSERVICEFILE GITHUB_TOKEN; do\n if printenv "$key" >/dev/null; then echo "credential inherited: $key" >&2; exit 97; fi\ndone\nprintf '%s\\n' '${name}' >> '${log}'\nexec '${real}' "$@"\n`, { mode: 0o755 })
+   writeFileSync(join(tools, name), `#!/bin/sh\n${outerPath}for key in DATABASE_URL SMITHERS_TEST_DATABASE_URL PGPASSWORD PGPASSFILE PGSERVICE PGSERVICEFILE GITHUB_TOKEN; do\n if printenv "$key" >/dev/null; then echo "credential inherited: $key" >&2; exit 97; fi\ndone\nprintf '%s\\n' '${name}' >> '${log}'\nexec '${real}' "$@"\n`, { mode: 0o755 })
   }
   // PGSERVICE/PGPASSFILE survive the outer fixture launcher. The production
   // helper, rather than the test harness, must remove them for both generators.
