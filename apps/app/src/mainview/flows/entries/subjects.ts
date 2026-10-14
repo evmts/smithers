@@ -119,9 +119,19 @@ export const subjectFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
        * writes its own tracker instead of opening a seeded issue and claiming
        * GitHub numbered it.
        */
-      preflight: () => design.enabled || install() ? undefined : cloudIssueWrites() ? CLOUD_ISSUE_DOOR : NO_ISSUE_DOOR,
+      /*
+       * `unavailable`, not `preflight`: which host serves this door does not
+       * depend on the title or the body, so the answer is owed BEFORE the form
+       * asks for either (../Declare.ts, `Commands.settle`). As a `preflight` it
+       * could not be read until a payload had been decoded, so a bare
+       * `/issue.new` on a Smithers Cloud origin opened Title / Body / "Open on
+       * GitHub" and named the right door only after the submit.
+       */
+      unavailable: () => design.enabled || install() ? undefined : cloudIssueWrites() ? CLOUD_ISSUE_DOOR : NO_ISSUE_DOOR,
       handler: ({ title, body }) => {
         if (install()) return actions.requestIssueCreate(title, body)
+        // Unreachable through the registry; the door's own answer stays, so no
+        // caller of the binding can write the seeded world on a hosted origin.
         if (!design.enabled) return cloudIssueWrites() ? CLOUD_ISSUE_DOOR : NO_ISSUE_DOOR
         return { value: `Opened #${newIssue(design, title, body, design.viewer())} on GitHub` }
       } }),

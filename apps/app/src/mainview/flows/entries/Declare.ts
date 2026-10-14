@@ -151,6 +151,14 @@ export type Handler<I extends OperationPayload> = (payload: I["Type"], signal: A
  */
 export interface Declaration<I extends OperationPayload> extends AppOperation<I>, FlowMetadata {
   readonly preflight?: (payload: I["Type"], invoker?: "user" | "agent" | "system") => string | undefined | Promise<string | undefined>
+  /**
+   * Why this origin serves no door for the flow at all — the refusal that
+   * reads the HOST, never the payload, so the catalog can answer it before
+   * the form law asks for a single field (../registry.ts, `Commands.settle`).
+   *
+   * A refusal that needs the decoded payload stays `preflight`.
+   */
+  readonly unavailable?: (invoker?: "user" | "agent" | "system") => string | undefined | Promise<string | undefined>
   /** The call identity is available for destination-side idempotency. */
   readonly prepare?: (payload: I["Type"]) => void | Promise<void>
   readonly handler: Handler<I>
@@ -163,11 +171,13 @@ export interface Declaration<I extends OperationPayload> extends AppOperation<I>
  * carries the argument hint; `metadata.summary` stays the human's catalog copy.
  */
 export const flow = <I extends OperationPayload>(declaration: Declaration<I>): FlowEntry => {
-  const { name, input, handler, prepare, preflight, ...metadata } = operation(declaration)
+  const { name, input, handler, prepare, preflight, unavailable, ...metadata } = operation(declaration)
   const described = metadata.args === undefined ? metadata.summary : `${metadata.summary} (args: ${metadata.args})`
   let binding: FlowEntry["binding"] | undefined
   return {
     preflight: preflight === undefined ? undefined : (payload, invoker) => preflight(Schema.decodeUnknownSync(input)(payload), invoker),
+    // No payload to decode, and that is the point: it answers before one exists.
+    ...(unavailable === undefined ? {} : { unavailable }),
     prepare: prepare === undefined ? undefined : async (payload) => {
       const decoded = Schema.decodeUnknownSync(input)(payload)
       await prepare(decoded)

@@ -143,6 +143,16 @@ export interface CatalogItem extends FlowMetadata {
 export interface FlowEntry<R = never> {
   /** Permission refusal before a delegated confirmation is published. */
   readonly preflight?: (payload: Record<string, unknown>, invoker?: "user" | "agent" | "system") => string | undefined | Promise<string | undefined>
+  /**
+   * This origin's refusal of the door ITSELF, which no payload can change.
+   *
+   * Read before the flow's form is rendered (`Commands.ts` `settle`), so a
+   * door that cannot run here never asks a person to fill one in and never
+   * reaches a write. `preflight` stays the refusal that reads the decoded
+   * payload — an actor, a field, a target — and so cannot answer until the
+   * form has collected one.
+   */
+  readonly unavailable?: (invoker?: "user" | "agent" | "system") => string | undefined | Promise<string | undefined>
   /** Data preparation only; never executes the flow or publishes a view. */
   readonly prepare?: (payload: Record<string, unknown>) => Promise<void>
   /** Copied from the same declaration; avoids projecting schemas for a name lookup. */

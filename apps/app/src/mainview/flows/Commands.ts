@@ -684,6 +684,28 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
       const refusal: CommandRefusal = { kind: "unknown-flag", flow: nameOf(target), flag: stray }
       return { status: "failed", error: refusalSentence(refusal), refusal }
     }
+    /*
+     * A door this origin has no way to serve, answered before anything is
+     * parsed, prefilled, deferred or asked for.
+     *
+     * THE FORM LAW below asks for the input a flow is MISSING; it was never a
+     * licence to collect input that cannot be spent. `preflight` could not do
+     * this job: it reads the DECODED payload, so it can only run once the form
+     * has already collected one, and `/issue.new` on a Smithers Cloud origin
+     * opened Title / Body / "Open on GitHub" and named the door that writes
+     * this host's issues only on the submit, folded into a generic failure's
+     * Details. `unavailable` is the half of that answer which does not depend
+     * on the payload (entries/Declare.ts), so the slash line, a bare slash, a
+     * card button's named submit and the agent all reach the same sentence at
+     * the same moment — and none of them reaches a live form or a write.
+     *
+     * It is NOT the catalog's `explainAbsent`: these doors are declared here
+     * and the host serves a sibling that does the work, so the flow stays
+     * listed and says which door is its own, the way `issues.create` names
+     * `/issue.new` back on an install.
+     */
+    const unserved = await target.unavailable?.(invoker)
+    if (unserved !== undefined) return { status: "failed", error: unserved }
     // Parse once before prerequisites: an explicit public repository is a
     // read source even when the current URL could not be opened.
     const parsed: Parsed = named === undefined

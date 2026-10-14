@@ -169,18 +169,51 @@ test("a host that serves neither Cloud issues nor an install refuses both writes
   } finally { await h.controller.dispose() }
 })
 
-test("the hosted app's own /issue.new form still asks, and its submit writes nothing", async () => {
+/*
+ * The c3ca production bug. On this origin `/issue.new` with no arguments
+ * opened the Title / Body / "Open on GitHub" form FIRST, and only the submit
+ * — after the person had written the issue — answered "Use /issues.create on
+ * Smithers Cloud.", and then only inside a generic failure's Details.
+ *
+ * THE FORM LAW asks for the input a flow is MISSING. It was never a licence
+ * to collect input this origin has no door to spend, and the ordering in
+ * `flows/Commands.ts` put the form ahead of the one check that knew. A door
+ * whose refusal does not read the payload declares it as `unavailable`
+ * (entries/Declare.ts), which the catalog answers before any field is asked
+ * for — so the slash line, the bare slash, the "New issue" button's named
+ * submit (cards/SubjectCards.tsx) and the agent all say the same sentence.
+ */
+test("the hosted app's /issue.new names the door that is its own BEFORE any form, through every trigger", async () => {
   const h = await hosted({ routes: { [`POST ${ISSUES}`]: createdIssue } })
+  const refused = { status: "failed", error: "Use /issues.create on Smithers Cloud." } as const
   try {
-    /* THE FORM LAW: a line without the required body renders the flow's own form, whatever the host serves. */
-    const asked = await h.controller.runCommandForResult("issue.new", createdIssue.title)
-    expect(asked).toMatchObject({ status: "form", flow: "issue.new", fields: ["body"] })
-    const form = h.store.collections.cards.get(asked.status === "form" ? asked.cardId : "")
-    expect(form?.kind === "flow-form" ? form.payload : undefined).toMatchObject({ flow: "issue.new", given: { title: createdIssue.title }, submitLabel: "Open on GitHub" })
-    const submitted = await h.controller.commands.submit({ name: "issue.new", payload: { title: createdIssue.title, body: "Reproduction" }, actor: "user" })
-    expect(submitted).toEqual({ status: "failed", error: "Use /issues.create on Smithers Cloud." })
+    const cards = h.store.collections.cards.size
+    // The bare line: nothing is asked for, because nothing could be sent.
+    expect(await h.controller.runCommandForResult("issue.new")).toEqual(refused)
+    // A title and no body: the one field the form used to collect is never requested.
+    expect(await h.controller.runCommandForResult("issue.new", createdIssue.title)).toEqual(refused)
+    // The button's named submit, with and without the body, cannot be typed past it.
+    expect(await h.controller.commands.submit({ name: "issue.new", payload: { title: createdIssue.title }, actor: "user" })).toEqual(refused)
+    expect(await h.controller.commands.submit({ name: "issue.new", payload: { title: createdIssue.title, body: "Reproduction" }, actor: "user" })).toEqual(refused)
+    // No form card opened, and nothing was posted to any host.
+    expect([...h.store.collections.cards.values()].filter(card => card.kind === "flow-form")).toEqual([])
+    expect(h.store.collections.cards.size).toBe(cards)
     expect(h.calls.filter(call => call.method === "POST")).toEqual([])
   } finally { await h.controller.dispose() }
+})
+
+test("where the issue door does run, /issue.new still asks for the body it is missing", async () => {
+  /* THE FORM LAW, unchanged: the install's GitHub App door and the design preview both ask. */
+  for (const bootstrap of [INSTALL, undefined]) {
+    const h = await hosted({ bootstrap, routes: { "POST /api/issues": { operationId: "op-1" }, "GET /api/issues/requests/op-1": { state: "running" } } })
+    try {
+      const asked = await h.controller.runCommandForResult("issue.new", createdIssue.title)
+      expect(asked).toMatchObject({ status: "form", flow: "issue.new", fields: ["body"] })
+      const form = h.store.collections.cards.get(asked.status === "form" ? asked.cardId : "")
+      expect(form?.kind === "flow-form" ? form.payload : undefined)
+        .toMatchObject({ flow: "issue.new", given: { title: createdIssue.title }, submitLabel: "Open on GitHub" })
+    } finally { await h.controller.dispose() }
+  }
 })
 
 /*
