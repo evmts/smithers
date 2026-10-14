@@ -940,6 +940,97 @@ describe("RunTiming.fold", () => {
     expect(report.total.costUsd).toBeCloseTo(report.ledger!.costUsd, 12)
   })
 
+  it("takes a frame's split, a cell's work and a flow call's time from the records that carry them", () => {
+    const j = journal()
+    const time = (wallMs: number, modelMs: number, cellMs: number, judgeMs: number, otherMs: number) => ({
+      wallMs,
+      modelMs,
+      cellMs,
+      judgeMs,
+      compactionMs: 0,
+      otherMs
+    })
+    j.run("running", 0)
+    j.requested(0, 0)
+    j.settled(1_000, 1_000, [100, 0, 10, 0], 0)
+    j.agent("cell-produced", 1_000)
+    j.agent("cell-call-started", 1_100, { callId: "c1", flowName: "bash" })
+    // The call's own duration, not the gap between its two stamps.
+    j.agent("cell-call-settled", 1_900, { callId: "c1", flowName: "bash", outcome: "success", durationMillis: 500 })
+    j.agent("cell-settled", 1_900, { work: { kind: "calls", calls: 1, callMs: 500 } })
+    j.agent("mutation-observed", 1_900, { mutated: false })
+    j.agent("turn-closed", 2_000, { frame: 0, time: time(2_000, 1_000, 600, 100, 300) })
+    j.requested(2_000, 1)
+    j.settled(3_000, 1_000, [100, 0, 10, 0], 0)
+    j.agent("cell-produced", 3_000)
+    j.agent("cell-settled", 3_100, { work: { kind: "no_call", calls: 0, callMs: 0 } })
+    j.agent("mutation-observed", 3_100, { mutated: true })
+    j.agent("turn-closed", 3_200, { frame: 1, time: time(1_200, 1_000, 100, 0, 100) })
+    j.run("completed", 3_200)
+    const report = RunTiming.fold(j.events, "run-1")
+    expect(report.frames).toMatchObject([
+      {
+        frame: 0,
+        wallMs: 2_000,
+        modelMs: 1_000,
+        cellsMs: 600,
+        judgeMs: 100,
+        compactionMs: 0,
+        otherMs: 300,
+        cellCalls: 1
+      },
+      { frame: 1, wallMs: 1_200, modelMs: 1_000, cellsMs: 100, judgeMs: 0, compactionMs: 0, otherMs: 100, cellCalls: 0 }
+    ])
+    expect(report.flowCalls).toEqual({ calls: 1, durationMs: 500 })
+    // What the cell amounted to decides whether the call moved anything, not the workspace check.
+    expect(report.calls).toMatchObject([{ work: "calls", moved: true }, { work: "no_call", moved: false }])
+    expect(report.cellWork).toEqual({ calls: 1, no_call: 1 })
+    expect(report.unmoved).toMatchObject({ calls: 1, durationMs: 1_000 })
+    const fields = report.derived.map((entry) => entry.field)
+    expect(fields).not.toContain("frames")
+    expect(fields).not.toContain("call moved")
+    const text = RunTiming.render(report)
+    expect(text).toMatch(/^Cell work +calls 1 · no_call 1$/m)
+    expect(table(text, "Model call tokens").rows.map((row) => row.at(-1))).toEqual(["yes", "no_call"])
+  })
+
+  it("fits thinking and writing separately from the wire's stages", () => {
+    const j = journal()
+    j.run("running", 0)
+    let at = 0
+    for (const [frame, [thinking, written]] of [[100, 50], [400, 20], [0, 300], [250, 250], [900, 10]].entries()) {
+      // Headers after 1 s; then 2 s plus 30 ms a thinking token; then 20 ms a written token, less 0.1 s.
+      const firstOutputMs = 1_000 + 2_000 + 30 * thinking!
+      const lastOutputMs = firstOutputMs + 20 * written! - 100
+      j.requested(at, frame)
+      at += lastOutputMs + 50
+      j.settled(at, lastOutputMs + 50, [1_000, 0, thinking! + written!, thinking!], 0, {
+        timing: { headersMs: 1_000, firstOutputMs, lastOutputMs }
+      })
+    }
+    j.run("completed", at)
+    const report = RunTiming.fold(j.events, "run-1")
+    expect(report.stageFit).toMatchObject({ calls: 5, headersMeanMs: 1_000 })
+    expect(report.stageFit!.thinking).toMatchObject({
+      fixedMs: expect.closeTo(2_000, 6),
+      perMs: expect.closeTo(30, 6),
+      r2: expect.closeTo(1, 9)
+    })
+    expect(report.stageFit!.writing).toMatchObject({
+      fixedMs: expect.closeTo(-100, 6),
+      perMs: expect.closeTo(20, 6),
+      r2: expect.closeTo(1, 9)
+    })
+    const text = RunTiming.render(report)
+    expect(table(text, "Speed by stage (from the wire's timing)")).toEqual({
+      header: ["stage", "calls", "fixed s", "ms per token", "R²"],
+      rows: [["thinking", "5", "2.0", "30.0", "1.00"], ["writing", "5", "-0.1", "20.0", "1.00"]]
+    })
+    expect(text).toMatch(/^Headers +1\.000 s mean over 5 calls$/m)
+    // No stage fit without the wire's record.
+    expect(RunTiming.fold(oldShape(), "run-1").stageFit).toBeUndefined()
+  })
+
   it("is total over an empty or malformed journal", () => {
     const empty = RunTiming.fold([], "run-1")
     expect(empty).toMatchObject({ wallMs: 0, calls: [], frames: [], spend: [], compactions: [] })
@@ -1217,7 +1308,7 @@ describe("RunTiming.render", () => {
     expect(text).toMatch(/^Moved nothing +3 of 4 settled calls · 60\.0 s · 7,600 tokens$/m)
     expect(text).toMatch(/^Cache share +35\.3 % of input$/m)
     expect(text).toMatch(/^Flow calls +2 · 2\.5 s of the cells time$/m)
-    expect(text).toMatch(/^Judge +5 readings · 2\.4 s latency · 1\.6 s holding the run$/m)
+    expect(text).toMatch(/^Judge +5 readings · 2\.4 s latency, of which 1\.6 s held the run$/m)
     expect(text).toMatch(/^Ledger +9 entries · 15,400 tokens · \$0\.0981$/m)
     expect(text).not.toContain("Wait by stage")
     expect(table(text, "Derived").rows.length + 1).toBe(report.derived.length)

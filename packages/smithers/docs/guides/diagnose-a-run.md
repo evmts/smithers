@@ -207,10 +207,18 @@ Wait by stage (seconds from the call's start)
   total that and the time before each request was sent. `Model call tokens`
   lists each call's input, cached, uncached, thinking, and written tokens, its
   tries, and whether its frame changed the workspace.
-- `Frames` splits each frame the way `Time` splits the run.
+- `Frames` splits each frame the way `Time` splits the run. A frame whose
+  `turn-closed` record carries its own split shows that split; its `judge` is
+  what the loop waited on, and supervisor readings that ran beside the loop
+  are in the `Judge` line's latency, so the two are not added.
+- `Cell work` counts cells by what they amounted to (`calls`, `no_call`,
+  `comment_only`, `threw`, `rejected`). A call whose cell made no flow call
+  moved nothing.
 - `Compactions` and `Judge readings that fired` list each one.
 - `Speed` fits call time against thinking and written tokens by least squares:
-  fixed seconds per call, milliseconds per token, and R².
+  fixed seconds per call, milliseconds per token, and R². `Speed by stage`
+  fits thinking (headers to first output) and writing (first to last output)
+  apart from the wire's timing, with the mean wait for headers beside them.
 - `Derived` names every number the report worked out because the journal did
   not record it.
 

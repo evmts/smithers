@@ -157,7 +157,9 @@ export interface ModelCall {
   readonly tries: number
   /** The tries that failed before the answered one, as the wire timed them. */
   readonly failedTries?: ReadonlyArray<FailedTry>
-  /** Whether the workspace changed in the call's frame; absent when no record says. */
+  /** What the call's cell amounted to: `calls`, `no_call`, `comment_only`, `threw`, `rejected`. */
+  readonly work?: string
+  /** Whether the call's cell made a flow call or, in a journal that does not say, changed the workspace. */
   readonly moved?: boolean
   /** Why the reply was rejected before its cell ran. */
   readonly rejected?: string
@@ -269,6 +271,33 @@ export interface Speed {
 }
 
 /**
+ * A straight line through one stage of the calls: `fixedMs + perMs * tokens`.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Line {
+  readonly fixedMs: number
+  readonly perMs: number
+  readonly r2: number
+}
+
+/**
+ * Thinking and writing fitted separately from the wire's `timing`: headers to
+ * first output against thinking tokens, and first to last output against
+ * written tokens, with the mean wait for headers beside them.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface StageFit {
+  readonly calls: number
+  readonly headersMeanMs: number
+  readonly thinking?: Line
+  readonly writing?: Line
+}
+
+/**
  * One number the report worked out because the journal did not record it.
  *
  * @category models
@@ -304,6 +333,10 @@ export interface Report {
   readonly frames: ReadonlyArray<Frame>
   /** Flow calls the cells made, and the part of `time.cellsMs` spent inside them. */
   readonly flowCalls: { readonly calls: number; readonly durationMs: number }
+  /** Cells by what they amounted to, when the journal records it. */
+  readonly cellWork?: Readonly<Record<string, number>>
+  /** Thinking and writing fitted apart, from the wire's stages. */
+  readonly stageFit?: StageFit
   /** Over the calls that carry wire timing: the time before each request was sent. */
   readonly beforeSent?: { readonly calls: number; readonly durationMs: number }
   /** Over the calls that carry both records: the time in the host after the first output reached the wire. */
@@ -347,6 +380,7 @@ interface Call {
   spent: number | undefined
   costUsd: number | undefined
   moved: boolean | undefined
+  work: string | undefined
   rejected: string | undefined
   /** Whether a ledger entry has been matched to the call. */
   paid: boolean
@@ -513,6 +547,20 @@ const fit = (
   return { calls: rows.length, fixedMs, perThinkingMs, perWrittenMs, r2: spread === 0 ? 1 : 1 - residual / spread }
 }
 
+/** Least squares of one stage's time on one token count; nothing from fewer than three calls or one count. */
+const line = (points: ReadonlyArray<readonly [tokens: number, ms: number]>): Line | undefined => {
+  if (points.length < 3) return undefined
+  const mean = (index: 0 | 1) => points.reduce((sum, point) => sum + point[index], 0) / points.length
+  const [x, y] = [mean(0), mean(1)]
+  const spread = points.reduce((sum, point) => sum + (point[0] - x) ** 2, 0)
+  if (spread === 0) return undefined
+  const perMs = points.reduce((sum, point) => sum + (point[0] - x) * (point[1] - y), 0) / spread
+  const fixedMs = y - perMs * x
+  const total = points.reduce((sum, point) => sum + (point[1] - y) ** 2, 0)
+  const residual = points.reduce((sum, point) => sum + (point[1] - fixedMs - perMs * point[0]) ** 2, 0)
+  return { fixedMs, perMs, r2: total === 0 ? 1 : 1 - residual / total }
+}
+
 /**
  * Folds one run's events into its timing report.
  *
@@ -530,6 +578,9 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
   const scopes = new Map<string, Scope>()
   const frameStarts = new Map<string, { frame: number; step: string | undefined; from: number }>()
   const cellCalls = new Map<string, number>()
+  /** A frame's own split, as its turn-closed record carries it. */
+  const frameTimes = new Map<string, Record<string, unknown>>()
+  const cellWork: Record<string, number> = {}
   const openCalls = new Map<string, number>()
   /** Spend the ledger recorded that no call or reading record accounts for, by purpose. */
   const loose = new Map<string, { calls: number; spent: number; costUsd: number }>()
@@ -637,6 +688,7 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
       spent: undefined,
       costUsd: undefined,
       moved: undefined,
+      work: undefined,
       rejected: undefined,
       paid: false
     }
@@ -754,10 +806,15 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
       case "turn-opened":
         scope.turns += 1
         break
-      case "turn-closed":
+      case "turn-closed": {
+        const frame = count(payload.frame)
+        if (frame !== undefined && payload.time !== undefined) {
+          frameTimes.set(`${step === undefined ? "" : terminalSafe(step)}\u0000${frame}`, asRecord(payload.time))
+        }
         abandon(scope, at)
         lastTurnClosed = lastTurnClosed === undefined ? at : Math.max(lastTurnClosed, at)
         break
+      }
       case "model-requested":
         abandon(scope, at)
         request(scope, key, step, at, payload)
@@ -780,7 +837,11 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
         }
         break
       case "mutation-observed":
-        if (scope.last !== undefined && scope.last.rejected === undefined && typeof payload.mutated === "boolean") {
+        // A cell that recorded its own work has already said whether the call moved anything.
+        if (
+          scope.last !== undefined && scope.last.rejected === undefined && scope.last.work === undefined &&
+          typeof payload.mutated === "boolean"
+        ) {
           scope.last.moved = payload.mutated
           note("call moved")
         }
@@ -788,10 +849,18 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
       case "cell-produced":
         scope.cellAt = at
         break
-      case "cell-settled":
+      case "cell-settled": {
         if (scope.cellAt !== undefined) intervals.push({ part: "cells", from: scope.cellAt, to: at })
         scope.cellAt = undefined
+        const kind = asString(asRecord(payload.work).kind)
+        if (kind === undefined) break
+        cellWork[terminalSafe(kind)] = (cellWork[terminalSafe(kind)] ?? 0) + 1
+        if (scope.last !== undefined) {
+          scope.last.work = terminalSafe(kind)
+          scope.last.moved = kind === "calls"
+        }
         break
+      }
       case "cell-call-started": {
         const frameKey = `${key}\u0000${scope.frame ?? Math.max(0, scope.turns - 1)}`
         cellCalls.set(frameKey, (cellCalls.get(frameKey) ?? 0) + 1)
@@ -800,7 +869,8 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
       }
       case "cell-call-settled": {
         const id = `${key}\u0000${asString(payload.callId) ?? asString(payload.flowName) ?? ""}`
-        const from = openCalls.get(id)
+        const recorded = count(payload.durationMillis)
+        const from = recorded === undefined ? openCalls.get(id) : at - recorded
         openCalls.delete(id)
         if (from !== undefined) intervals.push({ part: "calls", from, to: at })
         break
@@ -990,10 +1060,9 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
       otherMs: split.other
     }]
   })
-  if (end > start) {
-    note("time")
-    note("frames")
-  }
+  const recordedTime = (frame: Frame) => frameTimes.get(`${frame.step ?? ""}\u0000${frame.frame}`)
+  if (end > start) note("time")
+  if (frames.some((frame) => typeof frame.frame === "number" && recordedTime(frame) === undefined)) note("frames")
   if (calls.some((call) => !call.settled && call.spent !== undefined)) note("unsettled call tokens")
 
   const rows = new Map<string, { -readonly [K in keyof Spend]: Spend[K] }>()
@@ -1075,6 +1144,15 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
     calls: durations.length,
     durationMs: durations.reduce((sum, duration) => sum + duration, 0)
   })
+  const headers = calls.flatMap((call) => call.timing?.headersMs ?? [])
+  const thinkingLine = line(calls.flatMap((call) => {
+    const taken = span(call.timing?.headersMs, call.timing?.firstOutputMs)
+    return taken === undefined || call.usage === undefined ? [] : [[call.usage.thinking, taken] as const]
+  }))
+  const writingLine = line(calls.flatMap((call) => {
+    const taken = span(call.timing?.firstOutputMs, call.timing?.lastOutputMs)
+    return taken === undefined || call.usage === undefined ? [] : [[call.usage.written, taken] as const]
+  }))
   const sentAfter = calls.flatMap((call) => call.timing?.sentMs ?? [])
   const inHost = calls.flatMap((call) => hostOf(call) ?? [])
   const fired = readings.flatMap((reading): Array<Fired> =>
@@ -1142,11 +1220,33 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
         // The harness counts its own tries; the wire counts the tries inside the answered one.
         tries: (call.tries ?? 1 + call.retries) + Math.max(0, (call.attempts ?? 1) - 1),
         ...(call.failedTries === undefined ? {} : { failedTries: call.failedTries }),
+        ...(call.work === undefined ? {} : { work: call.work }),
         ...(call.moved === undefined ? {} : { moved: call.moved }),
         ...(call.rejected === undefined ? {} : { rejected: terminalSafe(call.rejected) })
       }
     }),
-    frames,
+    // A frame's own record of its split stands in place of the one worked out from stamps.
+    frames: frames.map((frame): Frame => {
+      const time = recordedTime(frame)
+      return time === undefined ? frame : {
+        ...frame,
+        wallMs: count(time.wallMs) ?? frame.wallMs,
+        modelMs: count(time.modelMs) ?? frame.modelMs,
+        cellsMs: count(time.cellMs) ?? frame.cellsMs,
+        judgeMs: count(time.judgeMs) ?? frame.judgeMs,
+        compactionMs: count(time.compactionMs) ?? frame.compactionMs,
+        otherMs: count(time.otherMs) ?? frame.otherMs
+      }
+    }),
+    ...(Object.keys(cellWork).length === 0 ? {} : { cellWork }),
+    ...(headers.length === 0 ? {} : {
+      stageFit: {
+        calls: headers.length,
+        headersMeanMs: headers.reduce((sum, ms) => sum + ms, 0) / headers.length,
+        ...(thinkingLine === undefined ? {} : { thinking: thinkingLine }),
+        ...(writingLine === undefined ? {} : { writing: writingLine })
+      }
+    }),
     flowCalls: { calls: [...cellCalls.values()].reduce((sum, calls) => sum + calls, 0), durationMs: overall.calls },
     ...(sentAfter.length === 0 ? {} : { beforeSent: totalOf(sentAfter) }),
     ...(inHost.length === 0 ? {} : { host: totalOf(inHost) }),
@@ -1274,10 +1374,16 @@ export const render = (report: Report): string => {
     ["written", (call) => whole(call.usage?.written)],
     ["cache %", (call) => percent(call.cacheShare)],
     ["tries", (call) => String(call.tries)],
-    [
-      "moved",
-      (call) => call.rejected !== undefined ? "rejected" : call.moved === undefined ? dash : call.moved ? "yes" : "no"
-    ]
+    ["moved", (call) =>
+      call.rejected !== undefined
+        ? "rejected"
+        : call.moved === undefined
+        ? dash
+        : call.moved
+        ? "yes"
+        : call.work === "comment_only"
+        ? "comment"
+        : call.work ?? "no"]
   ])
   const staged = report.calls.filter((call) => call.timing !== undefined)
   table<ModelCall>("Wait by stage (seconds from the call's start)", staged, [
@@ -1344,7 +1450,31 @@ export const render = (report: Report): string => {
     ["ms per written token", (speed) => speed.perWrittenMs.toFixed(1)],
     ["R²", (speed) => speed.r2.toFixed(2)]
   ])
+  const fit = report.stageFit
+  table<readonly [string, Line]>(
+    "Speed by stage (from the wire's timing)",
+    fit === undefined
+      ? []
+      : [
+        ...(fit.thinking === undefined ? [] : [["thinking", fit.thinking] as const]),
+        ...(fit.writing === undefined
+          ? []
+          : [["writing", fit.writing] as const])
+      ],
+    [
+      ["stage", ([stage]) => stage],
+      ["calls", () => String(fit?.calls ?? 0)],
+      ["fixed s", ([, fitted]) => seconds(fitted.fixedMs)],
+      ["ms per token", ([, fitted]) => fitted.perMs.toFixed(1)],
+      ["R²", ([, fitted]) => fitted.r2.toFixed(2)]
+    ],
+    1
+  )
   const facts: Array<readonly [string, string]> = []
+  if (fit !== undefined) facts.push(["Headers", `${stamp(fit.headersMeanMs)} s mean over ${some(fit.calls, "call")}`])
+  if (report.cellWork !== undefined) {
+    facts.push(["Cell work", Object.entries(report.cellWork).map(([kind, cells]) => `${kind} ${cells}`).join(" · ")])
+  }
   const verdicts = settled.filter((call) => call.moved !== undefined).length
   if (verdicts > 0) {
     facts.push([
@@ -1376,9 +1506,10 @@ export const render = (report: Report): string => {
   if (report.judge.readings > 0) {
     facts.push([
       "Judge",
-      `${some(report.judge.readings, "reading")} · ${seconds(report.judge.latencyMs)} s latency · ${
+      // Readings beside the loop cost latency and no wall time, so the two are not added.
+      `${some(report.judge.readings, "reading")} · ${seconds(report.judge.latencyMs)} s latency, of which ${
         seconds(report.time.judgeMs)
-      } s holding the run`
+      } s held the run`
     ])
   }
   if (report.ledger !== undefined) {
