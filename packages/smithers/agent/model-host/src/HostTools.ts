@@ -532,9 +532,21 @@ const uiCommand = (row: CatalogDescriptor, command: UiInstructionCommand): Bind 
         return { refusal }
       }
       if (command === "theme" && ui.mode !== "light" && ui.mode !== "dark") return { refusal }
+      /*
+       * A queued request, and it says so. The committed frame is the whole
+       * result this host has: the author's own browser picks the request up
+       * from its private view afterwards, and nothing carries back what it
+       * then showed or found. Told only "Requested /search.issues on the
+       * author's screen", the deployed model read a completed read and
+       * answered with an invented issue, its repository, its labels and its
+       * reproduction steps (root, account 8 on smithers.sh, 2026-10-14
+       * 10:09Z). So the result names the two things that licensed that: the
+       * browser runs it, and this host cannot see the screen.
+       */
       return {
         cards: [],
-        value: `Requested /${command}${command === "theme" ? ` ${ui.mode}` : ""} on the author's screen.`,
+        value: `Requested /${command}${command === "theme" ? ` ${ui.mode}` : ""} on the author's screen. `
+          + "Their browser runs it; this host cannot see their screen, so never state what it shows or found.",
         ui
       }
     })

@@ -1678,7 +1678,7 @@ describe("an install's host runs the catalog commands its grant allows, as the t
         ui: { command: "theme", mode: "dark" }
       }
     ])
-    expect(toolOutputs(provider)).toEqual(["Requested /theme dark on the author's screen."])
+    expect(toolOutputs(provider)).toEqual([screenRequest("theme dark")])
   })
 
   test("theme refuses toggles, unknown modes and extra authority fields", async () => {
@@ -1724,7 +1724,7 @@ describe("an install's host runs the catalog commands its grant allows, as the t
       expect(journal.frames.filter((frame) => frame.type === "call.settled")).toEqual([
         { runId: install.request.runId, type: "call.settled", link: 0, ordinal: 0, name, verdict: "run", ui }
       ])
-      expect(toolOutputs(provider)).toEqual([`Requested /${name} on the author's screen.`])
+      expect(toolOutputs(provider)).toEqual([screenRequest(name)])
     }
   })
 
@@ -2165,6 +2165,16 @@ const FLOW_NEW_LINE =
   "Asked to create, make, build or automate a flow or workflow (\"can we …\" included), run flow.new in that turn: pass what the flow should do as description when the person said it, and nothing when they did not. Then tell them in one sentence that the form is on their screen. Never explain how to write a flow by hand unless they ask for exactly that."
 const FLOW_NEW_COMMAND_LINE =
   "- /flow.new — Create a new flow (asks the person: it only shows them what to confirm, and their press acts)"
+/**
+ * The whole result a screen-only request has: the author's browser runs it
+ * afterwards and carries nothing back, so the tool result says so. Told only
+ * that its request was "Requested … on the author's screen", the deployed
+ * model answered root with an invented issue and its invented labels
+ * (account 8 on smithers.sh, 2026-10-14 10:09Z).
+ */
+const screenRequest = (command: string): string =>
+  `Requested /${command} on the author's screen. Their browser runs it; this host cannot see their screen, so never state what it shows or found.`
+
 const formOpen = (filled: string): string =>
   `The "Create a new flow" form is open on the author's screen${filled}. Nothing is created until they press Submit: tell them the form is on their screen, and never ask them to type arguments.`
 
@@ -2417,7 +2427,12 @@ describe("a Cloud account conversation runs the screen-only flows for its author
       verdict: "run",
       ui: { command: "search.issues", query: "roninjin10/e2e-verify open" }
     })
-    expect(toolOutputs(provider)).toEqual(["Requested /search.issues on the author's screen."])
+    expect(toolOutputs(provider)).toEqual([screenRequest("search.issues")])
+    // The two facts that stop an invented answer: whose browser runs it, and
+    // that this host cannot see the screen. Root's turn had neither.
+    expect(toolOutputs(provider)[0]).toContain("Their browser runs it")
+    expect(toolOutputs(provider)[0]).toContain("cannot see their screen")
+    expect(toolOutputs(provider)[0]).not.toMatch(/\bfound:|\bresults?:/)
     expect([journal.calls, journal.reads, journal.lists]).toEqual([[], [], []])
   })
 
