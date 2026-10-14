@@ -16,9 +16,23 @@ class BranchSourceFailure extends Data.TaggedError("BranchSourceFailure")<{ read
   override get message() { return this.sentence }
 }
 
-/** Demo hosts keep their seed when topics are absent; installs never use it. */
-export const branchSeedAvailable = (host: { readonly bootstrap?: AppBootstrap; readonly live?: unknown }): boolean =>
-  host.bootstrap === undefined ? !host.live : !host.bootstrap.capabilities.includes("install")
+/**
+ * Demo hosts keep their seed when topics are absent; installs never use it.
+ *
+ * A seed that was never sown is not available: the hosted app serves `cloud`
+ * with the design FIXTURE off, and reading its empty world left the box card
+ * blank instead of its own facts
+ * ([#3865](https://github.com/smithersai/smithers/issues/3865)). A caller that
+ * holds no design world at all (the flow registry's own type) keeps the
+ * bootstrap answer.
+ */
+export const branchSeedAvailable = (host: {
+  readonly bootstrap?: AppBootstrap
+  readonly live?: unknown
+  readonly design?: { readonly enabled: boolean }
+}): boolean =>
+  host.design?.enabled === false ? false
+    : host.bootstrap === undefined ? !host.live : !host.bootstrap.capabilities.includes("install")
 
 // T-APP-10 owns validation of the three serialized topic projections, not View props.
 const Where = z.discriminatedUnion("kind", [

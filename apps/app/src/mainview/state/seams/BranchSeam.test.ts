@@ -11,6 +11,11 @@ test("branch fallback distinguishes a demo bootstrap from an install and a provi
   }
   expect(branchSeedAvailable({})).toBe(true)
   expect(branchSeedAvailable({ live: {} })).toBe(false)
+  /* #3865: the hosted app serves `cloud` with the design FIXTURE off, and an unsown seed is not available. */
+  for (const host of [{ bootstrap, live: {} }, { bootstrap }, {}]) {
+    expect(branchSeedAvailable({ ...host, design: { enabled: false } })).toBe(false)
+    expect(branchSeedAvailable({ ...host, design: { enabled: true } })).toBe(branchSeedAvailable(host))
+  }
 })
 const branch = { id: "b1", name: "Live branch", machine: { state: "asleep" as const }, presence: [], terminals: [], ssh_line: "ssh -p 2222 b1@localhost" }
 test("live mapping uses captured facts and refuses missing or malformed topics", () => {

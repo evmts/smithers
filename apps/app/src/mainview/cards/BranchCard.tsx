@@ -1,7 +1,11 @@
 import { useSyncExternalStore } from "react"
+import { useLiveQuery } from "@tanstack/react-db"
 /* T-APP-10: live topics map to BranchView; demo projections remain isolated. */
 import type { CatalogTag } from "@smthrs/rpc/CardAction"
 import type { BranchCard as BranchModel } from "@smthrs/rpc/BranchCard"
+import type { MachineState } from "@smthrs/rpc/CardPrimitives"
+import type { CloudWorkspaceRow } from "../state/AppState"
+import { cloudBoxesHeld } from "../flows/entries/Declare"
 import { useBranchPresence, useTopic } from "../state/useTopic"
 import { branchModel, branchSeedAvailable, projectBranch, projectBranchActivity } from "../state/seams/BranchSeam"
 import { useController } from "../ControllerContext"
@@ -134,8 +138,46 @@ const DesignBranchBody = ({ card, actions }: { readonly card: CardOf<"branch">; 
     onView={patch => persistBranchView(controller, card, patch)} />
 }
 
+/**
+ * A box's state as Smithers Cloud already answered it, under an unserved
+ * `branch:<id>`.
+ *
+ * The hosted app opens real boxes (`cloud`, no `install`, design FIXTURE off)
+ * and `POST /api/repos/{repo}/workspaces` plus the seam's own completion watch
+ * keep this row current, but `branch:<id>` is the composed install's live
+ * topic. With nothing to read there the card rendered its heading and no body
+ * at all — no state, no failure — while the seam's sentence promises "the card
+ * tracks it"
+ * ([#3865](https://github.com/smithersai/smithers/issues/3865)).
+ *
+ * The row is facts, never authority: this body binds no act, so every press
+ * stays with the live projection that composes one. A served `branch:<id>`
+ * takes over, because the caller reaches here only when it answered nothing.
+ */
+const cloudBoxMachine = (row: CloudWorkspaceRow): MachineState =>
+  row.status === "running" ? { state: "awake" }
+    : row.status === "suspended" ? { state: "asleep" }
+    : row.status === "stopped" ? { state: "closed" }
+    : row.status === "failed"
+      ? { state: "failed", error: { class: row.failureCode ?? "workspace_failed",
+        // plue's own words where it recorded them; a failure with no reason is a fact, not a blank.
+        message: row.failureMessage ?? "Smithers Cloud recorded no reason for this failure." } }
+      : { state: "waking" }
+
+const CloudBoxBody = ({ card, actions }: { readonly card: CardOf<"branch">; readonly actions: CardActions }) => {
+  const controller = useController()
+  const { data: boxes } = useLiveQuery(controller.store.collections.cloudWorkspaces)
+  const row = boxes.find(box => box.id === card.payload.id)
+  if (row === undefined) return null
+  const model: BranchModel = { id: row.id, name: row.name, machine: cloudBoxMachine(row),
+    presence: [], terminals: [], activity: [], changed_files: [], ssh_line: "" }
+  return <BranchView model={model} actions={[]} gestures={{}} onAction={() => {}}
+    view={{ maximized: actions.presentation === "maximized", ...(card.payload.tab === undefined ? {} : { tab: card.payload.tab }) }}
+    onView={patch => persistBranchView(controller, card, patch)} />
+}
+
 /** Live facts never inherit seed rows or server-supplied command authority. Dependent actions stay dark. */
-export const LiveBranchBody = ({ card, actions }: { readonly card: CardOf<"branch">; readonly actions: CardActions }) => {
+export const LiveBranchBody =({ card, actions }: { readonly card: CardOf<"branch">; readonly actions: CardActions }) => {
   const controller = useController()
   const topic = controller.live ? `branch:${card.payload.id}` : undefined
   if (topic) {
@@ -149,8 +191,11 @@ export const LiveBranchBody = ({ card, actions }: { readonly card: CardOf<"branc
   const files = useTopic(topic && `${topic}:files`, controller.live)
   // An unserved optional stream must not hide the composed branch roster.
   // Permission failures and malformed snapshots still refuse the projection;
-  // no seed rows stand in for unavailable activity or changed files.
-  const optionalData = (snapshot: typeof activity) => snapshot?.error === "unsupported" ? [] : snapshot?.data
+  // no seed rows stand in for unavailable activity or changed files. A stream
+  // that has not answered yet is empty for now, exactly like one answered
+  // `unsupported` — #3865: holding the whole card back for it rendered a
+  // served branch as nothing at all.
+  const optionalData = (snapshot: typeof activity) => snapshot === undefined || snapshot.error === "unsupported" ? [] : snapshot.data
   const refused = (snapshot: typeof activity) => snapshot?.error !== undefined && snapshot.error !== "unsupported"
   const base = branch?.error || refused(activity) || refused(files) ? undefined
     : branchModel(branch?.data, optionalData(activity), optionalData(files), card.payload.id, { roster: roster?.model?.members.map(member => ({ ...member, id: member.login })) })
@@ -185,7 +230,10 @@ export const LiveBranchBody = ({ card, actions }: { readonly card: CardOf<"branc
   const model: BranchModel | undefined = base && { ...base, activity: base.activity.map(entry => entry.kind !== "change" ? entry
     : { ...entry, actions: changes.actions.filter(action => action.args?.burst === entry.id) }) }
   const bindings = cardActions<Gesture>(dispatch, model ? liveBranchActionDefinitions(model, providers, questionWait, movedWait?.id) : [])
-  if (!model) return branchSeedAvailable(controller) ? <DesignBranchBody card={card} actions={actions} /> : null
+  if (!model) {
+    if (branchSeedAvailable(controller)) return <DesignBranchBody card={card} actions={actions} />
+    return cloudBoxesHeld(controller) && controller.store !== undefined ? <CloudBoxBody card={card} actions={actions} /> : null
+  }
   return <BranchView model={model} actions={bindings.actions} gestures={bindings.gestures}
     onAction={(tag, input) => (tag === "diff" ? changes : bindings).onAction(tag, input)} view={{ maximized: actions.presentation === "maximized", tab: card.payload.tab }}
     onView={patch => persistBranchView(controller, card, patch)} />
