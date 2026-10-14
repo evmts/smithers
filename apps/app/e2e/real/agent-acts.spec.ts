@@ -113,31 +113,35 @@ agentTest("asked for a flow that labels new issues, the agent opens the form wit
 /*
  * The screen-only acts (mvp.md Appendix B.1): on Cloud the agent's grant
  * carries no install API, and the host withheld every one of them behind that
- * credential. Asked read-only to list a repository's issues, the deployed
- * agent answered "I can't list issues right now, but I can show you the
- * documentation using the /docs command" (2026-10-14, account 8 on
- * smithers.sh) while the person's own /issues.list worked. Its act is the
- * issue search on their screen.
+ * credential, so the agent could take no act a person takes on their own
+ * screen. Asked read-only to list a repository's issues it answered "I can't
+ * list issues right now, but I can show you the documentation using the /docs
+ * command" (2026-10-14, account 8 on smithers.sh) while the person's own
+ * /issues.list worked. This row proves the screen door itself with the
+ * smallest read-only act on it, /help: the model's call runs on the person's
+ * screen and the app renders the card. It does not prove an issue read —
+ * a Cloud account conversation has no repository-bound issue door
+ * (smithersai/smithers#3876, #3871), and search.issues indexes only the issue
+ * cards the conversation has already opened.
  */
-agentTest("asked to list the open issues, the agent runs the issue search on the person's own screen", scenario("agent.acts.search-issues", {
+agentTest("asked what it can do here, the agent runs the app's own command list on the person's screen", scenario("agent.acts.help", {
   capabilities: ["agent", "identity", "cloud"],
   coverage: [
-    "action:chat.send", "action:search.issues", "host:production", "path:success", "door:agent",
+    "action:chat.send", "action:help", "host:production", "path:success", "door:agent",
     "dimension:assistant-acts", "dimension:screen-only", "dimension:tool-loop", "dimension:no-remote-side-effect",
-    "evidence:rendered-search-card-and-reply"
+    "evidence:rendered-commands-card-and-reply"
   ],
-  description: "Ask the deployed Cloud agent read-only for the repository's open issues and require the rendered issue-search card, a reply with no how-to, and no launched run."
+  description: "Ask the deployed Cloud agent what it can do and require the rendered Commands card from its own /help call, a reply with no how-to, and no launched run."
 }), async ({ page }, testInfo) => {
   await bootWorkspace(page)
+  const cards = page.locator('.smithers-card[data-kind="commands"]')
+  const before = await cards.count()
   const { reply, launches } = await askAgent(
     page,
-    "List the open issues in this repository using the app's issue search. Do not create, edit, close or delete anything."
+    "Show me the commands you can run in this chat by running the app's own command list. Do not create, edit or delete anything."
   )
   await testInfo.attach("agent-acts-reply", { body: Buffer.from(JSON.stringify({ reply, launches }, null, 2)), contentType: "application/json" })
-  const results = page.locator('.smithers-card[data-kind="search-results"]').last()
-  await expect(results, `the agent replied ${JSON.stringify(reply)}`).toBeVisible({ timeout: 30_000 })
-  await expect(results.getByTestId("search-results-query")).toContainText("/search.issues")
+  await expect(cards, `the agent replied ${JSON.stringify(reply)}`).toHaveCount(before + 1, { timeout: 30_000 })
   expect(reply).not.toMatch(HOW_TO)
-  expect(reply).not.toMatch(/\/docs\b/)
   expect(launches).toEqual([])
 })
