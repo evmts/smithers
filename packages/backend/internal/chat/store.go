@@ -1436,10 +1436,13 @@ func (s *Store) stopProducerWith(ctx context.Context, grant ProducerGrant, code 
 	if code == "credential_missing" {
 		frame, _ = json.Marshal(map[string]any{"runId": turn.RunID, "type": "done", "code": "credential_missing", "error": "Model credential missing."})
 	}
-	if code == codeHostNoCapacity {
-		// No host ever started, so the default receipt's verdict on the host
-		// would be wrong. Say what happened, that nothing was lost, and what
-		// to do, as the workspace pool's own full-pool refusal does.
+	// No host ever started, so the default receipt's verdict on the host
+	// would be wrong. Say what happened, that nothing was lost, and what to
+	// do, as the workspace pool's own full-pool refusal does. A turn whose
+	// provider did start keeps the uncertain receipt below: its own output is
+	// already on screen, so "nothing was lost" would be the false half of a
+	// true sentence.
+	if code == codeHostNoCapacity && turn.ProducerStartedAt == nil {
 		frame = errorFrame(turn.RunID, hostNoCapacityMessage)
 	}
 	if refused != "" {

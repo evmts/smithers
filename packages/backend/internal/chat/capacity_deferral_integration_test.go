@@ -149,3 +149,62 @@ func TestCapacityDeferralWaitsTheRegistrysRetryAfter(t *testing.T) {
 	}
 	t.Fatalf("a capacity deferral never waited %s; attempts=%d", want, attempts)
 }
+
+// The deferral reads one code twice: sandbox.IsNoCapacity decides that a
+// refusal is a capacity deferral, and the error registry decides how long to
+// hold the rerun. Before this, nothing tied the port's spelling to the
+// registry's, so renaming CodeNoCapacity would have left the dispatcher
+// detecting refusals it then backed off with the silent 30 s fallback, and the
+// workspace pool's own predicate — which stopped reading the registry constant
+// when it moved onto the port — recognising nothing at all.
+func TestTheDeferralsPortCodeIsTheRegistrysCode(t *testing.T) {
+	if sandbox.NoCapacityCode != string(pkgerrors.CodeNoCapacity) {
+		t.Fatalf("the provider port spells a capacity refusal %q and the error registry %q; one deferral cannot have two names",
+			sandbox.NoCapacityCode, pkgerrors.CodeNoCapacity)
+	}
+}
+
+// A capacity receipt tells the person nothing of theirs was lost. That is only
+// true of a turn no provider ever started: the refusal lands before anything
+// runs. A turn whose provider did start has its own partial output on screen
+// and ends uncertain, so it keeps the uncertain receipt rather than being told
+// to send the message again.
+func TestACapacityReceiptIsOnlyGivenToATurnNoProviderStarted(t *testing.T) {
+	store := needStore(t)
+	scope, runID, journal := testScope(), "capacity-started-"+uuid.NewString(), testJournal()
+	accepted := admit(t, store, scope, runID, journal)
+	grant, err := store.Claim(context.Background(), scope, accepted.TurnID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Spend every attempt so the next refusal seals the turn instead of
+	// deferring it, then record that this generation's provider did start.
+	for grant.Generation < maxProducerAttempts {
+		if _, err = store.RetryProducer(context.Background(), grant, codeHostNoCapacity, 0); err != nil {
+			t.Fatal(err)
+		}
+		if grant, err = store.Claim(context.Background(), scope, accepted.TurnID, time.Minute); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = store.MarkProviderStarted(context.Background(), grant); err != nil {
+		t.Fatal(err)
+	}
+	retrying, err := store.RetryProducer(context.Background(), grant, codeHostNoCapacity, 0)
+	if err != nil || retrying {
+		t.Fatalf("a started provider out of attempts must be sealed: retrying=%v err=%v", retrying, err)
+	}
+	page, err := store.Replay(context.Background(), ReplayInput{Scope: scope, RunID: runID, Journal: journal, Limit: 8})
+	if err != nil || len(page.Batches) == 0 {
+		t.Fatalf("replay: batches=%d err=%v", len(page.Batches), err)
+	}
+	frames := page.Batches[len(page.Batches)-1].Frames
+	receipt := string(frames[len(frames)-1])
+	if strings.Contains(receipt, hostNoCapacityMessage) {
+		t.Fatalf("a turn whose provider started was told nothing was lost and to send it again: %s", receipt)
+	}
+	state, terminal, err := store.GetState(context.Background(), scope, accepted.TurnID)
+	if err != nil || !terminal || state != StateUncertain {
+		t.Fatalf("a started provider's turn ended %s terminal=%v err=%v, want uncertain", state, terminal, err)
+	}
+}

@@ -39,14 +39,26 @@ const codeHostNoCapacity = "host_no_capacity"
 // A full fleet is a transient deferral the product already answers that way
 // elsewhere: the workspace pool defers and stays resumable, and the error
 // registry publishes one RetryAfter for no_capacity, which is what clients are
-// told to wait. The host-failure ladder starts at a second and doubles, so a
-// turn refused for capacity spends all five of its attempts inside half a
-// minute and is then sealed failed while the only thing wrong is that the
-// fleet is busy. Measured on turn f413964a: generations 2 and 3 were both
-// refused for capacity, 17 s and 19 s apart, leaving one attempt to cover the
-// drain. The registry's interval is flat because a deferral has no escalating
-// fault to back off from: each rerun asks the same question of a fleet whose
-// headroom changes on its own.
+// told to wait. A turn refused for capacity is otherwise rerun on the
+// host-failure ladder, which starts at a second, and is then sealed failed
+// while the only thing wrong is that the fleet is busy.
+//
+// Measured on turn f413964a, where the fleet had room for exactly one chat
+// guest: each refused attempt took ~17 s by itself, which is the provider
+// adapter's own create ladder, and the dispatcher's ladder added 1 s after
+// generation 1 and 2 s after generation 2. So the five attempts a turn gets
+// covered about ninety seconds of shortage, almost none of it chosen here,
+// and two of them were spent in the thirty-six seconds while generation 1's
+// slot was still held. The registry's interval raises that cover to roughly
+// three and a half minutes, at the price of up to this long between a slot
+// freeing and the next attempt noticing: in that turn the slot freed within
+// seconds of generation 3's refusal, so the same turn would have answered
+// about half a minute later than it did. Coverage is the side worth buying,
+// because the alternative is a verdict on a host that never started.
+//
+// The interval is flat because a deferral has no escalating fault to back off
+// from: each rerun asks the same question of a fleet whose headroom changes on
+// its own.
 func capacityRefusalDelay(int64) time.Duration {
 	if entry, ok := pkgerrors.Lookup(pkgerrors.CodeNoCapacity); ok && entry.RetryAfter > 0 {
 		return time.Duration(entry.RetryAfter) * time.Second
