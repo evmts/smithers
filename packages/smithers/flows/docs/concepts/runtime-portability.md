@@ -50,7 +50,7 @@ For SQLite, the Node adapter requires Node's SQLite implementation. Under Bun, s
 The durable engine itself has no Bun exclusion. Both SQLite drivers reject legacy
 Smithers 0.x databases before adding tables. Either runtime can instead select
 PostgreSQL using `SMITHERS_POSTGRES_URL` or an explicit connection string; see
-[database configuration](https://database.smithers.sh/concepts/sqlite-only/).
+[database configuration](../../database/docs/concepts/sqlite-only.md).
 
 ## Evidence and regression contract
 

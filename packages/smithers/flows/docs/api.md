@@ -61,26 +61,26 @@ console.log(
 Each engine package is re-exported as a namespace, so a package's own module is
 one level below it (`Journal.SqlJournal.layer`).
 
-| Namespace       | Package                                       |
-| --------------- | --------------------------------------------- |
-| `Artifacts`     | [`@smthrs/artifacts`](/api/artifacts)         |
-| `Canonical`     | [`@smthrs/canonical`](/api/canonical)         |
-| `Capability`    | [`@smthrs/capability`](/api/capability)       |
-| `Crypto`        | [`@smthrs/crypto`](/api/crypto)               |
-| `Database`      | [`@smthrs/database`](/api/database)           |
-| `Engine`        | [`@smthrs/engine`](/api/engine)               |
-| `EngineStore`   | [`@smthrs/engine-store`](/api/engine-store)   |
-| `Jj`            | [`@smthrs/jj`](/api/jj)                       |
-| `Journal`       | [`@smthrs/journal`](/api/journal)             |
-| `Kernel`        | [`@smthrs/kernel`](/api/kernel)               |
-| `Keys`          | [`@smthrs/keys`](/api/keys)                   |
-| `Observability` | [`@smthrs/observability`](/api/observability) |
-| `Plan`          | [`@smthrs/plan`](/api/plan)                   |
-| `PlanStore`     | [`@smthrs/plan-store`](/api/plan-store)       |
-| `RunStore`      | [`@smthrs/run-store`](/api/run-store)         |
-| `Sandbox`       | [`@smthrs/sandbox`](/api/sandbox)             |
-| `StepCache`     | [`@smthrs/step-cache`](/api/step-cache)       |
-| `Sync`          | [`@smthrs/sync`](/api/smithers-sync)          |
+| Namespace       | Package                                                 |
+| --------------- | ------------------------------------------------------- |
+| `Artifacts`     | [`@smthrs/artifacts`](../artifacts/docs/api.md)         |
+| `Canonical`     | [`@smthrs/canonical`](../canonical/docs/api.md)         |
+| `Capability`    | [`@smthrs/capability`](../capability/docs/api.md)       |
+| `Crypto`        | [`@smthrs/crypto`](../crypto/docs/api.md)               |
+| `Database`      | [`@smthrs/database`](../database/docs/api.md)           |
+| `Engine`        | [`@smthrs/engine`](../engine/docs/api.md)               |
+| `EngineStore`   | [`@smthrs/engine-store`](../engine-store/docs/api.md)   |
+| `Jj`            | [`@smthrs/jj`](../jj/docs/api.md)                       |
+| `Journal`       | [`@smthrs/journal`](../journal/docs/api.md)             |
+| `Kernel`        | [`@smthrs/kernel`](../kernel/docs/api.md)               |
+| `Keys`          | [`@smthrs/keys`](../keys/docs/api.md)                   |
+| `Observability` | [`@smthrs/observability`](../observability/docs/api.md) |
+| `Plan`          | [`@smthrs/plan`](../plan/docs/api.md)                   |
+| `PlanStore`     | [`@smthrs/plan-store`](../plan-store/docs/api.md)       |
+| `RunStore`      | [`@smthrs/run-store`](../run-store/docs/api.md)         |
+| `Sandbox`       | [`@smthrs/sandbox`](../sandbox/docs/api.md)             |
+| `StepCache`     | [`@smthrs/step-cache`](../step-cache/docs/api.md)       |
+| `Sync`          | [`@smthrs/sync`](../sync/docs/api.md)                   |
 
 Namespacing is what preserves constructors like
 `Kernel.ChildProcessSpawner.layerNoop` and `RunStore.RunStore.layer`. The
@@ -93,13 +93,13 @@ out of both a committed row and a log line.
 
 ### Flat exports
 
-[`@smthrs/flow`](/api/flow) is re-exported flat, so all sixteen authoring names
+[`@smthrs/flow`](../flow/docs/api.md) is re-exported flat, so all sixteen authoring names
 sit at the top level: `Action`, `DurableClock`, `DurableDeferred`,
 `DurableQueue`, `Fault`, `Flow`, `FlowRuntime`, `Graph`, `HumanTask`,
 `Interpreter`, `Poll`, `RetryPolicy`, `Sleep`, `Stall`, `StepIdentity`, and
 `WaitFor`.
 
-`TimeTravel` from [`@smthrs/time-travel`](/api/time-travel) is the second flat
+`TimeTravel` from [`@smthrs/time-travel`](../time-travel/docs/api.md) is the second flat
 export, and it is a service key rather than a namespace:
 
 ```ts
@@ -115,9 +115,9 @@ const program = Effect.gen(function*() {
 `@smthrs/time-travel` directly.
 
 The `@smthrs/platform-*` bundles are deliberately absent. A program chooses
-[`@smthrs/platform-node`](/api/platform-node),
-[`@smthrs/platform-bun`](/api/platform-bun), or
-[`@smthrs/platform-browser`](/api/platform-browser) directly.
+[`@smthrs/platform-node`](../platform-node/docs/api.md),
+[`@smthrs/platform-bun`](../platform-bun/docs/api.md), or
+[`@smthrs/platform-browser`](../platform-browser/docs/api.md) directly.
 
 ### `namespaces`
 
@@ -168,12 +168,12 @@ flow file actions; the database path is trusted host configuration.
 | `cacheEnvironment` | `Action.CacheEnvironment`                          | Optional. The complete runtime environment a sealed step's recorded result may be reused under. Absent by default, which keeps every sealed key scoped to its own run.                                                                                                                                                                                                                                                                |
 | `sourceRevision`   | `string \| (() => string \| undefined)`            | Optional. The revision of the tree this host read its flows out of, which every recorded graph page carries beside the declaration sites, so a reader opens the declared file at that revision and not at whatever is on disk. A host that only learns the answer after this call declares a reader instead of a string; it is asked once per recorded page, and an answer that is not a revision records nothing. Absent by default. |
 
-`Ownership.sameHostPidProbe` from [`@smthrs/run-store`](/api/run-store) probes
+`Ownership.sameHostPidProbe` from [`@smthrs/run-store`](../run-store/docs/api.md) probes
 the process table only for the claim context's host (`context.claimant.hostId`).
 It returns `false` (treated as dead) for an owner on another host, allowing
 takeover once that owner's lease has expired. A fresh heartbeat still blocks
 takeover. To preserve foreign-host owners, use `HostLiveness.isAlive({ hostId })`
-from [`@smthrs/platform-node`](/api/platform-node), which returns `true` for
+from [`@smthrs/platform-node`](../platform-node/docs/api.md), which returns `true` for
 foreign hosts, or supply a distributed liveness check. `HostLiveness.isAlive`
 is the `layerHost` default and refuses foreign-host takeover even after lease
 expiry. A multi-process deployment answers from its supervisor or lease system.
@@ -275,7 +275,7 @@ process or signal handlers.
 
 `registry` is the optional catalog the registration phase reads from. A host that
 discovers its flows rather than listing them passes
-[`@smthrs/registry`](/api/registry)'s `Registry.layerProject({ root })`, and
+[`@smthrs/registry`](../../agent/registry/docs/api.md)'s `Registry.layerProject({ root })`, and
 builds `registerFlows` from `Executable.layer(...)`. The registry is provided
 beneath registration and above the engine, so every discovered flow is
 registered before the runtime accepts a launch. Omitting it is exactly the
@@ -353,7 +353,7 @@ arguments may still declare theirs.
 
 What it adds over `layer`:
 
-- The complete Node host from [`@smthrs/platform-node`](/api/platform-node) with
+- The complete Node host from [`@smthrs/platform-node`](../platform-node/docs/api.md) with
   process containment on. A spawned process gets its own process group, is
   signalled and then killed when its action's scope closes, and is recorded in
   the `ProcessLedger` so the next incarnation of this host reaps whatever a
@@ -379,7 +379,7 @@ import * as SandboxedFlow from "@smthrs/flows/SandboxedFlow"
 ```
 
 Runs a child flow's own code inside a machine a `Sandbox.Provider` provisions.
-`Sandbox.layerHost` from [`@smthrs/sandbox`](/api/sandbox) places a body's side
+`Sandbox.layerHost` from [`@smthrs/sandbox`](../sandbox/docs/api.md) places a body's side
 effects on a machine while its TypeScript keeps running in the engine host; this
 module is the tier above that, where the child's own code executes in the guest.
 It is Node-only: it bundles with esbuild and it starts a guest runtime.
@@ -526,7 +526,7 @@ const CapturedWork: Schema.NullOr<typeof Sandbox.Work> // decodes a missing key 
 const EnforcedCeiling: Schema.NullOr<Schema.Array<Schema.Array<typeof CapabilityPattern>>> // decodes a missing key as null
 ```
 
-`work` is `Sandbox.Work` from [`@smthrs/sandbox`](/api/sandbox): `Changed`
+`work` is `Sandbox.Work` from [`@smthrs/sandbox`](../sandbox/docs/api.md): `Changed`
 with a `git diff --binary` patch from `base`, or `Unchanged`. It is plain
 tagged JSON, so the journal records it, and `SandboxMerge.apply` lands it on
 the host.
@@ -654,7 +654,7 @@ Compose the returned layer beside `Interpreter.layer(parent)` over one
 ## See also
 
 Each namespace in the table above has its own API reference, reached through the
-links there. [`@smthrs/cli`](/api/cli) is this engine as the `smthrs` command
+links there. [`@smthrs/cli`](../../docs/api.md) is this engine as the `smthrs` command
 line, which builds its own durable engine through `NodeRuntime`. Depend on
 individual `@smthrs` packages rather than this barrel when a smaller dependency
 surface is worth the extra imports.

@@ -28,12 +28,20 @@ whole composition.
 ## Install
 
 ```bash
+npm init -y && npm pkg set type=module
 npm install @smthrs/flows@next effect
 ```
 
-That line is all a Node program needs. [Installation](./installation.md) covers
-the requirements, the import forms, the packages Bun and the browser add, and
-when to depend on individual engine packages instead.
+With pnpm 11, run `pnpm add @smthrs/flows@1.0.0-rc.6 effect` instead, then
+`pnpm approve-builds esbuild`. pnpm 11 holds a release back for its first 24
+hours, so `@next` installs the previous candidate for a day after each release.
+
+The host also needs [jj](https://jj-vcs.github.io/jj/latest/install-and-setup/)
+0.39.0 or later on `PATH`: it runs `jj --version` when it starts and stops with
+`No jj on PATH` without it. On macOS, `brew install jj`.
+[Installation](./installation.md) covers the requirements, the import forms,
+the packages Bun and the browser add, and when to depend on individual engine
+packages instead.
 
 Durable execution uses a Node.js 26.4.0+ or Bun 1.4.0+ host composition. The API is
 [Effect](https://effect.website) throughout: a flow declares its payload and
@@ -102,7 +110,7 @@ needs and seeing what happens when you leave the grant out.
 
 ## How this relates to the smthrs command line
 
-[`@smthrs/cli`](/api/cli) is this engine as a program you run rather than a
+[`@smthrs/cli`](../../docs/api.md) is this engine as a program you run rather than a
 library you compose. Its `smthrs` command finds the flows in a project, plans
 them, takes an approval, runs them, and reads their events back, and it builds
 its durable engine through `@smthrs/flows/NodeRuntime`, the same module the
@@ -110,9 +118,9 @@ example above calls. Choose the CLI when you want to run flows from a shell or
 a CI job. Choose `@smthrs/flows` when the program that runs them is yours.
 
 Reach for a single engine package instead of the barrel when you want a
-narrower dependency: [`@smthrs/flow`](/api/flow) declares flows and actions,
-[`@smthrs/engine`](/api/engine) executes them, and
-[`@smthrs/sandbox`](/api/sandbox) provisions machines. The barrel is a
+narrower dependency: [`@smthrs/flow`](../flow/docs/api.md) declares flows and actions,
+[`@smthrs/engine`](../engine/docs/api.md) executes them, and
+[`@smthrs/sandbox`](../sandbox/docs/api.md) provisions machines. The barrel is a
 packaging convenience, not a new layer of API, which is why nothing in it is
 reachable only through it.
 

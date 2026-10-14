@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://run-store.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/run-store/docs
 
 Durable run state and fenced ownership for long-running jobs, as
 [Effect](https://effect.website) services. `@smthrs/run-store` keeps one SQL row
@@ -18,11 +18,11 @@ replaced it.
 Two services, `RunStore` and `AttemptStore`, plus the `Ownership` liveness
 checks and heartbeat supervision. Arbitration itself — who holds the claim,
 who holds the lease, whether a fence still stands — is delegated to
-[`@smthrs/journal`](https://journal.smithers.sh)'s injectable `Consensus`
+[`@smthrs/journal`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/journal/docs)'s injectable `Consensus`
 strategy, the same one the journal fences its durable channel through; the
 run row mirrors the strategy's answer in the same transaction. They carry no
 database of their own: both are written against the driver-neutral
-[`@smthrs/database`](https://database.smithers.sh) contract, so the same code
+[`@smthrs/database`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/database/docs) contract, so the same code
 runs over a local SQLite file, over a server, or over an in-memory database in a
 test.
 
@@ -126,7 +126,7 @@ ownership unchanged.
 
 The root exports each module as a namespace, and each is also importable from
 the matching `@smthrs/run-store/*` subpath. The
-[API reference](https://run-store.smithers.sh/reference/api/) lists every export.
+[API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/run-store/docs/api.md) lists every export.
 
 | Namespace         | What it holds                                                                                                                                                                    |
 | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -150,45 +150,45 @@ the migration set is the contract, not the numbered files inside it.
 ## Where the run store sits
 
 `@smthrs/run-store` is one of the storage services inside
-[`@smthrs/flows`](https://flows.smithers.sh), the package that carries the whole
+[`@smthrs/flows`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/docs), the package that carries the whole
 Smithers durable flow engine in a single dependency. Flow authors never call it.
 
 Reach for it directly when you are building the host rather than the flow: a
 scheduler, a worker pool, or any service that hands durable work between
 processes and needs ownership arbitration it can trust. Most hosts do not wire
 it by hand even then.
-[`@smthrs/engine-store`](https://engine-store.smithers.sh) already composes
+[`@smthrs/engine-store`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/engine-store/docs) already composes
 these stores with the journal, the step cache, and the engine's own state into
 one storage ladder.
 
 The stores hold executable state. History lives in
-[`@smthrs/journal`](https://journal.smithers.sh), and the two halves stay
+[`@smthrs/journal`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/journal/docs), and the two halves stay
 consistent because both write through the same `@smthrs/database`
 `DurableWriter`: `Journal.transact` commits a state projection and its durable
 events in one transaction.
 
 ## Documentation
 
-Full documentation is at
-[run-store.smithers.sh](https://run-store.smithers.sh):
+Full documentation is in
+[`docs/`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/run-store/docs):
 
-- [Installation](https://run-store.smithers.sh/installation/)
-- [Quickstart](https://run-store.smithers.sh/quickstart/): one run through its
+- [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/run-store/docs/installation.md)
+- [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/run-store/docs/quickstart.md): one run through its
   whole lifecycle, including a step attempt.
-- [Fencing and ownership](https://run-store.smithers.sh/concepts/fencing/): the
+- [Fencing and ownership](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/run-store/docs/concepts/fencing.md): the
   compare-and-swap every write goes through.
-- [The heartbeat lease](https://run-store.smithers.sh/concepts/leases/): the
+- [The heartbeat lease](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/run-store/docs/concepts/leases.md): the
   four durations, the two clocks that stamp one row, and what a wall-clock lease
   cannot promise.
-- [Liveness evidence](https://run-store.smithers.sh/concepts/liveness-evidence/):
+- [Liveness evidence](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/run-store/docs/concepts/liveness-evidence.md):
   what admits a takeover.
-- [Durable values](https://run-store.smithers.sh/concepts/durable-values/): the
+- [Durable values](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/run-store/docs/concepts/durable-values.md): the
   persistence boundary and its shape limits.
-- [Execution revisions](https://run-store.smithers.sh/concepts/execution-revisions/):
+- [Execution revisions](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/run-store/docs/concepts/execution-revisions.md):
   database identity, monotonic changes, retained tombstones and cancellation acknowledgement.
-- [API reference](https://run-store.smithers.sh/reference/api/): every public
+- [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/run-store/docs/api.md): every public
   export.
-- [Troubleshooting](https://run-store.smithers.sh/troubleshooting/): each
+- [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/run-store/docs/troubleshooting.md): each
   refused outcome and typed error, and what to change.
 
 ## License

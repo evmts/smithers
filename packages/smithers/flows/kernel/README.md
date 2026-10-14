@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://kernel.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/kernel/docs
 
 A capability kernel for [Effect](https://effect.website) hosts. It puts a
 permission check in front of every side effect a program can reach: the five
@@ -26,13 +26,13 @@ without ever mentioning permission.
 
 `@smthrs/kernel` is not on npm at 1.0.0-rc.0. Its source lives in the
 [smithers repository](https://github.com/smithersai/smithers), and the
-[installation page](https://kernel.smithers.sh/installation/) covers how to
+[installation page](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/installation.md) covers how to
 depend on it from a checkout, the import forms, and the two test helpers.
 
 It needs Node.js 26.4.0 or later and `effect` `^4.0.4`. It carries no
 platform implementations of its own, so a composition that reaches a real
 machine also adds a bundle such as
-[`@smthrs/platform-node`](https://platform-node.smithers.sh).
+[`@smthrs/platform-node`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-node/docs).
 
 ## Refuse an operation nobody authorized
 
@@ -79,7 +79,7 @@ its refusal into one and keeps the structured original on the cause, where
 consent, and this store has nobody to ask. Build the store with
 `attended: true` instead and the same write parks on a request an operator can
 answer, then resumes the operation it was authorized for. The
-[quickstart](https://kernel.smithers.sh/quickstart/) runs both halves.
+[quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/quickstart.md) runs both halves.
 
 ## What a yes or no answer leaves open
 
@@ -101,7 +101,7 @@ answer, then resumes the operation it was authorized for. The
 
 The root entry point exports these namespaces, and each is also importable from
 `@smthrs/kernel/<Module>`. Every export, with its signature and its bounds, is
-on the [API reference](https://kernel.smithers.sh/reference/api/).
+on the [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md).
 
 | Namespace             | What it is                                                                                                   |
 | --------------------- | ------------------------------------------------------------------------------------------------------------ |
@@ -126,7 +126,7 @@ on the [API reference](https://kernel.smithers.sh/reference/api/).
 `ChildProcessEnvironment` builds a replacement environment from bootstrap names plus explicit declarations, withholding credential-shaped ambient values.
 
 `Capability` and `Permission` are re-exports; their modules live in
-[`@smthrs/capability`](https://capability.smithers.sh).
+[`@smthrs/capability`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/capability/docs).
 
 Two test helpers ship in the package's export map, not as dev-only files:
 `@smthrs/kernel/test/TestGrantStore` for allow, deny, and scripted grant-store
@@ -138,17 +138,17 @@ not depend back on a platform implementation.
 
 ## Documentation
 
-- [Overview](https://kernel.smithers.sh)
-- [Quickstart](https://kernel.smithers.sh/quickstart/)
-- [Guard a host bundle](https://kernel.smithers.sh/guides/guard-a-host-bundle/)
-- [Write a capability policy](https://kernel.smithers.sh/guides/write-a-capability-policy/)
-- [Decoration in place](https://kernel.smithers.sh/concepts/decoration-in-place/)
-- [API reference](https://kernel.smithers.sh/reference/api/)
-- [Troubleshooting](https://kernel.smithers.sh/troubleshooting/), which lists
+- [Overview](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/kernel/docs)
+- [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/quickstart.md)
+- [Guard a host bundle](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/guides/guard-a-host-bundle.md)
+- [Write a capability policy](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/guides/write-a-capability-policy.md)
+- [Decoration in place](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/concepts/decoration-in-place.md)
+- [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md)
+- [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/troubleshooting.md), which lists
   every refusal this package raises, what it means, and what to change.
 
 `@smthrs/kernel` is one package of the Smithers durable flow engine, which
-ships whole as [`@smthrs/flows`](https://flows.smithers.sh).
+ships whole as [`@smthrs/flows`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/docs).
 
 ## License
 

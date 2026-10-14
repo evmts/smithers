@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://artifacts.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/artifacts/docs
 
 The content-addressed artifact store: bytes addressed by their own SHA-256
 digest. You hand it a `Uint8Array`, it hands back a 64 character address, and
@@ -92,7 +92,7 @@ modification time fence, and `ArtifactBackupLease` keeps a sweep from deleting
 a blob a running backup is still copying.
 
 Every export, option, and error code is in the
-[API reference](https://artifacts.smithers.sh/reference/api/).
+[API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/artifacts/docs/api.md).
 
 ## What it guarantees
 
@@ -133,7 +133,7 @@ caller-owned buffer, and every successful `get` returns a new byte array.
 `ArtifactMissing` is an ordinary miss, and `ArtifactCorruption` is an integrity
 failure. `digest_failed`, `unavailable`, and `transport_failed` describe host
 or transport failures whose retryability depends on the host and operation.
-[Troubleshooting](https://artifacts.smithers.sh/troubleshooting/) lists each
+[Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/artifacts/docs/troubleshooting.md) lists each
 one with what to change.
 
 ## Prior art
@@ -149,14 +149,14 @@ the fsync before the rename are
 and the wire protocol, CAS blobs under `/cas/base16-key`, is
 [`HttpCacheClient`](https://github.com/bazelbuild/bazel/blob/master/src/main/java/com/google/devtools/build/lib/remote/http/HttpCacheClient.java).
 Where this package deviates, and why, is in
-[content addressing](https://artifacts.smithers.sh/concepts/content-addressing/).
+[content addressing](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/artifacts/docs/concepts/content-addressing.md).
 
 ## Where it fits
 
 This package is one piece of the Smithers durable flow engine, whose whole
-surface is re-exported by [`@smthrs/flows`](https://flows.smithers.sh). Inside
+surface is re-exported by [`@smthrs/flows`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/docs). Inside
 that engine the artifact store is the byte half of the result cache:
-[`@smthrs/step-cache`](https://step-cache.smithers.sh) records what a step
+[`@smthrs/step-cache`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/step-cache/docs) records what a step
 returned, and any part of that result too large to sit inline is spilled here
 and referenced by digest.
 
@@ -167,7 +167,7 @@ Reclaiming published artifacts is an explicit operation, never a side effect of
 a store call. The `.tmp-*` sweep in `layerFileSystem` reclaims crash orphans
 only. `ArtifactSweep` is the deletion surface, and the mark phase that decides
 what is live belongs to
-[`@smthrs/engine-store`](https://engine-store.smithers.sh).
+[`@smthrs/engine-store`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/engine-store/docs).
 
 ## License
 

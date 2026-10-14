@@ -21,6 +21,38 @@ package, is the first section. The full schemas are in the [API reference](./api
 | `@smthrs/platform-node`, `@effect/sql-sqlite-node`                       | `@smthrs/flows` 1.0.0-rc.4 or earlier, which left the Node host to the program.                           | `npm install @smthrs/flows@next`                                         |
 | `@smthrs/platform-bun`, `@effect/platform-bun`, `@effect/sql-sqlite-bun` | `@smthrs/flows/BunRuntime` without its packages.                                                          | Install the [Bun](./installation.md#bun-durable-execution) line.         |
 
+## ERR_MODULE_NOT_FOUND: Cannot find module effect/dist/unstable/http/FetchHttpClient.js
+
+**Symptom.** `node` exits before your program runs:
+`Error [ERR_MODULE_NOT_FOUND]: Cannot find module '.../node_modules/effect/dist/unstable/http/FetchHttpClient.js'`,
+imported from an `@smthrs/*` package such as `@smthrs/artifacts`.
+
+**Cause.** The project has `@smthrs/flows` 1.0.0-rc.5 or earlier beside
+`effect` 4.0.4, and those releases import a module that `effect` 4.0.4 does not
+ship. pnpm 11 installs such a release when you ask for `@smthrs/flows@next`
+within 24 hours of a new candidate: its `minimumReleaseAge` holds the new one
+back and `next` resolves to the one before it.
+
+**Fix.** Install 1.0.0-rc.6 or later. With npm, `npm install @smthrs/flows@next`.
+With pnpm 11, run the exact-version `pnpm add` line from
+[Installation](./installation.md#install-the-package), which pnpm installs the
+day it is published.
+
+## JjError: No jj on PATH
+
+**Symptom.** The host stops while it is being built, before any flow runs:
+`JjError [@smthrs/jj/JjError]: jj: No jj on PATH. Install jj (https://jj-vcs.github.io) or set SMITHERS_JJ_PATH.`
+
+**Cause.** Every `NodeRuntime` and `BunRuntime` host includes the jj service,
+and building it runs `jj --version`. The engine uses jj for workspace snapshots,
+so a host without jj refuses to start rather than fail mid-run. A jj older than
+0.39.0 is refused the same way, with the version it found.
+
+**Fix.** Install [jj](https://jj-vcs.github.io/jj/latest/install-and-setup/)
+0.39.0 or later and put it on `PATH`. On macOS, `brew install jj`; the linked
+page covers Linux and Windows. To use a binary that is not on `PATH`, set
+`SMITHERS_JJ_PATH` to its path.
+
 ## RuntimeConfigurationError
 
 **Symptom.** `layer`, `make`, `layerHost`, or `storage` throws before opening
@@ -133,7 +165,7 @@ rather than dropping events. Dropping would make a later replay wrong, so the
 write fails loudly instead.
 
 **Fix.** Reduce the write rate, or compose the journal yourself through
-[`@smthrs/journal`](/api/journal) with different capacity and overflow settings,
+[`@smthrs/journal`](../journal/docs/api.md) with different capacity and overflow settings,
 using `NodeRuntime.storage` or `layer` as the seam.
 
 ## SandboxedFlowError

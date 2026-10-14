@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://crypto.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/crypto/docs
 
 Strict SHA-256 hashing for TypeScript. The package accepts well-formed
 JavaScript text or a `Uint8Array`, hashes a byte snapshot, and returns one
@@ -58,7 +58,7 @@ This package adds no key, no salt, and no iteration count, so it defends
 against nothing that SHA-256 alone does not: not length extension, not
 brute-force recovery of a low-entropy input, and not a `Crypto` service that
 returns bytes of its own choosing. The full statement, with the guarantees the
-package does make, is at https://crypto.smithers.sh/contract/.
+package does make, is at https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/crypto/docs/contract.md.
 
 ## Input contract
 
@@ -106,10 +106,10 @@ is an unsatisfied Effect requirement and therefore a configuration defect, not a
 `A digest cannot be converted back into its source bytes`.
 
 Canonical value serialization belongs to
-[`@smthrs/canonical`](https://canonical.smithers.sh). Domain-specific key
-formats belong to [`@smthrs/keys`](https://keys.smithers.sh). All three are
+[`@smthrs/canonical`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/canonical/docs). Domain-specific key
+formats belong to [`@smthrs/keys`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/keys/docs). All three are
 part of the Smithers durable flow engine, which
-[`@smthrs/flows`](https://flows.smithers.sh) re-exports as one dependency, so
+[`@smthrs/flows`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/docs) re-exports as one dependency, so
 a program that already depends on flows reaches this module as
 `Crypto.digestSync` with nothing further to install. Full API documentation is
-at https://crypto.smithers.sh/reference/api/.
+at https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/crypto/docs/api.md.

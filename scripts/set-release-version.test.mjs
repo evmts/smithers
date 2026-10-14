@@ -1,6 +1,9 @@
 import assert from "node:assert/strict"
+import { readdirSync, readFileSync } from "node:fs"
+import { join } from "node:path"
 import test from "node:test"
 import { changelogMismatches, mismatches, readManifests, readVersionedManifests, releaseChangelog, retarget, retargetSource, sourceMismatches, versionedChangelogs, versionedSources, versionedTemplates } from "./set-release-version.mjs"
+import { repoRoot } from "./workspace-packages.mjs"
 
 const workspaceNames = new Set(["@smthrs/kernel", "@smthrs/flows"])
 
@@ -204,6 +207,28 @@ test("the storage docs quote the release through versioned sources, on the packa
   const rewritten = rows.reduce((current, row) => row.pattern.test(current) ? retargetSource(current, "1.0.0-rc.10", row) : current, text)
   // "Smithers 1.0 database" names the format, not the release, and stays.
   assert.equal(rewritten, text.replaceAll("1.0.0-rc.0", "1.0.0-rc.10"))
+})
+
+test("every Flows page that gives the pnpm install line names the version the bump writes", () => {
+  // pnpm 11 holds `@next` back for 24 hours after a release, so the pages pin
+  // the version, and a pin the bump does not know would go stale silently.
+  const rows = versionedSources.filter(({ declaration }) => declaration === "the pnpm install line")
+  const directory = join(repoRoot, "packages/smithers/flows")
+  const pages = ["README.md", ...readdirSync(join(directory, "docs"), { recursive: true }).map((entry) => join("docs", String(entry)))]
+    .filter((page) => page.endsWith(".md"))
+    .map((page) => join("packages/smithers/flows", page))
+  const giving = pages.filter((page) => /pnpm add\s+@smthrs\/flows@/.test(readFileSync(join(repoRoot, page), "utf8")))
+  assert.deepEqual(rows.map(({ path }) => path).sort(), giving.sort())
+  for (const page of giving) {
+    // retargetSource rewrites the first match only, so a page gives the line once.
+    const lines = readFileSync(join(repoRoot, page), "utf8").match(/pnpm add\s+@smthrs\/flows@/g)
+    assert.equal(lines.length, 1, page + " gives the pnpm install line more than once")
+  }
+  const row = rows[0]
+  assert.equal(
+    retargetSource("run `pnpm add @smthrs/flows@1.0.0-rc.6 effect` instead", "1.0.0-rc.7", row),
+    "run `pnpm add @smthrs/flows@1.0.0-rc.7 effect` instead"
+  )
 })
 
 test("releaseChangelog moves the unreleased entries under a dated heading for the version", () => {

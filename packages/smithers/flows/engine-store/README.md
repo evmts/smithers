@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://engine-store.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/engine-store/docs
 
 The durable half of the Smithers flow engine. It persists every step a flow
 takes to a SQLite database, so a flow that crashes, is killed, or waits for a
@@ -67,11 +67,11 @@ than at run time. Run the schema migrations before any SQL-backed service reads
 the database, and provide `OwnerIdentity.layer` unless the host mints its own
 owner tokens.
 
-[The quickstart](https://engine-store.smithers.sh/quickstart/) wires all of it
+[The quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/quickstart.md) wires all of it
 over one SQLite file and watches a sealed step replay after a restart.
 
 If you want the wiring rather than control over it, reach for
-[`@smthrs/flows`](https://flows.smithers.sh) instead. It ships `NodeRuntime`,
+[`@smthrs/flows`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/docs) instead. It ships `NodeRuntime`,
 which composes this package with the flow language, the journal, the run and
 cache stores, and the artifact tier over one file.
 
@@ -124,20 +124,20 @@ runtime.
 
 ## Documentation
 
-The full documentation is at <https://engine-store.smithers.sh>:
+The full documentation is at <https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/engine-store/docs>:
 
-- [Installation](https://engine-store.smithers.sh/installation/): runtime
+- [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/installation.md): runtime
   requirements, import forms, and the storage packages a runnable composition
   adds.
-- [Quickstart](https://engine-store.smithers.sh/quickstart/): compose a durable
+- [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/quickstart.md): compose a durable
   engine over SQLite and watch a step replay after a restart.
-- [Compose a durable engine](https://engine-store.smithers.sh/guides/compose-a-durable-engine/):
+- [Compose a durable engine](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/guides/compose-a-durable-engine.md):
   the required and optional services, and what each one changes.
-- [API reference](https://engine-store.smithers.sh/reference/api/): every public
+- [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/api.md): every public
   export, with signatures and error codes.
-- [Observe executions and page runs](https://engine-store.smithers.sh/guides/observe-executions/):
+- [Observe executions and page runs](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/guides/observe-executions.md):
   coherent snapshots, filtered keyset pages, durable children and revisioned catch-up.
-- [Troubleshooting](https://engine-store.smithers.sh/troubleshooting/): each
+- [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/troubleshooting.md): each
   typed failure, its cause, and its fix.
 
 See also [durable execution](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/README.md)

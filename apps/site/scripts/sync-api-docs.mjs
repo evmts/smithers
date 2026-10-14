@@ -13,7 +13,7 @@
  * Usage: node apps/site/scripts/sync-api-docs.mjs [--check]
  */
 import { readdirSync, readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync } from "node:fs"
-import { join, relative, dirname } from "node:path"
+import { join, relative, dirname, posix } from "node:path"
 import { fileURLToPath } from "node:url"
 import { libraryPackages } from "../../../scripts/workspace-packages.mjs"
 import { mapMarkdownProse } from "./docs-text.mjs"
@@ -102,8 +102,21 @@ function rewriteLinks(text, pkg) {
   // smithers.sh/migration/1.0 -> site-relative. The guide is the page at
   // /migration/1.0/ (migration-guide.mjs), outside the /docs tree.
   out = out.replace(/\]\(https:\/\/smithers\.sh\/migration\/1\.0(#[^)]+)?\)/gi, (_m, frag) => `](/migration/1.0/${frag ?? ""})`)
-  // Relative links remain precise file links in the package's source docs.
+  // A source page links another package by a relative path, so the link works
+  // where the page is read on GitHub. Another package's api.md is a page on
+  // this site; any other file outside this docs folder is read on GitHub.
   const repoRel = relative(repoRoot, pkg.apiPath).split("\\").join("/")
+  out = out.replace(
+    /\]\(((?:\.\.\/)+(?:[a-z0-9_.-]+\/)*[a-z0-9_.-]+\.md)(#[^)]+)?\)/gi,
+    (_m, path, frag) => {
+      const target = posix.join(posix.dirname(repoRel), path)
+      const short = apiShortByPath.get(target)
+      return short === undefined
+        ? `](https://github.com/smithersai/smithers/blob/main/${target}${frag ?? ""})`
+        : `](/docs/reference/api/${short}/${frag ?? ""})`
+    }
+  )
+  // Relative links remain precise file links in the package's source docs.
   const docsDirUrl = `https://github.com/smithersai/smithers/blob/main/${dirname(repoRel)}`
   const relTarget = (file, frag) => `${docsDirUrl}/${file.replace(/^\.\//, "")}${frag ?? ""}`
   out = out.replace(/\]\((\.\/)?((?:[a-z0-9-]+\/)*[a-z0-9-]+\.md)(#[^)]+)?\)/gi, (_m, _dot, f, frag) => `](${relTarget(f, frag)})`)
@@ -169,6 +182,10 @@ ${mdxBody}
 
 const packages = discover()
 const apiPackageNames = new Set(packages.map((pkg) => pkg.name))
+/** Repository path of each package's api.md -> its page under /docs/reference/api/. */
+const apiShortByPath = new Map(
+  packages.map((pkg) => [relative(repoRoot, pkg.apiPath).split("\\").join("/"), pkg.name.replace("@smthrs/", "")])
+)
 if (packages.length === 0) {
   throw new Error("sync-api-docs: no published packages with docs/api.md found")
 }

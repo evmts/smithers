@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://flows.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/docs
 
 The whole [Smithers](https://smithers.sh) durable flow engine in one dependency.
 It re-exports every engine package under a single import, and it adds the two
@@ -21,10 +21,24 @@ not.
 ## Install
 
 ```bash
+npm init -y && npm pkg set type=module
 npm install @smthrs/flows@next effect
 ```
 
-That line is all a Node program needs. It requires Node.js 26.4.0 or later.
+With pnpm 11, run `pnpm add @smthrs/flows@1.0.0-rc.6 effect` instead, then
+`pnpm approve-builds esbuild`. pnpm 11 holds a release back for its first 24
+hours, so `@next` installs the previous candidate for a day after each release.
+
+A Node program needs two things on the machine:
+
+- Node.js 26.4.0 or later.
+- [jj](https://jj-vcs.github.io/jj/latest/install-and-setup/) 0.39.0 or later
+  on `PATH`, or `SMITHERS_JJ_PATH` naming the binary. Every `NodeRuntime` host
+  runs `jj --version` when it starts and stops with `No jj on PATH` without it.
+  On macOS, `brew install jj`; the linked page covers Linux and Windows.
+
+`npm pkg set type=module` makes the project an ES module, so `node` runs the
+example below, which ends in a top-level `await`, without a warning.
 [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/installation.md)
 covers the `effect` range, the import forms, and the packages Bun and the
 browser add. The
@@ -87,7 +101,7 @@ the engine answers a completed one from the journal on disk.
 
 ## What the barrel exports
 
-[`@smthrs/flow`](https://flow.smithers.sh) is re-exported flat, so `Action`,
+[`@smthrs/flow`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/README.md) is re-exported flat, so `Action`,
 `DurableClock`, `DurableDeferred`, `DurableQueue`, `Flow`, `FlowRuntime`,
 `Graph`, `HumanTask`, `Interpreter`, `Poll`, `RetryPolicy`, `Sleep`,
 `StepIdentity`, and `WaitFor` sit at the top level. Writing a flow is the point
@@ -97,9 +111,11 @@ Every other engine package is a namespace, the way `effect`'s own index does
 it, so `Kernel.ChildProcessSpawner.layerNoop` and `RunStore.RunStore.layer`
 still read as themselves rather than collapsing into one shared namespace.
 `namespaces` is the sorted runtime list of every name the barrel exports, and
-the [API reference](https://flows.smithers.sh/reference/api/) has the full
+the [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/api.md) has the full
 table. Depend on an individual engine package instead when a narrower
-dependency surface is worth the extra imports.
+dependency surface is worth the extra imports. Install it at `@next`, the tag
+that carries the 1.0 release candidates (`npm install @smthrs/engine@next`);
+`latest` on several engine packages still names a 0.x release.
 
 The `@smthrs/platform-*` bundles are deliberately absent, for the same reason
 `effect`'s index does not re-export `@effect/platform-node`: a platform bundle
@@ -107,26 +123,28 @@ is chosen by the program that runs, not by the library it depends on. Platform
 implementations and test doubles are imported from their own packages, among
 them `@smthrs/platform-node`, `@smthrs/testing/TestHost`,
 `@smthrs/database/node/NodeDatabase`, and `@smthrs/journal/test/TestJournal`.
+Install those at `@next` too, for example
+`npm install --save-dev @smthrs/testing@next`.
 
 ## Bundling is not durable execution
 
 The root entry point bundles for a browser, and so does every package root it
 re-exports. What bundles is authoring and inspection: declaring flows, reading a
 plan, decoding a journal event.
-[Installation](https://flows.smithers.sh/installation/) names which entry points
-carry that guarantee, and
-[`@smthrs/platform-browser`](https://platform-browser.smithers.sh) is the host a
+[Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/installation.md#bundling-for-a-browser-is-not-durable-execution)
+names which entry points carry that guarantee, and
+[`@smthrs/platform-browser`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/docs/README.md) is the host a
 tab runs them on.
 
 [RC support matrix](https://github.com/smithersai/smithers/blob/main/apps/site/docs/reference/support-matrix.md) lists runtime evidence limits.
 
 Durable execution is provided by the Node and Bun compositions over SQLite or
-PostgreSQL. See [database configuration](./database/docs/concepts/sqlite-only.md)
+PostgreSQL. See [database configuration](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/concepts/sqlite-only.md)
 for selection, schema identity, and transaction guarantees.
 The shared engine consumes injected Effect services. Browser-safe authoring and
 inspection do not establish browser or edge durable execution. Native drivers
 remain explicit subpaths so the root does not import `node:sqlite` or `bun:sqlite`.
-See [runtime portability](./docs/concepts/runtime-portability.md) for the contract
+See [runtime portability](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/concepts/runtime-portability.md) for the contract
 and the native cross-runtime restart regression.
 
 ## The Node runtime
@@ -156,23 +174,23 @@ That call adds the contained Node host, the kernel's guarded host surface over
 an unattended grant store, the default step boundary and workspace sandbox, a
 process-table liveness probe, and signal handling that releases every run the
 host owns before it shuts down.
-[Stand up a durable Node runtime](https://flows.smithers.sh/guides/stand-up-a-node-runtime/)
+[Stand up a durable Node runtime](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/guides/stand-up-a-node-runtime.md)
 compares the four entry points and says which one a given program should call.
 
 ## Documentation
 
-The published site is https://flows.smithers.sh.
+The docs are the [`docs/`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/docs) folder of this package.
 
-- [Quickstart](https://flows.smithers.sh/quickstart/): one flow end to end on a
+- [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/quickstart.md): one flow end to end on a
   real durable engine, including the capability its body needs.
-- [The aggregate surface](https://flows.smithers.sh/concepts/aggregate-surface/):
+- [The aggregate surface](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/concepts/aggregate-surface.md):
   why the authoring names are flat, the infrastructure packages are namespaces,
   and the platform bundles are absent.
-- [Run a child flow in a sandbox](https://flows.smithers.sh/guides/run-a-child-flow-in-a-sandbox/):
+- [Run a child flow in a sandbox](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/guides/run-a-child-flow-in-a-sandbox.md):
   the tier where the child's own code executes on another machine.
-- [API reference](https://flows.smithers.sh/reference/api/): every public
+- [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/api.md): every public
   export, with the options each entry point takes.
-- [Troubleshooting](https://flows.smithers.sh/troubleshooting/): every typed
+- [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/troubleshooting.md): every typed
   refusal these modules raise, and what to change.
 
 ## Runtime portability is a required contract

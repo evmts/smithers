@@ -96,6 +96,20 @@ export const versionedSources = [
       pattern: /(is not a Smithers 1\.0 database \()(\S+)( does not load a 0\.x smithers\.db\))/
     }
   ]),
+  // pnpm 11 holds a release back for 24 hours, so `@smthrs/flows@next` installs
+  // the previous candidate for a day after each release. The Flows pages give
+  // pnpm the exact version instead, and the bump keeps it current.
+  ...[
+    "packages/smithers/flows/README.md",
+    "packages/smithers/flows/docs/README.md",
+    "packages/smithers/flows/docs/installation.md",
+    "packages/smithers/flows/docs/quickstart.md"
+  ].map((path) => ({
+    path,
+    package: "packages/smithers/flows",
+    declaration: "the pnpm install line",
+    pattern: /(pnpm add\s+@smthrs\/flows@)(\S+)(\s+effect)/
+  })),
   {
     path: "packages/smithers/flows/database/docs/troubleshooting.md",
     package: "packages/smithers/flows/database",

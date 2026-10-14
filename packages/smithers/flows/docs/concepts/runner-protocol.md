@@ -8,7 +8,7 @@ sidebar:
 There are two tiers of sandboxing in this stack, and mixing them up is the
 usual source of confusion.
 
-`Sandbox.layerHost` from [`@smthrs/sandbox`](/api/sandbox) places a body's
+`Sandbox.layerHost` from [`@smthrs/sandbox`](../../sandbox/docs/api.md) places a body's
 **side effects** on a machine. The action's TypeScript keeps running in the
 engine host; only its file operations and child processes are routed to a held
 session.

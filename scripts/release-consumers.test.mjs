@@ -485,6 +485,10 @@ test("the Flows quickstart imports only the packages its one install line names"
   // `effect` carries no version: the line installs the release the registry
   // calls latest, which the supported range has to admit (#3839).
   assert.deepEqual(quickstart.packages, ["@smthrs/flows@next", "effect"])
+  // pnpm 11 holds `@next` back for a day after a release, so pnpm gets the
+  // version the bump writes (scripts/set-release-version.mjs).
+  const { version } = JSON.parse(readFileSync(join(repoRoot, "packages/smithers/flows/package.json"), "utf8"))
+  assert.deepEqual(quickstart.pnpmPackages, ["@smthrs/flows@" + version, "effect"])
   assert.deepEqual(importedPackages(quickstart.program), ["@smthrs/flows", "effect"])
   assert.deepEqual(quickstart.run, ["node", "quickstart.ts"])
   assert.equal(quickstart.printed, "the note")
@@ -584,6 +588,7 @@ test("the quickstart consumer passes only when the install line brings what the 
       commands: ["npm init -y && npm pkg set type=module", install, 'mkdir -p workspace && echo "the note" > workspace/note.txt'],
       install,
       packages: install.split(" ").slice(2),
+      pnpmPackages: ["@smthrs/flows@" + version, "effect"],
       program: [
         'import { read } from "@smthrs/flows/NodeRuntime"',
         'import * as Effect from "effect/Effect"',

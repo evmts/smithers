@@ -39,7 +39,7 @@ const host = NodeRuntime.layerHost(
 
 What it adds over `layer`:
 
-- The complete Node host from [`@smthrs/platform-node`](/api/platform-node),
+- The complete Node host from [`@smthrs/platform-node`](../../platform-node/docs/api.md),
   with process containment on. A spawned process gets its own process group, is
   signalled and then killed when its action's scope closes, and is recorded in
   the `ProcessLedger` so the next incarnation of this host reaps whatever a
@@ -82,14 +82,14 @@ about an owner it never looked at, and the engine will steal runs out of live
 processes on the strength of it.
 
 - A single-machine host passes `Ownership.sameHostPidProbe` from
-  [`@smthrs/run-store`](/api/run-store), which asks this machine's process
+  [`@smthrs/run-store`](../../run-store/docs/api.md), which asks this machine's process
   table for owners on the same host. For a foreign host it returns `false`
   without probing a PID, leaving the expired lease to decide takeover.
   `RunStore.steal` still requires the lease to have expired.
 - A multi-process deployment answers from its supervisor or lease system.
 
 `layerHost` defaults `isAlive` to `HostLiveness.isAlive({ hostId })` from
-[`@smthrs/platform-node`](/api/platform-node). This probe returns `true` for
+[`@smthrs/platform-node`](../../platform-node/docs/api.md). This probe returns `true` for
 foreign-host owners, refusing takeover even after their lease expires.
 
 ## Drop to `layer` when you own the host
@@ -98,7 +98,7 @@ foreign-host owners, refusing takeover even after their lease expires.
 `FileSystem`, and `Jj` stay requirements, and the step boundary and workspace
 sandbox are arguments. `WorkspaceSandbox.layerFileSystem()` needs a
 `FileSystem` that makes descriptor-relative, no-follow requests, such as
-`AtomicFileSystem.layer` from [`@smthrs/platform-node`](/api/platform-node);
+`AtomicFileSystem.layer` from [`@smthrs/platform-node`](../../platform-node/docs/api.md);
 over a plain `NodeFileSystem.layer` it fails to build with `host_unavailable`.
 
 ```ts

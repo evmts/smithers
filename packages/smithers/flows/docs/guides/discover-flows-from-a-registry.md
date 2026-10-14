@@ -12,7 +12,7 @@ registration phase reads from: third for `layerHost`, fifth for `make` and
 
 ## Pass the project registry
 
-[`@smthrs/registry`](/api/registry) discovers a project's flows from
+[`@smthrs/registry`](../../../agent/registry/docs/api.md) discovers a project's flows from
 `<root>/flows/**` and the installed packs. `Registry.layerProject` builds that
 registry; `Executable.layer` is the registration that turns every discovered
 descriptor into a registered durable flow.
@@ -41,7 +41,7 @@ const host = NodeRuntime.layerHost(
 
 `delegates` is the list of flows a descriptor may delegate to. Building them,
 and the rest of the discovery model, belongs to that package:
-[run a discovered flow](/pkg/registry/guides/run-a-discovered-flow).
+[run a discovered flow](../../../agent/registry/docs/guides/run-a-discovered-flow.md).
 
 The lower-level constructors take the boundary and sandbox layers before
 registration and the registry:
@@ -98,4 +98,4 @@ host can print the refusals at startup rather than letting an operator discover
 them when a launch fails inside the runtime.
 
 A project with no `flows/` directory is not a failure. It has no flows yet,
-which is the state [`smthrs init`](/cli/init) leaves behind.
+which is the state [`smthrs init`](../../../docs/reference/cli/README.md) leaves behind.

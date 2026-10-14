@@ -144,13 +144,13 @@ provider for a machine at all.
 
 ## Choose a provider
 
-Providers come from [`@smthrs/sandbox`](/api/sandbox), which the barrel
+Providers come from [`@smthrs/sandbox`](../../sandbox/docs/api.md), which the barrel
 re-exports as the `Sandbox` namespace. It ships several, and
 `DirectorySandbox` is the one to start with: its machines are scratch
 directories on this host, so the whole placement path runs with no container
 runtime. It takes the filesystem and the spawner as values, which a Node
 program reads from a contained host. Provide `NodeHost.layerContained()` with
-a `ProcessLedger`; the [sandbox quickstart](https://sandbox.smithers.sh/quickstart/)
+a `ProcessLedger`; the [sandbox quickstart](../../sandbox/docs/quickstart.md)
 shows a complete composition. A raw or deadline-only spawner is refused before
 the directory is created:
 

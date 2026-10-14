@@ -540,9 +540,10 @@ export const runConsumerProfile = async (profile, manager, registryUrl, { runtim
 
 /**
  * The published Flows quickstart as a stranger meets it: the commands of its
- * set-up block, the program its `ts` blocks paste together, the command that
- * runs it and the line it prints. Read from the page, never restated here, so
- * the page and the gate cannot disagree.
+ * set-up block, the `pnpm add` line it gives pnpm 11 instead of the npm one,
+ * the program its `ts` blocks paste together, the command that runs it and the
+ * line it prints. Read from the page, never restated here, so the page and the
+ * gate cannot disagree.
  */
 export const readQuickstart = (root = repoRoot) => {
   const source = readFileSync(join(root, "packages/smithers/flows/docs/quickstart.md"), "utf8")
@@ -558,10 +559,13 @@ export const readQuickstart = (root = repoRoot) => {
   assert.equal(installs.length, 1, "quickstart must give exactly one install line")
   const approvals = [...source.matchAll(/`pnpm approve-builds ([^`]+)`/g)]
   assert.equal(approvals.length, 1, "quickstart must name the one pnpm approve-builds command")
+  const pnpmAdds = [...source.matchAll(/`pnpm add ([^`]+)`/g)]
+  assert.equal(pnpmAdds.length, 1, "quickstart must give the one pnpm add line")
   return {
     commands,
     install: installs[0],
     packages: installs[0].split(" ").slice(2),
+    pnpmPackages: pnpmAdds[0][1].split(/\s+/),
     approveBuilds: approvals[0][1].split(" "),
     program: fenced("ts").join("\n\n") + "\n",
     run: run.split(" "),
@@ -615,8 +619,10 @@ export const runQuickstartConsumer = async (
   try {
     await writeFile(join(consumer, ".npmrc"), "@smthrs:registry=" + registryUrl + "\n")
     const managerVersion = (await successful(manager, ["--version"], consumer)).output.trim()
-    // The page says a pnpm project runs `pnpm add` with the same packages.
-    const installed = [manager, manager === "npm" ? "install" : "add", ...quickstart.packages]
+    // The page gives pnpm its own `pnpm add` line: pnpm 11 holds a tag's newest
+    // release back for 24 hours, so the line names the exact version.
+    const packages = manager === "npm" ? quickstart.packages : quickstart.pnpmPackages
+    const installed = [manager, manager === "npm" ? "install" : "add", ...packages]
     for (const command of quickstart.commands) {
       if (command !== quickstart.install) {
         await successful("sh", ["-c", command], consumer)
@@ -652,7 +658,7 @@ export const runQuickstartConsumer = async (
       await successful(manager, ["install", ...flags], consumer)
     }
     const declared = Object.keys(JSON.parse(await readFile(join(consumer, "package.json"), "utf8")).dependencies).sort()
-    const named = quickstart.packages.map(specName).sort()
+    const named = packages.map(specName).sort()
     assert.deepEqual(declared, named, "the project declares exactly the packages on the install line")
     const { version: effectVersion } = assertSupportedEffect(consumer, manager + " quickstart")
     if (manager === "npm" && latestEffect !== undefined) {

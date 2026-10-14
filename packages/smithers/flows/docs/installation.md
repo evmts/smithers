@@ -11,15 +11,25 @@ sidebar:
 npm install @smthrs/flows@next effect
 ```
 
-The `next` tag carries the 1.0 release candidates. With pnpm, run `pnpm add`
-with the same two packages, then `pnpm approve-builds esbuild`. pnpm 11 ends
+The `next` tag carries the 1.0 release candidates. With pnpm 11, name the
+version instead of the tag, then approve `esbuild`'s install script:
+
+```bash
+pnpm add @smthrs/flows@1.0.0-rc.6 effect
+pnpm approve-builds esbuild
+```
+
+pnpm 11 holds a release back for its first 24 hours (`minimumReleaseAge`), so
+`@smthrs/flows@next` installs the previous candidate for a day after each
+release. An exact version is installed the day it is published: pnpm records
+it under `minimumReleaseAgeExclude` in `pnpm-workspace.yaml`. pnpm 11 also ends
 the install with `ERR_PNPM_IGNORED_BUILDS` until the project allows or denies
 the install script of `esbuild`; the packages are already installed, and
 `approve-builds` records the choice in `pnpm-workspace.yaml` so later installs
 succeed.
 
 `@smthrs/flows` installs the twenty engine packages it re-exports, the Node host
-[`@smthrs/platform-node`](/api/platform-node), the Node SQLite driver
+[`@smthrs/platform-node`](../platform-node/docs/api.md), the Node SQLite driver
 `@effect/sql-sqlite-node`, and `esbuild`, which `SandboxedFlow` uses to bundle a
 guest entry module. `effect` is a peer dependency. Install it yourself, because
 your program imports it directly and pnpm links only the packages a project
@@ -30,6 +40,11 @@ declares.
 - Node.js 26.4.0 or later with local SQLite, which is what `package.json`
   declares in `engines`. That is what durable execution needs, and it is also
   what runs a `.ts` file directly, with no build step.
+- [jj](https://jj-vcs.github.io/jj/latest/install-and-setup/) 0.39.0 or later
+  on `PATH`, or `SMITHERS_JJ_PATH` naming the binary. Every `NodeRuntime` and
+  `BunRuntime` host includes the jj service and runs `jj --version` when it is
+  built, so a host stops with `No jj on PATH` before any flow runs. On macOS,
+  `brew install jj`; the linked page covers Linux and Windows.
 - [`effect`](https://effect.website) in the range `^4.0.4`, as a peer
   dependency. This is an Effect library throughout: a flow's payload and result
   are Effect schemas, an action's implementation is an `Effect`, and a host is
@@ -66,11 +81,11 @@ index does not re-export `@effect/platform-node`: one import must not resolve
 `node:child_process`, ZenFS, and Bun at once. A platform is reached through an
 explicit subpath or its own package:
 
-| Runtime | Import                      | Platform package                                    | Installed by                            |
-| ------- | --------------------------- | --------------------------------------------------- | --------------------------------------- |
-| Node.js | `@smthrs/flows/NodeRuntime` | [`@smthrs/platform-node`](/api/platform-node)       | `@smthrs/flows`                         |
-| Bun     | `@smthrs/flows/BunRuntime`  | [`@smthrs/platform-bun`](/api/platform-bun)         | You. See [Bun](#bun-durable-execution). |
-| Browser | `@smthrs/platform-browser`  | [`@smthrs/platform-browser`](/api/platform-browser) | You. It hosts authoring and inspection. |
+| Runtime | Import                      | Platform package                                              | Installed by                            |
+| ------- | --------------------------- | ------------------------------------------------------------- | --------------------------------------- |
+| Node.js | `@smthrs/flows/NodeRuntime` | [`@smthrs/platform-node`](../platform-node/docs/api.md)       | `@smthrs/flows`                         |
+| Bun     | `@smthrs/flows/BunRuntime`  | [`@smthrs/platform-bun`](../platform-bun/docs/api.md)         | You. See [Bun](#bun-durable-execution). |
+| Browser | `@smthrs/platform-browser`  | [`@smthrs/platform-browser`](../platform-browser/docs/api.md) | You. It hosts authoring and inspection. |
 
 `@smthrs/platform-node` supplies the Node host, containment, process reaping,
 and the liveness probe. It carries its own copy of `@effect/platform-node`, and
@@ -96,11 +111,15 @@ precisely so importing the root never opens `node:sqlite`.
 
 The barrel is a convenience, not a seam. A library published to other consumers
 usually wants the narrower dependency: depend on
-[`@smthrs/flow`](/api/flow) alone to declare flows and actions, or on
-[`@smthrs/engine`](/api/engine) and
-[`@smthrs/engine-store`](/api/engine-store) to execute them. Reach for
+[`@smthrs/flow`](../flow/docs/api.md) alone to declare flows and actions, or on
+[`@smthrs/engine`](../engine/docs/api.md) and
+[`@smthrs/engine-store`](../engine-store/docs/api.md) to execute them. Reach for
 `@smthrs/flows` in the program that composes the whole engine, which is where
 one dependency saves you twenty.
+
+Install an individual package at `@next` as well, for example
+`npm install @smthrs/flow@next effect`. `latest` on several engine packages,
+among them `@smthrs/engine` and `@smthrs/testing`, still names a 0.x release.
 
 ## Next step
 

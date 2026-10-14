@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-**Documentation:** https://platform-node.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-node/docs
 
 The Node.js Host bundle for Smithers. One layer, `NodeHost.layer`, provides the
 five services a program runs its side effects through: a filesystem, a path
@@ -30,7 +30,7 @@ general-purpose adapter makes, so this package implements them itself:
 
 `@smthrs/platform-node` is not on npm at 1.0.0-rc.0. Its source lives in the
 [smithers repository](https://github.com/smithersai/smithers), and the
-[installation page](https://platform-node.smithers.sh/installation/) covers how
+[installation page](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/installation.md) covers how
 to depend on it from a checkout and the `effect` version it pins.
 
 On POSIX, filesystem confinement requires Node.js 26.4.0 or later and the
@@ -131,7 +131,7 @@ effect and cancellation is fiber interruption, not an `AbortSignal`.
 provided here as `NodeHttpClient.layerUndici`. Undici installs no redirect
 interceptor, so every hop stays a separate, checkable request.
 
-Both are what lets [`@smthrs/kernel`](https://kernel.smithers.sh) check
+Both are what lets [`@smthrs/kernel`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/kernel/docs) check
 `proc:spawn` against the rendered command line before any process starts, and
 `net:get` / `net:post` against the host of every URL a request reaches,
 redirect targets included. Wrap the bundle in its `HostServices.layer` to get
@@ -139,7 +139,7 @@ that permission-aware projection.
 
 ## Where this sits
 
-[`@smthrs/flows`](https://flows.smithers.sh) is the durable flow engine: flows,
+[`@smthrs/flows`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/docs) is the durable flow engine: flows,
 actions, the journal, and the runtime that replays a crashed run from where it
 stopped. It deliberately re-exports no `@smthrs/platform-*` package, for the
 same reason `effect`'s own index does not re-export `@effect/platform-node`:
@@ -150,14 +150,14 @@ and its `NodeRuntime` composes `NodeHost.layerContainedAt` plus
 
 ## Read next
 
-The documentation site covers the rest: [the host bundle](https://platform-node.smithers.sh/concepts/host-bundle/), [the descriptor-relative filesystem](https://platform-node.smithers.sh/concepts/descriptor-relative-filesystem/)
-and everything it refuses, [process containment](https://platform-node.smithers.sh/concepts/process-containment/)
-and every guard checked before a reap, the [API reference](https://platform-node.smithers.sh/reference/api/), and
-[troubleshooting](https://platform-node.smithers.sh/troubleshooting/).
+The documentation site covers the rest: [the host bundle](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/concepts/host-bundle.md), [the descriptor-relative filesystem](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/concepts/descriptor-relative-filesystem.md)
+and everything it refuses, [process containment](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/concepts/process-containment.md)
+and every guard checked before a reap, the [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/api.md), and
+[troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/troubleshooting.md).
 
 For a different runtime, the sibling bundles are
-[`@smthrs/platform-bun`](https://platform-bun.smithers.sh) and
-[`@smthrs/platform-browser`](https://platform-browser.smithers.sh).
+[`@smthrs/platform-bun`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-bun/docs) and
+[`@smthrs/platform-browser`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-browser/docs).
 
 The host exports `implementationIds` for its five service slots. Its rooted
 factories reject invalid roots before constructing a layer, using the host's

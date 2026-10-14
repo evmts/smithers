@@ -31,7 +31,7 @@ const { SqlJournal } = JournalPackage
 
 ## The authoring model is flat, on purpose
 
-[`@smthrs/flow`](/api/flow) is the one package re-exported flat. All fifteen of
+[`@smthrs/flow`](../../flow/docs/api.md) is the one package re-exported flat. All fifteen of
 `Action`, `DurableClock`, `DurableDeferred`, `DurableQueue`, `Flow`,
 `FlowRuntime`, `Graph`, `HumanTask`, `Interpreter`, `Poll`, `RetryPolicy`,
 `Sleep`, `Stall`, `StepIdentity`, and `WaitFor` sit at the top level beside the
@@ -42,7 +42,7 @@ noise. `Interpreter` belongs to that set because a host composition needs it:
 the registration layer `NodeRuntime.layerHost` takes is built from
 `Interpreter.layer(flow)`.
 
-[`@smthrs/time-travel`](/api/time-travel) contributes the second flat name for a
+[`@smthrs/time-travel`](../../time-travel/docs/api.md) contributes the second flat name for a
 different reason. `TimeTravel` is a service key rather than a namespace, so
 `const timeTravel = yield* TimeTravel` is the entire onboarding and
 `TimeTravel.layer` provides it. The rest of that package, including `Frame`,

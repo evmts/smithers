@@ -12,8 +12,12 @@ run of it that answers without reading the file again.
 
 ## Prerequisites
 
-Node.js 26.4.0 or later. It runs the TypeScript file below directly, with no
-build step and no loader flag.
+- Node.js 26.4.0 or later. It runs the TypeScript file below directly, with no
+  build step and no loader flag.
+- [jj](https://jj-vcs.github.io/jj/latest/install-and-setup/) 0.39.0 or later
+  on `PATH`. The host runs `jj --version` when it starts and stops with
+  `No jj on PATH` without it. On macOS, `brew install jj`; the linked page
+  covers Linux and Windows.
 
 Create an empty project, install the two packages the program imports, and give
 it something to read:
@@ -29,8 +33,13 @@ The project is `"type": "module"` because the program ends in a top-level
 `await`. `@smthrs/flows` installs the Node host and its SQLite driver. `effect`
 is on the line because the program imports it directly. `@smthrs/flows` accepts
 any `effect` in `^4.0.4`, so the line names no version and a project that
-already has one in that range keeps it. With pnpm, run `pnpm add` with the same
-two packages, then `pnpm approve-builds esbuild`: pnpm 11 ends the install with
+already has one in that range keeps it.
+
+With pnpm 11, replace the `npm install` line with
+`pnpm add @smthrs/flows@1.0.0-rc.6 effect`, then run
+`pnpm approve-builds esbuild`. pnpm 11 holds a release back for its first 24
+hours, so `@next` would install the previous candidate; an exact version is
+installed the day it is published. pnpm 11 also ends the install with
 `ERR_PNPM_IGNORED_BUILDS` until the project allows or denies the install script
 of `esbuild`, which `@smthrs/flows` uses to bundle sandboxed flows.
 [Installation](./installation.md) has the requirements in full.

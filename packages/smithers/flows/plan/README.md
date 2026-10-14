@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://plan.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan/docs
 
 The persisted plan: a keyed action graph, its append-only store, its diff, and
 the step-key compiler that gives every node its identity.
@@ -17,7 +17,7 @@ from what that node declares, records that graph in a SQLite store that only
 ever grows, and compares two graphs to say exactly what changed. It runs
 nothing itself: it performs no I/O beyond the database, and driving a compiled
 plan is a scheduler's job, such as
-[`@smthrs/engine-store`](https://engine-store.smithers.sh)'s `PlanScheduler`.
+[`@smthrs/engine-store`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/engine-store/docs)'s `PlanScheduler`.
 
 Reach for it when you are building a scheduler, a cache, or an approval flow
 over declared work and you need step identity, declared file effects, and an
@@ -35,8 +35,8 @@ pnpm add @effect/platform-node @effect/platform-node-shared
 ```
 
 Node.js 26.4.0 or later, and `effect` `^4.0.4` as a peer. Recording a plan
-is [`@smthrs/plan-store`](https://plan-store.smithers.sh), which owns the SQL
-and brings [`@smthrs/database`](https://database.smithers.sh) with it.
+is [`@smthrs/plan-store`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan-store/docs), which owns the SQL
+and brings [`@smthrs/database`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/database/docs) with it.
 
 ## Compile a plan
 
@@ -100,8 +100,8 @@ another number and both keys move; rename `read-pr` to `fetch-pr` and neither
 does.
 
 Recording that plan is
-[`@smthrs/plan-store`](https://plan-store.smithers.sh), whose
-[quickstart](https://plan-store.smithers.sh/quickstart/) builds the whole
+[`@smthrs/plan-store`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan-store/docs), whose
+[quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan-store/docs/quickstart.md) builds the whole
 composition against an in-memory database.
 
 ## What is in here
@@ -168,7 +168,7 @@ edge: `compile` puts the reader behind its producer by growing `dependsOn`, and
 fails with `cycle` when no edge set can satisfy both that and the declared
 order.
 
-[Declared effects and conflicts](https://plan.smithers.sh/concepts/effects-and-conflicts/)
+[Declared effects and conflicts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/docs/concepts/effects-and-conflicts.md)
 covers both passes in full.
 
 ## When it refuses
@@ -183,9 +183,9 @@ through `GraphBuildError`, whose closed code set names the site and the fix;
 `unstable_callback` in that set is raised by `@smthrs/flow` when a stable build
 meets a callback without a `Node.capture` declaration. Persistence has its own
 refusals, all of them
-[`@smthrs/plan-store`](https://plan-store.smithers.sh)'s.
+[`@smthrs/plan-store`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan-store/docs)'s.
 
-[Troubleshooting](https://plan.smithers.sh/troubleshooting/) lists every code
+[Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/docs/troubleshooting.md) lists every code
 with the change that clears it.
 
 ## Paths, payloads, and immutability
@@ -220,10 +220,10 @@ Persistence is a separate package, which is where a platform choice enters.
 
 ## Links
 
-- [Documentation](https://plan.smithers.sh)
-- [API reference](https://plan.smithers.sh/reference/api/)
-- [`@smthrs/plan-store`](https://plan-store.smithers.sh), the append-only store
+- [Documentation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan/docs)
+- [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/docs/api.md)
+- [`@smthrs/plan-store`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan-store/docs), the append-only store
   a compiled plan is recorded in
-- [`@smthrs/flows`](https://flows.smithers.sh), the whole engine as a single
+- [`@smthrs/flows`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/docs), the whole engine as a single
   dependency, which re-exports this package as its `Plan` namespace
 - [License: MIT](./LICENSE)
