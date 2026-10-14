@@ -45,6 +45,17 @@ export const numbered = (field?: string): Grammar => args => {
 
 const json = (payload: Record<string, unknown>) => JSON.stringify(payload)
 
+/**
+ * The doors `/issue.new` and `/issue.comment` name when this host does not
+ * serve theirs. `CLOUD_ISSUE_DOOR` is the mirror of `issues.create`'s own
+ * refusal ("Use /issue.new on this install."): a Cloud issue row is not the
+ * install's GitHub App issue identity, and neither sentence substitutes one
+ * source for the other.
+ */
+const CLOUD_ISSUE_DOOR = "Use /issues.create on Smithers Cloud."
+const NO_ISSUE_DOOR = "Opening an issue needs the GitHub App install or Smithers Cloud."
+const NO_COMMENT_DOOR = "Commenting on an issue needs the GitHub App install or Smithers Cloud."
+
 export const subjectFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => {
   const design = actions.design
   const designRepo = () => design.world().repo.repo
@@ -65,6 +76,21 @@ export const subjectFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
    * host that serves neither keeps the seeded answer it had.
    */
   const hostIssues = () => !design.enabled && (install() || actions.bootstrap?.capabilities.includes("cloud") === true)
+  /**
+   * Whether this host writes issues through its repository's own tracker: the
+   * Smithers Cloud doors `issues.create` and `issues.comment` already declare
+   * in `runtime`/`runtimeAny`, never the design FIXTURE.
+   *
+   * An install is answered before this, by its GitHub App, and the fixture is
+   * a write only while it is on (the design preview).
+   * [#3831](https://github.com/smithersai/smithers/issues/3831) item 1:
+   * branching on `install` alone had the hosted app — `cloud`, fixture off —
+   * write the seeded world, whose writes work with the fixture off, so
+   * `/issue.new` answered "Opened #1 on GitHub" for an in-memory row and
+   * `/issue.comment` "Commented on #n" for a thread nobody can read. Same
+   * class as #3879.
+   */
+  const cloudIssueWrites = () => !design.enabled && !install() && actions.bootstrap?.capabilities.includes("cloud") === true
   const realFiles = () => install() || actions.branchFiles.available()
   const repositoryFile = (payload: Readonly<Record<string, unknown>>): boolean => payload.operation !== "workspace" && payload.operation !== "tree" && payload.branch === undefined && payload.revision === undefined &&
     (payload.operation === "repository" || payload.repo !== undefined || payload.ref !== undefined || /^\/[^/]+\/[^/]+(?:\/|$)/.test(String(payload.path ?? "")) ||
@@ -83,11 +109,36 @@ export const subjectFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
     flow({ name: "issue.new",   slash: "/issue.new", cli: ["issue","new"], journey: [], group: "Issues", visibility: "core", actors: ["person","app_agent","external_agent"], minimumRole: "member", http: {"method":"POST","path":"/api/issues"}, summary: "Open a GitHub issue", args: "<title>", discloseToAgent: true,
       grammar: positional("title"), agent: "confirm", input: Schema.Struct({ title: Schema.NonEmptyString, body: Schema.String }),
       form: { submitLabel: "Open on GitHub", fields: { title: { label: "Title" }, body: { label: "Body" } }, args: json },
-      handler: ({ title, body }) => install() ? actions.requestIssueCreate(title, body) : ({ value: `Opened #${newIssue(design, title, body, design.viewer())} on GitHub` }) }),
+      /*
+       * This door is GitHub's, by its summary and by the design canon's submit
+       * verb (.specs/design/mock/src/world.ts). Smithers Cloud has no GitHub
+       * issue identity — `issues.create` refuses the mirror image, "Use
+       * /issue.new on this install." — so the Cloud host names the door that
+       * writes its own tracker instead of opening a seeded issue and claiming
+       * GitHub numbered it.
+       */
+      preflight: () => design.enabled || install() ? undefined : cloudIssueWrites() ? CLOUD_ISSUE_DOOR : NO_ISSUE_DOOR,
+      handler: ({ title, body }) => {
+        if (install()) return actions.requestIssueCreate(title, body)
+        if (!design.enabled) return cloudIssueWrites() ? CLOUD_ISSUE_DOOR : NO_ISSUE_DOOR
+        return { value: `Opened #${newIssue(design, title, body, design.viewer())} on GitHub` }
+      } }),
     flow({ name: "issue.comment",   slash: "/issue.comment", cli: ["issue","comment"], journey: ["J2"], group: "Issues", visibility: "core", actors: ["person","app_agent","external_agent"], minimumRole: "member", http: {"method":"POST","path":"/api/issues/{number}/comments"}, summary: "Comment on an issue", args: "#n <text>", discloseToAgent: true,
       grammar: numbered("body"), agent: "confirm", input: Schema.Struct({ number: Schema.Number, body: Schema.NonEmptyString }),
       form: { submitLabel: "Comment", fields: { number: { label: "Issue" }, body: { label: "Comment" } }, args: json },
-      handler: ({ number, body }) => commentIssue(design, number, body, design.viewer()) ? { value: `Commented on #${number}` } : `No issue #${number}` }),
+      handler: ({ number, body }) => {
+        /*
+         * Cloud comments on the repository's own issue — the one `/issue` just
+         * opened. An install's GitHub comment (POST /api/issues/{n}/comments)
+         * is a member confirmation the server performs (backend
+         * compose/member_commands.go), and the browser has no port for it, so
+         * it says so rather than writing the fixture.
+         */
+        if (cloudIssueWrites()) return actions.commentOnIssue(number, body)
+        if (install()) return "Commenting on a GitHub issue is a member confirmation on this install, not an app write yet."
+        if (!design.enabled) return NO_COMMENT_DOOR
+        return commentIssue(design, number, body, design.viewer()) ? { value: `Commented on #${number}` } : `No issue #${number}`
+      } }),
     flow({ name: "file",   slash: "/file", cli: ["file"], journey: ["J3","J9"], group: "Files and code", visibility: "core", actors: ["person","app_agent","external_agent"], minimumRole: "member", http: { method: "GET", path: "/api/branches/{branch}/files/{path}", defaults: { branch: "main" }, query: { at: "revision" } }, summary: "Open and co-edit a file", args: FILES_READ_COMMAND.args, discloseToAgent: true,
       grammar: args => payloadFor("file", args), agent: "run",
       payloadRequires: payload => payload.operation === "workspace" ? ["signed-in"] : repositoryFile(payload) ? ["first-run-target", "repo-source"] : [],
@@ -196,7 +247,14 @@ export const subjectFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
       form: { fields: { owner: { hidden: true }, repo: { hidden: true } } },
       grammar: positional("name"), agent: "run", input: Schema.Struct({ name: Schema.NonEmptyString, revision: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))), owner: Schema.optional(Schema.NonEmptyString), repo: Schema.optional(Schema.NonEmptyString) }),
       handler: ({ name, revision }) => {
-        if (revision !== undefined || install()) return actions.openWikiPage(name, revision)
+        /*
+         * The repository's own wiki, behind the same `install`/`cloud`
+         * capabilities the issues read names above (hostIssues) and the doors
+         * `wiki.save` already holds. The fixture answers only while it is on:
+         * branching on `install` alone had the hosted app create a page in the
+         * seeded world and open it as the repository's. Same class as #3879.
+         */
+        if (revision !== undefined || install() || hostIssues()) return actions.openWikiPage(name, revision)
         const page = findWikiPage(design.world(), name)
         if (page !== undefined) return open(wikiCard(page.id, page.title))
         const id = newWikiPage(design, name, design.viewer())
