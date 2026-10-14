@@ -315,22 +315,24 @@ export const runModelTurn = <E>(
     return visit(event)
   }
   const endStream = diagnostics.begin("model_stream")
-  // A hosted turn reaches its provider and its journal through one proxy, and
-  // both are the same origin, so they share one keep-alive connection. Writing
-  // a frame from inside the consumer stops reading the response that holds
-  // that connection, and the commit cannot be written until that response
-  // completes: production turn 2d851bdd attempted its first commit 1 ms after
-  // its first event and was still waiting half an hour later, with the
-  // response's last bytes unread. Buffering runs the provider's side in its
-  // own fiber, so the response keeps draining while a frame is committed and
-  // the connection is free when the commit needs it.
+  // Writing a frame from inside this consumer stopped reading the provider's
+  // response, and a commit the host issued in that state never answered:
+  // production turn 2d851bdd attempted its first commit 1 ms after its first
+  // event and was still waiting half an hour later, with the response's last
+  // bytes unread, and turn 7e5fc00f spent 1 h 19 m there and committed
+  // nothing. Buffering runs the provider's side in its own fiber, so the
+  // response keeps draining while a frame is in flight and the host never
+  // holds an unfinished response open waiting on its own journal.
   //
-  // A provider emits about one event per output token plus a bounded few for
-  // starts, ends and usage, and a turn's tokens are bounded before the request
-  // is sent, so this buffer cannot fill before the response ends.
-  const buffered = Stream.buffer(model.stream(providerRequest(turn, options)), {
-    capacity: Math.min(1 << 16, Math.max(1024, 2 * (options.maxTokens ?? 4096)))
-  })
+  // The capacity is unbounded deliberately. A finite buffer suspends its
+  // producer once it fills, which is the same stall one buffer-length later,
+  // and nothing bounds a turn's event count to a figure this host could pick:
+  // `fastModelFallback` strips the output token limit for a route that does
+  // not support one, so that provider answers at its own maximum, and
+  // `SMITHERS_CHAT_MAX_TOKENS` admits a million. What the queue holds is
+  // bounded by the response the provider actually sends, and a journal that
+  // answers keeps it near empty.
+  const buffered = Stream.buffer(model.stream(providerRequest(turn, options)), { capacity: "unbounded" })
   return Stream.runForEach(buffered, observe).pipe(
     Effect.flatMap(() =>
       settled

@@ -242,12 +242,14 @@ describe("callback attempt diagnostics", () => {
   })
 })
 
-// The production deadlock, as a stream contract. One shared proxy connection
-// means a commit cannot answer until the provider response that holds that
-// connection has been read to its end, while the only reader of that response
-// is the consumer that is waiting for the commit. The host must therefore keep
-// draining the provider's side while a frame is in flight; a host that reads
-// only when its consumer asks cannot finish this turn at all.
+// The production deadlock, as a stream contract. The commit production turn
+// 2d851bdd issued 1 ms after its first event never answered while the host
+// held the provider's response unread, so a commit that can only answer once
+// that response has been released must still be able to. The host therefore
+// has to keep draining the provider's side while a frame is in flight; a host
+// that reads only when its consumer asks cannot finish this turn at all.
+// `ProviderDrain.test.ts` carries the same contract for a response longer
+// than any fixed buffer.
 describe("a frame committed while the provider response is still open", () => {
   test("does not stop the provider stream being drained", async () => {
     let drained = false

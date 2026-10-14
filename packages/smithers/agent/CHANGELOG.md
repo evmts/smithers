@@ -4,16 +4,19 @@
 
 ### Fixed
 
-- A hosted chat turn no longer deadlocks against its own journal (#3812). The
-  guest reaches its provider and its journal through one proxy at one origin,
-  so they share a connection: writing a frame stopped reading the response
-  that held it, and the commit could not be written until that response
-  finished, which only the stopped reader could do. Production turn 2d851bdd
-  attempted its first commit 1 ms after its first event and never heard back.
-  `runModelTurn` now buffers the provider's side in its own fiber, bounded by
-  the turn's own token limit, so the response keeps draining while a frame is
-  committed. Long replies were the ones that hung, because a long answer is
-  still arriving when the first frame is committed.
+- A hosted chat turn no longer deadlocks against its own journal (#3812).
+  Writing a frame stopped reading the provider's response, and a commit issued
+  in that state never answered: production turn 2d851bdd attempted its first
+  commit 1 ms after its first event and was still waiting half an hour later
+  with the response's last bytes unread, and turn 7e5fc00f spent 1 h 19 m there
+  and committed nothing. `runModelTurn` now buffers the provider's side in its
+  own fiber, so the response keeps draining while a frame is in flight. The
+  buffer is unbounded on purpose: a finite one suspends its producer when it
+  fills, which is the same stall one buffer-length later, and nothing bounds a
+  turn's event count to a figure the host could pick — `fastModelFallback`
+  strips the output token limit for a route that does not support one. Long
+  replies were the ones that hung, because a long answer is still arriving when
+  the first frame is committed.
 
 ### Added
 
