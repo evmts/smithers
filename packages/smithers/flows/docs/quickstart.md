@@ -115,11 +115,28 @@ const allowWorkspaceReads = new Capability.Permission.Rule({
 })
 ```
 
-Leave the rule out and the read is refused with `PermissionRequired`, naming the
-exact capability it asked for. Because the implementation above wraps the read
-in `Effect.orDie`, that refusal arrives as a defect. An action that wants to
-report a denial rather than die on it catches the failure instead and returns
-what it found: a denial is an answer, and it is up to the action which kind.
+Leave the rule out and the read is refused with the `permission_required` code,
+naming the exact capability it asked for. Because the implementation above wraps
+the read in `Effect.orDie`, that refusal arrives as a defect, and the program
+stops with this first line:
+
+```console
+Error [PlatformError]: PermissionDenied: FileSystem.read (<path>): permission_required: fs:read:<path> (tier sealed, request permission-1)
+```
+
+An action that wants to report a denial rather than die on it catches the
+failure instead and returns what it found: a denial is an answer, and it is up
+to the action which kind.
+
+Rules govern what a step reaches through the host's Effect services:
+`FileSystem`, `ChildProcessSpawner`, `HttpClient`, and `Jj`. They do not see code
+that goes around those services. An action that imports `node:fs` or calls the
+global `fetch` reads and fetches whatever the process can, with no rule at all.
+The grant store guards the services a body is handed; it is not a process
+sandbox. To isolate a body's own code, run it as a child flow with
+`SandboxedFlow` on a container provider, as
+[Run a child flow in a sandbox](./guides/run-a-child-flow-in-a-sandbox.md)
+shows.
 
 ## Stand the host up and run it
 
@@ -193,7 +210,13 @@ was registered.
 Closing the scope closed all of it in order. Had you pressed `Ctrl-C` mid-run
 instead, the signal handler would have closed the same scope, and the run this
 host owned would have parked itself `released` for the next host to reclaim
-rather than sitting `running` behind a dead owner.
+rather than sitting `running` behind a dead owner. The interrupted program
+prints `Error: All fibers interrupted without error` and exits 1, and the next
+run resumes the execution at once.
+
+A process that dies without closing its scope, such as one killed with
+`kill -9`, leaves the run `running` under its lease. The next run waits about 30
+seconds for that lease to expire, then reclaims the run and resumes it.
 
 ## Next steps
 

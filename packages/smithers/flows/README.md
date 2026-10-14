@@ -8,7 +8,7 @@ runtime.
 
 **Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/docs
 
-The whole [Smithers](https://smithers.sh) durable flow engine in one dependency.
+The whole [Smithers](https://github.com/smithersai/smithers) durable flow engine in one dependency.
 It re-exports every engine package under a single import, and it adds the two
 modules a Node program needs to run flows for real: `NodeRuntime`, which stands
 a durable engine up over SQLite or PostgreSQL, and `SandboxedFlow`, which runs a child
@@ -75,8 +75,9 @@ const registerFlows = Interpreter.layer(CountBytes).pipe(
   Layer.provideMerge(
     FetchReadme.toLayer(({ repo }) =>
       Effect.promise(async () => {
-        const response = await fetch(`https://api.github.com/repos/${repo}/readme`)
-        return (await response.text()).length
+        const response = await fetch(`https://raw.githubusercontent.com/${repo}/HEAD/README.md`)
+        if (!response.ok) throw new Error(`GET README: HTTP ${response.status}`)
+        return (await response.arrayBuffer()).byteLength
       })
     )
   ),
@@ -95,9 +96,10 @@ const main = CountBytes.execute({ repo: "smithersai/smithers" }, { executionId: 
 console.log(await Effect.runPromise(main))
 ```
 
-Run it once and it calls GitHub. Run it a second time, unchanged, and it prints
-the same number without calling GitHub: `executionId` names one execution, and
-the engine answers a completed one from the journal on disk.
+Run it once and it downloads the repository's README from GitHub and prints its
+size in bytes. Run it a second time, unchanged, and it prints the same number
+without calling GitHub: `executionId` names one execution, and the engine
+answers a completed one from the journal on disk.
 
 ## What the barrel exports
 

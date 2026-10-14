@@ -20,7 +20,7 @@ workdir, and files it writes land in the workspace the host can read back.
 
 ```ts
 // child.ts
-import { Action, Flow } from "@smthrs/flow"
+import { Action, Flow } from "@smthrs/flows"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { writeFile } from "node:fs/promises"

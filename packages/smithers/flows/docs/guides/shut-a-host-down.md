@@ -16,10 +16,16 @@ that distinction is the difference between a shutdown and a kill: closing the
 scope runs the engine's finalizers, the drive fibers are interrupted from inside
 the engine, and each run this host owns parks itself `released`.
 
-A released run is reclaimable by the next host that starts. A run left `running`
-behind a dead owner is not, at least not until the stale-run sweep notices it
-much later. Under `layerHost`, containment also applies: whatever an interrupted
-action spawned is signalled and then killed as its process group.
+A released run is reclaimable by the next host that starts, and it resumes at
+once. A program that runs the host with `Effect.runPromise`, as the quickstart
+does, still sees the interruption: after a graceful `Ctrl-C` it prints
+`Error: All fibers interrupted without error` and exits 1.
+
+A process killed outright, with `kill -9`, runs no finalizer, so its run stays
+`running` under the dead owner's lease. The next host waits for that lease to
+lapse, about 30 seconds, then reclaims the run and resumes it. Under
+`layerHost`, containment also applies: whatever an interrupted action spawned is
+signalled and then killed as its process group.
 
 A fiber could not be the handle here anyway. A layer builds in its own fiber,
 not the program's, so the fiber this code can reach is not the one your program

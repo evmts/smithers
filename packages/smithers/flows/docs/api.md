@@ -22,7 +22,7 @@ import * as SandboxedFlow from "@smthrs/flows/SandboxedFlow"
 `@smthrs/flows/internal/*` and `@smthrs/flows/*/index` are blocked in the export
 map and are not public.
 
-Durable execution is supported on Node.js 26.4.0 or later with local SQLite.
+Durable execution is tested on Node.js 26.4+ and Bun 1.4+; `engines` requires Node `>=26.4.0`.
 The root entry point bundles for browsers, which buys authoring and inspection;
 it does not make a browser a durable host, and supplying another SQL client does
 not change that.
@@ -654,7 +654,6 @@ Compose the returned layer beside `Interpreter.layer(parent)` over one
 ## See also
 
 Each namespace in the table above has its own API reference, reached through the
-links there. [`@smthrs/cli`](../../docs/api.md) is this engine as the `smthrs` command
-line, which builds its own durable engine through `NodeRuntime`. Depend on
+links there. Depend on
 individual `@smthrs` packages rather than this barrel when a smaller dependency
 surface is worth the extra imports.

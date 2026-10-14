@@ -89,11 +89,20 @@ never get a half-installed handler set.
 **Fix.** Name catchable signals, or pass `signals: []` and wire your own. See
 [Shut a host down](./guides/shut-a-host-down.md).
 
-## PermissionRequired: an action was refused with no rule to point at
+## permission_required: an action was refused with no rule to point at
 
-**Symptom.** An action that reads a file or spawns a process fails with
-`@smthrs/capability/PermissionRequired`, code `permission_required`, carrying
-the exact capability it asked for.
+**Symptom.** An action that reads a file or spawns a process fails with code
+`permission_required`, carrying the exact capability it asked for. An action
+that lets the failure die, as the quickstart's does, stops the program with
+this first line:
+
+```console
+Error [PlatformError]: PermissionDenied: FileSystem.read (<path>): permission_required: fs:read:<path> (tier sealed, request permission-1)
+```
+
+`PermissionDenied` there is Effect's name for every refused platform call; the
+code after the path tells this case from the next one. The cause is
+`@smthrs/capability/PermissionRequired`.
 
 **Cause.** `layerHost` builds its grant store unattended: there is no operator
 to prompt, so a capability that no rule allows or denies cannot be escalated,
@@ -117,7 +126,7 @@ const rules = [
 ]
 ```
 
-## PermissionDenied: a rule refused it on purpose
+## permission_denied: a rule refused it on purpose
 
 **Symptom.** `@smthrs/capability/PermissionDenied`, code `permission_denied`,
 with a reason of `denied by permission policy`.
@@ -130,6 +139,22 @@ previous case: policy answered, and the answer was no.
 configured policy and its effective denial is a hard veto, while every later
 ruleset is applied last-match-wins. An allow in a later ruleset cannot lift a
 deny in the first one.
+
+## An action reached a file or a URL that no rule allows
+
+**Symptom.** With `rules: []`, an action still reads a file outside the
+workspace, fetches a URL, or starts a process, and nothing is refused.
+
+**Cause.** Rules govern what a step reaches through the host's Effect services:
+`FileSystem`, `ChildProcessSpawner`, `HttpClient`, and `Jj`. Code that imports
+`node:fs` or `node:child_process`, or calls the global `fetch`, goes around
+those services, and the grant store never sees it. The grant store is not a
+process sandbox.
+
+**Fix.** Reach the outside world through the Effect services, so the rules
+apply. To isolate code you do not trust, run it as a child flow with
+`SandboxedFlow` on a container provider; see
+[Run a child flow in a sandbox](./guides/run-a-child-flow-in-a-sandbox.md).
 
 ## The engine takes snapshots even though I denied jj
 
@@ -243,6 +268,5 @@ type parameters. See
 `@smthrs/flows/SandboxedFlow`. The root entry point is browser-safe; those two
 subpaths are not, which is exactly why they are subpaths.
 
-**Fix.** Keep both out of shared code. Durable execution is supported only on
-Node.js 26.4.0 or later with local SQLite; a browser can author and inspect
-declarations through the root entry point.
+**Fix.** Keep both out of shared code. Durable execution is tested on Node.js 26.4+ and Bun 1.4+; `engines` requires Node `>=26.4.0`. A browser can
+author and inspect declarations through the root entry point.

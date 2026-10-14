@@ -102,9 +102,11 @@ sandbox are arguments. `WorkspaceSandbox.layerFileSystem()` needs a
 over a plain `NodeFileSystem.layer` it fails to build with `host_unavailable`.
 
 ```ts
-import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
+import { EngineStore, RunStore } from "@smthrs/flows"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
-import { Ownership } from "@smthrs/run-store"
+
+const { StepBoundary, WorkspaceSandbox } = EngineStore
+const { Ownership } = RunStore
 
 const engine = NodeRuntime.layer(
   {

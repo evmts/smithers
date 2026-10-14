@@ -4,7 +4,7 @@ description: "The whole Smithers durable flow engine in one dependency: declare 
 ---
 
 `@smthrs/flows` is one package that carries the whole durable flow engine
-behind [Smithers](https://smithers.sh/docs/installation/). It re-exports every engine
+behind [Smithers](https://github.com/smithersai/smithers). It re-exports every engine
 package under a single import, and it adds the two modules a Node program needs
 to run flows for real: `NodeRuntime`, which stands a durable engine up over
 local SQLite, and `SandboxedFlow`, which runs a child flow's own code on a
@@ -43,7 +43,7 @@ The host also needs [jj](https://jj-vcs.github.io/jj/latest/install-and-setup/)
 the packages Bun and the browser add, and when to depend on individual engine
 packages instead.
 
-Durable execution uses a Node.js 26.4.0+ or Bun 1.4.0+ host composition. The API is
+Durable execution is tested on Node.js 26.4+ and Bun 1.4+; `engines` requires Node `>=26.4.0`. The API is
 [Effect](https://effect.website) throughout: a flow declares its payload and
 result as Effect schemas, an action's implementation is an `Effect`, and a host
 is a `Layer` you provide. The example below is a complete Effect program, and
@@ -79,8 +79,9 @@ const registerFlows = Interpreter.layer(CountBytes).pipe(
   Layer.provideMerge(
     FetchReadme.toLayer(({ repo }) =>
       Effect.promise(async () => {
-        const response = await fetch(`https://api.github.com/repos/${repo}/readme`)
-        return (await response.text()).length
+        const response = await fetch(`https://raw.githubusercontent.com/${repo}/HEAD/README.md`)
+        if (!response.ok) throw new Error(`GET README: HTTP ${response.status}`)
+        return (await response.arrayBuffer()).byteLength
       })
     )
   ),
@@ -99,23 +100,17 @@ const main = CountBytes.execute({ repo: "smithersai/smithers" }, { executionId: 
 console.log(await Effect.runPromise(main))
 ```
 
-Run it once and it calls GitHub. Run it a second time, unchanged, and it prints
-the same number without calling GitHub: `executionId` names one execution, and
-the engine answers a completed one from the journal on disk. That is durability
+Run it once and it downloads the repository's README from GitHub and prints its
+size in bytes. Run it a second time, unchanged, and it prints the same number
+without calling GitHub: `executionId` names one execution, and the engine
+answers a completed one from the journal on disk. That is durability
 in one line of behavior, and everything else here is built on it.
 
 The [Quickstart](./quickstart.md) takes the same program further: it reads a
 file through the guarded host, which means granting the one capability the body
 needs and seeing what happens when you leave the grant out.
 
-## How this relates to the smthrs command line
-
-[`@smthrs/cli`](../../docs/api.md) is this engine as a program you run rather than a
-library you compose. Its `smthrs` command finds the flows in a project, plans
-them, takes an approval, runs them, and reads their events back, and it builds
-its durable engine through `@smthrs/flows/NodeRuntime`, the same module the
-example above calls. Choose the CLI when you want to run flows from a shell or
-a CI job. Choose `@smthrs/flows` when the program that runs them is yours.
+## Depend on one engine package instead
 
 Reach for a single engine package instead of the barrel when you want a
 narrower dependency: [`@smthrs/flow`](../flow/docs/api.md) declares flows and actions,

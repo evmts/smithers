@@ -110,6 +110,13 @@ export const versionedSources = [
     declaration: "the pnpm install line",
     pattern: /(pnpm add\s+@smthrs\/flows@)(\S+)(\s+effect)/
   })),
+  // The registry is not in the barrel, and it must match the barrel's version.
+  {
+    path: "packages/smithers/flows/docs/guides/discover-flows-from-a-registry.md",
+    package: "packages/smithers/flows",
+    declaration: "the registry install line",
+    pattern: /(npm install\s+@smthrs\/registry@)(\S+)()/
+  },
   {
     path: "packages/smithers/flows/database/docs/troubleshooting.md",
     package: "packages/smithers/flows/database",

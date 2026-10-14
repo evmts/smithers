@@ -529,8 +529,9 @@ test("every Flows page states the manifest's Node floor and none says the packag
   let stated = 0
   for (const [page, text] of flowsPages()) {
     assert.doesNotMatch(text, /not (?:yet )?(?:on|published to) npm/i, page)
-    for (const [, version] of text.matchAll(/Node(?:\.js)? (\d+\.\d+\.\d+)/g)) {
-      assert.equal(version, floor, page + " states another Node floor")
+    // "Node.js 26.4.0 or later", "Node.js 26.4+", and "`engines` requires Node `>=26.4.0`".
+    for (const [, version] of text.matchAll(/Node(?:\.js)? `?>?=?(\d+\.\d+(?:\.\d+)?)/g)) {
+      assert.ok(version === floor || version + ".0" === floor, page + " states another Node floor: " + version)
       stated += 1
     }
   }

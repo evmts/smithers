@@ -11,6 +11,10 @@ sidebar:
 npm install @smthrs/flows@next effect
 ```
 
+npm 11 ends the install with an `install-scripts` warning naming `esbuild`.
+Leaving it unapproved is safe: npm installs esbuild's platform binary as an
+ordinary dependency, and `SandboxedFlow` bundles without the script.
+
 The `next` tag carries the 1.0 release candidates. With pnpm 11, name the
 version instead of the tag, then approve `esbuild`'s install script:
 
@@ -37,9 +41,9 @@ declares.
 
 ## Requirements
 
-- Node.js 26.4.0 or later with local SQLite, which is what `package.json`
-  declares in `engines`. That is what durable execution needs, and it is also
-  what runs a `.ts` file directly, with no build step.
+- Node.js 26.4.0 or later, which also runs a `.ts` file directly, with no build
+  step. Durable execution is tested on Node.js 26.4+ and Bun 1.4+; `engines`
+  requires Node `>=26.4.0`.
 - [jj](https://jj-vcs.github.io/jj/latest/install-and-setup/) 0.39.0 or later
   on `PATH`, or `SMITHERS_JJ_PATH` naming the binary. Every `NodeRuntime` and
   `BunRuntime` host includes the jj service and runs `jj --version` when it is
@@ -103,7 +107,7 @@ re-exports. What bundles is the authoring and inspection surface: you can
 declare flows, read a plan, and decode a journal event in a browser.
 
 Durable execution is a different claim: it needs a native Node.js or Bun host and
-SQLite or PostgreSQL. Node.js requires version 26.4.0 or later. A browser or edge runtime is not a supported durable host even
+SQLite or PostgreSQL. Durable execution is tested on Node.js 26.4+ and Bun 1.4+; `engines` requires Node `>=26.4.0`. A browser or edge runtime is not a supported durable host even
 when you supply another SQL client. Native modules are subpaths
 precisely so importing the root never opens `node:sqlite`.
 
@@ -120,6 +124,21 @@ one dependency saves you twenty.
 Install an individual package at `@next` as well, for example
 `npm install @smthrs/flow@next effect`. `latest` on several engine packages,
 among them `@smthrs/engine` and `@smthrs/testing`, still names a 0.x release.
+
+## Use PostgreSQL
+
+SQLite is the default. To keep the durable stores in PostgreSQL instead,
+install the optional adapter:
+
+```bash
+npm install @effect/sql-pg
+```
+
+Then set `SMITHERS_POSTGRES_URL` to a `postgres://` connection string, or pass
+one as the `filename` of `NodeRuntime.layerHost`. `SMITHERS_BACKEND=sqlite`
+keeps a filename on SQLite even when `SMITHERS_POSTGRES_URL` is set.
+[SQLite and PostgreSQL](../database/docs/concepts/sqlite-only.md) covers the
+schema each store gets and the role permissions the adapter needs.
 
 ## Next step
 

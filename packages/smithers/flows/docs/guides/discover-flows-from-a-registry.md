@@ -15,7 +15,12 @@ registration phase reads from: third for `layerHost`, fifth for `make` and
 [`@smthrs/registry`](../../../agent/registry/docs/api.md) discovers a project's flows from
 `<root>/flows/**` and the installed packs. `Registry.layerProject` builds that
 registry; `Executable.layer` is the registration that turns every discovered
-descriptor into a registered durable flow.
+descriptor into a registered durable flow. `@smthrs/flows` does not install it,
+so add it at the version of `@smthrs/flows` you have:
+
+```bash
+npm install @smthrs/registry@1.0.0-rc.6
+```
 
 ```ts
 import { Action } from "@smthrs/flows"
