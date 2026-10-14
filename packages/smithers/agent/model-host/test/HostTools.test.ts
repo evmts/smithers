@@ -13,8 +13,8 @@ import {
   FAILED_RESULT_LINE,
   RUN_IS_NOT_RESULT_LINE,
   SMITHERS_SUBJECT_READS_DOCS_LINE,
-  smithersSubjectLine,
   SMITHERS_SUBJECT_WITHOUT_DOCS_LINE,
+  smithersSubjectLine,
   WORKFLOW_LAUNDERING_RULE
 } from "@smthrs/rpc/AgentInstructions"
 import { MAX_TOOL_LEGS } from "@smthrs/rpc/AgentToolResult"
