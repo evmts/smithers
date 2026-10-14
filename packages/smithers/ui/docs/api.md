@@ -635,6 +635,9 @@ forces the textarea or the rich editor, overriding the
 `href` as written in the markdown; returning true stops the browser from
 following it, which is how a host opens a document's relative links itself.
 `MarkdownEditorHandle` exposes `getMarkdown` and the imperative seams.
+Images stay inline Markdown images, so their alt text and title round-trip
+unchanged. Crepe's image block is off because it saves its display ratio as
+the alt text.
 
 `MarkdownEditorStyles` ships the Crepe theme through the library's style seam.
 `MarkdownEditorError` carries a `code` and the original `cause`; both codes are

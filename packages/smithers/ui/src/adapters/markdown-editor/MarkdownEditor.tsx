@@ -323,7 +323,10 @@ const loadMilkdown = async (): Promise<MarkdownEditorModule> => {
   return {
     Crepe: class extends Crepe {
       constructor({ readOnly, ...options }: { root: HTMLElement; defaultValue: string; readOnly?: boolean }) {
-        super(options);
+        // Crepe's ImageBlock writes the block's display ratio into the alt
+        // field, so every image would save as `![1.00](src)` (#3903). Images
+        // stay commonmark inline nodes, which keep their alt text and title.
+        super({ ...options, features: { [Crepe.Feature.ImageBlock]: false } });
         if (readOnly) this.editor.config(ctx => {
           ctx.update(htmlSchema.key, previous => context => {
             const schema = previous(context);
