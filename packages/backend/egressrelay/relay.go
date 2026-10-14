@@ -603,7 +603,9 @@ func (b *binding) maskPrefix(data []byte, limit int) ([]byte, int) {
 	for index < limit {
 		matched := false
 		for _, candidate := range b.masks {
-			if strings.HasPrefix(string(data[index:]), candidate.value) {
+			// The comparison conversion does not copy data; converting the
+			// whole remainder for every scanned byte made masking quadratic.
+			if end := index + len(candidate.value); end <= len(data) && string(data[index:end]) == candidate.value {
 				out = append(out, candidate.placeholder...)
 				index += len(candidate.value)
 				matched = true

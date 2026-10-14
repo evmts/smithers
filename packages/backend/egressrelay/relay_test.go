@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -330,6 +331,23 @@ func TestMaskingBodyNeverLeaksASplitValue(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestMaskingBodyIsLinearInTheBody streams a large upstream body: masking
+// must cost a bounded number of bytes per body byte, not re-copy the rest of
+// each read for every byte it scans.
+func TestMaskingBodyIsLinearInTheBody(t *testing.T) {
+	bound := liveBinding(t, testValue)
+	const size = 1 << 20
+	input := strings.Repeat("a", size) + testValue
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	body := &maskingBody{source: io.NopCloser(strings.NewReader(input)), bound: bound}
+	out, err := io.ReadAll(body)
+	runtime.ReadMemStats(&after)
+	require.NoError(t, err)
+	assert.Equal(t, strings.Repeat("a", size)+sandbox.EgressProxyPlaceholder("A"), string(out))
+	assert.Less(t, after.TotalAlloc-before.TotalAlloc, uint64(32*size), "masking a 1 MiB body allocated quadratically")
 }
 
 func TestGuestEnvironmentRoutesBoundHostsThroughTheRelay(t *testing.T) {
