@@ -496,6 +496,15 @@ func (s *WorkspaceService) ensureRuntimeWorkspaceRunningLocked(ctx context.Conte
 		if isNoCapacityError(err) {
 			return s.refuseResumeForNoCapacity(ctx, row, err)
 		}
+		// A start that confirms the machine is gone is the same permanent loss
+		// the inspect arm above answers, and the sandbox-client path has
+		// answered it on a start since #3565: the row keeps its recovery
+		// identity and the caller is told to create the box. Wrapping it as an
+		// internal fault instead made a wake of a vanished branch answer 500
+		// fault=bug, and the turn behind it "try again in a moment".
+		if errors.Is(err, workspaceapi.ErrWorkspaceNotFound) {
+			return row, s.missingWorkspaceVM(ctx, row, requesterID)
+		}
 		if err != nil {
 			return row, runtimeOperationError("start workspace runtime", err)
 		}
