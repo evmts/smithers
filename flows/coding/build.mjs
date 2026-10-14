@@ -52,8 +52,15 @@ export const bundle = async (entryPoint, outfile) => {
       build.onResolve({ filter: /^bun:sqlite$/ }, args => args.namespace === "lazy-bun-sqlite"
         ? { path: args.path, external: true }
         : { path: args.path, namespace: "lazy-bun-sqlite" })
+      // Every name the bundled modules take from bun:sqlite has to be named
+      // here: esbuild resolves an ESM named import against this module's own
+      // exports, so one it does not re-export fails the build rather than the
+      // launch. `@smthrs/database`'s Bun client reads `constants` for its
+      // open flags.
       build.onLoad({ filter: /.*/, namespace: "lazy-bun-sqlite" }, () => ({
-        contents: 'const native = await import("bun:sqlite"); export const Database = native.Database;', loader: "js"
+        contents: 'const native = await import("bun:sqlite");'
+          + " export const Database = native.Database; export const constants = native.constants;",
+        loader: "js"
       }))
     }
   }
