@@ -31,6 +31,8 @@ export interface IssuesSeam {
   readonly subscribe: (onDispose: (release: () => void) => void) => void
   /** Renders the list card and answers the rows as text (the model reads the value, never the card). */
   readonly listIssues: ViewAction<[filter: "open" | "closed" | "all", repo?: string, kind?: IssueKindFilter, view?: string]>
+  /** The repository's issue rows for an index, through the same doors as the list card and mounting none; the door's own sentence when it refuses. */
+  readonly readIssueRows: (repo: string, filter: "open" | "closed" | "all") => Promise<ReadonlyArray<IssueListRow> | string>
   /** Reads an authorized snapshot for Make TODO without mounting an issue card. */
   readonly readTodoIssue: (number: number, repo: string) => Promise<IssuePayload | string>
   readonly viewIssue: ViewAction<[number: number, repo?: string, source?: "smithers-cloud" | "github"]>
@@ -660,77 +662,85 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     }
   }
 
+  /**
+   * One list read, mounting nothing: the repository's own tracker, an
+   * install's GitHub-App door, or the GitHub source a repository that is not
+   * imported degrades to. `listView` renders its card from this; the search
+   * index reads the same rows without a card (SearchSeam, §6).
+   */
+  const issueListRead = (repo: string, filter: "open" | "closed" | "all", kind: IssueKindFilter, named: string | undefined) => async (): Promise<ViewResult> => {
+    // An install has no Smithers tracker, conversations or saved views: its issues are GitHub's.
+    if (install) return listFromInstall(repo, filter)
+    // Plue 422s unknown states ("all" included) — omit the param to list every state.
+    const search = new URLSearchParams()
+    if (named !== undefined) search.set("view", named)
+    else if (filter !== "all") search.set("state", filter)
+    // Conversations are owner-private and excluded from the plain list; ask for them by kind (chat = issues contract; #2111).
+    if (kind === "conversation") search.set("kind", "chat")
+    const query = search.size === 0 ? "" : `?${search}`
+    let response: Response
+    try {
+      response = await ctx.http(`${issuesPath(repo)}${query}`)
+    } catch (error) {
+      return unreachable(`list issues for ${repo}`, error)
+    }
+    if (!response.ok) {
+      // The imported namespace 404s ⇔ the repo isn't imported: degrade to
+      // the GitHub-source list instead of surfacing a broken 404. A named
+      // view 404s when it is not declared: that is the answer, not a fallback.
+      if (response.status === 404 && named !== undefined) return readRepositoryListError(response, `Listing the ${named} view of ${repo} failed (${response.status})`)
+      if (response.status === 404) return listFromGithubSource(repo, filter)
+      if (response.status === 401) ctx.dispatch({ type: "card.removed", actor: ctx.actor(), id: `issues-${repo}` })
+      return readRepositoryListError(response, `Listing issues for ${repo} failed (${response.status})`)
+    }
+    const body: unknown = await response.json().catch(() => null)
+    if (!Array.isArray(body)) {
+      return `The backend answered issues for ${repo} with an unreadable payload`
+    }
+    const native = body.flatMap((entry) => {
+      const parsed = parseListRow(entry)
+      return parsed === null ? [] : [{ ...parsed, source: "smithers-cloud" as const }]
+    }).filter((row) => kind === "all" || (kind === "conversation" ? row.kind === "chat" : row.kind !== "chat"))
+    /*
+     * Smithers Cloud's /issues is the repository's OWN tracker and is correctly
+     * empty for a repo mirrored from GitHub; the upstream issues live at
+     * the GitHub-source route (synced store or live GitHub, per plue). One
+     * list shows both, each row labeled with where it came from, and the
+     * GitHub read's provenance rides the card. A GitHub refusal (not
+     * linked, not mirrored) is stated, never a silent absence.
+     */
+    // Read before GitHub: a GitHub 401 re-probes the session, and the view must settle in the scope it started in.
+    const views = await readIssueViews(repo)
+    // Conversations and saved views live in Smithers' own tracker; GitHub's rows join the unfiltered and issues lists.
+    const github = kind === "conversation" || named !== undefined ? { issues: [], meta: undefined } : await readGithubIssues(repo, filter)
+    const issues = [...native, ...github.issues]
+    const card: Card = {
+      id: `issues-${repo}`,
+      kind: "issue-list",
+      title: kind === "conversation" ? `Conversations · ${repo}` : `Issues · ${repo}`,
+      status: "active",
+      createdAt: Date.now(),
+      ordinal: ctx.nextOrdinal(),
+      payload: {
+        repo, filter, issues,
+        ...(kind === "all" ? {} : { kind }),
+        ...(github.meta === undefined ? {} : { github: github.meta }),
+        ...(named === undefined ? {} : { view: named }),
+        ...(views.length === 0 ? {} : { views: [...views] })
+      }
+    }
+    return { card, ...readResult(issues.length === 0
+      ? `No ${filter === "all" ? "" : `${filter} `}${kind === "conversation" ? "conversations" : "issues"} in ${repo}${github.meta?.refusal ? ` (GitHub: ${github.meta.refusal})` : ""}.`
+      : issues.map((issue) => issueRowValue(issue)).join("\n")) }
+  }
+
   const listView = preparedView(ctx, (filter: "open" | "closed" | "all", repoArg?: string, kind: IssueKindFilter = "all", view?: string) => {
     const target = resolveTargetRepo(ctx.store, repoOf(repoArg))
     if ("error" in target) return target.error
     const repo = target.repo
     // A saved view carries its own state and addresses Smithers' own tracker (the API refuses view with state).
     const named = view === undefined || view === "" ? undefined : view
-    return { id: `issues-${repo}`, title: `Issues · ${repo}`, key: JSON.stringify(["issues", repo, filter, kind, named ?? null]), pane: repo, read: async (): Promise<ViewResult> => {
-      // An install has no Smithers tracker, conversations or saved views: its issues are GitHub's.
-      if (install) return listFromInstall(repo, filter)
-      // Plue 422s unknown states ("all" included) — omit the param to list every state.
-      const search = new URLSearchParams()
-      if (named !== undefined) search.set("view", named)
-      else if (filter !== "all") search.set("state", filter)
-      // Conversations are owner-private and excluded from the plain list; ask for them by kind (chat = issues contract; #2111).
-      if (kind === "conversation") search.set("kind", "chat")
-      const query = search.size === 0 ? "" : `?${search}`
-      let response: Response
-      try {
-        response = await ctx.http(`${issuesPath(repo)}${query}`)
-      } catch (error) {
-        return unreachable(`list issues for ${repo}`, error)
-      }
-      if (!response.ok) {
-        // The imported namespace 404s ⇔ the repo isn't imported: degrade to
-        // the GitHub-source list instead of surfacing a broken 404. A named
-        // view 404s when it is not declared: that is the answer, not a fallback.
-        if (response.status === 404 && named !== undefined) return readRepositoryListError(response, `Listing the ${named} view of ${repo} failed (${response.status})`)
-        if (response.status === 404) return listFromGithubSource(repo, filter)
-        if (response.status === 401) ctx.dispatch({ type: "card.removed", actor: ctx.actor(), id: `issues-${repo}` })
-        return readRepositoryListError(response, `Listing issues for ${repo} failed (${response.status})`)
-      }
-      const body: unknown = await response.json().catch(() => null)
-      if (!Array.isArray(body)) {
-        return `The backend answered issues for ${repo} with an unreadable payload`
-      }
-      const native = body.flatMap((entry) => {
-        const parsed = parseListRow(entry)
-        return parsed === null ? [] : [{ ...parsed, source: "smithers-cloud" as const }]
-      }).filter((row) => kind === "all" || (kind === "conversation" ? row.kind === "chat" : row.kind !== "chat"))
-      /*
-       * Smithers Cloud's /issues is the repository's OWN tracker and is correctly
-       * empty for a repo mirrored from GitHub; the upstream issues live at
-       * the GitHub-source route (synced store or live GitHub, per plue). One
-       * list shows both, each row labeled with where it came from, and the
-       * GitHub read's provenance rides the card. A GitHub refusal (not
-       * linked, not mirrored) is stated, never a silent absence.
-       */
-      // Read before GitHub: a GitHub 401 re-probes the session, and the view must settle in the scope it started in.
-      const views = await readIssueViews(repo)
-      // Conversations and saved views live in Smithers' own tracker; GitHub's rows join the unfiltered and issues lists.
-      const github = kind === "conversation" || named !== undefined ? { issues: [], meta: undefined } : await readGithubIssues(repo, filter)
-      const issues = [...native, ...github.issues]
-      const card: Card = {
-        id: `issues-${repo}`,
-        kind: "issue-list",
-        title: kind === "conversation" ? `Conversations · ${repo}` : `Issues · ${repo}`,
-        status: "active",
-        createdAt: Date.now(),
-        ordinal: ctx.nextOrdinal(),
-        payload: {
-          repo, filter, issues,
-          ...(kind === "all" ? {} : { kind }),
-          ...(github.meta === undefined ? {} : { github: github.meta }),
-          ...(named === undefined ? {} : { view: named }),
-          ...(views.length === 0 ? {} : { views: [...views] })
-        }
-      }
-      return { card, ...readResult(issues.length === 0
-        ? `No ${filter === "all" ? "" : `${filter} `}${kind === "conversation" ? "conversations" : "issues"} in ${repo}${github.meta?.refusal ? ` (GitHub: ${github.meta.refusal})` : ""}.`
-        : issues.map((issue) => issueRowValue(issue)).join("\n")) }
-    } }
+    return { id: `issues-${repo}`, title: `Issues · ${repo}`, key: JSON.stringify(["issues", repo, filter, kind, named ?? null]), pane: repo, read: issueListRead(repo, filter, kind, named) }
   })
   const issueView = preparedView(ctx, (number: number, repoArg?: string, asked?: "smithers-cloud" | "github") => {
     // Every issue on an install is a GitHub issue.
@@ -999,6 +1009,12 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     draftIssueComment: async (cardId, text) => { await updateLocalIssue(cardId, payload => ({ ...payload, commentDraft: text })) },
     listIssues: Object.assign((filter: "open" | "closed" | "all", explicitRepo?: string, kind?: IssueKindFilter, view?: string) => repositoryListRead(ctx, "issues", repoOf(explicitRepo), filter, renderRepositoryForm, (repo) => listView(filter, repo, kind ?? "all", view),
       [filter, kind === undefined || kind === "all" ? undefined : `--kind ${kind}`, view === undefined || view === "" ? undefined : `--view ${view}`].filter((part) => part !== undefined).join(" ")), { preload: listView.preload }),
+
+    readIssueRows: async (repo, filter) => {
+      const result = await issueListRead(repo, filter, "all", undefined)()
+      if (typeof result === "string") return result
+      return result.card.kind === "issue-list" ? result.card.payload.issues : []
+    },
 
     readTodoIssue: async (number, repo) => {
       const result = await (install ? readInstallIssue(repo, number) : readGithubIssue(repo, number))

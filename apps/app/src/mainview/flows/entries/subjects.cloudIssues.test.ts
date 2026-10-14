@@ -164,3 +164,59 @@ test("a number the repository's tracker does not have is refused by the source, 
     expect(h.calls).toEqual([`GET ${ISSUES}/999`])
   } finally { await h.controller.dispose() }
 })
+
+/*
+ * #3891. `/search.issues` on the same bootstrap.
+ *
+ * 2026-10-14 06:50Z, same repository and same session: the person had read
+ * `/issues` (four open rows, #5 `Overnight-browser-20261014-0017`) nine
+ * minutes earlier, then navigated the pane to a pull request. `search.issues`
+ * for that exact title answered `0 results` and
+ * "No results for Overnight-browser-20261014-0017" — a read claimed about the
+ * repository's tracker that was never asked of it. The issues index was the
+ * cards still on the screen, and nothing else; `secrets` and `history` have
+ * taken a live read before answering since the seam was written.
+ */
+test("the hosted app's /search.issues asks the repository's own tracker, not the cards left on the screen", async () => {
+  const h = await hosted({ routes: cloudRoutes })
+  try {
+    /* Production's state at 06:50Z: no issue card was on the screen any more. */
+    expect([...h.store.collections.cards.keys()].filter(id => id.startsWith("issues-") || id.startsWith("issue-"))).toEqual([])
+    const outcome = await h.controller.runCommandForResult("search.issues", TITLE)
+    expect(outcome).toMatchObject({ status: "executed" })
+    const value = JSON.parse(outcome.status === "executed" ? outcome.value ?? "{}" : "{}") as { count: number; items: ReadonlyArray<{ kind: string; ref: string; title: string }> }
+    expect(value.count).toBe(1)
+    expect(value.items).toMatchObject([{ kind: "issue", ref: "5", title: `#5 ${TITLE}` }])
+    expect(h.calls).toContain(`GET ${ISSUES}`)
+    const card = h.store.collections.cards.get("search-search.issues")
+    expect(card?.kind === "search-results" ? card.payload.items.map(item => item.ref) : []).toEqual(["5"])
+  } finally { await h.controller.dispose() }
+})
+
+test("a tracker that refuses the read is stated, never restated as an empty result", async () => {
+  const h = await hosted({ routes: {} })
+  try {
+    /*
+     * Nothing answers: the tracker 404s, the GitHub source it degrades to
+     * refuses too, and the person reads that refusal. "No results" would be a
+     * claim about rows no door ever listed.
+     */
+    const outcome = await h.controller.runCommandForResult("search.issues", TITLE)
+    expect(outcome).toMatchObject({ status: "failed" })
+    expect(outcome.status === "failed" ? outcome.error : "").not.toContain("No results")
+    expect(h.calls).toContain(`GET ${ISSUES}`)
+    expect(h.store.collections.cards.get("search-search.issues")).toBeUndefined()
+  } finally { await h.controller.dispose() }
+})
+
+test("the seeded design preview still searches its own world and asks no backend for it", async () => {
+  const h = await hosted({ bootstrap: undefined })
+  try {
+    expect(h.controller.design.enabled).toBe(true)
+    expect(await h.controller.runCommandForResult("issues")).toMatchObject({ status: "executed" })
+    h.calls.length = 0
+    const outcome = await h.controller.runCommandForResult("search.issues", "design")
+    expect(outcome).toMatchObject({ status: "executed" })
+    expect(h.calls).toEqual([])
+  } finally { await h.controller.dispose() }
+})

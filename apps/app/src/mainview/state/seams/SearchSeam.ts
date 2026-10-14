@@ -58,6 +58,11 @@ export interface SearchSeamDeps {
   /** The history (stack) seam: the watched snapshot, else one read; `heldStack` is the watched one only. */
   readonly readStack?: (repo?: string) => Promise<MythicalStack | string>
   readonly heldStack?: (repo: string) => MythicalStack | undefined
+  /**
+   * The issues seam's cardless list read. Absent on a host with no tracker to
+   * ask — the seeded design preview — where the held cards ARE the world.
+   */
+  readonly readIssues?: (repo: string, filter: "open" | "closed" | "all") => Promise<ReadonlyArray<IssueRow> | string>
   readonly now?: () => number
 }
 
@@ -117,6 +122,15 @@ const withActions = (entries: ReadonlyArray<FlowEntry>, fact: Fact): SearchItem 
   return { ...item, actions: [...actionsFor(item, entries)] }
 }
 
+/** One row of a repository's issue list, as the list card carries it. */
+type IssueRow = Extract<Card, { kind: "issue-list" }>["payload"]["issues"][number]
+
+/** The issue rows of one repository, read live for an index. */
+interface IssueRows {
+  readonly repo: string
+  readonly issues: ReadonlyArray<IssueRow>
+}
+
 /** The secrets of one repository as the repository's secrets list names them: names and hosts, never a value. */
 interface SecretRows {
   readonly repo: string
@@ -127,6 +141,13 @@ interface SecretRows {
 interface LiveIndexes {
   readonly history?: ReadonlyArray<MythicalStack>
   readonly secrets?: ReadonlyArray<SecretRows>
+  readonly issues?: ReadonlyArray<IssueRows>
+  /**
+   * The sentence a tracker answered its own read with. The rows a seam has
+   * already established still answer; only a search with none of them states
+   * it, because "no results" would be a claim about a door that refused.
+   */
+  readonly issuesRefusal?: string
 }
 
 export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): SearchSeam => {
@@ -254,8 +275,16 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
       subtitle: `${row.repoId} · ${row.commitId === null ? "no commit" : row.commitId.slice(0, 8)}`
     }))
 
-  /** Issues the issues seam has listed or opened. */
-  const issueItems = (is?: string): ReadonlyArray<Fact> => {
+  /**
+   * The issues the search can see: the rows the flow door read live from the
+   * repository's own tracker, and the ones the issues seam has listed or
+   * opened on this screen. The live rows are added last, so a row the tracker
+   * just answered wins over the copy a card still holds.
+   * [#3891](https://github.com/smithersai/smithers/issues/3891): with the
+   * screen's index alone, `search.issues` answered "No results" about an
+   * issue the host serves, because the pane had navigated off the list.
+   */
+  const issueItems = (is?: string, live: ReadonlyArray<IssueRows> = []): ReadonlyArray<Fact> => {
     const seen = new Map<string, Fact>()
     const add = (number: number, title: string, state: string, repo: string): void => {
       if (is !== undefined && state !== is) return
@@ -265,6 +294,7 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
       if (card.kind === "issue-list") for (const issue of card.payload.issues) add(issue.number, issue.title, issue.state, card.payload.repo)
       if (card.kind === "issue") add(card.payload.number, card.payload.title, card.payload.state, card.payload.repo)
     }
+    for (const row of live) for (const issue of row.issues) add(issue.number, issue.title, issue.state, row.repo)
     return [...seen.values()]
   }
 
@@ -324,7 +354,9 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
       }
       case "issues": {
         const label = qualifier("label")
-        return label === undefined ? issueItems(qualifier("is")) : "Issue rows on this wire carry no labels to filter with; search without label:."
+        if (label !== undefined) return "Issue rows on this wire carry no labels to filter with; search without label:."
+        const items = issueItems(qualifier("is"), live.issues)
+        return items.length === 0 && live.issuesRefusal !== undefined ? live.issuesRefusal : items
       }
       case "secrets":
         return secretItems(secrets)
@@ -398,15 +430,24 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
   /**
    * The live reads a flow door takes before it answers, where the mode has
    * one. Each is the reader's own answer, indexed in place: a search embeds
-   * one card (§6), so the secrets and history cards stay their own flows'.
-   * A watched history snapshot is the index, else one read; the environment
-   * document is always re-read, as secrets.list re-reads it.
+   * one card (§6), so the secrets, history and issue cards stay their own
+   * flows'. A watched history snapshot is the index, else one read; the
+   * environment document is always re-read, as secrets.list re-reads it; and
+   * the repository's tracker is asked for issues, because a search that only
+   * read the screen answers for a door it never opened (#3891).
    */
   const liveIndexes = async (mode: PaletteMode, args: SearchArgs): Promise<LiveIndexes | string> => {
-    if (mode !== "secrets" && mode !== "history") return {}
+    const readIssues = deps.readIssues
+    if (mode === "issues" && readIssues === undefined) return {}
+    if (mode !== "secrets" && mode !== "history" && mode !== "issues") return {}
     const target = resolveTargetRepo(ctx.store, args.repo)
     if ("error" in target) return target.error
     const { repo } = target
+    if (mode === "issues" && readIssues !== undefined) {
+      /* Every state: `is:` narrows the index afterwards, so one read serves both. */
+      const rows = await readIssues(repo, "all")
+      return typeof rows === "string" ? { issuesRefusal: rows } : { issues: [{ repo, issues: rows }] }
+    }
     if (mode === "secrets") {
       const secrets = await readRepositorySecrets(ctx, repo)
       if (typeof secrets === "string") return secrets

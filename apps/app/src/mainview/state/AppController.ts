@@ -1563,7 +1563,9 @@ export const createAppController = (
    */
   const searchSeam = actors.pair(seamCtx, (context, select) =>
     createSearchSeam(context, { registry: () => commands, readStack: select(repositoryHistory).readStack,
-      heldStack: select(repositoryHistory).heldStack }))
+      heldStack: select(repositoryHistory).heldStack,
+      /* A real host's issue index is the repository's tracker, not the cards left on the screen (#3891); the seeded preview has no tracker to ask. */
+      ...(design.enabled ? {} : { readIssues: select(issuesSeam).readIssueRows }) }))
   const egressSeam = actors.pair(seamCtx, (context) => createEgressSeam(context, withToast))
   ctx.onDispose(workspaceSeam.dispose)
   /* Lane change: the change/diff cards and their acts. */
