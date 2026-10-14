@@ -91,9 +91,16 @@ const decodeInput = Schema.decodeUnknownOption(AgentInput)
 export interface Options {
   /** Entries every chain in the tree can call; the agent and system entries are appended. */
   readonly entries: ReadonlyArray<Catalog.Entry>
-  /** Maximum nesting depth, counted in derived child segments. */
+  /**
+   * Maximum nesting depth, counted in derived child segments. Must be a
+   * non-negative integer; construction dies on any other value.
+   */
   readonly maxDepth?: number | undefined
-  /** Per-child budgets and prefix, independent of the parent's. */
+  /**
+   * Per-child budgets and prefix, independent of the parent's. A budget,
+   * when set, must be a non-negative integer; construction dies on any
+   * other value.
+   */
   readonly maxLinks?: number | undefined
   readonly maxCallsPerLink?: number | undefined
   readonly prefix?: string | undefined
@@ -129,7 +136,9 @@ export const contractDigest = (options: Options): string =>
  * Builds the recursive catalog: the given entries plus the `agent` entry
  * (whose handler runs a nested chain against this same catalog, so
  * children recurse up to `maxDepth`) and the system entries, which
- * nothing can shadow.
+ * nothing can shadow. Dies when an entry shadows a reserved name, or when
+ * `maxDepth`, `maxLinks`, or `maxCallsPerLink` is not a non-negative
+ * integer.
  *
  * @category constructors
  * @since 0.1.0
@@ -160,6 +169,20 @@ export const make = (
       return yield* Effect.die(
         new Error(`entries shadow reserved catalog names: ${shadowed.join(", ")}`)
       )
+    }
+    // Every bound is compared with `>` or `>=`, which NaN never satisfies:
+    // a NaN, negative, fractional, or infinite bound would remove the limit
+    // on nesting or child spend instead of enforcing one.
+    for (
+      const [bound, value] of [
+        ["maxDepth", maxDepth],
+        ["maxLinks", pinned.maxLinks],
+        ["maxCallsPerLink", pinned.maxCallsPerLink]
+      ] as const
+    ) {
+      if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+        return yield* Effect.die(new Error(`${bound} must be a non-negative integer, got ${value}`))
+      }
     }
     // Captured at construction on purpose: a child must run on the very
     // same journal/author/runner the parent chain runs on. Build the

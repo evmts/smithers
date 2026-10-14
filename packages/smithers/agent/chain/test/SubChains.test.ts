@@ -211,6 +211,26 @@ describe("SubChains", () => {
     ).rejects.toThrow("shadow reserved catalog names: agent")
   })
 
+  it.each(
+    [
+      ["maxDepth", Number.NaN],
+      ["maxDepth", Number.POSITIVE_INFINITY],
+      ["maxDepth", -1],
+      ["maxDepth", 1.5],
+      ["maxLinks", Number.NaN],
+      ["maxCallsPerLink", -2]
+    ] as const
+  )("dies at construction when %s is %s", async (bound, value) => {
+    const layers = Layer.mergeAll(
+      Journal.layerMemory(),
+      Author.layerMock([]),
+      ScriptRunner.layerInProcess
+    )
+    await expect(
+      runOn(layers, SubChains.make({ entries: [], [bound]: value }))
+    ).rejects.toThrow(`${bound} must be a non-negative integer, got ${value}`)
+  })
+
   it("always composes the system entries into the recursive catalog", async () => {
     const script = flow(`const now = await ctx.call("sys/now")`, `return done(typeof now)`)
     const { outcome } = await runChain({

@@ -92,6 +92,9 @@ individually by the same seam.
 
 - Host entries may not shadow the reserved names (`agent`, `author`,
   `sys/now`, `sys/random`): the catalog dies at construction.
+- `maxDepth`, `maxLinks`, and `maxCallsPerLink` must be non-negative
+  integers: a `NaN`, negative, fractional, or infinite bound dies at
+  construction instead of removing the limit.
 - Root chain ids must not contain `/` or look like `<digits>.<digits>`: the
   derived child id grammar owns those shapes. `Chain.run` refuses them with
   `ChainError` code `invalid_journal` before reading or writing the journal.

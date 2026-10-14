@@ -24,6 +24,7 @@ fix the cause and resume to re-enter the child's settled prefix.
 | `replay_divergence` | `Options.context` changed on resume, changing a settled harness author payload. The error includes bounded journaled and live excerpts.                                                                     | Restore the original context lines, or start a new chain scope.                                                |
 | `invalid_journal`   | A link settled an author call whose result is not a script.                                                                                                                                                 | The journal is not a valid chain history; inspect the settled payload.                                         |
 | `invalid_journal`   | The root chain id contains `/` or matches `<digits>.<digits>`.                                                                                                                                              | Use the empty root id or a name such as `root-a`; derived child scopes are reserved.                           |
+| `invalid_journal`   | `maxLinks` or `maxCallsPerLink` is `NaN`, negative, fractional, or infinite.                                                                                                                                | Pass a non-negative integer budget, or omit it for the default.                                                |
 
 ## JournalError
 

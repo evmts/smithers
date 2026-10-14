@@ -30,8 +30,9 @@ import * as Steering from "./Steering.ts"
 
 /**
  * A chain that cannot proceed: a replayed link diverged from its journal,
- * the journal is not a valid chain history, or the root scope id uses
- * the reserved child grammar.
+ * the journal is not a valid chain history, the root scope id uses the
+ * reserved child grammar, or a budget in {@link Options} is not a
+ * non-negative integer.
  *
  * @category errors
  * @since 0.1.0
@@ -97,7 +98,17 @@ export interface Options {
    */
   readonly envelope?: typeof Schema.Json.Type | undefined
   readonly prefix?: string | undefined
+  /**
+   * The link budget, default {@link defaultMaxLinks}. Must be a non-negative
+   * integer; any other value fails the run with `invalid_journal` before it
+   * writes anything.
+   */
   readonly maxLinks?: number | undefined
+  /**
+   * The per-link call budget, default {@link defaultMaxCallsPerLink}. Must be
+   * a non-negative integer; any other value fails the run with
+   * `invalid_journal` before it writes anything.
+   */
   readonly maxCallsPerLink?: number | undefined
   /** Caller-supplied context lines appended after the goal in harness-driven author calls. */
   readonly context?: ReadonlyArray<string> | undefined
@@ -250,6 +261,17 @@ export const run = (options: Options): Effect.Effect<Outcome.RunResult, RunError
     const authorize = yield* Effect.serviceOption(Authorize.Authorize)
     const maxLinks = options.maxLinks ?? defaultMaxLinks
     const maxCalls = options.maxCallsPerLink ?? defaultMaxCallsPerLink
+    // Every budget comparison is `>=`, which NaN never satisfies: a NaN,
+    // negative, fractional, or infinite budget would silently remove the
+    // bound instead of enforcing one.
+    for (const [budget, value] of [["maxLinks", maxLinks], ["maxCallsPerLink", maxCalls]] as const) {
+      if (!Number.isSafeInteger(value) || value < 0) {
+        return yield* new ChainError({
+          code: "invalid_journal",
+          message: `${budget} must be a non-negative integer, got ${value}`
+        })
+      }
+    }
     const prefix = options.prefix ?? ""
 
     const initial = yield* journal.read

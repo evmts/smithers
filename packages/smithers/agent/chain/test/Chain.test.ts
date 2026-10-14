@@ -73,6 +73,41 @@ describe("Chain", () => {
     }
   )
 
+  it.each(
+    [
+      ["maxLinks", Number.NaN],
+      ["maxLinks", Number.POSITIVE_INFINITY],
+      ["maxLinks", -1],
+      ["maxLinks", 1.5],
+      ["maxCallsPerLink", Number.NaN],
+      ["maxCallsPerLink", Number.POSITIVE_INFINITY],
+      ["maxCallsPerLink", -1],
+      ["maxCallsPerLink", 0.5]
+    ] as const
+  )("refuses %s %s before running anything", async (budget, value) => {
+    const grep = countingEntry("grep", 1)
+    const error = await failChain({
+      author: Author.layerMock([flow(`await ctx.call("grep", {})`, `return done(1)`)]),
+      entries: [grep.entry],
+      [budget]: value
+    })
+    expect(error).toMatchObject({
+      _tag: "/chain/ChainError",
+      code: "invalid_journal",
+      message: `${budget} must be a non-negative integer, got ${value}`
+    })
+    expect(grep.count()).toBe(0)
+  })
+
+  it("accepts zero budgets: zero links parks before authoring", async () => {
+    const { events, outcome } = await runChain({ author: Author.layerMock([]), maxCallsPerLink: 0, maxLinks: 0 })
+    expect(outcome).toEqual({
+      _tag: "Park",
+      reason: { code: "quota", message: "the chain reached its budget of 0 links" }
+    })
+    expect(events.map((event) => event._tag)).toEqual(["ChainStarted", "LinkEnded"])
+  })
+
   it.each(["", "root-a", "1", "1.0a"])("drains steering for root scope %s", async (chain) => {
     const boundaries: Array<string> = []
     const seen: Array<Author.Input> = []

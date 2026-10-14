@@ -109,9 +109,10 @@ The chain trampoline: bootstrap, links, gates, and prefix replay.
 
 - `ChainError extends Schema.TaggedError`: tag `/chain/ChainError`, fields
   `code: "replay_divergence" | "invalid_journal"` and `message: string`. A
-  chain that cannot proceed: a replayed link diverged from its journal, or
-  the journal itself is not a valid chain history. Never recoverable by
-  re-authoring.
+  chain that cannot proceed: a replayed link diverged from its journal, the
+  journal itself is not a valid chain history, the root scope id uses the
+  reserved child grammar, or a budget is not a non-negative integer. Never
+  recoverable by re-authoring.
 
 ### Models
 
@@ -126,7 +127,9 @@ The chain trampoline: bootstrap, links, gates, and prefix replay.
   - `prefix?: string`: the stable fixed prefix handed to the author seat.
   - `maxLinks?: number`: link budget, default `defaultMaxLinks`.
   - `maxCallsPerLink?: number`: per-link call budget, default
-    `defaultMaxCallsPerLink`.
+    `defaultMaxCallsPerLink`. Both budgets must be non-negative integers; a
+    `NaN`, negative, fractional, or infinite budget fails the run with
+    `invalid_journal` before it writes anything.
   - `context?: ReadonlyArray<string>`: caller-supplied context lines
     appended after the goal in harness-driven author calls.
   - `chain?: string`: the journal scope this run owns (default `""`, the
@@ -469,7 +472,8 @@ The authored artifact of one link and the shape gate over raw output.
 - `extract(raw: string): Extraction`: applies gate 1 to raw author output:
   exactly one fenced `flow` block, whose body becomes the script. Zero
   blocks or more than one is a `Rejected` whose reason the next authoring
-  reads.
+  reads. The block opens with three or more backticks and `flow`, and closes
+  only on a line holding at least as many backticks and nothing else.
 
 ## `JsonBoundary`
 
@@ -861,7 +865,8 @@ primitive.
   the system entries, which nothing can shadow. The services are captured at
   construction: build the catalog over the SAME layers the chain runs on.
   Host entries shadowing the reserved names (`agent`, `author`, `sys/now`,
-  `sys/random`) die at construction.
+  `sys/random`) die at construction, as does a `maxDepth`, `maxLinks`, or
+  `maxCallsPerLink` that is not a non-negative integer.
 - `layer(options): Layer.Layer<Catalog.Catalog, never, Journal.Journal |
   Author.Author | ScriptRunner.ScriptRunner>`: the recursive catalog layer.
 
