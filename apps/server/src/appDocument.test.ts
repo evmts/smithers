@@ -25,6 +25,20 @@ describe("repository path ownership", () => {
     }
   })
 
+  // Regression (#3845 landed the guide 2026-10-13; the reservation followed in
+  // 2e59146a): the migration guide is the first versioned site route, so
+  // /migration/1.0 matches the owner/repo shape exactly. Without the
+  // reservation the Worker — which runs first on every path — answers it with
+  // the app document instead of the page, and the inventory walk above turns
+  // red, which is what blocked every Deploy apps run from 38461530158 to
+  // 38519005200. Assert the routing consequence, not only the inventory.
+  test("a versioned site route is the site's, not an owner's", () => {
+    expect(RESERVED_SITE_SEGMENTS).toContain("migration")
+    for (const path of ["/migration/1.0", "/migration/1.0/", "/Migration/1.0"]) {
+      expect(isRepositoryPath(path)).toBe(false)
+    }
+  })
+
   test("GitHub slug boundaries and exactly two segments are required", () => {
     for (const path of ["/a/b/", "/nope/nope", "/Some-Owner/repo_name.git", `/${"a".repeat(39)}/${"r".repeat(100)}`]) {
       expect(isRepositoryPath(path)).toBe(true)
