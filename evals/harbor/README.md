@@ -323,6 +323,14 @@ Harbor, the stock arm on a network-denied task needs its model route:
 report accepts those two hosts as extra agent hosts on the stock arm and
 refuses any other host. Each report states the agent network of its tasks.
 
+The report does not trust a stored `sealed`. It judges the seal again from the
+probe attempts the trial saved, by the current `seal.py` rules, so a verdict
+stored before a rule changed is corrected: nyc-01's trials stored
+`sealed: false` on curl 35 before #3863. Missing or unreadable attempts, a
+missing count of web searches, or any web search still unseal the trial. The
+report counts, per arm, the trials whose verdict changed
+(`sealVerdictsChanged`).
+
 Rootless Docker needs nothing extra: the internal network and the proxy live
 in the daemon's own network namespace. Start the runner inside the daemon's
 user namespace, or `docker compose cp` fails with an `Lchown` error.

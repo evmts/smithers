@@ -36,6 +36,23 @@ LEGACY = "[environment]\nallow_internet = false\n"
 ALLOWLIST = '[agent]\nnetwork_mode = "allowlist"\nallowed_hosts = ["pypi.org"]\n'
 MODEL_ROUTE = ["chatgpt.com", "auth.openai.com"]
 OPENED = "denied https://github.com/ connected (http 200)"
+
+
+def attempts(*denied: tuple[int, int]) -> list[dict]:
+    """The five probe attempts a trial saves: the model route reached, then
+    github.com through the agent's route, github.com and 1.1.1.1 around it,
+    each as (curl exit, http status)."""
+    reached = [{"kind": "allowed", "url": url, "curl": 0, "http": 403, "proxy": 0}
+               for url in ("https://chatgpt.com/", "https://auth.openai.com/")]
+    tried = (("denied", "https://github.com/"), ("denied-direct", "https://github.com/"),
+             ("denied-direct", "https://1.1.1.1/"))
+    return reached + [{"kind": kind, "url": url, "curl": curl, "http": http, "proxy": 0}
+                      for (kind, url), (curl, http) in zip(tried, denied)]
+
+
+REFUSED = attempts((56, 0), (6, 0), (7, 0))  # Pier's proxy and network none
+CUT = attempts((35, 0), (35, 0), (35, 0))  # Harbor's egress control, nyc-01
+OPEN = attempts((0, 200), (6, 0), (7, 0))
 DDL = """CREATE TABLE flows_journal_events (
   run_id TEXT NOT NULL, seq INTEGER NOT NULL, event_id TEXT NOT NULL UNIQUE,
   source_id TEXT NOT NULL, source_seq INTEGER NOT NULL, emitted_at_ms INTEGER NOT NULL,
@@ -66,10 +83,12 @@ class ReportCLI(unittest.TestCase):
     def trial(self, arm: str, task: str, *, reward: float | None = 1.0, exception: str | None = None,
               tokens: tuple = (1000, 800, 50), checksum: str | None = None, host_command: str | None = None,
               config: dict | None = None, succeeded: int = 3, refused_input: dict | None = None,
-              task_toml: str | None = None, sealed: bool | None = True) -> Path:
+              task_toml: str | None = None, sealed: bool | None = True, seal: dict | None = None) -> Path:
         """`task_toml` writes the task's own `task.toml` where the trial's config
         says the task lives; without it the task is a registry name the report
-        cannot open. `sealed` is the stock arm's seal verdict; None records none."""
+        cannot open. `sealed` saves the stock arm's probe: every denied attempt
+        refused, or github.com reached; None saves no seal record. `seal` saves
+        that record as given, its `sealed` the stored verdict."""
         self.serial += 1
         directory = self.jobs[arm] / f"{task}__{arm[:1]}{self.serial:04d}"
         summary = self.jobs[arm] / "result.json"
@@ -97,8 +116,10 @@ class ReportCLI(unittest.TestCase):
                 trial_config[section] = values
         (directory / "config.json").write_text(json.dumps({"trial_name": directory.name}))
         reached = {"attempted": succeeded + 1, "succeeded": succeeded}
-        proof = {} if arm == "smithers" or sealed is None else {
-            "sealed": sealed, "seal": {"sealed": sealed, **({} if sealed else {"reason": OPENED})}}
+        if seal is None and sealed is not None:
+            seal = {"sealed": sealed, "attempts": REFUSED if sealed else OPEN, "webSearches": 0,
+                    **({} if sealed else {"reason": OPENED})}
+        proof = {} if arm == "smithers" or seal is None else {"sealed": seal.get("sealed"), "seal": seal}
         result = {
             "task_name": f"terminal-bench/{task}",
             "trial_name": directory.name,
@@ -381,10 +402,68 @@ class ReportCLI(unittest.TestCase):
         self.trial("smithers", "unproven", task_toml=DEEPSWE)
         unproven = self.trial("baseline", "unproven", task_toml=DEEPSWE, sealed=None)
         refused.append(f"baseline: {unproven.name} is not sealed: the task denies the agent network (no-network) "
-                       "and the stock arm's seal does not hold: no seal verdict")
+                       "and the stock arm's seal does not hold: no saved seal attempts")
         report = self.assert_refused(*refused)
         self.assertFalse([reason for reason in report["refusals"] if sealed.name in reason], report["refusals"])
         self.assertEqual(report["network"], {"allowlist": 1, "no-network": 5})
+
+    def test_a_seal_stored_false_on_harbor_s_cut_handshakes_is_judged_again_and_scored(self) -> None:
+        """nyc-01's SWE-bench Pro V2 Codex trials stored `sealed: false` before
+        curl 35 counted as refused (#3863). The attempts they saved are judged
+        again by the current rules: every denied attempt was cut, so the trial
+        is sealed and scored, and the report says the verdict changed."""
+        self.trial("smithers", "swepro", task_toml=SWEPRO)
+        self.trial("baseline", "swepro", task_toml=SWEPRO, config={"agent": {"extra_allowed_hosts": MODEL_ROUTE}},
+                   seal={"sealed": False, "reason": "denied https://github.com/ proves nothing: curl exit 35",
+                         "attempts": CUT, "webSearches": 0})
+        text, report = self.run_report(0, "--min-tasks", "1")
+        self.assertTrue(report["publishable"], report["refusals"])
+        self.assertEqual(report["sealVerdictsChanged"], {"smithers": 0, "baseline": 1})
+        self.assertIn("Seal verdicts judged again from the saved attempts differ from the stored ones: "
+                      "smithers 0, baseline 1.", text)
+
+    def test_a_saved_connection_is_refused_whatever_the_stored_verdict(self) -> None:
+        self.trial("smithers", "deepswe", task_toml=DEEPSWE)
+        trial = self.trial("baseline", "deepswe", task_toml=DEEPSWE,
+                           seal={"sealed": True, "attempts": OPEN, "webSearches": 0})
+        report = self.assert_refused(f"baseline: {trial.name} is not sealed: the task denies the agent network "
+                                     f"(no-network) and the stock arm's seal does not hold: {OPENED}")
+        self.assertEqual(report["sealVerdictsChanged"], {"smithers": 0, "baseline": 1})
+
+    def test_missing_or_unreadable_attempts_are_refused(self) -> None:
+        """A stored `sealed: true` with nothing to judge it by is not a seal."""
+        cases = {
+            "no record": (None, "no saved seal attempts"),
+            "no attempts": ({"sealed": True, "webSearches": 0}, "no saved seal attempts"),
+            "empty attempts": ({"sealed": True, "attempts": [], "webSearches": 0}, "no saved seal attempts"),
+            "text": ({"sealed": True, "attempts": "all refused", "webSearches": 0}, "the saved seal attempts are unreadable"),
+            "no exit code": ({"sealed": True, "attempts": [{"kind": "denied", "url": "https://github.com/"}],
+                              "webSearches": 0}, "the saved seal attempts are unreadable"),
+            "one attempt short": ({"sealed": True, "attempts": REFUSED[:-1], "webSearches": 0},
+                                  "no denied-direct attempt on https://1.1.1.1/ was recorded"),
+        }
+        refused = []
+        for index, (case, (record, why)) in enumerate(cases.items()):
+            task = f"case-{index}"
+            self.trial("smithers", task, task_toml=DEEPSWE)
+            trial = self.trial("baseline", task, task_toml=DEEPSWE, sealed=None, seal=record)
+            refused.append(f"baseline: {trial.name} is not sealed: the task denies the agent network (no-network) "
+                           f"and the stock arm's seal does not hold: {why}")
+        self.assert_refused(*refused)
+
+    def test_a_saved_web_search_unseals_the_trial(self) -> None:
+        """The model backend runs a web search outside the task container, so
+        refused attempts do not make up for one. A record that does not say how
+        many ran proves nothing."""
+        self.trial("smithers", "searched", task_toml=DEEPSWE)
+        searched = self.trial("baseline", "searched", task_toml=DEEPSWE,
+                              seal={"sealed": True, "attempts": REFUSED, "webSearches": 2})
+        self.trial("smithers", "uncounted", task_toml=DEEPSWE)
+        uncounted = self.trial("baseline", "uncounted", task_toml=DEEPSWE, seal={"sealed": True, "attempts": REFUSED})
+        prefix = "is not sealed: the task denies the agent network (no-network) and the stock arm's seal does not hold"
+        self.assert_refused(
+            f"baseline: {searched.name} {prefix}: the CLI ran 2 web search(es) outside the task container",
+            f"baseline: {uncounted.name} {prefix}: no saved count of web searches")
 
     def test_a_task_whose_network_cannot_be_read_needs_the_seal(self) -> None:
         """A registry task, or a task directory gone since the run: no proof the

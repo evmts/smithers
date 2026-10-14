@@ -25,7 +25,11 @@ A run is publishable only when all of these hold:
   exited 0 in the task container, and for the Smithers arm the host-call
   audit (`audit_host_calls.py`) is `clean`. On a task that denies the agent
   network (`no-network` or `allowlist`), or whose network cannot be read,
-  the stock arm's denied-connect seal (`seal.py`) must also hold. On a public
+  the stock arm's denied-connect seal must also hold. The report judges it
+  again from the probe attempts the trial saved, by the current `seal.py`
+  rules, and never trusts the stored `sealed`: missing or unreadable attempts,
+  or a missing or non-zero count of web searches, unseal. It counts, per arm,
+  the trials whose verdict differs from the stored one. On a public
   task such as Terminal-Bench 4.0 both arms' containers reach the internet by
   the suite's protocol, and the seal is not required.
 
@@ -57,7 +61,7 @@ sys.path.insert(0, str(HERE))
 import audit_host_calls  # noqa: E402
 import calls  # noqa: E402
 import outcome  # noqa: E402
-from seal import ALLOWED_HOSTS as MODEL_ROUTE  # noqa: E402
+from seal import ALLOWED_HOSTS as MODEL_ROUTE, MARK as PROBE_MARK, verdict as probe_verdict  # noqa: E402
 
 MIN_TASKS = 50
 ARMS = ("smithers", "baseline")
@@ -123,7 +127,36 @@ def agent_network(config: dict) -> str:
     return denied[0] if denied else "public"
 
 
-def seal(trial: Path, config: dict, result: dict, smithers: bool, network: str) -> list[str]:
+def stock_seal(trial: Path, result: dict) -> dict:
+    """The stock arm's seal judged again from the probe attempts its trial
+    saved (`seal` in `agent/codex-account.json` or the result's metadata), by
+    the current `seal.py` rules: `{stored, sealed, reason}`. A verdict stored
+    before a rule changed (curl 35, #3863) is not trusted; `stored` only says
+    whether the two differ."""
+    metadata = (result.get("agent_result") or {}).get("metadata") or {}
+    record = _load(trial / "agent" / "codex-account.json")
+    stored = metadata.get("sealed", record.get("sealed"))
+    judged = {"stored": stored if isinstance(stored, bool) else None, "sealed": False}
+    saved = metadata.get("seal") or record.get("seal")
+    attempts = saved.get("attempts") if isinstance(saved, dict) else None
+    if not attempts:
+        return {**judged, "reason": "no saved seal attempts"}
+    try:
+        lines = [f"{PROBE_MARK} {a['kind']} {a['url']} {int(a['curl'])} {int(a['http'])} {int(a['proxy'])}"
+                 for a in attempts]
+    except (TypeError, KeyError, ValueError):
+        return {**judged, "reason": "the saved seal attempts are unreadable"}
+    proof = probe_verdict("\n".join(lines))
+    reasons = [] if proof["sealed"] else [proof["reason"]]
+    searches = saved.get("webSearches")
+    if not _is_count(searches):
+        reasons.append("no saved count of web searches")
+    elif searches:
+        reasons.append(f"the CLI ran {searches} web search(es) outside the task container")
+    return {**judged, "sealed": not reasons, "reason": "; ".join(reasons) or None}
+
+
+def seal(trial: Path, config: dict, result: dict, smithers: bool, network: str, proof: dict | None) -> list[str]:
     """Why a trial is not sealed to its task container; empty when it is."""
     agent, environment = config.get("agent") or {}, config.get("environment") or {}
     broken = []
@@ -150,16 +183,10 @@ def seal(trial: Path, config: dict, result: dict, smithers: bool, network: str) 
             why = "" if not unknown else (f" (target unknown for {unknown} call{'' if unknown == 1 else 's'}: "
                                           f"the journal truncated {'its' if unknown == 1 else 'their'} input)")
             broken.append(f"host-call audit {audit['verdict']}{why}")
-    elif network != "public":
-        metadata = (result.get("agent_result") or {}).get("metadata") or {}
-        record = _load(trial / "agent" / "codex-account.json")
-        sealed = metadata.get("sealed", record.get("sealed"))
-        if sealed is not True:
-            proof = metadata.get("seal") or record.get("seal") or {}
-            why = proof.get("reason") or "no seal verdict"
-            policy = ("the task's agent network is unknown (no readable task.toml at its recorded path)"
-                      if network == "unknown" else f"the task denies the agent network ({network})")
-            broken.append(f"{policy} and the stock arm's seal does not hold: {why}")
+    elif network != "public" and proof is not None and not proof["sealed"]:
+        policy = ("the task's agent network is unknown (no readable task.toml at its recorded path)"
+                  if network == "unknown" else f"the task denies the agent network ({network})")
+        broken.append(f"{policy} and the stock arm's seal does not hold: {proof['reason']}")
     return broken
 
 
@@ -185,6 +212,8 @@ def read_trials(job: Path, smithers: bool) -> list[dict]:
         agent_result = result.get("agent_result") or {}
         tokens = {name: agent_result.get(name) for name in TOKENS}
         network = agent_network(config)
+        healthy = outcome.is_healthy(kind)
+        proof = stock_seal(trial, result) if healthy and not smithers else None
         rows.append({
             "trial": trial.name,
             "task": result.get("task_name") or audit_host_calls.task_name(trial),
@@ -199,7 +228,9 @@ def read_trials(job: Path, smithers: bool) -> list[dict]:
                          "kwargs": (config.get("agent") or {}).get("kwargs") or {},
                          "environment": environment_identity(config.get("environment") or {})},
             "network": network,
-            "seal": seal(trial, config, result, smithers, network) if outcome.is_healthy(kind) else [],
+            "seal": seal(trial, config, result, smithers, network, proof) if healthy else [],
+            # The stored verdict differs from the one judged again.
+            "sealChanged": proof is not None and proof["stored"] is not None and proof["stored"] != proof["sealed"],
             "dir": trial,
             "minutes": agent_minutes(result),
             "startedAt": result.get("started_at"),
@@ -377,6 +408,7 @@ def build(smithers_job: Path, baseline_job: Path, min_tasks: int = MIN_TASKS) ->
         "comparison": compare(by_task, paired),
         "unplaceable": unplaceable,
         "network": dict(sorted(network.items())),
+        "sealVerdictsChanged": {arm: sum(1 for row in rows if row["sealChanged"]) for arm, rows in trials.items()},
         "window": {"from": stamps[0], "to": stamps[-1]} if stamps else None,
         "tasks": [
             {"task": task, **{arm: {"rewards": [r["reward"] for r in by_task[task][arm]],
@@ -555,6 +587,10 @@ def render(report: dict) -> str:
     arms = report["arms"]
     lines = [f"# {arms['smithers']['dataset']}: Smithers vs {arms['baseline']['agent']}", "",
              f"Agent network: {_network(report['network'])}.", ""]
+    changed = report["sealVerdictsChanged"]
+    if any(changed.values()):
+        lines += ["Seal verdicts judged again from the saved attempts differ from the stored ones: "
+                  f"{', '.join(f'{arm} {count}' for arm, count in changed.items())}.", ""]
     if not report["publishable"]:
         lines += ["**Not publishable.**", ""] + [f"- {reason}" for reason in report["refusals"]] + [""]
         return "\n".join(lines + render_comparison(report))
