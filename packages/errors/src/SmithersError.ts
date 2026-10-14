@@ -138,7 +138,8 @@ export class SmithersError<Tag extends string = string> extends Data.Error<Smith
     const name = options.name ?? "SmithersError"
     hidden(this, "name", name)
     hidden(this, "_tag", name)
-    if (options.cause !== undefined) hidden(this, "cause", options.cause)
+    const cause = options.cause
+    if (cause !== undefined) hidden(this, "cause", cause)
   }
 
   /** Only the enumerable fields, as `JSON.stringify` shows a plain `Error`. */

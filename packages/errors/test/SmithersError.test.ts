@@ -241,6 +241,31 @@ describe("SmithersError", () => {
     expect((new SmithersError("INTEGRATION_ERROR", "x", undefined, { cause }).cause as Error).cause).toBe(cause.cause)
   })
 
+  it("captures an accessor cause once without losing its first value", () => {
+    const cause = new Error("original failure")
+    let reads = 0
+    const error = new SmithersError("INTEGRATION_ERROR", "poll failed", undefined, {
+      get cause() {
+        return reads++ === 0 ? cause : undefined
+      }
+    })
+    expect(error.cause).toBe(cause)
+    expect(reads).toBe(1)
+  })
+
+  it("does not repeat a cause getter that cannot be evaluated twice", () => {
+    const cause = new Error("original failure")
+    let reads = 0
+    const error = new SmithersError("INTEGRATION_ERROR", "poll failed", undefined, {
+      get cause() {
+        if (reads++ > 0) throw new Error("cause read twice")
+        return cause
+      }
+    })
+    expect(error.cause).toBe(cause)
+    expect(reads).toBe(1)
+  })
+
   // The falsy rows pin the `!== undefined` check: a truthiness check would
   // drop null, false, 0 and "" while every truthy row still passed.
   it("stores non-Error causes verbatim, including defined falsy ones", () => {
