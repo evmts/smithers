@@ -40,16 +40,16 @@ func retryDelay(generation int64) time.Duration {
 // deferred: the fleet is full" lines the controller wrote between 12:28:00Z
 // and 12:35:00Z on 2026-10-14, around production turn f413964a, 441 name the
 // workspace waiting and 7 a snapshot bake, while 141 name nothing at all, and
-// no record that outlives the turn says which turn any of those 141 was for. That is why that turn's first generation cannot be
-// explained: it spent 300 s in sandbox_create, was interrupted for making no
-// progress, and was recorded as a host that stalled, and no evidence that
-// survives the turn says whether the fleet ever answered its create.
+// no record that outlives the turn says which turn any of those 141 was for.
+// That is why that turn's first generation cannot be explained: it spent
+// 300 s in sandbox_create, was interrupted for making no progress, and was
+// recorded as a host that stalled, and no evidence that survives the turn
+// says whether the fleet ever answered its create.
 //
-// The link is attribution only: the kind is the controller's own lower
-// snake case, the id is the turn's, and the fleet already stores both on the
+// The link is attribution only: the kind is the controller's own lower snake
+// case, the id is the turn's, and the fleet already stores both on the
 // instance row for every other owner. It carries no prompt, no token and no
 // person.
-
 const chatTurnResourceKind = "chat_turn"
 
 // codeHostNoCapacity names a turn whose host could not be launched because no
