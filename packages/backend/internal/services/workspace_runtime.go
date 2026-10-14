@@ -343,7 +343,16 @@ func runtimeOperationError(operation string, err error) error {
 	}
 	// A full host refused before it touched a machine: the honest answer is
 	// no_capacity, as on the sandbox path (workspaceProvisioningError).
-	if isMachineCapacityError(err) {
+	//
+	// Both shapes of that refusal count. isMachineCapacityError is the
+	// runtime's own microVM-count refusal; isNoCapacityError is the hosted
+	// runtime's typed 503. Flattening the second into Internal below threw
+	// the type away, and everything downstream keys off it: the start's
+	// failure settler exempts no_capacity from the terminal verdict, and the
+	// asynchronous provisioner parks instead of failing. Without the type a
+	// full pool marked a branch machine 'failed' — terminal, and a branch has
+	// no second machine — so one busy moment stranded the repository.
+	if isMachineCapacityError(err) || isNoCapacityError(err) {
 		return pkgerrors.NoCapacity(workspaceNoCapacityMessage).WithCause(err)
 	}
 	return pkgerrors.Internal(operation + ": " + err.Error())

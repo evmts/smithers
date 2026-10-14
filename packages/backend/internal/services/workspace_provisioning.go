@@ -1658,15 +1658,21 @@ func (s *WorkspaceService) provisionWorkspaceAsyncWithStart(ctx context.Context,
 				return
 			}
 			slog.Error("async workspace provisioning failed", "workspace_id", workspace.ID, "error", err)
-			// A full pool is not a provisioning failure when the box already
-			// HAS a VM: that guest is intact and suspended, and it comes back
-			// on the next open. 'failed' is a terminal verdict — the UI renders
-			// a dead box and the stranded-'starting' reaper DELETES a failed
-			// row's VM — so the box would be lost to a condition that clears
-			// itself. Park it instead. A box with no VM yet has nothing to
-			// keep, so it still fails below.
-			if isNoCapacityError(err) && strings.TrimSpace(workspace.VmID) != "" {
-				s.suspendWorkspaceAfterNoCapacity(provisionCtx, workspace)
+			// A full pool is never a provisioning failure. 'failed' is a
+			// terminal verdict — the UI renders a dead box, the
+			// stranded-'starting' reaper DELETES a failed row's VM, and a
+			// branch machine refuses every later join as retained — so the
+			// box would be lost to a condition that clears itself.
+			//
+			// A box that HAS a VM is parked: that guest is intact and comes
+			// back on the next open. A box with no VM yet has nothing to park,
+			// so its row simply stays where it is, non-terminal, exactly as
+			// ensureRuntimeWorkspaceRunningLocked already leaves it on the
+			// synchronous path; the next open provisions it.
+			if isNoCapacityError(err) {
+				if strings.TrimSpace(workspace.VmID) != "" {
+					s.suspendWorkspaceAfterNoCapacity(provisionCtx, workspace)
+				}
 				return
 			}
 			// Drive the row to a TERMINAL 'failed' status. Without this the row
