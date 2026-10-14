@@ -177,7 +177,7 @@ const CloudBoxBody = ({ card, actions }: { readonly card: CardOf<"branch">; read
 }
 
 /** Live facts never inherit seed rows or server-supplied command authority. Dependent actions stay dark. */
-export const LiveBranchBody =({ card, actions }: { readonly card: CardOf<"branch">; readonly actions: CardActions }) => {
+export const LiveBranchBody = ({ card, actions }: { readonly card: CardOf<"branch">; readonly actions: CardActions }) => {
   const controller = useController()
   const topic = controller.live ? `branch:${card.payload.id}` : undefined
   if (topic) {
