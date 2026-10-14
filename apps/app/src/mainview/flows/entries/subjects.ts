@@ -51,6 +51,20 @@ export const subjectFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
   const open = async (card: Parameters<CommandActions["presentSubject"]>[0]): Promise<CommandResult> => ({ value: await actions.presentSubject(card) })
   /* An install's issues are its repository's GitHub issues, through IssuesSeam (GET /api/issues). */
   const install = () => actions.bootstrap?.capabilities.includes("install") === true
+  /**
+   * Whether this host serves the issues `/issue` and `/issues` read.
+   *
+   * The doors are the ones `issues.view` and `issues.list` already declare in
+   * `runtimeAny` — the `install` and `cloud` CAPABILITIES — never the design
+   * FIXTURE. [#3879](https://github.com/smithersai/smithers/issues/3879):
+   * branching on `install` alone dropped the hosted app, which serves `cloud`
+   * with the fixture off, into the empty seeded world, so `/issue 5` answered
+   * "No issue #5" for an issue `/issues.view 5` opened. Same class as #3865.
+   *
+   * The fixture still answers whenever it is on (the design preview), and a
+   * host that serves neither keeps the seeded answer it had.
+   */
+  const hostIssues = () => !design.enabled && (install() || actions.bootstrap?.capabilities.includes("cloud") === true)
   const realFiles = () => install() || actions.branchFiles.available()
   const repositoryFile = (payload: Readonly<Record<string, unknown>>): boolean => payload.operation !== "workspace" && payload.operation !== "tree" && payload.branch === undefined && payload.revision === undefined &&
     (payload.operation === "repository" || payload.repo !== undefined || payload.ref !== undefined || /^\/[^/]+\/[^/]+(?:\/|$)/.test(String(payload.path ?? "")) ||
@@ -59,12 +73,13 @@ export const subjectFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
     flow({ name: "issue",   slash: "/issue", cli: ["issue","show"], journey: ["J2"], group: "Issues", visibility: "core", actors: ["person","app_agent","external_agent"], minimumRole: "member", http: {"method":"GET","path":"/api/issues/{number}"}, summary: "Open an issue's card", args: "#n", discloseToAgent: true,
       grammar: numbered(), agent: "run", input: Schema.Struct({ number: Schema.Number }),
       handler: ({ number }) => {
-        if (install()) return actions.viewIssue(number, undefined, "github")
+        /* An install reads GitHub's issue; Smithers Cloud reads its repository's own. */
+        if (hostIssues()) return actions.viewIssue(number, undefined, install() ? "github" : undefined)
         const issue = design.world().issues.find(each => each.number === number)
         return issue === undefined ? `No issue #${number}` : open(issueCard(designRepo(), number, issue.title))
       } }),
     flow({ name: "issues",   slash: "/issues", cli: ["issues"], journey: ["J2"], group: "Issues", visibility: "core", actors: ["person","app_agent","external_agent"], minimumRole: "member", http: {"method":"GET","path":"/api/issues"}, summary: "List the repository's issues", agent: "run", input: Schema.Struct({}),
-      handler: () => install() ? actions.listIssues("open") : open(issueListCard(designRepo())) }),
+      handler: () => hostIssues() ? actions.listIssues("open") : open(issueListCard(designRepo())) }),
     flow({ name: "issue.new",   slash: "/issue.new", cli: ["issue","new"], journey: [], group: "Issues", visibility: "core", actors: ["person","app_agent","external_agent"], minimumRole: "member", http: {"method":"POST","path":"/api/issues"}, summary: "Open a GitHub issue", args: "<title>", discloseToAgent: true,
       grammar: positional("title"), agent: "confirm", input: Schema.Struct({ title: Schema.NonEmptyString, body: Schema.String }),
       form: { submitLabel: "Open on GitHub", fields: { title: { label: "Title" }, body: { label: "Body" } }, args: json },
