@@ -73,7 +73,23 @@ const seededSources = {
     "### `0.1.0 runs the durable engine on Node.js >=26.4.0 only`",
     "### `<path> is not a Smithers 1.0 database (0.1.0 does not load a 0.x smithers.db)`",
     ""
-  ].join("\n")
+  ].join("\n"),
+  // The Flows pages pin pnpm to the release, and the pages they link install
+  // the packages the barrel does not re-export at the barrel's version.
+  "packages/smithers/flows/README.md": "pnpm add @smthrs/flows@0.1.0 effect\n",
+  "packages/smithers/flows/docs/README.md": "pnpm add @smthrs/flows@0.1.0 effect\n",
+  "packages/smithers/flows/docs/installation.md": "pnpm add @smthrs/flows@0.1.0 effect\n",
+  "packages/smithers/flows/docs/quickstart.md": "pnpm add @smthrs/flows@0.1.0 effect\n",
+  "packages/smithers/flows/docs/guides/discover-flows-from-a-registry.md": "npm install @smthrs/registry@0.1.0\n",
+  "packages/smithers/flows/docs/guides/run-a-child-flow-in-a-sandbox.md": "npm install @smthrs/platform-node@0.1.0\n",
+  "packages/smithers/flows/time-travel/docs/README.md": "npm install @smthrs/time-travel@0.1.0 effect\n",
+  "packages/smithers/flows/time-travel/docs/installation.md": "npm install @smthrs/time-travel@0.1.0 effect\n",
+  "packages/smithers/flows/time-travel/docs/quickstart.md": "npm install @smthrs/time-travel@0.1.0\n",
+  "packages/smithers/flows/time-travel/docs/guides/rewind-a-run.md":
+    "npm install @smthrs/time-travel@0.1.0 @smthrs/jj@0.1.0\n",
+  "packages/smithers/flows/flow/docs/guides/inspect-the-plan.md": "npm install @smthrs/flow@0.1.0 @smthrs/plan@0.1.0\n",
+  "packages/smithers/flows/plan/docs/guides/diff-two-plans.md":
+    "npm install @smthrs/plan@0.1.0 @smthrs/flow@0.1.0 @effect/platform-node\n"
 }
 
 /** A package changelog at 0.1.0 with one entry waiting under `[Unreleased]`. */

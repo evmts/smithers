@@ -11,20 +11,89 @@ tool to reach for when a step key changed unexpectedly, when a branch took the
 arm you did not expect, or when you want to show an operator what a run is about
 to do.
 
+## Before you start
+
+The examples run with `node <file>.ts` on Node.js 26.4.0 or later and need no
+engine, database, or jj: planning reads declarations only. They import
+`@smthrs/flow` and `@smthrs/plan`. In a project that installed `@smthrs/flows`,
+add both at the version of `@smthrs/flows` you have:
+
+```bash
+npm install @smthrs/flow@1.0.0-rc.6 @smthrs/plan@1.0.0-rc.6
+```
+
+`@smthrs/flows` re-exports the same modules, so `import { Graph } from "@smthrs/flows"`
+and its `Plan.Node` work too. The outputs below are real output from 1.0.0-rc.6.
+
 ## Build the graph
 
+Create `inspect.ts`. The flow runs two checks in parallel, joins them into a
+report, and then ships or explains:
+
 ```ts
-import { Graph } from "@smthrs/flow"
+import { Action, Flow, Graph } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import * as Schema from "effect/Schema"
+
+const Lint = Action.make("release/Lint", { payload: { target: Schema.String }, success: Schema.String })
+const Types = Action.make("release/Types", { payload: { target: Schema.String }, success: Schema.String })
+const Report = Action.make("release/Report", {
+  payload: { lint: Schema.String, types: Schema.String },
+  success: Schema.String
+})
+const Ship = Action.make("release/Ship", { payload: { report: Schema.String }, success: Schema.String })
+const Explain = Action.make("release/Explain", { payload: { reason: Schema.String }, success: Schema.String })
+
+const Release = Flow.make("release/Release", {
+  payload: { target: Schema.String },
+  success: Schema.String,
+  body: ({ target }) =>
+    Node.all({ lint: Lint.call({ target }), types: Types.call({ target }) }).pipe(
+      Node.bindPlanned((checks) => Report.call({ lint: checks.lint, types: checks.types })),
+      Node.branch({
+        if: (report) => report.includes("clean"),
+        then: (report) => Ship.call({ report }),
+        else: (reason) => Explain.call({ reason })
+      })
+    )
+})
 
 const graph = Graph.build(Release, { target: "web" })
 
 for (const node of Graph.nodes(graph)) {
-  console.log(node.id, node.kind, node.dependencies)
+  console.log(`${node.id} ${node.kind} [${node.dependencies.join(", ")}]`)
 }
 
 for (const edge of Graph.edges(graph)) {
   console.log(`${edge.from} -> ${edge.to} (${edge.reason})`)
 }
+```
+
+```bash
+node inspect.ts
+```
+
+```text
+root.flow.branch.andThen.all.lint ActionCall []
+root.flow.branch.andThen.all.types ActionCall []
+root.flow.branch.andThen All [root.flow.branch.andThen.all.lint, root.flow.branch.andThen.all.types]
+root.flow.branch.then ActionCall [root.flow.branch.andThen]
+root.flow.branch AndThen [root.flow.branch.andThen, root.flow.branch.then]
+root.flow.then ActionCall [root.flow.branch]
+root.flow.else ActionCall [root.flow.branch]
+root.flow Branch [root.flow.branch, root.flow.then, root.flow.else]
+root FlowCall [root.flow]
+root.flow.branch.andThen.all.lint -> root.flow.branch.andThen (value)
+root.flow.branch.andThen.all.types -> root.flow.branch.andThen (value)
+root.flow.branch.andThen -> root.flow.branch (value)
+root.flow.branch.andThen -> root.flow.branch.then (continuation)
+root.flow.branch.then -> root.flow.branch (value)
+root.flow.branch -> root.flow (value)
+root.flow.branch -> root.flow.then (continuation)
+root.flow.then -> root.flow (value)
+root.flow.branch -> root.flow.else (continuation)
+root.flow.else -> root.flow (value)
+root.flow -> root (value)
 ```
 
 `Graph.build` takes a flow declaration or a bare node, the payload, and options.
@@ -79,8 +148,13 @@ partial drafts. Check diagnostics before asking for drafts:
 const issues = Graph.diagnostics(graph)
 if (issues.length === 0) {
   const drafts = Graph.drafts(graph) // ready for Plan.compile or Plan.append
+  console.log(`${drafts.length} drafts`)
 }
 ```
+
+Appended to `inspect.ts`, it prints `9 drafts`: one per node above.
+[Diff two plans](../../../plan/docs/guides/diff-two-plans.md) compiles drafts like
+these and compares two versions of a flow.
 
 ## Resolve layers while building
 
@@ -103,17 +177,22 @@ that read the world would make a plan a function of more than its declarations.
 ## Drive one interpretation
 
 `Interpreter.interpret` builds the graph and walks it against real values,
-without registering the flow. It answers an `Interpretation`:
+without registering the flow. It is the walk `Interpreter.layer` runs for each
+round of an execution, and it requires the `FlowInstance` the runtime provides
+to an executing round, so a program reaches it through `execute` rather than by
+calling it at top level. It answers an `Interpretation`:
 
 ```ts
-import { Interpreter } from "@smthrs/flow"
-
-const interpretation = yield* Interpreter.interpret(Release, { target: "web" })
-
-interpretation.value // the root's value
-interpretation.settled // ReadonlyMap<string, unknown>: every node that settled
-interpretation.failed // the typed failures observed before a catch recovered them
-interpretation.skipped // the nodes a branch went the other way on
+interface Interpretation {
+  /** The root's value. */
+  readonly value: unknown
+  /** Every node that settled. */
+  readonly settled: ReadonlyMap<string, unknown>
+  /** The typed failures observed before a catch recovered them. */
+  readonly failed: ReadonlyMap<string, unknown>
+  /** The nodes a branch went the other way on. */
+  readonly skipped: ReadonlyArray<string>
+}
 ```
 
 `skipped` is the field that answers "why did nothing happen here". The walk is
@@ -147,6 +226,8 @@ implementation layers instead of provided under them.
 
 ## Related pages
 
+- [Diff two plans](../../../plan/docs/guides/diff-two-plans.md): compile two
+  versions of a flow and see which steps were added, removed, or re-keyed.
 - [Bodies are plans](../concepts/bodies-and-plans.md): why the build is pure and
   what it refuses.
 - [Execution identity](../concepts/execution-identity.md): how a node id becomes

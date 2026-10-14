@@ -117,6 +117,56 @@ export const versionedSources = [
     declaration: "the registry install line",
     pattern: /(npm install\s+@smthrs\/registry@)(\S+)()/
   },
+  // Pages the Flows docs link to install packages the barrel depends on but does
+  // not re-export, at the barrel's version. A rewrite replaces only the first
+  // match, so each page names each package once.
+  ...[
+    ["packages/smithers/flows/time-travel", "docs/README.md"],
+    ["packages/smithers/flows/time-travel", "docs/installation.md"],
+    ["packages/smithers/flows/time-travel", "docs/quickstart.md"],
+    ["packages/smithers/flows/time-travel", "docs/guides/rewind-a-run.md"]
+  ].map(([pkg, page]) => ({
+    path: `${pkg}/${page}`,
+    package: pkg,
+    declaration: "the time-travel install line",
+    pattern: /(npm install\s+@smthrs\/time-travel@)(\S+)()/
+  })),
+  {
+    path: "packages/smithers/flows/time-travel/docs/guides/rewind-a-run.md",
+    package: "packages/smithers/flows/time-travel",
+    declaration: "the jj install line",
+    pattern: /(npm install\s+@smthrs\/time-travel@\S+\s+@smthrs\/jj@)(\S+)()/
+  },
+  {
+    path: "packages/smithers/flows/flow/docs/guides/inspect-the-plan.md",
+    package: "packages/smithers/flows/flow",
+    declaration: "the flow install line",
+    pattern: /(npm install\s+@smthrs\/flow@)(\S+)()/
+  },
+  {
+    path: "packages/smithers/flows/flow/docs/guides/inspect-the-plan.md",
+    package: "packages/smithers/flows/flow",
+    declaration: "the plan install line",
+    pattern: /(npm install\s+@smthrs\/flow@\S+\s+@smthrs\/plan@)(\S+)()/
+  },
+  {
+    path: "packages/smithers/flows/plan/docs/guides/diff-two-plans.md",
+    package: "packages/smithers/flows/plan",
+    declaration: "the plan install line",
+    pattern: /(npm install\s+@smthrs\/plan@)(\S+)()/
+  },
+  {
+    path: "packages/smithers/flows/plan/docs/guides/diff-two-plans.md",
+    package: "packages/smithers/flows/plan",
+    declaration: "the flow install line",
+    pattern: /(npm install\s+@smthrs\/plan@\S+\s+@smthrs\/flow@)(\S+)()/
+  },
+  {
+    path: "packages/smithers/flows/docs/guides/run-a-child-flow-in-a-sandbox.md",
+    package: "packages/smithers/flows",
+    declaration: "the platform-node install line",
+    pattern: /(npm install\s+@smthrs\/platform-node@)(\S+)()/
+  },
   {
     path: "packages/smithers/flows/database/docs/troubleshooting.md",
     package: "packages/smithers/flows/database",

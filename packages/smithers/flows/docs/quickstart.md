@@ -227,6 +227,12 @@ seconds for that lease to expire, then reclaims the run and resumes it.
   the four entry points, and which one a given program should call.
 - [Shut a host down](./guides/shut-a-host-down.md): signals, the shutdown
   deadline, and what a released run means.
+- [Inspect the plan a body builds](../flow/docs/guides/inspect-the-plan.md) and
+  [Diff two plans](../plan/docs/guides/diff-two-plans.md): see what a flow will
+  run, and compare two versions of it, before anything runs.
+- [Rewind a run to a frame](../time-travel/docs/guides/rewind-a-run.md): rewind
+  a paused run and resume it, or fork a finished one.
 - [Run a child flow in a sandbox](./guides/run-a-child-flow-in-a-sandbox.md):
-  the tier where the child's own code executes on another machine.
+  the tier where the child's own code executes on another machine, including
+  one reached over SSH.
 - [Troubleshooting](./troubleshooting.md): every refusal these modules raise.

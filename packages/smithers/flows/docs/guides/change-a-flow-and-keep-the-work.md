@@ -164,6 +164,10 @@ will run  fix/RunTests
 
 No step ran and nothing was written: there is no `workspace` directory yet. The
 same list is where each run's `2 of 2 steps ran` line gets its total.
+[Inspect the plan a body builds](../../flow/docs/guides/inspect-the-plan.md)
+reads the rest of the graph: every node, its dependencies, and the edges
+between them. [Diff two plans](../../plan/docs/guides/diff-two-plans.md)
+compiles two versions of a flow and compares them.
 
 ## Run it
 
@@ -405,4 +409,6 @@ change the flow, leave it out or use a new one.
   its step needs to read a file.
 - [Stand up a durable Node runtime](./stand-up-a-node-runtime.md): what
   `NodeRuntime.layerHost` builds, and the other entry points.
+- [Diff two plans](../../plan/docs/guides/diff-two-plans.md): compare the
+  plans of two versions of a flow before running either.
 - [API reference](../api.md): every export of `@smthrs/flows`.

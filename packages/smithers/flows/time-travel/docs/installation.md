@@ -7,7 +7,13 @@ sidebar:
 
 ## Install the package
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/time-travel@1.0.0-rc.6 effect
+```
+
+In a project that already installs [`@smthrs/flows`](/api/flows), name the same
+version as `@smthrs/flows`, so both resolve to one copy of the package and of
+its `TimeTravel` service key.
 
 The package requires Node.js 26.4.0 or later and ships as both ESM and
 CommonJS with TypeScript declarations. Its runtime dependencies install with
@@ -67,7 +73,7 @@ including `SqlTimeTravelStore`, which needs an injected SQLite or PostgreSQL
 ## Reaching the service through the umbrella
 
 A composition that already installs [`@smthrs/flows`](/api/flows) reaches the
-same service key through it, with no second dependency:
+same service key through it:
 
 ```ts
 import { Engine, TimeTravel } from "@smthrs/flows"
@@ -77,6 +83,10 @@ import { Engine, TimeTravel } from "@smthrs/flows"
 is the whole onboarding and `TimeTravel.layer` provides it. The umbrella is
 also where a caller reaches `Engine.FlowEngine.Lineage`, the one constructor
 that mints the lineage id a frame is addressed by.
+
+The umbrella does not re-export a `TimeTravelStore`, so building the layer still
+takes this package: `SqlTimeTravelStore` comes from `@smthrs/time-travel`. The
+[Quickstart](./quickstart.md) is that composition over `NodeRuntime.layerHost`.
 
 ## What a runnable composition adds
 

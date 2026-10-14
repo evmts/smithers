@@ -59,10 +59,15 @@ truncating history the child still depends on is not a policy choice. See
 
 ## busy: "run ... is not available for rewind"
 
-**What happened.** Another owner holds the run, or the claim or activation was
-lost while the rewind was taking it.
+**What happened.** The run is not idle. Either it has finished (`completed`,
+`failed`, or `cancelled`), or it is `running`, or another owner holds it, or the
+claim or activation was lost while the rewind was taking it. Only a `pending` or
+`suspended` run can be rewound.
 
-**What to change.** Retry. This is a contention answer, not a verdict.
+**What to change.** For a finished run, fork it at the frame instead: a fork
+leaves the parent as it is and drives a child from that point. For a live run,
+park it at a durable wait or let the other owner release it, then retry. See
+[Rewind a run to a frame](./guides/rewind-a-run.md#paused-runs-rewind-finished-runs-fork).
 
 ## busy: "journal tail moved for ..."
 

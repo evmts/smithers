@@ -27,11 +27,14 @@ stranding an effect that already crossed into the outside world.
 
 ## Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/time-travel@1.0.0-rc.6 effect
+```
 
-Node.js 26.4.0 or later. The package ships ESM and CommonJS with TypeScript
-declarations, and its root entry point bundles for the browser with no `node:`
-built-in.
+Beside [`@smthrs/flows`](/api/flows), install the same version as
+`@smthrs/flows`. The package needs Node.js 26.4.0 or later, ships ESM and
+CommonJS with TypeScript declarations, and its root entry point bundles for the
+browser with no `node:` built-in.
 
 ## Read a run's past
 
@@ -76,9 +79,11 @@ have such runs and want to look at, branch, or truncate them.
 
 The two compose without ceremony. `TimeTravel.layer` asks for five injectable
 contracts, four of which an engine composition already provides, so it merges
-straight onto one. `@smthrs/flows` also re-exports the `TimeTravel` service key,
-so a program that already depends on the barrel reaches the service through it
-with no second dependency, and reaches `FlowEngine.Lineage` the same way.
+straight onto one. `@smthrs/flows` re-exports the `TimeTravel` service key and
+`FlowEngine.Lineage`, but not a store, so a program on the barrel adds this
+package for `SqlTimeTravelStore`. The [Quickstart](./quickstart.md) builds that
+composition and replays a run; [Rewind a run](./guides/rewind-a-run.md) rewinds a
+paused run and forks a finished one.
 
 Above both sits the `smithers` command-line tool, which runs and supervises
 flows without a program of your own. Its verbs are documented at

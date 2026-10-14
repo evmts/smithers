@@ -71,8 +71,16 @@ key, so it is not a hint.
 | Tier           | Choose it when                                        | What the engine does                                                                                                                                                                                                                                            |
 | -------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sealed`       | The result is a pure function of the declared inputs. | Records the result and replays it. With the right declarations, reuses it across runs.                                                                                                                                                                          |
-| `compensable`  | The body changes the workspace.                       | Takes a pre-image before each attempt and restores it before the next one, so attempt two does not trip over attempt one's half-written files. Requires a `FlowEngine.SnapshotBoundary` in context, which [`@smthrs/engine-store`](/api/engine-store) supplies. |
+| `compensable`  | The body changes the workspace.                       | Takes a pre-image before each attempt and restores it before the next one, so attempt two does not trip over attempt one's half-written files. Requires a `FlowEngine.SnapshotBoundary` in context, which [`@smthrs/engine-store`](/api/engine-store) supplies, and a workspace that is a jj repository. |
 | `irreversible` | The body changes the world outside the workspace.     | Refuses to retry without a declared `idempotencyKey`, dying with `IrreversibleRetryRequiresIdempotencyKey`.                                                                                                                                                     |
+
+The `compensable` pre-image is a jj snapshot of the workspace, so the
+workspace must be a jj repository: run `jj git init` in it first. Without one,
+the step dies before its first attempt runs:
+
+```text
+@smthrs/jj/JjError: jj snapshot: Error: There is no jj repo in "."
+```
 
 `sealed` is the default, and it is a claim about the body: this result is worth
 replaying. Add `nondeterministic: true` when several legitimate results may race

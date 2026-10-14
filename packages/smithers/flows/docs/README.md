@@ -130,8 +130,17 @@ reachable only through it.
   anything runs.
 - [Stand up a durable Node runtime](./guides/stand-up-a-node-runtime.md): the
   four `NodeRuntime` entry points, and which one a given program should call.
+- [Inspect the plan a body builds](../flow/docs/guides/inspect-the-plan.md):
+  every step and edge a flow will run, read before any of it runs.
+- [Diff two plans](../plan/docs/guides/diff-two-plans.md): compare the plans of
+  two versions of a flow, and why node ids are positional.
+- [Rewind a run to a frame](../time-travel/docs/guides/rewind-a-run.md): rewind
+  a paused run and resume it, or fork a finished one.
+- [Time travel quickstart](../time-travel/docs/quickstart.md): replay a run's
+  journal into an answer without re-running anything.
 - [Run a child flow in a sandbox](./guides/run-a-child-flow-in-a-sandbox.md):
-  the tier where the child's own code executes on another machine.
+  the tier where the child's own code executes on another machine, including
+  one reached over SSH.
 - [The aggregate surface](./concepts/aggregate-surface.md): why the authoring
   names are flat, the infrastructure packages are namespaces, and the platform
   bundles are absent.
