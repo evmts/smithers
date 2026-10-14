@@ -15,6 +15,13 @@ const derive = (input: unknown): Keys.KeyV1 => Effect.runSync(provideCrypto(Keys
 const decodeDerivedKey = (input: unknown): Keys.StoredKey =>
   Effect.runSync(provideCrypto(Schema.decodeUnknownEffect(Keys.DerivedKey)(input)))
 
+const derivations: ReadonlyArray<
+  readonly [string, (input: unknown) => Effect.Effect<Keys.KeyV1, unknown, Crypto.Crypto>]
+> = [
+  ["deriveKey", Keys.deriveKey],
+  ["DerivedKey", Schema.decodeUnknownEffect(Keys.DerivedKey)]
+]
+
 const failingCrypto = Layer.succeed(
   Crypto.Crypto,
   Crypto.make({
@@ -285,38 +292,60 @@ describe("key derivation", () => {
     expect(Schema.decodeUnknownSync(Keys.StoredKey)(recovered)).toBe(recovered)
   })
 
-  it("interrupts a pending digest, runs host cleanup, and permits recovery", async () => {
-    let cleaned = false
-    const exit = await Effect.runPromise(Effect.gen(function*() {
-      const started = yield* Deferred.make<void>()
-      // A suspended host gives deterministic cancellation with no wall-clock sleeps.
-      const host = Crypto.make({
-        randomBytes: (size) => new Uint8Array(size),
-        digest: () =>
-          Deferred.succeed(started, undefined).pipe(
-            Effect.andThen(Effect.never),
-            Effect.ensuring(Effect.sync(() => {
-              cleaned = true
-            }))
+  it.each(derivations)(
+    "%s interrupts a pending digest, runs host cleanup, and permits recovery",
+    async (_name, decode) => {
+      let cleaned = false
+      const exit = await Effect.runPromise(Effect.gen(function*() {
+        const started = yield* Deferred.make<void>()
+        // A suspended host gives deterministic cancellation with no wall-clock sleeps.
+        const host = Crypto.make({
+          randomBytes: (size) => new Uint8Array(size),
+          digest: () =>
+            Deferred.succeed(started, undefined).pipe(
+              Effect.andThen(Effect.never),
+              Effect.ensuring(Effect.sync(() => {
+                cleaned = true
+              }))
+            )
+        })
+        const fiber = yield* Effect.forkChild(
+          decode({ domain: "test/cancellation", version: 1 }).pipe(
+            Effect.provideService(Crypto.Crypto, host)
           )
-      })
-      const fiber = yield* Effect.forkChild(
-        Keys.deriveKey({ domain: "test/cancellation", version: 1 }).pipe(
-          Effect.provideService(Crypto.Crypto, host)
         )
-      )
-      yield* Deferred.await(started)
-      yield* Fiber.interrupt(fiber)
-      return yield* Fiber.await(fiber)
-    }))
-    expect(Exit.isFailure(exit)).toBe(true)
-    if (Exit.isFailure(exit)) {
-      expect(Cause.hasInterrupts(exit.cause)).toBe(true)
-      expect(Cause.hasFails(exit.cause)).toBe(false)
+        yield* Deferred.await(started)
+        yield* Fiber.interrupt(fiber)
+        return yield* Fiber.await(fiber)
+      }))
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        expect(Cause.hasInterrupts(exit.cause)).toBe(true)
+        expect(Cause.hasFails(exit.cause)).toBe(false)
+      }
+      expect(cleaned).toBe(true)
+      const recovered = derive({ domain: "test/cancellation", version: 1 })
+      expect(Schema.decodeUnknownSync(Keys.StoredKey)(recovered)).toBe(recovered)
     }
-    expect(cleaned).toBe(true)
-    const recovered = derive({ domain: "test/cancellation", version: 1 })
-    expect(Schema.decodeUnknownSync(Keys.StoredKey)(recovered)).toBe(recovered)
+  )
+
+  it.each(derivations)("%s reads mutable input only when run and rereads it on each execution", (_name, decode) => {
+    let reads = 0
+    let value = 1
+    const input = {
+      get value(): number {
+        reads++
+        return value
+      }
+    }
+    const pending = provideCrypto(decode(input))
+    expect(reads).toBe(0)
+    value = 2
+    expect(Effect.runSync(pending)).toBe(derive({ value: 2 }))
+    expect(reads).toBe(1)
+    value = 3
+    expect(Effect.runSync(pending)).toBe(derive({ value: 3 }))
+    expect(reads).toBe(2)
   })
 
   it("reports a missing Crypto service as an Effect configuration defect", () => {
