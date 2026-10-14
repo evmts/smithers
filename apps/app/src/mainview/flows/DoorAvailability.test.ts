@@ -269,6 +269,55 @@ test("once this origin's Wiki gate has refused a save, Save to wiki is withdrawn
   } finally { await h.controller.dispose() }
 })
 
+/*
+ * The repository Wiki family, as `entries/wiki.ts` declares it. Every one of
+ * these reaches `/api/repos/{owner}/{repo}/wiki*`, which is gated as a whole.
+ */
+const WIKI_FAMILY = ["wiki.cloud", "wiki.cloud.open", "wiki.cloud.new", "wiki.cloud.rename",
+  "wiki.cloud.delete", "wiki.history", "wiki.attach", "wiki.sync"] as const
+
+/* The notes doors act on this page's own documents, and `wiki.create` asks the Mythical stack. */
+const WIKI_NOTES = ["wiki", "wiki.pane", "wiki.open", "wiki.new-note", "wiki.select", "wiki.create"] as const
+
+test("the gate's verdict withdraws the whole repository Wiki family, not only the answer button, and leaves the notes doors alone", async () => {
+  const h = await host(HOSTED, { wiki: "gate" })
+  try {
+    for (const name of [...WIKI_FAMILY, ...WIKI_NOTES]) expect(h.controller.commands.find(name)).toBeDefined()
+    await h.controller.submitCommand({ name: "wiki.save", actor: "user", payload: { name: "Overnight verification queue guide", text: "# Answer\n\nKeep the queue" } })
+    await waitFor(() => h.store.session().wikiSaves?.[0]?.state === "failed", 5_000)
+    /*
+     * One refusal settles the family. Withdrawing only the answer button left
+     * `/wiki.cloud.new` as a typed door into the same gate: a Create form a
+     * person fills in and a PATCH/PUT that can only answer `forbidden`.
+     */
+    for (const name of WIKI_FAMILY) {
+      expect(h.controller.commands.find(name)).toBeUndefined()
+      expect(h.controller.commands.explainAbsent(name))
+        .toEqual({ door: "origin", reason: `/${name} is not available on this origin yet.` })
+    }
+    // The page's own notes are not the server's Wiki and keep working.
+    for (const name of WIKI_NOTES) expect(h.controller.commands.find(name)).toBeDefined()
+    const sent = h.calls.length
+    expect(await h.controller.submitCommand({ name: "wiki.cloud.new", actor: "user", payload: { title: "Overnight verification queue" } }))
+      .toMatchObject({ status: "unavailable", reason: "/wiki.cloud.new is not available on this origin yet." })
+    expect(await h.controller.runCommandForResult("wiki.cloud.new", "Overnight verification queue"))
+      .toMatchObject({ status: "unavailable", reason: "/wiki.cloud.new is not available on this origin yet." })
+    expect(h.calls.length).toBe(sent)
+  } finally { await h.controller.dispose() }
+})
+
+test("an origin whose Wiki is enabled keeps every repository Wiki door after a save", async () => {
+  const h = await host(HOSTED, { wiki: "served" })
+  try {
+    await h.controller.submitCommand({ name: "wiki.save", actor: "user", payload: { name: "Queue guide", text: "# Answer\n\nKeep the queue" } })
+    await waitFor(() => h.store.session().wikiSaves?.[0]?.state === "completed", 5_000)
+    for (const name of [...WIKI_FAMILY, ...WIKI_NOTES]) {
+      expect(h.controller.commands.find(name)).toBeDefined()
+      expect(h.controller.commands.explainAbsent(name)).toBeUndefined()
+    }
+  } finally { await h.controller.dispose() }
+})
+
 test("a Cloud origin whose Wiki is enabled keeps the door and its save completes", async () => {
   const h = await host(HOSTED, { wiki: "served" })
   try {

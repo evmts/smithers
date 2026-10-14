@@ -28,9 +28,36 @@ export const wikiSurfaceFlows = (actions: CommandActions): ReadonlyArray<FlowEnt
     return page === undefined ? actions.showWorld() : { value: await actions.presentSubject(wikiCard(page.id, page.title)) }
   } })
 
+/*
+ * The repository Wiki ROUTE FAMILY, named here rather than in the shared
+ * operation because which routes an origin mounts is the app's question
+ * (entries/controls.ts says the same about the TODO controls).
+ *
+ * Every door below reaches `/api/repos/{owner}/{repo}/wiki*` through
+ * `wiki/CloudWiki.ts`, and `compose/router.go` puts that whole family behind
+ * `FeatureFlagGate(cfg.FeatureFlags.Wiki)` — the pages, the search, the
+ * navigation index, the history, the create/patch/delete and the attachment
+ * PUT alike. So they declare the same `door` as `wiki.save`
+ * (flows/DoorAvailability.ts): once this origin has answered a Wiki call with
+ * the gate's own verdict, none of them opens a form again, and `/wiki.cloud.new`
+ * cannot be typed past the withdrawn answer button into the same refusal.
+ *
+ * The notes doors are deliberately NOT in it. `wiki`, `wiki.pane`,
+ * `wiki.open`, `wiki.new-note`, `wiki.select`, `wiki.edit`, `wiki.delete*`,
+ * `wiki.backlinks`, `wiki.graph`, `wiki.heading`, `wiki.view`, `wiki.card.*`
+ * and `wiki.space` act on this page's own documents, and `wiki.create` asks
+ * the Mythical stack (`/api/repos/{owner}/{repo}/mythical/wiki`, a different
+ * family). An origin whose Wiki flag is off still serves all of them.
+ */
+const WIKI_DOOR_FAMILY: ReadonlySet<string> = new Set([
+  "wiki.cloud", "wiki.cloud.open", "wiki.cloud.new", "wiki.cloud.rename",
+  "wiki.cloud.delete", "wiki.history", "wiki.attach", "wiki.sync"
+])
+
 /** The `wiki.*` flows: the shared wiki operations bound to the controller. */
 export const wikiFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
-  [...bind(wikiOperations.filter(operation => operation.name !== "wiki.ask"), {
+  [...bind(wikiOperations.filter(operation => operation.name !== "wiki.ask")
+    .map(operation => WIKI_DOOR_FAMILY.has(operation.name) ? { ...operation, door: "wiki" as const } : operation), {
     /* Manual refresh enters the packaged wiki worker; failed Home runs share background.retry. */
     "wiki.create": ({ repo }) => actions.refreshWiki(repo),
     "wiki.cloud": ({ repo, page, space }) => actions.listCloudWiki(repo, page, space),

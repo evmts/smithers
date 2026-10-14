@@ -172,6 +172,30 @@ describe("§3 the keyboard contract", () => {
     expect(rows(view.host)).not.toContain("cloud.sign-in")
   })
 
+  test("a door this origin does not mount says so before the form, and Enter is answered rather than silent", async () => {
+    /*
+     * The real hosted capability list (`https://smithers.sh/api/bootstrap`):
+     * no `install` row, so `compose/router.go` mounted no `/api/todos*`
+     * (flows/DoorAvailability.ts). The whole family is out of the palette, so
+     * the Composer's exact-name branch used to find nothing and Enter did
+     * NOTHING AT ALL — the keypress a person repeats because the app said
+     * neither yes nor no.
+     */
+    const view = await mount({ bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test",
+      capabilities: ["identity", "agent", "chat.archive", "github", "model.turn", "recommend", "commands.select", "cloud"], authFlow: "redirect", sandbox: null } })
+    await press(view, "k", { meta: true })
+    await view.act(() => view.controller.changeDraft("/todo.new"))
+    const reason = "/todo.new is not available on this origin yet."
+    expect(rows(view.host)).not.toContain("todo.new")
+    // What the person reads BEFORE they fill anything in, from the catalog's own sentence.
+    expect(view.controller.commands.explainAbsent("todo.new")?.reason).toBe(reason)
+    expect(view.host.querySelector('[data-testid="palette-refusal"]')?.textContent).toBe(reason)
+    await press(view, "Enter")
+    expect(view.store.collections.toasts.get("toast-command.unavailable.todo.new")?.title).toBe(reason)
+    // Not a metered turn either: the typed door is not prose.
+    expect(invoked(view.store).some(row => row.name === "chat.send")).toBe(false)
+  })
+
   test("an unknown /no-such-command stays visible with a refusal and never submits a metered turn", async () => {
     const view = await mount()
     await press(view, "k", { meta: true })

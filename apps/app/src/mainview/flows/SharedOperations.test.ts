@@ -12,6 +12,20 @@ const all = [...wikiSurfaceFlows(unused), ...wikiFlows(unused)]
 const bound = all.filter(entry => nameOf(entry) !== "wiki.save")
 const shared: ReadonlyArray<AppOperation> = [...wikiSurfaceOperations, ...wikiOperations].filter(operation => operation.name !== "wiki.ask")
 
+/*
+ * The one thing this app adds to a shared wiki declaration: `door`, the route
+ * family an origin either mounts or does not (`flows/DoorAvailability.ts`).
+ * The shared catalog says what an operation IS, and which routes an ORIGIN
+ * serves is this app's question (`entries/wiki.ts`), so it is named here
+ * rather than in `@smthrs/ui/app-operations/wiki` — and the equality below
+ * still fails on anything else the binding would add or drop.
+ */
+const APP_DOOR: Readonly<Record<string, { readonly door: "wiki" } | undefined>> = {
+  "wiki.cloud": { door: "wiki" }, "wiki.cloud.open": { door: "wiki" }, "wiki.cloud.new": { door: "wiki" },
+  "wiki.cloud.rename": { door: "wiki" }, "wiki.cloud.delete": { door: "wiki" }, "wiki.history": { door: "wiki" },
+  "wiki.attach": { door: "wiki" }, "wiki.sync": { door: "wiki" }
+}
+
 describe("GUI wiki flows", () => {
   test("register exactly the retained shared operations, in their order", () => {
     expect(all.map(nameOf)).toEqual([...shared.map((declared) => declared.name), "wiki.save"])
@@ -26,11 +40,16 @@ describe("GUI wiki flows", () => {
     bound.forEach((entry, index) => expect(entry.input).toBe(shared[index]!.input))
   })
 
-  test("carry the shared rules as their catalog metadata", () => {
+  test("carry the shared rules as their catalog metadata, plus this app's own door", () => {
     bound.forEach((entry, index) => {
-      const { name: _name, input: _input, ...rules } = shared[index]!
-      expect(entry.metadata).toEqual(rules)
+      const { name, input: _input, ...rules } = shared[index]!
+      expect(entry.metadata).toEqual({ ...rules, ...APP_DOOR[name] })
     })
+  })
+
+  test("the repository Wiki route family is doored and the notes doors are not", () => {
+    expect(bound.filter(entry => entry.metadata.door !== undefined).map(nameOf).sort())
+      .toEqual(Object.keys(APP_DOOR).sort())
   })
 
   test("disclose to the model exactly the operations that are not user-only", () => {
