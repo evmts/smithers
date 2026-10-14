@@ -163,6 +163,21 @@ describe("browserFetch guards", () => {
     }
   })
 
+  test("internal hostnames written as fully qualified names (trailing dot) are refused without resolving", async () => {
+    for (const host of ["localhost.", "db.internal.", "nas.local.", "home.lan.", "LOCALHOST."]) {
+      let resolved = 0
+      const outcome = await browserFetch(`https://${host}/`, {
+        resolveHost: async () => {
+          resolved += 1
+          return ["140.82.112.3"]
+        },
+        fetchImpl: async () => new Response("leaked")
+      })
+      expect(outcome).toMatchObject({ ok: false, code: "private_host" })
+      expect(resolved).toBe(0)
+    }
+  })
+
   test("a public hostname resolving to a private address is refused (the DNS check is after resolution)", async () => {
     const outcome = await browserFetch("https://sneaky.example.com/", {
       resolveHost: async () => ["169.254.169.254"]
@@ -1067,6 +1082,12 @@ describe("extractReadableText", () => {
 
   test("ignores closing block name prefixes until a complete closing tag", () => {
     expect(extractReadableText("before<script>hidden</scripture>still hidden</script >after")).toBe("before after")
+  })
+
+  test("decodes each entity once, so an escaped entity stays literal text", () => {
+    expect(extractReadableText("<p>write &amp;lt;b&amp;gt; for bold, &amp;amp; for &amp;</p>")).toBe(
+      "write &lt;b&gt; for bold, &amp; for &"
+    )
   })
 
   test("strips scripts, styles, and tags; decodes entities; collapses whitespace", () => {

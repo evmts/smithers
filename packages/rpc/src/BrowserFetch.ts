@@ -147,7 +147,8 @@ export type ResolveHost = (hostname: string, signal?: AbortSignal) => Promise<Re
 const BLOCKED_HOSTNAMES = new Set(["localhost", "localhost.localdomain"])
 
 const isBlockedHostname = (hostname: string): boolean => {
-  const lower = hostname.toLowerCase()
+  // A fully qualified name (`localhost.`) is the same host as its relative spelling.
+  const lower = hostname.toLowerCase().replace(/\.$/, "")
   if (BLOCKED_HOSTNAMES.has(lower)) return true
   return (
     lower.endsWith(".internal") ||
@@ -330,6 +331,16 @@ const guardTarget = async (
   return { addresses }
 }
 
+const ENTITIES: Record<string, string> = {
+  nbsp: " ",
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: "\"",
+  "#39": "'",
+  apos: "'"
+}
+
 /** Pull the readable text out of an HTML page: no scripts, no styles, no tags.
  * @since 1.0.0
  * @category conversions
@@ -376,13 +387,11 @@ export const extractReadableText = (html: string): string => {
     cursor = end + 1
   }
   const withoutTags = parts.join("")
-  const decoded = withoutTags
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, "\"")
-    .replace(/&#39;|&apos;/gi, "'")
+  // One pass, so `&amp;lt;` decodes to the literal text `&lt;`, never to `<`.
+  const decoded = withoutTags.replace(
+    /&(nbsp|amp|lt|gt|quot|#39|apos);/gi,
+    (_entity, name: string) => ENTITIES[name.toLowerCase()] ?? ""
+  )
   return decoded.replace(/\s+/g, " ").trim().slice(0, BROWSER_FETCH_MAX_TEXT)
 }
 
