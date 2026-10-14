@@ -5,6 +5,110 @@ release (what changed and why it matters, with screenshots and examples), see
 the release notes at
 [smithers.sh/changelogs/1.0.0-rc.0](https://smithers.sh/changelogs/1.0.0-rc.0).
 
+## 1.0.0-rc.6 (2026-10-14)
+
+<!-- commits:1.0.0-rc.6 -->
+
+81 commits since [v1.0.0-rc.5](https://github.com/smithersai/smithers/commit/bf61d63b37).
+
+### ✨ Features
+
+- **chat:** a hosted turn names the model it resolved (#3858) ([c6c360ddca](https://github.com/smithersai/smithers/commit/c6c360ddca963cf23c13c3e512e554f0a7af2dbf))
+- **model-host:** record what a hosted turn consumed and called back (#3812) ([2a39c76546](https://github.com/smithersai/smithers/commit/2a39c765467255631611a8c95d30bb2e0467a932))
+- **agent:** on Smithers Cloud the agent opens the new-flow form instead of explaining how (#3823) ([6c9829232a](https://github.com/smithersai/smithers/commit/6c9829232abab1c2308dec8b1aeee217f393534e))
+- **smithers:** key host timing records to their engine step and journal each process's lifetime (#3841) ([b8c8613b6b](https://github.com/smithersai/smithers/commit/b8c8613b6b8aaab142bd324dab2b46cba14e0801))
+- **cli:** read recorded frame time, cell work and call duration, and fit each stage in runs show --timing (#3842) ([f517519203](https://github.com/smithersai/smithers/commit/f5175192033b18e149d9a74cb014a3312de20588))
+- **harness:** record a model call that failed or never settled (#3844) ([ce561416d6](https://github.com/smithersai/smithers/commit/ce561416d696e90d015ac11e32eb9b3599365abf))
+- **evals:** read what the journal now records instead of deriving it, and fit a call by stage (#3843) ([e61c1d831b](https://github.com/smithersai/smithers/commit/e61c1d831bf4f5838900623df2ea45a62e5be1f1))
+- **harness:** carry a judge reading's wire timing on its reading and decision rows (#3844) ([993e1cee3b](https://github.com/smithersai/smithers/commit/993e1cee3b63a58e9794285307b28e8329e60390))
+- **agent:** say how long a failed model try ran and what status failed it (#3844) ([a4cabad6eb](https://github.com/smithersai/smithers/commit/a4cabad6eb23baf461e89b8d35a1df10e263d8ce))
+- **agent:** keep where a truncated call was aimed, and say why a failed call failed (#3844) ([15dbbb5651](https://github.com/smithersai/smithers/commit/15dbbb5651e7027486f58d08e4d0c67248376cf8))
+- **backend:** a composer names public mirrors in code (#3830) ([53bad92c84](https://github.com/smithersai/smithers/commit/53bad92c84931b12483eef0bef38053ce859d78b))
+- **harness:** carry the model package's wire timing and served tier on model-settled (#3844) ([325026f9dd](https://github.com/smithersai/smithers/commit/325026f9ddfde4cd1316c5a6ba1a501683f46963))
+- **harness:** classify each cell and time its calls; put the descriptor trail fixture on a stopped clock (#3844) ([398a551186](https://github.com/smithersai/smithers/commit/398a5511860cbed4d5da344bdbff56663eb6e551))
+- **backend:** a hosted deployment seeds its public mirrors (#3830) ([834170cc09](https://github.com/smithersai/smithers/commit/834170cc09fbd6cc9fd6fd3d9598a7c8576f17cd))
+- **smithers:** journal sign-in, start-up stages and each container command's timing (#3841) ([05c5cf5773](https://github.com/smithersai/smithers/commit/05c5cf57734a1cab300b2bca7c2980dd31af2e46))
+- **cli:** print the time in the host and before the request was sent, per call and for the run (#3842) ([2fb78dd9b5](https://github.com/smithersai/smithers/commit/2fb78dd9b511c58be0e7d11a36890756327f1aba))
+- **smithers:** time each sign-in and define the host's timing records (#3841) ([698f6f3312](https://github.com/smithersai/smithers/commit/698f6f3312a1c84b6ba316bbf6952d8c8b964261))
+- **harness:** record where each frame's wall time went on its closing event (#3844) ([53ba4960a1](https://github.com/smithersai/smithers/commit/53ba4960a1b37c7ad653ef75c9ee26e964487d39))
+- **agent:** label every spend with its purpose and frame, so totals by purpose add up to the run (#3844) ([29ba800be8](https://github.com/smithersai/smithers/commit/29ba800be8afd98772ea489e6e1835b782e6fad5))
+- **harness:** record which triggers a judge reading fired, what it scheduled, and what it cost (#3844) ([59a9eaaecb](https://github.com/smithersai/smithers/commit/59a9eaaecbc443461b4a4ed7b9a01b580f707b42))
+
+### 🐛 Bug fixes
+
+- **rpc,model-host:** the can't-yets are acts, not subjects, so a hosted turn writes prose (#3881) ([875342d819](https://github.com/smithersai/smithers/commit/875342d819dd89af9003b1f504f78640dee1e592))
+- **app:** a hosted turn's screen-only search paints its author's card (#3878) ([8727b17d59](https://github.com/smithersai/smithers/commit/8727b17d5951dd65c310b43357646cad67d74f21))
+- **app:** a merged pull request reads Merged, not Closed (#3880) ([61c37d724d](https://github.com/smithersai/smithers/commit/61c37d724dc8c135b5af731ae64bf0c4f8253b18))
+- **app:** the canonical /issue and /issues read the host's own issues, not the design mock (#3879) ([100328a5d3](https://github.com/smithersai/smithers/commit/100328a5d37f06c600e7362cdda25a1f34f5b584))
+- **scripts:** the landing-gate fixture's tool shims cannot re-enter themselves ([e1203b6f0b](https://github.com/smithersai/smithers/commit/e1203b6f0b0b176e81ce41387a4c009c73fd2792))
+- **model-host:** the callback bound closes a half-sent receipt's socket (#3812) ([efb5f28495](https://github.com/smithersai/smithers/commit/efb5f28495c83783bdc9ce82d256563f4f7e6567))
+- **workspace:** a dispatched turn joins the branch machine its owner sized (#3877) ([c5970f7670](https://github.com/smithersai/smithers/commit/c5970f7670064bc6b089281dc0ea39589db07f44))
+- **model-host:** a screen-only request says its browser runs it, and that this host cannot see the screen (#3878) ([67c69e618b](https://github.com/smithersai/smithers/commit/67c69e618b54522b9acd2210fcd327ca5b0b1643))
+- **app:** the Cloud production row proves its act with the turn's own frames, not a card count (#3876) ([eee8764606](https://github.com/smithersai/smithers/commit/eee87646064631c6638116419d5f71cf3f37d285))
+- **model-host:** a hosted turn records the Node build its callbacks run on ([b7d50142d5](https://github.com/smithersai/smithers/commit/b7d50142d508addfb06266767b9c641eae15e654))
+- **app:** the box card a hosted form opens reads its own box, never an unsown design seed ([d85fef7bdc](https://github.com/smithersai/smithers/commit/d85fef7bdc79d688ccd7de03c56f5e734025678c))
+- **model-host:** a journal callback that never answers ends the turn (#3812) ([b69692cae4](https://github.com/smithersai/smithers/commit/b69692cae49065f840d7c43fc6a05cb2b71302bf))
+- **workspace:** a busy pool never fails a branch machine terminally (#3874) ([60ea27578c](https://github.com/smithersai/smithers/commit/60ea27578ce88e531c6670edf1f270663c3a5c84))
+- **workspace:** the repository receipt writer is a capability a runtime can bind (#3875) ([d80fc3d6e0](https://github.com/smithersai/smithers/commit/d80fc3d6e0c852bcd2f011908ccdbfbb36ac83be))
+- **backend:** the installation owner is refused before an erase or a suspend changes anything (#3818) ([f9ba2f2217](https://github.com/smithersai/smithers/commit/f9ba2f22170d4d941d7d8c16851ea68affa0a4d6))
+- **agent:** the Cloud agent runs the screen-only flows its author's screen owns (#3876) ([26c0cb69ae](https://github.com/smithersai/smithers/commit/26c0cb69ae612d9457df673e1611120225ba5b59))
+- **app:** a hosted issue card offers only its own source's acts, and its box form reaches Smithers Cloud ([aa1d018b2f](https://github.com/smithersai/smithers/commit/aa1d018b2f97ea3f47a624f74a2a9d8808db7e1a))
+- **agent:** the one line a refused dispatch leaves cannot lose a race (#3866) ([29947638bd](https://github.com/smithersai/smithers/commit/29947638bd671a6467b382082fedb10907c3791c))
+- **evals:** a job that names no environment ran the runner's default (#3873) ([00808972e6](https://github.com/smithersai/smithers/commit/00808972e6074811457d4d5ddfbe95789d1cc2d9))
+- **evals:** the report judges the stock arm's seal again from its saved attempts (#3869) ([a1133e687c](https://github.com/smithersai/smithers/commit/a1133e687c4bbd3847af59072a6e832f6cdf4243))
+- **evals:** the report requires the stock arm's seal only where the task denies the agent network (#3868) ([2ed92c0217](https://github.com/smithersai/smithers/commit/2ed92c0217aa1e9e6ad6b9406921ce75e5c5462e))
+- **agent:** a refused dispatch leaves one line on the run (#3866) ([e47d94a776](https://github.com/smithersai/smithers/commit/e47d94a776f7e5a9246b228ac55751ba58d83c46))
+- **coding-host:** the lazy bun:sqlite shim re-exports every name the bundle imports ([f41992b89b](https://github.com/smithersai/smithers/commit/f41992b89be5cd2165c0fd589ccd829a28f5fb9d))
+- **evals:** the stock Codex arm installs only the system packages an image lacks (#3863) ([8e74506f10](https://github.com/smithersai/smithers/commit/8e74506f1088c78a265986fab000b0b1b8ef9058))
+- **evals:** Harbor re-runs a trial that hit a 429 (#3863) ([bccadfc555](https://github.com/smithersai/smithers/commit/bccadfc555ae00c94a0012debe3d72237f19101d))
+- **evals:** a handshake Harbor's egress control cuts is a refused connection (#3863) ([b8b827e1fa](https://github.com/smithersai/smithers/commit/b8b827e1fa8a23c32164928e2867fd0fd3f08a2f))
+- **model-host:** the provider's side drains for as long as the provider answers (#3812) ([702798a977](https://github.com/smithersai/smithers/commit/702798a97711e60bd1a6527e75b6a5c224fd6dbb))
+- **agent:** a failed session says why it failed (#3860) ([a34d0e134c](https://github.com/smithersai/smithers/commit/a34d0e134cff5686f124fa1aea0f357e2e4718f6))
+- **evals:** the stock Codex arm reads auth.json in an image whose USER is not root (#3862) ([c5e90dc56f](https://github.com/smithersai/smithers/commit/c5e90dc56fc814d90e8fa5dfe0500f4d2c340db1))
+- **model-host:** a committed frame no longer stops the provider stream (#3812) ([07e13e6423](https://github.com/smithersai/smithers/commit/07e13e642324bc2e4b39b3b4963b0c19bf635e38))
+- **server:** reserve the migration segment so /migration/1.0 is never a repository path (#3845) ([2e59146a91](https://github.com/smithersai/smithers/commit/2e59146a91c0503aa1f5895a1840f7034b3140df))
+- **workflow:** a full sandbox pool says so in the run log (#3857) ([7658bf5890](https://github.com/smithersai/smithers/commit/7658bf5890f1156d8f7f31029e03c8cc5bd145b0))
+- **app:** a live socket that never opened backs off to a minute (#3856) ([2ae9fd58be](https://github.com/smithersai/smithers/commit/2ae9fd58be56b84c449e446093f38e0dc4252ce0))
+- **app:** test children no longer wait on Bun to notice their exit (#3763) ([446d91a01c](https://github.com/smithersai/smithers/commit/446d91a01c499ece085bc4474d6252274f3e8fb2))
+- **site:** serve the 1.0 migration guide at smithers.sh/migration/1.0 (#3845) ([678d064889](https://github.com/smithersai/smithers/commit/678d0648893a7bf179aa5ecb61d48069085d857c))
+- **chat:** end a turn whose host stops making progress (#3812) ([fcee94dd23](https://github.com/smithersai/smithers/commit/fcee94dd2307bfc1eceb17b22d649c7deeeffacc))
+- **backend:** log a public mirror's standing refusal once (#3830) ([841e63acf4](https://github.com/smithersai/smithers/commit/841e63acf4877d3d433749c3fe92210dbba2f7d9))
+- **app:** a bare /flow.new asks with the form, the open repository filled in (#3828) ([edb49c49c2](https://github.com/smithersai/smithers/commit/edb49c49c2f4e29bd77fc6970a4ab58f4d913a9f))
+- **cli:** count evaluator readings and the plan's lead time in runs show --timing (#3842) ([830c9a37ed](https://github.com/smithersai/smithers/commit/830c9a37ed681c0ed407830cac88d8969fa4a426))
+- **agent:** restamp the sealed model step key for the model's timing fields (#3840) ([b6e44b8112](https://github.com/smithersai/smithers/commit/b6e44b811282ccb00f13631b3db1f212457eb5ca))
+- **evals:** the host-call audit says when a call's target is unknown because its input was truncated (#3843) ([278097543a](https://github.com/smithersai/smithers/commit/278097543ac6dfe46ea4bc1f7b689188e17d44e8))
+
+### 📝 Documentation
+
+- **api:** record the observability lanes' public declarations and regenerate their API pages (#3837) ([f1160f81a5](https://github.com/smithersai/smithers/commit/f1160f81a5bc04fe93c8333ae8918cce032fb9ca))
+- **site:** regenerate the harness and model API pages (#3483) ([3770a7a436](https://github.com/smithersai/smithers/commit/3770a7a4360904063d67a00de0d1becb5c2f39e2))
+- **release:** record the 1.0.0-rc.5 prerelease ([e606c6908d](https://github.com/smithersai/smithers/commit/e606c6908dbe98a0321744c44e6c9e9afe1ae568))
+- **model:** the latency guide shows the response line as it is written (#3840) ([7f0817bd52](https://github.com/smithersai/smithers/commit/7f0817bd523531b1a3b2552f274d622da95f4f24))
+
+### 🧹 Chores
+
+- **model-host:** the guest-runtime record is written when the turn runs ([55b32156fc](https://github.com/smithersai/smithers/commit/55b32156fc88f46565270f3ad0f4fa509d449b8d))
+- **flows:** declare the coding host's bundle test, so the target index is derivable again ([1573d5be01](https://github.com/smithersai/smithers/commit/1573d5be01bdfd6252964dc4e7c1247530b3ffe5))
+
+### 📦 Other changes
+
+- **style(smithers):** format the telemetry files the Effect 4.0.4 port left unformatted (#3839) ([c86fbe329a](https://github.com/smithersai/smithers/commit/c86fbe329ae06dc619ab6dd68e3eca67c4f9582d))
+- **test(app):** a number the repository's tracker lacks is refused by the source, not the mock (#3879) ([d29d096b34](https://github.com/smithersai/smithers/commit/d29d096b34dc171b9c2985f0b125d7b6e90ba631))
+- **test(backend):** the owner suspend guard fails closed when the binding is unreadable (#3818) ([01e24869eb](https://github.com/smithersai/smithers/commit/01e24869ebef8aa9295d931763c878bb0b2e736f))
+- **style(app):** restore the space the box-card fix dropped from LiveBranchBody's declaration ([02aef859ba](https://github.com/smithersai/smithers/commit/02aef859ba240b6599df75bcaba03477df10a952))
+- **test(app):** the Cloud agent's production row proves the screen door it actually has (#3876) ([ed9c2f1470](https://github.com/smithersai/smithers/commit/ed9c2f1470e7b31ad602fabb04ee8d3a74319432))
+- **test(workspace):** a narrow querier answers the repository identity a spec needs (#3867) ([08c90cb2ad](https://github.com/smithersai/smithers/commit/08c90cb2ad1e1d517bcc1649a4d71884ba562f91))
+- **build(effect):** move to stable effect 4.0.4; published packages accept effect ^4.0.4 (#3839) ([4e691d0ace](https://github.com/smithersai/smithers/commit/4e691d0acecdde755e163b03f853e4a1a9ede47e))
+- **test(server):** a versioned site route is the site's, not an owner's (#3859) ([5856458c6b](https://github.com/smithersai/smithers/commit/5856458c6bd988fa05a9254f37a1eb688193b558))
+- **test(app):** a stalled test child names the last step its supervisor reached (#3763) ([c78aaa09f6](https://github.com/smithersai/smithers/commit/c78aaa09f65dd967226bc4507dce65bd8baadb26))
+- **test(app):** browser specs follow the dismissed composer and the hosted conversation (#3483) ([7fe2c0bb7c](https://github.com/smithersai/smithers/commit/7fe2c0bb7cd6b6b653371be6db3683612b6ff972))
+- **test(app):** a child supervisor that never answers reports what the machine was short of (#3763) ([05ad2cfaac](https://github.com/smithersai/smithers/commit/05ad2cfaac1410967a3efade4b1af66ab3a27923))
+- **test(app):** give the process-starting script tests deadlines sized to their work (#3483) ([02ae2daad1](https://github.com/smithersai/smithers/commit/02ae2daad1b5c22b3f79e799f238c5bb15688e33))
+- **test(smithers):** time a process whose caller reads only its exit code (#3841) ([5428b6ce5e](https://github.com/smithersai/smithers/commit/5428b6ce5eb1add526aae5f29f0b99f3d69d417a))
+- **test(cli):** cover side-by-side steps, dead cells and stray records in the run timing report (#3842) ([79ac717be4](https://github.com/smithersai/smithers/commit/79ac717be4b84a0dcb49981b0615d15c62e84b44))
+
+<!-- /commits:1.0.0-rc.6 -->
+
 ## 1.0.0-rc.5 (2026-10-13)
 
 <!-- commits:1.0.0-rc.5 -->

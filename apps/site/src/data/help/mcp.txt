@@ -1,4 +1,4 @@
-mcp@1.0.0-rc.5 — Register the Smithers MCP server with an agent
+mcp@1.0.0-rc.6 — Register the Smithers MCP server with an agent
 
 Usage: mcp <command>
 

@@ -8,6 +8,12 @@ are history, not the release that carries it.
 
 ## [Unreleased]
 
+## [1.0.0-rc.6] - 2026-10-14
+
+### Changed
+
+- Released with the workspace package train. No change to this package since the previous release.
+
 ## [1.0.0-rc.5] - 2026-10-13
 
 ### Changed
