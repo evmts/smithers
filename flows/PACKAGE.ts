@@ -256,7 +256,13 @@ const coding = Smithers.NodeTest({
     Smithers.file("//flows/test/coding-recovery-policy.test.ts"),
     Smithers.file("//flows/test/learning.test.ts"),
     // The local landers over a real colocated jj repository and a recording `gh`.
-    Smithers.file("//flows/test/coding-local-landing.test.ts")
+    Smithers.file("//flows/test/coding-local-landing.test.ts"),
+    // The coding host's bundle shim, checked against every `bun:sqlite` import
+    // under `packages/smithers` and `flows`. It reads more than this target's
+    // srcs name, so it belongs to this uncached runner: a cached verdict would
+    // survive a new import the shim does not re-export, which is the build
+    // break it exists to catch (#3839).
+    Smithers.file("//flows/test/coding-host-bundle.test.ts")
   ]),
   srcs: codingSources,
   deps: codingDependencies,
