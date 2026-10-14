@@ -152,9 +152,13 @@ test("the GitHub-source door is asked only in its own query vocabulary", async (
   expect(update.issues.available).toBe(true)
 })
 
-test("a door this host switched off is unavailable, not repository activity that could not be checked", async () => {
+/* plue writes the gate's body itself; the Worker restates it in its own envelope, keeping the code and the message. */
+test.each([
+  { message: "feature not available" },
+  { status: "error", code: "forbidden", message: "feature not available" }
+])("a door this host switched off is unavailable, not repository activity that could not be checked (%o)", async body => {
   const update = await readWith(async url => url.includes("notifications")
-    ? Response.json({ message: "feature not available" }, { status: 403 })
+    ? Response.json(body, { status: 403 })
     : Response.json([{ number: 4, title: "Open issue", state: "open" }]))
   expect(update.notifications).toEqual({ available: false, problems: [], events: [] })
   /* The repository's own activity still reads, and nothing claims it did not. */
