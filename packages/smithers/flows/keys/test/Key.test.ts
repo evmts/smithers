@@ -51,6 +51,16 @@ describe("stored key validation", () => {
     expect(Keys.digest(Schema.decodeUnknownSync(Keys.StoredKey)(stored))).toBe("a".repeat(64))
   })
 
+  it.each(["\n", "\r", "\r\n", "\u2028", "\u2029"])(
+    "rejects a stored key followed by line terminator %j",
+    (terminator) => {
+      for (const schema of [Keys.StoredKey, Keys.KeyV1]) {
+        expect(() => Schema.decodeUnknownSync(schema)(stored + terminator)).toThrow()
+        expect(() => Schema.encodeUnknownSync(schema)(stored + terminator)).toThrow()
+      }
+    }
+  )
+
   it("keeps parsing separate from deriving a key from key-shaped text", () => {
     const parsed = Schema.decodeUnknownSync(Keys.StoredKey)(stored)
     expect(parsed).toBe(stored)
