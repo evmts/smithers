@@ -4,7 +4,9 @@ A task that declares `network_mode = "no-network"` must not let its agent
 reach the internet: an unsealed agent downloads the upstream fix. The stock
 Codex CLI runs inside the task container and has to reach its model, so its
 container cannot be on `network none`. Under Pier it sits on an internal
-network whose only way out is a proxy that allows `ALLOWED_HOSTS`.
+network whose only way out is a proxy that allows `ALLOWED_HOSTS`. Under
+Harbor's docker egress control, a transparent proxy cuts every other TLS
+handshake.
 
 `script()` is run inside the task container before the CLI starts, with the
 environment the CLI's own commands get. It tries each URL of `ATTEMPTS` with
@@ -44,6 +46,9 @@ REFUSED = {
     5: "the proxy did not resolve",
     6: "the host did not resolve",
     7: "the connection failed",
+    # Harbor's docker egress control: a transparent proxy reads the SNI and
+    # hangs up on a host off its allowlist before the handshake completes.
+    35: "the TLS handshake was cut",
     56: "the proxy refused the tunnel",
     97: "the proxy handshake failed",
 }

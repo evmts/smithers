@@ -289,7 +289,9 @@ backend runs the search, so no container network stops it.
 `seal.script()` in the task container with the environment the CLI's commands
 get. curl tries `github.com` through the proxy, then `github.com` and `1.1.1.1`
 around it. `sealed` is true only when every one was refused (curl exit 5, 6,
-7, 56 or 97) and the CLI's transcript has no `web_search` item. A connection,
+7, 35, 56 or 97) and the CLI's transcript has no `web_search` item. Exit 35
+is Harbor's docker egress control: its transparent proxy reads the SNI and
+cuts the handshake to a host off the allowlist. A connection,
 a missing curl, a timeout or a missing line reads `sealed: false` with the
 `reason`. The verdict and every attempt are in `agent/codex-account.json`
 (`sealed`, `seal`) and in `result.json` under `agent_result.metadata`. Do not

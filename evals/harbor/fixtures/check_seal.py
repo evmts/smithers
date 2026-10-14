@@ -72,7 +72,7 @@ def check_verdict() -> None:
         "a direct connection by address": swap(SEALED, "denied-direct https://1.1.1.1/", "seal-probe denied-direct https://1.1.1.1/ 0 301 000"),
         "curl is not installed": "\n".join(f"seal-probe {kind} {url} 127 000 000" for kind, url in seal.ATTEMPTS),
         "curl could not start": swap(SEALED, "denied https://github.com/", "seal-probe denied https://github.com/ 2 000 000"),
-        "a TLS failure is not a refusal": swap(SEALED, "denied https://github.com/", "seal-probe denied https://github.com/ 60 000 200"),
+        "a certificate failure is not a refusal": swap(SEALED, "denied https://github.com/", "seal-probe denied https://github.com/ 60 000 200"),
         "one denied attempt is missing": swap(SEALED, "denied-direct https://1.1.1.1/", ""),
         "an unreadable status": swap(SEALED, "denied https://github.com/", "seal-probe denied https://github.com/ refused 000 403"),
         "no output": "",
@@ -87,6 +87,20 @@ def check_verdict() -> None:
     # a route fault the trial raises, not an open container.
     offline = seal.verdict(swap(SEALED, "allowed https://chatgpt.com/", "seal-probe allowed https://chatgpt.com/ 56 000 403"))
     assert offline["sealed"] is True and offline["reachable"] is False, offline
+
+    # Harbor's docker egress control is a transparent proxy that reads the SNI
+    # and cuts a handshake to a host off its allowlist: curl 35, nothing
+    # received. Every Codex trial under it read unsealed (nyc-01
+    # burn-swepro-hard51-codex, 2026-10-14; #3863).
+    harbor = "\n".join([
+        "seal-probe allowed https://chatgpt.com/ 0 403 000",
+        "seal-probe allowed https://auth.openai.com/ 0 403 000",
+        "seal-probe denied https://github.com/ 35 000 000",
+        "seal-probe denied-direct https://github.com/ 35 000 000",
+        "seal-probe denied-direct https://1.1.1.1/ 35 000 000",
+    ])
+    proof = seal.verdict(harbor)
+    assert proof["sealed"] is True and proof["reachable"] is True, proof
 
     # A second, later line cannot overwrite a connection the first one made.
     replayed = seal.verdict("seal-probe denied https://github.com/ 0 200 200\n" + SEALED)
@@ -124,6 +138,32 @@ class Proxy:
                 status = "403 Forbidden" if line.startswith("CONNECT ") else "200 OK"
                 try:
                     connection.sendall(f"HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".encode())
+                except OSError:
+                    pass
+
+    def close(self) -> None:
+        self.server.close()
+
+
+class Cut:
+    """A local TLS port that accepts, reads the ClientHello and hangs up, as
+    Harbor's egress proxy does to a host off its allowlist."""
+
+    def __init__(self) -> None:
+        self.server = socket.create_server(("127.0.0.1", 0))
+        self.port = self.server.getsockname()[1]
+        threading.Thread(target=self._serve, daemon=True).start()
+
+    def _serve(self) -> None:
+        while True:
+            try:
+                connection, _ = self.server.accept()
+            except OSError:
+                return
+            with connection:
+                connection.settimeout(5)
+                try:
+                    connection.recv(4096)
                 except OSError:
                     pass
 
@@ -172,6 +212,16 @@ def check_real_probe() -> str:
         proof = seal.verdict(run_script(opened, proxy), opened)
         assert proof["sealed"] is False, proof
         assert "connected" in proof["reason"], proof
+
+        # A handshake cut after the ClientHello is a refusal.
+        cut = Cut()
+        try:
+            hung_up = (("denied-direct", f"https://127.0.0.1:{cut.port}/"),)
+            proof = seal.verdict(run_script(hung_up, proxy), hung_up)
+        finally:
+            cut.close()
+        assert [a["curl"] for a in proof["attempts"]] == [35], proof
+        assert proof["sealed"] is True, proof
     finally:
         proxy.close()
 
