@@ -36,7 +36,8 @@ async function pages(ctx: SeamContext, path: string, paging: "cloud" | "github" 
     try {
       const response = await ctx.http(url)
       if (!response.ok) {
-        if (await switchedOff(response)) return { rows, problems: [], available: false }
+        /* Pages already in hand were served; only a door that answered nothing is unavailable. */
+        if (await switchedOff(response)) return { rows, problems: [], available: rows.length > 0 }
         return { rows, problems: [`Could not load ${path.includes("notifications") ? "notifications" : "repository activity"} (${response.status}).`], available: rows.length > 0 }
       }
       const body: unknown = await response.json()

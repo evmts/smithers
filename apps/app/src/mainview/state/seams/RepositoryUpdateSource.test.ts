@@ -174,3 +174,17 @@ test("a 403 that is not the feature gate stays a visible problem", async () => {
   expect(update.notifications.problems).toEqual(["Could not load notifications (403)."])
   expect(update.notifications.available).toBe(false)
 })
+
+test("a door switched off between pages keeps the pages it already served", async () => {
+  let seen = 0
+  const update = await readWith(async url => {
+    if (!url.includes("github-repos")) return Response.json([])
+    seen++
+    return seen === 1
+      ? Response.json([{ number: 11, title: "Served before the gate closed", state: "open" }], { headers: { link: '<ignored>; rel="next"' } })
+      : Response.json({ message: "feature not available" }, { status: 403 })
+  })
+  expect(update.issues.events.map(row => row.number)).toEqual([11])
+  expect(update.issues.available).toBe(true)
+  expect(update.issues.problems).toEqual([])
+})
