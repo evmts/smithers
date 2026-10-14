@@ -1,8 +1,11 @@
 // Run with Node, outside Bun's synchronous child-process implementation.
 import { spawn, spawnSync } from 'node:child_process'
-import { readFileSync, readdirSync, readlinkSync } from 'node:fs'
+import { appendFileSync, readFileSync, readdirSync, readlinkSync } from 'node:fs'
 const request = JSON.parse(readFileSync(0, 'utf8'))
 const { command, args, options } = request
+// Each step and its milliseconds since the caller started, for test-child's error.
+const mark = step => { if (request.trail) try { appendFileSync(request.trail, `${step}@${Date.now() - request.startedAt}\n`) } catch {} }
+mark('started')
 let child, timer, finished = false
 const stdout = [], stderr = []
 let bytes = 0
@@ -11,7 +14,7 @@ const finish = (status, signal, error) => {
   finished = true
   clearTimeout(timer)
   process.stderr.write('', () => process.stdout.write(JSON.stringify({ pid: child?.pid, supervisorPid: process.pid, status, signal, error,
-    stdout: Buffer.concat(stdout).toString('base64'), stderr: Buffer.concat(stderr).toString('base64') }), () => process.exit(0)))
+    stdout: Buffer.concat(stdout).toString('base64'), stderr: Buffer.concat(stderr).toString('base64') }), () => { mark('answered'); process.exit(0) }))
 }
 const kill = () => {
   if (!child?.pid) return
@@ -57,8 +60,10 @@ try {
     else chunks.push(chunk)
   })
   child.on('error', error => finish(null, null, { code: error.code, message: error.message }))
-  child.on('close', (status, signal) => { kill(); finish(status, signal) })
+  mark('spawned')
+  child.on('close', (status, signal) => { mark(`closed:${status ?? signal}`); kill(); finish(status, signal) })
   timer = setTimeout(() => {
+    mark('timeout')
     diagnostics()
     kill()
     finish(null, 'SIGKILL', { code: 'ETIMEDOUT', message: `child exceeded ${options.timeout}ms` })

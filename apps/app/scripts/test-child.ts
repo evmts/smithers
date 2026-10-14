@@ -1,5 +1,8 @@
 import { spawnSync as nativeSpawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 // #3763: on GitHub's runners a supervisor sometimes never answers. Its error
@@ -19,14 +22,21 @@ const machine = (): string => {
 // descriptors 0/1/2 are passed; stdin is /dev/null unless explicit input exists.
 export const spawnSync: typeof nativeSpawnSync = ((command: string, args: string[] = [], options: any = {}) => {
   const timeout = options.timeout || 30_000
-  const request = { command, args, options: { ...options, timeout,
+  // The supervisor appends each step it reaches to this file, so a stall says
+  // whether it never started, waited on its child, or answered unheard (#3763).
+  const trail = join(tmpdir(), `test-child-${process.pid}-${randomUUID()}`)
+  const request = { command, args, trail, startedAt: Date.now(), options: { ...options, timeout,
     cwd: options.cwd instanceof URL ? fileURLToPath(options.cwd) : options.cwd,
     input: options.input === undefined ? undefined : Buffer.from(options.input).toString('base64') } }
   const result = nativeSpawnSync(typeof Bun === 'undefined' ? process.execPath : Bun.which('node')!, [fileURLToPath(new URL('./test-child-supervisor.mjs', import.meta.url))], {
     input: JSON.stringify(request), encoding: 'utf8', stdio: ['pipe', 'pipe', 'inherit'],
     timeout: timeout + 10_000, killSignal: 'SIGKILL', maxBuffer: (options.maxBuffer ?? 16 * 1024 * 1024) * 2 + 4096
   })
-  if (result.error) throw Object.assign(result.error, { message: result.error.message + machine() })
+  const steps = () => {
+    try { return readFileSync(trail, 'utf8').trim().split('\n').join(',') } catch { return 'none' } finally { rmSync(trail, { force: true }) }
+  }
+  if (result.error) throw Object.assign(result.error, { message: `${result.error.message}; supervisor=${steps()}${machine()}` })
+  steps()
   const child = JSON.parse(result.stdout)
   for (const key of ['stdout', 'stderr']) {
     const buffer = Buffer.from(child[key], 'base64')
