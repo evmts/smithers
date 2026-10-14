@@ -10,6 +10,7 @@
  */
 
 import { Data } from "effect"
+import type { HostDiagnosticFields } from "./HostDiagnostics.ts"
 
 /**
  * The trusted host could not resolve the owner's configured model.
@@ -28,6 +29,13 @@ export class ResolveFailed extends Data.TaggedError("ResolveFailed")<{ readonly 
 export class ProducerUnreachable extends Data.TaggedError("ProducerUnreachable")<{
   readonly message: string
   readonly step: "provider_started" | "commit"
+  /**
+   * How far the attempt got on the wire, as the transport observer recorded
+   * it. The attempt's own record is written to the guest's log, which lives
+   * only as long as the guest does; carrying it on the failure is what lets
+   * the host answer the API with it, over the connection that still works.
+   */
+  readonly transport?: HostDiagnosticFields
 }> {}
 
 /**

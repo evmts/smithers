@@ -18,10 +18,10 @@ import type { DocsPage } from "@smthrs/rpc/DocsPages"
 import type { AgentTurnFrame, FetchLike, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import { Duration, Effect } from "effect"
 import { inertCallbackTransport, observeCallbackTransport } from "./CallbackTransport.ts"
-import type { CallbackTransport } from "./CallbackTransport.ts"
+import type { CallbackAttempt, CallbackTransport } from "./CallbackTransport.ts"
 import { runContextPreflight } from "./ContextPreflight.ts"
 import { createHostDiagnostics } from "./HostDiagnostics.ts"
-import type { HostDiagnostics } from "./HostDiagnostics.ts"
+import type { HostDiagnosticFields, HostDiagnostics } from "./HostDiagnostics.ts"
 import { apiCaller, runHostTurn, sourceLister, sourceReader } from "./HostTools.ts"
 import { CommitRefused, ProducerUnreachable, ProviderStartRefused, ReceiptMismatch } from "./ModelHostError.ts"
 import type { ProducerError } from "./ModelHostError.ts"
@@ -88,8 +88,22 @@ type CommitReply = Extract<AgentTurnJournalReply, { readonly status: "committed"
  */
 export const CHAT_CALLBACK_DEADLINE_MS = 15_000
 
-const unreachable = (step: ProducerUnreachable["step"]) => (): ProducerUnreachable =>
-  new ProducerUnreachable({ step, message: "chat producer request failed" })
+// An attempt reports its phase once, however many readers ask: the failure the
+// host answers the API with and the record in the guest's own log are the same
+// reading, not two that could disagree. An observer that watched nothing
+// reports nothing, so no failure carries an empty transport field.
+const phaseOnce = (attempt: CallbackAttempt): () => HostDiagnosticFields => {
+  let reported: HostDiagnosticFields | undefined
+  return () => (reported ??= attempt.fields())
+}
+
+const phaseField = (phase: () => HostDiagnosticFields): { transport?: HostDiagnosticFields } => {
+  const transport = phase()
+  return Object.keys(transport).length === 0 ? {} : { transport }
+}
+
+const unreachable = (step: ProducerUnreachable["step"], phase: () => HostDiagnosticFields) => (): ProducerUnreachable =>
+  new ProducerUnreachable({ step, message: "chat producer request failed", ...phaseField(phase) })
 
 /**
  * Bounds one callback attempt, request and answer together.
@@ -107,7 +121,8 @@ const bounded = <A, E, R>(
   attempt: (signal: AbortSignal) => Effect.Effect<A, E, R>,
   step: ProducerUnreachable["step"],
   deadlineMillis: number,
-  onTimeout: () => void
+  onTimeout: () => void,
+  transport: () => HostDiagnosticFields
 ): Effect.Effect<A, E | ProducerUnreachable, R> =>
   Effect.suspend(() => {
     const deadline = new AbortController()
@@ -118,7 +133,11 @@ const bounded = <A, E, R>(
           onTimeout()
           deadline.abort()
           return Effect.fail(
-            new ProducerUnreachable({ step, message: `chat producer ${step} did not answer within its deadline` })
+            new ProducerUnreachable({
+              step,
+              message: `chat producer ${step} did not answer within its deadline`,
+              ...phaseField(transport)
+            })
           )
         })
     })
@@ -187,6 +206,7 @@ export class DurableChatProducer {
       // only that something opened a tunnel.
       const settle = this.diagnostics.begin("chat_callback", { step: "provider_started" })
       const probe = this.transport.begin()
+      const phase = phaseOnce(probe)
       let status = 0
       let timedOut = false
       return bounded(
@@ -203,7 +223,7 @@ export class DurableChatProducer {
                   headers: { authorization: `Bearer ${this.grant.token}` }
                 })
               ),
-            catch: unreachable("provider_started")
+            catch: unreachable("provider_started", phase)
           }).pipe(
             Effect.tap((response) =>
               Effect.sync(() => {
@@ -223,14 +243,15 @@ export class DurableChatProducer {
         this.deadlineMillis,
         () => {
           timedOut = true
-        }
+        },
+        phase
       ).pipe(
         // The record carries why the attempt ended, so a reader of the guest's
         // own log tells a bound that fired from a status the journal answered,
         // and reads the phase that bound fired in from the dispatcher's own
         // records rather than inferring it.
         Effect.ensuring(
-          Effect.sync(() => settle({ status, ...(timedOut ? { timedOut: true } : {}), ...probe.fields() }))
+          Effect.sync(() => settle({ status, ...(timedOut ? { timedOut: true } : {}), ...phase() }))
         )
       )
     })
@@ -317,6 +338,7 @@ export class DurableChatProducer {
     const invoke = Effect.suspend(() => {
       const settle = this.diagnostics.begin("chat_callback", { step: "commit", batch: expected.batch + 1 })
       const probe = this.transport.begin()
+      const phase = phaseOnce(probe)
       let status = 0
       let timedOut = false
       // The deadline covers the receipt as well as the response: a journal
@@ -335,7 +357,7 @@ export class DurableChatProducer {
                   body
                 })
               ),
-            catch: unreachable("commit")
+            catch: unreachable("commit", phase)
           }).pipe(
             Effect.tap((response) =>
               Effect.sync(() => {
@@ -348,10 +370,11 @@ export class DurableChatProducer {
         this.deadlineMillis,
         () => {
           timedOut = true
-        }
+        },
+        phase
       ).pipe(
         Effect.ensuring(
-          Effect.sync(() => settle({ status, ...(timedOut ? { timedOut: true } : {}), ...probe.fields() }))
+          Effect.sync(() => settle({ status, ...(timedOut ? { timedOut: true } : {}), ...phase() }))
         )
       )
     })

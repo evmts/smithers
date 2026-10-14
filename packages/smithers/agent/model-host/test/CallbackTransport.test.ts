@@ -1,7 +1,7 @@
 import { agentTurnJournalDigestInput } from "@smthrs/rpc/AgentTurnJournal"
 import type { AgentTurnBatch, AgentTurnCursor } from "@smthrs/rpc/AgentTurnJournal"
 import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
-import { Duration, Effect, Fiber } from "effect"
+import { Cause, Duration, Effect, Exit, Fiber } from "effect"
 import { createHash } from "node:crypto"
 import { createServer } from "node:http"
 import type { IncomingMessage, Server, ServerResponse } from "node:http"
@@ -472,6 +472,44 @@ describe("a journal callback's transport phase", () => {
     const fields = attempt.fields()
     transport.close()
     expect(fields).toEqual({ transport: "none" })
+  })
+})
+
+describe("a transport failure the host must answer with", () => {
+  test("carries the phase it died in, because the guest's own log dies with the guest", async () => {
+    // The attempt's record goes to the guest's log, and that log lives exactly
+    // as long as the guest does: a turn whose callback failed is cleaned up,
+    // and with it the only copy of how far it got. The failure carries the
+    // same reading out to the caller over the one connection a callback fault
+    // does not break.
+    const journal = await startJournal(() => "silent")
+    const lines: Array<Record<string, unknown>> = []
+    const transport = observeCallbackTransport(journal.baseUrl)
+    const producer = producerFor(journal.baseUrl, lines, transport)
+    const exit = await Effect.runPromise(Effect.exit(producer.write(delta("a"))))
+    transport.close()
+    expect(Exit.isFailure(exit)).toBe(true)
+    const failure = Exit.isFailure(exit) ? Cause.squash(exit.cause) as { transport?: Record<string, unknown> } : {}
+    // The journal took the bytes and answered nothing, which is what the
+    // guest's own record says too.
+    expect(failure.transport?.transport).toBe("sent")
+    // One reading, not two that could disagree: the record in the guest's log
+    // is this failure's own fields, with the bound's own status beside them.
+    expect(lines.at(-1)).toMatchObject(failure.transport ?? {})
+    // An address dial resolves nothing, so the failure claims no resolution.
+    expect(failure.transport?.lookupBegan).toBeUndefined()
+  })
+
+  test("carries no transport field when nothing was observed", async () => {
+    // A producer driven by a caller's own fetch has no dispatcher record to
+    // report, and an empty field would read as a record that found nothing.
+    const journal = await startJournal(() => "silent")
+    const lines: Array<Record<string, unknown>> = []
+    const producer = producerFor(journal.baseUrl, lines, inertCallbackTransport as never)
+    const exit = await Effect.runPromise(Effect.exit(producer.write(delta("a"))))
+    expect(Exit.isFailure(exit)).toBe(true)
+    const failure = Exit.isFailure(exit) ? Cause.squash(exit.cause) as { transport?: unknown } : {}
+    expect(failure.transport).toBeUndefined()
   })
 })
 

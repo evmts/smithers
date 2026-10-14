@@ -32,6 +32,18 @@
   same synchronous turn as the dial this observer counted, and one that arrives
   later is left alone rather than guessed at.
 
+  A turn whose callback failed now answers the caller with that phase, because
+  the record itself does not outlive the turn (#3812). The attempt's record is
+  written to the guest's own log, and the guest is deleted when its turn ends:
+  reading the phase meant catching the stall alive, which the production case
+  that motivated this record did not survive. A transport failure now carries
+  the phase it reached on the failure itself, so the host's refusal of the
+  turn — the one connection a callback fault does not break — carries it to the
+  API, whose bounded read of that body is already recorded against the turn.
+  One reading, not two: the failure's fields and the guest's own record come
+  from the same report. An observer that watched nothing adds no field, so a
+  caller-driven producer still answers exactly as before.
+
   Two limits remain. A hang after the name is answered is a connection the
   kernel is still retrying, and whether that is a dropped SYN, a silent
   middlebox or a filtered route is in no record this host takes. And the

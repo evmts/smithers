@@ -407,6 +407,35 @@ test.each(
   expect(await response.json()).toEqual({ status: "error", code: answer })
 })
 
+test("answers the caller with the phase a failed callback reached", async () => {
+  // The attempt's own record is written to the guest's log, which is deleted
+  // with the guest, so a turn whose callback failed leaves no copy of how far
+  // it got. The refusal carries the phase out over the connection a callback
+  // fault does not break — this answer — and the API's bounded read of this
+  // body is what makes the reading durable. Here the callback is a stub rather
+  // than a socket, so the honest phase is `none`: no dispatcher record exists.
+  const handler = createModelTurnHandler({
+    ...options,
+    resolve: () =>
+      Effect.succeed({
+        model: Model.make({
+          stream: () => Stream.fromIterable<ModelEvent.ModelEvent>([{ type: "settle", stopReason: "stop" }])
+        }),
+        options: { modelId: "fixture" }
+      }),
+    fetchImpl: async () => {
+      throw new Error("callback refused")
+    }
+  })
+  const response = await handler(post(JSON.stringify(grant)))
+  expect(response.status).toBe(502)
+  expect(await response.json()).toEqual({
+    status: "error",
+    code: "turn_failed",
+    transport: { transport: "none" }
+  })
+})
+
 test("counts a refused commit under its own failure class", async () => {
   const before = await failureCount("CommitRefused")
   const handler = createModelTurnHandler({

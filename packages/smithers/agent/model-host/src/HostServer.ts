@@ -17,6 +17,7 @@ import { z } from "zod"
 import { runContextPreflight } from "./ContextPreflight.ts"
 import { runDurableChatTurn } from "./DurableChatProducer.ts"
 import type { DurableChatGrant } from "./DurableChatProducer.ts"
+import type { HostDiagnosticFields } from "./HostDiagnostics.ts"
 import { boundedJson } from "./internal/BoundedJson.ts"
 import type { ProducerError, ResolveFailed } from "./ModelHostError.ts"
 import { StreamTooLarge } from "./ModelHostError.ts"
@@ -240,6 +241,14 @@ interface TurnFailure {
   readonly status?: number
   readonly code?: string
   readonly response: "turn_failed" | "provider_quota" | "provider_auth" | "cancelled"
+  /**
+   * How far the callback that failed got on the wire. The attempt's own record
+   * is in the guest's log, which is gone once the turn's guest is, so a
+   * transport failure carries its phase out over the one connection a callback
+   * fault does not break: this answer to the caller. Phases, counts and short
+   * codes only — the same fields the observer is built to be safe to log.
+   */
+  readonly transport?: HostDiagnosticFields
 }
 
 /** The provider refusals a person acts on: wait or add credit, or replace the key. */
@@ -267,6 +276,7 @@ const classify = (cause: Cause.Cause<ResolveFailed | ProducerError | Model.Model
   return {
     failure: error._tag,
     ...("status" in error ? { status: error.status } : {}),
+    ...("transport" in error && error.transport !== undefined ? { transport: error.transport } : {}),
     response: "turn_failed"
   }
 }
@@ -425,6 +435,7 @@ export const createModelTurnHandler = (options: ModelTurnHandlerOptions): (reque
           failure: failed.failure,
           ...(failed.status === undefined ? {} : { status: failed.status }),
           ...(failed.code === undefined ? {} : { code: failed.code }),
+          ...(failed.transport === undefined ? {} : failed.transport),
           turnId: grant.turnId,
           runId: grant.runId,
           generation: grant.generation,
@@ -434,6 +445,10 @@ export const createModelTurnHandler = (options: ModelTurnHandlerOptions): (reque
         Effect.andThen(Metric.update(Metric.withAttributes(turnDuration, { outcome: "failure" }), elapsed))
       )
     )
-    return Response.json({ status: "error", code: failed.response }, { status: 502 })
+    return Response.json({
+      status: "error",
+      code: failed.response,
+      ...(failed.transport === undefined ? {} : { transport: failed.transport })
+    }, { status: 502 })
   }
 }
