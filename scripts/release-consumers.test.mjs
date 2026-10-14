@@ -20,6 +20,7 @@ import {
   migrationProfiles,
   minimalProfiles,
   onEffect,
+  pnpmIgnoredBuilds,
   readQuickstart,
   refuseUnsupportedEffect,
   runConsumerProfile,
@@ -487,10 +488,22 @@ test("the Flows quickstart imports only the packages its one install line names"
   assert.deepEqual(importedPackages(quickstart.program), ["@smthrs/flows", "effect"])
   assert.deepEqual(quickstart.run, ["node", "quickstart.ts"])
   assert.equal(quickstart.printed, "the note")
+  // pnpm 11 ends `pnpm add` with ERR_PNPM_IGNORED_BUILDS for esbuild's install script.
+  assert.deepEqual(quickstart.approveBuilds, ["esbuild"])
   const pages = new Map(flowsPages())
   for (const page of ["README.md", "docs/README.md", "docs/installation.md"]) {
     assert.ok(pages.get(page).split("\n").includes(quickstart.install), page + " must give the quickstart's install line")
   }
+})
+
+test("pnpm's ignored build scripts reduce to package names, without versions", () => {
+  const output = [
+    "+ @smthrs/flows 1.0.0-rc.6",
+    "[ERR_PNPM_IGNORED_BUILDS] Ignored build scripts: esbuild@0.28.2, @scope/native@1.2.3-rc.1.",
+    'Run "pnpm approve-builds" to pick which dependencies should be allowed to run scripts.'
+  ].join("\n")
+  assert.deepEqual(pnpmIgnoredBuilds(output), ["@scope/native", "esbuild"])
+  assert.deepEqual(pnpmIgnoredBuilds("+ effect 4.0.4\nDone in 1s"), [])
 })
 
 test("program imports reduce to package names, without relative and node: specifiers", () => {
@@ -555,7 +568,14 @@ test("the quickstart consumer passes only when the install line brings what the 
         pack(directory, "effect", {
           name: "effect", version: latestEffect, type: "module",
           exports: { "./package.json": "./package.json", "./*": "./*.js" }
-        }, { "Effect.js": "export const succeed = (value) => value\n" })
+        }, { "Effect.js": "export const succeed = (value) => value\n" }),
+        // Packages with an install script, which pnpm 11 holds back until approved.
+        ...["esbuild", "native-thing"].map((script) =>
+          pack(directory, script, {
+            name: script, version: "1.0.0",
+            scripts: { postinstall: "node -e \"require('node:fs').writeFileSync('built', '')\"" }
+          }, {})
+        )
       ].map((entry) => ({ ...entry, directory }))
     }
     // The page's own shape: `effect` with no version is whatever the registry tags latest.
@@ -573,11 +593,17 @@ test("the quickstart consumer passes only when the install line brings what the 
         ''
       ].join("\n"),
       run: ["node", "quickstart.ts"],
-      printed: "the note"
+      printed: "the note",
+      approveBuilds: ["esbuild"]
     }
     const peer = { effect: SUPPORTED_EFFECT_RANGE }
     const cases = [
-      ["declared", { dependencies: { "@smthrs/platform-node": version }, peerDependencies: peer }, undefined],
+      ["declared", { dependencies: { "@smthrs/platform-node": version, esbuild: "1.0.0" }, peerDependencies: peer }, undefined],
+      // npm installs with --ignore-scripts; pnpm stops on a build script the page does not approve.
+      ["unapproved build script", {
+        dependencies: { "@smthrs/platform-node": version, esbuild: "1.0.0", "native-thing": "1.0.0" },
+        peerDependencies: peer
+      }, { pnpm: /pnpm held back build scripts the page does not approve/ }],
       // rc.4's shape: the import resolves only if the program installs the peer.
       ["optional peer", {
         peerDependencies: { ...peer, "@smthrs/platform-node": version },
@@ -597,7 +623,8 @@ test("the quickstart consumer passes only when the install line brings what the 
       restoreRegistry = useRegistry(registry.url)
       for (const manager of ["npm", "pnpm"]) {
         const run = runQuickstartConsumer(manager, registry.url, { quickstart })
-        if (refusal === undefined) {
+        const expected = refusal instanceof RegExp ? refusal : refusal?.[manager]
+        if (expected === undefined) {
           const result = await run
           assert.deepEqual(result.declared, ["@smthrs/flows", "effect"], manager + " " + name)
           assert.equal(result.effect, EXPECTED_EFFECT_VERSION, manager + " " + name + " installs the registry's latest Effect")
@@ -609,7 +636,7 @@ test("the quickstart consumer passes only when the install line brings what the 
           assert.deepEqual(result.runs, ["the note", "the note"], manager + " " + name)
           assert.equal(result.install.startsWith(manager === "npm" ? "npm install " : "pnpm add "), true)
         } else {
-          await assert.rejects(run, refusal, manager + " " + name + " must fail on the first run")
+          await assert.rejects(run, expected, manager + " " + name + " must fail on the first run")
         }
       }
     }

@@ -12,7 +12,11 @@ npm install @smthrs/flows@next effect
 ```
 
 The `next` tag carries the 1.0 release candidates. With pnpm, run `pnpm add`
-with the same two packages.
+with the same two packages, then `pnpm approve-builds esbuild`. pnpm 11 ends
+the install with `ERR_PNPM_IGNORED_BUILDS` until the project allows or denies
+the install script of `esbuild`; the packages are already installed, and
+`approve-builds` records the choice in `pnpm-workspace.yaml` so later installs
+succeed.
 
 `@smthrs/flows` installs the twenty engine packages it re-exports, the Node host
 [`@smthrs/platform-node`](/api/platform-node), the Node SQLite driver

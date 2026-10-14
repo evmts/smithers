@@ -556,14 +556,28 @@ export const readQuickstart = (root = repoRoot) => {
   assert.match(enter, /^mkdir (\S+) && cd \1$/, "quickstart must start in a new, empty directory")
   const installs = commands.filter((command) => command.startsWith("npm install "))
   assert.equal(installs.length, 1, "quickstart must give exactly one install line")
+  const approvals = [...source.matchAll(/`pnpm approve-builds ([^`]+)`/g)]
+  assert.equal(approvals.length, 1, "quickstart must name the one pnpm approve-builds command")
   return {
     commands,
     install: installs[0],
     packages: installs[0].split(" ").slice(2),
+    approveBuilds: approvals[0][1].split(" "),
     program: fenced("ts").join("\n\n") + "\n",
     run: run.split(" "),
     printed: printed[0]
   }
+}
+
+/**
+ * Package names pnpm reports under "Ignored build scripts", without versions.
+ * pnpm 11 ends an install with `ERR_PNPM_IGNORED_BUILDS` and pnpm 10 warns;
+ * both print the same list.
+ */
+export const pnpmIgnoredBuilds = (output) => {
+  const line = /Ignored build scripts: ([^\n]+)/.exec(output)?.[1] ?? ""
+  return line.split(",").map((entry) => entry.trim().replace(/\.$/, "")).filter(Boolean)
+    .map((entry) => entry.replace(/@[^@]+$/, "")).sort()
 }
 
 /** Package names a program imports, without its relative and `node:` specifiers. */
@@ -608,13 +622,34 @@ export const runQuickstartConsumer = async (
         await successful("sh", ["-c", command], consumer)
         continue
       }
-      if (manager === "pnpm") await successful("npm", ["pkg", "set", "packageManager=" + releasePackageManager], consumer)
-      await successful(manager, [
-        ...installed.slice(1),
-        "--ignore-scripts",
-        ...consumerCacheFlags(manager, repoRoot, { offline: false }),
-        ...(manager === "npm" ? ["--no-audit", "--no-fund"] : [])
-      ], consumer)
+      if (manager === "npm") {
+        await successful(manager, [
+          ...installed.slice(1),
+          "--ignore-scripts",
+          ...consumerCacheFlags(manager, repoRoot, { offline: false }),
+          "--no-audit",
+          "--no-fund"
+        ], consumer)
+        continue
+      }
+      // pnpm runs as the page says: `pnpm add`, then `pnpm approve-builds` for
+      // exactly the packages pnpm held back. A new dependency with an install
+      // script fails here until the page names it.
+      await successful("npm", ["pkg", "set", "packageManager=" + releasePackageManager], consumer)
+      const flags = consumerCacheFlags(manager, repoRoot, { offline: false })
+      const added = await consumerCommand(manager, [...installed.slice(1), ...flags], consumer)
+      const ignored = pnpmIgnoredBuilds(added.output)
+      assert.deepEqual(
+        ignored,
+        ignored.length === 0 ? [] : [...quickstart.approveBuilds].sort(),
+        "pnpm held back build scripts the page does not approve:\n" + added.output
+      )
+      if (ignored.length === 0) {
+        assert.equal(added.exit, 0, installed.join(" ") + "\n" + added.output)
+        continue
+      }
+      await successful(manager, ["approve-builds", ...quickstart.approveBuilds], consumer)
+      await successful(manager, ["install", ...flags], consumer)
     }
     const declared = Object.keys(JSON.parse(await readFile(join(consumer, "package.json"), "utf8")).dependencies).sort()
     const named = quickstart.packages.map(specName).sort()

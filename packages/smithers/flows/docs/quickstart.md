@@ -30,7 +30,10 @@ The project is `"type": "module"` because the program ends in a top-level
 is on the line because the program imports it directly. `@smthrs/flows` accepts
 any `effect` in `^4.0.4`, so the line names no version and a project that
 already has one in that range keeps it. With pnpm, run `pnpm add` with the same
-two packages. [Installation](./installation.md) has the requirements in full.
+two packages, then `pnpm approve-builds esbuild`: pnpm 11 ends the install with
+`ERR_PNPM_IGNORED_BUILDS` until the project allows or denies the install script
+of `esbuild`, which `@smthrs/flows` uses to bundle sandboxed flows.
+[Installation](./installation.md) has the requirements in full.
 
 ## Declare the action and the flow
 
