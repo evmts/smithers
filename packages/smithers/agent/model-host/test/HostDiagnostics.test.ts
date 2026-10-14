@@ -2,7 +2,7 @@ import * as Model from "@smthrs/model/Model"
 import type * as ModelEvent from "@smthrs/model/ModelEvent"
 import type { AgentTurnCursor } from "@smthrs/rpc/AgentTurnJournal"
 import type { StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
-import { Effect, Fiber, Stream } from "effect"
+import { Duration, Effect, Fiber, Stream } from "effect"
 import { describe, expect, test, vi } from "vitest"
 import { DurableChatProducer } from "../src/DurableChatProducer.ts"
 import { createHostDiagnostics, HOST_DIAGNOSTIC_MARKER } from "../src/HostDiagnostics.ts"
@@ -239,5 +239,62 @@ describe("callback attempt diagnostics", () => {
     await Effect.runPromise(producer.providerStarted())
     expect(sink.phase("chat_callback", "begin")[0]).toMatchObject({ step: "provider_started" })
     expect(sink.phase("chat_callback", "end")[0]).toMatchObject({ step: "provider_started", status: 204 })
+  })
+})
+
+// The production deadlock, as a stream contract. One shared proxy connection
+// means a commit cannot answer until the provider response that holds that
+// connection has been read to its end, while the only reader of that response
+// is the consumer that is waiting for the commit. The host must therefore keep
+// draining the provider's side while a frame is in flight; a host that reads
+// only when its consumer asks cannot finish this turn at all.
+describe("a frame committed while the provider response is still open", () => {
+  test("does not stop the provider stream being drained", async () => {
+    let drained = false
+    const events: Array<ModelEvent.ModelEvent> = [
+      ...Array.from({ length: 64 }, (_, index) => ({
+        type: "text-delta" as const,
+        id: "a",
+        text: `word ${index} `
+      })),
+      { type: "settle", stopReason: "stop" }
+    ]
+    const provider = Model.make({
+      stream: () =>
+        Stream.fromIterable(events).pipe(Stream.ensuring(Effect.sync(() => {
+          drained = true
+        })))
+    })
+    // The commit answers only once the response has been read to its end,
+    // which is exactly what sharing one connection with it enforces.
+    const commits: Array<string> = []
+    const write = (frame: { readonly type: string }) =>
+      Effect.flatMap(
+        Effect.promise(() =>
+          new Promise<void>((resolve) => {
+            const check = setInterval(() => {
+              if (!drained) return
+              clearInterval(check)
+              resolve()
+            }, 5)
+          })
+        ),
+        () =>
+          Effect.sync(() => {
+            commits.push(frame.type)
+          })
+      )
+    await Effect.runPromise(
+      runModelTurn(provider, turn, { modelId: "model" }, write, undefined, createHostDiagnostics({ write: () => {} }))
+        .pipe(
+          Effect.timeoutOrElse({
+            duration: Duration.seconds(10),
+            orElse: () =>
+              Effect.die(new Error("the turn never finished: the commit and the provider stream are deadlocked"))
+          })
+        )
+    )
+    expect(commits.length).toBe(events.length)
+    expect(commits.at(-1)).toBe("done")
   })
 })

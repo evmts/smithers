@@ -315,7 +315,23 @@ export const runModelTurn = <E>(
     return visit(event)
   }
   const endStream = diagnostics.begin("model_stream")
-  return Stream.runForEach(model.stream(providerRequest(turn, options)), observe).pipe(
+  // A hosted turn reaches its provider and its journal through one proxy, and
+  // both are the same origin, so they share one keep-alive connection. Writing
+  // a frame from inside the consumer stops reading the response that holds
+  // that connection, and the commit cannot be written until that response
+  // completes: production turn 2d851bdd attempted its first commit 1 ms after
+  // its first event and was still waiting half an hour later, with the
+  // response's last bytes unread. Buffering runs the provider's side in its
+  // own fiber, so the response keeps draining while a frame is committed and
+  // the connection is free when the commit needs it.
+  //
+  // A provider emits about one event per output token plus a bounded few for
+  // starts, ends and usage, and a turn's tokens are bounded before the request
+  // is sent, so this buffer cannot fill before the response ends.
+  const buffered = Stream.buffer(model.stream(providerRequest(turn, options)), {
+    capacity: Math.min(1 << 16, Math.max(1024, 2 * (options.maxTokens ?? 4096)))
+  })
+  return Stream.runForEach(buffered, observe).pipe(
     Effect.flatMap(() =>
       settled
         ? Effect.succeed(outcome)
