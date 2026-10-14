@@ -70,11 +70,14 @@ class ReportCLI(unittest.TestCase):
         self.job("baseline", BASELINE)
         self.serial = 0
 
-    def job(self, arm: str, agent: str, **extra: object) -> None:
+    def job(self, arm: str, agent: str, *, environment: dict | None = None, **extra: object) -> None:
+        """`environment` None writes the plue environment; {} names none, as
+        Harbor 0.23.0 writes a job run without `-e`."""
         self.jobs[arm].mkdir(exist_ok=True)
+        named = {"import_path": ENVIRONMENT} if environment is None else environment
         (self.jobs[arm] / "config.json").write_text(json.dumps({
             "job_name": self.jobs[arm].name,
-            "environment": {"import_path": ENVIRONMENT},
+            **({"environment": named} if named else {}),
             "agents": [{"name": agent, "model_name": MODEL, "kwargs": {"arm": arm}}],
             "datasets": [{"name": "terminal-bench/terminal-bench", "ref": "sha256:d1"}],
             **extra,
@@ -477,6 +480,47 @@ class ReportCLI(unittest.TestCase):
             *(f"baseline: {name} is not sealed: the task's agent network is unknown (no readable task.toml at its "
               f"recorded path) and the stock arm's seal does not hold: {OPENED}" for name in (trial.name, gone.name)))
         self.assertEqual(report["network"], {"unknown": 2})
+
+    def test_a_job_that_names_no_environment_runs_the_runner_s_default(self) -> None:
+        """`harbor run` without `-e` writes no environment into the job's
+        config, and every trial records Harbor's default, docker. nyc-01's
+        burn-swepro-hard51 pair was refused 87 times for it."""
+        docker = {"environment": {"import_path": None, "type": "docker"}}
+        for arm, agent in (("smithers", SMITHERS), ("baseline", BASELINE)):
+            self.job(arm, agent, environment={})
+            self.trial(arm, "task-000", config=docker)
+        text, report = self.run_report(0, "--min-tasks", "1")
+        self.assertTrue(report["publishable"], report["refusals"])
+        self.assertEqual(report["arms"]["baseline"]["environment"], "docker")
+        self.assertIn("environment `docker`", text)
+
+    def test_a_job_that_names_no_environment_refuses_a_trial_elsewhere(self) -> None:
+        """The default stands in for the job only: a trial on another
+        environment, or one whose own config names none, is refused."""
+        for arm, agent in (("smithers", SMITHERS), ("baseline", BASELINE)):
+            self.job(arm, agent, environment={})
+        self.trial("smithers", "task-000", config={"environment": {"import_path": None, "type": "docker"}})
+        plue = self.trial("baseline", "task-000")
+        self.trial("smithers", "task-001", config={"environment": {"import_path": None, "type": "docker"}})
+        unnamed = self.trial("baseline", "task-001", config={"environment": {"import_path": None, "type": None}})
+        self.assert_refused(f"baseline: {plue.name} ran environment {ENVIRONMENT}, not the job's docker",
+                            f"baseline: {unnamed.name} ran environment None, not the job's docker")
+
+    def test_the_default_environment_is_each_installed_runner_s(self) -> None:
+        """report.py runs without a runner installed, so it pins the default;
+        this fails when Harbor's or Pier's own default moves."""
+        import report
+        checked = []
+        for runner in ("harbor", "pier"):
+            try:
+                config = __import__(f"{runner}.models.trial.config", fromlist=["EnvironmentConfig"])
+            except ImportError:
+                continue
+            default = config.EnvironmentConfig()
+            self.assertEqual((default.type.value, default.import_path), (report.DEFAULT_ENVIRONMENT, None), runner)
+            checked.append(runner)
+        if not checked:
+            self.skipTest("no runner importable; set HARBOR_PYTHON")
 
     def test_infra_and_running_trials_block_publication(self) -> None:
         self.paired(1)

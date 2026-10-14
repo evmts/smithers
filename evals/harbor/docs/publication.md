@@ -14,14 +14,14 @@ reason when it is not. A refused report has no pass rates.
 
 A publishable run meets every rule:
 
-| Rule     | Requirement                                                                                     |
-| -------- | ----------------------------------------------------------------------------------------------- |
-| Same run | One dataset, model, environment and attempt count; every trial ran them; no timeout overrides   |
-| Finished | Every planned trial retained; none running or infrastructure                                    |
-| Paired   | Each task has one checksum and exactly the planned scored attempts in both arms                 |
-| Size     | At least 50 paired tasks (`--min-tasks`); unplaceable tasks leave both arms and are listed      |
-| Measured | Every scored trial reports input, cached and output tokens                                      |
-| Sealed   | No extra allowed hosts or mounts; a command exited 0 in the task container; host audit clean    |
+| Rule     | Requirement                                                                                                                                                                                                                       |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Same run | One dataset, model, environment and attempt count; every trial ran them; no timeout overrides. A job that names no environment ran the runner's default, `docker`                                                                 |
+| Finished | Every planned trial retained; none running or infrastructure                                                                                                                                                                      |
+| Paired   | Each task has one checksum and exactly the planned scored attempts in both arms                                                                                                                                                   |
+| Size     | At least 50 paired tasks (`--min-tasks`); unplaceable tasks leave both arms and are listed                                                                                                                                        |
+| Measured | Every scored trial reports input, cached and output tokens                                                                                                                                                                        |
+| Sealed   | No mounts; no extra allowed host but the stock arm's model route; a command exited 0 in the task container; host audit clean. On a task that denies the agent network, the stock arm's seal, judged again from its saved attempts |
 
 The journal keeps a digest in place of a call input too large to keep, and
 beside it the input's small fields, so the host audit reads the call's

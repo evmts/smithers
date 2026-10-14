@@ -11,7 +11,9 @@ it is not; a refused report lists every reason and carries no pass rates.
 A run is publishable only when all of these hold:
 
 - Both jobs ran the same dataset and ref, model, environment and attempts,
-  with no timeout or resource overrides.
+  with no timeout or resource overrides. A job that names no environment ran
+  the runner's default (`DEFAULT_ENVIRONMENT`); each of its trials must
+  record that default.
 - No current trial in either job is running or infrastructure (`outcome.py`):
   those are re-run, never scored. Run `requeue.py` and `harbor jobs resume`.
 - Every trial ran the agent, model and environment its job names; every
@@ -67,6 +69,11 @@ MIN_TASKS = 50
 ARMS = ("smithers", "baseline")
 SMITHERS_AGENT = "evals.harbor.smithers_agent:SmithersAgent"
 TOKENS = ("n_input_tokens", "n_cache_tokens", "n_output_tokens")
+# The environment Harbor 0.23.0 and Pier 0.3.1 run when a job names none
+# (`EnvironmentConfig.set_default_type`). Harbor then leaves `environment` out
+# of the job's config.json; its trials record the default. check_report.py
+# compares this with each installed runner's own default.
+DEFAULT_ENVIRONMENT = "docker"
 # Trial config fields that must stay at Harbor's defaults: each one changes
 # what a task is allowed, so a run that set one is not the benchmark.
 OVERRIDES = {
@@ -266,7 +273,7 @@ def describe(job: Path) -> dict:
         # Every field, so a version, path or filter difference also separates the arms.
         "datasetSpec": json.dumps(dataset, sort_keys=True),
         "datasets": len(datasets),
-        "environment": environment_identity(environment),
+        "environment": environment_identity(environment) or DEFAULT_ENVIRONMENT,
         "environmentSpec": json.dumps(environment, sort_keys=True),
         "attempts": config.get("n_attempts", 1),
     }
