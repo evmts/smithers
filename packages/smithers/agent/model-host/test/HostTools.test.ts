@@ -8,6 +8,7 @@ import type { AgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import {
   ACCOUNT_NUMBERS_LINE,
   AGENT_NAME_LINE,
+  ASSISTANT_ACTS_LINE,
   FAILED_RESULT_LINE,
   RUN_IS_NOT_RESULT_LINE,
   WORKFLOW_LAUNDERING_RULE
@@ -21,7 +22,7 @@ import { fixtures } from "@smthrs/rpc/fixtures/Todo"
 import { AgentTurnFrameSchema } from "@smthrs/rpc/NativeAgent"
 import type { AgentTurnFrame, FetchLike, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import type { TodoCard } from "@smthrs/rpc/TodoCard"
-import { UI_INSTRUCTION_FIELDS } from "@smthrs/rpc/UiInstruction"
+import { FORM_INSTRUCTION_FIELDS, UI_INSTRUCTION_FIELDS } from "@smthrs/rpc/UiInstruction"
 import { Effect, Stream } from "effect"
 import { createHash } from "node:crypto"
 import { describe, expect, test } from "vitest"
@@ -289,6 +290,7 @@ const HOST_COMMANDS = [
   "form.set",
   "github",
   "help",
+  "history",
   "issue",
   "issue.comment",
   "issue.new",
@@ -1016,7 +1018,15 @@ describe("an install's host runs the catalog commands its grant allows, as the t
       const provider = model([])
       await run(turn, provider, producer((path) => file(path, JOURNEY), stackRoutes))
       const system = systemText(provider.requests[0])
-      for (const line of [AGENT_NAME_LINE, RUN_IS_NOT_RESULT_LINE, FAILED_RESULT_LINE, ACCOUNT_NUMBERS_LINE]) {
+      for (
+        const line of [
+          AGENT_NAME_LINE,
+          ASSISTANT_ACTS_LINE,
+          RUN_IS_NOT_RESULT_LINE,
+          FAILED_RESULT_LINE,
+          ACCOUNT_NUMBERS_LINE
+        ]
+      ) {
         expect(system).toContain(line)
       }
       for (const line of WORKFLOW_LAUNDERING_RULE) expect(system).toContain(line)
@@ -1761,6 +1771,17 @@ describe("an install's host runs the catalog commands its grant allows, as the t
     }
   })
 
+  test("each flow asked for with its form is an agent-confirmed catalog row with an HTTP door, never a screen-only one", () => {
+    for (const [name, fields] of Object.entries(FORM_INSTRUCTION_FIELDS)) {
+      const row = catalogDescriptors.find((entry) => entry.name === name)!
+      expect([name, row.actors.includes("app_agent"), row.agent, row.http === null, row.visibility === "hidden"])
+        .toEqual([name, true, "confirm", false, false])
+      expect(Object.keys(row.payload.schema.properties ?? {}).sort()).toEqual([...fields].sort())
+      expect(fields).not.toContain("command")
+      expect(Object.keys(UI_INSTRUCTION_FIELDS)).not.toContain(name)
+    }
+  })
+
   test("forged Draft authority cannot bypass server confirmation", async () => {
     const journal = producer(
       (path) => file(path, JOURNEY),
@@ -1975,7 +1996,7 @@ const PAGES: ReadonlyArray<DocsPage> = [
   { slug: "flows", title: "Flows reference", summary: "Every flow.", markdown: "# Flows reference\n" }
 ]
 const DOCS_LINE =
-  "Asked how to do something in Smithers, first run docs with {\"mode\":\"read\",\"page\":\"<page>\"} for the page that covers it (pages: quickstart, flows), answer from what it returns, and name the page you read."
+  "Asked how something in Smithers works, or to be shown its documentation, run docs with {\"mode\":\"read\",\"page\":\"<page>\"} for the page that covers it (pages: quickstart, flows), answer from what it returns, and name the page you read. docs never answers a request a command above carries out: run that command instead of relaying a page's steps."
 const https: DurableChatGrant = {
   ...sourceless,
   request: { ...question, messages: [{ role: "user", content: "How do I put HTTPS in front?" }] }
@@ -2127,5 +2148,179 @@ describe("the host-owned app agent answers \"how do I\" from the bundled docs (C
       expect(journal.frames.map((frame) => frame.type)).toEqual(["delta", "done"])
       expect(answerText(journal.frames)).toBe("From the source: unknown-tool: commands")
     }
+  })
+})
+
+/**
+ * A Smithers Cloud account conversation as host prompt admission grants it
+ * (backend chat/prompt.go): no repository, no source, no install API, and the
+ * private marker on its request.
+ */
+const account: DurableChatGrant = {
+  ...sourceless,
+  request: { ...question, privateConversation: true, messages: [{ role: "user", content: "can we create a workflow" }] }
+}
+const FLOW_NEW_LINE =
+  "Asked to create, make, build or automate a flow or workflow (\"can we …\" included), run flow.new in that turn: pass what the flow should do as description when the person said it, and nothing when they did not. Then tell them in one sentence that the form is on their screen. Never explain how to write a flow by hand unless they ask for exactly that."
+const FLOW_NEW_COMMAND_LINE =
+  "- /flow.new — Create a new flow (asks the person: it only shows them what to confirm, and their press acts)"
+const formOpen = (filled: string): string =>
+  `The "Create a new flow" form is open on the author's screen${filled}. Nothing is created until they press Submit: tell them the form is on their screen, and never ask them to type arguments.`
+
+// #3823: asked "can we create a workflow" on smithers.sh, the agent had one command, docs, and recited the Flows page.
+describe("a Cloud account conversation asks for a new flow with its form", () => {
+  test("the turn is offered docs and flow.new, every form field optional, and nothing else", async () => {
+    for (
+      const [docs, names] of [[PAGES, ["docs", "flow.new"]], [undefined, ["flow.new"]]] as const
+    ) {
+      const journal = producer((path) => file(path, JOURNEY))
+      const provider = model([{ name: "commands", arguments: JSON.stringify({ action: "list" }) }])
+      await runWithDocs(account, provider, journal, docs)
+      const system = systemText(provider.requests[0])
+      expect(commandLines(system).map((line) => line.slice(3).split(" ")[0])).toEqual(names)
+      expect(commandLines(system)).toContain(FLOW_NEW_COMMAND_LINE)
+      expect(system).not.toContain(question.instructions)
+      expect(toolNames(provider.requests[0])).toEqual(["commands"])
+      const listed = JSON.parse(toolOutputs(provider)[0]!) as {
+        commands: ReadonlyArray<{ name: string; args: string }>
+      }
+      expect(listed.commands.map((command) => command.name)).toEqual(names)
+      expect(JSON.parse(listed.commands.find((command) => command.name === "flow.new")!.args)).toEqual({
+        type: "object",
+        properties: { description: { type: "string" }, repo: { anyOf: [{ type: "string" }, { type: "null" }] } },
+        $defs: {},
+        additionalProperties: false
+      })
+      expect(journal.calls).toEqual([])
+    }
+  })
+
+  test("the instructions tell it to act: run flow.new for the form, keep docs for how something works", async () => {
+    const told = async (turn: DurableChatGrant) => {
+      const provider = model([])
+      await runWithDocs(turn, provider, producer((path) => file(path, JOURNEY), stackRoutes), PAGES)
+      return systemText(provider.requests[0])
+    }
+    const cloud = await told(account)
+    for (const line of [ASSISTANT_ACTS_LINE, FLOW_NEW_LINE, DOCS_LINE]) expect(cloud).toContain(line)
+    // The rule sits after the commands it names and before the can't-yets.
+    expect(cloud.indexOf(FLOW_NEW_COMMAND_LINE)).toBeLessThan(cloud.indexOf(FLOW_NEW_LINE))
+    expect(cloud.indexOf(FLOW_NEW_LINE)).toBeLessThan(cloud.indexOf("Everything this list lacks is a can't-yet."))
+    // A turn that cannot ask for the form is never told it is on the person's screen.
+    for (const turn of [install, grant, https]) {
+      const system = await told(turn)
+      expect(system).toContain(ASSISTANT_ACTS_LINE)
+      expect(system).not.toContain(FLOW_NEW_LINE)
+      expect(system).not.toContain("form is on their screen")
+    }
+  })
+
+  test("flow.new asks the author's screen for the form with what the person said, and creates nothing", async () => {
+    const said = "label new issues by area"
+    const cases: ReadonlyArray<readonly [string | undefined, Record<string, string>, string]> = [
+      [JSON.stringify({ description: said }), { description: said }, ", with description filled in"],
+      [said, { description: said }, ", with description filled in"],
+      [
+        JSON.stringify({ description: `  ${said} `, repo: null }),
+        { description: said },
+        ", with description filled in"
+      ],
+      [
+        JSON.stringify({ description: said, repo: "acme/app" }),
+        { description: said, repo: "acme/app" },
+        ", with description and repo filled in"
+      ],
+      [JSON.stringify({ repo: "acme/app" }), { repo: "acme/app" }, ", with repo filled in"],
+      [undefined, {}, ""],
+      ["  ", {}, ""],
+      ["{}", {}, ""],
+      [JSON.stringify({ description: "  " }), {}, ""]
+    ]
+    for (const [args, draft, filled] of cases) {
+      const journal = producer((path) => file(path, JOURNEY))
+      const provider = model([execute("flow.new", args)])
+      await runWithDocs(account, provider, journal, PAGES)
+      expect(journal.frames.map((frame) => frame.type), String(args)).toEqual([
+        "call.started",
+        "call.settled",
+        "delta",
+        "done"
+      ])
+      for (const frame of journal.frames) expect(AgentTurnFrameSchema.safeParse(frame).success).toBe(true)
+      expect(journal.frames[1]).toEqual({
+        runId: "run",
+        type: "call.settled",
+        link: 0,
+        ordinal: 0,
+        name: "flow.new",
+        verdict: "run",
+        ui: { command: "flow.new", ...draft }
+      })
+      expect(toolOutputs(provider)).toEqual([formOpen(filled)])
+      // No API, no source: the request is the whole act.
+      expect([journal.calls, journal.reads, journal.lists]).toEqual([[], [], []])
+    }
+  })
+
+  test("flow.new refuses arguments the form does not declare, and nothing reaches the author's screen", async () => {
+    for (
+      const args of [
+        "{broken",
+        JSON.stringify({ description: 7 }),
+        JSON.stringify({ description: true }),
+        JSON.stringify({ description: { text: "label new issues" } }),
+        JSON.stringify({ description: ["label new issues"] }),
+        JSON.stringify({ name: "label-issues" }),
+        JSON.stringify({ description: "label new issues", confirmed: true }),
+        JSON.stringify({ description: "label new issues", repo: 3 })
+      ]
+    ) {
+      const journal = producer((path) => file(path, JOURNEY))
+      const provider = model([execute("flow.new", args)])
+      await runWithDocs(account, provider, journal, PAGES)
+      expect(journal.frames.map((frame) => frame.type), args).toEqual([
+        "call.started",
+        "gate.rejected",
+        "delta",
+        "done"
+      ])
+      expect(journal.frames[1]).toMatchObject({
+        type: "gate.rejected",
+        kind: "call_failed",
+        message: "Invalid arguments for flow.new; use its declared payload."
+      })
+      expect(toolOutputs(provider)).toEqual(["failed: Invalid arguments for flow.new; use its declared payload."])
+      expect(journal.calls).toEqual([])
+    }
+  })
+
+  test("only the private account conversation asks with the form: a repository's turn is offered what it was", async () => {
+    // The marker without the account: a turn that belongs to a repository is never the account conversation.
+    const provider = model([execute("flow.new", JSON.stringify({ description: "label new issues" }))])
+    const journal = producer((path) => file(path, JOURNEY))
+    await runWithDocs({ ...account, repositoryId: 3 }, provider, journal, PAGES)
+    expect(commandLines(systemText(provider.requests[0]))).toEqual(["- /docs — Read the docs in the app"])
+    expect(toolOutputs(provider)).toEqual([unknownCommandResult("flow.new")])
+    expect(journal.frames.some((frame) => frame.type === "call.settled")).toBe(false)
+
+    // An install turn still sends flow.new to the install API, where the server owns the confirmation.
+    const installed = producer(
+      (path) => file(path, JOURNEY),
+      () => Response.json({ confirmation: "confirm-1", state: "pending" }, { status: 202 })
+    )
+    const asked = model([execute("flow.new", JSON.stringify({ description: "label new issues" }))])
+    await runWithDocs(install, asked, installed, PAGES)
+    expect(installed.calls).toMatchObject([{
+      body: {
+        method: "POST",
+        path: "/api/flows",
+        key: `chat:${install.turnId}:0`,
+        payload: { description: "label new issues" }
+      }
+    }])
+    expect(installed.frames.filter((frame) => frame.type === "call.settled")).toEqual([
+      { runId: "run", type: "call.settled", link: 0, ordinal: 0, name: "flow.new", verdict: "run" }
+    ])
+    expect(toolOutputs(asked)).toEqual(["{\"confirmation\":\"confirm-1\",\"state\":\"pending\"}"])
   })
 })

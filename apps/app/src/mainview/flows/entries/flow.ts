@@ -119,6 +119,8 @@ export const flowFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
     args: "<description> [owner/repo]",
     requires: ["signed-in"],
     form: { fields: { repo: { optionsFrom: "cloud-repos", kind: "text" } } },
+    // A submitted form names the repository beside the description; only JSON reads back as both (SlashPayload.ts).
+    confirmArgs: payload => JSON.stringify(payload),
     input: Schema.Struct({
       description: Schema.String,
       repo: Schema.optional(Schema.String)

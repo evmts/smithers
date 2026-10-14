@@ -8,9 +8,11 @@
  * Commands use the generated catalog shared with the CLI. The host binds
  * file reads to the turn's mirrored source, `docs` to the pages its build
  * bundles, HTTP commands to the public API with a generation-bound
- * bearer, and UI-only flows to the author's own screen as instructions. The
- * server rechecks the author's permission and owns confirmations. Commands
- * without a transport are not offered. No repository code runs in this host.
+ * bearer, and UI-only flows to the author's own screen as instructions. An
+ * account conversation on Smithers Cloud has no install API: there a new flow
+ * is asked for with its form on the author's screen. The server rechecks the
+ * author's permission and owns confirmations. Commands without a transport
+ * are not offered. No repository code runs in this host.
  *
  * @since 1.0.0-rc.0
  */
@@ -33,6 +35,7 @@ import {
   agentCommandLine,
   ANNOUNCED_ACT_LINE,
   ASK_IS_PERMISSION_LINE,
+  ASSISTANT_ACTS_LINE,
   cantYetsSentence,
   FAILED_RESULT_LINE,
   namedCantYets,
@@ -52,6 +55,9 @@ import type { AgentChatMessage, AgentTurnUsage, FetchLike, StartAgentTurnRequest
 import { TodoCardSchema } from "@smthrs/rpc/TodoCard"
 import { todoCard } from "@smthrs/rpc/TodoCommands"
 import {
+  FORM_INSTRUCTION_FIELDS,
+  type FormInstructionCommand,
+  isFormInstructionCommand,
   isUiInstructionCommand,
   type UiInstructionCommand,
   type UiInstructionFrame,
@@ -516,6 +522,46 @@ const uiCommand = (row: CatalogDescriptor, command: UiInstructionCommand): Bind 
     })
 
 /**
+ * A flow asked for with its form (THE FORM LAW, apps/app/AGENTS.md). The
+ * request goes to its author's own screen as an instruction: the form opens
+ * there with what the model named as its draft, and the person's Submit runs
+ * the flow. Nothing is confirmed or run from here, so every field is
+ * optional. Bare argument text is the form's first field; a null or blank
+ * field is an absent one.
+ */
+const formCommand = (row: CatalogDescriptor, command: FormInstructionCommand): BoundRun => (args) =>
+  Effect.sync(() => {
+    const text = (args ?? "").trim()
+    let ui: UiInstructionFrame
+    try {
+      const named: Record<string, unknown> = text.startsWith("{")
+        ? JSON.parse(text)
+        : { [FORM_INSTRUCTION_FIELDS[command][0]]: text }
+      const draft = Object.entries(named).flatMap(([field, value]): Array<[string, unknown]> => {
+        const given = typeof value === "string" ? value.trim() : value
+        return given === null || given === "" ? [] : [[field, given]]
+      })
+      ui = UiInstructionFrameSchema.parse({ ...Object.fromEntries(draft), command })
+    } catch {
+      return { refusal: `Invalid arguments for ${command}; use its declared payload.` }
+    }
+    const filled = Object.keys(ui).filter((field) => field !== "command")
+    return {
+      cards: [],
+      value: `The "${row.summary}" form is open on the author's screen${
+        filled.length === 0 ? "" : `, with ${filled.join(" and ")} filled in`
+      }. Nothing is created until they press Submit: tell them the form is on their screen, and never ask them to type arguments.`,
+      ui
+    }
+  })
+
+/** A form's payload schema as the list action shows it: the catalog row's, with no field required. */
+const formArgs = (row: CatalogDescriptor): string => {
+  const { required: _required, ...schema } = row.payload.schema
+  return JSON.stringify({ ...schema, $defs: row.payload.definitions, additionalProperties: false })
+}
+
+/**
  * `docs` over the bundled pages, as the app runs it: a read hands the model a
  * page's title, summary and Markdown and embeds nothing; otherwise the Docs
  * card embeds the page. Neither reads the repository or calls the API.
@@ -689,15 +735,34 @@ const catalogCommand = (row: CatalogDescriptor): Bind => (grant, { api }) => {
 interface Offered {
   readonly command: AgentCommand & { readonly args: string }
   readonly run: BoundRun
+  /** Asked for with its form on the author's screen, never run from here. */
+  readonly asked?: true
 }
+
+/**
+ * Whether the turn is its author's own account conversation on Smithers
+ * Cloud: it belongs to no repository, and host prompt admission marked it
+ * private (backend chat/prompt.go). Such a turn has no install API to call.
+ */
+const accountConversation = (grant: DurableChatGrant): boolean =>
+  grant.repositoryId === undefined && grant.request.privateConversation === true
 
 /** The commands this turn's grant runs, in the order the list and the instructions name them. */
 const offeredCommands = (grant: DurableChatGrant, transport: HostTransport): ReadonlyArray<Offered> =>
-  catalogDescriptors.flatMap((row) => {
+  catalogDescriptors.flatMap((row): ReadonlyArray<Offered> => {
     if (
       !row.actors.includes("app_agent") || row.visibility === "hidden" ||
       (row.agent !== "run" && row.agent !== "confirm")
     ) return []
+    if (isFormInstructionCommand(row.name) && accountConversation(grant)) {
+      const command: Offered["command"] = {
+        name: row.name,
+        summary: row.summary,
+        agent: row.agent,
+        args: formArgs(row)
+      }
+      return [{ command, run: formCommand(row, row.name), asked: true }]
+    }
     const bind = row.name === "files" ?
       filesList
       : row.name === "file" ?
@@ -721,11 +786,23 @@ const offeredCommands = (grant: DurableChatGrant, transport: HostTransport): Rea
     return run === undefined ? [] : [{ command, run }]
   })
 
-/** How a turn answers "how do I": from the page that covers it, which it names. */
+/**
+ * How a turn answers "how does it work": from the page that covers it, which
+ * it names. A page never stands in for a command: a turn that relays a page's
+ * steps for an act a command carries out has handed the work back (#3823).
+ */
 const docsReadLine = (docs: ReadonlyArray<DocsPage>): string =>
-  `Asked how to do something in Smithers, first run docs with {"mode":"read","page":"<page>"} for the page that covers it (pages: ${
+  `Asked how something in Smithers works, or to be shown its documentation, run docs with {"mode":"read","page":"<page>"} for the page that covers it (pages: ${
     docs.map((page) => page.slug).join(", ")
-  }), answer from what it returns, and name the page you read.`
+  }), answer from what it returns, and name the page you read. docs never answers a request a command above carries out: run that command instead of relaying a page's steps.`
+
+/**
+ * How a turn that asks for a new flow with its form answers a request for
+ * one. Asked "can we create a workflow", a live model answered with steps and
+ * a source template for the person to write (#3823).
+ */
+const FLOW_NEW_LINE =
+  "Asked to create, make, build or automate a flow or workflow (\"can we …\" included), run flow.new in that turn: pass what the flow should do as description when the person said it, and nothing when they did not. Then tell them in one sentence that the form is on their screen. Never explain how to write a flow by hand unless they ask for exactly that."
 
 /** How a turn that can list finds a file it was not named: it lists, never guesses. */
 const LIST_BEFORE_READ_LINE =
@@ -746,6 +823,7 @@ const hostInstructions = (offered: ReadonlyArray<Offered>, docs: ReadonlyArray<D
     "You have one tool, \"commands\": action \"list\" returns the commands below; action \"execute\" runs one by name with its argument text, as the person who asked.",
     TOOL_CHANNEL_LINE,
     ASK_IS_PERMISSION_LINE,
+    ASSISTANT_ACTS_LINE,
     ANNOUNCED_ACT_LINE,
     RUN_IS_NOT_RESULT_LINE,
     FAILED_RESULT_LINE,
@@ -766,6 +844,7 @@ const hostInstructions = (offered: ReadonlyArray<Offered>, docs: ReadonlyArray<D
     ),
     "Call commands with action list to inspect payload schemas. HTTP commands accept a JSON object; TODO references also accept Tn.",
     ...(reads.includes(FILES_LIST_COMMAND.name) ? [LIST_BEFORE_READ_LINE] : []),
+    ...(offered.some(({ command, asked }) => asked === true && command.name === "flow.new") ? [FLOW_NEW_LINE] : []),
     ...(offered.some(({ command }) => command.name === "docs") ? [docsReadLine(docs)] : []),
     "",
     `Everything this list lacks is a can't-yet. ${cantYetsSentence(namedCantYets(reads))}`,

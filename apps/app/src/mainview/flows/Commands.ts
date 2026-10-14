@@ -178,6 +178,13 @@ export interface FlowSubmission {
   readonly gesture?: CommandGesture
   /** Presentation context only; it conveys no command authority. */
   readonly originCardId?: string
+  /**
+   * Ask with the flow's form whatever the payload names: the payload is the
+   * form's draft, and nothing confirms or runs. A host's request to its
+   * author's screen for a flow that is not UI-only comes through this door
+   * (@smthrs/rpc/UiInstruction, #3823).
+   */
+  readonly ask?: true
 }
 
 export interface CommandRegistry {
@@ -484,7 +491,8 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     httpCall?: AgentToolCall["httpCall"],
     inheritedGesture?: CommandGesture,
     originCardId?: string,
-    confirmed = false
+    confirmed = false,
+    ask = false
   ): Promise<CommandOutcome> => {
     invocation?.signal?.throwIfAborted()
     const request = { name, actor: invoker === "agent" ? "smithers" as const : invoker,
@@ -553,7 +561,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     } }
     const canPublish = (): boolean => acceptance === undefined || lifecycle?.canPublish?.(acceptance.receipt, request) !== false
     let outcome: CommandOutcome
-    try { outcome = await settle(invoker, name, args, seen, startedAt, scopedInvocation, named, gesture, execution, canPublish, confirmed) }
+    try { outcome = await settle(invoker, name, args, seen, startedAt, scopedInvocation, named, gesture, execution, canPublish, confirmed, ask) }
     catch { outcome = { status: "failed", error: "The command did not finish. Check its result before trying again." } }
     const retryableAuthorization = authorizationRefused && (!execution.invoked || name === "form.submit")
     if (acceptance !== undefined && lifecycle !== undefined && !await lifecycle.settle(acceptance.receipt, outcome, retryableAuthorization)) {
@@ -595,7 +603,9 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     gesture?: CommandGesture,
     execution?: { invoked: boolean },
     canPublish: () => boolean = () => true,
-    confirmed = false
+    confirmed = false,
+    /** FlowSubmission.ask: the form is the whole answer, whatever the payload names. */
+    ask = false
   ): Promise<CommandOutcome> => {
     const entry = find(name)
     if (entry === undefined) {
@@ -742,7 +752,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     const fields = formFieldsFor(target.input, target.metadata.form, "payload" in parsed ? parsed.payload : {})
     // A field the named input makes required (FormHints.requires) is asked for like a schema-required one.
     const requires = "error" in parsed ? [] : target.metadata.form?.requires?.(parsed.payload) ?? []
-    if ("error" in parsed || fields.some(field => (field.required || requires.includes(field.name)) && (field.kind === "write-only"
+    if (ask || "error" in parsed || fields.some(field => (field.required || requires.includes(field.name)) && (field.kind === "write-only"
       ? invoker !== "agent" && gesture?.hasWriteOnly?.(field.name) !== true
       : parsed.payload[field.name] === undefined))) {
       /*
@@ -750,7 +760,9 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
        * flow's form — derived from its input schema, prefilled with what the
        * line gave — and nothing else. No door answers with a usage sentence;
        * the grammar's own reason stays the fallback only for a flow with no
-       * fields to ask for (none today).
+       * fields to ask for (none today). A submission that only asks takes
+       * this branch whatever it names, and this branch always returns: it
+       * never reaches the confirmation or the binding below.
        */
       // A form is a new transcript card: a maximized card must not hide it.
       if (invoker === "user" && actions.snapshot().maximizedCardId != null && gesture?.presentationCurrent?.() !== false) actions.minimizeCard()
@@ -884,12 +896,12 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
         signal: signal ?? invocation?.signal
       })
     },
-    submit: async ({ name, payload, actor, display, invocation, gesture, originCardId }) => {
+    submit: async ({ name, payload, actor, display, invocation, gesture, originCardId, ask }) => {
       const clean = canonicalCommandName(name)
       if (actor === "user") {
         const release = gesture?.release
         if (release) gestureSubmissions.set(release, (gestureSubmissions.get(release) ?? 0) + 1)
-        try { return await runAs("user", clean, display, new Set(), invocation, payload, undefined, gesture, originCardId) }
+        try { return await runAs("user", clean, display, new Set(), invocation, payload, undefined, gesture, originCardId, false, ask) }
         finally {
           if (release) {
             const remaining = (gestureSubmissions.get(release) ?? 1) - 1
@@ -900,7 +912,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
       }
       const early = lifecycle?.before?.({ name: clean, actor: "smithers", source: "form", invocation }, display, payload)
       if (early !== undefined) return early
-      return runAs("agent", clean, display, new Set(), { ...(invocation ?? unscopedInvocation) }, payload)
+      return runAs("agent", clean, display, new Set(), { ...(invocation ?? unscopedInvocation) }, payload, undefined, undefined, undefined, false, ask)
     },
     callable,
     /*

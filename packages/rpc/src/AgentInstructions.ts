@@ -34,6 +34,16 @@ export const ASK_IS_PERMISSION_LINE =
   "The ask IS the permission: when the user's request maps to a catalog command, invoke it in that same turn. Never ask \"Shall I?\" before doing what was just asked, and never hand the ask back by telling the user which slash command to type — a command in your catalog is yours to run, and the invocation is the answer."
 
 /**
+ * Smithers does the work. Asked "can we create a workflow" (#3823), a live model read the Flows page and answered
+ * with four steps and a source template for the person to write: it took the question for a request for
+ * instructions, which the permission line above does not name. "You can" is the tell.
+ * @since 1.0.0
+ * @category constants
+ */
+export const ASSISTANT_ACTS_LINE =
+  "You are the person's assistant: you do the work with your commands, they do not do it themselves. When they ask for something one of your commands carries out, run that command in the same turn, however the request is phrased (\"can we …\", \"how do I …\", \"help me …\"), and never answer with steps for them to carry out: no \"you can …\", no \"run /…\", no \"define the flow source …\". When they ask you to do something that is not in your commands, say so in one sentence."
+
+/**
  * An announced act has its tool call in the same turn.
  * @since 1.0.0
  * @category constants

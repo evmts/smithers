@@ -55,6 +55,70 @@ func TestUIInstructionsMatchScreenOnlyCatalogRows(t *testing.T) {
 	}
 }
 
+// A flow asked for with its form is the opposite kind of row: it has an HTTP
+// door and confirms for an agent, so a request for it only fills in the form
+// its author submits. No row is in both tables.
+func TestFormInstructionsMatchAgentConfirmedCatalogRows(t *testing.T) {
+	raw, err := os.ReadFile("../../../smithers/src/internal/backend/catalog.mvp.json")
+	require.NoError(t, err)
+	var catalog struct {
+		Operations []catalogRow `json:"operations"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &catalog))
+	require.Len(t, formInstructionFields, 1)
+	for command, declared := range formInstructionFields {
+		index := slices.IndexFunc(catalog.Operations, func(row catalogRow) bool { return row.Name == command })
+		require.NotEqual(t, -1, index, command)
+		row := catalog.Operations[index]
+		require.True(t, slices.Contains(row.Actors, "app_agent"), command)
+		require.Equal(t, []any{"confirm", false, false}, []any{row.Agent, string(row.HTTP) == "null", row.Visibility == "hidden"}, command)
+		fields := []string{}
+		for field := range row.Payload.Schema.Properties {
+			fields = append(fields, field)
+		}
+		want := slices.Clone(declared)
+		sort.Strings(fields)
+		sort.Strings(want)
+		require.Equal(t, want, fields, command)
+		require.NotContains(t, declared, "command", command)
+		require.NotContains(t, uiInstructionFields, command)
+	}
+}
+
+// A request for a form carries text for the fields the form declares, each
+// optional, under the settled call's own command. Anything else is refused at
+// commit, so no other value can reach a browser.
+func TestFormUIInstructionCarriesOnlyDeclaredText(t *testing.T) {
+	for _, item := range []struct {
+		name, ui string
+		want     bool
+	}{
+		{"flow.new", `{"command":"flow.new"}`, true},
+		{"flow.new", `{"command":"flow.new","description":"label new issues by area"}`, true},
+		{"flow.new", `{"command":"flow.new","repo":"acme/app"}`, true},
+		{"flow.new", `{"command":"flow.new","description":"label new issues by area","repo":"acme/app"}`, true},
+		{"flow.new", `{"command":"flow.new","name":"label-issues"}`, false},
+		{"flow.new", `{"command":"flow.new","description":"label new issues","confirmed":"true"}`, false},
+		{"flow.new", `{"command":"flow.new","description":7}`, false},
+		{"flow.new", `{"command":"flow.new","description":true}`, false},
+		{"flow.new", `{"command":"flow.new","description":null}`, false},
+		{"flow.new", `{"command":"flow.new","description":{"text":"label new issues"}}`, false},
+		{"flow.new", `{"command":"flow.new","description":"label new issues","repo":7}`, false},
+		{"flow.new", `{"description":"label new issues"}`, false},
+		{"flow.new", `"flow.new"`, false},
+		// The request is the settled call's own: another command's name cannot carry it.
+		{"docs", `{"command":"flow.new","description":"label new issues"}`, false},
+		{"flow.run", `{"command":"flow.run","name":"create-flow"}`, false},
+		{"form.submit", `{"command":"form.submit","cardId":"form-flow.new"}`, false},
+	} {
+		var frame map[string]any
+		decoder := json.NewDecoder(strings.NewReader(`{"name":"` + item.name + `","ui":` + item.ui + `}`))
+		decoder.UseNumber()
+		require.NoError(t, decoder.Decode(&frame))
+		require.Equal(t, item.want, validUIInstruction(frame), item.ui)
+	}
+}
+
 // The view state serves each committed request as its command and payload.
 func TestUIInstructionDecodeSplitsCommandFromPayload(t *testing.T) {
 	instruction, err := decodeUIInstruction("turn:1:2", json.RawMessage(`{"command":"runs.trace.select","runId":"run-1","seq":4}`))

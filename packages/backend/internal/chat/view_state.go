@@ -201,8 +201,11 @@ func (h *Handler) ViewState(w http.ResponseWriter, r *http.Request) {
 
 // This projection reads only the authenticated author's host-owned turns, and
 // verifies their retained journal before any instruction can reach a browser.
+// The turns are an install's shared conversation, or with no repository the
+// author's own account conversation. Replay needs the caller's one snapshot.
 func (s *Store) privateUIInstructions(ctx context.Context, tx pgx.Tx, repositoryID, userID int64, conversation string) ([]uiInstruction, error) {
-	rows, err := tx.Query(ctx, `SELECT `+turnColumns+` FROM chat_turns WHERE repository_id=$1 AND user_id=$2 AND conversation_id=$3 AND producer_generation>0 AND state NOT IN ('queued','retired') AND request_payload->>'sharedConversation'='true' ORDER BY created_at,id`, repositoryID, userID, conversation)
+	rows, err := tx.Query(ctx, `SELECT `+turnColumns+` FROM chat_turns WHERE repository_id=$1 AND user_id=$2 AND conversation_id=$3 AND producer_generation>0 AND state NOT IN ('queued','retired')
+ AND (($1>0 AND request_payload->>'sharedConversation'='true') OR ($1=0 AND request_payload->>'privateConversation'='true')) ORDER BY created_at,id`, repositoryID, userID, conversation)
 	if err != nil {
 		return nil, err
 	}

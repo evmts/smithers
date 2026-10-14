@@ -106,8 +106,22 @@ func (s *Store) accountViewState(ctx context.Context, scope Scope, branch string
 	if err = json.Unmarshal(stored, &view); err != nil {
 		return nil, ErrCorrupt
 	}
+	// Saved browser input never supplies a queue or an instruction. Only
+	// committed rows do, and a read's snapshot is the one their replay needs.
 	delete(view, "queue")
 	delete(view, "instructions")
+	if value == nil {
+		instructions, err := s.privateUIInstructions(ctx, tx, scope.RepositoryID, scope.UserID, branch)
+		if err != nil {
+			return nil, err
+		}
+		if len(instructions) > 0 {
+			view["instructions"], err = json.Marshal(instructions)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
 	if len(queue) > 0 {
 		view["queue"], err = json.Marshal(queue)
 		if err != nil {

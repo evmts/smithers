@@ -48,9 +48,21 @@ var uiInstructionFields = map[string][]string{
 	"wiki.view":            {"view"},
 }
 
+// formInstructionFields lists the flows an app-agent turn may only ask for
+// with their form, and the fields a request may fill in. Each has an HTTP door
+// and confirms for an agent, so it is not a UI-only flow: the request opens
+// the form on its author's own screen with these fields as its draft, and the
+// person's Submit runs the flow. It mirrors FORM_INSTRUCTION_FIELDS in
+// packages/rpc/src/UiInstruction.ts; both are checked against the generated
+// catalog.
+var formInstructionFields = map[string][]string{
+	"flow.new": {"description", "repo"},
+}
+
 // validUIInstruction checks a settled call's optional `ui` field: the call's
-// own UI-only command beside its declared fields. Only runs.trace.view carries
-// the structured per-member monitor selection declared by the catalog.
+// own command beside its declared fields. Only runs.trace.view carries the
+// structured per-member monitor selection declared by the catalog, and a
+// form's draft is text.
 func validUIInstruction(frame map[string]any) bool {
 	instruction, present := frame["ui"]
 	if !present {
@@ -65,8 +77,11 @@ func validUIInstruction(frame map[string]any) bool {
 		return false
 	}
 	declared, ok := uiInstructionFields[command]
+	form := false
 	if !ok {
-		return false
+		if declared, form = formInstructionFields[command]; !form {
+			return false
+		}
 	}
 	for field, value := range ui {
 		if field == "command" {
@@ -74,6 +89,12 @@ func validUIInstruction(frame map[string]any) bool {
 		}
 		if !slices.Contains(declared, field) {
 			return false
+		}
+		if form {
+			if _, ok := value.(string); !ok {
+				return false
+			}
+			continue
 		}
 		if command == "runs.trace.view" && field == "state" {
 			if value == nil {

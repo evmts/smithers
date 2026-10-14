@@ -72,6 +72,11 @@ export interface StartAgentTurnRequest {
   readonly conversationId?: string
   /** Host prompt admission requires authorized SharedEntries preflight. Browser admission refuses this marker. */
   readonly sharedConversation?: boolean
+  /**
+   * The author's own account conversation on Smithers Cloud, before any install or repository: host prompt
+   * admission sets it exactly when the turn belongs to no repository, and no browser request supplies it.
+   */
+  readonly privateConversation?: boolean
   /** Stable per-leg identity and private replay capability, written locally before the POST. */
   readonly journal?: import("./AgentTurnJournal.ts").AgentTurnJournalRequest
   readonly messages: ReadonlyArray<AgentChatMessage>

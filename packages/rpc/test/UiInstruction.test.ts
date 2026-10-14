@@ -1,5 +1,11 @@
 import { describe, expect, test } from "vitest"
-import { UiInstructionFrameSchema } from "../src/UiInstruction.ts"
+import {
+  FORM_INSTRUCTION_FIELDS,
+  isFormInstructionCommand,
+  isUiInstructionCommand,
+  UI_INSTRUCTION_FIELDS,
+  UiInstructionFrameSchema
+} from "../src/UiInstruction.ts"
 
 describe("author monitor selection", () => {
   const base = { command: "runs.trace.view", runId: "run-9", view: "turns" }
@@ -26,5 +32,46 @@ describe("author monitor selection", () => {
       command: "theme",
       mode: "dark"
     })
+  })
+})
+
+// #3823: a flow that is not UI-only reaches its author's screen only as a request for its form.
+describe("a flow asked for with its form", () => {
+  test("carries the form's draft as text, each field optional", () => {
+    for (
+      const frame of [
+        { command: "flow.new" },
+        { command: "flow.new", description: "label new issues by area" },
+        { command: "flow.new", repo: "acme/app" },
+        { command: "flow.new", description: "label new issues by area", repo: "acme/app" }
+      ]
+    ) expect(UiInstructionFrameSchema.parse(frame)).toEqual(frame)
+  })
+  test("refuses a field the form does not declare and a value that is not text", () => {
+    for (
+      const frame of [
+        { command: "flow.new", name: "label-issues" },
+        { command: "flow.new", description: "label new issues", confirmed: "true" },
+        { command: "flow.new", description: 7 },
+        { command: "flow.new", description: true },
+        { command: "flow.new", description: null },
+        { command: "flow.new", description: { text: "label new issues" } },
+        { command: "flow.new", description: "label new issues", repo: 7 },
+        { command: "flow.new", description: "label new issues", repo: null }
+      ]
+    ) expect(UiInstructionFrameSchema.safeParse(frame).success, JSON.stringify(frame)).toBe(false)
+  })
+  test("is never also a UI-only flow, and no other flow is asked for this way", () => {
+    expect(Object.keys(FORM_INSTRUCTION_FIELDS)).toEqual(["flow.new"])
+    for (const name of Object.keys(FORM_INSTRUCTION_FIELDS)) {
+      expect([name, isFormInstructionCommand(name), isUiInstructionCommand(name)]).toEqual([name, true, false])
+    }
+    for (const name of Object.keys(UI_INSTRUCTION_FIELDS)) {
+      expect([name, isFormInstructionCommand(name)]).toEqual([name, false])
+    }
+    for (const name of ["flow.run", "flow.edit", "form.submit", "todo.new", "toString"]) {
+      expect([name, isFormInstructionCommand(name), UiInstructionFrameSchema.safeParse({ command: name }).success])
+        .toEqual([name, false, false])
+    }
   })
 })

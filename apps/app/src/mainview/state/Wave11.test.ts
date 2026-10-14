@@ -468,6 +468,104 @@ describe("wave 11 — the loaded repositories are the universe", () => {
     expect(draft()).toEqual({ repo: "acme/other" })
   })
 
+  /*
+   * #3823: on Smithers Cloud the agent's door to a new flow is a request to
+   * its author's own screen, and that door only asks. Whatever the request
+   * names is the form's draft: nothing confirms and nothing launches until
+   * the person presses Submit, and then the flow still confirms as the agent's.
+   */
+  test("the agent's request for a new flow asks with the form, runs nothing, and is applied once", async () => {
+    const store = await webStore()
+    const double = relay()
+    const instructions = [{ id: "turn-1:2:0", command: "flow.new", payload: { description: "label new issues by area" } }]
+    const controller = createAppController(store, silentAgent, {
+      ...double.services,
+      bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "identity", "cloud"], authFlow: "redirect", sandbox: null },
+      fetchImpl: async (input, init) => {
+        const path = new URL(String(input), "https://app.test").pathname
+        if (path === "/api/conversations/main") return json(200, { id: "main", entries: [] })
+        if (path === "/api/conversations/main/view-state") return json(200, { instructions })
+        return double.services.fetchImpl!(input, init)
+      }
+    })
+    await signIn(store)
+    const forms = () => [...store.collections.cards.values()].flatMap(card => card.kind === "flow-form" ? [card] : [])
+    const confirmations = () => [...store.collections.messages.values()].filter(message => message.action?.flow === "flow.new")
+
+    await controller.sharedConversation!.read()
+    await waitFor(() => forms().length === 1)
+    const form = forms()[0]!
+    expect(form.title).toBe("Create a new flow")
+    expect(form.payload).toMatchObject({ flow: "flow.new", via: "agent", draft: { description: "label new issues by area", repo: REPO } })
+    expect(store.session().uiInstructionsSeen).toHaveLength(1)
+    // The request named everything the flow requires, and still nothing was confirmed or launched.
+    expect(confirmations()).toEqual([])
+    expect(double.state.launched).toEqual([])
+    expect(double.calls.some(call => call.path.startsWith("/api/workflow/"))).toBe(false)
+
+    /* A later read serves the same request: the person's edit is not overwritten by a second form. */
+    expect((await controller.commands.run("form.set", `${form.id} description label new issues by team`)).status).toBe("executed")
+    await controller.sharedConversation!.read()
+    await settle(2)
+    expect(store.session().uiInstructionsSeen).toHaveLength(1)
+    expect(forms().map(card => card.payload.draft)).toEqual([{ description: "label new issues by team", repo: REPO }])
+
+    /* Submit runs the flow as the agent that asked: it confirms, and only the person's press launches. */
+    expect((await controller.commands.run("form.submit", form.id)).status).toBe("executed")
+    expect(forms()[0]!.status).toBe("acted")
+    expect(confirmations()).toHaveLength(1)
+    expect(double.state.launched).toEqual([])
+    const confirmation = confirmations()[0]!
+    const revision = confirmation.action?.revision
+    if (revision === undefined) throw new Error("the confirmation carries no revision")
+    expect((await controller.commands.confirm(confirmation.id, revision)).status).toBe("executed")
+    await waitFor(() => double.state.launched.length > 0)
+    expect(double.state.launched).toEqual([{ workflow: "create-flow", input: { args: "label new issues by team" } }])
+  })
+
+  test("the agent's request keeps the repository it names, asks for a description it lacks, and never runs another flow", async () => {
+    const store = await webStore()
+    const double = relay()
+    let instructions: ReadonlyArray<{ id: string; command: string; payload: Record<string, unknown> }> = []
+    const controller = createAppController(store, silentAgent, {
+      ...double.services,
+      bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "identity", "cloud"], authFlow: "redirect", sandbox: null },
+      fetchImpl: async (input, init) => {
+        const path = new URL(String(input), "https://app.test").pathname
+        if (path === "/api/conversations/main") return json(200, { id: "main", entries: [] })
+        if (path === "/api/conversations/main/view-state") return json(200, { instructions })
+        return double.services.fetchImpl!(input, init)
+      }
+    })
+    await signIn(store)
+    const draft = () => {
+      const form = [...store.collections.cards.values()].find(card => card.kind === "flow-form")
+      return form?.kind === "flow-form" ? form.payload.draft : undefined
+    }
+    const seen = () => store.session().uiInstructionsSeen?.length ?? 0
+
+    instructions = [{ id: "turn-1:2:0", command: "flow.new", payload: {} }]
+    await controller.sharedConversation!.read()
+    await waitFor(() => seen() === 1 && draft() !== undefined)
+    expect(draft()).toEqual({ repo: REPO })
+
+    instructions = [...instructions, { id: "turn-2:2:0", command: "flow.new", payload: { description: "triage nightly failures", repo: "acme/other" } }]
+    await controller.sharedConversation!.read()
+    await waitFor(() => seen() === 2 && draft()?.description !== undefined)
+    expect(draft()).toEqual({ description: "triage nightly failures", repo: "acme/other" })
+
+    /* A flow that is neither UI-only nor asked for with its form never reaches the registry from this door. */
+    instructions = [...instructions,
+      { id: "turn-3:2:0", command: "flow.run", payload: { name: "create-flow", repo: REPO } },
+      { id: "turn-3:2:1", command: "form.submit", payload: { cardId: "form-flow.new" } }]
+    await controller.sharedConversation!.read()
+    await settle(4)
+    expect(seen()).toBe(2)
+    expect([...store.collections.messages.values()].filter(message => message.action !== undefined)).toEqual([])
+    expect(double.state.launched).toEqual([])
+    expect(double.calls.some(call => call.path.startsWith("/api/workflow/"))).toBe(false)
+  })
+
   test("signed out, nothing reaches the seam — the answer names the one step", async () => {
     const store = await webStore()
     const double = relay()

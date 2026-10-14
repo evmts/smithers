@@ -829,3 +829,44 @@ test.each(["trailing-text", "tool-call", "invalid-input"])(
     )
   }
 )
+
+// #3823: the account conversation's marker is the grant wire's own request field, as the backend's prompt admission writes it.
+test("a Cloud account conversation's private marker reaches the turn through the grant wire", async () => {
+  const offered = async (request: Record<string, unknown>, extra: Record<string, unknown> = {}) => {
+    const systems: Array<string> = []
+    const handler = createModelTurnHandler({
+      authorization: "host-token",
+      callbackBaseUrl: "http://callback.test",
+      resolve: () =>
+        Effect.succeed({
+          model: Model.make({
+            stream: (turn) => {
+              systems.push((turn.system ?? []).map((part) => part.text).join("\n"))
+              return Stream.fromIterable([
+                { type: "text-delta", id: "t", text: "ok" } as const,
+                { type: "settle", stopReason: "stop" } as const
+              ])
+            }
+          }),
+          options: { modelId: "fixture" }
+        }),
+      fetchImpl: async (input, init) =>
+        String(input).includes("provider-started")
+          ? new Response(null, { status: 204 })
+          : Response.json(committed(JSON.parse(String(init?.body))))
+    })
+    const response = await handler(
+      post(JSON.stringify({ ...grant, ...extra, request: { ...grant.request, ...request } }))
+    )
+    expect(response.status).toBe(204)
+    expect(systems).toHaveLength(1)
+    return systems[0]!.split("\n").filter((line) => line.startsWith("- /"))
+  }
+  const account = { conversationId: "account-1-main", purpose: "conversation", sharedConversation: false }
+  expect(await offered({ ...account, privateConversation: true })).toEqual([
+    "- /flow.new — Create a new flow (asks the person: it only shows them what to confirm, and their press acts)"
+  ])
+  // Without the marker, or on a turn that belongs to a repository, the host offers what it did: nothing here.
+  expect(await offered({ ...account, privateConversation: false })).toEqual([])
+  expect(await offered({ ...account, privateConversation: true }, { repositoryId: 3 })).toEqual([])
+})

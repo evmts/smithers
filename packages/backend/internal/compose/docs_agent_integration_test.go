@@ -265,7 +265,7 @@ func TestInstallAgentAnswersHowDoIFromBundledDocs(t *testing.T) {
 	mu.Lock()
 	require.Len(t, systems, 2, "one leg asks, one answers from the read")
 	require.Contains(t, systems[0], "- /docs — Read the docs in the app")
-	require.Contains(t, systems[0], `Asked how to do something in Smithers, first run docs with {"mode":"read","page":"<page>"} for the page that covers it (pages: quickstart, flows)`)
+	require.Contains(t, systems[0], `Asked how something in Smithers works, or to be shown its documentation, run docs with {"mode":"read","page":"<page>"} for the page that covers it (pages: quickstart, flows)`)
 	// The model read the quickstart exactly as the app ships it.
 	require.Len(t, reads, 1)
 	var page struct{ Title, Summary, Markdown string }

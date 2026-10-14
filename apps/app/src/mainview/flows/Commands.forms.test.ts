@@ -144,6 +144,32 @@ describe("THE FORM LAW — the agent door", () => {
     expect(result).toStartWith("failed: /card.maximize is user-only")
     expect(formOf(store, "card.maximize")).toBeUndefined()
   })
+
+  /*
+   * #3823: a host's request to its author's screen for a flow that is not
+   * UI-only comes through `submit` with `ask`. It names everything the flow
+   * requires and still only asks: the same submission without `ask` is the
+   * agent's own invocation, which confirms.
+   */
+  test("a submission that only asks renders the form with what it names as the draft, and confirms and runs nothing", async () => {
+    const { store, controller, writes } = await boot()
+    const payload = { description: "label new issues by area", repo: "will/flows" }
+    const confirmations = () => messages(store).flatMap((message) => message.action?.flow === "flow.new" ? [message.action.args] : [])
+
+    for (const actor of ["agent", "user"] as const) {
+      expect(await controller.commands.submit({ name: "flow.new", payload, actor, ask: true }))
+        .toEqual({ status: "form", flow: "flow.new", cardId: "form-flow.new", fields: ["description", "repo"] })
+      expect(formOf(store, "flow.new")?.payload).toMatchObject({ via: actor, draft: payload })
+      expect(formOf(store, "flow.new")?.status).toBe("active")
+      expect(confirmations()).toEqual([])
+    }
+
+    expect(await controller.commands.submit({ name: "flow.new", payload, actor: "agent" }))
+      .toMatchObject({ status: "executed", value: expect.stringContaining("asked the user to confirm") })
+    // The confirmation's line reads back as the payload it was asked with, repository included.
+    expect(confirmations()).toEqual([JSON.stringify(payload)])
+    expect(writes).toEqual([])
+  })
 })
 
 describe("THE FORM LAW — the slash door and the button door", () => {

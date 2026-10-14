@@ -3,7 +3,7 @@ import { z } from "zod"
 import { AgentTurnFrameSchema } from "@smthrs/rpc/NativeAgent"
 import { ContextItemSchema, ToneSchema, TodoStateSchema, PlaceholderAvatarUrl } from "@smthrs/rpc/CardPrimitives"
 import { ContextPreflightResultSchema } from "@smthrs/rpc/ContextPreflight"
-import { isUiInstructionCommand } from "@smthrs/rpc/UiInstruction"
+import { isFormInstructionCommand, isUiInstructionCommand } from "@smthrs/rpc/UiInstruction"
 import { MessageSchema } from "../AppState"
 import type { ControllerContext } from "../controller/context"
 import type { LiveTopics } from "../useTopic"
@@ -95,7 +95,8 @@ export function createSharedConversationSeam(ctx: ControllerContext, live?: Live
     for (const instruction of view.instructions) {
       const id = JSON.stringify([owner, at, instruction.id])
       const { command } = instruction
-      if (!isUiInstructionCommand(command) || applying.has(id) || ctx.store.session().uiInstructionsSeen?.includes(id)) continue
+      const ask = isFormInstructionCommand(command)
+      if ((!ask && !isUiInstructionCommand(command)) || applying.has(id) || ctx.store.session().uiInstructionsSeen?.includes(id)) continue
       applying.add(id)
       uiWork = uiWork.then(async () => {
         if (!valid(revision)) return
@@ -103,10 +104,12 @@ export function createSharedConversationSeam(ctx: ControllerContext, live?: Live
         // the page, fails or is refused is never run again.
         await ctx.store.dispatch({ type: "conversation.ui.applied", actor: "system", owner, id }).isPersisted.promise
         if (!valid(revision)) return
-        // UI-only flows only: no HTTP command, shared mutation or model
-        // continuation reaches this door, and the flow's typed input decodes the payload.
-        const outcome = await ctx.commands.submit({ name: command, payload: instruction.payload, actor: "agent" })
-        if (outcome.status !== "executed" && outcome.status !== "form") throw new SharedConversationFailure({ sentence: `/${command} unavailable` })
+        // A UI-only flow runs here, and the flow's typed input decodes the payload.
+        // Any other flow is only asked for with its form: the request is the
+        // form's draft, and nothing confirms or runs until the person submits.
+        // No HTTP command, shared mutation or model continuation reaches this door.
+        const outcome = await ctx.commands.submit({ name: command, payload: instruction.payload, actor: "agent", ...(ask ? { ask } : {}) })
+        if (outcome.status !== "form" && (ask || outcome.status !== "executed")) throw new SharedConversationFailure({ sentence: `/${command} unavailable` })
       }).catch(error => { if (valid(revision)) ctx.failures.report("seam.failure", error, "conversation-ui") }).finally(() => applying.delete(id))
     }
   }
