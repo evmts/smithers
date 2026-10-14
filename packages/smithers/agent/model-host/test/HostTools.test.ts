@@ -28,6 +28,7 @@ import { createHash } from "node:crypto"
 import { describe, expect, test } from "vitest"
 import { runDurableChatTurn } from "../src/DurableChatProducer.ts"
 import type { DurableChatGrant } from "../src/DurableChatProducer.ts"
+import { createHostDiagnostics, HOST_DIAGNOSTIC_MARKER } from "../src/HostDiagnostics.ts"
 import { apiCaller, runHostTurn } from "../src/HostTools.ts"
 
 // Literal fixtures: the question, main's commit and JOURNEY.md's one line.
@@ -2167,11 +2168,60 @@ const FLOW_NEW_COMMAND_LINE =
 const formOpen = (filled: string): string =>
   `The "Create a new flow" form is open on the author's screen${filled}. Nothing is created until they press Submit: tell them the form is on their screen, and never ask them to type arguments.`
 
+/**
+ * The screen-only flows (mvp.md Appendix B.1) a Cloud account conversation
+ * runs for its author, in catalog order, beside the pages and the form it is
+ * offered. Each request is the whole act: it calls no route and spends no
+ * credential, so an account turn without an install API still runs them.
+ */
+const CLOUD_ACCOUNT_COMMANDS = [
+  "card.dismiss",
+  "card.history.back",
+  "card.history.forward",
+  "change.facet",
+  "chat.reload",
+  "docs",
+  "flow.new",
+  "flow.plan.select",
+  "flow.plan.tab",
+  "form.set",
+  "help",
+  "history",
+  "prs.tab",
+  "runs.coding.select",
+  "runs.graph.execution",
+  "runs.graph.follow",
+  "runs.graph.select",
+  "runs.graph.tab",
+  "runs.steps",
+  "runs.trace.filter",
+  "runs.trace.live",
+  "runs.trace.select",
+  "runs.trace.view",
+  "search.changes",
+  "search.files",
+  "search.flows",
+  "search.history",
+  "search.issues",
+  "search.runs",
+  "search.wiki",
+  "storage.recovery",
+  "theme",
+  "wiki.backlinks",
+  "wiki.graph",
+  "wiki.open",
+  "wiki.space",
+  "wiki.view"
+]
+
 // #3823: asked "can we create a workflow" on smithers.sh, the agent had one command, docs, and recited the Flows page.
 describe("a Cloud account conversation asks for a new flow with its form", () => {
-  test("the turn is offered docs and flow.new, every form field optional, and nothing else", async () => {
+  test("the turn is offered the author's own screen, docs and flow.new, every form field optional, and nothing else", async () => {
     for (
-      const [docs, names] of [[PAGES, ["docs", "flow.new"]], [undefined, ["flow.new"]]] as const
+      const [docs, names] of [
+        [PAGES, CLOUD_ACCOUNT_COMMANDS],
+        [undefined, CLOUD_ACCOUNT_COMMANDS.filter((name) => name !== "docs")]
+      ] as const
     ) {
       const journal = producer((path) => file(path, JOURNEY))
       const provider = model([{ name: "commands", arguments: JSON.stringify({ action: "list" }) }])
@@ -2322,5 +2372,84 @@ describe("a Cloud account conversation asks for a new flow with its form", () =>
       { runId: "run", type: "call.settled", link: 0, ordinal: 0, name: "flow.new", verdict: "run" }
     ])
     expect(toolOutputs(asked)).toEqual(["{\"confirmation\":\"confirm-1\",\"state\":\"pending\"}"])
+  })
+})
+
+/**
+ * The hosted Cloud chat is an account conversation, and compose wires an
+ * install API only for a single-owner install
+ * (backend/internal/compose/main.go), so every hosted turn's grant carries
+ * none. Withholding the screen-only flows behind that credential left the
+ * Cloud agent unable to take any act a person takes on their own screen: live
+ * on smithers.sh, asked to list a repository's issues, it answered "I can't
+ * list issues right now, but I can show you the documentation using the /docs
+ * command", and asked to run the issues namespace, "that namespace isn't
+ * available".
+ */
+describe("a Cloud account conversation runs the screen-only flows for its author", () => {
+  test("every Appendix B.1 flow is offered without an install API, and the search a person can run is among them", async () => {
+    const journal = producer((path) => file(path, JOURNEY))
+    const provider = model([{ name: "commands", arguments: JSON.stringify({ action: "list" }) }])
+    await runWithDocs(account, provider, journal, PAGES)
+    const listed = (JSON.parse(toolOutputs(provider)[0]!) as {
+      commands: ReadonlyArray<{ readonly name: string }>
+    }).commands.map((command) => command.name)
+    expect(account.api).toBeUndefined()
+    expect([...listed.filter((name) => Object.hasOwn(UI_INSTRUCTION_FIELDS, name))].sort())
+      .toEqual([...Object.keys(UI_INSTRUCTION_FIELDS)].sort())
+    for (const name of ["search.issues", "history", "help", "wiki.open", "theme"]) expect(listed).toContain(name)
+    // The screen is the whole act: nothing reached the API or the repository.
+    expect([journal.calls, journal.reads, journal.lists]).toEqual([[], [], []])
+  })
+
+  test("the search runs as a request on the author's own screen, with its declared field and no route", async () => {
+    const journal = producer((path) => file(path, JOURNEY))
+    const provider = model([execute("search.issues", JSON.stringify({ query: "roninjin10/e2e-verify open" }))])
+    await runWithDocs(account, provider, journal, PAGES)
+    expect(journal.frames.map((frame) => frame.type)).toEqual(["call.started", "call.settled", "delta", "done"])
+    for (const frame of journal.frames) expect(AgentTurnFrameSchema.safeParse(frame).success).toBe(true)
+    expect(journal.frames[1]).toEqual({
+      runId: "run",
+      type: "call.settled",
+      link: 0,
+      ordinal: 0,
+      name: "search.issues",
+      verdict: "run",
+      ui: { command: "search.issues", query: "roninjin10/e2e-verify open" }
+    })
+    expect(toolOutputs(provider)).toEqual(["Requested /search.issues on the author's screen."])
+    expect([journal.calls, journal.reads, journal.lists]).toEqual([[], [], []])
+  })
+
+  test("the turn records what it could do, as counts and flags an operator can read", async () => {
+    const lines: Array<string> = []
+    const journal = producer((path) => file(path, JOURNEY))
+    const provider = model([])
+    await Effect.runPromise(
+      runDurableChatTurn(
+        provider.model,
+        account,
+        { modelId: "m" },
+        "http://callback.test",
+        journal.fetchImpl,
+        undefined,
+        PAGES,
+        createHostDiagnostics({ turnId: account.turnId, write: (line) => lines.push(line) })
+      )
+    )
+    const offered = lines.map((line) => JSON.parse(line) as Record<string, unknown>)
+      .find((record) => record.event === "host_tools")
+    expect(offered).toMatchObject({
+      diagnostic: HOST_DIAGNOSTIC_MARKER,
+      turnId: account.turnId,
+      phase: "offered",
+      commands: CLOUD_ACCOUNT_COMMANDS.length,
+      api: false,
+      source: false,
+      docs: PAGES.length,
+      account: true
+    })
+    // A count and a flag only: no command, payload, destination or credential.
+    expect(JSON.stringify(offered)).not.toContain("search")
   })
 })

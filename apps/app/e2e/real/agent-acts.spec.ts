@@ -109,3 +109,35 @@ agentTest("asked for a flow that labels new issues, the agent opens the form wit
     await dismissFlowForms(page)
   }
 })
+
+/*
+ * The screen-only acts (mvp.md Appendix B.1): on Cloud the agent's grant
+ * carries no install API, and the host withheld every one of them behind that
+ * credential. Asked read-only to list a repository's issues, the deployed
+ * agent answered "I can't list issues right now, but I can show you the
+ * documentation using the /docs command" (2026-10-14, account 8 on
+ * smithers.sh) while the person's own /issues.list worked. Its act is the
+ * issue search on their screen.
+ */
+agentTest("asked to list the open issues, the agent runs the issue search on the person's own screen", scenario("agent.acts.search-issues", {
+  capabilities: ["agent", "identity", "cloud"],
+  coverage: [
+    "action:chat.send", "action:search.issues", "host:production", "path:success", "door:agent",
+    "dimension:assistant-acts", "dimension:screen-only", "dimension:tool-loop", "dimension:no-remote-side-effect",
+    "evidence:rendered-search-card-and-reply"
+  ],
+  description: "Ask the deployed Cloud agent read-only for the repository's open issues and require the rendered issue-search card, a reply with no how-to, and no launched run."
+}), async ({ page }, testInfo) => {
+  await bootWorkspace(page)
+  const { reply, launches } = await askAgent(
+    page,
+    "List the open issues in this repository using the app's issue search. Do not create, edit, close or delete anything."
+  )
+  await testInfo.attach("agent-acts-reply", { body: Buffer.from(JSON.stringify({ reply, launches }, null, 2)), contentType: "application/json" })
+  const results = page.locator('.smithers-card[data-kind="search-results"]').last()
+  await expect(results, `the agent replied ${JSON.stringify(reply)}`).toBeVisible({ timeout: 30_000 })
+  await expect(results.getByTestId("search-results-query")).toContainText("/search.issues")
+  expect(reply).not.toMatch(HOW_TO)
+  expect(reply).not.toMatch(/\/docs\b/)
+  expect(launches).toEqual([])
+})

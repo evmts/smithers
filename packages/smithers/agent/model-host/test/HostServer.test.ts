@@ -2,6 +2,7 @@ import * as Model from "@smthrs/model/Model"
 import { ModelError } from "@smthrs/model/ModelError"
 import type * as ModelEvent from "@smthrs/model/ModelEvent"
 import { agentTurnJournalDigestInput } from "@smthrs/rpc/AgentTurnJournal"
+import { UI_INSTRUCTION_FIELDS } from "@smthrs/rpc/UiInstruction"
 import { Effect, Metric, Stream } from "effect"
 import { createHash } from "node:crypto"
 import { describe, expect, test, vi } from "vitest"
@@ -863,9 +864,14 @@ test("a Cloud account conversation's private marker reaches the turn through the
     return systems[0]!.split("\n").filter((line) => line.startsWith("- /"))
   }
   const account = { conversationId: "account-1-main", purpose: "conversation", sharedConversation: false }
-  expect(await offered({ ...account, privateConversation: true })).toEqual([
+  // The form it asks for, and every screen-only flow it runs on its author's
+  // own screen: this host has no install API, and they need none.
+  const lines = await offered({ ...account, privateConversation: true })
+  expect(lines).toContain(
     "- /flow.new — Create a new flow (asks the person: it only shows them what to confirm, and their press acts)"
-  ])
+  )
+  expect([...lines.map((line) => line.slice(3).split(" ")[0]!).filter((name) => name !== "flow.new")].sort())
+    .toEqual([...Object.keys(UI_INSTRUCTION_FIELDS)].sort())
   // Without the marker, or on a turn that belongs to a repository, the host offers what it did: nothing here.
   expect(await offered({ ...account, privateConversation: false })).toEqual([])
   expect(await offered({ ...account, privateConversation: true }, { repositoryId: 3 })).toEqual([])

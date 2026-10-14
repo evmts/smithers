@@ -496,13 +496,30 @@ const commandPayload = (row: CatalogDescriptor, args: string | undefined): Recor
 }
 
 /**
+ * Whether the turn is its author's own account conversation on Smithers
+ * Cloud: it belongs to no repository, and host prompt admission marked it
+ * private (backend chat/prompt.go). Such a turn has no install API to call.
+ */
+const accountConversation = (grant: DurableChatGrant): boolean =>
+  grant.repositoryId === undefined && grant.request.privateConversation === true
+
+/**
  * A UI-only flow (spec §14.1.4) runs on the author's own screen, never here.
  * Its request shares the committed journal, but only the author's private
  * view projects it. A null field is an absent one. `/theme` names its mode:
  * this host cannot see the screen a toggle would flip.
+ *
+ * The request is the whole act, so it needs no install API: it carries no
+ * payload to a route and spends no credential. An account conversation on
+ * Smithers Cloud has no install API at all (compose wires one only for a
+ * single-owner install), and withholding these flows there left its agent
+ * with `docs` and a how-to for every act a person can take on their own
+ * screen — live, asked to list a repository's issues, it answered "I can't
+ * list issues right now, but I can show you the documentation". Only a turn
+ * with neither an API nor an author's own screen offers them.
  */
 const uiCommand = (row: CatalogDescriptor, command: UiInstructionCommand): Bind => (grant) =>
-  grant.api === undefined ? undefined : (args) =>
+  grant.api === undefined && !accountConversation(grant) ? undefined : (args) =>
     Effect.sync(() => {
       const refusal = command === "theme"
         ? "Invalid arguments for theme; use light or dark."
@@ -739,14 +756,6 @@ interface Offered {
   /** Asked for with its form on the author's screen, never run from here. */
   readonly asked?: true
 }
-
-/**
- * Whether the turn is its author's own account conversation on Smithers
- * Cloud: it belongs to no repository, and host prompt admission marked it
- * private (backend chat/prompt.go). Such a turn has no install API to call.
- */
-const accountConversation = (grant: DurableChatGrant): boolean =>
-  grant.repositoryId === undefined && grant.request.privateConversation === true
 
 /** The commands this turn's grant runs, in the order the list and the instructions name them. */
 const offeredCommands = (grant: DurableChatGrant, transport: HostTransport): ReadonlyArray<Offered> =>
@@ -987,6 +996,19 @@ export const runHostTurn = <E>(
 ): Effect.Effect<void, Model.ModelFailure | ModelError | E> =>
   Effect.gen(function*() {
     const offered = offeredCommands(grant, transport)
+    /*
+     * What this turn could do, as counts and flags. A turn that answers "I
+     * can't" because its grant carried no API, no source or no pages reads in
+     * the journal exactly like a model that chose not to act; this record
+     * separates the two without naming a command, a payload or a credential.
+     */
+    diagnostics?.record("host_tools", "offered", {
+      commands: offered.length,
+      api: grant.api !== undefined,
+      source: grant.source !== undefined,
+      docs: (transport.docs ?? []).length,
+      account: accountConversation(grant)
+    })
     // A turn offered no command keeps its request's own instructions and context: this host owns neither.
     let request: StartAgentTurnRequest = offered.length === 0
       ? { ...grant.request, tools: [] }
