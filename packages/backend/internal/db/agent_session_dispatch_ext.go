@@ -29,7 +29,9 @@ import (
 // The reset drops metadata.failure_reason with it (see
 // RecordAgentSessionFailureReason): the API returns metadata verbatim and the
 // session status event repeats that key, so a retry that succeeds would
-// otherwise keep showing its owner the previous attempt's refusal.
+// otherwise keep showing its owner the previous attempt's refusal. It drops
+// metadata.waiting_reason for the same reason: the wait this dispatch was
+// parked behind is over the moment it claims the session (#3888).
 //
 // Returns false when the session is missing/tombstoned or another run is live.
 func (q *Queries) ClaimAgentSessionForDispatch(ctx context.Context, sessionID string, workflowRunID int64) (bool, error) {
@@ -69,7 +71,7 @@ SET workflow_run_id = $2,
     status = 'active',
     started_at = NULL,
     finished_at = NULL,
-    metadata = COALESCE(metadata, '{}'::jsonb) - 'failure_reason',
+    metadata = COALESCE(metadata, '{}'::jsonb) - 'failure_reason' - 'waiting_reason',
     updated_at = NOW()
 WHERE id = $1 AND deleted_at IS NULL
 `, sessionID, workflowRunID); err != nil {
@@ -168,7 +170,7 @@ type FailNeverStartedAgentSessionParams = FailNeverStartedAgentSessionRawParams
 func (q *Queries) RecordAgentSessionFailureReason(ctx context.Context, sessionID, reason string) (AgentSession, bool, error) {
 	row := q.db.QueryRow(ctx, `
 UPDATE agent_sessions
-SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('failure_reason', $2::text),
+SET metadata = (COALESCE(metadata, '{}'::jsonb) - 'waiting_reason') || jsonb_build_object('failure_reason', $2::text),
     updated_at = NOW()
 WHERE id = $1 AND status <> 'active' AND deleted_at IS NULL
 RETURNING id, repository_id, user_id, workflow_run_id, title, status, metadata, workspace_id,
@@ -197,4 +199,31 @@ RETURNING id, repository_id, user_id, workflow_run_id, title, status, metadata, 
 		return AgentSession{}, false, err
 	}
 	return i, true, nil
+}
+
+// RecordAgentSessionWaitingReason merges one bounded, user-facing sentence into
+// an ACTIVE session's metadata under "waiting_reason".
+//
+// A dispatch the account's sandbox quota refuses is parked, not failed: the
+// durable job stays retryable on purpose. Until this, nothing recorded the
+// wait, so the session sat active with {} metadata and an unmoving updated_at,
+// which is indistinguishable from a wedged turn — production 2026-10-14 13:34Z,
+// sessions 3b6f589e and 82776348, four minutes silent. The key is cleared by
+// ClaimAgentSessionForDispatch when the turn finally starts and by
+// RecordAgentSessionFailureReason if it ends instead, so it never outlives the
+// wait it describes.
+//
+// Product vocabulary only: the value is handed straight back to the browser.
+// Returns false when the session is missing, tombstoned or no longer active.
+func (q *Queries) RecordAgentSessionWaitingReason(ctx context.Context, sessionID, reason string) (bool, error) {
+	tag, err := q.db.Exec(ctx, `
+UPDATE agent_sessions
+SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('waiting_reason', $2::text),
+    updated_at = NOW()
+WHERE id = $1 AND status = 'active' AND deleted_at IS NULL
+`, sessionID, reason)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
 }

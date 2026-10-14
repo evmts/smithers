@@ -322,3 +322,83 @@ func TestClaimAgentSessionForDispatch_ClearsThePreviousAttemptsFailureReason(t *
 		"a reactivated session must not carry the refusal its retry replaced")
 	assert.Empty(t, agentSessionFailureReasonFromMetadata(metadata))
 }
+
+// A dispatch the account's sandbox quota refuses is parked, not failed — the
+// durable worker answers it with a retryable outcome on purpose. Nothing
+// recorded that wait, and a session's only public surface is its metadata, so
+// the turn sat `active` with `{}` and an unmoving updated_at. Production
+// 2026-10-14 13:34Z, repository 112554: of eight turns dispatched together, six
+// failed in 7 s and two were still silent four minutes later, their only trace
+// an operator line
+//
+//	durable message dispatch failed agent_session_id=3b6f589e-…
+//	  error="Your Pro plan allows 3 running sandboxes. Suspend one to continue."
+//
+// smithers#3888.
+func TestAParkedDispatchRecordsItsWaitAndNeverOutlivesIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires PostgreSQL")
+	}
+	pool := setupTestPool(t)
+	q := db.New(pool)
+	ctx := context.Background()
+	userID, repoID := setupTestUserAndRepo(t, pool)
+	sessionID := uuid.NewString()
+	_, err := q.CreateAgentSession(ctx, db.CreateAgentSessionParams{
+		ID: sessionID, RepositoryID: repoID, UserID: userID, Title: "parked by the quota", Status: "active",
+	})
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `UPDATE agent_sessions SET metadata='{"kept":"by the session"}'::jsonb WHERE id=$1`, sessionID)
+	require.NoError(t, err)
+
+	t.Run("the wait is recorded on the active session", func(t *testing.T) {
+		recorded, recordErr := q.RecordAgentSessionWaitingReason(ctx, sessionID, agentSessionWaitingForSandboxMessage)
+		require.NoError(t, recordErr)
+		require.True(t, recorded, "a waiting turn that records nothing is indistinguishable from a wedged one")
+		session, getErr := q.GetAgentSession(ctx, sessionID)
+		require.NoError(t, getErr)
+		require.Contains(t, string(session.Metadata), "waiting_reason")
+		require.Contains(t, string(session.Metadata), "by the session", "the merge keeps the session's own keys")
+	})
+
+	t.Run("the dispatch that finally starts drops it", func(t *testing.T) {
+		definition, defErr := q.UpsertAgentWorkflowDefinition(ctx, repoID)
+		require.NoError(t, defErr)
+		run, runErr := q.CreateWorkflowRun(ctx, db.CreateWorkflowRunParams{
+			RepositoryID: repoID, WorkflowDefinitionID: definition.ID, Status: "queued",
+			TriggerEvent: "agent_message", DispatchInputs: []byte(`{}`), ExecutionPlane: "agent",
+		})
+		require.NoError(t, runErr)
+		claimed, claimErr := q.ClaimAgentSessionForDispatch(ctx, sessionID, run.ID)
+		require.NoError(t, claimErr)
+		require.True(t, claimed)
+		session, getErr := q.GetAgentSession(ctx, sessionID)
+		require.NoError(t, getErr)
+		require.NotContains(t, string(session.Metadata), "waiting_reason", "the wait is over the moment the turn starts")
+		require.Contains(t, string(session.Metadata), "by the session")
+	})
+
+	t.Run("a turn that ends instead shows one sentence, not two", func(t *testing.T) {
+		recorded, recordErr := q.RecordAgentSessionWaitingReason(ctx, sessionID, agentSessionWaitingForSandboxMessage)
+		require.NoError(t, recordErr)
+		require.True(t, recorded)
+		_, err := pool.Exec(ctx, `UPDATE agent_sessions SET status='failed' WHERE id=$1`, sessionID)
+		require.NoError(t, err)
+		failed, ok, failErr := q.RecordAgentSessionFailureReason(ctx, sessionID, agentSessionNoCapacityMessage)
+		require.NoError(t, failErr)
+		require.True(t, ok)
+		require.Contains(t, string(failed.Metadata), "failure_reason")
+		require.NotContains(t, string(failed.Metadata), "waiting_reason")
+
+		parked, parkErr := q.RecordAgentSessionWaitingReason(ctx, sessionID, agentSessionWaitingForSandboxMessage)
+		require.NoError(t, parkErr)
+		require.False(t, parked, "a terminal session is not waiting for anything")
+	})
+
+	t.Run("only a quota refusal is a wait", func(t *testing.T) {
+		require.Equal(t, agentSessionWaitingForSandboxMessage, agentDispatchWaitingReason(
+			&pkgerrors.APIError{Status: http.StatusTooManyRequests, Code: pkgerrors.CodeQuotaExceeded, Message: "no free sandbox"}))
+		require.Empty(t, agentDispatchWaitingReason(pkgerrors.Internal("create sandbox: connection refused")))
+		require.Empty(t, agentDispatchWaitingReason(nil))
+	})
+}

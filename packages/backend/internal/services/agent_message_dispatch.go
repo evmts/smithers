@@ -169,8 +169,13 @@ func (s *AgentService) handleMessageDispatch(ctx context.Context, lease *jobs.Le
 		if ctx.Err() != nil {
 			return errors.New("message dispatch interrupted before execution")
 		}
-		var apiErr *pkgerrors.APIError
-		if errors.As(err, &apiErr) && apiErr.Code == pkgerrors.CodeQuotaExceeded {
+		if reason := agentDispatchWaitingReason(err); reason != "" {
+			// The job stays retryable on purpose: this turn is waiting, not
+			// dead. Record the wait where the session shows things, or waiting
+			// and wedged look identical to its owner (#3888).
+			if _, recordErr := q.RecordAgentSessionWaitingReason(ctx, input.SessionID, reason); recordErr != nil {
+				middleware.LoggerWithAgentSession(ctx, input.SessionID).Warn("record agent session wait failed", "error", recordErr)
+			}
 			return errors.New("message dispatch waiting for capacity")
 		}
 		return fail("dispatch_failed")
@@ -186,4 +191,22 @@ func settleMessageDispatch(ctx context.Context, settle func(context.Context) err
 	receiptCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 	return settle(receiptCtx)
+}
+
+// agentSessionWaitingForSandboxMessage is what a parked turn says while the
+// account has no free sandbox for it. Like the pool-full sentence it names the
+// cause and promises nothing ran; unlike a failure it does not ask for a retry,
+// because the dispatch already retries itself.
+const agentSessionWaitingForSandboxMessage = "Waiting for a free sandbox: every sandbox this account may run at once is in use. Nothing has run yet; this turn starts when one frees up."
+
+// agentDispatchWaitingReason is the sentence a parked dispatch records, or ""
+// when the refusal is not a wait. Only the quota refusal parks a dispatch: it
+// is the one error the worker answers with a retryable outcome instead of a
+// terminal receipt.
+func agentDispatchWaitingReason(err error) string {
+	var apiErr *pkgerrors.APIError
+	if errors.As(err, &apiErr) && apiErr.Code == pkgerrors.CodeQuotaExceeded {
+		return agentSessionWaitingForSandboxMessage
+	}
+	return ""
 }
