@@ -2,8 +2,10 @@
  * The `search` flows (Search and Command Palette Spec 2026-09-07 §6): one
  * flow per palette prefix, each with its three doors. The palette is the
  * button door and reads the same seam synchronously; the slash and agent
- * doors run these handlers, which answer the items as data and, for a human,
- * embed the `search-results` card. Only indexed modes are registered.
+ * doors run these handlers, which answer the items as data and embed the
+ * `search-results` card for whoever the act is FOR — the person at the
+ * palette, or the author whose screen a hosted turn asked (the handler's
+ * `origin`, ../CommandOrigin.ts). Only indexed modes are registered.
  * Qualifiers (`section:`,
  * `status:`, `is:`, `path:`) ride inside the query, as §1 writes them.
  */
@@ -47,7 +49,7 @@ const search = (
     args,
     ...extra,
     input: Query,
-    handler: ({ query }) => actions.search(name, mode, { query })
+    handler: ({ query }, _signal, _call, _gesture, origin) => actions.search(name, mode, { query }, origin)
   })
 
 /** The `search.*` flows registered as one aggregator block. */
@@ -57,11 +59,11 @@ export const searchFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
      slash: "/search", cli: ["search"], journey: ["J9"], group: "Ask", visibility: "core", actors: ["person","app_agent","external_agent"], minimumRole: "member", http: {"method":"GET","path":"/api/search/code",query:{q:"query"}}, summary: "Search code, wiki and runs",
     args: "[query] [--kinds file,run,…]",
     agent: "run", input: OptionalQuery,
-    handler: ({ query, kinds }) =>
+    handler: ({ query, kinds }, _signal, _call, _gesture, origin) =>
       actions.search("search", "all", {
         query: query ?? "",
         ...(kinds === undefined ? {} : { kinds: kinds.split(",").map((kind) => kind.trim()).filter((kind) => kind !== "") })
-      })
+      }, origin)
   }),
   search(actions, "search.files", "path", "Find files by fuzzy path among the directories the app has listed", "<query> [path:… -path:…]"),
   search(actions, "search.flows", "flows", "The slash tree as data: every flow this session may run", "<query>"),

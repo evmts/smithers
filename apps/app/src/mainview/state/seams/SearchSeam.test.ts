@@ -6,6 +6,7 @@
  * refuses with its reason.
  */
 import { CardSchema } from "@smthrs/rpc/Cards"
+import { UI_INSTRUCTION_FIELDS } from "@smthrs/rpc/UiInstruction"
 import type { MythicalStack } from "@smthrs/rpc/Mythical"
 import type { StorageApi } from "@tanstack/db"
 import { describe,expect,test } from "bun:test"
@@ -293,6 +294,95 @@ describe("§6 the flow doors", () => {
     if (outcome.status !== "executed") return
     expect((JSON.parse(outcome.value ?? "{}") as { count: number }).count).toBe(2)
     expect(store.collections.cards.get("search-search.files")).toBeUndefined()
+  })
+
+  /*
+   * The third door, and the one a hosted turn uses: the agent asked for the
+   * act on its author's own screen, so the card IS the act. §6 keeps the
+   * agent loop's own tool call cardless (the row above); a screen request is
+   * not that call, and suppressing its card made all seven screen-only
+   * `search.*` acts silent no-ops on Smithers Cloud
+   * ([#3878](https://github.com/smithersai/smithers/issues/3878)): account 8
+   * ran search.issues on 2026-10-14 and saw a tool row, no card, and an
+   * answer that invented the issue.
+   */
+  test("a hosted screen request's search.files embeds the card for its author and still answers the items as data", async () => {
+    const { store, controller } = await ready()
+    await seed(store)
+    const outcome = await controller.commands.submit({ name: "search.files", payload: { query: "Redaction" }, actor: "agent" })
+    expect(outcome.status).toBe("executed")
+    if (outcome.status !== "executed") return
+    const value = JSON.parse(outcome.value ?? "{}") as { count: number; items: Array<{ ref: string }> }
+    expect(value.count).toBe(2)
+    const results = resultsCard(store, "search.files")
+    expect(results.payload).toMatchObject({ query: "Redaction", flow: "search.files" })
+    expect(results.payload.items.map((item) => item.ref)).toEqual(value.items.map((item) => item.ref))
+  })
+
+  test("a hosted screen request's search.issues embeds the card the author reads, and the agent is its actor", async () => {
+    const { store, controller } = await ready()
+    await seed(store)
+    const outcome = await controller.commands.submit({ name: "search.issues", payload: { query: "redaction" }, actor: "agent" })
+    expect(outcome.status).toBe("executed")
+    const results = resultsCard(store, "search.issues")
+    expect(results.payload.items.map((item) => item.ref)).toEqual(["412"])
+    expect(results.payload.items.map((item) => item.title)).toEqual(["#412 Harden redaction on the journal path"])
+  })
+
+  /*
+   * Every screen-only `search.*` act a hosted turn is offered
+   * (@smthrs/rpc UiInstruction `UI_INSTRUCTION_FIELDS`), under both agent
+   * doors at once. The contract is one rule, not seven: a screen request
+   * paints the author's card, the agent loop's own tool call does not, and
+   * both answer the same items as data.
+   */
+  test("all seven screen-only search.* acts paint the author's card on a screen request and none on a tool call", async () => {
+    const screenOnly = Object.keys(UI_INSTRUCTION_FIELDS).filter((name) => name.startsWith("search."))
+    expect(screenOnly).toEqual(["search.changes", "search.files", "search.flows", "search.history", "search.issues", "search.runs", "search.wiki"])
+    for (const name of screenOnly) {
+      const { store, controller } = await ready()
+      await seed(store)
+      try {
+        const tool = await controller.commands.runForAgent(name, "redaction")
+        expect(store.collections.cards.has(`search-${name}`), `${name} paints no card for the agent loop's own read`).toBe(false)
+        const screen = await controller.commands.submit({ name, payload: { query: "redaction" }, actor: "agent" })
+        // The door decides the SCREEN, never the answer: the same outcome either way.
+        expect(screen, `${name} answers both doors the same`).toEqual(tool)
+        const card = store.collections.cards.get(`search-${name}`)
+        if (tool.status === "executed") {
+          expect(card?.kind, `${name} paints the author's search-results card`).toBe("search-results")
+        } else {
+          // An honest refusal (this fixture indexes no history) paints nothing for anyone.
+          expect(tool.status, `${name} refused for a reason, not a missing door`).toBe("failed")
+          expect(card, `${name} refused, so neither door paints a card`).toBeUndefined()
+        }
+      } finally { await controller.dispose(); await store.dispose?.() }
+    }
+  })
+
+  test("a screen request's card keeps the agent as its actor: the door changes, the principal does not", async () => {
+    const { createSearchSeam } = await import("./SearchSeam")
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const controller = createAppController(store, unavailableAgent, backend({}))
+    const actors: Array<string> = []
+    try {
+      await seed(store)
+      const seam = createSearchSeam({
+        store,
+        baseUrl: "",
+        dispatch: (transition) => {
+          if (transition.type === "card.upsert") actors.push(transition.actor)
+          return store.dispatch(transition)
+        },
+        actor: () => "smithers",
+        nextOrdinal: store.nextOrdinal,
+        http: async () => json(404, {})
+      }, { registry: () => controller.commands })
+      const answered = await seam.search("search.files", "path", { query: "Redaction" }, "screen")
+      expect(typeof answered).toBe("object")
+      expect(actors).toEqual(["smithers"])
+      expect(store.collections.cards.has("search-search.files")).toBe(true)
+    } finally { await controller.dispose(); await store.dispose?.() }
   })
 
   test("search without a query answers the pills and recents; --kinds narrows", async () => {

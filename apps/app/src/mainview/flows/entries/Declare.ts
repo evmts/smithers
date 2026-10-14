@@ -10,6 +10,7 @@ import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { Effect, Schema } from "effect"
 import { FlowCancellation } from "../FlowCancellation"
 import { FlowGesture, type CommandGesture } from "../CommandGesture"
+import { FlowOrigin, type CommandOrigin } from "../CommandOrigin"
 import type { AppBootstrap, RuntimeCapability } from "@smthrs/rpc/AppBootstrap"
 import { operation, NoInput, type Operation, type OperationPayload } from "@smthrs/ui/app-operations"
 import type { AppController } from "../../state/AppController"
@@ -133,8 +134,14 @@ const act = (
 /** A shared operation as this app registers it: its host services and host kinds are the bootstrap's. */
 export type AppOperation<I extends OperationPayload = OperationPayload> = Operation<I, RuntimeCapability, AppBootstrap["host"]>
 
-/** What the GUI runs for one operation. */
-export type Handler<I extends OperationPayload> = (payload: I["Type"], signal: AbortSignal, call: Cell.Call, gesture?: CommandGesture) => CommandResult | Promise<CommandResult>
+/**
+ * What the GUI runs for one operation.
+ *
+ * `origin` is the DOOR the invocation came through (../CommandOrigin.ts), not
+ * its principal: a handler whose act is what the person SEES needs to tell the
+ * agent loop's own read apart from a request for the author's screen.
+ */
+export type Handler<I extends OperationPayload> = (payload: I["Type"], signal: AbortSignal, call: Cell.Call, gesture?: CommandGesture, origin?: CommandOrigin) => CommandResult | Promise<CommandResult>
 
 /**
  * Everything one registered flow declares, in one literal: the shared
@@ -191,7 +198,9 @@ export const flow = <I extends OperationPayload>(declaration: Declaration<I>): F
          */
         publicError: (failure: string | { readonly refusal: Refusal } | { readonly cause: unknown }) => typeof failure === "string" ? failure : "refusal" in failure ? refusalLine(failure.refusal, "") : lostActRefusal(failure.cause),
         handler: (payload, call) => Effect.flatMap(FlowCancellation, (cancellation) =>
-          Effect.flatMap(FlowGesture, gesture => act((signal) => handler(payload, cancellation ?? signal, call, gesture))))
+          Effect.flatMap(FlowGesture, gesture =>
+            Effect.flatMap(FlowOrigin, origin =>
+              act((signal) => handler(payload, cancellation ?? signal, call, gesture, origin)))))
       })
     },
     metadata,

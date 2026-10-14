@@ -1,5 +1,6 @@
 import { preloadViewModule } from "../ViewModules"
 import { FlowGesture, type CommandGesture } from "./CommandGesture"
+import { FlowOrigin, type CommandOrigin } from "./CommandOrigin"
 import type { CommandLifecycle, PendingCommandInput, PendingFieldInput, PendingFormInput } from "./CommandLifecycle"
 /*
  * The registry runtime: one dispatch path for every trigger.
@@ -403,13 +404,16 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     entry: FlowEntry,
     payload: Record<string, unknown>,
     invocation?: AgentInvocation,
-    gesture?: CommandGesture
+    gesture?: CommandGesture,
+    /** The door this invocation came through (CommandOrigin.ts), fixed for its lifetime. */
+    origin?: CommandOrigin
   ): Promise<CommandOutcome> => {
     const name = nameOf(entry)
     const settled = await Effect.runPromise(
       Effect.result(entry.binding.run(callFor(entry, payload, invocation))).pipe(
         Effect.provideService(FlowCancellation, invocation?.signal),
-        Effect.provideService(FlowGesture, gesture)
+        Effect.provideService(FlowGesture, gesture),
+        Effect.provideService(FlowOrigin, origin)
       ),
       // Controller promises receive the signal but retain their result when a
       // write cannot abort. Effect-native bindings use fiber interruption.
@@ -492,8 +496,15 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     inheritedGesture?: CommandGesture,
     originCardId?: string,
     confirmed = false,
-    ask = false
+    ask = false,
+    /**
+     * The door, when the caller knows it. An agent invocation that names none
+     * is the browser agent loop's own tool call: that is the only agent door
+     * whose VALUE is read, and the one §6 keeps cardless.
+     */
+    origin?: CommandOrigin
   ): Promise<CommandOutcome> => {
+    const door: CommandOrigin = origin ?? (invoker === "agent" ? "tool" : "person")
     invocation?.signal?.throwIfAborted()
     const request = { name, actor: invoker === "agent" ? "smithers" as const : invoker,
       source: named !== undefined ? "form" as const : invoker === "system" ? "automatic" as const : "command" as const, invocation, httpCall }
@@ -561,7 +572,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     } }
     const canPublish = (): boolean => acceptance === undefined || lifecycle?.canPublish?.(acceptance.receipt, request) !== false
     let outcome: CommandOutcome
-    try { outcome = await settle(invoker, name, args, seen, startedAt, scopedInvocation, named, gesture, execution, canPublish, confirmed, ask) }
+    try { outcome = await settle(invoker, name, args, seen, startedAt, scopedInvocation, named, gesture, execution, canPublish, confirmed, ask, door) }
     catch { outcome = { status: "failed", error: "The command did not finish. Check its result before trying again." } }
     const retryableAuthorization = authorizationRefused && (!execution.invoked || name === "form.submit")
     if (acceptance !== undefined && lifecycle !== undefined && !await lifecycle.settle(acceptance.receipt, outcome, retryableAuthorization)) {
@@ -605,7 +616,9 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     canPublish: () => boolean = () => true,
     confirmed = false,
     /** FlowSubmission.ask: the form is the whole answer, whatever the payload names. */
-    ask = false
+    ask = false,
+    /** The door runAs resolved for this invocation; it travels with it and never changes. */
+    door: CommandOrigin = "person"
   ): Promise<CommandOutcome> => {
     const entry = find(name)
     if (entry === undefined) {
@@ -745,7 +758,8 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
       // The deferral is its own trace; the fulfilling flow traces itself below.
       if (canPublish()) trace(invoker, name, args, startedAt, "deferred", `waits on ${unmet.id}`)
       return runAs(invoker, unmet.fulfill, undefined, new Set([...seen, unmet.fulfill]), undefined, undefined, undefined,
-        gesture?.presentationCurrent === undefined ? undefined : { name: unmet.fulfill, presentationCurrent: gesture.presentationCurrent, release: () => {} })
+        gesture?.presentationCurrent === undefined ? undefined : { name: unmet.fulfill, presentationCurrent: gesture.presentationCurrent, release: () => {} },
+        undefined, false, false, door)
     }
     // JSON can parse successfully while omitting a required schema field.
     // Let the form collect it before the binding can produce an input error.
@@ -822,7 +836,7 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     }
     invocation?.signal?.throwIfAborted()
     if (execution !== undefined) execution.invoked = true
-    const settledOutcome = await invoke(target, parsed.payload, invocation, gesture)
+    const settledOutcome = await invoke(target, parsed.payload, invocation, gesture, door)
     /*
      * The agent reads a refusal as its next act: a handler that points the
      * human at a slash the model cannot run (`/cloud.sign-in`) points the
@@ -912,7 +926,12 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
       }
       const early = lifecycle?.before?.({ name: clean, actor: "smithers", source: "form", invocation }, display, payload)
       if (early !== undefined) return early
-      return runAs("agent", clean, display, new Set(), { ...(invocation ?? unscopedInvocation) }, payload, undefined, undefined, undefined, false, ask)
+      /*
+       * The agent's SCREEN door: a hosted turn's UI instruction, or a form or
+       * card control submitted as the agent. Nothing reads the returned value
+       * here, so a handler that only answers data has done nothing (#3878).
+       */
+      return runAs("agent", clean, display, new Set(), { ...(invocation ?? unscopedInvocation) }, payload, undefined, undefined, undefined, false, ask, "screen")
     },
     callable,
     /*

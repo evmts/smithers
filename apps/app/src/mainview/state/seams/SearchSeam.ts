@@ -6,9 +6,19 @@
  * recents"), so every row is a fact a seam has already established. `search`
  * is the slash and agent door of every `search.*` flow: it reads the same
  * indexes, takes secrets and history from the reader's own answer, embeds ONE
- * `search-results` card for a human and answers the items as data for the
- * model. A search never dispatches another card: the secrets and history
- * cards belong to their own seams' flows (§6).
+ * `search-results` card for the SCREEN the search was run for and answers the
+ * items as data for the model. A search never dispatches another card: the
+ * secrets and history cards belong to their own seams' flows (§6).
+ *
+ * §6's cardless answer is the browser agent LOOP's own read — the model asked,
+ * the model consumes the value, and the person's screen is not painted for it.
+ * A hosted turn's screen-only request is the other agent door: it carries
+ * nothing back to the turn, so the card IS the act. The two are told apart by
+ * the invocation's `origin` (flows/CommandOrigin.ts), never by relabelling the
+ * agent as the person — the card still dispatches as `smithers`.
+ * [#3878](https://github.com/smithersai/smithers/issues/3878): reading the
+ * principal alone made all seven screen-only `search.*` acts silent no-ops on
+ * Smithers Cloud.
  *
  * The indexes are FACTS (kind, ref, title, subtitle); ranking reads facts,
  * and an item's actions are derived from the registry only for the rows the
@@ -20,6 +30,7 @@
 import type { SearchAction, SearchItem } from "@smthrs/rpc/Cards"
 import type { MythicalStack } from "@smthrs/rpc/Mythical"
 import type { SearchArgs } from "../../flows/entries/search"
+import type { CommandOrigin } from "../../flows/CommandOrigin"
 import { actionsFor, itemsValue, parseQuery, prefixRow, PREFIXES, rankItems } from "../../flows/SearchQuery"
 import type { PaletteMode, ParsedQuery, PrefixRow, ResultGroup, SearchFact } from "../../flows/SearchQuery"
 import type { CommandState, FlowEntry } from "../../flows/registry"
@@ -64,7 +75,12 @@ export interface PaletteAnswer {
 
 export interface SearchSeam {
   readonly palette: (text: string) => PaletteAnswer
-  readonly search: (flow: string, mode: PaletteMode, args: SearchArgs) => Promise<string | void | { readonly value: string }>
+  /**
+   * One `search.*` flow. `origin` is the door the invocation came through
+   * (flows/CommandOrigin.ts); absent is read as the principal alone, so an
+   * unnamed agent door stays the cardless §6 read.
+   */
+  readonly search: (flow: string, mode: PaletteMode, args: SearchArgs, origin?: CommandOrigin) => Promise<string | void | { readonly value: string }>
 }
 
 /** Rows per group in the overlay: past this, typing more is the answer, as the slash menu's cap says. */
@@ -115,7 +131,8 @@ interface LiveIndexes {
 
 export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): SearchSeam => {
   const now = deps.now ?? (() => Date.now())
-  // Each human search replaces one card. Agent answers do not claim that card.
+  // Each search that paints a screen replaces that screen's one card; the
+  // agent loop's own cardless read never claims it.
   const latest = new Map<string, symbol>()
   const cards = (): ReadonlyArray<Card> => [...ctx.store.collections.cards.values()].sort((left, right) => left.ordinal - right.ordinal)
 
@@ -400,12 +417,15 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
     return typeof stack === "string" ? stack : { history: [stack] }
   }
 
-  const search: SearchSeam["search"] = async (flow, mode, args) => {
+  const search: SearchSeam["search"] = async (flow, mode, args, origin) => {
     const current = captureCloudOwner(ctx, false)
     if (!current()) return SIGN_OUT_REFUSAL
     const actor = ctx.actor()
+    // Whose screen this search is for: the person's own, or the author's whose
+    // screen a hosted turn asked. Only the agent loop's own read paints none.
+    const renders = actor !== "smithers" || origin === "screen"
     const request = Symbol()
-    if (actor !== "smithers") latest.set(flow, request)
+    if (renders) latest.set(flow, request)
     const live = await liveIndexes(mode, args)
     if (!current()) return SIGN_OUT_REFUSAL
     if (typeof live === "string") return live
@@ -422,7 +442,7 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
     const registered = entries()
     const items = rank(pool, query).flatMap((group) => group.items.map((row) => row.item)).slice(0, limit).map((fact) => withActions(registered, fact))
     const value = itemsValue(flow, args.query, items)
-    if (actor === "smithers" || latest.get(flow) !== request) return { value }
+    if (!renders || latest.get(flow) !== request) return { value }
     const id = `search-${flow}`
     const existing = ctx.store.collections.cards.get(id)
     const card: Card = {
