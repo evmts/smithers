@@ -1,6 +1,6 @@
 import { projectBranchFiles } from "@smthrs/rpc/FileCard"
 import { expect, test } from "bun:test"
-import { branchFileMachineScope, branchModel, branchSeedAvailable, createBrowserPresence, projectBranch, projectBranchActivity } from "./BranchSeam"
+import { branchCardStage, branchFileMachineScope, branchModel, branchSeedAvailable, createBrowserPresence, projectBranch, projectBranchActivity } from "./BranchSeam"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 
 test("branch fallback distinguishes a demo bootstrap from an install and a provider-only host", () => {
@@ -213,3 +213,30 @@ test("scratch machine replay preserves branch context and refuses foreign or mal
   const cleared = projectBranch(pending, { Type: "todo.updated", Data: { card: { ...card, rebase_pending: { onto: "main" } } } })
   expect(branchModel(cleared, [], [], "b1")?.rebase).toEqual({ state: "pending", onto: "main" })
  })
+
+/*
+ * The stage a branch card states when it holds no branch (#3882). The
+ * renderer suites drive the real collection lifecycle; this holds the ordering
+ * rule they cannot reach: observations of different scopes, and a card that
+ * never saw a list at all.
+ */
+test("the newest box-list observation decides a card's stage, and no observation is pending", () => {
+  expect(branchCardStage(undefined)).toEqual({ kind: "loading" })
+  expect(branchCardStage([])).toEqual({ kind: "loading" })
+  expect(branchCardStage([{ phase: "ready", revision: 4 }])).toEqual({ kind: "absent" })
+  /* A later per-user read answers for a repository's boxes too, either way. */
+  expect(branchCardStage([{ phase: "ready", revision: 4 }, { phase: "loading", revision: 9 }])).toEqual({ kind: "loading" })
+  expect(branchCardStage([{ phase: "loading", revision: 9 }, { phase: "ready", revision: 11 }])).toEqual({ kind: "absent" })
+  /* A failed read is its own words, and a read with none is still honest. */
+  expect(branchCardStage([{ phase: "ready", revision: 2 }, { phase: "failed", revision: 3, error: "Box inventory is unavailable" }]))
+    .toEqual({ kind: "failed", error: "Box inventory is unavailable" })
+  expect(branchCardStage([{ phase: "failed", revision: 3 }]))
+    .toEqual({ kind: "failed", error: "Smithers Cloud's box list could not be read." })
+  /* A live topic that refused for its own reason outranks the list; a host
+   * without the topic does not refuse at all. */
+  expect(branchCardStage([{ phase: "ready", revision: 4 }], "forbidden")).toEqual({ kind: "failed", error: "forbidden" })
+  for (const absent of ["unknown_topic", "unsupported"]) {
+    expect(branchCardStage([{ phase: "ready", revision: 4 }], absent)).toEqual({ kind: "absent" })
+    expect(branchCardStage([], absent)).toEqual({ kind: "loading" })
+  }
+})
