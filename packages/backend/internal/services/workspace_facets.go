@@ -620,8 +620,11 @@ func (s *WorkspaceService) runningSandboxWorkspace(ctx context.Context, workspac
 	}
 	vm, err := s.sandbox.InspectSandbox(ctx, workspace.VmID)
 	if err != nil {
+		// The sandbox path's own confirmed loss, answered as the runtime path
+		// answers it (#3912): the row still names a machine the provider does
+		// not hold, which is gone, not stopped.
 		if vmAlreadyGone(err) {
-			return workspace, errWorkspaceStopped()
+			return workspace, s.missingWorkspaceVM(ctx, workspace, requesterID)
 		}
 		return workspace, workspaceProvisioningError("get sandbox", err)
 	}

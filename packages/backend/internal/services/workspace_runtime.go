@@ -229,8 +229,13 @@ func (s *WorkspaceService) runningRuntimeWorkspace(ctx context.Context, row db.W
 	}
 	observed, err := s.runtime.InspectWorkspace(operationCtx, current.ID)
 	if err != nil {
+		// A confirmed loss is not a stop. A stopped machine starts again; this
+		// one no longer exists, so "workspace is stopped" is false and leaves
+		// the reader no route out. The owner half of this same error has
+		// answered the recovery row since #3565, and the wake since #3890; the
+		// reader answers it too (#3912).
 		if errors.Is(err, workspaceapi.ErrWorkspaceNotFound) {
-			return current, errWorkspaceStopped()
+			return current, s.missingWorkspaceVM(ctx, current, requesterID)
 		}
 		return current, runtimeOperationError("inspect workspace runtime", err)
 	}
