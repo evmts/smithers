@@ -17,6 +17,7 @@ type turnProgress struct {
 	changed   time.Time
 	stage     ports.ChatStage
 	sandboxID string
+	route     string
 	head      int64
 	stalled   bool
 }
@@ -33,7 +34,10 @@ func (p *turnProgress) observe(event ports.ChatProgress) {
 	if event.SandboxID != "" {
 		p.sandboxID = event.SandboxID
 	}
-	p.logger.Info("chat turn progress", "stage", p.stage, "sandbox_id", p.sandboxID, "turn_elapsed_ms", time.Since(p.started).Milliseconds())
+	if event.Route != "" {
+		p.route = event.Route
+	}
+	p.logger.Info("chat turn progress", "stage", p.stage, "sandbox_id", p.sandboxID, "model_route", p.route, "turn_elapsed_ms", time.Since(p.started).Milliseconds())
 }
 
 // waiting records the journal head one renewal read, logs the turn's current
@@ -46,7 +50,7 @@ func (p *turnProgress) waiting(head int64) time.Duration {
 		p.head, p.changed = head, time.Now()
 	}
 	silence := time.Since(p.changed)
-	p.logger.Info("chat turn awaiting progress", "stage", p.stage, "sandbox_id", p.sandboxID, "head_batch", p.head,
+	p.logger.Info("chat turn awaiting progress", "stage", p.stage, "sandbox_id", p.sandboxID, "model_route", p.route, "head_batch", p.head,
 		"stage_elapsed_ms", silence.Milliseconds(), "turn_elapsed_ms", time.Since(p.started).Milliseconds())
 	return silence
 }
@@ -58,7 +62,7 @@ func (p *turnProgress) stall(silence time.Duration) {
 	defer p.mu.Unlock()
 	p.stalled = true
 	p.logger.Error("chat turn interrupted after its host stopped making progress", "stage", p.stage, "sandbox_id", p.sandboxID,
-		"head_batch", p.head, "silent_ms", silence.Milliseconds(), "turn_elapsed_ms", time.Since(p.started).Milliseconds())
+		"model_route", p.route, "head_batch", p.head, "silent_ms", silence.Milliseconds(), "turn_elapsed_ms", time.Since(p.started).Milliseconds())
 }
 
 func (p *turnProgress) silent() bool {

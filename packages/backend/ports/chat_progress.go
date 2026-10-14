@@ -24,9 +24,12 @@ const (
 
 // ChatProgress is metadata about one turn's current execution stage. SandboxID
 // is the provider-issued identity, never a URL, credential or launch payload.
+// Route names the model the turn resolved, in the bounded form described on
+// ReportChatModelRoute.
 type ChatProgress struct {
 	Stage     ChatStage
 	SandboxID string
+	Route     string
 }
 
 type chatProgressKey struct{}
@@ -42,5 +45,16 @@ func WithChatProgress(ctx context.Context, observe func(ChatProgress)) context.C
 func ReportChatProgress(ctx context.Context, stage ChatStage, sandboxID string) {
 	if observe, ok := ctx.Value(chatProgressKey{}).(func(ChatProgress)); ok && observe != nil {
 		observe(ChatProgress{Stage: stage, SandboxID: sandboxID})
+	}
+}
+
+// ReportChatModelRoute reports which model answers this turn, once its binding
+// is resolved: whose credit it spends, the provider, protocol and model that
+// serve it, and the name of the credential variable. The adapter builds the
+// value from software-selected words and bounded identifiers alone, so no
+// credential, origin, prompt or provider output can travel on it.
+func ReportChatModelRoute(ctx context.Context, route string) {
+	if observe, ok := ctx.Value(chatProgressKey{}).(func(ChatProgress)); ok && observe != nil {
+		observe(ChatProgress{Stage: ChatStageModel, Route: route})
 	}
 }

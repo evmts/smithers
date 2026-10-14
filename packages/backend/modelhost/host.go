@@ -19,7 +19,6 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/chat"
 	"github.com/smithersai/smithers/packages/backend/internal/chat/turncredential"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/modelproxy"
 	"github.com/smithersai/smithers/packages/backend/ports"
 )
@@ -36,6 +35,12 @@ type Binding struct {
 	Model            json.RawMessage
 	CredentialName   string
 	CredentialOrigin string
+
+	// Provider is the product's name for the provider this binding reaches,
+	// when the resolver chose it rather than the credential naming it. A
+	// managed binding spends one credential name for every provider, so
+	// without this its refusals and diagnostics would name none.
+	Provider string
 
 	// CredentialValue is held only in the launch request's memory and child
 	// process environment. It must never enter workspace metadata or logs.
@@ -188,8 +193,10 @@ func (host *Host) RunChatTurn(ctx context.Context, grant ports.ChatTurnGrant) (r
 	if err != nil {
 		return fmt.Errorf("resolve owner model: %w", err)
 	}
-	// The binding names the key, so a provider's refusal names its provider.
-	provider := services.ModelProviderNames[binding.CredentialName]
+	// A provider's refusal names its provider: the resolver's choice when it
+	// made one, and otherwise the key the binding names.
+	provider := bindingProvider(binding)
+	ports.ReportChatModelRoute(ctx, modelRoute(binding, provider))
 	binding, stopFast, err := prepareFast(binding)
 	if err != nil {
 		return err

@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/modelproxy"
 )
 
@@ -54,21 +55,57 @@ func (m *ManagedModels) ResolveChatModel(ctx context.Context, ownerID, repositor
 	if !errors.Is(err, ErrOwnerModelUnset) {
 		return binding, err
 	}
-	offered := m.keys.PlatformModelProviders()
-	for _, managed := range managedDefaults {
-		if !slices.Contains(offered, managed.provider) {
-			continue
-		}
-		model, marshalErr := json.Marshal(map[string]string{
-			"protocol": managed.protocol, "modelId": managed.modelID, "credential": ManagedCredentialName,
-			"baseUrl": m.proxyURL + "/" + managed.provider,
-		})
-		if marshalErr != nil {
-			return Binding{}, marshalErr
-		}
-		return Binding{Model: model, CredentialName: ManagedCredentialName, CredentialOrigin: m.origin, Managed: true}, nil
+	managed, chosen := managedDefaultFor(m.keys)
+	if !chosen {
+		return Binding{}, err
 	}
-	return Binding{}, err
+	model, marshalErr := json.Marshal(map[string]string{
+		"protocol": managed.protocol, "modelId": managed.modelID, "credential": ManagedCredentialName,
+		"baseUrl": m.proxyURL + "/" + managed.provider,
+	})
+	if marshalErr != nil {
+		return Binding{}, marshalErr
+	}
+	return Binding{Model: model, CredentialName: ManagedCredentialName, CredentialOrigin: m.origin,
+		Provider: managedProviderName(managed.provider), Managed: true}, nil
+}
+
+// managedDefaultFor is the managed default a turn would run now: the first one
+// whose provider the deployment pays for.
+func managedDefaultFor(keys modelproxy.Keys) (struct{ provider, protocol, modelID string }, bool) {
+	if keys == nil {
+		return struct{ provider, protocol, modelID string }{}, false
+	}
+	offered := keys.PlatformModelProviders()
+	for _, managed := range managedDefaults {
+		if slices.Contains(offered, managed.provider) {
+			return managed, true
+		}
+	}
+	return struct{ provider, protocol, modelID string }{}, false
+}
+
+// ManagedDefaultProvider names the provider an ordinary turn with no owner
+// model spends now, as the proxy path spells it, or "" when the deployment
+// pays for none of the managed defaults. A deployment reports it at startup so
+// an operator reads which provider ordinary turns reach without running one.
+func ManagedDefaultProvider(keys modelproxy.Keys) string {
+	managed, chosen := managedDefaultFor(keys)
+	if !chosen {
+		return ""
+	}
+	return managed.provider
+}
+
+// managedProviderName is the product's name for a managed default's
+// provider. Every managed binding spends ManagedCredentialName, so the
+// credential cannot name the provider a refusal or diagnostic must report.
+func managedProviderName(provider string) string {
+	seat, ok := modelproxy.SeatFor(provider)
+	if !ok {
+		return ""
+	}
+	return services.ModelProviderNames[seat.KeyEnv]
 }
 
 func (m *ManagedModels) ResolveModelTest(ctx context.Context, ownerID int64, request json.RawMessage) (Binding, error) {
