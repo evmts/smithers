@@ -164,3 +164,40 @@ test("read receipts stay isolated by repository, account, and source", async () 
   })
   expect([...store.collections.repositoryNotifications.values()].filter(row => row.repo === "else/repo").every(row => row.readVersion === undefined)).toBe(true)
 })
+
+/*
+ * #3889. The Activity card the hosted app actually renders, over the doors
+ * production actually serves (roninjin10/e2e-verify, 2026-10-14): the
+ * repository's own issues and landings answer, the GitHub-source door
+ * validates its query the way the backend does
+ * (services/github_repo_metadata.go: 400 for a parameter it does not name),
+ * and notifications are the feature the launch contract keeps off
+ * (middleware/feature_flag.go 403 `feature not available`, plue#675).
+ *
+ * The card must then state the activity it read, with its counts — never
+ * "Some repository activity could not be checked".
+ */
+test("the overview states real counts when a door is switched off and the GitHub query is the door's own", async () => {
+  const { store, actions } = await setup(memoryStorage(), async (url, init) => {
+    const target = new URL(url, "https://smithers.sh")
+    if (init?.method !== undefined && init.method !== "GET") throw Error(`the overview wrote to ${target.pathname}`)
+    if (target.pathname === "/api/notifications/list") return Response.json({ message: "feature not available" }, { status: 403 })
+    if (target.pathname.startsWith("/api/user/github-repos/")) {
+      const allowed = new Set(["state", "sort", "direction", "per_page", "page", "cursor", "labels"])
+      for (const key of target.searchParams.keys()) {
+        if (!allowed.has(key)) return Response.json({ message: "unsupported github repository metadata query parameter" }, { status: 400 })
+      }
+      return Response.json([{ number: 9, title: "GitHub issue", state: "open", updated_at: "2026-10-14T00:10:00Z" }])
+    }
+    if (target.pathname.endsWith("/issues")) return Response.json(target.searchParams.get("state") === "open"
+      ? [{ number: 5, title: "Overnight-browser-20261014-0017", state: "open", updated_at: "2026-10-14T00:17:00Z" }] : [])
+    if (target.pathname.endsWith("/landings")) return Response.json([])
+    return Response.json([])
+  })
+  const result = await actions.showRepoOverview("roninjin10/e2e-verify")
+  expect(result).toEqual({ value: expect.stringContaining("2 issue updates, 0 PR updates") })
+  const card = [...store.collections.cards.values()].find(card => card.kind === "repo-update")!
+  if (card.kind !== "repo-update") throw Error("missing update")
+  expect(card.payload).toMatchObject({ repo: "roninjin10/e2e-verify", problems: [], openIssues: 2, openPrs: 0 })
+  expect(card.payload.summary).not.toContain("could not be checked")
+})

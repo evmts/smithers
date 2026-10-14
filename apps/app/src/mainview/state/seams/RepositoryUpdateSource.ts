@@ -6,14 +6,39 @@ export interface RepositoryUpdateSnapshot { issues: Section; prs: Section; notif
 const record = (v: unknown): v is Record<string, any> => typeof v === "object" && v !== null
 const str = (v: unknown): string | null => typeof v === "string" ? v : null
 
-/** Pull every advertised page; a bound or bad page is visible, never an empty-success claim. */
-async function pages(ctx: SeamContext, path: string): Promise<{ rows: unknown[]; problems: string[]; available: boolean }> {
+/**
+ * A door this host switched off, by the backend's own availability contract:
+ * 403 with the exact `feature not available` message
+ * (middleware/feature_flag.go, which states that clients branch on it; the
+ * production canary reads the same answer as a pass, plue#675). It is not
+ * repository data that could not be read, so it carries no problem sentence.
+ */
+const switchedOff = async (response: Response): Promise<boolean> => {
+  if (response.status !== 403) return false
+  const body: unknown = await response.json().catch(() => null)
+  return record(body) && body.message === "feature not available"
+}
+
+/**
+ * Pull every advertised page; a bound or bad page is visible, never an
+ * empty-success claim.
+ *
+ * `paging` is the door's own pagination vocabulary. The GitHub-source door
+ * validates the whole query against an allowlist (backend
+ * services/github_repo_metadata.go `normalizeGitHubRepoMetadataQuery`) and
+ * answers 400 for a parameter it does not name, so the Cloud doors' keyset
+ * `limit` cannot ride along with it.
+ */
+async function pages(ctx: SeamContext, path: string, paging: "cloud" | "github" = "cloud"): Promise<{ rows: unknown[]; problems: string[]; available: boolean }> {
   const rows: unknown[] = []
   for (let page = 1; page <= 10; page++) {
-    const url = `${ctx.baseUrl}${path}${path.includes("?") ? "&" : "?"}per_page=100&limit=100&page=${page}`
+    const url = `${ctx.baseUrl}${path}${path.includes("?") ? "&" : "?"}per_page=100&${paging === "github" ? "" : "limit=100&"}page=${page}`
     try {
       const response = await ctx.http(url)
-      if (!response.ok) return { rows, problems: [`Could not load ${path.includes("notifications") ? "notifications" : "repository activity"} (${response.status}).`], available: rows.length > 0 }
+      if (!response.ok) {
+        if (await switchedOff(response)) return { rows, problems: [], available: false }
+        return { rows, problems: [`Could not load ${path.includes("notifications") ? "notifications" : "repository activity"} (${response.status}).`], available: rows.length > 0 }
+      }
       const body: unknown = await response.json()
       if (!Array.isArray(body)) return { rows, problems: ["Repository activity returned an unreadable response."], available: rows.length > 0 }
       rows.push(...body)
@@ -38,7 +63,7 @@ export async function readRepositoryUpdate(ctx: SeamContext, repo: string): Prom
     (async () => {
       const states = await Promise.all([pages(ctx, `/api/repos/${path}/issues?state=open`), pages(ctx, `/api/repos/${path}/issues?state=closed`)])
       return { rows: states.flatMap(state => state.rows), problems: states.flatMap(state => state.problems), available: states.some(state => state.available) }
-    })(), pages(ctx, `/api/user/github-repos/${path}/issues?state=all`),
+    })(), pages(ctx, `/api/user/github-repos/${path}/issues?state=all`, "github"),
     pages(ctx, `/api/repos/${path}/landings`), pages(ctx, "/api/notifications/list?all=true")
   ])
   const values = results.map(result => result.status === "fulfilled" ? result.value : { rows: [], problems: ["Activity check failed."], available: false })

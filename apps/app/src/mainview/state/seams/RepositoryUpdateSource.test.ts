@@ -55,8 +55,8 @@ test.each(["http", "json", "network"])("retains prior activity but marks a later
     throw new Error("private network detail")
   })
   expect(seen).toEqual([
-    "https://example.test/api/user/github-repos/org/repo/issues?state=all&per_page=100&limit=100&page=1",
-    "https://example.test/api/user/github-repos/org/repo/issues?state=all&per_page=100&limit=100&page=2"
+    "https://example.test/api/user/github-repos/org/repo/issues?state=all&per_page=100&page=1",
+    "https://example.test/api/user/github-repos/org/repo/issues?state=all&per_page=100&page=2"
   ])
   expect(update.issues.events).toEqual([{ source: "github", sourceId: "7", kind: "issue", number: 7, title: "Retained issue", state: "open", updatedAt: null, tags: ["issue", "open", "urgent", "bug"] }])
   expect(update.issues.available).toBe(true)
@@ -115,11 +115,58 @@ test.each([99, 100])("a %i-row page without Link uses the advertised-size fallba
     seen.push(url)
     return Response.json(seen.length === 1 ? Array.from({ length: count }, (_, index) => ({ number: index + 1, title: "Listed issue", state: "open" })) : [])
   }, "space owner/雪 repo")
-  const first = "https://example.test/api/user/github-repos/space%20owner/%E9%9B%AA%20repo/issues?state=all&per_page=100&limit=100&page=1"
-  const second = "https://example.test/api/user/github-repos/space%20owner/%E9%9B%AA%20repo/issues?state=all&per_page=100&limit=100&page=2"
+  const first = "https://example.test/api/user/github-repos/space%20owner/%E9%9B%AA%20repo/issues?state=all&per_page=100&page=1"
+  const second = "https://example.test/api/user/github-repos/space%20owner/%E9%9B%AA%20repo/issues?state=all&per_page=100&page=2"
   expect(seen).toEqual(count === 99 ? [first] : [first, second])
   expect(update.issues).toEqual({ available: true, problems: [], events: Array.from({ length: count }, (_, index) => ({
     source: "github", sourceId: String(index + 1), kind: "issue", number: index + 1, title: "Listed issue", state: "open", updatedAt: null, tags: ["issue", "open"]
   })) })
   expect(update.prs.events).toEqual([])
+})
+
+/*
+ * #3889, found by the root's own Activity card on the hosted app
+ * (roninjin10/e2e-verify, 2026-10-14): the card said "Some repository
+ * activity could not be checked" with no counts, over a 400 from the
+ * GitHub-source door and a 403 from notifications.
+ *
+ * The 400 is this read's own query: the GitHub metadata door validates it
+ * against an allowlist (backend services/github_repo_metadata.go
+ * `normalizeGitHubRepoMetadataQuery`: state, sort, direction, per_page, page,
+ * cursor, labels) and answers 400 `unsupported github repository metadata
+ * query parameter` for anything else, so the Cloud doors' `limit` must not
+ * ride along. The 403 is the host's availability contract (backend
+ * middleware/feature_flag.go: 403 + `feature not available`, which the
+ * production canary already reads as a pass, plue#675) — a door switched off,
+ * never repository data that could not be read.
+ */
+test("the GitHub-source door is asked only in its own query vocabulary", async () => {
+  const seen: string[] = []
+  const update = await readWith(async url => {
+    if (url.includes("github-repos")) seen.push(url)
+    return Response.json(url.includes("github-repos") ? [{ number: 3, title: "GitHub issue", state: "open" }] : [])
+  })
+  expect(seen).toEqual(["https://example.test/api/user/github-repos/org/repo/issues?state=all&per_page=100&page=1"])
+  expect(update.issues.events.map(row => row.number)).toEqual([3])
+  expect(update.issues.problems).toEqual([])
+  expect(update.issues.available).toBe(true)
+})
+
+test("a door this host switched off is unavailable, not repository activity that could not be checked", async () => {
+  const update = await readWith(async url => url.includes("notifications")
+    ? Response.json({ message: "feature not available" }, { status: 403 })
+    : Response.json([{ number: 4, title: "Open issue", state: "open" }]))
+  expect(update.notifications).toEqual({ available: false, problems: [], events: [] })
+  /* The repository's own activity still reads, and nothing claims it did not. */
+  expect(update.issues.available).toBe(true)
+  expect(update.issues.problems).toEqual([])
+  expect(update.prs.problems).toEqual([])
+})
+
+test("a 403 that is not the feature gate stays a visible problem", async () => {
+  const update = await readWith(async url => url.includes("notifications")
+    ? Response.json({ status: "error", code: "forbidden", message: "not a member of org/repo" }, { status: 403 })
+    : Response.json([]))
+  expect(update.notifications.problems).toEqual(["Could not load notifications (403)."])
+  expect(update.notifications.available).toBe(false)
 })
