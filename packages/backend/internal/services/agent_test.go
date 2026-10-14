@@ -1075,6 +1075,8 @@ type mockAgentDispatchQuerier struct {
 	updateAgentSessionTerminalForFlowFn   func(ctx context.Context, arg db.UpdateAgentSessionTerminalStatusForFlowParams) (db.AgentSession, error)
 	updateAgentSessionTimedOutFn          func(ctx context.Context, arg db.UpdateAgentSessionTimedOutParams) (db.AgentSession, error)
 	recordAgentSessionFailureReasonFn     func(ctx context.Context, sessionID, reason string) (db.AgentSession, bool, error)
+	insertWorkflowRunLogFn                func(ctx context.Context, arg db.InsertWorkflowRunLogNextSequenceParams) (db.InsertWorkflowRunLogNextSequenceRow, error)
+	notifyWorkflowRunLogFn                func(ctx context.Context, arg db.NotifyWorkflowRunLogParams) error
 }
 
 func (m *mockAgentDispatchQuerier) UpsertAgentWorkflowDefinition(ctx context.Context, repositoryID int64) (db.WorkflowDefinition, error) {
@@ -1351,6 +1353,20 @@ func (m *mockAgentDispatchQuerier) RecordAgentSessionFailureReason(ctx context.C
 	s.Status = "failed"
 	s.Metadata = []byte(`{"failure_reason":` + strconv.Quote(reason) + `}`)
 	return s, true, nil
+}
+
+func (m *mockAgentDispatchQuerier) InsertWorkflowRunLogNextSequence(ctx context.Context, arg db.InsertWorkflowRunLogNextSequenceParams) (db.InsertWorkflowRunLogNextSequenceRow, error) {
+	if m.insertWorkflowRunLogFn != nil {
+		return m.insertWorkflowRunLogFn(ctx, arg)
+	}
+	return db.InsertWorkflowRunLogNextSequenceRow{ID: 1, WorkflowRunID: arg.WorkflowRunID, WorkflowStepID: arg.WorkflowStepID, Sequence: 1, Stream: arg.Stream, Entry: arg.Entry}, nil
+}
+
+func (m *mockAgentDispatchQuerier) NotifyWorkflowRunLog(ctx context.Context, arg db.NotifyWorkflowRunLogParams) error {
+	if m.notifyWorkflowRunLogFn != nil {
+		return m.notifyWorkflowRunLogFn(ctx, arg)
+	}
+	return nil
 }
 
 // mockAgentLogStore implements AgentLogStore for unit tests.

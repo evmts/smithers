@@ -142,3 +142,67 @@ func mustJSONString(s string) string {
 	}
 	return string(encoded)
 }
+
+// A dispatch that fails before its task runs must still put one line on the
+// run the person is looking at. Production run 17463 (2026-10-14 07:30Z)
+// failed in 551 ms with `logs: []`, no output and no error field anywhere a
+// product route returns.
+func TestAgentDispatchFailureWritesOneLineToTheRunLog(t *testing.T) {
+	var entries []db.InsertWorkflowRunLogNextSequenceParams
+	var announced int
+	dq := &mockAgentDispatchQuerier{
+		insertWorkflowRunLogFn: func(_ context.Context, arg db.InsertWorkflowRunLogNextSequenceParams) (db.InsertWorkflowRunLogNextSequenceRow, error) {
+			entries = append(entries, arg)
+			return db.InsertWorkflowRunLogNextSequenceRow{ID: 9, WorkflowRunID: arg.WorkflowRunID, WorkflowStepID: arg.WorkflowStepID, Sequence: 1, Stream: arg.Stream, Entry: arg.Entry}, nil
+		},
+		notifyWorkflowRunLogFn: func(context.Context, db.NotifyWorkflowRunLogParams) error {
+			announced++
+			return nil
+		},
+	}
+	svc := &AgentService{
+		dispatchQ:      dq,
+		q:              &mockAgentQuerier{},
+		logStore:       &mockAgentLogStore{},
+		sessionMetrics: &mockAgentSessionMetricsObserver{},
+	}
+
+	svc.markAgentDispatchInfrastructureFailedWithReason(context.Background(), 0, 20, 17463,
+		"dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+		"create sandbox: microsandbox api returned status 503 (no_capacity)",
+		agentSessionNoCapacityMessage)
+
+	require.Len(t, entries, 1)
+	require.Equal(t, int64(17463), entries[0].WorkflowRunID)
+	require.Equal(t, int64(20), entries[0].WorkflowStepID)
+	require.Equal(t, "system", entries[0].Stream)
+	require.Equal(t, agentSessionNoCapacityMessage, entries[0].Entry)
+	require.NotContains(t, entries[0].Entry, "microsandbox",
+		"the run log carries product vocabulary, not the provider's chain")
+	require.Equal(t, 1, announced, "a watching Steps view must not have to refetch")
+}
+
+// A dispatch refused because this deployment has no agent loop must not tell
+// the person to try again: retrying never helps until an entrypoint exists.
+func TestRetiredAgentLoopRefusalDoesNotPromiseARetry(t *testing.T) {
+	require.NotContains(t, agentSessionLoopRetiredMessage, "try again")
+	require.NotEqual(t, agentSessionStartFailureMessage, agentSessionLoopRetiredMessage)
+	require.Contains(t, agentSessionLoopRetiredMessage, "not available on this deployment")
+}
+
+// A taskless failure still has a step, which is where the line goes. A run or
+// step that does not exist is skipped rather than written to run 0.
+func TestAgentDispatchFailureLogSkipsWhenThereIsNoRunOrStep(t *testing.T) {
+	var inserts int
+	dq := &mockAgentDispatchQuerier{
+		insertWorkflowRunLogFn: func(context.Context, db.InsertWorkflowRunLogNextSequenceParams) (db.InsertWorkflowRunLogNextSequenceRow, error) {
+			inserts++
+			return db.InsertWorkflowRunLogNextSequenceRow{}, nil
+		},
+	}
+	svc := &AgentService{dispatchQ: dq}
+	svc.appendAgentDispatchFailureLog(context.Background(), 0, 20, "reason")
+	svc.appendAgentDispatchFailureLog(context.Background(), 17463, 0, "reason")
+	svc.appendAgentDispatchFailureLog(context.Background(), 17463, 20, "   ")
+	require.Zero(t, inserts)
+}

@@ -22,6 +22,13 @@ const agentSessionNoCapacityMessage = "The agent pool is full right now. Nothing
 // of an empty metadata object.
 const agentSessionStartFailureMessage = "The agent could not be started. Nothing ran; try again in a moment."
 
+// agentSessionLoopRetiredMessage is what a session says on a deployment where
+// cloud agent dispatch is not wired at all. Retrying never helps, so it must
+// not borrow agentSessionStartFailureMessage's "try again in a moment": the
+// refusal is permanent until a Smithers 1.0 entrypoint exists. The operator
+// detail (agentLoopRetiredMessage) stays in the log.
+const agentSessionLoopRetiredMessage = "Cloud agents are not available on this deployment yet. Nothing ran, and retrying will not help."
+
 // agentSessionFailureReasonForError classifies a dispatch failure into the one
 // sentence the session shows. A pool with no room is the one cause a user can
 // act on differently (wait, rather than retry at once), which is why it is the

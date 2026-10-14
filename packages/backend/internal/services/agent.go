@@ -268,6 +268,11 @@ type AgentDispatchQuerier interface {
 	// shows its owner. The session's own routes carry no error field, so without
 	// it a refused dispatch is indistinguishable from any other failure.
 	RecordAgentSessionFailureReason(ctx context.Context, sessionID, reason string) (db.AgentSession, bool, error)
+	// The run's own log is the only place the Steps view reads. A dispatch
+	// that fails before its task runs writes nothing there otherwise, so the
+	// run page shows a red node with no line at all.
+	InsertWorkflowRunLogNextSequence(ctx context.Context, arg db.InsertWorkflowRunLogNextSequenceParams) (db.InsertWorkflowRunLogNextSequenceRow, error)
+	NotifyWorkflowRunLog(ctx context.Context, arg db.NotifyWorkflowRunLogParams) error
 }
 
 // AgentLogStore stores agent session logs to GCS.
@@ -1259,6 +1264,7 @@ func (s *AgentService) markAgentDispatchInfrastructureFailedWithReason(ctx conte
 		// session, or a newer run has claimed it before cleanup arrives.
 		s.revokeAgentSessionToken(ctx, pgtype.Int8{Int64: workflowRunID, Valid: true})
 	}
+	s.appendAgentDispatchFailureLog(ctx, workflowRunID, stepID, reason)
 	if s.dispatchQ != nil && strings.TrimSpace(sessionID) != "" {
 		s.cancelAgentRuntimeWatchdogForRun(sessionID, workflowRunID)
 		session, updated, err := s.transitionAgentSessionTerminalStatusWithReason(ctx, sessionID, "failed", pgtype.Int8{Int64: workflowRunID, Valid: true}, reason)
@@ -1267,6 +1273,47 @@ func (s *AgentService) markAgentDispatchInfrastructureFailedWithReason(ctx conte
 			s.archiveAgentTranscript(ctx, session, "failed")
 			s.revokeAgentSessionJJHubToken(ctx, session.UserID, session.WorkflowRunID)
 		}
+	}
+}
+
+// appendAgentDispatchFailureLog writes the user-facing sentence to the run's
+// own log, which is what the Steps view renders.
+//
+// A dispatch that fails before its task starts leaves the node red and empty:
+// the detail goes to workflow_tasks.last_error, which no product route
+// returns, and to slog. Production run 17463 (2026-10-14 07:30Z) failed in
+// 551 ms with `logs: []` and no output anywhere a person could reach. The nix
+// CI path already writes its one sentence here; the agent path now does the
+// same, and for the same reason: product vocabulary only, never the provider's
+// chain.
+func (s *AgentService) appendAgentDispatchFailureLog(ctx context.Context, workflowRunID, stepID int64, reason string) {
+	if s.dispatchQ == nil || workflowRunID == 0 || stepID == 0 || strings.TrimSpace(reason) == "" {
+		return
+	}
+	inserted, err := s.dispatchQ.InsertWorkflowRunLogNextSequence(ctx, db.InsertWorkflowRunLogNextSequenceParams{
+		WorkflowRunID:  workflowRunID,
+		WorkflowStepID: stepID,
+		Stream:         "system",
+		Entry:          reason,
+	})
+	if err != nil {
+		middleware.LoggerWithWorkflowRun(ctx, workflowRunID).
+			Warn("failed to append agent dispatch failure to the run log", "error", err)
+		return
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"log_id":           inserted.ID,
+		"workflow_step_id": inserted.WorkflowStepID,
+		"sequence":         inserted.Sequence,
+		"stream":           inserted.Stream,
+		"entry":            inserted.Entry,
+	})
+	if err := s.dispatchQ.NotifyWorkflowRunLog(ctx, db.NotifyWorkflowRunLogParams{
+		RunID:   workflowRunID,
+		Payload: string(payload),
+	}); err != nil {
+		middleware.LoggerWithWorkflowRun(ctx, workflowRunID).
+			Warn("failed to announce agent dispatch failure log", "error", err)
 	}
 }
 

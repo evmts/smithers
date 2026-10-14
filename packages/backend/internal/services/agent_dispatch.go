@@ -313,7 +313,8 @@ func (d *agentDispatch) refuseRetiredAgentLoop() error {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(d.ctx), 30*time.Second)
 		defer cancel()
 		d.infraFailedMarked = true
-		d.svc.markAgentDispatchInfrastructureFailed(ctx, d.task.ID, d.step.ID, d.run.ID, d.input.SessionID, agentLoopRetiredMessage)
+		d.svc.markAgentDispatchInfrastructureFailedWithReason(ctx, d.task.ID, d.step.ID, d.run.ID, d.input.SessionID,
+			agentLoopRetiredMessage, agentSessionLoopRetiredMessage)
 	}
 	return &pkgerrors.APIError{
 		Status:  http.StatusNotImplemented,
