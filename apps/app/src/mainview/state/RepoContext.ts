@@ -257,8 +257,17 @@ export const selectedBoxBindingFrom = (
 ): GatewayBinding | undefined => {
   const selection = key == null ? null : parseRepoSelection(key)
   if (selection === null || selection.repoId !== repo || selection.copyId === undefined) return undefined
+  /*
+   * A list that COMPLETED is the proof. A refresh of a scope that already
+   * completed one keeps it: `workspaceLists` holds one row per scope, so the
+   * next `workspaces.list.started` used to replace the ready row and take the
+   * recovery back for the length of one round trip — on the very act the
+   * recovery exists to unblock. A scope still loading its first list, or one
+   * whose list failed, still proves nothing (#3882).
+   */
   const observed = (collections.cloudSessions.get("cloud")?.workspaceLists ?? [])
-    .some(row => (row.scope === repo || row.scope === "*") && row.phase === "ready")
+    .some(row => (row.scope === repo || row.scope === "*") &&
+      (row.phase === "ready" || (row.phase === "loading" && row.readyRevision !== undefined)))
   const copy = collections.workingCopies.get(selection.copyId)
   if (copy === undefined || copy.repoId !== repo) {
     return observed && copy === undefined ? undefined

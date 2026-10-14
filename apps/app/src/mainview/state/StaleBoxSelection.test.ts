@@ -113,3 +113,54 @@ test("an unread inventory never reroutes a selected box to another one", async (
   /* Deleted, with no list read since: the refusal stands rather than guessing. */
   expect(selectedBoxBinding(store, REPO)).toEqual({ error: "The selected working copy is no longer available for this repository." })
 })
+
+/*
+ * The recovery used to flap. `workspaceLists` keeps ONE row per scope, so the
+ * next refresh replaced the ready row with `loading` and the proof of absence
+ * vanished with it — the refusal came back for the length of one round trip,
+ * on the exact act (`Issue flows` → the box prerequisite form) the recovery
+ * exists to unblock.
+ *
+ * An inventory that was read and is being re-read has not un-proven anything.
+ * A scope that has completed a list at least once keeps that proof across the
+ * refresh; a scope still loading its FIRST list, or one whose list failed,
+ * still proves nothing.
+ */
+test("a refresh does not take back the recovery it already made", async () => {
+  const store = await signedIn()
+  await opened(store)
+  await store.dispatch({ type: "workspace.deleted", actor: "user", workspaceId: BOX }).isPersisted.promise
+  await store.dispatch({ type: "workspaces.loaded", actor: "system", repoId: REPO, workspaces: [] }).isPersisted.promise
+  expect(selectedBoxBinding(store, REPO)).toBeUndefined()
+  /* The ordinary refresh every signed-in load runs. */
+  await store.dispatch({ type: "workspaces.list.started", actor: "system", requestId: "again", repoId: REPO }).isPersisted.promise
+  expect(selectedBoxBinding(store, REPO)).toBeUndefined()
+  /*
+   * And the selection stops being the reason for anything: mid-refresh this
+   * repository answers exactly what it answers with NOTHING selected — the
+   * ordinary "still loading" of a repository whose list is in flight, not a
+   * claim about this box.
+   */
+  const whileRefreshing = gatewayBindingFor(store, REPO)
+  const unselected = await signedIn()
+  await unselected.dispatch({ type: "workspaces.list.started", actor: "system", requestId: "again", repoId: REPO }).isPersisted.promise
+  expect(whileRefreshing).toEqual(gatewayBindingFor(unselected, REPO))
+  /* Once it completes, the box form is reachable again. */
+  await store.dispatch({ type: "workspaces.loaded", actor: "system", requestId: "again", repoId: REPO, workspaces: [] }).isPersisted.promise
+  expect(gatewayBindingFor(store, REPO)).toHaveProperty("noBox", true)
+})
+
+test("a first list still in flight proves nothing, and a failed list takes the proof back", async () => {
+  const store = await signedIn()
+  await opened(store)
+  await store.dispatch({ type: "workspace.deleted", actor: "user", workspaceId: BOX }).isPersisted.promise
+  /* Never read: the refusal stands. */
+  await store.dispatch({ type: "workspaces.list.started", actor: "system", requestId: "first", repoId: REPO }).isPersisted.promise
+  expect(selectedBoxBinding(store, REPO)).toEqual({ error: "The selected working copy is no longer available for this repository." })
+  /* Read once, then a refresh that FAILS: a list that could not be read is not a proof. */
+  await store.dispatch({ type: "workspaces.loaded", actor: "system", requestId: "first", repoId: REPO, workspaces: [] }).isPersisted.promise
+  expect(selectedBoxBinding(store, REPO)).toBeUndefined()
+  await store.dispatch({ type: "workspaces.list.started", actor: "system", requestId: "second", repoId: REPO }).isPersisted.promise
+  await store.dispatch({ type: "workspaces.list.failed", actor: "system", requestId: "second", repoId: REPO, error: "Smithers Cloud's box list could not be read." }).isPersisted.promise
+  expect(selectedBoxBinding(store, REPO)).toEqual({ error: "The selected working copy is no longer available for this repository." })
+})

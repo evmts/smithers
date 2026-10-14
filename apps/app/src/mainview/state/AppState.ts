@@ -342,6 +342,12 @@ export const CloudSessionRowSchema = z.object({
     phase: z.enum(["loading", "ready", "failed"]),
     requestId: z.string().optional(),
     revision: z.number().int().nonnegative(),
+    /**
+     * The revision a list for this scope last COMPLETED at. A refresh replaces
+     * `phase` with `loading`, and an inventory being re-read has not un-proven
+     * what the last complete read proved (#3882).
+     */
+    readyRevision: z.number().int().nonnegative().optional(),
     error: z.string().optional()
   })).optional()
 })

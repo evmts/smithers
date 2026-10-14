@@ -3307,6 +3307,9 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
               { scope, requestId: transition.requestId,
                 revision: transition.type === "workspaces.list.started" ? revision : active!.revision,
                 phase: transition.type === "workspaces.list.started" ? "loading" : "failed",
+                /* A re-read carries the last COMPLETE read's revision; a failure does not claim one. */
+                ...(transition.type === "workspaces.list.started" && active?.readyRevision !== undefined
+                  ? { readyRevision: active.readyRevision } : {}),
                 ...(transition.type === "workspaces.list.failed" ? { error: transition.error } : {}) }
             ]
           })
@@ -3324,7 +3327,8 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
             draft.workspaceLists = [
               ...(draft.workspaceLists ?? []).filter(row => row.scope !== (scope ?? "*")),
               { scope: scope ?? "*", revision: transition.requestId === undefined ? revision : active!.revision,
-                phase: "ready", ...(transition.requestId === undefined ? {} : { requestId: transition.requestId }) }
+                phase: "ready", readyRevision: transition.requestId === undefined ? revision : active!.revision,
+                ...(transition.requestId === undefined ? {} : { requestId: transition.requestId }) }
             ]
           })
           const next = new Set(transition.workspaces.map((workspace) => workspace.id))
