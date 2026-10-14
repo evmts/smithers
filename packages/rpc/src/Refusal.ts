@@ -438,6 +438,26 @@ export const refusalFromStored = (stored: StoredRefusal): Refusal => {
 export const isCapacityRefusal = (refusal: Refusal): boolean => refusal.code === "no_capacity"
 
 /**
+ * The refusing party's own words, for policy that has to branch on them.
+ *
+ * plue answers all three of its `forbidden` doors with that one verdict
+ * (pkg/errors/registry.go `CodeForbidden`), so a caller that must tell ONE of
+ * them apart — the route-family gate, `isFeatureGateRefusal` — has to read the
+ * sentence as well as the code. Reading `refusal.message` at that call site is
+ * a raw refusal-text read in a file that could print it, which the UI's
+ * lexical guard counts (apps/app/src/mainview/RawErrorRender.test.ts) and
+ * which is the right thing to count: the next edit to such a line is one
+ * character away from putting the wire's English on a screen. Asking here
+ * keeps the read in the module that owns the shape, and hands the caller a
+ * string it only compares. What a person reads is `refusalLine`
+ * (@smthrs/rpc/RefusalCopy), never this.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const statedWords = (refusal: Refusal): string => refusal.message
+
+/**
  * Whether the app may run the same request again on its own.
  *
  * Auto-retry is the SERVER'S instruction, never this app's optimism: only a

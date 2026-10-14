@@ -31,6 +31,22 @@ class MachineJsonUnreadable extends Data.TaggedError("MachineJsonUnreadable") {
 class IssueReadRefused extends Data.TaggedError("IssueReadRefused")<{ readonly sentence: string }> {
   override get message() { return this.sentence }
 }
+/**
+ * A TODO-family request this app had to classify itself, as a tagged failure
+ * rather than raw text.
+ *
+ * Tagged for two reasons. The diagnostic sink posts a thrown value's NAME
+ * beside its message (state/ClientErrors.ts `errorDetail`), so a tag tells the
+ * next reader of the crash route which classification they are looking at
+ * where a bare `Error` could only say `Error`. And the seams' own guard
+ * refuses raw failure text outright (mainview/RawErrorSites.test.ts), the
+ * guard being lexical down to this comment: an untagged `Error` carries no
+ * `_tag`, so `presentUserFailure` could only ever call it unknown, and the
+ * rule exists so no such value can reach a person by accident. Nothing reads
+ * this one: `todoRequestRefusal` writes the sentence a person sees, and this
+ * travels to the diagnostic ring alone.
+ */
+class TodoRequestUnexplained extends Data.TaggedError("TodoRequestUnexplained")<{ readonly message: string }> {}
 
 /**
  * A failed image or issue preparation: a refusal reads its own sentence (MachineJson's
@@ -520,7 +536,9 @@ export const createTodoSeam = (ctx: SeamContext, options: TodoSeamOptions = {}) 
         if (stated === undefined || refusal.code === "feature_not_available") {
           ctx.report?.(
             `todo.request.${refusal.code} ${method} ${route} ${response.status}`,
-            new Error(`${method} ${route} answered ${response.status} (${request.operation}, key ${request.key})`)
+            new TodoRequestUnexplained({
+              message: `${method} ${route} answered ${response.status} (${request.operation}, key ${request.key})`
+            })
           )
         }
         await fail(fault)

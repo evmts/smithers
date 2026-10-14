@@ -1714,6 +1714,13 @@ describe("TodoSeam — a refused Commit names what refused it", () => {
       const report = h.reports.at(-1)
       expect(report?.scope).toBe("todo.request.todo_route_absent POST /api/todos 404")
       expect(String((report?.error as Error).message)).toContain("POST /api/todos answered 404 (create, key ")
+      /*
+       * The crash route posts a thrown value's NAME beside its message
+       * (state/ClientErrors.ts), so what it reports is tagged: a reader of
+       * /api/admin/errors sees which classification refused this door instead
+       * of one more row that says `Error`.
+       */
+      expect((report?.error as Error).name).toBe("TodoRequestUnexplained")
     } finally { h.close() }
   })
 

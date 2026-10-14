@@ -22,6 +22,7 @@ import {
   refusalOf,
   retryAfterHeader,
   statedRetryDelayMs,
+  statedWords,
   type StoredRefusal,
   storedRefusal
 } from "../src/Refusal.ts"
@@ -600,5 +601,35 @@ describe("auto-retry", () => {
       if (entry.fault !== "wait") continue
       expect(entry.retryAfter, `${code} is a wait fault with no stated pacing`).toBeGreaterThan(0)
     }
+  })
+})
+
+describe("statedWords", () => {
+  test("is the refusing party's own sentence, so a shared verdict's gates can be told apart", () => {
+    // plue answers all three of its `forbidden` doors with the same verdict,
+    // so the sentence is the only thing that separates the route-family gate
+    // from a membership or a write-access refusal.
+    const gate = refusalOf({
+      body: { code: "forbidden", class: "permission", fault: "user" },
+      status: 403,
+      message: "feature not available"
+    })
+    expect(statedWords(gate)).toBe("feature not available")
+    const membership = refusalOf({
+      body: { code: "forbidden", class: "permission", fault: "user" },
+      status: 403,
+      message: "write access to this repository is required"
+    })
+    expect(statedWords(gate) === statedWords(membership)).toBe(false)
+    expect(gate.code).toBe(membership.code)
+  })
+
+  test("reads the words back unrewritten, including the caller's fallback when the wire stated none", () => {
+    expect(statedWords(refusalOf({ body: null, status: 500, message: "Reading this page failed (500)." }))).toBe(
+      "Reading this page failed (500)."
+    )
+    expect(statedWords(clientRefusal(new Error("offline"), "Could not reach Smithers Cloud."))).toBe(
+      "Could not reach Smithers Cloud."
+    )
   })
 })

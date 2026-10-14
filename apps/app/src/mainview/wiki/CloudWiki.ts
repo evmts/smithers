@@ -1,4 +1,5 @@
 import { digestSync } from "@smthrs/crypto"
+import { statedWords } from "@smthrs/rpc/Refusal"
 import { Context, Data, Effect } from "effect"
 import * as Y from "yjs"
 import { z } from "zod"
@@ -230,7 +231,7 @@ export const makeCloudWikiTransport = (
         if (!value.ok) {
           const failure = await cloudFailure(value, `Reading or saving this Wiki page failed (${value.status}).`)
           throw new CloudWikiError({
-            sentence: isFeatureGateRefusal(value.status, failure.refusal.message, failure.code) ? WIKI_FEATURE_UNAVAILABLE : failure.error,
+            sentence: isFeatureGateRefusal(value.status, statedWords(failure.refusal), failure.code) ? WIKI_FEATURE_UNAVAILABLE : failure.error,
             status: value.status,
             ...(failure.code === null ? {} : { code: failure.code })
           })
