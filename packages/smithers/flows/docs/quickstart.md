@@ -175,6 +175,11 @@ Change `note.txt` between the two runs to see it plainly. The second run still
 prints the old contents, because it is replaying a recorded step rather than
 reading the file again. To read the file for real, use a new `executionId`.
 
+The same `executionId` also returns the recorded result after you change the
+flow, so a step you add or edit does not run;
+[Change a flow and keep the work](./guides/change-a-flow-and-keep-the-work.md)
+shows how to run only what changed.
+
 ## What just happened
 
 `layerHost` composed every layer you did not write: the SQLite
@@ -192,6 +197,9 @@ rather than sitting `running` behind a dead owner.
 
 ## Next steps
 
+- [Change a flow and keep the work](./guides/change-a-flow-and-keep-the-work.md):
+  add or edit a step and rerun only what changed, and print the plan before
+  anything runs.
 - [Stand up a durable Node runtime](./guides/stand-up-a-node-runtime.md):
   the four entry points, and which one a given program should call.
 - [Shut a host down](./guides/shut-a-host-down.md): signals, the shutdown

@@ -130,6 +130,9 @@ reachable only through it.
   `effect` requirements, the import forms, and the platform packages you choose
   yourself.
 - [Quickstart](./quickstart.md): one flow end to end on a real durable engine.
+- [Change a flow and keep the work](./guides/change-a-flow-and-keep-the-work.md):
+  add or edit a step and rerun only what changed, and print the plan before
+  anything runs.
 - [Stand up a durable Node runtime](./guides/stand-up-a-node-runtime.md): the
   four `NodeRuntime` entry points, and which one a given program should call.
 - [Run a child flow in a sandbox](./guides/run-a-child-flow-in-a-sandbox.md):
