@@ -647,6 +647,28 @@ describe("FlowStore.layerFileSystem", () => {
     expect(existsSync(join(directory, "flows/triage/flow.ts"))).toBe(false)
   })
 
+  it.each([
+    "flows/other/flow.ts",
+    "flows/triage-two/flow.ts",
+    "README.md",
+    "src/index.ts",
+    "flows/triage",
+    "flows/triage/"
+  ])("refuses the key %s outside flows/<id>/ before anything is written", async (key) => {
+    // The memory store holds the same line: a save names one flow, so a key
+    // beside it, such as another flow's source or a package file, is refused
+    // rather than written into the checkout.
+    const directory = root()
+
+    const result = await onDisk(
+      directory,
+      (store) => store.write("triage", { "flows/triage/flow.ts": "kept", [key]: "outside" })
+    )
+
+    expect(refused(result).code).toBe("invalid_path")
+    expect(readdirSync(directory)).toStrictEqual([])
+  })
+
   it("refuses to write through a file the checkout linked outside the root", async () => {
     const directory = root()
     const outside = root()

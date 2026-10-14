@@ -219,16 +219,30 @@ export const makeMemory = (written: Map<string, string> = new Map()): Service =>
 const isOutside = (path: Path.Path, relative: string): boolean =>
   path.isAbsolute(relative) || relative === ".." || relative.startsWith(`..${path.sep}`)
 
-/** Resolves a file path using the host's semantics before any filesystem mutation. */
-const validatePath = (path: Path.Path, root: string, relative: string): Effect.Effect<string, FlowStoreError> => {
-  const confined = path.relative(root, path.resolve(root, relative))
-  return path.isAbsolute(relative) || confined === "" || isOutside(path, confined)
-    ? Effect.fail(error("invalid_path", `"${relative}" is not a file path inside the flows root.`))
-    : Effect.succeed(confined)
-}
-
 /** The components of an already resolved, confined relative path. */
 const segmentsOf = (path: Path.Path, relative: string): ReadonlyArray<string> => relative.split(path.sep)
+
+/**
+ * Resolves a file path using the host's semantics before any filesystem
+ * mutation, and refuses one that is not a file under `flows/<id>/`: a save
+ * names one flow, so a key beside it, such as another flow's source or a
+ * package file, is no more writable here than it is in {@link makeMemory}.
+ */
+const validatePath = (
+  path: Path.Path,
+  root: string,
+  id: string,
+  relative: string
+): Effect.Effect<string, FlowStoreError> => {
+  const confined = path.relative(root, path.resolve(root, relative))
+  if (path.isAbsolute(relative) || confined === "" || isOutside(path, confined)) {
+    return Effect.fail(error("invalid_path", `"${relative}" is not a file path inside the flows root.`))
+  }
+  const segments = segmentsOf(path, confined)
+  return segments.length < 3 || segments[0] !== "flows" || segments[1] !== id
+    ? Effect.fail(error("invalid_path", `"${relative}" is not a file path inside flows/${id}/.`))
+    : Effect.succeed(confined)
+}
 
 /** Whether a path is a symbolic link, reading one that cannot be read at all as not one. */
 const isLink = (fs: FileSystem.FileSystem, target: string): Effect.Effect<boolean> =>
@@ -399,8 +413,9 @@ const serializeWrite = <A, E>(root: string, write: Effect.Effect<A, E>): Effect.
 /**
  * Constructs a store over a directory on the host filesystem.
  *
- * Validates every path with the injected Path semantics and rejects symbolic
- * links below the root before staging. Writes to the same resolved root are
+ * Validates every path with the injected Path semantics, refuses one that is
+ * not a file under `flows/<id>/`, and rejects symbolic links below the root
+ * before staging. Writes to the same resolved root are
  * serialized within this process, including across store instances.
  * The entire file set and backups are staged inside the root before targets
  * are replaced by individual atomic renames. Publication failures restore the
@@ -428,7 +443,7 @@ export const makeFileSystem = (
           yield* validateId(id)
           const resolved: Array<readonly [string, string]> = []
           for (const [relative, source] of Object.entries(files)) {
-            const confined = yield* validatePath(path, root, relative)
+            const confined = yield* validatePath(path, root, id, relative)
             for (const [previous] of resolved) {
               const between = path.relative(path.join(root, previous), path.join(root, confined))
               const reverse = path.relative(path.join(root, confined), path.join(root, previous))
