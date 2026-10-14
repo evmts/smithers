@@ -2321,6 +2321,18 @@ describe("a Cloud account conversation asks for a new flow with its form", () =>
       expect(system).toContain(
         "When they ask you to ACT — to change something, or to reach something outside this conversation — and no command does it, say so in one sentence."
       )
+      /*
+       * The line licenses subjects in the WORLD and nothing about this app. A
+       * first draft ended "never hand it off to docs"; probed against the real
+       * provider with the pages offered, the same turn then answered "how do I
+       * put HTTPS in front of Smithers" from memory in 6.5 kB instead of
+       * reading the page. The clause defers to the docs rule by name, and this
+       * pins that it still does.
+       */
+      expect(system).toContain(
+        "a question about how SMITHERS itself works is still answered by running the command that reads its documentation and quoting what that returns, never from memory"
+      )
+      expect(system).not.toContain("never hand it off to docs")
       // Every external fence stands, unchanged.
       expect(system).toContain("You cannot send or draft email")
       expect(system).toContain("push to a branch or open a pull request — not directly, and not through a run")

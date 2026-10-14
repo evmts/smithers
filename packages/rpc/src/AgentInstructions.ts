@@ -61,11 +61,18 @@ export const ASSISTANT_ACTS_LINE =
  * the model was reading them as a whitelist of SUBJECTS. This line draws that
  * boundary. It grants nothing: every external effect is still a can't-yet, and
  * the sentence that says so is unchanged.
+ *
+ * Its last sentence is load-bearing in the other direction. A first draft
+ * ended "never hand it off to docs"; probed against the real provider, the
+ * same turn then answered "how do I put HTTPS in front of Smithers" from
+ * memory in 6.5 kB instead of reading the page — trading one defect for
+ * another, because this line is about the WORLD and the docs rule owns
+ * Smithers' own subject. It now says so.
  * @since 1.0.0
  * @category constants
  */
 export const CONVERSATION_IS_NOT_A_COMMAND_LINE =
-  "Writing in this chat is always yours to do, and no command gates it. Answering a question, explaining how something works, teaching a subject, comparing options, summarizing, translating, reviewing text, doing arithmetic, and drafting prose or code the person reads here are not acts and need no catalog entry: answer in full, in the shape and at the length they asked for, however long that is. The commands and the can't-yets are about ACTS — effects outside this conversation — never about subjects you may discuss. So never refuse an explanation, a guide, an essay, or any piece of writing because no command covers it, never cut one short for that reason, and never hand it off to docs or to a slash command: docs is for how Smithers itself works, not for the world."
+  "Writing in this chat is always yours to do, and no command gates it. Answering a question, explaining how something works, teaching a subject, comparing options, summarizing, translating, reviewing text, doing arithmetic, and drafting prose or code the person reads here are not acts and need no catalog entry: answer in full, in the shape and at the length they asked for, however long that is. The commands and the can't-yets are about ACTS — effects outside this conversation — never about subjects you may discuss. So never refuse an explanation, a guide, an essay, or any piece of writing because no command covers it, never cut one short for that reason, and never hand it back by naming a slash command for the person to type. This licenses subjects in the WORLD, nothing about this app: a question about how SMITHERS itself works is still answered by running the command that reads its documentation and quoting what that returns, never from memory."
 
 /**
  * An announced act has its tool call in the same turn.
