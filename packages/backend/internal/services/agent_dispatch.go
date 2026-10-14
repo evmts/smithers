@@ -259,10 +259,22 @@ func (d *agentDispatch) revokeCloneTokenWithContext(ctx context.Context) {
 // here would silently skip persisting the failure while the flag suppresses
 // cleanup()'s retry — leaving the run/task/session stuck in an active state.
 func (d *agentDispatch) markInfraFailed(message string) error {
+	return d.markInfraFailedWithReason(message, agentSessionStartFailureMessage)
+}
+
+// markInfraFailedFromError is markInfraFailed for a step that holds the
+// provider error, so the session can say "the pool is full" rather than the
+// generic sentence. step names the operation ("create sandbox"); err's chain
+// stays on the operator side.
+func (d *agentDispatch) markInfraFailedFromError(step string, err error) error {
+	return d.markInfraFailedWithReason(step+": "+err.Error(), agentSessionFailureReasonForError(err))
+}
+
+func (d *agentDispatch) markInfraFailedWithReason(message, reason string) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(d.ctx), 30*time.Second)
 	defer cancel()
 	d.infraFailedMarked = true
-	d.svc.markAgentDispatchInfrastructureFailed(ctx, d.task.ID, d.step.ID, d.run.ID, d.input.SessionID, message)
+	d.svc.markAgentDispatchInfrastructureFailedWithReason(ctx, d.task.ID, d.step.ID, d.run.ID, d.input.SessionID, message, reason)
 	return pkgerrors.Internal(message)
 }
 
@@ -791,7 +803,7 @@ func (d *agentDispatch) createAgentWorkspaceVM() error {
 		if errors.As(err, &apiErr) && apiErr.Code == pkgerrors.CodePlanLimitExceeded {
 			return err
 		}
-		return d.markInfraFailed("create agent workspace: " + err.Error())
+		return d.markInfraFailedFromError("create agent workspace", err)
 	}
 	d.workspaceID = result.WorkspaceID
 	d.vm = sandbox.CreateResult{ID: result.VMID}
@@ -1187,7 +1199,7 @@ func (d *agentDispatch) createVM() error {
 	if err != nil {
 		middleware.LoggerWithAgentSessionAndWorkflowRun(d.ctx, d.input.SessionID, d.run.ID).
 			Error("sandbox creation failed", "error", err, "type", "agent")
-		return d.markInfraFailed("create sandbox: " + err.Error())
+		return d.markInfraFailedFromError("create sandbox", err)
 	}
 
 	d.vm = vm

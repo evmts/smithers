@@ -145,3 +145,50 @@ func (q *Queries) FailNeverStartedAgentSession(ctx context.Context, arg FailNeve
 }
 
 type FailNeverStartedAgentSessionParams = FailNeverStartedAgentSessionRawParams
+
+// RecordAgentSessionFailureReason merges one bounded, user-facing sentence into
+// the session's metadata under "failure_reason".
+//
+// A session that cannot start goes terminal in seconds and the API returns
+// metadata verbatim, so this is the only place the owner of the session can
+// learn why. The specific causes (no fleet capacity, a workspace that never
+// came up, a sandbox that was refused) otherwise reach slog and the workflow
+// task's last_error only — neither of which the session's own routes expose.
+//
+// The caller passes product vocabulary, never a provider's error chain: the
+// value is handed straight back to the browser. The merge is additive so a
+// session's own metadata keys survive, and it is bounded to the terminal row
+// (status <> 'active') so a re-dispatched session cannot keep a stale reason.
+func (q *Queries) RecordAgentSessionFailureReason(ctx context.Context, sessionID, reason string) (AgentSession, bool, error) {
+	row := q.db.QueryRow(ctx, `
+UPDATE agent_sessions
+SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('failure_reason', $2::text),
+    updated_at = NOW()
+WHERE id = $1 AND status <> 'active' AND deleted_at IS NULL
+RETURNING id, repository_id, user_id, workflow_run_id, title, status, metadata, workspace_id,
+          started_at, finished_at, created_at, updated_at, deleted_at
+`, sessionID, reason)
+	var i AgentSession
+	err := row.Scan(
+		&i.ID,
+		&i.RepositoryID,
+		&i.UserID,
+		&i.WorkflowRunID,
+		&i.Title,
+		&i.Status,
+		&i.Metadata,
+		&i.WorkspaceID,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return AgentSession{}, false, nil
+	}
+	if err != nil {
+		return AgentSession{}, false, err
+	}
+	return i, true, nil
+}

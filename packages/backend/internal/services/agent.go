@@ -65,6 +65,10 @@ type AgentSessionEvent struct {
 	Action    string                `json:"action"`
 	Message   *AgentMessageResponse `json:"message,omitempty"`
 	Status    string                `json:"status,omitempty"`
+	// Reason is the user-facing sentence for a terminal status a watcher could
+	// not have predicted. It saves a client from re-polling the session just to
+	// read metadata.failure_reason.
+	Reason string `json:"reason,omitempty"`
 }
 
 func AgentSessionMessageEvent(msg AgentMessageResponse) AgentSessionEvent {
@@ -260,6 +264,10 @@ type AgentDispatchQuerier interface {
 	GetAgentSessionForFlowProjection(ctx context.Context, arg db.GetAgentSessionForFlowProjectionParams) (db.AgentSession, error)
 	UpdateAgentSessionTerminalStatusForFlow(ctx context.Context, arg db.UpdateAgentSessionTerminalStatusForFlowParams) (db.AgentSession, error)
 	UpdateAgentSessionTimedOut(ctx context.Context, arg db.UpdateAgentSessionTimedOutParams) (db.AgentSession, error)
+	// RecordAgentSessionFailureReason stores the one sentence a failed session
+	// shows its owner. The session's own routes carry no error field, so without
+	// it a refused dispatch is indistinguishable from any other failure.
+	RecordAgentSessionFailureReason(ctx context.Context, sessionID, reason string) (db.AgentSession, bool, error)
 }
 
 // AgentLogStore stores agent session logs to GCS.
@@ -1189,7 +1197,28 @@ func (s *AgentService) IngestRunnerEvent(ctx context.Context, input IngestRunner
 	return nil
 }
 
+// markAgentDispatchInfrastructureFailed fails the run, its task and step, and
+// the session, with the generic start-failure sentence on the session.
+//
+// A caller that knows the cause is actionable (the pool had no room) should use
+// markAgentDispatchInfrastructureFailedWithReason instead.
 func (s *AgentService) markAgentDispatchInfrastructureFailed(ctx context.Context, taskID, stepID, workflowRunID int64, sessionID, message string) {
+	s.markAgentDispatchInfrastructureFailedWithReason(ctx, taskID, stepID, workflowRunID, sessionID, message, agentSessionStartFailureMessage)
+}
+
+// markAgentDispatchInfrastructureFailedWithReason is the same, with the one
+// sentence the session's owner reads chosen by the caller.
+//
+// message is the operator string: it lands in the workflow task's last_error
+// and the log, and may carry a provider's error chain. reason is user-facing
+// and is stored on the session where the API returns it.
+func (s *AgentService) markAgentDispatchInfrastructureFailedWithReason(ctx context.Context, taskID, stepID, workflowRunID int64, sessionID, message, reason string) {
+	// Several callers reach here without having logged anything (the cleanup
+	// sweep and the session-claim loser among them), so a failed session left
+	// no trace at all under its own id. One line, correlated to the session and
+	// the run, is what makes a production failure findable afterwards.
+	middleware.LoggerWithAgentSessionAndWorkflowRun(ctx, sessionID, workflowRunID).
+		Error("agent dispatch infrastructure failed", "reason", reason, "detail", message, "task_id", taskID, "step_id", stepID)
 	if s.dispatchQ != nil {
 		run, runErr := s.dispatchQ.GetWorkflowRunByRunID(ctx, workflowRunID)
 		if runErr != nil && !stdErrors.Is(runErr, pgx.ErrNoRows) {
@@ -1232,7 +1261,7 @@ func (s *AgentService) markAgentDispatchInfrastructureFailed(ctx context.Context
 	}
 	if s.dispatchQ != nil && strings.TrimSpace(sessionID) != "" {
 		s.cancelAgentRuntimeWatchdogForRun(sessionID, workflowRunID)
-		session, updated, err := s.transitionAgentSessionTerminalStatus(ctx, sessionID, "failed", pgtype.Int8{Int64: workflowRunID, Valid: true})
+		session, updated, err := s.transitionAgentSessionTerminalStatusWithReason(ctx, sessionID, "failed", pgtype.Int8{Int64: workflowRunID, Valid: true}, reason)
 		if err == nil && updated {
 			s.observeAgentSessionCompletion("failed")
 			s.archiveAgentTranscript(ctx, session, "failed")

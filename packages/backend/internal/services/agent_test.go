@@ -1074,6 +1074,7 @@ type mockAgentDispatchQuerier struct {
 	getAgentSessionForFlowProjectionFn    func(ctx context.Context, arg db.GetAgentSessionForFlowProjectionParams) (db.AgentSession, error)
 	updateAgentSessionTerminalForFlowFn   func(ctx context.Context, arg db.UpdateAgentSessionTerminalStatusForFlowParams) (db.AgentSession, error)
 	updateAgentSessionTimedOutFn          func(ctx context.Context, arg db.UpdateAgentSessionTimedOutParams) (db.AgentSession, error)
+	recordAgentSessionFailureReasonFn     func(ctx context.Context, sessionID, reason string) (db.AgentSession, bool, error)
 }
 
 func (m *mockAgentDispatchQuerier) UpsertAgentWorkflowDefinition(ctx context.Context, repositoryID int64) (db.WorkflowDefinition, error) {
@@ -1340,6 +1341,16 @@ func (m *mockAgentDispatchQuerier) UpdateAgentSessionTimedOut(ctx context.Contex
 	s.Status = "timed_out"
 	s.FinishedAt = arg.FinishedAt
 	return s, nil
+}
+
+func (m *mockAgentDispatchQuerier) RecordAgentSessionFailureReason(ctx context.Context, sessionID, reason string) (db.AgentSession, bool, error) {
+	if m.recordAgentSessionFailureReasonFn != nil {
+		return m.recordAgentSessionFailureReasonFn(ctx, sessionID, reason)
+	}
+	s := sampleDBAgentSession(sessionID, 101, 1, "default")
+	s.Status = "failed"
+	s.Metadata = []byte(`{"failure_reason":` + strconv.Quote(reason) + `}`)
+	return s, true, nil
 }
 
 // mockAgentLogStore implements AgentLogStore for unit tests.

@@ -184,6 +184,20 @@ func (s *AgentService) reapExpiredSession(ctx context.Context, session db.AgentS
 }
 
 func (s *AgentService) transitionAgentSessionTerminalStatus(ctx context.Context, sessionID, status string, expectedWorkflowRunID pgtype.Int8) (db.AgentSession, bool, error) {
+	return s.transitionAgentSessionTerminalStatusWithReason(ctx, sessionID, status, expectedWorkflowRunID, "")
+}
+
+// transitionAgentSessionTerminalStatusWithReason also records the one sentence
+// the session's owner sees.
+//
+// The session row's only carrier for that sentence is its metadata, which the
+// API returns verbatim, so the reason is persisted there (one bounded key) and
+// repeated on the status event. Recording happens after the status write and
+// only when the write won, so a session another run already finished keeps its
+// own reason. A failure to record is logged and swallowed: the session is
+// already terminal, and losing the explanation must not strand the row in
+// 'active'.
+func (s *AgentService) transitionAgentSessionTerminalStatusWithReason(ctx context.Context, sessionID, status string, expectedWorkflowRunID pgtype.Int8, reason string) (db.AgentSession, bool, error) {
 	if s.dispatchQ == nil {
 		return db.AgentSession{}, false, nil
 	}
@@ -201,6 +215,16 @@ func (s *AgentService) transitionAgentSessionTerminalStatus(ctx context.Context,
 		return db.AgentSession{}, false, err
 	}
 	meterSandboxUsage(ctx, s.dispatchQ, session.UserID, "agent", sessionID, false)
+	if strings.TrimSpace(reason) != "" {
+		recorded, ok, err := s.dispatchQ.RecordAgentSessionFailureReason(ctx, sessionID, reason)
+		switch {
+		case err != nil:
+			middleware.LoggerWithAgentSession(ctx, sessionID).
+				Error("failed to record agent session failure reason", "error", err)
+		case ok:
+			session = recorded
+		}
+	}
 	s.notifyAgentSessionStatus(ctx, session)
 	return session, true, nil
 }
@@ -214,6 +238,7 @@ func (s *AgentService) notifyAgentSessionStatus(ctx context.Context, session db.
 		SessionID: session.ID,
 		Action:    "status",
 		Status:    session.Status,
+		Reason:    agentSessionFailureReasonFromMetadata(session.Metadata),
 	})
 
 	safeSessionID := strings.ReplaceAll(session.ID, "-", "")
