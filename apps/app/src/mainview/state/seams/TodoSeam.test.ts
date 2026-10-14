@@ -7,7 +7,7 @@ import { CardSchema } from "@smthrs/rpc/Cards"
 import { createAppStore } from "../AppStore"
 import { memoryStorage, settle, waitFor } from "../TestFixtures"
 import type { SeamContext } from "./SeamContext"
-import { createTodoSeam, type DraftEntry, type TodoEntry, type TodoReceipt, type TodoTopics, type TodoSeamOptions } from "./TodoSeam"
+import { createTodoSeam, todoRequestRefusal, type DraftEntry, type TodoEntry, type TodoReceipt, type TodoTopics, type TodoSeamOptions } from "./TodoSeam"
 import { IssueDraftRefused } from "./IssueTodoDraft"
 import type { TodoCard } from "@smthrs/rpc/TodoCard"
 import { fixtures } from "../../../../../../packages/rpc/test/fixtures/Todo"
@@ -1758,5 +1758,20 @@ describe("TodoSeam — a refused Commit names what refused it", () => {
       await waitFor(() => h.todo().payload.requests.some(request => request.state === "failed"))
       expect(h.todo().payload.requests.at(-1)?.error).toBe("TODOs are not a door on this Smithers host (PATCH /api/todos/12 answered 404).")
     } finally { h.close() }
+  })
+})
+
+test("a door that is not a TODO route does not claim TODOs are missing", () => {
+  expect(todoRequestRefusal("POST", "/api/terminals/terminal-A/commands", 404, undefined)).toEqual({
+    code: "todo_route_absent",
+    sentence: "This Smithers host does not serve that door (POST /api/terminals/terminal-A/commands answered 404)."
+  })
+  expect(todoRequestRefusal("POST", "/api/branches/main", 403, "feature not available")).toEqual({
+    code: "feature_not_available",
+    sentence: "This Smithers host does not serve that door (POST /api/branches/main answered 403)."
+  })
+  expect(todoRequestRefusal("POST", "/api/todos/12/answer", 404, undefined)).toEqual({
+    code: "todo_route_absent",
+    sentence: "TODOs are not a door on this Smithers host (POST /api/todos/12/answer answered 404)."
   })
 })

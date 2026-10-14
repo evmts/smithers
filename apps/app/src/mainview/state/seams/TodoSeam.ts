@@ -75,12 +75,28 @@ export const todoRequestRefusal = (
   stated: string | undefined
 ): { readonly code: "todo_route_absent" | "feature_not_available" | "todo_refused"; readonly sentence: string } => {
   const wire = `${method} ${route} answered ${status}`
+  /*
+   * Three of these requests do not go to the TODO routes at all — a terminal's
+   * append door and a branch's foreign-change doors — so the sentence names
+   * the family the route belongs to rather than claiming TODOs every time.
+   */
+  const family = route.startsWith(TODOS_PATH) ? "TODOs" : undefined
   if (isFeatureGateRefusal(status, stated)) {
-    return { code: "feature_not_available", sentence: `TODOs are not available on this Smithers host (${wire}).` }
+    return {
+      code: "feature_not_available",
+      sentence: family === undefined
+        ? `This Smithers host does not serve that door (${wire}).`
+        : `${family} are not available on this Smithers host (${wire}).`
+    }
   }
   if (stated !== undefined) return { code: "todo_refused", sentence: stated }
   if (status === 404) {
-    return { code: "todo_route_absent", sentence: `TODOs are not a door on this Smithers host (${wire}).` }
+    return {
+      code: "todo_route_absent",
+      sentence: family === undefined
+        ? `This Smithers host does not serve that door (${wire}).`
+        : `${family} are not a door on this Smithers host (${wire}).`
+    }
   }
   return {
     code: "todo_refused",
