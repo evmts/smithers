@@ -16,7 +16,7 @@ import { ContextPreflightInputSchema } from "@smthrs/rpc/ContextPreflight"
 import type { ContextPreflightFrame, ContextPreflightInput, ContextPreflightResult } from "@smthrs/rpc/ContextPreflight"
 import type { DocsPage } from "@smthrs/rpc/DocsPages"
 import type { AgentTurnFrame, FetchLike, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
-import { Effect } from "effect"
+import { Duration, Effect } from "effect"
 import { runContextPreflight } from "./ContextPreflight.ts"
 import { createHostDiagnostics } from "./HostDiagnostics.ts"
 import type { HostDiagnostics } from "./HostDiagnostics.ts"
@@ -62,8 +62,54 @@ export interface DurableChatGrant {
 
 type CommitReply = Extract<AgentTurnJournalReply, { readonly status: "committed" | "duplicate" }>
 
+/**
+ * How long one journal callback attempt may go unanswered.
+ *
+ * A hosted guest reaches its journal through the sandbox's egress proxy, and
+ * nothing below this host bounds that call: `fetch` has no default deadline.
+ * Production turn 2d851bdd attempted its first commit 1 ms after its first
+ * provider event, and the guest's own records show that one attempt still
+ * `pending` half an hour later with no socket for it in the guest's table at
+ * all; turn 7e5fc00f spent 1 h 19 m there and committed nothing. An unanswered
+ * callback is a transport fault whatever its cause, and a fault has to end the
+ * attempt — an unbounded one spends the person's whole turn in silence and
+ * produces neither output nor a receipt.
+ *
+ * A healthy callback is a loopback-shaped round trip: the fastest production
+ * turns commit 300–500 batches in 30–60 s, and provider-start answered in
+ * 424 ms under the worst conditions this investigation saw. 15 s is therefore
+ * two orders of magnitude of headroom, and an attempt that exceeds it is
+ * retried once on a new request before the turn fails.
+ *
+ * @category constants
+ * @since 1.0.0-rc.1
+ */
+export const CHAT_CALLBACK_DEADLINE_MS = 15_000
+
 const unreachable = (step: ProducerUnreachable["step"]) => (): ProducerUnreachable =>
   new ProducerUnreachable({ step, message: "chat producer request failed" })
+
+/**
+ * Bounds one callback attempt. The timeout interrupts the attempt, which
+ * aborts its `AbortSignal` and so closes the request's socket: the retry asks
+ * for a connection of its own instead of queueing behind a dead one.
+ */
+const bounded = <A, E, R>(
+  attempt: Effect.Effect<A, E, R>,
+  step: ProducerUnreachable["step"],
+  deadlineMillis: number,
+  onTimeout: () => void
+): Effect.Effect<A, E | ProducerUnreachable, R> =>
+  Effect.timeoutOrElse(attempt, {
+    duration: Duration.millis(deadlineMillis),
+    orElse: () =>
+      Effect.suspend(() => {
+        onTimeout()
+        return Effect.fail(
+          new ProducerUnreachable({ step, message: `chat producer ${step} did not answer within its deadline` })
+        )
+      })
+  })
 
 const sha256Hex = async (value: string): Promise<string> => {
   const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))
@@ -98,17 +144,20 @@ export class DurableChatProducer {
   private readonly grant: DurableChatGrant
   private readonly fetchImpl: FetchLike
   private readonly diagnostics: HostDiagnostics
+  private readonly deadlineMillis: number
 
   constructor(
     callbackBaseUrl: string,
     grant: DurableChatGrant,
     fetchImpl: FetchLike = fetch.bind(globalThis),
-    diagnostics: HostDiagnostics = createHostDiagnostics({ turnId: grant.turnId })
+    diagnostics: HostDiagnostics = createHostDiagnostics({ turnId: grant.turnId }),
+    deadlineMillis: number = CHAT_CALLBACK_DEADLINE_MS
   ) {
     this.callbackBaseUrl = callbackBaseUrl
     this.grant = grant
     this.fetchImpl = fetchImpl
     this.diagnostics = diagnostics
+    this.deadlineMillis = deadlineMillis
     this.cursor = AgentTurnCursorSchema.parse(grant.cursor)
   }
 
@@ -122,6 +171,7 @@ export class DurableChatProducer {
       // only that something opened a tunnel.
       const settle = this.diagnostics.begin("chat_callback", { step: "provider_started" })
       let status = 0
+      let timedOut = false
       return Effect.tryPromise({
         try: (signal) =>
           this.fetchImpl(url, {
@@ -136,7 +186,6 @@ export class DurableChatProducer {
             status = response.status
           })
         ),
-        Effect.ensuring(Effect.sync(() => settle({ status }))),
         Effect.flatMap((response) =>
           response.ok ? Effect.void : Effect.fail(
             new ProviderStartRefused({
@@ -144,7 +193,14 @@ export class DurableChatProducer {
               message: `chat provider start refused (${response.status})`
             })
           )
-        )
+        ),
+        (attempt) =>
+          bounded(attempt, "provider_started", this.deadlineMillis, () => {
+            timedOut = true
+          }),
+        // The record carries why the attempt ended, so a reader of the guest's
+        // own log tells a bound that fired from a status the journal answered.
+        Effect.ensuring(Effect.sync(() => settle({ status, ...(timedOut ? { timedOut: true } : {}) })))
       )
     })
   }
@@ -230,6 +286,7 @@ export class DurableChatProducer {
     const invoke = Effect.suspend(() => {
       const settle = this.diagnostics.begin("chat_callback", { step: "commit", batch: expected.batch + 1 })
       let status = 0
+      let timedOut = false
       return Effect.tryPromise({
         try: (signal) =>
           this.fetchImpl(new URL("/internal/chat/commit", this.callbackBaseUrl), {
@@ -245,11 +302,23 @@ export class DurableChatProducer {
             status = response.status
           })
         ),
-        Effect.ensuring(Effect.sync(() => settle({ status }))),
-        Effect.flatMap(commitReply)
+        Effect.flatMap(commitReply),
+        // The deadline covers the receipt as well as the response: a journal
+        // that sends headers and then stops wedges a turn exactly as a journal
+        // that never answers does.
+        (attempt) =>
+          bounded(attempt, "commit", this.deadlineMillis, () => {
+            timedOut = true
+          }),
+        Effect.ensuring(Effect.sync(() => settle({ status, ...(timedOut ? { timedOut: true } : {}) })))
       )
     })
     return invoke.pipe(
+      // One retry, on the identical expected cursor and body: a journal that
+      // already took this batch answers `duplicate`, so a bound that fired on
+      // an answer in flight cannot write it twice. Past the retry the turn
+      // fails with a named transport failure, which the host boundary turns
+      // into a terminal receipt — the person sees a failure instead of silence.
       Effect.catch(() => invoke),
       Effect.flatMap((reply) =>
         Effect.tryPromise({

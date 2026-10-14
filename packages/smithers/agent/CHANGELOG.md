@@ -4,6 +4,20 @@
 
 ### Fixed
 
+- A journal callback a hosted chat turn cannot get an answer to now ends that
+  turn instead of holding it open forever (#3812). `fetch` has no deadline of
+  its own and nothing below the host supplied one, so an unanswered commit
+  spent the person's whole turn in silence: production turn 2d851bdd sat on one
+  attempt for half an hour and turn 7e5fc00f for 1 h 19 m, both producing
+  neither output nor a receipt. Each attempt now has 15 s — two orders of
+  magnitude over the 424 ms the slowest healthy callback this investigation saw
+  — and the attempt is retried once on a request of its own before the turn
+  fails as `ProducerUnreachable`, which the host boundary turns into a terminal
+  receipt. The bound closes the attempt's socket rather than leaking it, and
+  the guest's own record names the bound that fired, so an operator does not
+  have to infer it. Removing the buffer below or this bound re-creates the
+  stall; `test/ProducerTransport.test.ts` holds both against a real journal
+  over real requests.
 - A hosted chat turn no longer deadlocks against its own journal (#3812).
   Writing a frame stopped reading the provider's response, and a commit issued
   in that state never answered: production turn 2d851bdd attempted its first

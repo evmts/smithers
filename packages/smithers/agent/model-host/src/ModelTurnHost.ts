@@ -329,9 +329,11 @@ export const runModelTurn = <E>(
   // and nothing bounds a turn's event count to a figure this host could pick:
   // `fastModelFallback` strips the output token limit for a route that does
   // not support one, so that provider answers at its own maximum, and
-  // `SMITHERS_CHAT_MAX_TOKENS` admits a million. What the queue holds is
-  // bounded by the response the provider actually sends, and a journal that
-  // answers keeps it near empty.
+  // `SMITHERS_CHAT_MAX_TOKENS` admits a million. A journal that answers keeps
+  // the queue near empty; what bounds its growth when one does not is the
+  // callback deadline in `DurableChatProducer`, which ends an unanswered
+  // attempt in seconds instead of accumulating a whole turn's response behind
+  // it. The capacity and that deadline are one repair: neither holds alone.
   const buffered = Stream.buffer(model.stream(providerRequest(turn, options)), { capacity: "unbounded" })
   return Stream.runForEach(buffered, observe).pipe(
     Effect.flatMap(() =>

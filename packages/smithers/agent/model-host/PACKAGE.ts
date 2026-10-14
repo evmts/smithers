@@ -120,9 +120,9 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "turnRequest or streamRequest casting a body to StartAgentTurnRequest without checking message roles, tool names or parameter objects.",
         "appendWireMessage mapping an unknown role or item type to a system or tool message.",
-        "Unbounded frame buffering on the stream path that lets one request hold the whole model output in memory."
+        "Frame buffering nothing bounds in bytes or in time. The stream path's accumulator is bounded by MAX_STREAM_BYTES. `runModelTurn`'s drain buffer is deliberately unbounded in capacity — a finite one suspends the provider and re-creates the journal stall (#3812) — so what bounds its growth is the journal callback deadline in DurableChatProducer: a consumer that cannot finish ends the turn in seconds. Either bound removed is the finding."
       ],
-      paths: ["src/HostServer.ts", "src/ModelTurnHost.ts"]
+      paths: ["src/HostServer.ts", "src/ModelTurnHost.ts", "src/DurableChatProducer.ts"]
     }
   ]
 })
