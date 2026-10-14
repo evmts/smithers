@@ -2472,7 +2472,8 @@ const FIXTURES: Record<
         title: "Bounded reads",
         subtitle: "Librarian",
         actions: [{ flow: "wiki.open", args: "wiki/bounded-reads.md", label: "Open", role: "open" }]
-      }]
+      }],
+      refusal: "The wiki index could not be read (503)."
     }
   },
   "wiki-links": {

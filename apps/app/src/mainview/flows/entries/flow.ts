@@ -93,6 +93,22 @@ export const flowVersionFlows = (actions: CommandActions): ReadonlyArray<FlowEnt
       handler: async ({ operation, repo, sourceCard }) => {
         if (operation === "workspace" || repo !== undefined || sourceCard !== undefined) return actions.listWorkspaceWorkflows(repo, sourceCard)
         if (actions.bootstrap?.capabilities.includes("install")) return actions.listRepositoryFlows()
+        /*
+         * A Cloud host's flows are its own workspace catalog — the door
+         * `/flow.new` writes to and `/flows <repo>` already reads — never the
+         * seeded preview's world. Off the design FIXTURE that world holds no
+         * flow versions at all, so the bare `/flows` answered "0 flows" about
+         * a repository whose catalog nothing had asked, and the person's
+         * screen stayed unchanged: no card, no empty state, no refusal. One
+         * condition (`install`) standing in for the door, the same shape as
+         * [#3879](https://github.com/smithersai/smithers/issues/3879) and
+         * [#3891](https://github.com/smithersai/smithers/issues/3891).
+         */
+        if (!actions.design.enabled) {
+          return actions.bootstrap?.capabilities.includes("cloud") === true
+            ? actions.listWorkspaceWorkflows(undefined, undefined)
+            : flowsUnavailable
+        }
         const cards = await actions.flowCards()
         if (cards === undefined) return flowsUnavailable
         for (const card of cards) await actions.presentFlow(card.name, flowTitle(card.name))

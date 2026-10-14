@@ -100,7 +100,9 @@ export const SearchResultsCardBody = ({ card, onRunCommand }: { readonly card: S
       <div className="world-card-row">
         <span className="world-card-path" data-testid="search-results-query">
           /{payload.flow}
-          {payload.args === undefined ? "" : ` ${payload.args}`} · {payload.items.length} result{payload.items.length === 1 ? "" : "s"}
+          {payload.args === undefined ? "" : ` ${payload.args}`}
+          {/* A run that refused counted nothing: its sentence is the answer, and "0 results" would restate a read no door performed. */}
+          {payload.refusal === undefined ? ` · ${payload.items.length} result${payload.items.length === 1 ? "" : "s"}` : ""}
         </span>
         <Button
           variant="ghost"
@@ -111,7 +113,9 @@ export const SearchResultsCardBody = ({ card, onRunCommand }: { readonly card: S
           Search again
         </Button>
       </div>
-      {groups.length === 0 ?
+      {payload.refusal !== undefined ?
+        <p className="world-card-empty" data-testid="search-results-refusal">{payload.refusal}</p> :
+        groups.length === 0 ?
         <p className="world-card-empty" data-testid="search-results-empty">No results for {payload.query === "" ? "an empty query" : payload.query}.</p> :
         groups.map((group) => (
           <section key={group.kind} className="search-results-group" data-kind={group.kind}>

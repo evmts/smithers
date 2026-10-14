@@ -2157,7 +2157,17 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       query: z.string(),
       flow: z.string(),
       args: z.string().optional(),
-      items: z.array(SearchItemSchema)
+      items: z.array(SearchItemSchema),
+      /*
+       * The sentence the run's own door answered with, when it answered no
+       * rows because it refused — a tracker that would not list, a target the
+       * seam could not resolve, a mode whose index this wire does not carry.
+       * The card states it in place of "No results", which is a claim about
+       * rows a door listed. Present means `items` is this run's emptiness,
+       * not an earlier run's answer left standing
+       * ([#3891](https://github.com/smithersai/smithers/issues/3891)).
+       */
+      refusal: z.string().optional()
     })
   }),
   /*

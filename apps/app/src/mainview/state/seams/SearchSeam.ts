@@ -460,21 +460,61 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
 
   const search: SearchSeam["search"] = async (flow, mode, args, origin) => {
     const current = captureCloudOwner(ctx, false)
-    if (!current()) return SIGN_OUT_REFUSAL
     const actor = ctx.actor()
     // Whose screen this search is for: the person's own, or the author's whose
     // screen a hosted turn asked. Only the agent loop's own read paints none.
     const renders = actor !== "smithers" || origin === "screen"
     const request = Symbol()
     if (renders) latest.set(flow, request)
-    const live = await liveIndexes(mode, args)
-    if (!current()) return SIGN_OUT_REFUSAL
-    if (typeof live === "string") return live
-    // The flow's query reads in its own mode's grammar.
+    // The flow's query reads in its own mode's grammar; the title is the query the person typed either way.
     const parsed = parseQuery(`${prefixRow(mode).prefix}${args.query}`)
     const query = parsed.query
+    /**
+     * The one card this flow owns, written by EVERY run the person sees.
+     * A run that refused carries the door's own sentence and no rows:
+     * [#3891](https://github.com/smithersai/smithers/issues/3891) left the
+     * previous run's rows and count standing whenever a run answered a
+     * sentence instead, so on production a stale `0 results` read as this
+     * run's answer and "Search again" could not clear it.
+     */
+    const present = (items: ReadonlyArray<SearchItem>, refusal?: string): void => {
+      const id = `search-${flow}`
+      const existing = ctx.store.collections.cards.get(id)
+      const card: Card = {
+        id,
+        kind: "search-results",
+        title: `Search · ${prefixRow(mode).prefix}${query === "" ? prefixRow(mode).searches : query}`,
+        status: "active",
+        createdAt: existing?.createdAt ?? now(),
+        ordinal: ctx.nextOrdinal(),
+        payload: { query: args.query, flow, ...(args.query === "" ? {} : { args: args.query }), items: [...items], ...(refusal === undefined ? {} : { refusal }) }
+      }
+      ctx.dispatch({ type: "card.upsert", actor, card })
+    }
+    /**
+     * An honest refusal paints NO new card — the sentence is the answer, as
+     * §6 and `SeamContext` already require. What it must not do is leave an
+     * EARLIER run's rows and count standing as this run's answer: on
+     * production a stale `0 results` read as the refusal's own count and
+     * "Search again" could not clear it
+     * ([#3891](https://github.com/smithersai/smithers/issues/3891)). So a
+     * refusal restates the card this flow already owns, and opens none.
+     *
+     * A run whose owner signed out or changed account writes nothing at all:
+     * that screen is no longer the one that asked, and this module's rule is
+     * that sign-out and account changes RETIRE pending work (`captureCloudOwner`).
+     */
+    const refuse = (sentence: string): string => {
+      const standing = ctx.store.collections.cards.get(`search-${flow}`) !== undefined
+      if (standing && renders && current() && latest.get(flow) === request) present([], sentence)
+      return sentence
+    }
+    if (!current()) return SIGN_OUT_REFUSAL
+    const live = await liveIndexes(mode, args)
+    if (!current()) return SIGN_OUT_REFUSAL
+    if (typeof live === "string") return refuse(live)
     const base = itemsOf(mode, parsed, live)
-    if (typeof base === "string") return base
+    if (typeof base === "string") return refuse(base)
     const { entries, state } = deps.registry()
     const snapshot = state()
     const kinds = args.kinds === undefined ? undefined : new Set(args.kinds)
@@ -484,18 +524,7 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
     const items = rank(pool, query).flatMap((group) => group.items.map((row) => row.item)).slice(0, limit).map((fact) => withActions(registered, fact))
     const value = itemsValue(flow, args.query, items)
     if (!renders || latest.get(flow) !== request) return { value }
-    const id = `search-${flow}`
-    const existing = ctx.store.collections.cards.get(id)
-    const card: Card = {
-      id,
-      kind: "search-results",
-      title: `Search · ${prefixRow(mode).prefix}${query === "" ? prefixRow(mode).searches : query}`,
-      status: "active",
-      createdAt: existing?.createdAt ?? now(),
-      ordinal: ctx.nextOrdinal(),
-      payload: { query: args.query, flow, ...(args.query === "" ? {} : { args: args.query }), items: [...items] }
-    }
-    ctx.dispatch({ type: "card.upsert", actor, card })
+    present(items)
     return { value }
   }
 
