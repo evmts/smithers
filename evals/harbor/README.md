@@ -300,8 +300,28 @@ is Harbor's docker egress control: its transparent proxy reads the SNI and
 cuts the handshake to a host off the allowlist. A connection,
 a missing curl, a timeout or a missing line reads `sealed: false` with the
 `reason`. The verdict and every attempt are in `agent/codex-account.json`
-(`sealed`, `seal`) and in `result.json` under `agent_result.metadata`. Do not
-score a `sealed: false` trial.
+(`sealed`, `seal`) and in `result.json` under `agent_result.metadata`.
+
+**When the seal applies.** The seal matters only on a task that denies the
+agent network. Do not score a `sealed: false` trial of such a task. On a
+public task, `sealed: false` is the suite's protocol: both arms' containers
+reach the internet, so the arms stay equal. Both runners resolve the agent's
+network the same way: `[agent] network_mode`, else `[environment]
+network_mode`, else the legacy `allow_internet` (absent: public).
+
+| Suite                   | Agent network                                                     | Seal required |
+| ----------------------- | ----------------------------------------------------------------- | ------------- |
+| Terminal-Bench 4.0      | public: no `network_mode` declared                                | no            |
+| DeepSWE 1.1 (Pier)      | `[agent] network_mode = "no-network"`                             | yes           |
+| SWE-bench Pro V2        | `[environment]` public for setup, `[agent]` `no-network`          | yes           |
+
+`report.py` applies this rule. It reads `task.toml` at the `task.path` each
+trial's config records, and it refuses an unsealed stock trial when that
+task denies the agent network, or when its `task.toml` cannot be read. Under
+Harbor, the stock arm on a network-denied task needs its model route:
+`--allow-agent-host chatgpt.com --allow-agent-host auth.openai.com`. The
+report accepts those two hosts as extra agent hosts on the stock arm and
+refuses any other host. Each report states the agent network of its tasks.
 
 Rootless Docker needs nothing extra: the internal network and the proxy live
 in the daemon's own network namespace. Start the runner inside the daemon's

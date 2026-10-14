@@ -20,14 +20,20 @@ A run is publishable only when all of these hold:
 - At least `--min-tasks` tasks are paired. A task either arm could not place
   (`PlueUnplaceable`) leaves both arms and is listed.
 - Every scored trial reports input, cached and output tokens.
-- Every scored trial is sealed: no extra allowed hosts or mounts, at least one
-  command exited 0 in the task container, and for the Smithers arm the
-  host-call audit (`audit_host_calls.py`) is `clean`.
+- Every scored trial is sealed: no mounts, no extra allowed hosts beyond the
+  stock arm's model route (`seal.ALLOWED_HOSTS`), at least one command
+  exited 0 in the task container, and for the Smithers arm the host-call
+  audit (`audit_host_calls.py`) is `clean`. On a task that denies the agent
+  network (`no-network` or `allowlist`), or whose network cannot be read,
+  the stock arm's denied-connect seal (`seal.py`) must also hold. On a public
+  task such as Terminal-Bench 4.0 both arms' containers reach the internet by
+  the suite's protocol, and the seal is not required.
 
 The pass rate is the mean reward over every scored trial of the paired tasks.
 Attempts per task are equal, so it is also the mean of the per-task means.
-The report reads only the two job directories: running it twice over the
-same files writes the same bytes.
+The report reads the two job directories and each trial's `task.toml` at
+the task path its config records: running it twice over the same files writes
+the same bytes.
 
 Beside the scores, and in a refused report too, `comparison` says where each
 arm's time and tokens went, per paired task and overall: model calls, seconds
@@ -40,6 +46,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tomllib
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -50,6 +57,7 @@ sys.path.insert(0, str(HERE))
 import audit_host_calls  # noqa: E402
 import calls  # noqa: E402
 import outcome  # noqa: E402
+from seal import ALLOWED_HOSTS as MODEL_ROUTE  # noqa: E402
 
 MIN_TASKS = 50
 ARMS = ("smithers", "baseline")
@@ -91,13 +99,40 @@ def overrides(config: dict) -> list[str]:
     return found
 
 
-def seal(trial: Path, config: dict, result: dict, smithers: bool) -> list[str]:
+def agent_network(config: dict) -> str:
+    """The network a trial's task gives its agent: `public`, `no-network`,
+    `allowlist`, or `unknown` when the task's `task.toml` cannot be read.
+
+    Harbor 0.23.0 and Pier 0.3.1 resolve it alike: `[agent] network_mode`,
+    else `[environment] network_mode`, else the legacy `[environment]
+    allow_internet` (absent: public). Both record the task directory as
+    `task.path` in the trial's config; a registry or git task has no local
+    path here. A Harbor task with steps denies network when any step does."""
+    task = config.get("task") or {}
+    if not task.get("path") or task.get("git_url") or task.get("name"):
+        return "unknown"
+    try:
+        document = tomllib.loads((Path(task["path"]) / "task.toml").read_text())
+    except (OSError, ValueError):
+        return "unknown"
+    environment = document.get("environment") or {}
+    baseline = environment.get("network_mode") or ("no-network" if environment.get("allow_internet") is False else "public")
+    agent = (document.get("agent") or {}).get("network_mode") or baseline
+    phases = [(step.get("agent") or {}).get("network_mode") or agent for step in document.get("steps") or []] or [agent]
+    denied = [str(mode) for mode in phases if mode != "public"]
+    return denied[0] if denied else "public"
+
+
+def seal(trial: Path, config: dict, result: dict, smithers: bool, network: str) -> list[str]:
     """Why a trial is not sealed to its task container; empty when it is."""
     agent, environment = config.get("agent") or {}, config.get("environment") or {}
     broken = []
     for where, hosts in (("agent", agent.get("extra_allowed_hosts")), ("environment", environment.get("extra_allowed_hosts"))):
-        if hosts:
-            broken.append(f"{where} extra_allowed_hosts {hosts}")
+        # The stock CLI runs in the container and must reach its model; the
+        # Smithers arm calls its model from the host.
+        extra = [host for host in hosts or [] if smithers or where != "agent" or host not in MODEL_ROUTE]
+        if extra:
+            broken.append(f"{where} extra_allowed_hosts {extra}")
     if environment.get("mounts"):
         broken.append(f"environment mounts {environment['mounts']}")
     reached = ((result.get("agent_result") or {}).get("metadata") or {}).get("container_commands")
@@ -115,6 +150,16 @@ def seal(trial: Path, config: dict, result: dict, smithers: bool) -> list[str]:
             why = "" if not unknown else (f" (target unknown for {unknown} call{'' if unknown == 1 else 's'}: "
                                           f"the journal truncated {'its' if unknown == 1 else 'their'} input)")
             broken.append(f"host-call audit {audit['verdict']}{why}")
+    elif network != "public":
+        metadata = (result.get("agent_result") or {}).get("metadata") or {}
+        record = _load(trial / "agent" / "codex-account.json")
+        sealed = metadata.get("sealed", record.get("sealed"))
+        if sealed is not True:
+            proof = metadata.get("seal") or record.get("seal") or {}
+            why = proof.get("reason") or "no seal verdict"
+            policy = ("the task's agent network is unknown (no readable task.toml at its recorded path)"
+                      if network == "unknown" else f"the task denies the agent network ({network})")
+            broken.append(f"{policy} and the stock arm's seal does not hold: {why}")
     return broken
 
 
@@ -139,6 +184,7 @@ def read_trials(job: Path, smithers: bool) -> list[dict]:
         kind = outcome.classify(result)
         agent_result = result.get("agent_result") or {}
         tokens = {name: agent_result.get(name) for name in TOKENS}
+        network = agent_network(config)
         rows.append({
             "trial": trial.name,
             "task": result.get("task_name") or audit_host_calls.task_name(trial),
@@ -152,7 +198,8 @@ def read_trials(job: Path, smithers: bool) -> list[dict]:
                          "model": (config.get("agent") or {}).get("model_name"),
                          "kwargs": (config.get("agent") or {}).get("kwargs") or {},
                          "environment": environment_identity(config.get("environment") or {})},
-            "seal": seal(trial, config, result, smithers) if outcome.is_healthy(kind) else [],
+            "network": network,
+            "seal": seal(trial, config, result, smithers, network) if outcome.is_healthy(kind) else [],
             "dir": trial,
             "minutes": agent_minutes(result),
             "startedAt": result.get("started_at"),
@@ -312,6 +359,14 @@ def build(smithers_job: Path, baseline_job: Path, min_tasks: int = MIN_TASKS) ->
             "harnessRevisions": sorted({r["harnessRevision"] for r in rows if r["harnessRevision"]}),
         }
     stamps = sorted(s for rows in trials.values() for r in rows for s in (r["startedAt"], r["finishedAt"]) if s)
+    # The agent network of every task either arm ran, as its task.toml declares it.
+    policies: dict[str, set[str]] = {}
+    for rows in trials.values():
+        for row in rows:
+            policies.setdefault(row["task"], set()).add(row["network"])
+    network: dict[str, int] = {}
+    for modes in policies.values():
+        network["/".join(sorted(modes))] = network.get("/".join(sorted(modes)), 0) + 1
     return {
         "publishable": not refusals,
         "refusals": refusals,
@@ -321,6 +376,7 @@ def build(smithers_job: Path, baseline_job: Path, min_tasks: int = MIN_TASKS) ->
         "results": results if not refusals else None,
         "comparison": compare(by_task, paired),
         "unplaceable": unplaceable,
+        "network": dict(sorted(network.items())),
         "window": {"from": stamps[0], "to": stamps[-1]} if stamps else None,
         "tasks": [
             {"task": task, **{arm: {"rewards": [r["reward"] for r in by_task[task][arm]],
@@ -490,9 +546,15 @@ def render_comparison(report: dict) -> list[str]:
     return lines + [""]
 
 
+def _network(network: dict[str, int]) -> str:
+    """`no-network (51 tasks), public (2 tasks)`."""
+    return ", ".join(f"{mode} ({count} task{'' if count == 1 else 's'})" for mode, count in network.items()) or "no tasks"
+
+
 def render(report: dict) -> str:
     arms = report["arms"]
-    lines = [f"# {arms['smithers']['dataset']}: Smithers vs {arms['baseline']['agent']}", ""]
+    lines = [f"# {arms['smithers']['dataset']}: Smithers vs {arms['baseline']['agent']}", "",
+             f"Agent network: {_network(report['network'])}.", ""]
     if not report["publishable"]:
         lines += ["**Not publishable.**", ""] + [f"- {reason}" for reason in report["refusals"]] + [""]
         return "\n".join(lines + render_comparison(report))
@@ -511,8 +573,10 @@ def render(report: dict) -> str:
               f"revisions {', '.join(report['results']['smithers']['harnessRevisions']) or 'unrecorded'}.",
               f"- Baseline `{arms['baseline']['agent']}` {json.dumps(arms['baseline']['kwargs'], sort_keys=True)}.",
               f"- Ran {window.get('from')} to {window.get('to')}.",
-              "- Every scored trial ran its commands in the task container with no extra allowed hosts or mounts; "
-              "the Smithers arm's host-call audit is clean for every trial.",
+              "- Every scored trial ran its commands in the task container with no mounts and no extra allowed host "
+              "but the stock arm's model route; the Smithers arm's host-call audit is clean for every trial.",
+              "- On a task that denies the agent network the stock arm's denied-connect seal held; on a public task "
+              "both arms' containers reach the internet, as the suite allows.",
               "- Pass rate is the mean verifier reward over every scored trial. Tokens are each agent's own count.",
               "", "## Limitations", ""]
     if report["unplaceable"]:

@@ -28,6 +28,14 @@ SMITHERS = "evals.harbor.smithers_agent:SmithersAgent"
 BASELINE = "evals.harbor.codex_pool:PooledCodex"
 MODEL = "openai/gpt-6-sol"
 ENVIRONMENT = "evals.harbor.plue_env:PlueEnvironment"
+# The agent phase's network as each suite's task.toml declares it.
+TB4 = "[agent]\ntimeout_sec = 900.0\n"  # nothing declared: public
+DEEPSWE = '[agent]\nnetwork_mode = "no-network"\n'
+SWEPRO = '[agent]\nnetwork_mode = "no-network"\n\n[environment]\nnetwork_mode = "public"\n'
+LEGACY = "[environment]\nallow_internet = false\n"
+ALLOWLIST = '[agent]\nnetwork_mode = "allowlist"\nallowed_hosts = ["pypi.org"]\n'
+MODEL_ROUTE = ["chatgpt.com", "auth.openai.com"]
+OPENED = "denied https://github.com/ connected (http 200)"
 DDL = """CREATE TABLE flows_journal_events (
   run_id TEXT NOT NULL, seq INTEGER NOT NULL, event_id TEXT NOT NULL UNIQUE,
   source_id TEXT NOT NULL, source_seq INTEGER NOT NULL, emitted_at_ms INTEGER NOT NULL,
@@ -57,7 +65,11 @@ class ReportCLI(unittest.TestCase):
 
     def trial(self, arm: str, task: str, *, reward: float | None = 1.0, exception: str | None = None,
               tokens: tuple = (1000, 800, 50), checksum: str | None = None, host_command: str | None = None,
-              config: dict | None = None, succeeded: int = 3, refused_input: dict | None = None) -> Path:
+              config: dict | None = None, succeeded: int = 3, refused_input: dict | None = None,
+              task_toml: str | None = None, sealed: bool | None = True) -> Path:
+        """`task_toml` writes the task's own `task.toml` where the trial's config
+        says the task lives; without it the task is a registry name the report
+        cannot open. `sealed` is the stock arm's seal verdict; None records none."""
         self.serial += 1
         directory = self.jobs[arm] / f"{task}__{arm[:1]}{self.serial:04d}"
         summary = self.jobs[arm] / "result.json"
@@ -73,6 +85,11 @@ class ReportCLI(unittest.TestCase):
                             "override_cpus": None},
             "verifier": {"override_timeout_sec": None},
         }
+        if task_toml is not None:
+            task_dir = self.root / "tasks" / task
+            task_dir.mkdir(parents=True, exist_ok=True)
+            (task_dir / "task.toml").write_text(task_toml)
+            trial_config["task"] = {"path": str(task_dir), "source": "fixture"}
         for section, values in (config or {}).items():
             if isinstance(values, dict):
                 trial_config[section].update(values)
@@ -80,6 +97,8 @@ class ReportCLI(unittest.TestCase):
                 trial_config[section] = values
         (directory / "config.json").write_text(json.dumps({"trial_name": directory.name}))
         reached = {"attempted": succeeded + 1, "succeeded": succeeded}
+        proof = {} if arm == "smithers" or sealed is None else {
+            "sealed": sealed, "seal": {"sealed": sealed, **({} if sealed else {"reason": OPENED})}}
         result = {
             "task_name": f"terminal-bench/{task}",
             "trial_name": directory.name,
@@ -87,7 +106,7 @@ class ReportCLI(unittest.TestCase):
             "config": trial_config,
             "agent_result": {
                 "n_input_tokens": tokens[0], "n_cache_tokens": tokens[1], "n_output_tokens": tokens[2],
-                "metadata": {"container_commands": reached,
+                "metadata": {"container_commands": reached, **proof,
                              **({"harness_revision": "abc123"} if arm == "smithers" else {})},
             },
             "verifier_result": {"rewards": {"reward": reward}} if reward is not None else None,
@@ -100,7 +119,7 @@ class ReportCLI(unittest.TestCase):
         if arm == "smithers":
             self.journal(directory, host_command, refused_input)
         else:
-            (directory / "agent" / "codex-account.json").write_text(json.dumps({"containerCommands": reached}))
+            (directory / "agent" / "codex-account.json").write_text(json.dumps({"containerCommands": reached, **proof}))
         return directory
 
     def journal(self, trial: Path, host_command: str | None, refused_input: dict | None = None) -> None:
@@ -318,6 +337,67 @@ class ReportCLI(unittest.TestCase):
             f"baseline: {mounts.name} is not sealed: environment mounts ['/data:/data']",
             f"baseline: {idle.name} is not sealed: no command exited 0 in the task container",
         )
+
+    def test_only_the_stock_arm_may_add_its_model_route(self) -> None:
+        """On a task that denies the agent network the stock Codex CLI still
+        needs its model: Harbor's `--allow-agent-host` records the route as
+        extra agent hosts (nyc-01 SWE-bench Pro V2). Any other host, or any
+        host for the Smithers arm, which calls its model from the host, unseals."""
+        route = self.trial("baseline", "task-000", task_toml=SWEPRO, config={"agent": {"extra_allowed_hosts": MODEL_ROUTE}})
+        mixed = self.trial("baseline", "task-001", config={"agent": {"extra_allowed_hosts": ["chatgpt.com", "example.com"]}})
+        self.trial("smithers", "task-000", task_toml=SWEPRO)
+        ours = self.trial("smithers", "task-001", config={"agent": {"extra_allowed_hosts": ["chatgpt.com"]}})
+        report = self.assert_refused(
+            f"baseline: {mixed.name} is not sealed: agent extra_allowed_hosts ['example.com']",
+            f"smithers: {ours.name} is not sealed: agent extra_allowed_hosts ['chatgpt.com']")
+        self.assertFalse([reason for reason in report["refusals"] if route.name in reason], report["refusals"])
+
+    def test_an_open_network_task_scores_an_unsealed_stock_trial(self) -> None:
+        """Terminal-Bench 4.0 gives the agent open network by protocol, and the
+        Smithers arm runs in the same open container: the stock arm's
+        `sealed: false` there is the suite, not a leak."""
+        self.trial("smithers", "tb4-task", task_toml=TB4)
+        self.trial("baseline", "tb4-task", task_toml=TB4, sealed=False)
+        self.trial("smithers", "explicit-public", task_toml='[environment]\nnetwork_mode = "public"\n')
+        self.trial("baseline", "explicit-public", task_toml='[environment]\nnetwork_mode = "public"\n', sealed=False)
+        text, report = self.run_report(0, "--min-tasks", "2")
+        self.assertTrue(report["publishable"], report["refusals"])
+        self.assertEqual(report["network"], {"public": 2})
+        self.assertIn("Agent network: public (2 tasks).", text)
+
+    def test_a_network_denied_task_refuses_an_unsealed_stock_trial(self) -> None:
+        """DeepSWE's `network none`, SWE-bench Pro V2's offline agent phase, a
+        legacy `allow_internet = false` and an allowlist all deny the agent the
+        internet: an unsealed stock trial there is never scored. A sealed one is."""
+        refused = []
+        for task, toml in (("deepswe", DEEPSWE), ("swepro", SWEPRO), ("legacy", LEGACY), ("allowlist", ALLOWLIST)):
+            self.trial("smithers", task, task_toml=toml)
+            trial = self.trial("baseline", task, task_toml=toml, sealed=False)
+            mode = "allowlist" if task == "allowlist" else "no-network"
+            refused.append(f"baseline: {trial.name} is not sealed: the task denies the agent network ({mode}) "
+                           f"and the stock arm's seal does not hold: {OPENED}")
+        self.trial("smithers", "swepro-sealed", task_toml=SWEPRO)
+        sealed = self.trial("baseline", "swepro-sealed", task_toml=SWEPRO, config={"agent": {"extra_allowed_hosts": MODEL_ROUTE}})
+        self.trial("smithers", "unproven", task_toml=DEEPSWE)
+        unproven = self.trial("baseline", "unproven", task_toml=DEEPSWE, sealed=None)
+        refused.append(f"baseline: {unproven.name} is not sealed: the task denies the agent network (no-network) "
+                       "and the stock arm's seal does not hold: no seal verdict")
+        report = self.assert_refused(*refused)
+        self.assertFalse([reason for reason in report["refusals"] if sealed.name in reason], report["refusals"])
+        self.assertEqual(report["network"], {"allowlist": 1, "no-network": 5})
+
+    def test_a_task_whose_network_cannot_be_read_needs_the_seal(self) -> None:
+        """A registry task, or a task directory gone since the run: no proof the
+        network was open, so an unsealed stock trial is refused."""
+        self.trial("smithers", "task-000")
+        trial = self.trial("baseline", "task-000", sealed=False)
+        self.trial("smithers", "task-001", task_toml=TB4)
+        gone = self.trial("baseline", "task-001", task_toml=TB4, sealed=False)
+        (self.root / "tasks" / "task-001" / "task.toml").unlink()
+        report = self.assert_refused(
+            *(f"baseline: {name} is not sealed: the task's agent network is unknown (no readable task.toml at its "
+              f"recorded path) and the stock arm's seal does not hold: {OPENED}" for name in (trial.name, gone.name)))
+        self.assertEqual(report["network"], {"unknown": 2})
 
     def test_infra_and_running_trials_block_publication(self) -> None:
         self.paired(1)
