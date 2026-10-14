@@ -2,6 +2,7 @@ package services
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 )
 
@@ -15,6 +16,12 @@ const agentSessionFailureReasonKey = "failure_reason"
 // no room for its box. It mirrors workspaceNoCapacityMessage: it names the
 // cause, promises nothing ran, and gives the one action that helps.
 const agentSessionNoCapacityMessage = "The agent pool is full right now. Nothing ran; start the agent again in a moment."
+
+// agentSessionMachineStartingMessage is what a session says when the branch's
+// machine is already being started by another request. Like a full pool, the
+// action that helps is to wait, not to retry at once — and unlike a failure,
+// the machine this turn needs is on its way (#3886).
+const agentSessionMachineStartingMessage = "The branch's machine is still starting. Nothing ran; start the agent again once it is awake."
 
 // agentSessionStartFailureMessage is the fallback for every other reason a
 // dispatch could not start. The specific cause stays in the operator log and
@@ -30,12 +37,16 @@ const agentSessionStartFailureMessage = "The agent could not be started. Nothing
 const agentSessionLoopRetiredMessage = "Cloud agents are not available on this deployment yet. Nothing ran, and retrying will not help."
 
 // agentSessionFailureReasonForError classifies a dispatch failure into the one
-// sentence the session shows. A pool with no room is the one cause a user can
-// act on differently (wait, rather than retry at once), which is why it is the
-// only distinguished case.
+// sentence the session shows. The distinguished causes are the ones a user acts
+// on differently — by waiting rather than retrying at once: a pool with no
+// room, and a branch machine another request is already starting. Everything
+// else is the fallback, with its cause in the operator log.
 func agentSessionFailureReasonForError(err error) string {
 	if isNoCapacityError(err) {
 		return agentSessionNoCapacityMessage
+	}
+	if errors.Is(err, errWorkspaceProvisionInProgress) {
+		return agentSessionMachineStartingMessage
 	}
 	return agentSessionStartFailureMessage
 }

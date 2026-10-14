@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -296,4 +297,32 @@ func TestAgentDispatchFailureLogStoresAStorableEntry(t *testing.T) {
 
 	require.Len(t, entries, 1)
 	require.NotContains(t, entries[0].Entry, "\x00")
+}
+
+// After RFD-004 a repository has one branch machine and every turn runs on it,
+// so the second turn of any fan-out meets the first turn's in-flight
+// provision: `workspaceProvisionInProgress`, a deliberately retryable
+// GuestNotReady 503 wrapped by CreateAgentWorkspace. It fell through to the
+// generic sentence, so a person starting a second turn — the ordinary case
+// while a machine wakes — was told only that the agent "could not be started".
+//
+// Production 2026-10-14 13:26Z, API 2b14f97f: four turns dispatched together on
+// repository 112554 failed in 6-12 s, all four with the generic sentence and
+// all four caused by
+//
+//	create agent workspace: workspace provisioning is owned by another API:
+//	workspace is provisioning; retry shortly
+//
+// smithers#3886.
+func TestAFanOutTurnSaysTheMachineIsStillStarting(t *testing.T) {
+	inFlight := fmt.Errorf("create agent workspace: %w", workspaceProvisionInProgress(nil))
+	require.Equal(t, agentSessionMachineStartingMessage, agentSessionFailureReasonForError(inFlight),
+		"a turn refused because the branch's machine is already starting says so; waiting is the action that helps")
+
+	// The two sentences that were already distinguished stay exactly as they were.
+	require.NotEqual(t, agentSessionMachineStartingMessage, agentSessionStartFailureMessage)
+	require.Equal(t, agentSessionNoCapacityMessage, agentSessionFailureReasonForError(
+		&pkgerrors.APIError{Status: http.StatusServiceUnavailable, Code: pkgerrors.CodeNoCapacity, Message: "no healthy Microsandbox worker has sufficient capacity"}))
+	require.Equal(t, agentSessionStartFailureMessage,
+		agentSessionFailureReasonForError(pkgerrors.Internal("create sandbox: connection refused")))
 }
