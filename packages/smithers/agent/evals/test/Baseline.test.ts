@@ -195,6 +195,31 @@ describe("Baseline", () => {
     expect(suites).toEqual(["a|b", "a|b/c", "z|c", "é|c"])
   })
 
+  // A run with trials > 1 records one score per trial under the same
+  // (suite, case, scorer, stepKey). The order trials finished in must not
+  // decide the committed bytes, or rerunning an unchanged suite rewrites the
+  // baseline file.
+  it("writes the same bytes whatever order records sharing a sort key arrive in", async () => {
+    const tied = [
+      { ...record, score: 0.75 },
+      { ...record, score: 0.25, scorerName: "exact" },
+      { ...record, score: 0.25 },
+      { ...record, score: 0.25, scorerName: "" },
+      { ...record, score: 0.5 }
+    ]
+    const forward = await Effect.runPromise(Baseline.make({ suite: "s", records: tied }))
+    const reversed = await Effect.runPromise(Baseline.make({ suite: "s", records: [...tied].reverse() }))
+    const written = Baseline.write(forward)
+    expect(Baseline.write(reversed)).toBe(written)
+    expect(JSON.parse(written).records).toEqual([
+      { ...record, score: 0.25 },
+      { ...record, score: 0.25, scorerName: "" },
+      { ...record, score: 0.25, scorerName: "exact" },
+      { ...record, score: 0.5 },
+      { ...record, score: 0.75 }
+    ])
+  })
+
   it("round-trips through write and load byte for byte", async () => {
     const baseline = await Effect.runPromise(Baseline.make({
       suite: "s",

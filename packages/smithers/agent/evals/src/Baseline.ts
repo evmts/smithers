@@ -219,7 +219,9 @@ export const make = (
  *
  * Records are ordered by an injective encoding of `(suite, case, scorer,
  * stepKey)`, so two records whose names differ only in where a separator falls
- * still sort apart. The result ends with a newline and never throws: a
+ * still sort apart. Records that share that tuple, one per trial of a repeated
+ * run, are ordered by score and then by `scorerName`, so the bytes never
+ * depend on the order trials finished in. The result ends with a newline and never throws: a
  * validated baseline holds only strings and finite numbers.
  *
  * @category serialization
@@ -229,7 +231,12 @@ export const write = (baseline: Baseline): string => {
   const sortKey = (record: BaselineRecord): string => tupleKey(record.suite, record.case, record.scorer, record.stepKey)
   const records = baseline.records
     .map((record) => [sortKey(record), record] as const)
-    .sort(([left], [right]) => CanonicalJson.compareText(left, right))
+    .sort(([leftKey, left], [rightKey, right]) =>
+      CanonicalJson.compareText(leftKey, rightKey) ||
+      left.score - right.score ||
+      CanonicalJson.compareText(left.scorerName ?? "", right.scorerName ?? "") ||
+      Number(left.scorerName !== undefined) - Number(right.scorerName !== undefined)
+    )
     .map(([, record]) => record)
   return CanonicalJson.stringify({
     version: baseline.version,
