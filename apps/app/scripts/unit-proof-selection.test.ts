@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
-import { execFileSync, spawnSync } from "node:child_process"
+import { execFileSync } from "node:child_process"
+import { spawnSync } from "./test-child"
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"

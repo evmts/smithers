@@ -1,7 +1,8 @@
 // Run with Node, outside Bun's synchronous child-process implementation.
 import { spawn, spawnSync } from 'node:child_process'
-import { appendFileSync, readFileSync, readdirSync, readlinkSync } from 'node:fs'
-const request = JSON.parse(readFileSync(0, 'utf8'))
+import { appendFileSync, readFileSync, readdirSync, readlinkSync, renameSync, writeFileSync } from 'node:fs'
+// Under Bun the request is a file and the answer is written beside it (test-child.ts).
+const request = JSON.parse(readFileSync(process.argv[2] ?? 0, 'utf8'))
 const { command, args, options } = request
 // Each step and its milliseconds since the caller started, for test-child's error.
 const mark = step => { if (request.trail) try { appendFileSync(request.trail, `${step}@${Date.now() - request.startedAt}\n`) } catch {} }
@@ -13,8 +14,15 @@ const finish = (status, signal, error) => {
   if (finished) return
   finished = true
   clearTimeout(timer)
-  process.stderr.write('', () => process.stdout.write(JSON.stringify({ pid: child?.pid, supervisorPid: process.pid, status, signal, error,
-    stdout: Buffer.concat(stdout).toString('base64'), stderr: Buffer.concat(stderr).toString('base64') }), () => { mark('answered'); process.exit(0) }))
+  const answer = JSON.stringify({ pid: child?.pid, supervisorPid: process.pid, status, signal, error,
+    stdout: Buffer.concat(stdout).toString('base64'), stderr: Buffer.concat(stderr).toString('base64') })
+  if (request.answer) {
+    // Rename publishes the whole answer at once: the caller polls for the file.
+    writeFileSync(`${request.answer}.partial`, answer)
+    renameSync(`${request.answer}.partial`, request.answer)
+    mark('answered')
+    process.stderr.write('', () => process.exit(0))
+  } else process.stderr.write('', () => process.stdout.write(answer, () => { mark('answered'); process.exit(0) }))
 }
 const kill = () => {
   if (!child?.pid) return

@@ -1,4 +1,5 @@
 import { validateMicrosandboxBinary } from "./bundle-microsandbox"
+import { runSync } from "./test-child"
 import { afterAll, beforeAll, expect, test } from "bun:test"
 import { requiresMacOS } from "./RequiresMacOS"
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
@@ -15,7 +16,7 @@ const pnpmPin = (JSON.parse(readFileSync(resolve(import.meta.dir, "..", "..", ".
 let root = ""
 
 const compile = (argv: ReadonlyArray<string>): void => {
-  const result = Bun.spawnSync(["cc", ...argv], { stdout: "pipe", stderr: "pipe" })
+  const result = runSync(["cc", ...argv])
   if (result.exitCode !== 0) throw new Error(new TextDecoder().decode(result.stderr))
 }
 
@@ -43,10 +44,8 @@ const build = (node: string, extraEnv: Record<string, string> = {}): { exitCode:
   for (const [name, value] of Object.entries(process.env)) {
     if (value !== undefined && !name.startsWith("SMITHERS_")) env[name] = value
   }
-  const result = Bun.spawnSync([process.execPath, script], {
-    env: { ...env, SMITHERS_BUILD_SHA: "0".repeat(40), SMITHERS_NODE_BINARY: node, ...extraEnv },
-    stdout: "pipe",
-    stderr: "pipe"
+  const result = runSync([process.execPath, script], {
+    env: { ...env, SMITHERS_BUILD_SHA: "0".repeat(40), SMITHERS_NODE_BINARY: node, ...extraEnv }
   })
   return { exitCode: result.exitCode, stderr: new TextDecoder().decode(result.stderr) }
 }
