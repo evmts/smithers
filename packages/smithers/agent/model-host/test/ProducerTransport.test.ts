@@ -84,6 +84,13 @@ interface Journal {
   answerCommits: (batch: number) => boolean
   /** Milliseconds a journal waits before it answers a commit it will answer. */
   latencyMillis: number
+  /**
+   * Commits this journal sends headers for and then stops. A journal that
+   * answers its status and never sends the receipt wedges a turn exactly as
+   * one that never answers at all, and the half-read response holds the
+   * socket, so the bound has to reach the body read too.
+   */
+  stallAfterHeaders: (batch: number) => boolean
 }
 
 const servers: Array<Server> = []
@@ -102,12 +109,17 @@ afterEach(async () => {
 })
 
 const startJournal = async (
-  options: { readonly answerCommits?: (batch: number) => boolean; readonly latencyMillis?: number } = {}
+  options: {
+    readonly answerCommits?: (batch: number) => boolean
+    readonly latencyMillis?: number
+    readonly stallAfterHeaders?: (batch: number) => boolean
+  } = {}
 ): Promise<Journal> => {
   const state = {
     attempts: [] as Array<Attempt>,
     answerCommits: options.answerCommits ?? (() => true),
-    latencyMillis: options.latencyMillis ?? 0
+    latencyMillis: options.latencyMillis ?? 0,
+    stallAfterHeaders: options.stallAfterHeaders ?? (() => false)
   }
   let committed = cursor
   const handle = (incoming: IncomingMessage, answer: ServerResponse): void => {
@@ -135,6 +147,13 @@ const startJournal = async (
       const attempt: Attempt = { path, batch: next, aborted: false, answered: false }
       state.attempts.push(attempt)
       held(attempt)
+      if (state.stallAfterHeaders(next)) {
+        // Headers, then silence: the response never ends, so the client's
+        // receipt read waits on a socket this journal keeps open.
+        answer.writeHead(200, { "content-type": "application/json" })
+        answer.flushHeaders()
+        return
+      }
       if (!state.answerCommits(next)) return
       const reply = receipt(committed, body.frames[0]!)
       committed = reply.cursor
@@ -164,6 +183,12 @@ const startJournal = async (
     },
     set latencyMillis(value) {
       state.latencyMillis = value
+    },
+    get stallAfterHeaders() {
+      return state.stallAfterHeaders
+    },
+    set stallAfterHeaders(value) {
+      state.stallAfterHeaders = value
     }
   }
 }
@@ -215,6 +240,41 @@ describe("a journal callback that is never answered", () => {
     await waitUntil(
       () => journal.attempts.every((attempt) => attempt.aborted),
       "a bounded attempt left its request open on the journal"
+    )
+  })
+
+  // A journal that answers its status and then stops sending the receipt is
+  // the same fault one message later, and it is the shape the comment on the
+  // commit bound claims to cover. `fetch` resolves on headers, so the receipt
+  // read is a second unbounded wait on the same socket: bounding only the
+  // request leaves the turn ended and the connection leaked.
+  test("ends an attempt whose journal sends headers and never sends the receipt", async () => {
+    const journal = await startJournal({ stallAfterHeaders: () => true })
+    const producer = new DurableChatProducer(
+      journal.baseUrl,
+      grantFor(journal.baseUrl),
+      undefined,
+      undefined,
+      deadline
+    )
+    const exit = await Effect.runPromise(
+      Effect.exit(producer.write(delta("a"))).pipe(
+        Effect.timeoutOrElse({
+          duration: Duration.seconds(10),
+          orElse: () =>
+            Effect.die(new Error("the receipt read was never bounded: the host waited on a half-sent response"))
+        })
+      )
+    )
+    const cause = JSON.stringify(Exit.isFailure(exit) ? exit.cause : {})
+    expect(cause).toContain("ProducerUnreachable")
+    expect(cause).toContain("commit")
+    expect(journal.attempts).toHaveLength(2)
+    // The bound has to close the socket it is holding, or every stalled turn
+    // leaves a connection behind for the lifetime of the guest.
+    await waitUntil(
+      () => journal.attempts.every((attempt) => attempt.aborted),
+      "a bounded attempt left its half-sent response open on the journal"
     )
   })
 

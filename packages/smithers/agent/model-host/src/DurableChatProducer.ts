@@ -90,25 +90,36 @@ const unreachable = (step: ProducerUnreachable["step"]) => (): ProducerUnreachab
   new ProducerUnreachable({ step, message: "chat producer request failed" })
 
 /**
- * Bounds one callback attempt. The timeout interrupts the attempt, which
- * aborts its `AbortSignal` and so closes the request's socket: the retry asks
- * for a connection of its own instead of queueing behind a dead one.
+ * Bounds one callback attempt, request and answer together.
+ *
+ * The attempt is built against a signal of this bound's own, which the
+ * expiring deadline aborts: that closes the request's socket, so the retry
+ * asks for a connection of its own instead of queueing behind a dead one. The
+ * signal rather than the fiber's interruption is what carries the bound,
+ * because `fetch` resolves as soon as headers arrive — a journal that answers
+ * its status and then stops sending the receipt leaves a second unbounded wait
+ * on the same socket, and interrupting that read alone would end the turn
+ * while leaking the connection.
  */
 const bounded = <A, E, R>(
-  attempt: Effect.Effect<A, E, R>,
+  attempt: (signal: AbortSignal) => Effect.Effect<A, E, R>,
   step: ProducerUnreachable["step"],
   deadlineMillis: number,
   onTimeout: () => void
 ): Effect.Effect<A, E | ProducerUnreachable, R> =>
-  Effect.timeoutOrElse(attempt, {
-    duration: Duration.millis(deadlineMillis),
-    orElse: () =>
-      Effect.suspend(() => {
-        onTimeout()
-        return Effect.fail(
-          new ProducerUnreachable({ step, message: `chat producer ${step} did not answer within its deadline` })
-        )
-      })
+  Effect.suspend(() => {
+    const deadline = new AbortController()
+    return Effect.timeoutOrElse(Effect.suspend(() => attempt(deadline.signal)), {
+      duration: Duration.millis(deadlineMillis),
+      orElse: () =>
+        Effect.suspend(() => {
+          onTimeout()
+          deadline.abort()
+          return Effect.fail(
+            new ProducerUnreachable({ step, message: `chat producer ${step} did not answer within its deadline` })
+          )
+        })
+    })
   })
 
 const sha256Hex = async (value: string): Promise<string> => {
@@ -172,32 +183,40 @@ export class DurableChatProducer {
       const settle = this.diagnostics.begin("chat_callback", { step: "provider_started" })
       let status = 0
       let timedOut = false
-      return Effect.tryPromise({
-        try: (signal) =>
-          this.fetchImpl(url, {
-            method: "POST",
-            signal,
-            headers: { authorization: `Bearer ${this.grant.token}` }
-          }),
-        catch: unreachable("provider_started")
-      }).pipe(
-        Effect.tap((response) =>
-          Effect.sync(() => {
-            status = response.status
-          })
-        ),
-        Effect.flatMap((response) =>
-          response.ok ? Effect.void : Effect.fail(
-            new ProviderStartRefused({
-              status: response.status,
-              message: `chat provider start refused (${response.status})`
-            })
-          )
-        ),
-        (attempt) =>
-          bounded(attempt, "provider_started", this.deadlineMillis, () => {
-            timedOut = true
-          }),
+      return bounded(
+        (deadlineSignal) =>
+          Effect.tryPromise({
+            try: (signal) =>
+              this.fetchImpl(url, {
+                method: "POST",
+                // The fiber's interruption cancels a turn; the bound's own
+                // signal ends an attempt that overran. Either closes this
+                // request.
+                signal: AbortSignal.any([signal, deadlineSignal]),
+                headers: { authorization: `Bearer ${this.grant.token}` }
+              }),
+            catch: unreachable("provider_started")
+          }).pipe(
+            Effect.tap((response) =>
+              Effect.sync(() => {
+                status = response.status
+              })
+            ),
+            Effect.flatMap((response) =>
+              response.ok ? Effect.void : Effect.fail(
+                new ProviderStartRefused({
+                  status: response.status,
+                  message: `chat provider start refused (${response.status})`
+                })
+              )
+            )
+          ),
+        "provider_started",
+        this.deadlineMillis,
+        () => {
+          timedOut = true
+        }
+      ).pipe(
         // The record carries why the attempt ended, so a reader of the guest's
         // own log tells a bound that fired from a status the journal answered.
         Effect.ensuring(Effect.sync(() => settle({ status, ...(timedOut ? { timedOut: true } : {}) })))
@@ -287,29 +306,35 @@ export class DurableChatProducer {
       const settle = this.diagnostics.begin("chat_callback", { step: "commit", batch: expected.batch + 1 })
       let status = 0
       let timedOut = false
-      return Effect.tryPromise({
-        try: (signal) =>
-          this.fetchImpl(new URL("/internal/chat/commit", this.callbackBaseUrl), {
-            method: "POST",
-            signal,
-            headers: { "content-type": "application/json", authorization: `Bearer ${this.grant.token}` },
-            body
-          }),
-        catch: unreachable("commit")
-      }).pipe(
-        Effect.tap((response) =>
-          Effect.sync(() => {
-            status = response.status
-          })
-        ),
-        Effect.flatMap(commitReply),
-        // The deadline covers the receipt as well as the response: a journal
-        // that sends headers and then stops wedges a turn exactly as a journal
-        // that never answers does.
-        (attempt) =>
-          bounded(attempt, "commit", this.deadlineMillis, () => {
-            timedOut = true
-          }),
+      // The deadline covers the receipt as well as the response: a journal
+      // that sends headers and then stops wedges a turn exactly as a journal
+      // that never answers does, and the bound's signal closes that socket
+      // rather than ending the turn around a half-read response.
+      return bounded(
+        (deadlineSignal) =>
+          Effect.tryPromise({
+            try: (signal) =>
+              this.fetchImpl(new URL("/internal/chat/commit", this.callbackBaseUrl), {
+                method: "POST",
+                signal: AbortSignal.any([signal, deadlineSignal]),
+                headers: { "content-type": "application/json", authorization: `Bearer ${this.grant.token}` },
+                body
+              }),
+            catch: unreachable("commit")
+          }).pipe(
+            Effect.tap((response) =>
+              Effect.sync(() => {
+                status = response.status
+              })
+            ),
+            Effect.flatMap(commitReply)
+          ),
+        "commit",
+        this.deadlineMillis,
+        () => {
+          timedOut = true
+        }
+      ).pipe(
         Effect.ensuring(Effect.sync(() => settle({ status, ...(timedOut ? { timedOut: true } : {}) })))
       )
     })

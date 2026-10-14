@@ -4,6 +4,19 @@
 
 ### Fixed
 
+- The journal callback bound now covers the receipt, not just the request
+  (#3812). `fetch` resolves as soon as headers arrive, so a journal that
+  answered a commit's status and then stopped sending its receipt left a second
+  unbounded wait on the same socket. The deadline interrupted that read, so the
+  turn did end — but the half-sent response was never closed, and every stalled
+  turn leaked a connection to the journal for the life of the guest. Each
+  attempt now runs against an `AbortSignal` of the bound's own, which the
+  expiring deadline aborts: the request and any receipt still arriving on it
+  both end, and the retry asks for a connection of its own. Proved on the
+  published bundle: before the fix a journal sending headers and no receipt
+  held both attempts' sockets open with the turn already failed; after it, both
+  closed at 15 s and 30 s. `test/ProducerTransport.test.ts` holds the shape
+  against a real journal over real requests.
 - A journal callback a hosted chat turn cannot get an answer to now ends that
   turn instead of holding it open forever (#3812). `fetch` has no deadline of
   its own and nothing below the host supplied one, so an unanswered commit
