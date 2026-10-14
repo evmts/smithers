@@ -68242,6 +68242,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/flows/docs/guides/change-a-flow-and-keep-the-work.md"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/docs/guides/collect-a-workspace-diff.md"
       },
       {
@@ -68259,10 +68263,6 @@
       {
         "kind": "file",
         "path": "packages/smithers/flows/docs/guides/stand-up-a-node-runtime.md"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/flows/docs/guides/wiki-verification.md"
       },
       {
         "kind": "file",
