@@ -83,6 +83,7 @@ def check_classification() -> None:
         # A run held at waiting-approval was the harness's, never a 0.
         (result("RunParked", "run ended at waiting-approval", reward=0.0), "infra"),
         (result("RuntimeError", "anything unforeseen"), "infra"),
+        (result("ApiRateLimitError", "429 Too Many Requests"), "infra"),
         # A grade next to an infrastructure exception is still infra.
         (result("PlueError", "delete failed", reward=1.0), "infra"),
         (result("PlueUnplaceable", "task asks for 8 vCPU"), "unplaceable"),
@@ -100,9 +101,19 @@ def check_classification() -> None:
                  # vba-userform-port, 2026-09-23: npm ECONNRESET through the egress
                  # proxy aborted test.sh before it wrote a reward.
                  "RewardFileNotFoundError", "RewardFileEmptyError", "VerifierOutputParseError",
-                 "DownloadVerifierDirError", "AddTestsDirError"):
+                 "DownloadVerifierDirError", "AddTestsDirError",
+                 # nyc-01 SWE-bench Pro V2, 2026-10-14: a 429 seconds into a trial (#3863).
+                 "ApiRateLimitError"):
         assert name in outcome.INFRA_EXCEPTIONS, name
     assert "PlueUnplaceable" not in outcome.INFRA_EXCEPTIONS
+    # Harbor matches retry names by type name: a misspelt one retries nothing.
+    try:
+        from harbor.agents.installed import base as installed
+    except ImportError:
+        installed = None
+    for name in outcome.INFRA_EXCEPTIONS if installed else ():
+        if name.startswith(("Api", "Network")):
+            assert isinstance(getattr(installed, name, None), type), f"Harbor raises no {name}"
     flags = outcome.retry_flags().split()
     assert flags[:2] == ["-r", "3"] and flags.count("--retry-include") == len(outcome.INFRA_EXCEPTIONS)
     assert outcome.ssh_transport_error(SSH_READ) and outcome.ssh_transport_error(SSH_CONNECT)

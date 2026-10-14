@@ -34,7 +34,7 @@ INFRA_EXCEPTIONS = (
     "DownloadVerifierDirError", "AddTestsDirError", "HealthcheckError",
     # Harbor installed-agent transport faults.
     "NetworkConnectionError", "ApiConnectionClosedError", "ApiResponseStalledError",
-    "ApiInternalServerError", "ApiOverloadedError",
+    "ApiInternalServerError", "ApiOverloadedError", "ApiRateLimitError",
 )
 
 
