@@ -336,9 +336,26 @@ describe("§6 the flow doors", () => {
    * paints the author's card, the agent loop's own tool call does not, and
    * both answer the same items as data.
    */
+  /*
+   * What this fixture's indexes actually hold, per flow. Pinned so the row
+   * above cannot be satisfied by a flow that quietly starts refusing: a
+   * refusal is only honest for the indexes this fixture does not seed.
+   */
+  const EXPECTED_OUTCOMES: Record<string, string> = {
+    "search.changes": "executed",
+    "search.files": "executed",
+    "search.flows": "executed",
+    // No history index is seeded here, and an unindexed read refuses by name.
+    "search.history": "failed",
+    "search.issues": "executed",
+    "search.runs": "executed",
+    "search.wiki": "executed"
+  }
+
   test("all seven screen-only search.* acts paint the author's card on a screen request and none on a tool call", async () => {
     const screenOnly = Object.keys(UI_INSTRUCTION_FIELDS).filter((name) => name.startsWith("search."))
     expect(screenOnly).toEqual(["search.changes", "search.files", "search.flows", "search.history", "search.issues", "search.runs", "search.wiki"])
+    const outcomes: Record<string, string> = {}
     for (const name of screenOnly) {
       const { store, controller } = await ready()
       await seed(store)
@@ -349,15 +366,17 @@ describe("§6 the flow doors", () => {
         // The door decides the SCREEN, never the answer: the same outcome either way.
         expect(screen, `${name} answers both doors the same`).toEqual(tool)
         const card = store.collections.cards.get(`search-${name}`)
+        outcomes[name] = tool.status
         if (tool.status === "executed") {
           expect(card?.kind, `${name} paints the author's search-results card`).toBe("search-results")
         } else {
-          // An honest refusal (this fixture indexes no history) paints nothing for anyone.
-          expect(tool.status, `${name} refused for a reason, not a missing door`).toBe("failed")
+          // An honest refusal paints nothing for anyone — and WHICH flows refuse
+          // is pinned below, so a flow cannot pass this row by starting to fail.
           expect(card, `${name} refused, so neither door paints a card`).toBeUndefined()
         }
       } finally { await controller.dispose(); await store.dispose?.() }
     }
+    expect(outcomes).toEqual(EXPECTED_OUTCOMES)
   })
 
   test("a screen request's card keeps the agent as its actor: the door changes, the principal does not", async () => {
