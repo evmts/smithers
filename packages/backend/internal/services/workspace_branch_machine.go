@@ -164,7 +164,7 @@ func (s *WorkspaceService) createBranchMachineRow(ctx context.Context, arg db.Cr
 		arg.UserID, arg.TargetBookmark, arg.AgentSessionID = owner, branch, pgUUIDFromString("")
 		row, err = q.CreateWorkspace(ctx, arg)
 	} else if err == nil {
-		err = branchMachineCompatible(row, arg, owner)
+		row, err = joinBranchMachine(ctx, tx, q, row, arg, owner)
 	}
 	if err != nil {
 		return db.Workspace{}, err
@@ -190,6 +190,71 @@ func stackLaneWorkspace(ctx context.Context, tx pgx.Tx, q *db.Queries, repositor
 	return q.GetWorkspace(ctx, id)
 }
 
+// joinBranchMachine admits this create to the branch's existing machine.
+//
+// A machine that never had a guest adopts the first size a person asks for.
+// Its size is otherwise unreachable: the import provisions the machine itself
+// and names no size, so it boots at this deployment's default; DELETE answers
+// "branch is retained"; there is no resize route; and after RFD-004 there is
+// no second machine to create instead. On a full fleet that is terminal — the
+// repository holds a machine nothing can place and its owner cannot ask for
+// one that fits. Adopting the size erases nothing: the row has no guest, no
+// disk and no session, and a machine that ever booted keeps its size (#3885).
+func joinBranchMachine(ctx context.Context, tx pgx.Tx, q *db.Queries, row db.Workspace, arg db.CreateWorkspaceParams, owner int64) (db.Workspace, error) {
+	err := branchMachineCompatible(row, arg, owner)
+	if err == nil || branchMachineHasGuest(row) || !branchMachineSizeDiffers(row, arg) {
+		return row, err
+	}
+	// Only the size may be adopted. Anything else this machine disagrees
+	// with is still the refusal, including a size on a retained machine.
+	sized := branchMachineSized(row, arg)
+	if other := branchMachineCompatible(sized, arg, owner); other != nil {
+		return row, other
+	}
+	if _, execErr := tx.Exec(ctx, `UPDATE workspaces SET vcpu_count=$2, memory_mb=$3, disk_mb=$4, updated_at=NOW()
+        WHERE id=$1 AND vm_id='' AND started_at IS NULL AND deleted_at IS NULL`,
+		row.ID, sized.VcpuCount, sized.MemoryMb, sized.DiskMb); execErr != nil {
+		return row, execErr
+	}
+	adopted, getErr := q.GetWorkspace(ctx, row.ID)
+	if getErr != nil {
+		return row, getErr
+	}
+	if branchMachineSizeDiffers(adopted, arg) {
+		// A guest appeared under us; the machine keeps the size it booted.
+		return adopted, err
+	}
+	return adopted, nil
+}
+
+// branchMachineHasGuest is true for a machine a guest was ever created for:
+// its id, or any of the stamps a start, resume or suspend leaves. Only such a
+// machine can hold a disk a worker retains.
+func branchMachineHasGuest(row db.Workspace) bool {
+	return strings.TrimSpace(row.VmID) != "" || row.StartedAt.Valid || row.ResumedAt.Valid || row.SuspendedAt.Valid
+}
+
+// branchMachineSized is row at the size this create names; a field the create
+// leaves unnamed keeps the machine's own.
+func branchMachineSized(row db.Workspace, arg db.CreateWorkspaceParams) db.Workspace {
+	if arg.VcpuCount.Valid {
+		row.VcpuCount = arg.VcpuCount
+	}
+	if arg.MemoryMb.Valid {
+		row.MemoryMb = arg.MemoryMb
+	}
+	if arg.DiskMb.Valid {
+		row.DiskMb = arg.DiskMb
+	}
+	return row
+}
+
+func branchMachineSizeDiffers(row db.Workspace, arg db.CreateWorkspaceParams) bool {
+	return arg.VcpuCount.Valid && arg.VcpuCount != row.VcpuCount ||
+		arg.MemoryMb.Valid && arg.MemoryMb != row.MemoryMb ||
+		arg.DiskMb.Valid && arg.DiskMb != row.DiskMb
+}
+
 func branchMachineCompatible(row db.Workspace, arg db.CreateWorkspaceParams, owner int64) error {
 	if row.RebuildRequiredAt.Valid {
 		return pkgerrors.New(pkgerrors.CodeWorkspaceRebuildRequired, "branch machine requires rebuild")
@@ -207,9 +272,7 @@ func branchMachineCompatible(row db.Workspace, arg db.CreateWorkspaceParams, own
 		arg.ForkedFromBase != "" && arg.ForkedFromBase != row.ForkedFromBase {
 		return pkgerrors.Conflict("branch already has a different machine source")
 	}
-	if arg.VcpuCount.Valid && arg.VcpuCount != row.VcpuCount ||
-		arg.MemoryMb.Valid && arg.MemoryMb != row.MemoryMb ||
-		arg.DiskMb.Valid && arg.DiskMb != row.DiskMb {
+	if branchMachineSizeDiffers(row, arg) {
 		return pkgerrors.Conflict("branch already has different machine resources")
 	}
 	return nil

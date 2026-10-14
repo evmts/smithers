@@ -228,3 +228,96 @@ func TestAFullPoolRecordsTheWaitItLeavesTheBoxIn(t *testing.T) {
 			"the row is untouched: clearFullPoolDeferral writes nothing for a stage it did not set")
 	})
 }
+
+// An import provisions the repository's branch machine itself and names no
+// size, so the row is unsized and boots at this deployment's default. Every
+// later create that names a size then answered
+//
+//	branch already has different machine resources
+//
+// and DELETE answered "branch is retained", so the size was unreachable by
+// any route a person has. Production 2026-10-14 12:45Z, API a2482ce1:
+// repository 112554 was imported, its machine 4cdaa484 was created 2 s later
+// unsized, the controller deferred it every few seconds
+// (`code=no_capacity`, `free cpu=1200m` on the only host with room for a
+// guest's disk) and the only placeable shape — 1 vCPU — was refused by this
+// check. The turn after it read "The agent pool is full right now."
+// smithers#3885.
+func TestAnUnbootedBranchMachineAdoptsTheSizeItsOwnerAsks(t *testing.T) {
+	const (
+		vcpus    = 1
+		memoryMB = 3072
+		diskMB   = 2048
+	)
+	sized := func() workspaceCreateMetadata {
+		return workspaceCreateMetadata{kind: "container", resources: WorkspaceResources{
+			CPUs: resourcePtr(vcpus), MemoryMB: resourcePtr(memoryMB), DiskGiB: resourcePtr(diskMB / 1024),
+		}}
+	}
+
+	t.Run("the machine the import left unsized takes the size that fits", func(t *testing.T) {
+		f := newBranchMachineFixture(t)
+		const branch = "adopt/main"
+		machine := f.machine(t, db.CreateWorkspaceParams{TargetBookmark: branch, Status: "starting"})
+		require.False(t, machine.VcpuCount.Valid, "the import names no size")
+		require.Empty(t, machine.VmID, "and never got a guest")
+		svc := f.service(nil)
+
+		joined, err := svc.findOrCreatePrimaryWorkspace(context.Background(), f.repo, f.user, "", branch, sized())
+		require.NoError(t, err, "a branch machine whose size no route can change strands the repository")
+		assert.Equal(t, machine.ID, joined.ID, "the branch still has exactly one machine")
+
+		stored, err := f.q.GetWorkspace(context.Background(), machine.ID)
+		require.NoError(t, err)
+		assert.Equal(t, pgtype.Int4{Int32: vcpus, Valid: true}, stored.VcpuCount)
+		assert.Equal(t, pgtype.Int4{Int32: memoryMB, Valid: true}, stored.MemoryMb)
+		assert.Equal(t, pgtype.Int4{Int32: diskMB, Valid: true}, stored.DiskMb)
+		assert.Len(t, f.branch(t, branch), 1)
+
+		// The create path's own size check must agree, or the person reads
+		// "exists with different resources" one call later instead.
+		require.NoError(t, svc.refuseJoinedMachineSizeMismatch(stored, CreateWorkspaceInput{Resources: sized().resources}))
+
+		again, err := svc.findOrCreatePrimaryWorkspace(context.Background(), f.repo, f.user, "", branch, sized())
+		require.NoError(t, err, "the size it adopted is the size it has")
+		assert.Equal(t, machine.ID, again.ID)
+	})
+
+	t.Run("a machine that booted keeps the size it booted", func(t *testing.T) {
+		f := newBranchMachineFixture(t)
+		const branch = "booted/main"
+		machine := f.machine(t, db.CreateWorkspaceParams{
+			TargetBookmark: branch, Status: "running",
+			VcpuCount: pgtype.Int4{Int32: 2, Valid: true},
+			MemoryMb:  pgtype.Int4{Int32: 4096, Valid: true},
+			DiskMb:    pgtype.Int4{Int32: 32768, Valid: true},
+		})
+		f.exec(t, `UPDATE workspaces SET vm_id='vm-booted', started_at=NOW() WHERE id=$1`, machine.ID)
+
+		_, err := f.service(nil).findOrCreatePrimaryWorkspace(context.Background(), f.repo, f.user, "", branch, sized())
+		var api *pkgerrors.APIError
+		require.ErrorAs(t, err, &api, "a running machine's guest is not resized under its session")
+		assert.Equal(t, "branch already has different machine resources", api.Message)
+
+		stored, getErr := f.q.GetWorkspace(context.Background(), machine.ID)
+		require.NoError(t, getErr)
+		assert.Equal(t, int32(2), stored.VcpuCount.Int32)
+		assert.Equal(t, int32(32768), stored.DiskMb.Int32)
+	})
+
+	t.Run("a retained machine is still retained", func(t *testing.T) {
+		f := newBranchMachineFixture(t)
+		const branch = "retained/main"
+		machine := f.machine(t, db.CreateWorkspaceParams{TargetBookmark: branch, Status: "failed"})
+
+		_, err := f.service(nil).findOrCreatePrimaryWorkspace(context.Background(), f.repo, f.user, "", branch, sized())
+		var api *pkgerrors.APIError
+		require.ErrorAs(t, err, &api)
+		assert.Equal(t, "branch machine is retained; recover it before joining", api.Message,
+			"a size never recovers a machine whose disk a worker may still hold")
+
+		stored, getErr := f.q.GetWorkspace(context.Background(), machine.ID)
+		require.NoError(t, getErr)
+		assert.False(t, stored.VcpuCount.Valid, "nothing was written")
+	})
+}
