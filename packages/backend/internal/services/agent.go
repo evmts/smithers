@@ -1290,11 +1290,11 @@ func (s *AgentService) appendAgentDispatchFailureLog(ctx context.Context, workfl
 	if s.dispatchQ == nil || workflowRunID == 0 || stepID == 0 || strings.TrimSpace(reason) == "" {
 		return
 	}
-	inserted, err := s.dispatchQ.InsertWorkflowRunLogNextSequence(ctx, db.InsertWorkflowRunLogNextSequenceParams{
+	inserted, err := s.insertAgentDispatchFailureLog(ctx, db.InsertWorkflowRunLogNextSequenceParams{
 		WorkflowRunID:  workflowRunID,
 		WorkflowStepID: stepID,
 		Stream:         "system",
-		Entry:          reason,
+		Entry:          storableWorkflowLogEntry(reason),
 	})
 	if err != nil {
 		middleware.LoggerWithWorkflowRun(ctx, workflowRunID).
@@ -1315,6 +1315,42 @@ func (s *AgentService) appendAgentDispatchFailureLog(ctx context.Context, workfl
 		middleware.LoggerWithWorkflowRun(ctx, workflowRunID).
 			Warn("failed to announce agent dispatch failure log", "error", err)
 	}
+}
+
+// insertAgentDispatchFailureLog allocates the run's next log sequence under the
+// advisory lock every other appender takes.
+//
+// workflow_run_logs is UNIQUE (workflow_run_id, sequence) and the insert reads
+// MAX(sequence)+1, so an unsynchronized append races any concurrent writer on
+// the same run — the sandbox scheduler reporting the provisioning failure that
+// caused this dispatch failure is exactly such a writer. The loser gets a
+// unique violation, and the one line the Steps view has is the one that is
+// lost. The notification is published only after the commit, so no watcher is
+// told about a row that may roll back.
+func (s *AgentService) insertAgentDispatchFailureLog(
+	ctx context.Context,
+	arg db.InsertWorkflowRunLogNextSequenceParams,
+) (db.InsertWorkflowRunLogNextSequenceRow, error) {
+	starter, ok := s.dispatchQ.(runnerTxStarter)
+	if !ok {
+		return s.dispatchQ.InsertWorkflowRunLogNextSequence(ctx, arg)
+	}
+	tx, err := starter.BeginTx(ctx)
+	if err != nil {
+		return db.InsertWorkflowRunLogNextSequenceRow{}, fmt.Errorf("begin agent dispatch failure log transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, arg.WorkflowRunID); err != nil {
+		return db.InsertWorkflowRunLogNextSequenceRow{}, fmt.Errorf("lock workflow run log sequence: %w", err)
+	}
+	inserted, err := db.New(tx).InsertWorkflowRunLogNextSequence(ctx, arg)
+	if err != nil {
+		return db.InsertWorkflowRunLogNextSequenceRow{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return db.InsertWorkflowRunLogNextSequenceRow{}, fmt.Errorf("commit agent dispatch failure log: %w", err)
+	}
+	return inserted, nil
 }
 
 func agentTerminalWorkflowStatuses(sessionStatus string) (taskStatus string, stepStatus string) {

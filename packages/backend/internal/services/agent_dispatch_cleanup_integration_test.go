@@ -262,3 +262,63 @@ func TestMarkAgentDispatchInfrastructureFailed_TasklessPredecessorPreservesNewCl
 	_, err = q.GetWorkflowRunByAgentToken(ctx, pgtype.Text{String: persistedNew.AgentTokenHash.String, Valid: true})
 	require.NoError(t, err)
 }
+
+// A retry that succeeds must not keep showing its owner the previous attempt's
+// refusal. markAgentDispatchInfrastructureFailed records the sentence on
+// agent_sessions.metadata, which the API returns verbatim and the session
+// status event repeats, so the re-dispatch that reactivates the row has to drop
+// it with started_at and finished_at.
+func TestClaimAgentSessionForDispatch_ClearsThePreviousAttemptsFailureReason(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires PostgreSQL")
+	}
+	pool := setupTestPool(t)
+	q := db.New(pool)
+	ctx := context.Background()
+	userID, repoID := setupTestUserAndRepo(t, pool)
+	sessionID := uuid.NewString()
+	_, err := q.CreateAgentSession(ctx, db.CreateAgentSessionParams{
+		ID: sessionID, RepositoryID: repoID, UserID: userID, Title: "retry after a refusal", Status: "active",
+	})
+	require.NoError(t, err)
+	definition, err := q.UpsertAgentWorkflowDefinition(ctx, repoID)
+	require.NoError(t, err)
+	makeRun := func() db.WorkflowRun {
+		t.Helper()
+		run, createErr := q.CreateWorkflowRun(ctx, db.CreateWorkflowRunParams{
+			RepositoryID: repoID, WorkflowDefinitionID: definition.ID, Status: "queued",
+			TriggerEvent: "agent_message", DispatchInputs: []byte(`{}`), ExecutionPlane: "agent",
+		})
+		require.NoError(t, createErr)
+		return run
+	}
+
+	refusedRun := makeRun()
+	claimed, err := q.ClaimAgentSessionForDispatch(ctx, sessionID, refusedRun.ID)
+	require.NoError(t, err)
+	require.True(t, claimed)
+	_, err = q.UpdateAgentSessionTerminalStatus(ctx, db.UpdateAgentSessionTerminalStatusParams{
+		ID: sessionID, Status: "failed",
+		ExpectedWorkflowRunID: pgtype.Int8{Int64: refusedRun.ID, Valid: true},
+	})
+	require.NoError(t, err)
+	failed, recorded, err := q.RecordAgentSessionFailureReason(ctx, sessionID, agentSessionNoCapacityMessage)
+	require.NoError(t, err)
+	require.True(t, recorded)
+	require.Contains(t, string(failed.Metadata), "failure_reason")
+	require.NoError(t, q.FailWorkflowRun(ctx, refusedRun.ID))
+
+	retryRun := makeRun()
+	claimed, err = q.ClaimAgentSessionForDispatch(ctx, sessionID, retryRun.ID)
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	var status string
+	var metadata []byte
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT status, metadata FROM agent_sessions WHERE id = $1`, sessionID).Scan(&status, &metadata))
+	assert.Equal(t, "active", status)
+	assert.JSONEq(t, `{}`, string(metadata),
+		"a reactivated session must not carry the refusal its retry replaced")
+	assert.Empty(t, agentSessionFailureReasonFromMetadata(metadata))
+}

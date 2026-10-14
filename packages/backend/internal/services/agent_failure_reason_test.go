@@ -3,9 +3,12 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"testing"
+	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 
@@ -205,4 +208,92 @@ func TestAgentDispatchFailureLogSkipsWhenThereIsNoRunOrStep(t *testing.T) {
 	svc.appendAgentDispatchFailureLog(context.Background(), 17463, 0, "reason")
 	svc.appendAgentDispatchFailureLog(context.Background(), 17463, 20, "   ")
 	require.Zero(t, inserts)
+}
+
+// transactionalAgentDispatchQuerier is the dispatch querier a production
+// *db.Queries is: it can start a transaction.
+type transactionalAgentDispatchQuerier struct {
+	*mockAgentDispatchQuerier
+	tx       *workflowSandboxLogTx
+	beginErr error
+}
+
+func (q *transactionalAgentDispatchQuerier) BeginTx(context.Context) (pgx.Tx, error) {
+	if q.beginErr != nil {
+		return nil, q.beginErr
+	}
+	return q.tx, nil
+}
+
+// workflow_run_logs is UNIQUE (workflow_run_id, sequence) and the insert reads
+// MAX(sequence)+1, so this line must be allocated under the same advisory lock
+// every other appender takes. The concurrent writer is not hypothetical: the
+// sandbox scheduler reports the provisioning failure that caused the dispatch
+// failure on the same run, and the loser of the race is the only line the
+// Steps view would have had.
+func TestAgentDispatchFailureLogLocksTheRunSequenceAndNotifiesAfterCommit(t *testing.T) {
+	base := &mockAgentDispatchQuerier{}
+	fakeTx := &workflowSandboxLogTx{}
+	fakeTx.queryRowFn = func(_ context.Context, sql string, _ ...any) pgx.Row {
+		require.Len(t, fakeTx.execCalls, 1, "the sequence lock must precede the insert")
+		require.Contains(t, fakeTx.execCalls[0], "pg_advisory_xact_lock")
+		require.Equal(t, []any{int64(17463)}, fakeTx.execArgs[0])
+		require.Contains(t, sql, "-- name: InsertWorkflowRunLogNextSequence")
+		return workflowSandboxLogTxRow{values: []any{
+			int64(91), int64(17463), int64(20), int64(4), "system", agentSessionNoCapacityMessage, time.Now().UTC(),
+		}}
+	}
+	base.insertWorkflowRunLogFn = func(context.Context, db.InsertWorkflowRunLogNextSequenceParams) (db.InsertWorkflowRunLogNextSequenceRow, error) {
+		t.Error("the transaction path must insert through db.New(tx), not the outer querier")
+		return db.InsertWorkflowRunLogNextSequenceRow{}, nil
+	}
+	var notified []db.NotifyWorkflowRunLogParams
+	base.notifyWorkflowRunLogFn = func(_ context.Context, arg db.NotifyWorkflowRunLogParams) error {
+		require.True(t, fakeTx.commitCalled, "no watcher is told about a row that may roll back")
+		notified = append(notified, arg)
+		return nil
+	}
+	svc := &AgentService{dispatchQ: &transactionalAgentDispatchQuerier{mockAgentDispatchQuerier: base, tx: fakeTx}}
+
+	svc.appendAgentDispatchFailureLog(context.Background(), 17463, 20, agentSessionNoCapacityMessage)
+
+	require.True(t, fakeTx.commitCalled)
+	require.Len(t, notified, 1)
+	require.Contains(t, notified[0].Payload, `"sequence":4`)
+}
+
+// A transaction that cannot even begin must not publish a notification for a
+// log row that was never written.
+func TestAgentDispatchFailureLogDoesNotAnnounceWhatItCouldNotWrite(t *testing.T) {
+	base := &mockAgentDispatchQuerier{}
+	var notified int
+	base.notifyWorkflowRunLogFn = func(context.Context, db.NotifyWorkflowRunLogParams) error {
+		notified++
+		return nil
+	}
+	svc := &AgentService{dispatchQ: &transactionalAgentDispatchQuerier{
+		mockAgentDispatchQuerier: base, beginErr: errors.New("pool exhausted"),
+	}}
+
+	svc.appendAgentDispatchFailureLog(context.Background(), 17463, 20, agentSessionNoCapacityMessage)
+
+	require.Zero(t, notified)
+}
+
+// PostgreSQL TEXT rejects NUL and invalid UTF-8, and a rejected insert loses
+// the only line the run has. Every other appender scrubs; so does this one.
+func TestAgentDispatchFailureLogStoresAStorableEntry(t *testing.T) {
+	var entries []db.InsertWorkflowRunLogNextSequenceParams
+	dq := &mockAgentDispatchQuerier{
+		insertWorkflowRunLogFn: func(_ context.Context, arg db.InsertWorkflowRunLogNextSequenceParams) (db.InsertWorkflowRunLogNextSequenceRow, error) {
+			entries = append(entries, arg)
+			return db.InsertWorkflowRunLogNextSequenceRow{ID: 1, Sequence: 1, Stream: arg.Stream, Entry: arg.Entry}, nil
+		},
+	}
+	svc := &AgentService{dispatchQ: dq}
+
+	svc.appendAgentDispatchFailureLog(context.Background(), 17463, 20, "refused\x00 by the pool")
+
+	require.Len(t, entries, 1)
+	require.NotContains(t, entries[0].Entry, "\x00")
 }

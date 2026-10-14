@@ -26,6 +26,11 @@ import (
 // (UpdateAgentSessionTerminalStatus only matches status='active' rows), leaking
 // the VM gauge and the run's scoped tokens.
 //
+// The reset drops metadata.failure_reason with it (see
+// RecordAgentSessionFailureReason): the API returns metadata verbatim and the
+// session status event repeats that key, so a retry that succeeds would
+// otherwise keep showing its owner the previous attempt's refusal.
+//
 // Returns false when the session is missing/tombstoned or another run is live.
 func (q *Queries) ClaimAgentSessionForDispatch(ctx context.Context, sessionID string, workflowRunID int64) (bool, error) {
 	tx, err := q.BeginTx(ctx)
@@ -64,6 +69,7 @@ SET workflow_run_id = $2,
     status = 'active',
     started_at = NULL,
     finished_at = NULL,
+    metadata = COALESCE(metadata, '{}'::jsonb) - 'failure_reason',
     updated_at = NOW()
 WHERE id = $1 AND deleted_at IS NULL
 `, sessionID, workflowRunID); err != nil {
