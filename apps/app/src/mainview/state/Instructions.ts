@@ -33,6 +33,8 @@ import {
   FAILED_RESULT_LINE,
   namedCantYets,
   RUN_IS_NOT_RESULT_LINE,
+  SMITHERS_SUBJECT_READS_DOCS_LINE,
+  smithersSubjectLine,
   TOOL_CHANNEL_LINE,
   WORKFLOW_LAUNDERING_RULE
 } from "@smthrs/rpc/AgentInstructions"
@@ -149,6 +151,7 @@ export const bytesOf = (text: string): number => new TextEncoder().encode(text).
  */
 export const STANDING_INSTRUCTION_TEXT = [
   SMITHERS_INSTRUCTIONS,
+  SMITHERS_SUBJECT_READS_DOCS_LINE,
   CODE_INTEL_LINE,
   WEB_HOST_LINE,
   ...NAMED_CANT_YETS,
@@ -172,6 +175,14 @@ export const smithersInstructions = (
   const listed = catalog.filter(command => wanted.has(command.name))
   return [
     SMITHERS_INSTRUCTIONS,
+    /*
+     * Smithers' own subject follows the documentation door, as CODE_INTEL_LINE
+     * follows `code.hover`: this registry hides and un-discloses `docs` when
+     * the host bundles no pages (flows/entries/docs.ts), and a turn told to
+     * read a page it cannot read, "never from memory", has only a refusal left
+     * (#3881).
+     */
+    smithersSubjectLine(catalog.some((command) => command.name === "docs")),
     ...(codeIntel ? [CODE_INTEL_LINE] : []),
     "",
     `Commands for this conversation (${catalog.length} exist; the list action with a "query" finds the rest, with their arguments):`,

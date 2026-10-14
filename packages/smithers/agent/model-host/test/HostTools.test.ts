@@ -12,6 +12,9 @@ import {
   CONVERSATION_IS_NOT_A_COMMAND_LINE,
   FAILED_RESULT_LINE,
   RUN_IS_NOT_RESULT_LINE,
+  SMITHERS_SUBJECT_READS_DOCS_LINE,
+  smithersSubjectLine,
+  SMITHERS_SUBJECT_WITHOUT_DOCS_LINE,
   WORKFLOW_LAUNDERING_RULE
 } from "@smthrs/rpc/AgentInstructions"
 import { MAX_TOOL_LEGS } from "@smthrs/rpc/AgentToolResult"
@@ -25,6 +28,7 @@ import type { AgentTurnFrame, FetchLike, StartAgentTurnRequest } from "@smthrs/r
 import type { TodoCard } from "@smthrs/rpc/TodoCard"
 import { FORM_INSTRUCTION_FIELDS, UI_INSTRUCTION_FIELDS } from "@smthrs/rpc/UiInstruction"
 import { Effect, Stream } from "effect"
+import { Buffer } from "node:buffer"
 import { createHash } from "node:crypto"
 import { describe, expect, test } from "vitest"
 import { runDurableChatTurn } from "../src/DurableChatProducer.ts"
@@ -2326,17 +2330,55 @@ describe("a Cloud account conversation asks for a new flow with its form", () =>
        * first draft ended "never hand it off to docs"; probed against the real
        * provider with the pages offered, the same turn then answered "how do I
        * put HTTPS in front of Smithers" from memory in 6.5 kB instead of
-       * reading the page. The clause defers to the docs rule by name, and this
-       * pins that it still does.
+       * reading the page. The clause defers to the docs rule, and this pins
+       * that it still does — in the form this grant's catalog earns, since a
+       * turn offered no documentation command cannot be sent to read a page.
        */
       expect(system).toContain(
-        "a question about how SMITHERS itself works is still answered by running the command that reads its documentation and quoting what that returns, never from memory"
+        smithersSubjectLine(commandLines(system).some((line) => line.startsWith("- /docs")))
       )
       expect(system).not.toContain("never hand it off to docs")
       // Every external fence stands, unchanged.
       expect(system).toContain("You cannot send or draft email")
       expect(system).toContain("push to a branch or open a pull request — not directly, and not through a run")
       for (const line of WORKFLOW_LAUNDERING_RULE) expect(system).toContain(line)
+    }
+  })
+
+  /*
+   * THE CLAUSE FOLLOWS THE COMMAND.
+   *
+   * `docsReadLine` is stated only when `docs` is offered — and a turn run with
+   * no pages is offered no `docs` (the row above pins that catalog). The
+   * conversation rule's Smithers-subject clause was stated unconditionally, so
+   * such a turn was told to answer a question about Smithers by running a
+   * command it does not have and "never from memory": no source, and nothing
+   * left but the refusal #3881 removed. The clause now follows the door, as
+   * CODE_INTEL_LINE follows `code.hover` in the browser's prompt.
+   */
+  test("the Smithers-subject clause is stated only when the turn is offered the documentation command", async () => {
+    const told = async (turn: DurableChatGrant, docs: ReadonlyArray<DocsPage> | undefined) => {
+      const provider = model([])
+      await runWithDocs(turn, provider, producer((path) => file(path, JOURNEY), stackRoutes), docs)
+      return systemText(provider.requests[0])
+    }
+    const pages = await told(account, PAGES)
+    expect(commandLines(pages).map((line) => line.slice(3).split(" ")[0])).toContain("docs")
+    expect(pages).toContain(DOCS_LINE)
+    expect(pages).toContain(SMITHERS_SUBJECT_READS_DOCS_LINE)
+    expect(pages).not.toContain(SMITHERS_SUBJECT_WITHOUT_DOCS_LINE)
+    const none = await told(account, undefined)
+    expect(commandLines(none).map((line) => line.slice(3).split(" ")[0])).not.toContain("docs")
+    expect(none).not.toContain(DOCS_LINE)
+    expect(none).not.toContain(SMITHERS_SUBJECT_READS_DOCS_LINE)
+    expect(none).toContain(SMITHERS_SUBJECT_WITHOUT_DOCS_LINE)
+    // No page to read is still not a refusal, and still not an invention.
+    expect(none).toContain("never invent a command, a flag, a page or a step")
+    // Either way the rule is stated once, and it licenses the world.
+    for (const system of [pages, none]) {
+      expect(system.split(CONVERSATION_IS_NOT_A_COMMAND_LINE)).toHaveLength(2)
+      expect(system).toContain("This licenses subjects in the WORLD, nothing about this app")
+      expect(system).toContain("You cannot send or draft email")
     }
   })
 
@@ -2569,7 +2611,7 @@ describe("a Cloud account conversation runs the screen-only flows for its author
       turnId: account.turnId,
       phase: "prompt",
       replaced: true,
-      instructionBytes: system.length,
+      instructionBytes: Buffer.byteLength(system),
       appended: false,
       appendedBytes: 0,
       context: false,

@@ -41,6 +41,7 @@ import {
   FAILED_RESULT_LINE,
   namedCantYets,
   RUN_IS_NOT_RESULT_LINE,
+  smithersSubjectLine,
   TOOL_CHANNEL_LINE,
   WORKFLOW_LAUNDERING_RULE
 } from "@smthrs/rpc/AgentInstructions"
@@ -65,6 +66,7 @@ import {
   UiInstructionFrameSchema
 } from "@smthrs/rpc/UiInstruction"
 import { Effect } from "effect"
+import { Buffer } from "node:buffer"
 import { createHash } from "node:crypto"
 import { z } from "zod"
 import type { DurableChatGrant } from "./DurableChatProducer.ts"
@@ -842,6 +844,13 @@ const hostInstructions = (offered: ReadonlyArray<Offered>, docs: ReadonlyArray<D
   const reads = offered.flatMap(({ command }) =>
     command.name === FILES_LIST_COMMAND.name || command.name === FILES_READ_COMMAND.name ? [command.name] : []
   )
+  /*
+   * A turn with no bundled pages is offered no `docs` at all, so the rule that
+   * hands Smithers' own subject to the documentation command is stated only
+   * here, beside the command itself: told to read a page it cannot read and
+   * "never from memory", such a turn has only a refusal left (#3881).
+   */
+  const documentation = offered.some(({ command }) => command.name === "docs")
   return [
     AGENT_NAME_LINE,
     "You have one tool, \"commands\": action \"list\" returns the commands below; action \"execute\" runs one by name with its argument text, as the person who asked.",
@@ -849,6 +858,7 @@ const hostInstructions = (offered: ReadonlyArray<Offered>, docs: ReadonlyArray<D
     ASK_IS_PERMISSION_LINE,
     ASSISTANT_ACTS_LINE,
     CONVERSATION_IS_NOT_A_COMMAND_LINE,
+    smithersSubjectLine(documentation),
     ANNOUNCED_ACT_LINE,
     RUN_IS_NOT_RESULT_LINE,
     FAILED_RESULT_LINE,
@@ -870,7 +880,7 @@ const hostInstructions = (offered: ReadonlyArray<Offered>, docs: ReadonlyArray<D
     "Call commands with action list to inspect payload schemas. HTTP commands accept a JSON object; TODO references also accept Tn.",
     ...(reads.includes(FILES_LIST_COMMAND.name) ? [LIST_BEFORE_READ_LINE] : []),
     ...(offered.some(({ command, asked }) => asked === true && command.name === "flow.new") ? [FLOW_NEW_LINE] : []),
-    ...(offered.some(({ command }) => command.name === "docs") ? [docsReadLine(docs)] : []),
+    ...(documentation ? [docsReadLine(docs)] : []),
     "",
     `Everything this list lacks is an ACT you cannot take yet; it is never a subject you cannot discuss. ${
       cantYetsSentence(namedCantYets(reads))
@@ -1047,11 +1057,13 @@ export const runHostTurn = <E>(
      */
     diagnostics?.record("host_tools", "prompt", {
       replaced: offered.length > 0,
-      instructionBytes: request.instructions.length,
+      // Bytes as the wire and the digest count them: the prompt's dashes and
+      // ellipses are multi-byte, so a code-unit count would not match either.
+      instructionBytes: Buffer.byteLength(request.instructions),
       instructionLines: request.instructions.split("\n").length,
       instructionSha: createHash("sha256").update(request.instructions).digest("hex").slice(0, 12),
       appended: grant.agentInstructions !== undefined,
-      appendedBytes: grant.agentInstructions?.length ?? 0,
+      appendedBytes: grant.agentInstructions === undefined ? 0 : Buffer.byteLength(grant.agentInstructions),
       context: request.context !== undefined,
       contextVersion: request.context?.version ?? 0,
       capabilities: request.context?.capabilities.length ?? 0,

@@ -67,12 +67,53 @@ export const ASSISTANT_ACTS_LINE =
  * same turn then answered "how do I put HTTPS in front of Smithers" from
  * memory in 6.5 kB instead of reading the page — trading one defect for
  * another, because this line is about the WORLD and the docs rule owns
- * Smithers' own subject. It now says so.
+ * Smithers' own subject. It now says so, and what it hands Smithers' own
+ * subject TO is stated separately, because that door is not always open
+ * (`SMITHERS_SUBJECT_READS_DOCS_LINE`).
  * @since 1.0.0
  * @category constants
  */
 export const CONVERSATION_IS_NOT_A_COMMAND_LINE =
-  "Writing in this chat is always yours to do, and no command gates it. Answering a question, explaining how something works, teaching a subject, comparing options, summarizing, translating, reviewing text, doing arithmetic, and drafting prose or code the person reads here are not acts and need no catalog entry: answer in full, in the shape and at the length they asked for, however long that is. The commands and the can't-yets are about ACTS — effects outside this conversation — never about subjects you may discuss. So never refuse an explanation, a guide, an essay, or any piece of writing because no command covers it, never cut one short for that reason, and never hand it back by naming a slash command for the person to type. This licenses subjects in the WORLD, nothing about this app: a question about how SMITHERS itself works is still answered by running the command that reads its documentation and quoting what that returns, never from memory."
+  "Writing in this chat is always yours to do, and no command gates it. Answering a question, explaining how something works, teaching a subject, comparing options, summarizing, translating, reviewing text, doing arithmetic, and drafting prose or code the person reads here are not acts and need no catalog entry: answer in full, in the shape and at the length they asked for, however long that is. The commands and the can't-yets are about ACTS — effects outside this conversation — never about subjects you may discuss. So never refuse an explanation, a guide, an essay, or any piece of writing because no command covers it, never cut one short for that reason, and never hand it back by naming a slash command for the person to type. This licenses subjects in the WORLD, nothing about this app."
+
+/**
+ * Smithers' own subject, where the documentation door is open.
+ *
+ * The conversation rule licenses the world and says so; Smithers itself is the
+ * one subject it does not license, because the documentation command answers
+ * that one from the page instead of from memory
+ * (`HostTools` `docsReadLine`, `flows/entries/docs.ts`).
+ * @since 1.0.0
+ * @category constants
+ */
+export const SMITHERS_SUBJECT_READS_DOCS_LINE =
+  "A question about how SMITHERS itself works is still answered by running the command that reads its documentation and quoting what that returns, never from memory."
+
+/**
+ * Smithers' own subject, where there is no documentation door.
+ *
+ * The clause above is stated only beside the command it names, as
+ * `CODE_INTEL_LINE` is stated only where `code.hover` is registered. Stated
+ * unconditionally it told a turn with no documentation command to run one and
+ * "never from memory" — no source, and nothing left but the refusal the rest
+ * of [#3881](https://github.com/smithersai/smithers/issues/3881) removed,
+ * aimed at Smithers' own subject. A turn with no page to read still answers;
+ * it just says which part it does not know, and invents nothing.
+ * @since 1.0.0
+ * @category constants
+ */
+export const SMITHERS_SUBJECT_WITHOUT_DOCS_LINE =
+  "No command here reads Smithers' own documentation, so a question about how SMITHERS itself works is answered from the runtime context and what this conversation has established: say plainly which part you do not know, and never invent a command, a flag, a page or a step. That is still an answer, never a refusal."
+
+/**
+ * Smithers' own subject, as the prompt beside a given catalog states it.
+ *
+ * @param documentationCommand - whether this turn is offered the command that reads the documentation.
+ * @since 1.0.0
+ * @category constructors
+ */
+export const smithersSubjectLine = (documentationCommand: boolean): string =>
+  documentationCommand ? SMITHERS_SUBJECT_READS_DOCS_LINE : SMITHERS_SUBJECT_WITHOUT_DOCS_LINE
 
 /**
  * An announced act has its tool call in the same turn.

@@ -8,7 +8,11 @@
  */
 import { describe, expect, test } from "bun:test"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
-import { CONVERSATION_IS_NOT_A_COMMAND_LINE } from "@smthrs/rpc/AgentInstructions"
+import {
+  CONVERSATION_IS_NOT_A_COMMAND_LINE,
+  SMITHERS_SUBJECT_READS_DOCS_LINE,
+  SMITHERS_SUBJECT_WITHOUT_DOCS_LINE
+} from "@smthrs/rpc/AgentInstructions"
 import { cloudCapabilities, localCapabilities } from "@smthrs/rpc/HostCapabilities"
 import { executeAgentToolCall } from "../flows/agentTools"
 import { scopedControllers } from "./ControllerTestScope"
@@ -46,6 +50,36 @@ test("the browser prompt says writing in the chat needs no command, and scopes i
   expect(prompt).toContain("You cannot send or draft email")
   expect(prompt).toContain("push to a branch or open a pull request — not directly, and not through a run")
   expect(prompt).toContain("Asked to write or explain something about one of them, write it: the subject is never the fence.")
+})
+
+/*
+ * THE CLAUSE FOLLOWS THE CATALOG, as CODE_INTEL_LINE already does.
+ *
+ * The conversation rule's last clause defers Smithers' own subject to the
+ * command that reads the documentation, so a "how does HTTPS work in front of
+ * Smithers" answer is quoted from the page instead of recalled (#3881). A
+ * session whose registry has no documentation door (`docsAvailable()` false —
+ * flows/entries/docs.ts hides and un-disclosed `docs` then) was told to run it
+ * anyway, and told "never from memory" with no other source: the same
+ * overbroad-refusal shape the rest of #3881 removed, aimed at Smithers'
+ * own subject. The clause is now stated only where the door exists.
+ */
+test("the Smithers-subject clause is stated only when a documentation command is in the catalog", () => {
+  const docs = { name: "docs", summary: "Read the docs in the app", args: "[page]" }
+  const without = smithersInstructions([], honesty())
+  expect(without).toContain(CONVERSATION_IS_NOT_A_COMMAND_LINE)
+  expect(without).not.toContain(SMITHERS_SUBJECT_READS_DOCS_LINE)
+  expect(without).toContain(SMITHERS_SUBJECT_WITHOUT_DOCS_LINE)
+  // No door to read, and still an answer: the fence against invention stands in its place.
+  expect(without).toContain("never invent a command, a flag, a page or a step")
+  const with_ = smithersInstructions([docs], honesty(), { disclosed: ["docs"] })
+  expect(with_).toContain(SMITHERS_SUBJECT_READS_DOCS_LINE)
+  expect(with_).not.toContain(SMITHERS_SUBJECT_WITHOUT_DOCS_LINE)
+  // Either way the rule itself is stated once, and licenses the world.
+  for (const prompt of [without, with_]) {
+    expect(prompt.split(CONVERSATION_IS_NOT_A_COMMAND_LINE)).toHaveLength(2)
+    expect(prompt).toContain("This licenses subjects in the WORLD, nothing about this app")
+  }
 })
 
 test("the browser host line is present once and names no retired download door", () => {
