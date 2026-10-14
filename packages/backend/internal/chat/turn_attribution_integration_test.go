@@ -63,3 +63,28 @@ func TestADispatchedTurnAttributesItsSandboxWorkToItself(t *testing.T) {
 		t.Fatal("the host was never dispatched")
 	}
 }
+
+// The kind is a wire value, not a local name: the controller validates it on
+// every mutation and refuses one that is not lower snake case with a leading
+// letter, longer than 64 bytes, or sent without an id, and a refused create is
+// the whole case this attribution exists for (Plue
+// internal/microsandbox/control/controller.go, validateResourceOwner). That
+// validator cannot be imported here, and the test above compares the
+// dispatched link with this same constant, so renaming it would leave this
+// package green while every chat sandbox create started coming back rejected.
+// Pin the value and the shape the other side reads.
+func TestTheChatTurnResourceKindIsOneTheControllerAccepts(t *testing.T) {
+	if chatTurnResourceKind != "chat_turn" {
+		t.Fatalf("resource kind = %q, want %q", chatTurnResourceKind, "chat_turn")
+	}
+	if len(chatTurnResourceKind) == 0 || len(chatTurnResourceKind) > 64 {
+		t.Fatalf("resource kind %q is %d bytes, outside the controller's 1..64", chatTurnResourceKind, len(chatTurnResourceKind))
+	}
+	for index, character := range chatTurnResourceKind {
+		letter := character >= 'a' && character <= 'z'
+		tail := index > 0 && (character == '_' || (character >= '0' && character <= '9'))
+		if !letter && !tail {
+			t.Fatalf("resource kind %q is not lower snake case at index %d", chatTurnResourceKind, index)
+		}
+	}
+}
