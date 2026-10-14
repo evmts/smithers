@@ -147,3 +147,20 @@ test("a host that serves neither Cloud issues nor an install is unchanged, and a
     expect(h.calls).toEqual([])
   } finally { await h.controller.dispose() }
 })
+
+test("a number the repository's tracker does not have is refused by the source, not by the mock", async () => {
+  const h = await hosted({ routes: {} })
+  try {
+    /*
+     * The tracker's own 404 (plue pkg/errors NotFound, restated by the Worker)
+     * reaches the person as the seam's sentence, which names the GitHub door —
+     * where the mock answered a bare "No issue #999" for an issue it never read.
+     */
+    const outcome = await h.controller.runCommandForResult("issue", "999")
+    expect(outcome).toMatchObject({ status: "failed" })
+    expect(outcome.status === "failed" ? outcome.error : "").toBe(
+      `Issue #999 in ${REPO} was not found. For a GitHub issue, use /issues.view 999 ${REPO} --source github.`
+    )
+    expect(h.calls).toEqual([`GET ${ISSUES}/999`])
+  } finally { await h.controller.dispose() }
+})
