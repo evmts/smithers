@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react"
 import { useLiveQuery } from "@tanstack/react-db"
+import { GitBranch } from "lucide-react"
 /* T-APP-10: live topics map to BranchView; demo projections remain isolated. */
 import type { CatalogTag } from "@smthrs/rpc/CardAction"
 import type { BranchCard as BranchModel } from "@smthrs/rpc/BranchCard"
@@ -7,7 +8,7 @@ import type { MachineState } from "@smthrs/rpc/CardPrimitives"
 import type { CloudWorkspaceRow } from "../state/AppState"
 import { cloudBoxesHeld } from "../flows/entries/Declare"
 import { useBranchPresence, useTopic } from "../state/useTopic"
-import { branchModel, branchSeedAvailable, projectBranch, projectBranchActivity } from "../state/seams/BranchSeam"
+import { branchCardStage, branchModel, branchSeedAvailable, projectBranch, projectBranchActivity, type BranchCardStage } from "../state/seams/BranchSeam"
 import { useController } from "../ControllerContext"
 import { cardActions, type CardActionDefinition, type CardCommandDispatch } from "../flows/cardActions"
 import type { CardActions, CardFamily, CardOf } from "./CardFamily"
@@ -115,11 +116,52 @@ function persistBranchView(controller: ReturnType<typeof useController>, card: C
   controller.setCardTab(card.id, patch.tab)
 }
 
+const STAGE_WORD: Record<BranchCardStage["kind"], string> = { loading: "Loading", absent: "Not available", failed: "Failed" }
+
+/**
+ * The card's body when it holds no branch: the stage of the source that would
+ * have answered it, and the box it names.
+ *
+ * Every path that used to answer `null` comes here. A branch card with a
+ * heading and no body at all told root's native retest nothing — not the box's
+ * id, not whether the inventory was still loading, not that a `workspaces.loaded`
+ * prune had already deleted the row the card points at
+ * ([#3882](https://github.com/smithersai/smithers/issues/3882)).
+ *
+ * It states only what is known. No machine state, no seed branch and no
+ * same-named row from another repository stands in for the box, and it binds no
+ * act: `data-branch-stage` and `data-branch-source` carry the classification
+ * for a native retest, so the next recurrence names its own stage.
+ */
+const BranchStageBody = ({ card, stage, source }: {
+  readonly card: CardOf<"branch">
+  readonly stage: BranchCardStage
+  readonly source: "cloud-row" | "live-topic" | "design-seed"
+}) => (
+  <section className="smithers-card branch-view" data-kind="branch" data-machine="unknown"
+    data-branch-stage={stage.kind} data-branch-source={source} data-branch-id={card.payload.id}>
+    <header className="smithers-card-header">
+      <GitBranch size={16} aria-hidden="true" />
+      <h2>{card.title}</h2>
+      <span className="branch-machine" data-state={stage.kind}>
+        {stage.kind === "loading" ? <span className="branch-spin" aria-hidden="true" /> : null}
+        {STAGE_WORD[stage.kind]}
+      </span>
+    </header>
+    <div className="smithers-card-body">
+      <div className="branch-notice" data-tone={stage.kind === "failed" ? "failed" : "quiet"}>
+        <span>{stage.kind === "failed" ? stage.error : stage.kind === "loading" ? "Loading this box." : "This box is not available."}</span>
+        <code>{card.payload.id}</code>
+      </div>
+    </div>
+  </section>
+)
+
 const DesignBranchBody = ({ card, actions }: { readonly card: CardOf<"branch">; readonly actions: CardActions }) => {
   const controller = useController()
   const world = useDesignWorld()
   const branch = branchOf(world, card.payload.id)
-  if (branch === undefined) return null
+  if (branch === undefined) return <BranchStageBody card={card} stage={{ kind: "absent" }} source="design-seed" />
   const item = branch.item === undefined ? undefined : todoOf(world, branch.item)
   const submit = (name: string, payload: Record<string, unknown>) =>
     controller.submitCommand({ name, payload, actor: "user", originCardId: card.id })
@@ -167,8 +209,12 @@ const cloudBoxMachine = (row: CloudWorkspaceRow): MachineState =>
 const CloudBoxBody = ({ card, actions }: { readonly card: CardOf<"branch">; readonly actions: CardActions }) => {
   const controller = useController()
   const { data: boxes } = useLiveQuery(controller.store.collections.cloudWorkspaces)
+  const { data: sessions } = useLiveQuery(controller.store.collections.cloudSessions)
   const row = boxes.find(box => box.id === card.payload.id)
-  if (row === undefined) return null
+  if (row === undefined) {
+    return <BranchStageBody card={card} source="cloud-row"
+      stage={branchCardStage(sessions.find(session => session.id === "cloud")?.workspaceLists)} />
+  }
   const model: BranchModel = { id: row.id, name: row.name, machine: cloudBoxMachine(row),
     presence: [], terminals: [], activity: [], changed_files: [], ssh_line: "" }
   return <BranchView model={model} actions={[]} gestures={{}} onAction={() => {}}
@@ -194,8 +240,11 @@ export const LiveBranchBody = ({ card, actions }: { readonly card: CardOf<"branc
   // no seed rows stand in for unavailable activity or changed files. A stream
   // that has not answered yet is empty for now, exactly like one answered
   // `unsupported` — #3865: holding the whole card back for it rendered a
-  // served branch as nothing at all.
-  const optionalData = (snapshot: typeof activity) => snapshot === undefined || snapshot.error === "unsupported" ? [] : snapshot.data
+  // served branch as nothing at all. Subscribed and silent is one of those
+  // not-yet answers: the channel holds a snapshot with no data for it, and
+  // reading that as the rows refused the projection just the same (#3882).
+  const optionalData = (snapshot: typeof activity) =>
+    snapshot === undefined || snapshot.error === "unsupported" || snapshot.data === undefined ? [] : snapshot.data
   const refused = (snapshot: typeof activity) => snapshot?.error !== undefined && snapshot.error !== "unsupported"
   const base = branch?.error || refused(activity) || refused(files) ? undefined
     : branchModel(branch?.data, optionalData(activity), optionalData(files), card.payload.id, { roster: roster?.model?.members.map(member => ({ ...member, id: member.login })) })
@@ -232,7 +281,10 @@ export const LiveBranchBody = ({ card, actions }: { readonly card: CardOf<"branc
   const bindings = cardActions<Gesture>(dispatch, model ? liveBranchActionDefinitions(model, providers, questionWait, movedWait?.id) : [])
   if (!model) {
     if (branchSeedAvailable(controller)) return <DesignBranchBody card={card} actions={actions} />
-    return cloudBoxesHeld(controller) && controller.store !== undefined ? <CloudBoxBody card={card} actions={actions} /> : null
+    if (cloudBoxesHeld(controller) && controller.store !== undefined) return <CloudBoxBody card={card} actions={actions} />
+    /* An install's own `branch:<id>`, or a bootstrap that has not answered yet. */
+    const refusal = branch?.error ?? (refused(activity) ? activity?.error : refused(files) ? files?.error : undefined)
+    return <BranchStageBody card={card} source="live-topic" stage={branchCardStage([], refusal)} />
   }
   return <BranchView model={model} actions={bindings.actions} gestures={bindings.gestures}
     onAction={(tag, input) => (tag === "diff" ? changes : bindings).onAction(tag, input)} view={{ maximized: actions.presentation === "maximized", tab: card.payload.tab }}

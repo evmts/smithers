@@ -34,6 +34,40 @@ export const branchSeedAvailable = (host: {
   host.design?.enabled === false ? false
     : host.bootstrap === undefined ? !host.live : !host.bootstrap.capabilities.includes("install")
 
+/**
+ * What a branch card may honestly say when it holds no branch to render: the
+ * stage of the source that would have answered, never a machine state.
+ *
+ * A card outlives its box. `workspaces.loaded` deletes every row the list did
+ * not name, so a card persisted beside a pruned row (and a card rehydrated
+ * before the first list read) has nothing to look up — and rendered as a
+ * heading with no body at all
+ * ([#3882](https://github.com/smithersai/smithers/issues/3882)). Missing,
+ * pending and failed are three different facts and each one is visible.
+ */
+export type BranchCardStage =
+  | { readonly kind: "loading" }
+  | { readonly kind: "absent" }
+  | { readonly kind: "failed"; readonly error: string }
+
+/**
+ * The newest box-list observation decides, across scopes: a later read of the
+ * per-user list answers for a repository's boxes too. With no observation at
+ * all the app has not read the list yet, which is pending and not absence. A
+ * live topic that refused for its own reason outranks both; `unknown_topic`
+ * and `unsupported` are not refusals, they are hosts without the topic.
+ */
+export const branchCardStage = (
+  observations: ReadonlyArray<{ readonly phase: "loading" | "ready" | "failed"; readonly error?: string; readonly revision: number }> | undefined,
+  topicError?: string
+): BranchCardStage => {
+  if (topicError !== undefined && topicError !== "unknown_topic" && topicError !== "unsupported") return { kind: "failed", error: topicError }
+  const latest = [...(observations ?? [])].sort((left, right) => right.revision - left.revision)[0]
+  if (latest === undefined || latest.phase === "loading") return { kind: "loading" }
+  if (latest.phase === "failed") return { kind: "failed", error: latest.error ?? "Smithers Cloud's box list could not be read." }
+  return { kind: "absent" }
+}
+
 // T-APP-10 owns validation of the three serialized topic projections, not View props.
 const Where = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("file"), path: z.string(), line: z.number().int().positive().optional() }),

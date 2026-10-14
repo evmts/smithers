@@ -230,21 +230,45 @@ export const selectedBoxBinding = (store: AppStore, repo: string): GatewayBindin
   return selectedBoxBindingFrom(store.collections, store.session().activeRepoKey, repo)
 }
 
-/** Shared selection decoding for live collection projections and command callers. */
+/**
+ * Shared selection decoding for live collection projections and command callers.
+ *
+ * A selection is a pointer. Every box row projects a working copy, so
+ * `workspaces.loaded` deleting the rows its list did not name takes the copy
+ * with it — and the key naming that copy outlived both. `Issue flows` on the
+ * hosted app then answered "The selected working copy is no longer available
+ * for this repository." for root's own box and kept answering it after main
+ * was reselected, because {@link selectedBoxBinding} returning an error is
+ * what stops the box prerequisite form — the one flow that would select a
+ * copy again — from rendering
+ * ([#3882](https://github.com/smithersai/smithers/issues/3882)).
+ *
+ * A reference the LOADED inventory proves gone is stale rather than a
+ * conflict, and the repository's default binding answers it, exactly as it
+ * does with nothing selected. Without that proof — an inventory still
+ * loading, failed or never read — the refusal stands, because an unread
+ * collection must never reroute an act to another box. The pointer itself is
+ * kept: a box one list omitted can be listed again, and then the human's own
+ * choice binds again.
+ */
 export const selectedBoxBindingFrom = (
-  collections: Pick<AppStore["collections"], "workingCopies" | "cloudWorkspaces">,
+  collections: Pick<AppStore["collections"], "workingCopies" | "cloudWorkspaces" | "cloudSessions">,
   key: string | null | undefined, repo: string
 ): GatewayBinding | undefined => {
   const selection = key == null ? null : parseRepoSelection(key)
   if (selection === null || selection.repoId !== repo || selection.copyId === undefined) return undefined
+  const observed = (collections.cloudSessions.get("cloud")?.workspaceLists ?? [])
+    .some(row => (row.scope === repo || row.scope === "*") && row.phase === "ready")
   const copy = collections.workingCopies.get(selection.copyId)
   if (copy === undefined || copy.repoId !== repo) {
-    return { error: "The selected working copy is no longer available for this repository." }
+    return observed && copy === undefined ? undefined
+      : { error: "The selected working copy is no longer available for this repository." }
   }
   if (copy.kind !== "workspace") return undefined
   const workspace = copy.workspaceId === undefined ? undefined : collections.cloudWorkspaces.get(copy.workspaceId)
   if (workspace === undefined || workspace.repoId !== repo) {
-    return { error: "The selected box is no longer available for this repository." }
+    return observed && workspace === undefined ? undefined
+      : { error: "The selected box is no longer available for this repository." }
   }
   return { workspaceId: workspace.id }
 }

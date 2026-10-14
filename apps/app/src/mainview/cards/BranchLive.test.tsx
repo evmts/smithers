@@ -46,7 +46,9 @@ for (const unavailable of [[], [2], [3], [2, 3]]) test(`registry renders real br
   const card = { id: "branch:b-retry", kind: "branch", title: "Branch", status: "active", createdAt: 1, ordinal: 1, payload: { id: "b-retry" } } as const
   try {
     await act(async () => root.render(<ControllerTestProvider controller={controller}>{CARD_RENDERERS.branch.render(card, actions)}</ControllerTestProvider>))
-    expect(host.textContent).toBe("")
+    /* Nothing has answered yet, so the card is pending rather than blank (#3882). */
+    expect(host.querySelector('[data-branch-stage="loading"]')).not.toBeNull()
+    expect(host.textContent).not.toContain("Captured live branch")
     socket.readyState = 1; socket.onopen?.()
     expect(frames).toEqual([{ t: "sub", id: 1, topic: "branch:b-retry" }, { t: "sub", id: 2, topic: "branch:b-retry:activity" }, { t: "sub", id: 3, topic: "branch:b-retry:files" }, { t: "presence", id: 4, where: { branch: "b-retry" } }])
     const snap = async (id: number, data: unknown) => act(async () => socket.onmessage?.({ data: JSON.stringify({ t: "snap", id, cursor: 1, data }) }))
@@ -62,7 +64,10 @@ for (const unavailable of [[], [2], [3], [2, 3]]) test(`registry renders real br
       ? act(async () => socket.onmessage?.({ data: JSON.stringify({ t: "err", id, code: "unsupported" }) }))
       : snap(id, [])
     await optional(2)
-    expect(host.textContent).toBe("")
+    /* The branch's own topic answered, so its facts show; a stream still in
+     * flight is empty for now, never a card held back (#3865, #3882). */
+    expect(host.textContent).toContain("Captured live branch")
+    expect(host.querySelector('[data-branch-stage]')).toBeNull()
     await optional(3)
     expect(host.textContent).toContain("Captured live branch")
     expect(host.textContent).toContain("Asleep")
@@ -72,9 +77,12 @@ for (const unavailable of [[], [2], [3], [2, 3]]) test(`registry renders real br
     expect(host.textContent).not.toContain("Retry failed webhooks")
     expect(host.querySelector("[data-flow]")).toBeNull()
     expect(frames.at(-1)).toEqual({ t: "presence", id: 4, where: { branch: "b-retry" } })
-    // Authorization failures remain fatal even with unavailable optional streams.
+    // Authorization failures remain fatal even with unavailable optional streams:
+    // no facts survive the refusal, and the card says it was refused (#3882).
     await act(async () => socket.onmessage?.({ data: JSON.stringify({ t: "err", id: 1, code: "forbidden" }) }))
-    expect(host.textContent).toBe("")
+    expect(host.textContent).not.toContain("Captured live branch")
+    expect(host.querySelector('[data-branch-stage="failed"]')).not.toBeNull()
+    expect(host.textContent).toContain("forbidden")
     await act(async () => root.unmount())
     expect(timers.at(-1)?.cancelled).toBe(true)
   } finally { await act(async () => root.unmount()); live.dispose() }

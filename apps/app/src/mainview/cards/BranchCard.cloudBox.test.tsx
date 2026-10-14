@@ -50,6 +50,9 @@ const mounted = async (options: {
   readonly workspace?: CloudWorkspaceInput
   readonly bootstrap?: AppBootstrap
   readonly snapshot?: TopicSnapshot
+  /** The box list the app read after the card was saved, the production order. */
+  readonly listed?: ReadonlyArray<CloudWorkspaceInput>
+  readonly listing?: { readonly error?: string }
 }) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, unavailableAgent, {
@@ -62,6 +65,15 @@ const mounted = async (options: {
   await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "roninjin10", expiresAt: null, scopes: null }).isPersisted.promise
   if (options.workspace !== undefined) await store.dispatch({ type: "workspace.updated", actor: "system", workspace: options.workspace }).isPersisted.promise
   await store.dispatch({ type: "card.upsert", actor: "user", card }).isPersisted.promise
+  if (options.listed !== undefined) {
+    await store.dispatch({ type: "workspaces.loaded", actor: "system", repoId: REPO, workspaces: [...options.listed] }).isPersisted.promise
+  }
+  if (options.listing !== undefined) {
+    await store.dispatch({ type: "workspaces.list.started", actor: "system", requestId: "refresh", repoId: REPO }).isPersisted.promise
+    if (options.listing.error !== undefined) {
+      await store.dispatch({ type: "workspaces.list.failed", actor: "system", requestId: "refresh", repoId: REPO, error: options.listing.error }).isPersisted.promise
+    }
+  }
   const host = document.body.appendChild(document.createElement("div"))
   const root = createRoot(host)
   await act(async () => root.render(<ControllerTestProvider controller={controller}>{CARD_RENDERERS.branch.render(card, actions as never)}</ControllerTestProvider>))
@@ -110,11 +122,83 @@ test("the live projection stays authoritative, and a card with no box of its own
     expect(live.host.textContent).toContain("Served branch")
   } finally { await live.dispose() }
 
-  /* No row, no topic: the card invents no box. */
+  /*
+   * No row and no topic: the card invents no box — and says which stage it is
+   * in rather than rendering a heading with no body (#3882). Nothing has read
+   * the box list yet, so this is pending, not absence.
+   */
   const empty = await mounted({})
-  try { expect(empty.host.textContent).toBe("") } finally { await empty.dispose() }
+  try {
+    const view = empty.host.querySelector('[data-kind="branch"]')
+    expect(view?.getAttribute("data-branch-stage")).toBe("loading")
+    expect(view?.getAttribute("data-machine")).toBe("unknown")
+    expect(empty.host.textContent).toContain("Loading this box.")
+    expect(empty.host.querySelector("[data-flow]")).toBeNull()
+  } finally { await empty.dispose() }
 
   /* An install serves its own branch topic; a stray cloud row never stands in for it. */
   const install = await mounted({ workspace: box(), bootstrap: INSTALL })
-  try { expect(install.host.textContent).toBe("") } finally { await install.dispose() }
+  try {
+    const view = install.host.querySelector('[data-kind="branch"]')
+    expect(view?.getAttribute("data-branch-source")).toBe("live-topic")
+    expect(view?.getAttribute("data-branch-stage")).toBe("loading")
+    /* The stray row's own state is not this card's state. */
+    expect(install.host.textContent).not.toContain("Waking")
+  } finally { await install.dispose() }
+})
+
+/*
+ * The actual acceptance failure root's native Arc retest reported after 02a
+ * deployed: a card SAVED beside its box, whose row a later box list pruned.
+ * `workspaces.loaded` deletes every row its list did not name; both
+ * collections are persisted, so the card outlives the row across every reload
+ * and `CloudBoxBody` had nothing to find. The synthetic fixture above held a
+ * row and so never reached it (#3882).
+ */
+test("a box list that no longer names the box leaves the card a stage, never an empty body", async () => {
+  const h = await mounted({ workspace: box({ status: "running" }), listed: [] })
+  try {
+    expect(h.controller.store.collections.cloudWorkspaces.get(BOX)).toBeUndefined()
+    expect(h.controller.store.collections.cards.get(`branch:${BOX}`)).not.toBeUndefined()
+    const view = h.host.querySelector('[data-kind="branch"]')
+    expect(view).not.toBeNull()
+    expect(view?.getAttribute("data-branch-stage")).toBe("absent")
+    expect(view?.getAttribute("data-branch-source")).toBe("cloud-row")
+    /* The box it names, for the retest that reads it. */
+    expect(view?.getAttribute("data-branch-id")).toBe(BOX)
+    expect(h.host.textContent).toContain("This box is not available.")
+    expect(h.host.textContent).toContain(BOX)
+    expect(h.host.textContent).toContain("Not available")
+    /* No invented machine state and no act. */
+    expect(view?.getAttribute("data-machine")).toBe("unknown")
+    expect(h.host.querySelector("[data-flow]")).toBeNull()
+  } finally { await h.dispose() }
+})
+
+test("a list still in flight reads pending, and a failed read carries its own words", async () => {
+  const loading = await mounted({ listed: [], listing: {} })
+  try {
+    expect(loading.host.querySelector('[data-kind="branch"]')?.getAttribute("data-branch-stage")).toBe("loading")
+    expect(loading.host.textContent).toContain("Loading this box.")
+  } finally { await loading.dispose() }
+
+  const failed = await mounted({ listed: [], listing: { error: "Box inventory is unavailable" } })
+  try {
+    expect(failed.host.querySelector('[data-kind="branch"]')?.getAttribute("data-branch-stage")).toBe("failed")
+    expect(failed.host.textContent).toContain("Box inventory is unavailable")
+  } finally { await failed.dispose() }
+})
+
+test("a pruned row restores the card the moment the box is listed again", async () => {
+  const h = await mounted({ workspace: box({ status: "running" }), listed: [] })
+  try {
+    expect(h.host.querySelector('[data-kind="branch"]')?.getAttribute("data-branch-stage")).toBe("absent")
+    await act(async () => {
+      await h.controller.store.dispatch({ type: "workspaces.loaded", actor: "system", repoId: REPO,
+        workspaces: [box({ status: "running" })] }).isPersisted.promise
+    })
+    const view = h.host.querySelector('[data-kind="branch"]')
+    expect(view?.getAttribute("data-branch-stage")).toBeNull()
+    expect(view?.getAttribute("data-machine")).toBe("awake")
+  } finally { await h.dispose() }
 })

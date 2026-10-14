@@ -3328,29 +3328,44 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
             ]
           })
           const next = new Set(transition.workspaces.map((workspace) => workspace.id))
+          /*
+           * A list answers for the inventory as it stood when the list was
+           * REQUESTED. A box created while it was in flight is a later fact
+           * and the answer cannot speak about it, so it is not missing from
+           * an inventory it never belonged to — pruning it deleted the row of
+           * the box a human had just opened, which left its card a heading
+           * with no body and its selection pointing at nothing (#3882). With
+           * no request of its own to date from, a list speaks for now.
+           */
+          const asOf = transition.requestId === undefined ? revision : active!.revision
+          const fresh = (row: { readonly revision: number }): boolean => row.revision > asOf
           const stale = [...collections.cloudWorkspaces.values()]
-            .filter((workspace) => (scope === undefined || workspace.repoId === scope) && !next.has(workspace.id))
+            .filter((workspace) => (scope === undefined || workspace.repoId === scope) && !next.has(workspace.id) && !fresh(workspace))
             .map((workspace) => workspace.id)
-          if (stale.length > 0) {
-            const removed = new Set(stale)
-            // Leaving the live inventory captures the last observed facts once.
-            for (const card of collections.cards.values()) {
-              if (card.kind !== "branch" || !removed.has(card.payload.id)) continue
-              const captured = currentCard(card)
-              collections.cards.update(card.id, (draft) => {
-                Object.assign(draft, captured)
-              })
-            }
-            collections.cloudWorkspaces.delete(stale)
-          }
+          /*
+           * Leaving the live inventory keeps the card: a branch card carries
+           * no copy of its box's facts (`projectRuntimeCard` answers only run
+           * and approval kinds, so the capture this loop used to run was a
+           * no-op), and the renderer reads the deletion as a stage of its own
+           * rather than an empty body — #3882.
+           */
+          if (stale.length > 0) collections.cloudWorkspaces.delete(stale)
           const staleCopies = [...collections.workingCopies.values()]
             .filter((copy) =>
               copy.kind === "workspace" &&
               (scope === undefined || copy.repoId === scope) &&
               copy.workspaceId !== undefined &&
-              !next.has(copy.workspaceId)
+              !next.has(copy.workspaceId) &&
+              !fresh(copy)
             )
             .map((copy) => copy.id)
+          /*
+           * The selection a prune orphans is KEPT. It is the human's own
+           * choice and a box the list omitted can be listed again, so
+           * `selectedBoxBindingFrom` reads an orphan as nothing-selected
+           * instead of a refusal, rather than this deleting the pointer
+           * (#3882).
+           */
           if (staleCopies.length > 0) collections.workingCopies.delete(staleCopies)
           for (const workspace of transition.workspaces) {
             const row: CloudWorkspaceRow = { ...workspace, updatedAt: createdAt, revision }

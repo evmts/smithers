@@ -154,11 +154,19 @@ describe("branch card mount", () => {
     expect(html).not.toContain('data-flow="branch.rebase"')
   })
 
-  test("a branch the world does not hold renders nothing", () => {
+  /* A branch the world does not hold is absent, and absence is a visible fact: a
+   * heading with no body told root's native retest nothing at all (#3882). */
+  test("a branch the world does not hold reads absent, not blank", () => {
     const html = renderToStaticMarkup(<ControllerTestProvider controller={controller(make()).controller}>
       {CARD_RENDERERS.branch.render(card("b-missing") as Extract<Card, { kind: "branch" }>, actions)}
     </ControllerTestProvider>)
-    expect(html).toBe("")
+    expect(html).toContain('data-branch-stage="absent"')
+    expect(html).toContain('data-branch-source="design-seed"')
+    expect(html).toContain('data-branch-id="b-missing"')
+    expect(html).toContain("This box is not available.")
+    /* No invented machine state and no act. */
+    expect(html).toContain('data-machine="unknown"')
+    expect(html).not.toContain("data-flow=")
   })
 })
 
@@ -166,7 +174,14 @@ test("an install Branch never renders the seeded model without its live topics",
   const controller = { design: make(), bootstrap: { host: "local", capabilities: ["install"] } } as unknown as AppController
   const card = { id: "branch:b-retry", kind: "branch", title: "Branch", status: "active", createdAt: 1, ordinal: 1, payload: { id: "b-retry" } } as const
   const actions = { onDecideApproval: () => {}, onConnectGitHub: () => {}, onRunWorkflow: () => {}, onStopRun: () => {}, onRetryRun: () => {}, onChooseWorkflowRepo: () => {}, worldDocuments: [], onChangeWorldDocument: () => {}, onRunCommand: () => {} }
-  expect(renderToStaticMarkup(<ControllerTestProvider controller={controller}>{CARD_RENDERERS.branch.render(card, actions)}</ControllerTestProvider>)).toBe("")
+  const html = renderToStaticMarkup(<ControllerTestProvider controller={controller}>{CARD_RENDERERS.branch.render(card, actions)}</ControllerTestProvider>)
+  /* Not one seeded fact: no name, no machine state, no act — the card says it
+   * is waiting for its own topic instead of rendering nothing at all (#3882). */
+  expect(html).not.toContain("retry-webhooks")
+  expect(html).not.toContain("data-flow=")
+  expect(html).toContain('data-branch-source="live-topic"')
+  expect(html).toContain('data-branch-stage="loading"')
+  expect(html).toContain("Loading this box.")
 })
 
 
