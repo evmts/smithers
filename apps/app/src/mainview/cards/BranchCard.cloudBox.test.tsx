@@ -53,13 +53,15 @@ const mounted = async (options: {
   /** The box list the app read after the card was saved, the production order. */
   readonly listed?: ReadonlyArray<CloudWorkspaceInput>
   readonly listing?: { readonly error?: string }
+  /** The wire, where a test drives the real seam instead of dispatching a list result. */
+  readonly fetchImpl?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 }) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, unavailableAgent, {
     bootstrap: options.bootstrap ?? HOSTED,
     toastDebounceMs: 0,
     live: { subscribe: () => () => {}, getSnapshot: (topic: string) => topic === `branch:${BOX}` ? options.snapshot : undefined },
-    fetchImpl: async () => json(404, { code: "not_found", message: "no stub" })
+    fetchImpl: options.fetchImpl ?? (async () => json(404, { code: "not_found", message: "no stub" }))
   })
   await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "roninjin10", admin: false, scopesPlain: null }).isPersisted.promise
   await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "roninjin10", expiresAt: null, scopes: null }).isPersisted.promise
@@ -255,4 +257,49 @@ test("a saved card renders its box after the app is opened again, and the next l
     await controller.dispose()
     await store.dispose?.()
   }
+})
+
+/*
+ * #3882 end to end, on the shape production actually has: the card and its row
+ * are saved, and then the real seam runs a real list against a wire that
+ * behaves the way the hosted deployment behaves — the owner-scoped list names
+ * NOTHING (a branch machine's row belongs to `smithers-machines`), while the
+ * box's own detail route serves it.
+ *
+ * Before the repair the list's silence deleted the row and this card read
+ * "This box is not available." about a box that was provisioning. The whole
+ * point is that it now reads the box's own state, and it is asserted here
+ * through the seam and the renderer together rather than from a dispatched
+ * fixture.
+ */
+test("a box no list can name still reads its own state, through the real list", async () => {
+  const asked: Array<string> = []
+  const h = await mounted({
+    workspace: box({ status: "starting", provisioningStage: null }),
+    fetchImpl: async (input) => {
+      const url = String(typeof input === "string" || input instanceof URL ? input : input.url)
+      const path = url.replace(/^.*\/api\//, "api/").split("?")[0]
+      asked.push(path)
+      /* Owner-scoped: this person's lists cannot name a machine-owned box. */
+      if (path === "api/user/workspaces") return json(200, [])
+      if (path === `api/repos/${REPO}/workspaces`) return json(200, [])
+      /* Repository-read scoped, and the box is still coming up. */
+      if (path === `api/repos/${REPO}/workspaces/${BOX}`) {
+        return json(200, { id: BOX, name: "main", status: "starting", target_bookmark: "main",
+          provisioning_stage: "waiting_for_machine", kind: "vm", created_at: "2026-10-14T00:17:00Z" })
+      }
+      return json(404, { code: "not_found", message: "no stub" })
+    }
+  })
+  try {
+    await act(async () => { await h.controller.listWorkspaces(REPO) })
+    expect(asked).toContain(`api/repos/${REPO}/workspaces/${BOX}`)
+    /* The row survived the silence, carrying the facts the box itself answered. */
+    expect(h.controller.store.collections.cloudWorkspaces.get(BOX))
+      .toMatchObject({ id: BOX, repoId: REPO, status: "starting", provisioningStage: "waiting_for_machine" })
+    const view = h.host.querySelector('[data-kind="branch"]')
+    expect(view?.getAttribute("data-machine")).toBe("waking")
+    expect(h.host.textContent).toContain("Waking")
+    expect(h.host.textContent).not.toContain("This box is not available.")
+  } finally { await h.dispose() }
 })
