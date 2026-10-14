@@ -1693,3 +1693,70 @@ test("terminal person append persists before launch, deduplicates and waits for 
     expect(h.outcomes.at(-1)).toMatchObject({ status: "ok" })
   } finally { h.close() }
 })
+
+describe("TodoSeam — a refused Commit names what refused it", () => {
+  const text = "Verify the overnight queue"
+  test("a host that never mounted the TODO routes is told apart from a refusal", async () => {
+    const calls: { url: string; method?: string }[] = []
+    const h = await harness((url, init) => {
+      calls.push({ url, method: init?.method })
+      return Promise.resolve(new Response("404 page not found", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } }))
+    })
+    try {
+      await h.seam.newTodo({ text })
+      expect(await h.seam.newTodo({ text, cardId: h.draft().id })).toEqual({ value: "Requested" })
+      await waitFor(() => h.draft().payload.request?.state === "failed")
+      expect(calls).toEqual([{ url: "https://install.test/api/todos", method: "POST" }])
+      expect(h.draft().payload.request?.error).toBe("TODOs are not a door on this Smithers host (POST /api/todos answered 404).")
+      expect(h.outcomes.at(-1)).toMatchObject({ status: "failed", detail: "TODOs are not a door on this Smithers host (POST /api/todos answered 404)." })
+      const report = h.reports.at(-1)
+      expect(report?.scope).toBe("todo.request.todo_route_absent")
+      expect(String((report?.error as Error).message)).toContain("POST /api/todos answered 404 (create, key ")
+    } finally { h.close() }
+  })
+
+  test("the route family's gate says which door the host does not serve, not just that a feature is off", async () => {
+    const h = await harness(() => Promise.resolve(json({ code: "forbidden", class: "user", fault: "user", message: "feature not available" }, 403)))
+    try {
+      await h.seam.newTodo({ text })
+      expect(await h.seam.newTodo({ text, cardId: h.draft().id })).toEqual({ value: "Requested" })
+      await waitFor(() => h.draft().payload.request?.state === "failed")
+      expect(h.draft().payload.request?.error).toBe("TODOs are not available on this Smithers host (POST /api/todos answered 403).")
+      expect(h.reports.at(-1)?.scope).toBe("todo.request.feature_not_available")
+    } finally { h.close() }
+  })
+
+  test("an answer with no words of its own names the route and the status, never a bare failure", async () => {
+    const h = await harness(() => Promise.resolve(new Response("", { status: 503 })))
+    try {
+      await h.seam.newTodo({ text })
+      expect(await h.seam.newTodo({ text, cardId: h.draft().id })).toEqual({ value: "Requested" })
+      await waitFor(() => h.draft().payload.request?.state === "failed")
+      expect(h.draft().payload.request?.error).toBe(
+        "The TODO request failed (POST /api/todos answered 503). Something on Smithers' side failed. Not your fault, and nothing your request could have changed."
+      )
+      expect(h.reports.at(-1)?.scope).toBe("todo.request.todo_refused")
+    } finally { h.close() }
+  })
+
+  test("a refusal plue authored keeps its own words and is not reported as unexplained", async () => {
+    const h = await harness(() => Promise.resolve(json({ code: "validation_failed", class: "user", fault: "user", message: "A TODO needs a prompt." }, 400)))
+    try {
+      await h.seam.newTodo({ text })
+      expect(await h.seam.newTodo({ text, cardId: h.draft().id })).toEqual({ value: "Requested" })
+      await waitFor(() => h.draft().payload.request?.state === "failed")
+      expect(h.draft().payload.request?.error).toBe("A TODO needs a prompt.")
+      expect(h.reports).toEqual([])
+    } finally { h.close() }
+  })
+
+  test("the amend and unapprove doors name their own method in the same sentence", async () => {
+    const h = await harness(() => Promise.resolve(new Response("404 page not found", { status: 404, headers: { "Content-Type": "text/plain" } })))
+    try {
+      await h.seam.applyTodoProjection(12, fixtures.failed.model)
+      expect(await h.seam.amendTodo({ n: 12, text: "Another prompt" })).toEqual({ value: "Requested" })
+      await waitFor(() => h.todo().payload.requests.some(request => request.state === "failed"))
+      expect(h.todo().payload.requests.at(-1)?.error).toBe("TODOs are not a door on this Smithers host (PATCH /api/todos/12 answered 404).")
+    } finally { h.close() }
+  })
+})

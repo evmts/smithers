@@ -72,7 +72,7 @@ export function SharedConversation({ source, localCardIds, localEntries = [] }: 
       const inspect = cardActions((tag, input) => controller.runCommand(tag, JSON.stringify(input)), turn.preflight ? [
         { tag: "run.inspect", label: "Inspect", command_input: { id: turn.runId } }
       ] : [])
-      const answers = turn.state === "completed" && text.trim() ? answerActions((name, input) => controller.commands.submit({ name, payload: (input ?? {}) as Record<string, unknown>, actor: "user", ...(name === "wiki.save" ? { display: flowArgs("wiki.save", input as { name?: string; text?: string }) } : {}) }), text) : undefined
+      const answers = turn.state === "completed" && text.trim() ? answerActions((name, input) => controller.commands.submit({ name, payload: (input ?? {}) as Record<string, unknown>, actor: "user", ...(name === "wiki.save" ? { display: flowArgs("wiki.save", input as { name?: string; text?: string }) } : {}) }), text, controller.commands) : undefined
       // The sender is Smithers; the reply quote, not the name, attributes the prompt (M-34).
       const answer = { kind: "agent" as const, id: turn.runId, agent: "smithers" as const, avatar_url: PlaceholderAvatarUrl, color_index: color }
       const reply = <blockquote className="turn-reply" data-reply-to={`${turn.id}:prompt`}><span className="turn-reply-author">{person.name}</span><span className="turn-reply-text">{turn.prompt}</span></blockquote>

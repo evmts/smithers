@@ -652,3 +652,48 @@ describe("attachment bytes read under one account", () => {
     expect(f.uploads()[0]!.body).toEqual(bytes)
   })
 })
+
+describe("Save to wiki on a host whose Wiki is switched off", () => {
+  const gated = async (status: number, message: string) => {
+    const store = await createAppStore({ kind: "localStorage", storage: memory() })
+    await signIn(store)
+    await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: repo, org: "owner", name: "repo", ownerKind: "user", head: null }] }).isPersisted.promise
+    await store.dispatch({ type: "repo.selected", actor: "user", id: repo }).isPersisted.promise
+    const writes: string[] = []
+    const settlements: unknown[] = []
+    const services: AppServices = { fetchImpl: async (input, init) => {
+      const path = new URL(String(input), "http://test").pathname
+      if (init?.method === "POST" && path.endsWith("/wiki")) {
+        writes.push(path)
+        return Response.json({ code: "forbidden", class: "user", fault: "user", message }, { status })
+      }
+      if (path.endsWith("/navigation/index")) return Response.json({ pages: [], folders: [], tags: [] })
+      return new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode(": connected\n\n")) } }), { headers: { "content-type": "text/event-stream" } })
+    } }
+    const ctx = createControllerContext(store, silentAgent, services)
+    ctx.withToast = async (_key, _title, _done, work) => { const result = await work(); settlements.push(result); return result }
+    ctx.resolveToast = () => {}
+    cleanup.push(() => ctx.dispose())
+    return { store, ctx, writes, settlements, wiki: createCloudWikiController(ctx, () => 1) }
+  }
+
+  test("the gate's three words become one sentence that names the Wiki, with the wire facts kept for diagnostics", async () => {
+    const f = await gated(403, "feature not available")
+    expect(await f.wiki.saveWikiAnswer("Overnight verification queue guide", "# Answer\n\nKeep the queue")).toEqual({ value: "Requested" })
+    await until(() => f.store.session().wikiSaves?.[0]?.state === "failed")
+    expect(f.writes).toEqual(["/api/repos/owner/repo/wiki"])
+    expect(f.store.session().wikiSaves?.[0]?.error).toBe("The Wiki is not available on this Smithers host.")
+    expect(f.settlements).toEqual(["The Wiki is not available on this Smithers host."])
+    const reported = f.ctx.failures.recent().filter(failure => failure.seam === "wiki.save")
+    expect(reported).toHaveLength(1)
+    expect(reported[0]?.subject).toMatch(/^answer-[0-9a-f-]+ 403 forbidden$/)
+    expect(reported[0]?.message).toContain("CloudWikiError: The Wiki is not available on this Smithers host.")
+  })
+
+  test("a refusal the Wiki handler wrote itself still reads in the handler's own words", async () => {
+    const f = await gated(403, "write access to this repository is required")
+    expect(await f.wiki.saveWikiAnswer("Queue guide", "# Answer")).toEqual({ value: "Requested" })
+    await until(() => f.store.session().wikiSaves?.[0]?.state === "failed")
+    expect(f.store.session().wikiSaves?.[0]?.error).toBe("write access to this repository is required")
+  })
+})

@@ -9,7 +9,7 @@ import { fixtures } from "../../../../../../packages/rpc/test/fixtures/Todo"
 import { modelInvocable, nameOf } from "../registry"
 import { parseTodoArgs, TodoNewInputSchema } from "@smthrs/rpc/TodoCommands"
 import { TodoNewInput } from "./todo"
-import { answerActions } from "../AnswerActions"
+import { answerActions, answerDoorUnavailable } from "../AnswerActions"
 import { designTodoCard } from "../../state/seams/DesignWorld/todo"
 
 const unavailable: AgentPort = { available: false, startTurn: async () => ({ status: "error", message: "unavailable" }), cancelTurn: async () => {}, subscribe: () => () => {} }
@@ -140,6 +140,41 @@ test("J9 answer actions dispatch its exact text and expose a page-name form", ()
   bindings.onAction("wiki.save", { name: "Findings" })
   expect(bindings.actions.map(action => action.label)).toEqual(["Make TODO", "Save to wiki"])
   expect(calls).toEqual([{ tag: "todo.new", input: { text } }, { tag: "wiki.save", input: { name: "Findings", text } }])
+})
+
+test("J9 answer doors the catalog does not enable are shown disabled with the slash door's own refusal, and dispatch nothing", () => {
+  const calls: unknown[] = []
+  const text = "# Answer\n\nKeep the source"
+  const catalog = {
+    find: (name: string) => name === "todo.new" ? { name } : undefined,
+    explainAbsent: (name: string) =>
+      name === "wiki.save" ? { door: "origin" as const, reason: "/wiki.save is not available on this origin yet." } : undefined
+  }
+  const bindings = answerActions((tag, input) => { calls.push({ tag, input }) }, text, catalog)
+  bindings.onAction("todo.new")
+  bindings.onAction("wiki.save", { name: "Findings" })
+  expect(bindings.actions.map(action => ({ label: action.label, disabled: action.disabled }))).toEqual([
+    { label: "Make TODO", disabled: undefined },
+    { label: "Save to wiki", disabled: { reason: "/wiki.save is not available on this origin yet." } }
+  ])
+  // The disabled door never reaches the command boundary: no form, no write, no toast.
+  expect(calls).toEqual([{ tag: "todo.new", input: { text } }])
+})
+
+test("J9 answer doors fall back to the catalog's origin sentence when it explains no door", () => {
+  const bindings = answerActions(() => {}, "Answer", { find: () => undefined, explainAbsent: () => undefined })
+  expect(bindings.actions.map(action => action.disabled?.reason)).toEqual([
+    "/todo.new is not available on this origin yet.",
+    "/wiki.save is not available on this origin yet."
+  ])
+})
+
+test("J9 answer doors a catalog enables stay offered, exactly as a host with no catalog reading", () => {
+  const enabled = { find: (name: string) => ({ name }), explainAbsent: () => undefined }
+  const bindings = answerActions(() => {}, "Answer", enabled)
+  expect(bindings.actions.map(action => action.disabled)).toEqual([undefined, undefined])
+  expect(answerDoorUnavailable(enabled, "wiki.save")).toBeUndefined()
+  expect(answerDoorUnavailable(undefined, "wiki.save")).toBeUndefined()
 })
 
 test("wiki.save without an answer refuses before any wiki write", async () => {

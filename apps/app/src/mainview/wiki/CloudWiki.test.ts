@@ -12,7 +12,8 @@ import {
   wikiContentPath,
   wikiFolderOf,
   wikiPagePath,
-  wikiStateContains
+  wikiStateContains,
+  WIKI_FEATURE_UNAVAILABLE
 } from "./CloudWiki"
 
 import nativeDeletion from "./fixtures/yrs-deletion-ack.json"
@@ -109,6 +110,33 @@ describe("the wiki spaces transport (#1922)", () => {
     expect(wikiContentPath("owner/repo", "private", 7, 2)).toBe("/repos/owner/repo/wiki/history/7/2/content?visibility=private")
     expect(wikiFolderOf("Guides/Start.md")).toBe("Guides")
     expect(wikiFolderOf("Home.md")).toBe("")
+  })
+
+  test("the route family's gate names the Wiki, and keeps the gate's own code for diagnostics", async () => {
+    const calls: string[] = []
+    const transport = makeCloudWikiTransport({ baseUrl: "", http: async (url) => {
+      calls.push(url)
+      return Response.json({ code: "forbidden", class: "user", fault: "user", message: "feature not available" }, { status: 403 })
+    } })
+    const result = await Effect.runPromise(Effect.result(
+      transport.create("owner/repo", "public", { title: "Overnight verification queue guide", body: "# Answer", slug: "answer-1", path: "Overnight verification queue guide.md" })
+    ))
+    expect(calls).toEqual(["/api/repos/owner/repo/wiki?visibility=public"])
+    expect(result._tag).toBe("Failure")
+    if (result._tag === "Failure") {
+      const failure = result.failure as { sentence?: string; status?: number; code?: string }
+      expect(failure.sentence).toBe(WIKI_FEATURE_UNAVAILABLE)
+      expect(failure.status).toBe(403)
+      expect(failure.code).toBe("forbidden")
+    }
+  })
+
+  test("a 403 the handler itself wrote keeps the handler's own words, never the Wiki's gate sentence", async () => {
+    const transport = makeCloudWikiTransport({ baseUrl: "", http: async () =>
+      Response.json({ code: "forbidden", class: "user", fault: "user", message: "write access to this repository is required" }, { status: 403 }) })
+    const result = await Effect.runPromise(Effect.result(transport.create("owner/repo", "public", { title: "T", body: "", slug: "s", path: "T.md" })))
+    expect(result._tag).toBe("Failure")
+    if (result._tag === "Failure") expect((result.failure as { sentence?: string }).sentence).toBe("write access to this repository is required")
   })
 
   test("a stale rename or attachment is refused with the 409 the backend answers", async () => {

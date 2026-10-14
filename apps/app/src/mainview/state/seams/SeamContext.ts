@@ -204,3 +204,23 @@ export const readGitHubRefusal = async (response: Response, fallback: string): P
 /** Bind issue-read authorization to the current identity and live roster observation. */
 export const issueAuthorizationScope = (ctx: SeamContext): string =>
   JSON.stringify([ctx.store.collections.identitySessions.get("identity"), ctx.issueAuthorizationScope?.() ?? ""])
+
+/**
+ * The exact body the backend's route-family gate writes
+ * (`packages/backend/internal/middleware/feature_flag.go`): HTTP 403 and
+ * `{"message":"feature not available"}`. That file states the message is the
+ * string clients branch on, and this is the branch.
+ */
+export const FEATURE_NOT_AVAILABLE = "feature not available"
+
+/**
+ * Whether a refused response is that gate rather than the handler behind it.
+ *
+ * The gate's three words name no subject, so they reach a person as a sentence
+ * about nothing ("feature not available") whichever door they pressed. A seam
+ * that recognizes the gate says which of ITS doors the host does not serve, and
+ * says it without claiming the person did anything wrong: no input, no retry
+ * and no other repository changes the answer.
+ */
+export const isFeatureGateRefusal = (status: number | null, message: string | undefined): boolean =>
+  status === 403 && message?.trim().toLowerCase() === FEATURE_NOT_AVAILABLE

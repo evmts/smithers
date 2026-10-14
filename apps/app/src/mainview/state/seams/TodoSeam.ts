@@ -15,7 +15,9 @@ import { Data, Schema } from "effect"
 import { TodoNewInput, TodoAmendInput } from "../../flows/entries/todo"
 import { actorSharedState } from "../ActorBindings"
 import type { SeamContext } from "./SeamContext"
-import { readResult, unreachableSentence } from "./SeamContext"
+import { isFeatureGateRefusal, readResult, unreachableSentence } from "./SeamContext"
+import { refusalOf } from "@smthrs/rpc/Refusal"
+import { refusalLine } from "@smthrs/rpc/RefusalCopy"
 import { actorName } from "../../cards/views/actorName"
 import { randomUuid } from "../../runtime/RandomUuid"
 
@@ -44,6 +46,47 @@ const preparationLine = (error: unknown, line: string, report: (error: unknown) 
 
 /* A projection's failure line is the server's authored sentence (mythical_failure.go, mythical_todo_pause.go), never thrown text. */
 const projectedLine = (line: { readonly message: string }): string => line.message
+
+/**
+ * The code and sentence a refused TODO request earns, from what the host
+ * actually answered.
+ *
+ * Three different events used to reach a person as one sentence, "TODO request
+ * failed.", which names no cause and leaves no fact to diagnose from:
+ *
+ * - The route family is not mounted at all. A mounted TODO route always writes
+ *   an APIError body (`routes/todos.go`), so a refusal carrying no `message`
+ *   came from the router instead: `404 page not found` as `text/plain`, which
+ *   is plumbing with no contract with this product (§28.5). It is the one case
+ *   no input and no retry can fix — this host serves no TODOs.
+ * - The route-family gate refused it (`isFeatureGateRefusal`): the host serves
+ *   TODOs, but its feature policy has the family switched off.
+ * - Anything else that answered without words of its own, which keeps the
+ *   shared verdict for its status and now also names the route and status.
+ *
+ * `code` is the app's own classification, reported for diagnostics beside the
+ * request's idempotency key; it is never shown to a person and never confused
+ * with a code the wire stated.
+ */
+export const todoRequestRefusal = (
+  method: string,
+  route: string,
+  status: number,
+  stated: string | undefined
+): { readonly code: "todo_route_absent" | "feature_not_available" | "todo_refused"; readonly sentence: string } => {
+  const wire = `${method} ${route} answered ${status}`
+  if (isFeatureGateRefusal(status, stated)) {
+    return { code: "feature_not_available", sentence: `TODOs are not available on this Smithers host (${wire}).` }
+  }
+  if (stated !== undefined) return { code: "todo_refused", sentence: stated }
+  if (status === 404) {
+    return { code: "todo_route_absent", sentence: `TODOs are not a door on this Smithers host (${wire}).` }
+  }
+  return {
+    code: "todo_refused",
+    sentence: refusalLine(refusalOf({ body: null, status, message: "" }), `The TODO request failed (${wire}).`)
+  }
+}
 
 export type { DraftEntry, TodoEntry }
 type Request = TodoEntry["payload"]["requests"][number]
@@ -376,6 +419,9 @@ export const createTodoSeam = (ctx: SeamContext, options: TodoSeamOptions = {}) 
       : request.operation === "create" ? (typeof request.body.terminal_session === "string" ? `/api/terminals/${encodeURIComponent(request.body.terminal_session)}/commands` : TODOS_PATH)
       : ["preapprove", "unapprove"].includes(request.operation) ? `${todoPath(request.n!)}/preapproval`
       : `${todoPath(request.n!)}${request.operation === "amend" || control ? "" : `/${request.operation}`}`
+    // Named here, not inside the fetch: a refusal with no words of its own
+    // names the method it used, and the two must be the same string.
+    const method = request.operation === "unapprove" ? "DELETE" : request.operation === "amend" ? "PATCH" : "POST"
     void (async () => {
       let response: Response
       try {
@@ -409,7 +455,7 @@ export const createTodoSeam = (ctx: SeamContext, options: TodoSeamOptions = {}) 
           : request.operation === "steer" ? { steer: request.body.steer ?? request.body.text }
           : control ? { op: request.operation, ...request.body } : request.body
         response = await ctx.http(`${ctx.baseUrl}${route}`, {
-          method: request.operation === "unapprove" ? "DELETE" : request.operation === "amend" ? "PATCH" : "POST", credentials: "include", signal: abort.signal,
+          method, credentials: "include", signal: abort.signal,
           headers: { "Content-Type": "application/json", "Idempotency-Key": request.key, ...(ctx.actor() === "smithers" ? { "Smithers-Via": "smithers" } : {}) }, body: JSON.stringify(request.operation === "create" && typeof request.body.terminal_session === "string"
             ? { command: "todo.new", payload: Object.fromEntries(Object.entries(body).filter(([key]) => key !== "terminal_session")) } : body)
         })
@@ -426,8 +472,25 @@ export const createTodoSeam = (ctx: SeamContext, options: TodoSeamOptions = {}) 
           const todo = entry(request.n!)
           if (todo) await write({ ...todo, payload: { ...todo.payload, answerDraft: String(request.body.answer), answeredBy: result.answered_by } })
         }
-        const message = typeof result.message === "string" ? result.message : "TODO request failed."
-        const fault = result.class === "infra" || result.class === "capacity" ? `${message} Not your fault.` : message
+        const stated = typeof result.message === "string" && result.message.trim() !== "" ? result.message : undefined
+        const refusal = todoRequestRefusal(method, route, response.status, stated)
+        const fault = refusal.code === "todo_refused" && stated !== undefined &&
+            (result.class === "infra" || result.class === "capacity")
+          ? `${refusal.sentence} Not your fault.`
+          : refusal.sentence
+        /*
+         * A refusal this app had to classify ITSELF — the router's, the gate's,
+         * or an answer with no words at all — leaves the correlation the next
+         * reader needs, and nothing a person reads: the classification, the
+         * route, the status and the request's own idempotency key. A refusal
+         * plue authored a sentence for is already explained and is not reported.
+         */
+        if (stated === undefined || refusal.code === "feature_not_available") {
+          ctx.report?.(
+            `todo.request.${refusal.code}`,
+            new Error(`${method} ${route} answered ${response.status} (${request.operation}, key ${request.key})`)
+          )
+        }
         await fail(fault)
         // A later push can race the displayed answer. Keep the refusal visible,
         // but reload its bound wait instead of waiting for a live notification.

@@ -3,7 +3,7 @@ import { Context, Data, Effect } from "effect"
 import * as Y from "yjs"
 import { z } from "zod"
 import { cloudFailure, createCloudClient } from "../state/seams/CloudClient"
-import type { SeamFetch } from "../state/seams/SeamContext"
+import { isFeatureGateRefusal, type SeamFetch } from "../state/seams/SeamContext"
 
 const positiveId = z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
 /** A wiki space: the public part or the private part of one repository's wiki (#1922). */
@@ -206,6 +206,19 @@ export class CloudWikiTransport extends Context.Service<CloudWikiTransport, {
   readonly attach: (repo: string, space: WikiSpace, slug: string, input: { readonly path: string; readonly mediaType: string; readonly expectedRevision: number; readonly bytes: Uint8Array }) => Effect.Effect<z.infer<typeof CloudWikiPage>, CloudWikiError>
 }>()("smithers-ui/CloudWikiTransport") {}
 
+/**
+ * What a person reads when this host's feature policy does not serve the Wiki.
+ *
+ * The route family's gate answers every Wiki call with its own three words,
+ * `feature not available` (`isFeatureGateRefusal`), which name no subject: a
+ * person who pressed Save on an answer was told that something, somewhere, is
+ * off. They are told which door instead, and told that nothing about their
+ * page, their repository or their account is the reason — so no one retypes a
+ * title that was never the problem. The gate's own code still travels on the
+ * error for diagnostics.
+ */
+export const WIKI_FEATURE_UNAVAILABLE = "The Wiki is not available on this Smithers host."
+
 export const makeCloudWikiTransport = (
   config: { readonly http: SeamFetch; readonly baseUrl: string }
 ): typeof CloudWikiTransport.Service => {
@@ -217,7 +230,7 @@ export const makeCloudWikiTransport = (
         if (!value.ok) {
           const failure = await cloudFailure(value, `Reading or saving this Wiki page failed (${value.status}).`)
           throw new CloudWikiError({
-            sentence: failure.error,
+            sentence: isFeatureGateRefusal(value.status, failure.refusal.message) ? WIKI_FEATURE_UNAVAILABLE : failure.error,
             status: value.status,
             ...(failure.code === null ? {} : { code: failure.code })
           })

@@ -735,6 +735,15 @@ export const createCloudWikiController = (ctx: ControllerContext, nextOrdinal: (
       } catch (error) {
         if (!current()) return "The Wiki save belongs to an earlier session."
         const message = error instanceof CloudWikiError ? error.sentence : "Could not save to Wiki."
+        /*
+         * The correlation a refused save leaves behind, and nothing a person
+         * reads: which status and which code the Wiki route answered, against
+         * this request's own slug. Without it a host whose Wiki is switched off
+         * and a page that genuinely conflicted are the same line in the ring.
+         */
+        if (error instanceof CloudWikiError) {
+          ctx.failures.report("wiki.save", error, `${slug} ${error.status ?? "no status"} ${error.code ?? "no code"}`)
+        }
         await saveRequest({ ...request, state: "failed", error: message })
         return message
       }
