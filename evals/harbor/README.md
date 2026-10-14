@@ -101,7 +101,9 @@ it from the trial's `config.json` and `[agent] timeout_sec` in the task's
 `task.toml`, and gives the CLI one minute less. `--ak budget_sec=N` sets the
 budget outright. There is no default: a trial whose timeout cannot be found
 raises `BudgetUnknown` before any model call. The 2026-09-26 runs fell back to
-3,600 s here while the stock Codex arm had each task's 5,400 s.
+3,600 s here while the stock Codex arm had each task's 5,400 s. When the
+runner cancels the agent anyway (its timeout, a job stop), the running CLI
+gets SIGTERM, then SIGKILL after 30 s, and the cancellation is re-raised.
 
 `smithers-run.json` and the trial's metadata record the budget (`budgetSec`,
 `budget_sec`), its source (`budgetSource`, `budget_source`: `budget_sec`,

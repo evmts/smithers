@@ -18,6 +18,9 @@ What is pinned, and why each one matters:
     the two validators ATIF enforces. When Harbor is importable the trajectory
     is validated by its own pydantic model as well, and the check says so.
   - The compose project name is sanitized the way Docker Compose does it.
+  - `_drive` runs plan, approve and run as real children: each outcome keeps
+    its exit status, phase and output, and a cancelled trial stops the CLI
+    (SIGTERM, then SIGKILL after the grace) instead of leaving it running.
   - The stock Codex arm runs as the image's own uid when the task names no
     user and the image's `USER` is not root, so the runner chowns the
     root-owned 0600 `auth.json` to the CLI's user (#3862). Without it the CLI
@@ -612,6 +615,123 @@ def check_container_survival() -> None:
     assert "125" in asyncio.run(agent.container_lost(Refuses()))
 
 
+# A real CLI child for `_drive`: `STUB_MODE` picks the outcome, and a run
+# that hangs writes its pid to `STUB_PID` once it is ready to be cancelled.
+STUB_CLI = r"""
+import json, os, signal, sys, time
+verb, mode = sys.argv[1], os.environ["STUB_MODE"]
+if verb == "plan":
+    print("planned", file=sys.stderr)
+    if mode == "plan-fails":
+        print("no plan")
+        sys.exit(2)
+    print("not json" if mode == "plan-garbled" else json.dumps({"approval": {"id": "a1"}}))
+elif verb == "approve":
+    print("approved " + sys.argv[2], file=sys.stderr)
+    if mode == "approve-fails":
+        print("refused")
+        sys.exit(5)
+else:
+    if mode == "stubborn":
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    print("ran " + sys.argv[2], flush=True)
+    print("warned", file=sys.stderr, flush=True)
+    if mode in ("hang", "stubborn"):
+        pid = os.environ["STUB_PID"]
+        open(pid + ".tmp", "w").write(str(os.getpid()))
+        os.replace(pid + ".tmp", pid)
+        time.sleep(600)
+    sys.exit(3)
+"""
+
+
+class Stubbed(agent.SmithersAgent):
+    """The real `_drive` with the CLI replaced by `STUB_CLI`."""
+
+    def _cli(self, *args: str) -> list[str]:
+        return [sys.executable, str(self.logs_dir.parent / "stub.py"), *args]
+
+
+def stubbed(root: Path, mode: str) -> tuple[Stubbed, dict[str, str]]:
+    (root / "stub.py").write_text(STUB_CLI)
+    (root / "agent").mkdir()
+    return (Stubbed(logs_dir=root / "agent", model_name="openai/gpt-6-sol"),
+            {**os.environ, "STUB_MODE": mode, "STUB_PID": str(root / "pid")})
+
+
+def gone(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    return False
+
+
+def check_drive() -> None:
+    """plan, approve, run against a real child: the exit status, the phase it
+    ended in and what `smithers-run.log` keeps of the CLI's output."""
+    import asyncio
+
+    cases = [
+        ("exit", 600, (3, "run"), ["planned", 'approved {"id": "a1"}', 'ran {"id": "a1"}', "warned"]),
+        ("plan-fails", 600, (2, "plan"), ["planned", "no plan"]),
+        ("plan-garbled", 600, (1, "plan"), ["planned", "not json"]),
+        ("approve-fails", 600, (5, "approve"), ['approved {"id": "a1"}', "refused"]),
+        ("hang", 2, (124, "run"), ['ran {"id": "a1"}', "run exceeded its 2s budget and was killed"]),
+    ]
+    for mode, budget, expected, logged in cases:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stub, env = stubbed(root, mode)
+            outcome = asyncio.run(stub._drive(root, env, budget))
+            assert outcome == expected, (mode, outcome)
+            log = (stub.logs_dir / "smithers-run.log").read_text()
+            for line in logged:
+                assert line in log, (mode, line, log)
+            if mode == "hang":
+                assert gone(int((root / "pid").read_text())), "a run over its budget is killed"
+
+
+def check_drive_cancelled() -> None:
+    """A cancelled trial stops its CLI. Harbor cancels `run()` at the agent
+    timeout or a job stop; on nyc-02 (2026-10-14) a runner hung until its CLI
+    was killed by hand, because the thread blocked in `subprocess.run`
+    outlived the cancellation. The CLI gets SIGTERM, SIGKILL after the grace,
+    and the cancellation is re-raised."""
+    import asyncio
+    import time
+
+    async def cancel(stub: Stubbed, env: dict[str, str], root: Path, **grace: float) -> tuple[int, float]:
+        task = asyncio.create_task(stub._drive(root, env, 600, **grace))
+        deadline = time.monotonic() + 30
+        while not (root / "pid").exists():
+            assert time.monotonic() < deadline and not task.done(), "the stub reached its run verb"
+            await asyncio.sleep(0.02)
+        pid = int((root / "pid").read_text())
+        started = time.monotonic()
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        else:
+            raise AssertionError("the cancellation is re-raised")
+        return pid, time.monotonic() - started
+
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        stub, env = stubbed(root, "hang")
+        pid, waited = asyncio.run(cancel(stub, env, root))
+        assert gone(pid), "SIGTERM stops the CLI"
+        assert waited < 10, f"stopped by SIGTERM, not by the {agent.CANCEL_GRACE_SEC:.0f}s fallback: {waited:.1f}s"
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        stub, env = stubbed(root, "stubborn")
+        pid, waited = asyncio.run(cancel(stub, env, root, grace=0.5))
+        assert gone(pid), "SIGKILL stops a CLI that ignores SIGTERM"
+        assert 0.5 <= waited < 10, f"killed after the 0.5s grace: {waited:.1f}s"
+
+
 def check_accounts() -> None:
     with tempfile.TemporaryDirectory() as directory:
         home = Path(directory)
@@ -891,7 +1011,10 @@ if __name__ == "__main__":
     image_user = check_codex_runs_as_image_user()
     install = check_codex_installs_only_what_is_missing()
     check_container_survival()
+    check_drive()
+    check_drive_cancelled()
     check_accounts()
     revision = check_harness_revision()
-    print(f"check_agent.py: prompt, environment, journal fold, helper lookup, names, plue shim, plue environment and account pool hold; "
+    print(f"check_agent.py: prompt, environment, journal fold, helper lookup, names, plue shim, plue environment, "
+          f"the CLI's three verbs and their cancellation, and account pool hold; "
           f"stock arm's image user {image_user}; its install {install}; harness revision {revision}; trajectory {validation}.")

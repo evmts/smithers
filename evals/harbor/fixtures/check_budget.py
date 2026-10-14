@@ -70,7 +70,7 @@ class Driven(agent.SmithersAgent):
     """The real agent with the CLI replaced: records the budget `_drive` was
     given and leaves the journal of a run that reached the container."""
 
-    def _drive(self, workspace: Path, env: dict[str, str], budget: float) -> tuple[int, str]:
+    async def _drive(self, workspace: Path, env: dict[str, str], budget: float) -> tuple[int, str]:
         self.driven = budget
         flows = workspace / ".flows"
         flows.mkdir()

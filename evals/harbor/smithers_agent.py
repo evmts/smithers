@@ -71,7 +71,9 @@ Agent kwargs (`--ak key=value`):
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
+import locale
 import os
 import re
 import shutil
@@ -668,6 +670,9 @@ def verdict(log_text: str, summary: dict[str, Any], events: list[dict[str, Any]]
 # before the runner cancels `run()`.
 BUDGET_MARGIN_SEC = 60.0
 BUDGET_FLOOR_SEC = 60.0
+# When the runner cancels `run()` anyway, the CLI gets SIGTERM and this long to
+# exit before SIGKILL.
+CANCEL_GRACE_SEC = 30.0
 
 
 class BudgetUnknown(Exception):
@@ -778,6 +783,45 @@ def resolve_budget(budget_sec: float | None, agent_timeout_sec: float | None, lo
         timeout, source = enforced_agent_timeout(logs_dir, environment)
     return {"budgetSec": max(BUDGET_FLOOR_SEC, timeout - BUDGET_MARGIN_SEC), "budgetSource": source,
             "agentTimeoutSec": timeout}
+
+
+async def run_child(argv: list[str], *, timeout: float, grace: float = CANCEL_GRACE_SEC,
+                    capture_output: bool = False, **options: Any) -> subprocess.CompletedProcess:
+    """`subprocess.run(argv, text=True, timeout=timeout, ...)` that a cancelled
+    trial reaches. Harbor cancels `run()` at the agent timeout or a job stop;
+    a thread blocked in `subprocess.run` outlived that, and on nyc-02
+    (2026-10-14) its CLI held the runner open until it was killed by hand.
+    Here the child gets SIGTERM, `grace` seconds, then SIGKILL, and the
+    cancellation is re-raised."""
+    if capture_output:
+        options.update(stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    child = await asyncio.create_subprocess_exec(*argv, **options)
+    try:
+        stdout, stderr = await asyncio.wait_for(child.communicate(), timeout)
+    except asyncio.TimeoutError:
+        with contextlib.suppress(ProcessLookupError):
+            child.kill()
+        await child.communicate()
+        raise subprocess.TimeoutExpired(argv, timeout) from None
+    except asyncio.CancelledError:
+        with contextlib.suppress(ProcessLookupError):
+            child.terminate()
+        try:
+            await asyncio.wait_for(child.communicate(), grace)
+        except asyncio.TimeoutError:
+            with contextlib.suppress(ProcessLookupError):
+                child.kill()
+            await child.communicate()
+        raise
+    return subprocess.CompletedProcess(argv, child.returncode, _decoded(stdout), _decoded(stderr))
+
+
+def _decoded(data: bytes | None) -> str | None:
+    """What `text=True` makes of a child's output: the locale's encoding and
+    universal newlines."""
+    if data is None:
+        return None
+    return data.decode(locale.getpreferredencoding(False)).replace("\r\n", "\n").replace("\r", "\n")
 
 
 class SmithersAgent(BaseAgent):
@@ -953,7 +997,7 @@ class SmithersAgent(BaseAgent):
 
             started = time.monotonic()
             try:
-                exit_status, phase = await asyncio.to_thread(self._drive, workspace, env, budget["budgetSec"])
+                exit_status, phase = await self._drive(workspace, env, budget["budgetSec"])
             finally:
                 if shim_home is not None:
                     shutil.rmtree(shim_home, ignore_errors=True)
@@ -1069,12 +1113,14 @@ class SmithersAgent(BaseAgent):
     def _cli(self, *args: str) -> list[str]:
         return ["node", str(self.root / CLI_RELATIVE), "--json", *args]
 
-    def _drive(self, workspace: Path, env: dict[str, str], budget: float) -> tuple[int, str]:
-        """plan, approve, run; the same three verbs the SWE-bench lane uses."""
+    async def _drive(self, workspace: Path, env: dict[str, str], budget: float,
+                     grace: float = CANCEL_GRACE_SEC) -> tuple[int, str]:
+        """plan, approve, run; the same three verbs the SWE-bench lane uses.
+        A cancelled trial stops whichever verb is running (`run_child`)."""
         log = (self.logs_dir / "smithers-run.log").open("a", encoding="utf-8")
         try:
-            plan = subprocess.run(self._cli("plan", FLOW_NAME), cwd=workspace, env=env,
-                                  capture_output=True, text=True, timeout=300)
+            plan = await run_child(self._cli("plan", FLOW_NAME), cwd=workspace, env=env,
+                                   capture_output=True, timeout=300, grace=grace)
             log.write(plan.stderr)
             if plan.returncode != 0:
                 log.write(plan.stdout)
@@ -1084,15 +1130,15 @@ class SmithersAgent(BaseAgent):
             except (ValueError, KeyError):
                 log.write(plan.stdout)
                 return 1, "plan"
-            approve = subprocess.run(self._cli("approve", approval, "--scope", "run"), cwd=workspace, env=env,
-                                     capture_output=True, text=True, timeout=300)
+            approve = await run_child(self._cli("approve", approval, "--scope", "run"), cwd=workspace, env=env,
+                                      capture_output=True, timeout=300, grace=grace)
             log.write(approve.stderr)
             if approve.returncode != 0:
                 log.write(approve.stdout)
                 return approve.returncode, "approve"
             try:
-                run = subprocess.run(self._cli("run", approval), cwd=workspace, env=env,
-                                     stdout=log, stderr=subprocess.STDOUT, text=True, timeout=budget)
+                run = await run_child(self._cli("run", approval), cwd=workspace, env=env,
+                                      stdout=log, stderr=subprocess.STDOUT, timeout=budget, grace=grace)
             except subprocess.TimeoutExpired:
                 log.write(f"\nsmithers_agent: run exceeded its {budget:.0f}s budget and was killed\n")
                 return 124, "run"
