@@ -8,6 +8,7 @@ import type { Harness } from "@smthrs/rpc/LocalApp"
 import { DETECTORS } from "./Detectors.ts"
 import { findBinary } from "./HarnessHost.ts"
 import type { HarnessHost } from "./HarnessHost.ts"
+import { parseVersionLine } from "./Probe.ts"
 
 /**
  * Every harness id, in contract order, whether installed or not.
@@ -16,6 +17,8 @@ import type { HarnessHost } from "./HarnessHost.ts"
  * credentials are on disk. Version probes for the installed binaries run in
  * parallel, so a caller waits for the slowest CLI once rather than for the
  * sum of them.
+ * Returned versions are parsed, stripped of controls and bounded even when
+ * the host supplies raw probe output.
  *
  * @category detection
  * @since 0.1.0
@@ -31,7 +34,7 @@ export const detectHarnessesWith = async (host: HarnessHost): Promise<Array<Harn
       id: detector.id,
       displayName: detector.displayName,
       binary,
-      version: versions[index] ?? null,
+      version: versions[index] == null ? null : parseVersionLine(versions[index]),
       status: signal === null ? "unavailable" : signal.status,
       account: signal === null ? null : signal.account,
       launch: { argv: [...detector.launch] },

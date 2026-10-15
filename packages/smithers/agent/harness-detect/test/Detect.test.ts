@@ -64,6 +64,21 @@ const host = (fake: Fake = {}): HarnessHost & { readonly probed: Array<string> }
   }
 }
 
+describe("version output at the detection boundary", () => {
+  test.each([
+    ["\u001b[31m2.1.247 (Claude Code)\u001b[0m", "2.1.247"],
+    ["x".repeat(1000), "x".repeat(64)],
+    ["\u0000\u001b[0m\n  ", null],
+    [null, null]
+  ])("sanitizes host output %j", async (output, expected) => {
+    const rows = await detectHarnessesWith(host({
+      binaries: ["/usr/bin/claude"],
+      versions: { "/usr/bin/claude": output }
+    }))
+    expect(rows.find((row) => row.id === "claude")?.version).toBe(expected)
+  })
+})
+
 describe("the candidate dirs", () => {
   test("callers without a platform keep the native path convention", () => {
     expect(harnessCandidateDirs({ home: HOME, listDir: () => [] })[0]).toBe(join(HOME, ".local", "bin"))
