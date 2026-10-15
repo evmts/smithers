@@ -334,14 +334,15 @@ const toolIndex = (state: State, call: typeof ChunkToolCall.Type): number => {
   // vLLM and older Ollama builds send every complete parallel call as
   // `index: 0`. A delta whose id differs from the call already at its index is
   // another call, so it is placed by its id instead of merged into that one.
-  const occupant = call.index === undefined ? undefined : state.callIdByIndex[call.index]
-  if (call.index !== undefined && (occupant === undefined || call.id === undefined || call.id === occupant)) {
-    return call.index
-  }
+  // A known id always names its call, even under a different index.
   if (call.id !== undefined) {
     for (const [index, callId] of Object.entries(state.callIdByIndex)) {
       if (callId === call.id) return Number(index)
     }
+  }
+  const occupant = call.index === undefined ? undefined : state.callIdByIndex[call.index]
+  if (call.index !== undefined && (occupant === undefined || call.id === undefined)) {
+    return call.index
   }
   return Object.keys(state.callIdByIndex).reduce((next, index) => Math.max(next, Number(index) + 1), 0)
 }

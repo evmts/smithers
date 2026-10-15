@@ -1,13 +1,32 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
 /** Standard package targets plus package-owned documentation generation. */
 import { Smithers } from "@smthrs/targets"
+import * as Input from "@smthrs/targets/Input"
 
 const cwd = "packages/smithers/agent/model"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  sources: Input.glob("{src,examples}/**/*.ts"),
   cwd
 })
+
+/**
+ * Changed public APIs against the package prose. The default context reads
+ * only `docs/*.md`; the concept and guide pages document the same exports, so
+ * the review reads all of them.
+ */
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({
+  cwd,
+  context: [
+    Smithers.file("README.md"),
+    Smithers.glob("docs/**/*.md"),
+    Smithers.file("//apps/site/src/content/docs/docs/reference/api/model.mdx")
+  ]
+})
+
+/** Changed exports against their own JSDoc. */
+const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd })
 
 const securityReview = Smithers.SecurityReview({
   cwd,
@@ -143,5 +162,17 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview }
+  targets: {
+    check,
+    circular,
+    docs,
+    docsFiles,
+    fmt,
+    lib,
+    lint,
+    reviewDocsAgainstCode,
+    reviewJsdocAgainstCode,
+    test,
+    ...securityReview
+  }
 })

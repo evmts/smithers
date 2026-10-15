@@ -382,6 +382,24 @@ describe("OpenAIChatCompletions.protocol.stream", () => {
     ])
   })
 
+  it("keeps appending to a call whose id reappears under a new index", () => {
+    // A known id names the call outright; restarting it would drop the
+    // arguments already received and announce one call twice.
+    const events = replayData([
+      "{\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_a\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{\\\"q\\\"\"}}]}}]}",
+      "{\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":1,\"id\":\"call_a\",\"function\":{\"name\":\"lookup\",\"arguments\":\":1}\"}}]}}]}",
+      "{\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}"
+    ])
+
+    expect(events).toEqual([
+      { type: "tool-call-start", id: "call_a", name: "lookup" },
+      { type: "tool-call-delta", id: "call_a", arguments: "{\"q\"" },
+      { type: "tool-call-delta", id: "call_a", arguments: ":1}" },
+      { type: "tool-call-end", id: "call_a", arguments: "{\"q\":1}" },
+      { type: "settle", stopReason: "tool-calls" }
+    ])
+  })
+
   it("opens a nameless tool call as a typed provider fault", () => {
     const error = Effect.runSync(Effect.flip(
       OpenAIChatCompletions.protocol.stream.step(

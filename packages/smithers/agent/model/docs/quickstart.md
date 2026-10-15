@@ -62,6 +62,10 @@ Run it and you should see one text part:
 message, plus the usage counters the stream reported. You will use it on real
 streams exactly the same way.
 
+The package ships this step as a tested example,
+`examples/stub-model.ts`, which also prices the reported usage with
+`Pricing.cost`.
+
 ## 3. Call a real provider
 
 To send the same request to Anthropic, build a route from your API key and
