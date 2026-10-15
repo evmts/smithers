@@ -326,6 +326,24 @@ describe("SmithersError", () => {
     expect(Object.isFrozen(details)).toBe(false)
   })
 
+  it("preserves enumerable symbol context while excluding hidden symbols from the copy", () => {
+    const visible = Symbol("context")
+    const hidden = Symbol("context")
+    const nested = { reason: "transport" }
+    const details = { reason: "failed", [visible]: nested }
+    Object.defineProperty(details, hidden, { value: "excluded" })
+    const error = new SmithersError("INTEGRATION_ERROR", "failed", details)
+
+    expect(Object.getOwnPropertySymbols(error.details!)).toEqual([visible])
+    expect(Reflect.get(error.details!, visible)).toBe(nested)
+    expect(Object.hasOwn(error.details!, hidden)).toBe(false)
+    expect(Object.isFrozen(error.details)).toBe(true)
+    expect(error.toJSON().details).toBe(error.details)
+    expect(JSON.parse(JSON.stringify(error)).details).toEqual({ reason: "failed" })
+    details[visible] = { reason: "changed" }
+    expect(Reflect.get(error.details!, visible)).toBe(nested)
+  })
+
   it("propagates the original failure when copying context invokes a throwing accessor", () => {
     const failure = new Error("context unavailable")
     const details = {
