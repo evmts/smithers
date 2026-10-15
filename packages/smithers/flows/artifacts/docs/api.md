@@ -434,7 +434,10 @@ treated as a lock with no readable owner and reclaimed on the same bound.
 `hold` is the same lease without a deadline, for a caller that bounds a wider
 wait itself; `onAcquired` runs once the lease is held. `guard`, when given,
 runs before every create, heartbeat, rename, and remove of the lock, claim, or
-tombstone, and its failure refuses that step through `failure`.
+tombstone, and its failure refuses that step through `failure`. Both fail
+through `failure` with a `RangeError`, before touching the lock, unless
+`0 < heartbeatEvery < staleAfterMs` and `staleAfterMs` is finite: a shorter
+stale bound would let a contender reclaim a live holder's lock.
 
 | Option           | Default        | Meaning                                          |
 | ---------------- | -------------- | ------------------------------------------------ |
