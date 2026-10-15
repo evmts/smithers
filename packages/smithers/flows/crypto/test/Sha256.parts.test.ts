@@ -106,3 +106,23 @@ it("normalizes revoked arrays and unreadable array lengths without retaining inp
     expect(hash(["a"])).toBe(createHash("sha256").update("a").digest("hex"))
   }
 })
+
+it("normalizes indexed fragment access failures and preserves the last successful prefixes", () => {
+  const hash = makeDigestPartsSync()
+  const expected = createHash("sha256").update("prefixtail").digest("hex")
+  expect(hash(["prefix", "tail"])).toBe(expected)
+  const cause = new Error("private fragment text")
+  const input = ["prefix", "changed", "unused"]
+  Object.defineProperty(input, "2", {
+    get() {
+      throw cause
+    }
+  })
+  expect(() => hash(input)).toThrow(expect.objectContaining({
+    code: "invalid_input",
+    message: "SHA-256 text fragment could not be read",
+    cause
+  }))
+  expect(hash(["prefix", "tail"])).toBe(expected)
+  expect(hash(["prefix", "changed"])).toBe(createHash("sha256").update("prefixchanged").digest("hex"))
+})

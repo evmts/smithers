@@ -348,7 +348,7 @@ export const Sha256 = Object.assign(Sha256Schema, { Digest, digest, digestSync }
  *
  * @returns A synchronous hasher accepting an array of text fragments.
  * @throws {Sha256Error} The returned hasher throws for non-array input, invalid
- * lengths, non-string fragments, invalid text, or failed text encoding. Failed calls preserve the
+ * lengths, unreadable or non-string fragments, invalid text, or failed text encoding. Failed calls preserve the
  * last successful call's reusable prefixes.
  *
  * @category hashing
@@ -371,7 +371,12 @@ export const makeDigestPartsSync = (): (parts: ReadonlyArray<string>) => Digest 
     // record cache keys different from the values actually hashed.
     const parts: Array<string> = []
     for (let index = 0; index < length; index++) {
-      const part = input[index]!
+      let part: unknown
+      try {
+        part = input[index]
+      } catch (cause) {
+        throw failure("invalid_input", "SHA-256 text fragment could not be read", cause)
+      }
       if (typeof part !== "string") {
         throw failure("invalid_input", "SHA-256 text fragments must be strings")
       }
