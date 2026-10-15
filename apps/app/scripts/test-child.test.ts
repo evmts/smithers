@@ -31,6 +31,10 @@ test('timeout bounds a leader that exits while a descendant holds its pipes', ()
       fs.writeFileSync(${JSON.stringify(pidFile)},String(child.pid)); child.unref();
     `], { encoding: 'utf8', timeout: 500 })
     expect((child.error as NodeJS.ErrnoException).code).toBe('ETIMEDOUT')
+    // No exit status beside the error: Bun's own synchronous spawn answers 0 here for a child it
+    // stopped waiting on, and a caller reading that status accepts a launch that never finished (#3763).
+    expect(child.status).toBeNull()
+    expect(child.signal).toBe('SIGKILL')
     expect(Date.now() - start).toBeLessThan(5000)
     const pid = Number(readFileSync(pidFile, 'utf8'))
     // A killed orphan may briefly be a zombie until init reaps it.

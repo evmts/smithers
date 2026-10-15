@@ -7,9 +7,9 @@ import { terminalSkillProof } from "./terminal-skill-proof"
  * own rather than bun:test's 5 s default (gate 1, runs 38556009956 and 38558094099). The launches are supervised
  * from Node rather than taken synchronously from Bun, which can answer for a child that already finished (#3763):
  * on gate 1 (run 38700479725, job 116307187784) four launches whose proof had in fact passed were named ETIMEDOUT
- * at exactly 20 s, while this file's twelve others cost ~30 ms each, so the budget was not short. Each launch is
- * still bounded in turn: a wedged interpreter is killed with its group and named, instead of silently spending the
- * test's budget and outliving it.
+ * at exactly 20 s, while that job's other thirteen cases of this file took 23-214 ms, so the budget was not short.
+ * Each launch is still bounded in turn: a wedged interpreter is killed with its group and named, instead of
+ * silently spending the test's budget and outliving it.
  */
 setDefaultTimeout(60_000)
 const LAUNCH_BUDGET_MS = 20_000
@@ -91,7 +91,9 @@ describe("installed Claude skill execution receipts", () => {
 /*
  * The launch itself, with no proof script. Bun's synchronous spawn can answer for a child that already
  * finished (#3763): on gate 1 (run 38700479725, job 116307187784) it named ETIMEDOUT at exactly 20 s for
- * the four launches whose proof had in fact passed, while this file's twelve others cost ~30 ms each.
+ * the four launches whose proof had in fact passed, while that job's other thirteen cases of this file took
+ * 23-214 ms. An unsupervised launch there answers status 0 BESIDE that error, so a proof that passed reads
+ * as one that never finished.
  * Here the leader exits at once and leaves a descendant holding its pipes, which answers deterministically
  * what that race answers by chance: a launch the budget kills reports no exit status, so a killed launch can
  * never read as a proof that passed or as one that refused. scripts/test-child owns the kill and the bound;
