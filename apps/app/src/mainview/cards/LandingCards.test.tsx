@@ -207,3 +207,63 @@ test("a tab that read everything draws no limit, and a refused one draws its ref
   expect(refused).not.toContain("landing-checks-limit")
   expect(refused).not.toContain("No checks reported")
 })
+
+/*
+ * The aggregate conclusion over a list of checks that is not all of them.
+ * `checksSummary` read only the rows it was handed, so a hundred successful
+ * runs out of two hundred and forty concluded "All checks have passed" in the
+ * box header — an approval of runs nobody saw — while the notice right above
+ * it said the rows were partial. A conclusion that unseen runs cannot change
+ * (a failure) still stands; one they can does not.
+ */
+test("a partly read checks list is never concluded as all passing, and keeps its rows", () => {
+  const partial = renderTab({
+    sourceRepo: "upstream/project",
+    state: "merged",
+    tab: "checks",
+    checks: [{ context: "build-status", state: "success" }, { context: "lint", state: "success" }],
+    readLimits: { checks: "Showing 100 of 240 check runs." }
+  })
+  expect(partial).not.toContain("All checks have passed")
+  expect(partial).toContain("Some checks could not be read")
+  // The runs that WERE read stay readable beside the honest conclusion.
+  expect(partial).toContain("build-status")
+  expect(partial).toContain("lint")
+  expect(partial).toContain("Showing 100 of 240 check runs.")
+  expect(partial).toContain('data-testid="landing-checks-limit"')
+
+  // A failing run is a conclusion the unseen ones cannot overturn.
+  const failing = renderTab({
+    sourceRepo: "upstream/project",
+    state: "merged",
+    tab: "checks",
+    checks: [{ context: "build-status", state: "failure" }, { context: "lint", state: "success" }],
+    readLimits: { checks: "Showing 100 of 240 check runs." }
+  })
+  expect(failing).toContain("1 failing check")
+  expect(failing).not.toContain("All checks have passed")
+
+  // Zero rows out of a count that says there are some is not "none reported".
+  const none = renderTab({ sourceRepo: "upstream/project", state: "merged", tab: "checks",
+    checks: [], readLimits: { checks: "Showing 0 of 9 check runs." } })
+  expect(none).not.toContain("No checks reported")
+  expect(none).toContain("Some checks could not be read")
+})
+
+test("a whole checks read still concludes all passing, and a refused one concludes nothing", () => {
+  const whole = renderTab({ sourceRepo: "upstream/project", state: "merged", tab: "checks",
+    checks: [{ context: "build-status", state: "success" }] })
+  expect(whole).toContain("All checks have passed")
+  expect(whole).not.toContain("Some checks could not be read")
+
+  const native = renderTab({ state: "open", checks: [{ context: "ci", state: "success" }] })
+  expect(native).toContain("All checks have passed")
+  expect(native).toContain('aria-label="Checks and landing"')
+
+  // A refused read has no conclusion to draw: no all-pass, no empty claim.
+  const refused = renderTab({ sourceRepo: "upstream/project", state: "merged", tab: "checks",
+    checks: [], readErrors: { checks: "Checks unavailable (Read failed (HTTP 403).)" } })
+  expect(refused).not.toContain("All checks have passed")
+  expect(refused).not.toContain("No checks reported")
+  expect(refused).toContain('data-testid="landing-checks-failure"')
+})

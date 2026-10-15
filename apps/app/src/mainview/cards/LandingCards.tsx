@@ -171,11 +171,21 @@ const reviewVerb = (type: string): { readonly icon: "check" | "file-diff" | "com
   return { icon: "comment", tone: "draft", verb: "reviewed" }
 }
 
-const checksSummary = (checks: LandingPayload["checks"]): { readonly tone: Tone; readonly icon: "check-circle-fill" | "x-circle-fill" | "dot-fill"; readonly text: string } => {
-  if (checks.length === 0) return { tone: "draft", icon: "dot-fill", text: "No checks reported" }
+/*
+ * The one conclusion drawn over a whole list of checks, in the box header.
+ * `whole` is false when the rows are not all of the runs there are: a read
+ * the seam limited (`readLimits.checks`). Then the only conclusions left are
+ * the ones the unseen runs cannot change — a run that FAILED still failed,
+ * but successes do not add up to "all" and no rows do not add up to "none
+ * reported". A REFUSED read (`readErrors.checks`) has no box at all; its
+ * refusal replaces it below, so it reaches no conclusion either.
+ */
+const checksSummary = (checks: LandingPayload["checks"], whole: boolean): { readonly tone: Tone; readonly icon: "check-circle-fill" | "x-circle-fill" | "dot-fill"; readonly text: string } => {
   const tones = checks.map((check) => checkDisplay(check.state).tone)
   const failing = tones.filter((tone) => tone === "closed").length
   if (failing > 0) return { tone: "closed", icon: "x-circle-fill", text: `${failing} failing ${failing === 1 ? "check" : "checks"}` }
+  if (!whole) return { tone: "draft", icon: "dot-fill", text: "Some checks could not be read" }
+  if (checks.length === 0) return { tone: "draft", icon: "dot-fill", text: "No checks reported" }
   if (tones.some((tone) => tone === "queued")) return { tone: "queued", icon: "dot-fill", text: "Some checks haven't completed yet" }
   return { tone: "open", icon: "check-circle-fill", text: "All checks have passed" }
 }
@@ -284,7 +294,7 @@ export const LandingCardBody = ({
   const { repo, number, title, state, author, prBody, reviews, checks } = card.payload
   const extra = card.payload
   const actionable = extra.sourceRepo === undefined && ["open", "draft", "failed"].includes(state.toLowerCase())
-  const summary = checksSummary(checks)
+  const summary = checksSummary(checks, extra.readLimits?.checks === undefined)
   const additions = (extra.files ?? []).reduce((sum, file) => sum + (file.additions ?? 0), 0)
   const deletions = (extra.files ?? []).reduce((sum, file) => sum + (file.deletions ?? 0), 0)
   /*

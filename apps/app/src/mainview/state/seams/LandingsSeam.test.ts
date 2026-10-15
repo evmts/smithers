@@ -990,6 +990,123 @@ describe("a GitHub source's pull request tabs", () => {
     await controller.dispose()
   })
 
+  /*
+   * A page whose JSON is the right SHAPE but whose rows are not the rows this
+   * reads. The first candidate validated the envelope per page and parsed the
+   * ROWS only after the whole walk, so one malformed row on page two threw
+   * away the hundred verified rows of page one and answered the tab
+   * "unavailable". A page is now validated to the row before any of it is
+   * kept: the verified pages stay and the bad page is the limit.
+   */
+  test("a later page with a malformed ROW keeps the verified pages and says the rest were not read", async () => {
+    const { payload, controller } = await prCard(tabsBackend({
+      [`${githubPulls}/2/commits`]: (request) =>
+        pageOf(request).get("page") === "1"
+          ? json(200, commitPage(100, 1))
+          // A list, of objects, with a commit that names no sha: valid JSON of
+          // the right shape and not a commit row.
+          : json(200, [{ commit: { message: "no sha here" } }])
+    }))
+    expect(payload.commits).toHaveLength(100)
+    expect(payload.commits?.[0]?.message).toBe("commit 1")
+    expect(payload.commits?.at(-1)?.message).toBe("commit 100")
+    expect(payload.readErrors?.commits).toBeUndefined()
+    expect(payload.readLimits?.commits).toBe(
+      "Showing the 100 commits this read could reach. The platform returned an unreadable response."
+    )
+    await controller.dispose()
+  })
+
+  test("a later page of check runs with a malformed ROW keeps the runs already read", async () => {
+    const { payload, controller } = await prCard(tabsBackend({
+      [checkRuns]: (request) =>
+        pageOf(request).get("page") === "1"
+          ? json(200, runPage(100, 1, 150))
+          : json(200, { total_count: 150, check_runs: [{ name: "late", conclusion: "success" }] })
+    }))
+    expect(payload.checks).toHaveLength(100)
+    expect(payload.checks?.[0]).toEqual({ context: "check-1", state: "success" })
+    expect(payload.readErrors?.checks).toBeUndefined()
+    expect(payload.readLimits?.checks).toBe(
+      "Showing 100 of 150 check runs. The platform returned an unreadable response."
+    )
+    await controller.dispose()
+  })
+
+  test("a malformed ROW on the FIRST page is the tab's honest refusal, not a half-read tab", async () => {
+    const { payload, controller } = await prCard(tabsBackend({
+      [`${githubPulls}/2/commits`]: json(200, [...commitPage(1, 1), { commit: { message: "no sha here" } }])
+    }))
+    expect(payload.commits).toBeUndefined()
+    expect(payload.readErrors?.commits ?? "").toContain("Commits unavailable (")
+    expect(payload.readErrors?.commits ?? "").toContain("unreadable response")
+    expect(payload.readLimits?.commits).toBeUndefined()
+    await controller.dispose()
+  })
+
+  /*
+   * GitHub answers at most 250 commits for ONE pull request however it is
+   * paged. Reaching exactly that many without the pull request's own count is
+   * the one short page that proves nothing: the list may have ended there, or
+   * the endpoint may have. Only a count can tell them apart.
+   */
+  test("exactly the 250 commits GitHub will answer is complete with a count and uncertain without one", async () => {
+    const pages = (request: Request) => {
+      const page = Number(pageOf(request).get("page"))
+      return json(200, page === 3 ? commitPage(50, 201) : commitPage(100, (page - 1) * 100 + 1))
+    }
+    const known = await prCard(tabsBackend({
+      [`${githubPulls}/2`]: json(200, { ...detail, commits: 250 }),
+      [`${githubPulls}/2/commits`]: pages
+    }))
+    expect(known.payload.commits).toHaveLength(250)
+    expect(known.payload.readLimits).toBeUndefined()
+    await known.controller.dispose()
+
+    // The same 250 rows, from a pull request that reports no count.
+    const unknown = await prCard(tabsBackend({ [`${githubPulls}/2/commits`]: pages }))
+    expect(unknown.payload.commits).toHaveLength(250)
+    expect(unknown.payload.readErrors).toBeUndefined()
+    expect(unknown.payload.readLimits?.commits ?? "").toContain("250")
+    expect(unknown.payload.readLimits?.commits ?? "").toContain("at most 250 commits")
+    await unknown.controller.dispose()
+
+    // One commit and no count is not a bounded read: nothing to warn about.
+    const one = await prCard(tabsBackend())
+    expect(one.payload.commits).toHaveLength(1)
+    expect(one.payload.readLimits).toBeUndefined()
+    await one.controller.dispose()
+  })
+
+  test("a count that is not a whole, representable number of rows is no count at all", async () => {
+    // A negative count made `shown < total` false, so a REFUSED later page
+    // read as the whole list.
+    const negative = await prCard(tabsBackend({
+      [`${githubPulls}/2`]: json(200, { ...detail, commits: -5 }),
+      [`${githubPulls}/2/commits`]: (request) =>
+        pageOf(request).get("page") === "1" ? json(200, commitPage(100, 1)) : json(502, { code: "github_unavailable" })
+    }))
+    expect(negative.payload.commits).toHaveLength(100)
+    expect(negative.payload.readLimits?.commits ?? "").toContain("Showing the 100 commits this read could reach.")
+    expect(negative.payload.readLimits?.commits ?? "").not.toContain("-5")
+    await negative.controller.dispose()
+
+    // A fraction or a number past integer precision is not a row count, and
+    // never reaches the sentence a person reads.
+    for (const commits of [2.5, 1e21]) {
+      const { payload, controller } = await prCard(tabsBackend({ [`${githubPulls}/2`]: json(200, { ...detail, commits }) }))
+      expect(payload.commits).toHaveLength(1)
+      expect(payload.readLimits).toBeUndefined()
+      await controller.dispose()
+    }
+
+    // A ref's `total_count` is held to the same bound.
+    const runs = await prCard(tabsBackend({ [checkRuns]: json(200, { total_count: 3.5, check_runs: checkRunRows.check_runs }) }))
+    expect(runs.payload.checks).toEqual([{ context: "build-status", state: "success" }])
+    expect(runs.payload.readLimits).toBeUndefined()
+    await runs.controller.dispose()
+  })
+
   test("a refused FIRST page is still the tab's refusal, with no rows to keep", async () => {
     const { payload, controller } = await prCard(tabsBackend({
       [`${githubPulls}/2/commits`]: (request) =>

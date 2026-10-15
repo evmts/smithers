@@ -281,6 +281,31 @@ const GITHUB_COMMIT_PAGES = 3
 const GITHUB_CHECK_PAGES = 10
 
 /**
+ * The most commits GitHub answers for ONE pull request, however it is paged
+ * (docs.github.com/rest/pulls/pulls, "List commits on a pull request"). A
+ * walk that reaches exactly this many has read a page that looks like the end
+ * of the list and is also exactly where the endpoint stops, so without the
+ * pull request's own count there is no evidence which one it was.
+ */
+const GITHUB_PULL_COMMIT_CAP = 250
+const GITHUB_PULL_COMMIT_CAP_REASON =
+  `GitHub answers at most ${GITHUB_PULL_COMMIT_CAP} commits for one pull request, and this one reports no count of its own.`
+
+/**
+ * A count a source reports about its own list, when it is usable as evidence
+ * that a read is whole or short.
+ *
+ * Only a whole, non-negative, representable count is: comparing rows against
+ * a negative number says a short read is complete (nothing is `< -5`), a
+ * fraction or a number past integer precision counts rows against something
+ * that is not a number of rows, and either one would print into the sentence
+ * a person reads. Anything else is no count, and then only a short page can
+ * end a list.
+ */
+const boundedCount = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined
+
+/**
  * The sentence a tab carries when its rows are real but not all of them.
  * `undefined` when they ARE all of them: nothing to say, and no notice drawn.
  *
@@ -578,27 +603,36 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
    *   `rows`   with no `limit`, every row the list has.
    *   `rows`   with a `limit`, the rows that were read and the reason the
    *            rest were not. Never dropped, never called complete.
+   *
+   * Each page is validated THROUGH `parseRow` before any of it is kept, so a
+   * page whose JSON is a list of the right shape but whose rows are not these
+   * rows ends the walk exactly as an unreadable page does: the pages already
+   * verified stay and the bad page is the limit. Validating only the envelope
+   * per page and the rows after the whole walk threw a hundred verified
+   * commits away for one malformed row on page two.
    */
-  const readGitHubRows = async (
+  const readGitHubRows = async <Row>(
     path: string,
     maxPages: number,
-    rowsOf: (body: unknown) => { readonly rows: readonly unknown[]; readonly total?: number } | null
+    rowsOf: (body: unknown) => { readonly rows: readonly unknown[]; readonly total?: number } | null,
+    parseRow: (value: unknown) => Row | null
   ): Promise<
-    { readonly rows: readonly unknown[]; readonly total?: number; readonly limit?: string } | { readonly error: string }
+    { readonly rows: readonly Row[]; readonly total?: number; readonly limit?: string } | { readonly error: string }
   > => {
-    const rows: unknown[] = []
+    const rows: Row[] = []
     let total: number | undefined
     for (let page = 1; page <= maxPages; page += 1) {
       const read = await readGitHubJson(`${path}?per_page=${GITHUB_PAGE_SIZE}&page=${page}`)
       const shape = "error" in read ? null : rowsOf(read.body)
-      if (shape === null) {
+      const parsed = shape === null ? null : shape.rows.map(parseRow)
+      if (shape === null || parsed === null || parsed.some((row) => row === null)) {
         const reason = "error" in read ? read.error : unreadableAnswer
         // Page one IS the read: with no rows, the tab can only say why.
         if (page === 1) return { error: reason }
         return { rows, ...(total !== undefined ? { total } : {}), limit: reason }
       }
       if (shape.total !== undefined) total = shape.total
-      rows.push(...shape.rows)
+      rows.push(...parsed as Row[])
       if (shape.rows.length < GITHUB_PAGE_SIZE) return { rows, ...(total !== undefined ? { total } : {}) }
     }
     return {
@@ -634,8 +668,12 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
       // How many commits there are is the pull request's own count, not the
       // number of rows read: GitHub stops this list at 250 whatever page is
       // asked for, so 250 rows of a 400-commit stack look like the end of it.
-      readGitHubRows(`${pull}/commits`, GITHUB_COMMIT_PAGES, (body) =>
-        Array.isArray(body) ? { rows: body, ...(commitCount !== undefined ? { total: commitCount } : {}) } : null),
+      readGitHubRows(
+        `${pull}/commits`,
+        GITHUB_COMMIT_PAGES,
+        (body) => Array.isArray(body) ? { rows: body, ...(commitCount !== undefined ? { total: commitCount } : {}) } : null,
+        parseGitHubCommitRow
+      ),
       // The checks of a pull request are the check runs of its head commit;
       // a detail that names no head commit has no ref to read them at, which
       // is a refusal with a reason rather than an empty Checks tab.
@@ -646,29 +684,34 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
           GITHUB_CHECK_PAGES,
           // GitHub counts the runs it has for the ref in `total_count`; rows
           // short of it are rows short of it, however the read ended.
-          (body) => !isRecord(body) || !Array.isArray(body.check_runs)
-            ? null
-            : { rows: body.check_runs, ...(typeof body.total_count === "number" ? { total: body.total_count } : {}) }
+          (body) => {
+            if (!isRecord(body) || !Array.isArray(body.check_runs)) return null
+            const total = boundedCount(body.total_count)
+            return { rows: body.check_runs, ...(total !== undefined ? { total } : {}) }
+          },
+          parseCheckRunRow
         )
     ])
 
     const files = "diff" in diffRead ? (diffRead.diff.trim() === "" ? [] : unifiedPatchFiles(diffRead.diff)) : null
     const filesError = "error" in diffRead ? diffRead.error : files === null ? unreadableAnswer : undefined
 
-    const commitRows = "rows" in commitsRead ? commitsRead.rows.map(parseGitHubCommitRow) : undefined
-    const commits = commitRows?.every((row) => row !== null) === true
-      ? commitRows as NonNullable<PrPayload["commits"]>
-      : undefined
-    const commitsError = "error" in commitsRead ? commitsRead.error : commits === undefined ? unreadableAnswer : undefined
+    const commits = "rows" in commitsRead ? [...commitsRead.rows] : undefined
+    const commitsError = "error" in commitsRead ? commitsRead.error : undefined
+    // Reaching the 250 GitHub will answer with no count of its own is a
+    // bounded read, not a finished one, even though the last page was short.
+    const commitsReason = !("rows" in commitsRead)
+      ? undefined
+      : commitsRead.limit
+        ?? (commitsRead.total === undefined && commitsRead.rows.length >= GITHUB_PULL_COMMIT_CAP
+          ? GITHUB_PULL_COMMIT_CAP_REASON
+          : undefined)
     const commitsLimit = commits === undefined || !("rows" in commitsRead)
       ? undefined
-      : partialRead(commits.length, commitsRead.total, "commits", commitsRead.limit)
+      : partialRead(commits.length, commitsRead.total, "commits", commitsReason)
 
-    const runRows = "rows" in checksRead ? checksRead.rows.map(parseCheckRunRow) : undefined
-    const checks = runRows?.every((row) => row !== null) === true
-      ? newestPerContext(runRows as CheckRow[])
-      : undefined
-    const checksError = "error" in checksRead ? checksRead.error : checks === undefined ? unreadableAnswer : undefined
+    const checks = "rows" in checksRead ? newestPerContext(checksRead.rows) : undefined
+    const checksError = "error" in checksRead ? checksRead.error : undefined
     // The runs READ, not the rows drawn: `newestPerContext` folds a re-run
     // onto the check it re-ran, so the fold is never the count of the list.
     const checksLimit = checks === undefined || !("rows" in checksRead)
@@ -730,9 +773,7 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     const githubHead = isRecord(raw) && isRecord(raw.head) && typeof raw.head.sha === "string" ? raw.head.sha : undefined
     // The pull request's own commit count: what the Commits tab's rows are
     // measured against, because the commit list alone cannot say it is whole.
-    const githubCommitCount = isRecord(raw) && typeof raw.commits === "number" && Number.isInteger(raw.commits) && raw.commits >= 0
-      ? raw.commits
-      : undefined
+    const githubCommitCount = isRecord(raw) ? boundedCount(raw.commits) : undefined
     const github = source.kind === "github"
       ? await fetchGitHubTabs(source.repo, number, githubHead, githubCommitCount)
       : undefined
