@@ -289,6 +289,59 @@ describe("ClaudeCode.make", () => {
     expect(claude.started).toHaveLength(2)
   })
 
+  // 2026-10-15 ~02:19:22Z: on the legacy CLI harness two attempts died
+  // `AGENT_QUOTA_EXCEEDED` in the same second on their own output — a source
+  // comment, a report about a transaction fallback — because its classifier
+  // read a failed attempt's text for limit words, at a quarter of the
+  // account's session budget. This seat reads Claude Code's own error field
+  // and the API status beside it, never what the turn said. These two cases
+  // are that boundary, so no later edit can start reading the words again.
+  const limitProse = [
+    "Rather than weaken #3959 classification, the fallback itself was made safe:",
+    "a sequence conflict (SQLSTATE 23505) is retried up to 10 attempts, so the",
+    "quota exceeded and usage limit branches stay as they were."
+  ].join("\n")
+
+  it("passes an answer that quotes a usage limit through as text", async () => {
+    const claude = scripted(() => ({ text: limitProse }))
+    const events = await run(model(claude.start), request([user("report on #3959")]))
+
+    expect(settled(events).content).toEqual([{ type: "text", text: limitProse }])
+    expect(events.at(-1)).toMatchObject({ type: "settle", stopReason: "stop" })
+  })
+
+  it.each(
+    [
+      [undefined, "provider_internal"],
+      [429, "rate_limited"],
+      [401, "authentication"]
+    ] as const
+  )("classifies a reported failure by its API status (%s), not by its words", async (status, code) => {
+    const start: ClaudeCode.Start = () => {
+      const messages = queue<Sdk.SDKMessage>()
+      messages.push({
+        type: "result",
+        subtype: "success",
+        session_id: "sess_1",
+        is_error: true,
+        result: limitProse,
+        stop_reason: "end_turn",
+        usage: {},
+        ...(status === undefined ? {} : { api_error_status: status })
+      } as unknown as Sdk.SDKMessage)
+      return {
+        [Symbol.asyncIterator]: messages.iterator,
+        interrupt: () => Promise.resolve(),
+        close: () => {}
+      }
+    }
+    const failure = await Effect.runPromise(
+      Effect.flip(Stream.runCollect(model(start).stream(request([user("task")]))))
+    )
+
+    expect(failure).toMatchObject({ code, ...(status === undefined ? {} : { httpStatus: status }) })
+  })
+
   it("interrupts Claude Code, then closes the session, when the stream is interrupted", async () => {
     const claude = scripted(() => ({ hang: true }))
     const seat = model(claude.start)
