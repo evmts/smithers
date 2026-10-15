@@ -234,6 +234,11 @@
 
 ### Changed
 
+- `AgentAction` and `Agent` arm no completion judge by default: `claimCap`
+  omitted on the action and the host leaves the claim brake off, and a
+  positive cap arms it. A workflow that wants a model to read its completions
+  says so (#3993).
+
 - `control.agent.compaction-settled` writes the tokens its removed messages
   held as `removed`. It wrote `removedTokens`, a name the journal reads as a
   credential, so every stored row held a placeholder in its place (#3844).

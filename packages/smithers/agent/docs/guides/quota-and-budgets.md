@@ -167,8 +167,8 @@ A step the ledger has already counted proceeds whatever the ceiling says: its
 replay costs nothing, and a run killed after its last model call must not come
 back dead on arrival.
 
-Evaluator readings the harness takes in a run (the completion judge, run-start
-relevance, compaction marks, the supervisor) are charged too, one share per
+Evaluator readings the harness takes in a run (the completion judge where the
+workflow armed it, run-start relevance, compaction marks, the supervisor) are charged too, one share per
 model priced under that model's id, including a reading that failed after the
 provider metered it. A reading is admitted with `admitReading(stepKey)`, not a
 forecast: it is far smaller than the primary call a forecast projects, so it

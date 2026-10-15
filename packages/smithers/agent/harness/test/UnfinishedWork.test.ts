@@ -34,6 +34,7 @@ const window = ContextWindow.make({
   ]
 })
 
+/** A run whose workflow armed the claim judge, the only place this question is asked. */
 const base = CellTurn.make({
   session: "session-1",
   seat: "anthropic:test-model",
@@ -42,7 +43,8 @@ const base = CellTurn.make({
   capabilityEnvelope: [],
   placement: Option.none(),
   contextWindow: window,
-  maxFrames: 10
+  maxFrames: 10,
+  claimCap: 3
 })
 
 const tree = (digest: string) => Option.some(new EngineLike.Observation({ digest, paths: 3, complete: true }))

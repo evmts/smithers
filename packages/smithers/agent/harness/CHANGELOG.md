@@ -4,6 +4,18 @@
 
 ### Changed
 
+- No model reads a completion unless the workflow arms the claim brake:
+  `CellTurn.defaultClaimDemands` is 0, and a flow arms the judge with a
+  positive `claimCap` (`AgentAction`'s `claimCap`, `AgentAction.Host.claimCap`,
+  `Agent.Options.claimCap` or `CellTurn.make`). Will ruled on 2026-10-14 that
+  a separate model checking the work is a workflow concern. On the paired
+  SWE-bench Pro run of that day the default judge refused 10 runs as
+  `claim_unproven`, 9 of them correct, and its bounce held 101 completions
+  whose answering frames mostly completed again unchanged. An armed run is
+  judged exactly as before; the deterministic completion demands run on every
+  completion either way. The unmoved-tree demand and the unfinished-work
+  verdict ride the judge's reading, so they are off with it (#3993).
+
 - The cell contract leaves reading before the first edit uncapped: rule 4
   says to print whole files, search results and listings then, and its print
   economy (40 lines a cell, no whole files or search results, counts first)

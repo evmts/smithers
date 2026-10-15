@@ -89,7 +89,9 @@ const state = (maxFrames: number) =>
     contextWindow: window,
     maxFrames,
     readOnlyCap: 0,
-    approvalChannel: false
+    approvalChannel: false,
+    // A workflow that armed the claim judge, whose boundary this reads.
+    claimCap: 3
   })
 
 const paidFor = (paid: ReadonlyArray<{ readonly name: string; readonly usage: unknown }>) =>

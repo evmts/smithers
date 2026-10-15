@@ -364,7 +364,7 @@ Every omitted budget takes its module-level default, and zero disarms it:
 | `defaultNarrowingDemands`  | 1       | Completions bounced for narrowed evidence.                                                              |
 | `defaultUnmovedDemands`    | 1       | Completions bounced for an unmoved tree.                                                                |
 | `defaultUnresolvedDemands` | 1       | Completions bounced for a displaced failing check.                                                      |
-| `defaultClaimDemands`      | 3       | Frames given to answer an unrecorded claim.                                                             |
+| `defaultClaimDemands`      | 0       | Frames given to answer an unrecorded claim; zero asks no model unless a workflow arms the judge.        |
 | `defaultRevalidations`     | 1       | In-frame answers to an unparseable cell.                                                                |
 | `defaultMaxCheckpoints`    | 8       | Trees one run may pin with `ctx.checkpoint()`.                                                          |
 
@@ -1692,8 +1692,12 @@ bypasses no other demand, and does nothing but write a journal line;
 `judgeCompletion` consults it only once the five deterministic demands have
 found nothing.
 
-**It never goes quiet either.** Every completion with a claim is read, and
-`claimCap` (3) is the number of frames the run is _given_ to answer one, not
+**It runs only where the workflow arms it.** `claimCap` defaults to 0, so no
+completion is read unless the flow running the agent passes a positive cap
+(Will, 2026-10-14, #3993). The measured cap for a workflow that arms it is 3.
+
+**Armed, it never goes quiet.** Every completion with a claim is read, and
+`claimCap` is the number of frames the run is _given_ to answer one, not
 the number of completions that are read. The first such claim is handed
 back with the demand prose, like any other completion demand; a claim with no
 bounce left, because the cap is spent or because no frame remains to hand it

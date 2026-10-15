@@ -51,7 +51,7 @@ const window = ContextWindow.make({
   ]
 })
 
-const base = CellTurn.make({
+const opening = {
   session: "session-1",
   seat: "anthropic:test-model",
   modelParams: ModelRequest.GenerationParams.make(),
@@ -60,7 +60,10 @@ const base = CellTurn.make({
   placement: Option.none(),
   contextWindow: window,
   maxFrames: 10
-})
+}
+
+/** A run whose workflow armed the brake with the cap it was measured at. */
+const base = CellTurn.make({ ...opening, claimCap: 3 })
 
 const tree = (digest: string) => Option.some(new EngineLike.Observation({ digest, paths: 3, complete: true }))
 
@@ -397,11 +400,20 @@ describe("the claim brake", () => {
     expect(judged.unproven?.message).toContain("no frame left to hand it back to")
   })
 
-  it("gives a run three frames to prove a claim by default, and no more", () => {
-    // One was too few on a real seat: this seat claims a fix before making the
-    // edit, and a run bounced once then killed had the bug still in the file.
-    expect(CellTurn.defaultClaimDemands).toBe(3)
-    expect(new CellTurn.State({ ...base, openingDigest: "t0" }).claimCap).toBe(3)
+  it("asks no model about a completion unless the workflow arms the brake", async () => {
+    // Will, 2026-10-14 (#3993): a model checking the work is the workflow's
+    // choice. A run composed without a cap reads nothing, however the judge
+    // would have read it.
+    const jev = reading({ complete: 0.1, overclaims: 0.9, invented: 0.95 })
+    const unarmed = CellTurn.make(opening)
+    const judged = await settled({ layer: jev.layer, changes: { claimCap: unarmed.claimCap } })
+
+    expect(CellTurn.defaultClaimDemands).toBe(0)
+    expect(unarmed.claimCap).toBe(0)
+    expect(jev.asked).toEqual([])
+    expect(judged.demand).toBeUndefined()
+    expect(judged.observed).toBeUndefined()
+    expect(judged.unproven).toBeUndefined()
   })
 
   it("reads nothing at all when the cap disarms it", async () => {

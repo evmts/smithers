@@ -74,7 +74,10 @@ const state = (maxFrames: number, revalidations?: number) =>
     repeatCap: 0,
     narrowingCap: 0,
     unmovedCap: 0,
-    unresolvedCap: 0
+    unresolvedCap: 0,
+    // Armed by the workflow: several cases are driven by a completion the
+    // claim judge bounced, and the supervisor reads that reading.
+    claimCap: 3
   })
 
 /** The completion brake's confident answer, so every run can finish. */

@@ -889,7 +889,8 @@ describe("a budget on the durable engine", () => {
         })
         const budget = yield* Budget.make({})
         const wiring = Layer.mergeAll(First.layer, Interpreter.layer(OneStep)).pipe(
-          Layer.provideMerge(AgentAction.layerHost(host)),
+          // A host that arms the claim judge, so its reading is a labelled spend.
+          Layer.provideMerge(AgentAction.layerHost({ ...host, claimCap: 3 })),
           Layer.provideMerge(seats(spending(600, [thinking, thinking, answering(`{"approved":true}`)], calls))),
           Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, judge)),
           Layer.provideMerge(Layer.succeed(Budget.Budget)(budget)),

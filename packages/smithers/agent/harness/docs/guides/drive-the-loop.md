@@ -58,19 +58,19 @@ The required declarations are:
 
 Everything else is a budget with a default; every budget's zero disarms it:
 
-| Option            | Default                                 | What it bounds                                                                                                                                   |
-| ----------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `maxFrames`       | 100 (`CellTurn.defaultMaxFrames`)       | Frames one admitted task may spend.                                                                                                              |
-| `readOnlyCap`     | 0                                       | Consecutive read-only frames before the controller intervenes; at twice the cap the run stops. A run that is only meant to read omits it.        |
-| `modelCallMs`     | 300,000 (`CellTurn.defaultModelCallMs`) | Wall-clock one model call may spend.                                                                                                             |
-| `repeatCap`       | 4 (`CellTurn.defaultRepeatFrames`)      | Consecutive repeat-observation frames.                                                                                                           |
-| `narrowingCap`    | 1 (`CellTurn.defaultNarrowingDemands`)  | Completions bounced for narrowed evidence.                                                                                                       |
-| `unmovedCap`      | 1 (`CellTurn.defaultUnmovedDemands`)    | Completions bounced for an unmoved tree.                                                                                                         |
-| `unresolvedCap`   | 1 (`CellTurn.defaultUnresolvedDemands`) | Completions bounced for a displaced failing check.                                                                                               |
-| `claimCap`        | 3 (`CellTurn.defaultClaimDemands`)      | Frames the run is given to answer a claim reporting work its own record does not record; past it such a claim fails the run as `claim_unproven`. |
-| `revalidations`   | 1 (`CellTurn.defaultRevalidations`)     | In-frame answers to an unparseable cell.                                                                                                         |
-| `checkpointCap`   | 8 (`CellTurn.defaultMaxCheckpoints`)    | Trees one run may pin with `ctx.checkpoint()`.                                                                                                   |
-| `approvalChannel` | `false`                                 | Whether a human can answer this run; `false` refuses a `park` and answers it in-frame.                                                           |
+| Option            | Default                                 | What it bounds                                                                                                                                                                                                                    |
+| ----------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `maxFrames`       | 100 (`CellTurn.defaultMaxFrames`)       | Frames one admitted task may spend.                                                                                                                                                                                               |
+| `readOnlyCap`     | 0                                       | Consecutive read-only frames before the controller intervenes; at twice the cap the run stops. A run that is only meant to read omits it.                                                                                         |
+| `modelCallMs`     | 300,000 (`CellTurn.defaultModelCallMs`) | Wall-clock one model call may spend.                                                                                                                                                                                              |
+| `repeatCap`       | 4 (`CellTurn.defaultRepeatFrames`)      | Consecutive repeat-observation frames.                                                                                                                                                                                            |
+| `narrowingCap`    | 1 (`CellTurn.defaultNarrowingDemands`)  | Completions bounced for narrowed evidence.                                                                                                                                                                                        |
+| `unmovedCap`      | 1 (`CellTurn.defaultUnmovedDemands`)    | Completions bounced for an unmoved tree.                                                                                                                                                                                          |
+| `unresolvedCap`   | 1 (`CellTurn.defaultUnresolvedDemands`) | Completions bounced for a displaced failing check.                                                                                                                                                                                |
+| `claimCap`        | 0 (`CellTurn.defaultClaimDemands`)      | Frames the run is given to answer a claim reporting work its own record does not record; past it such a claim fails the run as `claim_unproven`. Zero, the default, asks no model; a workflow arms the judge with a positive cap. |
+| `revalidations`   | 1 (`CellTurn.defaultRevalidations`)     | In-frame answers to an unparseable cell.                                                                                                                                                                                          |
+| `checkpointCap`   | 8 (`CellTurn.defaultMaxCheckpoints`)    | Trees one run may pin with `ctx.checkpoint()`.                                                                                                                                                                                    |
+| `approvalChannel` | `false`                                 | Whether a human can answer this run; `false` refuses a `park` and answers it in-frame.                                                                                                                                            |
 
 The state is a schema class: it serializes into the journal, and a resumed run
 rebuilds from it.
@@ -182,8 +182,10 @@ ends on `TurnClosed` with its outcome, beside `Resolved`, `Suspended`, or
 The full list is in the [`AgentEvent` reference](../api.md#agentevent).
 
 `ClaimDemanded` is the sixth brake on a completion and the only one that is
-not a measurement. Once the measured demands have found nothing, the
-controller sends the task, the completion message, whether the tree moved,
+not a measurement. It is off unless the workflow arms it with a positive
+`claimCap` (Will, 2026-10-14, #3993): a model checking the work is the
+workflow's verification policy, not the loop's. Armed, once the measured
+demands have found nothing, the controller sends the task, the completion message, whether the tree moved,
 the check ledger, the last check's output, and bounded receipts for recent
 settled calls to the `Evaluator` service. The receipts retain classification
 and read results across frames. Jev answers three questions: does the completion
@@ -213,7 +215,7 @@ The demand asks the agent to answer the current request in the requested
 format; it asks for recorded evidence only for actions or results the answer
 claims, rather than turning every completion into a work report.
 
-It never falls back and it never goes quiet. A completion Jev could not judge,
+Armed, it never falls back and it never goes quiet. A completion Jev could not judge,
 whether the host bound no transport or the gateway refused, timed out or
 answered something that does not decode, fails the run as
 `completion_unjudged` naming the reason, rather than standing unjudged. And a

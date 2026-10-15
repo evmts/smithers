@@ -800,8 +800,11 @@ const measuredDemand = (
  *    `Evaluator` is therefore a required service of this function and of
  *    every turn above it.
  *
- * The fifth is the one that is read on *every* completion, and the three
- * things below that take a demand away do not take the reading away. The
+ * The fifth runs only where the workflow armed it with a positive `claimCap`
+ * (Will, 2026-10-14, #3993); with the default of zero the four measured
+ * demands are the whole judgement and no model is asked. Armed, it is the one
+ * that is read on *every* completion, and the three things below that take a
+ * demand away do not take the reading away. The
  * others are recomputable from the journal, so skipping them costs a grader
  * nothing and a skipped one lets a completion stand that the truth bar still
  * judges. This one is a sentence being checked against the record, it is what
@@ -881,8 +884,8 @@ export const judgeCompletion = (
     }
 
     // The sixth brake, and the only one that leaves this package to decide.
-    // `claimCap` of zero disarms it: no request, no event, no failure, which
-    // is what a host that does not want a model in this path asks for.
+    // `claimCap` of zero, the default, leaves it off: no request, no event,
+    // no failure. A workflow that wants a model in this path arms it.
     if (state.claimCap === 0) return stands
     // A host may put prior conversation before the current request. Keep
     // both ends of the task; clipping its head alone can leave only history.

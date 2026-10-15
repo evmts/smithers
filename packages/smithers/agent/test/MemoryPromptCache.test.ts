@@ -355,7 +355,8 @@ describe("memory and the prompt cache", () => {
     expect(
       events.filter((event) => event._tag === "decision-settled" && event.classifier.startsWith("memory/"))
     ).toEqual([])
-    expect(events.some((event) => event._tag === "decision-settled")).toBe(true)
+    // Nor did a completion reading: no workflow armed the claim judge (#3993).
+    expect(events.filter((event) => event._tag === "decision-settled")).toEqual([])
     const settledCalls = events.flatMap((event) => event._tag === "cell-call-settled" ? [event.flowName] : [])
     expect(settledCalls).toEqual(["memory", "gate"])
   })

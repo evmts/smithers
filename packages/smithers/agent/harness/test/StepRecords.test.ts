@@ -240,6 +240,8 @@ describe("decision answers", () => {
 })
 
 describe("decision-settled from the completion brake", () => {
+  // Every case but the disarmed one runs under a workflow that armed the
+  // judge: no model reads a completion otherwise (#3993).
   const tasked = ContextWindow.make({
     modelId: "test-model",
     segments: [
@@ -271,7 +273,7 @@ describe("decision-settled from the completion brake", () => {
   it("journals the state, the questions and the answers of a reading that let the claim stand", async () => {
     const asked: Array<Evaluator.Request> = []
     const { events } = await run({
-      state: state({ contextWindow: tasked }),
+      state: state({ contextWindow: tasked, claimCap: 3 }),
       flows: [],
       script: [emits(`ctx.done("hello")`)],
       evaluator: scripted(standing, asked)
@@ -310,7 +312,7 @@ describe("decision-settled from the completion brake", () => {
 
   it("says the reading acted when it handed the completion back, and when it ended the run", async () => {
     const bounced = await run({
-      state: state({ contextWindow: tasked, maxFrames: 2 }),
+      state: state({ contextWindow: tasked, maxFrames: 2, claimCap: 3 }),
       flows: [],
       script: [emits(`ctx.done("I ran the suite and it passed")`), emits(`ctx.done("hello")`)],
       evaluator: Evaluator.layerScripted((request) =>
@@ -324,7 +326,7 @@ describe("decision-settled from the completion brake", () => {
     expect(of(bounced.events, "claim-demanded").map((event) => event.demanded)).toEqual([true, false])
 
     const refused = await run({
-      state: state({ contextWindow: tasked, maxFrames: 1 }),
+      state: state({ contextWindow: tasked, maxFrames: 1, claimCap: 3 }),
       flows: [],
       script: [emits(`ctx.done("I ran the suite and it passed")`)],
       evaluator: Evaluator.layerScripted(() => unrecorded)
@@ -366,7 +368,7 @@ describe("decision-settled from the completion brake", () => {
   const attempt = async (records: Map<string, unknown>, evaluator: Layer.Layer<Evaluator.Evaluator>) => {
     const model = ScriptedModel.make([emits(`ctx.done("hello")`)])
     const events: Array<AgentEvent.AgentEvent> = []
-    await CellTurn.run({ state: state({ contextWindow: tasked }), flows: [] }).pipe(
+    await CellTurn.run({ state: state({ contextWindow: tasked, claimCap: 3 }), flows: [] }).pipe(
       Stream.runForEach((event) => Effect.sync(() => events.push(event))),
       Effect.provide(journaled(ScriptedEngine.make(model.model), records)),
       Effect.provide(QuickJSSandbox.layer),

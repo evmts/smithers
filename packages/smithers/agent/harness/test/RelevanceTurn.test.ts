@@ -407,8 +407,9 @@ ctx.done({ names: Object.keys(ctx.flows), found, missing: missing.error.code })`
       pinned: ["read"],
       evaluator: Evaluator.layerUnavailable()
     })
-    // The claim brake cannot be judged either, so the run stops there.
-    expect(failure).toMatchObject({ code: "completion_unjudged" })
+    // The workflow armed no claim judge, so nothing else asks Jev and the
+    // run completes on the whole catalog it was shown (#3993).
+    expect(failure).toBeUndefined()
     expect(of(events, "decision-unjudged")).toEqual([
       expect.objectContaining({ classifier: "relevance/unnecessary", frame: 0, items: 5 })
     ])

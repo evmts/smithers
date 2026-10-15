@@ -132,7 +132,9 @@ const drive = async (judgeTokens: number, maxTokens: number, garbled = false) =>
     }),
     limits: { calls: 8 },
     capabilityEnvelope: [],
-    maxFrames: 4
+    maxFrames: 4,
+    // The workflow arms the completion judge whose spend this suite charges.
+    claimCap: 3
   })
   const layer = Layer.mergeAll(Research.layer, Interpreter.layer(Twice)).pipe(
     Layer.provideMerge(Layer.mergeAll(host, seats, Agent.layer)),

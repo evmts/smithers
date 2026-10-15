@@ -131,8 +131,9 @@ export interface Host {
   /**
    * Forwarded to `Agent.Options.claimCap`.
    *
-   * Zero disarms the completion claim brake for actions whose completions are
-   * answers rather than workspace claims.
+   * Omitted or zero leaves the completion claim brake off; a positive cap arms
+   * the host's judge for every action on this host that does not set its own.
+   * Verification policy is the workflow's (Will, 2026-10-14, #3993).
    */
   readonly claimCap?: number | undefined
   /** Whether this host can answer a parked agent step. Unattended hosts default to false. */
@@ -390,10 +391,11 @@ export interface Options<
    */
   readonly readOnlyCap?: number | undefined
   /**
-   * Overrides {@link Host.claimCap} for this action. Zero disarms the
-   * completion claim brake, which is right for an action whose completion is
-   * an answer (a classification, an extraction) rather than a claim about work
-   * it did: the answer stands without the host's judge reading it.
+   * Overrides {@link Host.claimCap} for this action. A positive cap arms the
+   * completion claim brake, so the host's judge reads this action's
+   * completions against its record; zero disarms it for an action whose
+   * completion is an answer (a classification, an extraction) on a host that
+   * armed it. Omitted on both, the brake is off (Will, 2026-10-14, #3993).
    */
   readonly claimCap?: number | undefined
   /**

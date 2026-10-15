@@ -99,7 +99,9 @@ const state = (
     maxFrames: overrides.maxFrames === undefined ? 4 : overrides.maxFrames,
     contextWindowTokens: overrides.contextWindowTokens === undefined ? 0 : overrides.contextWindowTokens,
     readOnlyCap: overrides.readOnlyCap === undefined ? 0 : overrides.readOnlyCap,
-    approvalChannel: overrides.approvalChannel === undefined ? false : overrides.approvalChannel
+    approvalChannel: overrides.approvalChannel === undefined ? false : overrides.approvalChannel,
+    // A workflow that armed the claim judge: these cases replay its boundary.
+    claimCap: 3
   })
 
 interface Observed {

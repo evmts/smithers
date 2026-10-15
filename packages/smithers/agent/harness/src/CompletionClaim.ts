@@ -42,14 +42,21 @@
  * are read: every completion with a claim is read, and a claim past the cap
  * that the record does not record is a failed run rather than a finished one.
  *
- * One host control sits outside that: `claimCap` of zero disarms this brake
- * outright, the way zero disarms every other budget in `CellTurn.State`, and
- * then no completion is read, no `ClaimDemanded` is journaled and nothing here
- * can fail a run. It is a composition-time choice a host makes for a path it
- * does not want a model in, not a fallback the brake takes on its own, and no
- * shipped host makes it: `smithers run` leaves the cap at
- * `CellTurn.defaultClaimDemands`. Prose saying every completion of
- * every run is read means every run under the default cap.
+ * All of that holds where a workflow armed the brake, and only there. Will
+ * ruled on 2026-10-14 (#3993) that a separate model checking the work is a
+ * workflow concern: it spends tokens and time on every completion and
+ * hardcodes a verification policy in a loop workflows compose. The paired
+ * SWE-bench Pro run of that day showed the default brake refusing 10 runs as
+ * `claim_unproven`, 9 of them correct, and its bounce held 101 completions
+ * whose answering frames mostly completed again unchanged
+ * (`results-2026-10-14/why-codex-won.md` defect 2, `why-more-output.md`
+ * section 3). So `claimCap` defaults to zero (`CellTurn.defaultClaimDemands`):
+ * no completion is read, no `ClaimDemanded` is journaled and nothing here can
+ * fail a run unless the flow running the agent passes a positive cap through
+ * `AgentAction`'s `claimCap`, `AgentAction.Host.claimCap` or
+ * `Agent.Options.claimCap`. It is one implementation either way: an armed run
+ * reads every completion exactly as described here. Prose in this module
+ * saying every completion is read means every completion of an armed run.
  *
  * ## What that verdict may be about, and why it is not {@link Probabilities.complete}
  *

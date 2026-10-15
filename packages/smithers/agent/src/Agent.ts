@@ -248,9 +248,9 @@ export interface Options {
   readonly unresolvedCap?: number | undefined
   /**
    * Caps how many completions may be bounced for a claim the run's record does
-   * not support; see `CellTurn.make`. Armed by default; zero disarms the one
-   * brake that asks the `Evaluator`, which is what an interactive host whose
-   * human reads every answer passes when it binds no judge.
+   * not support; see `CellTurn.make`. Off by default: the one brake that asks
+   * the `Evaluator` about a completion runs only where the workflow passes a
+   * positive cap (Will, 2026-10-14, #3993).
    */
   readonly claimCap?: number | undefined
   /**

@@ -1576,12 +1576,10 @@ describe("AgentSession", () => {
     expect(anthropic).not.toHaveProperty("cacheKey")
     expect(traceRequest("test-protocol", { cacheKey: "not-sent" })).not.toHaveProperty("cacheKey")
 
-    // One completion, judged once and replayed from its record thereafter.
-    const decisions = typed("control.agent.decision-settled").map((entry) => entry.payload as Record<string, unknown>)
-    expect(decisions).toHaveLength(typed("control.agent.claim-demanded").length)
-    expect((typed("control.agent.claim-demanded")[0]!.payload as { usage?: unknown }).usage).toBeUndefined()
-    expect(decisions).toHaveLength(1)
-    expect(decisions[0]).toMatchObject({ scope: runId, frame: 1, classifier: "completion/claim", decidedBy: "jev" })
+    // No model reads the completion: a session arms no claim judge (#3993),
+    // so no attempt journals a reading or a decision to replay.
+    expect(typed("control.agent.claim-demanded")).toEqual([])
+    expect(typed("control.agent.decision-settled")).toEqual([])
     expect(new Set(trail.map((entry) => entry.sourceSeq)).size).toBe(trail.length)
 
     // The two records take no ordinal. Every other row of the first frame

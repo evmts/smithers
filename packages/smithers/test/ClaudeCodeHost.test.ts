@@ -1,7 +1,8 @@
 /**
- * Real native host, clean environment, the signed-in Claude Code as the flow's
- * seat, and the completion judge beside it: Jev with a gateway key, Claude
- * Haiku on the same Claude Code without one.
+ * Real native host, clean environment, and the signed-in Claude Code as the
+ * flow's seat, with a gateway key and without one. The host selects a judge
+ * either way (Jev with the key, Claude Haiku on the same Claude Code without
+ * it), and a flow that arms no claim judge (#3993) is read by neither.
  */
 import { spawn, spawnSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
@@ -154,26 +155,19 @@ const requests = (hosted: Hosted) =>
 const claims = (hosted: Hosted) =>
   hosted.events("control.agent.decision-settled").filter((event) => event.classifier === "completion/claim")
 
-/** The model each completion reading was metered on: the model that judged. */
-const judgeModels = (hosted: Hosted): ReadonlyArray<unknown> =>
-  hosted.events("control.agent.claim-demanded").map((event) => event.usage?.modelId)
-
 /** What the run left behind, printed so a real run's receipt outlives its fixture. */
 const evidence = (hosted: Hosted) => ({
   runId: hosted.started.runId,
   exit: hosted.status,
   cause: hosted.started.cause,
   runs: hosted.runs,
-  asked: requests(hosted),
-  judgedBy: claims(hosted).map((claim) => claim.decidedBy),
-  judgeModels: judgeModels(hosted),
-  answers: claims(hosted).map((claim) => claim.answers)
+  asked: requests(hosted)
 })
 
 /**
  * A run that completed on the claude-code seat: both databases say so, every
  * model request took the claude-code route, the answer holds the marker, and
- * the one completion judgment read it as complete. Returns that judgment.
+ * no model read the completion, because the flow armed no claim judge.
  */
 const completed = (hosted: Hosted) => {
   process.stderr.write(`${JSON.stringify(evidence(hosted))}\n`)
@@ -189,34 +183,21 @@ const completed = (hosted: Hosted) => {
   }
   expect(JSON.stringify(hosted.events("control.agent.resolved"))).toContain(marker)
   expect(hosted.events("control.agent.decision-unjudged")).toEqual([])
-  const [claim, ...others] = claims(hosted)
-  expect(others).toEqual([])
-  expect(claim.answers).toEqual(
-    expect.arrayContaining([expect.objectContaining({ id: "complete", kind: "boolean", p: expect.any(Number) })])
-  )
-  expect(claim.answers.find((answer: { id: string }) => answer.id === "complete").p).toBeGreaterThan(0.5)
-  return claim
+  expect(claims(hosted)).toEqual([])
+  expect(hosted.events("control.agent.claim-demanded")).toEqual([])
 }
 
 // Opt-in: each case spends a turn of the operator's Claude subscription, so
 // neither runs by default.
 describe.runIf(process.env.SMITHERS_CLAUDE_CODE_SMOKE === "1")("a flow on the installed Claude Code", () => {
-  it("completes on the claude-code seat, its completion judged by Jev", { timeout: 900_000 }, async () => {
+  it("completes on the claude-code seat on a host whose judge is Jev", { timeout: 900_000 }, async () => {
     // Only a gateway key puts Jev in the judge's seat.
-    expect(process.env.AI_GATEWAY_API_KEY, "export AI_GATEWAY_API_KEY: Jev judges this case").toBeTruthy()
-    const claim = completed(await hostFlow(true))
-    expect(claim.decidedBy).toBe("jev")
+    expect(process.env.AI_GATEWAY_API_KEY, "export AI_GATEWAY_API_KEY: Jev is this host's judge").toBeTruthy()
+    completed(await hostFlow(true))
   })
 
-  it(
-    "completes with no gateway key, its completion judged by Claude Haiku through the adapter",
-    { timeout: 900_000 },
-    async () => {
-      // Claude Code is this host's only credential, so its Haiku judges in Jev's place.
-      const hosted = await hostFlow(false)
-      const claim = completed(hosted)
-      expect(claim.decidedBy).toBe("seat")
-      expect(judgeModels(hosted)).toEqual(["haiku"])
-    }
-  )
+  it("completes with no gateway key, on a host whose judge is Claude Haiku", { timeout: 900_000 }, async () => {
+    // Claude Code is this host's only credential, so the host boots with its Haiku as the judge.
+    completed(await hostFlow(false))
+  })
 })

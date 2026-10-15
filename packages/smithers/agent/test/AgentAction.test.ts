@@ -604,8 +604,15 @@ describe("AgentAction completion claim brake", () => {
     ))
   }
 
-  it("reads every completion against the host's judge by default", async () => {
-    const exit = await answer(answerer("ArmedAnswer"), "claim-armed")
+  it("asks no judge about a completion unless the workflow arms the brake", async () => {
+    // Will, 2026-10-14 (#3993): verification policy belongs to the workflow,
+    // so a host with no judge still completes an action that armed none.
+    const exit = await answer(answerer("UnarmedAnswer"), "claim-unarmed")
+    expect(exit).toMatchObject({ _tag: "Success", value: { approved: true, issues: [] } })
+  })
+
+  it("reads the completion of an action that arms the brake against the host's judge", async () => {
+    const exit = await answer(answerer("ArmedAnswer", 3), "claim-armed")
     expect(exit._tag).toBe("Failure")
     expect(JSON.stringify(exit)).toContain("no judge configured")
   })

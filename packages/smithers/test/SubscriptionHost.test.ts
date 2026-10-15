@@ -1,6 +1,9 @@
 /**
- * Real native host, clean environment, the Codex subscription as the flow's
- * seat, and GPT-6 Luna on the same subscription as its completion judge.
+ * Real native host, clean environment, and the Codex subscription as the
+ * flow's seat. With no gateway key the host selects GPT-6 Luna on the same
+ * subscription as its judge; a flow that arms no claim judge (#3993) is not
+ * read by it, so the run completes on the seat alone.
+ * `SubscriptionJudgeCalibration.test.ts` gates that judge's readings.
  */
 import { spawn, spawnSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
@@ -94,29 +97,13 @@ Reply with the exact text SUBSCRIPTION_OK. Do not run tools or modify files. Thi
               true
             )
             expect(JSON.stringify(payloads("control.agent.resolved"))).toContain("SUBSCRIPTION_OK")
-            const judgment = payloads("control.agent.decision-settled").find((event) =>
-              event.classifier === "completion/claim"
-            )
             // What the run left behind, printed so a real run's receipt outlives its fixture.
-            process.stderr.write(`${
-              JSON.stringify({
-                runId,
-                judgedBy: judgment?.decidedBy,
-                judgeModels: payloads("control.agent.claim-demanded").map((event) => event.usage?.modelId),
-                answers: judgment?.answers
-              })
-            }\n`)
-            // No gateway key: Luna judged on the subscription, through the model-to-judge adapter.
-            expect(judgment?.decidedBy).toBe("seat")
-            expect(payloads("control.agent.claim-demanded").map((event) => event.usage?.modelId)).toEqual([
-              "gpt-6-luna"
-            ])
-            expect(judgment?.answers).toEqual(
-              expect.arrayContaining([
-                expect.objectContaining({ id: "complete", kind: "boolean", p: expect.any(Number) })
-              ])
-            )
-            expect(judgment.answers.find((answer: { id: string }) => answer.id === "complete").p).toBeGreaterThan(0.5)
+            process.stderr.write(`${JSON.stringify({ runId })}\n`)
+            // The flow armed no claim judge, so no model read its completion (#3993).
+            expect(payloads("control.agent.claim-demanded")).toEqual([])
+            expect(
+              payloads("control.agent.decision-settled").filter((event) => event.classifier === "completion/claim")
+            ).toEqual([])
           }
         } finally {
           db.close()

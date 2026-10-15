@@ -1083,8 +1083,9 @@ export const layerFromSeat = (
  * and drive none, where nothing will ever ask it anything. It is never a
  * completion-capable host's default: such a host binds {@link layerFromSeat}
  * or deliberately supplies a scripted judge.
- * It is also the judge a host binds when it has disarmed the claim brake
- * (`claimCap: 0`), so that nothing on the host will ever ask it.
+ * It is also what a host binds when nothing it runs asks a judge: no workflow
+ * arms the claim brake (`claimCap` is 0 by default) and nothing else on the
+ * host reads one.
  *
  * @category layers
  * @since 1.0.0-rc.0

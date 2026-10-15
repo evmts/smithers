@@ -182,7 +182,9 @@ const checkpointed = (): CellTurn.State =>
       repeatCap: 0,
       narrowingCap: 0,
       unmovedCap: 0,
-      unresolvedCap: 0
+      unresolvedCap: 0,
+      // The claim judge is a gate a workflow arms; this run arms every gate.
+      claimCap: 3
     }))
   )
 

@@ -152,6 +152,9 @@ export const incarnation = (
           limits: { calls: 8 },
           maxFrames: 3,
           modelRetryPolicy: Schedule.recurs(0),
+          // The workflow arms the claim judge, so a step's facts include the
+          // decision its completion reading journals (#3993).
+          claimCap: 3,
           ...options.host
         })),
         Layer.provideMerge(SeatResolver.layer({

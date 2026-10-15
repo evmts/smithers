@@ -2975,7 +2975,9 @@ describe("CellTurn vacuous verification, unwired", () => {
         repeatCap: 0,
         narrowingCap: 0,
         unresolvedCap: 0,
-        unmovedCap: overrides.unmovedCap ?? 0
+        unmovedCap: overrides.unmovedCap ?? 0,
+        // The unmoved demand rides the claim judge, which the workflow arms.
+        ...(overrides.evaluator === undefined ? {} : { claimCap: 3 })
       }),
       flows: [shell, editor],
       script: cells.map(emits),
@@ -3905,7 +3907,9 @@ describe("CellTurn completion check cost", () => {
         capabilityEnvelope: [],
         placement: Option.none(),
         contextWindow: tasked,
-        maxFrames: 1
+        maxFrames: 1,
+        // A workflow that armed the judge, whose reading is what this costs.
+        claimCap: 3
       }),
       script: [emits(`ctx.done("The query string is kept.")`)],
       evaluator: metered(
@@ -3962,7 +3966,9 @@ describe("CellTurn frame time", () => {
         capabilityEnvelope: ["fs:read:**"].map(pattern),
         placement: Option.none(),
         contextWindow: tasked,
-        maxFrames: 2
+        maxFrames: 2,
+        // The workflow armed the judge, so the last frame has a judge's share.
+        claimCap: 3
       }),
       script: [
         taking(advance, 2_000, emits(`await ctx.call("fs/list", { path: "." })`)),
@@ -4921,6 +4927,9 @@ describe("CellTurn unmoved workspace", () => {
         maxFrames: overrides.maxFrames ?? cells.length,
         repeatCap: 0,
         readOnlyCap: overrides.readOnlyCap ?? 0,
+        // The unmoved demand is issued only where the claim judge, which the
+        // workflow arms, reads a completion as unsupported (#2937).
+        claimCap: 3,
         ...(overrides.unmovedCap === undefined ? {} : { unmovedCap: overrides.unmovedCap })
       }),
       flows: [shell, editor],
@@ -5912,7 +5921,9 @@ describe("CellTurn unsupported claim", () => {
         placement: Option.none(),
         contextWindow: tasked,
         maxFrames: overrides.maxFrames ?? cells.length,
-        repeatCap: 0
+        repeatCap: 0,
+        // A workflow that armed the judge with the cap it was measured at.
+        claimCap: 3
       }),
       flows: [shell, editor],
       script: cells.map(emits),
@@ -6023,7 +6034,8 @@ describe("CellTurn unsupported claim", () => {
           placement: Option.none(),
           contextWindow: tasked,
           maxFrames: 3,
-          repeatCap: 0
+          repeatCap: 0,
+          claimCap: 3
         }),
         flows: [shell, editor],
         script: [
@@ -6094,7 +6106,8 @@ describe("CellTurn unsupported claim", () => {
         placement: Option.none(),
         contextWindow: tasked,
         maxFrames: 3,
-        repeatCap: 0
+        repeatCap: 0,
+        claimCap: 3
       }),
       flows: [shell, editor],
       script: [editing, finishing("check src/a.py", overclaimed), finishing("check src/a.py", proven)].map(emits),
@@ -6247,8 +6260,10 @@ describe("CellTurn unsupported claim", () => {
     expect(resolved).not.toContain("stands here rather than being lost")
   })
 
-  it("fails the run when nothing could judge the claim, and names the reason", async () => {
-    // What a host without `AI_GATEWAY_API_KEY` binds.
+  it("finishes on its deterministic guards alone when the workflow arms no judge", async () => {
+    // Will, 2026-10-14 (#3993): verification policy belongs to the workflow.
+    // A run whose workflow passed no claim cap asks no model about its
+    // completion, so even a host with no judge at all completes it.
     const { events, failure, model } = await run({
       state: CellTurn.make({
         session: "session-1",
@@ -6260,6 +6275,39 @@ describe("CellTurn unsupported claim", () => {
         contextWindow: tasked,
         maxFrames: 3,
         repeatCap: 0
+      }),
+      flows: [shell, editor],
+      script: [editing, finishing("check src/a.py", "kept the query string; the suite is green")].map(emits),
+      calls: [edited, green],
+      tree: "a.py=base",
+      evaluator: Evaluator.layerUnavailable()
+    })
+
+    expect(failure).toBeUndefined()
+    expect(of(events, "discipline-armed")[0]).toMatchObject({ claimCap: 0 })
+    expect(of(events, "claim-demanded")).toEqual([])
+    expect(of(events, "decision-settled")).toEqual([])
+    expect(of(events, "resolved")[0]?.message.content).toEqual([
+      expect.objectContaining({ text: "kept the query string; the suite is green" })
+    ])
+    expect(model.recorder.requests).toHaveLength(2)
+  })
+
+  it("fails the run when nothing could judge the claim a workflow armed the judge for, and names the reason", async () => {
+    // What a host without `AI_GATEWAY_API_KEY` binds, under a workflow that
+    // opted in to the judge.
+    const { events, failure, model } = await run({
+      state: CellTurn.make({
+        session: "session-1",
+        seat: "anthropic:test-model",
+        modelParams: ModelRequest.GenerationParams.make(),
+        layers: ["layer-a"],
+        capabilityEnvelope: ["fs:write:**", "proc:spawn:*"].map(pattern),
+        placement: Option.none(),
+        contextWindow: tasked,
+        maxFrames: 3,
+        repeatCap: 0,
+        claimCap: 3
       }),
       flows: [shell, editor],
       script: [editing, finishing("check src/a.py", "kept the query string; the suite is green")].map(emits),

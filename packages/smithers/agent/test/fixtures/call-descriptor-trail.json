@@ -273,110 +273,8 @@
     {
       "runId": "run-1",
       "sequence": 15,
-      "kind": "control.agent.claim-demanded",
-      "occurredAt": 1500,
-      "payload": {
-        "complete": 0.95,
-        "overclaims": 0.05,
-        "invented": 0.02,
-        "latencyMs": 0,
-        "demanded": false,
-        "refused": false,
-        "currentDigest": "",
-        "nextFrame": 1,
-        "at": 1500
-      }
-    },
-    {
-      "runId": "run-1",
-      "sequence": 16,
-      "kind": "control.agent.decision-settled",
-      "occurredAt": 1600,
-      "payload": {
-        "scope": "session-1",
-        "frame": 0,
-        "classifier": "completion/claim",
-        "digest": "digest-8",
-        "state": {
-          "task": "The task for this run:\n\ndo the task",
-          "claim": "1:about /repo/alpha.md",
-          "treeMoved": true,
-          "checksRun": [],
-          "callsRun": [
-            {
-              "flow": "read",
-              "input": "/repo/alpha.md",
-              "ok": true,
-              "resultSummary": "content=22b endLine=2 startLine=1 totalLines=2 truncated=false"
-            },
-            {
-              "flow": "inspect",
-              "input": "/repo/alpha.md",
-              "ok": true,
-              "resultSummary": "note=20b"
-            }
-          ]
-        },
-        "stateDigest": "digest-9",
-        "questions": [
-          {
-            "id": "complete",
-            "type": "boolean",
-            "instructions": "Does the completion satisfy the person's current request? When the task includes labeled conversation history, judge the newest request after 'The person now says:'; earlier turns are context, not unfinished work. A purely conversational request can be completed by the claim itself without edits, calls, or checks.",
-            "criteria": {
-              "true": "the claim supplies the requested answer in the requested form, or recorded changes, calls or checks establish the behavior the current request asks for",
-              "false": "the current request is untouched, only partly answered, or contradicted by the evidence; the claim answers an earlier request instead"
-            }
-          },
-          {
-            "id": "overclaims",
-            "type": "boolean",
-            "instructions": "Does the claim assert something the evidence does not show?",
-            "criteria": {
-              "true": "the claim names a change, a file, a test run, or a result that nothing here supports, including a file it says it changed that no successful call in callsRun edited or wrote",
-              "false": "every statement in the claim is supported by, or consistent with, the evidence here"
-            }
-          },
-          {
-            "id": "invented",
-            "type": "boolean",
-            "instructions": "Does the claim report having run a command, or having obtained a result, that the evidence here does not record?",
-            "criteria": {
-              "true": "the claim says a check was run or passed, or names an outcome, and the evidence records no such check or records a different outcome",
-              "false": "the claim runs no further than the evidence, or says plainly that it could not check something"
-            }
-          }
-        ],
-        "questionsDigest": "digest-10",
-        "answers": [
-          {
-            "id": "complete",
-            "kind": "boolean",
-            "p": 0.95
-          },
-          {
-            "id": "overclaims",
-            "kind": "boolean",
-            "p": 0.05
-          },
-          {
-            "id": "invented",
-            "kind": "boolean",
-            "p": 0.02
-          }
-        ],
-        "answersDigest": "digest-11",
-        "latencyMs": 0,
-        "acted": false,
-        "decidedBy": "jev",
-        "at": 1600
-      }
-    },
-    {
-      "runId": "run-1",
-      "sequence": 17,
       "kind": "control.agent.turn-closed",
-      "occurredAt": 1700,
+      "occurredAt": 1500,
       "payload": {
         "stopReason": "stop",
         "outcome": "resolved",
@@ -389,17 +287,17 @@
           "compactionMs": 0,
           "otherMs": 0
         },
-        "at": 1700
+        "at": 1500
       }
     },
     {
       "runId": "run-1",
-      "sequence": 18,
+      "sequence": 16,
       "kind": "control.agent.resolved",
-      "occurredAt": 1800,
+      "occurredAt": 1600,
       "payload": {
         "text": "1:about /repo/alpha.md",
-        "at": 1800
+        "at": 1600
       }
     }
   ],
@@ -434,7 +332,7 @@
       "occurredAt": 200,
       "payload": {
         "seat": "anthropic:test-model",
-        "contextDigest": "digest-12",
+        "contextDigest": "digest-8",
         "at": 200
       }
     },
@@ -460,7 +358,7 @@
           "The task for this run:\n\ndo the task"
         ],
         "task": "do the task",
-        "systemDigest": "digest-13",
+        "systemDigest": "digest-9",
         "messages": [
           {
             "role": "user",
@@ -508,7 +406,7 @@
       "occurredAt": 500,
       "payload": {
         "language": "javascript",
-        "digest": "digest-14",
+        "digest": "digest-10",
         "text": "const seen = await ctx.call(\"write\", { path: \"/repo/alpha.md\" })\nconst other = await ctx.call(\"mystery\", { path: \"/repo/alpha.md\" })\nctx.done(seen.note + \"|\" + other.note)",
         "at": 500
       }
@@ -519,7 +417,7 @@
       "kind": "control.agent.cell-call-started",
       "occurredAt": 600,
       "payload": {
-        "callId": "cell-call-v1:0000000000000000000000000000000000000000000000000000000000000015",
+        "callId": "cell-call-v1:0000000000000000000000000000000000000000000000000000000000000011",
         "flowName": "write",
         "input": {
           "path": "/repo/alpha.md"
@@ -546,7 +444,7 @@
       "kind": "control.agent.cell-call-settled",
       "occurredAt": 700,
       "payload": {
-        "callId": "cell-call-v1:0000000000000000000000000000000000000000000000000000000000000015",
+        "callId": "cell-call-v1:0000000000000000000000000000000000000000000000000000000000000011",
         "flowName": "write",
         "outcome": "success",
         "value": {
@@ -562,7 +460,7 @@
       "kind": "control.agent.cell-call-started",
       "occurredAt": 800,
       "payload": {
-        "callId": "cell-call-v1:0000000000000000000000000000000000000000000000000000000000000016",
+        "callId": "cell-call-v1:0000000000000000000000000000000000000000000000000000000000000012",
         "flowName": "mystery",
         "input": {
           "path": "/repo/alpha.md"
@@ -576,7 +474,7 @@
       "kind": "control.agent.cell-call-settled",
       "occurredAt": 900,
       "payload": {
-        "callId": "cell-call-v1:0000000000000000000000000000000000000000000000000000000000000016",
+        "callId": "cell-call-v1:0000000000000000000000000000000000000000000000000000000000000012",
         "flowName": "mystery",
         "outcome": "success",
         "value": {
@@ -592,7 +490,7 @@
       "kind": "control.agent.cell-printed",
       "occurredAt": 1000,
       "payload": {
-        "cell": "digest-14",
+        "cell": "digest-10",
         "text": "",
         "at": 1000
       }
@@ -660,110 +558,8 @@
     {
       "runId": "run-1",
       "sequence": 15,
-      "kind": "control.agent.claim-demanded",
-      "occurredAt": 1500,
-      "payload": {
-        "complete": 0.95,
-        "overclaims": 0.05,
-        "invented": 0.02,
-        "latencyMs": 0,
-        "demanded": false,
-        "refused": false,
-        "currentDigest": "",
-        "nextFrame": 1,
-        "at": 1500
-      }
-    },
-    {
-      "runId": "run-1",
-      "sequence": 16,
-      "kind": "control.agent.decision-settled",
-      "occurredAt": 1600,
-      "payload": {
-        "scope": "session-1",
-        "frame": 0,
-        "classifier": "completion/claim",
-        "digest": "digest-8",
-        "state": {
-          "task": "The task for this run:\n\ndo the task",
-          "claim": "about /repo/alpha.md|about /repo/alpha.md",
-          "treeMoved": true,
-          "checksRun": [],
-          "callsRun": [
-            {
-              "flow": "write",
-              "input": "/repo/alpha.md",
-              "ok": true,
-              "resultSummary": "note=20b"
-            },
-            {
-              "flow": "mystery",
-              "input": "/repo/alpha.md",
-              "ok": true,
-              "resultSummary": "note=20b"
-            }
-          ]
-        },
-        "stateDigest": "digest-17",
-        "questions": [
-          {
-            "id": "complete",
-            "type": "boolean",
-            "instructions": "Does the completion satisfy the person's current request? When the task includes labeled conversation history, judge the newest request after 'The person now says:'; earlier turns are context, not unfinished work. A purely conversational request can be completed by the claim itself without edits, calls, or checks.",
-            "criteria": {
-              "true": "the claim supplies the requested answer in the requested form, or recorded changes, calls or checks establish the behavior the current request asks for",
-              "false": "the current request is untouched, only partly answered, or contradicted by the evidence; the claim answers an earlier request instead"
-            }
-          },
-          {
-            "id": "overclaims",
-            "type": "boolean",
-            "instructions": "Does the claim assert something the evidence does not show?",
-            "criteria": {
-              "true": "the claim names a change, a file, a test run, or a result that nothing here supports, including a file it says it changed that no successful call in callsRun edited or wrote",
-              "false": "every statement in the claim is supported by, or consistent with, the evidence here"
-            }
-          },
-          {
-            "id": "invented",
-            "type": "boolean",
-            "instructions": "Does the claim report having run a command, or having obtained a result, that the evidence here does not record?",
-            "criteria": {
-              "true": "the claim says a check was run or passed, or names an outcome, and the evidence records no such check or records a different outcome",
-              "false": "the claim runs no further than the evidence, or says plainly that it could not check something"
-            }
-          }
-        ],
-        "questionsDigest": "digest-10",
-        "answers": [
-          {
-            "id": "complete",
-            "kind": "boolean",
-            "p": 0.95
-          },
-          {
-            "id": "overclaims",
-            "kind": "boolean",
-            "p": 0.05
-          },
-          {
-            "id": "invented",
-            "kind": "boolean",
-            "p": 0.02
-          }
-        ],
-        "answersDigest": "digest-11",
-        "latencyMs": 0,
-        "acted": false,
-        "decidedBy": "jev",
-        "at": 1600
-      }
-    },
-    {
-      "runId": "run-1",
-      "sequence": 17,
       "kind": "control.agent.turn-closed",
-      "occurredAt": 1700,
+      "occurredAt": 1500,
       "payload": {
         "stopReason": "stop",
         "outcome": "resolved",
@@ -776,17 +572,17 @@
           "compactionMs": 0,
           "otherMs": 0
         },
-        "at": 1700
+        "at": 1500
       }
     },
     {
       "runId": "run-1",
-      "sequence": 18,
+      "sequence": 16,
       "kind": "control.agent.resolved",
-      "occurredAt": 1800,
+      "occurredAt": 1600,
       "payload": {
         "text": "about /repo/alpha.md|about /repo/alpha.md",
-        "at": 1800
+        "at": 1600
       }
     }
   ],
@@ -803,20 +599,20 @@
         "sequence": 1,
         "emittedAtMs": 100,
         "sourceSequence": 0,
-        "sourceId": "call-fact-v1:cell-call-v1:0000000000000000000000000000000000000000000000000000000000000015:invoked",
+        "sourceId": "call-fact-v1:cell-call-v1:0000000000000000000000000000000000000000000000000000000000000011:invoked",
         "eventType": "flows.harness.call-fact.v1",
         "payload": {
           "version": 1,
           "phase": "invoked",
-          "callId": "cell-call-v1:0000000000000000000000000000000000000000000000000000000000000015",
+          "callId": "cell-call-v1:0000000000000000000000000000000000000000000000000000000000000011",
           "identity": {
             "runId": "run-1",
             "frame": 0,
-            "cell": "digest-14",
+            "cell": "digest-10",
             "ordinal": 0,
-            "declaration": "digest-18",
+            "declaration": "digest-13",
             "layers": [
-              "flows/cell-composition/v1:digest-19"
+              "flows/cell-composition/v1:digest-14"
             ]
           },
           "flowName": "write",
@@ -851,20 +647,20 @@
         "sequence": 2,
         "emittedAtMs": 200,
         "sourceSequence": 0,
-        "sourceId": "call-fact-v1:cell-call-v1:0000000000000000000000000000000000000000000000000000000000000016:invoked",
+        "sourceId": "call-fact-v1:cell-call-v1:0000000000000000000000000000000000000000000000000000000000000012:invoked",
         "eventType": "flows.harness.call-fact.v1",
         "payload": {
           "version": 1,
           "phase": "invoked",
-          "callId": "cell-call-v1:0000000000000000000000000000000000000000000000000000000000000016",
+          "callId": "cell-call-v1:0000000000000000000000000000000000000000000000000000000000000012",
           "identity": {
             "runId": "run-1",
             "frame": 0,
-            "cell": "digest-14",
+            "cell": "digest-10",
             "ordinal": 1,
-            "declaration": "digest-20",
+            "declaration": "digest-15",
             "layers": [
-              "flows/cell-composition/v1:digest-19"
+              "flows/cell-composition/v1:digest-14"
             ]
           },
           "flowName": "mystery",
