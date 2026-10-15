@@ -157,11 +157,18 @@ export const readConfig = (env) => {
     )
   }
 
-  if (problems.length > 0) return { ok: false, problems }
   const development = read === "" && write === ""
-  if (development && readNamespacePrefix !== "") {
-    return { ok: false, problems: ["SMITHERS_CACHE_READ_NAMESPACE_PREFIX requires a configured read token"] }
+  // A malformed token reads as empty, so this asks about what the operator set:
+  // a refused token already has its own problem, and is not development mode.
+  const tokenSet = (name) => env[name] !== undefined && env[name] !== ""
+  if (
+    readNamespacePrefix !== "" &&
+    !tokenSet("SMITHERS_CACHE_READ_TOKEN") &&
+    !tokenSet("SMITHERS_CACHE_WRITE_TOKEN")
+  ) {
+    problems.push("SMITHERS_CACHE_READ_NAMESPACE_PREFIX requires a configured read token")
   }
+  if (problems.length > 0) return { ok: false, problems }
   return {
     ok: true,
     config: {

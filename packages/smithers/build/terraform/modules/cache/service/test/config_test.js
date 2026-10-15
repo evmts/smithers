@@ -29,6 +29,13 @@ describe("readConfig", () => {
     expect(readConfig({ DATABASE_URL: databaseUrl, SMITHERS_CACHE_READ_NAMESPACE_PREFIX: "pr-1/" }).ok).toBe(false)
   })
 
+  test("reports a development-mode namespace prefix alongside every other problem", () => {
+    const result = readConfig({ DATABASE_URL: databaseUrl, PORT: "0", SMITHERS_CACHE_READ_NAMESPACE_PREFIX: "pr-1/" })
+    expect(result.ok).toBe(false)
+    expect(result.problems.join(" ")).toContain("PORT")
+    expect(result.problems.join(" ")).toContain("SMITHERS_CACHE_READ_NAMESPACE_PREFIX requires a configured read token")
+  })
+
   test("accepts the environment the module wires", () => {
     const result = readConfig({ ...valid, SMITHERS_CACHE_MAX_BODY_BYTES: "16777216" })
     expect(result.ok).toBe(true)
