@@ -403,6 +403,31 @@ describe("Redaction", () => {
     })
   })
 
+  it("preserves every numeric counter under a plural tokens name, as the textual rules do", () => {
+    const usage = {
+      inputTokens: 10,
+      outputTokens: 2,
+      cachedInputTokens: 4,
+      cacheWriteTokens: 3,
+      maxTokens: 4096,
+      contextWindowTokens: 200000,
+      prompt_tokens: 7,
+      "budget-tokens": 9
+    }
+    expect(Redaction.redact({ usage })).toEqual({ usage })
+    expect(Redaction.redact({
+      accessTokens: "secret",
+      refreshTokens: -1,
+      cacheWriteTokens: 1.5,
+      cacheWriteToken: "secret"
+    })).toEqual({
+      accessTokens: Redaction.placeholder,
+      refreshTokens: Redaction.placeholder,
+      cacheWriteTokens: Redaction.placeholder,
+      cacheWriteToken: Redaction.placeholder
+    })
+  })
+
   it("preserves a numeric token ceiling and still redacts a numeric bearer token", () => {
     expect(Redaction.redact({
       budget: { tokens: 70, milliseconds: 60000 },

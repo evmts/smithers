@@ -31,9 +31,10 @@ not a substring test, so `tokenizer`, `secretary`, `monkey`, and
 `idempotencyKey` stay intact. Redacting them would destroy data in a permanent
 row without protecting anything, and `idempotencyKey` in particular is the
 durable identity an effect boundary replays on. Token counters are kept too: a
-non-negative safe integer under `inputTokens`, `outputTokens`,
-`cachedInputTokens`, `reasoningTokens`, or `totalTokens` is accounting, not
-bearer material.
+non-negative safe integer under any name ending in a plural `tokens`
+(`inputTokens`, `cacheWriteTokens`, `max_tokens`) or under `inputToken`,
+`outputToken`, `cachedInputToken`, `reasoningToken`, or `totalToken` is
+accounting, not bearer material. A bare `token` is redacted even when numeric.
 
 **Textual.** `Redaction.defaultRules` scans inside any string for credential
 shapes seen in real bug reports: provider keys, bearer tokens, GitHub, AWS,

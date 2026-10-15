@@ -1056,13 +1056,16 @@ const tokenCounterKeys: ReadonlySet<string> = new Set([
 ])
 
 /**
- * A bare plural `tokens` is a count too: `Envelope.budget.tokens` is the run's
- * token ceiling, and redacting it erased every journaled budget. A singular
- * `token` stays bearer material even when it is numeric.
+ * Any name ending in a plural `tokens` holds a count too, the rule the textual
+ * pass applies in {@link namesCredential}: `Envelope.budget.tokens` is the
+ * run's token ceiling, and `usage.cacheWriteTokens`, `maxTokens`, and
+ * `contextWindowTokens` are accounting; redacting them erased every journaled
+ * budget and cache-write count (#3846). A bare singular `token` stays bearer
+ * material even when it is numeric.
  */
 const isTokenCount = (key: string, value: unknown): boolean =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0 &&
-  (tokenCounterKeys.has(canonicalKey(key)) || key.toLowerCase() === "tokens")
+  (tokenCounterKeys.has(canonicalKey(key)) || /tokens$/i.test(key))
 
 /**
  * Whether a field name names a credential.
