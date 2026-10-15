@@ -11,9 +11,11 @@ import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
  * `smithers-build query '//packages/smithers/agent/chain/...'` before and after.
  */
 import { Smithers } from "@smthrs/targets"
+import * as Input from "@smthrs/targets/Input"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  sources: Input.glob("{src,examples}/**/*.ts"),
   cwd: "packages/smithers/agent/chain"
 })
 
