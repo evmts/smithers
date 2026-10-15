@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import * as Frontmatter from "../src/internal/Frontmatter.ts"
 
 describe("Frontmatter", () => {
@@ -249,5 +249,20 @@ describe("Frontmatter", () => {
     expect(result.fields).toEqual({})
     expect(result.warnings).toHaveLength(1)
     expect(result.warnings[0]?.code).toBe("frontmatter_parse_error")
+  })
+  it("never writes a YAML library warning to the process for a collection key", () => {
+    // Discovery runs inside a terminal UI; a process warning there lands on
+    // stderr in the middle of the rendered screen.
+    const emitWarning = vi.spyOn(process, "emitWarning").mockImplementation(() => undefined)
+    try {
+      const result = Frontmatter.parse({
+        path: "/skills/review/SKILL.md",
+        text: "---\n? [a, b]\n: c\nname: review\n---\nbody"
+      })
+      expect(result.fields.name).toBe("review")
+      expect(emitWarning).not.toHaveBeenCalled()
+    } finally {
+      emitWarning.mockRestore()
+    }
   })
 })

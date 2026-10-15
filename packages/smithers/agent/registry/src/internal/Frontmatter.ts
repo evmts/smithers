@@ -63,7 +63,9 @@ export const parse = (
   }
 
   try {
-    const parsed = Yaml.parseDocument(frontmatter, { schema: "failsafe" })
+    // `logLevel: "error"` keeps the YAML library from calling
+    // `process.emitWarning`, which would write to the host's stderr.
+    const parsed = Yaml.parseDocument(frontmatter, { schema: "failsafe", logLevel: "error" })
     if (parsed.errors.length > 0) {
       return {
         fields: emptyFields(),
