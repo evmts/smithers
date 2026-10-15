@@ -114,9 +114,10 @@ type Task = { readonly kind: "leave"; readonly value: object } | {
   readonly slot: Slot
 }
 
-// ECMAScript ToLength (ES2026 §7.1.20): Number, NaN -> 0, truncate, clamp to [0, 2^53 - 1].
+// ECMAScript ToLength: ToNumber, NaN -> 0, truncate, clamp to [0, 2^53 - 1].
 const toLength = (value: unknown): number => {
-  const number = Math.trunc(Number(value))
+  // Unary plus uses ToNumber, rejecting BigInt even after object coercion.
+  const number = Math.trunc(+(value as number))
   if (Number.isNaN(number) || number <= 0) return 0
   return Math.min(number, Number.MAX_SAFE_INTEGER)
 }

@@ -231,6 +231,19 @@ describe("digest-unsafe built-ins", () => {
       expect(canonicalize(value)).toBe(JSON.stringify(value))
     })
 
+    it.each([
+      ["a BigInt", 2n],
+      ["a boxed BigInt", Object(2n)],
+      ["a BigInt primitive conversion", { [Symbol.toPrimitive]: () => 2n }],
+      ["a symbol", Symbol("length")]
+    ])("rejects %s length with a located coercion failure", (_name, length) => {
+      const value = withLength(length)
+      expect(() => JSON.stringify(value)).toThrow(TypeError)
+      expect(() => canonicalize({ xs: value })).toThrow(
+        expect.objectContaining({ code: "canonical_getter_threw", path: "$.xs", cause: expect.any(TypeError) })
+      )
+    })
+
     it("reads the integer indices 0 and 1 for a fractional length", () => {
       expect(canonicalize(withLength(2.5))).toBe("[10,20]")
     })
