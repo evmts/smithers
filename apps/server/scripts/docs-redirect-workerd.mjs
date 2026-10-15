@@ -31,6 +31,7 @@ try {
     ["https://flows.smithers.sh/reference/api/", `${flows}/api.md`],
     ["https://flows.smithers.sh/reference/api/flow/", `${flows}/api.md`],
     ["https://flows.smithers.sh/quick%73tart/", `${flows}/quickstart.md`],
+    ["https://flows.smithers.sh/time-travel/guides/rewind-a-run/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/time-travel/docs/guides/rewind-a-run.md"],
     ["https://flows.smithers.sh/no-such-page/", "https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/docs"],
     ["https://flows.smithers.sh/../../x/", "https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/docs"],
     ["https://flows.smithers.sh/..%2f..%2fquickstart/", "https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/docs"],

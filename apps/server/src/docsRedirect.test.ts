@@ -57,6 +57,24 @@ describe("pages", () => {
     ]) expect(await locationOf(`https://flows.smithers.sh${path}`)).toBe(location!)
   })
 
+  test("a flows path that starts with a nested package's directory lands in that package's docs folder", async () => {
+    const nested = `${REPO}blob/main/packages/smithers/flows`
+    for (const [path, location] of [
+      ["/time-travel/quickstart/", `${nested}/time-travel/docs/quickstart.md`],
+      ["/time-travel/guides/rewind-a-run/", `${nested}/time-travel/docs/guides/rewind-a-run.md`],
+      ["/flow/guides/inspect-the-plan/", `${nested}/flow/docs/guides/inspect-the-plan.md`],
+      ["/time-travel/reference/api/", `${nested}/time-travel/docs/api.md`],
+      ["/time-travel/quickstart", `${nested}/time-travel/docs/quickstart.md`],
+      ["/time-travel/", `${REPO}tree/main/packages/smithers/flows/time-travel/docs`]
+    ]) expect(await locationOf(`https://flows.smithers.sh${path}`)).toBe(location!)
+    // Not a package under packages/smithers/flows, or no page of one: the flows folder, as before.
+    for (const path of ["/model/quickstart/", "/time-travel/no-such-page/"]) {
+      expect(await locationOf(`https://flows.smithers.sh${path}`)).toBe(FLOWS_FOLDER)
+    }
+    // Only flows answers for nested packages.
+    expect(await locationOf("https://agent.smithers.sh/model/quickstart/")).toBe(DOCS_REDIRECTS.get("agent")!)
+  })
+
   test("a path with or without its trailing slash or index.html names the same page", async () => {
     for (const path of ["/quickstart", "/quickstart/", "/quickstart/index.html"]) {
       expect(await locationOf(`https://flows.smithers.sh${path}`)).toBe(`${FLOWS}/quickstart.md`)
@@ -144,16 +162,17 @@ describe("known slugs", () => {
     expect(README_URL).toBe(`${REPO}blob/main/README.md`)
   })
 
-  test("every page Location is a file or folder inside that slug's own docs folder", () => {
+  test("every page Location is a file or folder inside that slug's own docs folder, or for flows a nested package's", () => {
     expect([...DOCS_PAGES.keys()]).toEqual([...DOCS_REDIRECTS.keys()])
     for (const [slug, pages] of DOCS_PAGES) {
-      const folder = DOCS_REDIRECTS.get(slug)!
-      const files = folder.replace("/tree/main/", "/blob/main/")
-      expect(pages.get("/")).toBe(folder)
+      expect(pages.get("/")).toBe(DOCS_REDIRECTS.get(slug)!)
       for (const [path, location] of pages) {
         expect(path).toMatch(/^\/(?:[a-z0-9_.-]+\/)*$/)
-        expect(location === folder || location.startsWith(`${folder}/`) ||
-          (location.startsWith(`${files}/`) && location.endsWith(".md"))).toBe(true)
+        // flows also answers for each package nested under it, at /<directory name>/.
+        const folders = [DOCS_REDIRECTS.get(slug)!]
+        if (slug === "flows") folders.push(`${REPO}tree/main/packages/smithers/flows/${path.split("/")[1]}/docs`)
+        expect(folders.some(folder => location === folder || location.startsWith(`${folder}/`) ||
+          (location.startsWith(`${folder.replace("/tree/main/", "/blob/main/")}/`) && location.endsWith(".md")))).toBe(true)
         expect(location).not.toContain("..")
         expect(new URL(location).host).toBe("github.com")
       }

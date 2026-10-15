@@ -19,6 +19,7 @@ const cases = [
   ["https://flows.smithers.sh/installation/", "flows", "/installation/"],
   ["https://flows.smithers.sh/reference/api/", "flows", "/reference/api/"],
   ["https://flows.smithers.sh/guides/stand-up-a-node-runtime/", "flows", "/guides/stand-up-a-node-runtime/"],
+  ["https://flows.smithers.sh/time-travel/quickstart/", "flows", "/time-travel/quickstart/"],
   ["https://flows.smithers.sh/no-such-page/", "flows", null],
   ["https://engine.smithers.sh/concepts/retries/", "engine", "/concepts/retries/"],
   ["https://smithers-patterns.smithers.sh/", "smithers-patterns", "/"],

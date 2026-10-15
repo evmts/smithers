@@ -21,7 +21,7 @@ https://flows.smithers.sh/
 | Entry (default export only; workerd refuses other exports) | `src/docsRedirectWorker.ts` |
 | Config: name, 48 routes, `UNKNOWN_SLUGS` switch | `wrangler.docs-redirect.jsonc` |
 | Unit and workerd tests | `src/docsRedirect.test.ts`, `src/docsRedirect.workerd.test.ts` |
-| Live acceptance probe (11 URLs: 301, exact Location, target 200) | `node scripts/package-docs-redirect-probe.mjs` |
+| Live acceptance probe (12 URLs: 301, exact Location, target 200) | `node scripts/package-docs-redirect-probe.mjs` |
 
 This Worker is not `smithers-mvp-web`. The Deploy apps workflow does not deploy it,
 and deploying it never touches the shared edge.
@@ -72,6 +72,7 @@ and maps each to its file on GitHub:
 | `guides/x.md`, `concepts/x.md`, any `a/b/x.md` | `/guides/x/`, `/concepts/x/`, `/a/b/x/` | `blob/main/<dir>/docs/<file>` |
 | `api.md` | `/reference/api/` | `blob/main/<dir>/docs/api.md` |
 | `a/README.md` (`cli`'s `reference/cli/`) | `/a/` | `tree/main/<dir>/docs/a` |
+| `flows` only: `<dir>/<sub>/docs/x.md`, for each package one directory under `<dir>` with a `docs/` folder | `/<sub>/x/`, by the rows above | `blob/main/<dir>/<sub>/docs/x.md` |
 
 No page set its own `slug` frontmatter. When the sites were retired (2026-10-06) they
 served 715 pages, and each had its file; a page whose file was deleted since lands on
@@ -85,7 +86,10 @@ on the folder, including a `..` that appears only after decoding, since no key h
 
 Generation fails on a symlink in a `docs/` folder, on two files that claim one path
 (`api.md` and `reference/api.md`, or `x.md` and `x/README.md`), and on a path that is not
-lowercase `[a-z0-9_.-]` segments. A page added, renamed or removed changes the map:
+lowercase `[a-z0-9_.-]` segments. That includes a `flows` page and a nested
+package's page that claim one path. `aggregateSites` in the generator lists the sites
+that answer for nested packages: `flows` only, because its barrel re-exports the engine
+packages under `packages/smithers/flows/`. A page added, renamed or removed changes the map:
 `pnpm docs:sync` regenerates it, and `pnpm docs:check` and `//scripts:packageDocs` fail
 while it is stale, so a Location never names a file that no longer exists.
 
@@ -144,7 +148,7 @@ from a clean `apps/server` checkout of origin/main:
 ```sh
 bun test src/docsRedirect.test.ts src/docsRedirect.workerd.test.ts
 CLOUDFLARE_API_TOKEN=<token> bun x wrangler deploy -c wrangler.docs-redirect.jsonc
-node ../../scripts/package-docs-redirect-probe.mjs   # 10/11: the unknown slug needs DNS
+node ../../scripts/package-docs-redirect-probe.mjs   # 11/12: the unknown slug needs DNS
 ```
 
 Then rerun the snapshot above and compare it with the inventory. After the probe
@@ -190,4 +194,4 @@ To turn it on, in one change:
 1. DNS: proxied `AAAA * 100::` and `TXT * "smithers-unclaimed=docs-redirect"`.
 2. `wrangler.docs-redirect.jsonc`: add `{ "pattern": "*.smithers.sh/*", "zone_id": "8ebd98d2f0dc7d8db2e61f31ebc19c14" }`
    and set `UNKNOWN_SLUGS` to `"txt-marker"`; update the config test.
-3. Deploy, run the probe (11/11), rerun the snapshot and compare every inventoried host.
+3. Deploy, run the probe (12/12), rerun the snapshot and compare every inventoried host.

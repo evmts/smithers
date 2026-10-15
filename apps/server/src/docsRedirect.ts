@@ -9,6 +9,8 @@ import { fetchWithDeadline, readBoundedJson, Transport } from "./Http"
  *
  * `<slug>.smithers.sh/<page path>` answers 301 to that page's file in the
  * slug's package docs/ folder on GitHub, and any other path to the folder.
+ * `flows.smithers.sh/<sub>/<page path>` also names a page of the package
+ * nested at packages/smithers/flows/<sub> (`aggregateSites` in the generator).
  * The Location is always a value of the generated maps: the Host picks a slug,
  * the path is only a lookup key into DOCS_PAGES, and the query is dropped, so
  * no request text reaches the answer and the target is always the

@@ -166,43 +166,83 @@ const docsFiles = (root, dir) => {
 }
 
 /**
+ * The retired sites whose package is a barrel over the packages nested one
+ * directory under it. `flows.smithers.sh` re-exports the engine packages under
+ * `packages/smithers/flows/`, so it also answers for each one's pages at
+ * `/<directory name>/<page path>`: `/time-travel/quickstart/` is
+ * `packages/smithers/flows/time-travel/docs/quickstart.md`.
+ *
+ * @type {ReadonlyArray<string>}
+ */
+export const aggregateSites = ["flows"]
+
+/**
+ * The workspace packages exactly one directory under `dir` that have a docs/
+ * folder, sorted.
+ *
+ * @param {string} root
+ * @param {string} dir
+ * @returns {ReadonlyArray<string>}
+ */
+export const nestedDocsDirs = (root, dir) =>
+  workspacePackages(root)
+    .map((entry) => entry.dir)
+    .filter((sub) => sub.startsWith(`${dir}/`) && !sub.slice(dir.length + 1).includes("/") && existsSync(join(root, sub, "docs")))
+    .sort()
+
+/**
  * One package's old page paths -> each page's file on GitHub, from the files
- * its docs/ folder holds now. A README lands on its folder, which GitHub shows
+ * its docs/ folder holds now, plus each `nested` package's pages under
+ * `/<its directory name>/`. A README lands on its folder, which GitHub shows
  * with the README rendered below the listing; every other page lands on its
  * file. Throws when a file has no plain lowercase path or two files claim one.
  *
  * @param {string} root
  * @param {string} dir
+ * @param {ReadonlyArray<string>} nested package dirs whose pages the site also serves
  * @returns {Readonly<Record<string, string>>}
  */
-export const pagesOf = (root, dir) => {
+export const aggregatePagesOf = (root, dir, nested) => {
   /** @type {Map<string, string>} */
   const claimed = new Map()
   /** @type {Array<[string, string]>} */
   const pages = []
-  for (const file of docsFiles(root, dir)) {
-    const path = sitePathOf(file)
-    if (!PAGE_PATH.test(path)) throw new Error(`${dir}/docs/${file}: page path ${path} is not lowercase [a-z0-9_.-] segments`)
-    const other = claimed.get(path)
-    if (other !== undefined) throw new Error(`${dir}/docs/${file} and ${other} both claim ${path}`)
-    claimed.set(path, file)
-    const folder = file.replace(/(^|\/)(?:README|index)\.md$/, "")
-    pages.push([path, folder !== file
-      ? `${REPOSITORY_URL}/tree/main/${dir}/docs${folder === "" ? "" : `/${folder}`}`
-      : `${REPOSITORY_URL}/blob/main/${dir}/docs/${file}`])
+  for (const [prefix, pkg] of [["", dir], ...nested.map((sub) => [`/${sub.slice(sub.lastIndexOf("/") + 1)}`, sub])]) {
+    for (const file of docsFiles(root, pkg)) {
+      const path = `${prefix}${sitePathOf(file)}`
+      if (!PAGE_PATH.test(path)) throw new Error(`${pkg}/docs/${file}: page path ${path} is not lowercase [a-z0-9_.-] segments`)
+      const other = claimed.get(path)
+      if (other !== undefined) throw new Error(`${pkg}/docs/${file} and ${other} both claim ${path}`)
+      claimed.set(path, `${pkg}/docs/${file}`)
+      const folder = file.replace(/(^|\/)(?:README|index)\.md$/, "")
+      pages.push([path, folder !== file
+        ? `${REPOSITORY_URL}/tree/main/${pkg}/docs${folder === "" ? "" : `/${folder}`}`
+        : `${REPOSITORY_URL}/blob/main/${pkg}/docs/${file}`])
+    }
   }
   return Object.fromEntries(pages.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
 }
 
 /**
+ * One package's old page paths -> each page's file on GitHub.
+ *
+ * @param {string} root
+ * @param {string} dir
+ * @returns {Readonly<Record<string, string>>}
+ */
+export const pagesOf = (root, dir) => aggregatePagesOf(root, dir, [])
+
+/**
  * slug -> old page path -> that page's file on GitHub: every page each legacy
- * package's docs/ folder holds.
+ * package's docs/ folder holds, and for an aggregate site every page of the
+ * packages nested under it.
  *
  * @param {string} [root]
  * @returns {Readonly<Record<string, Readonly<Record<string, string>>>>}
  */
 export const buildPageMap = (root = repoRoot) =>
-  Object.fromEntries(legacyDirs(root).map(([slug, dir]) => [slug, pagesOf(root, dir)]))
+  Object.fromEntries(legacyDirs(root).map(([slug, dir]) =>
+    [slug, aggregatePagesOf(root, dir, aggregateSites.includes(slug) ? nestedDocsDirs(root, dir) : [])]))
 
 /**
  * The retired sites as the apps/site scripts read them (llms index, API docs
