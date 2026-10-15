@@ -1247,6 +1247,25 @@ func (s *WorkspaceService) OpenWorkspaceTerminal(ctx context.Context, sessionID 
 	return terminal, nil
 }
 
+// workspaceFileOperationError classifies a file call's failure for a caller
+// that holds the row. The contract keeps two markers apart and so must this:
+// fs.ErrNotExist is the missing PATH, and ErrWorkspaceNotFound is the machine
+// "permanently gone" (packages/backend/workspace/contracts.go). Folding them
+// into one 404 told a person their file was not there when the machine it
+// lived on had vanished, and carried no details, so they were handed no route
+// out — the answer #3565, #3890 and #3912 settled on every neighbouring door is
+// the confirmed loss with its recovery row. #3912 fixed the readiness check
+// that runs BEFORE the call; this is the machine vanishing between the two.
+func (s *WorkspaceService) workspaceFileOperationError(ctx context.Context, err error, kind string, row db.Workspace, requesterID int64) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, workspaceapi.ErrWorkspaceNotFound) && !errors.Is(err, fs.ErrNotExist) {
+		return s.missingWorkspaceVM(ctx, row, requesterID)
+	}
+	return mapRuntimeFileError(err, kind)
+}
+
 func mapRuntimeFileError(err error, kind string) error {
 	if err == nil {
 		return nil

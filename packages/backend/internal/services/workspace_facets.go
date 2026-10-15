@@ -115,7 +115,7 @@ func (s *WorkspaceService) listWorkspaceFiles(ctx context.Context, workspaceID s
 		}
 		listed, listErr := s.runtime.ListFiles(runtimeCtx, row.ID, relativePath)
 		if listErr != nil {
-			return nil, mapRuntimeFileError(listErr, "directory")
+			return nil, s.workspaceFileOperationError(ctx, listErr, "directory", row, userID)
 		}
 		entries := make([]WorkspaceFileEntry, 0, len(listed))
 		for _, entry := range listed {
@@ -232,7 +232,7 @@ func (s *WorkspaceService) readWorkspaceFile(ctx context.Context, workspaceID st
 		}
 		content, readErr := read(runtimeCtx, row.ID, relativePath)
 		if readErr != nil {
-			return WorkspaceFileContent{}, mapRuntimeFileError(readErr, "file")
+			return WorkspaceFileContent{}, s.workspaceFileOperationError(ctx, readErr, "file", row, userID)
 		}
 		if len(content) > MaxWorkspaceFileBytes {
 			return WorkspaceFileContent{}, pkgerrors.RequestEntityTooLarge("workspace file exceeds 1 MiB limit")
@@ -363,7 +363,7 @@ func (s *WorkspaceService) writeWorkspaceFiles(ctx context.Context, workspaceID 
 						}
 						return stale
 					}
-					return mapRuntimeFileError(writeErr, "file")
+					return s.workspaceFileOperationError(ctx, writeErr, "file", row, userID)
 				}
 				if receipt == nil || len(receipt.Paths) != len(results) {
 					return pkgerrors.Internal("invalid workspace write receipt")
