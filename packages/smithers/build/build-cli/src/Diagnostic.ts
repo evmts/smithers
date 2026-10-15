@@ -24,9 +24,11 @@ export const maximumMessageCodeUnits = 64 * 1024
 const bounded = (message: string, fallback: string): string => {
   const wellFormed = message.isWellFormed() ? message : message.toWellFormed()
   if (wellFormed === "") return fallback
-  return wellFormed.length <= maximumMessageCodeUnits
-    ? wellFormed
-    : `${wellFormed.slice(0, maximumMessageCodeUnits - 3)}...`
+  if (wellFormed.length <= maximumMessageCodeUnits) return wellFormed
+  // Cut before a high surrogate whose low half would fall past the bound.
+  const end = maximumMessageCodeUnits - 3
+  const cut = /[\ud800-\udbff]/.test(wellFormed[end - 1]!) ? end - 1 : end
+  return `${wellFormed.slice(0, cut)}...`
 }
 
 /**

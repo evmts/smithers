@@ -78,4 +78,15 @@ describe("Diagnostic", () => {
       Diagnostic.maximumMessageCodeUnits
     )
   })
+
+  it("never splits a surrogate pair when it truncates", () => {
+    // The cut lands between the halves of an astral character.
+    const oversized = `${"x".repeat(Diagnostic.maximumMessageCodeUnits - 4)}${"\u{1F600}".repeat(4)}`
+    const rendered = Diagnostic.message(oversized)
+    expect(rendered.isWellFormed()).toBe(true)
+    expect(rendered.length).toBeLessThanOrEqual(Diagnostic.maximumMessageCodeUnits)
+    expect(rendered.endsWith("x...")).toBe(true)
+    const error = Diagnostic.error(new Error(oversized))
+    expect(error.message.isWellFormed()).toBe(true)
+  })
 })
