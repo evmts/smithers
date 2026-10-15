@@ -46,7 +46,10 @@ The other seeds describe the rest of the world the operation reads:
 `make` returns the store widened with a `state()` inspector. That widening is
 the reason to call it rather than `MemoryTimeTravelStore.layer`: the inspector
 is not part of the `TimeTravelStore` contract, so a test that wants to assert
-on archived records or surviving edges has to hold the concrete store.
+on archived records or surviving edges has to hold the concrete store. The
+widened store also carries `append(record)`, which writes a journal record
+after construction, so a test can re-append past a truncation the way a
+resumed run would.
 
 ## Assert on the world, not the return value
 

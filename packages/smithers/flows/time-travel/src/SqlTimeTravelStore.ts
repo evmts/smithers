@@ -1071,6 +1071,17 @@ export const make: Effect.Effect<
                 ))
               }
               const runId = childRunId ?? (yield* mintForkId(parentRunId, frame))
+              // A child id names a NEW run. One naming the parent or any run
+              // with a row or a journal would land the copied prefix inside
+              // history that is already there, so it is refused before a write.
+              const taken = yield* sql<{ readonly count: number }>`
+                SELECT
+                  (SELECT COUNT(*) FROM flows_runs WHERE run_id = ${runId}) +
+                  (SELECT COUNT(*) FROM flows_journal_events WHERE run_id = ${runId}) AS count
+              `
+              if (Number(taken[0]!.count) > 0) {
+                return yield* Effect.fail(error("invalid", TimeTravelStore.forkChildTakenMessage(runId)))
+              }
               // The committed edge takes over the ordinal the reservation
               // held, so the intent is consumed in the same transaction.
               yield* sql`DELETE FROM flows_time_travel_fork_intents WHERE child_run_id = ${runId}`

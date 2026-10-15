@@ -269,9 +269,17 @@ describe("TimeTravelStore conformance", () => {
         records: [{ runId: "run", seq: 0, eventId: "baseline", payload: {} }],
         runOwners: new Map([["run", owner]])
       })
-      // Fork markers are the memory store's journal append path. Empty donor
-      // runs copy no prefix and append one marker at the reused seq 1.
-      const memoryCounts = yield* exercise(memory, (parent) => memory.createFork(parent, zero, "run"))
+      // Each generation re-appends a fork marker at the reused seq 1.
+      const memoryCounts = yield* exercise(memory, (parent) =>
+        Effect.sync(() =>
+          memory.append({
+            runId: "run",
+            seq: 1,
+            eventId: parent,
+            eventType: forkCreatedEventType,
+            payload: { parentRunId: parent }
+          })
+        ))
       const memoryArchive = memory.state().archived.map((record) => ({
         generation: record.generation,
         seq: record.seq,
@@ -830,4 +838,82 @@ describe("TimeTravelStore fork intents", () => {
         consumed: []
       })
     }))
+})
+
+/**
+ * A caller-supplied child id names a NEW run. One that names the parent or a
+ * run that already exists must be refused before any row is written, or the
+ * copied prefix lands inside a run that already has its own history.
+ */
+describe("TimeTravelStore fork child id", () => {
+  for (const childRunId of ["run", "other"] as const) {
+    it.effect(`refuses a fork into existing run ${childRunId} identically without writing`, () =>
+      Effect.gen(function*() {
+        const at = { lineageId: "run/root", seq: 0 } as const
+        const memory = MemoryTimeTravelStore.make({
+          records: [
+            { runId: "run", seq: 0, eventId: "run-0", lineageId: "run/root", payload: {} },
+            { runId: "other", seq: 0, eventId: "other-0", payload: {} }
+          ]
+        })
+        const memoryBefore = memory.state()
+        const memoryFailure = yield* Effect.flip(memory.createFork("run", at, childRunId))
+        expect(memory.state()).toEqual(memoryBefore)
+
+        const sqlite = yield* withSql((store, sql) =>
+          Effect.gen(function*() {
+            yield* sql`
+              INSERT INTO flows_runs (run_id, status, created_at_ms, state_json)
+              VALUES
+                ('run', 'suspended', 0, ${JSON.stringify({ version: 1, flowName: "Demo", payload: {} })}),
+                ('other', 'completed', 0, ${JSON.stringify({ version: 1, flowName: "Demo", payload: {} })})
+            `
+            yield* sql`
+              INSERT INTO flows_journal_events
+                (run_id, seq, event_id, source_id, source_seq, emitted_at_ms,
+                 event_type, payload_json, meta_json)
+              VALUES
+                ('run', 0, 'run-0', 'source', 0, 0, 'test', '{}', ${JSON.stringify({ lineageId: "run/root" })}),
+                ('other', 0, 'other-0', 'source', 0, 0, 'test', '{}', '{}')
+            `
+            const failure = yield* Effect.flip(store.createFork("run", at, childRunId))
+            const events = yield* sql<{ readonly count: number }>`
+              SELECT COUNT(*) AS count FROM flows_journal_events
+            `
+            const edges = yield* sql<{ readonly count: number }>`
+              SELECT COUNT(*) AS count FROM flows_time_travel_edges
+            `
+            return {
+              failure: { code: failure.code, message: failure.message },
+              events: Number(events[0]!.count),
+              edges: Number(edges[0]!.count)
+            }
+          })
+        )
+
+        expect(sqlite).toEqual({
+          failure: { code: memoryFailure.code, message: memoryFailure.message },
+          events: 2,
+          edges: 0
+        })
+        expect(memoryFailure).toMatchObject({
+          code: "invalid",
+          message: `fork child run ${childRunId} already exists`
+        })
+      }))
+  }
+})
+
+describe("MemoryTimeTravelStore append", () => {
+  it("writes a record and refuses a second record at the same coordinate", () => {
+    const memory = MemoryTimeTravelStore.make({
+      records: [{ runId: "run", seq: 0, eventId: "run-0", payload: {} }]
+    })
+    memory.append({ runId: "run", seq: 1, eventId: "run-1", payload: { at: 1 } })
+    expect(memory.state().records.map((record) => record.eventId)).toEqual(["run-0", "run-1"])
+    expect(() => memory.append({ runId: "run", seq: 1, eventId: "again", payload: {} })).toThrow(
+      "run run already has a record at seq 1"
+    )
+    expect(memory.state().records).toHaveLength(2)
+  })
 })

@@ -271,6 +271,15 @@ export const validateAuditPatch = (patch: AuditPatch): Effect.Effect<AuditPatch,
 export const forkFrameMessage = (parentRunId: string, frame: Frame): string =>
   `frame ${frame.lineageId}@${frame.seq} is not a record of ${parentRunId}`
 /**
+ * The refusal both stores raise for a fork whose child id names a run that
+ * already exists, the parent included. A fork always writes a NEW run, so
+ * copying its prefix into one with its own history would merge two journals.
+ *
+ * @since 1.0.0
+ * @category constructors
+ */
+export const forkChildTakenMessage = (childRunId: string): string => `fork child run ${childRunId} already exists`
+/**
  * Proof that one side effect was compensated during a rewind.
  *
  * A rewind reverts effects by calling their registered rollback handlers; each

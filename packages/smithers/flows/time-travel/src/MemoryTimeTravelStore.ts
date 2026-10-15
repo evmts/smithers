@@ -137,17 +137,23 @@ export interface Options {
 
 /**
  * Creates an in-memory store seeded from `options`, returning the store
- * *widened* with a `state()` inspector.
+ * *widened* with a `state()` inspector and an `append(record)` journal write.
  *
  * The widened return is the reason to call this instead of {@link layer}: the
  * inspector is not part of the `TimeTravelStore` contract, so a test that
  * wants to assert on archived records or surviving edges must hold the
- * concrete store rather than resolve the service.
+ * concrete store rather than resolve the service. `append` stands in for the
+ * journal writer a real run has, so a test can write records after a
+ * truncation; it throws an `invalid` {@link TimeTravelError} for a record
+ * whose `(runId, seq)` the store already holds, as a journal refuses one.
  *
  * @since 0.1.0
  * @category constructors
  */
-export const make = (options: Options = {}): TimeTravelStore.Service & { readonly state: () => MemoryState } => {
+export const make = (options: Options = {}): TimeTravelStore.Service & {
+  readonly state: () => MemoryState
+  readonly append: (record: JournalRecord) => void
+} => {
   /**
    * Copies the values a caller hands in and the values a reader takes out.
    *
@@ -516,6 +522,15 @@ export const make = (options: Options = {}): TimeTravelStore.Service & { readonl
             throw error("not_found", TimeTravelStore.forkFrameMessage(parentRunId, frame))
           }
           const runId = childRunId ?? mintForkId(parentRunId, frame)
+          // A child id names a NEW run, exactly as the SQL store refuses one
+          // that already has a row or a journal.
+          if (
+            records.some((record) => record.runId === runId) ||
+            edges.some((edge) => edge.parentRunId === runId || edge.childRunId === runId) ||
+            liveRuns.has(runId) || runStatuses.has(runId) || runOwners.has(runId)
+          ) {
+            throw error("invalid", TimeTravelStore.forkChildTakenMessage(runId))
+          }
           // The committed edge takes over the ordinal the reservation held.
           forkIntents = forkIntents.filter((intent) => intent.childRunId !== runId)
           const prefix = records.filter((record) => record.runId === parentRunId && record.seq <= frame.seq)
@@ -590,7 +605,13 @@ export const make = (options: Options = {}): TimeTravelStore.Service & { readonl
       })))
     )
   })
-  return Object.assign(service, { state })
+  const append = (record: JournalRecord): void => {
+    if (records.some((existing) => existing.runId === record.runId && existing.seq === record.seq)) {
+      throw error("invalid", `run ${record.runId} already has a record at seq ${record.seq}`)
+    }
+    records.push(clone(record, "record"))
+  }
+  return Object.assign(service, { state, append })
 }
 /**
  * Provides a seeded memory store as the `TimeTravelStore` service. The

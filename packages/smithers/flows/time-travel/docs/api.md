@@ -378,12 +378,13 @@ moment the code under test reaches a third.
 | `Fork`          | `{ runId, edge }`. The row `createFork` commits; a fork's warnings ride `ForkResult`.                          |
 | `ForkIntent`    | `{ childRunId, parentRunId, parentSeq, reservedAtMs }`. A minted fork id whose fork has not committed.         |
 
-Three helpers travel with them:
+Four helpers travel with them:
 
 ```ts
 const auditPatchKeys: ReadonlyArray<keyof AuditPatch>
 const validateAuditPatch: (patch: AuditPatch) => Effect<AuditPatch, TimeTravelError>
 const forkFrameMessage: (parentRunId: string, frame: Frame) => string
+const forkChildTakenMessage: (childRunId: string) => string
 ```
 
 `validateAuditPatch` refuses a patch carrying a key `AuditPatch` does not admit,
@@ -392,7 +393,8 @@ because the offending caller is an untyped one. An invalid status reports
 The message omits the patch's detail and handler receipts.
 `forkFrameMessage` is the one refusal message both stores raise for a fork whose
 frame addresses no record, so a caller that branches on it gets the same answer
-from either.
+from either. `forkChildTakenMessage` is the matching `invalid` refusal for a
+fork whose child id names a run that already exists.
 
 ### Service
 
@@ -412,7 +414,7 @@ from either.
 | `archivedAt(runId, seq)`                                             | Whether the archive holds a record at that coordinate. Recovery's commit-point evidence.                                                                                                                                                                                                                 |
 | `nextForkId(parentRunId, frame)`                                     | Mints and durably reserves the run id the next fork off that frame will carry, without creating a run.                                                                                                                                                                                                   |
 | `abandonForkIntents(staleBeforeMs)`                                  | Every reservation older than `staleBeforeMs` whose fork never committed, handed back exactly once.                                                                                                                                                                                                       |
-| `createFork(parentRunId, frame, childRunId?, override?, rebinding?)` | Branches a new run off a frame, copying the journal prefix and the attempts that existed there, and recording the `fork` edge. `override` replaces one copied step result in the same transaction; `rebinding` replaces the child's payload and carries named spawned children. The parent is untouched. |
+| `createFork(parentRunId, frame, childRunId?, override?, rebinding?)` | Branches a new run off a frame, copying the journal prefix and the attempts that existed there, and recording the `fork` edge. `override` replaces one copied step result in the same transaction; `rebinding` replaces the child's payload and carries named spawned children. The parent is untouched. A `childRunId` naming a run that already exists, the parent included, is refused `invalid`. |
 | `recordReceipt(receipt)`                                             | Persists one compensation receipt against its audit row, before the journal range that effect belongs to is truncated.                                                                                                                                                                                   |
 
 Every method fails as `TimeTravelError`.
@@ -423,7 +425,10 @@ A `TimeTravelStore` held entirely in JavaScript objects: deterministic, needs
 no database, and browser-safe.
 
 ```ts
-const make: (options?: Options) => TimeTravelStore.Service & { readonly state: () => MemoryState }
+const make: (options?: Options) => TimeTravelStore.Service & {
+  readonly state: () => MemoryState
+  readonly append: (record: JournalRecord) => void
+}
 const layer: (options?: Options) => Layer<TimeTravelStore.TimeTravelStore>
 ```
 
@@ -434,6 +439,9 @@ crashing. `JournalRecord` is one seeded record: `{ runId, seq, eventId,
 lineageId?, payload, eventType? }`. `MemoryState` is the whole world as
 `records`, `archived`, `edges`, `audits`, `receipts`, `snapshots`, `liveRuns`,
 `runOwners`, `runStatuses`, and `forkIntents`, copied on every read.
+`append(record)` writes one journal record after construction, standing in for
+the journal writer a real run has; a second record at the same `(runId, seq)`
+throws `invalid`.
 
 ## SqlTimeTravelStore
 
