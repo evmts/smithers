@@ -344,6 +344,50 @@ describe("SmithersError", () => {
     expect(Reflect.get(error.details!, visible)).toBe(nested)
   })
 
+  it("captures enumerable symbol accessors once and never reads hidden symbol accessors", () => {
+    const visible = Symbol("visible")
+    const hidden = Symbol("hidden")
+    const value = { reason: "transport" }
+    let reads = 0
+    const details = {
+      get [visible]() {
+        reads++
+        if (reads > 1) throw new Error("symbol context read twice")
+        return value
+      }
+    }
+    Object.defineProperty(details, hidden, {
+      get(): never {
+        throw new Error("hidden symbol context read")
+      }
+    })
+
+    const error = new SmithersError("INTEGRATION_ERROR", "failed", details)
+    expect(Reflect.get(error.details!, visible)).toBe(value)
+    expect(Reflect.get(error.toJSON().details as object, visible)).toBe(value)
+    expect(JSON.parse(JSON.stringify(error)).details).toEqual({})
+    expect(Object.hasOwn(error.details!, hidden)).toBe(false)
+    expect(reads).toBe(1)
+  })
+
+  it("propagates the exact value thrown by an enumerable symbol context accessor", () => {
+    const key = Symbol("failure")
+    const failure = { reason: "context unavailable" }
+    const details = {
+      get [key](): never {
+        throw failure
+      }
+    }
+
+    let caught: unknown
+    try {
+      new SmithersError("INTEGRATION_ERROR", "failed", details)
+    } catch (error) {
+      caught = error
+    }
+    expect(caught).toBe(failure)
+  })
+
   it("propagates the original failure when copying context invokes a throwing accessor", () => {
     const failure = new Error("context unavailable")
     const details = {
