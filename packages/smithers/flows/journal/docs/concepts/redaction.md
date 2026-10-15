@@ -64,6 +64,9 @@ and a count under a plural `tokens` name (`max_tokens: 4096`) is kept.
 A credential name that is a URL's user
 (`https://x-access-token:…@github.com/acme/app.git`) takes only the password
 before `@`, so the host and path a failed clone is diagnosed by are kept.
+A URL password runs to the last `@` before the host, as a URL parser reads it,
+so `redis://:pa:ss@cache` and `mysql://root:p@ss@db` lose the whole password,
+and a URL with no password (`ssh://git@host`) is unchanged.
 
 In a journal row a bare value is one token, and a string or container the text
 never closes stops at the end of its line: a stray backtick in an agent's

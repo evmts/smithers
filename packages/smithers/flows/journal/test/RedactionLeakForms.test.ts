@@ -30,6 +30,44 @@ describe("Git OAuth credential usernames", () => {
   })
 })
 
+describe("URL userinfo passwords", () => {
+  // WHATWG URL parsing ends userinfo at the LAST `@` of the authority, and
+  // RFC 3986 allows `:` inside a password. Redis URLs carry no username.
+  it.each([
+    ["an empty username", `redis://:${secret}@cache.invalid:6379/0`, "redis://:[REDACTED]@cache.invalid:6379/0"],
+    [
+      "a colon in the password",
+      `postgres://app:${secret}:x@db.invalid/app`,
+      "postgres://app:[REDACTED]@db.invalid/app"
+    ],
+    [
+      "a raw at sign in the password",
+      `mysql://root:p@${secret}@db.invalid/app`,
+      "mysql://root:[REDACTED]@db.invalid/app"
+    ],
+    [
+      "a quoted URL beside another at sign",
+      `{"u":"amqp://g:${secret}@mq.invalid","v":"a@b"}`,
+      `{"u":"amqp://g:[REDACTED]@mq.invalid","v":"a@b"}`
+    ]
+  ])("redacts the whole password with %s", (_name, input, expected) => {
+    for (const redact of [Redaction.redact, Redaction.redactDiagnostic]) {
+      const output = redact(input)
+      expect(output).toBe(expected)
+      expect(output).not.toContain(secret)
+      expect(redact(output)).toBe(output)
+    }
+  })
+
+  it.each([
+    "https://host.invalid:8443/path?q=a@b",
+    "https://host.invalid:8443#frag@x",
+    "ssh://git@host.invalid:22/repo"
+  ])("leaves a URL without a password unchanged: %s", (input) => {
+    expect(Redaction.redact(input)).toBe(input)
+  })
+})
+
 const pem = [
   "-----BEGIN RSA PRIVATE KEY-----",
   ...Array.from({ length: 12 }, (_, line) => `${secret}${line}`.padEnd(64, "A")),

@@ -779,7 +779,14 @@ export const defaultRules: ReadonlyArray<Rule> = [
     // of `aaaaaaaa-` cost 11 seconds, on the path every journal write and every
     // log line takes. A scheme longer than 30 characters is not one this net is
     // for, and the cap makes each start position cost a constant.
-    pattern: /\b([a-z][a-z0-9+.-]{0,30}:\/\/[^\s:@/]+):(?!\[REDACTED\]@)[^\s:@/]+@/gi,
+    //
+    // The username may be empty (`redis://:password@host`), and the password
+    // runs to the LAST `@` before the authority ends, as a URL parser reads
+    // it: RFC 3986 allows `:` in a password and a raw `@` is common in
+    // connection strings. Stopping at the first `:` or `@` left the tail of
+    // such a password in the row. Quotes and backslashes end the scan so a
+    // URL inside JSON text never swallows the next string.
+    pattern: /\b([a-z][a-z0-9+.-]{0,30}:\/\/[^\s:@/]*):(?!\[REDACTED\]@)[^\s/?#"'`\\]*@/gi,
     replace: "$1:[REDACTED]@"
   },
   {
