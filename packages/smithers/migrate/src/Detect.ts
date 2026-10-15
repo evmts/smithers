@@ -1469,17 +1469,24 @@ export const scan = (
 /**
  * Every version a lockfile resolved the `effect` package to, deduplicated and
  * sorted. Reads the four lockfile dialects by their own spelling of a resolved
- * package: `effect@<version>` keys (pnpm, bun, yarn classic), the
- * `node_modules/effect` entry (npm), and a yarn berry `effect@npm:` key with
- * its `version:` line.
+ * package: `effect@<version>` keys (pnpm, bun), every `node_modules/effect`
+ * entry including copies nested under another package (npm), and a yarn
+ * `effect@<range>` key with the `version` line under it (classic and berry).
  *
  * @category scanners
  * @since 1.0.0-rc.0
  */
 export const resolvedEffectVersions = (lock: string): ReadonlyArray<string> => {
   const found = new Set<string>()
-  for (const match of lock.matchAll(/(?<![\w@/.-])effect@(\d[^\s"',:()]*)/g)) found.add(match[1]!)
-  for (const match of lock.matchAll(/"node_modules\/effect":\s*\{[^}]*?"version":\s*"([^"]+)"/g)) found.add(match[1]!)
-  for (const match of lock.matchAll(/^"?effect@npm:[^\n]*:\n\s+version:? "?([^"\n]+)"?/gm)) found.add(match[1]!)
+  // A full version only: a yarn key's `effect@3` is a requested range, not a resolution.
+  for (const match of lock.matchAll(/(?<![\w@/.-])effect@(\d+\.\d+\.\d+[^\s"',:()]*)/g)) found.add(match[1]!)
+  // npm keys a copy nested under another package or a workspace member by its
+  // full install path, and that nested copy is the one that splits a runtime.
+  for (const match of lock.matchAll(/"(?:[^"\n]*\/)?node_modules\/effect":\s*\{[^}]*?"version":\s*"([^"]+)"/g)) {
+    found.add(match[1]!)
+  }
+  // yarn keys an entry by the requested ranges, `effect@npm:^4.0.4` in berry
+  // and `effect@^3.10.0` in classic, and states the resolution on the next line.
+  for (const match of lock.matchAll(/^"?effect@[^\n]*:\n\s+version:? "?([^"\n]+)"?/gm)) found.add(match[1]!)
   return [...found].sort()
 }

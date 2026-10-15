@@ -266,6 +266,36 @@ describe("Detect.scan over jsx-single", () => {
     expect(Detect.resolvedEffectVersions("nothing here")).toEqual([])
   })
 
+  it("reads a yarn classic range key and an npm install nested under another package", () => {
+    // yarn v1 keys an entry by the range a manifest asked for and states the
+    // resolved version on the next line, quoted and with no colon.
+    const yarnClassic = [
+      "\"@effect/platform@^0.1.0\":",
+      "  version \"0.1.2\"",
+      "",
+      "effect@^3.10.0, effect@3:",
+      "  version \"3.10.4\"",
+      "  resolved \"https://registry.yarnpkg.com/effect/-/effect-3.10.4.tgz#abc\"",
+      ""
+    ].join("\n")
+    expect(Detect.resolvedEffectVersions(yarnClassic)).toEqual(["3.10.4"])
+    // npm keeps a second copy under the package that needs it, which is the
+    // copy that splits a project's Effect runtime in two.
+    const npmNested = JSON.stringify(
+      {
+        packages: {
+          "node_modules/effect": { version: "4.0.4" },
+          "node_modules/legacy/node_modules/effect": { version: "3.19.0" },
+          "packages/app/node_modules/effect": { version: "3.18.1" },
+          "node_modules/@scope/effect": { version: "9.9.9" }
+        }
+      },
+      null,
+      2
+    )
+    expect(Detect.resolvedEffectVersions(npmNested)).toEqual(["3.18.1", "3.19.0", "4.0.4"])
+  })
+
   it.effect("reports every path it could not read or would not descend into, instead of dropping it", () =>
     Effect.gen(function*() {
       const root = copyFixture("jsx-single")
