@@ -17,4 +17,21 @@ describe("isRecord", () => {
       expect(isRecord(value)).toBe(true)
     }
   })
+
+  it("classifies live proxies without calling object inspection traps", () => {
+    const inspection = () => {
+      throw new Error("must not inspect the candidate")
+    }
+    const traps = { get: inspection, ownKeys: inspection, getPrototypeOf: inspection }
+    expect(isRecord(new Proxy({}, traps))).toBe(true)
+    expect(isRecord(new Proxy([], traps))).toBe(false)
+  })
+
+  it("propagates the native TypeError for revoked proxies", () => {
+    for (const target of [{}, []]) {
+      const { proxy, revoke } = Proxy.revocable(target, {})
+      revoke()
+      expect(() => isRecord(proxy)).toThrow(TypeError)
+    }
+  })
 })

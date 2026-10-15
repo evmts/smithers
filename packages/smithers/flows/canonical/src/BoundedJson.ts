@@ -1,6 +1,8 @@
 /**
  * Descriptor-only JSON admission and encoded-byte accounting for durable boundaries.
- * Never invokes getters or `toJSON`; admitted values are detached and frozen.
+ * Never invokes getters or `toJSON`; ordinary JSON copies are detached and frozen.
+ * A strict `native` adapter is trusted to provide its own detached leaf and byte
+ * count; that returned value is not validated, copied, or frozen.
  * A Proxy's `ownKeys`, `getOwnPropertyDescriptor`, and `getPrototypeOf` traps
  * still run, so only JSON.parse output or other inert data is untrusted input.
  *
@@ -76,6 +78,9 @@ const shortEscaped = new Set([0x08, 0x09, 0x0a, 0x0c, 0x0d])
  * every other C0 control as `\u00XX`, so those five cost two bytes here and the
  * rest cost six.
  *
+ * @param value - Raw text whose JSON quotes and escapes contribute to the count.
+ * @param maximum - Inclusive byte limit; defaults to no limit.
+ * @returns The encoded byte count, or undefined for malformed or oversized text.
  * @category encoding
  * @since 1.0.0
  */
@@ -117,11 +122,18 @@ export type StrictLimits = { readonly [K in Exclude<keyof Limits, "maxTotalMembe
  * @since 1.0.0
  */
 export interface StrictOptions {
+  /** Produce frozen Object.prototype records; reserved keys are still refused. */
   readonly ordinaryRecords?: boolean
   /** Preflight text lengths and identify rejected keys by position. */
   readonly boundedText?: boolean
+  /** Called on each frozen copy in postorder, even before a later refusal. Throws become inspection refusals. */
   readonly onContainer?: (value: ReadonlyArray<Json> | { readonly [key: string]: Json }) => void
-  /** Detach an explicitly supported non-ordinary leaf with its encoded byte size. */
+  /**
+   * Adapt a nonordinary, non-array object as a trusted leaf. The returned value
+   * is not validated, copied, or frozen. Supply an accurate nonnegative safe
+   * integer byte count, or return undefined to refuse the object. Throws become
+   * inspection refusals.
+   */
   readonly native?: (value: object) => { readonly value: unknown; readonly bytes: number } | undefined
 }
 
@@ -363,6 +375,12 @@ const walk = (
 /**
  * Copies a JSON tree without invoking getters or `toJSON`, under explicit
  * byte, depth, node, and member limits. Proxy inspection traps still run.
+ * Shared references are copied per occurrence; only ancestor cycles refuse.
+ *
+ * @param input - Parsed JSON or another inert candidate.
+ * @param limits - Nonnegative resource bounds; root depth is zero.
+ * @param options - Disable early object node/byte preflight with preflightObjects: false; final bounds still apply.
+ * @returns A frozen detached copy and byte count, or a located refusal.
  *
  * @category validation
  * @since 1.0.0-rc.0
@@ -378,6 +396,15 @@ export const admit = (
 
 /**
  * Copies a strict JSON tree with cumulative bounds and stable value paths.
+ * Rejects repeated object references, hidden members, reserved record keys,
+ * symbols, and nonordinary arrays. Container callbacks run in postorder;
+ * callbacks can observe earlier children before a later refusal. Native
+ * adapters supply trusted leaves outside the JSON copy/freeze guarantee.
+ *
+ * @param input - Parsed JSON or another inert candidate.
+ * @param limits - Required byte, node, text, container-depth, and cumulative member bounds.
+ * @param options - Output prototypes, key diagnostics, container callbacks, and trusted native adapters.
+ * @returns A copied tree or a JSON-style path and complaint; no byte count.
  *
  * @category validation
  * @since 1.0.0

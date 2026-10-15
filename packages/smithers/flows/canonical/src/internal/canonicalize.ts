@@ -149,6 +149,10 @@ const caused = (
  * primitive unboxes from its internal slot (stringify consults overridden
  * `toString`/`valueOf`, letting a mutated wrapper change the bytes).
  *
+ * @param input - Value to serialize using the documented JSON reduction rules.
+ * @param options - Optional legacy lone-surrogate escaping; defaults to strict RFC 8785.
+ * @returns Sorted canonical JSON text, or legacy sorted JSON when escaping is enabled.
+ * @throws CanonicalError with a stable code and field path when serialization is refused.
  * @category constructors
  * @since 0.1.0
  */

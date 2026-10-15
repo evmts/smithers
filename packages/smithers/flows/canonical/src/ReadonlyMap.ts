@@ -5,7 +5,13 @@
  */
 
 /**
- * Copies entries behind a facade that exposes no mutation methods.
+ * Copies entries behind a frozen facade that exposes no mutation methods.
+ * Keys and values retain their identity and are not copied or frozen. Duplicate
+ * keys retain their first insertion position and use their last value.
+ *
+ * @param entries - Entries to copy; defaults to an empty map.
+ * @returns A read-only facade whose forEach callback receives that facade.
+ * @throws Propagates native Map construction errors for invalid iterables.
  *
  * @category constructors
  * @since 1.0.0
