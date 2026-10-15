@@ -13,6 +13,40 @@ const stores = PlanStore.layer.pipe(Layer.provideMerge(Migrations.layer.pipe(Lay
 const key = `key1_${"0".repeat(64)}`
 
 describe("plan integrity admission", () => {
+  for (const table of ["flows_plan_nodes", "flows_plan_edges"] as const) {
+    it.effect(`rolls back a rejected append to ${table} and permits retry`, () =>
+      withCrypto(
+        Effect.gen(function*() {
+          const base = yield* compile([draft("root")])
+          const grown = yield* Plan.append(base, [
+            draft("first", { inputs: [{ _tag: "Pending", from: "root" }] }),
+            draft("second", { inputs: [{ _tag: "Pending", from: "first" }] })
+          ])
+          const store = yield* PlanStore.PlanStore
+          const sql = yield* SqlClient.SqlClient
+          yield* store.record(base, 0)
+          yield* Dialect.trigger(sql, {
+            name: "refuse_appended_row",
+            table,
+            event: "BEFORE INSERT",
+            when: table === "flows_plan_nodes" ? "NEW.node_id = 'second'" : "NEW.to_node = 'second'",
+            reject: "storage constraint"
+          })
+
+          expect((yield* Effect.flip(store.append(grown))).code).toBe("constraint")
+          expect(Option.getOrThrow(yield* store.get(base.planId))).toEqual(base)
+          expect((yield* sql<{ count: number }>`SELECT COUNT(*) AS count FROM flows_plan_nodes`)[0]!.count).toBe(1)
+          expect((yield* sql<{ count: number }>`SELECT COUNT(*) AS count FROM flows_plan_edges`)[0]!.count).toBe(0)
+
+          yield* TestDatabase.dropTrigger(sql, "refuse_appended_row")
+          yield* store.append(grown)
+          expect(Option.getOrThrow(yield* store.get(base.planId))).toEqual(grown)
+          expect((yield* sql<{ count: number }>`SELECT COUNT(*) AS count FROM flows_plan_nodes`)[0]!.count).toBe(3)
+          expect((yield* sql<{ count: number }>`SELECT COUNT(*) AS count FROM flows_plan_edges`)[0]!.count).toBe(2)
+        }).pipe(Effect.provide(stores))
+      ))
+  }
+
   it.effect("refuses forged store admission without writing or misreporting ExistingSame", () =>
     withCrypto(
       Effect.gen(function*() {
