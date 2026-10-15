@@ -15,7 +15,9 @@ import * as Target from "./Target.ts"
  * Attributes for {@link Typecheck}.
  *
  * `cwd` is the workspace-relative package directory `tsc` runs in and
- * defaults to the workspace root, so `tsconfig` stays package-relative.
+ * defaults to the workspace root, so `tsconfig` stays package-relative. A
+ * `//` tsconfig is workspace-rooted and is rendered relative to `cwd` before
+ * `tsc` sees it.
  *
  * @category schemas
  * @since 0.1.0
@@ -52,13 +54,13 @@ const checkArgv = (attrs: Attrs): ReadonlyArray<string> =>
     ? PackageManager.exec(attrs.packageManager, [
       "tsc",
       "-b",
-      attrs.tsconfig.path,
+      Input.rootRelative(attrs.cwd, attrs.tsconfig.path),
       ...(attrs.incremental ? [] : ["--force"])
     ])
     : PackageManager.exec(attrs.packageManager, [
       "tsc",
       "-p",
-      attrs.tsconfig.path,
+      Input.rootRelative(attrs.cwd, attrs.tsconfig.path),
       "--noEmit",
       ...(attrs.incremental ? ["--incremental"] : [])
     ])

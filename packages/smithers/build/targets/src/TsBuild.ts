@@ -108,7 +108,8 @@ export type Tool = typeof Tool.Type
  * defaults to the workspace root, so `tsconfig`, `entries`, and `outDir`
  * stay package-relative. `tsconfig` and `entries` are declared input files;
  * `outDir` stays a string because it declares an output path rather than
- * referencing a file the target reads.
+ * referencing a file the target reads. A `//` tsconfig or entry is
+ * workspace-rooted and is rendered relative to `cwd` before the tool sees it.
  *
  * `entries` and `format` sit beside `tool` rather than inside its `tsup`
  * variant because `PackageJson` derives a published package's `exports` from
@@ -166,13 +167,17 @@ export type Attrs = typeof Attrs.Type
 const buildArgv = (attrs: Attrs): ReadonlyArray<string> => {
   switch (attrs.tool.name) {
     case "tsc":
-      return PackageManager.exec(attrs.packageManager, ["tsc", "-p", attrs.tsconfig.path])
+      return PackageManager.exec(attrs.packageManager, [
+        "tsc",
+        "-p",
+        Input.rootRelative(attrs.cwd, attrs.tsconfig.path)
+      ])
     case "program":
       return Runtime.run(attrs.packageManager?.runtime, [Input.rootRelative(attrs.cwd, attrs.tool.entry.path)])
     case "tsup":
       return PackageManager.exec(attrs.packageManager, [
         "tsup",
-        ...attrs.entries.map((entry) => entry.path),
+        ...attrs.entries.map((entry) => Input.rootRelative(attrs.cwd, entry.path)),
         "--format",
         attrs.format === "dual" ? "esm,cjs" : attrs.format,
         "--out-dir",

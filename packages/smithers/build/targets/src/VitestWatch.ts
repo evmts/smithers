@@ -16,7 +16,7 @@ import * as Target from "./Target.ts"
  *
  * `cwd` is the workspace-relative directory the runner starts in and defaults
  * to the workspace root. The `config` path resolves from `cwd` when the tool
- * runs.
+ * runs; a `//` config is workspace-rooted and is rendered relative to `cwd`.
  *
  * @category schemas
  * @since 0.1.0
@@ -72,7 +72,7 @@ export const VitestWatch = Target.make("VitestWatch", {
       argv: PackageManager.exec(attrs.packageManager, [
         "vitest",
         "watch",
-        ...(attrs.config === null ? [] : ["--config", attrs.config.path]),
+        ...(attrs.config === null ? [] : ["--config", Input.rootRelative(attrs.cwd, attrs.config.path)]),
         "--environment",
         attrs.environment
       ])

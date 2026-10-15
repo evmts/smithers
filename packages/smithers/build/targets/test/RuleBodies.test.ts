@@ -101,6 +101,14 @@ describe("Typecheck", () => {
       .toEqual(["pnpm", "exec", "tsc", "-b", "tsconfig.json"])
   })
 
+  it("renders a workspace-rooted tsconfig against its own cwd in both modes", () => {
+    const rooted = { ...base, tsconfig: Input.file("//tsconfig.base.json") }
+    expect(plannedArgv(Typecheck.Typecheck({ ...rooted, buildMode: false, incremental: false })).slice(3, 5))
+      .toEqual(["-p", "../../tsconfig.base.json"])
+    expect(plannedArgv(Typecheck.Typecheck({ ...rooted, buildMode: true, incremental: true })).slice(3, 5))
+      .toEqual(["-b", "../../tsconfig.base.json"])
+  })
+
   it("runs from the declared package directory", () => {
     const call = plannedCalls(Typecheck.Typecheck({ ...base, buildMode: false, incremental: false }))[0]
     expect(call?.payload["cwd"]).toBe("packages/example")
@@ -194,6 +202,18 @@ describe("DtsBuild", () => {
     expect(calls.at(-1)?.action).toBe("smithers-build/capture-outputs")
     expect(calls.at(-1)?.payload).toEqual({ cwd: "packages/example", paths: ["dist/types"] })
     expect(Target.metadata(target).outputs).toEqual({ cwd: "packages/example", paths: ["dist/types"] })
+  })
+
+  it("renders workspace-rooted tsconfig and entries against its own cwd", () => {
+    const rooted = {
+      ...base,
+      entries: [Input.file("//packages/example/src/index.ts")],
+      tsconfig: Input.file("//tsconfig.build.json")
+    }
+    expect(plannedArgv(DtsBuild.DtsBuild({ ...rooted, tool: { name: "tsc", declarationMap: true } })).slice(2, 5))
+      .toEqual(["tsc", "-p", "../../tsconfig.build.json"])
+    expect(plannedArgv(DtsBuild.DtsBuild({ ...rooted, tool: { name: "tsup" } })).slice(2, 4))
+      .toEqual(["tsup", "src/index.ts"])
   })
 })
 

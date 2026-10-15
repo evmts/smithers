@@ -225,6 +225,22 @@ describe("Vitest rules", () => {
       .toEqual(["pnpm", "exec", "vitest", "watch", "--environment", "node"])
   })
 
+  it("renders a workspace-rooted config against its own cwd in every Vitest rule", () => {
+    const rooted = { ...base, config: Input.file("//vitest.shared.ts") }
+    const { environment: _environment, ...coverageRooted } = rooted
+    const argvs = [
+      plannedArgv(Vitest({ ...rooted, coverage: false, passWithNoTests: false })),
+      plannedArgv(VitestWatch(rooted)),
+      plannedArgv(VitestCoverage({
+        ...coverageRooted,
+        provider: "v8" as const,
+        reportsDirectory: "coverage",
+        thresholds: { branches: 1, functions: 1, lines: 1, statements: 1 }
+      }))
+    ]
+    for (const argv of argvs) expect(argv[argv.indexOf("--config") + 1]).toBe("../../vitest.shared.ts")
+  })
+
   it("VitestCoverage declares the report directory it captures", () => {
     const { environment: _environment, ...coverageBase } = base
     const target = VitestCoverage({
@@ -308,6 +324,18 @@ describe("TsBuild", () => {
   it("refuses a tsc declaration that asks for a dual distribution", () => {
     expect(() => TsBuild({ ...base, tool: { name: "tsc" }, format: "dual" }))
       .toThrow(/tsc tool cannot produce the dual format/)
+  })
+
+  it("renders a workspace-rooted tsconfig and entries against its own cwd", () => {
+    const rooted = {
+      ...base,
+      entries: [Input.file("//packages/example/src/index.ts")],
+      tsconfig: Input.file("//tsconfig.build.json")
+    }
+    expect(plannedArgv(TsBuild({ ...rooted, tool: { name: "tsc" }, format: "esm" })))
+      .toEqual(["pnpm", "exec", "tsc", "-p", "../../tsconfig.build.json"])
+    expect(plannedArgv(TsBuild({ ...rooted, tool: { name: "tsup", external: [] }, format: "esm" })).slice(2, 4))
+      .toEqual(["tsup", "src/index.ts"])
   })
 })
 

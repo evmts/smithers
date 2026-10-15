@@ -18,7 +18,8 @@ import * as ToolBuild from "./ToolBuild.ts"
  *
  * `cwd` is the workspace-relative directory the runner starts in and defaults
  * to the workspace root. The `config` path and `reportsDirectory` resolve
- * from `cwd` when the tool runs. `config`, `tests`, and `sources` are declared
+ * from `cwd` when the tool runs; a `//` config is workspace-rooted and is
+ * rendered relative to `cwd`. `config`, `tests`, and `sources` are declared
  * inputs; `reportsDirectory` stays a string because it declares an output
  * path rather than referencing a file the target reads.
  *
@@ -102,7 +103,7 @@ export const VitestCoverage = Target.make("VitestCoverage", {
       argv: PackageManager.exec(attrs.packageManager, [
         "vitest",
         "run",
-        ...(attrs.config === null ? [] : ["--config", attrs.config.path]),
+        ...(attrs.config === null ? [] : ["--config", Input.rootRelative(attrs.cwd, attrs.config.path)]),
         "--coverage.enabled=true",
         `--coverage.provider=${attrs.provider}`,
         `--coverage.reportsDirectory=${attrs.reportsDirectory}`,

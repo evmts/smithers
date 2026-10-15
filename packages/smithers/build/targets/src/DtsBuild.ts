@@ -84,7 +84,8 @@ export type Tool = typeof Tool.Type
  * defaults to the workspace root, so `tsconfig`, `entries`, and `outDir`
  * stay package-relative. `tsconfig` and `entries` are declared input files;
  * `outDir` stays a string because it declares an output path rather than
- * referencing a file the target reads.
+ * referencing a file the target reads. A `//` tsconfig or entry is
+ * workspace-rooted and is rendered relative to `cwd` before the tool sees it.
  *
  * @category schemas
  * @since 0.1.0
@@ -120,7 +121,7 @@ const declarationArgv = (attrs: Attrs): ReadonlyArray<string> =>
     ? PackageManager.exec(attrs.packageManager, [
       "tsc",
       "-p",
-      attrs.tsconfig.path,
+      Input.rootRelative(attrs.cwd, attrs.tsconfig.path),
       "--declaration",
       "--emitDeclarationOnly",
       "--declarationMap",
@@ -128,7 +129,7 @@ const declarationArgv = (attrs: Attrs): ReadonlyArray<string> =>
     ])
     : PackageManager.exec(attrs.packageManager, [
       "tsup",
-      ...attrs.entries.map((entry) => entry.path),
+      ...attrs.entries.map((entry) => Input.rootRelative(attrs.cwd, entry.path)),
       "--dts-only",
       "--out-dir",
       attrs.outDir
