@@ -32,7 +32,11 @@ function TurnElapsed({ state, startedAt, finishedAt, produced }: { state: string
   // A turn that has committed nothing is not working yet: production turn
   // 83bca322 spent 206.8 s deferred for a busy fleet while this line claimed
   // "Working for 3m26". Until output arrives, say the one true thing, that no
-  // model host has answered, and leave the cause to the typed outcome.
+  // model host has answered, and leave the cause to the typed outcome. Only
+  // the author's own turn can say it, because the projection shares a turn's
+  // reasoning and tool frames with its author alone (chat/shared.go
+  // sharedFrame): for anyone else an empty frame list means nothing has been
+  // shared yet, not that nothing ran, and a host may well be working.
   if (working) return startedAt === undefined ? null
     : produced ? <p className="turn-elapsed" data-turn-elapsed="working">Working for {elapsed(live * 1000)}</p>
     : <p className="turn-elapsed" data-turn-elapsed="waiting">Waiting for a model host · {elapsed(live * 1000)}</p>
@@ -124,7 +128,7 @@ export function SharedConversation({ source, localCardIds, localEntries = [] }: 
       return <div key={turn.id} data-shared-turn={turn.id} data-state={turn.state}>
         {turn.subject ? null : <>
           <MessageScrollerItem style={{ contentVisibility: "visible" }} messageId={`${turn.id}:prompt`}><EntryRow kind="prompt" author={{ kind: "person", ...person, color_index: color }} title="" tone="quiet" card={<div data-composer-prompt={sessions[0]?.requests?.find(row => row.turnId === turn.id)?.id ?? turn.id}><Markdown content={turn.prompt} /></div>} onAction={() => {}} /></MessageScrollerItem>
-          <MessageScrollerItem style={{ contentVisibility: "visible" }} messageId={`${turn.id}:answer`}><EntryRow kind="answer" author={answer} title="" tone="quiet" action={inspect.actions[0]} contextActions={turn.context ? contextActions(turn.context, (tag, input) => controller.runCommand(tag, JSON.stringify(input)), contextOpenAction) : undefined} context={turn.context ? { count: turn.context.length, items: turn.context } : undefined} card={<>{reply}<TurnElapsed state={turn.state} startedAt={turn.startedAt} finishedAt={turn.finishedAt} produced={frames.length > 0} />{trace}{answers ? <div className="message-answer-actions">{answers.actions.map(action => <DiffAction key={action.tag} action={action} onAction={answers.onAction} />)}</div> : null}<span className="message-actions"><CopyMessageButton text={text} onCopy={value => controller.runCommandForResult("chat.copy-message", value)} /></span>{failure?.type === "done" && failure.error ? <FailureNotice role="status" failure={sharedTurnFailure({ ...failure, error: failure.error })} /> : null}</>} onAction={inspect.onAction} /></MessageScrollerItem>
+          <MessageScrollerItem style={{ contentVisibility: "visible" }} messageId={`${turn.id}:answer`}><EntryRow kind="answer" author={answer} title="" tone="quiet" action={inspect.actions[0]} contextActions={turn.context ? contextActions(turn.context, (tag, input) => controller.runCommand(tag, JSON.stringify(input)), contextOpenAction) : undefined} context={turn.context ? { count: turn.context.length, items: turn.context } : undefined} card={<>{reply}<TurnElapsed state={turn.state} startedAt={turn.startedAt} finishedAt={turn.finishedAt} produced={frames.length > 0 || turn.authorLogin !== owner} />{trace}{answers ? <div className="message-answer-actions">{answers.actions.map(action => <DiffAction key={action.tag} action={action} onAction={answers.onAction} />)}</div> : null}<span className="message-actions"><CopyMessageButton text={text} onCopy={value => controller.runCommandForResult("chat.copy-message", value)} /></span>{failure?.type === "done" && failure.error ? <FailureNotice role="status" failure={sharedTurnFailure({ ...failure, error: failure.error })} /> : null}</>} onAction={inspect.onAction} /></MessageScrollerItem>
         </>}
         {turn.subject ? frames.flatMap(frame => frame.type === "card" ? [renderCard(frame.card.id)] : []) : null}
       </div>

@@ -228,7 +228,10 @@ test("a capacity-deferred turn waits honestly and keeps its long diagnostic insi
   const sentence = "Every model host is busy right now. Nothing in this conversation was lost; send the message again in a moment."
   const diagnostic = `${sentence} host_no_capacity sandbox.create.${"x".repeat(400)}`
   let frames: AgentTurnFrame[] = [], state = "running", finishedAt: number | undefined
-  const conversation = () => ({ id: "main", entries: [{ id: "capacity-turn", author: 1, authorLogin: "ben", runId: "capacity-run", prompt: "Short reply please", state, startedAt, ...(finishedAt === undefined ? {} : { finishedAt }), frames }] })
+  // The turn is the signed-in owner's own, as production turn 83bca322 was:
+  // only its author is shown every frame it produced, so only their line can
+  // read an empty one as "no model host has answered".
+  const conversation = () => ({ id: "main", entries: [{ id: "capacity-turn", author: 1, authorLogin: "canary-owner", runId: "capacity-run", prompt: "Short reply please", state, startedAt, ...(finishedAt === undefined ? {} : { finishedAt }), frames }] })
   await page.route("**/api/conversations/main", route => route.fulfill({ json: conversation() }))
   await page.route("**/api/conversations/main/view-state", route => route.fulfill({ json: {} }))
   let publish = () => {}

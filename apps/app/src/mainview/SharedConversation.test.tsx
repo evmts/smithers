@@ -78,8 +78,10 @@ const turnOf = (fields: Record<string, unknown>) => SharedConversationSchema.par
   id: "capacity", author: 3, authorLogin: "ben", runId: "run-capacity", prompt: "Short reply please",
   startedAt: Date.now() - 206_802, ...fields
 }] })
-const renderShared = async (conversation: ReturnType<typeof SharedConversationSchema.parse>) => {
+/* The viewer defaults to the turn's own author, as in the production turn. */
+const renderShared = async (conversation: ReturnType<typeof SharedConversationSchema.parse>, viewer = "ben") => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: viewer, admin: false, scopesPlain: null }).isPersisted.promise
   const controller = { store, runCommand: () => {}, runCommandForResult: async () => undefined } as unknown as AppController
   const source = { get: () => ({ conversation }), subscribe: () => () => {} } as unknown as SharedConversationSeam
   try {
@@ -98,6 +100,20 @@ test("a turn with no committed output says it is waiting for a host, not working
   expect(working).toContain('data-turn-elapsed="working"')
   expect(working).toContain("Working for")
   expect(working).not.toContain("Waiting for a model host")
+})
+
+/*
+ * The projection shares a turn's reasoning and tool frames with its author
+ * alone (packages/backend/internal/chat/shared.go sharedFrame), so another
+ * member watching a turn that is reasoning or running tools sees no frames at
+ * all. Reading that as "no model host has answered" would tell them a host is
+ * idle while one is working; their line keeps the elapsed work it always had.
+ */
+test("another member's turn with nothing shared yet still says it is working", async () => {
+  const html = await renderShared(turnOf({ state: "running", frames: [] }), "maya")
+  expect(html).toContain('data-turn-elapsed="working"')
+  expect(html).toContain("Working for")
+  expect(html).not.toContain("Waiting for a model host")
 })
 
 test("a terminal capacity refusal names the busy fleet first and keeps the producer's words in Details", async () => {
