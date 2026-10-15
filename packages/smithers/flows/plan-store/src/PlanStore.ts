@@ -85,13 +85,44 @@ export type RecordResult =
  * @slop
  */
 export interface Service {
-  /** Records generation 0 of a plan. */
+  /**
+   * Verifies and atomically records generation 0. An identical stored plan
+   * returns `ExistingSame`; a different verified plan under the same id
+   * returns `Conflict` with the stored digest and leaves storage unchanged.
+   *
+   * @param plan - Compiled generation-zero plan whose base digest equals its digest.
+   * @param createdAtMs - Creation time in milliseconds, a nonnegative safe integer.
+   * @returns An Effect yielding the first-writer-wins recording outcome.
+   * Fails with `invalid_plan` for invalid input, `decode_failed` for corrupt
+   * existing content, `constraint` for rejected SQL rows, or
+   * `persistence_failed` for other database failures.
+   * @since 0.1.0
+   */
   readonly record: (plan: Plan.Plan, createdAtMs: number) => Effect.Effect<RecordResult, PlanStoreError>
-  /** Appends the newest generation's nodes and edges and advances the digest. */
+  /**
+   * Verifies and atomically appends the newest generation's nodes and edges,
+   * advancing the digest only when the recorded envelope matches its prefix.
+   * A rejected insert rolls back both the new rows and the envelope advance.
+   *
+   * @param plan - Complete compiled plan, including its recorded prefix and a nonempty newest generation.
+   * @returns An Effect completing when the generation is stored. Fails with
+   * `invalid_plan` for invalid input, `constraint` for an absent, moved or
+   * divergent prefix or rejected SQL row, `decode_failed` for corrupt stored
+   * content found while diagnosing a refused append, or `persistence_failed`
+   * for other database failures. Repeating a successful append is refused.
+   * @since 0.1.0
+   */
   readonly append: (plan: Plan.Plan) => Effect.Effect<void, PlanStoreError>
   /**
    * Reads the whole plan back, nodes in recorded order. Dependencies come from
    * each verified node's `dependsOn`; `flows_plan_edges` is never read.
+   *
+   * @param planId - Exact identifier supplied when the plan was recorded.
+   * @returns An Effect yielding `None` only when no plan is recorded, or
+   * `Some` containing the verified immutable plan. Fails with `decode_failed`
+   * for corrupt stored content, `constraint` for a database constraint error,
+   * or `persistence_failed` for other database failures.
+   * @since 0.1.0
    */
   readonly get: (planId: string) => Effect.Effect<Option.Option<Plan.Plan>, PlanStoreError>
 }
