@@ -42,7 +42,9 @@ run actually asked, log the request at the call site.
 
 **Cause.** The request shape matched a recorded call, but that call was
 recorded against a different model. `RecordedModel` matches by shape with
-`modelId` erased, then checks the model.
+`modelId` erased, then checks the model. When one prompt was recorded for
+several models, the call recorded with the requested model replays; the error
+means no unconsumed call with that shape was recorded with it.
 
 **Fix.** Re-record against the model the test now uses, or switch the test
 back. If the intent is to tolerate a model change, use `CachedModel`, which

@@ -120,6 +120,25 @@ describe("RecordedModel", () => {
       expect(defectOf(exit)).toBeInstanceOf(ReplayHarnessMismatchError)
     }))
 
+  it.effect("replays the recording made with the requested model when one prompt was recorded for two", () =>
+    Effect.gen(function*() {
+      const sonnet = request("Summarize PR 4821.", "anthropic:claude-sonnet-4")
+      const twoModels: Fixture = {
+        calls: [
+          fixture.calls[0]!,
+          {
+            request: sonnet,
+            model: "anthropic:claude-sonnet-4",
+            events: [{ type: "settle", stopReason: "stop", responseId: "resp_sonnet" }]
+          }
+        ]
+      }
+      const replay = yield* make(twoModels)
+      const events = yield* Stream.runCollect(replay.model.stream(sonnet))
+      expect([...events]).toEqual(twoModels.calls[1]!.events)
+      expect(yield* replay.controller.unconsumed()).toEqual([twoModels.calls[0]])
+    }))
+
   it.effect("replays the recorded events before the recorded failure", () =>
     Effect.gen(function*() {
       const failing: Fixture = {

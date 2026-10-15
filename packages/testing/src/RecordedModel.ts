@@ -103,9 +103,16 @@ export const make = (fixture: Fixture, options: Options = {}): Effect.Effect<Rep
     const claim = (request: ModelRequestLike): Effect.Effect<Selection> => {
       const digest = requestShapeDigest(request)
       return Ref.modify<ReadonlyArray<boolean>, Selection>(consumed, (used) => {
+        // Out of order, one prompt may be recorded for several models. Prefer
+        // the unconsumed call made with the requested model; a same-shape call
+        // for another model is a mismatch only when no such call remains.
+        const open = (index: number) => !used[index] && shapes[index] === digest
+        const sameModel = fixture.calls.findIndex((call, index) => open(index) && call.model === request.modelId)
         const candidate = options.strictRequestOrder
           ? used.findIndex((value) => !value)
-          : shapes.findIndex((shape, index) => !used[index] && shape === digest)
+          : sameModel >= 0
+          ? sameModel
+          : shapes.findIndex((_, index) => open(index))
         if (candidate < 0 || shapes[candidate] !== digest) {
           return [{ _tag: "Unscripted" as const }, used] as const
         }
