@@ -161,17 +161,41 @@ type branchFinalCapture struct {
 }
 
 func (s *WorkspaceService) captureAndSleepExcluded(ctx context.Context, row db.Workspace, sessionless bool) error {
-	unavailable := func(err error) error {
-		return pkgerrors.New(pkgerrors.CodeServiceUnavailable, "branch sleep requires verified capture, runtime binding and state publication").WithCause(err)
+	// Eleven distinct failures used to return one indistinguishable 503, and
+	// writeRouteError scrubs a 5xx sentence to "service unavailable", so an
+	// idle branch machine that refused to sleep told its owner and the
+	// operator log exactly nothing — the receipt for box
+	// 1d7209c4-1915-4433-bc2b-c15376574147, which held 1 vCPU / 4 GiB / 32 GiB
+	// for 15 h 42 min past its own 1800 s idle timeout while every suspend
+	// answered 503. The stage is a written constant naming the step that did
+	// not hold: no payloads, no keys, no URLs and no raw driver text.
+	unavailable := func(stage string, err error) error {
+		failure := pkgerrors.New(pkgerrors.CodeServiceUnavailable,
+			"branch sleep requires verified capture, runtime binding and state publication: "+stage)
+		failure.Details = map[string]string{
+			"reason":    "branch_sleep_unavailable",
+			"stage":     stage,
+			"branch_id": row.ID,
+		}
+		return failure.WithCause(err)
 	}
 	store, ok := s.branchHeads.(workspaceSnapshotStore)
-	if !ok || s.branchCapture == nil || !s.hasWorkspaceRuntime() || s.requireBranchMachineProviders() != nil {
-		return unavailable(nil)
+	if !ok {
+		return unavailable("branch head store unavailable", nil)
+	}
+	if s.branchCapture == nil {
+		return unavailable("branch capture unavailable", nil)
+	}
+	if !s.hasWorkspaceRuntime() {
+		return unavailable("workspace runtime unavailable", nil)
+	}
+	if err := s.requireBranchMachineProviders(); err != nil {
+		return unavailable("branch machine providers unavailable", err)
 	}
 	var err error
 	row, err = s.q.GetWorkspace(ctx, row.ID)
 	if err != nil {
-		return unavailable(err)
+		return unavailable("reload branch row", err)
 	}
 	if row.Status == "suspended" || row.Status == "stopped" {
 		return nil
@@ -181,26 +205,26 @@ func (s *WorkspaceService) captureAndSleepExcluded(ctx context.Context, row db.W
 	}
 	tx, err := s.transactions.Begin(ctx)
 	if err != nil {
-		return unavailable(err)
+		return unavailable("begin lane binding read", err)
 	}
 	err = s.branchMachineProviders.LaneBinding(ctx, tx, row.RepositoryID, row.TargetBookmark, row.ID)
 	_ = tx.Rollback(context.WithoutCancel(ctx))
 	if err != nil {
-		return unavailable(err)
+		return unavailable("verify lane binding", err)
 	}
 	operationCtx, err := s.workspaceRuntimeContext(ctx, row, row.UserID, workspaceLifecycleOperation(row, "sleep"))
 	if err != nil {
-		return unavailable(err)
+		return unavailable("open runtime operation", err)
 	}
 	if err = s.transitionBranchMachine(ctx, row, "running", "releasing", "", sessionless); err != nil {
 		if sessionless && errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
-		return unavailable(err)
+		return unavailable("enter releasing", err)
 	}
 	// Cancellation must not strand a live VM in releasing. An inspection failure
 	// is not evidence that it is awake: retain releasing and the failure receipt.
-	fail := func(cause error) error {
+	fail := func(stage string, cause error) error {
 		recovery, cancel := context.WithTimeout(context.WithoutCancel(operationCtx), 10*time.Second)
 		defer cancel()
 		next := "releasing"
@@ -209,31 +233,31 @@ func (s *WorkspaceService) captureAndSleepExcluded(ctx context.Context, row db.W
 			next = "running"
 		}
 		_ = s.transitionBranchMachine(recovery, row, "releasing", next, "capture or stop failed")
-		return unavailable(cause)
+		return unavailable(stage, cause)
 	}
 	capture, err := s.branchCapture.Capture(ctx, row.ID)
 	if err != nil {
-		return fail(err)
+		return fail("capture branch", err)
 	}
 	current, err := s.q.GetWorkspace(ctx, row.ID)
 	if err != nil {
-		return fail(err)
+		return fail("reload captured branch row", err)
 	}
 	if capture.Head == "" || capture.Tree == "" || current.HeadCommitID != capture.Head {
-		return fail(fmt.Errorf("capture head has no durable projection"))
+		return fail("project capture head", fmt.Errorf("capture head has no durable projection"))
 	}
 	slug, err := s.workspaceRepoSlug(ctx, row.RepositoryID)
 	if err != nil {
-		return fail(err)
+		return fail("resolve repository slug", err)
 	}
 	owner, repo, _ := strings.Cut(slug, "/")
 	advertisement, err := store.InfoRefsUploadPack(ctx, owner, repo)
 	if err != nil {
-		return fail(err)
+		return fail("read branch head advertisement", err)
 	}
 	refs, err := parseUploadPackAdvertisement(advertisement)
 	if err != nil {
-		return fail(err)
+		return fail("parse branch head advertisement", err)
 	}
 	verified := false
 	for _, ref := range refs {
@@ -242,28 +266,28 @@ func (s *WorkspaceService) captureAndSleepExcluded(ctx context.Context, row db.W
 		}
 	}
 	if !verified {
-		return fail(fmt.Errorf("capture ref mismatch"))
+		return fail("verify published capture ref", fmt.Errorf("capture ref mismatch"))
 	}
 	commit, err := store.GetChange(ctx, owner, repo, capture.Head)
 	if err != nil {
-		return fail(err)
+		return fail("read captured change", err)
 	}
 	if commit.CommitID != capture.Head {
-		return fail(fmt.Errorf("capture object unavailable"))
+		return fail("verify captured object", fmt.Errorf("capture object unavailable"))
 	}
 	// No not-found/already-stopped fallback: successful stop is the receipt.
 	stopStartedAt := time.Now()
 	if err = s.runtime.StopWorkspace(operationCtx, row.ID); err != nil {
-		return fail(err)
+		return fail("stop runtime", err)
 	}
 	finish, cancel := context.WithTimeout(context.WithoutCancel(operationCtx), 10*time.Second)
 	defer cancel()
 	observed, err := s.runtime.InspectWorkspace(finish, row.ID)
 	if err != nil {
-		return fail(err)
+		return fail("confirm runtime stop", err)
 	}
 	if observed.ID != row.ID || observed.State != workspaceapi.WorkspaceStopped {
-		return fail(fmt.Errorf("branch stop is unconfirmed"))
+		return fail("confirm runtime stop", fmt.Errorf("branch stop is unconfirmed"))
 	}
 	if s.sandboxMetrics != nil {
 		s.sandboxMetrics.ObserveSandboxVMSuspend(time.Since(stopStartedAt).Seconds())
@@ -272,7 +296,7 @@ func (s *WorkspaceService) captureAndSleepExcluded(ctx context.Context, row db.W
 		finish = context.WithValue(finish, branchFinalCaptureKey{}, branchFinalCapture{capture.Head, capture.Tree, row.VmID})
 	}
 	if err = s.transitionBranchMachine(finish, row, "releasing", "suspended", ""); err != nil {
-		return unavailable(err)
+		return unavailable("publish suspended state", err)
 	}
 	s.revokeWorkspaceHeadToken(finish, current)
 	s.meterWorkspaceUsage(finish, current, "suspended")
