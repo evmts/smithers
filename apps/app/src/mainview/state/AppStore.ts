@@ -1310,8 +1310,8 @@ const initializeAppStore = async (
     initial = { state: baseline, checkpoint: baseline.checkpoint }
   } else {
     if (savedHead === undefined || savedCheckpoint === undefined || collections.appEventHeads.size !== 1 ||
-      collections.appEventCheckpoints.size !== 1) throw new AppEventIntegrityError("head")
-    if (collections.appEventRetirements.has(retiredAppStreamKey(savedHead.streamId))) throw new AppEventIntegrityError("scope")
+      collections.appEventCheckpoints.size !== 1) throw new AppEventIntegrityError("head", { stage: "open-authority-rows" })
+    if (collections.appEventRetirements.has(retiredAppStreamKey(savedHead.streamId))) throw new AppEventIntegrityError("scope", { stage: "open-retired-stream" })
     const upgrading = needsAppProjectorUpgrade(savedHead, savedCheckpoint)
     const upgradeSource = upgrading ? readProjection(collections) : undefined
     retireLegacySignup = upgradeSource !== undefined && savedHead.projectorVersion < 26
@@ -1446,7 +1446,7 @@ const initializeAppStore = async (
   }
   const persistStream = async (transaction: Transaction, write: StreamWrite, acceptedGeneration: number): Promise<void> => {
     try {
-      if (acceptedGeneration !== generation) throw new AppEventIntegrityError("conflict")
+      if (acceptedGeneration !== generation) throw new AppEventIntegrityError("conflict", { stage: "commit-generation" })
       await persist(transaction, write.state.head)
       committed = write.state
       savedSignInPrompts.publish(committed.snapshot.messages)

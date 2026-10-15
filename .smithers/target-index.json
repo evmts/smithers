@@ -31375,6 +31375,32 @@
     }
   },
   {
+    "label": "//apps/patterns-site:links",
+    "package": "apps/patterns-site",
+    "name": "links",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "apps/patterns-site/links.test.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/patterns-site/site/**",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "apps/patterns-site/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//apps/server:check",
     "package": "apps/server",
     "name": "check",
@@ -44238,7 +44264,7 @@
     "inputs": [
       {
         "kind": "glob",
-        "pattern": "packages/smithers/agent/harness/src/**/*.ts",
+        "pattern": "packages/smithers/agent/harness/{src,examples}/**/*.ts",
         "exclude": []
       },
       {
@@ -44287,7 +44313,7 @@
       },
       {
         "kind": "glob",
-        "pattern": "packages/smithers/agent/harness/src/**/*.ts",
+        "pattern": "packages/smithers/agent/harness/{src,examples}/**/*.ts",
         "exclude": []
       },
       {
@@ -44362,7 +44388,7 @@
     "inputs": [
       {
         "kind": "glob",
-        "pattern": "packages/smithers/agent/harness/src/**/*.ts",
+        "pattern": "packages/smithers/agent/harness/{src,examples}/**/*.ts",
         "exclude": []
       },
       {
@@ -44393,7 +44419,7 @@
     "inputs": [
       {
         "kind": "glob",
-        "pattern": "packages/smithers/agent/harness/src/**/*.ts",
+        "pattern": "packages/smithers/agent/harness/{src,examples}/**/*.ts",
         "exclude": []
       },
       {
@@ -44450,7 +44476,7 @@
     "inputs": [
       {
         "kind": "glob",
-        "pattern": "packages/smithers/agent/harness/src/**/*.ts",
+        "pattern": "packages/smithers/agent/harness/{src,examples}/**/*.ts",
         "exclude": []
       },
       {
@@ -44460,6 +44486,81 @@
       {
         "kind": "file",
         "path": "eslint.jsdoc.js"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/agent/harness/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/agent/harness:reviewDocsAgainstCode",
+    "package": "packages/smithers/agent/harness",
+    "name": "reviewDocsAgainstCode",
+    "rule": "LlmLint",
+    "reviewPolicy": "{\"changes\":{\"_tag\":\"GitDiff\",\"base\":\"origin/main\",\"paths\":[\"packages/smithers/agent/harness/src/**\"]},\"include\":[{\"_tag\":\"Glob\",\"pattern\":\"//packages/smithers/agent/harness/src/**\",\"exclude\":[]}],\"context\":[{\"_tag\":\"File\",\"path\":\"//packages/smithers/agent/harness/README.md\"},{\"_tag\":\"Glob\",\"pattern\":\"//packages/smithers/agent/harness/docs/**/*.md\",\"exclude\":[]},{\"_tag\":\"File\",\"path\":\"//apps/site/src/content/docs/docs/reference/api/harness.mdx\"}],\"deps\":[],\"prompt\":\"You are reviewing a diff in `smithers`, an Effect v4 coding-agent harness written from scratch. Report only violations of the rubric below. Judgment calls that the rubric does not cover are not findings. Prefer no finding over a speculative one.\",\"rubric\":\"The context files are package prose and selected site reference, concept, or guide pages.\\nCompare their current contents against the changed source, whether or not they changed.\\n1. A public export whose reference page still describes removed, renamed, or changed\\n   behavior is a warning against the reference page.\\n2. A new public export absent from its package's reference page is a warning against the\\n   reference page.\\n3. A concept page contradicted by the change is a warning against the concept page.\\nName the stale documentation page in `file`. Do not report a source file for these.\\nPrivate helpers, tests, and internal modules are out of scope.\",\"engine\":\"codex\",\"model\":\"gpt-6-luna\",\"batchSize\":3,\"failOn\":\"warning\",\"scope\":\"changed\",\"manual\":false}",
+    "kinds": [
+      "review"
+    ],
+    "summary": "A cheap Codex review of changed public APIs against package prose and matching site API references.",
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "git-diff",
+        "base": "origin/main",
+        "paths": [
+          "packages/smithers/agent/harness/src/**"
+        ]
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/harness/src/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/harness/README.md"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/harness/docs/**/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/site/src/content/docs/docs/reference/api/harness.mdx"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/agent/harness/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/agent/harness:reviewJsdocAgainstCode",
+    "package": "packages/smithers/agent/harness",
+    "name": "reviewJsdocAgainstCode",
+    "rule": "LlmLint",
+    "reviewPolicy": "{\"changes\":{\"_tag\":\"GitDiff\",\"base\":\"origin/main\",\"paths\":[\"packages/smithers/agent/harness/src/**/*.ts\"]},\"include\":[{\"_tag\":\"Glob\",\"pattern\":\"//packages/smithers/agent/harness/src/**/*.ts\",\"exclude\":[]}],\"context\":[],\"deps\":[],\"prompt\":\"You are reviewing a diff in `smithers`, an Effect v4 coding-agent harness written from scratch. Report only violations of the rubric below. Judgment calls that the rubric does not cover are not findings. Prefer no finding over a speculative one.\",\"rubric\":\"For each export whose body changed in this diff:\\n1. The JSDoc prose must still describe what the code does. Prose that describes the old\\n   behavior is a warning.\\n2. The documented error channel must match the actual `Schema.TaggedError` union the\\n   code can fail with. A documented error the code cannot raise, or a raised error the\\n   doc never mentions, is a warning.\\n3. A documented default must match the default in the code.\\n4. `@since` on a NEW export must be the current unreleased version, not a value\\n   copy-pasted from a neighboring export.\\nReport against the source file and the line of the JSDoc block. Presence of JSDoc is\\nalready gated by eslint; only truthfulness is in scope.\",\"engine\":\"codex\",\"model\":\"gpt-6-luna\",\"batchSize\":3,\"failOn\":\"warning\",\"scope\":\"changed\",\"manual\":false}",
+    "kinds": [
+      "review"
+    ],
+    "summary": "A cheap Codex review of changed exports against their JSDoc.",
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "git-diff",
+        "base": "origin/main",
+        "paths": [
+          "packages/smithers/agent/harness/src/**/*.ts"
+        ]
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/harness/src/**/*.ts",
+        "exclude": []
       }
     ],
     "outputs": [],
@@ -44547,7 +44648,7 @@
       },
       {
         "kind": "glob",
-        "pattern": "packages/smithers/agent/harness/src/**/*.ts",
+        "pattern": "packages/smithers/agent/harness/{src,examples}/**/*.ts",
         "exclude": []
       },
       {
@@ -57112,7 +57213,7 @@
     "inputs": [
       {
         "kind": "glob",
-        "pattern": "packages/smithers/flows/patterns/src/**/*.ts",
+        "pattern": "packages/smithers/flows/patterns/{src,examples}/**/*.ts",
         "exclude": []
       },
       {
@@ -57161,7 +57262,7 @@
       },
       {
         "kind": "glob",
-        "pattern": "packages/smithers/flows/patterns/src/**/*.ts",
+        "pattern": "packages/smithers/flows/patterns/{src,examples}/**/*.ts",
         "exclude": []
       },
       {
@@ -57236,7 +57337,7 @@
     "inputs": [
       {
         "kind": "glob",
-        "pattern": "packages/smithers/flows/patterns/src/**/*.ts",
+        "pattern": "packages/smithers/flows/patterns/{src,examples}/**/*.ts",
         "exclude": []
       },
       {
@@ -57267,7 +57368,7 @@
     "inputs": [
       {
         "kind": "glob",
-        "pattern": "packages/smithers/flows/patterns/src/**/*.ts",
+        "pattern": "packages/smithers/flows/patterns/{src,examples}/**/*.ts",
         "exclude": []
       },
       {
@@ -57324,7 +57425,7 @@
     "inputs": [
       {
         "kind": "glob",
-        "pattern": "packages/smithers/flows/patterns/src/**/*.ts",
+        "pattern": "packages/smithers/flows/patterns/{src,examples}/**/*.ts",
         "exclude": []
       },
       {
@@ -57496,7 +57597,7 @@
       },
       {
         "kind": "glob",
-        "pattern": "packages/smithers/flows/patterns/src/**/*.ts",
+        "pattern": "packages/smithers/flows/patterns/{src,examples}/**/*.ts",
         "exclude": []
       },
       {
@@ -72714,6 +72815,7 @@
       "//scripts:repositoryInputs_617070732f6170702f6532652f66697874757265732f7265706f2d706c7567696e2f746f6f6c73",
       "//scripts:repositoryInputs_617070732f6275672d776f726b6572",
       "//scripts:repositoryInputs_617070732f6d6f64656c2d686f7374",
+      "//scripts:repositoryInputs_617070732f7061747465726e732d73697465",
       "//scripts:repositoryInputs_617070732f736572766572",
       "//scripts:repositoryInputs_617070732f73697465",
       "//scripts:repositoryInputs_617070732f747569",
@@ -72919,6 +73021,26 @@
       {
         "kind": "glob",
         "pattern": "apps/model-host/**/*",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "scripts/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//scripts:repositoryInputs_617070732f7061747465726e732d73697465",
+    "package": "scripts",
+    "name": "repositoryInputs_617070732f7061747465726e732d73697465",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "apps/patterns-site/**/*",
         "exclude": []
       }
     ],

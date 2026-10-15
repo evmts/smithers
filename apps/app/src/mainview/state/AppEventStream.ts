@@ -49,7 +49,15 @@ export const APP_EVENT_FORMAT_VERSION = 1
 // 33: MVP Cut retires card kinds/forms and chrome transitions; rotate pre-Cut streams
 // from decoded materialized rows instead of replaying old sealed bytes with new semantics.
 // 35: journal private transcript placement with local output; legacy rows retain their data and default to the beginning of shared history.
-export const APP_PROJECTOR_VERSION = 35
+/*
+ * 36: `workspaces.loaded` and a re-read now write `readyRevision` on the saved
+ * box-list observation (#3882). The field is OPTIONAL, so every stored row
+ * still parses — but the PROJECTOR changed, so an already-persisted
+ * `workspaces.loaded` event reprojects to a state its sealed hash does not
+ * name, and replay refused the saved stream at startup (#3906). An added
+ * optional field is only free when nothing writes it to an old row's bytes.
+ */
+export const APP_PROJECTOR_VERSION = 36
 
 const JsonSchema: z.ZodType<EventJson> = z.lazy(() => z.union([
   z.null(), z.boolean(), z.number().finite(), z.string(), z.array(JsonSchema), z.record(z.string(), JsonSchema)
@@ -116,14 +124,14 @@ export class AppProjectorVersionError extends Data.TaggedError("AppProjectorVers
 export const needsAppProjectorUpgrade = (headInput: unknown, checkpointInput: unknown): boolean => {
   const head = StoredAppEventHeadSchema.safeParse(headInput)
   const checkpoint = StoredAppEventCheckpointSchema.safeParse(checkpointInput)
-  if (!head.success || !checkpoint.success) return fail("format")
+  if (!head.success || !checkpoint.success) return fail("format", { stage: "upgrade-version-rows" })
   const newest = Math.max(head.data.projectorVersion, checkpoint.data.projectorVersion)
   if (newest > APP_PROJECTOR_VERSION) throw new AppProjectorVersionError(newest)
-  if (head.data.projectorVersion !== checkpoint.data.projectorVersion) return fail("format")
+  if (head.data.projectorVersion !== checkpoint.data.projectorVersion) return fail("format", { stage: "upgrade-version-split" })
   if (newest === APP_PROJECTOR_VERSION) return false
-  if (head.data.streamId !== checkpoint.data.streamId) return fail("scope")
-  if (checkpoint.data.sequence > head.data.sequence) return fail("head")
-  if (checkpoint.data.hash !== sealedHash("checkpoint", checkpoint.data)) return fail("checkpoint")
+  if (head.data.streamId !== checkpoint.data.streamId) return fail("scope", { stage: "upgrade-stream-id" })
+  if (checkpoint.data.sequence > head.data.sequence) return fail("head", { stage: "upgrade-checkpoint-ahead" })
+  if (checkpoint.data.hash !== sealedHash("checkpoint", checkpoint.data)) return fail("checkpoint", { stage: "upgrade-checkpoint-seal" })
   return true
 }
 
@@ -131,15 +139,92 @@ export const AppEventRetirementSchema = z.object({ id: HashSchema }).strict()
 
 export type AppEventIntegrityReason = "format" | "scope" | "checkpoint" | "gap" | "conflict" | "event" | "projection" | "head"
 
+/**
+ * Where a refusal happened, in this module's own vocabulary. Every member is a
+ * schema name, a published transition type, a zod issue code, a field path of
+ * schema keys, or a position: NEVER a stored row value, a customer payload or
+ * a secret. The startup panel prints it behind Details, so a production
+ * refusal names its own cause without exporting any saved data (#3906).
+ */
+export interface AppEventIntegrityDetail {
+  /** The step inside this module that refused. */
+  readonly stage: string
+  /** The projection collection the refused row belongs to. */
+  readonly collection?: AppProjectionCollectionName
+  /** Dotted path of the refused field. Only names a schema declares; a saved key is `*`. */
+  readonly path?: string
+  /** The zod issue code, e.g. `invalid_type`. */
+  readonly code?: string
+  /** The published transition type of the event being replayed. */
+  readonly type?: string
+  /** The stream position of the event being replayed. */
+  readonly sequence?: number
+}
+
+const detailSentence = (detail: AppEventIntegrityDetail): string =>
+  Object.entries(detail).filter(([, value]) => value !== undefined).map(([key, value]) => `${key}=${String(value)}`).join(" ")
+
 export class AppEventIntegrityError extends Data.TaggedError("AppEventIntegrityError")<{
   readonly reason: AppEventIntegrityReason
+  readonly detail?: AppEventIntegrityDetail
   readonly message: string
 }> {
-  constructor(reason: AppEventIntegrityReason) {
-    super({ reason, message: `App event verification failed (${reason}). Saved history was preserved.` })
+  constructor(reason: AppEventIntegrityReason, detail?: AppEventIntegrityDetail) {
+    super({ reason, ...(detail === undefined ? {} : { detail }),
+      message: `App event verification failed (${reason}). Saved history was preserved.${detail === undefined ? "" : ` Where: ${detailSentence(detail)}.`}` })
   }
 }
-const fail = (reason: AppEventIntegrityError["reason"]): never => { throw new AppEventIntegrityError(reason) }
+const fail = (reason: AppEventIntegrityError["reason"], detail?: AppEventIntegrityDetail): never => {
+  throw new AppEventIntegrityError(reason, detail)
+}
+
+/*
+ * A zod issue's path names the schema's own keys — EXCEPT inside a `z.record`,
+ * where the segment is a key the SAVED DATA chose (a transcript anchor id, a
+ * handoff manifest key, any object key inside an encoded event input). Those
+ * are stored values and must never reach a printed message, so a segment is
+ * only spelled out when one of this module's own schemas declares it; every
+ * other segment becomes `*`. Array positions are the schema's own counting,
+ * not saved data, so they stay.
+ */
+const declaredKeys = new WeakMap<z.ZodType, ReadonlySet<string>>()
+const schemaKeyNames = (schema: z.ZodType): ReadonlySet<string> => {
+  const cached = declaredKeys.get(schema)
+  if (cached !== undefined) return cached
+  const names = new Set<string>()
+  const seen = new Set<unknown>()
+  const walk = (node: unknown, depth: number): void => {
+    if (typeof node !== "object" || node === null || depth > 64 || seen.has(node)) return
+    seen.add(node)
+    const def = (node as { readonly _zod?: { readonly def?: unknown } })._zod?.def
+    if (typeof def !== "object" || def === null) return
+    const fields = def as Record<string, unknown>
+    if (typeof fields.shape === "object" && fields.shape !== null) {
+      for (const [name, child] of Object.entries(fields.shape)) { names.add(name); walk(child, depth + 1) }
+    }
+    for (const key of ["innerType", "element", "valueType", "keyType", "left", "right", "in", "out"]) walk(fields[key], depth + 1)
+    if (Array.isArray(fields.options)) for (const option of fields.options) walk(option, depth + 1)
+    // A lazy schema is the recursion point; `seen` holds its own node, so this terminates.
+    if (typeof fields.getter === "function") walk((fields.getter as () => unknown)(), depth + 1)
+  }
+  walk(schema, 0)
+  declaredKeys.set(schema, names)
+  return names
+}
+
+/** Schema keys and the issue's own code only; a zod issue's message can quote a value. */
+const issueDetail = (schema: z.ZodType, error: z.ZodError): { readonly path: string; readonly code: string } | undefined => {
+  const issue = error.issues[0]
+  if (issue === undefined) return undefined
+  const names = schemaKeyNames(schema)
+  const path = issue.path
+    .map(part => typeof part === "number" ? String(part) : names.has(String(part)) ? String(part) : "*")
+    .join(".")
+  return { path: path || "(row)", code: issue.code }
+}
+
+const schemaDetail = (collection: AppProjectionCollectionName, error: z.ZodError): AppEventIntegrityDetail =>
+  ({ stage: "snapshot-row-schema", collection, ...issueDetail(APP_PROJECTION_SCHEMAS[collection], error) })
 const hash = (domain: string, value: unknown): string => digest(`smithers-app/${domain}/v1:${canonicalEventValue(value)}`)
 const seal = <T extends object>(domain: string, value: T): T & { hash: string } => ({ ...value, hash: hash(domain, value) })
 const sealedHash = (domain: string, value: { readonly hash: string }): string => {
@@ -155,7 +240,7 @@ const rowJson = (row: unknown): unknown => {
 
 export const normalizeAppProjection = (input: unknown): AppProjectionSnapshot => {
   encodeEventValue(input)
-  if (typeof input !== "object" || input === null || Array.isArray(input)) return fail("projection")
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return fail("projection", { stage: "snapshot-shape" })
   const saved = input as Record<string, unknown>
   const imports = Array.isArray(saved.cards) ? saved.cards.flatMap(row => {
     if (typeof row !== "object" || row === null || !("kind" in row) || row.kind !== "repo-import") return []
@@ -168,19 +253,20 @@ export const normalizeAppProjection = (input: unknown): AppProjectionSnapshot =>
     return { ...row, repositoryImports: [...current, ...imports.filter(request => !current.some((existing: unknown) => typeof existing === "object" && existing !== null && "id" in existing && existing.id === request.id))] }
   }) }
   const names = Object.keys(input as object)
-  if (names.length !== APP_PROJECTION_COLLECTION_NAMES.length || names.some(name => !Object.hasOwn(APP_PROJECTION_SCHEMAS, name))) return fail("projection")
+  if (names.length !== APP_PROJECTION_COLLECTION_NAMES.length || names.some(name => !Object.hasOwn(APP_PROJECTION_SCHEMAS, name))) return fail("projection", { stage: "snapshot-roster" })
   const entries = APP_PROJECTION_COLLECTION_NAMES.map(name => {
     const rows = (input as Record<string, unknown>)[name]
-    if (!Array.isArray(rows)) return fail("projection")
+    if (!Array.isArray(rows)) return fail("projection", { stage: "collection-shape", collection: name })
     const keys = new Set<string>()
     const normalized = rows.map(row => {
       const result = APP_PROJECTION_SCHEMAS[name].safeParse(rowJson(row))
-      if (!result.success) return fail("projection")
+      if (!result.success) return fail("projection", schemaDetail(name, result.error))
       const stored = rowJson(result.data)
       const again = APP_PROJECTION_SCHEMAS[name].safeParse(stored)
-      if (!again.success || canonicalEventValue(rowJson(again.data)) !== canonicalEventValue(stored)) return fail("projection")
+      if (!again.success) return fail("projection", schemaDetail(name, again.error))
+      if (canonicalEventValue(rowJson(again.data)) !== canonicalEventValue(stored)) return fail("projection", { stage: "snapshot-row-unstable", collection: name })
       const key = appProjectionKey(name, stored)
-      if (keys.has(key)) return fail("projection")
+      if (keys.has(key)) return fail("projection", { stage: "snapshot-row-duplicate", collection: name })
       keys.add(key)
       return stored
     })
@@ -199,15 +285,15 @@ export const appProjectionHash = (snapshot: AppProjectionSnapshot): string => {
   if (previous !== undefined) return previous
   const entries = [...APP_PROJECTION_COLLECTION_NAMES].sort().map(name => {
     const table = Object.getOwnPropertyDescriptor(snapshot, name)
-    if (!table || !("value" in table) || !Array.isArray(table.value)) return fail("projection")
+    if (!table || !("value" in table) || !Array.isArray(table.value)) return fail("projection", { stage: "hash-collection-shape", collection: name })
     const rows = table.value as unknown[]
     const cachedTable = immutableTables.get(rows)?.get(name)
     if (cachedTable !== undefined) return cachedTable
-    if (Reflect.ownKeys(rows).length !== rows.length + 1) return fail("projection")
+    if (Reflect.ownKeys(rows).length !== rows.length + 1) return fail("projection", { stage: "hash-collection-keys", collection: name })
     const values: Array<readonly [string, string]> = []
     for (let index = 0; index < rows.length; index++) {
       const entry = Object.getOwnPropertyDescriptor(rows, index)
-      if (!entry || !("value" in entry) || !entry.enumerable) return fail("projection")
+      if (!entry || !("value" in entry) || !entry.enumerable) return fail("projection", { stage: "hash-row-hole", collection: name })
       const row = entry.value
       const frozen = isImmutableProjectionValue(row)
       let json = frozen ? immutableRowJson.get(row) : undefined
@@ -244,7 +330,7 @@ export const prepareAppTransition = (snapshot: AppProjectionSnapshot, input: App
     for (const nested of Object.values(value)) removeCapabilities(nested)
   }
   removeCapabilities(transition)
-  try { return validateAppTransition(snapshot, transition) } catch { return fail("event") }
+  try { return validateAppTransition(snapshot, transition) } catch { return fail("event", { stage: "transition-invalid", ...(typeof (transition as { type?: unknown }).type === "string" ? { type: (transition as { type: string }).type } : {}) }) }
 }
 
 export interface AppStreamState {
@@ -257,7 +343,7 @@ export const createAppCheckpoint = (
   reason: AppEventCheckpoint["reason"]
 ): AppEventCheckpoint => {
   const snapshot = normalizeAppProjection(state.snapshot)
-  if (appProjectionHash(snapshot) !== state.head.stateHash || revisionOf(snapshot) !== state.head.revision) return fail("projection")
+  if (appProjectionHash(snapshot) !== state.head.stateHash || revisionOf(snapshot) !== state.head.revision) return fail("projection", { stage: "checkpoint-state-hash", sequence: state.head.sequence })
   return seal("checkpoint", {
     ...state.head, reason,
     snapshot: snapshot as unknown as AppEventCheckpoint["snapshot"]
@@ -269,7 +355,7 @@ export const initializeAppStream = (
   streamId: string,
   reason: "created" | "legacy-baseline" | "privacy-reset" | "projector-upgrade"
 ): AppStreamState & { readonly checkpoint: AppEventCheckpoint } => {
-  if (!streamId) return fail("scope")
+  if (!streamId) return fail("scope", { stage: "initialize-stream-id" })
   const snapshot = normalizeAppProjection(input)
   const stateHash = appProjectionHash(snapshot)
   const head: AppEventHead = {
@@ -290,10 +376,10 @@ export const appendAppEvent = (
   context: { readonly eventId: string; readonly createdAt: number; readonly persistenceMode: AppProjectionPersistenceMode }
 ): (AppStreamState & { readonly event: AppEventRecord }) | undefined => {
   if (!context.eventId || !Number.isFinite(context.createdAt) || !ModeSchema.safeParse(context.persistenceMode).success ||
-    previous.head.sequence >= Number.MAX_SAFE_INTEGER || (input.kind !== "boot" && input.kind !== "transition")) return fail("event")
-  if (appProjectionHash(previous.snapshot) !== previous.head.stateHash || revisionOf(previous.snapshot) !== previous.head.revision) return fail("projection")
+    previous.head.sequence >= Number.MAX_SAFE_INTEGER || (input.kind !== "boot" && input.kind !== "transition")) return fail("event", { stage: "append-context" })
+  if (appProjectionHash(previous.snapshot) !== previous.head.stateHash || revisionOf(previous.snapshot) !== previous.head.revision) return fail("projection", { stage: "append-state-hash", sequence: previous.head.sequence })
   const seed = input.kind === "boot" ? BootSchema.safeParse(decodeEventValue(encodeEventValue(input.seed))) : undefined
-  if (seed && (!seed.success || seed.data.createdAt !== context.createdAt)) return fail("event")
+  if (seed && (!seed.success || seed.data.createdAt !== context.createdAt)) return fail("event", { stage: "append-boot-seed" })
   const transition = input.kind === "transition" ? prepareAppTransition(previous.snapshot, input.transition) : undefined
   const value = seed?.success ? seed.data : transition
   const encoded = encodeEventValue(value)
@@ -316,34 +402,44 @@ export const appendAppEvent = (
 
 const decodeRecord = (input: unknown): AppEventRecord => {
   const result = AppEventRecordSchema.safeParse(input)
-  if (!result.success) return fail("format")
+  if (!result.success) {
+    return fail("format", { stage: "event-row-schema", ...issueDetail(AppEventRecordSchema, result.error) })
+  }
   const event = result.data
-  if (event.hash !== sealedHash("event", event)) return fail("event")
+  if (event.hash !== sealedHash("event", event)) return fail("event", { stage: "event-seal", type: event.type, sequence: event.sequence })
   return event
 }
 
 const replayEvent = (previous: AppStreamState, event: AppEventRecord): AppStreamState => {
-  if (event.streamId !== previous.head.streamId) return fail("scope")
-  if (event.sequence !== previous.head.sequence + 1) return fail("gap")
-  if (event.previousEventHash !== previous.head.eventHash || event.previousStateHash !== previous.head.stateHash) return fail("conflict")
+  const at = { type: event.type, sequence: event.sequence }
+  if (event.streamId !== previous.head.streamId) return fail("scope", { stage: "replay-stream-id", ...at })
+  if (event.sequence !== previous.head.sequence + 1) return fail("gap", { stage: "replay-sequence", ...at })
+  if (event.previousEventHash !== previous.head.eventHash || event.previousStateHash !== previous.head.stateHash) return fail("conflict", { stage: "replay-chain", ...at })
   let value: unknown
-  try { value = decodeEventValue(event.input as EncodedEventValue) } catch { return fail("event") }
+  try { value = decodeEventValue(event.input as EncodedEventValue) } catch { return fail("event", { stage: "replay-decode-input", ...at }) }
   let snapshot: AppProjectionSnapshot
   if (event.kind === "boot") {
     const seed = BootSchema.safeParse(value)
-    if (!seed.success || event.type !== "app.boot" || event.actor !== "system" || seed.data.createdAt !== event.createdAt) return fail("event")
+    if (!seed.success || event.type !== "app.boot" || event.actor !== "system" || seed.data.createdAt !== event.createdAt) return fail("event", { stage: "replay-boot-seed", ...at })
     snapshot = seedAppProjection(previous.snapshot, seed.data)
   } else {
     if (typeof value !== "object" || value === null || !("type" in value) || !("actor" in value) ||
-      value.type !== event.type || value.actor !== event.actor || !Object.hasOwn(APP_TRANSITION_TYPES, event.type)) return fail("event")
+      value.type !== event.type || value.actor !== event.actor || !Object.hasOwn(APP_TRANSITION_TYPES, event.type)) return fail("event", { stage: "replay-transition-type", ...at })
     const transition = prepareAppTransition(previous.snapshot, value as AppTransition)
-    if (canonicalEventValue(transition) !== canonicalEventValue(value)) return fail("event")
+    if (canonicalEventValue(transition) !== canonicalEventValue(value)) return fail("event", { stage: "replay-transition-rewritten", ...at })
     snapshot = projectAppEvent(previous.snapshot, { transition, revision: event.revision,
       createdAt: event.createdAt, persistenceMode: event.persistenceMode })
-    if (snapshot === previous.snapshot) return fail("event")
+    if (snapshot === previous.snapshot) return fail("event", { stage: "replay-transition-inert", ...at })
   }
   freezeProjectionValue(snapshot)
-  if (revisionOf(snapshot) !== event.revision || appProjectionHash(snapshot) !== event.stateHash) return fail("projection")
+  /*
+   * The saved row reprojects to something other than the state it recorded, so
+   * this build's projector disagrees with the one that wrote it. That owes an
+   * APP_PROJECTOR_VERSION bump (#3906): the named type is the transition whose
+   * projection moved, which is what a production report needs to see.
+   */
+  if (revisionOf(snapshot) !== event.revision) return fail("projection", { stage: "replay-revision", ...at })
+  if (appProjectionHash(snapshot) !== event.stateHash) return fail("projection", { stage: "replay-state-hash", ...at })
   return { snapshot, head: { ...previous.head, sequence: event.sequence, revision: event.revision, eventHash: event.hash, stateHash: event.stateHash } }
 }
 
@@ -355,15 +451,15 @@ export const replayAppEvents = (
 ): AppStreamState => {
   const checkpointResult = AppEventCheckpointSchema.safeParse(checkpointInput)
   const headResult = AppEventHeadSchema.safeParse(headInput)
-  if (!checkpointResult.success || !headResult.success) return fail("format")
+  if (!checkpointResult.success || !headResult.success) return fail("format", { stage: checkpointResult.success ? "replay-head-row" : "replay-checkpoint-row" })
   const checkpoint = checkpointResult.data
   const expected = headResult.data
-  if (checkpoint.hash !== sealedHash("checkpoint", checkpoint)) return fail("checkpoint")
-  if (checkpoint.streamId !== expected.streamId) return fail("scope")
-  if (checkpoint.sequence > expected.sequence) return fail("head")
+  if (checkpoint.hash !== sealedHash("checkpoint", checkpoint)) return fail("checkpoint", { stage: "replay-checkpoint-seal", sequence: checkpoint.sequence })
+  if (checkpoint.streamId !== expected.streamId) return fail("scope", { stage: "replay-checkpoint-stream-id" })
+  if (checkpoint.sequence > expected.sequence) return fail("head", { stage: "replay-checkpoint-ahead", sequence: checkpoint.sequence })
   const snapshot = normalizeAppProjection(checkpoint.snapshot)
   freezeProjectionValue(snapshot)
-  if (appProjectionHash(snapshot) !== checkpoint.stateHash || revisionOf(snapshot) !== checkpoint.revision) return fail("checkpoint")
+  if (appProjectionHash(snapshot) !== checkpoint.stateHash || revisionOf(snapshot) !== checkpoint.revision) return fail("checkpoint", { stage: "replay-checkpoint-state-hash", sequence: checkpoint.sequence })
   let current: AppStreamState = { snapshot, head: {
     ...VersionFieldsValue, id: "current", streamId: checkpoint.streamId,
     sequence: checkpoint.sequence, revision: checkpoint.revision, eventHash: checkpoint.eventHash, stateHash: checkpoint.stateHash
@@ -372,12 +468,12 @@ export const replayAppEvents = (
   const byId = new Map<string, string>()
   for (const raw of events) {
     const event = decodeRecord(raw)
-    if (event.streamId !== expected.streamId) return fail("scope")
-    if (event.sequence > expected.sequence) return fail("head")
+    if (event.streamId !== expected.streamId) return fail("scope", { stage: "replay-event-stream-id", type: event.type, sequence: event.sequence })
+    if (event.sequence > expected.sequence) return fail("head", { stage: "replay-event-past-head", type: event.type, sequence: event.sequence })
     const prior = bySequence.get(event.sequence)
-    if (prior !== undefined && prior.hash !== event.hash) return fail("conflict")
+    if (prior !== undefined && prior.hash !== event.hash) return fail("conflict", { stage: "replay-duplicate-sequence", type: event.type, sequence: event.sequence })
     const sameId = byId.get(event.id)
-    if (sameId !== undefined && sameId !== event.hash) return fail("conflict")
+    if (sameId !== undefined && sameId !== event.hash) return fail("conflict", { stage: "replay-duplicate-id", type: event.type, sequence: event.sequence })
     bySequence.set(event.sequence, event)
     byId.set(event.id, event.hash)
   }
@@ -385,7 +481,7 @@ export const replayAppEvents = (
     if (event.sequence <= checkpoint.sequence) continue
     current = replayEvent(current, event)
   }
-  if (canonicalEventValue(current.head) !== canonicalEventValue(expected)) return fail("head")
+  if (canonicalEventValue(current.head) !== canonicalEventValue(expected)) return fail("head", { stage: "replay-head-mismatch", sequence: current.head.sequence })
   return current
 }
 

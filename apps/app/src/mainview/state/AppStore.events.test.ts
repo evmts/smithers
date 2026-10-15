@@ -672,7 +672,7 @@ describe("the live store's authoritative event path", () => {
      * out. Changing this list owes a bump and an upgrade test like the ones
      * below.
      */
-    expect({ version: APP_PROJECTOR_VERSION, roster: [...APP_PROJECTION_COLLECTION_NAMES].sort() }).toEqual({ version: 35, roster: [
+    expect({ version: APP_PROJECTOR_VERSION, roster: [...APP_PROJECTION_COLLECTION_NAMES].sort() }).toEqual({ version: 36, roster: [
       "agents", "approvalRequests", "billingAccounts", "branches", "cardHistories", "cards", "changes",
       "cloudSessions", "cloudWorkspaces", "commandIntents", "connectorOperations", "connectors", "flowDurations", "frames",
       "githubAppStatuses", "httpTurnLegs", "httpTurns", "identitySessions", "messages", "models",
@@ -974,7 +974,9 @@ describe("the live store's authoritative event path", () => {
     const storage = memoryStorage()
     await installProjectorFixture(storage, APP_PROJECTOR_VERSION)
     const before = envelopeRows(storage)
-    await expect(open(storage)).rejects.toEqual(new AppEventIntegrityError("checkpoint"))
+    // The refusal names the step that refused, without any saved row's value.
+    await expect(open(storage)).rejects.toEqual(
+      new AppEventIntegrityError("checkpoint", { stage: "replay-checkpoint-state-hash", sequence: 5 }))
     expect(envelopeRows(storage)).toEqual(before)
   })
 
