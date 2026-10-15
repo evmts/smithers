@@ -1,9 +1,16 @@
 import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
+import * as Input from "@smthrs/targets/Input"
 
 const cwd = "packages/smithers/mcp"
 
-const standard = BuildAndCheckTypeScriptPackage({ cwd })
+// Examples are type-checked, linted and run by `test/examples.test.ts`, so
+// they key the same targets as the sources; the server they spawn is test data.
+const standard = BuildAndCheckTypeScriptPackage({
+  cwd,
+  sources: Input.glob("{src,examples}/**/*.ts"),
+  testData: ["examples/**/*.mjs"]
+})
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = standard
 
