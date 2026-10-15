@@ -86,7 +86,9 @@ redelivery the same mutation instead of a second one.
 `ingest` runs one request at a time, and in this order:
 
 1. Copy the request: the bytes, and only the enumerable own string headers,
-   lower-cased, with a duplicate case-insensitive name refused.
+   lower-cased, with a duplicate case-insensitive name refused. Headers arrive
+   as a plain record or as the Effect HTTP `Headers` value a server request
+   carries.
 2. Compute the body fingerprint.
 3. **Verify**, with the verifier's own copy of the body. Signature verification
    is the amplification guard, so it happens before decode and before any
@@ -140,8 +142,9 @@ The default is deliberately smaller than the 4 MiB mutation identity budget: a
 body that cannot become a durable mutation is refused at the door rather than
 copied, decoded, and refused later.
 
-Malformed JSON returns `InvalidInput` with the fixed issue `invalid webhook
-JSON`. Parser messages and payload fragments are excluded from the error.
+Malformed JSON, including a body that is not valid UTF-8, returns
+`InvalidInput` with the fixed issue `invalid webhook JSON`. Parser messages
+and payload fragments are excluded from the error.
 
 ## Project a run back out
 
