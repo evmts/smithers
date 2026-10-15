@@ -99,6 +99,13 @@ describe("rate-limit detection", () => {
     expect(retryAfterMs(new Headers({ "x-ratelimit-reset": "900" }), 1_000_000)).toBeNull()
     expect(retryAfterMs(new Headers())).toBeNull()
   })
+
+  it("falls back to x-ratelimit-reset when Retry-After is blank or not delay-seconds", () => {
+    for (const retryAfter of ["", " ", "0x10", "1e3", "-1", "2.5"]) {
+      const headers = new Headers({ "retry-after": retryAfter, "x-ratelimit-reset": "1010" })
+      expect(retryAfterMs(headers, 1_000_000), JSON.stringify(retryAfter)).toBe(10_000)
+    }
+  })
 })
 
 describe("GitHubClient request typing", () => {

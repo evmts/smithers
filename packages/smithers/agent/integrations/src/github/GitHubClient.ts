@@ -231,17 +231,19 @@ export const isRateLimitResponse = (status: number, headers: Headers, body: unkn
 }
 
 /**
- * How long to wait before retrying, from `Retry-After` (seconds) or
- * `x-ratelimit-reset` (epoch seconds), capped at one minute.
+ * How long to wait before retrying, from `Retry-After` (whole seconds) or
+ * `x-ratelimit-reset` (epoch seconds), capped at one minute. A blank or
+ * malformed `Retry-After` is ignored.
  *
  * @category getters
  * @since 1.0.0
  */
 export const retryAfterMs = (headers: Headers, nowMs: number = Date.now()): number | null => {
-  const retryAfter = headers.get("retry-after")
-  if (retryAfter !== null) {
-    const seconds = Number(retryAfter)
-    if (Number.isFinite(seconds) && seconds >= 0) return Math.min(seconds * 1000, MAX_RETRY_AFTER_MS)
+  // RFC 9110 delay-seconds is 1*DIGIT; Number() would read "" as 0 and
+  // "0x10" as 16, so a blank header would retry at once past a known reset.
+  const retryAfter = headers.get("retry-after")?.trim()
+  if (retryAfter !== undefined && /^\d+$/.test(retryAfter)) {
+    return Math.min(Number(retryAfter) * 1000, MAX_RETRY_AFTER_MS)
   }
   const reset = headers.get("x-ratelimit-reset")
   if (reset !== null) {
