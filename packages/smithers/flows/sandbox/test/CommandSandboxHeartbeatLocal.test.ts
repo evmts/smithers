@@ -1,6 +1,6 @@
 import { NodeServices } from "@effect/platform-node"
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Stream } from "effect"
+import { Duration, Effect, Stream } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs"
@@ -144,4 +144,31 @@ describe("CommandSandbox local heartbeat", () => {
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
     15_000
   )
+
+  // A platform timer holds at most 2^31 - 1 milliseconds and fires after 1 ms
+  // for anything longer, so an interval past ~24.8 days, or infinity, used to
+  // probe in a tight loop and end every command as a silent machine.
+  for (const heartbeat of [Duration.infinity, Duration.days(30)]) {
+    it.effect(
+      `never probes within a heartbeat of ${Duration.format(heartbeat)}`,
+      () =>
+        Effect.gen(function*() {
+          const local = yield* ChildProcessSpawner
+          let launches = 0
+          const spawner = makeSpawner((command) => {
+            launches++
+            return local.spawn(command)
+          })
+          const session = yield* CommandSandbox.make({ spawner, prefix: [], heartbeat, workdir: root })
+            .acquire(`${basename(root)}-long-${Duration.toMillis(heartbeat)}`)
+          const before = launches
+          const child = yield* session.spawn("sleep 1; printf done", {})
+          expect(yield* child.exitCode).toBe(0)
+          expect(yield* Stream.mkString(Stream.decodeText(child.stdout))).toBe("done")
+          // The one launch is the command itself.
+          expect(launches - before).toBe(1)
+        }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      15_000
+    )
+  }
 })

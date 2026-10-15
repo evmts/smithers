@@ -13,14 +13,30 @@ import * as Effect from "effect/Effect"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 
 /**
- * Completes after `duration` on the platform's own timer.
+ * Completes after `duration` on the platform's own timer. An infinite
+ * duration never completes, and one longer than a single timer holds is
+ * waited in timer-sized steps.
  *
  * @category constructors
  * @since 0.1.0
  */
-export const elapsed = (duration: Duration.Input): Effect.Effect<void> =>
+export const elapsed = (duration: Duration.Input): Effect.Effect<void> => {
+  const millis = Duration.toMillis(duration)
+  return millis === Infinity ? Effect.never : waited(millis)
+}
+
+/**
+ * The longest delay a platform timer holds. Node and browsers fire a longer
+ * one, `Infinity` included, after 1 millisecond.
+ */
+const longestTimer = 2_147_483_647
+
+const waited = (millis: number): Effect.Effect<void> =>
   Effect.callback<void>((resume) => {
-    const timer = setTimeout(() => resume(Effect.void), Duration.toMillis(duration))
+    const timer = setTimeout(
+      () => resume(millis > longestTimer ? waited(millis - longestTimer) : Effect.void),
+      Math.min(millis, longestTimer)
+    )
     return Effect.sync(() => clearTimeout(timer))
   })
 
