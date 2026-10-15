@@ -51,6 +51,9 @@ const units: Readonly<Record<string, number>> = {
 /**
  * Parses a duration such as `30d`, `12h`, or `90m` into milliseconds.
  *
+ * Returns `undefined` for an unreadable spelling, a zero window, or a window
+ * too large to count in whole milliseconds.
+ *
  * @category constructors
  * @since 1.0.0
  */
@@ -64,7 +67,9 @@ export const duration = (value: string): number | undefined => {
   // `gc --older-than 0s` is "delete all history" wearing the spelling of a
   // retention policy. Refusing it costs an operator who meant it one explicit
   // `1s`, and saves the one who typed it by accident their whole journal.
-  return window === 0 ? undefined : window
+  // Too many digits parse to Infinity or lose whole-millisecond precision,
+  // and an infinite window turns the cutoff into a value no report can print.
+  return window === 0 || !Number.isSafeInteger(window) ? undefined : window
 }
 
 /**

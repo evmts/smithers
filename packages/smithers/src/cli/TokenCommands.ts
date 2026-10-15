@@ -56,7 +56,8 @@ export const mint = (
       return yield* new CliError.UsageError({ message: "Set SMITHERS_TOKEN to the gateway credential to mint from" })
     }
     const ttlMillis = duration(options.ttl)
-    if (ttlMillis === undefined) {
+    // An expiry past the last date JavaScript can represent has no ISO form.
+    if (ttlMillis === undefined || Number.isNaN(new Date(Date.now() + ttlMillis).getTime())) {
       return yield* new CliError.UsageError({
         message: `--ttl must be a positive duration such as 30s, 15m, 1h, or 2d, not ${options.ttl}`
       })

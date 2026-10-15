@@ -145,7 +145,8 @@ describe("smthrs token mint", () => {
     expect(blank.codes).toEqual([2])
     expect(blank.stdout + blank.stderr).toContain("Set SMITHERS_TOKEN")
 
-    for (const ttl of ["0s", "soon", "-1h", "1y"]) {
+    // A lifetime whose expiry falls past the last representable date.
+    for (const ttl of ["0s", "soon", "-1h", "1y", "999999999999d", `${"9".repeat(400)}s`]) {
       const bad = await invoke(["token", "mint", "--scope", "read:runs", "--ttl", ttl], { SMITHERS_TOKEN: key })
       expect([ttl, bad.codes]).toEqual([ttl, [2]])
       expect(bad.stdout + bad.stderr).toContain("--ttl must be a positive duration")

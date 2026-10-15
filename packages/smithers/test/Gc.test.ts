@@ -123,6 +123,14 @@ describe("the retention window", () => {
     expect(Gc.duration("30d")).toBe(30 * 24 * 60 * 60 * 1000)
   })
 
+  it("refuses a window too large to count in whole milliseconds", () => {
+    // 400 digits parse to Infinity; 999999999999d is past 2^53 milliseconds.
+    for (const value of [`${"9".repeat(400)}s`, "999999999999d"]) {
+      expect(Gc.duration(value)).toBeUndefined()
+    }
+    expect(Gc.duration("1000w")).toBe(1000 * 7 * 24 * 60 * 60 * 1000)
+  })
+
   it("keeps a month by default", () => {
     expect(Gc.defaultRetention).toBe("30d")
   })
