@@ -66,7 +66,7 @@ export const wrap = <S extends object>(service: S, hook: Hook): S => {
     const value = (service as Record<string, unknown>)[key]
     if (Effect.isEffect(value)) {
       wrapped[key] = hook(key, "before", []).pipe(
-        Effect.andThen(value as Effect.Effect<unknown, unknown, unknown>),
+        Effect.andThen(value),
         Effect.tap(() => hook(key, "after", []))
       )
     } else if (typeof value === "function") {
@@ -75,7 +75,7 @@ export const wrap = <S extends object>(service: S, hook: Hook): S => {
         const result = method.apply(service, args)
         return Effect.isEffect(result)
           ? hook(key, "before", args).pipe(
-            Effect.andThen(result as Effect.Effect<unknown, unknown, unknown>),
+            Effect.andThen(result),
             Effect.tap(() => hook(key, "after", args))
           )
           : result
