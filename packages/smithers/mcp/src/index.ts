@@ -1,7 +1,8 @@
 /**
  * Model Context Protocol client and flow bindings.
  *
- * `McpClient` speaks the stdio protocol to a configured MCP server, and
+ * `McpClient` speaks to a configured MCP server over stdio or Streamable
+ * HTTP, and
  * `McpFlows` projects that server's tools into the flow catalog as
  * `mcp/<server>/<tool>` bindings. `@smthrs/cli` composes both behind
  * `--mcp-config`.

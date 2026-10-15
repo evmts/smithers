@@ -641,6 +641,23 @@ describe("McpClient over Streamable HTTP", () => {
     })
   })
 
+  it("skips an event whose data is empty, as a resumable stream's priming event is", async () => {
+    // The MCP reference server opens a resumable stream with
+    // `id: <event id>\ndata: \n\n`: an event that carries no message.
+    const remote = await listen({
+      override: (message, response) => {
+        if (message.method !== "tools/call") return false
+        response.writeHead(200, { "content-type": "text/event-stream" })
+        response.end(
+          "id: prime-1\nretry: 1000\ndata: \n\nid: prime-2\ndata:\n\n" +
+            event({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: "5" }] } })
+        )
+        return true
+      }
+    })
+    expect((await run(add(remote.url))).content).toEqual([{ type: "text", text: "5" }])
+  })
+
   it("reads an event stream whose lines end in a lone CR", async () => {
     const remote = await listen({
       override: (message, response) => {

@@ -75,7 +75,8 @@ message, and closing the scope ends the session with a `DELETE`. A server that
 answers `404` for an established session has ended it: the call fails with
 `connection_closed` and is not replayed, so reconnect to continue. This client
 does not open the optional server-initiated `GET` stream or resume a broken
-event stream.
+event stream. On an event stream, comments and events with empty data, such as
+the event a resumable stream opens with, are skipped.
 
 ## Name the server
 

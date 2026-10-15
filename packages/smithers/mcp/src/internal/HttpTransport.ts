@@ -359,7 +359,9 @@ export const connect = (
               const data = event.data
               event.data = undefined
               event.bytes = 0
-              return Effect.succeed([event, data === undefined ? [] : [data]] as const)
+              // An event with empty data carries no message: a resumable
+              // stream opens with one to hand the client its first event id.
+              return Effect.succeed([event, data === undefined || data === "" ? [] : [data]] as const)
             }
             if (!line.startsWith("data:")) return Effect.succeed([event, []] as const)
             const value = line.slice(line.startsWith("data: ") ? 6 : 5)
