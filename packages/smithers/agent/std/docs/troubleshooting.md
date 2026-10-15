@@ -160,6 +160,18 @@ The same rule refuses a hermetic `script` whose `interpreter` is not a shell:
 the pre-check reads shell text, and Python is not shell text. Run it
 unhermetically, or express it as shell.
 
+## invalid_input: Command not started: its arguments exceed the operating system's size limit (E2BIG)
+
+**What happened.** The operating system refused to start the command because
+its arguments are too large: one argument over 128 KiB on Linux, or all of them
+over 1 MiB on macOS. A long heredoc in `command`, or a file's text passed in
+`args`, is one such argument. For a `container` call the host's `docker exec`
+carries the same arguments, so the same limit applies.
+
+**What to change.** Send the text on standard input, which has no size limit.
+Put a program and its data in `script`, or keep `command` short and pass the
+data in `stdin`. Never put long text in `command` or `args`.
+
 ## provider_unavailable: this host has no container transport
 
 **What happened.** A call named a `container` and no `Container` service was

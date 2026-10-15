@@ -1676,7 +1676,9 @@ Bindings explicitly publish host-authored refusal messages through
 `FlowBinding.Options.publicError`. Shell, test, and search errors with codes
 `command_failed` or `request_failed` remain opaque because their messages can
 carry process diagnostics. A `timeout` publishes fixed text: "The command timed
-out." Search `invalid_pattern` errors use fixed corrective text because native
+out." A command the operating system refused for the size of its arguments
+(`E2BIG`) is the caller's own input: it fails with `invalid_input` and fixed
+text naming the cause and the fix, never the command line. Search `invalid_pattern` errors use fixed corrective text because native
 search can return raw stderr. The portable validator's specific reason is
 deliberately omitted too, since both sources share that error code. Custom
 services must keep all other refusal messages suitable for cells and journals;

@@ -10,9 +10,12 @@
 import * as NodeChildProcessSpawner from "@effect/platform-node/NodeChildProcessSpawner"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { describe, expect, it } from "@effect/vitest"
+import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
+import * as CommandLine from "@smthrs/kernel/CommandLine"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Path from "effect/Path"
+import * as PlatformError from "effect/PlatformError"
 import * as Bash from "../src/Bash.ts"
 import * as Container from "../src/Container.ts"
 import * as Exec from "../src/internal/Exec.ts"
@@ -242,10 +245,18 @@ describe("Exec.toStdError", () => {
     })
   }
 
+  it("reports arguments too long to start as the caller's input, with its reason and none of the command", () => {
+    const error = new Exec.ExecError({ code: "arguments_too_long", message: "Command not started: too long." })
+    const reported = Exec.toStdError("python3 - SYNTHETIC_ARGUMENT", error)
+    expect(reported).toMatchObject({ code: "invalid_input", message: "Command not started: too long." })
+    expect(reported.message).not.toContain("SYNTHETIC_ARGUMENT")
+  })
+
   for (
     const { code, expected } of [
       { code: "timeout", expected: "timeout" },
       { code: "spawn_error", expected: "command_failed" },
+      { code: "arguments_too_long", expected: "invalid_input" },
       { code: "capture_overflow", expected: "command_failed" }
     ] as const
   ) {
@@ -253,4 +264,45 @@ describe("Exec.toStdError", () => {
       expect(Exec.toStdErrorCode(new Exec.ExecError({ code, message: "boom" }))).toBe(expected)
     })
   }
+})
+
+/**
+ * A spawn the operating system refused, as the production spawner reports it:
+ * a platform error whose cause is Node's own, carrying the errno and a message
+ * that repeats the command line.
+ */
+describe("Exec.exec spawn refusals", () => {
+  const refusing = (code: string) =>
+    ChildProcessSpawner.makeNoop({
+      spawn: (command) =>
+        Effect.fail(PlatformError.systemError({
+          _tag: "Unknown",
+          module: "ChildProcess",
+          method: "spawn",
+          pathOrDescriptor: CommandLine.render(command),
+          description: `spawn ${code}`,
+          cause: Object.assign(new Error(`spawn ${code}`), { code, syscall: "spawn" })
+        }))
+    })
+  const refused = (code: string) =>
+    Exec.exec("python3", { args: ["-", "SYNTHETIC_ARGUMENT"] }).pipe(
+      Effect.flip,
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, refusing(code))
+    )
+
+  it.effect("names arguments too long to start, and how to send them, without repeating them", () =>
+    Effect.gen(function*() {
+      const error = yield* refused("E2BIG")
+      expect(error).toMatchObject({
+        code: "arguments_too_long",
+        message:
+          "Command not started: its arguments exceed the operating system's size limit (E2BIG). Send long text on standard input or in a file, not in the command line or its arguments."
+      })
+      expect(error.message).not.toContain("SYNTHETIC_ARGUMENT")
+    }))
+
+  it.effect("keeps every other refusal a host failure", () =>
+    Effect.gen(function*() {
+      expect(yield* refused("EAGAIN")).toMatchObject({ code: "spawn_error" })
+    }))
 })

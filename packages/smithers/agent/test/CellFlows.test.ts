@@ -26,6 +26,7 @@ import { HarnessError } from "@smthrs/harness/HarnessError"
 import * as Sandbox from "@smthrs/harness/Sandbox"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import * as CommandLine from "@smthrs/kernel/CommandLine"
+import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as Recall from "@smthrs/memory/Recall"
 import * as Evaluator from "@smthrs/model/Evaluator"
@@ -34,6 +35,7 @@ import * as ModelError from "@smthrs/model/ModelError"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
 import { Node } from "@smthrs/plan"
+import * as ProcessReaper from "@smthrs/platform-node/ProcessReaper"
 import type { FlowsHooks, PluginInput } from "@smthrs/plugin"
 import { make as makePlugin } from "@smthrs/plugin"
 import type { ResolvedConfig } from "@smthrs/plugin/Config"
@@ -2297,4 +2299,51 @@ ctx.done(ran.ok === false ? ran.error.message : ran.exitCode + ":" + ran.stdout.
     },
     60_000
   )
+})
+
+describe("a command the operating system refuses to start says why", () => {
+  /**
+   * The spawner `smthrs run` composes, over real processes. A command line past
+   * the OS argument limit fails `execve` with E2BIG before anything starts; the
+   * 2026-10-14 SWE-bench Pro run handed that to the model as "Flow bash failed."
+   * in 50 calls (#3962), mostly a file's text in `args` or a long heredoc.
+   */
+  const contained = Layer.merge(
+    Layer.provideMerge(
+      ProcessReaper.layerSpawner({ graceMs: 80 }).pipe(
+        Layer.provide(ProcessLedger.layerMemory({ hostId: "cell-flows", ownerPid: process.pid }))
+      ),
+      Layer.provideMerge(NodeChildProcessSpawner.layer, Layer.merge(NodeFileSystem.layer, Path.layer))
+    ),
+    Path.layer
+  )
+  const reason =
+    "Flow bash failed: Command not started: its arguments exceed the operating system's size limit (E2BIG). Send long text on standard input or in a file, not in the command line or its arguments."
+
+  it.skipIf(process.platform === "win32")("tells the cell the reason and the fix, and records the same", async () => {
+    const scope = Effect.runSync(Scope.make())
+    try {
+      const services = await Effect.runPromise(
+        Layer.buildWithScope(contained, scope) as Effect.Effect<
+          Context.Context<ChildProcessSpawner.ChildProcessSpawner | Path.Path>
+        >
+      )
+      const outcome = await drive(collect({
+        flows: [StandardFlows.shell(services)],
+        cells: [`const text = "x".repeat(2 * 1024 * 1024)
+const line = await ctx.call("bash", { command: "printf %s '" + text + "' | wc -c" })
+const args = await ctx.call("bash", { interpreter: "node", script: "console.log(process.argv[2].length)", args: [text] })
+ctx.done(String(line.ok) + " " + String(args.ok))`]
+      }))
+
+      const [line, args] = firstFrameSettledCalls(eventsOf(outcome))
+      for (const call of [line, args]) {
+        expect(call?.result).toMatchObject({ outcome: "failure", code: "flow_failed", message: reason })
+        expect(call?.reason).toEqual({ code: "invalid_input" })
+        expect(AgentSession.trace(call!)!.payload).toMatchObject({ message: reason })
+      }
+    } finally {
+      Effect.runSync(Scope.close(scope, Exit.void))
+    }
+  }, 60_000)
 })

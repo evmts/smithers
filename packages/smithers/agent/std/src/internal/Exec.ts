@@ -30,7 +30,7 @@ import { elideMiddle } from "./Text.ts"
  * @category models
  * @since 1.0.0
  */
-export const ExecErrorCode = Schema.Literals(["timeout", "spawn_error", "capture_overflow"])
+export const ExecErrorCode = Schema.Literals(["timeout", "spawn_error", "arguments_too_long", "capture_overflow"])
 
 /**
  * Failure codes a buffered execution can report.
@@ -44,8 +44,10 @@ export type ExecErrorCode = typeof ExecErrorCode.Type
  * A command that never produced an exit code.
  *
  * A non-zero exit is a successful {@link ExecResult}, not a failure; this
- * error is reserved for a command that could not start or was cut off by its
- * timeout, or whose captured output exceeded a refusing capture bound.
+ * error is reserved for a command that could not start (`arguments_too_long`
+ * when the operating system refused it for the size of its arguments) or was
+ * cut off by its timeout, or whose captured output exceeded a refusing capture
+ * bound.
  *
  * @category errors
  * @since 1.0.0
@@ -269,6 +271,23 @@ const capture = <E>(
     ? boundedEnds(stream, maxBytes)
     : boundedTail(stream, maxBytes, overflow)
 
+/**
+ * A command whose arguments exceed the operating system's limit fails `execve`
+ * with `E2BIG` before it starts: one argument over 128 KiB on Linux, all of
+ * them over 1 MiB on macOS. A heredoc in a command line, or a file's text
+ * passed as an argument, is one such argument. The platform error's own text
+ * repeats the whole command line, so this text is written here instead, and a
+ * caller may show it as it stands.
+ */
+const argumentsTooLong = (error: { readonly cause?: unknown }): ExecError | undefined =>
+  (error.cause as { readonly code?: unknown } | undefined)?.code === "E2BIG"
+    ? new ExecError({
+      code: "arguments_too_long",
+      message:
+        "Command not started: its arguments exceed the operating system's size limit (E2BIG). Send long text on standard input or in a file, not in the command line or its arguments."
+    })
+    : undefined
+
 const unbounded = (
   command: string,
   options: ExecOptions
@@ -327,7 +346,7 @@ const unbounded = (
   }).pipe(
     Effect.scoped,
     Effect.mapError((error) =>
-      error instanceof ExecError ? error : new ExecError({
+      error instanceof ExecError ? error : argumentsTooLong(error) ?? new ExecError({
         code: "spawn_error",
         message: `exec: ${command}: ${error.message}`
       })
@@ -368,20 +387,23 @@ export const exec = (
  *
  * A timeout keeps its own code, because "the command never finished" and "the
  * command never started" are different things to a caller deciding whether to
- * retry. Every other way of producing no exit code is a host failure.
+ * retry. Arguments the operating system refused for their size are the
+ * caller's own input, which a shell flow publishes, so they read as
+ * `invalid_input`. Every other way of producing no exit code is a host failure.
  *
  * @category errors
  * @since 1.0.0
  */
 export const toStdErrorCode = (error: ExecError): StdError.Code =>
-  error.code === "timeout" ? "timeout" : "command_failed"
+  error.code === "timeout" ? "timeout" : error.code === "arguments_too_long" ? "invalid_input" : "command_failed"
 
 /**
  * The model-facing failure one execution error becomes.
  *
  * A timeout names the command, which is what the caller asked for and all a
- * timeout has to say. Any other failure carries the message the execution
- * produced, which already names the command.
+ * timeout has to say. Arguments too long to start carry the reason and the
+ * fix, and nothing of the command. Any other failure carries the message the
+ * execution produced, which already names the command.
  *
  * @category errors
  * @since 1.0.0
@@ -391,6 +413,8 @@ export const toStdError = (command: string, error: ExecError): StdError.StdError
     code: toStdErrorCode(error),
     message: error.code === "timeout"
       ? `Command timed out: ${command}`
+      : error.code === "arguments_too_long"
+      ? error.message
       : `Command failed to start: ${error.message}`,
     ...(error.limitMillis === undefined ? {} : { limitMillis: error.limitMillis })
   })
