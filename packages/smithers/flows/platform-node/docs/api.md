@@ -35,10 +35,10 @@ here as `EgressHttpClient.layer(environment)`. That layer is Undici through the 
 redirect interceptor either way, so every hop stays visible to
 [@smthrs/kernel](/api/kernel).
 
-The complete host bundles require jj 0.39.0 or newer. Each bundle builds its jj
-layer with one version probe; construction can fail with `JjError`, including
-`not_installed` or `unsupported_version`. The version probe runs outside the host process ledger; repository commands
-use the selected process runner.
+The complete host bundles build without jj. Their `Jj` service probes
+`jj --version` on its first operation, through the runner its repository
+commands use, and fails that operation with `JjError` `not_installed` or
+`unsupported_version`. `Jj` operations need jj 0.39.0 or newer.
 
 ## Requirements
 

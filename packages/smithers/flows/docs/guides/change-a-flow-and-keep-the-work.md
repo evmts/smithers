@@ -18,8 +18,8 @@ environment its results depend on. The program below does all three, and
 
 ## Prerequisites
 
-Node.js 26.4.0 or later and [jj](https://jj-vcs.github.io/jj/latest/install-and-setup/)
-on `PATH`; [Installation](../installation.md) has the details. Create a project:
+Node.js 26.4.0 or later; [Installation](../installation.md) has the details.
+Create a project:
 
 ```bash
 mkdir fix && cd fix

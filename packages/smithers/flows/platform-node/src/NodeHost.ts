@@ -26,7 +26,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as NodePath from "@effect/platform-node/NodePath"
-import type { Jj, JjError } from "@smthrs/jj"
+import type { Jj } from "@smthrs/jj"
 import * as NodeJj from "@smthrs/jj/node/NodeJj"
 import type { HostServiceIds } from "@smthrs/kernel/HostServices"
 import type * as KernelProcessConfinement from "@smthrs/kernel/ProcessConfinement"
@@ -157,10 +157,14 @@ const reaping = (options?: ContainedOptions): ProcessReaper.Options => ({
 /**
  * Provides the default Node implementations for the whole closed Host surface.
  *
+ * Builds on a host without jj: the `Jj` slot checks `jj --version` on its
+ * first operation and fails that operation with `JjError` `not_installed` or
+ * `unsupported_version`, so a program that never calls `Jj` runs without jj.
+ *
  * @category layers
  * @since 0.1.0
  */
-export const layer: Layer.Layer<NodeHost, JjError> = Layer.mergeAll(
+export const layer: Layer.Layer<NodeHost> = Layer.mergeAll(
   ProcessConfinement.layer(),
   platform,
   Layer.provide(NodeChildProcessSpawner.layer, platform),
@@ -174,7 +178,7 @@ export const layer: Layer.Layer<NodeHost, JjError> = Layer.mergeAll(
  * @category layers
  * @since 1.0.0
  */
-export const layerAt = (repositoryRoot: string): Layer.Layer<NodeHost, JjError> =>
+export const layerAt = (repositoryRoot: string): Layer.Layer<NodeHost> =>
   Layer.mergeAll(
     ProcessConfinement.layer(),
     platform,
@@ -197,8 +201,8 @@ export const layerAt = (repositoryRoot: string): Layer.Layer<NodeHost, JjError> 
  *
  * jj is contained here too: `layerContained` builds the `Jj` service over the
  * same spawner rather than letting it start its own children, so a `jj`
- * invocation a crashed host left running is a record the next incarnation
- * reaps like any other.
+ * invocation a crashed host left running, including the version probe of the
+ * first `Jj` operation, is a record the next incarnation reaps like any other.
  *
  * The ledger is a requirement rather than a default because the durable half
  * of containment is only as good as the journal underneath it:
@@ -211,7 +215,7 @@ export const layerAt = (repositoryRoot: string): Layer.Layer<NodeHost, JjError> 
  */
 export const layerContained = (
   options?: ContainedOptions
-): Layer.Layer<NodeHost, JjError, ProcessLedger.ProcessLedger> => {
+): Layer.Layer<NodeHost, never, ProcessLedger.ProcessLedger> => {
   const spawner = Layer.provide(
     ProcessReaper.layerSpawner({ graceMs: options?.graceMs }),
     Layer.provide(NodeChildProcessSpawner.layer, platform)
@@ -239,7 +243,7 @@ export const layerContained = (
 export const layerContainedAt = (
   repositoryRoot: string,
   options?: ContainedOptions
-): Layer.Layer<NodeHost, JjError, ProcessLedger.ProcessLedger> => {
+): Layer.Layer<NodeHost, never, ProcessLedger.ProcessLedger> => {
   const spawner = Layer.provide(
     ProcessReaper.layerSpawner({ graceMs: options?.graceMs }),
     Layer.provide(NodeChildProcessSpawner.layer, platform)

@@ -27,14 +27,13 @@ Callers branch on these, step keys digest them, and user interfaces map them to
 remediation. A code is added and never repurposed. Widening `conflict` to cover
 a new situation would silently change what an already-recorded run means.
 
-`conflict`, `invalid_ref`, `snapshot_refused`, and `unknown` always report an
-operation. The other two also reach a caller from layer construction, before any
-operation runs: a CLI layer probes `jj --version` before it exposes `Jj`, and
-that probe fails with `not_installed` when no usable binary was found, and with
-`unsupported_version` when the binary is older than `NodeJj.minimumVersion` or
-prints a version this package cannot parse. `unsupported_version` is only ever a
-construction failure, so `JjError` sits in the layer error channel of all four
-CLI layers as well as in every method's.
+Every code reaches a caller from an operation. A CLI layer builds without jj
+and probes `jj --version` before its first operation runs. That probe fails the
+operation with `not_installed`, method `version`, when no usable binary was
+found, and with `unsupported_version` when the binary is older than
+`NodeJj.minimumVersion` or prints a version this package cannot parse. The four
+CLI layers have no error channel of their own, so a program that never calls
+`Jj` never sees either code.
 
 ## Classification is one definition, shared by every layer
 

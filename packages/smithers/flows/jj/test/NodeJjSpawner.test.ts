@@ -231,6 +231,9 @@ const versionAnswers = (
 const run = <A, E>(effect: Effect.Effect<A, E, Jj>, spawner: Layer.Layer<ChildProcessSpawner>) =>
   Effect.provide(effect, Layer.provide(budgeted(NodeJj.layerSpawnerAt(directory)), spawner))
 
+/** The first operation is what checks the version, so it stands for "use jj". */
+const firstStatus = Effect.flatMap(Jj, (jj) => jj.status())
+
 process.on("exit", () => rmSync(directory, { recursive: true, force: true }))
 
 describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
@@ -266,9 +269,9 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
 
   it.effect("checks the version reported by each host runner even after a passing direct probe", () =>
     Effect.gen(function*() {
-      yield* Effect.provide(Jj, budgeted(NodeJj.layerAt(directory)))
+      yield* Effect.provide(firstStatus, budgeted(NodeJj.layerAt(directory)))
       const calls: Array<EffectChildProcess.StandardCommand> = []
-      const error = yield* Effect.flip(run(Jj, spawnerWithPath(directory, calls, oldBinary)))
+      const error = yield* Effect.flip(run(firstStatus, spawnerWithPath(directory, calls, oldBinary)))
       expect(error).toMatchObject({ code: "unsupported_version", method: "version" })
       expect(error.message).toContain("0.38.0")
       expect(calls.map((command) => command.args[0])).toEqual(["--version"])
@@ -301,7 +304,7 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
       process.env.PATH = ""
       delete process.env.SMITHERS_JJ_PATH
       try {
-        const error = yield* Effect.flip(run(Jj, spawnerWithPath(directory, calls)))
+        const error = yield* Effect.flip(run(firstStatus, spawnerWithPath(directory, calls)))
         expect(error).toMatchObject({ code: "not_installed", method: "version" })
         expect(calls).toEqual([])
       } finally {
@@ -316,7 +319,7 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
       // spawner that executes a supported jj at that path is authoritative for
       // its own layer: it is asked, and the ambient answer never decides.
       process.env.SMITHERS_JJ_PATH = oldBinary
-      const direct = yield* Effect.flip(Effect.provide(Jj, budgeted(NodeJj.layerAt(directory))))
+      const direct = yield* Effect.flip(Effect.provide(firstStatus, budgeted(NodeJj.layerAt(directory))))
       expect(direct).toMatchObject({ code: "unsupported_version", method: "version" })
       const calls: Array<EffectChildProcess.StandardCommand> = []
       const jj = yield* run(Jj, spawnerWithPath(directory, calls, join(directory, "jj")))
@@ -325,10 +328,10 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
       expect(calls.map((command) => command.args[0])).toEqual(["--version", "status"])
     }))
 
-  it.effect("rejects an old local version before exposing the spawner-backed Jj", () =>
+  it.effect("rejects an old local version on the first spawner-backed operation", () =>
     Effect.gen(function*() {
       process.env.SMITHERS_JJ_PATH = oldBinary
-      const error = yield* Effect.flip(run(Jj, realSpawner))
+      const error = yield* Effect.flip(run(firstStatus, realSpawner))
       expect(error).toMatchObject({ code: "unsupported_version", method: "version", command: "jj --version" })
       expect(error.message).toContain("0.39.0")
     }))
@@ -461,7 +464,7 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
       process.env.SMITHERS_JJ_PATH = overrideBinary
       chmodSync(overrideBinary, 0o644)
       try {
-        const error = yield* Effect.flip(run(Jj, missingBinary()))
+        const error = yield* Effect.flip(run(firstStatus, missingBinary()))
         expect(error.code).toBe("not_installed")
         expect(error.message).toContain(`jj: Cannot execute the jj binary at ${overrideBinary}.`)
         expect(error.message).toContain(`chmod +x '${overrideBinary}'`)

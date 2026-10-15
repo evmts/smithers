@@ -176,12 +176,12 @@ bundles for the browser; each implementation is imported from its own subpath.
 `NodeJj` shells out to the `jj` CLI with argv arrays and never a shell string.
 It ships four layers, and they differ along two axes.
 
-| Export                           | Signature                                                             | Process ownership | Repository      |
-| -------------------------------- | --------------------------------------------------------------------- | ----------------- | --------------- |
-| `layer`                          | `Layer<Jj, JjError>`                                                  | Its own child     | The process cwd |
-| `layerAt(repositoryRoot)`        | `(repositoryRoot: string) => Layer<Jj, JjError>`                      | Its own child     | Bound, absolute |
-| `layerSpawner`                   | `Layer<Jj, JjError, ChildProcessSpawner>`                             | The host spawner  | The process cwd |
-| `layerSpawnerAt(repositoryRoot)` | `(repositoryRoot: string) => Layer<Jj, JjError, ChildProcessSpawner>` | The host spawner  | Bound, absolute |
+| Export                           | Signature                                                           | Process ownership | Repository      |
+| -------------------------------- | ------------------------------------------------------------------- | ----------------- | --------------- |
+| `layer`                          | `Layer<Jj>`                                                         | Its own child     | The process cwd |
+| `layerAt(repositoryRoot)`        | `(repositoryRoot: string) => Layer<Jj>`                             | Its own child     | Bound, absolute |
+| `layerSpawner`                   | `Layer<Jj, never, ChildProcessSpawner>`                             | The host spawner  | The process cwd |
+| `layerSpawnerAt(repositoryRoot)` | `(repositoryRoot: string) => Layer<Jj, never, ChildProcessSpawner>` | The host spawner  | Bound, absolute |
 
 Who owns the child process: `layer` spawns through `node:child_process`
 directly, because a host must be able to checkpoint work where a spawner is
@@ -249,17 +249,21 @@ to jj; workspace names and paths use `--name=` and `--` so option-like values
 are not interpreted as CLI flags.
 
 Node and Bun require **jj 0.39.0 or newer**, pinned by the exported
-`NodeJj.minimumVersion` constant. Before exposing `Jj`, all CLI layers await a
-`jj --version` probe through the same runner used for operations. The probe
-uses the absolute host executable selected at layer construction and does not
-require the repository directory. Bound layers can be built before runtime
-storage creates that directory; operations still require a valid working directory.
-Probe results are shared per absolute path and runner for the process lifetime.
-Each host spawner has its own probe cache. Restart the process after replacing a
-binary at the same path. Operations keep using the verified path even if the
-host or spawner PATH changes. An older or unrecognized version fails construction with `JjError.code = "unsupported_version"`
-and the required minimum; a missing binary fails construction with `not_installed`.
-All four CLI layers therefore have `JjError` in their layer error channel.
+`NodeJj.minimumVersion` constant. Building a CLI layer spawns nothing and never
+fails, so a program that never calls `Jj` runs on a host without jj. The layer
+selects the absolute host executable when it is built, and the first operation
+awaits a `jj --version` probe through the same runner used for operations. The
+probe does not require the repository directory. Bound layers can be built
+before runtime storage creates that directory; operations still require a valid
+working directory. A supported probe result is shared per absolute path and
+runner for the process lifetime. Each host spawner has its own probe cache. A
+failed probe is not remembered, so the next operation probes again. Restart the
+process after replacing an accepted binary at the same path, or after installing
+jj where none was found. Operations keep using the selected path even if the
+host or spawner PATH changes. An older or unrecognized version fails the
+operation with `JjError.code = "unsupported_version"` and the required minimum;
+a missing binary fails it with `not_installed`. The four CLI layers have no
+error channel.
 
 Node and Bun repository commands (except `root`) disable jj's default new-file size limit with
 `--config snapshot.max-new-file-size=0`, so new artifacts larger than 1 MiB are
@@ -339,8 +343,9 @@ substituted. An override that names nothing falls through to `PATH`, and the
 fall-through is reported in `describe()`, and the Node and Bun layers log a
 warning annotated with the variable and path when they are built. Existing overrides and executable
 PATH candidates resolve to absolute host paths. Relative paths resolve against
-the host cwd at layer construction. Preflight and operations use the same path
-through the same runner, including when the host spawner changes PATH.
+the host cwd when the layer is built. The first operation's version probe and
+every operation use the same path through the same runner, including when the
+host spawner changes PATH.
 `smthrs doctor` prints `describe()`.
 
 `resolveJjBinary` always returns a command: when jj is genuinely absent it

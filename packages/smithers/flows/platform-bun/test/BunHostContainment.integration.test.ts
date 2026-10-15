@@ -18,7 +18,7 @@ import { Deferred, Effect, Fiber, Layer } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { spawn } from "node:child_process"
-import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as BunHost from "../src/BunHost.ts"
@@ -255,7 +255,7 @@ describe.skipIf(process.platform === "win32")("BunHost.layerContained", () => {
       }
     }), 30_000)
 
-  it.live("records and retires both the jj version probe and repository command", () =>
+  it.live("records and retires the first operation's jj probe and its command", () =>
     Effect.gen(function*() {
       // `BunJj.layer` spawns through `node:child_process` directly, so a jj
       // child leads no group the host recorded and no reaper can ever find it.
@@ -286,9 +286,10 @@ describe.skipIf(process.platform === "win32")("BunHost.layerContained", () => {
         const invocations = () => readFileSync(`${binary}.invocations`, "utf8").trim().split("\n")
         const status = yield* Effect.gen(function*() {
           const jj = yield* Jj
-          // Construction ran and retired only the startup version probe.
-          expect(invocations()).toEqual(["--version"])
-          expect(recorded).toEqual([binary])
+          // Building the host spawned nothing: the version probe waits for the
+          // first operation.
+          expect(existsSync(`${binary}.invocations`)).toBe(false)
+          expect(recorded).toEqual([])
           expect(yield* ledger.live).toEqual([])
           return yield* jj.status()
         }).pipe(Effect.provide(host), Effect.scoped)

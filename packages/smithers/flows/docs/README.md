@@ -36,9 +36,9 @@ With pnpm 11, run `pnpm add @smthrs/flows@1.0.0-rc.8 effect` instead, then
 `pnpm approve-builds esbuild`. pnpm 11 installs only versions at least 24 hours
 old, so `@next` can resolve to a candidate more than one release behind.
 
-The host also needs [jj](https://jj-vcs.github.io/jj/latest/install-and-setup/)
-0.39.0 or later on `PATH`: it runs `jj --version` when it starts and stops with
-`No jj on PATH` without it. On macOS, `brew install jj`.
+Compensable steps and time-travel rewinds also need
+[jj](https://jj-vcs.github.io/jj/latest/install-and-setup/) 0.39.0 or later on
+`PATH`; a host without it runs every other step. On macOS, `brew install jj`.
 [Installation](./installation.md) covers the requirements, the import forms,
 the packages Bun and the browser add, and when to depend on individual engine
 packages instead.

@@ -1,16 +1,16 @@
 import { describe, expect, it } from "@effect/vitest"
-import { JjError } from "@smthrs/jj"
+import { Jj, JjError } from "@smthrs/jj"
 import * as NodeJj from "@smthrs/jj/node/NodeJj"
 import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as BunHost from "../src/BunHost.ts"
 
-describe.skipIf(process.platform === "win32")("BunHost startup probe budget", () => {
+describe.skipIf(process.platform === "win32")("BunHost first-use jj probe budget", () => {
   const contained = { graceMs: 20 }
   const factories = [
     ["default", () => BunHost.layer],
@@ -21,7 +21,7 @@ describe.skipIf(process.platform === "win32")("BunHost startup probe budget", ()
   ] as const
 
   for (const [name, build] of factories) {
-    it(`bounds ${name} startup before exposing FileSystem`, async () => {
+    it(`exposes FileSystem from ${name} without probing jj, and bounds the first Jj operation`, async () => {
       const root = mkdtempSync(join(tmpdir(), "bun-startup-budget-"))
       const binary = join(root, "jj")
       const pidFile = join(root, "pid")
@@ -38,10 +38,18 @@ describe.skipIf(process.platform === "win32")("BunHost startup probe budget", ()
         const configured = name === "default"
           ? host
           : host.pipe(Layer.provide(Layer.succeed(NodeJj.StartupTimeoutMs)(budget)))
-        const start = Date.now()
-        const error = await Effect.runPromise(Effect.flip(
-          Effect.provide(FileSystem.FileSystem, configured).pipe(Effect.timeout(watchdog))
-        ))
+        const { error, probedAtBuild, start } = await Effect.runPromise(
+          Effect.gen(function*() {
+            // Building the host and using a service other than Jj spawns nothing.
+            yield* FileSystem.FileSystem
+            const probedAtBuild = existsSync(pidFile)
+            const jj = yield* Jj
+            const start = Date.now()
+            const error = yield* Effect.flip(jj.status())
+            return { error, probedAtBuild, start }
+          }).pipe(Effect.provide(configured), Effect.timeout(watchdog))
+        )
+        expect(probedAtBuild).toBe(false)
         expect(error).toBeInstanceOf(JjError)
         expect(error).toMatchObject({ code: "unknown", method: "version", cause: { code: "ETIMEDOUT" } })
         expect(error).toMatchObject({ command: `${binary} --version` })

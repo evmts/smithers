@@ -27,13 +27,13 @@ a browser; a page composes
 [`@smthrs/platform-browser`](/api/platform-browser) instead.
 :::
 
-The complete host bundles require jj 0.39.0 or newer. Each bundle checks its jj
-executable before exposing repository operations. Construction can fail with
-`JjError`, including `not_installed` or `unsupported_version`. The contained
-bundles route that probe
-through their process spawner and retire its ledger entry when it exits. Probe
-results are cached per resolved absolute executable path and runner; contained
-spawners share a result only within the same spawner instance.
+Every host bundle builds without jj. The `Jj` slot requires jj 0.39.0 or newer
+and checks its executable on its first operation, which fails with `JjError`
+`not_installed` or `unsupported_version` when jj is missing or older. The
+contained bundles route that probe through their process spawner and retire its
+ledger entry when it exits. Probe results are cached per resolved absolute
+executable path and runner; contained spawners share a result only within the
+same spawner instance.
 
 ## Entry points
 
@@ -52,18 +52,18 @@ Supported runtimes are Bun >=1.4.0 and Node.js >=26.4.0.
 
 ## BunHost
 
-The complete closed Host bundle: layers, construction errors, models,
+The complete closed Host bundle: layers, root errors, models,
 implementation identities, and platform module re-exports.
 
 ### Layers
 
-| Export             | Signature                                                                                                     |
-| ------------------ | ------------------------------------------------------------------------------------------------------------- |
-| `layer`            | `Layer.Layer<BunHost \| Crypto.Crypto, JjError>`                                                              |
-| `layerAt`          | `(root: string) => Layer.Layer<BunHost \| Crypto.Crypto, JjError>`                                            |
-| `layerContained`   | `(options?: ContainedOptions) => Layer.Layer<BunHost \| Crypto.Crypto, JjError, ProcessLedger>`               |
-| `layerContainedAt` | `(root: string, options?: ContainedOptions) => Layer.Layer<BunHost \| Crypto.Crypto, JjError, ProcessLedger>` |
-| `layerHttpClient`  | `Layer.Layer<HttpClient>`                                                                                     |
+| Export             | Signature                                                                                                   |
+| ------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `layer`            | `Layer.Layer<BunHost \| Crypto.Crypto>`                                                                     |
+| `layerAt`          | `(root: string) => Layer.Layer<BunHost \| Crypto.Crypto>`                                                   |
+| `layerContained`   | `(options?: ContainedOptions) => Layer.Layer<BunHost \| Crypto.Crypto, never, ProcessLedger>`               |
+| `layerContainedAt` | `(root: string, options?: ContainedOptions) => Layer.Layer<BunHost \| Crypto.Crypto, never, ProcessLedger>` |
+| `layerHttpClient`  | `Layer.Layer<HttpClient>`                                                                                   |
 
 `layer` provides all five Host services, including the runtime-independent
 `Path`. `Jj` is bound to the process working directory.

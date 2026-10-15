@@ -19,14 +19,14 @@
  * database. A double at any of those points would prove nothing, because the
  * subject is precisely what is left when no code of ours got to run.
  */
-import { afterAll, beforeAll, describe, expect, it } from "@effect/vitest"
+import { afterAll, describe, expect, it } from "@effect/vitest"
 import { ProcessLedger } from "@smthrs/kernel"
 import * as NodeHost from "@smthrs/platform-node/NodeHost"
 import * as ProcessReaper from "@smthrs/platform-node/ProcessReaper"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { spawn } from "node:child_process"
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
@@ -35,20 +35,9 @@ import * as NodeRuntime from "../src/NodeRuntime.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-reap-host-"))
 const fixture = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "reap-host.ts")
-const previousJj = process.env.SMITHERS_JJ_PATH
 
-beforeAll(() => {
-  // These hosts exercise containment, without needing an installed jj or a repository.
-  const binary = join(directory, "jj")
-  writeFileSync(binary, "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo \"jj 0.39.0\"; fi\n", { mode: 0o755 })
-  process.env.SMITHERS_JJ_PATH = binary
-})
-
-afterAll(() => {
-  if (previousJj === undefined) delete process.env.SMITHERS_JJ_PATH
-  else process.env.SMITHERS_JJ_PATH = previousJj
-  rmSync(directory, { recursive: true, force: true })
-})
+// These hosts exercise containment. None of them calls jj, so none needs one.
+afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
 const groupIsAlive = (pgid: number): boolean => {
   try {
@@ -158,13 +147,11 @@ const settled = async (pgid: number): Promise<boolean> => {
 }
 
 describe("a host that was killed", () => {
-  it("journals and retires the jj probe before recording its live child", async () => {
+  it("starts no jj probe, so its live child is the only process it journals", async () => {
     const filename = join(directory, "probe", "runtime.sqlite")
     const pgid = await killHost(filename, "probe-host")
     try {
       expect(journalOf(filename, "probe-host")).toEqual([
-        { event_type: "flows.host.process-spawned.v1" },
-        { event_type: "flows.host.process-exited.v1" },
         { event_type: "flows.host.process-spawned.v1" }
       ])
     } finally {
@@ -182,8 +169,6 @@ describe("a host that was killed", () => {
       // ends: its supervisor lost the host's channel and stopped it.
       expect(await settled(pgid)).toBe(true)
       expect(journalOf(filename, "supervised-host")).toEqual([
-        { event_type: "flows.host.process-spawned.v1" },
-        { event_type: "flows.host.process-exited.v1" },
         { event_type: "flows.host.process-spawned.v1" }
       ])
 
@@ -194,11 +179,7 @@ describe("a host that was killed", () => {
       // never aims a kill at a pid the operating system has handed out again.
       expect(journalOf(filename, "supervised-host")).toEqual([
         { event_type: "flows.host.process-spawned.v1" },
-        { event_type: "flows.host.process-exited.v1" },
-        { event_type: "flows.host.process-spawned.v1" },
-        { event_type: "flows.host.process-reap-skipped.v1", reason: "process-gone" },
-        { event_type: "flows.host.process-spawned.v1" },
-        { event_type: "flows.host.process-exited.v1" }
+        { event_type: "flows.host.process-reap-skipped.v1", reason: "process-gone" }
       ])
     } finally {
       if (groupIsAlive(pgid)) process.kill(-pgid, "SIGKILL")
@@ -215,8 +196,6 @@ describe("a host that was killed", () => {
       // can do nothing about.
       expect(groupIsAlive(pgid)).toBe(true)
       expect(journalOf(filename, "reap-host")).toEqual([
-        { event_type: "flows.host.process-spawned.v1" },
-        { event_type: "flows.host.process-exited.v1" },
         { event_type: "flows.host.process-spawned.v1" }
       ])
 
@@ -228,11 +207,7 @@ describe("a host that was killed", () => {
       // against a pid the operating system has since handed to somebody else.
       expect(journalOf(filename, "reap-host")).toEqual([
         { event_type: "flows.host.process-spawned.v1" },
-        { event_type: "flows.host.process-exited.v1" },
-        { event_type: "flows.host.process-spawned.v1" },
-        { event_type: "flows.host.process-reaped.v1" },
-        { event_type: "flows.host.process-spawned.v1" },
-        { event_type: "flows.host.process-exited.v1" }
+        { event_type: "flows.host.process-reaped.v1" }
       ])
     } finally {
       if (groupIsAlive(pgid)) process.kill(-pgid, "SIGKILL")

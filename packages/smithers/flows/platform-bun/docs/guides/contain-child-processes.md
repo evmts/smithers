@@ -130,15 +130,16 @@ const status = Effect.flatMap(Jj, (jj) => jj.status()).pipe(
 ```
 
 That is the observable difference: the same call under `BunHost.layer` leaves
-the ledger empty. The initial `jj --version` probe uses the selected runner
-too, so a contained host records and retires it before exposing `Jj`. Probe
-results are cached per resolved absolute executable path and runner, with a
-separate cache for each spawner instance.
+the ledger empty. The `jj --version` probe that the first `Jj` operation runs
+uses the selected runner too, so a contained host records and retires it like
+any other child. Building the host spawns nothing. Probe results are cached per
+resolved absolute executable path and runner, with a separate cache for each
+spawner instance.
 
-Every aggregate host waits up to 5000 ms for the startup probe, then interrupts
-it and awaits process cleanup. A probe that misses this budget, or that the
+The first `Jj` operation on every aggregate host waits up to 5000 ms for the
+version probe, then interrupts it and awaits process cleanup. A probe that misses this budget, or that the
 spawner was too busy to start in time, is retried once. A second timeout fails
-with a typed `JjError` that has `method: "version"`, `code: "unknown"`,
+the operation with a typed `JjError` that has `method: "version"`, `code: "unknown"`,
 `cause.code: "ETIMEDOUT"`, and the executable path in its command and message.
 Cleanup can add the contained spawner's shutdown grace period to each attempt. Raw hosts close the probe's pipes and kill its
 direct child; they do not add a ledger entry.
@@ -154,7 +155,7 @@ const boundedHost = host.pipe(
 ```
 
 The budget is a positive, finite number of milliseconds, at most 2147483647.
-Timeout and interruption allow a later construction to retry the probe.
+Timeout and interruption allow the next operation to retry the probe.
 
 ## What the reaper refuses to kill
 

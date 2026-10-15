@@ -185,8 +185,10 @@ fi
         }),
         (gate) =>
           Effect.acquireUseRelease(
-            Effect.forkChild(Effect.provide(Jj, NodeJj.layerAt(root))),
-            (building) =>
+            // The first operation runs the version probe before it takes a lock.
+            Effect.flatMap(Effect.provide(Jj, NodeJj.layerAt(root)), (jj) =>
+              Effect.forkChild(Effect.flip(jj.snapshot()))),
+            (snapshotting) =>
               Effect.gen(function*() {
                 yield* Effect.promise(async (signal) => {
                   for (;;) {
@@ -195,21 +197,24 @@ fi
                       await readFile(join(root, "ready"))
                       return
                     } catch (cause) {
-                      if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause
+                      if ((cause as NodeJS.ErrnoException).code !== "ENOENT") {
+                        throw cause
+                      }
                     }
                   }
                 })
                 // The FIFO holds a real child; only the test clock advances.
                 yield* TestClock.adjust(5_200)
-                yield* Effect.promise(() => gate.writeFile("jj 0.39.0\n"))
-                const jj = yield* Fiber.join(building)
                 vi.mocked(rename).mockRejectedValueOnce(errno("EACCES"))
-                const error = yield* Effect.flip(jj.snapshot())
+                yield* Effect.promise(() =>
+                  gate.writeFile("jj 0.39.0\n")
+                )
+                const error = yield* Fiber.join(snapshotting)
                 expect(error).toMatchObject({ code: "unknown", module: "NodeJj", method: "snapshot" })
                 expect(error.message).toContain("repository lock failed")
                 expect(existsSync(join(root, "started"))).toBe(false)
               }),
-            (building) => Fiber.interrupt(building)
+            (snapshotting) => Fiber.interrupt(snapshotting)
           ),
         (gate) => Effect.promise(() => gate.close())
       )

@@ -471,7 +471,7 @@ describe.skipIf(process.platform === "win32")("NodeJj spawn errors", () => {
 
   it.live("reports a non-ENOENT spawn failure as `unknown` rather than `not_installed`", () =>
     Effect.gen(function*() {
-      const error = yield* Effect.flip(run(Jj))
+      const error = yield* Effect.flip(run(Effect.flatMap(Jj, (jj) => jj.status())))
 
       expect(error.code).toBe("unknown")
       expect(error.message).toMatch(/^jj version: /)

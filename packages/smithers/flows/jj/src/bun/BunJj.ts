@@ -10,7 +10,7 @@
 
 import type * as Layer from "effect/Layer"
 import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import type { Jj, JjError } from "../Jj.ts"
+import type { Jj } from "../Jj.ts"
 import * as NodeJj from "../node/NodeJj.ts"
 
 /**
@@ -19,7 +19,7 @@ import * as NodeJj from "../node/NodeJj.ts"
  * @category layers
  * @since 0.1.0
  */
-export const layer: Layer.Layer<Jj, JjError> = NodeJj.layer
+export const layer: Layer.Layer<Jj> = NodeJj.layer
 
 /**
  * Provides the `Jj` service bound to one absolute repository root under Bun.
@@ -39,7 +39,7 @@ export const layerAt = NodeJj.layerAt
  * @category layers
  * @since 0.1.0
  */
-export const layerSpawner: Layer.Layer<Jj, JjError, ChildProcessSpawner> = NodeJj.layerSpawner
+export const layerSpawner: Layer.Layer<Jj, never, ChildProcessSpawner> = NodeJj.layerSpawner
 
 /**
  * Provides a repository-bound `Jj` service through the host spawner under Bun.

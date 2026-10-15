@@ -18,9 +18,9 @@ in a run's past. Every output block below is real output from
 ## Prerequisites
 
 - Node.js 26.4.0 or later. It runs the TypeScript file below directly.
-- [jj](https://jj-vcs.github.io/jj/latest/install-and-setup/) 0.39.0 or later
-  on `PATH`. The durable host runs `jj --version` when it starts. On macOS,
-  `brew install jj`.
+
+This page only replays, so it does not need jj. Forking and rewinding do; see
+[Rewind a run to a frame](./guides/rewind-a-run.md).
 
 Create a project and install the engine, `effect`, and this package:
 

@@ -38,15 +38,16 @@ const requiredPeers = Object.keys(manifest.peerDependencies)
   .sort()
 
 describe("Installation docs", () => {
-  it("require jj for every complete bundle in installation and quickstart", () => {
-    // Every `BunHost` factory is `Layer.mergeAll` over a `BunJj` layer whose
-    // version probe runs at construction, so a program that asks for only
-    // `FileSystem` still fails with `not_installed` on a host without jj.
+  it("require jj only for Jj operations in installation and quickstart", () => {
+    // Every `BunHost` factory builds without jj (#3894): the `BunJj` slot
+    // probes on its first operation, so only a `Jj` call fails `not_installed`.
     for (const page of ["../docs/installation.md", "../docs/quickstart.md"]) {
       const text = flatten(read(page))
       expect(text).toMatch(/jj 0\.39\.0 or (later|newer)/)
       expect(text).toMatch(/Jujutsu/)
-      expect(text).not.toMatch(/if your program uses that slot/)
+      expect(text).toMatch(/builds? without jj/)
+      expect(text).toContain("not_installed")
+      expect(text).not.toMatch(/while the layer is built|at construction|before the program body runs/)
     }
   })
 
@@ -60,17 +61,18 @@ describe("Installation docs", () => {
     }
   })
 
-  it("documents construction-time JjError on every host factory", () => {
+  it("documents that every host factory builds without jj", () => {
     const source = read("../src/BunHost.ts")
     for (const factory of ["layer", "layerAt", "layerContained", "layerContainedAt"]) {
       const declaration = source.search(new RegExp(`\\nexport const ${factory}\\b`))
       expect(declaration, factory).toBeGreaterThan(0)
-      const jsdoc = source.slice(source.lastIndexOf("/**", declaration), declaration)
-      expect(flatten(jsdoc), factory).toMatch(/JjError/)
+      const jsdoc = flatten(source.slice(source.lastIndexOf("/**", declaration), declaration))
+      expect(jsdoc, factory).toMatch(/[Bb]uilds( on a host)? without jj/)
+      expect(jsdoc, factory).not.toMatch(/Fails at construction/)
     }
   })
 
-  it("gives the contained factories the JjError channel in troubleshooting", () => {
+  it("quotes the contained factories' signature in troubleshooting", () => {
     const source = flatten(read("../src/BunHost.ts"))
     const signature = source.match(/layerContained = \([^)]*\): (Layer\.Layer<[^>]+>)/)?.[1]
     expect(signature).toBeDefined()

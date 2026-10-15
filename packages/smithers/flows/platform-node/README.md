@@ -95,7 +95,7 @@ handle's `kill` for signal delivery; cleanup failure retains the ledger record.
 `ScopedProcess` supplies this lifetime policy for transient commands without a
 durable ledger, and exposes the separate native `Handle.targetPid` for diagnostics.
 
-Complete host bundles require jj 0.39.0 or newer. Construction probes the binary through its selected runner; a contained host records and retires this probe in its process ledger and can fail with `JjError` (`not_installed` or `unsupported_version`). Repository commands use the selected process runner.
+Complete host bundles build without jj. The first `Jj` operation probes the binary through its selected runner and fails with `JjError` (`not_installed` or `unsupported_version`) when jj 0.39.0 or newer is missing; a contained host records and retires this probe in its process ledger. Repository commands use the same runner.
 
 ## Modules
 

@@ -13,10 +13,6 @@ which layer is responsible for each.
 ## Prerequisites
 
 - Node.js 26.4.0 or later, on a POSIX host.
-- `jj` 0.39.0 or newer on `PATH`. Check with `jj --version`. Every complete
-  `NodeHost` layer checks jj at construction, including this quickstart's
-  filesystem and process examples. For applications that do not need jj, see
-  [Individual services without jj](./installation.md#individual-services-without-jj).
 - A project with the packages installed:
   `npm install @smthrs/platform-node@next @smthrs/kernel@next effect`. The
   package ships the `smithers-jj-export` helper the filesystem runs.

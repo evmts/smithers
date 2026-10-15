@@ -58,12 +58,13 @@ The program names Bun nowhere. It asks for a service tag, and the layer decides
 what fills it, so swapping `BunHost.layer` for `NodeHost.layer` from
 `@smthrs/platform-node` does not change a character of it.
 
-The complete host bundles require jj 0.39.0 or newer. Each bundle builds its jj
-layer with one version probe; construction can fail with `JjError`, including
-`not_installed` or `unsupported_version`. The version probe and repository commands use the
-selected process runner. Contained bundles record and retire the probe in the
-host process ledger. Probe results are cached per resolved absolute executable
-path and runner, with a separate cache for each spawner instance.
+Every host bundle builds without jj. The `Jj` slot needs jj 0.39.0 or newer: its
+first operation runs one version probe and fails with `JjError` `not_installed`
+or `unsupported_version` when jj is missing or older. The version probe and
+repository commands use the selected process runner. Contained bundles record
+and retire the probe in the host process ledger. Probe results are cached per
+resolved absolute executable path and runner, with a separate cache for each
+spawner instance.
 
 ## Modules
 

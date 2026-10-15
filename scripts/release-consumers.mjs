@@ -2,11 +2,11 @@
 import assert from "node:assert/strict"
 import { execFile, execFileSync, spawn } from "node:child_process"
 import { createHash } from "node:crypto"
-import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs"
+import { accessSync, constants, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
-import { dirname, isAbsolute, join, relative, resolve } from "node:path"
+import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { promisify } from "node:util"
 
 import { build as bundle } from "esbuild"
@@ -595,6 +595,21 @@ export const importedPackages = (program) => [
 ].sort()
 
 /**
+ * `PATH` without the entries that hold an executable `jj`. The quickstart never
+ * calls `Jj`, so it must run on a machine that never installed jj (#3894).
+ */
+export const pathWithoutJj = (path = "") =>
+  path.split(delimiter).filter((entry) => {
+    if (entry === "") return false
+    try {
+      accessSync(join(entry, "jj"), constants.X_OK)
+      return !statSync(join(entry, "jj")).isFile()
+    } catch {
+      return true
+    }
+  }).join(delimiter)
+
+/**
  * The install line plus the pasted quickstart, from an empty directory (#3838).
  * Nothing is preinstalled: the project declares exactly what the install line
  * names, so a package the program reaches only through an optional peer fails
@@ -607,7 +622,8 @@ export const importedPackages = (program) => [
  * pre-helper rehearsal on the configured source helper. `latestEffect`, when
  * given, is the release npm calls latest: an npm install must get exactly it.
  * pnpm 11 holds a release younger than its `minimumReleaseAge`, so a pnpm
- * install is held to the range only and reports what it got.
+ * install is held to the range only and reports what it got. The program runs
+ * with jj removed from `PATH` and no `SMITHERS_JJ_PATH`.
  */
 export const runQuickstartConsumer = async (
   manager,
@@ -668,8 +684,10 @@ export const runQuickstartConsumer = async (
     const [command, ...args] = quickstart.run
     assert.equal(command, "node", "the quickstart runs under node")
     const runs = []
+    const withoutJj = { ...env, PATH: pathWithoutJj(env.PATH) }
+    delete withoutJj.SMITHERS_JJ_PATH
     for (const attempt of ["first run", "second run"]) {
-      const result = await captureProcess(process.execPath, args, consumer, { timeoutMs: 120_000, env })
+      const result = await captureProcess(process.execPath, args, consumer, { timeoutMs: 120_000, env: withoutJj })
       assert.equal(result.ok, true, manager + " quickstart " + attempt + " failed:\n" + result.output)
       assert.equal(result.output.trim(), quickstart.printed, manager + " quickstart " + attempt + " printed something else")
       runs.push(result.output.trim())

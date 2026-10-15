@@ -20,12 +20,11 @@ appear in, and disappear from, the process ledger.
   the line because `contained.ts` imports its `ProcessLedger`, and Bun's
   isolated linker and pnpm link only the packages a project declares. See
   [Installation](./installation.md).
-- [Jujutsu](https://jj-vcs.github.io) at jj 0.39.0 or later on `PATH`. Confirm
-  it with `jj --version`. Neither program below touches `Jj`, but every
-  complete bundle probes jj while the layer is built and fails with `JjError`
-  before the program body runs when it is missing. See
-  [Installation](./installation.md) for `SMITHERS_JJ_PATH` and for composing
-  service layers without jj.
+- [Jujutsu](https://jj-vcs.github.io) at jj 0.39.0 or later on `PATH`, only for
+  a program that calls `Jj`. Neither program below does, and every bundle
+  builds without jj; a `Jj` operation on a host without it fails with
+  `JjError` `not_installed`. See [Installation](./installation.md) for
+  `SMITHERS_JJ_PATH`.
 
 ## Run a file operation and a command
 
@@ -67,8 +66,9 @@ bun run quickstart.ts
 ```
 
 `BunHost.layer` provided all five slots; the program used two of them. The
-other three were built and never asked for, and building `Jj` is where the
-jj version probe ran.
+other three were built and never asked for. Building `Jj` spawned nothing: its
+jj version probe runs on the first `Jj` operation, which this program never
+makes.
 
 ## Turn containment on
 

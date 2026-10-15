@@ -25,7 +25,7 @@
 import * as BunChildProcessSpawner from "@effect/platform-bun/BunChildProcessSpawner"
 import * as BunCrypto from "@effect/platform-bun/BunCrypto"
 import * as BunPath from "@effect/platform-bun/BunPath"
-import type { Jj, JjError } from "@smthrs/jj"
+import type { Jj } from "@smthrs/jj"
 import * as BunJj from "@smthrs/jj/bun/BunJj"
 import type { HostServiceIds } from "@smthrs/kernel/HostServices"
 import type * as KernelProcessConfinement from "@smthrs/kernel/ProcessConfinement"
@@ -240,16 +240,16 @@ export const layerHttpClient: Layer.Layer<HttpClient> = EgressHttpClient.layer(p
  * Provides all five Bun Host services, including the runtime-independent Path
  * service.
  *
- * Fails at construction with {@link JjError} carrying `not_installed` or
- * `unsupported_version`: the `Jj` slot is merged eagerly and probes
- * `jj --version` while the layer is built, before the program body runs and
- * whether or not the program asks for `Jj`. Requires jj 0.39.0 or later.
+ * Builds on a host without jj. The `Jj` slot probes `jj --version` on its
+ * first operation and fails that operation with `JjError` carrying
+ * `not_installed` or `unsupported_version`; a program that never calls `Jj`
+ * runs without jj. `Jj` requires jj 0.39.0 or later.
  *
  * @category layers
  * @since 1.0.0-rc.0
  * @slop
  */
-export const layer: Layer.Layer<BunHost | Crypto.Crypto, JjError> = Layer.mergeAll(
+export const layer: Layer.Layer<BunHost | Crypto.Crypto> = Layer.mergeAll(
   ProcessConfinement.layer(),
   platform,
   Layer.provide(BunChildProcessSpawner.layer, platform),
@@ -264,13 +264,13 @@ export const layer: Layer.Layer<BunHost | Crypto.Crypto, JjError> = Layer.mergeA
  * is not absolute or contains NUL; the empty string counts. The check runs
  * when the factory is called, before any layer exists.
  *
- * Fails at construction with {@link JjError} exactly as {@link layer} does:
- * the `Jj` slot probes `jj --version` while the layer is built.
+ * Builds without jj exactly as {@link layer} does: the `Jj` slot probes
+ * `jj --version` on its first operation.
  *
  * @category layers
  * @since 1.0.0-rc.0
  */
-export const layerAt = (root: string): Layer.Layer<BunHost | Crypto.Crypto, JjError> => {
+export const layerAt = (root: string): Layer.Layer<BunHost | Crypto.Crypto> => {
   const repositoryRoot = absoluteRoot("layerAt", root)
   return Layer.mergeAll(
     ProcessConfinement.layer(),
@@ -292,8 +292,8 @@ export const layerAt = (root: string): Layer.Layer<BunHost | Crypto.Crypto, JjEr
  * it makes, `process.kill` and `taskkill`, are Node's, and Bun implements
  * them unchanged.
  *
- * Fails at construction with {@link JjError} exactly as {@link layer} does;
- * here the `jj --version` probe runs through the contained spawner, so its
+ * Builds without jj exactly as {@link layer} does; here the first
+ * operation's `jj --version` probe runs through the contained spawner, so its
  * record enters and leaves the ledger like any other child.
  *
  * @category layers
@@ -301,7 +301,7 @@ export const layerAt = (root: string): Layer.Layer<BunHost | Crypto.Crypto, JjEr
  */
 export const layerContained = (
   options?: ContainedOptions
-): Layer.Layer<BunHost | Crypto.Crypto, JjError, ProcessLedger.ProcessLedger> => {
+): Layer.Layer<BunHost | Crypto.Crypto, never, ProcessLedger.ProcessLedger> => {
   const spawner = Layer.provide(
     ProcessReaper.layerSpawner({ graceMs: options?.graceMs }),
     Layer.provide(BunChildProcessSpawner.layer, platform)
@@ -322,8 +322,7 @@ export const layerContained = (
  *
  * Refuses a root exactly as {@link layerAt} does: {@link BunHostError} with
  * code `invalid_repository_root`, thrown when the factory is called.
- * Fails at construction with {@link JjError} exactly as {@link layerContained}
- * does.
+ * Builds without jj exactly as {@link layerContained} does.
  *
  * @category layers
  * @since 1.0.0-rc.0
@@ -331,7 +330,7 @@ export const layerContained = (
 export const layerContainedAt = (
   root: string,
   options?: ContainedOptions
-): Layer.Layer<BunHost | Crypto.Crypto, JjError, ProcessLedger.ProcessLedger> => {
+): Layer.Layer<BunHost | Crypto.Crypto, never, ProcessLedger.ProcessLedger> => {
   const repositoryRoot = absoluteRoot("layerContainedAt", root)
   const spawner = Layer.provide(
     ProcessReaper.layerSpawner({ graceMs: options?.graceMs }),

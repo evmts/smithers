@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
+import { delimiter, dirname, join } from "node:path"
 import test from "node:test"
 import { satisfies } from "semver"
 import {
@@ -20,6 +20,7 @@ import {
   migrationProfiles,
   minimalProfiles,
   onEffect,
+  pathWithoutJj,
   pnpmIgnoredBuilds,
   readQuickstart,
   refuseUnsupportedEffect,
@@ -523,6 +524,20 @@ test("program imports reduce to package names, without relative and node: specif
   assert.deepEqual(importedPackages("console.log(1)"), [])
 })
 
+test("the quickstart runs with every PATH entry that holds an executable jj removed", () => {
+  const root = mkdtempSync(join(tmpdir(), "release-path-without-jj-"))
+  try {
+    const [withJj, plain, inert, named] = ["with-jj", "plain", "inert", "named"].map((name) => join(root, name))
+    for (const directory of [withJj, plain, inert, join(named, "jj")]) mkdirSync(directory, { recursive: true })
+    writeFileSync(join(withJj, "jj"), "#!/bin/sh\n", { mode: 0o755 })
+    writeFileSync(join(inert, "jj"), "not a program\n", { mode: 0o644 })
+    assert.equal(pathWithoutJj([withJj, plain, "", inert, named, withJj].join(delimiter)), [plain, inert, named].join(delimiter))
+    assert.equal(pathWithoutJj(undefined), "")
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test("every Flows page states the manifest's Node floor and none says the package is off npm", () => {
   const manifest = JSON.parse(readFileSync(join(repoRoot, "packages/smithers/flows/package.json"), "utf8"))
   const [, floor] = /^>=(\d+\.\d+\.\d+)$/.exec(manifest.engines.node)
@@ -562,8 +577,15 @@ test("the quickstart consumer passes only when the install line brings what the 
         }, { "NodeRuntime.js": 'export { read } from "@smthrs/platform-node"\n' }),
         pack(directory, "platform-node", { name: "@smthrs/platform-node", version, type: "module", main: "index.js" }, {
           "index.js": [
-            'import { existsSync, readFileSync, writeFileSync } from "node:fs"',
+            'import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs"',
             'export const read = (path) => {',
+            '  // The gate runs the quickstart where no jj is reachable (#3894).',
+            '  if (process.env.SMITHERS_JJ_PATH !== undefined) throw new Error("SMITHERS_JJ_PATH is set")',
+            '  for (const entry of (process.env.PATH ?? "").split(":")) {',
+            '    if (entry !== "" && existsSync(entry + "/jj") && statSync(entry + "/jj").isFile()) {',
+            '      throw new Error("jj is on the quickstart PATH: " + entry)',
+            '    }',
+            '  }',
             '  if (!existsSync(".journal")) writeFileSync(".journal", readFileSync(path))',
             '  return readFileSync(".journal", "utf8")',
             '}',

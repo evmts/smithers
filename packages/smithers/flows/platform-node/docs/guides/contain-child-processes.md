@@ -37,7 +37,7 @@ const host = NodeHost.layerContained({ graceMs: 2000 }).pipe(
 )
 ```
 
-`host` is a `Layer<NodeHost, JjError>`: the same five services `NodeHost.layer` hands
+`host` is a `Layer<NodeHost>`: the same five services `NodeHost.layer` hands
 out, spawning through the contained spawner. Swap `layerMemory` for
 `ProcessLedger.layer` to get the durable ledger, and provide a `Journal` from
 [`@smthrs/journal`](/api/journal) underneath it.

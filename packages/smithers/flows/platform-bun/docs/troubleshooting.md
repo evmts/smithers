@@ -96,7 +96,7 @@ your code.
 `@smthrs/kernel/ProcessLedger`.
 
 **Cause.** Both contained factories return
-`Layer.Layer<BunHost | Crypto.Crypto, JjError, ProcessLedger.ProcessLedger>`.
+`Layer.Layer<BunHost | Crypto.Crypto, never, ProcessLedger.ProcessLedger>`.
 The ledger is a
 requirement rather than a built-in default, because the durable half is only as
 good as the journal underneath it, and only your program knows whether it has
@@ -148,15 +148,16 @@ between them does not change. See
 
 ## Jj fails with not_installed
 
-**Symptom.** Building any complete bundle fails with a `JjError` whose code
-is `not_installed` or `unsupported_version` before the program body runs,
-even when the program never asks for `Jj`.
+**Symptom.** A `Jj` operation fails with a `JjError` whose code is
+`not_installed` or `unsupported_version` and whose method is `version`. The
+host built and every other service works.
 
-**Cause.** No usable `jj` executable, or one older than 0.39.0. Every
-`BunHost` factory builds its `Jj` layer eagerly, and that layer probes
-`jj --version` at construction. This package vendors no binaries and installs
-nothing on your behalf.
+**Cause.** No usable `jj` executable, or one older than 0.39.0. The `Jj` slot
+probes `jj --version` on its first operation, and the operation that triggered
+the probe did not run. This package vendors no binaries and installs nothing on
+your behalf.
 
 **Fix.** Install [Jujutsu](https://jj-vcs.github.io), which provides the `jj`
-command, or set `SMITHERS_JJ_PATH` to the executable you want spawned.
+command, or set `SMITHERS_JJ_PATH` to the executable you want spawned, then
+restart the program: the slot selects the executable when the layer is built.
 [`@smthrs/jj`](/api/jj) documents the resolution order and the failure codes.

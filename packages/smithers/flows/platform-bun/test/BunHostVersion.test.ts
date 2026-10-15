@@ -9,7 +9,7 @@ import { join } from "node:path"
 import * as BunHost from "../src/BunHost.ts"
 
 describe("BunHost startup", () => {
-  it.live("propagates a native executable's unsupported version as a typed construction failure", () =>
+  it.live("propagates a native executable's unsupported version as the first Jj operation's typed failure", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => mkdtemp(join(tmpdir(), "flows-bun-host-version-"))),
       (root) =>
@@ -21,7 +21,9 @@ describe("BunHost startup", () => {
           const previous = process.env.SMITHERS_JJ_PATH
           process.env.SMITHERS_JJ_PATH = binary
           try {
-            const error = yield* Effect.flip(Effect.provide(Jj, BunHost.layerAt(root)))
+            const error = yield* Effect.flip(
+              Effect.provide(Effect.flatMap(Jj, (jj) => jj.status()), BunHost.layerAt(root))
+            )
             expect(error).toMatchObject({ code: "unsupported_version", method: "version" })
             expect(error.message).toContain("0.39.0")
             expect(error.message).toContain(`found ${version}`)

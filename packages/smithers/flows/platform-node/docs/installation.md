@@ -34,20 +34,25 @@ The package ships ESM, CommonJS, and TypeScript declarations.
 | Node.js 26.4.0 or later         | the minimum this package's `engines` field declares                   |
 | a POSIX host                    | Windows has none of the primitives below and is unsupported           |
 | the `smithers-jj-export` helper | `AtomicFileSystem` runs every guarded filesystem operation through it |
-| `jj` 0.39.0 or newer on `PATH`  | required at construction by every complete `NodeHost` layer           |
+| `jj` 0.39.0 or newer on `PATH`  | required by `Jj` operations; a host builds without it                 |
 
-### jj is checked at construction
+### jj is checked on first use
 
 Every complete host bundle, `NodeHost.layer`, `NodeHost.layerAt`,
-`NodeHost.layerContained`, and `NodeHost.layerContainedAt`, builds a
-version-checked `Jj` layer before providing its services. This requires jj
-0.39.0 or newer even when the program requests only the filesystem or process
-spawner. Check the installed version with `jj --version`.
+`NodeHost.layerContained`, and `NodeHost.layerContainedAt`, builds without jj
+and spawns nothing while it builds. Its `Jj` service runs `jj --version` on its
+first operation, so a program that uses only the filesystem, process spawner,
+or HTTP client runs on a host with no jj. Compensable steps, time-travel
+restores, and any code that calls `Jj` need jj 0.39.0 or newer. Check the
+installed version with `jj --version`.
 
-If the executable is missing, bundle construction fails with a typed `JjError`
+If the executable is missing, that first operation fails with a typed `JjError`
 whose code is `not_installed`. An older version fails with
-`unsupported_version`. The version probe runs outside the host process ledger;
-repository commands use the selected process runner.
+`unsupported_version`. A refused probe runs again on the next operation, so an
+in-place upgrade needs no restart. The bundle picks the jj path, from
+`SMITHERS_JJ_PATH` or `PATH`, when it builds: restart the host after installing
+jj. The probe uses the same runner as repository commands, so the contained
+bundles record it in the process ledger.
 
 ### The filesystem helper
 
@@ -67,11 +72,11 @@ starts, and the first guarded filesystem call inside a flow body fails with
 `layerWith`, see
 [Configure the filesystem helper](./guides/configure-the-filesystem-helper.md).
 
-## Individual services without jj
+## Individual services
 
-Applications that do not need `Jj` can provide individual service layers.
-This composition supplies the bundle's filesystem, path, process spawner, and
-HTTP client without constructing a `Jj` layer:
+A program that should reach only part of the host can provide individual
+service layers instead of a bundle. This composition supplies the bundle's
+filesystem, path, process spawner, and HTTP client, and no `Jj`:
 
 ```ts
 import { NodeHost } from "@smthrs/platform-node"

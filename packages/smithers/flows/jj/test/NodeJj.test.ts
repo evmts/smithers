@@ -571,14 +571,16 @@ describe.skipIf(!jjInstalled)("NodeJj", () => {
       expect(error.message).toContain("jj revert")
     }))
 
-  it.effect("reports `not_installed` when `jj` is not on PATH, and says how to fix it", () =>
+  it.effect("builds without jj on PATH and reports `not_installed` on the first operation, with the fix", () =>
     Effect.gen(function*() {
       const path = process.env.PATH
       const override = process.env.SMITHERS_JJ_PATH
       process.env.PATH = join(repository, "empty-bin")
       delete process.env.SMITHERS_JJ_PATH
       try {
-        const error = yield* Effect.flip(run(Jj))
+        // A host that never calls jj must not need it, so the layer builds.
+        const jj = yield* run(Jj)
+        const error = yield* Effect.flip(jj.status())
         expect(error.code).toBe("not_installed")
         // The resolver already knows why nothing was found, so the failure says
         // it rather than leaving an operator to run `doctor` for the same fact.

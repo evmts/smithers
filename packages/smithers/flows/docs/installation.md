@@ -46,10 +46,12 @@ declares.
   step. Durable execution is tested on Node.js 26.4+ and Bun 1.4+; `engines`
   requires Node `>=26.4.0`.
 - [jj](https://jj-vcs.github.io/jj/latest/install-and-setup/) 0.39.0 or later
-  on `PATH`, or `SMITHERS_JJ_PATH` naming the binary. Every `NodeRuntime` and
-  `BunRuntime` host includes the jj service and runs `jj --version` when it is
-  built, so a host stops with `No jj on PATH` before any flow runs. On macOS,
-  `brew install jj`; the linked page covers Linux and Windows.
+  on `PATH`, or `SMITHERS_JJ_PATH` naming the binary, for the steps that use
+  it: a compensable step, which the engine snapshots before each attempt, a
+  time-travel rewind or fork, and an action that calls `Jj`. Every
+  `NodeRuntime` and `BunRuntime` host starts without jj. The first step that
+  needs jj runs `jj --version` and fails with `No jj on PATH` when there is
+  none. On macOS, `brew install jj`; the linked page covers Linux and Windows.
 - [`effect`](https://effect.website) in the range `^4.0.4`, as a peer
   dependency. This is an Effect library throughout: a flow's payload and result
   are Effect schemas, an action's implementation is an `Effect`, and a host is

@@ -177,7 +177,7 @@ its declared nightly toolchain; an uninstrumented pass does not certify it.
 Developer runs with a separate configuration must report their reduced scope
 and do not replace the supported package gate.
 
-## Startup probes under machine load
+## Version probes under machine load
 
 The version and spawner contract tests run real fixture executables under
 Effect's test clock. Host scheduling does not consume their simulated startup
@@ -189,9 +189,9 @@ sleeps.
 The 500 ms regression observes the real child's cleanup signal: no `SIGKILL`
 at 499 ms, then `SIGKILL` at 500 ms. The layer retries a timed out probe once,
 so the second child gets its own 500 ms and is killed the same way before the
-typed timeout error, with both children reaped before a later layer retries. A
-pending layer fiber alone cannot prove the timeout is still pending because an
-expired probe may be awaiting child cleanup. The same assertions must reject a
+typed timeout error, with both children reaped before a later operation
+retries. A pending operation fiber alone cannot prove the timeout is still
+pending because an expired probe may be awaiting child cleanup. The same assertions must reject a
 1 ms budget supplied through `StartupTimeoutMs`; the negative control checks
 that exact assertion failure. The production 5000 ms startup deadline is
 unchanged. `NodeJjSpawner.test.ts` drives the retry with an injected spawner

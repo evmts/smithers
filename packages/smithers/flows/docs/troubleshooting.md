@@ -41,34 +41,36 @@ day it is published.
 
 ## JjError: No jj on PATH
 
-**Symptom.** The host stops while it is being built, before any flow runs:
+**Symptom.** A step fails, and the host and its other steps keep running:
 `JjError [@smthrs/jj/JjError]: jj: No jj on PATH. Install jj (https://jj-vcs.github.io) or set SMITHERS_JJ_PATH.`
 
-**Cause.** Every `NodeRuntime` and `BunRuntime` host includes the jj service,
-and building it runs `jj --version`. The engine uses jj for workspace snapshots,
-so a host without jj refuses to start rather than fail mid-run. A jj older than
-0.39.0 is refused the same way, with the version it found.
+**Cause.** The step needs jj and the host has none. A compensable step needs
+it because the engine snapshots the workspace before each attempt; a
+time-travel rewind or fork needs it to restore the workspace; an action that
+calls `Jj` needs it directly. The first such step runs `jj --version`. A jj
+older than 0.39.0 is refused the same way, with the version it found.
 
 **Fix.** Install [jj](https://jj-vcs.github.io/jj/latest/install-and-setup/)
-0.39.0 or later and put it on `PATH`. On macOS, `brew install jj`; the linked
-page covers Linux and Windows. To use a binary that is not on `PATH`, set
-`SMITHERS_JJ_PATH` to its path.
+0.39.0 or later and put it on `PATH`, then restart the host: it reads `PATH`
+when it starts. On macOS, `brew install jj`; the linked page covers Linux and
+Windows. To use a binary that is not on `PATH`, set `SMITHERS_JJ_PATH` to its
+path.
 
 ## JjError: The machine was too busy to start the process
 
-**Symptom.** The host stops while it is being built, before any flow runs:
+**Symptom.** The first step that needs jj fails:
 `JjError [@smthrs/jj/JjError]: jj version: TimedOut: ChildProcess.spawn (<jj path>): The machine was too busy to start the process within 5 s`.
 The error has `code: "unknown"`, `method: "version"`, and `cause.code: "ETIMEDOUT"`.
 
-**Cause.** The host runs `jj --version` through its process supervisor, which
-starts a fresh Node or Bun process and gives each startup step 5 s. On a
-heavily loaded machine, with a load average far above its core count, that
-process can start later than the bound. The host retries the probe once; this
-error means both attempts were too slow. jj itself is not at fault.
+**Cause.** That step runs `jj --version` through the host's process
+supervisor, which starts a fresh Node or Bun process and gives each startup
+step 5 s. On a heavily loaded machine, with a load average far above its core
+count, that process can start later than the bound. The probe is retried once;
+this error means both attempts were too slow. jj itself is not at fault.
 
-**Fix.** Run the program again once the load drops; a later start usually
-succeeds. On a machine that stays this busy, run fewer processes beside the
-host.
+**Fix.** Run the step again once the load drops; the next step that needs jj
+probes again and usually succeeds. On a machine that stays this busy, run
+fewer processes beside the host.
 
 ## RuntimeConfigurationError
 

@@ -25,8 +25,8 @@ and the child runs everything above the frame.
 ## Try it
 
 The program below parks a two-step run on a person's approval, rewinds it,
-approves it, then shows the refusal and the fork. It needs jj on `PATH`, as
-every durable host does. Every output block is real output from
+approves it, then shows the refusal and the fork. It needs jj 0.39.0 or later
+on `PATH`, because the fork adds its workspace through jj. Every output block is real output from
 `@smthrs/flows`, `@smthrs/time-travel`, and `@smthrs/jj` 1.0.0-rc.6.
 
 ```bash

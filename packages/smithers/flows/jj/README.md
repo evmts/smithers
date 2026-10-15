@@ -102,18 +102,21 @@ to jj; workspace names and paths use `--name=` and `--` so option-like values
 are not interpreted as CLI flags.
 
 Node and Bun require **jj 0.39.0 or newer**, pinned by the exported
-`NodeJj.minimumVersion` constant. Before exposing `Jj`, all CLI layers await a
-`jj --version` probe through the same runner used for operations. The probe
-uses the absolute host executable selected at layer construction and does not
-require the repository directory. Bound layers can be built before runtime
-storage creates that directory; operations still require a valid working directory.
-A supported probe result is shared per absolute path and runner for the process
-lifetime. Each host spawner has its own probe cache. A failed probe is not
-remembered: after `chmod +x` or an in-place upgrade, the next layer build probes
-again. Restart the process after replacing an accepted binary at the same path.
-Operations keep using the verified path even if the host or spawner PATH changes. An older or unrecognized version fails construction with `JjError.code = "unsupported_version"`
-and the required minimum; a missing binary fails construction with `not_installed`.
-All four CLI layers therefore have `JjError` in their layer error channel.
+`NodeJj.minimumVersion` constant. Building a CLI layer spawns nothing and never
+fails, so a program that never calls `Jj` runs on a host without jj. The layer
+selects the absolute host executable when it is built, and the first operation
+awaits a `jj --version` probe through the same runner used for operations. The
+probe does not require the repository directory. Bound layers can be built
+before runtime storage creates that directory; operations still require a valid
+working directory. A supported probe result is shared per absolute path and
+runner for the process lifetime. Each host spawner has its own probe cache. A
+failed probe is not remembered: after `chmod +x` or an in-place upgrade, the
+next operation probes again. Restart the process after replacing an accepted
+binary at the same path, or after installing jj where none was found. Operations
+keep using the selected path even if the host or spawner PATH changes. An older
+or unrecognized version fails the operation with
+`JjError.code = "unsupported_version"` and the required minimum; a missing
+binary fails it with `not_installed`. The four CLI layers have no error channel.
 
 Node and Bun snapshots disable jj's default new-file size limit with
 `--config snapshot.max-new-file-size=0`, so new artifacts larger than 1 MiB are

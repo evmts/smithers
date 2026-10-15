@@ -16,10 +16,12 @@
  *   `jj snapshot` that hangs is otherwise a process no host can account for.
  *   `@smthrs/platform-node`'s contained host bundle uses this one.
  *
- * Both await a version probe through their operation runner before exposing
- * `Jj`, sharing a supported result per absolute executable path and runner; a
- * failed probe is retried by the next layer build. All later
- * operations use that same path, independent of repository cwd or PATH changes.
+ * Both bind the executable when the layer is built and spawn nothing then, so
+ * a host without jj starts. The first operation awaits a version probe through
+ * the operation runner, sharing a supported result per absolute executable
+ * path and runner; a failed probe is retried by the next operation. Every
+ * operation uses the path bound at build time, independent of later repository
+ * cwd or PATH changes.
  *
  * Errors are classified from `jj`'s own stderr vocabulary onto the stable
  * `JjError` codes, the same way `NodeFileSystem` classifies errno, and both
@@ -65,11 +67,13 @@ const workspaceCleanupTimeoutMs = 5_000
 export const minimumVersion = "0.39.0"
 
 /**
- * Milliseconds a layer waits for each startup version probe attempt, before
- * cleanup. A probe that times out, or that the spawner reports `TimedOut`
- * starting, is retried once, so a layer waits at most twice this long.
- * Provide this reference to a layer to override the 5000 ms default. Values
- * must be positive, finite, and within the host timer range (2147483647 ms).
+ * Milliseconds a layer's first operation waits for each version probe
+ * attempt, before cleanup. A probe that times out, or that the spawner reports
+ * `TimedOut` starting, is retried once, so the operation waits at most twice
+ * this long. Provide this reference to a layer to override the 5000 ms
+ * default; the layer reads it when it is built. Values must be positive,
+ * finite, and within the host timer range (2147483647 ms); an invalid value
+ * fails the probe before it spawns.
  *
  * @category configuration
  * @since 1.0.0
@@ -1152,12 +1156,21 @@ const timedOut = (error: JjError): boolean => error.cause?.code === "ETIMEDOUT"
 const versionProbes = new Map<string, Effect.Effect<string, JjError>>()
 const spawnerVersionProbes = new WeakMap<ChildProcessSpawner["Service"], Map<string, Effect.Effect<string, JjError>>>()
 
-/** Check and bind the executable before exposing repository operations. */
+/**
+ * Bind the executable now; check its version before the first operation.
+ *
+ * Resolution reads the environment and the filesystem and spawns nothing, so a
+ * host without jj builds and only an operation that needs jj fails, with the
+ * probe's `not_installed`, `unsupported_version`, or startup failure. The path
+ * is bound here, so a later PATH or cwd change cannot redirect the layer. Only
+ * a supported probe is remembered: an operation after a refusal probes again,
+ * so `chmod +x` or an in-place upgrade takes effect without a rebuild.
+ */
 const checkedOperations = (
   makeRun: (binary: Binary) => Run,
   repositoryRoot?: string,
   spawner?: ChildProcessSpawner["Service"]
-): Effect.Effect<Jj, JjError> =>
+): Effect.Effect<Jj> =>
   Effect.gen(function*() {
     const binary = resolveJjBinary()
     if (binary.ignored !== undefined) {
@@ -1166,80 +1179,106 @@ const checkedOperations = (
       ).pipe(Effect.annotateLogs({ variable: binary.ignored.variable, path: binary.ignored.path }))
     }
     const startupTimeoutMs = yield* StartupTimeoutMs
-    if (!Number.isFinite(startupTimeoutMs) || startupTimeoutMs <= 0 || startupTimeoutMs > 2_147_483_647) {
-      return yield* Effect.fail(
-        new JjError({
-          code: "unknown",
-          module: MODULE,
-          method: "version",
-          command: `${binary.path} --version`,
-          message: `jj version: invalid startup timeout ${startupTimeoutMs}ms for ${binary.path}`,
-          cause: { code: "EINVAL", message: "StartupTimeoutMs must be positive and at most 2147483647" }
-        })
-      )
-    }
-    // The unresolved fallback is diagnostic data, never a command to resolve
-    // in a different runner environment or repository working directory.
-    if (!isAbsolute(binary.path)) {
-      return yield* Effect.fail(spawnFailure(
-        "version",
-        ["--version"],
-        undefined,
-        binary.hint,
-        { code: "ENOENT", message: "No executable jj found on host PATH" },
-        true
-      ))
-    }
     const run = makeRun({ command: binary.path, hint: binary.hint })
-    let probes = versionProbes
-    if (spawner !== undefined) {
-      const cached = spawnerVersionProbes.get(spawner)
-      probes = cached ?? new Map()
-      if (cached === undefined) spawnerVersionProbes.set(spawner, probes)
-    }
-    const attempt = Effect.gen(function*() {
-      let probe = probes.get(binary.path)
-      if (probe === undefined) {
-        const cached: Effect.Effect<string, JjError> = yield* Effect.cached(
-          // The repository may not exist until runtime storage creates it.
-          run("version", ["--version"]).pipe(
-            Effect.flatMap(requireMinimumVersion),
-            // Only a supported version is remembered. Interruption produced no
-            // result, and a refusal is one the operator repairs while the host
-            // runs: `chmod +x` (the permission hint's own advice) or upgrading jj
-            // in place must take effect on the next layer build.
-            Effect.onError(() =>
-              Effect.sync(() => {
-                if (probes.get(binary.path) === cached) probes.delete(binary.path)
-              })
+    const checkVersion = Effect.gen(function*() {
+      if (!Number.isFinite(startupTimeoutMs) || startupTimeoutMs <= 0 || startupTimeoutMs > 2_147_483_647) {
+        return yield* Effect.fail(
+          new JjError({
+            code: "unknown",
+            module: MODULE,
+            method: "version",
+            command: `${binary.path} --version`,
+            message: `jj version: invalid startup timeout ${startupTimeoutMs}ms for ${binary.path}`,
+            cause: { code: "EINVAL", message: "StartupTimeoutMs must be positive and at most 2147483647" }
+          })
+        )
+      }
+      // The unresolved fallback is diagnostic data, never a command to resolve
+      // in a different runner environment or repository working directory.
+      if (!isAbsolute(binary.path)) {
+        return yield* Effect.fail(spawnFailure(
+          "version",
+          ["--version"],
+          undefined,
+          binary.hint,
+          { code: "ENOENT", message: "No executable jj found on host PATH" },
+          true
+        ))
+      }
+      let probes = versionProbes
+      if (spawner !== undefined) {
+        const cached = spawnerVersionProbes.get(spawner)
+        probes = cached ?? new Map()
+        if (cached === undefined) spawnerVersionProbes.set(spawner, probes)
+      }
+      const attempt = Effect.gen(function*() {
+        let probe = probes.get(binary.path)
+        if (probe === undefined) {
+          const cached: Effect.Effect<string, JjError> = yield* Effect.cached(
+            // The repository may not exist until runtime storage creates it.
+            run("version", ["--version"]).pipe(
+              Effect.flatMap(requireMinimumVersion),
+              // Only a supported version is remembered. Interruption produced no
+              // result, and a refusal is one the operator repairs while the host
+              // runs: `chmod +x` (the permission hint's own advice) or upgrading jj
+              // in place must take effect on the next operation.
+              Effect.onError(() =>
+                Effect.sync(() => {
+                  if (probes.get(binary.path) === cached) probes.delete(binary.path)
+                })
+              )
             )
           )
-        )
-        probe = cached
-        probes.set(binary.path, probe)
-      }
-      // Bound each layer's wait, including a wait on another layer's cached
-      // probe. Interrupting the runner cleans it up and invalidates its cache;
-      // a timeout is never cached as a version result.
-      yield* probe.pipe(Effect.timeoutOrElse({
-        duration: startupTimeoutMs,
-        orElse: () =>
-          Effect.fail(
-            new JjError({
-              code: "unknown",
-              module: MODULE,
-              method: "version",
-              command: `${binary.path} --version`,
-              message: `jj version: startup probe for ${binary.path} timed out after ${startupTimeoutMs}ms`,
-              cause: { name: "TimeoutError", code: "ETIMEDOUT", message: "jj startup version probe timed out" }
-            })
-          )
-      }))
+          probe = cached
+          probes.set(binary.path, probe)
+        }
+        // Bound each operation's wait, including a wait on another layer's
+        // cached probe. Interrupting the runner cleans it up and invalidates its
+        // cache; a timeout is never cached as a version result.
+        yield* probe.pipe(Effect.timeoutOrElse({
+          duration: startupTimeoutMs,
+          orElse: () =>
+            Effect.fail(
+              new JjError({
+                code: "unknown",
+                module: MODULE,
+                method: "version",
+                command: `${binary.path} --version`,
+                message: `jj version: startup probe for ${binary.path} timed out after ${startupTimeoutMs}ms`,
+                cause: { name: "TimeoutError", code: "ETIMEDOUT", message: "jj startup version probe timed out" }
+              })
+            )
+        }))
+      })
+      // A loaded machine can miss either startup bound, and a second attempt
+      // usually succeeds. One retry keeps a jj that never answers bounded.
+      yield* attempt.pipe(Effect.retry({ times: 1, while: timedOut }))
     })
-    // A loaded machine can miss either startup bound, and a second attempt
-    // usually succeeds. One retry keeps a jj that never answers bounded.
-    yield* attempt.pipe(Effect.retry({ times: 1, while: timedOut }))
-    return operations(run, repositoryRoot)
+    // Once this layer's probe has passed, later operations skip it, as they did
+    // when the probe ran at build time.
+    let verified = false
+    const ready = Effect.suspend(() =>
+      verified ? Effect.void : Effect.tap(checkVersion, () =>
+        Effect.sync(() => {
+          verified = true
+        }))
+    )
+    const checked = <Args extends ReadonlyArray<unknown>, A, E>(
+      operation: (...args: Args) => Effect.Effect<A, E>
+    ) =>
+    (...args: Args): Effect.Effect<A, E | JjError> => Effect.andThen(ready, Effect.suspend(() => operation(...args)))
+    const jj = operations(run, repositoryRoot)
+    return {
+      snapshot: checked(jj.snapshot),
+      restore: checked(jj.restore),
+      diff: checked(jj.diff),
+      workspaceAdd: checked(jj.workspaceAdd),
+      workspaceForget: checked(jj.workspaceForget),
+      status: checked(jj.status),
+      root: checked(jj.root),
+      revert: checked(jj.revert),
+      opRestore: checked(jj.opRestore)
+    }
   })
 
 /** Accepts `jj --version` output at or above {@link minimumVersion}. */
@@ -1268,6 +1307,10 @@ const requireMinimumVersion = (output: string): Effect.Effect<string, JjError> =
 /**
  * Provides the `Jj` service backed by the `jj` CLI, spawning its own children.
  *
+ * Building it never fails and spawns nothing. The first operation checks the
+ * jj version and fails with `not_installed` or `unsupported_version` when the
+ * host has no usable jj, so a program that never calls `Jj` runs without one.
+ *
  * This is the layer for a program that has no spawner to offer, so it starts
  * its children outside whatever kill policy a host has decided on: a `jj` this
  * layer starts leads no process group the host recorded, appears in no
@@ -1291,7 +1334,7 @@ const requireMinimumVersion = (output: string): Effect.Effect<string, JjError> =
  * @category layers
  * @since 1.0.0
  */
-export const layer: Layer.Layer<Jj, JjError> = Layer.effect(Jj, checkedOperations(jj))
+export const layer: Layer.Layer<Jj> = Layer.effect(Jj, checkedOperations(jj))
 
 /**
  * Provides `Jj` bound to one absolute repository root.
@@ -1309,7 +1352,7 @@ export const layer: Layer.Layer<Jj, JjError> = Layer.effect(Jj, checkedOperation
  * @category layers
  * @since 1.0.0
  */
-export const layerAt = (repositoryRoot: string): Layer.Layer<Jj, JjError> => {
+export const layerAt = (repositoryRoot: string): Layer.Layer<Jj> => {
   if (!isAbsolute(repositoryRoot)) {
     throw new TypeError(`NodeJj.layerAt requires an absolute repository root: ${repositoryRoot}`)
   }
@@ -1320,6 +1363,9 @@ export const layerAt = (repositoryRoot: string): Layer.Layer<Jj, JjError> => {
  * Provides the `Jj` service backed by the `jj` CLI, spawning through the host's
  * `ChildProcessSpawner`.
  *
+ * Like {@link layer}, it builds without jj and checks the version on the first
+ * operation, through the same spawner.
+ *
  * Use this one wherever the host contains what it starts. A jj child spawned
  * around the spawner leads no process group the host recorded, appears in no
  * `ProcessLedger`, and is never reaped, so a `jj` that hangs after the host
@@ -1329,7 +1375,7 @@ export const layerAt = (repositoryRoot: string): Layer.Layer<Jj, JjError> => {
  * @category layers
  * @since 1.0.0
  */
-export const layerSpawner: Layer.Layer<Jj, JjError, ChildProcessSpawner> = Layer.effect(
+export const layerSpawner: Layer.Layer<Jj, never, ChildProcessSpawner> = Layer.effect(
   Jj,
   Effect.flatMap(ChildProcessSpawner, (spawner) => checkedOperations(viaSpawner(spawner), undefined, spawner))
 )
@@ -1345,7 +1391,7 @@ export const layerSpawner: Layer.Layer<Jj, JjError, ChildProcessSpawner> = Layer
  */
 export const layerSpawnerAt = (
   repositoryRoot: string
-): Layer.Layer<Jj, JjError, ChildProcessSpawner> => {
+): Layer.Layer<Jj, never, ChildProcessSpawner> => {
   if (!isAbsolute(repositoryRoot)) {
     throw new TypeError(`NodeJj.layerSpawnerAt requires an absolute repository root: ${repositoryRoot}`)
   }

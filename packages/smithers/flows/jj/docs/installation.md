@@ -44,8 +44,8 @@ Other platforms are covered by the
 jj --version
 ```
 
-With no usable jj, every operation fails with the `not_installed` code and a
-message naming the fix, rather than throwing. Nothing in the package installs,
+The layers build without jj. With no usable jj, every operation fails with the
+`not_installed` code and a message naming the fix, rather than throwing. Nothing in the package installs,
 downloads, or `chmod`s a binary on your behalf.
 
 ### Point at a specific jj

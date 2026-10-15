@@ -1,6 +1,6 @@
 ---
 title: "Installation"
-description: "Install @smthrs/platform-bun from npm with its required peers, the smithers-jj-export helper @smthrs/platform-node ships for the filesystem slot, the jj executable every complete bundle probes at startup, and the import forms for each entry point."
+description: "Install @smthrs/platform-bun from npm with its required peers, the smithers-jj-export helper @smthrs/platform-node ships for the filesystem slot, the jj executable the Jj slot probes on first use, and the import forms for each entry point."
 sidebar:
   order: 1
 ---
@@ -55,15 +55,15 @@ packaged helper with another absolute path; see
 
 Windows is unsupported for this slot.
 
-## Install Jujutsu for the complete bundles
+## Install Jujutsu for the Jj slot
 
-Every complete bundle, `BunHost.layer`, `layerAt`, `layerContained`, and
-`layerContainedAt`, requires jj 0.39.0 or later on the host, whether or not
-the program uses the `Jj` slot. Each factory merges its `Jj` layer with the
-other four, and that layer runs one `jj --version` probe while the layer is
-built. On a host without the executable, or with an older one, construction
-fails with `JjError` carrying `not_installed` or `unsupported_version` before
-the program body runs, even for a program that asked for only `FileSystem`.
+Every bundle, `BunHost.layer`, `layerAt`, `layerContained`, and
+`layerContainedAt`, builds without jj, so a program that never calls `Jj` runs
+on a host without it. The `Jj` slot requires jj 0.39.0 or later: its first
+operation runs one `jj --version` probe, and on a host without the executable,
+or with an older one, that operation fails with `JjError` carrying
+`not_installed` or `unsupported_version`. The slot selects the executable when
+the layer is built, so restart the program after installing jj.
 
 Install [Jujutsu](https://jj-vcs.github.io), a version-control system that
 works on a Git repository, and confirm the version:
@@ -76,9 +76,9 @@ This package vendors no binaries. [`@smthrs/jj`](/api/jj) documents the
 resolution order and the `SMITHERS_JJ_PATH` override for an executable that is
 not on `PATH`.
 
-A program that must run without jj composes the individual service layers
-instead of a complete bundle: `BunFileSystem.layer`, `Path.layer`, and the
-spawner and HTTP client layers each build without a probe. See
+A program that wants only some of the services composes the individual service
+layers instead of a complete bundle: `BunFileSystem.layer`, `Path.layer`, and
+the spawner and HTTP client layers. See
 [The Host surface on Bun](./concepts/host-surface.md) for taking one service
 without the other four.
 
@@ -121,9 +121,9 @@ page composes [`@smthrs/platform-browser`](/api/platform-browser) instead.
   [Contain and reap child processes](./guides/contain-child-processes.md).
 
 The `Jj` slot spawns the `jj` command that
-[Install Jujutsu for the complete bundles](#install-jujutsu-for-the-complete-bundles)
-covers. A bundle probes it at construction, so the executable is a startup
-requirement rather than a slot the program opts into.
+[Install Jujutsu for the Jj slot](#install-jujutsu-for-the-jj-slot) covers. The
+slot probes it on its first operation, so jj is a requirement of the programs
+that call `Jj`, not of every host.
 
 ## Next step
 

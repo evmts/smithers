@@ -4,23 +4,26 @@ description: "Every failure @smthrs/jj reports, grouped by code: the symptom you
 ---
 
 Every failure this package produces is a `JjError` with one of six codes.
-Find the code, then the message, and read the matching section. Two of them,
-`not_installed` and `unsupported_version`, can fail a CLI layer while it is
-built rather than an operation, so the program never receives `Jj` at all. The
-codes and how they are assigned are in
+Find the code, then the message, and read the matching section. A CLI layer
+builds without jj, so every code arrives from an operation. Two of them,
+`not_installed` and `unsupported_version`, come from the version probe the
+first operation runs, and carry `method: "version"`. The codes and how they are
+assigned are in
 [How a jj failure is reported](./concepts/failures.md).
 
 ## not_installed
 
 ### "No jj on PATH. Install jj ... or set SMITHERS_JJ_PATH."
 
-**What happened.** The Node or Bun layer spawned `jj` and the operating system
-found nothing by that name. The resolver already knew why, so the failure says
-it rather than leaving you to run `doctor` for the same fact. The `cause`
-carries `code: "ENOENT"`.
+**What happened.** A Node or Bun layer found no `jj` on `PATH` and no
+`SMITHERS_JJ_PATH` when it was built, and an operation then needed jj. The layer
+spawns nothing for an unresolved name. The resolver already knew why, so the
+failure says it rather than leaving you to run `doctor` for the same fact. The
+`cause` carries `code: "ENOENT"`.
 
-**What to change.** Install jj, or set `SMITHERS_JJ_PATH` to a working binary.
-See [Installation](./installation.md).
+**What to change.** Install jj, or set `SMITHERS_JJ_PATH` to a working binary,
+then restart the program: a layer keeps the executable it selected when it was
+built. See [Installation](./installation.md).
 
 ### "Cannot execute the jj binary at ... Run: chmod +x ..."
 
@@ -156,15 +159,16 @@ back.
 
 ### "jj requires version 0.39.0 or newer; found ..."
 
-**What happened.** A CLI layer probed `jj --version` before exposing `Jj`, and
-the binary it resolved is older than `NodeJj.minimumVersion` or printed a
-version string this package cannot parse. The failure is in the layer, so no
-operation ran and the program never received the service.
+**What happened.** The first operation on a CLI layer probed `jj --version`,
+and the binary it resolved is older than `NodeJj.minimumVersion` or printed a
+version string this package cannot parse. The operation that triggered the
+probe did not run.
 
 **What to change.** Upgrade jj with `brew upgrade jj` or
 `cargo install --locked jj-cli`, or point `SMITHERS_JJ_PATH` at a newer binary.
-A refused probe is not cached, so the next layer build after an in-place
-upgrade probes the new binary; no restart is needed. See
+A refused probe is not cached, so the next operation after an in-place upgrade
+probes the new binary; no restart is needed. A new `SMITHERS_JJ_PATH` takes
+effect when the layer is next built. See
 [Choose which jj binary runs](./guides/choose-the-jj-binary.md).
 
 ## unknown

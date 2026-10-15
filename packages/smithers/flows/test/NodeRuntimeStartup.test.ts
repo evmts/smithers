@@ -9,18 +9,14 @@ import * as Exit from "effect/Exit"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as PlatformError from "effect/PlatformError"
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import * as NodeRuntime from "../src/NodeRuntime.ts"
 
-it("builds the host before the runtime creates its repository and database parent", async () => {
+it("builds the host before the runtime creates its repository and database parent, spawning nothing", async () => {
   const directory = mkdtempSync(join(tmpdir(), "flows-startup-"))
-  const previous = process.env.SMITHERS_JJ_PATH
-  const binary = join(directory, "jj")
-  writeFileSync(binary, "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo \"jj 0.39.0\"; fi\n", { mode: 0o755 })
-  process.env.SMITHERS_JJ_PATH = binary
   const root = join(directory, "missing", "repository")
   const filename = join(root, "runtime.sqlite")
   try {
@@ -39,17 +35,13 @@ it("builds the host before the runtime creates its repository and database paren
     )
     const database = new DatabaseSync(filename, { readOnly: true })
     try {
-      // The contained jj layer validates its pinned executable at startup.
-      expect(database.prepare("SELECT event_type FROM flows_journal_events ORDER BY seq").all()).toEqual([
-        { event_type: "flows.host.process-spawned.v1" },
-        { event_type: "flows.host.process-exited.v1" }
-      ])
+      // The contained jj layer checks its executable on its first operation,
+      // so a host that runs nothing starts no process at all.
+      expect(database.prepare("SELECT event_type FROM flows_journal_events ORDER BY seq").all()).toEqual([])
     } finally {
       database.close()
     }
   } finally {
-    if (previous === undefined) delete process.env.SMITHERS_JJ_PATH
-    else process.env.SMITHERS_JJ_PATH = previous
     rmSync(directory, { recursive: true, force: true })
   }
 })

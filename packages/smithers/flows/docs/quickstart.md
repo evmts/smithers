@@ -14,10 +14,9 @@ run of it that answers without reading the file again.
 
 - Node.js 26.4.0 or later. It runs the TypeScript file below directly, with no
   build step and no loader flag.
-- [jj](https://jj-vcs.github.io/jj/latest/install-and-setup/) 0.39.0 or later
-  on `PATH`. The host runs `jj --version` when it starts and stops with
-  `No jj on PATH` without it. On macOS, `brew install jj`; the linked page
-  covers Linux and Windows.
+
+The quickstart does not need jj. A compensable step or a time-travel rewind
+does; [Installation](./installation.md#requirements) covers it.
 
 Create an empty project, install the two packages the program imports, and give
 it something to read:

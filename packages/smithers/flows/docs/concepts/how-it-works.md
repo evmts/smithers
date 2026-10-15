@@ -188,4 +188,4 @@ The refusal names the exact capability the step asked for. Grant that and nothin
 npm i @smthrs/flows@next effect
 ```
 
-You need Node.js 26.4 or later and jj on your `PATH`. Start with the [quickstart](../quickstart.md). [Change a flow and keep the work](../guides/change-a-flow-and-keep-the-work.md) builds a flow like this one and runs the add-a-step, edit-a-step and change-the-input cases.
+You need Node.js 26.4 or later, and jj on your `PATH` for compensable steps. Start with the [quickstart](../quickstart.md). [Change a flow and keep the work](../guides/change-a-flow-and-keep-the-work.md) builds a flow like this one and runs the add-a-step, edit-a-step and change-the-input cases.

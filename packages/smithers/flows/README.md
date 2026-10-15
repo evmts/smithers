@@ -29,13 +29,13 @@ With pnpm 11, run `pnpm add @smthrs/flows@1.0.0-rc.8 effect` instead, then
 `pnpm approve-builds esbuild`. pnpm 11 installs only versions at least 24 hours
 old, so `@next` can resolve to a candidate more than one release behind.
 
-A Node program needs two things on the machine:
+A Node program needs Node.js 26.4.0 or later.
 
-- Node.js 26.4.0 or later.
-- [jj](https://jj-vcs.github.io/jj/latest/install-and-setup/) 0.39.0 or later
-  on `PATH`, or `SMITHERS_JJ_PATH` naming the binary. Every `NodeRuntime` host
-  runs `jj --version` when it starts and stops with `No jj on PATH` without it.
-  On macOS, `brew install jj`; the linked page covers Linux and Windows.
+A compensable step, a time-travel rewind, or a step that calls `Jj` also needs
+[jj](https://jj-vcs.github.io/jj/latest/install-and-setup/) 0.39.0 or later on
+`PATH`, or `SMITHERS_JJ_PATH` naming the binary. A host without jj starts and
+runs every other step; a step that needs jj fails with `No jj on PATH`. On
+macOS, `brew install jj`; the linked page covers Linux and Windows.
 
 `npm pkg set type=module` makes the project an ES module, so `node` runs the
 example below, which ends in a top-level `await`, without a warning.

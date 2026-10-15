@@ -35,24 +35,30 @@ an operator whose typo was disregarded otherwise gets a healthy report for a jj
 they did not choose.
 
 Relative overrides and PATH entries resolve against the host working directory
-at layer construction. Repository working directories and later changes to PATH
+when the layer is built. Repository working directories and later changes to PATH
 or `SMITHERS_JJ_PATH` cannot select another executable for that layer. A contained
 spawner must be able to execute the selected absolute path; its own PATH does
 not change the selection. The version probe also runs through that spawner,
 without a repository cwd.
 
-## Bound startup
+Selection spawns nothing and never fails, so a layer builds on a host without
+jj. The first operation probes the selected path. When nothing was found, that
+operation fails with `not_installed`; install jj and restart the process, since
+the layer keeps the selection it made when it was built.
 
-Node and Bun layers wait up to 5000 ms for `jj --version`, then interrupt the
-probe and await cleanup. A loaded machine can miss that budget, or the
-spawner's own startup bound (a `PlatformError` tagged `TimedOut`), so either
-timeout is retried once with a fresh budget. A second timeout fails
-construction with `JjError`, `code: "unknown"`, `method: "version"`, and
-`cause.code: "ETIMEDOUT"`. The command and message identify the resolved
-executable. Contained spawner cleanup can add its shutdown grace period to each
-attempt.
+## Bound the version probe
 
-Provide `NodeJj.StartupTimeoutMs` to override the budget for one layer:
+The first operation of a Node or Bun layer waits up to 5000 ms for
+`jj --version`, then interrupts the probe and awaits cleanup. A loaded machine
+can miss that budget, or the spawner's own startup bound (a `PlatformError`
+tagged `TimedOut`), so either timeout is retried once with a fresh budget. A
+second timeout fails the operation with `JjError`, `code: "unknown"`,
+`method: "version"`, and `cause.code: "ETIMEDOUT"`. The command and message
+identify the resolved executable. Contained spawner cleanup can add its
+shutdown grace period to each attempt.
+
+Provide `NodeJj.StartupTimeoutMs` to the layer to override the budget. The
+layer reads it when it is built:
 
 ```ts
 import * as NodeJj from "@smthrs/jj/node/NodeJj"
@@ -63,11 +69,12 @@ const jj = NodeJj.layerAt("/srv/repository").pipe(
 )
 ```
 
-The value must be positive, finite, and at most 2147483647 ms. Invalid values
-fail construction with `JjError` and `cause.code: "EINVAL"`. A timeout is not
-cached as a version result; a later layer can retry. Each layer's budget also
-bounds its wait for an in-progress shared probe. Repository operations retain
-their existing lifetime and cancellation behavior.
+The value must be positive, finite, and at most 2147483647 ms. An invalid value
+fails the first operation with `JjError` and `cause.code: "EINVAL"` before
+anything is spawned. A timeout is not cached as a version result; the next
+operation retries. Each layer's budget also bounds its wait for an in-progress
+shared probe. Repository operations retain their existing lifetime and
+cancellation behavior.
 
 ## Read the resolution
 
