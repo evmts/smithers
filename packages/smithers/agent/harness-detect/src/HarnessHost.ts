@@ -117,7 +117,10 @@ export const findBinary = (name: string, host: HarnessHost): string | null => {
       ? Object.entries(host.env).find(([candidate, value]) => value !== undefined && candidate.toUpperCase() === key)
         ?.[1]
       : undefined)
-  const fromPath = (variable("PATH") ?? "").split(delimiter).filter((dir) => isAbsolute(dir))
+  // A single leading slash on Windows is rooted on the current drive, not fully qualified.
+  const fromPath = (variable("PATH") ?? "").split(delimiter).filter((dir) =>
+    isAbsolute(dir) && (!windows || /^[A-Za-z]:[/\\]|^[/\\]{2}[^/\\]+[/\\][^/\\]+/.test(dir))
+  )
   // A Windows command is a file with an executable extension: npm installs
   // `claude.cmd`, native installers `codex.exe`. A bare `claude` beside them
   // is a POSIX shell shim Windows cannot launch.

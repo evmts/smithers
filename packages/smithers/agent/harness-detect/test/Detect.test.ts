@@ -126,6 +126,17 @@ describe("the candidate dirs", () => {
     expect(findBinary("gemini", h)).toBeNull()
   })
 
+  test("Windows rejects current-drive rooted PATH entries but accepts qualified paths", () => {
+    const h = host({
+      platform: "win32",
+      home: "C:\\Users\\u",
+      env: { PATH: "\\tools;/tools;C:tools;D:\\bin;\\\\server\\share\\bin" },
+      binaries: ["\\tools\\codex.exe", "D:\\bin\\codex.exe", "\\\\server\\share\\bin\\claude.exe"]
+    })
+    expect(findBinary("codex", h)).toBe("D:\\bin\\codex.exe")
+    expect(findBinary("claude", h)).toBe("\\\\server\\share\\bin\\claude.exe")
+  })
+
   test("Windows honors a PathExt spelled in any case", () => {
     const h = host({
       platform: "win32",
