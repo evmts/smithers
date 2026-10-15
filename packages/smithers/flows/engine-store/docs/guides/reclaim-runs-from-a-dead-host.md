@@ -93,6 +93,22 @@ at the staleness cutoff. A deferral is forgotten as soon as the row leaves the
 stale window, so a fresh stall under a new lease is probed on the first tick
 that sees it.
 
+## What a reclaimed run does with its unfinished step
+
+The step that was running when the owner died left an attempt row in state
+`running`. The re-drive reaches that attempt again, and what it does depends on
+the step:
+
+- A cache-eligible step (sealed, with a hard boundary) asks the step cache
+  first. When another run already recorded the same key, for example the run
+  you started to replace the killed one, the reclaimed attempt takes that
+  result and the body does not run again. When that run is still computing it
+  in the same process, the reclaimed attempt waits for it.
+- Any other step re-executes under its original attempt number. An
+  irreversible step whose effect was dispatched but never recorded as settled
+  needs an idempotency key to re-execute; without one the run fails with
+  `IrreversibleRetryRequiresIdempotencyKey`.
+
 ## Check a run's own view
 
 `DurableEngineState` answers directly, which is useful in a diagnostic tool:

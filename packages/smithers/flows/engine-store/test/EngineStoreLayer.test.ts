@@ -460,8 +460,10 @@ describe("EngineStore.make liveness", () => {
 })
 
 describe("EngineStore boundary metadata", () => {
-  it.effect("propagates declared nondeterminism through a keyed durable cache race", () =>
+  it.effect("propagates declared nondeterminism through a keyed durable cache race between two engines", () =>
     Effect.gen(function*() {
+      // One engine runs a cache key once across its runs (issue #3898), so
+      // the race needs two incarnations over one store: two processes.
       const state = DurableEngineState.makeMemory()
       const bothStarted = yield* Deferred.make<void>()
       const executions = yield* Ref.make(0)
@@ -482,19 +484,24 @@ describe("EngineStore boundary metadata", () => {
 
       const result = yield* withCrypto(
         Effect.scoped(Effect.gen(function*() {
-          const engine = yield* EngineStore.make({
-            owner: { hostId: "layer-host" },
-            journalSource: "layer-test",
-            isAlive: () => Effect.succeed(false)
+          const makeEngine = Effect.gen(function*() {
+            const engine = yield* EngineStore.make({
+              owner: { hostId: "layer-host" },
+              journalSource: "layer-test",
+              isAlive: () => Effect.succeed(false)
+            })
+            yield* engine.register(LayerFlow, () => action as unknown as Effect.Effect<string, never, never>)
+            return engine
           })
-          yield* engine.register(LayerFlow, () => action as unknown as Effect.Effect<string, never, never>)
+          const engine = yield* makeEngine
+          const other = yield* makeEngine
           const raced = yield* Effect.all([
             engine.execute(LayerFlow, {
               executionId: "nondeterministic-a",
               payload: {},
               discard: false
             }),
-            engine.execute(LayerFlow, {
+            other.execute(LayerFlow, {
               executionId: "nondeterministic-b",
               payload: {},
               discard: false

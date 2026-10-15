@@ -10,9 +10,12 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Jj } from "@smthrs/kernel"
 import { type Ownership, RunStore } from "@smthrs/run-store"
+import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
+import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
+import * as AttemptAdmission from "../src/internal/AttemptAdmission.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
 import { withCrypto } from "./Sha256.ts"
@@ -161,5 +164,59 @@ describe("the cache-hit block runs under the per-key admission permit (issue #11
       )
       expect(outcome.results).toEqual(["recorded", "recorded"])
       expect(outcome.maxActive).toBe(1)
+    }))
+})
+
+describe("a process executes one cache key once across runs (issue #3898)", () => {
+  it.effect("holds a second run's dispatch until the first run records the result, then serves it", () =>
+    Effect.gen(function*() {
+      const key = "cache-serial/cross-run"
+      const outcome = yield* withCrypto(
+        Effect.gen(function*() {
+          // One admission mutex, as `EngineStore.make` threads into every dispatch.
+          const admission = AttemptAdmission.makeUnsafe()
+          const entered = yield* Deferred.make<void>()
+          const release = yield* Deferred.make<void>()
+          let bodies = 0
+          const dispatchIn = (runId: string, result: string) =>
+            ActionPersistence.make({
+              runId,
+              owner,
+              sourceId: runId,
+              admission,
+              execute: () =>
+                Effect.gen(function*() {
+                  bodies++
+                  yield* Deferred.succeed(entered, undefined)
+                  yield* Deferred.await(release)
+                  return result
+                })
+            })({ action: {}, attempt: 1, key, tier: "sealed", metadata: declared })
+          yield* activate("cache-serial-running")
+          yield* activate("cache-serial-waiting")
+          const running = yield* Effect.forkScoped(dispatchIn("cache-serial-running", "first"))
+          yield* Deferred.await(entered)
+          const waiting = yield* Effect.forkScoped(dispatchIn("cache-serial-waiting", "second"))
+          // Real turns for the store, so a dispatch nothing holds reaches its body.
+          for (let turn = 0; turn < 50; turn++) {
+            yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 1)))
+          }
+          const concurrent = bodies
+          yield* Deferred.succeed(release, undefined)
+          const results = [yield* Fiber.join(running), yield* Fiber.join(waiting)]
+          return { concurrent, results, bodies }
+        }).pipe(
+          Effect.provide(Layer.mergeAll(
+            TestStores.layer(),
+            jjLayer,
+            StepBoundary.layerTest({ readSnapshot: StepBoundary.exactReads(declared) })
+          )),
+          Effect.scoped
+        )
+      )
+      expect(outcome.concurrent).toBe(1)
+      // The second run was answered by the first run's row.
+      expect(outcome.results).toEqual(["first", "first"])
+      expect(outcome.bodies).toBe(1)
     }))
 })

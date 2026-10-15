@@ -1229,7 +1229,21 @@ export const make = (deps: Dependencies) => {
       // permits and interleave the very span the permit serializes. The step
       // key, not the narrowed cache address, is what serializes here, because
       // the attempt rows two scopes of one key share are what they race over.
-      return yield* admission.withPermit(`${deps.runId}|${stepKeyDigest}`)(
+      //
+      // A cache-eligible dispatch also holds the permit for its cache address,
+      // taken second so every dispatch acquires the two in one order (issue
+      // #3898). Runs share that address, so a second run asking for a result
+      // this process is already computing waits for it and is answered by its
+      // cache row instead of running the body beside it. That includes a run
+      // the stale-running sweep reclaimed from a dead owner, whose in-flight
+      // attempt would otherwise re-execute next to the run that superseded
+      // it. Other processes are not excluded: two processes may still execute
+      // one key at once, and the second recording resolves as before.
+      const exclusive = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+        admission.withPermit(`run:${deps.runId}|${stepKeyDigest}`)(
+          cacheDeclaration._tag === "Eligible" ? admission.withPermit(`cache:${keyDigest}`)(effect) : effect
+        )
+      return yield* exclusive(
         Effect.gen(function*() {
           // Lifecycle announcements take a per-attempt producer identity
           // (issue #91): adoption — or a replay after a crash in the
@@ -1476,6 +1490,26 @@ export const make = (deps: Dependencies) => {
           // A run's admitted attempt is replay authority. Shared cache rows
           // are replaceable and cannot overwrite its result or failure.
           const existing = yield* attempts.get(attemptId)
+          /**
+           * AN ORPHANED ATTEMPT ASKS THE CACHE FIRST (issue #3898). A `running`
+           * row read under the permit is crash evidence (see adoption below):
+           * the attempt never settled, so it holds no result for the cache to
+           * overwrite. A reclaimed run reaching it is in the same position as
+           * a fresh dispatch, and must be answered by a verified row another
+           * run recorded under this key rather than by re-executing the body.
+           * A crossing that already succeeded is the one exception: the row
+           * carries this run's own result, which adoption settles from.
+           *
+           * Only cache-eligible declarations get here, which are sealed with a
+           * hard boundary: an irreversible or compensable attempt, or a sealed
+           * one without a boundary, adopts and re-executes exactly as before.
+           * An unkeyed sealed step's key folds in its run, so no other run can
+           * have recorded it, and its adoption re-executes as before too.
+           */
+          const orphaned = Option.isSome(existing) && existing.value.state === "running" &&
+              decodeMeta(existing.value.meta)?.effectCrossing !== "succeeded"
+            ? existing.value
+            : undefined
           if (cacheDeclaration._tag === "Eligible") {
             const observed = yield* cache.get(keyDigest).pipe(
               Effect.catch((error) =>
@@ -1513,7 +1547,7 @@ export const make = (deps: Dependencies) => {
                   }
                 ))
               }
-              if (candidate._tag === "CandidateEvidence" && Option.isNone(existing)) {
+              if (candidate._tag === "CandidateEvidence" && (Option.isNone(existing) || orphaned !== undefined)) {
                 const boundary = yield* StepBoundary.StepBoundary
                 // Skyframe's dirty check, not "the declaration changed" (issue
                 // #90): the read-set digests folded into the step key are caller
@@ -1560,6 +1594,32 @@ export const make = (deps: Dependencies) => {
                       recordedRunId: cached.value.recordedRunId,
                       recordedEventSeq: cached.value.recordedEventSeq
                     }))
+                    if (orphaned !== undefined) {
+                      // Close the orphaned attempt with the result that answered
+                      // it, so the run carries no attempt that started and never
+                      // finished, and a later re-drive replays this row. The
+                      // meta records no boundary evidence: this attempt measured
+                      // none of its own, so the row is never published back.
+                      const finishedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
+                      const settled = yield* settleAttempt({
+                        ...attemptId,
+                        state: "succeeded",
+                        finishedAtMs,
+                        outcome: attemptPayload(cached.value.result),
+                        meta: attemptPayload(
+                          {
+                            ...decodeMeta(orphaned.meta),
+                            ...declarationMeta,
+                            admittedBy: deps.owner
+                          } satisfies AttemptMeta
+                        )
+                      }, [
+                        JournalRecords.attemptFinished(attemptSource("finished"), { ...attemptId, state: "succeeded" })
+                      ])
+                      if (!settled) {
+                        return yield* Effect.interrupt
+                      }
+                    }
                     // Counted after the provenance emit: `verified_hit` means
                     // the cached result was served, and a journal failure on
                     // the emit fails the dispatch before any result is
@@ -1953,7 +2013,8 @@ export const make = (deps: Dependencies) => {
            * is crash evidence, not a live admission (issue #71): the incarnation
            * that admitted the attempt died before finishing (SIGKILL, OOM), and
            * the #53 stale-running sweep re-drove the run to a new owner — or the
-           * same owner after restart. The attempt never completed, so it must
+           * same owner after restart. The attempt never completed, so unless a
+           * verified cache row answered it above (issue #3898), it must
            * re-execute under its original number rather than fall through to
            * `attempts.put` (whose `Conflict` on the differing `startedAtMs`
            * surfaced as `AttemptAdmissionRejected`, permanently failing a

@@ -30,14 +30,20 @@ question, answered in [Cache admission](./cache-admission.md).
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `succeeded`   | Returns the recorded result, and calls `StepBoundary.replayOutputs` first so the workspace holds the outputs the step produced. |
 | `failed`      | Rethrows the persisted domain failure. It never re-admits the attempt.                                                          |
-| `running`     | Recovers under the run fence and shared admission permit, honoring any recorded effect crossing.                                |
+| `running`     | Asks the step cache first when the step is cache-eligible, then recovers under the run fence and admission permit.              |
 | `suspended`   | Continues the same attempt rather than burning a new one against the retry budget.                                              |
 
-An admitted attempt remains authoritative when a matching shared cache row
+A settled attempt remains authoritative when a matching shared cache row
 exists; another run's cached success cannot replace its result or failure.
 Failure values were schema-encoded before persistence, so a `_tag` survives
 the JSON round trip and a `RetryPolicy`'s non-retryable matching still applies
 on replay.
+
+A `running` attempt has no result of its own. When its step is cache-eligible
+(sealed, with a hard boundary), a verified row another run recorded under the
+same key answers it, and the row is closed as `succeeded` with that result. A
+recorded successful effect crossing still wins over the cache, because it
+carries this run's own result.
 
 ## Which columns are redacted
 
@@ -61,6 +67,13 @@ Each engine or plan scheduler shares admission permits across its dispatches.
 A permit covers one run and step key through admission, execution, and
 settlement. Concurrent same-key dispatches wait, then replay the settled
 attempt instead of executing another body. Interruption releases the permit.
+
+A cache-eligible dispatch also holds a permit for its cache address, which runs
+share. A second run that asks one engine for a step that engine is already
+computing waits, then takes the first run's cache row instead of running the
+body beside it. Engines in other processes are not excluded: two processes can
+still execute one key at once, and the second recording resolves as described
+in [Cache admission](./cache-admission.md).
 
 Holding the permit and the run fence permits recovery of a stranded `running`
 attempt. A recorded successful effect crossing supplies the result directly;
