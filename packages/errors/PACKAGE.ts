@@ -1,11 +1,13 @@
 import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
 /** Standard package targets. */
 import { Smithers } from "@smthrs/targets"
+import * as Input from "@smthrs/targets/Input"
 
 const cwd = "packages/errors"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  sources: Input.glob("{src,examples}/**/*.ts"),
   cwd
 })
 
