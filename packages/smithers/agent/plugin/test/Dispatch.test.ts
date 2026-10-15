@@ -332,6 +332,28 @@ describe("waterfall dispatch", () => {
     )
     expect(error).toMatchObject({ code: "config_invalid", plugin: "merge-throw", hook: "config" })
   })
+
+  it("keeps what the merge callback threw as the cause", async () => {
+    const thrown = new Error("merge failed")
+    const dispatcher = await dispatcherFor([
+      { name: "merge-throw", hooks: { config: () => Effect.succeed({ value: 1 }) } }
+    ])
+    const error = await run(
+      dispatcher.waterfall("config", {}, () => {
+        throw thrown
+      }).pipe(Effect.flip)
+    )
+    expect(error.cause).toBe(thrown)
+  })
+
+  it("keeps the merge refusal as the cause of the attributed error", async () => {
+    const dispatcher = await dispatcherFor([
+      { name: "reserved", hooks: { config: () => Effect.succeed({ engine: {} } as never) } }
+    ])
+    const error = await run(dispatcher.waterfall("config", {}, Config.merge).pipe(Effect.flip))
+    expect(error).toMatchObject({ code: "config_invalid", plugin: "reserved", hook: "config", path: "$.engine" })
+    expect(error.cause).toMatchObject({ code: "config_invalid", path: "$.engine" })
+  })
 })
 
 describe("Plugins runtime catalog kinds", () => {
@@ -390,5 +412,33 @@ describe("Plugins runtime catalog kinds", () => {
     ))
     expect(await run(asFirst.sequential("isolated", 21).pipe(Effect.flip))).toMatchObject(refused)
     expect(ran).toBe(1)
+  })
+
+  it("refuses handlers registered under a hook the catalog does not declare", async () => {
+    let ran = 0
+    const handler = (value: number) => Effect.sync(() => (ran += 1, value))
+    // A hand-built resolution: `resolve` never registers a handler outside its
+    // catalog, so this is the only way to reach the state.
+    const dispatcher = loose(Plugins.make<StandaloneHooks>(Object.freeze({
+      plugins: Object.freeze([]),
+      handlers: new Map([["isolated", Object.freeze([{ plugin: "stray", hook: "isolated", handler }])]]),
+      kinds: Hooks.engineHooks,
+      parallelConcurrency: 1
+    })))
+    const refused = { code: "hook_kind_mismatch", hook: "isolated" }
+    expect(await run(dispatcher.sequential("isolated", 1).pipe(Effect.flip))).toMatchObject(refused)
+    expect(await run(dispatcher.first("isolated", 1).pipe(Effect.flip))).toMatchObject(refused)
+    expect(await run(dispatcher.waterfall("isolated", 1, (_previous, patch) => patch).pipe(Effect.flip)))
+      .toMatchObject(refused)
+    expect(await run(dispatcher.parallel("isolated", 1))).toMatchObject([refused])
+    expect(ran).toBe(0)
+  })
+
+  it("dispatches an undeclared hook with no handlers as empty", async () => {
+    const dispatcher = loose(Plugins.makeNoop<StandaloneHooks>())
+    expect(await run(dispatcher.sequential("isolated", 1))).toEqual([])
+    expect(await run(dispatcher.first("isolated", 1))).toEqual(Option.none())
+    expect(await run(dispatcher.waterfall("isolated", 1, (_previous, patch) => patch))).toBe(1)
+    expect(await run(dispatcher.parallel("isolated", 1))).toEqual([])
   })
 })

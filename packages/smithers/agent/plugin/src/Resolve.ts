@@ -161,22 +161,25 @@ const childPath = (path: string, key: string): string => {
 const ownData = (
   input: unknown,
   path: string,
-  allowed?: ReadonlySet<string>
+  allowed?: ReadonlySet<string>,
+  fields: { readonly plugin?: string; readonly hook?: string } = {}
 ): Readonly<Record<string, unknown>> => {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
-    throw invalidPlugin(path, "must be an ordinary record")
+    throw invalidPlugin(path, "must be an ordinary record", fields)
   }
   const prototype = Object.getPrototypeOf(input)
-  if (prototype !== Object.prototype && prototype !== null) throw invalidPlugin(path, "must be an ordinary record")
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw invalidPlugin(path, "must be an ordinary record", fields)
+  }
   const output: Record<string, unknown> = {}
   for (const key of Reflect.ownKeys(input)) {
-    if (typeof key !== "string") throw invalidPlugin(path, "must not contain symbol keys")
+    if (typeof key !== "string") throw invalidPlugin(path, "must not contain symbol keys", fields)
     if (allowed !== undefined && !allowed.has(key)) {
-      throw invalidPlugin(childPath(path, key), "contains an unknown property")
+      throw invalidPlugin(childPath(path, key), "contains an unknown property", fields)
     }
     const descriptor = Object.getOwnPropertyDescriptor(input, key)
     if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
-      throw invalidPlugin(childPath(path, key), "must be an enumerable data property")
+      throw invalidPlugin(childPath(path, key), "must be an enumerable data property", fields)
     }
     Object.defineProperty(output, key, { value: descriptor.value, enumerable: true })
   }
@@ -249,7 +252,7 @@ const snapshotHook = (
   if (entry === undefined) {
     throw invalidPlugin(path, "must be a function or a hook object", { plugin, hook })
   }
-  const values = ownData(entry, path, new Set(["order", "handler"]))
+  const values = ownData(entry, path, new Set(["order", "handler"]), { plugin, hook })
   if (typeof values.handler !== "function") {
     throw invalidPlugin(`${path}.handler`, "must be a function", { plugin, hook })
   }
@@ -285,11 +288,11 @@ const snapshotPlugin = <H>(
 
   let hooks: Readonly<Record<string, unknown>> | undefined
   if (values.hooks !== undefined) {
-    const rawHooks = ownData(values.hooks, `${path}.hooks`)
+    const rawHooks = ownData(values.hooks, `${path}.hooks`, undefined, { plugin: name })
     const snapshot: Record<string, unknown> = Object.create(null)
     for (const [index, hook] of Object.keys(rawHooks).entries()) {
       if (!validName(hook)) {
-        throw invalidPlugin(`${path}.hooks[${index}]`, "contains an invalid hook name")
+        throw invalidPlugin(`${path}.hooks[${index}]`, "contains an invalid hook name", { plugin: name })
       }
       const entry = rawHooks[hook]
       Object.defineProperty(snapshot, hook, {

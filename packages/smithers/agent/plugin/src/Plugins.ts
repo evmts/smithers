@@ -32,8 +32,23 @@ const empty: ReadonlyArray<HandlerRecord> = Object.freeze([])
 // The typed catalog and the runtime catalog can only drift when a host casts
 // around `KeysOfKind`; refuse before any handler runs rather than execute a
 // hook under semantics its declaration never promised.
-const kindMismatch = (resolved: Resolved<unknown>, hook: string, kind: HookKind): PluginError | undefined => {
-  if (!Object.hasOwn(resolved.kinds, hook)) return undefined
+// A hook the catalog does not declare dispatches as empty, unless a
+// hand-built resolution registered handlers for it: those have no declared
+// kind to honor, so they are refused too.
+const kindMismatch = (
+  resolved: Resolved<unknown>,
+  hook: string,
+  kind: HookKind,
+  handlers: ReadonlyArray<HandlerRecord>
+): PluginError | undefined => {
+  if (!Object.hasOwn(resolved.kinds, hook)) {
+    if (handlers.length === 0) return undefined
+    return new PluginError({
+      code: "hook_kind_mismatch",
+      message: `hook "${hook}" has handlers but is not declared in the runtime catalog`,
+      hook
+    })
+  }
   const declared = resolved.kinds[hook]
   if (declared === kind) return undefined
   return new PluginError({
@@ -125,7 +140,7 @@ export const make = <H = FlowsHooks>(resolved: Resolved<H>): Service<H> => {
 
   const sequential = ((hook: string, ...args: Array<unknown>) =>
     Effect.gen(function*() {
-      const mismatch = kindMismatch(resolved, hook, "sequential")
+      const mismatch = kindMismatch(resolved, hook, "sequential", handlers(hook))
       if (mismatch !== undefined) return yield* Effect.fail(mismatch)
       const results: Array<unknown> = []
       for (const record of handlers(hook)) {
@@ -135,7 +150,7 @@ export const make = <H = FlowsHooks>(resolved: Resolved<H>): Service<H> => {
     })) as Service<H>["sequential"]
 
   const parallel = ((hook: string, ...args: Array<unknown>) => {
-    const mismatch = kindMismatch(resolved, hook, "parallel")
+    const mismatch = kindMismatch(resolved, hook, "parallel", handlers(hook))
     if (mismatch !== undefined) return Effect.succeed([mismatch])
     return Effect.forEach(
       handlers(hook),
@@ -149,7 +164,7 @@ export const make = <H = FlowsHooks>(resolved: Resolved<H>): Service<H> => {
 
   const first = ((hook: string, ...args: Array<unknown>) =>
     Effect.gen(function*() {
-      const mismatch = kindMismatch(resolved, hook, "first")
+      const mismatch = kindMismatch(resolved, hook, "first", handlers(hook))
       if (mismatch !== undefined) return yield* Effect.fail(mismatch)
       for (const record of handlers(hook)) {
         const result = yield* runHandler(record, args)
@@ -171,7 +186,7 @@ export const make = <H = FlowsHooks>(resolved: Resolved<H>): Service<H> => {
   const waterfall =
     ((hook: string, initial: unknown, merge: (previous: unknown, patch: unknown) => unknown) =>
       Effect.gen(function*() {
-        const mismatch = kindMismatch(resolved, hook, "waterfall")
+        const mismatch = kindMismatch(resolved, hook, "waterfall", handlers(hook))
         if (mismatch !== undefined) return yield* Effect.fail(mismatch)
         let value = initial
         for (const record of handlers(hook)) {
@@ -186,13 +201,15 @@ export const make = <H = FlowsHooks>(resolved: Resolved<H>): Service<H> => {
                     message: cause.message,
                     plugin: record.plugin,
                     hook: record.hook,
-                    path: cause.path
+                    path: cause.path,
+                    cause
                   })
                   : new PluginError({
                     code: "config_invalid",
                     message: `waterfall hook "${record.hook}" in plugin "${record.plugin}" returned an invalid patch`,
                     plugin: record.plugin,
-                    hook: record.hook
+                    hook: record.hook,
+                    cause
                   })
             })
           }

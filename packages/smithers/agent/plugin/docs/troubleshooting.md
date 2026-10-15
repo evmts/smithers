@@ -45,7 +45,8 @@ At startup, `Options.hooks` labelled `config` with a kind other than
 `waterfall`, or `configResolved` with a kind other than `parallel`; the path
 names the entry, such as `$options.hooks.config`. At dispatch, a method was
 called for a hook the catalog declares with a different kind, which only a cast
-around the typed dispatcher can reach. In both cases no handler ran.
+around the typed dispatcher can reach, or for a hook a hand-built `Resolved`
+gave handlers without declaring it in `kinds`. In every case no handler ran.
 
 **What to change.** Make the catalog agree with the hook interface: spread
 `engineHooks` for the shared hooks and write each of your own hooks with the

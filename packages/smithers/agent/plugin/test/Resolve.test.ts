@@ -198,6 +198,19 @@ describe("Resolve.resolve", () => {
     expect(nullError).toMatchObject({ code: "invalid_plugin", path: "$[0].hooks.configResolved" })
   })
 
+  it("attributes every malformed hook entry to its plugin and hook", async () => {
+    const refuse = (hooks: unknown) =>
+      run(Resolve.resolve([{ name: "attributed", hooks } as unknown as FlowsPlugin]).pipe(Effect.flip))
+    const entry = { code: "invalid_plugin", plugin: "attributed", hook: "config" }
+    expect(await refuse({ config: null })).toMatchObject({ ...entry, path: "$[0].hooks.config" })
+    expect(await refuse({ config: { handler: () => Effect.void, extra: 1 } }))
+      .toMatchObject({ ...entry, path: "$[0].hooks.config.extra" })
+    expect(await refuse({ config: Object.defineProperty({}, "handler", { get: () => () => Effect.void }) }))
+      .toMatchObject({ ...entry, path: "$[0].hooks.config.handler" })
+    expect(await refuse([])).toMatchObject({ code: "invalid_plugin", plugin: "attributed", path: "$[0].hooks" })
+    expect(await refuse({ "": () => Effect.void })).toMatchObject({ code: "invalid_plugin", plugin: "attributed" })
+  })
+
   it("freezes the resolved plugin list and each hook's handler list", async () => {
     const resolved = await run(Resolve.resolve([observer("a", [])]))
     expect(Object.isFrozen(resolved)).toBe(true)
