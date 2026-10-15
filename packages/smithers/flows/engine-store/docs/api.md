@@ -895,7 +895,10 @@ durable fails and the shared entry is withheld.
 
 `hydrate(digests)` establishes that this host can resolve every referenced
 artifact and reports whether the replay is now worth retrying. It never fails a
-run: a shared tier that is down must not stop work that can simply be done.
+run: a shared tier that is down must not stop work that can simply be done. A
+downloaded blob counts only when this host's store files it under the requested
+digest, so a shared tier that serves the wrong bytes costs the replay, never
+its correctness.
 
 The two tiers cannot both be layers, because they inhabit the same tag and
 composing them would shadow one with the other.

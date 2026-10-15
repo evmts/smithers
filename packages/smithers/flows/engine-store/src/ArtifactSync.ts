@@ -241,6 +241,13 @@ export const make = (options: {
         // them written into this workspace.
         const written = yield* remote.get(digest).pipe(
           Effect.flatMap((bytes) => local.put(bytes)),
+          // A custom tier may skip that verification; the address `put`
+          // returned is the proof the requested blob is now local.
+          Effect.flatMap((address) =>
+            address === digest ?
+              Effect.void :
+              Effect.fail({ message: `the shared tier served the bytes of ${address}` })
+          ),
           Effect.tapError(fallBack("the artifact could not be fetched", [digest])),
           Effect.option
         )

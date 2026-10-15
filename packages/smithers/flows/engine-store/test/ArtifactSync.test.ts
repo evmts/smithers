@@ -233,6 +233,21 @@ describe("hydrate", () => {
       expect(warnings[0]).toContain(digest)
     }))
 
+  it.effect("reports failure when the shared tier serves bytes of another digest", () =>
+    Effect.gen(function*() {
+      // A custom tier that breaks the `get` verification contract: the local
+      // `put` re-addresses the wrong bytes, so the requested digest is still
+      // absent and the replay must fall back rather than claim satisfaction.
+      const memory = ArtifactStore.makeMemory()
+      const remote: ArtifactStore.Service = { ...memory, get: () => Effect.succeed(encoder.encode("other bytes")) }
+      const local = ArtifactStore.makeMemory()
+      const { value, warnings } = yield* warningsOf(withCrypto(ArtifactSync.make({ local, remote }).hydrate([digest])))
+      expect(value).toBe(false)
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain(digest)
+      expect(yield* withCrypto(local.has(digest))).toBe(false)
+    }))
+
   it.effect("reports failure when the local tier cannot even be probed", () =>
     Effect.gen(function*() {
       const sync = ArtifactSync.make({ local: ArtifactStore.makeNoop(), remote: ArtifactStore.makeMemory() })
