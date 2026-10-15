@@ -293,12 +293,12 @@ export const makeFile = (path: string): Effect.Effect<
               const next = appended(yield* current(value), call)
               const index = next.calls.length - 1
               const journalPath = `${path}.journal`
-              yield* io(journalPath, () =>
-                appendFile(
-                  journalPath,
-                  `${JSON.stringify({ index, call: next.calls[index] })}\n`,
-                  { flag: journalAppend }
-                ))
+              const line = JSON.stringify({ index, call: next.calls[index] })
+              // Persist only what reloads. JSON writes NaN and Infinity as null,
+              // so a call carrying one appended fine and then made every later
+              // open of the fixture die on decode.
+              yield* decodeFile(journalPath, { calls: [(JSON.parse(line) as { readonly call: unknown }).call] })
+              yield* io(journalPath, () => appendFile(journalPath, `${line}\n`, { flag: journalAppend }))
               return Option.some(next)
             }).pipe(Effect.onExit((exit) => Exit.isFailure(exit) ? release : Effect.void))).pipe(Effect.uninterruptible)
       }),

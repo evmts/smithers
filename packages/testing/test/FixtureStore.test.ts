@@ -314,6 +314,26 @@ describe("FixtureStore flush and recovery", () => {
       })
     ))
 
+  it.effect("refuses a call whose JSON would not reload, keeping the fixture readable", () =>
+    withFile((path) =>
+      Effect.gen(function*() {
+        const store = yield* FixtureStore.makeFile(path)
+        // JSON writes NaN as null, which the fixture schema rejects on reload.
+        const unencodable: RecordedCall = {
+          ...call,
+          events: [{ type: "usage", costUsd: Number.NaN }, { type: "settle", stopReason: "stop" }]
+        }
+        const exit = yield* Effect.exit(store.append(unencodable))
+        expect(Exit.isFailure(exit)).toBe(true)
+        if (Exit.isFailure(exit)) expect(String(Cause.squash(exit.cause))).toContain("costUsd")
+        expect(existsSync(`${path}.lock`)).toBe(false)
+        yield* store.append(call)
+        yield* store.flush()
+        const reopened = yield* FixtureStore.makeFile(path)
+        expect(Option.getOrThrow(yield* reopened.load()).calls).toEqual([call])
+      })
+    ))
+
   it.effect("preserves JSON and the recoverable journal when publication fails", () =>
     withFile((path) =>
       Effect.gen(function*() {
