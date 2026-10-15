@@ -133,6 +133,12 @@ meaning, with the original error kept as the `cause`:
 | `EBUSY`                      | `Busy`             |
 | anything else                | `Unknown`          |
 
+A backend that answers with an impossible value is refused rather than
+trusted. `stat` fails `BadResource` when the reported size is not a whole,
+non-negative number of bytes, and reports no `mtime` when the timestamp is not
+a finite number. `stream` fails `BadResource` when a read reports more bytes
+than the buffer it was handed, or a negative or fractional count.
+
 ## Encoding and size policy
 
 `readFileString` and `writeFileString` are UTF-8 by default, through the

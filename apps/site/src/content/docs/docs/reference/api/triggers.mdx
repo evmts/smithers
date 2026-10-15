@@ -323,6 +323,11 @@ backlog when catch-up exceeds its bound. It still dispatches the current
 occurrence subject to overlap, on the first poll after a restart and on every
 later poll.
 
+The bound counts every boundary since the last dispatch, the one that just
+passed included, and a restart and a stalled scheduler count the same
+boundaries. A tick where only that one boundary passed fires it under any
+bound.
+
 ## TriggerStore
 
 The durable state contract: registration, listing, the claim protocol, and
@@ -1151,9 +1156,10 @@ included. See [Overlap and catch-up](https://github.com/smithersai/smithers/blob
 ## Webhook verification and input ownership
 
 The signature verifier looks up `SignatureConfig.header` in `RawInbound.headers`
-first as lowercase and then exactly as written. It encodes the supplied header
-value as UTF-8 with `TextEncoder` and compares those bytes with the bytes
-returned by `SignatureConfig.expected`. An absent or empty header is refused
+first as lowercase, then exactly as written, then under any other casing, so a
+header name matches whatever capitalisation the request carries. It encodes the
+supplied header value as UTF-8 with `TextEncoder` and compares those bytes with
+the bytes returned by `SignatureConfig.expected`. An absent or empty header is refused
 before `expected` runs, and an `expected` that answers with zero bytes is
 refused after it. Constant-time equality agrees on two empty byte strings, so
 without those guards a request carrying no signature at all would authenticate

@@ -337,7 +337,7 @@ A directory output captured and replayed as one tree artifact.
 - **Signature:** `start(options: { readonly flowName: string; readonly deadline?: Duration.Input | undefined; readonly startedAtMs?: number | undefined }): Effect.Effect<LineageDeadline | undefined, never, FlowRuntime | FlowInstance | Crypto.Crypto>`
 - **Since:** `1.0.0`
 
-Starts the current execution's deadline: the lineage deadline the round inherited from a handoff, or `deadline` counted from the execution's journaled first start (or from `startedAtMs`, when the host holds a durable start of its own), with a durable clock armed at it. Answers `undefined` when neither applies. Dies with a `RangeError` when `deadline` is not a positive finite duration. Start at most one deadline per execution.
+Starts the current execution's deadline: the lineage deadline the round inherited from a handoff, or `deadline` counted from the execution's journaled first start (or from `startedAtMs`, when the host holds a durable start of its own), with a durable clock armed at it. Answers `undefined` when neither applies. Dies with a `RangeError` when `deadline` is not a positive finite duration, `startedAtMs` is not finite, or the deadline would expire after epoch millisecond `Number.MAX_SAFE_INTEGER`. Start at most one deadline per execution.
 
 ### `Deadline.remainingMs`
 
@@ -374,7 +374,7 @@ A durable flow timer: a name, a duration, and the deferred that is completed whe
 - **Signature:** `make(options: { readonly name: string; readonly duration: Duration.Input }): DurableClock`
 - **Since:** `0.1.0`
 
-Declares one durable clock. The duration must be finite and not negative.
+Declares one durable clock. Throws a `RangeError` when the duration is malformed, infinite, negative, or longer than `Number.MAX_SAFE_INTEGER` milliseconds: a durable store records a clock's due time as a safe integer.
 
 ### `DurableClock.sleep`
 
@@ -382,7 +382,7 @@ Declares one durable clock. The duration must be finite and not negative.
 - **Default:** `inMemoryThreshold` is 60 seconds
 - **Since:** `0.1.0`
 
-Waits inside a flow. A duration at or below `inMemoryThreshold` runs as an in-memory action. A longer duration schedules a durable clock, so the wait outlives the process holding it.
+Waits inside a flow. A duration at or below `inMemoryThreshold` runs as an in-memory action. A longer duration schedules a durable clock, so the wait outlives the process holding it. Throws a `RangeError` for a duration `make` refuses or a malformed, infinite, or negative threshold. A durable sleep that would wake after epoch millisecond `Number.MAX_SAFE_INTEGER` dies with a `RangeError` instead of arming its clock.
 
 ## DurableDeferred
 
@@ -748,7 +748,7 @@ Declares the host's execution-id source as a layer. Callers that name an `execut
 - **Required:** `payload` and exactly one of `body` or `prompt`
 - **Since:** `0.1.0`
 
-Creates a durable flow definition. The `body` is the flow's one behavior, evaluated at plan time only, and it must be pure: it may not read mutable module state, clocks, random values, services, or values captured outside `payload`. A typed `prompt(payload)` lowers to one ordinary action named `<tag>/prompt`; its returned `PromptFlow` exposes the declaration as `action` and the renderer as `prompt`. The renderer runs only when the host implementation calls it. Optional `model`, `effort`, `flows`, `system`, and `chat` fields retain host metadata; annotation copies preserve them. `Flow.make` throws a `RangeError` when `maxRounds` is not a positive safe integer or `deadline` is not a positive finite duration. `deadline` bounds one execution, counted from its journaled first start, so a resume after a restart honors the original deadline; on expiry the execution settles with `Flow.DeadlineExceeded` whether it was running or parked.
+Creates a durable flow definition. The `body` is the flow's one behavior, evaluated at plan time only, and it must be pure: it may not read mutable module state, clocks, random values, services, or values captured outside `payload`. A typed `prompt(payload)` lowers to one ordinary action named `<tag>/prompt`; its returned `PromptFlow` exposes the declaration as `action` and the renderer as `prompt`. The renderer runs only when the host implementation calls it. Optional `model`, `effort`, `flows`, `system`, and `chat` fields retain host metadata; annotation copies preserve them. `Flow.make` throws a `RangeError` when `maxRounds` is not a positive safe integer or `deadline` is not a positive finite duration of at most `Number.MAX_SAFE_INTEGER` milliseconds. `deadline` bounds one execution, counted from its journaled first start, so a resume after a restart honors the original deadline; on expiry the execution settles with `Flow.DeadlineExceeded` whether it was running or parked.
 
 `Flow.make` throws `TypeError` for a missing or blank tag, or when the declaration
 does not supply exactly one function as `body` or `prompt`.

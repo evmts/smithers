@@ -470,7 +470,7 @@ A directory output captured and replayed as one tree artifact.
 - **Signature:** `start(options: { readonly flowName: string; readonly deadline?: Duration.Input | undefined; readonly startedAtMs?: number | undefined }): Effect.Effect<LineageDeadline | undefined, never, FlowRuntime | FlowInstance | Crypto.Crypto>`
 - **Since:** `1.0.0`
 
-Starts the current execution's deadline: the lineage deadline the round inherited from a handoff, or `deadline` counted from the execution's journaled first start (or from `startedAtMs`, when the host holds a durable start of its own), with a durable clock armed at it. Answers `undefined` when neither applies. Dies with a `RangeError` when `deadline` is not a positive finite duration. Start at most one deadline per execution.
+Starts the current execution's deadline: the lineage deadline the round inherited from a handoff, or `deadline` counted from the execution's journaled first start (or from `startedAtMs`, when the host holds a durable start of its own), with a durable clock armed at it. Answers `undefined` when neither applies. Dies with a `RangeError` when `deadline` is not a positive finite duration, `startedAtMs` is not finite, or the deadline would expire after epoch millisecond `Number.MAX_SAFE_INTEGER`. Start at most one deadline per execution.
 
 ### `Deadline.remainingMs`
 
@@ -507,7 +507,7 @@ A durable flow timer: a name, a duration, and the deferred that is completed whe
 - **Signature:** `make(options: { readonly name: string; readonly duration: Duration.Input }): DurableClock`
 - **Since:** `0.1.0`
 
-Declares one durable clock. The duration must be finite and not negative.
+Declares one durable clock. Throws a `RangeError` when the duration is malformed, infinite, negative, or longer than `Number.MAX_SAFE_INTEGER` milliseconds: a durable store records a clock's due time as a safe integer.
 
 ### `DurableClock.sleep`
 
@@ -515,7 +515,7 @@ Declares one durable clock. The duration must be finite and not negative.
 - **Default:** `inMemoryThreshold` is 60 seconds
 - **Since:** `0.1.0`
 
-Waits inside a flow. A duration at or below `inMemoryThreshold` runs as an in-memory action. A longer duration schedules a durable clock, so the wait outlives the process holding it.
+Waits inside a flow. A duration at or below `inMemoryThreshold` runs as an in-memory action. A longer duration schedules a durable clock, so the wait outlives the process holding it. Throws a `RangeError` for a duration `make` refuses or a malformed, infinite, or negative threshold. A durable sleep that would wake after epoch millisecond `Number.MAX_SAFE_INTEGER` dies with a `RangeError` instead of arming its clock.
 
 ## DurableDeferred
 
@@ -881,7 +881,7 @@ Declares the host's execution-id source as a layer. Callers that name an `execut
 - **Required:** `payload` and exactly one of `body` or `prompt`
 - **Since:** `0.1.0`
 
-Creates a durable flow definition. The `body` is the flow's one behavior, evaluated at plan time only, and it must be pure: it may not read mutable module state, clocks, random values, services, or values captured outside `payload`. A typed `prompt(payload)` lowers to one ordinary action named `<tag>/prompt`; its returned `PromptFlow` exposes the declaration as `action` and the renderer as `prompt`. The renderer runs only when the host implementation calls it. Optional `model`, `effort`, `flows`, `system`, and `chat` fields retain host metadata; annotation copies preserve them. `Flow.make` throws a `RangeError` when `maxRounds` is not a positive safe integer or `deadline` is not a positive finite duration. `deadline` bounds one execution, counted from its journaled first start, so a resume after a restart honors the original deadline; on expiry the execution settles with `Flow.DeadlineExceeded` whether it was running or parked.
+Creates a durable flow definition. The `body` is the flow's one behavior, evaluated at plan time only, and it must be pure: it may not read mutable module state, clocks, random values, services, or values captured outside `payload`. A typed `prompt(payload)` lowers to one ordinary action named `<tag>/prompt`; its returned `PromptFlow` exposes the declaration as `action` and the renderer as `prompt`. The renderer runs only when the host implementation calls it. Optional `model`, `effort`, `flows`, `system`, and `chat` fields retain host metadata; annotation copies preserve them. `Flow.make` throws a `RangeError` when `maxRounds` is not a positive safe integer or `deadline` is not a positive finite duration of at most `Number.MAX_SAFE_INTEGER` milliseconds. `deadline` bounds one execution, counted from its journaled first start, so a resume after a restart honors the original deadline; on expiry the execution settles with `Flow.DeadlineExceeded` whether it was running or parked.
 
 `Flow.make` throws `TypeError` for a missing or blank tag, or when the declaration
 does not supply exactly one function as `body` or `prompt`.
@@ -3716,8 +3716,8 @@ directly. Both packages are on npm under the `next` tag.
 ```json
 {
   "devDependencies": {
-    "@smthrs/build-cli": "1.0.0-rc.7",
-    "@smthrs/targets": "1.0.0-rc.7",
+    "@smthrs/build-cli": "1.0.0-rc.8",
+    "@smthrs/targets": "1.0.0-rc.8",
     "effect": "4.0.4"
   }
 }
@@ -7570,7 +7570,10 @@ treated as a lock with no readable owner and reclaimed on the same bound.
 `hold` is the same lease without a deadline, for a caller that bounds a wider
 wait itself; `onAcquired` runs once the lease is held. `guard`, when given,
 runs before every create, heartbeat, rename, and remove of the lock, claim, or
-tombstone, and its failure refuses that step through `failure`.
+tombstone, and its failure refuses that step through `failure`. Both fail
+through `failure` with a `RangeError`, before touching the lock, unless
+`0 < heartbeatEvery < staleAfterMs` and `staleAfterMs` is finite: a shorter
+stale bound would let a contender reclaim a live holder's lock.
 
 | Option           | Default        | Meaning                                          |
 | ---------------- | -------------- | ------------------------------------------------ |
@@ -12007,6 +12010,7 @@ Run health over the control plane. See
 
 Defaults: `monitorId` is `default`, `intervalMs` is 1,000, `maxChecks` is 10,
 `stallBeats` is 3, `roundBound` is 32, and `autoHeal` is empty.
+Out-of-range bounds fail with `InvalidInput` before the first beat.
 
 ## Channels
 
@@ -13145,15 +13149,18 @@ https://smithers.sh/docs/reference/api/database/
 The root entry point is driver neutral and bundles for browsers. Each driver is
 platform specific and lives at an explicit subpath.
 
-| Import                                | Exports                                                                              |
-| ------------------------------------- | ------------------------------------------------------------------------------------ |
-| `@smthrs/database`                    | `DurableWriter`, `Migrations`, `DatabaseMetrics`, `UnsupportedBackend` as namespaces |
-| `@smthrs/database/DurableWriter`      | the write boundary, its errors, and its layers                                       |
-| `@smthrs/database/Migrations`         | the migration composer                                                               |
-| `@smthrs/database/DatabaseMetrics`    | the write-retry counter                                                              |
-| `@smthrs/database/UnsupportedBackend` | the ignored connection-string names                                                  |
-| `@smthrs/database/node/NodeDatabase`  | Node only. The `node:sqlite` client layer                                            |
-| `@smthrs/database/test/TestDatabase`  | Node only. The in-memory client and writer                                           |
+| Import                                       | Exports                                                                              |
+| -------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `@smthrs/database`                           | `DurableWriter`, `Migrations`, `DatabaseMetrics`, `UnsupportedBackend` as namespaces |
+| `@smthrs/database/DurableWriter`             | the write boundary, its errors, and its layers                                       |
+| `@smthrs/database/Migrations`                | the migration composer                                                               |
+| `@smthrs/database/DatabaseMetrics`           | the write-retry counter                                                              |
+| `@smthrs/database/UnsupportedBackend`        | the ignored connection-string names                                                  |
+| `@smthrs/database/Dialect`                   | SQL fragments that read the same on SQLite and PostgreSQL                            |
+| `@smthrs/database/node/NodeDatabase`         | Node only. The `node:sqlite` client layer                                            |
+| `@smthrs/database/bun/BunDatabase`           | Bun only. The `bun:sqlite` client layer                                              |
+| `@smthrs/database/postgres/PostgresDatabase` | The PostgreSQL client layer                                                          |
+| `@smthrs/database/test/TestDatabase`         | Node only. The isolated test client and writer, and fixture helpers                  |
 
 `@smthrs/database/internal/*` is blocked by the export map.
 
@@ -13589,6 +13596,7 @@ interface NodeDatabaseOptions {
   readonly mode?: number | undefined
   readonly busyTimeout?: Duration.Input | undefined
   readonly sqlite?: Omit<SqliteClient.SqliteClientConfig, "filename"> | undefined
+  readonly readOnly?: boolean | undefined
 }
 ```
 
@@ -13596,8 +13604,9 @@ interface NodeDatabaseOptions {
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `filename`    | The SQLite database filename. A `file:` URI is accepted, and `:memory:` opens a private in-memory database. The parent directory is not created.                                                                                              |
 | `mode`        | Creation permissions for a new plain-path database, masked by the process umask. Defaults to `0o600`; WAL and SHM sidecars inherit the main file's mode. Existing files, `file:` URIs, temporary databases and read-only opens are unchanged. |
-| `busyTimeout` | Synchronous SQLite lock wait. Defaults to `0` so open and durable-write retries wait cooperatively. Overrides `sqlite.busyTimeout` when supplied.                                                                                             |
+| `busyTimeout` | Synchronous SQLite lock wait. Defaults to `0` so open and durable-write retries wait cooperatively, and to one second for a read-only open. Overrides `sqlite.busyTimeout` when supplied.                                                     |
 | `sqlite`      | Additional driver configuration. WAL remains enabled unless explicitly disabled. An explicit `sqlite.busyTimeout` is honored when `busyTimeout` is absent.                                                                                    |
+| `readOnly`    | Opens an existing store for reading only. SQLite opens read-only without converting to WAL; PostgreSQL skips schema creation and runs every transaction `READ ONLY`. Nothing is created, migrated or locked for writing.                      |
 
 ### UnsupportedDatabaseCode
 
@@ -13652,8 +13661,9 @@ a `bun:sqlite` client with the same schema guard, bounded open retries and
 failed-commit recovery as NodeDatabase. As on Node, `.raw` on a write without
 result columns returns `{ changes, lastInsertRowid }`, so `affectedRows` reads
 its count; the upstream `@effect/sql-sqlite-bun` client returns `[]` there.
-Options contain `filename` and optional
-`sqlite` settings from that Bun driver. A new plain-path database is created
+Options contain `filename`, optional
+`sqlite` settings from that Bun driver, and `readOnly`, which behaves as on
+NodeDatabase. A new plain-path database is created
 with mode `0o600`, masked by the process umask, and its WAL and SHM sidecars
 inherit that mode. Existing files, `file:` URIs, temporary databases and opens
 whose settings disable creation are left to SQLite. Install its matching optional peer;
@@ -13670,21 +13680,82 @@ Node only. `import * as TestDatabase from "@smthrs/database/test/TestDatabase"`.
 const layer: Layer.Layer<DurableWriter.DurableWriter | SqlClient.SqlClient>
 ```
 
-Provides the production Node SQLite client and the production durable writer
-over a fresh in-memory database. `:memory:` is private to a connection, so both
-halves share one connection and serialization comes from the client's
-in-process transaction mutex rather than from the database.
+Provides the production client and the production durable writer over a fresh,
+isolated database. By default that is an in-memory SQLite database:
+`:memory:` is private to a connection, so both halves share one connection and
+serialization comes from the client's in-process transaction mutex rather than
+from the database. When `SMITHERS_TEST_PG_URL` is set, the layer instead creates
+a schema named `test_<uuid>` on that server and drops it when the layer's scope
+closes. Never set `SMITHERS_TEST_PG_URL` to a production server.
+
+`sqliteLayer` is the in-memory SQLite form alone, whatever the environment says.
+
+### Fixture helpers
+
+Each helper takes the test's `SqlClient` and works on SQLite and PostgreSQL.
+They exist to build states production code refuses to write; never call them on
+a production database.
+
+| Helper                      | What it does                                                                                                                                                                       |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `checks(sql, enabled)`      | Turns `CHECK` constraints off and back on. PostgreSQL drops the current schema's checks and re-adds them `NOT VALID`, so rows written while they were off stay.                    |
+| `foreignKeys(sql, enabled)` | The same for foreign keys, so a fixture can hold orphaned rows.                                                                                                                    |
+| `dropTrigger(sql, name)`    | Drops the trigger `name` wherever it is in the current schema. Unlike `Dialect.dropTrigger`, it needs no table name.                                                               |
+| `catalog(sql)`              | A relation with SQLite's `sqlite_master` columns (`name`, `tbl_name`, `type`, `sql`) for asserting on tables, indexes and triggers.                                                |
+| `explain(sql, statement)`   | The query plan of `statement` as `{ detail }` rows. On PostgreSQL sequential scans are disabled for the plan, so a small fixture still shows whether an index can serve the query. |
+| `until(predicate)`          | Polls `predicate` every 2 ms and dies after 2000 polls without `true`.                                                                                                             |
+| `dropSchema(sql, schema)`   | Drops a PostgreSQL test schema after taking its writer lock, so it waits for an in-flight transaction instead of deadlocking with it.                                              |
 
 See [Test against a database](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/guides/test-against-a-database.md).
 
 ## PostgresDatabase
 
 Import `@smthrs/database/postgres/PostgresDatabase` and provide
-`layer({ url, schema?, postgres? })`. The optional `postgres` field passes
+`layer({ url, schema?, postgres?, readOnly? })`. `schema` defaults to
+`smithers_flows` and must be 1 to 63 UTF-8 bytes without NUL; anything else
+raises `postgres_schema_invalid`. `readOnly` reads an existing schema without
+creating it or taking the writer lock. The optional `postgres` field passes
 Effect PostgreSQL pool/connection options; Smithers owns the type registry.
 The resulting layer provides `SqlClient`; compose `DurableWriter.layer()`
 and the owning migration set as with SQLite. See
 [configuration and isolation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/concepts/sqlite-only.md).
+
+## Dialect
+
+`import * as Dialect from "@smthrs/database/Dialect"`.
+
+SQL fragments that let one store and one migration run on SQLite and
+PostgreSQL. Each takes the store's `SqlClient` and emits the form for its
+backend. Fragments that accept names, paths or trigger text splice them into
+SQL unescaped: pass only constants the store owns.
+
+| Export                          | SQLite                                | PostgreSQL                                            |
+| ------------------------------- | ------------------------------------- | ----------------------------------------------------- |
+| `isPostgres(sql)`               | `false`                               | `true`                                                |
+| `isReadOnly(sql)`               | `true` for a `readOnly` open          | `true` for a `readOnly` open                          |
+| `integer(sql)`                  | `INTEGER`                             | `NUMERIC`, so a fractional write is kept and rejected |
+| `isInteger(sql, value)`         | `typeof(value) = 'integer'`           | `trunc(value) = value`                                |
+| `jsonValid(sql, value)`         | `json_valid(value)`                   | `value IS JSON`                                       |
+| `jsonText(sql, value, path)`    | `json_extract(value, path)`           | `value::jsonb #>> '{…}'`                              |
+| `identity(sql)`                 | `INTEGER PRIMARY KEY AUTOINCREMENT`   | `BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY` |
+| `rowId(sql)`                    | empty: every table has a `rowid`      | `rowid BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,`   |
+| `greatest(sql)`                 | `MAX`                                 | `GREATEST`                                            |
+| `indexHint(sql, name)`          | `INDEXED BY name`                     | empty                                                 |
+| `tables(sql)`                   | tables in `sqlite_master`             | tables in the current schema                          |
+| `columns(sql, table)`           | `PRAGMA table_info`                   | `information_schema.columns` in the current schema    |
+| `trigger(sql, options)`         | `CREATE TRIGGER … BEGIN … END`        | a `<name>_fn` function and a row trigger              |
+| `dropTrigger(sql, name, table)` | `DROP TRIGGER name`                   | `DROP TRIGGER name ON table`                          |
+| `query(sql, template, values)`  | runs `template` with `?` placeholders | rewrites each `?` to `$1`, `$2`, …                    |
+
+`jsonText` reads a string member as the same text on both backends. Other
+scalars differ: SQLite returns JSON `true` as the integer `1` and numbers as
+numbers, PostgreSQL returns the text `'true'` and `'7'`. Compare a boolean
+member against both forms.
+
+`trigger` rejects a row with `reject` as its message (a constraint failure on
+both backends), skips it with `ignore: true`, or runs `body`; `when` limits it
+to rows where the condition holds. `query` does not parse SQL, so its template
+must not contain `?` anywhere but a placeholder.
 
 ---
 
@@ -22948,7 +23019,8 @@ The decorator. GET and HEAD use `net:get` and every other method uses
 any other scheme it is `<scheme>//<lowercased host>`. In other words `https` is
 the implicit scheme: `https://EXAMPLE.test/x` names `example.test`, while
 `http://EXAMPLE.test/x` names `http://example.test`, so a host grant never
-authorizes a cleartext downgrade. Requests are snapshotted before any
+authorizes a cleartext downgrade. A trailing dot is dropped from the host, so
+`https://example.test./x` also names `example.test`. Requests are snapshotted before any
 suspension. By default, redirects are followed **above** the guard, so every hop re-enters
 authorization independently. The client below the guard must not follow
 redirects on its own. The decorator forces `RequestInit { redirect: "manual" }`
@@ -30509,6 +30581,12 @@ meaning, with the original error kept as the `cause`:
 | `EBUSY`                      | `Busy`             |
 | anything else                | `Unknown`          |
 
+A backend that answers with an impossible value is refused rather than
+trusted. `stat` fails `BadResource` when the reported size is not a whole,
+non-negative number of bytes, and reports no `mtime` when the timestamp is not
+a finite number. `stream` fails `BadResource` when a read reports more bytes
+than the buffer it was handed, or a negative or fractional count.
+
 ## Encoding and size policy
 
 `readFileString` and `writeFileString` are UTF-8 by default, through the
@@ -30655,7 +30733,7 @@ implementation identities, and platform module re-exports.
 `Path`. `Jj` is bound to the process working directory.
 
 `layerAt` is `layer` with `Jj` bound to `root` instead. `root` must be an
-absolute path; see [BunHostError](#bunhosterror).
+absolute path without NUL; see [BunHostError](#bunhosterror).
 
 `layerContained` is `layer` with process containment turned on: every child is
 spawned through `@smthrs/kernel`'s `ContainedSpawner` with
@@ -30703,10 +30781,10 @@ type BunHostErrorCode = "invalid_repository_root"
 ```
 
 The refusal `layerAt` and `layerContainedAt` throw when `root` is not absolute,
-the empty string included. It is thrown rather than failed because a factory
-runs while a program composes its layers, where there is no fiber to fail into
-and a wrong root is a composition mistake, not a runtime outcome. The check
-runs when the factory is called, before any layer exists.
+the empty string included, or contains NUL. It is thrown rather than failed
+because a factory runs while a program composes its layers, where there is no
+fiber to fail into and a wrong root is a composition mistake, not a runtime
+outcome. The check runs when the factory is called, before any layer exists.
 
 It is this package's class rather than the `Jj` adapter's: a Bun caller
 composed `BunHost` and should learn nothing about the adapter behind the `Jj`
@@ -31670,8 +31748,10 @@ Every method first compares its kind with the runtime catalog the resolution
 admitted (`Resolved.kinds`). A hook the catalog declares with a different kind
 is refused before any handler runs: `sequential`, `first`, and `waterfall` fail
 with `hook_kind_mismatch`, and `parallel` returns that one error. A hook name
-absent from the catalog dispatches nothing. The typed signatures make the
-mismatch unreachable without a cast; the runtime check covers the cast.
+absent from the catalog dispatches nothing, unless a hand-built `Resolved`
+registered handlers under it; those are refused the same way, because no kind
+was declared for them. The typed signatures make the mismatch unreachable
+without a cast; the runtime check covers the cast.
 
 Handlers must return an Effect. Synchronous throws, Effect failures and defects,
 and non-Effect results (including `undefined`, scalars, and Promises) become
@@ -31896,8 +31976,8 @@ class PluginError extends Schema.TaggedError<PluginError>()("flows/plugin/Plugin
 
 Every startup and dispatch refusal uses this one error. `plugin` and `hook` are
 attribution, `path` is a diagnostic dollar-path into the refused value, and
-`cause` carries a failing handler's or layer's original failure. Match on
-`code`; the messages are prose.
+`cause` carries a failing handler's, layer's, or waterfall merge's original
+failure. Match on `code`; the messages are prose.
 
 `cause` is not redacted. It holds whatever the plugin failed or threw with,
 which can include credentials or config values. Keep it in process for
@@ -38823,7 +38903,9 @@ Real, machine-global process fault primitives, imported by subpath:
 import { isAlive, killProcess, skewClock, waitForReparent } from "@smthrs/testing/Faults"
 ```
 
-Every helper that waits takes an optional `timeoutMs` as its last argument.
+Every helper that waits takes an optional `timeoutMs` as its last argument. A
+`timeoutMs` that is `NaN` or negative throws `RangeError` before the helper
+waits or signals.
 
 ### Faults.isAlive and isGroupAlive
 
@@ -39940,6 +40022,11 @@ backlog when catch-up exceeds its bound. It still dispatches the current
 occurrence subject to overlap, on the first poll after a restart and on every
 later poll.
 
+The bound counts every boundary since the last dispatch, the one that just
+passed included, and a restart and a stalled scheduler count the same
+boundaries. A tick where only that one boundary passed fires it under any
+bound.
+
 ## TriggerStore
 
 The durable state contract: registration, listing, the claim protocol, and
@@ -40768,9 +40855,10 @@ included. See [Overlap and catch-up](https://github.com/smithersai/smithers/blob
 ## Webhook verification and input ownership
 
 The signature verifier looks up `SignatureConfig.header` in `RawInbound.headers`
-first as lowercase and then exactly as written. It encodes the supplied header
-value as UTF-8 with `TextEncoder` and compares those bytes with the bytes
-returned by `SignatureConfig.expected`. An absent or empty header is refused
+first as lowercase, then exactly as written, then under any other casing, so a
+header name matches whatever capitalisation the request carries. It encodes the
+supplied header value as UTF-8 with `TextEncoder` and compares those bytes with
+the bytes returned by `SignatureConfig.expected`. An absent or empty header is refused
 before `expected` runs, and an `expected` that answers with zero bytes is
 refused after it. Constant-time equality agrees on two empty byte strings, so
 without those guards a request carrying no signature at all would authenticate

@@ -263,8 +263,10 @@ Every method first compares its kind with the runtime catalog the resolution
 admitted (`Resolved.kinds`). A hook the catalog declares with a different kind
 is refused before any handler runs: `sequential`, `first`, and `waterfall` fail
 with `hook_kind_mismatch`, and `parallel` returns that one error. A hook name
-absent from the catalog dispatches nothing. The typed signatures make the
-mismatch unreachable without a cast; the runtime check covers the cast.
+absent from the catalog dispatches nothing, unless a hand-built `Resolved`
+registered handlers under it; those are refused the same way, because no kind
+was declared for them. The typed signatures make the mismatch unreachable
+without a cast; the runtime check covers the cast.
 
 Handlers must return an Effect. Synchronous throws, Effect failures and defects,
 and non-Effect results (including `undefined`, scalars, and Promises) become
@@ -489,8 +491,8 @@ class PluginError extends Schema.TaggedError<PluginError>()("flows/plugin/Plugin
 
 Every startup and dispatch refusal uses this one error. `plugin` and `hook` are
 attribution, `path` is a diagnostic dollar-path into the refused value, and
-`cause` carries a failing handler's or layer's original failure. Match on
-`code`; the messages are prose.
+`cause` carries a failing handler's, layer's, or waterfall merge's original
+failure. Match on `code`; the messages are prose.
 
 `cause` is not redacted. It holds whatever the plugin failed or threw with,
 which can include credentials or config values. Keep it in process for
