@@ -6,10 +6,12 @@ import type { AgentInvocation } from "../flows/AgentInvocation"
 import type { AppController,AppServices } from "./AppController"
 import { emptyAppProjection,projectAppEvent,seedAppProjection } from "./AppProjection"
 import { createAppStore,type AppStore } from "./AppStore"
+import { DEFAULT_BRANCH_ID,DEFAULT_WORKSPACE_ID,rootFrameId } from "./AppState"
 import { createCommandIntentLifecycle } from "./controller/commandIntents"
 import { createControllerContext } from "./controller/context"
 import { scopedControllers } from "./ControllerTestScope"
 import { readEntityRecoveries } from "./EntityRecovery"
+import { restoreRecordedBranch } from "./RecordedBranch.fixture"
 import { memoryStorage, repositoryHttpFixture, silentAgent, waitFor } from "./TestFixtures"
 
 const createAppController = scopedControllers()
@@ -182,6 +184,39 @@ describe("durable command intent at the active shared door", () => {
     await store.settled?.()
     expect(store.session().inputMode).toBe("vim")
     expect(store.session().draft).toBe("")
+  })
+
+  /*
+   * The capability no longer names the selected workspace, branch or
+   * repository, so the line carries that weight: a restored branch brings back
+   * ITS draft, which both revokes the capability (the draft changed) and fails
+   * the capture's own comparison. The submission left behind still executes,
+   * and the restored line stays. Dropping either reading clears a branch's
+   * draft from under it.
+   */
+  test("a branch restored inside the admission window keeps its own draft", async () => {
+    const store = await open()
+    const held = deferred(), entered = deferred()
+    const controller = controllerFor(hold(store, "command.intent.accepted", held, entered))
+    const kept = "the branch left behind keeps this line"
+    controller.changeDraft(kept)
+    await store.settled?.()
+    const original = store.session().activeBranchId ?? DEFAULT_BRANCH_ID
+    await restoreRecordedBranch(store)
+    await waitFor(() => (store.session().activeBranchId ?? DEFAULT_BRANCH_ID) !== original)
+    controller.changeDraft("/input.mode vim")
+    await store.settled?.()
+    const pending = controller.commands.run("chat.send", "/input.mode vim")
+    await entered.promise
+    store.dispatch({ type: "frame.navigated", actor: "user", branchId: original, frameId: rootFrameId(original),
+      workspaceId: store.session().activeWorkspaceId ?? DEFAULT_WORKSPACE_ID })
+    expect(store.session().activeBranchId ?? DEFAULT_BRANCH_ID).toBe(original)
+    expect(store.session().draft).toBe(kept)
+    held.resolve()
+    await pending
+    await store.settled?.()
+    expect(store.session().inputMode).toBe("vim")
+    expect(store.session().draft).toBe(kept)
   })
 
   test("a delayed queue submission preserves a freshly retyped identical draft", async () => {
