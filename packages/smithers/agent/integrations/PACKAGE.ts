@@ -5,10 +5,13 @@ import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
  * `cwd` anchors every emitted tool run in this package directory.
  */
 import { Smithers } from "@smthrs/targets"
+import * as Input from "@smthrs/targets/Input"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
   deps: [],
+  // Examples are linted and type-checked with the sources and run by the suite.
+  sources: Input.glob("{src,examples}/**/*.ts"),
   cwd: "packages/smithers/agent/integrations"
 })
 

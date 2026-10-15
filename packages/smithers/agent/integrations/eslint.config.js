@@ -13,18 +13,18 @@ export default tseslint.config(
   importPlugin.flatConfigs.recommended,
   importPlugin.flatConfigs.typescript,
   {
-    files: ["src/**/*.ts"],
+    files: ["src/**/*.ts", "examples/**/*.ts"],
     extends: [tseslint.configs.recommended],
     languageOptions: {
       parserOptions: {
-        projectService: true,
+        project: "./tsconfig.test.json",
         tsconfigRootDir: import.meta.dirname
       }
     },
     settings: {
       "import/resolver": {
         typescript: {
-          project: ["./tsconfig.json"]
+          project: ["./tsconfig.test.json"]
         }
       }
     },
