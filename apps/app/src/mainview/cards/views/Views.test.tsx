@@ -2834,6 +2834,7 @@ describe("HomeView", () => {
       expect(h.onView).toHaveBeenCalledTimes(0)
       for (const [health, main, actions, expected] of [
         ["stale", { cause: "Network unavailable", last_success_at: "2026-10-05T11:54:41Z" }, [{ args: { operation: "retry" }, tag: "github", label: "Retry" }], "synced 6 min ago · Network unavailableRetry"],
+        ["stale", { cause: "Network unavailable", last_success_at: "2026-10-05T09:00:00Z" }, [], "synced 3 h ago · Network unavailable"],
         ["limited", { cause: "GitHub rate limit", retry_at: "10:42" }, [], "GitHub rate limit · retries at 10:42"],
         ["refused", { cause: "Repository access refused" }, [{ tag: "settings", label: "Fix" }], "Repository access refusedFix"],
       ] as const) {

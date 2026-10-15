@@ -7,6 +7,7 @@ import type { TodoState } from "@smthrs/rpc/CardPrimitives"
 import { ActorChip, actorName } from "./ActorChip"
 import { LessonsCount } from "./ProposalView"
 import { StateWord } from "./StateWord"
+import { ageLabel } from "../../Timestamps"
 
 /** Supplied actions preserve their order, arguments and disabled reason. */
 function HomeAction({ action, onAction, onView, menu }: { action: Action; onAction: HomeViewProps["onAction"]; onView?: HomeViewProps["onView"]; menu?: boolean }) {
@@ -104,7 +105,7 @@ export function HomeView({ model, actions, view, onAction, onView }: HomeViewPro
     return () => observer.disconnect()
   }, [])
   const age = Math.max(0, Math.floor((now - Date.parse(model.main.last_success_at)) / 1000))
-  const synced = Date.parse(model.main.last_success_at) <= 0 ? "" : age < 60 ? `synced ${age} s ago` : `synced ${Math.round(age / 60)} min ago`
+  const synced = Date.parse(model.main.last_success_at) <= 0 ? "" : `synced ${age < 60 ? `${age} s ago` : ageLabel(model.main.last_success_at, now)}`
   const syncActions = actions.filter(action => action.label === "Retry" || action.label === "Fix")
   const otherActions = actions.filter(action => action.label !== "Retry" && action.label !== "Fix")
   const filters = []
