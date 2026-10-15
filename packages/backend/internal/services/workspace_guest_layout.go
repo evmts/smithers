@@ -66,7 +66,7 @@ func (s *WorkspaceService) workspaceGuestLayout(ctx context.Context, row db.Work
 	}
 	result, err := s.runtime.ExecuteCommand(operationCtx, row.ID, workspaceapi.Command{Args: []string{"/bin/sh", "-c", "id -u && id -un"}})
 	if err != nil {
-		return workspaceGuestLayout{}, runtimeOperationError("read workspace guest account", err)
+		return workspaceGuestLayout{}, s.workspaceRuntimeOperationError(ctx, "read workspace guest account", err, row, requesterID)
 	}
 	fields := strings.Fields(result.Stdout)
 	if result.ExitCode != 0 || result.OutputTruncated || len(fields) != 2 {
@@ -90,7 +90,7 @@ func (s *WorkspaceService) runtimeGuestPaths(ctx context.Context, row db.Workspa
 	}
 	observed, err := s.runtime.InspectWorkspace(operationCtx, row.ID)
 	if err != nil {
-		return workspaceGuestLayout{}, nil, runtimeOperationError("inspect workspace runtime", err)
+		return workspaceGuestLayout{}, nil, s.workspaceRuntimeOperationError(ctx, "inspect workspace runtime", err, row, requesterID)
 	}
 	if !path.IsAbs(observed.Root) || !path.IsAbs(observed.Home) {
 		return workspaceGuestLayout{}, nil, pkgerrors.Internal("workspace runtime reports no guest checkout or home")

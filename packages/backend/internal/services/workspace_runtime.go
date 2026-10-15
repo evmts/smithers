@@ -1009,7 +1009,7 @@ func (s *WorkspaceService) LaunchWorkspaceService(ctx context.Context, workspace
 			ReadyAddress: runtimeReadyAddress(input.Port), ReadyTimeout: 30 * time.Second,
 		})
 		if err != nil {
-			return runtimeOperationError("start workspace service", err)
+			return s.workspaceRuntimeOperationError(ctx, "start workspace service", err, row, userID)
 		}
 		s.touchWorkspaceEntryRecency(ctx, row.ID, "service-start")
 		managed = runtimeManagedService(started.Name, workspaceapi.ServiceRunning, started.Address, 0)
@@ -1057,7 +1057,7 @@ func (s *WorkspaceService) listRuntimeWorkspaceServices(ctx context.Context, row
 	}
 	observed, err := catalog.ListServices(operationCtx, row.ID)
 	if err != nil {
-		return nil, runtimeOperationError("list workspace services", err)
+		return nil, s.workspaceRuntimeOperationError(ctx, "list workspace services", err, row, userID)
 	}
 	result := make([]WorkspaceManagedService, 0, len(observed))
 	for _, service := range observed {
@@ -1187,11 +1187,15 @@ func (s *WorkspaceService) OpenWorkspaceTerminal(ctx context.Context, sessionID 
 	}
 	var terminal workspaceapi.Terminal
 	var credential *terminalCredential
+	// The resize below runs after the mutation closes, and it is the third
+	// call on this box; it answers a confirmed loss like the two before it.
+	var opened db.Workspace
 	err = s.withWorkspaceMutation(ctx, session.WorkspaceID, repositoryID, userID, func(ctx context.Context, row db.Workspace) error {
 		row, err := s.ensureRuntimeWorkspaceRunning(ctx, row, userID)
 		if err != nil {
 			return err
 		}
+		opened = row
 		terminalVersion := session.UpdatedAt.UTC().UnixNano()
 		operationCtx, err := s.workspaceRuntimeContext(ctx, row, userID, "workspace-terminal:"+session.ID+":v"+strconv.FormatInt(terminalVersion, 10))
 		if err != nil {
@@ -1201,7 +1205,7 @@ func (s *WorkspaceService) OpenWorkspaceTerminal(ctx context.Context, sessionID 
 		// The shell starts signed in: its delegated credential is in its file
 		// before the shell can read SMITHERS_TOKEN_FILE.
 		if credential, err = s.signInWorkspaceTerminal(operationCtx, row, session.ID, userID); err != nil {
-			return runtimeOperationError("sign in workspace terminal", err)
+			return s.workspaceRuntimeOperationError(ctx, "sign in workspace terminal", err, row, userID)
 		}
 		if credential != nil {
 			command.Environment = credential.environment()
@@ -1224,7 +1228,7 @@ func (s *WorkspaceService) OpenWorkspaceTerminal(ctx context.Context, sessionID 
 			if credential != nil {
 				credential.Close()
 			}
-			return runtimeOperationError("open workspace terminal", err)
+			return s.workspaceRuntimeOperationError(ctx, "open workspace terminal", err, row, userID)
 		}
 		return nil
 	})
@@ -1242,9 +1246,34 @@ func (s *WorkspaceService) OpenWorkspaceTerminal(ctx context.Context, sessionID 
 	}
 	if err := terminal.Resize(ctx, columns, rows); err != nil {
 		_ = terminal.Close()
-		return nil, runtimeOperationError("resize workspace terminal", err)
+		return nil, s.workspaceRuntimeOperationError(ctx, "resize workspace terminal", err, opened, userID)
 	}
 	return terminal, nil
+}
+
+// workspaceRuntimeOperationError types a failed runtime call for a caller that
+// holds the row. A runtime that confirms the machine is permanently gone
+// (workspaceapi.ErrWorkspaceNotFound) is not an internal fault: the readiness
+// check and the start answer that loss with the recovery row (#3565, #3890,
+// #3912) and the file doors do too (#3954), but every other door on an already
+// ready box flattened it to 500 fault=bug with the marker's own text in the
+// message. The machine vanishing BETWEEN the readiness check and the call is
+// the window that reaches here, and it is the one production box
+// 8bdcfa88-451a-4afe-a341-2be82227c1a5 sat in: row running, vm_id set, the
+// controller answering 404 for its placement. A coding or dispatch request,
+// the guest layout every runtime command resolves first, a service listing and
+// a terminal all landed on it, so the one answer that carries a route out —
+// 409 workspace_vm_missing with WorkspaceRecoveryDetails — was the one answer
+// they could not give. The order matches the inspect and start arms above:
+// a confirmed loss outranks the lease the loss took with it.
+func (s *WorkspaceService) workspaceRuntimeOperationError(ctx context.Context, operation string, err error, row db.Workspace, requesterID int64) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, workspaceapi.ErrWorkspaceNotFound) {
+		return s.missingWorkspaceVM(ctx, row, requesterID)
+	}
+	return runtimeOperationError(operation, err)
 }
 
 // workspaceFileOperationError classifies a file call's failure for a caller
