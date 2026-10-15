@@ -339,7 +339,12 @@ export const Sha256 = Object.assign(Sha256Schema, { Digest, digest, digestSync }
  */
 export const makeDigestPartsSync = (): (parts: ReadonlyArray<string>) => Digest => {
   let previous: ReadonlyArray<string> = [], prefixes: Array<Sha256Prefix> = []
-  return (parts) => {
+  return (input) => {
+    // Read indexed fragments once: caller iterators and accessors must not
+    // record cache keys different from the values actually hashed.
+    const parts: Array<string> = []
+    const length = input.length
+    for (let index = 0; index < length; index++) parts.push(input[index]!)
     let same = 0
     while (same < parts.length && same < previous.length && parts[same] === previous[same]) same++
     const state = same ? prefixes[same - 1]!.clone() : new Sha256Prefix()
@@ -348,7 +353,7 @@ export const makeDigestPartsSync = (): (parts: ReadonlyArray<string>) => Digest 
       state.update(snapshotSync(parts[index]!))
       next.push(state.clone())
     }
-    previous = [...parts]
+    previous = parts
     prefixes = next
     return encodeHex(state.finish()) as Digest
   }
