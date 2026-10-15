@@ -64,3 +64,7 @@ pub mod session_environment;
 mod wake_journal;
 
 mod rebase_observer;
+
+// document_core is shared by path with the FFI crate and uses this decoder.
+#[path = "../../smithers-ffi/src/live_document_decode.rs"]
+mod live_document_decode;
