@@ -310,7 +310,7 @@ func (s *WorkspaceService) destroyWorkspace(ctx context.Context, workspace db.Wo
 		return err
 	}
 	if keep {
-		return fmt.Errorf("%w: %w", errTodoWorkspaceRetained, pkgerrors.Conflict("branch is retained"))
+		return fmt.Errorf("%w: %w", errTodoWorkspaceRetained, pkgerrors.Conflict(workspaceRetainedMessage))
 	}
 	workspace = current
 	if s.runtime != nil {

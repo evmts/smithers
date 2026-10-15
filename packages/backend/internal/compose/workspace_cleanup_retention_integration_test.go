@@ -68,7 +68,11 @@ func TestCleanupScratchRetentionThroughInstallHTTP(t *testing.T) {
 	body, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusConflict, res.StatusCode, string(body))
-	require.Contains(t, string(body), "branch is retained")
+	// The machine here is kind "vm" with no TODO/lane binding: a scratch
+	// machine of the branch-machine owner. It is retained, and the refusal
+	// says that about the machine rather than calling it a branch.
+	require.Contains(t, string(body), "machine is retained until its work is captured and settled")
+	require.NotContains(t, string(body), "branch is retained")
 	retained, err := q.GetWorkspaceIncludingDeleted(ctx, row.ID)
 	require.NoError(t, err)
 	require.Equal(t, "suspended", retained.Status)

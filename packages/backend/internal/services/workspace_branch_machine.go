@@ -195,7 +195,7 @@ func stackLaneWorkspace(ctx context.Context, tx pgx.Tx, q *db.Queries, repositor
 // A machine that never had a guest adopts the first size a person asks for.
 // Its size is otherwise unreachable: the import provisions the machine itself
 // and names no size, so it boots at this deployment's default; DELETE answers
-// "branch is retained"; there is no resize route; and after RFD-004 there is
+// "machine is retained"; there is no resize route; and after RFD-004 there is
 // no second machine to create instead. On a full fleet that is terminal — the
 // repository holds a machine nothing can place and its owner cannot ask for
 // one that fits. Adopting the size erases nothing: the row has no guest, no
@@ -282,7 +282,7 @@ func branchMachineCompatible(row db.Workspace, arg db.CreateWorkspaceParams, own
 		// A retained failure refuses every later join, and GetBranchWorkspace
 		// returns it on purpose ("none permit replacement"), so the refusal is
 		// permanent: resume answers its own "create a fresh workspace"
-		// conflict and DELETE answers "branch is retained". The sentinel is
+		// conflict and DELETE answers "machine is retained". The sentinel is
 		// what the agent dispatch classifies on, so a turn stops promising a
 		// retry that cannot work (#3890's rule). The HTTP shape is unchanged.
 		return fmt.Errorf("%w: %w", errBranchMachineRetainedFailure,

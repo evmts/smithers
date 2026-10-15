@@ -146,6 +146,18 @@ func (s *WorkspaceService) reclaimAgentWorkspaceDisk(ctx context.Context, id str
 // retired lanes: retirement is not proof of settlement or final capture. Until the branch
 // settlement/capture and quiet-service contracts land, all bound disks stay.
 // Missing binding authority fails closed rather than treating it as no TODO.
+// workspaceRetainedMessage is what an owner is told when cleanup declines to
+// remove their machine. keepTodoWorkspace holds two different machines: a
+// lane-bound branch machine, and a scratch machine retained because the
+// durable service owner is its identity too. Only the first is a branch, so
+// the older sentence ("branch is retained") was false about production box
+// 1d7209c4-1915-4433-bc2b-c15376574147 — a kind="container" machine with no
+// lane — and sent its owner looking for branch work it never held. The
+// retention is the same policy for both, and naming it is what both can be
+// told truthfully; it also carries the condition that releases them, which
+// the bare noun did not. Form follows branchMachineRetainedMessage.
+const workspaceRetainedMessage = "machine is retained until its work is captured and settled"
+
 func (s *WorkspaceService) keepTodoWorkspace(ctx context.Context, row db.Workspace) (bool, error) {
 	// Scratch machines have no Mythical lane. The durable service owner is
 	// their identity too; kind alone is not a branch-machine discriminator.
