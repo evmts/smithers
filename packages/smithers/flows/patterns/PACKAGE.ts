@@ -1,4 +1,4 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
 /** Standard package targets plus package-owned documentation generation. */
 import { Smithers } from "@smthrs/targets"
 
@@ -8,6 +8,15 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   deps: [],
   cwd
 })
+
+/**
+ * Changed public exports against README.md, docs/*.md, and the site's
+ * patterns API reference page.
+ */
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({ cwd })
+
+/** Changed public exports against their own JSDoc. */
+const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd })
 
 // Pure orchestration combinators over @smthrs/flow. Member flows are often
 // model agents, so every decision value (approval, review verdict, plan, task
@@ -130,5 +139,17 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview }
+  targets: {
+    check,
+    circular,
+    docs,
+    docsFiles,
+    fmt,
+    lib,
+    lint,
+    reviewDocsAgainstCode,
+    reviewJsdocAgainstCode,
+    test,
+    ...securityReview
+  }
 })
