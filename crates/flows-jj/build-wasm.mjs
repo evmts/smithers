@@ -136,13 +136,15 @@ export const remapFlags = ({ cargoHome, commitHash, sysroot, workspaceRoot }) =>
  * Ambient encoded flags are replaced and `RUSTFLAGS` is removed so neither
  * can inject extra codegen or discard the remapping. Compiler,
  * wrapper, and per-target linker overrides are removed so Cargo uses the
- * pinned toolchain rather than tools selected by the invoking shell. The
+ * pinned toolchain rather than tools selected by the invoking shell. Rustup's
+ * toolchain override is removed for both compiler probes and compilation. The
  * byte-compare would catch the damage one step later on CI, but a build on
  * the canonical host must produce the canonical bytes on the first try.
  */
 export const buildEnvironment = (env, flags) => {
   const environment = { ...env, CARGO_ENCODED_RUSTFLAGS: flags.join("\x1f") }
   delete environment.RUSTFLAGS
+  delete environment.RUSTUP_TOOLCHAIN
   for (const name of Object.keys(environment)) {
     if (
       /^(?:RUSTC|CARGO_BUILD_RUSTC)(?:_WRAPPER|_WORKSPACE_WRAPPER)?$/.test(name) ||
@@ -174,12 +176,13 @@ const isMain = process.argv[1] !== undefined &&
   import.meta.url === pathToFileURL(resolve(process.argv[1])).href
 
 if (isMain) {
+  const probeEnvironment = buildEnvironment(process.env, [])
   const artifact = join(targetDir(process.env, repoRoot), "wasm32-wasip1", "release", "flows_jj.wasm")
   const destinationDir = join(repoRoot, "packages", "smithers", "flows", "jj", "wasm")
   const destination = join(destinationDir, "flows_jj.wasm")
 
   const rustc = (args) => {
-    const result = spawnSync("rustc", args, { cwd: repoRoot, encoding: "utf8" })
+    const result = spawnSync("rustc", args, { cwd: repoRoot, env: probeEnvironment, encoding: "utf8" })
     if (result.error?.code === "ENOENT") {
       console.error("error: `rustc` not found on PATH — install a Rust toolchain (rustup) first")
       process.exit(1)

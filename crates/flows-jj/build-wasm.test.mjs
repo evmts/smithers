@@ -203,3 +203,23 @@ test("buildEnvironment preserves remap flags through Cargo when paths contain sp
     rmSync(directory, { recursive: true, force: true })
   }
 })
+
+test("buildEnvironment lets the repository pin select the Rustup toolchain", () => {
+  const input = Object.freeze({ ...process.env, RUSTUP_TOOLCHAIN: "flows-jj-invalid-toolchain" })
+  const environment = buildEnvironment(input, [])
+  // The nonexistent override must never reach rustup or trigger a toolchain
+  // installation; the repository's already-installed pinned compiler is used.
+  for (const tool of ["rustc", "cargo"]) {
+    const result = spawnSync(tool, ["--version"], {
+      cwd: fileURLToPath(new URL("../../", import.meta.url)),
+      env: environment,
+      encoding: "utf8",
+      timeout: 60000
+    })
+    assert.equal(result.error, undefined)
+    assert.equal(result.status, 0, result.stderr)
+    assert.ok(result.stdout.startsWith(`${tool} `), result.stdout)
+  }
+  assert.equal("RUSTUP_TOOLCHAIN" in environment, false)
+  assert.equal(input.RUSTUP_TOOLCHAIN, "flows-jj-invalid-toolchain")
+})
