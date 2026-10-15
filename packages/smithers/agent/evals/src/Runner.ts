@@ -248,8 +248,37 @@ const caseError = (suiteCase: Case, cause: Cause.Cause<unknown>): EvalError => {
 // A step key is a runtime value the target returns, so unlike a suite name it
 // is flattened rather than rejected: it reaches baselines, reports and the
 // gate summary, and a control character in any of them corrupts a CI log line.
+// An executor written in plain JavaScript can return any shape, so the two
+// fields every scorer and baseline reads are checked here, where the failure
+// can still name the case and the field.
+const malformedExecution = (suiteCase: Case, execution: Execution): EvalError | undefined => {
+  const shape: { readonly stepKey?: unknown; readonly latencyMs?: unknown } =
+    typeof execution === "object" && execution !== null ? execution : {}
+  if (typeof shape.stepKey !== "string") {
+    return new EvalError({
+      code: "executor",
+      message: `executor returned a stepKey that is not a string (${typeof shape.stepKey})`,
+      path: `${casePath(suiteCase.name)}.stepKey`
+    })
+  }
+  if (typeof shape.latencyMs !== "number" || !Number.isFinite(shape.latencyMs) || shape.latencyMs < 0) {
+    return new EvalError({
+      code: "executor",
+      message: `executor returned a latencyMs that is not a finite non-negative number (${
+        typeof shape.latencyMs === "number" ? String(shape.latencyMs) : typeof shape.latencyMs
+      })`,
+      path: `${casePath(suiteCase.name)}.latencyMs`
+    })
+  }
+  return undefined
+}
+
 const runCase = (executor: CaseExecutorService, suiteCase: Case): Effect.Effect<CaseResult> =>
   Effect.suspend(() => executor.run(structuredClone(suiteCase))).pipe(
+    Effect.flatMap((execution) => {
+      const malformed = malformedExecution(suiteCase, execution)
+      return malformed === undefined ? Effect.succeed(execution) : Effect.fail(malformed)
+    }),
     Effect.map((execution): CaseResult => ({
       case: suiteCase.name,
       execution: { ...execution, stepKey: flattenControlCharacters(execution.stepKey) },

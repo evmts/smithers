@@ -91,6 +91,11 @@ The target flow failed for a case, or no executor was available.
   the typed error, locates it with the executor's own `path` or with
   `cases['<name>']`, and produces no observations for the case. The rest of
   the suite still ran. Read the retained `cause`.
+- `Target failed for case '<name>': executor returned a stepKey that is not a
+  string` or `... a latencyMs that is not a finite non-negative number`: the
+  executor succeeded but returned a malformed execution. `path` is
+  `cases['<name>'].stepKey` or `cases['<name>'].latencyMs`. Return the step
+  key as a string and the latency in milliseconds as a number of 0 or more.
 - `No executor is available for case '<name>'`: the run was provided
   `CaseExecutor.makeNoop()` or `CaseExecutor.layerNoop`. Wire a real executor.
 

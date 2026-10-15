@@ -174,6 +174,36 @@ describe("Runner", () => {
     expect((result.cases[1]?.error?.cause as EvalError).message).toBe("boom\n::error::forged from target\u007f")
   })
 
+  // An executor written in plain JavaScript can hand back any shape. A step key
+  // that is not a string used to crash the control-character pass with "is not
+  // iterable", and a NaN latency reached every scorer unchecked.
+  it("fails a case whose executor returns a malformed step key or latency", async () => {
+    const malformed: ReadonlyArray<readonly [string, Record<string, unknown> | null, string]> = [
+      ["null-execution", null, "stepKey"],
+      ["number-step", { stepKey: 42, latencyMs: 0 }, "stepKey"],
+      ["absent-step", { latencyMs: 0 }, "stepKey"],
+      ["nan-latency", { stepKey: "step", latencyMs: Number.NaN }, "latencyMs"],
+      ["negative-latency", { stepKey: "step", latencyMs: -1 }, "latencyMs"],
+      ["string-latency", { stepKey: "step", latencyMs: "5" }, "latencyMs"]
+    ]
+    const suite = await suiteOf("s", [], malformed.map(([name]) => ({ name, input: name })))
+    const executor = executorFor((suiteCase) => {
+      const fields = malformed.find(([name]) => name === suiteCase.name)![1]
+      const execution = fields === null ? null : { output: suiteCase.input, target, ...fields }
+      return Effect.succeed(execution as unknown as CaseExecutor.Execution)
+    })
+    const result = await Effect.runPromise(Runner.run(suite, runOptions).pipe(Effect.provide(executor)))
+
+    for (const [index, [name, , field]] of malformed.entries()) {
+      const error = result.cases[index]?.error
+      expect(result.cases[index]?.execution).toBeUndefined()
+      expect(error?.code).toBe("executor")
+      expect(error?.path).toBe(`cases['${name}'].${field}`)
+      expect(error?.message).toContain(`Target failed for case '${name}': executor returned`)
+      expect(error?.message).toContain(field)
+    }
+  })
+
   it("isolates mutating executors and scorers across sequential and concurrent runs", async () => {
     const executorSeen: unknown[] = []
     const scorerSeen: unknown[] = []
