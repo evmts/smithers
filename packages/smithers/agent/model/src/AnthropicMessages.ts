@@ -962,7 +962,7 @@ const providerReason = (
   providerType: string | undefined,
   message: string
 ): ModelErrorCode => {
-  const reason = classifyHttpStatus(status, providerType, message)
+  const reason = classifyHttpStatus(status, providerType, message, "provider")
   if (reason === "quota_exceeded" || reason === "authentication") return reason
   const normalized = `${providerType ?? ""} ${message}`.toLowerCase()
   // Anthropic overloads are transient rate limits, including HTTP 529.

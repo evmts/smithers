@@ -518,7 +518,7 @@ const providerReason = (
   const numeric = code === undefined ? Number.NaN : Number(code)
   const httpLike = Number.isInteger(numeric) && numeric >= 400 && numeric <= 599 ? numeric : undefined
   const effective = status ?? httpLike
-  return classifyHttpStatus(effective, code, message)
+  return classifyHttpStatus(effective, code, message, "provider")
 }
 
 const classifyError = (status: number, body: string): ModelError => {

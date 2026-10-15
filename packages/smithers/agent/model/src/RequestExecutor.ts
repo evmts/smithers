@@ -552,7 +552,12 @@ const providerMessage = (
 const reasonForStatus = (status: number, body: string | undefined, parsed: unknown): ModelError["code"] => {
   const fields = providerFields(parsed)
   // Parsed metadata is diagnostic context, not a provider error signal.
-  return classifyHttpStatus(status, fields.code, isRecord(parsed) ? fields.message ?? "" : body ?? "")
+  // A body with no error envelope is read as the opaque text it is: whatever a
+  // transport, a gateway or a quoted report put there cannot name a limit the
+  // status does not carry.
+  return isRecord(parsed)
+    ? classifyHttpStatus(status, fields.code, fields.message ?? "", "provider")
+    : classifyHttpStatus(status, fields.code, body ?? "", "opaque")
 }
 
 const sanitizedField = (

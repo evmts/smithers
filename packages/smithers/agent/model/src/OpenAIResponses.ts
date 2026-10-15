@@ -775,7 +775,7 @@ const stepEvent = (
   if (type === "response.failed" || type === "error") {
     const error = providerError(value, now)
     return new ModelError({
-      code: classifyHttpStatus(undefined, error.code, error.message),
+      code: classifyHttpStatus(undefined, error.code, error.message, "provider"),
       message: error.message,
       providerCode: error.code,
       resetAtEpochMillis: error.resetAtEpochMillis,
@@ -826,7 +826,7 @@ const classifyError = (status: number, body: string): ModelError => {
   const message = string(error?.message) ?? string(parsed?.message) ?? string(parsed?.detail) ??
     `OpenAI Responses request failed with HTTP ${status}`
   return new ModelError({
-    code: classifyHttpStatus(status, code, message),
+    code: classifyHttpStatus(status, code, message, "provider"),
     message,
     httpStatus: status,
     providerCode: code
