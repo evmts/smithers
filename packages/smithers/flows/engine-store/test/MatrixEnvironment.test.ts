@@ -19,7 +19,10 @@ const old = BuildAndCheckTypeScriptPackage({
 })
 const actual = Target.metadata(Package.test)
 const previous = Target.metadata(old.test)
-assert.deepEqual({ ...actual.attrs, env: {}, deps: [] }, { ...previous.attrs, deps: [] })
+// The matrix target is the stock package test plus the tested examples (test/examples.test.ts runs them).
+const srcs = [...previous.attrs.srcs]
+srcs.splice(2, 0, Smithers.glob("examples/**/*.ts"))
+assert.deepEqual({ ...actual.attrs, env: {}, deps: [] }, { ...previous.attrs, srcs, deps: [] })
 assert.deepEqual(actual.attrs.deps, [Package.lib])
 assert.deepEqual(actual.dependencies, [Package.lib])
 assert.equal(actual.cacheable, false)
