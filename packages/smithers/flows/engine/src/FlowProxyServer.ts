@@ -3,8 +3,8 @@
  *
  * `layerHttpApi` connects the HTTP API group created by `FlowProxy` to the
  * supplied flows. `layerRpcHandlers` does the same for the generated RPC
- * definitions. Both layers route execute, discard, and resume requests to the
- * matching flow operation, while the `FlowRuntime` and flow handler
+ * definitions. Both layers route execute, discard, resume, and interrupt
+ * requests to the matching flow operation, while the `FlowRuntime` and flow handler
  * services stay on the server side.
  *
  * A handler here calls `flow.execute`, so both layers require what the served
@@ -35,22 +35,23 @@ import { renderDiagnostic } from "./internal/Diagnostic.ts"
  * a multi-tenant server namespaces client identity in one place instead of at
  * every call site.
  *
- * The server calls the function once inside each execute, discard, or resume
- * handler. Execute and discard inputs include the decoded flow payload, while
- * resume inputs use `undefined` because a resume request carries only an
- * execution id. Returning `undefined` for execute or discard lets the engine
- * select the flow's idempotency key or ambient execution-id source. Returning `undefined` for
- * resume refuses the request with a `Flow.ExecutionIdRequired` defect:
- * falling back to the client value there would let a client resume outside
- * the namespace this option confines it to. Without this option, every
+ * The server calls the function once inside each execute, discard, resume, or
+ * interrupt handler. Execute and discard inputs include the decoded flow
+ * payload, while resume and interrupt inputs use `undefined` because those
+ * requests carry only an execution id. Returning `undefined` for execute or
+ * discard lets the engine select the flow's idempotency key or ambient
+ * execution-id source. Returning `undefined` for resume or interrupt refuses
+ * the request with a `Flow.ExecutionIdRequired` defect: falling back to the
+ * client value there would let a client resume or cancel outside the
+ * namespace this option confines it to. Without this option, every
  * client value passes through unchanged.
  *
  * Implementations must be pure, must return for every input, and must return
- * a string for every resume. The function receives the flow and request
- * payload, but no request-scoped service. A resume request carries no
- * payload, so a scope that reads a middleware-authenticated tenant from
- * `payload` has to close over the trusted namespace for resume; a scope built
- * where the tenant is already known covers all three operations.
+ * a string for every resume and interrupt. The function receives the flow and
+ * request payload, but no request-scoped service. Resume and interrupt
+ * requests carry no payload, so a scope that reads a middleware-authenticated
+ * tenant from `payload` has to close over the trusted namespace for them; a
+ * scope built where the tenant is already known covers all four operations.
  *
  * @category models
  * @since 1.0.0
@@ -236,8 +237,21 @@ const handleInterrupt = (
   )
 
 /**
- * Creates handlers for a flow HTTP API group, wiring execute, discard, and
- * resume endpoints to the supplied flows.
+ * Creates handlers for a flow HTTP API group, wiring the execute, discard,
+ * resume, and interrupt endpoints of each supplied flow to that flow.
+ *
+ * Pass the API that contains the group `FlowProxy.toHttpApiGroup` built from
+ * the same flows, and that group's identifier.
+ *
+ * @param api - The HTTP API that contains the flow group.
+ * @param identifier - The flow group's identifier inside `api`.
+ * @param flows - The flows to serve; the same list the group was built from.
+ * @param options - `executionId` rewrites each client execution id before it
+ *   reaches the engine; see {@link ExecutionIdScope}.
+ * @returns The group's handler layer. It requires the `FlowRuntime` and every
+ *   service the served flow bodies require.
+ * @throws FlowProxy.FlowProxyCollision When two flows derive the same
+ *   operation name.
  *
  * @category layers
  * @since 0.1.0
@@ -284,8 +298,19 @@ export const layerHttpApi = <
 }
 
 /**
- * Creates RPC handlers for the supplied flows, wiring execute, discard,
- * and resume RPCs to flow operations.
+ * Creates RPC handlers for the supplied flows, wiring the execute, discard,
+ * resume, and interrupt RPCs of each flow to that flow.
+ *
+ * @param flows - The flows to serve; the same list the RPC group was built
+ *   from.
+ * @param options - `prefix` must equal the prefix passed to
+ *   `FlowProxy.toRpcGroup`, because it is part of every operation name.
+ *   `executionId` rewrites each client execution id before it reaches the
+ *   engine; see {@link ExecutionIdScope}.
+ * @returns The handler layer. It requires the `FlowRuntime` and every service
+ *   the served flow bodies require.
+ * @throws FlowProxy.FlowProxyCollision When two flows derive the same
+ *   operation name.
  *
  * @category layers
  * @since 0.1.0
@@ -325,7 +350,7 @@ export const layerRpcHandlers = <
 
 /**
  * Union of RPC handler services required to serve the generated flow
- * execute, discard, and resume RPCs.
+ * execute, discard, resume, and interrupt RPCs.
  *
  * @category services
  * @since 0.1.0

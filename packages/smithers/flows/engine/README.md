@@ -110,6 +110,16 @@ Full signatures: <https://engine.smithers.sh/reference/api/>.
 | [Trampoline rounds](https://engine.smithers.sh/concepts/trampoline-rounds/)    | Handoffs, derived round ids, and `maxRounds`.                    |
 | [Troubleshooting](https://engine.smithers.sh/troubleshooting/)                 | Every refusal and warning, with the fix.                         |
 
+## Examples
+
+Each example is a runnable program that `test/examples.test.ts` runs and
+checks on every test run.
+
+| File                                               | What it shows                                                                                         |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| [`examples/quickstart.ts`](examples/quickstart.ts) | A repeated execution id joins the recorded run; the same id with another payload is refused.          |
+| [`examples/serveRpc.ts`](examples/serveRpc.ts)     | Serve a flow over RPC with `FlowProxy` and `FlowProxyServer`, then call it from an in-process client. |
+
 ## In-memory lifetime
 
 `FlowEngine.layerMemory` is a deterministic test and local-development
