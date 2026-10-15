@@ -207,6 +207,20 @@ describe("finishing a request", () => {
     expect(pause?.cause).toMatch(/core budget exhausted/)
   })
 
+  it("backs off when a spent budget's reset is already past, so a fast local clock cannot drop the pause", () => {
+    const { state, pause } = finish(started, T0, {
+      resource: "core",
+      limited: true,
+      headers: headers({
+        "x-ratelimit-limit": "5000",
+        "x-ratelimit-remaining": "0",
+        "x-ratelimit-reset": resetIn(-5_000)
+      })
+    }, limits)
+    expect(state.pausedUntil).toBe(T0 + limits.minPauseMs)
+    expect(pause?.cause).toMatch(/backoff/)
+  })
+
   it("backs off a minute, doubling while limits persist, capped, and resets on success", () => {
     let state: State = started
     const seen: Array<number> = []

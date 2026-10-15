@@ -321,7 +321,9 @@ export const finish = (
   if (retryAfter !== undefined) {
     until = now + retryAfter * 1000
     cause = `retry-after ${retryAfter}s`
-  } else if (remaining === 0 && resetAt !== undefined) {
+  } else if (remaining === 0 && resetAt !== undefined && resetAt > now) {
+    // A reset already past means this clock runs ahead of GitHub's, which
+    // still refused the request: back off instead of retrying at once.
     until = resetAt
     cause = `${resource} budget exhausted until x-ratelimit-reset`
   } else {
