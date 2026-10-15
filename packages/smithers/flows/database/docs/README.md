@@ -28,8 +28,8 @@ and each one is quiet rather than loud:
   because that is the first writer winning.
 - **A failure vocabulary per driver.** Branching on `SQLITE_BUSY` in one place
   and on SQLSTATE `40001` in another leaves half the branches dead on the other
-  backend. `DatabaseError` carries `busy`, `constraint`, `io`, `unsupported`,
-  or `unknown`, and the same classifier decides both the code you are told and
+  backend. `DatabaseError` carries `busy`, `constraint`, `io`, `schema`,
+  `unsupported`, or `unknown`, and the same classifier decides both the code you are told and
   whether the write replayed, so the two cannot disagree about one error.
 - **An affected-row count that reads `undefined`.** SQLite drivers report
   `changes` and node-postgres reports `rowCount`. A compare-and-swap that casts

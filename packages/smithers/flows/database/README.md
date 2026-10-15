@@ -80,9 +80,11 @@ specific and lives at its own subpath.
 | `@smthrs/database/Migrations`                | the migration composer                                                               |
 | `@smthrs/database/DatabaseMetrics`           | the write-retry counter                                                              |
 | `@smthrs/database/UnsupportedBackend`        | the connection-string names this release ignores                                     |
+| `@smthrs/database/Dialect`                   | SQL fragments that read the same on SQLite and PostgreSQL                            |
 | `@smthrs/database/node/NodeDatabase`         | Node only. The `node:sqlite` client layer                                            |
+| `@smthrs/database/bun/BunDatabase`           | Bun only. The `bun:sqlite` client layer                                              |
 | `@smthrs/database/postgres/PostgresDatabase` | PostgreSQL client with schema-scoped write serialization                             |
-| `@smthrs/database/test/TestDatabase`         | Node only. The in-memory client and writer                                           |
+| `@smthrs/database/test/TestDatabase`         | Node only. The isolated test client and writer, and fixture helpers                  |
 
 `DurableWriter.make` accepts any Effect `SqlClient`, so the retry
 classification and the error vocabulary are dialect blind. SQLite and PostgreSQL adapters share the stores and migration ladder. See
@@ -94,7 +96,7 @@ classification and the error vocabulary are dialect blind. SQLite and PostgreSQL
   serialization conflict is replayed on a bounded exponential backoff; a
   constraint violation never is, because that is the first writer winning.
 - **One failure vocabulary.** `DatabaseError` carries `busy`, `constraint`,
-  `io`, `unsupported`, or `unknown`, and the same classifier decides both the
+  `io`, `schema`, `unsupported`, or `unknown`, and the same classifier decides both the
   code you are told and whether the write replayed.
 - **An affected-row count that reads on any driver.** SQLite reports `changes`
   and node-postgres reports `rowCount`; `affectedRows` reads both and fails

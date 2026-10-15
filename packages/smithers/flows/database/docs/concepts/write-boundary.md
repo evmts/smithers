@@ -102,6 +102,7 @@ are recognized, and a code from the wrong dialect never matches.
 | `busy`       | `SQLITE_BUSY*`, `SQLITE_LOCKED*`, SQLSTATE `40001`, `40P01`, `55P03`, and the texts `database is locked`, `database is busy`, `could not serialize access`, `deadlock detected`, `cannot rollback - no transaction is active` | yes      |
 | `io`         | `SQLITE_IOERR*` and the text `disk i/o error`                                                                                                                                                                                 | no       |
 | `constraint` | Effect SQL's `ConstraintError` and `UniqueViolation`                                                                                                                                                                          | no       |
+| `schema`     | the texts `no such table` and `no such column`, and SQLSTATE `42P01` and `42703`                                                                                                                                              | no       |
 | `unknown`    | anything else                                                                                                                                                                                                                 | no       |
 
 A unique violation is deliberately absent from the busy set. It is the

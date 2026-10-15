@@ -6,15 +6,18 @@ description: "Every public export of @smthrs/database: the DurableWriter service
 The root entry point is driver neutral and bundles for browsers. Each driver is
 platform specific and lives at an explicit subpath.
 
-| Import                                | Exports                                                                              |
-| ------------------------------------- | ------------------------------------------------------------------------------------ |
-| `@smthrs/database`                    | `DurableWriter`, `Migrations`, `DatabaseMetrics`, `UnsupportedBackend` as namespaces |
-| `@smthrs/database/DurableWriter`      | the write boundary, its errors, and its layers                                       |
-| `@smthrs/database/Migrations`         | the migration composer                                                               |
-| `@smthrs/database/DatabaseMetrics`    | the write-retry counter                                                              |
-| `@smthrs/database/UnsupportedBackend` | the ignored connection-string names                                                  |
-| `@smthrs/database/node/NodeDatabase`  | Node only. The `node:sqlite` client layer                                            |
-| `@smthrs/database/test/TestDatabase`  | Node only. The in-memory client and writer                                           |
+| Import                                       | Exports                                                                              |
+| -------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `@smthrs/database`                           | `DurableWriter`, `Migrations`, `DatabaseMetrics`, `UnsupportedBackend` as namespaces |
+| `@smthrs/database/DurableWriter`             | the write boundary, its errors, and its layers                                       |
+| `@smthrs/database/Migrations`                | the migration composer                                                               |
+| `@smthrs/database/DatabaseMetrics`           | the write-retry counter                                                              |
+| `@smthrs/database/UnsupportedBackend`        | the ignored connection-string names                                                  |
+| `@smthrs/database/Dialect`                   | SQL fragments that read the same on SQLite and PostgreSQL                            |
+| `@smthrs/database/node/NodeDatabase`         | Node only. The `node:sqlite` client layer                                            |
+| `@smthrs/database/bun/BunDatabase`           | Bun only. The `bun:sqlite` client layer                                              |
+| `@smthrs/database/postgres/PostgresDatabase` | The PostgreSQL client layer                                                          |
+| `@smthrs/database/test/TestDatabase`         | Node only. The isolated test client and writer, and fixture helpers                  |
 
 `@smthrs/database/internal/*` is blocked by the export map.
 
@@ -450,6 +453,7 @@ interface NodeDatabaseOptions {
   readonly mode?: number | undefined
   readonly busyTimeout?: Duration.Input | undefined
   readonly sqlite?: Omit<SqliteClient.SqliteClientConfig, "filename"> | undefined
+  readonly readOnly?: boolean | undefined
 }
 ```
 
@@ -457,8 +461,9 @@ interface NodeDatabaseOptions {
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `filename`    | The SQLite database filename. A `file:` URI is accepted, and `:memory:` opens a private in-memory database. The parent directory is not created.                                                                                              |
 | `mode`        | Creation permissions for a new plain-path database, masked by the process umask. Defaults to `0o600`; WAL and SHM sidecars inherit the main file's mode. Existing files, `file:` URIs, temporary databases and read-only opens are unchanged. |
-| `busyTimeout` | Synchronous SQLite lock wait. Defaults to `0` so open and durable-write retries wait cooperatively. Overrides `sqlite.busyTimeout` when supplied.                                                                                             |
+| `busyTimeout` | Synchronous SQLite lock wait. Defaults to `0` so open and durable-write retries wait cooperatively, and to one second for a read-only open. Overrides `sqlite.busyTimeout` when supplied.                                                     |
 | `sqlite`      | Additional driver configuration. WAL remains enabled unless explicitly disabled. An explicit `sqlite.busyTimeout` is honored when `busyTimeout` is absent.                                                                                    |
+| `readOnly`    | Opens an existing store for reading only. SQLite opens read-only without converting to WAL; PostgreSQL skips schema creation and runs every transaction `READ ONLY`. Nothing is created, migrated or locked for writing.                      |
 
 ### UnsupportedDatabaseCode
 
@@ -513,8 +518,9 @@ a `bun:sqlite` client with the same schema guard, bounded open retries and
 failed-commit recovery as NodeDatabase. As on Node, `.raw` on a write without
 result columns returns `{ changes, lastInsertRowid }`, so `affectedRows` reads
 its count; the upstream `@effect/sql-sqlite-bun` client returns `[]` there.
-Options contain `filename` and optional
-`sqlite` settings from that Bun driver. A new plain-path database is created
+Options contain `filename`, optional
+`sqlite` settings from that Bun driver, and `readOnly`, which behaves as on
+NodeDatabase. A new plain-path database is created
 with mode `0o600`, masked by the process umask, and its WAL and SHM sidecars
 inherit that mode. Existing files, `file:` URIs, temporary databases and opens
 whose settings disable creation are left to SQLite. Install its matching optional peer;
@@ -531,18 +537,79 @@ Node only. `import * as TestDatabase from "@smthrs/database/test/TestDatabase"`.
 const layer: Layer.Layer<DurableWriter.DurableWriter | SqlClient.SqlClient>
 ```
 
-Provides the production Node SQLite client and the production durable writer
-over a fresh in-memory database. `:memory:` is private to a connection, so both
-halves share one connection and serialization comes from the client's
-in-process transaction mutex rather than from the database.
+Provides the production client and the production durable writer over a fresh,
+isolated database. By default that is an in-memory SQLite database:
+`:memory:` is private to a connection, so both halves share one connection and
+serialization comes from the client's in-process transaction mutex rather than
+from the database. When `SMITHERS_TEST_PG_URL` is set, the layer instead creates
+a schema named `test_<uuid>` on that server and drops it when the layer's scope
+closes. Never set `SMITHERS_TEST_PG_URL` to a production server.
+
+`sqliteLayer` is the in-memory SQLite form alone, whatever the environment says.
+
+### Fixture helpers
+
+Each helper takes the test's `SqlClient` and works on SQLite and PostgreSQL.
+They exist to build states production code refuses to write; never call them on
+a production database.
+
+| Helper                      | What it does                                                                                                                                                                       |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `checks(sql, enabled)`      | Turns `CHECK` constraints off and back on. PostgreSQL drops the current schema's checks and re-adds them `NOT VALID`, so rows written while they were off stay.                    |
+| `foreignKeys(sql, enabled)` | The same for foreign keys, so a fixture can hold orphaned rows.                                                                                                                    |
+| `dropTrigger(sql, name)`    | Drops the trigger `name` wherever it is in the current schema. Unlike `Dialect.dropTrigger`, it needs no table name.                                                               |
+| `catalog(sql)`              | A relation with SQLite's `sqlite_master` columns (`name`, `tbl_name`, `type`, `sql`) for asserting on tables, indexes and triggers.                                                |
+| `explain(sql, statement)`   | The query plan of `statement` as `{ detail }` rows. On PostgreSQL sequential scans are disabled for the plan, so a small fixture still shows whether an index can serve the query. |
+| `until(predicate)`          | Polls `predicate` every 2 ms and dies after 2000 polls without `true`.                                                                                                             |
+| `dropSchema(sql, schema)`   | Drops a PostgreSQL test schema after taking its writer lock, so it waits for an in-flight transaction instead of deadlocking with it.                                              |
 
 See [Test against a database](./guides/test-against-a-database.md).
 
 ## PostgresDatabase
 
 Import `@smthrs/database/postgres/PostgresDatabase` and provide
-`layer({ url, schema?, postgres? })`. The optional `postgres` field passes
+`layer({ url, schema?, postgres?, readOnly? })`. `schema` defaults to
+`smithers_flows` and must be 1 to 63 UTF-8 bytes without NUL; anything else
+raises `postgres_schema_invalid`. `readOnly` reads an existing schema without
+creating it or taking the writer lock. The optional `postgres` field passes
 Effect PostgreSQL pool/connection options; Smithers owns the type registry.
 The resulting layer provides `SqlClient`; compose `DurableWriter.layer()`
 and the owning migration set as with SQLite. See
 [configuration and isolation](./concepts/sqlite-only.md).
+
+## Dialect
+
+`import * as Dialect from "@smthrs/database/Dialect"`.
+
+SQL fragments that let one store and one migration run on SQLite and
+PostgreSQL. Each takes the store's `SqlClient` and emits the form for its
+backend. Fragments that accept names, paths or trigger text splice them into
+SQL unescaped: pass only constants the store owns.
+
+| Export                          | SQLite                                | PostgreSQL                                            |
+| ------------------------------- | ------------------------------------- | ----------------------------------------------------- |
+| `isPostgres(sql)`               | `false`                               | `true`                                                |
+| `isReadOnly(sql)`               | `true` for a `readOnly` open          | `true` for a `readOnly` open                          |
+| `integer(sql)`                  | `INTEGER`                             | `NUMERIC`, so a fractional write is kept and rejected |
+| `isInteger(sql, value)`         | `typeof(value) = 'integer'`           | `trunc(value) = value`                                |
+| `jsonValid(sql, value)`         | `json_valid(value)`                   | `value IS JSON`                                       |
+| `jsonText(sql, value, path)`    | `json_extract(value, path)`           | `value::jsonb #>> '{…}'`                              |
+| `identity(sql)`                 | `INTEGER PRIMARY KEY AUTOINCREMENT`   | `BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY` |
+| `rowId(sql)`                    | empty: every table has a `rowid`      | `rowid BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,`   |
+| `greatest(sql)`                 | `MAX`                                 | `GREATEST`                                            |
+| `indexHint(sql, name)`          | `INDEXED BY name`                     | empty                                                 |
+| `tables(sql)`                   | tables in `sqlite_master`             | tables in the current schema                          |
+| `columns(sql, table)`           | `PRAGMA table_info`                   | `information_schema.columns` in the current schema    |
+| `trigger(sql, options)`         | `CREATE TRIGGER … BEGIN … END`        | a `<name>_fn` function and a row trigger              |
+| `dropTrigger(sql, name, table)` | `DROP TRIGGER name`                   | `DROP TRIGGER name ON table`                          |
+| `query(sql, template, values)`  | runs `template` with `?` placeholders | rewrites each `?` to `$1`, `$2`, …                    |
+
+`jsonText` reads a string member as the same text on both backends. Other
+scalars differ: SQLite returns JSON `true` as the integer `1` and numbers as
+numbers, PostgreSQL returns the text `'true'` and `'7'`. Compare a boolean
+member against both forms.
+
+`trigger` rejects a row with `reject` as its message (a constraint failure on
+both backends), skips it with `ignore: true`, or runs `body`; `when` limits it
+to rows where the condition holds. `query` does not parse SQL, so its template
+must not contain `?` anywhere but a placeholder.

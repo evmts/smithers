@@ -6,16 +6,17 @@ sidebar:
 ---
 
 `DurableWriter.write` widens a caller's error channel with `DatabaseError`,
-which carries one of five codes. Only `busy` was ever replayed, and by the time
+which carries one of six codes. Only `busy` was ever replayed, and by the time
 you see it the budget is spent.
 
-| Code          | What happened                                                                    | What to do                                                                                 |
-| ------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `busy`        | A transient lock or serialization conflict outlived the retry budget.            | Raise `maxAttempts`, or surface it as a retryable failure to the caller.                   |
-| `constraint`  | A unique or check constraint rejected the row.                                   | Branch on it. This is a decision, not a fault.                                             |
-| `io`          | The disk failed. Normalized, never replayed, because the write reached the disk. | Fail loudly.                                                                               |
-| `unsupported` | The writer is the noop stub, or an affected-row count was unreadable.            | Fix the composition, or see [Read a write's affected-row count](./count-affected-rows.md). |
-| `unknown`     | A SQL failure in none of the above categories.                                   | Read `cause`. It carries the original error.                                               |
+| Code          | What happened                                                                          | What to do                                                                                 |
+| ------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `busy`        | A transient lock or serialization conflict outlived the retry budget.                  | Raise `maxAttempts`, or surface it as a retryable failure to the caller.                   |
+| `constraint`  | A unique or check constraint rejected the row.                                         | Branch on it. This is a decision, not a fault.                                             |
+| `io`          | The disk failed. Normalized, never replayed, because the write reached the disk.       | Fail loudly.                                                                               |
+| `schema`      | A statement named a table or column the database lacks: a store older than the binary. | Run the store's migrations before writing.                                                 |
+| `unsupported` | The writer is the noop stub, or an affected-row count was unreadable.                  | Fix the composition, or see [Read a write's affected-row count](./count-affected-rows.md). |
+| `unknown`     | A SQL failure in none of the above categories.                                         | Read `cause`. It carries the original error.                                               |
 
 ## Branch on a constraint
 
