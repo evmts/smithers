@@ -37,8 +37,8 @@ non-negative safe integer under any name ending in a plural `tokens`
 accounting, not bearer material. A bare `token` is redacted even when numeric.
 
 **Textual.** `Redaction.defaultRules` scans inside any string for credential
-shapes seen in real bug reports: provider keys, bearer tokens, GitHub, AWS,
-Slack, and Google credentials, URL passwords, Basic authorization, bare JWTs,
+shapes seen in real bug reports: provider keys, bearer tokens, GitHub, GitLab, npm,
+AWS, Slack (tokens and webhook URLs), and Google credentials, URL passwords, Basic authorization, bare JWTs,
 PEM private-key blocks, INI/YAML credential assignments such as
 `SECRET = value` and `password: value`, credential flags such as
 `--password value`, cookie and session assignments, and embedded JSON

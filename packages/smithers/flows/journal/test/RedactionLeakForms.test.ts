@@ -68,6 +68,29 @@ describe("URL userinfo passwords", () => {
   })
 })
 
+describe("provider token prefixes", () => {
+  // Synthetic tokens in each provider's documented shape.
+  it.each([
+    ["a GitLab personal access token", "glpat-Zq7Synthetic4Value9AbCd", "[REDACTED]"],
+    ["an npm access token", "npm_Zq7Synthetic4Value9AbCdEfGhIjKlMnOpQ", "[REDACTED]"],
+    [
+      "a Slack incoming webhook",
+      "https://hooks.slack.com/services/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f",
+      "https://hooks.slack.com/services/[REDACTED]"
+    ]
+  ])("redacts %s", (_name, token, expected) => {
+    for (const redact of [Redaction.redact, Redaction.redactDiagnostic]) {
+      const output = redact(`sent ${token} today`)
+      expect(output).toBe(`sent ${expected} today`)
+      expect(redact(output)).toBe(output)
+    }
+  })
+
+  it.each(["npm_modules", "glpat-short", "https://hooks.slack.com/services/"])("keeps %s", (text) => {
+    expect(Redaction.redact(text)).toBe(text)
+  })
+})
+
 const pem = [
   "-----BEGIN RSA PRIVATE KEY-----",
   ...Array.from({ length: 12 }, (_, line) => `${secret}${line}`.padEnd(64, "A")),

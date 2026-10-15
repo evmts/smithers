@@ -844,6 +844,23 @@ export const defaultRules: ReadonlyArray<Rule> = [
     replace: "[REDACTED]"
   },
   {
+    id: "gitlab-token",
+    pattern: /\bglpat-[A-Za-z0-9_-]{20,}(?![A-Za-z0-9_-])/g,
+    replace: "[REDACTED]"
+  },
+  {
+    id: "npm-token",
+    pattern: /\bnpm_[A-Za-z0-9]{36}(?![A-Za-z0-9])/g,
+    replace: "[REDACTED]"
+  },
+  {
+    // The webhook path is the whole credential: anyone holding it can post
+    // to the channel. The host stays so a failed delivery is still readable.
+    id: "slack-webhook",
+    pattern: /(\bhooks\.slack\.com\/services\/)T[A-Z0-9]+\/B[A-Z0-9]+\/[A-Za-z0-9]+/g,
+    replace: "$1[REDACTED]"
+  },
+  {
     id: "assignment",
     // A credential name, `:`, `=` or `=>`, and its whole value: quoted at any
     // escape depth, a container, or several bare words. See `redactValues`.
