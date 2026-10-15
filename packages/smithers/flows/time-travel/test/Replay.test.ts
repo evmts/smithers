@@ -400,6 +400,24 @@ describe("Replay bounds", () => {
       expect(state).toEqual(["a", "b", "c"])
     }))
 
+  it.effect("refuses two different records at one coordinate in either order", () =>
+    Effect.gen(function*() {
+      // A repeat of the SAME record is a duplicate; a different event at a
+      // folded coordinate is corrupt evidence. Keeping whichever one sorted
+      // first would make the projection depend on how the page was ordered.
+      const rival = { ...entry(1, "rival"), eventId: "event-1-rival" }
+      for (const entries of [[entry(0, "a"), entry(1, "b"), rival], [entry(0, "a"), rival, entry(1, "b")]]) {
+        const failure = yield* Effect.flip(
+          Replay.rederive({ lineageId: "run/root", seq: 5 }, fold, { runId: "run" }).pipe(
+            Effect.provide(Layer.succeed(Journal.Journal, journalOf(entries))),
+            Effect.provide(CacheStore.layerNoop())
+          )
+        )
+        expect(failure).toMatchObject({ code: "invalid" })
+        expect(failure.message).toContain("seq 1")
+      }
+    }))
+
   it.effect("refuses a later page that reaches below a coordinate the fold has passed", () =>
     Effect.gen(function*() {
       // Sequence order is the journal contract across pages; a page that

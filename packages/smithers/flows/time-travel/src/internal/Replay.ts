@@ -113,9 +113,11 @@ export const rederive = <S>(
        * records, never of how a reader happened to page them. ACROSS pages the
        * journal contract is sequence order, so a coordinate the fold has passed
        * is a duplicate when it was folded and corrupt evidence when it was not;
-       * the old whole-prefix sort would have silently slotted it in.
+       * the old whole-prefix sort would have silently slotted it in. A
+       * coordinate repeated with a DIFFERENT event id is corrupt too: keeping
+       * whichever sorted first would tie the projection to page order.
        */
-      const seen = new Set<number>()
+      const seen = new Map<number, string>()
       let lastSeq = -1
       yield* JournalPages.forEachPage(
         journal,
@@ -129,14 +131,24 @@ export const rederive = <S>(
           Effect.gen(function*() {
             const ordered = [...entries].sort((left, right) => left.seq - right.seq)
             for (const entry of ordered) {
-              if (seen.has(entry.seq)) continue
+              const seenEventId = seen.get(entry.seq)
+              if (seenEventId !== undefined) {
+                if (seenEventId === entry.eventId) continue
+                return yield* Effect.fail(
+                  error(
+                    "invalid",
+                    `journal replay returned two records at seq ${entry.seq} for ${options.runId}`,
+                    { runId: entry.runId, seq: entry.seq, eventIds: [seenEventId, entry.eventId] }
+                  )
+                )
+              }
               if (entry.seq < lastSeq) {
                 return yield* Effect.fail(
                   error("invalid", `journal replay returned seq ${entry.seq} after seq ${lastSeq} for ${options.runId}`)
                 )
               }
               if (entry.seq > frame.seq) return JournalPages.Stop
-              seen.add(entry.seq)
+              seen.set(entry.seq, entry.eventId)
               lastSeq = entry.seq
               folded += 1
               if (folded > maxEntries) {

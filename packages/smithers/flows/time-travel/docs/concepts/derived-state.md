@@ -56,6 +56,9 @@ breaking it produced a wrong answer:
   journal contract is sequence order, so a coordinate the fold has already
   passed is a duplicate when it was folded and corrupt evidence when it was
   not. The second case fails `invalid` rather than being silently slotted in.
+  Two records at one coordinate with different event ids also fail
+  `invalid`: keeping whichever one sorted first would make the answer depend
+  on page order.
 - **Stop at the frame.** The fold streams. It reads until the first record past
   the frame and retains nothing below it, so a frame near the head of a long
   run does not pay for the run's whole history.
