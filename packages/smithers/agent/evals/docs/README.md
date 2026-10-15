@@ -36,9 +36,7 @@ Every stage is an `Effect` value, and nothing in a run reads a clock or
 generates an identifier: `runId` and `at` come from the caller, so two runs over
 the same inputs produce byte-identical observations.
 
-The package is at 1.0.0-rc.0 and is not on the npm registry yet, so you get it
-by working in a clone of the
-[Smithers repository](https://github.com/smithersai/smithers).
+Prereleases are published to npm under the `next` tag;
 [Installation](./installation.md) has the steps.
 
 ## A working example

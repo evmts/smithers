@@ -20,9 +20,13 @@ runner. Runtime evaluation code imports scorers directly.
 
 ## Install
 
-The package is at 1.0.0-rc.0 and is not on the npm registry yet. It is a
-workspace package of https://github.com/smithersai/smithers, so you use it from
-a package in a clone of that repository. The steps are at
+Prereleases are published to npm under the `next` tag:
+
+```bash
+pnpm add @smthrs/evals@next effect@^4.0.4
+```
+
+The steps, including working from a source checkout, are at
 https://evals.smithers.sh/installation/.
 
 ## Example

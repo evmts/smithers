@@ -44,12 +44,14 @@ describe("documentation", () => {
     expect(readme).not.toContain("npm install")
   })
 
-  // The README says the package is not on the npm registry, so an install page
-  // that tells a reader to `pnpm add` it sends them to a registry 404.
+  // Prereleases ship on the npm `next` dist-tag only; `latest` lags behind, so
+  // an install line without the tag installs an older release.
   it("installs the package the way the README does", () => {
-    expect(read("../README.md")).toContain("not on the npm registry")
+    const install = "pnpm add @smthrs/evals@next effect@^4.0.4"
     const installation = read("../docs/installation.md")
-    expect(installation).not.toMatch(/(?:pnpm add|npm install|yarn add) @smthrs\/evals/)
+    expect(read("../README.md")).toContain(install)
+    expect(installation).toContain(install)
+    expect(installation).not.toMatch(/(?:pnpm add|npm install|yarn add) @smthrs\/evals(?!@next)/)
     expect(installation).toContain(`"@smthrs/evals": "workspace:*"`)
   })
 
