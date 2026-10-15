@@ -99,7 +99,8 @@ export interface DrainInput {
    * The journal sequence that opened this turn. A steer admitted after it is
    * held for the next boundary, which is what keeps a message that arrived
    * mid-turn out of the turn already in flight. Omitting it delivers
-   * everything pending for the lineage.
+   * everything pending for the lineage. A value that is not a non-negative
+   * integer fails the drain with `notification_invalid` and records nothing.
    */
   readonly cutoffSeq?: number | undefined
 }
@@ -728,6 +729,17 @@ export const layerWith = (
         drain: Effect.fn("NotificationQueue.drain")((input) =>
           journal.transact(
             operations.withPermits(1)(Effect.gen(function*() {
+              // A cutoff no sequence can satisfy would commit this boundary as
+              // delivering nothing, and every retry would replay that record.
+              if (
+                input.cutoffSeq !== undefined && !(Number.isSafeInteger(input.cutoffSeq) && input.cutoffSeq >= 0)
+              ) {
+                return yield* new NotificationError({
+                  code: "notification_invalid",
+                  message: "A drain cutoff must be a non-negative integer journal sequence",
+                  path: "cutoffSeq"
+                })
+              }
               const runId = JournalEvent.RunId.make(input.runId)
               const key = NotificationEvent.drainKey(input.targetLineageId, input.boundary)
               const loaded = yield* load(runId)

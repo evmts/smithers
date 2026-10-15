@@ -875,6 +875,39 @@ describe("NotificationQueue", () => {
     expect(observed.next.notifications.map(({ id }) => id)).toEqual(["after"])
   })
 
+  it.each([Number.NaN, -1, 1.5, Number.POSITIVE_INFINITY])(
+    "refuses cutoff %s instead of committing an empty boundary",
+    async (cutoffSeq) => {
+      const observed = await run(
+        Effect.gen(function*() {
+          const queue = yield* NotificationQueue.NotificationQueue
+          const opened = yield* queue.admit("run", item("steer", "steer"))
+          const error = yield* queue.drain({
+            runId: "run",
+            targetLineageId: "run/root",
+            boundary: "turn-1",
+            wouldIdle: false,
+            cutoffSeq
+          }).pipe(Effect.flip)
+          // The refusal must not burn the boundary: a corrected retry still delivers.
+          const retried = yield* queue.drain({
+            runId: "run",
+            targetLineageId: "run/root",
+            boundary: "turn-1",
+            wouldIdle: false,
+            cutoffSeq: opened.seq
+          })
+          return { error, retried }
+        })
+      )
+
+      expect(refusal(observed.error).code).toBe("notification_invalid")
+      expect(refusal(observed.error).path).toBe("cutoffSeq")
+      expect(observed.retried.duplicate).toBe(false)
+      expect(observed.retried.notifications.map(({ id }) => id)).toEqual(["steer"])
+    }
+  )
+
   it("refuses a value that is not a notification instead of acknowledging it", async () => {
     const observed = await run(
       Effect.gen(function*() {

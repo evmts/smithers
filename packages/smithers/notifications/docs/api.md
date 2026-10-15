@@ -126,13 +126,13 @@ interface DrainInput {
 }
 ```
 
-| Field             | Meaning                                                                                                                                                       |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `runId`           | The run whose journal holds the notifications.                                                                                                                |
-| `targetLineageId` | The lineage this boundary belongs to. Notifications for other lineages are left pending.                                                                      |
-| `boundary`        | The name of this safe point. With `runId` and `targetLineageId` it is the drain identity.                                                                     |
-| `wouldIdle`       | Whether the run would have nothing to do if this boundary delivered nothing. When true and no steer was promoted, one queued notification is promoted.        |
-| `cutoffSeq`       | The journal sequence that opened this turn. Steers admitted after it are held for the next boundary. Omitting it delivers everything pending for the lineage. |
+| Field             | Meaning                                                                                                                                                                                                                                     |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runId`           | The run whose journal holds the notifications.                                                                                                                                                                                              |
+| `targetLineageId` | The lineage this boundary belongs to. Notifications for other lineages are left pending.                                                                                                                                                    |
+| `boundary`        | The name of this safe point. With `runId` and `targetLineageId` it is the drain identity.                                                                                                                                                   |
+| `wouldIdle`       | Whether the run would have nothing to do if this boundary delivered nothing. When true and no steer was promoted, one queued notification is promoted.                                                                                      |
+| `cutoffSeq`       | The journal sequence that opened this turn. Steers admitted after it are held for the next boundary. Omitting it delivers everything pending for the lineage. A value that is not a non-negative integer fails with `notification_invalid`. |
 
 ### DrainReceipt
 
@@ -175,7 +175,7 @@ class NotificationError extends Schema.TaggedError<NotificationError>()(
 | `notification_closed`      | New public refusal code: this receiver has finished. Start a new request; retrying this message at the closed receiver cannot deliver it. |
 | `notification_full`        | New public refusal code: nothing was retained. Retry the same notification after pending work drains.                                     |
 | `notification_id_reused`   | A stable id was already admitted with different content. A producer bug, not a storage failure.                                           |
-| `notification_invalid`     | The value is not a notification. `path` names the field that failed.                                                                      |
+| `notification_invalid`     | The value is not a notification, or a drain's `cutoffSeq` is not a non-negative integer. `path` names the field that failed.              |
 
 Storage failures surface as `Journal.JournalError` instead, so the two stay
 distinguishable.
