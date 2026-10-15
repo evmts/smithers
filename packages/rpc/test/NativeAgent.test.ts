@@ -27,7 +27,8 @@ describe("AgentTurnFrame — proxy family", () => {
       runId: "r1",
       type: "done",
       code: "host_no_capacity",
-      error: "Every model host is busy right now. Nothing in this conversation was lost; send the message again in a moment."
+      error:
+        "Every model host is busy right now. Nothing in this conversation was lost; send the message again in a moment."
     }],
     ["done, cancelled with an error", {
       runId: "r1",
@@ -126,6 +127,22 @@ describe("AgentTurnFrame — proxy family", () => {
         payload: { was: "run-history" }
       }
     })
+  })
+
+  /*
+   * The done code is a closed vocabulary, so every code the chat producer
+   * seals a turn with has to be in it: a sealed turn whose code this schema
+   * lacks rejects its own frame, its turn, and the entries array around it, so
+   * one turn ends a whole transcript. `credential_issuer_unavailable` was such
+   * a hole — store.go sealed it and the app showed "Conversation unavailable"
+   * over every earlier answer. The list is the producers': store.go
+   * `stopProducerWith` and author.go `authorRevokedFrame`.
+   */
+  test("every done code the chat producer seals a turn with decodes", () => {
+    const sealed = (code: string) => ({ runId: "r1", type: "done", code, error: "the receipt's own sentence" })
+    for (const code of ["credential_missing", "credential_issuer_unavailable", "author_revoked", "host_no_capacity"]) {
+      expect([code, decodeAgentTurnFrame(sealed(code))]).toEqual([code, sealed(code)])
+    }
   })
 
   test("the decoder answers null for a value that is not an object", () => {

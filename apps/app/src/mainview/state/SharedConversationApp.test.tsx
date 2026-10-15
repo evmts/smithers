@@ -738,6 +738,33 @@ test("published imports remain read-only with their durable sequence", () => {
 })
 
 
+/*
+ * A sealed turn cannot cost the conversation around it. The frame vocabulary
+ * is closed, so a `done` code this build does not know rejects the turn, the
+ * entries array and the whole conversation: a credential-issuer outage
+ * (packages/backend/internal/chat/store.go `stopProducerWith`) sealed one
+ * turn with `credential_issuer_unavailable` and the transcript became
+ * "Conversation unavailable" over every earlier answer.
+ */
+test("a turn sealed with any code the chat producer emits keeps the answers around it readable", () => {
+  const answered = {
+    id: "turn-answered", author: 1, authorLogin: "ben", runId: "run-answered", prompt: "First", state: "completed",
+    frames: [{ runId: "run-answered", type: "delta", kind: "text", text: "Here it is" }, { runId: "run-answered", type: "done", reason: "stop" }]
+  }
+  for (const code of ["credential_missing", "credential_issuer_unavailable", "author_revoked", "host_no_capacity"]) {
+    const sealed = {
+      id: "turn-sealed", author: 1, authorLogin: "ben", runId: "run-sealed", prompt: "Second", state: "failed",
+      frames: [{ runId: "run-sealed", type: "done", code, error: "the receipt's own sentence" }]
+    }
+    const parsed = SharedConversationSchema.safeParse({ id: "main", entries: [answered, sealed] })
+    expect([code, parsed.success ? parsed.data.entries.length : "conversation rejected"]).toEqual([code, 2])
+  }
+  // A code no producer emits is still refused, so no unknown outcome can
+  // carry an error message into copy a person reads as Smithers' own.
+  expect(SharedConversationSchema.safeParse({ id: "main", entries: [{ ...answered, state: "failed",
+    frames: [{ runId: "run-answered", type: "done", code: "made_up", error: "raw" }] }] }).success).toBe(false)
+})
+
 test("served read-only messages retain their durable cursor through the shared seam", () => {
   const entry = { id: "import-message", origin: "external", sequence: 9, agent_kind: "codex", format_version: "codex/0.160.0", source_id: "source", session_id: "session", participant_id: "participant", read_only: true, actor: { kind: "person", login: "ben", name: "Ben", avatar_url: "https://example.test/ben.png", color_index: 0 }, role: "user", text: "Read this import", status: "complete", createdAt: 0, ordinal: 0 }
   expect(SharedConversationSchema.parse({ id: "main", entries: [entry] }).entries[0]).toMatchObject({ origin: "external", sequence: 9, read_only: true })

@@ -261,9 +261,16 @@ export const AgentTurnFrameSchema = z.discriminatedUnion("type", [
      * the fleet had room, nothing of the turn ran, and the attempts are spent.
      * A client renders its own sentence for the code and never reads `error`
      * for the cause. The vocabulary fails closed, so a build that serves this
-     * enum must reach people before a producer that emits a value it lacks.
+     * enum must reach people before a producer that emits a value it lacks,
+     * and it has to name every code the producer already seals a turn with:
+     * one it omits rejects the frame, the turn and the whole conversation the
+     * turn sits in, so a single outage blanks the transcript. The producers
+     * are `stopProducerWith` (packages/backend/internal/chat/store.go), which
+     * seals `credential_missing`, `credential_issuer_unavailable` and
+     * `host_no_capacity`, and `authorRevokedFrame` (author.go).
      */
-    code: z.enum(["credential_missing", "author_revoked", "host_no_capacity"]).optional(),
+    code: z.enum(["credential_missing", "credential_issuer_unavailable", "author_revoked", "host_no_capacity"])
+      .optional(),
     error: z.string().optional(),
     usage: AgentTurnUsageSchema.optional()
   }),
