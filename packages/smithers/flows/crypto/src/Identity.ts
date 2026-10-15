@@ -38,6 +38,9 @@ export type Algorithm = "sha256-source-ephemeral/v4" | "sha256-source-captures/v
 /**
  * The serializable stand-in for a function.
  *
+ * The versioned algorithm identifies the encoding used for the lowercase
+ * hexadecimal SHA-256 digest. This describes identity, not executable code.
+ *
  * @since 1.0.0
  * @category models
  */
@@ -150,6 +153,10 @@ const nonce = (): string => {
  * Exposed so a second ephemeral encoding, such as the projection of an
  * unregistered symbol, folds in the same per-process value and can never
  * collide with a different value observed by another process.
+ *
+ * @returns The realm-shared nonce as 32 lowercase hexadecimal characters,
+ * seeded lazily with `crypto.getRandomValues` on first use.
+ * @throws {Error} Propagates host failures when secure randomness is unavailable.
  *
  * @since 1.0.0
  * @category accessors
@@ -400,7 +407,24 @@ const capturedOperation = <Args extends ReadonlyArray<unknown>, A>(
 }
 
 /**
- * Brands an operation with every inert value it closes over.
+ * Snapshots declared inert values and binds an operation to their frozen copy.
+ *
+ * Read declared values through a function expression's `this`, rather than a
+ * mutable lexical alias. The wrapper forwards ordinary arguments unchanged and
+ * ignores a caller-supplied receiver. The original data remains unchanged.
+ * Plain records, dense arrays, strings, booleans, null and finite numbers are
+ * admitted to a maximum depth of 256. Shared objects remain shared, and that
+ * topology contributes to identity. Record keys use canonical insertion order.
+ * Capturing an existing wrapper preserves its behavior and includes both sets
+ * of declared values in the new identity.
+ *
+ * @param captures - Inert data to copy, freeze and include in the identity.
+ * @param operation - Function whose exact source contributes to identity and
+ * whose `this` receiver will be the detached frozen copy.
+ * @returns A wrapper with the same arguments and return value as the operation.
+ * @throws {TypeError} For invalid callbacks, native or bound function source,
+ * unsupported data, accessors, Proxies, cycles, excessive depth, or missing
+ * `structuredClone`. Data admission errors identify the offending capture path.
  *
  * @since 1.0.0
  * @category constructors
@@ -440,6 +464,14 @@ export const capture = <C extends Readonly<Record<string, unknown>>, Args extend
  * Unless its inert captures were declared with {@link capture}, the digest also
  * includes process-local, per-function entropy, because source-only identity
  * would permit incorrect cache hits.
+ *
+ * @param operation - Function to identify, optionally declared with capture.
+ * @returns A versioned SHA-256 identity, stable for this function in this realm;
+ * declared captures also permit matching identities across realms.
+ * @throws {TypeError} If operation is not a function.
+ * @throws {import("./Sha256.ts").Sha256Error} If the source or declared capture
+ * text cannot be encoded as strict UTF-8.
+ * @throws {Error} Propagates host randomness failures for an ephemeral identity.
  *
  * @since 1.0.0
  * @category constructors
