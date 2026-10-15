@@ -629,6 +629,69 @@ describe("restore", () => {
       expect(failure(exit).code).toBe("not_empty")
     }))
 
+  it.effect("leaves the target directory empty after a failed restore, so a retry can reuse it", () =>
+    Effect.gen(function*() {
+      const base = root()
+      const objects = join(base, "objects")
+      const digest = plantBlob(objects, "restore-retry-artifact")
+      const backupDirectory = join(base, "backup")
+      yield* run(backup({ directory: backupDirectory, objectsDirectory: objects }))
+      const blob = join(backupDirectory, DisasterRecovery.objectsDirectoryName, digest.slice(0, 2), digest)
+      const original = readFileSync(blob)
+      writeFileSync(blob, "rotted")
+
+      const target = join(base, "restored")
+      const exit = yield* run(
+        DisasterRecovery.restore({ backupDirectory, targetDirectory: target }).pipe(Effect.exit)
+      )
+      expect(failure(exit).code).toBe("digest_mismatch")
+      // The database file was already written before the blob was refused; a
+      // store-shaped leftover would refuse the retry as `not_empty`.
+      expect(readdirSync(target)).toEqual([])
+
+      writeFileSync(blob, original)
+      const restored = yield* run(DisasterRecovery.restore({ backupDirectory, targetDirectory: target }))
+      expect(restored.manifest.artifacts).toHaveLength(1)
+    }))
+
+  it.effect("restoreAndFence leaves no unfenced store behind when fencing refuses", () =>
+    Effect.gen(function*() {
+      const base = root()
+      const backupDirectory = join(base, "backup")
+      const manifest = yield* run(backup({ directory: backupDirectory }))
+      const manifestPath = join(backupDirectory, DisasterRecovery.manifestFileName)
+      const original = readFileSync(manifestPath, "utf8")
+      writeFileSync(
+        manifestPath,
+        JSON.stringify({
+          ...manifest,
+          database: {
+            ...manifest.database,
+            migrations: [...manifest.database.migrations, { migrationId: 99_999, name: "future_change" }]
+          }
+        })
+      )
+
+      const target = join(base, "restored")
+      const exit = yield* run(
+        DisasterRecovery.restoreAndFence({
+          backupDirectory,
+          targetDirectory: target,
+          databaseLayer: restoredDatabase
+        }).pipe(Effect.exit)
+      )
+      expect(failure(exit)).toMatchObject({ code: "schema_mismatch", method: "fence" })
+      // A `restored.json` beside a database that still carries pre-backup
+      // owner fences would read as a finished restore.
+      expect(readdirSync(target)).toEqual([])
+
+      writeFileSync(manifestPath, original)
+      const restored = yield* run(
+        DisasterRecovery.restoreAndFence({ backupDirectory, targetDirectory: target, databaseLayer: restoredDatabase })
+      )
+      expect(restored.manifest).toEqual(manifest)
+    }))
+
   it.effect("offers a one-shot restore-and-fence API over a supplied database layer", () =>
     Effect.gen(function*() {
       const base = root()

@@ -408,6 +408,23 @@ const ensureEmptyDirectory = (
   })
 
 /**
+ * Removes every entry of a directory this module filled after admitting it
+ * empty, leaving the directory reusable for a retry. Cleanup is best effort;
+ * the caller reports the original failure.
+ */
+const discardEntries = (fs: FileSystem.FileSystem, directory: string): Effect.Effect<void> =>
+  fs.readDirectory(directory).pipe(
+    Effect.flatMap((entries) =>
+      Effect.forEach(
+        entries,
+        (entry) => fs.remove(`${directory}/${entry}`, { recursive: true, force: true }),
+        { discard: true }
+      )
+    ),
+    Effect.ignore
+  )
+
+/**
  * A relative blob path in the store's fanout layout: a two-hex directory
  * holding a 64-hex digest that begins with it. Anything else under the
  * objects directory — a scratch `.tmp-*` file, the fanout directory itself —
@@ -660,18 +677,8 @@ export const backup = <R = never, E = never>(
     // The directory was empty when the capture began, so everything in it is
     // this capture's: the snapshot, any SQLite sidecar the inspection
     // connection left, and the copied blobs. A failed capture removes them and
-    // leaves the directory reusable for a retry. Cleanup is best effort; the
-    // original failure is the one reported.
-    const discardPartial = fs.readDirectory(options.directory).pipe(
-      Effect.flatMap((entries) =>
-        Effect.forEach(
-          entries,
-          (entry) => fs.remove(`${options.directory}/${entry}`, { recursive: true, force: true }),
-          { discard: true }
-        )
-      ),
-      Effect.ignore
-    )
+    // leaves the directory reusable for a retry.
+    const discardPartial = discardEntries(fs, options.directory)
 
     return yield* (options.objectsDirectory === undefined
       ? capture
@@ -719,6 +726,57 @@ export const verify = Effect.fn("DisasterRecovery.verify")(function*(
   return manifest
 })
 
+/** Copies a verified backup into an admitted empty target directory. */
+const writeRestoredStore = (
+  fs: FileSystem.FileSystem,
+  options: RestoreOptions,
+  manifest: BackupManifest,
+  maxFileSizeBytes: number
+): Effect.Effect<RestoredStore, DisasterRecoveryError, Crypto.Crypto> =>
+  Effect.gen(function*() {
+    const databaseBytes = yield* checkedFile(
+      fs,
+      "restore",
+      `${options.backupDirectory}/${manifest.database.file}`,
+      manifest.database.sha256,
+      maxFileSizeBytes
+    )
+    const databaseFile = `${options.targetDirectory}/${databaseFileName}`
+    yield* fs.writeFile(databaseFile, databaseBytes).pipe(
+      Effect.mapError(ioFailure("restore", `writing ${databaseFile}`))
+    )
+
+    const objectsDirectory = `${options.targetDirectory}/${objectsDirectoryName}`
+    for (const entry of manifest.artifacts) {
+      const bytes = yield* checkedFile(
+        fs,
+        "restore",
+        blobPath(`${options.backupDirectory}/${objectsDirectoryName}`, entry.digest),
+        entry.digest,
+        maxFileSizeBytes
+      )
+      yield* fs.makeDirectory(`${objectsDirectory}/${entry.digest.slice(0, 2)}`, { recursive: true }).pipe(
+        Effect.mapError(ioFailure("restore", `creating the objects directory for ${entry.digest}`))
+      )
+      yield* fs.writeFile(blobPath(objectsDirectory, entry.digest), bytes).pipe(
+        Effect.mapError(ioFailure("restore", `writing the blob for ${entry.digest}`))
+      )
+    }
+
+    const restoredAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
+    const marker = {
+      formatVersion: 1,
+      restoredAtMs,
+      backupCreatedAtMs: manifest.createdAtMs,
+      databaseSha256: manifest.database.sha256
+    }
+    yield* fs.writeFileString(
+      `${options.targetDirectory}/${restoredMarkerFileName}`,
+      `${JSON.stringify(marker, null, 2)}\n`
+    ).pipe(Effect.mapError(ioFailure("restore", `writing ${restoredMarkerFileName}`)))
+    return { databaseFile, objectsDirectory, manifest } satisfies RestoredStore
+  })
+
 /**
  * Restores a verified backup into an empty target directory.
  *
@@ -728,7 +786,8 @@ export const verify = Effect.fn("DisasterRecovery.verify")(function*(
  * is a fresh store directory to compose `NodeDatabase.layer` and
  * `ArtifactStore.layerFileSystem` over. The database is restored with the
  * pre-backup owner fences still in place — run {@link fence} against it
- * before any engine adopts it.
+ * before any engine adopts it. A failed copy removes everything it wrote, so
+ * the target is left empty and reusable for a retry.
  *
  * @since 0.1.0
  * @category operations
@@ -741,47 +800,13 @@ export const restore = Effect.fn("DisasterRecovery.restore")(function*(options: 
   const manifest = yield* readManifest(fs, "restore", options.backupDirectory, maxFileSizeBytes)
   yield* ensureEmptyDirectory(fs, "restore", options.targetDirectory)
 
-  const databaseBytes = yield* checkedFile(
-    fs,
-    "restore",
-    `${options.backupDirectory}/${manifest.database.file}`,
-    manifest.database.sha256,
-    maxFileSizeBytes
+  // The target was empty when the copy began, so everything in it is this
+  // restore's. A refused blob or a failed write removes the partial store, so
+  // nothing store-shaped is left to compose over and a retry can reuse it.
+  return yield* Effect.onError(
+    writeRestoredStore(fs, options, manifest, maxFileSizeBytes),
+    () => discardEntries(fs, options.targetDirectory)
   )
-  const databaseFile = `${options.targetDirectory}/${databaseFileName}`
-  yield* fs.writeFile(databaseFile, databaseBytes).pipe(
-    Effect.mapError(ioFailure("restore", `writing ${databaseFile}`))
-  )
-
-  const objectsDirectory = `${options.targetDirectory}/${objectsDirectoryName}`
-  for (const entry of manifest.artifacts) {
-    const bytes = yield* checkedFile(
-      fs,
-      "restore",
-      blobPath(`${options.backupDirectory}/${objectsDirectoryName}`, entry.digest),
-      entry.digest,
-      maxFileSizeBytes
-    )
-    yield* fs.makeDirectory(`${objectsDirectory}/${entry.digest.slice(0, 2)}`, { recursive: true }).pipe(
-      Effect.mapError(ioFailure("restore", `creating the objects directory for ${entry.digest}`))
-    )
-    yield* fs.writeFile(blobPath(objectsDirectory, entry.digest), bytes).pipe(
-      Effect.mapError(ioFailure("restore", `writing the blob for ${entry.digest}`))
-    )
-  }
-
-  const restoredAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
-  const marker = {
-    formatVersion: 1,
-    restoredAtMs,
-    backupCreatedAtMs: manifest.createdAtMs,
-    databaseSha256: manifest.database.sha256
-  }
-  yield* fs.writeFileString(
-    `${options.targetDirectory}/${restoredMarkerFileName}`,
-    `${JSON.stringify(marker, null, 2)}\n`
-  ).pipe(Effect.mapError(ioFailure("restore", `writing ${restoredMarkerFileName}`)))
-  return { databaseFile, objectsDirectory, manifest } satisfies RestoredStore
 })
 
 /**
@@ -868,10 +893,12 @@ export const fence = Effect.fn("DisasterRecovery.fence")(function*(manifest: Bac
 /**
  * Restores a backup and immediately fences the restored database.
  *
- * This is the one-shot operator API for disaster recovery. The database
- * driver itself still arrives through a caller-supplied Layer so this module
- * remains host-neutral and browser-bundleable; the bundled Node script passes
- * `NodeDatabase.layer` for the restored file.
+ * This is the one-shot operator API for disaster recovery. When fencing
+ * refuses, the restored files are removed, so no engine can adopt a store that
+ * still carries pre-backup owners. The database driver itself still arrives
+ * through a caller-supplied Layer so this module remains host-neutral and
+ * browser-bundleable; the bundled Node script passes `NodeDatabase.layer` for
+ * the restored file.
  *
  * @since 0.1.0
  * @category operations
@@ -880,9 +907,14 @@ export const restoreAndFence = <R = never, E = never>(
   options: RestoreAndFenceOptions<R, E>
 ): Effect.Effect<FencedRestoredStore, DisasterRecoveryError | E, FileSystem.FileSystem | Crypto.Crypto | R> =>
   Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
     const restored = yield* restore(options)
+    // A refused fence leaves a database that still carries pre-backup owner
+    // fences beside a `restored.json` marker. Remove the whole restore so no
+    // engine can adopt it and the operator can retry into the same target.
     const summary = yield* fence(restored.manifest).pipe(
-      Effect.provide(options.databaseLayer(restored.databaseFile))
+      Effect.provide(options.databaseLayer(restored.databaseFile)),
+      Effect.onError(() => discardEntries(fs, options.targetDirectory))
     )
     return { ...restored, fence: summary } satisfies FencedRestoredStore
   })

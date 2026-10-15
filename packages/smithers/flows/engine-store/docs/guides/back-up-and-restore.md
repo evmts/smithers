@@ -110,10 +110,16 @@ file (`store.sqlite3`), an `objects` directory, and a `restored.json` marker, an
 is a fresh store directory to compose `NodeDatabase.layer` and
 `ArtifactStore.layerFileSystem` over.
 
+A failed restore removes what it wrote, so nothing store-shaped is left in the
+target and you can retry into the same directory. A target that was not empty
+is refused with `not_empty` and left untouched.
+
 `restore` alone leaves the pre-backup owner fences in place. Run
 `DisasterRecovery.fence(manifest)` against the restored file before any engine
 adopts it, or use `restoreAndFence`, which does both and returns a
-`FencedRestoredStore`.
+`FencedRestoredStore`. When fencing refuses, `restoreAndFence` also removes the
+restored files, so no engine can adopt a store that still carries pre-backup
+owners.
 
 ## What fencing does
 
@@ -149,8 +155,8 @@ its own fresh owner.
 | `not_empty`           | A target or backup directory exists and is not empty.         |
 | `invalid_manifest`    | The manifest is missing or does not decode.                   |
 | `missing_file`        | A file the manifest lists is absent.                          |
-| `digest_mismatch`     | The database snapshot does not hash to its recorded digest.   |
-| `artifact_corruption` | A blob does not hash to its address.                          |
+| `digest_mismatch`     | A backup file does not hash to its manifest digest.           |
+| `artifact_corruption` | A live blob does not hash to its address during a backup.     |
 | `snapshot_incomplete` | The snapshot references artifacts the capture could not take. |
 | `schema_mismatch`     | A recorded migration is missing or has a different name.      |
 | `io`                  | A host read or write refused, including an oversized file.    |
