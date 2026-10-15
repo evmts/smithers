@@ -108,7 +108,8 @@ const checkTitle = (title: string): void => {
  * Files come back in first-appearance order. A titled file's content is the
  * fences' bodies joined by one blank line; a standalone file's content is the
  * fence body. Throws on a title that escapes the scratch directory or that
- * takes a standalone block's `block-N.ts` name.
+ * takes a standalone block's `block-N.ts` name. A page with CRLF line endings
+ * reads as if it had LF endings, and the files come back with LF endings.
  *
  * @category utils
  * @since 0.1.0
@@ -123,7 +124,8 @@ export const extract = (markdown: string, languages: ReadonlyArray<string>): Ext
   let blocks = 0
   let standalone = 0
   let fragments = 0
-  for (const match of markdown.matchAll(pattern)) {
+  // A Windows checkout stores pages with CRLF endings; the fence pattern reads LF.
+  for (const match of markdown.replaceAll("\r\n", "\n").matchAll(pattern)) {
     const index = blocks
     blocks += 1
     const meta = parseMeta(match[1] ?? "")

@@ -54,6 +54,12 @@ describe("MarkdownCodeBlocks.extract", () => {
     expect(extracted.files).toEqual([{ path: "a.ts", content: "export {}\n" }])
   })
 
+  it("reads a page checked out with CRLF line endings", () => {
+    const extracted = MarkdownCodeBlocks.extract(page.replaceAll("\n", "\r\n"), ["ts"])
+    expect(extracted.files).toEqual(MarkdownCodeBlocks.extract(page, ["ts"]).files)
+    expect(extracted.blocks).toBe(5)
+  })
+
   it("refuses a title that escapes the scratch directory", () => {
     expect(() => MarkdownCodeBlocks.extract("```ts title=\"../a.ts\"\nexport {}\n```\n", ["ts"])).toThrow(
       /title "\.\.\/a\.ts"/
