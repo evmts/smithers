@@ -1,11 +1,36 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
+import * as Input from "@smthrs/targets/Input"
 
 const cwd = "packages/smithers/agent/evals"
 
-const standard = BuildAndCheckTypeScriptPackage({ cwd })
+const standard = BuildAndCheckTypeScriptPackage({ cwd, sources: Input.glob("{src,examples}/**/*.ts") })
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = standard
+
+/**
+ * Changed public APIs against the package README, every docs page (concepts
+ * and guides included), and the site API reference page.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({
+  cwd,
+  context: [
+    Smithers.file("README.md"),
+    Smithers.glob("docs/**/*.md"),
+    Smithers.file("//apps/site/src/content/docs/docs/reference/api/evals.mdx")
+  ]
+})
+
+/**
+ * Changed exports against their own JSDoc.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd })
 
 const securityReview = Smithers.SecurityReview({
   cwd,
@@ -95,5 +120,17 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview }
+  targets: {
+    check,
+    circular,
+    docs,
+    docsFiles,
+    fmt,
+    lib,
+    lint,
+    reviewDocsAgainstCode,
+    reviewJsdocAgainstCode,
+    test,
+    ...securityReview
+  }
 })
