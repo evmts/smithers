@@ -49391,6 +49391,11 @@
       },
       {
         "kind": "glob",
+        "pattern": "packages/smithers/build/build-cli/examples/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
         "pattern": "packages/smithers/build/build-cli/test/**/*.ts",
         "exclude": []
       },
@@ -49509,6 +49514,11 @@
       },
       {
         "kind": "glob",
+        "pattern": "packages/smithers/build/build-cli/examples/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
         "pattern": "packages/smithers/build/build-cli/test/**/*.ts",
         "exclude": []
       },
@@ -49603,6 +49613,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/build/build-cli/src/**/*.js",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/build/build-cli/examples/**/*.ts",
         "exclude": []
       },
       {
@@ -49784,6 +49799,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/build/build-cli/src/**/*.js",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/build/build-cli/examples/**/*.ts",
         "exclude": []
       },
       {
