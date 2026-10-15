@@ -33,6 +33,53 @@ describe("DurableClock", () => {
     ).toThrow(/inMemoryThreshold/)
   })
 
+  it("rejects a duration longer than the latest due time a durable timer records", () => {
+    // A store records a clock's due time as a safe integer of epoch milliseconds.
+    expect(() => DurableClock.make({ name: "edge", duration: Duration.millis(Number.MAX_SAFE_INTEGER) })).not
+      .toThrow()
+    for (const duration of [Duration.millis(2 ** 53), Duration.days(1e12)]) {
+      expect(() => DurableClock.make({ name: "too-long", duration })).toThrow(/"duration" must be at most/)
+      expect(() => DurableClock.sleep({ name: "too-long", duration })).toThrow(/"duration" must be at most/)
+    }
+    // The threshold is never stored, so it carries no such bound.
+    expect(() =>
+      DurableClock.sleep({ name: "wide-threshold", duration: "1 second", inMemoryThreshold: Duration.days(1e12) })
+    ).not.toThrow()
+  })
+
+  effect("a durable sleep that would wake after the latest recordable due time fails instead of arming", () => {
+    const Step = Action.make("DurableClock/late/step", {
+      payload: { id: Schema.String },
+      success: Schema.String
+    })
+    const flow = Flow.make("DurableClock/late", {
+      payload: { id: Schema.String },
+      success: Schema.String,
+      idempotencyKey: ({ id }) => id,
+      body: (payload) => Step.call(payload)
+    })
+    const layer = layerWired(Layer.mergeAll(
+      Step.toLayer(() =>
+        Effect.gen(function*() {
+          yield* DurableClock.sleep({ name: "late", duration: "10 minutes", inMemoryThreshold: "1 second" })
+          return "woke"
+        })
+      ),
+      Interpreter.layer(flow)
+    ))
+    return Effect.gen(function*() {
+      yield* TestClock.setTime(Number.MAX_SAFE_INTEGER - 60_000)
+      const executionId = yield* flow.execute({ id: "late" }, { discard: true })
+      const result = yield* pollUntil(flow.poll(executionId), isComplete, { turns: 10, advance: "1 milli" })
+      expect(Option.isSome(result) && result.value._tag === "Complete" && Exit.isFailure(result.value.exit)).toBe(
+        true
+      )
+      if (Option.isSome(result) && result.value._tag === "Complete") {
+        expect(String(Exit.isFailure(result.value.exit) && result.value.exit.cause)).toContain("DurableClock")
+      }
+    }).pipe(Effect.provide(layer))
+  })
+
   effect("a zero duration sleep returns without waiting on the clock", () => {
     const Step = Action.make("DurableClock/zero/step", {
       payload: { id: Schema.String },

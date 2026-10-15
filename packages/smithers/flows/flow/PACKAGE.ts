@@ -6,6 +6,7 @@
  * `BuildAndCheckTypeScriptPackage({ cwd: "packages/smithers/flows/flow", deps: [plan, crypto, keys, canonical, capability] })`
  * emits; the file exists to show the expansion, not to diverge from it.
  */
+import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode, ReviewTagsMigrationsAndKeys } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import { docsWriter, referenceStyle, rootInvariantsConfig, rootJSDocConfig } from "../../../../PACKAGE.ts"
 import { Package as canonicalPackage } from "../canonical/PACKAGE.ts"
@@ -23,6 +24,7 @@ const canonical = canonicalPackage.lib
 const cwd = "packages/smithers/flows/flow"
 const sources = Smithers.glob("src/**/*.ts")
 const tests = Smithers.glob("test/**/*.test.ts")
+const examples = Smithers.glob("examples/**/*.ts")
 
 const lib = Smithers.TsBuild({
   srcs: [sources],
@@ -36,7 +38,7 @@ const lib = Smithers.TsBuild({
 })
 
 const check = Smithers.Typecheck({
-  srcs: [sources, Smithers.glob("test/**/*.ts")],
+  srcs: [sources, examples, Smithers.glob("test/**/*.ts")],
   deps: [lib, plan, crypto, keys, canonical, capability],
   tsconfig: Smithers.file("tsconfig.test.json"),
   buildMode: false,
@@ -46,7 +48,7 @@ const check = Smithers.Typecheck({
 
 const test = Smithers.Vitest({
   tests: [tests],
-  sources: [sources],
+  sources: [sources, examples],
   deps: [lib, plan, crypto, keys, canonical, capability],
   config: Smithers.file("vitest.config.ts"),
   environment: "node",
@@ -55,7 +57,7 @@ const test = Smithers.Vitest({
 })
 
 const lint = Smithers.EsLint({
-  sources: [sources],
+  sources: [sources, examples],
   deps: [],
   configs: [Smithers.file("eslint.config.js"), rootJSDocConfig, rootInvariantsConfig],
   maxWarnings: 0,
@@ -64,7 +66,7 @@ const lint = Smithers.EsLint({
 })
 
 const fmt = Smithers.Dprint({
-  sources: [sources, Smithers.glob("test/**/*.ts")],
+  sources: [sources, examples, Smithers.glob("test/**/*.ts")],
   deps: [],
   config: Smithers.file("dprint.json"),
   fix: false,
@@ -135,6 +137,43 @@ const referenceDocs = Smithers.Agent.Diff({
   maxRounds: 3
 })
 // --- end reference docs pipeline ------------------------------------------
+
+// --- model reviews ---------------------------------------------------------
+
+/**
+ * The durable-identity review. This package derives execution ids, step keys,
+ * deferred names, and the action and flow tags a journal records, so a changed
+ * key input or identity string re-keys every recorded execution.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const reviewTagsMigrationsAndKeys = ReviewTagsMigrationsAndKeys({ cwd })
+
+/**
+ * Changed public APIs against the package README, every docs page (concepts
+ * and guides included), and the site API reference page.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({
+  cwd,
+  context: [
+    Smithers.file("README.md"),
+    Smithers.glob("docs/**/*.md"),
+    Smithers.file("//apps/site/src/content/docs/docs/reference/api/flow.mdx")
+  ]
+})
+
+/**
+ * Changed exports against their own JSDoc.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd })
+// --- end model reviews -----------------------------------------------------
 
 // --- security review -------------------------------------------------------
 // `security` reviews the diff against origin/main; `securityAudit` audits every
@@ -266,6 +305,9 @@ export const Package = Smithers.Package({
     referenceCodeBlocks,
     referenceDocs,
     referencePages,
+    reviewDocsAgainstCode,
+    reviewJsdocAgainstCode,
+    reviewTagsMigrationsAndKeys,
     ...securityReview
   }
 })

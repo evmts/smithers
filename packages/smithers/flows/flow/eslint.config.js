@@ -13,7 +13,7 @@ export default tseslint.config(
   importPlugin.flatConfigs.recommended,
   importPlugin.flatConfigs.typescript,
   {
-    files: ["src/**/*.ts"],
+    files: ["src/**/*.ts", "examples/**/*.ts"],
     extends: [tseslint.configs.recommended],
     languageOptions: {
       parserOptions: {
@@ -57,6 +57,18 @@ export default tseslint.config(
       "unicorn/no-abusive-eslint-disable": "error",
       "unicorn/no-accessor-recursion": "error",
       "unicorn/prefer-array-flat-map": "error"
+    }
+  },
+  {
+    // Examples are outside `tsconfig.json`, which builds `src` only, so they
+    // type-check against the test project that includes them.
+    files: ["examples/**/*.ts"],
+    languageOptions: {
+      parserOptions: {
+        projectService: false,
+        project: "./tsconfig.test.json",
+        tsconfigRootDir: import.meta.dirname
+      }
     }
   },
   {

@@ -99,7 +99,8 @@ interface MakeOptions<
   readonly maxRounds?: number | undefined
   /**
    * How long one execution may take, counted from its journaled first start.
-   * A positive finite duration; see {@link Flow.deadline}.
+   * A positive finite duration of at most `Number.MAX_SAFE_INTEGER`
+   * milliseconds; see {@link Flow.deadline}.
    */
   readonly deadline?: Duration.Input | undefined
   readonly annotations?: Context.Context<never>
@@ -221,6 +222,11 @@ export const make: {
     (deadline === undefined || !Duration.isFinite(deadline) || Duration.toMillis(deadline) <= 0)
   ) {
     throw new RangeError(`Flow.make: "${tag}" deadline must be a positive finite duration`)
+  }
+  // The durable clock that enforces a deadline is due at its start plus the
+  // deadline, and a store records that due time as a safe integer.
+  if (deadline !== undefined && Duration.toMillis(deadline) > Number.MAX_SAFE_INTEGER) {
+    throw new RangeError(`Flow.make: "${tag}" deadline must be at most ${Number.MAX_SAFE_INTEGER} ms`)
   }
   // Captured here, where the stack still names the author's file, and carried
   // as a non-enumerable property so no digest can see it

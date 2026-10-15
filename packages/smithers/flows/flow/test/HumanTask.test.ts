@@ -957,7 +957,10 @@ describe("HumanTask gives up", () => {
     return Effect.all([
       refused(Number.NaN, "human-deadline-nan"),
       refused(Number.POSITIVE_INFINITY, "human-deadline-infinite"),
-      refused(-5, "human-deadline-negative")
+      refused(-5, "human-deadline-negative"),
+      // A durable store records the timeout clock's due time as a safe integer.
+      refused(2 ** 53, "human-deadline-past-safe"),
+      refused(Number.MAX_VALUE, "human-deadline-max-value")
     ], { discard: true })
   })
 

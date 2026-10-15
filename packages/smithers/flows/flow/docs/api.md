@@ -44,7 +44,7 @@ The [export reference](./reference/flow.md) lists every exported symbol with its
 
 ## `Flow`
 
-`Flow.make(tag, options)` accepts struct payload fields, success and error schemas, an optional `idempotencyKey`, annotations, a `suspendedRetryPolicy`, a `maxRounds` bound for trampoline lineages, and a `deadline` for one execution. Four literals lower into the annotation bag rather than staying options: `description`, `capabilities`, `effects`, the effect envelope from [`@smthrs/plan`](/api/plan#effects), and `modelInvocable`, which says whether a catalog may offer this flow to a model and defaults to `true`. They are literals so a catalog can project a discovered flow's authority from source text without importing the module, and `Graph.build` refuses a composition beneath the flow that reads or writes outside that envelope, loosens its mode, or raises its tier. Declare exactly one of `body` or `prompt`. A prompt declaration lowers to one ordinary action, exposed as `flow.action`; its host supplies the implementation through `flow.action.toLayer`. The typed `flow.prompt` renderer runs inside that implementation, never during planning. Optional `model`, `effort`, `flows`, `system`, and `chat` fields retain host metadata. See [Prompt-backed flows](./guides/use-a-prompt.md). `maxRounds` must be a positive safe integer and `deadline` a positive finite duration; `Flow.make` throws a `RangeError` when either is not. The deadline counts from the execution's journaled first start, so a resume after a restart honors the original deadline, and expiry settles the execution with the `DeadlineExceeded` defect whether it was running or parked. A trampoline lineage is one run: every round after a handoff expires at the originator's start plus the originator's deadline, whatever the round itself declares.
+`Flow.make(tag, options)` accepts struct payload fields, success and error schemas, an optional `idempotencyKey`, annotations, a `suspendedRetryPolicy`, a `maxRounds` bound for trampoline lineages, and a `deadline` for one execution. Four literals lower into the annotation bag rather than staying options: `description`, `capabilities`, `effects`, the effect envelope from [`@smthrs/plan`](/api/plan#effects), and `modelInvocable`, which says whether a catalog may offer this flow to a model and defaults to `true`. They are literals so a catalog can project a discovered flow's authority from source text without importing the module, and `Graph.build` refuses a composition beneath the flow that reads or writes outside that envelope, loosens its mode, or raises its tier. Declare exactly one of `body` or `prompt`. A prompt declaration lowers to one ordinary action, exposed as `flow.action`; its host supplies the implementation through `flow.action.toLayer`. The typed `flow.prompt` renderer runs inside that implementation, never during planning. Optional `model`, `effort`, `flows`, `system`, and `chat` fields retain host metadata. See [Prompt-backed flows](./guides/use-a-prompt.md). `maxRounds` must be a positive safe integer and `deadline` a positive finite duration of at most `Number.MAX_SAFE_INTEGER` milliseconds; `Flow.make` throws a `RangeError` when either is not. The deadline counts from the execution's journaled first start, so a resume after a restart honors the original deadline, and expiry settles the execution with the `DeadlineExceeded` defect whether it was running or parked. A trampoline lineage is one run: every round after a handoff expires at the originator's start plus the originator's deadline, whatever the round itself declares.
 
 The returned definition exposes:
 
@@ -156,6 +156,8 @@ Sealed idempotency identity has two forms. A string is namespaced by the action 
 | `DurableClock`    | `make({ name, duration })` and `sleep({ name, duration, inMemoryThreshold? })`                                                |
 | `DurableQueue`    | `make`, `process`, `makeWorker`, and `worker` over Effect's `PersistedQueue`                                                  |
 | `Deadline`        | `start`, `within`, and `bound`: the run deadline `Flow.make` applies, for a host that bounds a run by an approved deadline    |
+
+`DurableClock.make` and `DurableClock.sleep` throw a `RangeError` for a malformed, infinite, or negative duration, or one longer than `Number.MAX_SAFE_INTEGER` milliseconds: a durable store records a clock's due time as a safe integer. A durable sleep that would wake after epoch millisecond `Number.MAX_SAFE_INTEGER` dies with a `RangeError` instead of arming its clock.
 
 A deferred token encodes the flow name, the execution id, and the deferred name, so another process can complete the correct durable address. `TokenInvalid` is the typed failure every completion surface returns for a token that does not parse or that names a different deferred than the one it was submitted through. Completing a deferred is first-writer-wins: the first recorded exit is the one every later read replays.
 
@@ -327,15 +329,15 @@ A failed agent run, and a launch the executor refused, journal the fault on `con
 
 `HumanTask.action` is the declared `system/human-task` step: a typed question with re-asking and a deadline, built on `WaitFor`'s wait points and `DurableClock`.
 
-| Payload field | Meaning                                                                                                      |
-| ------------- | ------------------------------------------------------------------------------------------------------------ |
-| `name`        | addresses the question. Two calls naming one question in one execution await one answer                      |
-| `kind`        | `ask` (prose), `confirm` (a boolean), `select` (one of `options`), `json` (a value `schema` accepts)         |
-| `prompt`      | what the person is asked                                                                                     |
-| `options`     | the choices a `select` offers                                                                                |
-| `schema`      | a JSON Schema in the bounded subset, valid only with `kind: "json"`                                          |
-| `maxAttempts` | how many answers may be refused before the task fails. Defaults to `defaultMaxAttempts` (10)                 |
-| `timeoutMs`   | how long the question stays open, across every attempt. A finite number of milliseconds that is not negative |
+| Payload field | Meaning                                                                                                              |
+| ------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `name`        | addresses the question. Two calls naming one question in one execution await one answer                              |
+| `kind`        | `ask` (prose), `confirm` (a boolean), `select` (one of `options`), `json` (a value `schema` accepts)                 |
+| `prompt`      | what the person is asked                                                                                             |
+| `options`     | the choices a `select` offers                                                                                        |
+| `schema`      | a JSON Schema in the bounded subset, valid only with `kind: "json"`                                                  |
+| `maxAttempts` | how many answers may be refused before the task fails. Defaults to `defaultMaxAttempts` (10)                         |
+| `timeoutMs`   | how long the question stays open, across every attempt. A number of milliseconds from 0 to `Number.MAX_SAFE_INTEGER` |
 
 The bounded schema subset is `type` (`object`, `array`, `string`, `number`, `integer`, `boolean`, `null`), `enum`, `properties`, `required`, `items`, `nullable`, `description`, and `title`. `enum` members may be any JSON value, including objects and arrays, and membership is compared structurally rather than by reference. A schema supplied with any kind other than `json` is refused as `request_invalid`, because nothing would check it.
 
@@ -347,7 +349,7 @@ declared `options` or `schema`. It describes the question without including an
 answer. Durable readers use it to render pending questions, including waits
 inside child executions; routing still uses the wait token.
 
-`HumanTaskFailed` carries `code`, `task`, `attempts`, the `rejections` it collected, and a message. `request_invalid` refuses an unanswerable question before anyone is asked: a `select` with no options, an attempt budget below one or above the documented ceiling, a `timeoutMs` that is not a length of time, a schema outside the subset, a schema past the depth or node bound, or a schema supplied with the wrong kind. `rejected` means the budget was spent on answers the task refused. `timeout` means the deadline passed with the question open.
+`HumanTaskFailed` carries `code`, `task`, `attempts`, the `rejections` it collected, and a message. `request_invalid` refuses an unanswerable question before anyone is asked: a `select` with no options, an attempt budget below one or above the documented ceiling, a `timeoutMs` that is not a length of time or is above `Number.MAX_SAFE_INTEGER`, a schema outside the subset, a schema past the depth or node bound, or a schema supplied with the wrong kind. `rejected` means the budget was spent on answers the task refused. `timeout` means the deadline passed with the question open.
 
 Sizes are bounded so one question cannot grow a durable record without limit. The attempt budget is refused above `maxAttemptBudget`, the schema is refused past `maxSchemaDepth` levels or `maxSchemaNodes` nodes, an answer is refused past `maxAnswerNodes` visited values, a value echoed into a rejection message is truncated at `maxDiagnosticChars` with an explicit marker, and the retained `rejections` array stops at `maxRetainedRejectionChars` and records how many further rejections it omitted. The per-attempt journal step still records its own full reason: only the accumulated array is capped, because a refused answer stays recorded so the record shows what was actually said.
 
@@ -364,6 +366,8 @@ A `RetryPolicy` is a plain value, so the next retry delay is derived from a pers
 `nextDelay` is total even for a policy that never went through `make`, which is what a policy decoded from a persisted row is: a non-finite attempt, elapsed time, bound, or computed delay answers `None` rather than handing the engine a negative or `NaN` duration to sleep for.
 
 `decide` classifies non-retryable errors here and nowhere else, by the policy's declared tags and by `defaultNonRetryable`, which lists the integrity verdicts that must reach the driver unretried under every policy. Exhaustion and expiration preserve the final declared failure. The older `RetryPolicyExpired` and `RetryAttemptsExhausted` schemas remain available for interpreting historical outcomes.
+
+The package's [`examples/retry-and-stall.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/examples/retry-and-stall.ts) runs `RetryPolicy.decide` over five failed attempts and `Stall.observe` over a repair loop's rounds, with no runtime. Run it with `node examples/retry-and-stall.ts` from the package directory.
 
 ## `StepIdentity`
 

@@ -66,6 +66,11 @@ const origin = Action.make({
  * replay must line up with: the origin and the clock are addressed by fixed
  * names within the execution.
  *
+ * A deadline that is not a positive finite duration, a `startedAtMs` that is
+ * not finite, or a bound that would expire after epoch millisecond
+ * `Number.MAX_SAFE_INTEGER` dies with a `RangeError`: a durable store records
+ * the clock's due time as a safe integer.
+ *
  * @category constructors
  * @since 1.0.0
  */
@@ -95,7 +100,18 @@ export const start = (options: {
           new RangeError(`Deadline.start: "${options.flowName}" deadline must be a positive finite duration`)
         )
       }
-      lineage = { startedAtMs: options.startedAtMs ?? (yield* origin), deadlineMs }
+      const startedAtMs = options.startedAtMs ?? (yield* origin)
+      // The clock armed below is due at `startedAtMs + deadlineMs`, and a
+      // durable store records a due time as a safe integer.
+      if (!Number.isFinite(startedAtMs) || startedAtMs + deadlineMs > Number.MAX_SAFE_INTEGER) {
+        return yield* Effect.die(
+          new RangeError(
+            `Deadline.start: "${options.flowName}" deadline must expire by epoch millisecond ` +
+              `${Number.MAX_SAFE_INTEGER}, and a ${deadlineMs} ms deadline from ${startedAtMs} does not`
+          )
+        )
+      }
+      lineage = { startedAtMs, deadlineMs }
     }
     const remaining = yield* remainingMs(lineage)
     if (remaining > 0) {

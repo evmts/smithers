@@ -139,11 +139,11 @@ so a restart between the park and the answer resumes on the same token.
 `HumanTask.HumanTaskFailed` carries `code`, `task`, `attempts`, the `rejections`
 it collected, and a message:
 
-| Code              | Meaning                                                                                                                                                                                                                                                           |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `request_invalid` | The question was unanswerable before anyone was asked: a `select` with no options, an attempt budget below one or above `HumanTask.maxAttemptBudget`, a `timeoutMs` that is not a length of time, or a schema outside the subset or past its depth or node bound. |
-| `rejected`        | The attempt budget was spent on answers the task refused.                                                                                                                                                                                                         |
-| `timeout`         | The deadline passed with the question still open.                                                                                                                                                                                                                 |
+| Code              | Meaning                                                                                                                                                                                                                                                                                                 |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `request_invalid` | The question was unanswerable before anyone was asked: a `select` with no options, an attempt budget below one or above `HumanTask.maxAttemptBudget`, a `timeoutMs` that is not a length of time or is above `Number.MAX_SAFE_INTEGER`, or a schema outside the subset or past its depth or node bound. |
+| `rejected`        | The attempt budget was spent on answers the task refused.                                                                                                                                                                                                                                               |
+| `timeout`         | The deadline passed with the question still open.                                                                                                                                                                                                                                                       |
 
 `HumanTask.HumanAnswerInvalid` is the separate refusal an answer earns before it
 can consume durable storage, with `answer_invalid` for an answer outside the

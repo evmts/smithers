@@ -680,7 +680,9 @@ const budgetOf = (payload: Payload): Effect.Effect<number, HumanTaskFailed> => {
 const deadlineOf = (payload: Payload): Effect.Effect<Duration.Duration | undefined, HumanTaskFailed> => {
   const timeoutMs = payload.timeoutMs
   if (timeoutMs === undefined) return Effect.succeed(undefined)
-  return Number.isFinite(timeoutMs) && timeoutMs >= 0
+  // The timeout clock is due at its start plus the deadline, and a durable
+  // store records that due time as a safe integer.
+  return Number.isFinite(timeoutMs) && timeoutMs >= 0 && timeoutMs <= Number.MAX_SAFE_INTEGER
     ? Effect.succeed(Duration.millis(timeoutMs))
     : Effect.fail(
       failed(
@@ -688,8 +690,8 @@ const deadlineOf = (payload: Payload): Effect.Effect<Duration.Duration | undefin
         "request_invalid",
         0,
         [],
-        `${tag} was called with timeoutMs ${timeoutMs}. A deadline is a finite number of ` +
-          "milliseconds that is not negative; the question would be over before it was asked, or " +
+        `${tag} was called with timeoutMs ${timeoutMs}. A deadline is a number of milliseconds ` +
+          `from 0 to ${Number.MAX_SAFE_INTEGER}; the question would be over before it was asked, or ` +
           "never over at all."
       )
     )

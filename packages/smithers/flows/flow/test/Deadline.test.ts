@@ -45,6 +45,20 @@ describe("Flow.make deadline", () => {
       expect(() => make(deadline)).toThrow(`Flow.make: "Deadline/declared" deadline must be a positive finite duration`)
     }
   })
+
+  it("refuses a deadline longer than the latest deadline a durable timer records", () => {
+    const make = (deadline: Duration.Input) => () =>
+      Flow.make("Deadline/declared", {
+        payload: {},
+        success: Schema.String,
+        deadline,
+        body: () => Effect.succeed("unused") as never
+      })
+    expect(make(Duration.millis(Number.MAX_SAFE_INTEGER))).not.toThrow()
+    expect(make(Duration.millis(2 ** 53))).toThrow(
+      `Flow.make: "Deadline/declared" deadline must be at most ${Number.MAX_SAFE_INTEGER} ms`
+    )
+  })
 })
 
 describe("Deadline", () => {
@@ -96,6 +110,35 @@ describe("Deadline", () => {
         expect(String(squash(exit))).toContain(`"Deadline/bounded" deadline must be a positive finite duration`)
       }
     }).pipe(Effect.provide(layerMemory)))
+
+  effect(
+    "start refuses a deadline that would expire after the latest deadline a durable timer records",
+    () =>
+      Effect.gen(function*() {
+        // The durable clock that enforces the deadline is due at
+        // `startedAtMs + deadlineMs`, and a store records that as a safe integer.
+        const refused = [
+          { deadline: Duration.millis(2 ** 53) },
+          { deadline: Duration.millis(Number.MAX_SAFE_INTEGER), startedAtMs: 1 },
+          { deadline: 60_000, startedAtMs: Number.NaN },
+          { deadline: 60_000, startedAtMs: Number.POSITIVE_INFINITY }
+        ]
+        for (const options of refused) {
+          const exit = yield* Effect.exit(inExecution(Deadline.start({ flowName: "Deadline/bounded", ...options })))
+          expect(squash(exit)).toBeInstanceOf(RangeError)
+          expect(String(squash(exit))).toContain(`"Deadline/bounded" deadline must expire by epoch millisecond`)
+        }
+        expect(
+          yield* inExecution(
+            Deadline.start({
+              flowName: "Deadline/bounded",
+              deadline: Duration.millis(Number.MAX_SAFE_INTEGER - 1),
+              startedAtMs: 1
+            })
+          )
+        ).toEqual({ startedAtMs: 1, deadlineMs: Number.MAX_SAFE_INTEGER - 1 })
+      }).pipe(Effect.provide(layerMemory))
+  )
 
   effect("within runs the body unbounded without a deadline", () =>
     Effect.gen(function*() {
