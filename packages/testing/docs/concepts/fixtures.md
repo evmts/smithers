@@ -138,13 +138,15 @@ unchanged.
 
 A fixture is meant to be committed, and a recorded call holds the system
 prompt, every message, tool arguments and results, and the provider's error
-text verbatim. Before `RecordingModel` hands a call to its sink, it scans the
-serialized call with the token-shaped rules from `@smthrs/journal/Redaction`:
+text verbatim. Before `RecordingModel` hands a call to its sink, it scans every
+string in the call with the token-shaped rules from `@smthrs/journal/Redaction`:
 private key blocks, JWTs, and `sk-`, `ghp_`, `github_pat_`, `AKIA`, `xox`, and
 `AIza` keys. It also joins each text, thinking, and tool-call argument stream
 in event order and scans the joined string, because a provider streams a key a
-few characters per delta. A match fails the stream with a defect that names the
-rule, not the value, and nothing is recorded.
+few characters per delta. A string that holds JSON escapes, such as tool-call
+arguments, is scanned again with each escape blanked, so a key after `\n`
+still matches. A match fails the stream with a defect that names the rule, not
+the value, and nothing is recorded.
 
 The scan does not cover opaque bearer tokens, such as an `Authorization: Bearer`
 header echoed in a tool result, or credentials embedded in a URL, such as

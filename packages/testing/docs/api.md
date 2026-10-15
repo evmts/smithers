@@ -1636,7 +1636,9 @@ Real, machine-global process fault primitives, imported by subpath:
 import { isAlive, killProcess, skewClock, waitForReparent } from "@smthrs/testing/Faults"
 ```
 
-Every helper that waits takes an optional `timeoutMs` as its last argument.
+Every helper that waits takes an optional `timeoutMs` as its last argument. A
+`timeoutMs` that is `NaN` or negative throws `RangeError` before the helper
+waits or signals.
 
 ### Faults.isAlive and isGroupAlive
 

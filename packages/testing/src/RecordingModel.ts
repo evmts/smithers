@@ -80,9 +80,29 @@ const streamedTexts = (events: ReadonlyArray<ModelEventLike>): Array<string> => 
   return [...joined.values()]
 }
 
+// Every rule opens with a boundary guard, and a JSON escape puts a letter right
+// before the key: a key on its own line reads `\nghp_...` once serialized. So
+// each string in the call is scanned raw rather than as `JSON.stringify(call)`.
+// Tool-call arguments are themselves JSON text, so every string is scanned
+// again with its escape sequences blanked.
+const strings = (value: unknown, out: Array<string>): Array<string> => {
+  if (typeof value === "string") {
+    out.push(value)
+  } else if (typeof value === "object" && value !== null) {
+    for (const [key, item] of Object.entries(value)) {
+      out.push(key)
+      strings(item, out)
+    }
+  }
+  return out
+}
+
+const unescaped = (text: string): Array<string> =>
+  text.includes("\\") ? [text, text.replace(/\\(?:u[0-9A-Fa-f]{4}|[\s\S])/g, " ")] : [text]
+
 const guarded = (call: RecordedCall, sink: Sink): Effect.Effect<void> =>
   Effect.suspend(() => {
-    const texts = [JSON.stringify(call), ...streamedTexts(call.events)]
+    const texts = [...strings(call, []), ...streamedTexts(call.events)].flatMap(unescaped)
     const found = credentialPatterns.find((rule) => texts.some((text) => rule.pattern.test(text)))
     return found === undefined ? sink(call) : Effect.die(
       new Error(

@@ -105,6 +105,16 @@ describe("killProcess", () => {
     }
   )
 
+  it("rejects a timeout that is NaN or negative instead of waiting forever", async () => {
+    // A NaN deadline never compares as reached, so the wait would spin until
+    // the test runner kills the suite. Each helper refuses it before waiting.
+    for (const bad of [Number.NaN, -1]) {
+      await expect(waitFor(() => false, "never", bad)).rejects.toThrow(RangeError)
+      await expect(waitForReparent(process.pid, process.ppid, bad)).rejects.toThrow(RangeError)
+      await expect(killProcess({ pid: process.pid }, "SIGCONT", bad)).rejects.toThrow(RangeError)
+    }
+  })
+
   it("times out with the label it was given", async () => {
     await expect(waitFor(() => false, "a condition that never holds", 100))
       .rejects.toThrow(/a condition that never holds/)

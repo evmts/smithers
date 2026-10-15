@@ -88,9 +88,17 @@ export const parentPid = (pid: number): number | undefined => {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
+// A NaN deadline never compares as reached, so the wait would spin forever.
+const requireTimeoutMs = (name: string, ms: number): void => {
+  if (Number.isNaN(ms) || ms < 0) {
+    throw new RangeError(`${name}: timeoutMs must be a non-negative number, got ${String(ms)}`)
+  }
+}
+
 /**
  * Waits until `predicate` holds, or fails with `label` in the message.
  *
+ * @throws RangeError when `timeoutMs` is NaN or negative.
  * @since 1.0.0
  * @category utils
  */
@@ -99,6 +107,7 @@ export const waitFor = async (
   label: string,
   timeoutMs = defaultTimeoutMs
 ): Promise<void> => {
+  requireTimeoutMs("waitFor", timeoutMs)
   const deadline = realNow() + timeoutMs
   for (;;) {
     if (predicate()) return
@@ -115,6 +124,7 @@ export const waitFor = async (
  * parent is reaped, which is after the signal is delivered. A suite that reads
  * `parentPid` once races that.
  *
+ * @throws RangeError when `timeoutMs` is NaN or negative.
  * @since 1.0.0
  * @category getters
  */
@@ -123,6 +133,7 @@ export const waitForReparent = async (
   expected: number,
   timeoutMs = defaultTimeoutMs
 ): Promise<number> => {
+  requireTimeoutMs("waitForReparent", timeoutMs)
   const deadline = realNow() + timeoutMs
   for (;;) {
     const parent = parentPid(pid)
@@ -142,6 +153,7 @@ export const waitForReparent = async (
  * A pid that is already dead is an error rather than a no-op: the test that
  * called this believed it was injecting a fault, and it was not.
  *
+ * @throws RangeError when `timeoutMs` is NaN or negative, before any signal is sent.
  * @since 1.0.0
  * @category constructors
  */
@@ -154,6 +166,7 @@ export const killProcess = async (
   if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) {
     throw new Error(`killProcess: invalid pid ${String(pid)}`)
   }
+  requireTimeoutMs("killProcess", timeoutMs)
   try {
     process.kill(pid, signal)
   } catch (error) {

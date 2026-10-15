@@ -211,13 +211,27 @@ describe("RecordingModel", () => {
           { type: "tool-call-end", id: "call_1" },
           { type: "settle", stopReason: "tool-calls", responseId: "resp_1" }
         ]
+        const escapedToolCall: ReadonlyArray<ModelEvent.ModelEvent> = [
+          { type: "tool-call-start", id: "call_1", name: "bash" },
+          { type: "tool-call-delta", id: "call_1", arguments: JSON.stringify({ cmd: `cat <<EOF\n${secret}\nEOF` }) },
+          { type: "tool-call-end", id: "call_1" },
+          { type: "settle", stopReason: "tool-calls", responseId: "resp_1" }
+        ]
         for (
           const recorder of [
             RecordingModel.make(liveOf(Stream.fromIterable(events)), sink.sink).stream(request(`key ${secret}`)),
+            // JSON escapes a newline or tab as `\n` or `\t`, so in the serialized
+            // call a letter sits right before the key and defeats each rule's
+            // word-boundary guard. A key on its own line is the common shape.
+            RecordingModel.make(liveOf(Stream.fromIterable(events)), sink.sink).stream(request(`key:\n${secret}`)),
+            RecordingModel.make(liveOf(Stream.fromIterable(events)), sink.sink).stream(request(`key\t${secret}`)),
             RecordingModel.make(liveOf(Stream.fromIterable(leaking)), sink.sink).stream(request("Summarize.")),
             RecordingModel.make(liveOf(Stream.fromIterable(chunked)), sink.sink).stream(request("Summarize.")),
             RecordingModel.make(liveOf(Stream.fromIterable(chunkedThinking)), sink.sink).stream(request("Think.")),
-            RecordingModel.make(liveOf(Stream.fromIterable(chunkedToolCall)), sink.sink).stream(request("Run."))
+            RecordingModel.make(liveOf(Stream.fromIterable(chunkedToolCall)), sink.sink).stream(request("Run.")),
+            // Tool-call arguments are JSON text, so a key the model writes on
+            // its own line arrives after a literal `\n` escape.
+            RecordingModel.make(liveOf(Stream.fromIterable(escapedToolCall)), sink.sink).stream(request("Run."))
           ]
         ) {
           const exit = yield* Effect.exit(Stream.runDrain(recorder))
