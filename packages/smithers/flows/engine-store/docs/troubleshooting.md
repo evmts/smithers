@@ -304,6 +304,9 @@ migrations omit or rename a historical entry recorded in the manifest. Forward
 additions within installed lower blocks are compatible; check historical IDs
 and names before fencing again.
 
+A failed backup, `restore`, or `restoreAndFence` removes the files it wrote, so
+fix the cause and retry into the same directory.
+
 ## The composition does not compile
 
 **What happened.** A required service is missing. A composition failure is an

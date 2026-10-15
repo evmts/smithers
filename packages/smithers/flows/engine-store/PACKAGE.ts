@@ -1,14 +1,21 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
-import { ReviewTagsMigrationsAndKeys } from "@smthrs/repo-targets"
+import {
+  BuildAndCheckTypeScriptPackage,
+  ReviewDocsAgainstCode,
+  ReviewJsdocAgainstCode,
+  ReviewTagsMigrationsAndKeys
+} from "@smthrs/repo-targets"
 /**
  * Standard package targets.
  *
  * `cwd` anchors every emitted tool run in this package directory.
  */
 import { Smithers } from "@smthrs/targets"
+import * as Input from "@smthrs/targets/Input"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  // Examples are type-checked, linted and run by test/examples.test.ts.
+  sources: Input.glob("{src,examples}/**/*.ts"),
   cwd: "packages/smithers/flows/engine-store"
 })
 
@@ -40,6 +47,7 @@ const test = Smithers.NodeTest({
   srcs: [
     Smithers.glob("src/**/*.ts"),
     Smithers.glob("test/**/*.ts"),
+    Smithers.glob("examples/**/*.ts"),
     Smithers.file("package.json"),
     Smithers.file("vitest.config.ts"),
     Smithers.file("//packages/repo-targets/test-utils/effect-property.mjs"),
@@ -78,6 +86,31 @@ const disasterRecovery = Smithers.NodeTest({
  * @category lint
  */
 const reviewTagsMigrationsAndKeys = ReviewTagsMigrationsAndKeys({ cwd: "packages/smithers/flows/engine-store" })
+
+/**
+ * Changed public APIs against the package prose. The default context reads
+ * only `docs/*.md`; the concept and guide pages document the same stores,
+ * layers, and error codes, so the review reads all of them.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({
+  cwd: "packages/smithers/flows/engine-store",
+  context: [
+    Smithers.file("README.md"),
+    Smithers.glob("docs/**/*.md"),
+    Smithers.file("//apps/site/src/content/docs/docs/reference/api/engine-store.mdx")
+  ]
+})
+
+/**
+ * Changed exports against their own JSDoc.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: "packages/smithers/flows/engine-store" })
 
 /**
  * The security review: `security` reviews this package's changed files against
@@ -269,6 +302,8 @@ export const Package = Smithers.Package({
     disasterRecovery,
     docs,
     docsFiles,
+    reviewDocsAgainstCode,
+    reviewJsdocAgainstCode,
     reviewTagsMigrationsAndKeys,
     fmt,
     lib,
