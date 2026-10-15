@@ -40,6 +40,18 @@ describe("Detect.classifyPackage", () => {
     expect(Detect.classifyPackage("effect", "4.0.0-beta.105")).toBeUndefined()
   })
 
+  it("decides a partial range by its leading version, as npm does", () => {
+    // npm reads `^0.35` as >=0.35.0 <0.36.0 and `0.x` as >=0.0.0 <1.0.0, so
+    // both install a 0.x release that the migration has to replace.
+    for (const range of ["^0.35", "~0.35", "0.x", "0", "0.35.x", ">=0.30 <1", "v0.35"]) {
+      expect(Detect.classifyPackage("@smthrs/cli", range)).toBe("old-version")
+      expect(Detect.classifyPackage("smithers", range)).toBe("old-version")
+    }
+    for (const range of ["^1", "1.x", "~1.0", "*", "x", "workspace:^", "github:smithersai/smithers#v0.35"]) {
+      expect(Detect.classifyPackage("@smthrs/cli", range)).toBeUndefined()
+    }
+  })
+
   it("decides the bare name by its spec", () => {
     // A pack inside the old monorepo links the facade by directory name. The
     // name alone proves nothing: `smithers` is not a Smithers package on the

@@ -26,21 +26,31 @@ export interface Version {
 
 const pattern = /(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/
 
+// A range that opens with a partial version: `^0.35`, `~1`, `0.x`, `>=0.30 <1`.
+// Anchored at the start, so a digit inside a path, URL, or alias is never read.
+const partial = /^\s*(?:[~^=]|[<>]=?)?\s*v?(\d+)(?:\.(\d+|[xX*]))?(?:\.(\d+|[xX*]))?(?=$|\s|\|)/
+
 /**
  * Parses the first version in a dependency specifier, so `^0.35.0`,
- * `>=0.35.0 <1`, and `0.35.0` all parse. A specifier with no version at all
- * (`file:../smithers`, `workspace:*`, `latest`) returns `undefined`.
- * Core components outside the safe integer range also return `undefined`.
+ * `>=0.35.0 <1`, and `0.35.0` all parse. A range that opens with a partial
+ * version (`^0.35`, `0.x`, `~1`) parses as its lower bound, with each missing
+ * or wildcard component read as `0`, which is how npm reads it. A specifier
+ * with no version at all (`file:../smithers`, `workspace:*`, `latest`, `*`)
+ * returns `undefined`. Core components outside the safe integer range also
+ * return `undefined`.
  *
  * @since 1.0.0-rc.0
  * @private
  */
 export const parse = (specifier: string): Version | undefined => {
-  const match = pattern.exec(specifier)
+  const match = pattern.exec(specifier) ?? partial.exec(specifier)
   if (match === null) return undefined
-  const major = Number(match[1])
-  const minor = Number(match[2])
-  const patch = Number(match[3])
+  const component = (
+    value: string | undefined
+  ): number => (value === undefined || !/^\d+$/.test(value) ? 0 : Number(value))
+  const major = component(match[1])
+  const minor = component(match[2])
+  const patch = component(match[3])
   if (!Number.isSafeInteger(major) || !Number.isSafeInteger(minor) || !Number.isSafeInteger(patch)) return undefined
   const prerelease = match[4] === undefined ? [] : match[4].split(".")
   return { major, minor, patch, prerelease }

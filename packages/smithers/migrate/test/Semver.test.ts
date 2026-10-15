@@ -6,14 +6,18 @@ describe("Smithers dependency version boundary", () => {
     [
       ["^0.35.0", { major: 0, minor: 35, patch: 0, prerelease: [] }],
       [">=0.35.0 <1", { major: 0, minor: 35, patch: 0, prerelease: [] }],
+      ["^1.0", { major: 1, minor: 0, patch: 0, prerelease: [] }],
+      ["0.x", { major: 0, minor: 0, patch: 0, prerelease: [] }],
+      [">= 0.35 < 1", { major: 0, minor: 35, patch: 0, prerelease: [] }],
+      ["~0.35.x || ^1", { major: 0, minor: 35, patch: 0, prerelease: [] }],
       ["1.0.0-rc.12", { major: 1, minor: 0, patch: 0, prerelease: ["rc", "12"] }],
       ["1.2.3-alpha.4.beta", { major: 1, minor: 2, patch: 3, prerelease: ["alpha", "4", "beta"] }]
     ] as const
-  )("parses the first version in %s", (specifier, expected) => {
+  )("parses the first version or leading partial range in %s", (specifier, expected) => {
     expect(parse(specifier)).toEqual(expected)
   })
 
-  it.each(["", "latest", "workspace:*", "file:../smithers", "link:../smithers", "^1.0"])(
+  it.each(["", "latest", "workspace:*", "file:../smithers", "link:../smithers", "*", "x", "github:org/smithers#v0.35"])(
     "leaves a specifier without a complete version unresolved (%s)",
     (specifier) => expect(parse(specifier)).toBeUndefined()
   )

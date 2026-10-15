@@ -12,6 +12,12 @@
   checked fallback domains, unknown/any defaults, and incompatible literal or
   required-object defaults.
 
+- Classify a dependency pinned by a partial range (`^0.35`, `~0.35`, `0.x`)
+  by its lower bound, so `"@smthrs/cli": "^0.35"` is planned as a 0.x package
+  instead of being left in the migrated manifest.
+- Read the `effect` version from yarn classic range keys and from npm copies
+  nested under another package, and stop reporting a yarn `effect@3` key as
+  resolved version `3`.
 - Leave dependency versions with unsafe numeric core components unresolved
   instead of classifying rounded major, minor, or patch values.
 - Compare numeric prerelease identifiers exactly, including values beyond
