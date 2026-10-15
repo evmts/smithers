@@ -39,7 +39,7 @@ export const firstPath = (error: Schema.SchemaError): string => {
   for (let depth = 0; depth < 64; depth++) {
     switch (issue._tag) {
       case "Pointer":
-        segments.push(...issue.path)
+        for (const segment of issue.path) segments.push(segment)
         issue = issue.issue
         continue
       case "Filter":

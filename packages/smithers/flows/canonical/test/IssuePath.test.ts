@@ -79,4 +79,10 @@ describe("firstPath", () => {
     const issue = new SchemaIssue.Pointer([Symbol.for("k")], new SchemaIssue.InvalidType(Schema.String.ast))
     expect(firstPath(new Schema.SchemaError(issue))).toBe("$[Symbol(k)]")
   })
+
+  it("renders a large pointer path without exceeding the function argument limit", () => {
+    const segments = Array.from({ length: 150_000 }, () => "field")
+    const issue = new SchemaIssue.Pointer(segments, new SchemaIssue.InvalidType(Schema.String.ast))
+    expect(firstPath(new Schema.SchemaError(issue))).toBe("$" + ".field".repeat(segments.length))
+  })
 })
