@@ -1,15 +1,21 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
-import { ReviewTagsMigrationsAndKeys } from "@smthrs/repo-targets"
+import {
+  BuildAndCheckTypeScriptPackage,
+  ReviewDocsAgainstCode,
+  ReviewJsdocAgainstCode,
+  ReviewTagsMigrationsAndKeys
+} from "@smthrs/repo-targets"
 /**
  * Standard package targets.
  *
  * `cwd` anchors every emitted tool run in this package directory.
  */
 import { Smithers } from "@smthrs/targets"
+import * as Input from "@smthrs/targets/Input"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
   deps: [],
+  sources: Input.glob("{src,examples}/**/*.ts"),
   cwd: "packages/smithers/flows/database",
   tests: Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] }),
   buildProgram: Smithers.file("//packages/repo-targets/scripts/build.mjs"),
@@ -41,6 +47,7 @@ const test = Smithers.Shell.Test({
     Smithers.file("scripts/test-matrix.mjs"),
     Smithers.glob("src/**/*.ts"),
     Smithers.glob("test/**/*.ts"),
+    Smithers.glob("examples/**/*.ts"),
     Smithers.file("package.json"),
     Smithers.file("vitest.config.ts"),
     Smithers.file("//packages/repo-targets/test-utils/effect-property.mjs"),
@@ -61,6 +68,30 @@ const test = Smithers.Shell.Test({
  * @category lint
  */
 const reviewTagsMigrationsAndKeys = ReviewTagsMigrationsAndKeys({ cwd: "packages/smithers/flows/database" })
+
+/**
+ * Changed public APIs against the package README, every docs page (concepts
+ * and guides included), and the site API reference page.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({
+  cwd: "packages/smithers/flows/database",
+  context: [
+    Smithers.file("README.md"),
+    Smithers.glob("docs/**/*.md"),
+    Smithers.file("//apps/site/src/content/docs/docs/reference/api/database.mdx")
+  ]
+})
+
+/**
+ * Changed exports against their own JSDoc.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: "packages/smithers/flows/database" })
 
 /**
  * The package's fault-injection cases.
@@ -178,6 +209,8 @@ export const Package = Smithers.Package({
     circular,
     docs,
     docsFiles,
+    reviewDocsAgainstCode,
+    reviewJsdocAgainstCode,
     reviewTagsMigrationsAndKeys,
     faults,
     fmt,
