@@ -6,14 +6,24 @@ import { say } from "./j1-fixtures"
 test("C-APP-05: a host turn replays after its author closes the tab", async ({ page }) => {
   await installCloudFixture(page, { capabilities: ["install", "identity", "agent"] })
   const entries: unknown[] = []
-  let writes = 0
+  /*
+   * The host admits one turn per idempotency key (chat/prompt.go). A tab that
+   * closes before its "accepted" write lands leaves the prompt "requested", and
+   * the returning tab re-sends it under the same key; that resend is the
+   * designed recovery, so the stub answers it as the host does, with the turn
+   * the key already admitted.
+   */
+  const keys = new Set<string>()
   const context = page.context()
   const mountConversation = async (target: Page) => {
   await target.route("**/api/conversations/main", route => route.fulfill({ json: { id: "main", entries } }))
   await target.route("**/api/conversations/main/view-state", route => route.fulfill({ json: { queue: [] } }))
   await target.route("**/api/conversations/main/prompt", route => {
-    writes++
-    entries.push({ id: "held", author: 1, authorLogin: "scoped-user", runId: "held-run", prompt: "Summarize the repository", state: "running", frames: [] })
+    const { idempotencyKey } = route.request().postDataJSON() as { readonly idempotencyKey: string }
+    if (!keys.has(idempotencyKey)) {
+      keys.add(idempotencyKey)
+      entries.push({ id: "held", author: 1, authorLogin: "scoped-user", runId: "held-run", prompt: "Summarize the repository", state: "running", frames: [] })
+    }
     return route.fulfill({ status: 202, json: { turnId: "held", terminal: false } })
   })
   }
@@ -28,5 +38,7 @@ test("C-APP-05: a host turn replays after its author closes the tab", async ({ p
   await mountConversation(returned)
   await returned.goto("/")
   await expect(returned.getByTestId("transcript").getByText("Repository summary.", { exact: true })).toBeVisible()
-  expect(writes).toBe(1)
+  // One prompt, one admission: the returning tab never mints a second key.
+  expect(keys.size).toBe(1)
+  expect(entries).toHaveLength(1)
 })
