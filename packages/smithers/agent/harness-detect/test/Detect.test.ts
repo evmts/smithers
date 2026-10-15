@@ -80,6 +80,27 @@ describe("version output at the detection boundary", () => {
 })
 
 describe("the candidate dirs", () => {
+  test.each(["darwin", "win32"])("rejects path components in binary names on %s", (platform) => {
+    const reads: Array<string> = []
+    const h: HarnessHost = {
+      ...host({ platform, home: platform === "win32" ? "C:\\Users\\u" : HOME }),
+      listDir: (path) => {
+        reads.push(path)
+        return []
+      },
+      isFile: (path) => {
+        reads.push(path)
+        return path.includes("outside")
+      }
+    }
+    for (
+      const name of ["../outside", "..\\outside", "nested/outside", "nested\\outside", "", ".", "..", "bad\u0000name"]
+    ) {
+      expect(findBinary(name, h)).toBeNull()
+    }
+    expect(reads).toEqual([])
+  })
+
   test.each(["darwin", "win32"])("rejects malformed nvm directory entries on %s", (platform) => {
     const h: HarnessHost = {
       ...host({ platform }),

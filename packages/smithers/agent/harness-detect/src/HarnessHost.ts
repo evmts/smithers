@@ -103,11 +103,14 @@ const compareSemver = (left: RegExpExecArray, right: RegExpExecArray): number =>
  * A relative PATH entry (`.`, `node_modules/.bin`) is skipped: it resolves
  * against the process cwd, which may be a cloned repository that plants a
  * `claude` for detection to probe and the app to launch.
+ * Empty names, dot components, path separators, and NUL are rejected before
+ * any host lookup, so `name` cannot escape a candidate directory.
  *
  * @category detection
  * @since 0.1.0
  */
 export const findBinary = (name: string, host: HarnessHost): string | null => {
+  if (name === "" || name === "." || name === ".." || /[/\\]/.test(name) || name.includes("\0")) return null
   const { delimiter, isAbsolute, join } = hostPath(host)
   const windows = host.platform === "win32"
   // Windows environment names are case-insensitive, so a copied env may
