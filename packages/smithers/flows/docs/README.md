@@ -125,6 +125,8 @@ reachable only through it.
   `effect` requirements, the import forms, and the platform packages you choose
   yourself.
 - [Quickstart](./quickstart.md): one flow end to end on a real durable engine.
+- [How Smithers Flows works](./concepts/how-it-works.md): the plan, the step
+  key, reuse across runs, the record, rewind, and permissions.
 - [Change a flow and keep the work](./guides/change-a-flow-and-keep-the-work.md):
   add or edit a step and rerun only what changed, and print the plan before
   anything runs.

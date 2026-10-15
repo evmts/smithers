@@ -342,6 +342,7 @@ export const DOCS_PAGES: ReadonlyMap<string, ReadonlyMap<string, string>> = new 
   ["flows", new Map([
     ["/", "https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/docs"],
     ["/concepts/aggregate-surface/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/concepts/aggregate-surface.md"],
+    ["/concepts/how-it-works/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/concepts/how-it-works.md"],
     ["/concepts/runner-protocol/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/concepts/runner-protocol.md"],
     ["/concepts/runtime-portability/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/concepts/runtime-portability.md"],
     ["/guides/change-a-flow-and-keep-the-work/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/guides/change-a-flow-and-keep-the-work.md"],

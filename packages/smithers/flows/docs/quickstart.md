@@ -226,6 +226,8 @@ seconds for that lease to expire, then reclaims the run and resumes it.
 
 ## Next steps
 
+- [How Smithers Flows works](./concepts/how-it-works.md): why a step that did
+  not run can be trusted, from the plan to the step key and the record.
 - [Change a flow and keep the work](./guides/change-a-flow-and-keep-the-work.md):
   add or edit a step and rerun only what changed, and print the plan before
   anything runs.
