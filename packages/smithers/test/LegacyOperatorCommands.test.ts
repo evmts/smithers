@@ -243,6 +243,22 @@ describe("legacy operator command contracts", () => {
     }
   )
 
+  it.each([
+    ["an error status", new Response(JSON.stringify({ error: "Not found" }), { status: 404 })],
+    ["a null document", new Response("null", { status: 200 })],
+    ["an array document", new Response("[\"1.0.0\"]", { status: 200 })]
+  ])("refuses an unusable registry answer instead of reporting current: %s", async (_label, response) => {
+    // fetch is the network boundary; tests never reach the real registry.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response))
+    const result = await invoke(["update", "--json"])
+    expect(result.stdout).toBe("")
+    expect(Exit.isFailure(result.exit) && Cause.squash(result.exit.cause)).toMatchObject({
+      _tag: "/cli/Refused",
+      fault: "dependency",
+      code: "registry_unreachable"
+    })
+  })
+
   it("registers only the named agent and renders the complete result", async () => {
     const agent = Agents.agents[0]!
     const result = await invoke(["mcp", "add", "--agent", agent.id, "--json"])

