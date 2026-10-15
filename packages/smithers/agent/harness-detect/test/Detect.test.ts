@@ -80,6 +80,30 @@ describe("version output at the detection boundary", () => {
 })
 
 describe("the candidate dirs", () => {
+  test.each([0, 1, 2])("orders nvm component %i exactly beyond Number precision and range", (component) => {
+    const versions = [
+      "v9007199254740992.0.0",
+      "v9007199254740993.0.0",
+      `v${"9".repeat(310)}.0.0`,
+      `v${"9".repeat(311)}.0.0`
+    ].map((version) => {
+      const components = ["0", "0", "0"]
+      components[component] = version.slice(1).split(".")[0]!
+      return `v${components.join(".")}`
+    })
+    const h: HarnessHost = {
+      ...host(),
+      listDir: () => versions,
+      isFile: (path) => path.includes(".nvm") && path.endsWith("/codex")
+    }
+    const expected = [...versions].reverse().map((version) => join(HOME, ".nvm", "versions", "node", version, "bin"))
+    expect(harnessCandidateDirs(h).filter((dir) => dir.includes(".nvm"))).toEqual(expected)
+    expect(findBinary("codex", h)).toBe(join(expected[0]!, "codex"))
+    const descending = { ...h, listDir: () => [...versions].reverse() }
+    expect(harnessCandidateDirs(descending).filter((dir) => dir.includes(".nvm"))).toEqual(expected)
+    expect(findBinary("codex", descending)).toBe(join(expected[0]!, "codex"))
+  })
+
   test.each(["darwin", "win32"])("rejects path components in binary names on %s", (platform) => {
     const reads: Array<string> = []
     const h: HarnessHost = {

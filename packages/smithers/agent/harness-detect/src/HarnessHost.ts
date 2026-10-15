@@ -91,8 +91,9 @@ const NODE_DIR = /^v?(\d+)\.(\d+)\.(\d+)(?![\s\S])/
  */
 const compareSemver = (left: RegExpExecArray, right: RegExpExecArray): number => {
   for (let index = 1; index <= 3; index += 1) {
-    const difference = Number(left[index]) - Number(right[index])
-    if (difference !== 0) return difference
+    // Captures contain decimal digits; BigInt preserves components beyond Number's precision and range.
+    const difference = BigInt(left[index]!) - BigInt(right[index]!)
+    if (difference !== 0n) return difference > 0n ? 1 : -1
   }
   return 0
 }
