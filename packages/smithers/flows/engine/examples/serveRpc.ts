@@ -47,14 +47,15 @@ const prefix = "flows_" as const
  * runs start empty.
  *
  * @returns The two joined results, how many times the review step ran, and
- *   the declared error the rejected document failed with.
+ *   the error the rejected document failed with: its declared error, or
+ *   the conflict every execute operation can answer.
  * @since 1.0.0
  */
 export const runServeRpc = (): Promise<{
   readonly first: string
   readonly second: string
   readonly reviews: number
-  readonly rejection: string
+  readonly rejection: "rejected" | FlowEngine.ExecutionIdentityConflict
 }> => {
   let reviews = 0
 

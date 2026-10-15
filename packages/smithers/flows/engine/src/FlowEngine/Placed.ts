@@ -55,6 +55,14 @@ const transportRetry = Schedule.max([
 ])
 
 /**
+ * Asks `ask` again while the transport loses it, for {@link transportRetry}.
+ * Safe only for a request whose second ask under one id has the effect of
+ * the first.
+ */
+const retryTransport = <A, E, R>(ask: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.retry(ask, { while: isTransport, schedule: transportRetry })
+
+/**
  * Runs `use` against an RPC client for `flow`'s group. A transport failure
  * that outlives the caller's retries is a defect of this execution.
  */
@@ -116,7 +124,7 @@ export const callRemote = (
       const ask = request.discard === true
         ? Effect.as(client[operation.discard]!(wire), request.executionId)
         : client[operation.execute]!(wire)
-      return yield* Effect.retry(ask, { while: isTransport, schedule: transportRetry })
+      return yield* retryTransport(ask)
     }))
 
 /**
@@ -134,7 +142,9 @@ export const placeExecute = <Execute extends FlowRuntime.FlowRuntime["Service"][
         : callRemote(binding, flow, options))) as never
 
 /**
- * `resume` for a placed flow: here, or the remote engine's resume.
+ * `resume` for a placed flow: here, or the remote engine's resume. A lost
+ * transport is asked again as {@link callRemote} asks, because a second
+ * resume of one id re-drives the run the first one did.
  *
  * @category constructors
  * @since 1.0.0
@@ -153,15 +163,17 @@ export const placeResume = (
       : remote(binding, flow, (client, operation) =>
         Effect.flatMap(requestedAuthority(flow), (capabilityCeilings) =>
           Effect.orDie(
-            client[operation.resume]!({
+            retryTransport(client[operation.resume]!({
               executionId,
               capabilityCeilings,
               ...(options?.poll === undefined ? {} : { poll: options.poll })
-            })
+            }))
           ))))
 
 /**
- * `interrupt` for a placed flow: here, or the remote engine's interrupt.
+ * `interrupt` for a placed flow: here, or the remote engine's interrupt. A
+ * lost transport is asked again as {@link callRemote} asks, because a second
+ * cancellation request of one id changes nothing the first did not.
  *
  * @category constructors
  * @since 1.0.0
@@ -173,4 +185,4 @@ export const placeInterrupt = (
   Effect.flatMap(bindingOf(flow), (binding) =>
     binding._tag === "Here"
       ? inner(flow, executionId)
-      : remote(binding, flow, (client, operation) => client[operation.interrupt]!({ executionId })))
+      : remote(binding, flow, (client, operation) => retryTransport(client[operation.interrupt]!({ executionId }))))

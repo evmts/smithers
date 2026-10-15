@@ -66,6 +66,12 @@ registration was built with, and a run reclaimed after a restart has no call
 site. With no table every placement runs here, so the same flow file runs
 unchanged on a host that is the deploy machine.
 
+A placement the table does not name runs here too: a `target` missing from
+the table, a placement with no `target`, and every `Local` or `Client`
+placement. A misspelled target therefore runs the flow on this engine rather
+than failing. Pass a binding as the second argument,
+`Hosts.layer(table, fallback)`, to send those placements somewhere else.
+
 ## What the two engines hold
 
 - The caller's plan holds one leaf for the child, under the id
@@ -83,6 +89,9 @@ unchanged on a host that is the deploy machine.
   has or answers the result it recorded. After that it is a defect of the
   parent. An answer the client cannot read, such as a proxy's error page or a
   refused bearer, is not asked again and is a defect at once.
+- A direct `interrupt` or `resume` of a placed execution goes to the remote
+  engine and is asked again on the same terms, because asking twice under one
+  id has the effect of asking once.
 - The remote engine reads its own `Hosts` table, never the caller's. That table
   must run the flows it serves here: one that sends them back out loops.
 - Two callers that use the same execution id and payload share one remote run.

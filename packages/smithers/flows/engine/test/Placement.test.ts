@@ -476,6 +476,68 @@ describe("a placed .child()", () => {
     ))
 })
 
+/**
+ * Wraps `proxy` so the first request for `operation` loses its connection
+ * before it leaves, as a reset tunnel reports it. `asks` counts every attempt.
+ */
+const dropFirst = (operation: string, asks: Array<string>) => (proxy: Hosts.Binding): Hosts.Binding => ({
+  _tag: "Proxy",
+  connect: (group) =>
+    Effect.map(
+      (proxy as Extract<Hosts.Binding, { _tag: "Proxy" }>).connect(group),
+      (client) =>
+        new Proxy(client as Record<string, (request: object) => Effect.Effect<unknown, unknown>>, {
+          get: (target, name: string) => (request: object) =>
+            // Decided per attempt: the caller's retry runs this effect again.
+            Effect.suspend(() => {
+              if (name !== operation) return target[name]!(request)
+              asks.push(name)
+              return asks.length === 1 ? Effect.fail(transportLost) : target[name]!(request)
+            })
+        })
+    )
+})
+
+describe("a placed execution's own requests", () => {
+  it.live("asks the remote engine to interrupt again when the transport drops the first ask", () =>
+    withCrypto(
+      Effect.gen(function*() {
+        const started = yield* Deferred.make<void>()
+        let interrupted = false
+        const b = yield* engineB(() =>
+          Deferred.succeed(started, undefined).pipe(
+            Effect.andThen(Effect.never),
+            Effect.onInterrupt(() => Effect.sync(() => (interrupted = true)))
+          )
+        )
+        const asks: Array<string> = []
+        const a = yield* engineA(b, [], dropFirst("placement/releaseInterrupt", asks))
+        const running = yield* Effect.forkChild(
+          Release.execute({ version: "12.0" }, { executionId: "release-12" }).pipe(onA(a))
+        )
+        yield* Deferred.await(started)
+        const exit = yield* Effect.exit(runtimeOf(a as never).interrupt(Release, "release-12").pipe(onA(a)))
+        expect(exit).toEqual(Exit.void)
+        yield* Fiber.await(running)
+        expect(interrupted).toBe(true)
+        expect(asks).toEqual(["placement/releaseInterrupt", "placement/releaseInterrupt"])
+      }).pipe(Effect.scoped)
+    ), 30_000)
+
+  it.live("asks the remote engine to resume again when the transport drops the first ask", () =>
+    withCrypto(
+      Effect.gen(function*() {
+        const b = yield* engineB((version) => Effect.succeed(`released ${version}`))
+        const asks: Array<string> = []
+        const a = yield* engineA(b, [], dropFirst("placement/releaseResume", asks))
+        yield* Release.execute({ version: "13.0" }, { executionId: "release-13" }).pipe(onA(a))
+        const exit = yield* Effect.exit(runtimeOf(a as never).resume(Release, "release-13").pipe(onA(a)))
+        expect(exit).toEqual(Exit.void)
+        expect(asks).toEqual(["placement/releaseResume", "placement/releaseResume"])
+      }).pipe(Effect.scoped)
+    ), 30_000)
+})
+
 describe("Hosts.layer", () => {
   it.effect("binds a named target and runs every other placement here", () =>
     Effect.gen(function*() {
