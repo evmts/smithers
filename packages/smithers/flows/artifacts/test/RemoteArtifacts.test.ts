@@ -343,6 +343,10 @@ describe("uploads", () => {
     "https://user:secret@cache.example.com",
     "https://cache.example.com?tenant=one",
     "https://cache.example.com#fragment",
+    // An empty query or fragment parses as "" yet survives serialization, so
+    // the request path would land after the delimiter.
+    "https://cache.example.com/cache?",
+    "https://cache.example.com/cache#",
     "http://cache.localhost:8080",
     "not a URL"
   ])("refuses unsafe endpoint %s before sending credentials", (endpoint) =>

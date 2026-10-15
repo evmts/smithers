@@ -241,6 +241,17 @@ export const makeFileSystem = (
   const remove: Service["remove"] = Effect.fn("ArtifactSweep.remove")((digest, removeOptions) =>
     Effect.gen(function*() {
       const validated = yield* ArtifactStore.validateDigest(digest)
+      const bound = removeOptions?.ifUnmodifiedSinceMs
+      // NaN fails every comparison, so the fence below would read it as "not
+      // modified since" and delete a blob a concurrent put just freshened.
+      if (bound !== undefined && (typeof bound !== "number" || Number.isNaN(bound))) {
+        return yield* Effect.fail(
+          new ArtifactStore.ArtifactStoreError({
+            code: "invalid_configuration",
+            message: "invalid sweep option: ifUnmodifiedSinceMs"
+          })
+        )
+      }
       yield* Effect.annotateCurrentSpan({ digest: validated })
       const checkRoot = yield* ArtifactPath.guard(fs, directory).pipe(Effect.mapError(hostFailure))
       const checkParent = yield* ArtifactPath.guard(fs, `${directory}/${validated.slice(0, 2)}`).pipe(
@@ -265,7 +276,6 @@ export const makeFileSystem = (
           yield* checkRoot.pipe(Effect.mapError(hostFailure))
           yield* checkParent.pipe(Effect.mapError(hostFailure))
           const checkBlob = yield* ArtifactPath.guard(fs, path, "File").pipe(Effect.mapError(hostFailure))
-          const bound = removeOptions?.ifUnmodifiedSinceMs
           if (bound !== undefined) {
             const info = yield* fs.stat(path).pipe(Effect.option)
             // Already gone is a completed deletion, and an unmeasurable mtime is

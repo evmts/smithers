@@ -358,6 +358,17 @@ describe("fenced removal", () => {
       expect(host.files.has(blobPath)).toBe(false)
     }))
 
+  it.effect("refuses a NaN fence instead of deleting unconditionally", () =>
+    Effect.gen(function*() {
+      // Every comparison with NaN is false, so an unchecked NaN bound reads as
+      // "never modified since" and deletes a freshly re-referenced blob.
+      const host = memoryFs({ seed: { [blobPath]: artifact }, mtimes: { [blobPath]: 5_000 } })
+      const sweep = sweepFor(host)
+      const exit = yield* withCrypto(sweep.remove(digest, { ifUnmodifiedSinceMs: Number.NaN })).pipe(Effect.exit)
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(host.files.has(blobPath)).toBe(true)
+    }))
+
   it.effect("serializes a concurrent put with fenced deletion so the digest remains readable", () =>
     Effect.gen(function*() {
       const host = memoryFs({ seed: { [blobPath]: artifact }, mtimes: { [blobPath]: 1_000 } })

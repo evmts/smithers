@@ -376,7 +376,12 @@ export const make = (
     if (endpoint.protocol !== "https:" && !(endpoint.protocol === "http:" && loopback)) {
       return yield* Effect.fail(configurationFailure("remote artifact endpoint must use HTTPS"))
     }
-    if (endpoint.username !== "" || endpoint.password !== "" || endpoint.search !== "" || endpoint.hash !== "") {
+    // An empty query or fragment ("https://h/p?") parses as "" yet survives
+    // serialization, so the delimiter itself is refused in the href.
+    if (
+      endpoint.username !== "" || endpoint.password !== "" || endpoint.search !== "" || endpoint.hash !== "" ||
+      endpoint.href.includes("?") || endpoint.href.includes("#")
+    ) {
       return yield* Effect.fail(
         configurationFailure("remote artifact endpoint must not contain credentials, a query, or a fragment")
       )
