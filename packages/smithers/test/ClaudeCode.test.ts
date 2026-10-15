@@ -17,6 +17,8 @@ import * as Providers from "../src/Providers.ts"
 type Reply =
   | { readonly text: string }
   | { readonly error: Sdk.SDKAssistantMessageError }
+  /** A turn Claude Code reported as failed on its result, with the API status it saw. */
+  | { readonly reported: string; readonly status?: number }
   | { readonly hang: true }
 
 /** An async queue the fake session's messages are read from. */
@@ -70,20 +72,22 @@ const scripted = (answer: (turn: string) => Reply, hangInterrupt = false) => {
         const reply = answer(turn)
         if ("hang" in reply) return
         const id = `msg_${started.length}_${record.turns.length}`
+        const said = "text" in reply ? reply.text : "reported" in reply ? reply.reported : "API Error"
         emit({
           type: "assistant",
           parent_tool_use_id: null,
           ...("error" in reply ? { error: reply.error } : {}),
-          message: { id, content: [{ type: "text", text: "text" in reply ? reply.text : "API Error" }] }
+          message: { id, content: [{ type: "text", text: said }] }
         })
         emit({
           type: "result",
           subtype: "success",
           session_id: `sess_${started.length}`,
-          is_error: "error" in reply,
-          result: "text" in reply ? reply.text : "API Error",
+          is_error: "error" in reply || "reported" in reply,
+          result: said,
           stop_reason: "end_turn",
-          usage: { input_tokens: 10, cache_read_input_tokens: 90, cache_creation_input_tokens: 5, output_tokens: 7 }
+          usage: { input_tokens: 10, cache_read_input_tokens: 90, cache_creation_input_tokens: 5, output_tokens: 7 },
+          ...("reported" in reply && reply.status !== undefined ? { api_error_status: reply.status } : {})
         })
       }
     })()
@@ -317,29 +321,12 @@ describe("ClaudeCode.make", () => {
       [401, "authentication"]
     ] as const
   )("classifies a reported failure by its API status (%s), not by its words", async (status, code) => {
-    const start: ClaudeCode.Start = () => {
-      const messages = queue<Sdk.SDKMessage>()
-      messages.push({
-        type: "result",
-        subtype: "success",
-        session_id: "sess_1",
-        is_error: true,
-        result: limitProse,
-        stop_reason: "end_turn",
-        usage: {},
-        ...(status === undefined ? {} : { api_error_status: status })
-      } as unknown as Sdk.SDKMessage)
-      return {
-        [Symbol.asyncIterator]: messages.iterator,
-        interrupt: () => Promise.resolve(),
-        close: () => {}
-      }
-    }
-    const failure = await Effect.runPromise(
-      Effect.flip(Stream.runCollect(model(start).stream(request([user("task")]))))
-    )
+    const claude = scripted(() => ({ reported: limitProse, ...(status === undefined ? {} : { status }) }))
+    const seat = model(claude.start)
+    const failure = await Effect.runPromise(Effect.flip(Stream.runCollect(seat.stream(request([user("task")])))))
 
     expect(failure).toMatchObject({ code, ...(status === undefined ? {} : { httpStatus: status }) })
+    expect(claude.started[0]!.closed).toBe(true)
   })
 
   it("interrupts Claude Code, then closes the session, when the stream is interrupted", async () => {
