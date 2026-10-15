@@ -710,6 +710,26 @@ describe("publications", () => {
       expect(tier.calls).toEqual([])
     }))
 
+  it.effect("refuses compact JSON whose canonical entry exceeds the wire bound", () =>
+    Effect.gen(function*() {
+      // Each field fits independently; decimal expansion makes only the whole
+      // canonical envelope exceed the bound. The raw exponent form fits.
+      const compact = `[${Array.from({ length: 99_999 }, () => "1e20").join(",")}]`
+      const body = JSON.stringify(entry).replace("{\"ok\":true}", compact).replace(
+        "{\"tier\":\"sealed\"}",
+        compact
+      )
+      expect(new TextEncoder().encode(body).byteLength).toBeLessThan(RemoteCacheStore.maximumEntryBytes)
+      expect(new TextEncoder().encode(JSON.stringify(JSON.parse(body))).byteLength).toBeGreaterThan(
+        RemoteCacheStore.maximumEntryBytes
+      )
+      const tier = tierOf(() => new Response(body))
+      const store = yield* tier.store
+      const exit = yield* store.get(entry.keyDigest).pipe(Effect.exit)
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(errorOf(exit).code).toBe("decode_failed")
+    }))
+
   it.effect("PUTs back the entry a lookup returned at the combined node boundary", () =>
     Effect.gen(function*() {
       // Each field sits exactly at its own 100,000-node budget (the array

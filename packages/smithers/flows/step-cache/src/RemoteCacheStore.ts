@@ -411,7 +411,10 @@ export const make = (
           try: () => JSON.parse(decoder.decode(bytes)) as unknown,
           catch: (cause) => transportFailure("a lookup body", cause)
         })
+        // Compact numeric encodings can grow during canonicalization. Bound
+        // the same envelope that a later publication must encode.
         const entry = yield* CacheAdmission.snapshotEntry(body as CacheStore.CacheEntry).pipe(
+          Effect.tap((entry) => CacheAdmission.encodeEntryCanonical(entry)),
           Effect.mapError(() =>
             new CacheStore.CacheStoreError({
               code: "decode_failed",
@@ -455,9 +458,9 @@ export const make = (
         // whole entry under the envelope-aware policy, not the per-field one.
         // Each field keeps its own node and depth budget, the envelope adds
         // one nesting level and a fixed node allowance, and the whole-entry
-        // byte bound is enforced on the encoding itself. `get` admits an entry
-        // field-by-field under the same byte bound, so a publication never
-        // refuses an entry a lookup could have returned.
+        // byte bound is enforced on the encoding itself. `get` checks this
+        // same whole-entry encoding after admitting each field, so a
+        // publication never refuses an entry a lookup could have returned.
         const body = yield* CacheAdmission.encodeEntryCanonical(entry)
         const response = yield* send(
           "a publication",
