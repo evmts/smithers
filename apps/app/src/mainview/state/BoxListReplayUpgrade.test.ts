@@ -155,3 +155,53 @@ test("a saved row this build cannot parse names its collection and field, never 
   expect(failure.detail).toEqual({ stage: "snapshot-row-schema", collection: "cloudSessions", path: "expiresAt", code: "invalid_type" })
   expect(failure.message).not.toContain("private-login")
 })
+
+/*
+ * A saved row's `type` is only `z.string().min(1)`, and the refusals that read
+ * it run BEFORE replay checks it against the published transition set. A row
+ * this build never wrote can therefore carry arbitrary stored text there, so
+ * an undeclared name is masked the same way a saved record key is.
+ */
+test("a saved event whose type this build never published is masked, not printed", async () => {
+  const storage = memoryStorage()
+  const store = await open(storage)
+  await store.dispatch({ type: "composer.changed", actor: "user", draft: "Keep my conversation" }).isPersisted.promise
+  await store.compactEvents()
+  await store.dispatch({ type: "workspaces.loaded", actor: "system", workspaces: [] }).isPersisted.promise
+  const history = await store.eventHistory()
+  // Retyped but NOT resealed, so the refusal is the seal check, which reads `type` first.
+  const tampered = { ...history.events[0]!, type: "note.saved: private-owner/private-repo@secret-branch" }
+  await store.dispose?.(); opened.splice(opened.indexOf(store), 1)
+  const envelope = parseStorageEnvelope(storage.getItem(ENVELOPE_STORAGE_KEY)!)!
+  envelope.entries["smithers-mvp.app-events"] = JSON.stringify({
+    [`s:${tampered.id}`]: { versionKey: "fixture", data: tampered }
+  })
+  storage.setItem(ENVELOPE_STORAGE_KEY, JSON.stringify(envelope))
+
+  const refusal = await open(storage).then(() => undefined, (error: unknown) => error)
+  expect(refusal).toBeInstanceOf(AppEventIntegrityError)
+  const failure = refusal as AppEventIntegrityError
+  expect(failure.detail).toEqual({ stage: "event-seal", type: "*", sequence: tampered.sequence })
+  expect(failure.message).toContain("type=*")
+  expect(failure.message).not.toContain("private-owner")
+  expect(failure.message).not.toContain("secret-branch")
+})
+
+test("a published transition type still names itself in a refusal", async () => {
+  const storage = memoryStorage()
+  const store = await open(storage)
+  await store.compactEvents()
+  await store.dispatch({ type: "workspaces.loaded", actor: "system", workspaces: [] }).isPersisted.promise
+  const history = await store.eventHistory()
+  const tampered = { ...history.events[0]!, sequence: history.events[0]!.sequence + 1 }
+  await store.dispose?.(); opened.splice(opened.indexOf(store), 1)
+  const envelope = parseStorageEnvelope(storage.getItem(ENVELOPE_STORAGE_KEY)!)!
+  envelope.entries["smithers-mvp.app-events"] = JSON.stringify({
+    [`s:${tampered.id}`]: { versionKey: "fixture", data: tampered }
+  })
+  storage.setItem(ENVELOPE_STORAGE_KEY, JSON.stringify(envelope))
+
+  const refusal = await open(storage).then(() => undefined, (error: unknown) => error)
+  expect(refusal).toBeInstanceOf(AppEventIntegrityError)
+  expect((refusal as AppEventIntegrityError).detail?.type).toBe("workspaces.loaded")
+})

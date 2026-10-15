@@ -212,6 +212,16 @@ const schemaKeyNames = (schema: z.ZodType): ReadonlySet<string> => {
   return names
 }
 
+/*
+ * A saved row's `type` is only `z.string().min(1)`, so a tampered row — or one
+ * a build this old never published — can carry arbitrary stored text, and the
+ * refusals below read it BEFORE the replay checks it against the published
+ * set. The detail promises a published transition type, so anything this build
+ * does not declare becomes `*`, the same masking a saved record key gets.
+ */
+const declaredType = (type: string): string =>
+  type === "app.boot" || Object.hasOwn(APP_TRANSITION_TYPES, type) ? type : "*"
+
 /** Schema keys and the issue's own code only; a zod issue's message can quote a value. */
 const issueDetail = (schema: z.ZodType, error: z.ZodError): { readonly path: string; readonly code: string } | undefined => {
   const issue = error.issues[0]
@@ -330,7 +340,7 @@ export const prepareAppTransition = (snapshot: AppProjectionSnapshot, input: App
     for (const nested of Object.values(value)) removeCapabilities(nested)
   }
   removeCapabilities(transition)
-  try { return validateAppTransition(snapshot, transition) } catch { return fail("event", { stage: "transition-invalid", ...(typeof (transition as { type?: unknown }).type === "string" ? { type: (transition as { type: string }).type } : {}) }) }
+  try { return validateAppTransition(snapshot, transition) } catch { return fail("event", { stage: "transition-invalid", ...(typeof (transition as { type?: unknown }).type === "string" ? { type: declaredType((transition as { type: string }).type) } : {}) }) }
 }
 
 export interface AppStreamState {
@@ -406,12 +416,12 @@ const decodeRecord = (input: unknown): AppEventRecord => {
     return fail("format", { stage: "event-row-schema", ...issueDetail(AppEventRecordSchema, result.error) })
   }
   const event = result.data
-  if (event.hash !== sealedHash("event", event)) return fail("event", { stage: "event-seal", type: event.type, sequence: event.sequence })
+  if (event.hash !== sealedHash("event", event)) return fail("event", { stage: "event-seal", type: declaredType(event.type), sequence: event.sequence })
   return event
 }
 
 const replayEvent = (previous: AppStreamState, event: AppEventRecord): AppStreamState => {
-  const at = { type: event.type, sequence: event.sequence }
+  const at = { type: declaredType(event.type), sequence: event.sequence }
   if (event.streamId !== previous.head.streamId) return fail("scope", { stage: "replay-stream-id", ...at })
   if (event.sequence !== previous.head.sequence + 1) return fail("gap", { stage: "replay-sequence", ...at })
   if (event.previousEventHash !== previous.head.eventHash || event.previousStateHash !== previous.head.stateHash) return fail("conflict", { stage: "replay-chain", ...at })
@@ -468,12 +478,12 @@ export const replayAppEvents = (
   const byId = new Map<string, string>()
   for (const raw of events) {
     const event = decodeRecord(raw)
-    if (event.streamId !== expected.streamId) return fail("scope", { stage: "replay-event-stream-id", type: event.type, sequence: event.sequence })
-    if (event.sequence > expected.sequence) return fail("head", { stage: "replay-event-past-head", type: event.type, sequence: event.sequence })
+    if (event.streamId !== expected.streamId) return fail("scope", { stage: "replay-event-stream-id", type: declaredType(event.type), sequence: event.sequence })
+    if (event.sequence > expected.sequence) return fail("head", { stage: "replay-event-past-head", type: declaredType(event.type), sequence: event.sequence })
     const prior = bySequence.get(event.sequence)
-    if (prior !== undefined && prior.hash !== event.hash) return fail("conflict", { stage: "replay-duplicate-sequence", type: event.type, sequence: event.sequence })
+    if (prior !== undefined && prior.hash !== event.hash) return fail("conflict", { stage: "replay-duplicate-sequence", type: declaredType(event.type), sequence: event.sequence })
     const sameId = byId.get(event.id)
-    if (sameId !== undefined && sameId !== event.hash) return fail("conflict", { stage: "replay-duplicate-id", type: event.type, sequence: event.sequence })
+    if (sameId !== undefined && sameId !== event.hash) return fail("conflict", { stage: "replay-duplicate-id", type: declaredType(event.type), sequence: event.sequence })
     bySequence.set(event.sequence, event)
     byId.set(event.id, event.hash)
   }
