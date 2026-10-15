@@ -1,13 +1,15 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test"
-import { spawnSync } from "node:child_process"
+import { spawnSync } from "../../../scripts/test-child"
 import { terminalSkillProof } from "./terminal-skill-proof"
 
 /*
  * Every case runs the proof script in a real CPython, one to six launches per test, so the budget is the launches'
- * own rather than bun:test's 5 s default. On a loaded runner a launch costs far more than the ~30 ms it costs idle,
- * and the default read these real launches as hangs (gate 1, runs 38556009956 and 38558094099). Each launch is also
- * bounded in turn: a wedged interpreter is killed and named, instead of silently spending the test's budget and
- * outliving it.
+ * own rather than bun:test's 5 s default (gate 1, runs 38556009956 and 38558094099). The launches are supervised
+ * from Node rather than taken synchronously from Bun, which can answer for a child that already finished (#3763):
+ * on gate 1 (run 38700479725, job 116307187784) four launches whose proof had in fact passed were named ETIMEDOUT
+ * at exactly 20 s, while this file's twelve others cost ~30 ms each, so the budget was not short. Each launch is
+ * still bounded in turn: a wedged interpreter is killed with its group and named, instead of silently spending the
+ * test's budget and outliving it.
  */
 setDefaultTimeout(60_000)
 const LAUNCH_BUDGET_MS = 20_000
@@ -19,7 +21,7 @@ const transcript = (command: string, content: unknown, isError: boolean) => [
 ]
 const run = (messages: unknown[], expected = ["todo new"], confirmation: string | undefined = "todo new", refusal?: { code: string; message: string }) => {
   const result = spawnSync("/usr/bin/python3", ["-c", terminalSkillProof(expected, refusal ? undefined : confirmation, refusal)], {
-    input: messages.map(message => JSON.stringify(message)).join("\n"), encoding: "utf8", timeout: LAUNCH_BUDGET_MS, killSignal: "SIGKILL"
+    input: messages.map(message => JSON.stringify(message)).join("\n"), encoding: "utf8", timeout: LAUNCH_BUDGET_MS
   })
   // A launch that never finishes is the proof failing, not the receipt passing: name it rather than leave the
   // caller reading a status of null.
@@ -84,4 +86,22 @@ describe("installed Claude skill execution receipts", () => {
     messages[2] = { type: "result", subtype: "error_during_execution", is_error: true }
     expect(run(messages).status).not.toBe(0)
   })
+})
+
+/*
+ * The launch itself, with no proof script. Bun's synchronous spawn can answer for a child that already
+ * finished (#3763): on gate 1 (run 38700479725, job 116307187784) it named ETIMEDOUT at exactly 20 s for
+ * the four launches whose proof had in fact passed, while this file's twelve others cost ~30 ms each.
+ * Here the leader exits at once and leaves a descendant holding its pipes, which answers deterministically
+ * what that race answers by chance: a launch the budget kills reports no exit status, so a killed launch can
+ * never read as a proof that passed or as one that refused. scripts/test-child owns the kill and the bound;
+ * this case holds the launcher above to them, and goes red again on an unsupervised synchronous launch.
+ */
+test("a launch the budget kills reports no exit status", () => {
+  const leaks = "import subprocess,sys\nsubprocess.Popen([sys.executable,'-c','import time;time.sleep(30)'],stdout=1,stderr=2)\nprint('left')"
+  const started = Date.now()
+  const result = spawnSync("/usr/bin/python3", ["-c", leaks], { encoding: "utf8", timeout: 500 })
+  expect((result.error as NodeJS.ErrnoException | undefined)?.code).toBe("ETIMEDOUT")
+  expect(result.status).toBeNull()
+  expect(Date.now() - started).toBeLessThan(LAUNCH_BUDGET_MS)
 })
