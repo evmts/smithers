@@ -187,12 +187,15 @@ native filesystem watchers are not a prerequisite. A FIFO holds the child withou
 sleeps.
 
 The 500 ms regression observes the real child's cleanup signal: no `SIGKILL`
-at 499 ms, then `SIGKILL` and the typed timeout error at 500 ms, with the child
-reaped before retrying. A pending layer fiber alone cannot prove the timeout
-is still pending because an expired probe may be awaiting child cleanup. The
-same assertions must reject a 1 ms budget supplied through `StartupTimeoutMs`;
-the negative control checks that exact assertion failure. The production
-5000 ms startup deadline is unchanged.
+at 499 ms, then `SIGKILL` at 500 ms. The layer retries a timed out probe once,
+so the second child gets its own 500 ms and is killed the same way before the
+typed timeout error, with both children reaped before a later layer retries. A
+pending layer fiber alone cannot prove the timeout is still pending because an
+expired probe may be awaiting child cleanup. The same assertions must reject a
+1 ms budget supplied through `StartupTimeoutMs`; the negative control checks
+that exact assertion failure. The production 5000 ms startup deadline is
+unchanged. `NodeJjSpawner.test.ts` drives the retry with an injected spawner
+that reports `TimedOut`, refuses, or never answers the first probe.
 
 The live repository-lock fixture supplies a 60-second startup budget through
 `StartupTimeoutMs`, matching the existing test watchdog. Those cases assert lock

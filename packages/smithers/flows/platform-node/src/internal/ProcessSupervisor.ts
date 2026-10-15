@@ -74,7 +74,10 @@ export const failure = (method: string, command: string, cause: unknown): Platfo
     EISDIR: "BadResource",
     ENOTDIR: "BadResource",
     ELOOP: "BadResource",
-    EBUSY: "Busy"
+    EBUSY: "Busy",
+    // Not an errno: the supervisor's own startup bound, typed so a caller can
+    // retry a start a loaded machine was too busy to make in time.
+    startup_timeout: "TimedOut"
   }
   return PlatformError.systemError({
     _tag: tags[error.code ?? ""] ?? "Unknown",
@@ -144,14 +147,20 @@ const promise = <A>() => {
 const wait = <A>(value: Promise<A>, method: string, command: string) =>
   Effect.tryPromise({ try: () => value, catch: (cause) => failure(method, command, cause) })
 
+// Every `spawn` bound waits on a fresh runtime process or a local socket, so a
+// miss there means the machine was too busy, not that the target is broken.
 const bounded = <A, E, R>(effect: Effect.Effect<A, E, R>, millis: number, method: string, command: string) =>
   effect.pipe(
     Effect.timeoutOrElse({
       duration: millis,
       orElse: () =>
-        Effect.fail(
-          failure(method, command, processFault("supervisor_timeout", `Process supervisor ${method} timed out`))
-        )
+        Effect.fail(failure(
+          method,
+          command,
+          method === "spawn"
+            ? processFault("startup_timeout", `The machine was too busy to start the process within ${millis / 1000} s`)
+            : processFault("supervisor_timeout", `Process supervisor ${method} timed out`)
+        ))
     }),
     Effect.provideService(Clock.Clock, processClock)
   )

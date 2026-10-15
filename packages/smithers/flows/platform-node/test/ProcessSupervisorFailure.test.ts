@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import * as ContainedSpawner from "@smthrs/kernel/ContainedSpawner"
 import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
 import { Cause, Effect, Exit, Fiber, Layer, Sink, Stream } from "effect"
+import type * as PlatformError from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, ExitCode, make, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
 import { EventEmitter, once } from "node:events"
@@ -507,7 +508,13 @@ describe("failed process preparation", () => {
       expect(Exit.isFailure(result.outcome)).toBe(true)
       if (Exit.isFailure(result.outcome)) {
         expect(Cause.hasDies(result.outcome.cause)).toBe(false)
-        expect(String(result.outcome.cause)).toContain("spawn timed out")
+        // A loaded machine starts the owner late; the caller reads a typed
+        // timeout it can retry, not an unknown failure.
+        const error = Cause.squash(result.outcome.cause) as PlatformError.PlatformError
+        expect(error.message).toBe(
+          "TimedOut: ChildProcess.spawn (literal): The machine was too busy to start the process within 5 s"
+        )
+        expect(error.reason).toMatchObject({ _tag: "TimedOut", method: "spawn", cause: { code: "startup_timeout" } })
       }
       expect(Date.now() - started).toBeGreaterThanOrEqual(4900)
       expect(Date.now() - started).toBeLessThan(8000)

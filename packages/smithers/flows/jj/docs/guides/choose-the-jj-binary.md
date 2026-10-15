@@ -43,11 +43,14 @@ without a repository cwd.
 
 ## Bound startup
 
-Node and Bun layers wait at most 5000 ms for `jj --version`, then interrupt the
-probe and await cleanup. A timeout fails construction with `JjError`,
-`code: "unknown"`, `method: "version"`, and `cause.code: "ETIMEDOUT"`. The
-command and message identify the resolved executable. Contained spawner
-cleanup can add its shutdown grace period to this budget.
+Node and Bun layers wait up to 5000 ms for `jj --version`, then interrupt the
+probe and await cleanup. A loaded machine can miss that budget, or the
+spawner's own startup bound (a `PlatformError` tagged `TimedOut`), so either
+timeout is retried once with a fresh budget. A second timeout fails
+construction with `JjError`, `code: "unknown"`, `method: "version"`, and
+`cause.code: "ETIMEDOUT"`. The command and message identify the resolved
+executable. Contained spawner cleanup can add its shutdown grace period to each
+attempt.
 
 Provide `NodeJj.StartupTimeoutMs` to override the budget for one layer:
 

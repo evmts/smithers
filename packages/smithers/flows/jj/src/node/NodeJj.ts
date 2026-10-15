@@ -65,7 +65,9 @@ const workspaceCleanupTimeoutMs = 5_000
 export const minimumVersion = "0.39.0"
 
 /**
- * Milliseconds a layer waits for its startup version probe, before cleanup.
+ * Milliseconds a layer waits for each startup version probe attempt, before
+ * cleanup. A probe that times out, or that the spawner reports `TimedOut`
+ * starting, is retried once, so a layer waits at most twice this long.
  * Provide this reference to a layer to override the 5000 ms default. Values
  * must be positive, finite, and within the host timer range (2147483647 ms).
  *
@@ -789,7 +791,16 @@ const viaSpawner = (spawner: ChildProcessSpawner["Service"]) => (binary: Binary)
         Effect.fail(
           isJjError(error)
             ? error
-            : spawnFailure(method, args, cwd, hint, error, error.reason._tag === "NotFound")
+            : spawnFailure(
+              method,
+              args,
+              cwd,
+              hint,
+              // `TimedOut` is `ETIMEDOUT` with a different name on it, as
+              // `NotFound` is `ENOENT`: the startup probe retries on that code.
+              error.reason._tag === "TimedOut" ? { ...jjErrorCause(error), code: "ETIMEDOUT" } : error,
+              error.reason._tag === "NotFound"
+            )
         )
       ),
       Effect.flatMap((output) => settle(method, args, output))
@@ -1133,6 +1144,9 @@ const operations = (spawn: Run, repositoryRoot?: string) => {
   return { snapshot, restore, diff, workspaceAdd, workspaceForget, status, root, revert, opRestore }
 }
 
+/** A probe that missed a startup bound: the layer's own, or the spawner's. */
+const timedOut = (error: JjError): boolean => error.cause?.code === "ETIMEDOUT"
+
 // Cache only within the runner that performed the check. A direct probe cannot
 // establish what a contained spawner can execute at the same absolute path.
 const versionProbes = new Map<string, Effect.Effect<string, JjError>>()
@@ -1183,43 +1197,48 @@ const checkedOperations = (
       probes = cached ?? new Map()
       if (cached === undefined) spawnerVersionProbes.set(spawner, probes)
     }
-    let probe = probes.get(binary.path)
-    if (probe === undefined) {
-      const cached: Effect.Effect<string, JjError> = yield* Effect.cached(
-        // The repository may not exist until runtime storage creates it.
-        run("version", ["--version"]).pipe(
-          Effect.flatMap(requireMinimumVersion),
-          // Only a supported version is remembered. Interruption produced no
-          // result, and a refusal is one the operator repairs while the host
-          // runs: `chmod +x` (the permission hint's own advice) or upgrading jj
-          // in place must take effect on the next layer build.
-          Effect.onError(() =>
-            Effect.sync(() => {
-              if (probes.get(binary.path) === cached) probes.delete(binary.path)
-            })
+    const attempt = Effect.gen(function*() {
+      let probe = probes.get(binary.path)
+      if (probe === undefined) {
+        const cached: Effect.Effect<string, JjError> = yield* Effect.cached(
+          // The repository may not exist until runtime storage creates it.
+          run("version", ["--version"]).pipe(
+            Effect.flatMap(requireMinimumVersion),
+            // Only a supported version is remembered. Interruption produced no
+            // result, and a refusal is one the operator repairs while the host
+            // runs: `chmod +x` (the permission hint's own advice) or upgrading jj
+            // in place must take effect on the next layer build.
+            Effect.onError(() =>
+              Effect.sync(() => {
+                if (probes.get(binary.path) === cached) probes.delete(binary.path)
+              })
+            )
           )
         )
-      )
-      probe = cached
-      probes.set(binary.path, probe)
-    }
-    // Bound each layer's wait, including a wait on another layer's cached
-    // probe. Interrupting the runner cleans it up and invalidates its cache;
-    // a timeout is never cached as a version result.
-    yield* probe.pipe(Effect.timeoutOrElse({
-      duration: startupTimeoutMs,
-      orElse: () =>
-        Effect.fail(
-          new JjError({
-            code: "unknown",
-            module: MODULE,
-            method: "version",
-            command: `${binary.path} --version`,
-            message: `jj version: startup probe for ${binary.path} timed out after ${startupTimeoutMs}ms`,
-            cause: { name: "TimeoutError", code: "ETIMEDOUT", message: "jj startup version probe timed out" }
-          })
-        )
-    }))
+        probe = cached
+        probes.set(binary.path, probe)
+      }
+      // Bound each layer's wait, including a wait on another layer's cached
+      // probe. Interrupting the runner cleans it up and invalidates its cache;
+      // a timeout is never cached as a version result.
+      yield* probe.pipe(Effect.timeoutOrElse({
+        duration: startupTimeoutMs,
+        orElse: () =>
+          Effect.fail(
+            new JjError({
+              code: "unknown",
+              module: MODULE,
+              method: "version",
+              command: `${binary.path} --version`,
+              message: `jj version: startup probe for ${binary.path} timed out after ${startupTimeoutMs}ms`,
+              cause: { name: "TimeoutError", code: "ETIMEDOUT", message: "jj startup version probe timed out" }
+            })
+          )
+      }))
+    })
+    // A loaded machine can miss either startup bound, and a second attempt
+    // usually succeeds. One retry keeps a jj that never answers bounded.
+    yield* attempt.pipe(Effect.retry({ times: 1, while: timedOut }))
     return operations(run, repositoryRoot)
   })
 

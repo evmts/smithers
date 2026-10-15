@@ -11,6 +11,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
+import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as PlatformError from "effect/PlatformError"
 import type * as EffectChildProcess from "effect/process/ChildProcess"
@@ -23,6 +24,7 @@ import {
 } from "effect/process/ChildProcessSpawner"
 import * as Sink from "effect/Sink"
 import * as Stream from "effect/Stream"
+import * as TestClock from "effect/testing/TestClock"
 import { execFileSync, spawn } from "node:child_process"
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -169,6 +171,55 @@ const missingBinary = (allowVersion = false) =>
             PlatformError.systemError({ _tag: "NotFound", module: "ChildProcess", method: "spawn", description: "jj" })
           )
       ))
+  ).pipe(Layer.provide(realSpawner))
+
+/** What `@smthrs/platform-node`'s supervisor reports when a loaded machine starts a process too late. */
+const busy = (command: string) =>
+  PlatformError.systemError({
+    _tag: "TimedOut",
+    module: "ChildProcess",
+    method: "spawn",
+    pathOrDescriptor: command,
+    description: "The machine was too busy to start the process within 5 s"
+  })
+
+/**
+ * A host spawner that answers the version probes in order with `answers`, then
+ * spawns for real once they run out. `probes` counts every version spawn.
+ */
+const versionAnswers = (
+  answers: ReadonlyArray<"busy" | "denied" | "hang">,
+  probes: { count: number }
+) =>
+  Layer.effect(
+    ChildProcessSpawner,
+    Effect.map(ChildProcessSpawner, (real) =>
+      makeSpawner((command) => {
+        const standard = command as EffectChildProcess.StandardCommand
+        if (!standard.args.includes("--version")) return real.spawn(command)
+        const answer = answers[probes.count++]
+        if (answer === undefined) return real.spawn(command)
+        if (answer === "busy") return Effect.fail(busy(standard.command))
+        if (answer === "denied") {
+          return Effect.fail(
+            PlatformError.systemError({ _tag: "PermissionDenied", module: "ChildProcess", method: "spawn" })
+          )
+        }
+        // A process that never starts answering: only the probe's own budget ends it.
+        return Effect.succeed(makeHandle({
+          pid: ProcessId(0),
+          exitCode: Effect.never,
+          isRunning: Effect.succeed(true),
+          kill: () => Effect.void,
+          stdin: Sink.drain,
+          stdout: Stream.never,
+          stderr: Stream.never,
+          all: Stream.never,
+          getInputFd: () => Sink.drain,
+          getOutputFd: () => Stream.never,
+          unref: Effect.succeed(Effect.void)
+        }))
+      }))
   ).pipe(Layer.provide(realSpawner))
 
 const run = <A, E>(effect: Effect.Effect<A, E, Jj>, spawner: Layer.Layer<ChildProcessSpawner>) =>
@@ -486,6 +537,52 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
       ))
       expect(error.code).toBe("unknown")
       expect(error.message).toContain("jj status:")
+    }))
+})
+
+describe.skipIf(process.platform === "win32")("NodeJj startup probe on a busy machine", () => {
+  const status = Effect.flatMap(Jj, (jj) => jj.status())
+
+  it.effect("retries the version probe once when the spawner was too busy to start it", () =>
+    Effect.gen(function*() {
+      const probes = { count: 0 }
+      expect(yield* run(status, versionAnswers(["busy"], probes))).toBe("the working copy is clean\n")
+      expect(probes.count).toBe(2)
+    }))
+
+  it.effect("fails typed when the retry is too busy as well", () =>
+    Effect.gen(function*() {
+      const probes = { count: 0 }
+      const error = yield* Effect.flip(run(status, versionAnswers(["busy", "busy"], probes)))
+      expect(error).toMatchObject({ code: "unknown", method: "version", cause: { code: "ETIMEDOUT" } })
+      expect(error.message).toMatch(
+        /^jj version: TimedOut: ChildProcess\.spawn \(\S+\/jj\): The machine was too busy to start the process within 5 s$/
+      )
+      expect(probes.count).toBe(2)
+    }))
+
+  it.effect("does not retry a version probe the spawner refused for another reason", () =>
+    Effect.gen(function*() {
+      const probes = { count: 0 }
+      const error = yield* Effect.flip(run(status, versionAnswers(["denied"], probes)))
+      expect(error).toMatchObject({ code: "unknown", method: "version" })
+      expect(probes.count).toBe(1)
+    }))
+
+  it.effect("gives a probe that outran its budget one more attempt", () =>
+    Effect.gen(function*() {
+      const probes = { count: 0 }
+      const building = yield* Effect.forkChild(
+        Effect.provide(status, Layer.provide(NodeJj.layerSpawnerAt(directory), versionAnswers(["hang"], probes))).pipe(
+          Effect.provideService(NodeJj.StartupTimeoutMs, 500)
+        )
+      )
+      while (probes.count === 0) yield* Effect.yieldNow
+      yield* TestClock.adjust(499)
+      expect(probes.count).toBe(1)
+      yield* TestClock.adjust(1)
+      expect(yield* Fiber.join(building)).toBe("the working copy is clean\n")
+      expect(probes.count).toBe(2)
     }))
 })
 

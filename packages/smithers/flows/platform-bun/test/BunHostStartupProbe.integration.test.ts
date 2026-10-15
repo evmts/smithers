@@ -30,7 +30,8 @@ describe.skipIf(process.platform === "win32")("BunHost startup probe budget", ()
       process.env.SMITHERS_JJ_PATH = binary
       try {
         const budget = name === "default" ? 5_000 : 3_000
-        const watchdog = budget + 3_000
+        // A timed out probe is retried once with a fresh budget.
+        const watchdog = 2 * budget + 3_000
         const host = build(root).pipe(
           Layer.provide(ProcessLedger.layerMemory({ hostId: `startup-${name}`, ownerPid: process.pid }))
         )
@@ -46,7 +47,7 @@ describe.skipIf(process.platform === "win32")("BunHost startup probe budget", ()
         expect(error).toMatchObject({ command: `${binary} --version` })
         expect(error.message).toContain(binary)
         expect(error.message).toContain(`${budget}ms`)
-        expect(Date.now() - start).toBeGreaterThanOrEqual(budget - 100)
+        expect(Date.now() - start).toBeGreaterThanOrEqual(2 * budget - 100)
         expect(Date.now() - start).toBeLessThan(watchdog)
         const pid = Number(readFileSync(pidFile, "utf8").trim())
         expect(pid).toBeGreaterThan(0)

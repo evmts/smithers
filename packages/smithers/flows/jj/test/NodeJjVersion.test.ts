@@ -79,7 +79,7 @@ exec /bin/cat hold
 `
       )
       const kills: Array<NodeJS.Signals | number | undefined> = []
-      vi.mocked(spawn).mockImplementationOnce((...args) => {
+      vi.mocked(spawn).mockImplementation((...args) => {
         const child = actualChildProcess.spawn(...args)
         const kill = child.kill.bind(child)
         child.kill = (signal) => {
@@ -92,7 +92,10 @@ exec /bin/cat hold
         for (;;) {
           signal.throwIfAborted()
           try {
-            return Number(await readFile(join(root, "pid"), "utf8"))
+            const pid = Number(await readFile(join(root, "pid"), "utf8"))
+            // The next probe publishes its own pid; wait for that one next time.
+            await rm(join(root, "pid"))
+            return pid
           } catch (cause) {
             if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause
           }
@@ -106,6 +109,7 @@ exec /bin/cat hold
 
 // Both the real deadline regression and its early-budget negative control use
 // these exact assertions. A pending fiber alone can already be in cleanup.
+// A timed out probe is retried once, and each attempt gets the whole budget.
 const verifyStartupBudget = (budget: number) =>
   withVersion("jj 0.39.0", (root) =>
     Effect.gen(function*() {
@@ -120,13 +124,17 @@ const verifyStartupBudget = (budget: number) =>
           ),
           (building) =>
             Effect.gen(function*() {
-              const pid = yield* ready
-              expect(pid).toBeGreaterThan(0)
-              yield* TestClock.adjust(499)
-              expect(kills, "startup probe cleanup before 500 ms").toEqual([])
-              expect(building.pollUnsafe()).toBeUndefined()
-              yield* TestClock.adjust(1)
-              expect(kills).toEqual(["SIGKILL"])
+              const pids: Array<number> = []
+              for (const earlier of [[], ["SIGKILL"]]) {
+                const pid = yield* ready
+                expect(pid).toBeGreaterThan(0)
+                pids.push(pid)
+                yield* TestClock.adjust(499)
+                expect(kills, "startup probe cleanup before 500 ms").toEqual(earlier)
+                expect(building.pollUnsafe()).toBeUndefined()
+                yield* TestClock.adjust(1)
+                expect(kills).toEqual([...earlier, "SIGKILL"])
+              }
               const error = yield* Fiber.join(building)
               expect(error).toMatchObject({
                 code: "unknown",
@@ -135,12 +143,14 @@ const verifyStartupBudget = (budget: number) =>
                 command: `${binary} --version`,
                 cause: { name: "TimeoutError", code: "ETIMEDOUT" }
               })
-              expect(() => process.kill(pid, 0)).toThrow()
+              for (const pid of pids) expect(() => process.kill(pid, 0)).toThrow()
               yield* Effect.promise(() => writeFile(binary, original))
               yield* Effect.provide(Jj, NodeJj.layerAt(root)).pipe(
                 Effect.provideService(NodeJj.StartupTimeoutMs, 2_000)
               )
-              expect(yield* Effect.promise(() => readFile(join(root, "probes"), "utf8"))).toBe("probe\nprobe\n")
+              expect(yield* Effect.promise(() => readFile(join(root, "probes"), "utf8"))).toBe(
+                "probe\nprobe\nprobe\n"
+              )
             }),
           // A rejected negative control must reap its real child as well.
           (building) => Fiber.interrupt(building)
@@ -320,7 +330,7 @@ describe("NodeJj version requirement", () => {
           }))
       })))
 
-  it.effect("retries a timed out probe with a new layer's budget", () => verifyStartupBudget(500))
+  it.effect("retries a timed out probe once, then with a new layer's budget", () => verifyStartupBudget(500))
 
   it.effect("rejects a 1 ms startup budget against the 500 ms deadline", () =>
     Effect.gen(function*() {
@@ -330,7 +340,8 @@ describe("NodeJj version requirement", () => {
         expect(Cause.squash(exit.cause)).toMatchObject({
           name: "AssertionError",
           message: expect.stringContaining("startup probe cleanup before 500 ms"),
-          actual: ["SIGKILL"],
+          // The retry may have missed its 1 ms budget as well by then.
+          actual: expect.arrayContaining(["SIGKILL"]),
           expected: []
         })
       }
