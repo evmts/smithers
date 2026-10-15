@@ -178,6 +178,44 @@ apply. To isolate code you do not trust, run it as a child flow with
 `SandboxedFlow` on a container provider; see
 [Run a child flow in a sandbox](./guides/run-a-child-flow-in-a-sandbox.md).
 
+## undeclared_read, undeclared_write, missing_declared_output: a step broke its file boundary
+
+**Symptom.** A step with a `hard` `fileBoundary` fails, and the run's cause is
+one defect that names the refusal, its code and the paths:
+
+```text
+Error: {"_tag":"@smthrs/engine-store/UndeclaredRead","code":"undeclared_read","paths":["note.txt"],"diffIdentity":"key1_c429630f…"}
+```
+
+On 1.0.0-rc.8 and earlier the same refusal printed
+`SchemaError: Expected never at ["cause"]["failures"][0]["error"]` without the
+paths, after a log line that starts `A recorded action outcome does not match
+the action's declared schemas`.
+
+**Cause.** The engine compares what the step did with what it declared:
+
+| `code`                       | What the step did                                     | `paths` names          |
+| ---------------------------- | ----------------------------------------------------- | ---------------------- |
+| `undeclared_read`            | Read a file its `readSet` does not declare.           | The files it read.     |
+| `undeclared_write`           | Wrote a file its `writeSet` does not declare.         | The files it wrote.    |
+| `missing_declared_output`    | Finished without writing a file its `writeSet` names. | The declared files.    |
+| `surviving_declared_removal` | Finished with a file its `removes` names still there. | The declared removals. |
+
+An undeclared read or write is refused before copy-back, so the workspace
+keeps none of the step's writes. The refusal is the engine's verdict on the
+step, not an error the action declared, so it arrives as a defect and never
+through the action's `error` schema. A retry policy does not retry it, and a
+replay of the execution answers the same defect.
+
+Before 1.0.0-rc.7, `missing_declared_output` could also name a file the step did
+write, when the process working directory was not `workspaceRoot`. Upgrade.
+
+**Fix.** Declare the path in `readSet` or `writeSet`, or write the file the step
+declares. To act on a refusal in code, decode the defect with its class, for
+example `Schema.decodeUnknownOption(EngineStore.StepSandbox.UndeclaredRead)(defect)`.
+Each refusal has its own section in the
+[engine-store troubleshooting page](../engine-store/docs/troubleshooting.md).
+
 ## The engine takes snapshots even though I denied jj
 
 **Symptom.** A compensable action still records a Jujutsu pre-image after

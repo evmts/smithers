@@ -73,6 +73,28 @@ the declaration, or make the step honest about its nondeterminism by declaring
 it. `Inconsistency.layerTolerant(owner)` preserves the first-recorded row and
 continues, if you need to keep running while you investigate.
 
+## A boundary refusal in a flow run
+
+**What happened.** `UndeclaredRead`, `UndeclaredWrite`, `MissingDeclaredOutput`,
+`SurvivingDeclaredRemoval`, `UnsupportedBoundary`, `BoundaryCorruption` and
+`MissingArtifact` are the boundary's verdict on a step, not errors the action
+declared. `EngineStore` settles the action with the refusal's encoded fields as
+a defect, so the action's `error` schema never decodes it and a retry policy
+never retries it. The live attempt and a replay of its `failed` row settle the
+same value, and the run prints it as:
+
+```text
+Error: {"_tag":"@smthrs/engine-store/UndeclaredRead","code":"undeclared_read","paths":["note.txt"],"diffIdentity":"key1_c429630f…"}
+```
+
+On 1.0.0-rc.8 and earlier the refusal stayed in the action's typed error
+channel, and an action whose `error` schema could not decode it failed with
+`SchemaError: Expected never at ["cause"]["failures"][0]["error"]` instead.
+
+**What to change.** Read the tag's section below. To act on a refusal in code,
+decode the defect with its class, for example
+`Schema.decodeUnknownOption(StepSandbox.UndeclaredRead)(defect)`.
+
 ## UndeclaredWrite
 
 **What happened.** A hard-mode step wrote outside its declared write set. The

@@ -24,6 +24,7 @@ import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
+import * as Result from "effect/Result"
 import type * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
@@ -174,6 +175,35 @@ type PublicRequirements =
 type Requirements = PublicRequirements | EngineJj.EngineJj
 
 const isBoundaryMetadata = Schema.is(FileBoundary)
+
+/**
+ * What the file boundary refuses a sealed attempt with: `StepSandbox` and
+ * `StepBoundary` failures for a step that broke its declaration or a host that
+ * cannot honour one. None of them is a failure the action declared.
+ */
+const BoundaryRefusal = Schema.Union([
+  StepSandbox.UndeclaredRead,
+  StepBoundary.UndeclaredWrite,
+  StepBoundary.MissingDeclaredOutput,
+  StepBoundary.SurvivingDeclaredRemoval,
+  StepBoundary.UnsupportedBoundary,
+  StepBoundary.BoundaryCorruption,
+  StepBoundary.MissingArtifact
+])
+
+/**
+ * Matches a boundary refusal and answers its encoded tagged fields (issue
+ * #4019). A live refusal is a class instance; a replayed one is the fields its
+ * failed attempt row persisted, decoded first so both settle as one value.
+ */
+const boundaryRefusal = (error: unknown): Result.Result<unknown, unknown> => {
+  const encoded = Option.orElse(
+    Schema.encodeUnknownOption(BoundaryRefusal)(error),
+    () =>
+      Option.flatMap(Schema.decodeUnknownOption(BoundaryRefusal)(error), Schema.encodeUnknownOption(BoundaryRefusal))
+  )
+  return Option.isSome(encoded) ? Result.succeed(encoded.value) : Result.fail(error)
+}
 
 /**
  * Constructs the production encoded composition.
@@ -366,6 +396,11 @@ const makeWithEngineJj = (
           // an Error instance to just its name and message.
           (cause) => Effect.die(Schema.encodeSync(Action.IrreversibleRetryRequiresIdempotencyKey)(cause))
         ),
+        // A boundary refusal is the engine's verdict on the step, not the
+        // action's error, so it takes the same defect channel. Decoded through
+        // the action's error schema it became "SchemaError: Expected never"
+        // and lost the refused paths.
+        Effect.catchFilter(boundaryRefusal, Effect.die),
         Flow.intoResult,
         Effect.provideService(FlowRuntime.FlowInstance, instance),
         Effect.provideService(

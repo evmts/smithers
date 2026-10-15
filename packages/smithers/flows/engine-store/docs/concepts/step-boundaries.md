@@ -47,6 +47,11 @@ in `expected` mode:
 | Did not produce a declared output, and did not declare it as a removal | `MissingDeclaredOutput`    | `MissingDeclaredOutput` deviation    |
 | Left a declared removal in place                                       | `SurvivingDeclaredRemoval` | `SurvivingDeclaredRemoval` deviation |
 
+Under `EngineStore`, a hard-mode refusal settles the action as a defect that
+carries the refusal's tag, code and paths. It never passes through the action's
+`error` schema; see
+[Troubleshooting](../troubleshooting.md#a-boundary-refusal-in-a-flow-run).
+
 The two absence cases exist for a specific reason. Recording `digest: null` as
 valid evidence caches the claim "this file should not exist", which
 `replayOutputs` then acts on by deleting the path on a workspace that never ran
