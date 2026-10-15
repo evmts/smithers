@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { Cause, Effect, type Exit, Layer, Result } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import { existsSync, statSync, writeFileSync } from "node:fs"
+import { existsSync, lstatSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import * as ReleasePolicy from "../src/internal/ReleasePolicy.ts"
@@ -111,6 +111,24 @@ describe("NodeDatabase file permissions", () => {
         }
       })
   )
+
+  it.effect("creates a dangling symlink's target with private permissions", () =>
+    Effect.gen(function*() {
+      const target = tempFile()
+      const filename = `${target}-link`
+      symlinkSync(target, filename)
+      const previousMask = process.umask(0o022)
+      try {
+        yield* Effect.gen(function*() {
+          const sql = yield* SqlClient.SqlClient
+          yield* sql`CREATE TABLE flows_migrations (migration_id INTEGER PRIMARY KEY)`
+        }).pipe(Effect.provide(NodeDatabase.layer({ filename })))
+      } finally {
+        process.umask(previousMask)
+      }
+      expect(lstatSync(filename).isSymbolicLink()).toBe(true)
+      expect(statSync(target).mode & 0o777).toBe(0o600)
+    }))
 
   it.effect("does not create a missing file for a read-only open", () =>
     Effect.gen(function*() {

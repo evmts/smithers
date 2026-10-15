@@ -4,7 +4,8 @@
 
 import { Context, Duration, Effect, Layer, Schedule, Schema, Scope } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import { closeSync, openSync } from "node:fs"
+import { closeSync, lstatSync, openSync, readlinkSync } from "node:fs"
+import { dirname, resolve } from "node:path"
 import * as ReadOnly from "./ReadOnly.ts"
 import * as ReleasePolicy from "./ReleasePolicy.ts"
 
@@ -32,7 +33,10 @@ type InspectTables = (filename: string) => ReadonlyArray<string> | undefined
  * Creates a plain-path database before SQLite does, so WAL and SHM sidecars
  * inherit restrictive permissions from the main file on every native driver.
  * Exclusive creation preserves existing files, including a file another opener
- * just created, and never follows a planted symlink. SQLite retains ownership
+ * just created. A dangling symlink is resolved link by link (at most 40 links,
+ * as the kernel allows) and its missing target is created exclusively with the
+ * same mode, because SQLite would otherwise follow the link and create the
+ * target under the process umask alone. SQLite retains ownership
  * of URI, memory and temporary opens, and of any open whose driver settings
  * forbid creation (`create` is false).
  *
@@ -41,14 +45,22 @@ type InspectTables = (filename: string) => ReadonlyArray<string> | undefined
  */
 export const createDatabaseFile = (filename: string, create: boolean, mode = 0o600): void => {
   if (!create || filename === "" || filename === ":memory:" || filename.startsWith("file:")) return
-  let descriptor: number
-  try {
-    descriptor = openSync(filename, "wx", mode)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") return
-    throw error
+  let path = filename
+  for (let links = 0; links <= 40; links++) {
+    let descriptor: number
+    try {
+      descriptor = openSync(path, "wx", mode)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+      // An existing file, or a link SQLite will follow: only a link's target
+      // can still be missing.
+      if (!lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink()) return
+      path = resolve(dirname(path), readlinkSync(path))
+      continue
+    }
+    closeSync(descriptor)
+    return
   }
-  closeSync(descriptor)
 }
 
 /**
