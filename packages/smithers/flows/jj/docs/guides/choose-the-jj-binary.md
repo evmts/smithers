@@ -21,7 +21,11 @@ export SMITHERS_JJ_PATH=/opt/homebrew/bin/jj
 file that actually runs, not a hint. Resolution order is short:
 
 1. `SMITHERS_JJ_PATH`, when it names a file that exists.
-2. `PATH`, searched for `jj` (`jj.exe` on Windows).
+2. `PATH`, searched for `jj` (`jj.exe` on Windows). A directory named `jj`,
+   such as a jj source checkout, is skipped.
+
+An override that names a directory resolves as not executable, with a hint
+that names the directory.
 
 An override that names an existing file stays authoritative **even when it is
 not executable**, so a broken explicit path is reported instead of a different

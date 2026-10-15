@@ -8,7 +8,7 @@
  * bare command name rather than failing at resolution time.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { delimiter, join, relative } from "node:path"
 import * as Resolve from "../src/node/resolveJjBinary.ts"
@@ -149,6 +149,30 @@ describe("resolveJjBinary", () => {
 
       expect(resolved).toMatchObject({ path: "jj", source: "path", executable: false })
       expect(resolved.hint).toContain("No jj on PATH")
+    }))
+
+  it("skips a directory named jj on PATH and keeps searching", () =>
+    staged((directory) => {
+      // A jj source checkout sitting in a PATH directory: directories pass the
+      // execute-bit probe, but spawning one fails with EACCES.
+      const checkout = join(directory, "src")
+      mkdirSync(join(checkout, "jj"), { recursive: true })
+      const bin = join(directory, "bin")
+      mkdirSync(bin)
+      const binary = write(join(bin, "jj"), 0o755)
+
+      expect(Resolve.resolveJjBinary({ environment: { PATH: `${checkout}${delimiter}${bin}` }, platform: "linux" }))
+        .toEqual({ path: binary, source: "path", executable: true })
+      expect(Resolve.resolveJjBinary({ environment: { PATH: checkout }, platform: "linux" }))
+        .toMatchObject({ path: "jj", source: "path", executable: false })
+    }))
+
+  it("reports a directory override as unusable instead of executable", () =>
+    staged((directory) => {
+      const resolved = Resolve.resolveJjBinary({ environment: { SMITHERS_JJ_PATH: directory }, platform: "linux" })
+
+      expect(resolved).toMatchObject({ path: directory, source: "env", executable: false })
+      expect(resolved.hint).toContain(directory)
     }))
 
   it("treats an empty PATH the same as an unset one", () => {

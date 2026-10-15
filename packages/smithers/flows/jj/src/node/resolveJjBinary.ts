@@ -19,7 +19,7 @@
  * @since 1.0.0
  */
 
-import { accessSync, constants, existsSync } from "node:fs"
+import { accessSync, constants, existsSync, statSync } from "node:fs"
 import { delimiter, resolve } from "node:path"
 
 /**
@@ -128,6 +128,19 @@ export const permissionHint = (file: string, platform: NodeJS.Platform = process
     ` or point SMITHERS_JJ_PATH at a working jj.`
 }
 
+/**
+ * Whether a path names a directory. Directories pass the execute-bit probe
+ * (search permission), but spawning one fails with EACCES, so a `jj` source
+ * checkout on PATH must not be selected as the binary.
+ */
+const isDirectory = (file: string): boolean => {
+  try {
+    return statSync(file).isDirectory()
+  } catch {
+    return false
+  }
+}
+
 /** The guidance printed when no `jj` was found at all. */
 const missingHint = "No jj on PATH. Install jj (https://jj-vcs.github.io) or set SMITHERS_JJ_PATH."
 
@@ -177,7 +190,8 @@ export const resolveJjBinary = (options: Options = {}): Resolved => {
   const environment = options.environment ?? process.env
   const platform = options.platform ?? process.platform
   const exists = options.exists ?? existsSync
-  const executable = options.executable ?? ((file: string) => isExecutable(file, { platform }))
+  const executable = options.executable ??
+    ((file: string) => !isDirectory(file) && isExecutable(file, { platform }))
 
   let ignored: { readonly variable: string; readonly path: string } | undefined
   for (const variable of overrideVariables) {
@@ -200,7 +214,11 @@ export const resolveJjBinary = (options: Options = {}): Resolved => {
       source: "env",
       executable: usable,
       variable,
-      ...(usable ? {} : { hint: permissionHint(path, platform) })
+      ...(usable ? {} : {
+        hint: isDirectory(path)
+          ? `${path} is a directory, not the jj binary. Point SMITHERS_JJ_PATH at the jj executable.`
+          : permissionHint(path, platform)
+      })
     }
   }
 
