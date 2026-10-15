@@ -507,6 +507,26 @@ describe("AnthropicMessages streaming", () => {
     ])
   })
 
+  it("closes text and thinking the provider never stopped at message_stop, before the settle", () => {
+    const events = replay([
+      "{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"plan\"}}",
+      "{\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\"}}",
+      "{\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}",
+      "{\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}",
+      "{\"type\":\"message_stop\"}"
+    ], true)
+
+    expect(events.map((event) => event.type)).toEqual([
+      "text-start",
+      "text-delta",
+      "thinking-start",
+      "thinking-delta",
+      "thinking-end",
+      "text-end",
+      "settle"
+    ])
+  })
+
   it("fails the stream when a completed tool call did not accumulate JSON", () => {
     const error = replayError([
       "{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_bad\",\"name\":\"weather\"}}",

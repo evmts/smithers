@@ -937,10 +937,13 @@ const onMessageStop = (state: State): Result.Result<StepResult, ModelError> =>
   Result.gen(function*() {
     if (state.settled) return { state, events: [] }
     const closed = yield* closeOpenCalls(state)
+    // Text and thinking the provider never stopped end here too, so the
+    // settle stays the last event rather than preceding `onHalt`'s ends.
     return {
-      state: { ...closed.state, settled: true },
+      state: { ...closed.state, blocks: [], settled: true },
       events: [
         ...closed.events,
+        ...finalize(closed.state),
         ...(state.usage === undefined || state.usageEmitted
           ? []
           : [ModelEvent.Usage(state.usage)]),
