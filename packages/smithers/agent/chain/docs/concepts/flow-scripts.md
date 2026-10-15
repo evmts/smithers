@@ -16,6 +16,10 @@ the reply must contain exactly one fenced `flow` block, whose body becomes
 the script. Zero blocks or two or more blocks is a rejection the next
 authoring reads, not a crash.
 
+The block closes the way a markdown fence closes: on a line holding only
+backticks, at least as many as opened it. A script whose strings carry their
+own fenced code opens with four backticks (`` ````flow ``) and closes with four.
+
 ````text
 ```flow
 const hits = await ctx.call("grep", { pattern: "TODO" })

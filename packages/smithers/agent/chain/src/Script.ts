@@ -55,11 +55,17 @@ export type Extraction =
   | { readonly _tag: "Extracted"; readonly script: Script }
   | { readonly _tag: "Rejected"; readonly reason: string }
 
-const fence = /```flow\n([\s\S]*?)\n```/g
+// Closes the way a markdown fence closes: on a line holding only a run of
+// backticks at least as long as the opening run, plus trailing blanks. A
+// lazy match on any "\n```" would end the block at an inner "```js" line
+// inside a template literal and hand the runner a truncated script.
+const fence = /(?<!`)(`{3,})flow\n([\s\S]*?)\n\1`*[ \t]*(?=\n|$)/g
 
 /**
  * Applies the shape gate to raw author output: exactly one fenced `flow`
- * block, whose body becomes the script.
+ * block, whose body becomes the script. The block opens with three or more
+ * backticks followed by `flow` and closes on a line holding only at least
+ * as many backticks, so a longer opening fence can carry inner fences.
  *
  * @category gates
  * @since 0.1.0
@@ -78,5 +84,5 @@ export const extract = (raw: string): Extraction => {
     }
   }
   // The capture group always participates when the fence matches.
-  return { _tag: "Extracted", script: make(first[1] as string) }
+  return { _tag: "Extracted", script: make(first[2] as string) }
 }

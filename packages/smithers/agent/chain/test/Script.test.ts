@@ -42,4 +42,28 @@ describe("Script", () => {
       expect(extraction.reason).toContain("2")
     }
   })
+
+  it("does not close the block on a fence line that carries text", () => {
+    const body = ["const opener = `", "```ts`", "return done(opener)"].join("\n")
+    expect(Script.extract(flow(body))).toEqual({ _tag: "Extracted", script: Script.make(body) })
+  })
+
+  it("lets a longer opening fence hold a bare inner fence line", () => {
+    const body = ["const md = `", "```", "x()", "```", "`", "return done(md)"].join("\n")
+    expect(Script.extract(["````flow", body, "````"].join("\n"))).toEqual({
+      _tag: "Extracted",
+      script: Script.make(body)
+    })
+  })
+
+  it("accepts a closing fence with trailing spaces at the end of the reply", () => {
+    expect(Script.extract("```flow\nreturn done(1)\n```  ")).toEqual({
+      _tag: "Extracted",
+      script: Script.make("return done(1)")
+    })
+  })
+
+  it("does not close the block on a shorter fence", () => {
+    expect(Script.extract("````flow\nreturn done(1)\n```")._tag).toBe("Rejected")
+  })
 })
