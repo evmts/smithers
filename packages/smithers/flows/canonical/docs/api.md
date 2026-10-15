@@ -25,17 +25,20 @@ specification.
 ## canonicalize
 
 ```ts
-const canonicalize: (input: unknown) => string
+const canonicalize: (input: unknown, options?: { readonly loneSurrogates?: "escape" }) => string
 ```
 
-Serializes a value into an RFC 8785 canonical JSON document.
+Serializes a value into an RFC 8785 canonical JSON document by default.
+The optional `loneSurrogates: "escape"` policy preserves unpaired UTF-16 code
+units as JSON escapes for legacy sorted-JSON formats. That mode is not RFC 8785
+and must not be used where strict canonical bytes are required.
 
 | Parameter | Type      | Meaning                                                                                       |
 | --------- | --------- | --------------------------------------------------------------------------------------------- |
 | `input`   | `unknown` | Any JavaScript value. `JSON.stringify` semantics reduce it to JSON data before serialization. |
 
 **Returns** the canonical document as a plain `string`. It is always valid JSON
-text, and canonicalizing its parse returns the same string.
+text. In the default strict mode, canonicalizing its parse returns the same string.
 
 **Throws** a [`CanonicalError`](#canonicalerror) when the value has no
 canonical form. The error names the failure with a stable
@@ -219,3 +222,105 @@ or oversized text. It counts the short control escapes exactly.
 Import the namespace from the package root or `@smthrs/canonical/BoundedJson`.
 Admission is a separate boundary from canonical serialization and does not alter
 `canonicalize`'s handling of values or its output bytes.
+
+### Ordinary admission options
+
+`admit(input, limits, { preflightObjects: false })` disables the early minimum
+node and byte checks during object descriptor collection. The final limits still
+apply, but a child refusal can be reported before the enclosing budget refusal.
+The default is `true`; member bounds remain active in either mode.
+Ordinary admission permits shared references and copies each occurrence, ignores
+hidden properties, and counts depth as edges from the root (root depth zero).
+Refusal paths are arrays of string segments, including stringified array indices.
+
+### Strict admission
+
+`BoundedJson.admitStrict(input, limits, options?)` returns `{ ok: true, value }`
+or `{ ok: false, path, complaint }`. Its path is a JSON-style string beginning
+with `$`; it does not return the ordinary result's byte count or issue code.
+All six `StrictLimits` fields are required: `maxBytes`, `maxDepth`, `maxMembers`,
+`maxNodes`, `maxStringBytes`, and `maxKeyBytes`. Depth counts containers, so
+`maxDepth: 1` accepts a root container with primitive children. `maxMembers`
+bounds the cumulative number of members across the tree as well as each
+container. Use nonnegative finite integer limits.
+
+Strict admission rejects shared object references, hidden members, symbol keys,
+nonordinary arrays, and the record keys `__proto__`, `constructor`, and
+`prototype`, in addition to ordinary admission's refusals. Both plain and
+null-prototype input records are accepted. The default copies are frozen,
+null-prototype records and ordinary arrays.
+
+| Option            | Behavior                                                                                                                                                                                                                                            |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ordinaryRecords` | Produce frozen records with `Object.prototype` instead of null prototypes. Reserved input keys remain refused.                                                                                                                                      |
+| `boundedText`     | Reject overlong UTF-16 text before scanning its encoded bytes. Malformed or oversized key diagnostics use `[key:0]`, `[key:1]`, etc., instead of copying the offending key. Other paths, including reserved-key refusals, still contain input keys. |
+| `onContainer`     | Receive each detached, frozen container in child-before-parent order. Earlier callbacks can run even if a later member refuses the whole tree. A thrown callback becomes an inspection refusal.                                                     |
+| `native`          | Handle a nonordinary, non-array object as a leaf by returning `{ value, bytes }`, or return `undefined` to refuse it. The byte size must be a nonnegative safe integer and fit the total budget.                                                    |
+
+`native` is a trusted extension: admission neither validates nor copies nor
+freezes the returned value. The adapter must provide the promised detached
+representation and accurate encoded size. It is still subject to node, depth,
+and repeated-reference checks. Proxy inspection runs before the adapter; thrown
+adapter errors become inspection refusals.
+
+```ts
+import { BoundedJson } from "@smthrs/canonical"
+
+const containers: Array<unknown> = []
+const admitted = BoundedJson.admitStrict({ tags: ["release"] }, {
+  maxBytes: 64,
+  maxDepth: 2,
+  maxMembers: 2,
+  maxNodes: 3,
+  maxStringBytes: 16,
+  maxKeyBytes: 16
+}, {
+  ordinaryRecords: true,
+  onContainer: (value) => containers.push(value)
+})
+// admitted.ok === true; containers contains the tags array, then the record.
+```
+
+## ReadonlyMap.make
+
+Import `make` from `@smthrs/canonical/ReadonlyMap`; it is not a root export.
+`make<K, V>(entries?: Iterable<readonly [K, V]>): ReadonlyMap<K, V>` copies the
+entries into a private map and returns a frozen facade with `size`, `get`,
+`has`, `forEach`, `entries`, `keys`, `values`, and iteration. Duplicate keys use
+the last value, retaining their first insertion position. No mutation methods
+are exposed. `forEach` receives the facade as its third argument and honors
+`thisArg`. Entry values and keys themselves are not copied or frozen. Invalid
+iterables propagate the native `Map` construction error.
+
+```ts
+import { make } from "@smthrs/canonical/ReadonlyMap"
+
+const registry = make([["build", { enabled: true }]] as const)
+registry.get("build")?.enabled // true
+const names = [...registry.keys()] // ["build"]
+```
+
+## IssuePath.firstPath
+
+Import `firstPath` from `@smthrs/canonical/IssuePath`; it is not a root export.
+`firstPath(error: Schema.SchemaError): string` follows the first issue branch
+and renders its field path without rendering the rejected value. Identifiers
+use dot notation, other string keys use JSON-quoted brackets, and numeric
+indices use brackets. A root rejection returns `$`. Traversal stops after 64
+issue wrappers, returning the path collected so far; this does not bound the
+length of a key or the resulting string. Paths still contain caller-supplied
+keys and need redaction where those keys are sensitive.
+
+```ts
+import { firstPath } from "@smthrs/canonical/IssuePath"
+import * as Schema from "effect/Schema"
+
+let rejectedPath = "$"
+try {
+  Schema.decodeUnknownSync(Schema.Struct({ count: Schema.Number }))({ count: "invalid" })
+} catch (error) {
+  if (!Schema.isSchemaError(error)) throw error
+  rejectedPath = firstPath(error)
+}
+// rejectedPath === "$.count"
+```

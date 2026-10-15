@@ -123,6 +123,7 @@ is a hash of a document this package produced.
 - [Why digests need canonical JSON](./concepts/digest-determinism.md): what the
   bytes are load bearing for, and why an output change is a digest change.
 - [API reference](./api.md): `canonicalize`, the `Canonical` schema,
-  `CanonicalError`, and the nine stable failure codes.
+  `CanonicalError`, bounded admission policies, record and map helpers,
+  schema issue paths, and the nine stable failure codes.
 - [Troubleshooting](./troubleshooting.md): each failure code with its cause and
   its fix.
