@@ -765,6 +765,105 @@ describe("a callback dial a forward proxy carried", () => {
   })
 })
 
+describe("two callbacks of one turn in flight at once", () => {
+  // Production's own overlap: turn 2d851bdd answered `first_event` at 2126 ms
+  // and began `commit` at 2127 ms. Measured on the pinned Node 26.5.0 through
+  // a real CONNECT proxy, two concurrent callbacks to one journal origin open
+  // TWO tunnels rather than queueing on one
+  // (`diagnostics/continuation14/repro/concurrent-before.log`), so the second
+  // one's dial arrives while the first is still open and was counted by it.
+  // These publish the dispatcher's records in that measured order.
+  const create = channel("undici:request:create")
+  const beforeConnect = channel("undici:client:beforeConnect")
+  const connected = channel("undici:client:connected")
+  const connectError = channel("undici:client:connectError")
+  const sendHeaders = channel("undici:client:sendHeaders")
+  const headers = channel("undici:request:headers")
+  const trailers = channel("undici:request:trailers")
+
+  const dialOf = (origin: string) => {
+    const { host, hostname } = new URL(origin)
+    return { connectParams: { host, hostname } }
+  }
+
+  const journalOrigin = "http://journal.invalid:8080"
+
+  test("does not count a later callback's connection against one that already has its socket", () => {
+    const transport = observeCallbackTransport(journalOrigin)
+    const first = transport.begin()
+    const second = transport.begin()
+    const firstRequest = { origin: journalOrigin, path: "/internal/chat/first_event" }
+    const secondRequest = { origin: journalOrigin, path: "/internal/chat/commit" }
+    first.run(() => {
+      create.publish({ request: firstRequest })
+      beforeConnect.publish(dialOf(journalOrigin))
+      connected.publish(dialOf(journalOrigin))
+      sendHeaders.publish({ request: firstRequest, socket: {} })
+      headers.publish({ request: firstRequest })
+      trailers.publish({ request: firstRequest })
+      return Promise.resolve()
+    })
+    // The commit begins while the first attempt is still open, and opens its
+    // own connection.
+    second.run(() => {
+      create.publish({ request: secondRequest })
+      beforeConnect.publish(dialOf(journalOrigin))
+      connected.publish(dialOf(journalOrigin))
+      return Promise.resolve()
+    })
+    const firstFields = first.fields()
+    const secondFields = second.fields()
+    transport.close()
+    // The answered callback reports the one connection it waited for. Counting
+    // the commit's dial as well reported two begun and one ended on a body
+    // that had already ended, which reads as a connection that never came up.
+    expect(firstFields.transport).toBe("received")
+    expect(firstFields.connectBegan).toBe(1)
+    expect(firstFields.connectEnded).toBe(1)
+    expect(secondFields.transport).toBe("created")
+    expect(secondFields.connectBegan).toBe(1)
+    expect(secondFields.connectEnded).toBe(1)
+  })
+
+  test("keeps the waiting callback's own unfinished connection, and leaves the answered one out of it", () => {
+    // The reading the count exists for has to survive the correction: a commit
+    // still at `created` with a connection begun and none ended is the hop
+    // that has not come up, and the attempt that already answered must carry
+    // neither that dial nor its failure.
+    const transport = observeCallbackTransport(journalOrigin)
+    const answered = transport.begin()
+    const waiting = transport.begin()
+    const answeredRequest = { origin: journalOrigin, path: "/internal/chat/first_event" }
+    const waitingRequest = { origin: journalOrigin, path: "/internal/chat/commit" }
+    answered.run(() => {
+      create.publish({ request: answeredRequest })
+      beforeConnect.publish(dialOf(journalOrigin))
+      connected.publish(dialOf(journalOrigin))
+      sendHeaders.publish({ request: answeredRequest, socket: {} })
+      headers.publish({ request: answeredRequest })
+      trailers.publish({ request: answeredRequest })
+      return Promise.resolve()
+    })
+    waiting.run(() => {
+      create.publish({ request: waitingRequest })
+      beforeConnect.publish(dialOf(journalOrigin))
+      connectError.publish({ ...dialOf(journalOrigin), error: { code: "ECONNREFUSED" } })
+      return Promise.resolve()
+    })
+    const answeredFields = answered.fields()
+    const waitingFields = waiting.fields()
+    transport.close()
+    expect(answeredFields.connectBegan).toBe(1)
+    expect(answeredFields.connectFailed).toBeUndefined()
+    expect(answeredFields.connectCode).toBeUndefined()
+    expect(waitingFields.transport).toBe("created")
+    expect(waitingFields.connectBegan).toBe(1)
+    expect(waitingFields.connectEnded).toBe(0)
+    expect(waitingFields.connectFailed).toBe(1)
+    expect(waitingFields.connectCode).toBe("ECONNREFUSED")
+  })
+})
+
 describe("the inert transport", () => {
   test("runs the request and adds no field a caller cannot stand behind", async () => {
     const attempt = inertCallbackTransport.begin()

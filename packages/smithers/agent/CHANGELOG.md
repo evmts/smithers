@@ -65,8 +65,9 @@
   is a connection the kernel is still retrying, and whether that is a dropped
   SYN, a silent middlebox or a filtered route is in no record this host takes.
   And the connection and resolution counts belong to the callback origin rather
-  than to one request, so a turn's other callbacks to the same origin are
-  counted by whichever attempts are open alongside them.
+  than to one request, so two of a turn's callbacks simultaneously waiting for
+  a connection to the same origin each count both of their dials. An attempt
+  that already has its socket is no longer one of them.
 
 ### Fixed
 
@@ -99,6 +100,26 @@
   transport publishes in both shapes; the measurements are in
   `diagnostics/continuation13/repro` (`after-fix-tls.log`,
   `red-absolute-named.log` and `after-fix-http-named.log`).
+- A callback that the journal already answered no longer reports a later
+  callback's connection as one of its own (#3812). The connection counts are an
+  origin's, so every attempt open to that origin counted every dial for it,
+  including attempts whose headers were already on a socket. Measured on the
+  pinned Node 26.5.0 with two callbacks of one turn in flight to one journal
+  origin through a real CONNECT proxy — the overlap production turn `2d851bdd`
+  had, and the shape the single-attempt readings could not take — the
+  dispatcher opened a second tunnel for the second callback and the first,
+  already answered `204` with its body ended, reported `connectBegan 2,
+  connectEnded 1`: a connection that never came up, on a callback that
+  received its answer. A dial is now counted only by an attempt still at
+  `created`, which is the state the count was built to read; the waiting
+  attempt keeps its own unfinished connection and its failure code, and the
+  direct and both proxied shapes are unchanged. The same measurement settles
+  one thing about the turn itself: a second concurrent callback to one origin
+  is not queued on the first one's connection, so a dispatcher pool with
+  nothing to spare is not what that turn's missing second socket was. What it
+  was is still unknown, and nothing here claims otherwise. Measurements in
+  `diagnostics/continuation14/repro` (`concurrent-before.log`,
+  `concurrent-after.log`).
 - A refused sealed model stream no longer carries a field that route cannot
   produce (#3812). `streamRefused` spread the status a journal refused a
   callback with, and a sealed stream commits nothing: its only failures are a

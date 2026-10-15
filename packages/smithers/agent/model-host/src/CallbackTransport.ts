@@ -83,7 +83,23 @@ export type CallbackTransportPhase =
 
 /**
  * One attempt's transport record: the phase it reached, and the connection
- * work its origin did while it was open.
+ * work its origin did while it was waiting for one.
+ *
+ * What the counts are NOT: an attempt's own dial, attributable to it alone.
+ * `undici:client:beforeConnect` names an origin, never a request, so two
+ * callbacks of one turn simultaneously at `created` for one origin each count
+ * both of their dials. What was measured and removed is the reading that
+ * mattered: an attempt that already has its socket no longer counts a later
+ * attempt's dial, so a callback the journal answered cannot report a
+ * connection that never ended.
+ *
+ * One thing that measurement settles about turn `2d851bdd`, which began its
+ * commit 1 ms after its first event was answered and put NO second socket in
+ * the guest's table: a second concurrent callback to one journal origin is
+ * not queued on the first one's connection. Through a real CONNECT proxy on
+ * the pinned Node, two overlapping callbacks opened TWO tunnels — the proxy's
+ * own count. So a dispatcher pool with no connection to spare is not what the
+ * missing second socket was, and nothing here claims to know what it was.
  *
  * @category models
  * @since 1.0.0-rc.1
@@ -244,12 +260,24 @@ const onError = (message: unknown): void => {
 }
 
 // A connection belongs to an origin, not to a request: `undici` opens one when
-// a request needs it and reports it on its own. Every attempt open to that
-// origin counts it, which is what makes "created, and a connection is still
+// a request needs it and reports it on its own. Every attempt still WAITING
+// for one counts it, which is what makes "created, and a connection is still
 // coming up" distinguishable from "created, and nothing is being opened".
+//
+// Waiting is the whole of the qualification, and it is `created`: an attempt
+// whose headers are already on a socket has the connection it needed, and a
+// dial published after that is somebody else's. Measured on the pinned Node
+// 26.5.0 with two callbacks of one turn in flight to one journal origin
+// through a real CONNECT proxy — production's own shape, and the one the
+// single-attempt readings could not take — the dispatcher opened a SECOND
+// tunnel for the second callback, and the first, already answered 204,
+// counted that dial too: `connectBegan 2, connectEnded 1` on a callback whose
+// body had ended. That reads as a connection that never came up, on an
+// attempt that received its answer
+// (`diagnostics/continuation14/repro/concurrent-before.log`).
 const forOrigin = (message: unknown, count: (state: AttemptState) => void): void => {
   const { connectParams } = message as ConnectMessage
-  for (const state of open) if (state.dialHost === connectParams.host) count(state)
+  for (const state of open) if (state.phase === "created" && state.dialHost === connectParams.host) count(state)
 }
 
 // The socket a dial created, for exactly as long as claiming it is certain.
