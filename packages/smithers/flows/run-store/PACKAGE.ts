@@ -1,11 +1,18 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
-import { ReviewTagsMigrationsAndKeys } from "@smthrs/repo-targets"
+import {
+  BuildAndCheckTypeScriptPackage,
+  ReviewDocsAgainstCode,
+  ReviewJsdocAgainstCode,
+  ReviewTagsMigrationsAndKeys
+} from "@smthrs/repo-targets"
 /** Standard package targets plus package-owned documentation generation. */
 import { Smithers } from "@smthrs/targets"
+import * as Input from "@smthrs/targets/Input"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
   deps: [],
+  // Examples are type-checked, linted, and run by test/Examples.test.ts.
+  sources: Input.glob("{src,examples}/**/*.ts"),
   cwd: "packages/smithers/flows/run-store"
 })
 
@@ -17,6 +24,30 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
  * @category lint
  */
 const reviewTagsMigrationsAndKeys = ReviewTagsMigrationsAndKeys({ cwd: "packages/smithers/flows/run-store" })
+
+/**
+ * Changed public APIs against the package README, every docs page (concepts
+ * and guides included), and the site API reference page.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({
+  cwd: "packages/smithers/flows/run-store",
+  context: [
+    Smithers.file("README.md"),
+    Smithers.glob("docs/**/*.md"),
+    Smithers.file("//apps/site/src/content/docs/docs/reference/api/run-store.mdx")
+  ]
+})
+
+/**
+ * Changed exports against their own JSDoc.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: "packages/smithers/flows/run-store" })
 
 /**
  * Security review of the durable run and attempt stores: ownership fencing,
@@ -123,5 +154,18 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { check, circular, docs, docsFiles, reviewTagsMigrationsAndKeys, fmt, lib, lint, test, ...securityReview }
+  targets: {
+    check,
+    circular,
+    docs,
+    docsFiles,
+    reviewDocsAgainstCode,
+    reviewJsdocAgainstCode,
+    reviewTagsMigrationsAndKeys,
+    fmt,
+    lib,
+    lint,
+    test,
+    ...securityReview
+  }
 })
