@@ -2417,7 +2417,7 @@ const callHandler = (
       state,
       cell.digest,
       invocation.ordinal,
-      callMs,
+      Sandbox.callLimit(callMs, invocation),
       invocation.flow,
       // A flow that asks Jev journals its receipts into this run, and what it
       // pays for them is a reading this frame's cell asked for.

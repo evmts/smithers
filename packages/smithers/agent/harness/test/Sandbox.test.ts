@@ -219,8 +219,10 @@ describe("Sandbox", () => {
 
     const one = await evaluate(text, { call: handler(replies, first) })
     const two = await evaluate(text, { call: handler(replies, second) })
+    // What the frame has left is a clock reading, not part of what was asked.
+    const asked = (calls: ReadonlyArray<Sandbox.Invocation>) => calls.map(({ remainingMs: _, ...call }) => call)
 
-    expect(first).toEqual(second)
+    expect(asked(first)).toEqual(asked(second))
     expect(one).toStrictEqual(two)
   })
 
@@ -1136,6 +1138,83 @@ describe("Sandbox.driveCell", () => {
 
     expect(observed.map((call) => call.ordinal)).toEqual([0])
     expect(outcome._tag).toBe("settled")
+  })
+
+  it("runs a call past callMs when it asks for longer, and hands the handler what the frame has left", async () => {
+    const observed: Array<Sandbox.Invocation> = []
+    let result: Cell.CallResult | undefined
+    const pending: Array<Sandbox.PendingCall> = [{
+      ordinal: 0,
+      flow: "bash",
+      input: { command: "make", timeoutMs: 5_000 },
+      settle: (settled) => {
+        result = settled
+      },
+      abort: () => {}
+    }]
+
+    await Effect.runPromise(
+      Sandbox.driveCell({
+        pending,
+        flush: () => {},
+        finished: () =>
+          result === undefined
+            ? undefined
+            : new Cell.Settled({ transition: Sandbox.replTransition({ _tag: "Done", output: "ok" }, undefined) }),
+        abort: () => {},
+        remainingMs: () => 60_000,
+        handler: (invocation) =>
+          Effect.sleep(80).pipe(Effect.andThen(handler({ bash: { exitCode: 0 } }, observed)(invocation))),
+        limits: { callMs: 20 }
+      })
+    )
+
+    expect(result).toMatchObject({ outcome: "success", value: { exitCode: 0 } })
+    expect(observed).toEqual([{
+      ordinal: 0,
+      flow: "bash",
+      input: { command: "make", timeoutMs: 5_000 },
+      remainingMs: 60_000
+    }])
+  })
+})
+
+describe("Sandbox.callLimit", () => {
+  it("holds a call that names no usable timeoutMs to callMs", () => {
+    const inputs: ReadonlyArray<Schema.Json> = [
+      null,
+      "sleep 1",
+      [300_000],
+      {},
+      { timeoutMs: "300000" },
+      { timeoutMs: Number.POSITIVE_INFINITY },
+      { timeoutMs: Number.NaN }
+    ]
+    expect(inputs.map((input) => Sandbox.callLimit(120_000, { input }))).toEqual(inputs.map(() => 120_000))
+  })
+
+  it("gives a call the longer timeoutMs it asks for, and leaves a shorter one to the flow's own clock", () => {
+    expect(Sandbox.callLimit(120_000, { input: { command: "go test ./...", timeoutMs: 300_000 } })).toBe(300_000)
+    expect(Sandbox.callLimit(120_000, { input: { timeoutMs: 5_000 } })).toBe(120_000)
+  })
+
+  it("holds a request to what the frame has left, less a second to read the timeout, never under callMs", () => {
+    expect(Sandbox.callLimit(1_000, { input: { timeoutMs: 60_000 }, remainingMs: 10_000 })).toBe(9_000)
+    expect(Sandbox.callLimit(1_000, { input: { timeoutMs: 60_000 }, remainingMs: 1_500 })).toBe(1_000)
+    expect(Sandbox.callLimit(1_000, { input: { timeoutMs: 5_000 }, remainingMs: 10_000 })).toBe(5_000)
+  })
+
+  it("tells a realm's handler what the frame has left, except for a flow that pauses the backstop", async () => {
+    const counted: Array<Sandbox.Invocation> = []
+    const paused: Array<Sandbox.Invocation> = []
+    const cell = `await ctx.call("fs/list", { path: "." }); ctx.done("ok")`
+
+    await evaluate(cell, { call: handler({}, counted), limits: { totalMs: 60_000 } })
+    await evaluate(cell, { call: handler({}, paused), limits: { totalMs: 60_000, pauseTotalMsFor: ["fs/list"] } })
+
+    expect(counted[0]?.remainingMs).toBeGreaterThan(0)
+    expect(counted[0]?.remainingMs).toBeLessThanOrEqual(60_000)
+    expect(paused[0]).not.toHaveProperty("remainingMs")
   })
 })
 

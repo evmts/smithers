@@ -1356,6 +1356,12 @@ const openRealm = (
                 })
             }),
           ...(evaluation.bounded === undefined ? {} : { bounded: evaluation.bounded }),
+          // Calls run one at a time, so no paused call is in flight when the
+          // next is issued. A paused flow does not spend the backstop at all.
+          remainingMs: (flow) =>
+            limits.pauseTotalMsFor?.includes(flow) === true
+              ? undefined
+              : totalMs - (clock.now() - frameStarted - pausedMs),
           flush: () => poll(),
           finished: () => {
             poll()

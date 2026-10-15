@@ -544,6 +544,24 @@ test("Host.run keeps the call ceiling on plugin flows while worker waits are exe
   }
 })
 
+test("Runtime.boundedBinding gives a call the longer timeoutMs it asks for", async () => {
+  // A bash call that asked for longer than the TUI's ordinary ceiling was cut
+  // at the ceiling anyway (#3961); one that asks for nothing still is.
+  const slow: FlowBinding.Binding = {
+    descriptor: { name: "bash" } as FlowBinding.Binding["descriptor"],
+    run: () => Effect.sleep(80).pipe(Effect.as({ outcome: "success", value: { exitCode: 0 } } as never))
+  }
+  const bounded = Runtime.boundedBinding(slow, 20)
+  const run = (input: Record<string, number | string>) =>
+    Effect.runPromise(bounded.run({ flowName: "bash", input } as never))
+
+  expect(await run({ command: "make", timeoutMs: 5_000 })).toMatchObject({ outcome: "success" })
+  expect(await run({ command: "make" })).toMatchObject({
+    outcome: "failure",
+    message: "Flow bash timed out after 0.02 seconds."
+  })
+})
+
 test("Host.run exposes non-parked usage-limit copy for a failure card", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "smithers-tui-limit-"))
   roots.push(cwd)

@@ -12,7 +12,9 @@
  * QuickJS sandbox, the real registry-backed resolver, the real controller. Only
  * the provider is recorded.
  */
+import * as NodeChildProcessSpawner from "@effect/platform-node/NodeChildProcessSpawner"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as Capability from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
 import { FlowEngine } from "@smthrs/engine"
@@ -21,6 +23,7 @@ import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { HarnessError } from "@smthrs/harness/HarnessError"
+import * as Sandbox from "@smthrs/harness/Sandbox"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import * as CommandLine from "@smthrs/kernel/CommandLine"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
@@ -36,6 +39,7 @@ import { make as makePlugin } from "@smthrs/plugin"
 import type { ResolvedConfig } from "@smthrs/plugin/Config"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Registry from "@smthrs/registry/Registry"
+import * as Bash from "@smthrs/std/Bash"
 import * as Search from "@smthrs/std/Search"
 import { StdError } from "@smthrs/std/StdError"
 import * as TestRunner from "@smthrs/std/TestRunner"
@@ -344,6 +348,7 @@ const collect = (options: {
   readonly flows?: ReadonlyArray<FlowBinding.Source> | undefined
   readonly plugins?: PluginInput<FlowsHooks> | undefined
   readonly authorize?: ((call: Cell.Call) => Effect.Effect<void, HarnessError>) | undefined
+  readonly limits?: Sandbox.Limits | undefined
 }) =>
   Effect.gen(function*() {
     const collected: Array<AgentEvent.AgentEvent> = []
@@ -365,6 +370,7 @@ const collect = (options: {
       flows: options.flows,
       plugins: options.plugins,
       authorize: options.authorize,
+      limits: options.limits,
       maxFrames: 3
     }).pipe(
       Stream.runForEach((event) => Effect.sync(() => collected.push(event))),
@@ -2218,4 +2224,77 @@ ctx.done(judged.ok === false ? judged.error.code + " " + judged.error.message : 
     expect(completionOf(outcome)).toContain("Jev was unavailable")
     expect(completionOf(outcome)).not.toMatch(/decide without|without it|yourself/)
   })
+})
+
+describe("a bash call runs as long as it asks", () => {
+  /**
+   * The real shell: these calls spawn `sleep` and are cut by real clocks. The
+   * limits are scaled down from the run they reproduce, where 13 calls asking
+   * for 180 s or 600 s were cut at the 120 s per-call ceiling (2026-10-14
+   * SWE-bench Pro, #3961).
+   */
+  const shell = StandardFlows.shell(
+    Effect.runSync(
+      Effect.context<ChildProcessSpawner.ChildProcessSpawner | Path.Path>().pipe(
+        Effect.provide(
+          Layer.merge(
+            Layer.provide(NodeChildProcessSpawner.layer, Layer.merge(NodeFileSystem.layer, Path.layer)),
+            Path.layer
+          )
+        )
+      )
+    )
+  )
+  const running = (call: string, limits: Sandbox.Limits) =>
+    drive(collect({
+      flows: [shell],
+      limits,
+      cells: [`const ran = await ctx.call("bash", ${call})
+ctx.done(ran.ok === false ? ran.error.message : ran.exitCode + ":" + ran.stdout.trim())`]
+    }))
+
+  it.skipIf(process.platform === "win32")(
+    "finishes a command that asked for more than the per-call ceiling",
+    async () => {
+      const outcome = await running(`{ command: "sleep 1; echo done", timeoutMs: 30000 }`, { callMs: 300 })
+
+      const [ran] = firstFrameSettledCalls(eventsOf(outcome))
+      expect(ran?.result).toMatchObject({ outcome: "success", value: { exitCode: 0, stdout: "done\n" } })
+    },
+    60_000
+  )
+
+  it.skipIf(process.platform === "win32")(
+    "holds a command that asked for nothing to the per-call ceiling",
+    async () => {
+      const outcome = await running(`{ command: "sleep 5; echo done" }`, { callMs: 300 })
+
+      const [ran] = firstFrameSettledCalls(eventsOf(outcome))
+      expect(ran?.result).toMatchObject({
+        outcome: "failure",
+        code: "timeout",
+        message: "Flow bash timed out after 0.3 seconds."
+      })
+      expect(ran?.durationMillis).toBeLessThan(5_000)
+    },
+    60_000
+  )
+
+  it("defaults the per-call ceiling to the timeout bash documents", () => {
+    expect(Sandbox.defaultLimits.callMs).toBe(Bash.DEFAULT_TIMEOUT_MS)
+  })
+
+  it.skipIf(process.platform === "win32")(
+    "cuts a request longer than the frame has left inside the frame, so the cell reads the timeout",
+    async () => {
+      const outcome = await running(`{ command: "sleep 30", timeoutMs: 60000 }`, { callMs: 300, totalMs: 3_000 })
+
+      // Past the per-call ceiling, as asked, and short of the frame's end.
+      const [ran] = firstFrameSettledCalls(eventsOf(outcome))
+      expect(ran?.result).toMatchObject({ outcome: "failure", code: "timeout" })
+      expect(ran?.durationMillis).toBeGreaterThanOrEqual(1_000)
+      expect(ran?.durationMillis).toBeLessThan(3_000)
+    },
+    60_000
+  )
 })

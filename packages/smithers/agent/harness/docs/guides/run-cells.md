@@ -189,7 +189,7 @@ The defaults are:
 | `steps`       | 1,000   | Per frame; interrupt checks, not bytecode operations.                                                      |
 | `timeMs`      | 30,000  | Per frame; the cell's own JavaScript time, excluding time suspended in a `ctx.call` or `ctx.checkpoint()`. |
 | `totalMs`     | 900,000 | Per frame; whole-evaluation time, host calls included.                                                     |
-| `callMs`      | 120,000 | Per call; settles an overrunning call as a resolved `timeout`.                                             |
+| `callMs`      | 600,000 | Per call; settles an overrunning call as a resolved `timeout`. A longer `timeoutMs` the call names wins.   |
 
 `steps` and `timeMs` have typed floors (`Sandbox.minimumSteps`,
 `Sandbox.minimumTimeMs`), and `memoryBytes` has `Sandbox.minimumMemoryBytes`:

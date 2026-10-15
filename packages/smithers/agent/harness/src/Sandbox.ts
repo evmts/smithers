@@ -100,6 +100,12 @@ export interface Invocation {
    * the sandbox would lose the calls the cell had already paid for.
    */
   readonly at?: Schema.Json | undefined
+  /**
+   * What the frame's wall-clock backstop has left when the call is issued, in
+   * milliseconds. Absent when the call does not spend that backstop. A
+   * boundary that bounds its own settlements reads it through {@link callLimit}.
+   */
+  readonly remainingMs?: number | undefined
 }
 
 /**
@@ -229,7 +235,8 @@ export interface Limits {
   readonly pauseTotalMsFor?: ReadonlyArray<string> | undefined
   /**
    * Maximum wall-clock time one flow call may take, in milliseconds; a
-   * non-negative safe integer.
+   * non-negative safe integer. A call that asks for longer with its own
+   * `timeoutMs` gets that, within what its frame has left; see {@link callLimit}.
    *
    * The per-call budget {@link totalMs} cannot supply. `totalMs` is the frame's
    * last resort, and a call that overruns it takes the whole frame down with a
@@ -284,7 +291,9 @@ export const defaultLimits = Object.freeze({
   steps: 1000,
   timeMs: 30_000,
   totalMs: 900_000,
-  callMs: 120_000
+  // The timeout `bash` and `test` document, so a command that names none runs
+  // as long as its flow says it will.
+  callMs: 600_000
 })
 
 /**
@@ -722,6 +731,35 @@ export const callTimedOut = (flow: string, callMs: number): Cell.CallResult =>
   timedOut(`Flow ${flow} timed out after ${seconds(callMs)} seconds.`, callMs)
 
 /**
+ * What a call leaves of its frame when its own request is cut short: time for
+ * the timeout to reach the cell before the frame's clock ends the frame.
+ */
+const answerMs = 1_000
+
+/**
+ * The wall-clock ceiling one call runs under, in milliseconds.
+ *
+ * `callMs` bounds a call that names no time of its own. A call that asks for
+ * longer with `timeoutMs`, as `bash` and `test` take, runs that long instead,
+ * because a ceiling under the call's own clock cuts work its flow promised to
+ * wait for: on the 2026-10-14 SWE-bench Pro run, 9 of the 13 commands cut at a
+ * 120 s ceiling had asked for 180 s or 600 s. The request is held to what the
+ * frame has left, so the call settles as a timeout the cell reads instead of
+ * taking its frame down unanswered.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.8
+ */
+export const callLimit = (callMs: number, invocation: Pick<Invocation, "input" | "remainingMs">): number => {
+  const { input, remainingMs } = invocation
+  const asked = input !== null && typeof input === "object" && !Array.isArray(input)
+    ? (input as Readonly<Record<string, unknown>>).timeoutMs
+    : undefined
+  if (typeof asked !== "number" || !Number.isFinite(asked) || asked <= callMs) return callMs
+  return Math.max(callMs, Math.min(asked, remainingMs === undefined ? asked : remainingMs - answerMs))
+}
+
+/**
  * Erases type-only syntax from a cell without evaluating or resolving modules.
  *
  * Only Node's strip-safe TypeScript subset is accepted. Constructs that need
@@ -811,6 +849,8 @@ export const driveCell = (options: {
   readonly mint?: Minter | undefined
   /** Whether the caller bounds each settlement itself; see {@link RealmEvaluation.bounded}. */
   readonly bounded?: boolean | undefined
+  /** What the frame's backstop has left for a call to this flow; see {@link Invocation.remainingMs}. */
+  readonly remainingMs?: ((flow: string) => number | undefined) | undefined
   readonly limits?: Limits | undefined
 }): Effect.Effect<Cell.Outcome, SandboxError | HarnessError> =>
   Effect.gen(function*() {
@@ -839,7 +879,8 @@ export const driveCell = (options: {
         }
         calls = calls + 1
         options.progress?.(next.ordinal, settledOrdinal)
-        const callMs = options.limits?.callMs ?? defaultLimits.callMs
+        const remainingMs = options.remainingMs?.(next.flow)
+        const callMs = callLimit(options.limits?.callMs ?? defaultLimits.callMs, { input: next.input, remainingMs })
         // A mint is settled here rather than on a channel of its own so that it
         // is ordered against the calls around it. See `Minter`.
         const settling = next.kind === "checkpoint"
@@ -848,7 +889,8 @@ export const driveCell = (options: {
             ordinal: next.ordinal,
             flow: next.flow,
             input: next.input,
-            ...(next.at === undefined ? {} : { at: next.at })
+            ...(next.at === undefined ? {} : { at: next.at }),
+            ...(remainingMs === undefined ? {} : { remainingMs })
           })
         const result = yield* (options.bounded === true
           // The caller bounds its own settlements, inside the boundary it

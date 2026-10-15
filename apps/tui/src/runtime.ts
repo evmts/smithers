@@ -44,15 +44,20 @@ export interface Ports {
 }
 /** Calls that wait on another agent or the person, unbounded. */
 export const waiting: ReadonlyArray<string> = ["agent.wait", StandardFlows.askFlow.name]
-/** Keeps every ordinary flow call bounded; only waiting calls hold a worker cell open. */
+/**
+ * Keeps every ordinary flow call bounded; only waiting calls hold a worker cell
+ * open. A call that asks for longer with `timeoutMs` gets it (`Sandbox.callLimit`).
+ */
 export const boundedBinding = (binding: FlowBinding.Binding, callMs: number): FlowBinding.Binding =>
   waiting.includes(binding.descriptor.name) ? binding : {
     ...binding,
-    run: (call) =>
-      binding.run(call).pipe(Effect.timeoutOrElse({
-        duration: callMs,
-        orElse: () => Effect.succeed(Sandbox.callTimedOut(call.flowName, callMs))
+    run: (call) => {
+      const limit = Sandbox.callLimit(callMs, call)
+      return binding.run(call).pipe(Effect.timeoutOrElse({
+        duration: limit,
+        orElse: () => Effect.succeed(Sandbox.callTimedOut(call.flowName, limit))
       }))
+    }
   }
 /** Smithers flows and the TUI's ordinary per-call ceiling. */
 export const plugins = (ports?: Ports, callMs?: number) => [

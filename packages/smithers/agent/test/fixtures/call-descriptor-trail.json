@@ -18,7 +18,7 @@
         "memoryBytes": 134217728,
         "steps": 1000,
         "timeMs": 30000,
-        "callMs": 120000,
+        "callMs": 600000,
         "totalMs": 900000,
         "at": 100
       }
@@ -422,7 +422,7 @@
         "memoryBytes": 134217728,
         "steps": 1000,
         "timeMs": 30000,
-        "callMs": 120000,
+        "callMs": 600000,
         "totalMs": 900000,
         "at": 100
       }
