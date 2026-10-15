@@ -14,12 +14,12 @@ The mounts, the bind and credential policy, the projections and their rows, the 
 
 ## Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+Published on npm under the `next` tag. Name `@next` explicitly: `latest` still points at 0.35.0, an older release.
 
 Node 26.4.0 or later is required. `effect@^4.0.4` is a required peer.
 
 ```bash
-pnpm add @smthrs/gateway effect
+pnpm add @smthrs/gateway@next effect@^4.0.4
 ```
 
 ## Public API

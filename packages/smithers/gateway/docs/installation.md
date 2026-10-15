@@ -7,7 +7,12 @@ sidebar:
 
 ## Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli).
+Published on npm under the `next` tag. Name `@next` explicitly: `latest`
+still points at 0.35.0, an older release.
+
+```bash
+pnpm add @smthrs/gateway@next effect@^4.0.4
+```
 
 ## Requirements
 
@@ -18,11 +23,7 @@ Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/m
 
 `effect` is the only peer, in the range `^4.0.4`. Node and Bun adapters
 are bundled privately, built from 4.0.4, including their shared implementation.
-Hosts need no separate adapter install:
-
-```bash
-pnpm add effect@^4.0.4
-```
+Hosts need no separate adapter install.
 
 Use `@smthrs/gateway/node/NodeGateway` on Node or
 `@smthrs/gateway/bun/BunGateway` on Bun. The root and protocol subpaths need
@@ -84,6 +85,7 @@ The full composition, with the storage underneath it, is in
 ## Running without composing anything
 
 [`smthrs serve`](/cli/serve) hosts this exact assembly for a project on disk.
-If you want a gateway rather than a library, use the CLI instead. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli).
+If you want a gateway rather than a library, install the CLI instead, also
+under the `next` tag: `pnpm add -g @smthrs/cli@next`.
 
 Then see the [Quickstart](./quickstart.md).
