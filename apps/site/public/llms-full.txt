@@ -34833,11 +34833,11 @@ The base is resolved after the provider hands over the session, so a provider th
 
 `resolveBase(session, { checkout?, revision? })` and `capture(session, { checkout?, base })` are the two halves `run` composes, for a caller that holds its own session. Call `capture` while the session is still held.
 
-| `CaptureError.reason` | Cause                                                                     |
-| --------------------- | ------------------------------------------------------------------------- |
-| `not_a_repository`    | the checkout is not the top of a git work tree, or the guest has no `git` |
-| `base_unresolved`     | the base revision names no commit in the checkout                         |
-| `capture_failed`      | `git` failed while diffing                                                |
+| `CaptureError.reason` | Cause                                                                                       |
+| --------------------- | ------------------------------------------------------------------------------------------- |
+| `not_a_repository`    | the checkout is not the top of a git work tree, or the guest has no `git`                   |
+| `base_unresolved`     | the base revision names no commit in the checkout                                           |
+| `capture_failed`      | `git` failed while diffing, or the patch is not UTF-8 even with every path diffed as binary |
 
 `hostContext(session, { health? })` builds the `Host` context `layerHost` provides from a session the caller already holds; it requires a `Scope`. `layerHost` and `run` both use it.
 
@@ -34884,14 +34884,14 @@ The acquisition deadline does not bound a custom resolver's effects.
 the full `JjError`, including its code and nested `lock_timeout` cause. Host
 adapter loading is lazy and shared through one memoized, typed loader.
 
-| `MergeError.reason`   | Cause                                                                     |
-| --------------------- | ------------------------------------------------------------------------- |
-| `base_not_found`      | the work's base is not in the repository, even after the configured fetch |
-| `onto_unresolved`     | `onto` does not name exactly one commit                                   |
-| `patch_rejected`      | the patch does not apply to its own base                                  |
-| `conflict`            | `failOnConflict` met a conflict; `paths` names it                         |
-| `resolution_rejected` | a resolver's answer still has conflicts or does not descend from `onto`   |
-| `vcs_failed`          | `jj`, `git`, fence acquisition or host adapter loading failed             |
+| `MergeError.reason`   | Cause                                                                                                |
+| --------------------- | ---------------------------------------------------------------------------------------------------- |
+| `base_not_found`      | the work's base is not a full commit id, or is not in the repository even after the configured fetch |
+| `onto_unresolved`     | `onto` does not name exactly one commit                                                              |
+| `patch_rejected`      | the patch does not apply to its own base                                                             |
+| `conflict`            | `failOnConflict` met a conflict; `paths` names it                                                    |
+| `resolution_rejected` | a resolver's answer still has conflicts or does not descend from `onto`                              |
+| `vcs_failed`          | `jj`, `git`, fence acquisition or host adapter loading failed                                        |
 
 A `Strategy<E, R>` has one method, `onConflict(conflicted, repository)`, answering `Merged`, `Conflicted`, or a failure. `apply` lands the change before calling it.
 
@@ -34952,6 +34952,8 @@ const provider = DirectorySandbox.make({
   root: "/var/tmp/smithers"
 })
 ```
+
+`root` must be an absolute host path. `make` throws a `TypeError` for a relative or empty one, which would place every session's workdir under the engine process's working directory or directly under `/`.
 
 `acquire` first requires `ContainedSpawner.isContained(spawner)`: a raw spawner or a wrapper with only a kill deadline fails with `unavailable` before any directory or command is created. Use `NodeHost.layerContained()` or `BunHost.layerContained()` with a `ProcessLedger`; a custom host must supply a real platform lifecycle. The filesystem and spawner remain injected values, so this package has no production platform dependency.
 
