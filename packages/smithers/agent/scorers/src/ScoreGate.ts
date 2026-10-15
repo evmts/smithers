@@ -152,11 +152,25 @@ const faults = (samples: ReadonlyArray<ScoreSample>): ReadonlyArray<string> =>
 const rounded = (value: number): number => Number(value.toPrecision(6))
 
 /**
+ * The observed value as a breach reports it: rounded, unless rounding would
+ * print the threshold itself and hide the miss.
+ */
+const shown = (threshold: number, actual: number): number =>
+  rounded(actual) === rounded(threshold) ? actual : rounded(actual)
+
+/**
+ * How far a mean may sit below its threshold and still meet it. Summing
+ * binary floats drifts: the mean of 0.6, 0.7, and 0.8 is 0.6999999999999998,
+ * and a suite whose scores average exactly its threshold must not go red.
+ */
+const meanTolerance = 1e-9
+
+/**
  * Renders one breach with the stable code the error channel uses for misuse,
  * so a reason line names the gate, its threshold, and what the run scored.
  */
 const breach = (code: ScoreGateCode, threshold: number, actual: number): string =>
-  `${code}: threshold ${rounded(threshold)}, actual ${rounded(actual)}`
+  `${code}: threshold ${rounded(threshold)}, actual ${shown(threshold, actual)}`
 
 /**
  * Renders a per-case breach, naming the case that missed its threshold. The
@@ -165,7 +179,7 @@ const breach = (code: ScoreGateCode, threshold: number, actual: number): string 
  * otherwise collapse into one finding that names neither of them.
  */
 const caseBreach = (caseName: string, threshold: number, actual: number): string =>
-  `case_below_threshold: case '${caseName}', threshold ${rounded(threshold)}, actual ${rounded(actual)}`
+  `case_below_threshold: case '${caseName}', threshold ${rounded(threshold)}, actual ${shown(threshold, actual)}`
 
 /** Stands in for a verdict that states bad news without stating a reason. */
 const unstatedFailure = "A gate failed without a stated reason"
@@ -275,7 +289,13 @@ export const grade = (verdict: Verdict): { readonly exitCode: 0 | 1 | 5; readonl
  * @since 0.1.0
  */
 export interface ScoreExpectation {
-  /** Requires the arithmetic mean of all score observations to meet `threshold`. @since 0.1.0 @category gates */
+  /**
+   * Requires the arithmetic mean of all score observations to meet `threshold`,
+   * within 1e-9 so floating-point summation cannot fail a mean that equals it.
+   *
+   * @since 0.1.0
+   * @category gates
+   */
   readonly mean: (threshold: number) => Effect.Effect<Verdict, ScoreGateError>
   /** Requires every score observation to meet `threshold`. @since 0.1.0 @category gates */
   readonly min: (threshold: number) => Effect.Effect<Verdict, ScoreGateError>
@@ -307,7 +327,7 @@ export const expectScores = (samples: ReadonlyArray<ScoreSample>): ScoreExpectat
         const values = scoreValues(samples)
         if (values.length === 0) return undecidable(samples, ["No score samples for mean gate"])
         const actual = values.reduce((total, value) => total + value, 0) / values.length
-        return actual < threshold
+        return actual < threshold - meanTolerance
           ? failed(samples, [breach("mean_below_threshold", threshold, actual)])
           : passed(samples)
       }),

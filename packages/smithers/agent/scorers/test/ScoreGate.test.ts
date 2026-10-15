@@ -46,6 +46,20 @@ describe("runtime score gates", () => {
     }
   })
 
+  it("passes a mean equal to the threshold despite floating-point summation", async () => {
+    // 0.6 + 0.7 + 0.8 sums to 2.0999999999999996 in binary floating point.
+    for (const [values, threshold] of [[[0.6, 0.7, 0.8], 0.7], [[0.1, 0.2], 0.15], [[0.7, 0.9, 0.8], 0.8]] as const) {
+      const gates = ScoreGate.expectScores(values.map((value) => sample(value)))
+      expect(await Effect.runPromise(gates.mean(threshold))).toEqual({ _tag: "Passed", inconclusive: [] })
+    }
+    const below = ScoreGate.expectScores([sample(0.6), sample(0.7), sample(0.799999)])
+    expect(await Effect.runPromise(below.mean(0.7))).toEqual({
+      _tag: "Failed",
+      reasons: ["mean_below_threshold: threshold 0.7, actual 0.6999996666666667"],
+      inconclusive: []
+    })
+  })
+
   it("averages all observations and takes each case's minimum", async () => {
     const gates = ScoreGate.expectScores([sample(0.75), sample(0.25), sample(1, "second")])
     expect(await Effect.runPromise(gates.mean(0.7))).toEqual({

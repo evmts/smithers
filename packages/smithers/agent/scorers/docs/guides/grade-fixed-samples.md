@@ -36,6 +36,8 @@ sample has a finite `value` in `[0, 1]` and an optional `reason`. A
 `Effect.Effect<Verdict, ScoreGateError>` without environment requirements:
 
 - `mean(threshold)` compares the arithmetic mean of all score observations.
+  A mean within 1e-9 of the threshold meets it, so floating-point summation
+  cannot fail scores that average exactly the threshold.
 - `min(threshold)` compares the lowest score observation.
 - `perCase(thresholds)` compares each named case's lowest observation. Cases
   absent from the threshold record are not gated individually. Each breach
@@ -90,7 +92,9 @@ enough evidence to call it.
 
 Reason lists are joined with `;`. Threshold breach reasons retain the gate
 code, threshold, and actual score, rounded to six significant digits for
-display, for example `mean_below_threshold: threshold 0.5, actual 0.49`. A
+display, for example `mean_below_threshold: threshold 0.5, actual 0.49`. An
+actual score that rounds to its threshold prints in full, so a miss never
+reads as `actual 0.7` against `threshold 0.7`. A
 per-case reason names its case as well,
 `case_below_threshold: case 'translation', threshold 0.8, actual 0.2`, so two
 cases that miss the same threshold with the same score stay distinct after
