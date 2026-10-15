@@ -66,13 +66,15 @@ const fence = /(?<!`)(`{3,})flow\n([\s\S]*?)\n\1`*[ \t]*(?=\n|$)/g
  * block, whose body becomes the script. The block opens with three or more
  * backticks followed by `flow` and closes on a line holding only at least
  * as many backticks, so a longer opening fence can carry inner fences.
+ * CRLF line endings are read as LF, so the script text always uses LF.
  *
  * @category gates
  * @since 0.1.0
  * @slop
  */
 export const extract = (raw: string): Extraction => {
-  const blocks = [...raw.matchAll(fence)]
+  // Some routes return CRLF text; the fence only knows LF line ends.
+  const blocks = [...raw.replace(/\r\n/g, "\n").matchAll(fence)]
   const first = blocks[0]
   if (first === undefined) {
     return { _tag: "Rejected", reason: "the author output contains no ```flow block" }

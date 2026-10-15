@@ -66,4 +66,19 @@ describe("Script", () => {
   it("does not close the block on a shorter fence", () => {
     expect(Script.extract("````flow\nreturn done(1)\n```")._tag).toBe("Rejected")
   })
+
+  it("extracts a block from CRLF author output with LF line endings", () => {
+    const raw = "Prose.\r\n```flow\r\nconst a = 1\r\nreturn done(a)\r\n```\r\nMore prose.\r\n"
+    expect(Script.extract(raw)).toEqual({
+      _tag: "Extracted",
+      script: Script.make("const a = 1\nreturn done(a)")
+    })
+  })
+
+  it("keeps a lone carriage return inside the script body", () => {
+    expect(Script.extract("```flow\nreturn done(\"a\\rb\")\n```")).toEqual({
+      _tag: "Extracted",
+      script: Script.make("return done(\"a\\rb\")")
+    })
+  })
 })

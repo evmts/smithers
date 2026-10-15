@@ -473,7 +473,8 @@ The authored artifact of one link and the shape gate over raw output.
   exactly one fenced `flow` block, whose body becomes the script. Zero
   blocks or more than one is a `Rejected` whose reason the next authoring
   reads. The block opens with three or more backticks and `flow`, and closes
-  only on a line holding at least as many backticks and nothing else.
+  only on a line holding at least as many backticks and nothing else. CRLF
+  line endings are read as LF, so the script text always uses LF.
 
 ## `JsonBoundary`
 
