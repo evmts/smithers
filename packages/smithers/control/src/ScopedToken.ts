@@ -237,15 +237,23 @@ export const verify = (key: string, token: string, now: number): Effect.Effect<C
 const field = (value: unknown, name: string): unknown =>
   typeof value === "object" && value !== null ? (value as Record<string, unknown>)[name] : undefined
 
+/**
+ * The filters a payload names, unless the server ignores them: a `List` of
+ * the flow catalog returns every flow whatever its free-form filters say, so
+ * they confine nothing.
+ */
+const honoredFilters = (payload: unknown): unknown =>
+  field(payload, "_tag") === "flows" ? undefined : field(payload, "filters")
+
 /** The run a payload names, wherever the control and gateway schemas put it. */
 const namedRun = (payload: unknown): unknown =>
   field(payload, "runId") ??
     field(field(payload, "target"), "runId") ??
     field(field(payload, "selector"), "runId") ??
-    field(field(payload, "filters"), "runId")
+    field(honoredFilters(payload), "runId")
 
 /** The flow a payload names. */
-const namedFlow = (payload: unknown): unknown => field(payload, "flowId") ?? field(field(payload, "filters"), "flowId")
+const namedFlow = (payload: unknown): unknown => field(payload, "flowId") ?? field(honoredFilters(payload), "flowId")
 
 /**
  * Whether verified claims authorize one call.
@@ -253,7 +261,8 @@ const namedFlow = (payload: unknown): unknown => field(payload, "flowId") ?? fie
  * The procedure must be named. A token confined to a run authorizes only a
  * call that names that run, and one confined to a flow only a call that names
  * that flow: a call that names neither, such as an unfiltered `List`, is
- * refused rather than widened.
+ * refused rather than widened. A flow-catalog `List` never names a run or
+ * flow, because the server ignores its filters.
  *
  * @category verification
  * @since 1.0.0

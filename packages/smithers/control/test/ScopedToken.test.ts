@@ -203,6 +203,24 @@ describe("what claims authorize", () => {
     expect(ScopedToken.authorizes(confined, { rpc: "List", payload: { _tag: "flows" } })).toBe(false)
   })
 
+  it("refuses a confined catalog listing whose free-form filters the server ignores", () => {
+    // `List { _tag: "flows" }` returns the whole flow catalog whatever its
+    // filters say, so a filter naming the confined flow or run must not
+    // admit it.
+    expect(ScopedToken.authorizes(claims({ flowId: "demo" }), {
+      rpc: "List",
+      payload: { _tag: "flows", filters: { flowId: "demo" } }
+    })).toBe(false)
+    expect(ScopedToken.authorizes(claims({ runId: "run-1" }), {
+      rpc: "List",
+      payload: { _tag: "flows", filters: { runId: "run-1" } }
+    })).toBe(false)
+    expect(ScopedToken.authorizes(claims({}), {
+      rpc: "List",
+      payload: { _tag: "flows", filters: { flowId: "demo" } }
+    })).toBe(true)
+  })
+
   it("requires both confinements when both are set", () => {
     const confined = claims({ runId: "run-1", flowId: "demo" })
     expect(ScopedToken.authorizes(confined, {
