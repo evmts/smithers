@@ -302,6 +302,17 @@ const boundedText = (value: string, budget: SnapshotBudget): string => {
  */
 const standardErrorKeys = ["name", "message", "stack", "cause"] as const
 
+/** Reads inherited data fields without invoking accessors or walking forever. */
+const errorField = (value: object, key: string): unknown => {
+  let current: object | null = value
+  for (let depth = 0; current !== null && depth <= maximumSnapshotDepth; depth++) {
+    const descriptor = Object.getOwnPropertyDescriptor(current, key)
+    if (descriptor !== undefined) return "value" in descriptor ? descriptor.value : unrenderableMarker
+    current = Object.getPrototypeOf(current)
+  }
+  return current === null ? undefined : truncatedMarker
+}
+
 const snapshotValue = (
   value: unknown,
   budget: SnapshotBudget,
@@ -346,7 +357,7 @@ const snapshotValue = (
       for (const key of standardErrorKeys.slice(0, budget.members)) {
         budget.members--
         try {
-          record[key] = snapshotValue(value[key], budget, ancestors, depth + 1)
+          record[key] = snapshotValue(errorField(value, key), budget, ancestors, depth + 1)
         } catch {
           record[key] = unrenderableMarker
         }

@@ -80,7 +80,8 @@ export const layerStructuredJson = (options?: Options): Layer.Layer<never> => {
 }
 
 /**
- * Removes the active logger set while retaining Effect's minimum-level filter.
+ * Removes the active logger set and pins the minimum level to `None` unless
+ * `options.minimumLogLevel` explicitly selects another level.
  *
  * @category layers
  * @since 0.1.0

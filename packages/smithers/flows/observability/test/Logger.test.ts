@@ -11,6 +11,39 @@ const captured = () => {
 }
 
 describe("Logger layers", () => {
+  it.each([undefined, "Debug", "Warn"] as const)("silences loggers with minimum level %s", async (minimumLogLevel) => {
+    const ambient = captured()
+    const level = await Effect.runPromise(
+      Effect.gen(function*() {
+        yield* Effect.logFatal("silent even above the minimum")
+        return yield* References.MinimumLogLevel
+      }).pipe(
+        Effect.provide(Logger.layerNoop(minimumLogLevel === undefined ? undefined : { minimumLogLevel })),
+        Effect.provide(EffectLogger.layer([ambient.logger])),
+        Effect.provideService(References.MinimumLogLevel, "Trace")
+      )
+    )
+
+    expect(level).toBe(minimumLogLevel ?? "None")
+    expect(ambient.values).toEqual([])
+  })
+
+  it.each([false, true])("merges the ambient logger only when requested: %s", async (mergeWithExisting) => {
+    const ambient = captured()
+    const added = captured()
+    await Effect.runPromise(
+      Effect.logInfo("delivered once per sink").pipe(
+        Effect.provide(Logger.layer(added.logger, { mergeWithExisting })),
+        Effect.provide(EffectLogger.layer([ambient.logger]))
+      )
+    )
+
+    expect(added.values.map(({ options }) => options.message)).toEqual([["delivered once per sink"]])
+    expect(ambient.values.map(({ options }) => options.message)).toEqual(
+      mergeWithExisting ? [["delivered once per sink"]] : []
+    )
+  })
+
   it("exposes pretty, structured, and noop layers", () => {
     expect(Logger.layerPrettyDev()).toBeDefined()
     expect(Logger.layerStructuredJson()).toBeDefined()

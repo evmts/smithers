@@ -297,9 +297,9 @@ describe("JournalLogger", () => {
       }
     })
     const hostileError = new Proxy(new Error("boom"), {
-      get: (target, key, receiver) => {
+      getOwnPropertyDescriptor: (target, key) => {
         if (key === "stack") throw new Error("unreadable stack")
-        return Reflect.get(target, key, receiver)
+        return Reflect.getOwnPropertyDescriptor(target, key)
       }
     })
 
@@ -514,6 +514,80 @@ describe("JournalLogger", () => {
 
     const [died] = payload.cause.reasons as ReadonlyArray<{ defect?: unknown }>
     expect(died!.defect).toMatchObject({ name: "Error", message: "accessor", detail: unrenderableMarker })
+  })
+
+  it("does not invoke own or inherited accessors for standard error fields", async () => {
+    const id = runId("standard-accessor-error-run")
+    let reads = 0
+    const error = new Error("original")
+    // Define stack first: V8 may otherwise materialize its lazy stack using message.
+    for (const key of ["stack", "message", "cause"]) {
+      Object.defineProperty(error, key, {
+        configurable: true,
+        get: () => {
+          reads++
+          return "getter result"
+        }
+      })
+    }
+    Object.setPrototypeOf(
+      error,
+      Object.create(Error.prototype, {
+        name: {
+          get: () => {
+            reads++
+            return "getter name"
+          }
+        }
+      })
+    )
+    const payload = await run(
+      Effect.gen(function*() {
+        const journal = yield* Journal.Journal
+        yield* Effect.logError("failed", Cause.die(error))
+        const [entry] = yield* entriesEventually(journal, id, 1)
+        return Schema.decodeUnknownSync(TelemetryLog)(entry!.payload)
+      }).pipe(
+        Effect.provide(Layer.provideMerge(layerJournalForwarding({ runId: id }), TestJournal.layer()))
+      )
+    )
+    expect(reads).toBe(0)
+    expect(payload.cause.reasons).toEqual([{
+      _tag: "Die",
+      defect: {
+        name: unrenderableMarker,
+        message: unrenderableMarker,
+        stack: unrenderableMarker,
+        cause: unrenderableMarker
+      }
+    }])
+  })
+
+  it("bounds inherited error fields beyond the snapshot depth", async () => {
+    const id = runId("deep-error-prototype-run")
+    let prototype: object = Error.prototype
+    for (let depth = 0; depth <= maximumSnapshotDepth; depth++) prototype = Object.create(prototype)
+    const error = Object.create(prototype)
+    const payload = await run(
+      Effect.gen(function*() {
+        const journal = yield* Journal.Journal
+        yield* Effect.logError("failed", Cause.die(error))
+        const [entry] = yield* entriesEventually(journal, id, 1)
+        return Schema.decodeUnknownSync(TelemetryLog)(entry!.payload)
+      }).pipe(
+        Effect.provide(Layer.provideMerge(layerJournalForwarding({ runId: id }), TestJournal.layer()))
+      )
+    )
+
+    expect(payload.cause.reasons).toEqual([{
+      _tag: "Die",
+      defect: {
+        name: truncatedMarker,
+        message: truncatedMarker,
+        stack: truncatedMarker,
+        cause: truncatedMarker
+      }
+    }])
   })
 
   it("keeps the standard error fields when an error refuses to enumerate its own keys", async () => {
@@ -748,7 +822,9 @@ describe("JournalLogger", () => {
     const id = runId("error-key-collision-run")
     const failure = new Error("m")
     failure.name = "E"
-    failure.stack = "s"
+    // V8 can retain a native stack accessor after assignment. Use a data
+    // descriptor so this case spends the exact byte budget calculated below.
+    Object.defineProperty(failure, "stack", { configurable: true, value: "s" })
     // Byte arithmetic: message ["failed"] (8), then the standard error fields
     // "E", "m", "s", and "[Undefined]" (22), then key "a[Truncated]" (14) +
     // "keep" (6) + key "apiKey" (8) + the filler string (its length + 2)
