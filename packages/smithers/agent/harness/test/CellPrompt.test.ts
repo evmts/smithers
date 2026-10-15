@@ -392,7 +392,8 @@ describe("cellPrompt", () => {
     // rules in fragments. The environment ceiling fell from 300 to 200.
     //
     // Unchanged on 2026-10-14: uncapping reading before the first edit cost
-    // +26 characters and lands the contract at 1,449.
+    // +26 characters and lands the contract at 1,449. The short-answer rule of
+    // the same day (#3995) fits the same ceiling.
     expect(Tokens.estimate(contractText())).toBeLessThanOrEqual(1_450)
     expect(Tokens.estimate(sectionOf("cell-environment", {}, { locale: "C.UTF-8", absentTools: ["rg", "ruff"] })))
       .toBeLessThanOrEqual(200)
@@ -456,9 +457,13 @@ describe("the contract", () => {
     // reading before the first edit is not capped (why-codex-won.md): rule 4's
     // economy starts at the first edit, and its `console.log(hits)` example,
     // a print of search results, went with the ban it illustrated.
-    expect(replText()).toHaveLength(5_579)
+    // It moved again the same day, 5,579 → 5,571, on will's ruling that the
+    // answer is short (#3995): rule 5 asks for what changed and which check
+    // passed in three lines instead of each check's command and output, and
+    // the example completes in one sentence instead of pasting the hunk.
+    expect(replText()).toHaveLength(5_571)
     expect(Digest.digest(replText()))
-      .toBe("7f55f01235888a434e3b587794b5aa268697d282f1ab20c235bc5936d345f755")
+      .toBe("4c75253ebc2c7ba08d978b9ca33bfe5660d960eba27cfafc5c15ac257892318b")
   })
 
   it("encourages the guard shape and leaves the unguarded completion legal", () => {
@@ -526,6 +531,21 @@ describe("the contract", () => {
     for (const named of ["ctx.done(output)", "ctx.park(reason, message)", "ctx.justify(", "console.log"]) {
       expect(replText()).toContain(named)
     }
+  })
+
+  it("asks for a short answer: what changed and which check passed, and what is unverified", () => {
+    // Will's ruling of 2026-10-14 (#3995). Rule 5 asked a completing run to
+    // name each claimed check's exact command and output, and the worked
+    // example pasted the applied hunk into the answer; done text ran 498
+    // tokens per task against stock Codex's 74 (why-more-output.md).
+    const rule = replText().split("\n").find((line) => line.startsWith("5. "))!
+    expect(rule).toContain("what changed and which check passed")
+    expect(rule).toContain("say what is unverified")
+    expect(rule).not.toContain("exact command and output")
+    // The example answers in one sentence and leaves the hunk in the tree.
+    const done = replText().split("\n").find((line) => line.includes("ctx.done(") && line.startsWith("if ("))!
+    expect(done).not.toContain("hunk")
+    expect(done).toContain("verification.input.command")
   })
 
   it("leaves reading before the first edit uncapped and keeps the print economy after it", () => {

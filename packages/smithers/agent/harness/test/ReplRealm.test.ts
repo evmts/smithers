@@ -1008,8 +1008,10 @@ describe("the REPL contract's worked example", () => {
     expect(fix).not.toMatch(/git (checkout|restore|stash|reset)/)
     const finished = frames[1]!.outcome
     expect(finished._tag === "settled" && finished.transition._tag).toBe("complete")
+    // One sentence: what changed and which check passed. The hunk is printed
+    // for the model to read and left out of the answer (#3995).
     expect(finished._tag === "settled" && finished.transition._tag === "complete" && finished.transition.output)
-      .toContain("failed before the edit and exits 0 after it")
+      .toBe("Widened src/units/widen.ts; run-tests tests/test_widen.py::test_keeps_unit failed before, passes after.")
     expect(frames[1]!.prints).toContain("+  return widen(value)")
     expect(frames[1]!.prints).toContain("\n1 0")
   })

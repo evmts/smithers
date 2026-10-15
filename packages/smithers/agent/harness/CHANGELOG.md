@@ -4,6 +4,13 @@
 
 ### Changed
 
+- The cell contract asks for a short answer. Rule 5 asked a completing run to
+  name each claimed check's exact command and output, and the worked
+  example's `ctx.done` pasted the applied hunk; done text ran 498 tokens per
+  task against stock Codex's 74 on the paired SWE-bench Pro run of
+  2026-10-14. Rule 5 now asks for what changed and which check passed in at
+  most three lines, still with what is unverified, and the example answers in
+  one sentence. The contract is 5,571 characters (#3995).
 - No model reads a completion unless the workflow arms the claim brake:
   `CellTurn.defaultClaimDemands` is 0, and a flow arms the judge with a
   positive `claimCap` (`AgentAction`'s `claimCap`, `AgentAction.Host.claimCap`,

@@ -160,6 +160,13 @@ export interface Environment {
  * Will 2026-10-14: reading before the first edit is not capped; evidence
  * why-codex-won.md. Rule 4's print economy now starts at the first edit.
  *
+ * Will 2026-10-14, the same day (#3995): the answer is short. Rule 5 asked a
+ * completing run to name each claimed check's exact command and output, and
+ * the worked example pasted the applied hunk into `ctx.done`; done text ran
+ * 498 tokens per task against stock Codex's 74 (why-more-output.md). Rule 5
+ * now asks for what changed and which check passed, in a few lines, and still
+ * for what is unverified; the example answers in one sentence.
+ *
  * Governing design: `../../docs/concepts.md#repl-realm`.
  */
 const replContract = `JavaScript REPL, one cell per turn, alive for the whole run.
@@ -184,7 +191,7 @@ const applied = await ctx.call("edit", { path: hit.file, oldString: anchor, newS
 const before = await ctx.call(verification.flow, verification.input, { at: ctx.base })  // opening tree; edit stays
 const after = await ctx.call(verification.flow, verification.input)
 console.log(applied.ok === false ? applied.error.message : applied.hunk, before.exitCode, after.exitCode, after.stdout)
-if (before.exitCode !== 0 && after.exitCode === 0) ctx.done(verification.input.command + " failed before the edit and exits 0 after it; the applied hunk is:\\n" + applied.hunk)
+if (before.exitCode !== 0 && after.exitCode === 0) ctx.done("Widened " + hit.file + "; " + verification.input.command + " failed before, passes after.")
 \`\`\`
 
 Many calls per cell; one call per frame wastes turns.
@@ -195,7 +202,7 @@ Rules:
 2. Every effect is a flow: files, commands, memory, questions, subagents.
 3. A failed call does not throw: resolves \`{ ok: false, error: { code, message, hint } }\`; test \`.ok === false\` where you are unsure. Success resolves the result unwrapped. A throwing cell keeps names already assigned. Long calls spend the flow's budget, not the cell's. Output is capped: a result flagged truncated is a fragment. Restore files with git checkout or git restore; never route file content through captured stdout (a write of bytes a call returned truncated is refused).
 4. Before your first edit, reading is uncapped: print whole files, search results, listings. Each turn opens with your last print, bound names, and one line per settled call (tree writes and repeats flagged). After your first edit, prints are re-paid every turn: print only what you must read; keep the rest in variables; ≤40 lines a cell; never whole listings, search results, files or intermediates; counts and paths first, then only the chosen region. Structures print as JSON; record lists as tables.
-5. Finish by calling. \`ctx.done(output)\` ends the run; \`output\` is the answer. \`ctx.park(reason, message)\` waits durably for a human; reason "waiting-input" | "waiting-event" | "waiting-quota"; refused when nobody listens. Both take effect at that line; later calls in the cell resolve \`{ ok: false, error: { code: "run_completed" } }\`. Conversational or read-only request: \`ctx.done(answer)\` directly; no edit, command, baseline or tree review. \`console.log\` alone does not finish. Workspace change: finish behind the deciding check, \`if (after.exitCode === 0) ctx.done(...)\`. Let the guard read the tree too: \`git status --porcelain\` and \`git diff\` in the completing cell; finish silently only when the check passes AND the diff holds exactly the files you meant to change, else \`console.log\` that diff. A bare \`ctx.done\` is allowed but is a claim nobody checked: say what is unverified. Name each claimed check's exact command and output. A cell calling neither ends the turn.
+5. Finish by calling. \`ctx.done(output)\` ends the run; \`output\` is the answer. \`ctx.park(reason, message)\` waits durably for a human; reason "waiting-input" | "waiting-event" | "waiting-quota"; refused when nobody listens. Both take effect at that line; later calls in the cell resolve \`{ ok: false, error: { code: "run_completed" } }\`. Conversational or read-only request: \`ctx.done(answer)\` directly; no edit, command, baseline or tree review. \`console.log\` alone does not finish. Workspace change: finish behind the deciding check, \`if (after.exitCode === 0) ctx.done(...)\`. Let the guard read the tree too: \`git status --porcelain\` and \`git diff\` in the completing cell; finish silently only when the check passes AND the diff holds exactly the files you meant to change, else \`console.log\` that diff. A bare \`ctx.done\` is allowed but is a claim nobody checked: say what is unverified. Workspace \`output\`, ≤3 lines: what changed and which check passed. A cell calling neither ends the turn.
 6. Resume re-executes cells from the top; settled calls replay recorded results.
 7. Bug-fix evidence: a command counts only after you SEE it fail on the unmodified tree FOR THE RIGHT REASON (the bug). A probe naming a test, file, module or program that does not exist reproduces nothing; \`invalidProbe\` flags some. Fix such a probe before you rely on it. Keep the check as \`verification = { flow, input }\`; reuse it unchanged after edits.
 8. Workspace change: read broadly in ONE cell, then edit. Too many frames without a write stop the run; near the limit, edit or \`ctx.justify("<missing evidence, the call that gets it, what changes next>")\`. An edit answers with the hunk it applied: print it in the same cell (a bad edit costs one glance there). Then run whatever language-aware checker \`ctx.flows\` and this image actually offer (compiler, ruff, eslint/tsc) through the shell flow. Fix undefined names before broad suites. No checker: say so; never regex-guess.
