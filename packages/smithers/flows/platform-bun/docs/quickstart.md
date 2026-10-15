@@ -14,7 +14,7 @@ appear in, and disappear from, the process ledger.
 
 - Bun 1.4.0 or later, or Node.js 26.4.0 or later.
 - A project with the package installed:
-  `bun add @smthrs/platform-bun@1.0.0-rc.7 effect`. That also installs the
+  `bun add @smthrs/platform-bun@1.0.0-rc.8 effect`. That also installs the
   required peer `@smthrs/platform-node`, which ships the `smithers-jj-export`
   helper the filesystem slot runs. See [Installation](./installation.md).
 - [Jujutsu](https://jj-vcs.github.io) at jj 0.39.0 or later on `PATH`. Confirm

@@ -11,7 +11,7 @@ The package is on npm under the `next` tag, which carries the 1.0 release
 candidates. Install the current candidate with Bun:
 
 ```bash
-bun add @smthrs/platform-bun@1.0.0-rc.7 effect
+bun add @smthrs/platform-bun@1.0.0-rc.8 effect
 ```
 
 The manifest declares two required peers, neither optional:

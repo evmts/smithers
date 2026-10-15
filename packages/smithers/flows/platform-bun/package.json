@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/platform-bun",
   "type": "module",
-  "version": "1.0.0-rc.7",
+  "version": "1.0.0-rc.8",
   "license": "MIT",
   "smthrs": {
     "group": "engine",
@@ -120,15 +120,15 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/jj": "1.0.0-rc.7",
-    "@smthrs/kernel": "1.0.0-rc.7",
+    "@smthrs/jj": "1.0.0-rc.8",
+    "@smthrs/kernel": "1.0.0-rc.8",
     "undici": "8.11.2",
     "redis": "6.2.1",
     "@types/ws": "8.18.2",
     "ws": "8.22.0"
   },
   "peerDependencies": {
-    "@smthrs/platform-node": "1.0.0-rc.7",
+    "@smthrs/platform-node": "1.0.0-rc.8",
     "effect": "^4.0.4"
   },
   "devDependencies": {
@@ -138,7 +138,7 @@
     "@effect/platform-node-shared": "4.0.4",
     "@effect/vitest": "4.0.4",
     "@eslint/js": "9.39.5",
-    "@smthrs/platform-node": "1.0.0-rc.7",
+    "@smthrs/platform-node": "1.0.0-rc.8",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
@@ -153,6 +153,6 @@
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
     "vitest": "5.0.0",
-    "@smthrs/artifacts": "1.0.0-rc.7"
+    "@smthrs/artifacts": "1.0.0-rc.8"
   }
 }
