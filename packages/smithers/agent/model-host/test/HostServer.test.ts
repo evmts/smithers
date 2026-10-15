@@ -272,6 +272,25 @@ test("a refused model stream records its stage on the guest's diagnostics", asyn
   expect(JSON.stringify(records)).not.toContain("private provider diagnostic")
 })
 
+test("a refused model stream names the provider's own code, and no other field it cannot carry", async () => {
+  // The stage alone does not separate a provider that refused the request
+  // from one that broke mid-answer; the provider's own code does, and it is
+  // the one field beyond the tag this route can carry. A journal's refusal
+  // status is not: a sealed stream commits nothing, so nothing on this route
+  // has one, and the response must not imply it could.
+  const response = await failing(new ModelError({ code: "rate_limited", message: "signed request detail" }))(
+    streamPost({ runId: "run", messages: [] })
+  )
+  expect(response.status).toBe(502)
+  expect(await response.json()).toEqual({
+    status: "error",
+    code: "stream_failed",
+    stage: "stream",
+    failure: "ModelFailure",
+    providerCode: "rate_limited"
+  })
+})
+
 test.each([
   "ftp://callback.test",
   "http://user@callback.test",

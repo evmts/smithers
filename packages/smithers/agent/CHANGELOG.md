@@ -25,9 +25,10 @@
   that dial created tells them apart, because it reports the name's answer
   before the connection is attempted. `lookupBegan` without `lookupEnded` is a
   name still in the resolver, `lookupEnded` with no connection ended is a name
-  answered and a connection that never came up, `lookupCode` names a resolution
-  that failed, and a dial to an address records no resolution at all — which
-  makes that last reading unambiguous on its own. `net.client.socket` carries no
+  answered and a connection that never came up, and `lookupCode` names a
+  resolution that failed. That split holds for a dial this host makes itself;
+  no resolution record at all means either a dial to an address or a dial a
+  connector carried, and the two are not distinguished. `net.client.socket` carries no
   origin, so a socket is attributed only when the dispatcher created it in the
   same synchronous turn as the dial this observer counted, and one that arrives
   later is left alone rather than guessed at.
@@ -53,6 +54,32 @@
 
 ### Fixed
 
+- A callback's transport record no longer reports a name resolution this host
+  never performed (#3812). Every hosted guest reaches its journal through the
+  sandbox's egress proxy, and under a proxy the dispatcher dials the journal's
+  origin and then hands that dial to a connector, which dials the proxy: the
+  socket the dial produced is the proxy's, so its resolution — or its absence,
+  when the proxy is an address — is not the journal's name. The observer
+  claimed it anyway. Measured on the pinned Node 26.5.0 through a real CONNECT
+  proxy, a **healthy** callback reported one resolution begun and none ended,
+  which this record's own reading calls a name still stuck in the resolver, and
+  with the proxy named it reported the proxy's resolution as the journal's. A
+  dial for a host no open attempt named now releases the claim, so a proxied
+  attempt records its connection counts and no resolution, and the record no
+  longer sends a reader after DNS for a fault that is not there. The direct
+  dial's split is unchanged. `test/CallbackTransport.test.ts` replays the
+  record order real transport publishes in that shape; the measurement it comes
+  from is in `diagnostics/continuation13/repro`.
+- A refused sealed model stream no longer carries a field that route cannot
+  produce (#3812). `streamRefused` spread the status a journal refused a
+  callback with, and a sealed stream commits nothing: its only failures are a
+  refused resolve, a model failure and an oversized stream, none of which has a
+  status. The branch was unreachable, which is why the package's own 100 %
+  coverage threshold could not be met with it there. The cause type is narrowed
+  to what the route can fail with, so a producer failure at that call site is a
+  type error rather than a status the response would silently drop, and the
+  provider's own code — the one field beyond the tag the route does carry — is
+  now pinned by a test.
 - The journal callback bound now covers the receipt, not just the request
   (#3812). `fetch` resolves as soon as headers arrive, so a journal that
   answered a commit's status and then stopped sending its receipt left a second

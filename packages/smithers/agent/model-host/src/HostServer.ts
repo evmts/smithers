@@ -300,14 +300,20 @@ const classify = (
 const streamRefused = (
   diagnostics: HostDiagnostics,
   stage: "resolve" | "stream",
-  cause: Cause.Cause<ResolveFailed | ProducerError | Model.ModelFailure | StreamTooLarge>
+  cause: Cause.Cause<ResolveFailed | Model.ModelFailure | StreamTooLarge>
 ): Response => {
   const classified = classify(cause)
+  // `classify` also carries the status a journal refused a callback with, and
+  // this route cannot produce one: a sealed model stream commits nothing, so
+  // its failures are a refused resolve, a model failure and an oversized
+  // stream, none of which has a status. Spreading one here left a branch no
+  // request could reach, and the narrowed cause type above is what keeps it
+  // unreachable — a producer failure at this call site is a type error now,
+  // rather than a status this response would silently drop.
   const refusal = {
     stage,
     failure: classified.failure,
-    ...(classified.code === undefined ? {} : { providerCode: classified.code }),
-    ...(classified.status === undefined ? {} : { status: classified.status })
+    ...(classified.code === undefined ? {} : { providerCode: classified.code })
   }
   diagnostics.record("model_stream", "refused", refusal)
   return Response.json({ status: "error", code: "stream_failed", ...refusal }, { status: 502 })

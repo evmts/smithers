@@ -3,6 +3,7 @@ import type { AgentTurnBatch, AgentTurnCursor } from "@smthrs/rpc/AgentTurnJourn
 import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import { Cause, Duration, Effect, Exit, Fiber } from "effect"
 import { createHash } from "node:crypto"
+import { channel } from "node:diagnostics_channel"
 import { createServer } from "node:http"
 import type { IncomingMessage, Server, ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
@@ -606,6 +607,124 @@ describe("a callback dial's resolution", () => {
     const fields = attempt.fields()
     transport.close()
     expect(fields).toEqual({ transport: "none" })
+  })
+})
+
+describe("a callback dial a forward proxy carried", () => {
+  // Every hosted guest reaches its journal through the sandbox's egress
+  // proxy, and that is the one network shape none of the cases above cover.
+  // Under a proxy the dispatcher dials the journal's origin, hands that dial
+  // to a connector, and the connector dials the PROXY — so the socket the
+  // dial produced is the proxy's, and whatever it resolves is the proxy's
+  // name, not the journal's. These cases replay the record order real
+  // transport publishes in that shape, measured on the pinned Node 26.5.0
+  // through a real CONNECT proxy and kept in
+  // `diagnostics/continuation13/repro` with its readings: a HEALTHY proxied
+  // callback reported `lookupBegan: 1, lookupEnded: 0`, which this file's own
+  // documentation reads as a name still in the resolver. Publishing on the
+  // dispatcher's own channels is the subscriber's real seam; the proxy is the
+  // part that cannot be raised inside one coverage-instrumented process.
+  const create = channel("undici:request:create")
+  const beforeConnect = channel("undici:client:beforeConnect")
+  const connected = channel("undici:client:connected")
+  const clientSocket = channel("net.client.socket")
+  const sendHeaders = channel("undici:client:sendHeaders")
+  const headers = channel("undici:request:headers")
+  const trailers = channel("undici:request:trailers")
+
+  const dialOf = (origin: string) => {
+    const { host, hostname } = new URL(origin)
+    return { connectParams: { host, hostname } }
+  }
+
+  /** A socket a dial created, which reports the names it is asked to resolve. */
+  const socketFor = (resolves: ReadonlyArray<string>) => {
+    const asked: Array<string> = []
+    const socket = {
+      once: (event: string, listener: (error: null) => void) => {
+        asked.push(event)
+        for (const _ of resolves) listener(null)
+        return socket
+      }
+    }
+    return { socket, asked }
+  }
+
+  /**
+   * One attempt through a proxy, in the dispatcher's own order: the journal's
+   * request and dial, then the proxy's request and dial, then the one socket
+   * the connector created, then both connections and the answer.
+   */
+  const proxiedAttempt = (journalOrigin: string, proxyOrigin: string, resolves: ReadonlyArray<string>) => {
+    const transport = observeCallbackTransport(journalOrigin)
+    const attempt = transport.begin()
+    const request = { origin: journalOrigin, path: "/internal/chat/commit" }
+    const dialled = socketFor(resolves)
+    attempt.run(() => {
+      create.publish({ request })
+      beforeConnect.publish(dialOf(journalOrigin))
+      create.publish({ request: { origin: proxyOrigin, path: new URL(journalOrigin).host } })
+      beforeConnect.publish(dialOf(proxyOrigin))
+      clientSocket.publish({ socket: dialled.socket })
+      connected.publish(dialOf(proxyOrigin))
+      connected.publish(dialOf(journalOrigin))
+      sendHeaders.publish({ request, socket: {} })
+      headers.publish({ request })
+      trailers.publish({ request })
+      return Promise.resolve()
+    })
+    const fields = attempt.fields()
+    transport.close()
+    return { fields, asked: dialled.asked }
+  }
+
+  test("reports no resolution of its own when the proxy is an address", () => {
+    // The measured production-shaped reading. The connection counts are the
+    // journal's own and stay; the resolution is the proxy's and must not be
+    // claimed, because an address resolves nothing and `lookupBegan` without
+    // `lookupEnded` would read as a journal name stuck in the resolver.
+    const { asked, fields } = proxiedAttempt("http://journal.invalid:8080", "http://127.0.0.1:41038", [])
+    expect(fields.transport).toBe("received")
+    expect(fields.connectBegan).toBe(1)
+    expect(fields.connectEnded).toBe(1)
+    expect(fields.lookupBegan).toBeUndefined()
+    expect(fields.lookupEnded).toBeUndefined()
+    expect(asked).toEqual([])
+  })
+
+  test("does not read the proxy's own resolution as the journal's", () => {
+    // A guest's proxy is itself named (`host.microsandbox.internal`), so the
+    // socket the connector created does resolve a name — the proxy's. Reading
+    // it as the journal's would report a resolution this host never made and
+    // would carry the proxy's resolver failure under the journal's code.
+    const { asked, fields } = proxiedAttempt("http://journal.invalid:8080", "http://proxy.invalid:41038", ["lookup"])
+    expect(fields.transport).toBe("received")
+    expect(fields.connectBegan).toBe(1)
+    expect(fields.lookupBegan).toBeUndefined()
+    expect(fields.lookupEnded).toBeUndefined()
+    expect(fields.lookupCode).toBeUndefined()
+    expect(asked).toEqual([])
+  })
+
+  test("still separates a name from a connection for a dial this host makes itself", () => {
+    // The reading the proxy case gives up must survive where it is sound: an
+    // unproxied dial by name still records both halves of its resolution.
+    const journalOrigin = "http://journal.invalid:8080"
+    const transport = observeCallbackTransport(journalOrigin)
+    const attempt = transport.begin()
+    const request = { origin: journalOrigin, path: "/internal/chat/commit" }
+    const dialled = socketFor(["lookup"])
+    attempt.run(() => {
+      create.publish({ request })
+      beforeConnect.publish(dialOf(journalOrigin))
+      clientSocket.publish({ socket: dialled.socket })
+      return Promise.resolve()
+    })
+    const fields = attempt.fields()
+    transport.close()
+    expect(fields.lookupBegan).toBe(1)
+    expect(fields.lookupEnded).toBe(1)
+    expect(dialled.asked).toEqual(["lookup"])
   })
 })
 

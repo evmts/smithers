@@ -40,9 +40,18 @@ import type { HostDiagnosticFields } from "./HostDiagnostics.ts"
  * socket that dial created tells them apart — `lookupBegan` without
  * `lookupEnded` is a name still in the resolver, and `lookupEnded` without a
  * connection ended is a name answered and a connection that never came up. A
- * dial to an address records no lookup at all, which leaves that reading
- * unambiguous on its own. A connection that *fails* also names itself
- * (`connectCode`, so `ENOTFOUND` reads apart from `ECONNREFUSED`).
+ * connection that *fails* also names itself (`connectCode`, so `ENOTFOUND`
+ * reads apart from `ECONNREFUSED`).
+ *
+ * That split holds for a dial this host makes itself. NO resolution record at
+ * all means one of two things, and they are not distinguished: the dial was
+ * to an address, or it was handed to a connector — a forward proxy, which is
+ * every hosted guest — that resolved and dialled its own host instead. A
+ * guest never resolves its journal's name; its proxy does. So the absence of
+ * these fields is not evidence that no name was involved, and the earlier
+ * reading of it as such was wrong: measured on Node 26.5.0 through a real
+ * CONNECT proxy, a healthy callback reported one resolution begun and none
+ * ended, which read as a name stuck in the resolver.
  *
  * What it still does not separate: a hang after the name is answered is a
  * connection the kernel is retrying, and whether that is a dropped SYN, a
@@ -104,11 +113,12 @@ interface AttemptState {
    * The host and port the dispatcher spells for this attempt's connection,
    * which is whatever its own request record names. A guest reaches its
    * journal through the sandbox's egress proxy, and the two proxy shapes
-   * spell it differently: a tunnelled request (the production one — the
-   * guest's Node runs with `NODE_USE_ENV_PROXY=1` and CONNECTs for every
-   * scheme) keeps the journal's own origin and dials it by name through the
-   * tunnel, while a plain-HTTP proxied request names the proxy as its origin
-   * and carries the journal's URL as its path. Taking the host from the
+   * spell it differently, and which one a guest gets follows the journal's
+   * scheme rather than its proxy: under `NODE_USE_ENV_PROXY=1` an `https`
+   * journal (the production one) is CONNECTed, so the request keeps the
+   * journal's own origin and is dialled by name through the tunnel, while an
+   * `http` journal is sent absolute-form, so the request names the proxy as
+   * its origin and carries the journal's URL as its path. Taking the host from the
    * record rather than from the callback URL matches `connectParams.host` in
    * both, so the connection counts are not silently always zero in one.
    */
@@ -239,9 +249,19 @@ const onBeforeConnect = (message: unknown): void => {
     state.connectBegan += 1
     dialled.push(state)
   })
+  // A dial for a host no open attempt named, arriving while one of them is
+  // waiting for its socket, is the connector that attempt's dial was handed
+  // to: a forward proxy opening its own connection. The socket that follows
+  // belongs to the proxy, so the resolution on it — or the absence of one,
+  // when the proxy is an address — is not this origin's name, and claiming it
+  // reports a resolution this host never performed.
+  if (dialled.length === 0) {
+    dialling = undefined
+    return
+  }
   // A dial to an address has no name to resolve, and recording a resolution it
   // never began would read as one that never returned.
-  if (dialled.length === 0 || isIP((message as ConnectMessage).connectParams.hostname) !== 0) return
+  if (isIP((message as ConnectMessage).connectParams.hostname) !== 0) return
   dialling = dialled
   queueMicrotask(() => {
     dialling = undefined
