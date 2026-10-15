@@ -304,23 +304,26 @@ function Presence({ model, gestures, onAction }: ListProps) {
   )
 }
 /*
- * An empty Activity panel reads as a broken card, not as an empty one: a box
- * still waiting for a machine has recorded nothing yet, and the panel used to
- * say so with nothing at all. The machine's own word is already in the model,
- * so the absence names where the box is instead of inventing a second account
- * of it; a machine that is up and has recorded nothing says only that.
+ * An empty tab panel reads as a broken card, not as an empty one: a box still
+ * waiting for a machine has recorded nothing yet, and the panel used to say so
+ * with nothing at all. The queued box a8eb95e2 opened on a blank Activity
+ * body, and its Files and Terminals panels were as blank — one tab press away
+ * from the same card — so all three answer. The machine's own word is already
+ * in the model, so the absence names where the box is instead of inventing a
+ * second account of it; a machine that is up and has recorded nothing says
+ * only that.
  */
-function ActivityAbsence({ model }: Pick<BranchViewProps, "model">) {
+function PanelAbsence({ model, words }: Pick<BranchViewProps, "model"> & { readonly words: string }) {
   return (
     <p className="branch-muted">
       {model.machine.state === "awake" || model.machine.state === "failed"
-        ? "Nothing yet"
-        : `${machineWords[model.machine.state]} · nothing yet`}
+        ? `${words.charAt(0).toUpperCase()}${words.slice(1)}`
+        : `${machineWords[model.machine.state]} · ${words}`}
     </p>
   )
 }
 function ActivityList({ model, view, onAction }: Pick<BranchViewProps, "model" | "view" | "onAction">) {
-  if (model.activity.length === 0) return <ActivityAbsence model={model} />
+  if (model.activity.length === 0) return <PanelAbsence model={model} words="nothing yet" />
   const shown = view.maximized ? model.activity : model.activity.slice(-5)
   const earlier = model.activity.length - shown.length
   const lastAnswer = model.activity.map((entry) => entry.kind).lastIndexOf("answer")
@@ -365,6 +368,7 @@ function ActivityList({ model, view, onAction }: Pick<BranchViewProps, "model" |
   )
 }
 function FileList({ model, gestures, onAction }: ListProps) {
+  if (model.changed_files.length === 0) return <PanelAbsence model={model} words="no changed files" />
   return (
     <ul className="branch-list">
       {model.changed_files.map((file) => (
@@ -391,6 +395,7 @@ function FileList({ model, gestures, onAction }: ListProps) {
   )
 }
 function TerminalList({ model, gestures, onAction }: ListProps) {
+  if (model.terminals.length === 0) return <PanelAbsence model={model} words="no terminals" />
   return (
     <ul className="branch-list">
       {model.terminals.map((terminal) => (

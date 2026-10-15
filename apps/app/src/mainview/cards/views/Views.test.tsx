@@ -8,6 +8,7 @@ import { stories as secretsStories } from "./SecretsView.stories"
 import { SecretsView } from "./SecretsView"
 import type { SecretsViewProps } from "@smthrs/rpc/SecretsCard"
 import { BranchView } from "./BranchView"
+import type { BranchCard } from "@smthrs/rpc/BranchCard"
 import { fixtures as branchFixtures } from "@smthrs/rpc/fixtures/Branch"
 import { TerminalView } from "./TerminalView"
 import { terminalSlot } from "../TerminalCard"
@@ -1912,6 +1913,34 @@ for (const [key, copy, label, tag, args] of branchStateOracles) test(`Branch ${k
     expect(onAction.mock.calls).toEqual([[tag, args]])
     await act(async () => root.render(<BranchView {...branchFixtures[key]} actions={[]} onAction={onAction} onView={onView} />))
     expect(host.querySelectorAll("button[data-flow]")).toHaveLength(0)
+  } finally { await act(async () => root.unmount()); host.remove() }
+})
+
+/*
+ * The queued box a8eb95e2 opened on a blank Activity body. Its Files and
+ * Terminals panels were as blank, one tab press from the same card, so every
+ * empty panel answers: where the box is while it has not come up, and the bare
+ * absence once it is up or has failed with its own notice above.
+ */
+test("every empty Branch panel answers, in the machine word the model already carries", async () => {
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host)
+  const queued: BranchCard = { ...branchFixtures.waiting.model, machine: { state: "waking" } }
+  const render = (model: BranchCard, tab: "activity" | "files" | "terminals") =>
+    act(async () => root.render(<BranchView {...branchFixtures.waiting} model={model}
+      view={{ maximized: false, tab }} onAction={() => {}} onView={() => {}} />))
+  try {
+    for (const [tab, words] of [["activity", "nothing yet"], ["files", "no changed files"], ["terminals", "no terminals"]] as const) {
+      await render(queued, tab)
+      expect(host.querySelector('[role="tabpanel"]')!.textContent).toBe(`Waking · ${words}`)
+    }
+    for (const [tab, words] of [["activity", "Nothing yet"], ["files", "No changed files"], ["terminals", "No terminals"]] as const) {
+      await render({ ...queued, machine: { state: "awake" } }, tab)
+      expect(host.querySelector('[role="tabpanel"]')!.textContent).toBe(words)
+    }
+    // A panel that has something to show still shows it, never the absence.
+    await act(async () => root.render(<BranchView {...branchFixtures.active_terminals} onAction={() => {}} onView={() => {}} />))
+    expect(host.querySelector('[role="tabpanel"]')!.textContent).toContain("pnpm check")
+    expect(host.querySelector('[role="tabpanel"] p.branch-muted')).toBeNull()
   } finally { await act(async () => root.unmount()); host.remove() }
 })
 
