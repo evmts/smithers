@@ -58,6 +58,13 @@ describe("actual copy transport", () => {
     expect(await readFile(downloaded, "utf8")).toBe("file content")
     expect((await readdir(home)).some((name) => name.startsWith(".smithers-cp-"))).toBe(false)
   })
+  it("treats a timeout longer than a timer can hold as a long wait, not an immediate one", async () => {
+    // Node fires a timer longer than 2^31-1 ms after 1 ms; 3,000,000 s is past it.
+    const { c, home } = await fixture()
+    await writeFile(join(home, "source"), "value")
+    await copy(c, { src: join(home, "source"), dst: `box:${home}/guest` }, { ...options, timeout: 3_000_000 })
+    expect(await readFile(join(home, "guest"), "utf8")).toBe("value")
+  })
   it("merges directory contents and replaces an existing ordinary file", async () => {
     const { c, home } = await fixture()
     const source = join(home, "source"), guest = join(home, "guest"), destination = join(home, "destination")

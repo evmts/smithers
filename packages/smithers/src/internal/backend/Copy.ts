@@ -134,10 +134,12 @@ export const copy: Handler = async (c, a, o) => {
     // Every path below awaits `exited`; this keeps an early throw from
     // leaving its rejection unhandled.
     exited.catch(() => {})
+    // Node fires a timer longer than 2^31-1 ms after 1 ms, so cap the budget.
+    const budget = Math.min((Number(o.timeout) > 0 ? Number(o.timeout) : 600) * 1000, 2_147_483_647)
     const timer = setTimeout(() => {
       expired = true
       child.kill()
-    }, (Number(o.timeout) > 0 ? Number(o.timeout) : 600) * 1000)
+    }, budget)
     try {
       let transferError: unknown
       if (upload) {
