@@ -1,4 +1,9 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
+import {
+  BuildAndCheckTypeScriptPackage,
+  ReviewDocsAgainstCode,
+  ReviewJsdocAgainstCode,
+  ReviewTagsMigrationsAndKeys
+} from "@smthrs/repo-targets"
 /**
  * Standard package targets.
  *
@@ -12,6 +17,15 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   deps: [],
   cwd
 })
+
+const bunTest = Smithers.BunSuite({ cwd })
+
+const reviewTagsMigrationsAndKeys = ReviewTagsMigrationsAndKeys({ cwd })
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({
+  cwd,
+  context: [Smithers.file("README.md"), Smithers.glob("docs/**/*.md")]
+})
+const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd })
 
 const securityReview = Smithers.SecurityReview({
   cwd,
@@ -66,7 +80,7 @@ const securityReview = Smithers.SecurityReview({
         "Effects.sealed keeping a declared write set while setting tier \"sealed\", so a side-effecting flow's result is content-shared across runs.",
         "annotate copying Durable.Capabilities, Annotations.Effects, or Annotations.Placement from a caller-supplied context without the flow author opting in."
       ],
-      paths: ["src/Flow.ts", "src/Annotations.ts"]
+      paths: ["src/Flow.ts", "src/internal/Signature.ts", "src/Annotations.ts"]
     },
     {
       id: "identity-digest-stability",
@@ -78,11 +92,25 @@ const securityReview = Smithers.SecurityReview({
         "Digest.canonical or Digest.digest diverging from @smthrs/crypto digestSync or RFC 8785 canonical bytes.",
         "KeyMaterial placing nodeId or other graph-local names into hashed material."
       ],
-      paths: ["src/Flow.ts", "src/Digest.ts", "src/KeyMaterial.ts"]
+      paths: ["src/Flow.ts", "src/internal/Signature.ts", "src/Digest.ts", "src/KeyMaterial.ts"]
     }
   ]
 })
 
 export const Package = Smithers.Package({
-  targets: { check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview }
+  targets: {
+    bunTest,
+    check,
+    circular,
+    docs,
+    docsFiles,
+    fmt,
+    lib,
+    lint,
+    reviewDocsAgainstCode,
+    reviewJsdocAgainstCode,
+    reviewTagsMigrationsAndKeys,
+    test,
+    ...securityReview
+  }
 })
