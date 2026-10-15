@@ -28,16 +28,52 @@ const kill = () => {
   if (!child?.pid) return
   try { process.kill(-child.pid, 'SIGKILL') } catch (error) { if (error.code !== 'ESRCH') throw error }
 }
-const diagnostics = () => {
-  const ps = spawnSync('/bin/ps', process.platform === 'darwin' ? ['-axo', 'pid,ppid,pgid,state,command'] : ['-ef', '--forest'],
+// A timeout may not record another task's work. The global process listing this
+// printed carried other sessions' full command lines, and even our own target's
+// argv can hold inline code, a prompt or a credential, so diagnostics name the
+// supervised group alone and only as bounded facts: pid, parent, group, wait
+// state, descriptors, stack and counts. Never a command line, never a signal to
+// a process outside the group (#3763).
+const safeState = value => (/^[A-Za-z][A-Za-z+<>?]{0,5}$/.test(value ?? '') ? value : 'unknown')
+const exeName = value => {
+  const base = String(value ?? '').split('/').pop()
+  return /^[\w.+-]{1,64}$/.test(base) ? base : 'unnamed'
+}
+const sum = chunks => chunks.reduce((total, chunk) => total + chunk.length, 0)
+// The group id is the child's own pid: detached spawn made the group for it.
+// Another process's group id is read only to decide membership, and no field of
+// a process outside the group is ever printed.
+const groupMembers = () => {
+  if (process.platform === 'linux') {
+    // /proc has no group filter, so each stat is read and all but ours dropped.
+    return readdirSync('/proc').filter(name => /^\d+$/.test(name)).flatMap(pid => {
+      try {
+        // State, parent and group are the fields after comm, which the split drops with it.
+        const stat = readFileSync(`/proc/${pid}/stat`, 'utf8').split(') ')[1].split(' ')
+        return Number(stat[2]) === child.pid ? [{ pid, ppid: stat[1], state: safeState(stat[0]) }] : []
+      } catch { return [] /* Process exited during inspection. */ }
+    })
+  }
+  // -g selects by process group leader, so ps lists no other group, and the
+  // COMMAND column is not asked for at all.
+  const ps = spawnSync('/bin/ps', ['-o', 'pid=,ppid=,pgid=,state=', '-g', String(child.pid)],
     { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: 1000 })
-  process.stderr.write(`[test-child timeout] pid=${child.pid} command=${command}\n${ps.stdout ?? ''}\n`)
+  return (ps.stdout ?? '').split('\n').flatMap(line => {
+    const [pid, ppid, pgid, state] = line.trim().split(/\s+/)
+    return /^\d+$/.test(pid ?? '') && pgid === String(child.pid) ? [{ pid, ppid, state: safeState(state) }] : []
+  })
+}
+const diagnostics = () => {
+  const members = groupMembers()
+  process.stderr.write(`[test-child timeout] PID ${child.pid} pgid=${child.pid} exe=${exeName(command)} argc=${args?.length ?? 0}` +
+    ` timeout=${options.timeout}ms elapsed=${Number.isFinite(request.startedAt) ? `${Date.now() - request.startedAt}ms` : 'unknown'}` +
+    ` stdin=${options.input === undefined ? 'devnull' : 'written'} stdoutBytes=${sum(stdout)} stderrBytes=${sum(stderr)}` +
+    ` group=${members.length}\n`)
+  for (const member of members) process.stderr.write(`[pid ${member.pid}] ppid=${member.ppid} state=${member.state}\n`)
   if (process.platform === 'linux') {
     // Include descendants: the leader may have exited while a grandchild holds stdout open.
-    for (const pid of readdirSync('/proc').filter(name => /^\d+$/.test(name))) {
+    for (const { pid } of members) {
       try {
-        const stat = readFileSync(`/proc/${pid}/stat`, 'utf8').split(') ')[1].split(' ')
-        if (Number(stat[2]) !== child.pid) continue // process group, after comm and state
         const fds = readdirSync(`/proc/${pid}/fd`).map(fd => {
           try { return `${fd} -> ${readlinkSync(`/proc/${pid}/fd/${fd}`)}` } catch { return `${fd} -> unavailable` }
         })
@@ -49,9 +85,13 @@ const diagnostics = () => {
       } catch { /* Process exited during inspection. */ }
     }
   } else {
-    for (const [cmd, argv] of [['/usr/sbin/lsof', ['-p', String(child.pid)]], ['/usr/bin/sample', [String(child.pid), '1', '1']]]) {
-      const result = spawnSync(cmd, argv, { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: 2000 })
-      process.stderr.write(`${cmd}:\n${result.stdout ?? ''}${result.stderr ?? ''}\n`)
+    // Same reason as the Linux descendant walk, bounded because each call costs
+    // seconds: the leader first, then one surviving descendant.
+    for (const { pid } of members.slice(0, 2)) {
+      for (const [cmd, argv] of [['/usr/sbin/lsof', ['-p', pid]], ['/usr/bin/sample', [pid, '1', '1']]]) {
+        const result = spawnSync(cmd, argv, { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: 2000 })
+        process.stderr.write(`${cmd}: pid ${pid}\n${result.stdout ?? ''}${result.stderr ?? ''}\n`)
+      }
     }
   }
 }

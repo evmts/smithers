@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { randomUUID } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -63,6 +64,34 @@ test('timeout emits process tree, descriptor and stack diagnostics before killin
     expect(result.stderr).toContain('/usr/sbin/lsof:')
     expect(result.stderr).toContain('/usr/bin/sample:')
   }
+})
+
+test('timeout diagnostics name the supervised group alone, with no command line of any process', async () => {
+  const { spawn, spawnSync: native } = await import('node:child_process')
+  const unrelated = `unrelated-argv-${randomUUID()}`, owned = `owned-payload-${randomUUID()}`
+  // Another task's process: its own group, its own sentinel in argv. A timeout of ours must not record it.
+  const other = spawn('node', ['-e', 'setInterval(() => {}, 1000)', unrelated], { detached: true, stdio: 'ignore' })
+  try {
+    const result = native('node', [join(import.meta.dir, 'test-child-supervisor.mjs')], {
+      // The supervised child carries the sentinel inline, the way a credential or a customer prompt reaches argv.
+      input: JSON.stringify({ command: 'node', args: ['-e', `const payload = ${JSON.stringify(owned)}; setInterval(() => {}, 1000)`], options: { timeout: 200 } }),
+      encoding: 'utf8', timeout: 20_000, maxBuffer: 16 * 1024 * 1024
+    })
+    expect(result.status).toBe(0)
+    expect(JSON.parse(result.stdout).error.code).toBe('ETIMEDOUT')
+    // Still a report about the supervised group: its leader, its members and their wait state.
+    expect(result.stderr).toContain('[test-child timeout]')
+    expect(result.stderr).toMatch(/group=[1-9]\d*/)
+    expect(result.stderr).toMatch(/\[pid \d+] ppid=\d+ state=\S+/)
+    expect(result.stderr).toContain('exe=node')
+    // No argv of ours and none of theirs, and no row for a process outside the group.
+    expect(result.stderr).not.toContain(owned)
+    expect(result.stderr).not.toContain(unrelated)
+    expect(result.stderr).not.toContain('setInterval')
+    expect(result.stderr).not.toContain(`[pid ${other.pid}]`)
+    // Diagnostics observe; they never signal another task's process.
+    expect(() => process.kill(other.pid!, 0)).not.toThrow()
+  } finally { process.kill(other.pid!, 'SIGKILL') }
 })
 
 test('excess output is bounded and terminates the process group', () => {
