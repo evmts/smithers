@@ -222,11 +222,12 @@ const codePoints = (value: string): number => [...value].length
 
 const isBlank = (value: string): boolean => value.trim() === ""
 
-const isScalarMapping = (value: unknown): boolean =>
-  typeof value === "object" &&
-  value !== null &&
-  !Array.isArray(value) &&
-  Object.values(value).every((member) => typeof member === "string")
+const isScalarMapping = (value: unknown): boolean => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false
+  const prototype = Object.getPrototypeOf(value)
+  if (prototype !== null && prototype !== Object.prototype) return false
+  return Object.values(value).every((member) => typeof member === "string")
+}
 
 /**
  * Checks already-parsed Agent Skills frontmatter against the specification's

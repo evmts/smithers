@@ -170,6 +170,24 @@ describe("Skill", () => {
     expect(errorCode(document(["name: pdf", "description: d", "metadata: loose"]))).toBe("skill_invalid_metadata")
   })
 
+  it.each([null, 42, [], new Date(0), new Map([["author", "me"]]), new Set(["me"])])(
+    "rejects non-mapping parsed metadata: %s",
+    (metadata) => {
+      expect(Markdown.validateSkillFrontmatter({ name: "pdf", description: "d", metadata })).toMatchObject({
+        _tag: "Failure",
+        failure: { code: "skill_invalid_metadata" }
+      })
+    }
+  )
+
+  it("accepts empty and null-prototype parsed metadata mappings", () => {
+    for (const metadata of [{}, Object.assign(Object.create(null), { author: "me" })]) {
+      const result = Markdown.validateSkillFrontmatter({ name: "pdf", description: "d", metadata })
+      expect(Result.isSuccess(result)).toBe(true)
+      if (Result.isSuccess(result)) expect(result.success.extra.metadata).toEqual(metadata)
+    }
+  })
+
   it("requires license to be a scalar when present", () => {
     expect(parse(document(["name: pdf", "description: d", "license: Apache-2.0"])).extra.license).toBe("Apache-2.0")
     const error = failure(document(["name: pdf", "description: d", "license:", "  spdx: MIT"]))
