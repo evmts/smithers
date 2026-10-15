@@ -91,7 +91,10 @@ tracked in [#1790](https://github.com/smithersai/smithers/issues/1790).
 A host sealed to one container is the exception. `SMITHERS_BASH_CONTAINER` names
 the container, and `bash` and `test` then run in it through the `docker` CLI.
 Every other container, and a call that names none, fails with
-`outside_container`. The transport process runs outside the OS sandbox, which
+`outside_container`. The file flows (`read`, `edit`, `apply_patch`, `grep` and
+the rest) act on the container's files through the same transport, resolving a
+relative path under `SMITHERS_TEST_CWD`, and `grep` and `glob` answer through
+`RemoteSearch`. The transport process runs outside the OS sandbox, which
 denies the daemon's socket, and receives the host's `DOCKER_HOST`,
 `DOCKER_CONTEXT`, `DOCKER_CONFIG`, `DOCKER_TLS_VERIFY`, and `DOCKER_CERT_PATH`,
 so it reaches a rootless daemon.

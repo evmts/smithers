@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- `RemoteSearch` answers `grep` and `glob` for a tree on another machine in two
+  round trips: the machine's `find` lists the root and `tar` returns its
+  `.gitignore` files, then `tar` returns the files the search reads, and
+  `PortableSearch` answers over that copy. Results, notices, and refusals are
+  the portable peer's. A sealed benchmark host searches its task container this
+  way rather than with one container exec per directory and per file.
+- `PortableSearch.searched` names the files a `grep` reads for an input.
+
 ### Fixed
 
 - Container commands reject sparse argument arrays and build plans from the

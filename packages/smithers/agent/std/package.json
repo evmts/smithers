@@ -54,6 +54,7 @@
     "./Probe": "./src/Probe.ts",
     "./Read": "./src/Read.ts",
     "./Relocate": "./src/Relocate.ts",
+    "./RemoteSearch": "./src/RemoteSearch.ts",
     "./Search": "./src/Search.ts",
     "./SearchConformance": "./src/SearchConformance.ts",
     "./SearchContract": "./src/SearchContract.ts",
@@ -306,6 +307,16 @@
         "require": {
           "types": "./dist/cjs/Relocate.d.ts",
           "default": "./dist/cjs/Relocate.js"
+        }
+      },
+      "./RemoteSearch": {
+        "import": {
+          "types": "./dist/esm/RemoteSearch.d.ts",
+          "default": "./dist/esm/RemoteSearch.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RemoteSearch.d.ts",
+          "default": "./dist/cjs/RemoteSearch.js"
         }
       },
       "./Search": {

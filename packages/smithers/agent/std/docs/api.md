@@ -180,10 +180,14 @@ resolves its own services when it is built.
 The in-process peer. Walks the injected `FileSystem`, so it needs no external
 binary and is browser-safe.
 
-| Export  | Type                                                       |
-| ------- | ---------------------------------------------------------- |
-| `make`  | `(services: Context<FileSystem \| Path>) => Search.Search` |
-| `layer` | `Layer<Search.Search, never, FileSystem \| Path>`          |
+| Export     | Type                                                                                                                                   |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `make`     | `(services: Context<FileSystem \| Path>) => Search.Search`                                                                             |
+| `layer`    | `Layer<Search.Search, never, FileSystem \| Path>`                                                                                      |
+| `searched` | `(input: Pick<GrepInput, "root" \| "hidden" \| "noIgnore" \| "globs">) => Effect<ReadonlyArray<string>, StdError, FileSystem \| Path>` |
+
+`searched` names the files `grep` reads for an input, in the order it reads
+them; `RemoteSearch` fetches exactly those.
 
 ## NativeSearch
 
@@ -200,6 +204,26 @@ ripgrep stream could make this peer disagree with the portable one. A failure to
 start `rg` is `provider_unavailable`. The default layer uses the host environment
 allowlist. `make` accepts explicit environment declarations as its second
 argument; those names override the allowlist.
+
+## RemoteSearch
+
+The peer for a tree on another machine, such as a container or a sandbox
+machine. It lists the root with the machine's `find`, brings back its
+`.gitignore` files and then the files the search reads with `tar`, and lets
+`PortableSearch` answer over that copy, so every result, notice, and refusal is
+the in-process peer's. Each search is two round trips through the machine's
+spawner, whatever the tree's size.
+
+| Export     | Type                                                                                                 | Meaning                                                                      |
+| ---------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `maxBytes` | `268_435_456`                                                                                        | The most file content one search brings back; past it, `response_too_large`. |
+| `make`     | `(services: Context<ChildProcessSpawner \| Path>, options?: { maxBytes?: number }) => Search.Search` | The spawner runs on the machine; `Path` resolves a relative root there.      |
+
+The machine needs `sh`, `find`, `xargs`, `tar`, `head`, and `base64`; GNU,
+BusyBox, and BSD userlands all have them, and a machine without one refuses
+with `command_failed` naming it. The program goes in on standard input and
+the answer comes back as base64, so a transport whose argv is bounded or whose
+output channel carries only text answers intact.
 
 ## SearchContract
 

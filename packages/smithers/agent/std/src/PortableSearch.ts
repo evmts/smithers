@@ -241,6 +241,26 @@ const glob = (
   })
 
 /**
+ * The files this peer's `grep` reads for `input`, in the order it reads
+ * them: the walk under `input.root` with its `.gitignore` rules and
+ * `input.globs` applied and symbolic links left out, or the root itself when
+ * it names one file. A peer that has to bring a tree's bytes to this process
+ * before it can search them (`RemoteSearch`) fetches exactly these.
+ *
+ * @category queries
+ * @since 1.0.0-rc.8
+ */
+export const searched = (
+  input: Pick<Search.GrepInput, "root" | "hidden" | "noIgnore" | "globs">
+): Effect.Effect<ReadonlyArray<string>, StdError.StdError, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fileSystem = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const walked = yield* Walk.files(fileSystem, path, input.root, input.hidden, input.noIgnore)
+    return yield* candidates(fileSystem, path, walked, input.root, input.globs)
+  })
+
+/**
  * Captures filesystem and path services in the portable peer.
  *
  * @category constructors

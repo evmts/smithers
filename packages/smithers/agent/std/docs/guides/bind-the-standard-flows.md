@@ -36,7 +36,9 @@ const host = Layer.mergeAll(
 
 Swap `NativeSearch.layer` for `PortableSearch.layer` to search in process with
 no external binary. Both satisfy the same `Search` service, and nothing above
-the layer changes.
+the layer changes. When the files live on another machine, such as a container
+or a sandbox machine, `RemoteSearch.make` over that machine's spawner and `Path`
+answers in two round trips where the portable peer would ask once per file.
 
 A host that cannot serve a service binds its refusal layer instead of leaving it
 out, so the failure names the missing service rather than a missing context:
