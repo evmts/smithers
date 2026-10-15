@@ -1,4 +1,4 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
 /** Shared model host library targets and its coverage-gated protocol suite. */
 import { Smithers } from "@smthrs/targets"
 import { Package as rpcPackage } from "../../../rpc/PACKAGE.ts"
@@ -10,15 +10,20 @@ const cwd = "packages/smithers/agent/model-host"
 const dependencies = [cliPackage.lib, kernelPackage.lib, modelPackage.lib, rpcPackage.check]
 const standard = BuildAndCheckTypeScriptPackage({ deps: dependencies, cwd })
 
-/**
- * The package documentation as a file group. This package keeps no `docs/`
- * directory, so the group is the README and the manifest, not the shared
- * `docs/**\/*.md` glob, which names nothing here.
- */
+/** The package documentation as a file group: the README, every docs page and the manifest. */
 const docsFiles = Smithers.Filegroup({
-  srcs: [Smithers.file("README.md"), Smithers.file("package.json")],
+  srcs: [Smithers.file("README.md"), Smithers.glob("docs/**/*.md"), Smithers.file("package.json")],
   cwd
 })
+
+/** Changed public APIs against the package README and every docs page. */
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({
+  cwd,
+  context: [Smithers.file("README.md"), Smithers.glob("docs/**/*.md")]
+})
+
+/** Changed exports against their own JSDoc. */
+const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd })
 
 const securityReview = Smithers.SecurityReview({
   cwd,
@@ -135,6 +140,8 @@ export const Package = Smithers.Package({
     fmt: standard.fmt,
     lib: standard.lib,
     lint: standard.lint,
+    reviewDocsAgainstCode,
+    reviewJsdocAgainstCode,
     test: standard.test,
     ...securityReview
   }
