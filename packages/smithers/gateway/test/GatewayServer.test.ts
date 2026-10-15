@@ -1610,6 +1610,37 @@ describe("the assembled gateway over a real loopback bind", () => {
       )
     ))
 
+  test("bounds the body of every runtime bridge door, the monitor included", () =>
+    Effect.gen(function*() {
+      const url = yield* baseUrl
+      // Padding keeps each body valid JSON, so a door that read it whole would
+      // answer the bridge contract rather than the size limit.
+      const body = JSON.stringify({ protocol: "smithers.flow-runtime/v1", runId: "run-1", pad: "x".repeat(256) })
+      for (const door of ["command", "observe", "monitor"]) {
+        const response = yield* Effect.promise(() =>
+          fetch(`${url}/runtime/v1/${door}`, {
+            method: "POST",
+            headers: { "content-type": "application/json", authorization: "Bearer edge-secret" },
+            body
+          })
+        )
+        expect([door, response.status]).toEqual([door, 413])
+        expect(yield* Effect.promise(() => response.json() as Promise<unknown>)).toMatchObject({
+          code: "request_too_large"
+        })
+      }
+    }).pipe(
+      Effect.provide(
+        served({
+          host: "127.0.0.1",
+          port: 0,
+          credential: "edge-secret",
+          maxRequestBodyBytes: 64,
+          runtimeBridge: { runtimeArtifactDigest: "a".repeat(64), sourceRevision: "b".repeat(40), ownerGeneration: 1 }
+        })
+      )
+    ))
+
   test("serves a projection snapshot over POST /projections, framed on the wire", () =>
     Effect.gen(function*() {
       const url = yield* baseUrl

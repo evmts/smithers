@@ -386,6 +386,7 @@ export const rpcPaths: ReadonlyArray<string> = ["/rpc", "/projections", "/sync",
 export const boundedPostPaths: ReadonlyArray<string> = [
   ...rpcPaths,
   "/runtime/v1/command",
+  "/runtime/v1/monitor",
   "/runtime/v1/observe"
 ]
 
@@ -422,6 +423,7 @@ export const protectedPaths: ReadonlyArray<string> = [
   "/projections/ws",
   "/sync/ws",
   "/runtime/v1/command",
+  "/runtime/v1/monitor",
   "/runtime/v1/observe"
 ]
 
