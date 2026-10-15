@@ -79,6 +79,25 @@ describe("the published command wrapper", () => {
     expect(result.stdout).toBe("")
   })
 
+  it("waits for asynchronous CLI evaluation and preserves its final status", () => {
+    const result = run(
+      "await new Promise(resolve => setTimeout(resolve, 20)); console.log('completed'); process.exitCode = 17"
+    )
+    expect(result.error).toBeUndefined()
+    expect(result.status).toBe(17)
+    expect(result.stdout).toBe("completed\n")
+    expect(result.stderr).toBe("")
+  })
+
+  it("fails visibly when the installed CLI imports a missing module", () => {
+    const result = run("await import('./missing-entry.mjs')")
+    expect(result.error).toBeUndefined()
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain("ERR_MODULE_NOT_FOUND")
+    expect(result.stderr).toContain("missing-entry.mjs")
+    expect(result.stdout).toBe("")
+  })
+
   it("refuses a missing dependency instead of loading the caller's package", () => {
     const result = run(undefined)
     expect(result.error).toBeUndefined()
