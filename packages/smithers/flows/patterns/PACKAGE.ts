@@ -12,8 +12,21 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
 /**
  * Changed public exports against README.md, docs/*.md, and the site's
  * patterns API reference page.
+ *
+ * The site page is named as a FILE, not left to the macro's default glob: this
+ * is the only package whose reference page exists, so that glob matches nothing
+ * here and everything in `apps/site`, which `//:targetIndex` refuses as
+ * `declared_input_crosses_package`. `packages/smithers/flows/engine` names its
+ * own page the same way.
  */
-const reviewDocsAgainstCode = ReviewDocsAgainstCode({ cwd })
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({
+  cwd,
+  context: [
+    Smithers.file("README.md"),
+    Smithers.glob("docs/*.md"),
+    Smithers.file("//apps/site/src/content/docs/docs/reference/api/patterns.mdx")
+  ]
+})
 
 /** Changed public exports against their own JSDoc. */
 const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd })
