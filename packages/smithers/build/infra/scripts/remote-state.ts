@@ -496,6 +496,40 @@ const describeHolder = (body: string): string => {
   return "an unreadable holder"
 }
 
+const unpublishedMarker = ".smithers-unpublished-state"
+const markerFormat = "smithers-unpublished-state/1"
+
+/** The remote version local state was pulled from, and the digest of what was pulled. */
+interface UnpublishedMarker {
+  readonly etag: string | null
+  readonly baseline: string
+}
+
+const digest = (snapshot: string): string => createHash("sha256").update(snapshot, "utf8").digest("hex")
+
+const readMarker = async (path: string): Promise<UnpublishedMarker | undefined> => {
+  let body: string
+  try {
+    body = await Fs.readFile(path, "utf8")
+  } catch (error) {
+    if (errorCode(error) === "ENOENT") return undefined
+    throw error
+  }
+  try {
+    const parsed = JSON.parse(body) as { format?: unknown; etag?: unknown; baseline?: unknown }
+    if (
+      parsed.format === markerFormat && (parsed.etag === null || typeof parsed.etag === "string") &&
+      typeof parsed.baseline === "string"
+    ) return { etag: parsed.etag, baseline: parsed.baseline }
+  } catch {
+    // Reported below as unreadable.
+  }
+  throw new TypeError(
+    `the unpublished-state marker ${path} is unreadable; compare local state with ${stateBucketName} by hand, ` +
+      `then delete the marker`
+  )
+}
+
 /**
  * Locks the remote state and pulls it over the local state directory.
  *
@@ -503,6 +537,17 @@ const describeHolder = (body: string): string => {
  * local state is left as it is and becomes the first snapshot on push, which
  * is how a stack's existing local state moves to R2. The lock is released if
  * initialization fails after taking the lock.
+ *
+ * Until a push succeeds, a marker in the state directory records the remote
+ * version local state was pulled from. A later session that finds local state
+ * changed since that pull keeps it instead of pulling, so resources a failed or
+ * killed run created stay recorded and are published by the next push. When
+ * the remote moved on since that pull as well, the session refuses rather
+ * than discard either side.
+ *
+ * @throws An `Error` when the lock is held or local state holds unpublished
+ * changes the remote has since diverged from; a `TypeError` for an invalid
+ * snapshot or an unreadable unpublished-state marker.
  *
  * @category constructors
  * @since 0.1.0
@@ -524,12 +569,30 @@ export const openRemoteState = async (
     )
   }
   const release = (): Promise<void> => remote.bucket.delete(lockKey)
+  const markerPath = NodePath.join(directory, unpublishedMarker)
   let pulled: StateObject | undefined
   let baseline: string
   try {
+    const marker = await readMarker(markerPath)
     pulled = await remote.bucket.get(remote.key)
-    if (pulled !== undefined) await writeStateSnapshot(directory, pulled.body)
-    baseline = pulled === undefined ? renderSnapshot({}) : await readStateSnapshot(directory)
+    const unpublished = marker !== undefined && digest(await readStateSnapshot(directory)) !== marker.baseline
+    if (unpublished) {
+      if ((pulled?.etag ?? null) !== marker.etag) {
+        throw new Error(
+          `local Alchemy state in ${directory} holds changes a run never published, and remote state ${remote.key} ` +
+            `changed since it was pulled; reconcile them by hand, then delete ${markerPath}`
+        )
+      }
+      baseline = marker.baseline
+    } else {
+      if (pulled !== undefined) await writeStateSnapshot(directory, pulled.body)
+      baseline = digest(pulled === undefined ? renderSnapshot({}) : await readStateSnapshot(directory))
+      await Fs.writeFile(
+        markerPath,
+        JSON.stringify({ format: markerFormat, etag: pulled?.etag ?? null, baseline }),
+        { encoding: "utf8", mode: 0o600 }
+      )
+    }
   } catch (error) {
     try {
       await release()
@@ -541,13 +604,17 @@ export const openRemoteState = async (
   return {
     push: async () => {
       const snapshot = await readStateSnapshot(directory)
-      if (snapshot === baseline) return "unchanged"
+      if (digest(snapshot) === baseline) {
+        await Fs.rm(markerPath, { force: true })
+        return "unchanged"
+      }
       const condition: PutCondition = pulled === undefined ? { ifAbsent: true } : { ifMatch: pulled.etag }
       if (!(await remote.bucket.put(remote.key, snapshot, condition))) {
         throw new Error(
           `remote Alchemy state ${remote.key} changed during this deployment; local state was kept in ${directory}`
         )
       }
+      await Fs.rm(markerPath, { force: true })
       return "published"
     },
     release

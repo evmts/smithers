@@ -331,6 +331,94 @@ describe("remote state sessions", () => {
     expect(JSON.parse(bucket.objects.get("alchemy/Stack.json")!.body).files["prod/CacheWorker.json"]).toBe("2")
   })
 
+  it("keeps state a run never published and publishes it from the next run", async () => {
+    const bucket = memoryStateBucket()
+    const remote = { bucket, key: "alchemy/Stack.json" }
+    const first = await openRemoteState(remote, directory, holder)
+    await put("prod/CacheWorker.json", "1")
+    await first.push()
+    await first.release()
+
+    // The run creates a resource, then dies before publishing: redaction
+    // failed, or the process was killed. Only local state records it.
+    const failed = await openRemoteState(remote, directory, holder)
+    await put("prod/CacheWorker.json", "2")
+    await failed.release()
+
+    const next = await openRemoteState(remote, directory, holder)
+    expect(read("prod/CacheWorker.json")).toBe("2")
+    expect(await next.push()).toBe("published")
+    await next.release()
+    expect(JSON.parse(bucket.objects.get("alchemy/Stack.json")!.body).files["prod/CacheWorker.json"]).toBe("2")
+  })
+
+  it("keeps a first deployment's unpublished state while no snapshot exists yet", async () => {
+    const bucket = memoryStateBucket()
+    const remote = { bucket, key: "alchemy/Stack.json" }
+    const failed = await openRemoteState(remote, directory, holder)
+    await put("prod/CacheWorker.json", "1")
+    await failed.release()
+
+    const next = await openRemoteState(remote, directory, holder)
+    expect(await next.push()).toBe("published")
+    await next.release()
+    expect(JSON.parse(bucket.objects.get("alchemy/Stack.json")!.body).files["prod/CacheWorker.json"]).toBe("1")
+  })
+
+  it("refuses to pull over unpublished local state once the remote moved on", async () => {
+    const bucket = memoryStateBucket()
+    const remote = { bucket, key: "alchemy/Stack.json" }
+    const session = await openRemoteState(remote, directory, holder)
+    await put("prod/CacheWorker.json", "local")
+    bucket.objects.set("alchemy/Stack.json", {
+      body: JSON.stringify({ format: "smithers-alchemy-state/1", files: { "prod/CacheWorker.json": "remote" } }),
+      etag: `"elsewhere"`
+    })
+    await expect(session.push()).rejects.toThrow(/kept in/)
+    await session.release()
+
+    await expect(openRemoteState(remote, directory, holder)).rejects.toThrow(/never published.*changed since/)
+    expect(read("prod/CacheWorker.json")).toBe("local")
+    expect(bucket.objects.has("alchemy/Stack.json.lock")).toBe(false)
+  })
+
+  it("pulls normally after a run that published, or one that changed nothing", async () => {
+    const bucket = memoryStateBucket()
+    const remote = { bucket, key: "alchemy/Stack.json" }
+    const idle = await openRemoteState(remote, directory, holder)
+    await idle.release()
+    const published = await openRemoteState(remote, directory, holder)
+    await put("prod/CacheWorker.json", "1")
+    expect(await published.push()).toBe("published")
+    await published.release()
+
+    bucket.objects.set("alchemy/Stack.json", {
+      body: JSON.stringify({ format: "smithers-alchemy-state/1", files: { "prod/CacheWorker.json": "3" } }),
+      etag: `"elsewhere"`
+    })
+    const next = await openRemoteState(remote, directory, holder)
+    expect(read("prod/CacheWorker.json")).toBe("3")
+    await next.release()
+  })
+
+  it("refuses an unpublished-state marker it cannot read", async () => {
+    const bucket = memoryStateBucket()
+    await put(".smithers-unpublished-state", "garbage")
+
+    await expect(openRemoteState({ bucket, key: "alchemy/Stack.json" }, directory, holder)).rejects.toThrow(
+      /unpublished-state marker/
+    )
+    expect(bucket.objects.has("alchemy/Stack.json.lock")).toBe(false)
+  })
+
+  it("reports an unpublished-state marker it cannot open and frees the lock", async () => {
+    const bucket = memoryStateBucket()
+    await mkdir(NodePath.join(directory, ".smithers-unpublished-state"))
+
+    await expect(openRemoteState({ bucket, key: "alchemy/Stack.json" }, directory, holder)).rejects.toThrow(/EISDIR/)
+    expect(bucket.objects.has("alchemy/Stack.json.lock")).toBe(false)
+  })
+
   it("keeps the memory bucket's conditional writes honest", async () => {
     const bucket = memoryStateBucket()
     expect(await bucket.put("k", "a", { ifAbsent: true })).toBe(true)

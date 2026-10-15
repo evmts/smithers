@@ -128,6 +128,14 @@ satisfies, so the wrapper reads state with `accept-encoding: identity` and
 refuses a weak ETag with `WeakEtagError` instead of reporting a false
 concurrent change.
 
+A run that changes state but does not publish it, because redaction failed, the
+publish lost the compare-and-swap, or the process was killed, leaves
+`.smithers-unpublished-state` in the state directory. The marker records the
+remote version the run pulled. The next deployment keeps the changed local
+state instead of pulling over it, so resources that run created stay recorded,
+and publishes it. When the remote also changed since that pull, the deployment
+refuses until an operator reconciles both copies and deletes the marker.
+
 The stack program refuses to run unless the wrapper started it
 (`SMITHERS_BUILD_INFRA_STATE_SYNCED`), so `alchemy deploy` or `alchemy plan`
 run directly fail before they read unsynced local state. The state bucket is
