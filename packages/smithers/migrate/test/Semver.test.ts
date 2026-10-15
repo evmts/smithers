@@ -10,6 +10,9 @@ describe("Smithers dependency version boundary", () => {
       ["0.x", { major: 0, minor: 0, patch: 0, prerelease: [] }],
       [">= 0.35 < 1", { major: 0, minor: 35, patch: 0, prerelease: [] }],
       ["~0.35.x || ^1", { major: 0, minor: 35, patch: 0, prerelease: [] }],
+      [">=0.35 <1.0.0", { major: 0, minor: 35, patch: 0, prerelease: [] }],
+      ["^0.35 || ^1.0.0", { major: 0, minor: 35, patch: 0, prerelease: [] }],
+      ["~0.35 <1.0.0-0", { major: 0, minor: 35, patch: 0, prerelease: [] }],
       ["1.0.0-rc.12", { major: 1, minor: 0, patch: 0, prerelease: ["rc", "12"] }],
       ["1.2.3-alpha.4.beta", { major: 1, minor: 2, patch: 3, prerelease: ["alpha", "4", "beta"] }]
     ] as const
@@ -62,6 +65,11 @@ describe("Smithers dependency version boundary", () => {
     })
     expect(parse(">=0.9007199254740992.0 <1.0.0")).toBeUndefined()
   })
+
+  it.each([">=0.35 <1.0.0", "^0.35 || ^1.0.0", "0.x || 1.0.0-rc.7"])(
+    "reads a partial lower bound before a complete upper bound as 0.x (%s)",
+    (specifier) => expect(isBeforeOneZero(specifier)).toBe(true)
+  )
 
   it("orders release and prerelease identifiers by SemVer precedence", () => {
     const ordered = [

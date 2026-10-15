@@ -34,7 +34,8 @@ const partial = /^\s*(?:[~^=]|[<>]=?)?\s*v?(\d+)(?:\.(\d+|[xX*]))?(?:\.(\d+|[xX*
  * Parses the first version in a dependency specifier, so `^0.35.0`,
  * `>=0.35.0 <1`, and `0.35.0` all parse. A range that opens with a partial
  * version (`^0.35`, `0.x`, `~1`) parses as its lower bound, with each missing
- * or wildcard component read as `0`, which is how npm reads it. A specifier
+ * or wildcard component read as `0`, which is how npm reads it, even when a
+ * complete version follows (`>=0.35 <1.0.0` parses as `0.35.0`). A specifier
  * with no version at all (`file:../smithers`, `workspace:*`, `latest`, `*`)
  * returns `undefined`. Core components outside the safe integer range also
  * return `undefined`.
@@ -43,7 +44,9 @@ const partial = /^\s*(?:[~^=]|[<>]=?)?\s*v?(\d+)(?:\.(\d+|[xX*]))?(?:\.(\d+|[xX*
  * @private
  */
 export const parse = (specifier: string): Version | undefined => {
-  const match = pattern.exec(specifier) ?? partial.exec(specifier)
+  // The leading version wins: in `>=0.35 <1.0.0` the lower bound is `0.35`,
+  // not the complete upper bound later in the range.
+  const match = partial.exec(specifier) ?? pattern.exec(specifier)
   if (match === null) return undefined
   const component = (
     value: string | undefined

@@ -15,6 +15,9 @@
 - Classify a dependency pinned by a partial range (`^0.35`, `~0.35`, `0.x`)
   by its lower bound, so `"@smthrs/cli": "^0.35"` is planned as a 0.x package
   instead of being left in the migrated manifest.
+- Classify a range whose partial lower bound precedes a complete upper bound
+  (`>=0.35 <1.0.0`, `^0.35 || ^1.0.0`) by that lower bound instead of reading
+  the upper bound as a 1.0 version.
 - Read the `effect` version from yarn classic range keys and from npm copies
   nested under another package, and stop reporting a yarn `effect@3` key as
   resolved version `3`.
