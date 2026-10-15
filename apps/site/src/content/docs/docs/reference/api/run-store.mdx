@@ -441,7 +441,9 @@ made it. `claim` records `claimed`; `activate` records `activated`, or
 `released` when the snapshot moved on; `claimAndOwn` records `claimed` or
 `stolen` and then `activated`, with a `released` first when an owner re-owns
 its own stale run; `steal` records `stolen`; `abandonClaim` and an owner's
-non-running `transitionOwned` record `released`; `recoverClaim` records
+non-running `transitionOwned` record `released`, and that `transitionOwned`
+records a second `released` for a steal claim still pending on the run;
+`recoverClaim` records
 `expired`. A refused operation and a heartbeat record nothing, and a
 rolled-back transaction leaves no fact.
 

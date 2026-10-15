@@ -56,7 +56,9 @@ embedding the surface in a process of your own.
 
 ## Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/gateway@next effect
+```
 
 The package needs Node.js 26.4.0 or later. For the peers and the
 services a running composition supplies, see [Installation](./installation.md).

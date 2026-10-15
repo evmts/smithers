@@ -35,7 +35,9 @@ alerts about a run that has been stuck too long.
 
 ## Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/notifications@next effect
+```
 
 Node.js 26.4.0 or later. `@smthrs/journal` is where the durable records go, and
 the example below imports it directly. See [Installation](./installation.md) for

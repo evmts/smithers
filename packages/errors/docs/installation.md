@@ -3,22 +3,16 @@ title: "Installation"
 description: "Install @smthrs/errors and import it from the root entry point or a module subpath."
 ---
 
-`@smthrs/errors` is Effect-independent and adds no runtime dependencies.
-
 ## Add the dependency
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
-
-```json
-{
-  "dependencies": {
-    "@smthrs/errors": "1.0.0-rc.1"
-  }
-}
+```bash
+npm install @smthrs/errors@next effect
 ```
 
-The package has no runtime dependencies. Its only requirement is Node.js
-26.4.0 or later, declared in `engines`.
+The `next` tag carries the 1.0 release candidates.
+
+The package has no runtime dependencies. `effect` is a peer dependency in the
+range `^4.0.4`, and Node.js 26.4.0 or later is required, declared in `engines`.
 
 ## Import it
 

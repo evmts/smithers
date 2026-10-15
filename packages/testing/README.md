@@ -21,7 +21,9 @@ constructor identity, tags, fields, and existing test imports are preserved.
 
 ## Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/testing@next effect
+```
 
 `effect` is a required peer in the range `^4.0.4`. `vitest` and
 `@effect/vitest` are optional peers, needed only by the `Vitest` adapter.

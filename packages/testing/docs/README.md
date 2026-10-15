@@ -30,7 +30,9 @@ same answer twice.
 
 ## Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/testing@next effect
+```
 
 `vitest` and
 `@effect/vitest` are optional peers, needed only by the `Vitest` adapter.

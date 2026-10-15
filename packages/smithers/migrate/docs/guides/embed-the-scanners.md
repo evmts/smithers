@@ -15,9 +15,13 @@ or opens a database except read only.
 
 ## Install the scanner API
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/migrate@next @effect/platform-node@4.0.4 @effect/platform-node-shared@4.0.4 effect@4.0.4
+```
 
-Keep optional dependencies enabled: TypeScript 7 supplies the native compiler
+The package depends on `effect` 4.0.4 exactly, so the line pins `effect` and
+the Node adapters the example imports to that release, which keeps one copy of
+`effect` in the tree. Keep optional dependencies enabled: TypeScript 7 supplies the native compiler
 the scanners need through a platform-specific optional package. See
 [Installation](../installation.md) for the dependency requirements.
 

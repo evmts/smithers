@@ -58,7 +58,10 @@ const unpadded = (text: string): string =>
 describe("scanner installation guides", () => {
   it.each(["embed-the-scanners", "scan-a-project"])("%s keeps the native compiler installed", (guide) => {
     const page = read(`../docs/guides/${guide}.md`)
-    expect(page).not.toMatch(/--no-optional|--omit[= ]optional|@smthrs\/migrate@next/)
+    expect(page).not.toMatch(/--no-optional|--omit[= ]optional/)
+    // The package is on npm under `next`; `latest` is an older candidate.
+    expect(page).toMatch(/^npm install @smthrs\/migrate@next\b/m)
+    expect(page).not.toMatch(/not on npm/i)
     expect(page).toContain("native compiler")
     expect(page).toContain("(../installation.md)")
   })

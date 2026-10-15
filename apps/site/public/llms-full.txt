@@ -51,7 +51,13 @@ The Smithers library is a roster of `@smthrs/*` packages, each with one referenc
 
 ## Install
 
-The packages are not on npm yet. See [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+The other packages are on npm under the `next` tag, which carries the 1.0 release candidates. Install the whole durable flow engine:
+
+```bash
+npm install @smthrs/flows@next effect
+```
+
+Install any single package the same way, by name with `@next`.
 
 ## Reading these pages
 
@@ -140,7 +146,11 @@ https://smithers.sh/docs/reference/api/flow/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/flow/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/reference/flow.md)
 
-Install the package with its `effect` peer. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+Install the package with its `effect` peer:
+
+```bash
+npm install @smthrs/flow@next effect
+```
 
 ## Entry points
 
@@ -1980,7 +1990,11 @@ This page is the long form: one entry per export, with the full type and every f
 
 ## Install
 
-Install the engine beside the flow package it runs. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+Install the engine beside the flow package it runs:
+
+```bash
+npm install @smthrs/engine@next @smthrs/flow@next effect
+```
 
 ## Entry points
 
@@ -3695,14 +3709,16 @@ https://smithers.sh/docs/reference/api/targets/
 
 ## Install
 
-Install it with the build CLI; a `PACKAGE.ts` or `WORKSPACE.ts` file then
-imports it directly. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli).
+Install it with the build CLI, beside the `effect` version `@smthrs/build-cli`
+depends on exactly; a `PACKAGE.ts` or `WORKSPACE.ts` file then imports it
+directly. Both packages are on npm under the `next` tag.
 
 ```json
 {
   "devDependencies": {
-    "@smthrs/build-cli": "1.0.0-rc.1",
-    "@smthrs/targets": "1.0.0-rc.1"
+    "@smthrs/build-cli": "1.0.0-rc.7",
+    "@smthrs/targets": "1.0.0-rc.7",
+    "effect": "4.0.4"
   }
 }
 ```
@@ -23029,9 +23045,8 @@ Effect's platform surface.
 
 ## Test subpaths
 
-For a deterministic host, use `@smthrs/testing/TestHost`. Add
-`"@smthrs/testing": "workspace:*"` to the consuming package's devDependencies;
-see [Testing](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/testing.md).
+For a deterministic host, use `@smthrs/testing/TestHost`. Install it with
+`npm install --save-dev @smthrs/testing@next`; see [Testing](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/testing.md).
 
 ### @smthrs/kernel/test/TestGrantStore
 
@@ -28410,9 +28425,11 @@ alternations of proponent then opponent, then one judge call over the whole
 transcript. `rounds` is expanded while the flow is declared, so the call count
 is a fact about the declaration rather than about a run.
 
-`Debate.run(input, options)` supplies the accumulated transcript instead:
-`proponent` receives `{ input, transcript, round }`, `opponent` receives that
-plus `proponent`, and `judge` receives `{ input, transcript }`. The judge's
+Both forms hand members the same payloads: `proponent` receives
+`{ input, transcript, round }`, `opponent` receives that plus `proponent`, and
+`judge` receives `{ input, transcript }`. `round` counts from 1.
+
+`Debate.run(input, options)` runs the same exchange as an Effect. The judge's
 value is the result. Each turn is frozen as it is appended and each callback
 gets a frozen snapshot of the transcript, while the payloads inside a turn stay
 the caller's own references. `rounds` must be a positive safe integer.
@@ -30874,10 +30891,11 @@ design. `NodeHost.layer` builds cleanly on a host without it, because the
 executable is re-validated per request rather than once at construction: the
 file a path names can be replaced while a host runs, and a check that happened
 only at boot would be a check about a file that is no longer there. The
-consequence is that on `node:22-slim`, `node:22-alpine`, or a distroless image
-the layer builds, the run starts, and the first guarded filesystem call inside a
-flow body fails `PermissionDenied`. Build or install the helper, or point the
-adapter at it; see [Configure the filesystem helper](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/guides/configure-the-filesystem-helper.md).
+consequence is that where no helper resolves, the layer builds, the run starts,
+and the first guarded filesystem call inside a flow body fails
+`PermissionDenied`. The package ships the helper for macOS, Linux, and Windows;
+to use another one, point the adapter at it. See
+[Configure the filesystem helper](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/guides/configure-the-filesystem-helper.md).
 
 ## Entry points
 
@@ -32492,7 +32510,9 @@ a mapping or an array containing mappings), or when `model` is an invalid list
 (such as `model: []`). These refusals report `missing_description`,
 `invalid_capabilities`, or `invalid_model`, respectively. An omitted
 `capabilities` key projects wildcard authority; a space-separated string is
-accepted with an `invalid_capabilities` warning. Other malformed fields may
+accepted with an `invalid_capabilities` warning. A blank `model` string or a
+`model` mapping is ignored with an `invalid_model` warning, and the flow keeps
+the default seat. Other malformed fields may
 produce a descriptor with a conservative value. Report `warnings` whether or
 not a descriptor was produced.
 
@@ -33444,7 +33464,9 @@ keeping the caller's own order. Every kept entry is stamped by `attribute`.
 A name defined by more than one pack keeps the highest-precedence definition
 and reports a `shadowed` warning naming both packs and versions, so an operator
 can see which pack lost and why rather than discovering it from a flow that
-behaves unexpectedly.
+behaves unexpectedly. A name one pack defines twice, for example under both
+`flows` and `skills`, keeps that pack's first definition and reports a
+`duplicate_name` warning naming the pack and the kept path.
 
 ## RegistryError
 
@@ -34006,7 +34028,9 @@ made it. `claim` records `claimed`; `activate` records `activated`, or
 `released` when the snapshot moved on; `claimAndOwn` records `claimed` or
 `stolen` and then `activated`, with a `released` first when an owner re-owns
 its own stale run; `steal` records `stolen`; `abandonClaim` and an owner's
-non-running `transitionOwned` record `released`; `recoverClaim` records
+non-running `transitionOwned` record `released`, and that `transitionOwned`
+records a second `released` for a steal claim still pending on the run;
+`recoverClaim` records
 `expired`. A refused operation and a heartbeat record nothing, and a
 rolled-back transaction leaves no fact.
 
@@ -39603,8 +39627,8 @@ Effect reads it from context. Launching goes through
 [`@smthrs/control`](/docs/reference/api/control/), and persistence through the SQL client and
 durable writer of [`@smthrs/database`](/docs/reference/api/database/).
 
-The package is not on npm at 1.0.0-rc.0. See [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/triggers/docs/installation.md)
-for how to get it.
+Install it with `npm install @smthrs/triggers@next effect`. See
+[Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/triggers/docs/installation.md) for its requirements.
 
 ## Example
 

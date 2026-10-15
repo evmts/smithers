@@ -69,7 +69,11 @@ credentials.
 
 The scanner modules import only `effect`, `@effect/platform-node`,
 `typescript`, and Node built-ins. Install the package with optional dependencies
-enabled so TypeScript 7's platform-specific native compiler is available. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+enabled so TypeScript 7's platform-specific native compiler is available:
+
+```bash
+npm install @smthrs/migrate@next
+```
 
 The optional `@smthrs/*` packages are installed too, but importing the scanners
 does not load the migration runtime. See [Installation](../installation.md)

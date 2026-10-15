@@ -11,9 +11,10 @@ describe("package manifest and README", () => {
     expect(readme).toContain("https://mcp.smithers.sh")
     expect(readme).not.toMatch(/\]\(\.\/docs\//)
 
-    // Nothing is published yet, so the README states that and teaches no install.
-    expect(readme).toContain("not published to npm yet")
-    expect(readme).not.toContain("pnpm add @smthrs/mcp")
+    // The package is on npm under `next`, which carries the 1.0 release
+    // candidates; `latest` is older, so the README names the tag.
+    expect(readme).toContain("npm install @smthrs/mcp@next")
+    expect(readme).not.toMatch(/not (?:yet )?(?:on|published to) npm|not on npm yet/i)
 
     // The links a reader without the repository can still follow.
     for (const path of [new URL("../LICENSE", import.meta.url)]) {

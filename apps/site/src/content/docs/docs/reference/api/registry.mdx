@@ -593,7 +593,9 @@ a mapping or an array containing mappings), or when `model` is an invalid list
 (such as `model: []`). These refusals report `missing_description`,
 `invalid_capabilities`, or `invalid_model`, respectively. An omitted
 `capabilities` key projects wildcard authority; a space-separated string is
-accepted with an `invalid_capabilities` warning. Other malformed fields may
+accepted with an `invalid_capabilities` warning. A blank `model` string or a
+`model` mapping is ignored with an `invalid_model` warning, and the flow keeps
+the default seat. Other malformed fields may
 produce a descriptor with a conservative value. Report `warnings` whether or
 not a descriptor was produced.
 
@@ -1545,7 +1547,9 @@ keeping the caller's own order. Every kept entry is stamped by `attribute`.
 A name defined by more than one pack keeps the highest-precedence definition
 and reports a `shadowed` warning naming both packs and versions, so an operator
 can see which pack lost and why rather than discovering it from a flow that
-behaves unexpectedly.
+behaves unexpectedly. A name one pack defines twice, for example under both
+`flows` and `skills`, keeps that pack's first definition and reports a
+`duplicate_name` warning naming the pack and the kept path.
 
 ## RegistryError
 

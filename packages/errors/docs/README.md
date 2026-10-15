@@ -43,14 +43,17 @@ draws that line.
 
 ## Install
 
-At `1.0.0-rc.0` this package is not on npm. It ships inside the Smithers
-repository, where `@smthrs/integrations` is its only consumer. Handling a
+```bash
+npm install @smthrs/errors@next effect
+```
+
+`@smthrs/integrations` is its only consumer in Smithers. Handling a
 `SmithersError` you caught needs no install: every field, code, and raise site
 is on this site, and the source is
 [on GitHub](https://github.com/smithersai/smithers/tree/main/packages/errors).
-[Installation](./installation.md) has the dependency declaration, the root
-entry point, the two module subpaths, and the paths the exports map refuses.
-The package has no runtime dependencies and needs Node.js 26.4.0 or later.
+[Installation](./installation.md) has the root entry point, the two module
+subpaths, and the paths the exports map refuses. The package has no runtime
+dependencies, peers `effect` `^4.0.4`, and needs Node.js 26.4.0 or later.
 
 ## A small example
 

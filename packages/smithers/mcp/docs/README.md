@@ -32,8 +32,9 @@ one entry of it, and nothing else.
 
 ## Install
 
-`@smthrs/mcp` is not published to npm yet. Its source is on
-[GitHub](https://github.com/smithersai/smithers).
+```bash
+npm install @smthrs/mcp@next @effect/platform-node effect
+```
 
 It needs Node.js 26.4.0 or later. Opening a connection requires two services
 from the caller's environment: Effect's `ChildProcessSpawner`, because an MCP

@@ -22,10 +22,10 @@ that supply storage, the selected SQLite driver, and the control runtime's ports
 
 ```bash
 pnpm add -D \
-  @smthrs/database@1.0.0-rc.0 \
-  @smthrs/journal@1.0.0-rc.0 \
-  @smthrs/notifications@1.0.0-rc.0 \
-  @smthrs/registry@1.0.0-rc.0 \
+  @smthrs/database@next \
+  @smthrs/journal@next \
+  @smthrs/notifications@next \
+  @smthrs/registry@next \
   effect \
   @effect/sql-sqlite-node
 ```

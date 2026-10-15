@@ -5,14 +5,15 @@ sidebar:
   order: 1
 ---
 
-## Availability
+## Install the package
 
-`@smthrs/mcp` is not published to npm yet. Its source is on
-[GitHub](https://github.com/smithersai/smithers), and the `smthrs` command line
+```bash
+npm install @smthrs/mcp@next effect
+```
+
+The `next` tag carries the 1.0 release candidates. The `smthrs` command line
 is the worked example of everything on this page: it composes this package
 behind `--mcp-config`.
-
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
 
 ## Requirements
 

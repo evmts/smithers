@@ -7,9 +7,12 @@ Release candidate scope, host requirements and compatibility review are defined 
 `SmithersError` and the five error codes the Smithers integration adapters
 raise.
 
-At `1.0.0-rc.0` this package is not on npm. It ships inside the Smithers
-repository, where `@smthrs/integrations` is its only consumer; every other
-package states its failures as `Schema.TaggedError` classes of its own.
+```bash
+npm install @smthrs/errors@next effect
+```
+
+`@smthrs/integrations` is its only consumer in Smithers; every other package
+states its failures as `Schema.TaggedError` classes of its own.
 
 ## What it is for
 

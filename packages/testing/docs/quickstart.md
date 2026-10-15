@@ -13,7 +13,11 @@ against it. Nothing is stubbed but the storage.
 ## Prerequisites
 
 - Node.js 26.4.0 or later.
-- A package with the test dependencies installed. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+- A project with the test dependencies installed:
+
+  ```bash
+  npm install --save-dev @smthrs/testing@next vitest@5.0.0 @effect/vitest effect
+  ```
 
 Both `effect` packages are peers in the range `^4.0.4`. [Installation](./installation.md)
 says why.
@@ -59,7 +63,7 @@ different engine.
 ## Run it
 
 ```bash
-pnpm vitest run engine.test.ts
+npx vitest run engine.test.ts
 ```
 
 ```text
