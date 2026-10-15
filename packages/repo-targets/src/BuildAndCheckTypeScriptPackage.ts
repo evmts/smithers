@@ -56,18 +56,20 @@ export interface Options {
    */
   readonly entry?: Input.File | undefined
   /**
-   * The glob Vitest collects cases from. It feeds `test` alone. Narrowing it
-   * to a subset of the test tree, which is how a package holds a tier such as
-   * fault injection out of its default suite, must not narrow what `check`
-   * typechecks or what `fmt` keys on, so those read `testSources` instead.
+   * The glob Vitest collects cases from. It narrows the suite `test` runs.
+   * Narrowing it to a subset of the test tree, which is how a package holds a
+   * tier such as fault injection out of its default suite, must not narrow
+   * what `check` typechecks, what `fmt` keys on, or the helpers `test` is
+   * keyed on, so those read `testSources` instead.
    *
    * @default test/**\/*.test.ts
    */
   readonly tests?: Input.Glob | undefined
   /**
    * Every TypeScript file in the package's test tree, including helpers and
-   * fixtures no suite collects. It feeds `check` and `fmt`, and a package
-   * that keeps its tests outside `test/` overrides it beside `tests`.
+   * fixtures no suite collects. It feeds `check` and `fmt`, and it keys
+   * `test`, so an edit to a helper a case imports re-runs the suite. A
+   * package that keeps its tests outside `test/` overrides it beside `tests`.
    *
    * @default test/**\/*.ts
    */
@@ -236,6 +238,7 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
       tests: [tests],
       sources: [
         sources,
+        testSources,
         Input.file("//packages/repo-targets/test-utils/effect-property.mjs"),
         Input.file("//packages/repo-targets/test-utils/effect-property.d.mts"),
         ...(options.testData ?? []).map((pattern) => Input.glob(pattern))

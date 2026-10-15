@@ -24,7 +24,12 @@ it("CI runs the package pattern that holds the coverage-enabled test target and 
     coverage: true,
     passWithNoTests: false,
     tests: [{ _tag: "Glob", pattern: "test/**/*.test.ts", exclude: [] }],
-    sources: [{ _tag: "Glob", pattern: "src/**/*.ts", exclude: [] }]
+    sources: [
+      { _tag: "Glob", pattern: "src/**/*.ts", exclude: [] },
+      { _tag: "Glob", pattern: "test/**/*.ts", exclude: [] },
+      { _tag: "Glob", pattern: "test-utils/**", exclude: [] },
+      { _tag: "File", path: "PACKAGE.ts" }
+    ]
   })
   // Fill only the workspace manager; all runner settings come from PACKAGE.ts.
   const runner = plannedCalls(Vitest.Vitest({ ...attrs, packageManager }))

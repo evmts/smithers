@@ -131,7 +131,7 @@ describe("ReviewDocsAgainstCode", () => {
     expect(attrs.context).toEqual([
       { _tag: "Glob", pattern: "//packages/smithers/flows/journal/README.md", exclude: [] },
       { _tag: "Glob", pattern: "//packages/smithers/flows/journal/docs/*.md", exclude: [] },
-      { _tag: "Glob", pattern: "//apps/site/src/content/docs/docs/reference/api/journal*.mdx", exclude: [] }
+      { _tag: "Glob", pattern: "//apps/site/src/content/docs/docs/reference/api/journal.mdx", exclude: [] }
     ])
   })
 
@@ -150,6 +150,15 @@ describe("ReviewDocsAgainstCode", () => {
     const files = await expandContext(attrs.context)
     expect(files).toContain("packages/smithers/flows/journal/README.md")
     expect(files).toContain("apps/site/src/content/docs/docs/reference/api/journal.mdx")
+  })
+
+  it("reads its own reference page and not a sibling package's that shares the prefix", async () => {
+    // `plan-store.mdx` documents `@smthrs/plan-store`; a `plan*.mdx` selection
+    // handed it to the plan review, whose rubric then reports exports missing
+    // from a page that never documents them.
+    const files = await expandContext(attrsOf(ReviewDocsAgainstCode({ cwd: "packages/smithers/flows/plan" })).context)
+    const pages = files.filter((file) => file.startsWith("apps/site/"))
+    expect(pages).toEqual(["apps/site/src/content/docs/docs/reference/api/plan.mdx"])
   })
 
   it("keeps the default context within the executor limits", async () => {

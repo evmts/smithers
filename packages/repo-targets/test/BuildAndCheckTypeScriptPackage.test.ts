@@ -214,10 +214,10 @@ describe("BuildAndCheckTypeScriptPackage test data", () => {
     const standard = BuildAndCheckTypeScriptPackage({ packageManager, cwd: options.cwd })
     const withData = BuildAndCheckTypeScriptPackage(options)
     expect(Target.metadata(withData.test).inputs).toEqual([
-      ...Target.metadata(standard.test).inputs.slice(0, 4),
+      ...Target.metadata(standard.test).inputs.slice(0, 5),
       Input.glob("test/fixtures/*.mjs"),
       Input.glob("test/fixtures/*.cjs"),
-      ...Target.metadata(standard.test).inputs.slice(4)
+      ...Target.metadata(standard.test).inputs.slice(5)
     ])
     expect(plannedArgv(withData.test)).toEqual(plannedArgv(standard.test))
     for (const name of ["lib", "check", "lint", "fmt", "docs", "circular", "docsFiles"] as const) {
@@ -379,6 +379,21 @@ describe("BuildAndCheckTypeScriptPackage option propagation", () => {
     expect(attrsOf<Typecheck.Attrs>(relocated.check).srcs).toContainEqual(Input.file("tsconfig.build.json"))
   })
 
+  it("keys the test target on the helpers its cases import", () => {
+    // Vitest digests only the declared tests and sources. A helper such as
+    // `test/toolchain.ts` matches no `*.test.ts` glob, so without
+    // `testSources` an edit to it reused a cached green run.
+    expect(Target.metadata(standard.test).inputs).toContainEqual(Input.glob("test/**/*.ts"))
+    const relocated = BuildAndCheckTypeScriptPackage({
+      packageManager,
+      cwd: "packages/example",
+      tests: Input.glob("spec/**/*.test.ts"),
+      testSources: Input.glob("spec/**/*.ts")
+    })
+    expect(Target.metadata(relocated.test).inputs).toContainEqual(Input.glob("spec/**/*.ts"))
+    expect(Target.metadata(relocated.test).inputs).not.toContainEqual(Input.glob("test/**/*.ts"))
+  })
+
   it("moves the typechecked and formatted test tree with testSources", () => {
     const relocated = BuildAndCheckTypeScriptPackage({
       packageManager,
@@ -424,6 +439,7 @@ describe("BuildAndCheckTypeScriptPackage option propagation", () => {
     ])
     expect(attrsOf<Vitest.Attrs>(relocated.test).sources).toEqual([
       moved,
+      Input.glob("test/**/*.ts"),
       Input.file("//packages/repo-targets/test-utils/effect-property.mjs"),
       Input.file("//packages/repo-targets/test-utils/effect-property.d.mts")
     ])

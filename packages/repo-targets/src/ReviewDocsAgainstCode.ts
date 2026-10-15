@@ -12,9 +12,10 @@ import type { Options, ReviewLint } from "./ReviewLint.ts"
  * Reviews changed public APIs against the prose that documents them.
  *
  * `context` defaults to the package's own `README.md` and `docs/*.md` plus the
- * site API reference pages at
- * `//apps/site/src/content/docs/docs/reference/api/<package>*.mdx`, where
- * `<package>` is the last directory in `cwd`. At the workspace root only the
+ * site API reference page at
+ * `//apps/site/src/content/docs/docs/reference/api/<package>.mdx`, where
+ * `<package>` is the last directory in `cwd`. The page name is exact, so the
+ * `plan` review does not read `plan-store.mdx`. At the workspace root only the
  * local prose is selected. Override `context` to opt into concept or guide
  * sections. Context crosses package boundaries and is read into every batch
  * whether or not it changed; the set must fit LlmLint's 2 MiB aggregate cap.
@@ -41,7 +42,7 @@ export const ReviewDocsAgainstCode = (options: Options): ReviewLint => {
       Input.glob("README.md"),
       Input.glob("docs/*.md"),
       ...(packageName === "." ? [] : [
-        Input.glob(`//apps/site/src/content/docs/docs/reference/api/${packageName}*.mdx`)
+        Input.glob(`//apps/site/src/content/docs/docs/reference/api/${packageName}.mdx`)
       ])
     ],
     batchSize: 3,

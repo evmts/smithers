@@ -2,12 +2,16 @@ import { Smithers } from "@smthrs/targets"
 
 const cwd = "packages/repo-targets"
 const sources = Smithers.glob("src/**/*.ts")
+// Files the cases import or read beside the suites themselves: the shared
+// test helpers, the property helper every package typechecks against, and
+// this declaration, which `CiSelection.test.ts` loads.
+const testSupportFiles = [Smithers.glob("test/**/*.ts"), Smithers.glob("test-utils/**"), Smithers.file("PACKAGE.ts")]
 const testSupport = Smithers.Filegroup({
   srcs: [Smithers.file("//packages/smithers/build/targets/test-support/plan.ts")],
   cwd
 })
 const check = Smithers.Typecheck({
-  srcs: [sources, Smithers.glob("test/**/*.ts")],
+  srcs: [sources, ...testSupportFiles],
   deps: [testSupport],
   tsconfig: Smithers.file("tsconfig.json"),
   buildMode: false,
@@ -16,7 +20,7 @@ const check = Smithers.Typecheck({
 })
 const test = Smithers.Vitest({
   tests: [Smithers.glob("test/**/*.test.ts")],
-  sources: [sources],
+  sources: [sources, ...testSupportFiles],
   deps: [testSupport],
   config: Smithers.file("vitest.config.ts"),
   environment: "node",
