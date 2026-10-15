@@ -51,6 +51,11 @@ const result = await Effect.runPromise(
 parks the loop. Branch on `_tag`. The same loop declared instead of executed, `ReviewLoop.make`, is a
 graph of six calls you can count and cost before anything happens.
 
+[`examples/runtime.ts`](./examples/runtime.ts) runs `ReviewLoop`, `Bounded`,
+`Quarantine`, and `WithRetry` the same way, and
+[`test/examples.test.ts`](./test/examples.test.ts) runs each example and checks
+its result.
+
 The full API reference lives at
 [smithers-patterns.smithers.sh/reference/api](https://smithers-patterns.smithers.sh/reference/api/).
 

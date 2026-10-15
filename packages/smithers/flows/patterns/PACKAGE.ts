@@ -1,11 +1,15 @@
 import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
 /** Standard package targets plus package-owned documentation generation. */
 import { Smithers } from "@smthrs/targets"
+import * as Input from "@smthrs/targets/Input"
 
 const cwd = "packages/smithers/flows/patterns"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  // examples/ is type-checked, linted and formatted with the sources, and run
+  // by test/examples.test.ts.
+  sources: Input.glob("{src,examples}/**/*.ts"),
   cwd
 })
 
