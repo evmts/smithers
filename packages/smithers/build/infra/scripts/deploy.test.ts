@@ -412,28 +412,29 @@ describe("deploy wrapper", () => {
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
     const kill = vi.spyOn(process, "kill")
     try {
-      const code = await withIsolatedSignals(() => {
-        const originalOn = process.on.bind(process)
-        const on = vi.spyOn(process, "on").mockImplementation(((event: string, listener: () => void) => {
-          const registered = originalOn(event, listener)
-          if (event === "SIGTERM") {
-            on.mockRestore()
-            // The wrapper installs its handlers and spawns in one synchronous
-            // run, so a microtask lands once the spawn has failed and left a
-            // child without a pid; the signal must be dropped rather than
-            // sent to process group zero.
-            queueMicrotask(() => process.emit("SIGTERM"))
-          }
-          return registered
-        }) as typeof process.on)
-        return deploy([], {
+      // Signals that arrive while remote state is pulled cancel the run before
+      // Alchemy starts, so the signal has to land after the spawn itself. The
+      // wrapper subscribes to the child's events right after spawning; a spawn
+      // in a missing directory has failed there and left a child without a
+      // pid, and the signal must be dropped rather than sent to process group
+      // zero.
+      const once = vi.spyOn(ChildProcess.prototype, "once").mockImplementation(function(
+        this: ChildProcess,
+        ...args: Parameters<ChildProcess["once"]>
+      ) {
+        once.mockRestore()
+        process.emit("SIGTERM")
+        return this.once(...args)
+      })
+      const code = await withIsolatedSignals(() =>
+        deploy([], {
           cli: script("exit-zero"),
           cwd: NodePath.join(directory, "absent-directory"),
           stateDirectory: stateDirectory(),
           escalationDelayMs: 100,
           redact: async () => (redactions += 1, 0)
         })
-      })
+      )
 
       expect(code).toBe(1)
       expect(redactions).toBe(1)
@@ -852,6 +853,49 @@ describe("deploy wrapper remote state", () => {
     expect(code).toBe(1)
     expect(seen).toBeUndefined()
     expect(stderr).toContain("CLOUDFLARE_API_TOKEN is required")
+  })
+
+  it.each([["SIGTERM", 143], ["SIGINT", 130]] as const)(
+    "honors %s that arrives while remote state is pulled, without starting Alchemy",
+    async (signal, exitCode) => {
+      const bucket = memoryStateBucket()
+      const interrupting: StateBucket = {
+        ...bucket,
+        get: async (key) => {
+          // The lock is taken; the operator presses Ctrl-C during the pull.
+          process.emit(signal)
+          return bucket.get(key)
+        }
+      }
+
+      const { code, seen } = await withIsolatedSignals(() => run(interrupting, "0"))
+
+      expect(code).toBe(exitCode)
+      expect(seen).toBeUndefined()
+      expect(bucket.objects.has("alchemy/Test.json")).toBe(false)
+      expect(bucket.objects.has("alchemy/Test.json.lock")).toBe(false)
+      expect(process.listenerCount(signal)).toBe(0)
+    }
+  )
+
+  it("fails an interrupted run whose remote lock cannot be released", async () => {
+    const bucket = memoryStateBucket()
+    const stuck: StateBucket = {
+      ...bucket,
+      get: async (key) => {
+        process.emit("SIGTERM")
+        return bucket.get(key)
+      },
+      delete: async () => {
+        throw new Error("R2 state DELETE answered 503")
+      }
+    }
+
+    const { code, seen, stderr } = await withIsolatedSignals(() => run(stuck, "0"))
+
+    expect(code).toBe(1)
+    expect(seen).toBeUndefined()
+    expect(stderr).toContain("lock was not released: R2 state DELETE answered 503")
   })
 
   it("never publishes state that failed redaction", async () => {

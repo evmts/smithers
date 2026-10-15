@@ -233,7 +233,17 @@ const verifiedTokenId = async (
   apiToken: string
 ): Promise<string | undefined> => {
   const response = await fetch(url, { headers: { authorization: `Bearer ${apiToken}` } })
-  const payload = (await response.json()) as { success?: boolean; result?: { id?: unknown } }
+  const text = await response.text()
+  // A rate limit or server error says nothing about the token, so it must not
+  // read as a refusal or send the caller on to the user-token endpoint.
+  const outage = new Error(`Cloudflare token verification ${url} answered ${response.status}: ${text.slice(0, 200)}`)
+  if (response.status === 429 || response.status >= 500) throw outage
+  let payload: { success?: boolean; result?: { id?: unknown } }
+  try {
+    payload = JSON.parse(text) as typeof payload
+  } catch {
+    throw outage
+  }
   return payload.success === true && typeof payload.result?.id === "string" ? payload.result.id : undefined
 }
 
@@ -245,6 +255,9 @@ const verifiedTokenId = async (
  * Cloudflare's own verification, first as an account token, then as a user
  * token, so the deployment needs no second secret.
  *
+ * @throws An `Error` naming the status when verification answers a rate limit,
+ * a server error, or a body that is not JSON; an `Error` naming
+ * `CLOUDFLARE_API_TOKEN` when neither endpoint verifies the token.
  * @category constructors
  * @since 0.1.0
  */

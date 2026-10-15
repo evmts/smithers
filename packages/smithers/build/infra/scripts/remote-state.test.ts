@@ -613,6 +613,20 @@ describe("R2 credentials", () => {
     )
   })
 
+  it.each([
+    ["an HTML outage page", () => new Response("<html>bad gateway</html>", { status: 502 }), /502/],
+    ["a JSON server error", () => Response.json({ success: false }, { status: 503 }), /503/],
+    ["a rate limit", () => Response.json({ success: false }, { status: 429 }), /429/],
+    ["a proxy page that is not JSON", () => new Response("<html>forbidden</html>", { status: 403 }), /403/]
+  ])("reports %s from token verification as the outage it is", async (_, answer, status) => {
+    const { fetch, requests } = recordingFetch(answer)
+    const failure = r2CredentialsFromApiToken({ apiToken: "t", accountId: "acct", fetch })
+    await expect(failure).rejects.toThrow(status)
+    await expect(failure).rejects.not.toThrow(/did not verify/)
+    // An outage on the account endpoint is not evidence the token is a user token.
+    expect(requests).toHaveLength(1)
+  })
+
   it("refuses a verification that names no token", async () => {
     const { fetch } = recordingFetch(() => Response.json({ success: true, result: {} }))
     await expect(r2CredentialsFromApiToken({ apiToken: "t", accountId: "acct", fetch })).rejects.toThrow(
