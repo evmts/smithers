@@ -48,7 +48,11 @@ const primitiveDiagnostic = (value: unknown): unknown => {
     case "string":
       return value.slice(0, redactionWindow)
     case "number":
-      return Number.isFinite(value) ? value : `[${value > 0 ? "+" : "-"}non-finite number]`
+      return Number.isFinite(value)
+        ? value
+        : Number.isNaN(value)
+        ? "[NaN]"
+        : `[${value > 0 ? "+" : "-"}non-finite number]`
     case "boolean":
       return value
     case "undefined":
