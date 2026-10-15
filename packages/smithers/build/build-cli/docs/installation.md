@@ -20,13 +20,13 @@ For the full picture of the three packages, see the
 ## Add the dependency
 
 Declare the CLI and the authoring package as devDependencies of the workspace
-root. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli).
+root. Prereleases publish to npm under the `next` dist-tag.
 
 ```json
 {
   "devDependencies": {
-    "@smthrs/build-cli": "1.0.0-rc.1",
-    "@smthrs/targets": "1.0.0-rc.1"
+    "@smthrs/build-cli": "next",
+    "@smthrs/targets": "next"
   }
 }
 ```

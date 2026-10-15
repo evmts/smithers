@@ -108,13 +108,13 @@ See [Accepted agent edits](./concepts/agent-edits.md) for publication and hard-l
 
 ## How to get it
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli).
+Prereleases publish to npm under the `next` dist-tag.
 
 ```json
 {
   "devDependencies": {
-    "@smthrs/build-cli": "1.0.0-rc.1",
-    "@smthrs/targets": "1.0.0-rc.1"
+    "@smthrs/build-cli": "next",
+    "@smthrs/targets": "next"
   }
 }
 ```
