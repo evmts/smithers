@@ -133,6 +133,33 @@ describe("Regression", () => {
     expect(atRelative.nondeterminism).toEqual([])
   })
 
+  // Decimal scores are not exactly representable: 0.7 - 0.8 is
+  // -0.10000000000000009 and (0.8 - 0.72) / 0.8 is 0.09999999999999995. A
+  // move that lands on a decimal tolerance has to be silenced whichever side
+  // of it rounding put the arithmetic, or `absolute: 0.1` silences 0.7 -> 0.6
+  // and reports 0.8 -> 0.7 as a drop the report prints as 0.100000.
+  it("silences a decimal move that lands on a decimal tolerance despite float rounding", async () => {
+    const decimal = {
+      version: 1 as const,
+      suite: "s",
+      records: [{ suite: "s", case: "c", scorer: "x", stepKey: "old", score: 0.8 }]
+    }
+    const compareDecimal = (stepKey: string, score: number, tolerances: Regression.Tolerances) =>
+      Effect.runPromise(Regression.compare(decimal, run(stepKey, score), tolerances))
+
+    expect((await compareDecimal("new", 0.7, { absolute: 0.1 })).regressions).toEqual([])
+    expect((await compareDecimal("old", 0.7, { absolute: 0.1 })).nondeterminism).toEqual([])
+    expect((await compareDecimal("old", 0.9, { absolute: 0.1 })).nondeterminism).toEqual([])
+    expect((await compareDecimal("new", 0.6, { absolute: 0.2 })).regressions).toEqual([])
+    expect((await compareDecimal("new", 0.72, { relative: 0.1 })).regressions).toEqual([])
+
+    // A move one thousandth past the tolerance is still a move.
+    expect((await compareDecimal("new", 0.699, { absolute: 0.1 })).regressions).toHaveLength(1)
+    expect((await compareDecimal("old", 0.701, { absolute: 0.09 })).nondeterminism).toHaveLength(1)
+    // With the default tolerance of 0 every move is still reported, however small.
+    expect((await compareDecimal("old", 0.8 + 2 ** -50, {})).nondeterminism).toHaveLength(1)
+  })
+
   it("reports any drop from a zero baseline score whatever the relative tolerance", async () => {
     const zero = {
       version: 1 as const,

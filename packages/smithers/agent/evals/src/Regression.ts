@@ -104,6 +104,12 @@ type Score = Extract<Observation, { readonly kind: "score" }>
 const key = (caseName: string, scorer: string): string => tupleKey(caseName, scorer)
 const validTolerance = (value: number): boolean => Number.isFinite(value) && value >= 0
 
+// Decimal scores are not exactly representable, so 0.8 - 0.7 is
+// 0.10000000000000009. A move counts only when it clears a positive tolerance
+// by more than a few ulps; a zero tolerance still reports every move.
+const exceeds = (move: number, tolerance: number): boolean =>
+  tolerance === 0 ? move > 0 : move - tolerance > 8 * Number.EPSILON * Math.max(1, tolerance)
+
 const groupBy = <A>(items: ReadonlyArray<A>, of: (item: A) => string): Map<string, Array<A>> => {
   const groups = new Map<string, Array<A>>()
   for (const item of items) {
@@ -278,7 +284,8 @@ export const compare = (
       // dead: a score is validated into [0, 1], so nothing can drop below 0.
       if (observation.stepKey === baselineRecord.stepKey) {
         if (
-          Math.abs(delta) > absolute && Math.abs(delta) / Math.max(Math.abs(baselineRecord.score), 1e-12) > relative
+          exceeds(Math.abs(delta), absolute) &&
+          exceeds(Math.abs(delta) / Math.max(Math.abs(baselineRecord.score), 1e-12), relative)
         ) {
           nondeterminism.push({
             case: observation.case,
@@ -289,7 +296,7 @@ export const compare = (
           })
         }
       } else if (
-        delta < 0 && -delta > absolute && -delta / Math.max(baselineRecord.score, 1e-12) > relative
+        delta < 0 && exceeds(-delta, absolute) && exceeds(-delta / Math.max(baselineRecord.score, 1e-12), relative)
       ) {
         regressions.push({
           case: observation.case,
