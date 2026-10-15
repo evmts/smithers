@@ -8,7 +8,7 @@ sidebar:
 ## Install the package
 
 ```bash
-npm install @smthrs/time-travel@1.0.0-rc.8 effect
+npm install @smthrs/time-travel@1.0.0-rc.9 effect
 ```
 
 In a project that already installs [`@smthrs/flows`](/api/flows), name the same

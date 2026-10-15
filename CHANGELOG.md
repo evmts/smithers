@@ -5,6 +5,136 @@ release (what changed and why it matters, with screenshots and examples), see
 the release notes at
 [smithers.sh/changelogs/1.0.0-rc.0](https://smithers.sh/changelogs/1.0.0-rc.0).
 
+## 1.0.0-rc.9 (2026-10-15)
+
+<!-- commits:1.0.0-rc.9 -->
+
+104 commits since [v1.0.0-rc.8](https://github.com/smithersai/smithers/commit/ac39826420).
+
+### ✨ Features
+
+- **smithers:** give a sealed host its file flows in the container ([e0bc9bc1f3](https://github.com/smithersai/smithers/commit/e0bc9bc1f332aa4375828663bf3aea3e3aa9d6ed))
+- **std:** search a machine's tree in two round trips ([425bbbf974](https://github.com/smithersai/smithers/commit/425bbbf9749034b4be5b53cfde967df92cbb4496))
+- **sandbox:** serve a container something else runs as a session ([9e363a9e8d](https://github.com/smithersai/smithers/commit/9e363a9e8da6fc144492aae5b8ae99d1fb39430c))
+- **patterns-site:** link every ported use-case example from its card (#3991) ([91d40d2900](https://github.com/smithersai/smithers/commit/91d40d29008f193953183f31f690df85aee9d2ea))
+
+### 🐛 Bug fixes
+
+- **flows:** reclaim a killed owner's run at once when its pid is gone (#3897) ([bd9972a06a](https://github.com/smithersai/smithers/commit/bd9972a06ae26b21bccc73b5b82806b03fe14833))
+- **app:** a failed browser step's report outlives the steps that clear it ([abe5baa348](https://github.com/smithersai/smithers/commit/abe5baa34866c6f9246b79b7e683e325e709a054))
+- **journal:** drop two type assertions the widened lint rejects ([4dd2a5c7cd](https://github.com/smithersai/smithers/commit/4dd2a5c7cd66c384d46407a64ca3190fd395c453))
+- **flows:** a host starts without jj; only steps that use jj need it (#3894) ([6d3f819d57](https://github.com/smithersai/smithers/commit/6d3f819d574208b2119a77351fe5c5c296f21e8b))
+- **flows:** a hard-boundary refusal reaches the caller instead of SchemaError (#4019) ([e6963c002f](https://github.com/smithersai/smithers/commit/e6963c002f3c3dcc2fe76d5123f17634bc8324df))
+- **evals:** a command's output that says "usage limit" no longer disables a Codex account (#4011) ([9a556e745a](https://github.com/smithersai/smithers/commit/9a556e745ad11df74abb73836db18a39d0ca4842))
+- **app:** the palette denies only the doors no registry answers for ([7358e8efde](https://github.com/smithersai/smithers/commit/7358e8efdeb48f1cbacbd100a72f4a297bf3b90a))
+- **app:** a bun test run makes the JUnit report directory its bunfig declares ([96dba737cd](https://github.com/smithersai/smithers/commit/96dba737cd1bf9c0efe0a73b05b6289c456c2190))
+- **app:** a test-child timeout reports its own process group, not the machine's command lines ([545b0ce373](https://github.com/smithersai/smithers/commit/545b0ce37326146859daef87355af1b4d114093e))
+- **app:** a refused catalog read is not a repository with no agents ([4b1d981b77](https://github.com/smithersai/smithers/commit/4b1d981b7734f47b8b85d4ea572b6e4f1090a29e))
+- **app:** a navigation write inside the admission window no longer strands the submitted line ([e24bf196e5](https://github.com/smithersai/smithers/commit/e24bf196e570dc0e2bf4af05f6e64e00949a2b1a))
+- **routes:** the model stream's catch-all names the branch that refused it ([0eeaa7219f](https://github.com/smithersai/smithers/commit/0eeaa7219fd3c558f1a50eaefcdb8f46c62cb254))
+- **workspace:** an isolated runtime's machine is never named after its workspace ([18c5566c95](https://github.com/smithersai/smithers/commit/18c5566c957147d8b3c745557f6c9fd437f7596d))
+- **app:** the Agents card lists the agents a host answered for, never its seed table ([9396d62fa8](https://github.com/smithersai/smithers/commit/9396d62fa8b9689ab69b559ad467396bb3b0aa9c))
+- **app:** Branch Files reads its own absence, not an empty list element ([5548a15596](https://github.com/smithersai/smithers/commit/5548a15596744f2261d411986229a80ac002bece))
+- **services:** one reclaimed workspace is one decrement, from the replica that took it ([548b268ae9](https://github.com/smithersai/smithers/commit/548b268ae94c31a149380946336f65169acc2e33))
+- **app:** a refused issue index is stated whatever the screen holds, and names its door ([283fac8d37](https://github.com/smithersai/smithers/commit/283fac8d3743ba7c6508d5c840341b10d3cfa314))
+- **services:** the workspace VM gauge is credited only by a workspace ([32577bb40c](https://github.com/smithersai/smithers/commit/32577bb40c7dd36337f06423e915d93aede43834))
+- **app:** a refused issue source is stated, never answered as 0 results ([f28ccce338](https://github.com/smithersai/smithers/commit/f28ccce3385106e7ce8fa2f4bf06f7e6dd02d3f2))
+- **app:** a queued box's Files and Terminals panels answer too ([cd5b896316](https://github.com/smithersai/smithers/commit/cd5b896316a5b679452f1aad77838401b8c55342))
+- **app:** a card the transcript renders locally takes its local place in the rail ([297b2bd38b](https://github.com/smithersai/smithers/commit/297b2bd38b92ef679a93153a603a3f533f68e89d))
+- **app:** only a turn's author reads an empty transcript as waiting ([9af0b338e3](https://github.com/smithersai/smithers/commit/9af0b338e3518bc7a8e110db481cd8cd3b98fa82))
+- **rpc:** the done-code vocabulary names every code the chat producer seals with ([05710000ba](https://github.com/smithersai/smithers/commit/05710000ba1613078c00e0305f288f5073f461ad))
+- **app:** a queued box's Activity panel says where the box is ([56446ecd86](https://github.com/smithersai/smithers/commit/56446ecd8690d41ba4543db19f6d4729d6487553))
+- **app:** the rail reads the transcript's order, so its end is the newest entry ([3d02756df6](https://github.com/smithersai/smithers/commit/3d02756df61d739336b007014fe0f43bab9484f0))
+- **app:** a capacity-deferred turn says so, once, without pushing the transcript sideways ([76d4944a29](https://github.com/smithersai/smithers/commit/76d4944a29d394766607ab6ee21c78e39ceb6643))
+- **build-cli:** resolve owners paths with dot or empty segments ([472d8ff953](https://github.com/smithersai/smithers/commit/472d8ff953146f197f6bb6b2efb6d490ad29714d))
+- **sandbox:** refuse short merge bases and relative directory roots ([3c190283c6](https://github.com/smithersai/smithers/commit/3c190283c6d51800e2b14277957f0c4c526bfbd7))
+- **app:** a saved event type this build never published prints as * ([b121b2d88f](https://github.com/smithersai/smithers/commit/b121b2d88fff05d0a624094976997cc87b8b1ddc))
+- **targets:** name the memory and jj site reference pages as files ([4ce7e13f42](https://github.com/smithersai/smithers/commit/4ce7e13f4210a47fe0c2076ae40b82ca10d8d74b))
+- **harness:** only the check a run declared can hold its completion (#3994) ([89bd8d7c45](https://github.com/smithersai/smithers/commit/89bd8d7c4543b85d1542b486a4899d1204f232e2))
+- **agent:** reject a bad claim cap given to implement or the host ([cb3de695fe](https://github.com/smithersai/smithers/commit/cb3de695fe30a878bb0a631f1c4edab436da2775))
+- **control:** reject invalid monitor bounds before the first beat ([3a2567d822](https://github.com/smithersai/smithers/commit/3a2567d8225f1226b0b1eb5fa8f47442f0a63243))
+- **jj:** make jjErrorCause never throw on a hostile failure ([941cd90769](https://github.com/smithersai/smithers/commit/941cd907692817fbdd6abcf9ae654c340edf28b1))
+- **workspace:** a retained machine is told it is a machine, not a branch ([f8262b2aef](https://github.com/smithersai/smithers/commit/f8262b2aef7ff129ef647e748cd77fae9ec01368))
+- **workspace:** only a deployment that never composed sleep tells an owner to stop retrying ([6f8b55e995](https://github.com/smithersai/smithers/commit/6f8b55e995119017bd5bbb6632f05b4377ec7280))
+- **targets:** refuse owners globs that inject CODEOWNERS lines ([dad852f9c6](https://github.com/smithersai/smithers/commit/dad852f9c631768ba91aa17c82747812546feea0))
+- **platform-bun:** refuse repository roots that contain NUL ([b1c6bbb8df](https://github.com/smithersai/smithers/commit/b1c6bbb8df76f34b7becf40b0e06503c30e24813))
+- **platform-node:** bound the owner's ps at 1 s and name its fault ([5698a8fd8e](https://github.com/smithersai/smithers/commit/5698a8fd8ea028a48d5fb722ed529bfdf7ec0d31))
+- **observability:** intrinsic date snapshots; native plain-run cuts ([81a3773118](https://github.com/smithersai/smithers/commit/81a377311883bdaca0e3f8cd36a356674e99ce26))
+- **migrate:** record the whole cli verb a command script runs ([17d3d8df21](https://github.com/smithersai/smithers/commit/17d3d8df21787d80de6656b84397a7a01f2ee2c7))
+- **model-host:** stop cut echoes rejoining a streamed credential ([65cf2f4bf3](https://github.com/smithersai/smithers/commit/65cf2f4bf36cff3a53fdd5198441f152ff7ec6b3))
+- **triggers:** a stalled poll owes the same runs as a restart ([f375e6ad64](https://github.com/smithersai/smithers/commit/f375e6ad641f8cf5d297710a38490bea19178989))
+- **patterns:** pass review to retried Supervisor.run workers ([8f57dd4127](https://github.com/smithersai/smithers/commit/8f57dd412793b3f077eb4533d5a05a97d675d325))
+- **testing:** refuse NaN timeouts and catch keys after JSON escapes ([6f4408789d](https://github.com/smithersai/smithers/commit/6f4408789db81b12c0dc559e631d034938d08c54))
+- **repo-targets:** lower relative dynamic import to require in cjs ([27dc82fc78](https://github.com/smithersai/smithers/commit/27dc82fc78bf072ec084baad4f048d222067d6dd))
+- **rpc:** refuse every non-reserved live frame with LiveFrameRefused ([0874b01fb7](https://github.com/smithersai/smithers/commit/0874b01fb7c80d14ce69ec4ddcbacfde2b309bb4))
+- **model-host:** an answered callback records no connection of a later one (#3812) ([f4d9d1f906](https://github.com/smithersai/smithers/commit/f4d9d1f9069f55e89cc3aac15a8906e1a34d6d26))
+- **app:** a search refusal is never empty, and never paints its sentence twice ([9cca06aaf8](https://github.com/smithersai/smithers/commit/9cca06aaf8e4092dbdb465b195a95ce7999a55b6))
+- **time-travel:** stop nextForkId re-minting an id after a truncation ([e32dd0875e](https://github.com/smithersai/smithers/commit/e32dd0875ef80512b984cfd4b25cad82af039c8a))
+- **gateway:** match allowed host names without regard to case ([7246f2decf](https://github.com/smithersai/smithers/commit/7246f2decfea7d1e39e0c2b8cff8e6cf75cb99d5))
+- **platform-browser:** rerun package targets when an example changes ([56272cf5ab](https://github.com/smithersai/smithers/commit/56272cf5ab17f78ce0debbd8fc961053a7919545))
+- **kernel:** authorize a trailing-dot host as the bare host ([e94d7abc55](https://github.com/smithersai/smithers/commit/e94d7abc5525d936a9a052e6b97b0dff39770954))
+- **flow:** refuse durable deadlines past the safe-integer due time ([1aa25f967a](https://github.com/smithersai/smithers/commit/1aa25f967a0b7c1cf86e22028250902fc9f4af38))
+- **engine:** retry placed resume and interrupt on transport loss ([542d3670cc](https://github.com/smithersai/smithers/commit/542d3670ccb34780af6284fbe304dd359edbd82b))
+- **machined:** gate linux-only helpers so macOS clippy passes ([ed8e3142f6](https://github.com/smithersai/smithers/commit/ed8e3142f66fc99b073bff1f9c6c7542250e4a8e))
+- **infra:** release the remote state lock on a signal during pull ([ee610dd205](https://github.com/smithersai/smithers/commit/ee610dd2055ad7933a6d63fa6fc85845f100c419))
+- **build:** report the cache prefix problem alongside other problems ([f5ac6dfd25](https://github.com/smithersai/smithers/commit/f5ac6dfd251918f86ff5bed9344cddc6432eccd2))
+- **std:** catch writes inside sh -c and eval in hermetic bash ([9465b79ce9](https://github.com/smithersai/smithers/commit/9465b79ce947f6de7f2da5fc6ee081b6f469c63d))
+- **plugin:** refuse handlers registered under an undeclared hook ([4647413433](https://github.com/smithersai/smithers/commit/4647413433ce43039142520e099d099b89e0fc5d))
+- **model:** keep appending to a tool call whose id moves index ([66c5ff0836](https://github.com/smithersai/smithers/commit/66c5ff0836ae9d256f21171c7569bd258eeae639))
+- **integrations:** rate limiter survives an unparsable absolute url ([6f929f44c9](https://github.com/smithersai/smithers/commit/6f929f44c99418bf7c9b49770de0eb6549a359ed))
+- **chain:** refuse invalid QuickJsRunner limits and pin them at make ([4315b3ae7d](https://github.com/smithersai/smithers/commit/4315b3ae7d60460fbcac0e441ada6255b0044662))
+- **examples:** RAG citation repair retrieves with the repaired plan (#3991) ([47f1c85bd4](https://github.com/smithersai/smithers/commit/47f1c85bd4e9b6b8515e4e37655800b8241acb63))
+- **patterns:** MergeQueue at concurrency 1 lands one member at a time (#3991) ([869bf7a41d](https://github.com/smithersai/smithers/commit/869bf7a41d873a6688796005f9213614977adc94))
+
+### ♻️ Refactors
+
+- **app:** the JUnit report test owns its fixture directories and bounds its child ([10a823b300](https://github.com/smithersai/smithers/commit/10a823b300faab38b3b97462d5b7bc9dba4ce7ab))
+
+### 📝 Documentation
+
+- **flows:** add the How Smithers Flows works concept page (#4017) ([0926f18fff](https://github.com/smithersai/smithers/commit/0926f18fff9d3386186cc418bba0b489536569b2))
+- **flows:** fix five rc.8 reader-check defects in the Flows, Bun host and plan-diff pages (#4016) ([2fb26c844c](https://github.com/smithersai/smithers/commit/2fb26c844c7927f6f3c9b97fefb1a2ee06b72012))
+- **site:** the sandbox reference says what its own docs now say ([3f24b579ba](https://github.com/smithersai/smithers/commit/3f24b579bab1659f48bb9a31dbcb0f8a267d9cfa))
+- **site:** regenerate the API and reference pages that held Deploy apps red ([3ed562a8ab](https://github.com/smithersai/smithers/commit/3ed562a8ab6a7e61eec8927d64553004629a695f))
+- **plan:** document params, returns and error codes on exports ([a50dbd9fef](https://github.com/smithersai/smithers/commit/a50dbd9fef49f0a0dc02914c8c83d8f62cd5485b))
+- **database:** document schema errors, read-only opens and dialect ([27ef3c0195](https://github.com/smithersai/smithers/commit/27ef3c0195bf0b72d2f123dbce0bf5636f380a0f))
+- **artifacts:** document the file lease stale-bound RangeError ([70f2851c1f](https://github.com/smithersai/smithers/commit/70f2851c1f8ac25ce2e630d5725a8f99da183f64))
+
+### 🧹 Chores
+
+- **build:** regenerate the target index for the package bug-bash targets ([6d3eb4db1b](https://github.com/smithersai/smithers/commit/6d3eb4db1bce14c133bf99ac110af4009d952e9e))
+- **capability:** add doc review targets and examples sources ([3ba6e96868](https://github.com/smithersai/smithers/commit/3ba6e968680ee9cf24217bc04c306ac34e002569))
+
+### 📦 Other changes
+
+- **test(engine-store):** expect the examples glob in the matrix test target ([b5de2c5776](https://github.com/smithersai/smithers/commit/b5de2c57769e2c545fc5f9fa4c1dd7a0b788ed70))
+- **ci(release):** move an npm dist-tag of one @smthrs package from CI (#4018) ([69dd8acab9](https://github.com/smithersai/smithers/commit/69dd8acab9f8770a425435792f233ef4805ba864))
+- **test(agent):** cover the three branches the coverage gate missed ([20fd11a80a](https://github.com/smithersai/smithers/commit/20fd11a80a94d6fcad19fcfc3f51f6bdb1bdafbc))
+- **test(app):** the canary's no-result report is exercised by a stand-in child ([7ec512e809](https://github.com/smithersai/smithers/commit/7ec512e809e3911db8e17cd9107d3d1bf1c1d229))
+- **test(app):** the canary and bundle-CLI fixtures launch the Bun running them, not a name off PATH ([ad422cf526](https://github.com/smithersai/smithers/commit/ad422cf5268c54a9bef2ea74dd904764f38641ac))
+- **test(app):** the surfaces probe knocks on a Runs door the fixture declares, while it is still the card's content ([fa60275f83](https://github.com/smithersai/smithers/commit/fa60275f838c80b10986c8ca85bdd083043608e2))
+- **test(app):** the branch a submission leaves behind keeps its own draft ([ce1b15a38e](https://github.com/smithersai/smithers/commit/ce1b15a38eff6ee02cd1024853ac8c6c4037de7a))
+- **test(app):** the launch race's evidence is the job's, and its owner asserts the status ([6115088fa7](https://github.com/smithersai/smithers/commit/6115088fa738905bce4c4a069983d1aad4d1a22a))
+- **test(app):** the skill proof's launches are supervised, not read as hangs ([9d2f673808](https://github.com/smithersai/smithers/commit/9d2f673808e1b1642107017515db803d6ab47637))
+- **test(flows):** reap suite pins supervised cleanup; add review targets ([8711080c57](https://github.com/smithersai/smithers/commit/8711080c577c54d3baf26369fc8485329945be4f))
+- **test(memory):** add model review targets, reuse one vector test database ([ef49475402](https://github.com/smithersai/smithers/commit/ef49475402b6d03dcd83c918c80396172308c21f))
+- **style(rpc):** the refusal wire's own test reads at the width dprint prints ([9514168455](https://github.com/smithersai/smithers/commit/951416845510643c22ee64c9eab1af8e2e8d59f8))
+- **test(app):** /flows proves the Cloud catalog read, not the absence of one ([e4830e0ee6](https://github.com/smithersai/smithers/commit/e4830e0ee6230980bf332a189845e92f09e0661e))
+- **test(harness):** cover tab escapes and unaligned compaction marks ([4e4b8ee228](https://github.com/smithersai/smithers/commit/4e4b8ee2282ffaff6733c69889b05066ed624bca))
+- **test(cli):** add a tested example for output rendering and gc windows ([8cfb8b8b8b](https://github.com/smithersai/smithers/commit/8cfb8b8b8b632cb7d1576b40106f78083bb583c6))
+- **test(smthrs-deprecation):** cover async exit status and missing module ([52dbdaae5e](https://github.com/smithersai/smithers/commit/52dbdaae5ecdd27a74015643b10e1bea6a5977bb))
+- **test(run-store):** expect a settle to free a pending steal claim ([4f4e3dad4d](https://github.com/smithersai/smithers/commit/4f4e3dad4dd4e2f1c6eaa8527e9c8b52c93aa5b5))
+- **test(plan-store):** reject invalid creation timestamps without rows ([93bdcf84ef](https://github.com/smithersai/smithers/commit/93bdcf84efce52de430d39e5609fbefa91e4bb49))
+- **test(keys):** add a tested runnable identity example ([644842d8b5](https://github.com/smithersai/smithers/commit/644842d8b501f9a09875135fa63b36bc06f58051))
+- **test(canonical):** add a runnable serialization example and map tests ([060d3bc9c0](https://github.com/smithersai/smithers/commit/060d3bc9c0f1579547f6d77e08c412d8f0113375))
+- **test(ffi):** cover apply_files rejections and deleted-file preimages ([9d0ca254be](https://github.com/smithersai/smithers/commit/9d0ca254bebfd0cc3d667f94ff0c72955ae887aa))
+- **test(backend):** cover EscapeGuestPath and add a security review ([5b2e8cdf22](https://github.com/smithersai/smithers/commit/5b2e8cdf226d312367cfe076aa6ca9ba7b23525a))
+- **test(scorers):** count hunkless git diffs in the integration test ([3815d701a3](https://github.com/smithersai/smithers/commit/3815d701a330259231fc72ebdb760be722c5df01))
+- **test(registry):** add a tested quickstart example ([290ff74d18](https://github.com/smithersai/smithers/commit/290ff74d187756c9cefe03f0dfef787c12327c67))
+- **test(fs):** add a runnable agent command example with tests ([f0fbcb98bf](https://github.com/smithersai/smithers/commit/f0fbcb98bf42ca67f4896a539a248b7a4a72a92b))
+
+<!-- /commits:1.0.0-rc.9 -->
+
 ## 1.0.0-rc.8 (2026-10-14)
 
 <!-- commits:1.0.0-rc.8 -->
