@@ -158,11 +158,46 @@ export type ModelEventLike =
     readonly totalTokens?: number | undefined
     readonly costUsd?: number | undefined
   }
-  | { readonly type: "retry"; readonly attempt: number; readonly code: string; readonly delayMillis: number }
+  | {
+    readonly type: "retry"
+    readonly attempt: number
+    readonly code: string
+    readonly delayMillis: number
+    /** Milliseconds since the call started when this attempt began. */
+    readonly elapsedMs?: number | undefined
+    /** The HTTP status that failed the attempt, when a response carried one. */
+    readonly httpStatus?: number | undefined
+  }
   | {
     readonly type: "settle"
     readonly stopReason: "stop" | "length" | "tool-calls" | "content-filter" | "error" | "aborted" | "unknown"
     readonly responseId?: string | undefined
+    /** The service tier the provider reports it served the call on. */
+    readonly servedTier?: string | undefined
+    /** The call's wire timing, in milliseconds from `startedAt`. */
+    readonly timing?: {
+      readonly startedAt?: number | undefined
+      readonly attempts?: number | undefined
+      readonly requestBytes?: number | undefined
+      readonly preparedMs?: number | undefined
+      readonly signedMs?: number | undefined
+      readonly sentMs?: number | undefined
+      readonly headersMs?: number | undefined
+      readonly firstEventMs?: number | undefined
+      readonly firstThinkingMs?: number | undefined
+      readonly firstOutputMs?: number | undefined
+      readonly lastOutputMs?: number | undefined
+      readonly completedMs?: number | undefined
+      readonly closedMs?: number | undefined
+      readonly failedTries?:
+        | ReadonlyArray<{
+          readonly sentMs?: number | undefined
+          readonly failedMs: number
+          readonly code: string
+          readonly httpStatus?: number | undefined
+        }>
+        | undefined
+    } | undefined
     /** The vendor session that answered, for a seat that is a wrapped CLI. */
     readonly sessionId?: string | undefined
     readonly itemIds?: ReadonlyArray<string> | undefined

@@ -139,6 +139,14 @@ const _toolResult: EventKeys<"tool-result"> = true
 const _usage: EventKeys<"usage"> = true
 const _retry: EventKeys<"retry"> = true
 const _settle: EventKeys<"settle"> = true
+const _settleTimingKeys: Keys<
+  NonNullable<Member<ProductionEvent, "type", "settle">["timing"]>,
+  NonNullable<Member<ModelEventLike, "type", "settle">["timing"]>
+> = true
+const _settleFailedTryKeys: Keys<
+  NonNullable<NonNullable<Member<ProductionEvent, "type", "settle">["timing"]>["failedTries"]>[number],
+  NonNullable<NonNullable<Member<ModelEventLike, "type", "settle">["timing"]>["failedTries"]>[number]
+> = true
 const _settleStopReasons: Exact<
   Member<ProductionEvent, "type", "settle">["stopReason"],
   Member<ModelEventLike, "type", "settle">["stopReason"]

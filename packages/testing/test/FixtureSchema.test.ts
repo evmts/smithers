@@ -194,6 +194,49 @@ describe("the Fixture interface and the Fixture schema are one contract", () => 
       expect(decoded.calls[0]?.events).toStrictEqual([{ type: "usage", ...usage }])
     }))
 
+  it.effect("decodes retry and settle events with every optional field populated, wire timing included", () =>
+    Effect.gen(function*() {
+      const retry: Complete<Member<ModelEventLike, "type", "retry">> = {
+        type: "retry",
+        attempt: 2,
+        code: "rate_limited",
+        delayMillis: 500,
+        elapsedMs: 1_250,
+        httpStatus: 429
+      }
+      const timing: Complete<NonNullable<Member<ModelEventLike, "type", "settle">["timing"]>> = {
+        startedAt: 1_757_000_000_000,
+        attempts: 2,
+        requestBytes: 2_048,
+        preparedMs: 1,
+        signedMs: 2,
+        sentMs: 3,
+        headersMs: 40,
+        firstEventMs: 45,
+        firstThinkingMs: 50,
+        firstOutputMs: 60,
+        lastOutputMs: 300,
+        completedMs: 310,
+        closedMs: 312,
+        failedTries: [{ sentMs: 3, failedMs: 20, code: "transport", httpStatus: 503 }]
+      }
+      const settle: Complete<Member<ModelEventLike, "type", "settle">> = {
+        type: "settle",
+        stopReason: "stop",
+        responseId: "resp_1",
+        servedTier: "priority",
+        timing,
+        sessionId: "session_1",
+        itemIds: ["item_1"]
+      }
+      const call = { request: request("openai:gpt-5-mini"), model: "openai:gpt-5-mini", events: [retry, settle] }
+      // A field the schema does not declare is stripped on decode, so a
+      // reloaded fixture would replay a settle event with less than the live
+      // model emitted.
+      const decoded = yield* decode({ calls: [call] })
+      expect(decoded.calls[0]?.events).toStrictEqual([retry, settle])
+    }))
+
   it.effect("rejects a call whose model disagrees with its own request.modelId", () =>
     Effect.gen(function*() {
       const exit = yield* decode(fixture("anthropic:claude-sonnet-4", "openai:gpt-5-mini")).pipe(Effect.exit)

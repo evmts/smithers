@@ -100,12 +100,36 @@ const eventSchema = Schema.Union([
     type: Schema.Literal("retry"),
     attempt: Schema.Int,
     code: Schema.String,
-    delayMillis: Schema.Number
+    delayMillis: Schema.Number,
+    elapsedMs: Schema.optional(Schema.Number),
+    httpStatus: Schema.optional(Schema.Number)
   }),
   Schema.Struct({
     type: Schema.Literal("settle"),
     stopReason: Schema.Literals(["stop", "length", "tool-calls", "content-filter", "error", "aborted", "unknown"]),
     responseId: Schema.optional(Schema.String),
+    servedTier: Schema.optional(Schema.String),
+    timing: Schema.optional(Schema.Struct({
+      startedAt: Schema.optional(Schema.Number),
+      attempts: Schema.optional(Schema.Int),
+      requestBytes: Schema.optional(Schema.Number),
+      preparedMs: Schema.optional(Schema.Number),
+      signedMs: Schema.optional(Schema.Number),
+      sentMs: Schema.optional(Schema.Number),
+      headersMs: Schema.optional(Schema.Number),
+      firstEventMs: Schema.optional(Schema.Number),
+      firstThinkingMs: Schema.optional(Schema.Number),
+      firstOutputMs: Schema.optional(Schema.Number),
+      lastOutputMs: Schema.optional(Schema.Number),
+      completedMs: Schema.optional(Schema.Number),
+      closedMs: Schema.optional(Schema.Number),
+      failedTries: Schema.optional(Schema.Array(Schema.Struct({
+        sentMs: Schema.optional(Schema.Number),
+        failedMs: Schema.Number,
+        code: Schema.String,
+        httpStatus: Schema.optional(Schema.Number)
+      })))
+    })),
     sessionId: Schema.optional(Schema.String),
     itemIds: Schema.optional(Schema.Array(Schema.String))
   })
