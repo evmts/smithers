@@ -28,13 +28,15 @@ const verboseVersion = [
 
 // These fixtures stand in for compiler startup failures only. Running a real
 // canonical compiler here could launch a full build and overwrite shipped bytes.
-const runStartup = (compiler) => {
+const runStartup = (compiler, cargo) => {
   const directory = mkdtempSync(join(tmpdir(), "flows-jj-startup-"))
   try {
-    if (compiler !== undefined) {
-      const executable = join(directory, "rustc")
-      writeFileSync(executable, `#!/bin/sh\n${compiler}\n`)
-      chmodSync(executable, 0o755)
+    for (const [name, script] of Object.entries({ rustc: compiler, cargo })) {
+      if (script !== undefined) {
+        const executable = join(directory, name)
+        writeFileSync(executable, `#!/bin/sh\n${script}\n`)
+        chmodSync(executable, 0o755)
+      }
     }
     return spawnSync(process.execPath, [fileURLToPath(new URL("./build-wasm.mjs", import.meta.url)), "--verify"], {
       cwd: directory,
@@ -71,6 +73,41 @@ test("build command refuses a noncanonical compiler host before invoking Cargo",
   assert.match(result.stderr, /this host is aarch64-apple-darwin/)
   assert.match(result.stderr, /docker run/)
   assert.doesNotMatch(result.stderr, /`cargo` not found/)
+  assert.equal(result.stdout, "")
+})
+
+const canonicalVersionProbe = [
+  'if [ "$1" = "-vV" ]; then',
+  `  printf '%s\\n' 'host: ${canonicalHost}' 'commit-hash: abc123'`,
+  "  exit 0",
+  "fi"
+].join("\n")
+const canonicalCompiler = `${canonicalVersionProbe}\nprintf '%s\\n' '/fixture/sysroot'`
+
+test("build command reports a failed sysroot probe before invoking Cargo", () => {
+  const result = runStartup(`${canonicalVersionProbe}\nprintf '%s\\n' 'sysroot fixture failure' >&2\nexit 9`)
+  assert.equal(result.error, undefined)
+  assert.equal(result.status, 9)
+  assert.match(result.stderr, /sysroot fixture failure/)
+  assert.match(result.stderr, /rustc --print sysroot failed/)
+  assert.equal(result.stdout, "")
+})
+
+test("build command reports missing Cargo after successful compiler probes", () => {
+  const result = runStartup(canonicalCompiler)
+  assert.equal(result.error, undefined)
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /`cargo` not found on PATH/)
+  assert.equal(result.stdout, "")
+})
+
+test("build command preserves failed Cargo status and uses the locked WASI build", () => {
+  const result = runStartup(canonicalCompiler, "printf '%s\\n' 'cargo fixture failure' \"$@\" >&2\nexit 23")
+  assert.equal(result.error, undefined)
+  assert.equal(result.status, 23)
+  assert.match(result.stderr, /cargo fixture failure\nbuild\n--locked\n--release\n--target\nwasm32-wasip1\n--package\nflows-jj\n/)
+  assert.match(result.stderr, /cargo build failed/)
+  assert.match(result.stderr, /rustup target add wasm32-wasip1/)
   assert.equal(result.stdout, "")
 })
 
