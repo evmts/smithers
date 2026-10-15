@@ -18,6 +18,9 @@
 - Classify a range whose partial lower bound precedes a complete upper bound
   (`>=0.35 <1.0.0`, `^0.35 || ^1.0.0`) by that lower bound instead of reading
   the upper bound as a 1.0 version.
+- Classify a range that opens with an upper bound (`<1.0.0`, `<1`) by the
+  newest version it installs, so `"@smthrs/cli": "<1.0.0"` is planned as a 0.x
+  package instead of being read as 1.0.0.
 - Read the `effect` version from yarn classic range keys and from npm copies
   nested under another package, and stop reporting a yarn `effect@3` key as
   resolved version `3`.

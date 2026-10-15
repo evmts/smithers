@@ -133,7 +133,17 @@ describe("Smithers dependency version boundary", () => {
       ["1.0.0", false],
       ["workspace:*", true],
       ["file:../smithers", true],
-      ["9007199254740992.0.0", true]
+      ["9007199254740992.0.0", true],
+      // An upper bound alone installs the newest version below it.
+      ["<1.0.0", true],
+      ["<1", true],
+      ["< 1.0", true],
+      ["<1.0.0-rc.0", true],
+      ["<=0.40", true],
+      ["<1.0.1", false],
+      ["<2", false],
+      ["<=1", false],
+      ["<=1.0.0-0", false]
     ] as const
   )("classifies %s at the 1.0 migration gate", (specifier, expected) => {
     expect(isBeforeOneZero(specifier)).toBe(expected)

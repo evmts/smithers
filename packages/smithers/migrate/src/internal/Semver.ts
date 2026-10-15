@@ -100,10 +100,13 @@ export const compare = (left: Version, right: Version): number => {
 }
 
 const oneZeroZero: Version = { major: 1, minor: 0, patch: 0, prerelease: ["0"] }
+const oneZeroZeroRelease: Version = { major: 1, minor: 0, patch: 0, prerelease: [] }
 
 /**
  * Reports whether a dependency specifier resolves before `1.0.0-0`, the range
  * that separates a 0.x Smithers package from a 1.0 release candidate.
+ * A range that opens with an upper bound is judged by the newest version it
+ * admits, so `<1.0.0` and `<1` are before it and `<1.0.1` is not.
  *
  * `1.0.0-rc.0` is not before it: a numeric prerelease identifier has lower
  * precedence than an alphanumeric one, so `1.0.0-0 < 1.0.0-rc.0`. A specifier
@@ -118,5 +121,9 @@ const oneZeroZero: Version = { major: 1, minor: 0, patch: 0, prerelease: ["0"] }
 export const isBeforeOneZero = (specifier: string): boolean => {
   const version = parse(specifier)
   if (version === undefined) return true
+  // An upper bound alone installs the newest version below it: `<1.0.0` and
+  // `<1` install 0.x, because npm leaves `1.0.0`'s prereleases out of a range
+  // that does not name one.
+  if (/^\s*<(?!=)/.test(specifier)) return compare(version, oneZeroZeroRelease) <= 0
   return compare(version, oneZeroZero) < 0
 }
