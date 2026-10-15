@@ -128,8 +128,14 @@ describe("the search card's refusal carries its verdict, not a bare sentence", (
    */
   test("a sentence with no words in it is refused, and surrounding whitespace is not part of it", () => {
     for (const sentence of ["", " ", "\n\t "]) expect(withRefusal({ sentence, fault: "user" }).success).toBe(false)
-    const card = CardSchema.parse({ ...search, payload: { ...search.payload, refusal: { sentence: "  The tracker would not list.\n", fault: "dependency" } } })
-    expect(card.kind === "search-results" ? card.payload.refusal : undefined).toEqual({ sentence: "The tracker would not list.", fault: "dependency" })
+    const card = CardSchema.parse({
+      ...search,
+      payload: { ...search.payload, refusal: { sentence: "  The tracker would not list.\n", fault: "dependency" } }
+    })
+    expect(card.kind === "search-results" ? card.payload.refusal : undefined).toEqual({
+      sentence: "The tracker would not list.",
+      fault: "dependency"
+    })
   })
 
   test("a card that refused nothing carries no refusal at all", () => {
