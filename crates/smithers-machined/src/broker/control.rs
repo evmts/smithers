@@ -3,6 +3,7 @@
 //! argv remains data until that provider has dropped privileges.
 use crate::{conn, hooks::Error};
 use std::{io, time::Duration};
+#[cfg(target_os = "linux")]
 const REGISTRY_LIMIT: usize = 16 * 1024 * 1024;
 pub trait Controls {
     fn tick(&mut self) -> io::Result<()> {

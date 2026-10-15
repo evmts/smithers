@@ -18,6 +18,27 @@ pub struct Closed<A, B, C> {
     pub renamed_to: BTreeMap<String, String>,
     pub last_path: String,
 }
+// Burst creation is Linux-only; keep the unsupported result at the call
+// boundary so the portable watcher state machine remains type-checked.
+fn burst_id() -> io::Result<[u8; 16]> {
+    #[cfg(target_os = "linux")]
+    {
+        let mut id = [0; 16];
+        let mut offset = 0;
+        while offset < id.len() {
+            match rustix::rand::getrandom(&mut id[offset..], rustix::rand::GetRandomFlags::empty())
+            {
+                Ok(0) => return Err(io::Error::other("random source exhausted")),
+                Ok(n) => offset += n,
+                Err(rustix::io::Errno::INTR) => continue,
+                Err(e) => return Err(e.into()),
+            }
+        }
+        Ok(id)
+    }
+    #[cfg(not(target_os = "linux"))]
+    Err(io::ErrorKind::Unsupported.into())
+}
 type BurstIdentity<A> = (Key<A>, [u8; 16], Option<Window<A>>);
 
 #[derive(Clone, Debug)]
@@ -30,6 +51,7 @@ pub struct Checkpoint<A, B> {
 impl<A: Clone + Eq, B: Clone> Checkpoint<A, B> {
     /// Finish an immutable close recovered from the private close journal.
     /// New disk writes must never join that already-published burst identity.
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn settle_closed<C>(&mut self, closed: &Closed<A, B, C>) -> io::Result<()> {
         let Some(key) = self
             .identities
@@ -418,24 +440,7 @@ impl<A: Eq + Clone, B: Eq + Clone> Changes<A, B> {
         self.close_due(p, now, Some((&key, path)), false)?;
         let opened = !self.state.identities.iter().any(|(k, _, _)| k == &key);
         if opened {
-            let mut id = [0; 16];
-            #[cfg(target_os = "linux")]
-            {
-                let mut offset = 0;
-                while offset < id.len() {
-                    match rustix::rand::getrandom(
-                        &mut id[offset..],
-                        rustix::rand::GetRandomFlags::empty(),
-                    ) {
-                        Ok(0) => return Err(io::Error::other("random source exhausted")),
-                        Ok(n) => offset += n,
-                        Err(rustix::io::Errno::INTR) => continue,
-                        Err(e) => return Err(e.into()),
-                    }
-                }
-            }
-            #[cfg(not(target_os = "linux"))]
-            return Err(io::ErrorKind::Unsupported.into());
+            let id = burst_id()?;
             let window = if matches!(key, Key::Outside) {
                 Some(Window::new(if self.previous_samples.is_empty() {
                     &self.samples
@@ -617,6 +622,7 @@ impl<A: Eq + Clone, B: Eq + Clone> Changes<A, B> {
     pub fn needs_resync(&self) -> bool {
         self.resync_required
     }
+    #[cfg(target_os = "linux")]
     pub(crate) fn metadata_pending(&self) -> bool {
         self.metadata_at.is_some()
     }

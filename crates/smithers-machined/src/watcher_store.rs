@@ -15,7 +15,9 @@ use std::{
     path::{Path, PathBuf},
 };
 const LIMIT: u64 = 64 * 1024 * 1024;
+#[cfg(any(target_os = "linux", test))]
 type Closed = crate::events::Closed<Actor, Oid, Oid>;
+#[cfg(any(target_os = "linux", test))]
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Closing {
@@ -90,6 +92,7 @@ impl Store {
         }
         Ok(Some(stored))
     }
+    #[cfg(any(target_os = "linux", test))]
     fn closing(&self) -> io::Result<Vec<Closed>> {
         let Some(bytes) = self.read_private("watcher-closing.json")? else {
             return Ok(vec![]);
@@ -101,6 +104,7 @@ impl Store {
         Self::validate_closes(&journal.closes)?;
         Ok(journal.closes)
     }
+    #[cfg(any(target_os = "linux", test))]
     fn validate_closes(closes: &[Closed]) -> io::Result<()> {
         let valid_path =
             |path: &str| !path.contains('\0') && crate::ignore::relative(Path::new(path));
@@ -145,6 +149,7 @@ impl Store {
         }
         Ok(())
     }
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn prepare_close(
         &self,
         close: &Closed,
@@ -164,6 +169,7 @@ impl Store {
         repository.retain_watcher_close(close.burst_id, close.versions_commit)?;
         self.replace_private("watcher-closing.json", &bytes)
     }
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn publish_close(
         close: &Closed,
         events: &crate::event_service::Events<crate::git::Repository, crate::git::Repository>,
@@ -183,6 +189,7 @@ impl Store {
         }
         Ok(())
     }
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn recover_closes(
         &self,
         state: &mut Checkpoint<Actor, Oid>,
@@ -202,6 +209,7 @@ impl Store {
         }
         self.finish_closes(repository)
     }
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn finish_closes(&self, repository: &crate::git::Repository) -> io::Result<()> {
         match fs::symlink_metadata(self.directory.join("watcher-closing.json")) {
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),

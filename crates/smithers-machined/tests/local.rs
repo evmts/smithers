@@ -370,18 +370,21 @@ fn local_delete_is_absent_content_and_actor_only_comes_from_admission() {
 /// test-built ones.
 #[test]
 fn local_open_refuses_admission_fields_from_corpus() {
+    #[cfg(target_os = "linux")]
     use smithers_machined::local::validate_open;
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../packages/backend/internal/compose/testdata/cocontracts");
-    for (name, allowed) in [
+    for (name, _allowed) in [
         ("local_open_session", true),
         ("local_open_session_admitted", false),
     ] {
         let frame = Frame::decode_local(&std::fs::read(root.join(format!("{name}.bin"))).unwrap())
             .unwrap_or_else(|e| panic!("{name}: {e:?}"));
-        let (_, method, args) = frame.request().unwrap();
+        let (_, method, _args) = frame.request().unwrap();
         assert_eq!(method, 6, "{name}");
-        assert_eq!(validate_open(args).is_ok(), allowed, "{name}");
+        // Kernel peer admission is available only in the Linux guest.
+        #[cfg(target_os = "linux")]
+        assert_eq!(validate_open(_args).is_ok(), _allowed, "{name}");
     }
 }
 

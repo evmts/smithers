@@ -1670,8 +1670,6 @@ fn import_unavailable_refuses_before_entering_any_kernel_reader_or_discovery() {
 
 #[test]
 fn foreground_commands_bind_live_ptys_and_refuse_supplied_root_inputs() {
-    use rustix::net::{socketpair, AddressFamily, SocketFlags, SocketType};
-    use smithers_machined::broker::control::SocketpairBroker;
     let (mut supervisor, state) = setup();
     roster(&mut supervisor);
     let pty = open(&mut supervisor, user(), Kind::Pty);
@@ -1689,6 +1687,23 @@ fn foreground_commands_bind_live_ptys_and_refuse_supplied_root_inputs() {
         );
     }
     assert_eq!(state.lock().unwrap().command_reads, 0);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn foreground_commands_project_live_ptys_over_broker_socket() {
+    use rustix::net::{socketpair, AddressFamily, SocketFlags, SocketType};
+    use smithers_machined::broker::control::SocketpairBroker;
+    let (mut supervisor, state) = setup();
+    roster(&mut supervisor);
+    let pty = open(&mut supervisor, user(), Kind::Pty);
+    let exec = open(&mut supervisor, user(), Kind::Exec);
+    state.lock().unwrap().commands = [
+        (pty, "sleep".into()),
+        (exec, "cat".into()),
+        (999, "bash".into()),
+    ]
+    .into();
     let (server, client) = socketpair(
         AddressFamily::UNIX,
         SocketType::SEQPACKET,

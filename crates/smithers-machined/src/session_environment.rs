@@ -2,6 +2,7 @@
 //! and the tmpfs environment. Root never parses either file's contents.
 use crate::broker::sessions::User;
 use serde::Deserialize;
+#[cfg(any(target_os = "linux", test))]
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, io};
 #[cfg(target_os = "linux")]
@@ -57,8 +58,10 @@ fn unique_environment<'de, D: serde::Deserializer<'de>>(
     }
     d.deserialize_map(Map)
 }
+#[cfg(any(target_os = "linux", test))]
 #[derive(Deserialize)]
 struct Environment(#[serde(deserialize_with = "unique_environment")] BTreeMap<String, String>);
+#[cfg(any(target_os = "linux", test))]
 fn environment(bytes: &[u8]) -> io::Result<BTreeMap<String, String>> {
     if bytes.len() > LIMIT {
         return Err(invalid());
@@ -110,6 +113,7 @@ impl Binding {
         }
         Ok(b)
     }
+    #[cfg(any(target_os = "linux", test))]
     fn token(&self, bytes: &[u8]) -> io::Result<()> {
         if bytes.is_empty()
             || bytes.len() > 1025

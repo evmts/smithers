@@ -59,6 +59,7 @@ pub struct Repository {
     spool: PathBuf,
 }
 impl Repository {
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn retain_watcher_close(&self, id: [u8; 16], commit: Oid) -> io::Result<()> {
         if id == [0; 16] || !self.contains(commit)? {
             return Err(invalid());
@@ -70,6 +71,7 @@ impl Repository {
         ])?;
         self.sync()
     }
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn clear_watcher_closes(&self) -> io::Result<()> {
         let refs = self.command(&[
             "for-each-ref",

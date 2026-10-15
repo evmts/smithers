@@ -1,18 +1,19 @@
+use smithers_machined::broker::lifecycle::{self, Process};
+#[cfg(target_os = "linux")]
 use smithers_machined::{
-    broker::{
-        control::{self, Controls},
-        lifecycle::{self, Process},
-    },
+    broker::control::{self, Controls},
     conn,
 };
 use std::{io, time::Duration};
 #[cfg(target_os = "linux")]
 #[path = "broker/freeze.rs"]
 mod freeze;
+#[cfg(target_os = "linux")]
 #[derive(Default)]
 struct Kernel {
     calls: Vec<&'static str>,
 }
+#[cfg(target_os = "linux")]
 impl Controls for Kernel {
     fn freeze(&mut self, _: Duration) -> io::Result<Option<u32>> {
         self.calls.push("freeze");
@@ -27,6 +28,7 @@ impl Controls for Kernel {
         Ok(3)
     }
 }
+#[cfg(target_os = "linux")]
 fn packet(variant: u8, fields: &[Vec<u8>]) -> Vec<u8> {
     let mut bytes = 9u32.to_be_bytes().to_vec();
     bytes.extend(conn::tagged(variant, fields));
