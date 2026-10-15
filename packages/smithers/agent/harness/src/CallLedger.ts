@@ -511,6 +511,33 @@ export const remember = (known: Ledger, made: ReadonlyArray<Settlement>): Ledger
 }
 
 /**
+ * Escapes every control character and Unicode line separator in one field.
+ *
+ * A flow's failure message, a result's keys and an input's text can be a
+ * repository file's content. Rendered raw, a line break in one of them starts a
+ * line the model reads as another ledger entry or as an instruction, so each
+ * field is rendered with its breaks escaped and every entry stays one line.
+ * Escaping at render rather than at {@link entry} also covers lines a resumed
+ * run decodes from a journal written before this rule.
+ */
+const oneLine = (text: string): string =>
+  Array.from(text, (character) => {
+    const code = character.charCodeAt(0)
+    const control = code <= 0x1f || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029
+    if (!control) return character
+    switch (character) {
+      case "\n":
+        return "\\n"
+      case "\r":
+        return "\\r"
+      case "\t":
+        return "\\t"
+      default:
+        return `\\u${code.toString(16).padStart(4, "0")}`
+    }
+  }).join("")
+
+/**
  * Renders the ledger for the state section, or nothing when there is no call
  * to list.
  *
@@ -545,9 +572,9 @@ export const render = (ledger: Ledger, since = 0): string | undefined => {
       ? ""
       : ` — the same write as ${repeated.ordinal}, which ${repeated.ok ? "succeeded" : "failed"}`
     const wrote = line.mutates ? `WROTE ${line.payloadBytes}b, ` : ""
-    return `${line.ordinal}. ${line.flow} ${line.subject} — ${wrote}${
+    return `${line.ordinal}. ${oneLine(line.flow)} ${oneLine(line.subject)} — ${wrote}${
       line.ok ? "ok" : "FAILED"
-    }${again}: ${line.digest} (${line.bytes}b)`
+    }${again}: ${oneLine(line.digest)} (${line.bytes}b)`
   })
   // Only where the run has actually written something: teaching about a marker
   // nothing on the page carries costs a frame's worth of reading for nothing.
