@@ -124,6 +124,13 @@ describe("StructuredOutput.lastBalanced", () => {
     expect(StructuredOutput.lastBalanced("{\"a\": [1]}")).toBe("{\"a\": [1]}")
   })
 
+  it("returns no inner fragment of a container that never closes", () => {
+    // A truncated answer must not be decoded from a piece of itself; the same
+    // rule hides a document behind a stray unclosed brace in prose.
+    expect(StructuredOutput.lastBalanced("{\"a\":{\"b\":1}, \"c\"")).toBeUndefined()
+    expect(StructuredOutput.lastBalanced("use {x then {\"a\":1}")).toBeUndefined()
+  })
+
   it("ignores a close with no opener, and reports nothing for prose", () => {
     expect(StructuredOutput.lastBalanced("} nothing opened")).toBeUndefined()
     expect(StructuredOutput.lastBalanced("plain prose")).toBeUndefined()

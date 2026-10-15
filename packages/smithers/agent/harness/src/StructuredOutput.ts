@@ -271,13 +271,16 @@ ${failure.issues.map((issue) => `- ${issue}`).join("\n")}`
 const stripBom = (text: string): string => text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
 
 /**
- * The balanced JSON container whose matching close ends last.
+ * The last outermost balanced JSON container in the text.
  *
  * Scans once, left to right, tracking object and array delimiters, quoted
- * strings, and escapes. A mismatched close abandons the open container rather
- * than pairing it with the wrong opener, so a truncated prefix cannot be
- * reported as a complete document. `undefined` means the text holds no
- * balanced container at all.
+ * strings, and escapes. Only a container that closes at the outermost level
+ * counts: a `{` or `[` that never closes holds everything after it, so a
+ * truncated answer such as `{"a":{"b":1}, "c"` yields `undefined`, never the
+ * inner `{"b":1}`. The same rule means a stray unclosed brace in prose before
+ * the document hides that document. A mismatched close abandons the open
+ * container rather than pairing it with the wrong opener. `undefined` means no
+ * container closed at the outermost level.
  *
  * This is the array-capable form of smithers' `extractLastBalancedJson`, which
  * is object-only.
