@@ -138,7 +138,9 @@ target.
 
 `--audience <auto|human|agent>` selects the consumer experience; `auto` detects
 verified harness markers and terminal capabilities. `SMITHERS_AUDIENCE` supplies
-the environment override. Humans receive progress eagerly; agents receive
+the environment override and must be `auto`, `human`, or `agent`; any other
+value stops the command with one `smithers-build:` line on stderr and exit 1.
+An explicit `--audience` wins over the variable. Humans receive progress eagerly; agents receive
 concise Incur results and useful next commands, with progress silent by default.
 
 `--silent` suppresses progress, not results or failures. The public CLI retains

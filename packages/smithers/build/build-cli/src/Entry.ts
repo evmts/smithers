@@ -12,6 +12,7 @@
 
 import * as Audience from "./Audience.ts"
 import { makeCli, normalizeArgv } from "./Cli.ts"
+import * as Diagnostic from "./Diagnostic.ts"
 import * as Environment from "./Environment.ts"
 import * as ApprovalBridge from "./internal/ApprovalBridge.ts"
 import type * as Reporter from "./Reporter.ts"
@@ -52,19 +53,30 @@ export interface Host {
  * and removed from the host environment before any declaration evaluates, so no
  * workspace module can read them. Relative `PATH` entries are fixed to the
  * launch directory first. A signal aborts every running target and the
- * process exits 1 whatever the command was about to report.
+ * process exits 1 whatever the command was about to report. An invalid
+ * `SMITHERS_AUDIENCE` writes one `smithers-build:` line to stderr and exits 1
+ * before any command runs.
  *
  * @category execution
  * @since 0.1.0
  */
 export const main = async (host: Host): Promise<void> => {
   Environment.anchorSearchPath(host.env, host.cwd ?? process.cwd())
-  const presentation = Audience.fromArguments(host.argv, {
-    env: host.env,
-    stdin: host.stdin?.isTTY === true,
-    stdout: host.stdout.isTTY,
-    stderr: host.stderr.isTTY
-  })
+  let presentation: Audience.Policy
+  try {
+    presentation = Audience.fromArguments(host.argv, {
+      env: host.env,
+      stdin: host.stdin?.isTTY === true,
+      stdout: host.stdout.isTTY,
+      stderr: host.stderr.isTTY
+    })
+  } catch (cause) {
+    // An invalid SMITHERS_AUDIENCE is refused before any output format exists,
+    // so it is one plain stderr line, never an escaped stack trace.
+    host.stderr.write(`smithers-build: ${Diagnostic.describe(cause, "invalid SMITHERS_AUDIENCE")}\n`)
+    host.setExitCode(1)
+    return
+  }
   const cacheUrl = host.env["SMITHERS_CACHE_URL"]
   const cacheToken = host.env["SMITHERS_CACHE_TOKEN"]
   delete host.env["SMITHERS_CACHE_URL"]

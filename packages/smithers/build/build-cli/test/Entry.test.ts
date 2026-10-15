@@ -155,6 +155,17 @@ describe("Entry.main", () => {
     expect("PATH" in missing).toBe(false)
   })
 
+  it("reports an invalid SMITHERS_AUDIENCE as one sentence and exits 1", async () => {
+    // The audience is resolved before the CLI serves, so its refusal used to
+    // escape `main` and reach the operator as a raw Node stack trace.
+    const fake = host(["--help"], { ...process.env, SMITHERS_AUDIENCE: "typo" })
+    await expect(Entry.main(fake.value)).resolves.toBeUndefined()
+    expect(fake.codes).toEqual([1])
+    expect(fake.stderr.text()).toBe("smithers-build: SMITHERS_AUDIENCE must be auto, human, or agent\n")
+    expect(fake.stdout.text()).toBe("")
+    expect(fake.owned("SIGINT")).toBe(0)
+  })
+
   it("records the exit code of a failed command", async () => {
     const root = await fixture()
     const fake = host(["//:missing", "--workspace", root, "--ui", "plain"], { ...process.env })
