@@ -4545,6 +4545,38 @@ describe("CellTurn compaction marks", () => {
     expect(of(events, "decision-unjudged")).toEqual([])
   })
 
+  it("asks a supervisor reading to mark nothing when the state's facts predate marks, and still compacts early", async () => {
+    // Above the size the judge is consulted at, so an aligned run's frame-0
+    // reading marks its segments (see the early compaction above). A run whose
+    // facts predate marks cannot say which segment is the person's, so its
+    // readings ask about none, and the compaction they trigger squashes all.
+    const frameZero = (request: Evaluator.Request) =>
+      (request.state as { readonly frames?: ReadonlyArray<{ readonly frame: number }> }).frames?.at(-1)?.frame === 0
+    const judge = marksJudge(() => ({ remove: 0.05, keep: 0.05 }), () => false, frameZero)
+    const legacy = new CellTurn.State({ ...compactionState(sized(240_000), 10_000_000, 4), segmentFacts: [] })
+    const { engine, events, failure } = await run({
+      script: [
+        emits(`console.log("looked")`),
+        emits(`console.log("looked again")`),
+        prose("the early summary"),
+        emits(`ctx.done("done")`)
+      ],
+      state: legacy,
+      flows: [],
+      evaluator: judge.layer,
+      judged: true,
+      ...gated()
+    })
+    expect(failure).toBeUndefined()
+    expect(judge.asked).toEqual([])
+    expect(of(events, "decision-settled").filter((event) => event.classifier === "compaction/marks")).toEqual([])
+    expect(engine.recorder.records.filter((boundary) => boundary.name === "compaction-marks")).toEqual([])
+    const settled = of(events, "compaction-settled")
+    expect(settled).toHaveLength(1)
+    expect(settled[0]).toMatchObject({ causes: ["outdated_context"], unaligned: true })
+    expect(settled[0]!.marks).toBeUndefined()
+  })
+
   it("replays the recorded marks without asking, onto the same window and sealed keys", async () => {
     const records = new Map<string, unknown>()
     const first = await run({

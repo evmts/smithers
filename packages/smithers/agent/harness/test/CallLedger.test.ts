@@ -246,6 +246,20 @@ describe("CallLedger.render", () => {
     expect(lines[2]).toBe("2. read b.py — ok: k\\u2028ey=1 x\\u0085y=2 (21b)")
   })
 
+  it("renders a tab as \\t and any other control character by its code point", () => {
+    // A test runner's failure carries colour codes and tab-aligned columns.
+    // Raw, the escape byte reaches the model unseen and the tab reads as
+    // spacing; escaped, the entry says exactly what the flow handed back.
+    const ledger = CallLedger.remember([], [
+      settlement("bash", { command: "make" }, null, "\u001b[31mFAIL\u001b[0m\tsrc/a.test.ts")
+    ])
+    const lines = (CallLedger.render(ledger) ?? "").split("\n")
+
+    expect(lines[1]).toBe(
+      "1. bash {\"command\":\"make\"} — FAILED: \\u001b[31mFAIL\\u001b[0m\\tsrc/a.test.ts (51b)"
+    )
+  })
+
   it("says nothing about writes for a run that has made none", () => {
     const ledger = CallLedger.remember([], [settlement("read", { path: "a/b.py" }, { content: "x" })])
     expect(CallLedger.render(ledger)).not.toContain("WROTE")

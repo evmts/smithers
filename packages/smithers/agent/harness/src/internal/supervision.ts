@@ -419,9 +419,11 @@ export const open = (input: {
                   rows.map((row): Relevance.Item => ({ kind: "memory", id: row.key, text: row.text }))
                 )
               ),
-              unmarked.length === 0 ? Effect.succeed(undefined) : Effect.result(
+              // `unmarked` is drawn from the offer's compaction, so it is empty
+              // whenever the offer carries none.
+              offer.compaction === undefined || unmarked.length === 0 ? Effect.succeed(undefined) : Effect.result(
                 compactionMarks.read(
-                  { task: snapshot.task, failing: offer.compaction?.failing ?? [] },
+                  { task: snapshot.task, failing: offer.compaction.failing },
                   unmarked.map(({ item }) => item)
                 )
               )
