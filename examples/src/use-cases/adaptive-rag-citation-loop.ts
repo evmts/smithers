@@ -8,13 +8,14 @@
  * cited answer from all evidence so far and the previous grade, and a judge
  * agent grades it. A grounded answer (judged grounded and scoring at least
  * `groundedThreshold`, default 0.85) ends the loop; otherwise the planner
- * repairs the plan and the next round runs, up to `maxIterations` (default 3).
+ * repairs the plan and the next round retrieves with it, up to
+ * `maxIterations` (default 3).
  * An answer that ends ungrounded and scores below `reviewThreshold` (default
  * 0.75) waits for a person's review. The writer then produces the final
  * status.
  *
  * 0.x's `<Loop maxIterations>` is unrolled from the payload, and each grade branches to the final answer or to the next round.
- * As in 0.x, retrieval keeps reading the first plan: 0.x preferred `plan-retrieval`'s output over `repair-retrieval-plan`'s, so a repaired plan reaches only the record.
+ * 0.x's retrieval kept reading the first plan, because it preferred `plan-retrieval`'s output over `repair-retrieval-plan`'s, so a repair changed nothing; here each round after a repair retrieves with the repaired plan.
  * 0.x's `<Approval>` becomes a `HumanTask` asking for 0.x's approval schema; the writer reads the reviewer's note.
  * The route is one router agent's typed answer, as in 0.x; `@smthrs/patterns` has no classifier. `MapReduce` and `ReviewLoop` do not fit: the three searches are fixed, and 0.x's repair revises the retrieval plan while the writer redrafts from the grade.
  * 0.x's prompts ended by asking for structured data matching the output schema; `AgentAction` renders and enforces the output schema instead.
@@ -297,13 +298,15 @@ const draft = (
         }),
         then: (grade) => FinalAnswer.call({ question: ask.question, answer, grade, grounded: true }),
         else: (grade) => {
-          const next = n >= ask.maxIterations
-            ? settleUngrounded(ask, answer, grade)
-            : round(ask, n + 1, route, plan, evidence, grade)
+          const last = n >= ask.maxIterations
+          if (plan === undefined) {
+            return last ? settleUngrounded(ask, answer, grade) : round(ask, n + 1, route, plan, evidence, grade)
+          }
           // The repair runs on every ungrounded round, the last one included, as in 0.x.
-          return plan === undefined
-            ? next
-            : Node.andThen(RepairPlan.call({ question: ask.question, priorPlan: plan, grade, evidence }), next)
+          const repair = RepairPlan.call({ question: ask.question, priorPlan: plan, grade, evidence })
+          return last
+            ? Node.andThen(repair, settleUngrounded(ask, answer, grade))
+            : Node.bindPlanned(repair, (repaired) => round(ask, n + 1, route, repaired, evidence, grade))
         }
       })
   )

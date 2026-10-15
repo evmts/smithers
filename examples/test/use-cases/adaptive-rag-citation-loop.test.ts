@@ -36,8 +36,8 @@ const input = (asked: string, instruction: string): any => {
  * that each return one claim with a fresh source id; a writer that cites every
  * piece of evidence it was handed; a judge that grades the rounds with
  * `scores` in order (grounded at 0.85); a repair that renames the plan's
- * subquery; and a final writer that reports what it was handed. Every request
- * is recorded in order.
+ * subquery and names a database source; and a final writer that reports what
+ * it was handed. Every request is recorded in order.
  */
 const script = (options: {
   readonly mode: string
@@ -92,7 +92,7 @@ const script = (options: {
     const repair = input(asked, "Repair the retrieval plan based on the citation judge result.")
     if (repair !== undefined) {
       turns.push(`repair ${repair.priorPlan.subqueries.join(", ")} after ${repair.grade.score}`)
-      return { subqueries: ["eu statutory minimum"], sources: ["web"], mustCite: true, gapsToClose: ["statute"] }
+      return { subqueries: ["eu statutory minimum"], sources: ["database"], mustCite: true, gapsToClose: ["statute"] }
     }
     const final = input(asked, "Produce the final cited-answer status.")
     if (final !== undefined) {
@@ -151,22 +151,28 @@ it.effect("repairs the plan and redrafts until the judge accepts", () =>
       actions: layer
     })
 
-    const retrievals = turns.filter((turn) => turn.startsWith("retrieve"))
-    // A plan without a database source sends the third search to the web.
-    // Both rounds searched with the first plan, as 0.x did, and the second
-    // draft read all six pieces of evidence and the first grade.
-    expect([...new Set(retrievals)].sort()).toEqual([
+    expect(turns.slice(0, 2)).toEqual(["route", "plan retrieve in fixtures/adaptive-rag"])
+    // The first plan names no database source, so its third search goes to
+    // the web.
+    expect(turns.slice(2, 5).sort()).toEqual([
       "retrieve keyword for eu refund window",
       "retrieve vector for eu refund window",
       "retrieve web for eu refund window"
     ])
-    expect(retrievals).toHaveLength(6)
-    expect(turns.filter((turn) => !turn.startsWith("retrieve"))).toEqual([
-      "route",
-      "plan retrieve in fixtures/adaptive-rag",
+    expect(turns.slice(5, 8)).toEqual([
       "draft from 3 evidence after no grade",
       "judge 3 citations: 0.6",
-      "repair eu refund window after 0.6",
+      "repair eu refund window after 0.6"
+    ])
+    // The second round searches with the repaired plan: its subquery, and its
+    // database source for the third search.
+    expect(turns.slice(8, 11).sort()).toEqual([
+      "retrieve database for eu statutory minimum",
+      "retrieve keyword for eu statutory minimum",
+      "retrieve vector for eu statutory minimum"
+    ])
+    // The second draft read all six pieces of evidence and the first grade.
+    expect(turns.slice(11)).toEqual([
       "draft from 6 evidence after 0.6",
       "judge 6 citations: 0.88",
       "final grounded=true approval=none"
