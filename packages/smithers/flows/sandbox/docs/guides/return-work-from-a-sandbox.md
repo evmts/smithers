@@ -79,6 +79,12 @@ renames, mode changes, and binary files. Files the checkout's `.gitignore`
 excludes are not work. The checkout's own index and history are not changed.
 A body that fails fails the run, and no work is captured.
 
+The patch is UTF-8 text. When the checkout holds a text file or a file name in
+another encoding, such as Latin-1, the whole patch is captured as binary
+patches with quoted names, which apply to the same bytes. If the checkout's
+`.gitattributes` forces such a file to diff as text, the capture fails with
+`CaptureError` reason `capture_failed`.
+
 ## Apply work on the host
 
 `SandboxMerge.apply` applies the patch to its own base, then rebases the result

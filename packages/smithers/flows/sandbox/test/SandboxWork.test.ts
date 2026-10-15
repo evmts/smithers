@@ -317,6 +317,54 @@ while [ "$(date +%s)" = "$second" ]; do :; done`
       expect((work as Sandbox.Changed).patch).toContain("-1.2.3\n+1.2.4\n")
     }))
 
+  /**
+   * Git diffs a file without NUL bytes as text and prints its lines raw. A
+   * Latin-1 line is not UTF-8, and decoding the patch as UTF-8 replaced each
+   * such byte with U+FFFD, so the merged file held different bytes than the
+   * guest wrote.
+   */
+  it.effect("captures text that is not UTF-8 byte for byte", () =>
+    Effect.gen(function*() {
+      const repo = hostRepository(fresh(), { "keep.txt": "keep\n" })
+      const provider = seeded(yield* directory(machines), gitClone(repo.path))
+      // "café\n" and "naïve\n" in Latin-1: no NUL byte, so git calls it text.
+      const latin1 = new Uint8Array([0x63, 0x61, 0x66, 0xe9, 0x0a, 0x6e, 0x61, 0xef, 0x76, 0x65, 0x0a])
+      const { result: guestTree_, work } = yield* Sandbox.run(
+        provider,
+        { session: "latin-1" },
+        Effect.gen(function*() {
+          const fs = yield* FileSystem.FileSystem
+          yield* fs.writeFile("latin1.txt", latin1)
+          yield* fs.writeFileString("keep.txt", "keep\nedited\n")
+          return yield* guestTree
+        })
+      )
+      expect(work._tag).toBe("Changed")
+      expect((work as Sandbox.Changed).patch).not.toContain("�")
+      const outcome = yield* apply(work, repo.path)
+      expect(outcome._tag).toBe("Merged")
+      const commit = (outcome as SandboxMerge.Merged).commit
+      expect(treeOf(repo.path, commit)).toBe(guestTree_)
+      expect(fileAt(repo.path, commit, "keep.txt")).toBe("keep\nedited\n")
+    }))
+
+  it.effect("refuses as capture_failed text that is not UTF-8 when .gitattributes forces a text diff", () =>
+    Effect.gen(function*() {
+      const repo = hostRepository(fresh(), { ".gitattributes": "*.txt diff\n" })
+      const provider = seeded(yield* directory(machines), gitClone(repo.path))
+      const error = yield* Effect.flip(Sandbox.run(
+        provider,
+        { session: "forced-text" },
+        Effect.gen(function*() {
+          const fs = yield* FileSystem.FileSystem
+          yield* fs.writeFile("latin1.txt", new Uint8Array([0x63, 0x61, 0x66, 0xe9, 0x0a]))
+        })
+      ))
+      expect(error).toBeInstanceOf(Sandbox.CaptureError)
+      expect((error as Sandbox.CaptureError).reason).toBe("capture_failed")
+      expect((error as Sandbox.CaptureError).message).toContain("is not UTF-8 even with every path diffed as binary")
+    }))
+
   it.effect("treat a guest without git as not_a_repository and any other git failure as capture_failed", () =>
     Effect.gen(function*() {
       const noGit = Sandbox.TestSession.make({ workdir: "/work" })
