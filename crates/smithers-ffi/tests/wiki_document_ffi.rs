@@ -253,3 +253,80 @@ fn wiki_rejects_unknown_fields_missing_fields_and_wrong_types() {
     let recovered = request(json!({"operation": "seed", "markdown": "Accepted"}));
     assert_eq!(recovered["markdown"], "Accepted");
 }
+
+#[test]
+fn wiki_bounds_nested_maps_and_preserves_accepted_values() {
+    for depth in [0, 1, 63, 64, 65, 100] {
+        let doc = Doc::with_client_id(31);
+        let authors = doc.get_or_insert_map("authors");
+        let mut value = Any::String("leaf 🦀".into());
+        for _ in 0..depth {
+            value = Any::Map(std::sync::Arc::new(
+                [("child".to_owned(), value)].into_iter().collect(),
+            ));
+        }
+        authors.insert(&mut doc.transact_mut(), "nested", value.clone());
+        let update = doc
+            .transact()
+            .encode_state_as_update_v1(&StateVector::default());
+        let result = request(json!({
+            "operation": "apply", "state": "AAA=", "update": BASE64_STANDARD.encode(update)
+        }));
+        if depth > 64 {
+            assert_eq!(
+                result["code"], "invalid_argument",
+                "depth {depth}: {result}"
+            );
+        } else {
+            use yrs::updates::decoder::Decode;
+            assert_eq!(result["markdown"], "", "depth {depth}: {result}");
+            let restored = Doc::new();
+            restored
+                .transact_mut()
+                .apply_update(
+                    yrs::Update::decode_v1(
+                        &BASE64_STANDARD
+                            .decode(result["state"].as_str().unwrap())
+                            .unwrap(),
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+            assert_eq!(
+                restored
+                    .get_or_insert_map("authors")
+                    .get(&restored.transact(), "nested"),
+                Some(yrs::Out::Any(value)),
+                "depth {depth}"
+            );
+        }
+    }
+    assert_eq!(
+        request(json!({"operation": "seed", "markdown": "Recovered"}))["markdown"],
+        "Recovered"
+    );
+}
+
+#[test]
+fn wiki_rejects_encoded_and_decoded_input_size_overflow() {
+    for (field, limit) in [("update", 1usize << 20), ("state", 8usize << 20)] {
+        // These limits leave room in their final base64 quartet: adding one
+        // decoded byte does not increase the encoded length. Exercise the
+        // decoded-byte check independently of the encoded-length check.
+        let encoded_limit = limit.div_ceil(3) * 4;
+        let oversized = BASE64_STANDARD.encode(vec![0; limit + 1]);
+        assert_eq!(oversized.len(), encoded_limit);
+        for encoded in [oversized, "!".repeat(encoded_limit + 1)] {
+            let mut input = json!({"operation": "apply", "state": "AAA=", "update": "AAA="});
+            input[field] = json!(encoded);
+            let result = request(input);
+            assert_eq!(result["code"], "invalid_argument", "{field}: {result}");
+            assert_eq!(
+                result["error"],
+                "wiki document update exceeds its size limit"
+            );
+        }
+    }
+    let recovered = request(json!({"operation": "apply", "state": "AAA=", "update": "AAA="}));
+    assert_eq!(recovered["markdown"], "");
+}
