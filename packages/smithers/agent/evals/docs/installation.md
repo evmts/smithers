@@ -1,6 +1,6 @@
 ---
 title: "Installation"
-description: "Add @smthrs/evals to a workspace package, plus its runtime requirements and entry points."
+description: "Install @smthrs/evals from npm, plus its runtime requirements and entry points."
 ---
 
 Prereleases are published to npm under the `next` tag. Install the package
@@ -8,18 +8,6 @@ with its `effect` peer dependency:
 
 ```bash
 pnpm add @smthrs/evals@next effect@^4.0.4
-```
-
-To work against the source instead, use it from a package in a clone of
-https://github.com/smithersai/smithers and depend on it through the workspace
-protocol:
-
-```json
-{
-  "dependencies": {
-    "@smthrs/evals": "workspace:*"
-  }
-}
 ```
 
 ## Runtime requirements

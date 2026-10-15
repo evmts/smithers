@@ -1,23 +1,17 @@
 ---
 title: "Installation"
-description: "How to get @smthrs/triggers, what it requires at runtime, the import forms it publishes, and the packages a running host adds on top."
+description: "Install @smthrs/triggers from npm, what it requires at runtime, the import forms it publishes, and the packages a running host adds on top."
 sidebar:
   order: 1
 ---
 
 ## Get the package
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
-
-The installed manifest resolves to the synchronized RC:
-
-```json
-{
-  "dependencies": {
-    "@smthrs/triggers": "1.0.0-rc.1"
-  }
-}
+```bash
+npm install @smthrs/triggers@next effect
 ```
+
+The `next` tag carries the 1.0 release candidates.
 
 ## Requirements
 
@@ -29,7 +23,8 @@ The installed manifest resolves to the synchronized RC:
 - [`@smthrs/database`](/api/database), for the SQL client and the durable
   writer that `SqlTriggerStore` writes through.
 
-All three are ordinary dependencies of the package and install with it.
+`@smthrs/control` and `@smthrs/database` are ordinary dependencies and install
+with the package. `effect` is a peer dependency, so the install line names it.
 
 ## Import forms
 

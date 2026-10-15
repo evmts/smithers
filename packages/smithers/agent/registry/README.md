@@ -32,7 +32,9 @@ discovery never evaluates them.
 
 ## Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/registry@next effect
+```
 
 `effect` is a peer dependency in the range `^4.0.4`. `@effect/platform-node`
 supplies the `FileSystem` and `Path` implementations the scan walks with; this

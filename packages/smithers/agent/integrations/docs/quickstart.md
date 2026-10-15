@@ -16,7 +16,9 @@ works.
 
 ## 1. Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/integrations@next @smthrs/engine@next @smthrs/flow@next @effect/platform-node effect
+```
 
 ## 2. Configure the credential
 

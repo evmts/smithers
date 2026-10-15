@@ -1,6 +1,6 @@
 ---
 title: "Installation"
-description: "Install @smthrs/chain and the services a run needs."
+description: "Use @smthrs/chain from a checkout of the Smithers repository, and the services a run needs."
 sidebar:
   order: 1
 ---
@@ -14,14 +14,9 @@ sidebar:
 
 ## Install the package
 
-`@smthrs/chain` is not on the npm registry. It is developed in the
+`@smthrs/chain` is not published to npm. It is developed in the
 [Smithers repository](https://github.com/smithersai/smithers) and is used
-today from a checkout of it, where it resolves as a workspace dependency.
-When it publishes, the install is one command:
-
-```bash
-pnpm add @smthrs/chain
-```
+from a checkout of it, where it resolves as a workspace dependency.
 
 ## Import paths
 

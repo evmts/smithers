@@ -52,7 +52,11 @@ describe("documentation", () => {
     expect(read("../README.md")).toContain(install)
     expect(installation).toContain(install)
     expect(installation).not.toMatch(/(?:pnpm add|npm install|yarn add) @smthrs\/evals(?!@next)/)
-    expect(installation).toContain(`"@smthrs/evals": "workspace:*"`)
+    // The package is on npm, so neither page sends a reader to the source tree.
+    for (const page of [read("../README.md"), installation]) {
+      expect(page).not.toContain("workspace:*")
+      expect(page).not.toMatch(/source checkout|not on npm/i)
+    }
   })
 
   // A formatter spaces `yield*` into `yield *` in a fragment it cannot parse

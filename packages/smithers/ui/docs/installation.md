@@ -5,8 +5,9 @@ sidebar:
   order: 1
 ---
 
-`@smthrs/ui` is not published to a registry, so `npm install @smthrs/ui`
-resolves nothing. It is consumed from source, through the pnpm workspace of the
+`@smthrs/ui` 1.x is not published to npm: `npm install @smthrs/ui` installs
+0.35.0, the earlier release, which these pages do not describe. The 1.x package
+is consumed from source, through the pnpm workspace of the
 [smithersai/smithers](https://github.com/smithersai/smithers) repository that
 also holds the applications built on it. This page
 describes what the package expects from a host either way, so the requirements

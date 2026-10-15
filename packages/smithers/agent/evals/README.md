@@ -26,7 +26,7 @@ Prereleases are published to npm under the `next` tag:
 pnpm add @smthrs/evals@next effect@^4.0.4
 ```
 
-The steps, including working from a source checkout, are at
+Requirements and entry points are at
 https://evals.smithers.sh/installation/.
 
 ## Example

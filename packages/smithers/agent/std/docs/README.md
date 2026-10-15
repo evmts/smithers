@@ -42,7 +42,9 @@ the details that decide whether a model gets its next step right:
 
 ## Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/std@next effect
+```
 
 The handlers
 ask the host for services such as `FileSystem`, `Path`, and

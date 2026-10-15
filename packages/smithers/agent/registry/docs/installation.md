@@ -7,7 +7,11 @@ sidebar:
 
 ## Install the package
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/registry@next effect
+```
+
+The `next` tag carries the 1.0 release candidates.
 
 [`effect`](https://effect.website) is a peer dependency in the range
 `^4.0.4`. Declare it yourself in that range: your own code imports

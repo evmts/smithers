@@ -1,13 +1,14 @@
 ---
 title: "Installation"
-description: "Where @smthrs/ui-styleguide comes from at 1.0.0-rc.0, the single import form it supports, the three runtimes it loads under, and what importing the barrel costs."
+description: "Where @smthrs/ui-styleguide comes from, the single import form it supports, the three runtimes it loads under, and what importing the barrel costs."
 sidebar:
   order: 1
 ---
 
 ## Where the package comes from
 
-`@smthrs/ui-styleguide` is not published to npm at `1.0.0-rc.0`. It ships inside
+`@smthrs/ui-styleguide` 1.x is not published to npm; the registry has only the
+earlier 0.35.0 release. It ships inside
 the Smithers repository, and it reaches an application through
 [`@smthrs/ui`](https://github.com/smithersai/smithers/tree/main/packages/smithers/ui), the component library that depends on it.
 

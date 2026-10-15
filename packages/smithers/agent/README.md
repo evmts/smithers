@@ -28,7 +28,9 @@ is another implementation of `Agent.Service`, not a second loop beside this one.
 
 ## Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/agent@next effect
+```
 
 Node.js 26.4.0 or later. The shortest real use is one model-backed step: an
 ordinary action that ships its own implementation and answers in the shape you

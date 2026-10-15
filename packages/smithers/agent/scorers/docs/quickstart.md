@@ -12,9 +12,14 @@ in-memory, so the whole thing runs from one file with no setup.
 
 ## Prerequisites
 
-Node.js 26.4.0 or later, and a project that depends on `@smthrs/scorers` and
-`@smthrs/database`. The in-memory SQLite example also needs the optional Node
-driver. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+Node.js 26.4.0 or later, and a project with the packages installed:
+
+```bash
+npm install @smthrs/scorers@next @smthrs/database@next @effect/sql-sqlite-node effect
+```
+
+`@effect/sql-sqlite-node` is the optional Node driver the in-memory SQLite
+example opens.
 
 ## Declare the scorer
 

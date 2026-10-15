@@ -81,9 +81,9 @@ describe("documentation", () => {
     // who has only the tarball. A relative `docs/` path does not.
     expect(readme).toContain("https://scorers.smithers.sh")
     expect(readme).not.toMatch(/\]\(\.\/docs\//)
-    // Nothing is published yet, and an install command paired with an
-    // admission that it does not work reads as a note to self.
-    expect(readme).not.toContain("npm install")
+    // The package is on npm under `next`, where `latest` is an older release.
+    expect(readme).toContain("npm install @smthrs/scorers@next effect")
+    expect(readme).not.toMatch(/not on npm/i)
   })
 
   // `docs/exports.md` was written by `scripts/docs.mjs`, and this case ran that

@@ -1,40 +1,17 @@
 ---
 title: "Installation"
-description: "Add @smthrs/model to a workspace package, plus its runtime requirements and import forms."
+description: "Install @smthrs/model from npm, plus its runtime requirements and import forms."
 sidebar:
   order: 1
 ---
 
-`@smthrs/model` is at 1.0.0-rc.0 and is not on the npm registry yet, so
-`npm install @smthrs/model` finds nothing. It is a workspace package of the
-[Smithers repository](https://github.com/smithersai/smithers), and you use it
-from a package in that workspace.
-
-## Get the workspace
+## Install the package
 
 ```bash
-git clone https://github.com/smithersai/smithers.git
-cd smithers
-pnpm install
+npm install @smthrs/model@next effect
 ```
 
-## Add it to a workspace package
-
-Declare a workspace dependency from the package that calls a model:
-
-```json
-{
-  "dependencies": {
-    "@smthrs/model": "workspace:*"
-  }
-}
-```
-
-Then install again:
-
-```bash
-pnpm install
-```
+The `next` tag carries the 1.0 release candidates.
 
 ## Requirements
 

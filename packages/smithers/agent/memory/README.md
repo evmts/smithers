@@ -19,17 +19,12 @@ algorithm your host can support and every caller keeps working.
 
 ## Install
 
-The `1.0.0-rc.0` release documented here is not on npm yet. The `0.x` versions
-published under this name are the previous generation of the package and have a
-different API. Until the release candidate publishes, use `@smthrs/memory` from
-a checkout of the [smithers repository](https://github.com/smithersai/smithers),
-where it resolves as a workspace dependency:
-
 ```bash
-git clone https://github.com/smithersai/smithers.git
-cd smithers
-pnpm install
+npm install @smthrs/memory@next effect
 ```
+
+Name `@next`: npm's `latest` tag still carries the `0.x` line, the previous
+generation of the package, which has a different API.
 
 It needs Node.js 26.4.0 or later and `effect` `^4.0.4` as a peer. The full
 requirements, and the two packages a file-backed store adds, are on the

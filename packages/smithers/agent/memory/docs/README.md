@@ -17,7 +17,11 @@ A model's context window disappears when the process exits. Everything the next 
 
 ## Install
 
-The `1.0.0-rc.0` release documented here is not on npm yet, so it is used today from a checkout of the [Smithers repository](https://github.com/smithersai/smithers). [Installation](./installation.md) has the workspace form and the packages a file-backed store adds.
+```bash
+npm install @smthrs/memory@next effect
+```
+
+Name `@next`: npm's `latest` tag still carries the `0.x` line, which has a different API. [Installation](./installation.md) has the requirements and the packages a file-backed store adds.
 
 ## Write a fact and recall it
 

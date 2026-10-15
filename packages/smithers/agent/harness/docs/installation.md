@@ -1,25 +1,17 @@
 ---
 title: "Installation"
-description: "How to get @smthrs/harness, the runtimes it supports, the entry points its exports map publishes, and the effect version it pins."
+description: "Install @smthrs/harness from npm, the runtimes it supports, the entry points its exports map publishes, and its effect peer range."
 sidebar:
   order: 1
 ---
 
 ## Get the package
 
-`@smthrs/harness` is not published to npm at 1.0.0-rc.0, so
-`pnpm add @smthrs/harness` does not resolve. Its source lives in the
-[smithers repository](https://github.com/smithersai/smithers). Clone that
-repository, install its dependencies, and declare the package where you need
-it:
-
-```json
-{
-  "dependencies": {
-    "@smthrs/harness": "workspace:*"
-  }
-}
+```bash
+npm install @smthrs/harness@next effect
 ```
+
+The `next` tag carries the 1.0 release candidates.
 
 ## Requirements
 

@@ -20,10 +20,11 @@ speaking one of those wire formats reach your code as the same typed
 
 ## Install
 
-The package is at 1.0.0-rc.0 and is not on the npm registry yet. It is a
-workspace package of https://github.com/smithersai/smithers, so you use it from
-a package in a clone of that repository. The steps are at
-https://model.smithers.sh/installation/.
+```bash
+npm install @smthrs/model@next effect
+```
+
+Requirements and import forms are at https://model.smithers.sh/installation/.
 
 ## Example
 

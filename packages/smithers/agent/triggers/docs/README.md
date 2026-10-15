@@ -47,10 +47,12 @@ at a flow by id, and the flow itself never learns that a clock started it.
 
 ## Install
 
-`@smthrs/triggers` is not on npm at 1.0.0-rc.0. Its source lives in the
-[smithers repository](https://github.com/smithersai/smithers), and
-[Installation](./installation.md) covers how to depend on it from a checkout,
-what it requires at runtime, and which packages a running host adds.
+```bash
+npm install @smthrs/triggers@next effect
+```
+
+[Installation](./installation.md) covers what it requires at runtime and which
+packages a running host adds.
 
 ## The smallest declaration
 

@@ -22,7 +22,8 @@ attributes, CVA variant recipes, and `asChild`.
 
 ## Availability
 
-`@smthrs/ui` is not published to a registry. Its source lives in the
+`@smthrs/ui` 1.x is not published to npm; the registry has only the earlier
+0.35.0 release. Its source lives in the
 [smithersai/smithers](https://github.com/smithersai/smithers) repository under
 `packages/smithers/ui`, and the applications there consume it through the pnpm
 workspace.

@@ -9,8 +9,8 @@ custom properties plus the base element and component rules that consume them.
 `@smthrs/ui` builds its shadcn-anatomy components on these tokens; `apps/app` and
 `flows/review` embed the sheets directly.
 
-Private at `1.0.0-rc.0`: the package ships only inside the workspace, as
-TypeScript source with no build step and no dependencies.
+Private: the package ships only inside the workspace, as TypeScript source with
+no build step and no dependencies. npm has only the earlier 0.35.0 release.
 
 ```ts
 import { standaloneThemeCss, themeCss, themeRegistry, workflowUiStyles } from "@smthrs/ui-styleguide";

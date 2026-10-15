@@ -17,13 +17,14 @@ Scheduling, persistence, transport, and model execution stay behind explicit
 service ports, so this package holds no scheduler, no database, and no provider
 client.
 
-## Availability
+## Install
 
-`@smthrs/harness` is not on npm at 1.0.0-rc.0. Its source lives in the
-[smithers repository](https://github.com/smithersai/smithers), and
-[Installation](https://harness.smithers.sh/installation/) covers how to depend
-on it from a checkout, the runtimes it supports, and the `effect` version it
-pins.
+```bash
+npm install @smthrs/harness@next effect
+```
+
+[Installation](https://harness.smithers.sh/installation/) covers the runtimes
+it supports and its `effect` peer range.
 
 ## A working example
 

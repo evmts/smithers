@@ -15,14 +15,8 @@ started run gets exactly the authority a person starting it would get.
 
 ## Install
 
-`@smthrs/triggers` is not on npm at 1.0.0-rc.0. It ships as a member of the
-[smithers repository](https://github.com/smithersai/smithers) workspace, so
-using it today means working from a checkout:
-
 ```bash
-git clone https://github.com/smithersai/smithers.git
-cd smithers
-pnpm install
+npm install @smthrs/triggers@next effect
 ```
 
 It needs Node.js 26.4.0 or later and `effect` `^4.0.4`. The full

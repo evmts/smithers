@@ -20,8 +20,8 @@ Effect reads it from context. Launching goes through
 [`@smthrs/control`](/api/control), and persistence through the SQL client and
 durable writer of [`@smthrs/database`](/api/database).
 
-The package is not on npm at 1.0.0-rc.0. See [Installation](./installation.md)
-for how to get it.
+Install it with `npm install @smthrs/triggers@next effect`. See
+[Installation](./installation.md) for its requirements.
 
 ## Example
 

@@ -7,7 +7,11 @@ sidebar:
 
 ## Install the package
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/plugin@next effect
+```
+
+The `next` tag carries the 1.0 release candidates.
 
 Install `effect` explicitly, in the range `^4.0.4`. The kernel depends on it, but your
 plugins import `Effect`, `Layer`, and `Option` directly, so `effect` belongs in

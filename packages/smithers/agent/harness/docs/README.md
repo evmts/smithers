@@ -69,10 +69,12 @@ all.
 
 ## Get the package
 
-`@smthrs/harness` is not on npm at 1.0.0-rc.0. Its source lives in the
-[smithers repository](https://github.com/smithersai/smithers), and
-[Installation](./installation.md) covers how to depend on it from a checkout,
-the runtimes it supports, and the `effect` version it pins.
+```bash
+npm install @smthrs/harness@next effect
+```
+
+[Installation](./installation.md) covers the runtimes it supports and its
+`effect` peer range.
 
 ## A working example in one screen
 
