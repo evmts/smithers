@@ -23,11 +23,13 @@ import type * as Planned from "./Planned.ts"
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export interface Rekeyed {
+  /** The node's id in the newer plan. */
   readonly id: string
+  /** The step key the paired node carried in the older plan. */
   readonly from: string
+  /** The step key the node carries in the newer plan. */
   readonly to: string
   /**
    * Field labels such as `"kind"`, `"body"`, `"layers"`, `"capabilities"`,
@@ -44,12 +46,15 @@ export interface Rekeyed {
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export interface PlanDiff {
+  /** Ids, in the newer plan, of nodes with no counterpart in the older plan. */
   readonly added: ReadonlyArray<string>
+  /** Ids, in the older plan, of nodes with no counterpart in the newer plan. */
   readonly removed: ReadonlyArray<string>
+  /** Nodes paired by id whose step key changed, with the fields that changed it. */
   readonly rekeyed: ReadonlyArray<Rekeyed>
+  /** Ids, in the newer plan, of nodes whose step key is unchanged, including nodes whose id moved. */
   readonly unchanged: ReadonlyArray<string>
 }
 
@@ -174,7 +179,6 @@ const changedFields = (
  * plan's node order.
  * @since 0.1.0
  * @category constructors
- * @slop
  */
 export const diff = (previous: Plan.Plan, next: Plan.Plan): PlanDiff => {
   // pairs maps a next node to the previous node it is the same step as.

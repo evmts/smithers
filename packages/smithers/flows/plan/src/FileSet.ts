@@ -47,7 +47,6 @@ export type BoundaryMode = typeof BoundaryMode.Type
  *
  * @category accessors
  * @since 0.1.0
- * @slop
  */
 export const canonical = (path: string): string => path.replaceAll("\\", "/").normalize("NFC")
 
@@ -65,10 +64,15 @@ export const canonical = (path: string): string => path.replaceAll("\\", "/").no
  */
 export const folded = (path: string): string => canonical(path).toUpperCase().normalize("NFC")
 
-/** Workspace-relative glob pattern.
+/**
+ * A non-empty workspace-relative path or pattern.
+ *
+ * Decoding fails with a `SchemaError` when {@link workspaceRelative} refuses
+ * the string. A bare `Pattern` in a declaration names one literal path; only a
+ * {@link Glob} gives `*` and `**` wildcard meaning.
+ *
  * @category schemas
  * @since 0.1.0
- * @slop
  */
 export const Pattern = Schema.NonEmptyString.check(
   Schema.makeFilter(
@@ -83,9 +87,10 @@ export const Pattern = Schema.NonEmptyString.check(
  * traversal, and the aliasing forms — `.` segments, empty segments — that
  * would let two spellings of one file defeat exact-string overlap detection.
  *
+ * C0 controls and DEL are refused as well.
+ *
  * @category predicates
  * @since 0.1.0
- * @slop
  */
 export const workspaceRelative = (pattern: string): boolean => {
   for (let index = 0; index < pattern.length; index++) {
@@ -99,133 +104,171 @@ export const workspaceRelative = (pattern: string): boolean => {
   return segments.every((segment) => segment !== ".." && segment !== "." && segment !== "")
 }
 
-/** Bazel-style file glob.
+/**
+ * A Bazel-style file glob: the paths matching any `include` pattern and no
+ * `exclude` pattern.
+ *
+ * In a pattern, `*` matches within one path segment and a `**` segment
+ * matches zero or more whole segments. A trailing `**` needs its separator,
+ * so `src/**` does not match `src` itself.
+ *
  * @category schemas
  * @since 0.1.0
- * @slop
  */
 export const Glob = Schema.TaggedStruct("Glob", {
   include: Schema.NonEmptyArray(Pattern),
   exclude: Schema.optional(Schema.Array(Pattern))
 })
 
-/** Bazel-style file glob.
+/**
+ * The value form of {@link Glob}.
+ *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type Glob = typeof Glob.Type
 
-/** A directory output captured and replayed as one tree artifact.
+/**
+ * A directory output captured and replayed as one tree artifact.
+ *
+ * It covers `path` and every path beneath it, compared in {@link folded}
+ * form.
+ *
  * @category schemas
  * @since 0.1.0
- * @slop
  */
 export const TreeArtifact = Schema.TaggedStruct("TreeArtifact", {
   path: Pattern
 })
 
-/** A directory output captured and replayed as one tree artifact.
+/**
+ * The value form of {@link TreeArtifact}.
+ *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type TreeArtifact = typeof TreeArtifact.Type
 
-/** One leaf of a named filegroup.
+/**
+ * One leaf declaration: a literal path, a {@link Glob}, or a
+ * {@link TreeArtifact}. Write sets and filegroups hold entries.
+ *
  * @category schemas
  * @since 0.1.0
- * @slop
  */
 export const Entry = Schema.Union([Pattern, Glob, TreeArtifact])
 
-/** One leaf of a named filegroup.
+/**
+ * The value form of {@link Entry}.
+ *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type Entry = typeof Entry.Type
 
-/** A declaration valid in a read set.
+/**
+ * One leaf declaration valid in a read set: a literal path or a {@link Glob}.
+ * A read set cannot name a {@link TreeArtifact}, which is an output form.
+ *
  * @category schemas
  * @since 0.1.0
- * @slop
  */
 export const ReadEntry = Schema.Union([Pattern, Glob])
 
-/** A declaration valid in a read set.
+/**
+ * The value form of {@link ReadEntry}.
+ *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type ReadEntry = typeof ReadEntry.Type
 
-/** A named reusable collection expanded before measurement.
+/**
+ * A named, reusable list of {@link Entry} declarations.
+ *
+ * {@link expand} replaces a filegroup with its entries in place before any
+ * overlap check or measurement, so the name never reaches the boundary.
+ * Filegroups do not nest.
+ *
  * @category schemas
  * @since 0.1.0
- * @slop
  */
 export const Filegroup = Schema.TaggedStruct("Filegroup", {
   name: Schema.NonEmptyString,
   entries: Schema.Array(Entry)
 })
 
-/** A named reusable collection expanded before measurement.
+/**
+ * The value form of {@link Filegroup}.
+ *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type Filegroup = typeof Filegroup.Type
 
-/** A named read-only collection.
+/**
+ * A {@link Filegroup} restricted to {@link ReadEntry} declarations, for use
+ * in a read set. It shares the `"Filegroup"` tag.
+ *
  * @category schemas
  * @since 0.1.0
- * @slop
  */
 export const ReadFilegroup = Schema.TaggedStruct("Filegroup", {
   name: Schema.NonEmptyString,
   entries: Schema.Array(ReadEntry)
 })
 
-/** A named read-only collection.
+/**
+ * The value form of {@link ReadFilegroup}.
+ *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type ReadFilegroup = typeof ReadFilegroup.Type
 
-/** Any declaration accepted by a plan effect set.
+/**
+ * Any declaration accepted in a write set: an {@link Entry} or a
+ * {@link Filegroup}.
+ *
  * @category schemas
  * @since 0.1.0
- * @slop
  */
 export const Declaration = Schema.Union([Entry, Filegroup])
 
-/** Any declaration accepted by a plan effect set.
+/**
+ * The value form of {@link Declaration}.
+ *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type Declaration = typeof Declaration.Type
 
-/** Any declaration accepted by a plan read set.
+/**
+ * Any declaration accepted in a read set: a {@link ReadEntry} or a
+ * {@link ReadFilegroup}.
+ *
  * @category schemas
  * @since 0.1.0
- * @slop
  */
 export const ReadDeclaration = Schema.Union([ReadEntry, ReadFilegroup])
 
-/** Any declaration accepted by a plan read set.
+/**
+ * The value form of {@link ReadDeclaration}.
+ *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type ReadDeclaration = typeof ReadDeclaration.Type
 
-/** Creates a named filegroup.
+/**
+ * Creates a {@link Filegroup}. It does not validate `name` or `entries`;
+ * decode through {@link Filegroup} when the input is untrusted.
+ *
+ * @param name - The filegroup name.
+ * @param entries - The entries the filegroup expands to, in order.
+ * @returns The filegroup value.
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const makeFilegroup = (name: string, entries: ReadonlyArray<Entry>): Filegroup => ({
   _tag: "Filegroup",
@@ -233,38 +276,54 @@ export const makeFilegroup = (name: string, entries: ReadonlyArray<Entry>): File
   entries
 })
 
-/** Expands filegroups deterministically, preserving declaration order.
+/**
+ * Replaces each {@link Filegroup} with its entries, in place, and keeps every
+ * other declaration as it is. Order is preserved and duplicates are kept.
+ *
+ * @param declarations - Write-set declarations, possibly holding filegroups.
+ * @returns The flat list of entries.
  * @category accessors
  * @since 0.1.0
- * @slop
  */
 export const expand = (declarations: ReadonlyArray<Declaration>): ReadonlyArray<Entry> =>
   declarations.flatMap((declaration) =>
     typeof declaration !== "string" && declaration._tag === "Filegroup" ? declaration.entries : [declaration]
   )
 
-/** Expands read filegroups deterministically, preserving declaration order.
+/**
+ * {@link expand} for read sets: replaces each {@link ReadFilegroup} with its
+ * entries, in place, preserving order and duplicates.
+ *
+ * @param declarations - Read-set declarations, possibly holding filegroups.
+ * @returns The flat list of read entries.
  * @category accessors
  * @since 0.1.0
- * @slop
  */
 export const expandReads = (declarations: ReadonlyArray<ReadDeclaration>): ReadonlyArray<ReadEntry> =>
   declarations.flatMap((declaration) =>
     typeof declaration !== "string" && declaration._tag === "Filegroup" ? declaration.entries : [declaration]
   )
 
-/** Whether a value is a glob declaration.
+/**
+ * Whether a value carries the `"Glob"` tag. It checks only the tag, not the
+ * patterns.
+ *
+ * @param value - Any value.
+ * @returns `true` for an object whose `_tag` is `"Glob"`.
  * @category guards
  * @since 0.1.0
- * @slop
  */
 export const isGlob = (value: unknown): value is Glob =>
   typeof value === "object" && value !== null && "_tag" in value && value._tag === "Glob"
 
-/** Whether a value is a tree artifact declaration.
+/**
+ * Whether a value carries the `"TreeArtifact"` tag. It checks only the tag,
+ * not the path.
+ *
+ * @param value - Any value.
+ * @returns `true` for an object whose `_tag` is `"TreeArtifact"`.
  * @category guards
  * @since 0.1.0
- * @slop
  */
 export const isTreeArtifact = (value: unknown): value is TreeArtifact =>
   typeof value === "object" && value !== null && "_tag" in value && value._tag === "TreeArtifact"
@@ -343,17 +402,29 @@ const patternMatcher = (pattern: string): (path: string) => boolean => {
   return matcher
 }
 
-/** Tests one workspace-relative path against one Bazel-style pattern.
+/**
+ * Whether `path` matches `pattern` under {@link Glob} wildcard rules.
+ *
+ * The pattern is read in its {@link canonical} spelling; the path is matched
+ * as given, case-sensitively, with `/` as its only separator.
+ *
+ * @param pattern - A Bazel-style pattern such as `src/*.ts` or `docs/**`.
+ * @param path - A workspace-relative path.
+ * @returns `true` when the path matches.
  * @category predicates
  * @since 0.1.0
- * @slop
  */
 export const matchesPattern = (pattern: string, path: string): boolean => patternMatcher(pattern)(path)
 
-/** Tests one file path against a glob, including exclusions.
+/**
+ * Whether `path` matches some `include` pattern of `glob` and no `exclude`
+ * pattern, each tested with {@link matchesPattern}. Case-sensitive.
+ *
+ * @param glob - The glob to test.
+ * @param path - A workspace-relative path.
+ * @returns `true` when the glob selects the path.
  * @category predicates
  * @since 0.1.0
- * @slop
  */
 export const matchesGlob = (glob: Glob, path: string): boolean =>
   glob.include.some((pattern) => matchesPattern(pattern, path)) &&
@@ -391,7 +462,6 @@ const matchesGlobFolded = (glob: Glob, path: string): boolean => {
  *
  * @category predicates
  * @since 0.1.0
- * @slop
  */
 export const overlaps = (left: Entry, right: Entry): boolean => {
   if (typeof left === "string" && typeof right === "string") return folded(left) === folded(right)

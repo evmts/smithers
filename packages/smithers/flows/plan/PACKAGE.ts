@@ -1,15 +1,44 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
 /**
  * Standard package targets plus package-owned documentation generation.
  *
  * `cwd` anchors every emitted tool run in this package directory.
  */
+import {
+  BuildAndCheckTypeScriptPackage,
+  ReviewDocsAgainstCode,
+  ReviewJsdocAgainstCode,
+  ReviewTagsMigrationsAndKeys
+} from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
   cwd: "packages/smithers/flows/plan"
 })
+
+/**
+ * The durable-identity review. This package derives step keys, the plan digest
+ * an approval binds to, and the key-material version strings, so a changed
+ * key input or identity string re-keys every recorded plan.
+ */
+const reviewTagsMigrationsAndKeys = ReviewTagsMigrationsAndKeys({ cwd: "packages/smithers/flows/plan" })
+
+/**
+ * Changed public APIs against the package prose. The default context reads
+ * only `docs/*.md`; the concept and guide pages document the same exports, so
+ * the review reads all of them (about 200 KiB, under the 2 MiB cap).
+ */
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({
+  cwd: "packages/smithers/flows/plan",
+  context: [
+    Smithers.file("README.md"),
+    Smithers.glob("docs/**/*.md"),
+    Smithers.file("//apps/site/src/content/docs/docs/reference/api/plan.mdx")
+  ]
+})
+
+/** Changed exports against their own JSDoc. */
+const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: "packages/smithers/flows/plan" })
 
 const securityReview = Smithers.SecurityReview({
   cwd: "packages/smithers/flows/plan",
@@ -99,5 +128,18 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview }
+  targets: {
+    check,
+    circular,
+    docs,
+    docsFiles,
+    fmt,
+    lib,
+    lint,
+    reviewDocsAgainstCode,
+    reviewJsdocAgainstCode,
+    reviewTagsMigrationsAndKeys,
+    test,
+    ...securityReview
+  }
 })

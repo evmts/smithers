@@ -34,12 +34,17 @@ import * as StepKey from "./StepKey.ts"
  * What a node does to the world, declared. Paths only — measuring them is
  * run-time work, so a digest here would break the no-I/O law.
  *
+ * Decoding fails with a `SchemaError` when a path is not workspace-relative.
+ * {@link compile} also refuses a node whose `removes` overlaps its `writes`
+ * with an `invalid_effects` {@link PlanError}.
+ *
  * @since 0.1.0
  * @category schemas
- * @slop
  */
 export const NodeEffects = Schema.Struct({
+  /** Paths the node reads. A read orders the node after every writer of an overlapping path. */
   reads: Schema.Array(FileSet.ReadDeclaration),
+  /** Paths the node writes. Two writers of an overlapping path form a conflict. */
   writes: Schema.Array(FileSet.Declaration),
   /**
    * Paths the node declares it will DELETE. A removal mutates the world exactly
@@ -47,6 +52,7 @@ export const NodeEffects = Schema.Struct({
    * conflict pass and the reader-after-writer pass see them as one set.
    */
   removes: Schema.optional(Schema.Array(FileSet.Pattern)),
+  /** How strictly the sandbox enforces these declarations. */
   boundaryMode: FileSet.BoundaryMode
 })
 
@@ -55,16 +61,18 @@ export const NodeEffects = Schema.Struct({
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type NodeEffects = typeof NodeEffects.Type
 
 /**
- * The plan-time write-conflict strategies of the effect taxonomy.
+ * The plan-time verdict for two writers of an overlapping path:
+ * `serialize` gives the later writer an ordering edge, `lane` records a lane
+ * annotation on both writers and adds no edge, and `fail` refuses the plan
+ * with `overlap_forbidden`. For a pair, `fail` dominates `lane`, which
+ * dominates `serialize`. The same schema as `Effects.ConflictStrategy`.
  *
  * @since 0.1.0
  * @category schemas
- * @slop
  */
 export const PairStrategy = Effects.ConflictStrategy
 
@@ -73,18 +81,17 @@ export const PairStrategy = Effects.ConflictStrategy
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type PairStrategy = typeof PairStrategy.Type
 
 /**
  * The runtime half of a conflict annotation: what the scheduler
  * does when the overlap the plan predicted actually bites, or when a
- * scheduled node's inputs are invalidated under it.
+ * scheduled node's inputs are invalidated under it. For a pair,
+ * `stop-merge` dominates `delay-rebase`.
  *
  * @since 0.1.0
  * @category schemas
- * @slop
  */
 export const RuntimeStrategy = Schema.Literals(["delay-rebase", "stop-merge"])
 
@@ -93,7 +100,6 @@ export const RuntimeStrategy = Schema.Literals(["delay-rebase", "stop-merge"])
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type RuntimeStrategy = typeof RuntimeStrategy.Type
 
@@ -104,9 +110,11 @@ const NodeKind = Schema.Literals(["step", "agent", "merge"])
  * One resolved overlap between two writers that no dependency path already
  * orders. Conflict is a property of the PAIR, not of one declaration.
  *
+ * `with` names the other node, `paths` lists the overlapping declarations,
+ * and `strategy` and `runtime` are the verdicts resolved for the pair.
+ *
  * @since 0.1.0
  * @category schemas
- * @slop
  */
 export const ConflictAnnotation = Schema.Struct({
   with: Schema.NonEmptyString,
@@ -120,7 +128,6 @@ export const ConflictAnnotation = Schema.Struct({
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type ConflictAnnotation = typeof ConflictAnnotation.Type
 
@@ -138,9 +145,11 @@ export type ConflictAnnotation = typeof ConflictAnnotation.Type
  * a later elaboration can resolve a pair against them without re-reading the
  * flow source.
  *
+ * `generation` is 0 for nodes from {@link compile} and grows by one with each
+ * {@link append}.
+ *
  * @since 0.1.0
  * @category schemas
- * @slop
  */
 export const PlanNode = Schema.Struct({
   id: Schema.NonEmptyString,
@@ -161,7 +170,6 @@ export const PlanNode = Schema.Struct({
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type PlanNode = typeof PlanNode.Type
 
@@ -175,9 +183,11 @@ export type PlanNode = typeof PlanNode.Type
  * `baseDigest` is the digest at generation 0: what a human approved and what
  * a `RUNNING` run pins. `digest` advances with every appended elaboration.
  *
+ * Decoding checks only the shape. Use {@link verify} to check that keys,
+ * edges, and digests match the declarations.
+ *
  * @since 0.1.0
  * @category schemas
- * @slop
  */
 export const Plan = Schema.Struct({
   planId: Schema.NonEmptyString,
@@ -193,7 +203,6 @@ export const Plan = Schema.Struct({
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type Plan = typeof Plan.Type
 
@@ -202,13 +211,17 @@ export type Plan = typeof Plan.Type
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export interface NodeDraft {
+  /** A non-empty id, unique within the plan. */
   readonly id: string
+  /** The key inputs. Its `Ref` inputs name the node's material dependencies. */
   readonly material: KeyMaterial.KeyMaterial
+  /** The declared reads, writes, and removals. They replace `material.effects`. */
   readonly effects: NodeEffects
+  /** `step`, `agent`, or `merge`. Defaults to `step`. */
   readonly kind?: PlanNode["kind"] | undefined
+  /** A safe integer scheduling priority. Defaults to 0. */
   readonly priority?: number | undefined
   /** This declaration's preferred plan-time verdict for a detected overlap. */
   readonly conflictStrategy?: PairStrategy | undefined
@@ -217,11 +230,22 @@ export interface NodeDraft {
 }
 
 /**
- * A graph the compiler refuses.
+ * A graph the compiler refuses. `code` names the rule:
+ *
+ * - `cycle`: material or inferred edges form a cycle.
+ * - `unknown_dependency`: a `Ref` names a node that is not in the plan.
+ * - `duplicate_node`: two nodes share an id.
+ * - `overlap_forbidden`: two unordered writers overlap and the pair's
+ *   strategy is `fail`.
+ * - `invalid_effects`: a node both writes and removes one path.
+ * - `invalid_node`: a draft field, the plan id, or the flow name is malformed.
+ * - `invalid_plan`: {@link verify} found a plan that does not match its
+ *   declarations.
+ * - `graph_too_large`: the plan exceeds {@link maximumPlanNodes} or the
+ *   effect-analysis work budget.
  *
  * @since 0.1.0
  * @category errors
- * @slop
  */
 export class PlanError extends Schema.TaggedError<PlanError>()("@smthrs/plan/PlanError", {
   code: Schema.Literals([
@@ -245,7 +269,6 @@ export class PlanError extends Schema.TaggedError<PlanError>()("@smthrs/plan/Pla
  *
  * @since 1.0.0
  * @category limits
- * @slop
  */
 export const maximumPlanNodes = 10_000
 
@@ -671,9 +694,15 @@ const keyNodes = (
  * {@link maximumPlanNodes} and fail with `graph_too_large` above that limit
  * or the effect-analysis work budget. Analysis yields periodically.
  *
+ * The options and drafts are copied when `compile` is called, so later
+ * caller mutation does not reach the plan. The result is deeply frozen.
+ *
+ * @param options - `planId` and `flow` name the plan; `nodes` are the drafts.
+ * @returns The generation-0 plan, whose `baseDigest` equals its `digest`.
+ * Fails with {@link PlanError} for a refused graph, `KeyMaterialError` or
+ * `SchemaError` when a key cannot be derived.
  * @since 0.1.0
  * @category constructors
- * @slop
  */
 export const compile = (options: {
   readonly planId: string
@@ -710,9 +739,16 @@ export const compile = (options: {
  * Re-ordering after a reconciliation happens by re-keying *future* steps,
  * never by rewriting history.
  *
+ * A plan not produced by this module is checked with {@link verify} first.
+ *
+ * @param plan - The plan to grow.
+ * @param drafts - At least one new node. Ids must not repeat existing ones;
+ *   `Ref` inputs may name existing nodes.
+ * @returns The plan with one more generation and a new `digest`. Fails with
+ * {@link PlanError} (`invalid_node` for an empty `drafts`, `invalid_plan` for a
+ * plan that fails verification), `KeyMaterialError`, or `SchemaError`.
  * @since 0.1.0
  * @category constructors
- * @slop
  */
 export const append = (
   plan: Plan,
@@ -832,9 +868,10 @@ export const verify = (
  * The nodes added by the newest generation: what {@link module:PlanStore}
  * appends and what the `subgraph-appended` journal record names.
  *
+ * @param plan - A plan.
+ * @returns The nodes whose generation equals `plan.generation`, in order.
  * @since 0.1.0
  * @category accessors
- * @slop
  */
 export const generationNodes = (plan: Plan): ReadonlyArray<PlanNode> =>
   plan.nodes.filter((node) => node.generation === plan.generation)
@@ -844,9 +881,11 @@ export const generationNodes = (plan: Plan): ReadonlyArray<PlanNode> =>
  * {@link verify}: such values take verify's trusted fast path and need no
  * second schema validation.
  *
+ * @param input - Any value.
+ * @returns `true` only for a plan returned by {@link compile},
+ * {@link append}, or {@link verify}; a structurally equal copy returns `false`.
  * @since 1.0.0
  * @category guards
- * @slop
  */
 export const isVerified = (input: unknown): input is Plan =>
   typeof input === "object" && input !== null && frozenPlans.has(input as Plan)
@@ -858,9 +897,13 @@ export const isVerified = (input: unknown): input is Plan =>
  * plan's integrity from the already-verified prefix instead of decoding and
  * re-verifying every stored row.
  *
+ * For a generation-0 plan no generation precedes the newest, so this is the
+ * digest of an empty node list.
+ *
+ * @param plan - A plan.
+ * @returns The approval digest of the nodes older than `plan.generation`.
  * @since 1.0.0
  * @category accessors
- * @slop
  */
 export const prefixDigest = (
   plan: Plan

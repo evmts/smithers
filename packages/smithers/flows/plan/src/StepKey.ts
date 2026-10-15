@@ -43,7 +43,6 @@ import type * as KeyMaterial from "./KeyMaterial.ts"
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type StepKey = StoredKey
 
@@ -72,7 +71,6 @@ type GraphReference = "ref" | "pending" | "ref-projected"
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export interface DigestInput {
   readonly [DigestInputTypeId]: typeof DigestInputTypeId
@@ -94,9 +92,12 @@ export interface DigestInput {
  * Nominally tags a precomputed digest so it is hashed as a digest reference
  * rather than a literal value.
  *
+ * @param digest - The precomputed digest.
+ * @param reference - Which graph reference resolved to the digest, and the
+ *   projection path for `ref-projected`. Omit for a plain digest.
+ * @returns The tagged digest input.
  * @since 0.1.0
  * @category constructors
- * @slop
  */
 export const digestInput = (
   digest: string,
@@ -112,11 +113,13 @@ export const digestInput = (
 })
 
 /**
- * Type guard for values produced by {@link digestInput}.
+ * Type guard for values produced by {@link digestInput}. A plain object
+ * shaped like `{ digest: "..." }` is not one.
  *
+ * @param value - Any value.
+ * @returns `true` only for a value carrying the private digest-input brand.
  * @since 0.1.0
  * @category guards
- * @slop
  */
 export const isDigestInput = (value: unknown): value is DigestInput =>
   typeof value === "object" && value !== null && DigestInputTypeId in value &&
@@ -146,7 +149,6 @@ export const isDigestInput = (value: unknown): value is DigestInput =>
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type EnvironmentIdentity = typeof EnvironmentIdentity.Type
 
@@ -180,9 +182,13 @@ export const EnvironmentIdentity = Schema.Union([
  * digest. Entries are sound only while each settled `from` value is immutable;
  * callers must create a fresh memo when those values can change.
  *
+ * `digest(from, path, compute)` runs `compute` once per address and shares its
+ * result with concurrent callers. A failed or interrupted computation is not
+ * kept: the next caller recomputes, and a waiter whose leader was interrupted
+ * becomes the new leader instead of inheriting the interrupt.
+ *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export interface DigestMemo {
   readonly digest: (
@@ -196,9 +202,9 @@ export interface DigestMemo {
  * Creates an empty projected-value digest memo. Projection addresses are
  * JSON-encoded `[from, path]` tuples so segment boundaries are unambiguous.
  *
+ * @returns A memo with no entries.
  * @since 0.1.0
  * @category constructors
- * @slop
  */
 export const makeDigestMemo = (): DigestMemo => {
   const entries = new Map<string, Deferred.Deferred<StepKey, Schema.SchemaError>>()
@@ -240,7 +246,6 @@ export const makeDigestMemo = (): DigestMemo => {
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export interface ContentIdentity {
   readonly body: unknown
@@ -261,7 +266,6 @@ export interface ContentIdentity {
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export interface OrdinalIdentity {
   readonly runId: string
@@ -271,11 +275,18 @@ export interface OrdinalIdentity {
 }
 
 /**
- * Stable failures while resolving graph-local dependency references.
+ * Stable failures while deriving a key. `code` names the rule:
+ *
+ * - `invalid_environment`: an {@link EnvironmentIdentity} that is neither
+ *   declared nor run-scoped.
+ * - `missing_dependency`: a `Ref` or `Pending` input names a node with no
+ *   recorded digest, or, at dispatch, a `Ref` names one with no settled
+ *   result.
+ * - `non_content_material`: a content-key constructor received material whose
+ *   tier is not `sealed`.
  *
  * @since 0.1.0
  * @category errors
- * @slop
  */
 export class KeyMaterialError extends Schema.TaggedError<KeyMaterialError>()("@smthrs/plan/KeyMaterialError", {
   code: Schema.Literals(["invalid_environment", "missing_dependency", "non_content_material"]),
@@ -423,9 +434,11 @@ export const environmentIdentity = (
  * declarations are normalized before serialization; write declarations remain
  * part of the identity even when the step writes nothing.
  *
+ * @param identity - The step's content material.
+ * @returns The content key. Fails with `invalid_environment` for a malformed
+ * environment, or `SchemaError` when the material cannot be serialized.
  * @since 0.1.0
  * @category constructors
- * @slop
  */
 export const content = (
   identity: ContentIdentity
@@ -447,9 +460,10 @@ export const content = (
  * Produces a run-local ordinal key for compensable, irreversible, or unsealed
  * work. These keys intentionally cannot be reused across runs.
  *
+ * @param identity - The run id, optional parent scope, ordinal, and tier.
+ * @returns The ordinal key.
  * @since 0.1.0
  * @category constructors
- * @slop
  */
 export const ordinal = (
   identity: OrdinalIdentity
@@ -466,9 +480,13 @@ export const ordinal = (
  * and never enter the hashed value — rename a node and nothing re-keys; change
  * what a node consumes and everything downstream of it does.
  *
+ * @param material - The node's key material; its tier must be `sealed`.
+ * @param dependencyDigests - The key of every node the material references,
+ *   by node id.
+ * @returns The content key. Fails with `non_content_material` for a
+ * non-sealed tier and `missing_dependency` for an unresolved reference.
  * @since 0.1.0
  * @category constructors
- * @slop
  */
 export const fromKeyMaterial = (
   material: KeyMaterial.KeyMaterial,
@@ -637,7 +655,6 @@ const orderingOnly = "ordering-only"
  *
  * @since 0.1.0
  * @category utilities
- * @slop
  */
 export const project = (value: unknown, path: ReadonlyArray<string>): unknown => {
   let current = value
@@ -672,9 +689,13 @@ export const project = (value: unknown, path: ReadonlyArray<string>): unknown =>
  * halt rule guarantees it: a dependent of failed or skipped work never
  * dispatches, so a `Ref` always resolves against a success.
  *
+ * @param options - The material, the dependencies' settled results, the
+ *   measured hermetic boundary, and an optional environment and memo.
+ * @returns The dispatch key. Fails with `non_content_material` for a
+ * non-sealed tier, `missing_dependency` for a `Ref` absent from `results`,
+ * or `invalid_environment` for a malformed environment.
  * @since 0.1.0
  * @category constructors
- * @slop
  */
 export const dispatchIdentity = (options: {
   readonly material: KeyMaterial.KeyMaterial

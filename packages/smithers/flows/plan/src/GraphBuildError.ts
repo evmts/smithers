@@ -70,7 +70,6 @@ import * as Schema from "effect/Schema"
  *
  * @since 0.1.0
  * @category schemas
- * @slop
  */
 export const GraphBuildErrorCode = Schema.Literals([
   "planned_value_computed",
@@ -103,7 +102,6 @@ export const GraphBuildErrorCode = Schema.Literals([
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type GraphBuildErrorCode = typeof GraphBuildErrorCode.Type
 
@@ -124,7 +122,6 @@ export type GraphBuildErrorCode = typeof GraphBuildErrorCode.Type
  *
  * @since 0.1.0
  * @category errors
- * @slop
  */
 export class GraphBuildError extends Schema.TaggedError<GraphBuildError>()("@smthrs/plan/GraphBuildError", {
   code: GraphBuildErrorCode,
@@ -151,8 +148,9 @@ const advisoryCodes: ReadonlySet<GraphBuildErrorCode> = new Set<GraphBuildErrorC
  * written, so the drafts are withheld. An advisory one reports a narrowing the
  * author should see while the graph still compiles.
  *
+ * @param diagnostic - A recorded refusal.
+ * @returns `false` only for an advisory code (`capability_outside_grant`).
  * @since 0.1.0
  * @category predicates
- * @slop
  */
 export const isFatalDiagnostic = (diagnostic: GraphBuildError): boolean => !advisoryCodes.has(diagnostic.code)

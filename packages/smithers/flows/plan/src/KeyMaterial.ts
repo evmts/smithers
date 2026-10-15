@@ -25,9 +25,12 @@ import * as Effects from "./Effects.ts"
  * `Ref{from, path: []}` — which resolve to the same dependency digest — can
  * never collide.
  *
+ * - `Literal` hashes `value` inline.
+ * - `Ref` consumes the value at `path` inside node `from`'s result.
+ * - `Pending` consumes node `from`'s whole result.
+ *
  * @since 0.1.0
  * @category schemas
- * @slop
  */
 export const InputRef = Schema.Union([
   Schema.TaggedStruct("Literal", { value: Schema.Unknown }),
@@ -36,11 +39,10 @@ export const InputRef = Schema.Union([
 ])
 
 /**
- * A reference to one declared input of a node.
+ * The value form of {@link InputRef}.
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type InputRef = typeof InputRef.Type
 
@@ -50,7 +52,6 @@ export type InputRef = typeof InputRef.Type
  *
  * @since 0.1.0
  * @category constants
- * @slop
  */
 export const version = "flows/key-material/v2"
 
@@ -61,9 +62,12 @@ export const version = "flows/key-material/v2"
  * interpreted, which is what keeps the compiler independent of whatever the
  * flow builder decides an effect declaration looks like.
  *
+ * `version` must equal {@link version}. `kind` is the effect tier. `inputs`
+ * are hashed in order; `layers` and `capabilities` name what the node runs
+ * with.
+ *
  * @since 0.1.0
  * @category schemas
- * @slop
  */
 export const KeyMaterial = Schema.Struct({
   version: Schema.Literal(version),
@@ -79,11 +83,10 @@ export const KeyMaterial = Schema.Struct({
 })
 
 /**
- * Everything that can change a node's result, handed to the digest.
+ * The value form of {@link KeyMaterial}.
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type KeyMaterial = typeof KeyMaterial.Type
 
@@ -93,9 +96,11 @@ export type KeyMaterial = typeof KeyMaterial.Type
  * {@link module:Plan} uses them as the edge set — one derivation, so an edge
  * and a hashed reference can never disagree.
  *
+ * @param material - The node's key material.
+ * @returns The `from` of every `Ref` and `Pending` input, first occurrence
+ * order, deduplicated.
  * @since 0.1.0
  * @category accessors
- * @slop
  */
 export const dependencies = (material: KeyMaterial): ReadonlyArray<string> => {
   const seen = new Set<string>()

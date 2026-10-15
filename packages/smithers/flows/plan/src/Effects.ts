@@ -139,17 +139,21 @@ export {
 
 /**
  * A normalized description of the resources a flow or step may read and
- * write.
+ * write. Build one with {@link make}.
  *
  * @category models
  * @since 0.0.0
- * @slop
  */
 export interface Declaration {
+  /** Readable paths or envelope patterns, sorted and duplicate-free. */
   readonly reads: ReadonlyArray<string>
+  /** Writable paths or envelope patterns, sorted and duplicate-free. */
   readonly writes: ReadonlyArray<string>
+  /** `hermetic` or `expected` enforcement. */
   readonly mode: Mode
+  /** What a plan does when another node writes an overlapping path. */
   readonly onConflict: ConflictStrategy
+  /** The effect tier. Absent means `sealed`. */
   readonly tier?: Tier | undefined
 }
 
@@ -163,7 +167,6 @@ export interface Declaration {
  *
  * @category models
  * @since 0.0.0
- * @slop
  */
 export interface MakeOptions {
   readonly reads: Iterable<string>
@@ -176,9 +179,13 @@ export interface MakeOptions {
 /**
  * A result of checking that a step declaration narrows a flow envelope.
  *
+ * On failure, `code` names the first rule broken, checked in this order:
+ * `effect_outside_envelope` (with the uncovered read and write paths, sorted),
+ * `effect_mode_widening`, then `effect_tier_widening` (both with empty
+ * `paths`).
+ *
  * @category models
  * @since 0.0.0
- * @slop
  */
 export type NarrowResult =
   | { readonly ok: true }
@@ -191,11 +198,14 @@ export type NarrowResult =
 const normalize = (paths: Iterable<string>): ReadonlyArray<string> => [...new Set(paths)].sort()
 
 /**
- * Constructs a deterministic effect declaration.
+ * Constructs a deterministic effect declaration: `reads` and `writes` are
+ * collected, deduplicated, and sorted; an absent `tier` is omitted. Paths are
+ * not validated or rewritten.
  *
+ * @param input - The paths, mode, conflict strategy, and optional tier.
+ * @returns The normalized declaration.
  * @category constructors
  * @since 0.0.0
- * @slop
  */
 export const make = (input: MakeOptions): Declaration => ({
   reads: normalize(input.reads),
@@ -216,9 +226,11 @@ export const make = (input: MakeOptions): Declaration => ({
  * covered, so {@link narrow} reports it as `effect_outside_envelope` rather
  * than silently accepting an escape.
  *
+ * @param envelope - One envelope entry.
+ * @param path - One declared path.
+ * @returns `true` when the entry covers the path.
  * @category predicates
  * @since 0.0.0
- * @slop
  */
 export const covers = (envelope: string, path: string): boolean => {
   if (Index.hasDotSegment(path)) return false
@@ -239,9 +251,11 @@ export const covers = (envelope: string, path: string): boolean => {
  * patterns nest. A graph build prepares each envelope once for every node it
  * encloses.
  *
+ * @param envelope - The flow's declaration.
+ * @param step - The step's declaration.
+ * @returns `{ ok: true }`, or the first rule the step breaks.
  * @category validation
  * @since 0.0.0
- * @slop
  */
 export const narrow = (envelope: Declaration, step: Declaration): NarrowResult =>
   Index.narrowPrepared(Index.prepareEnvelope(envelope), step)
@@ -263,9 +277,11 @@ export const narrow = (envelope: Declaration, step: Declaration): NarrowResult =
  * ranks inside its interval, so the cost is linear in the two declarations
  * plus the matches, whatever the paths' lengths or how many patterns nest.
  *
+ * @param a - One declaration.
+ * @param b - The other declaration.
+ * @returns The shared write paths; empty when the writes are disjoint.
  * @category analysis
  * @since 0.0.0
- * @slop
  */
 export const overlaps = (a: Declaration, b: Declaration): ReadonlyArray<string> => {
   const indexed = Index.indexPaths([a.writes, b.writes])
@@ -274,11 +290,13 @@ export const overlaps = (a: Declaration, b: Declaration): ReadonlyArray<string> 
 }
 
 /**
- * Returns a sealed, hermetic copy of an effect declaration.
+ * Returns a sealed, hermetic copy of an effect declaration, normalized by
+ * {@link make}. Paths and `onConflict` are kept.
  *
+ * @param declaration - The declaration to copy.
+ * @returns The copy with `mode: "hermetic"` and `tier: "sealed"`.
  * @category constructors
  * @since 0.0.0
- * @slop
  */
 export const sealed = (declaration: Declaration): Declaration =>
   make({ ...declaration, mode: "hermetic", tier: "sealed" })
