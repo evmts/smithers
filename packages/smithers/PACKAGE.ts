@@ -1,4 +1,4 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
 import { nativeFfiLib, rehearsalNative } from "../../scripts/native-targets.ts"
 /** Standard package targets plus package-owned documentation generation. */
 import { Smithers } from "@smthrs/targets"
@@ -26,8 +26,26 @@ const { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeSc
     Smithers.file("scripts/build-tui.mjs"),
     Smithers.file("scripts/tui-native-editor.mjs")
   ],
-  tests: Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] })
+  tests: Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] }),
+  // Runnable examples are linted and type-checked with the sources.
+  sources: Smithers.glob("{src,examples}/**/*.ts")
 })
+
+/**
+ * Changed public APIs and commands against the package README, every docs
+ * page, and the site CLI reference page.
+ */
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({
+  cwd: "packages/smithers",
+  context: [
+    Smithers.file("README.md"),
+    Smithers.glob("docs/**/*.md"),
+    Smithers.file("//apps/site/src/content/docs/docs/reference/api/cli.mdx")
+  ]
+})
+
+/** Changed exports against their own JSDoc. */
+const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: "packages/smithers" })
 
 /** The history suite needs a real PostgreSQL server on the Linux CI runner. */
 const historyPostgresDatabase = Smithers.Docker.Service({
@@ -547,6 +565,8 @@ export const Package = Smithers.Package({
     lib,
     lint,
     nativeSources,
+    reviewDocsAgainstCode,
+    reviewJsdocAgainstCode,
     test,
     historyPostgresDatabase,
     docsSources,
