@@ -144,8 +144,8 @@ than expecting it in the message a sender receives.
 **What to change.** Check three things in order.
 
 1. The header name in `SignatureConfig.header`. The verifier looks it up first
-   in lowercase and then exactly as written, so a casing mismatch is not the
-   cause, but a wrong name is.
+   in lowercase, then exactly as written, then under any other casing, so a
+   casing mismatch is not the cause, but a wrong name is.
 2. The bytes `SignatureConfig.expected` returns. They are compared against the
    UTF-8 encoding of the header value, so an implementation that returns raw
    HMAC bytes where the provider sends hex will never match. Return the encoded

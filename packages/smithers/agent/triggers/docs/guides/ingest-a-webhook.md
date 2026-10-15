@@ -78,8 +78,9 @@ Three properties of that signature are the point of it.
   never by the caller's, so a caller cannot lengthen its input until the work
   stops growing and learn the expected signature's length.
 
-The verifier looks the header up first in lowercase and then exactly as written,
-so `x-hub-signature-256` and `X-Hub-Signature-256` both resolve. An absent or
+The verifier looks the header up first in lowercase, then exactly as written,
+then under any other casing, so `x-hub-signature-256` and `X-Hub-Signature-256`
+both resolve whichever spelling the declaration uses. An absent or
 empty header is refused before `expected` runs, and an `expected` that answers
 with zero bytes is refused after it, so a secret that resolves to the empty
 string closes the door instead of opening it for everyone.

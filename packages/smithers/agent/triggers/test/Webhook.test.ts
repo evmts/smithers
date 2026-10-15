@@ -388,6 +388,40 @@ describe("Webhook", () => {
     expect(receipt._tag).toBe("Accepted")
   })
 
+  // Header names are case-insensitive. The lookup used to try only the
+  // lowercase name and the declared spelling, so a lowercase declaration
+  // refused a request whose host kept the sender's capitalisation.
+  it("accepts the signature header under any casing the request carries", async () => {
+    for (
+      const [declared, sent] of [
+        ["x-signature", "X-Signature"],
+        ["X-Signature", "x-SIGNATURE"]
+      ] as const
+    ) {
+      const calls: Array<string> = []
+      const webhook = Webhook.make({
+        ...declaration(calls),
+        verify: Webhook.makeSignatureVerifier({
+          header: declared,
+          expected: () => Effect.succeed(new TextEncoder().encode("valid"))
+        })
+      })
+      const receipt = await run(
+        webhook.register.pipe(
+          Effect.andThen(
+            webhook.ingest({
+              body: new TextEncoder().encode(JSON.stringify({ _tag: "start", flowId: "review", input: {} })),
+              headers: { [sent]: "valid" },
+              idempotencyKey: `cased-${sent}`
+            })
+          )
+        ),
+        calls
+      )
+      expect(receipt._tag).toBe("Accepted")
+    }
+  })
+
   // A verifier that cannot resolve its credential used to throw out of a
   // synchronous callback, which `Effect.suspend` turns into a defect that kills
   // the fiber rather than a refusal the caller can read. Its message used to be
@@ -422,6 +456,26 @@ describe("Webhook", () => {
       })
       expect(JSON.stringify(failure)).not.toContain(hostDetail)
     }
+  })
+
+  // A caller that builds headers by hand can leave a name present with no
+  // value. The case-insensitive search passes over it and over names that
+  // only start with the declared one.
+  it("reads the valued header when another casing of its name holds no value", async () => {
+    const verify = Webhook.makeSignatureVerifier({
+      header: "x-signature",
+      expected: () => Effect.succeed(encode("valid"))
+    })
+    const verified = await Effect.runPromise(
+      Effect.exit(
+        verify({
+          body: encode("{}"),
+          headers: { "X-SIGNATURE-": "other", "X-sIgNaTuRe": undefined, "X-Signature": "valid" },
+          idempotencyKey: "cased-undefined-1"
+        }, credential)
+      )
+    )
+    expect(verified._tag).toBe("Success")
   })
 
   it("keeps the host's resolver failure in the verifier's cause, out of its message", async () => {

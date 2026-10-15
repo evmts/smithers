@@ -74,6 +74,27 @@ export interface SignatureConfig {
 const ownedCopy = (body: Uint8Array): Uint8Array => Uint8Array.from(body)
 
 /**
+ * Reads a header whose name may be spelled in any case.
+ *
+ * The lowercase form and the declared spelling are tried first, then every
+ * other key whose lowercase form matches. HTTP header names are
+ * case-insensitive, and a host that keeps the sender's capitalisation used to
+ * fail a lowercase declaration.
+ */
+const headerValue = (
+  headers: Channel.RawInbound["headers"],
+  name: string
+): string | undefined => {
+  const lower = name.toLowerCase()
+  const direct = headers[lower] ?? headers[name]
+  if (direct !== undefined) return direct
+  for (const [key, value] of Object.entries(headers)) {
+    if (value !== undefined && key.toLowerCase() === lower) return value
+  }
+  return undefined
+}
+
+/**
  * Builds a verifier that compares a signature header in constant time.
  *
  * An absent or empty header is refused before `expected` runs, and an
@@ -103,7 +124,7 @@ export const makeSignatureVerifier = (config: SignatureConfig): Channel.Verify =
       })
     )
   return Effect.suspend(() => {
-    const supplied = raw.headers[config.header.toLowerCase()] ?? raw.headers[config.header]
+    const supplied = headerValue(raw.headers, config.header)
     if (supplied === undefined || supplied.length === 0) {
       return refuse()
     }
