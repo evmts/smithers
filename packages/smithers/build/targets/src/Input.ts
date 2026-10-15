@@ -375,8 +375,10 @@ export const resolvePath = (packageDir: string, value: string): string => {
  * Stripping the `//` and handing the remainder to the child resolves it
  * against `cwd` instead of the root, so `//scripts/check.mjs` under cwd
  * `packages/foo` silently means `packages/foo/scripts/check.mjs`. This walks
- * back out to the root first. A package-relative path is already what the
- * child needs and passes through unchanged.
+ * back out to the root first. A rendered path that starts with `-` keeps a
+ * `./` prefix so the child reads it as a path, not an option. A
+ * package-relative path is already what the child needs and passes through
+ * unchanged.
  *
  * @category expansion
  * @since 0.1.0
@@ -385,7 +387,10 @@ export const rootRelative = (cwd: string, value: string): string => {
   if (!value.startsWith("//")) return value
   const from = posix(NodePath.normalize(cwd === "" ? "." : cwd))
   const rendered = posix(NodePath.relative(from === "." ? "." : from, value.slice(2)))
-  return rendered === "" ? "." : rendered
+  if (rendered === "") return "."
+  // A child parses a leading "-" as an option, not a file, so a rooted path
+  // that renders to "-x" keeps an explicit "./" and stays a path.
+  return rendered.startsWith("-") ? `./${rendered}` : rendered
 }
 
 /**

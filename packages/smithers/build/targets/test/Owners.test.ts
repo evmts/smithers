@@ -208,4 +208,32 @@ describe("Owners pattern lists", () => {
       /agents deny pattern must be a non-empty string/
     )
   })
+  // A per-file glob becomes one CODEOWNERS line, `<pattern> <owners...>`, and
+  // GitHub splits that line on whitespace and reads `#` as a comment. A
+  // newline in a pattern therefore writes a second rule with owners nobody
+  // declared, so these are refused where they are written.
+  it.each([
+    ["src/a.ts\n* @intruder", "a newline that writes a second CODEOWNERS rule"],
+    ["src/a.ts\r* @intruder", "a carriage return"],
+    ["src/a b.ts", "whitespace that splits the CODEOWNERS line"],
+    ["src/a.ts\t@intruder", "a tab"],
+    ["#src/*.ts", "a leading # that CODEOWNERS reads as a comment"],
+    ["!src/*.ts", "a leading ! that CODEOWNERS does not support"],
+    ["src/\u007f.ts", "a DEL control character"]
+  ])("refuses a perFile pattern %j: %s", (pattern) => {
+    expect(() => Owners.declare({ perFile: { [pattern]: ["will"] } })).toThrow(
+      /perFile pattern must be a glob without whitespace, control characters, or a leading # or !/
+    )
+  })
+
+  it("refuses the same unsafe text in an agents policy pattern", () => {
+    expect(() => Owners.declare({ ...base, agents: { deny: ["a\n*"] } })).toThrow(
+      /agents deny pattern must be a glob without whitespace/
+    )
+  })
+
+  it("keeps ordinary globs", () => {
+    const declaration = Owners.declare({ perFile: { "src/**/*.{ts,tsx}": ["will"], "[ab]?.md": "team:docs" } })
+    expect(declaration.perFile.map((rule) => rule.pattern)).toEqual(["[ab]?.md", "src/**/*.{ts,tsx}"])
+  })
 })

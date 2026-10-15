@@ -245,6 +245,8 @@ const ownerList = (value: unknown, where: string): ReadonlyArray<Owner> => {
   return owners
 }
 
+const unsafePattern = /[\s\u0000-\u001f\u007f]|^[#!]/
+
 const patternList = (value: unknown, where: string): ReadonlyArray<string> => {
   if (!Array.isArray(value)) throw new TypeError(`Owners ${where} must be an array of glob patterns`)
   if (value.length > maximumPatterns) throw new Error(`Owners ${where} lists more than ${maximumPatterns} patterns`)
@@ -252,9 +254,15 @@ const patternList = (value: unknown, where: string): ReadonlyArray<string> => {
     if (typeof entry !== "string" || entry === "" || entry.includes("\0")) {
       throw new Error(`Owners ${where} pattern must be a non-empty string: ${JSON.stringify(entry)}`)
     }
-    if (entry.startsWith("/") || entry.startsWith("//") || entry.split("/").includes("..")) {
-      throw new Error(`Owners ${where} pattern must be relative to the package: ${JSON.stringify(entry)}`)
-    }
+    // A pattern is written into a CODEOWNERS line, `<pattern> <owners...>`,
+    // which GitHub splits on whitespace and reads as a comment after `#`. A
+    // newline would write a second rule with owners nobody declared.
+    const rule = entry.startsWith("/") || entry.split("/").includes("..")
+      ? "must be relative to the package"
+      : unsafePattern.test(entry)
+      ? "must be a glob without whitespace, control characters, or a leading # or !"
+      : undefined
+    if (rule !== undefined) throw new Error(`Owners ${where} pattern ${rule}: ${JSON.stringify(entry)}`)
   }
   return value
 }
@@ -326,6 +334,11 @@ const normalizeUpstream = (value: unknown): Upstream | undefined => {
  * `S.Package({ owners: { ... } })` and `S.Workspace(name, { owners: { ... } })`
  * call this on the plain object they receive; a caller may also call it
  * directly and pass the result.
+ *
+ * Throws a `TypeError` or `Error` naming the offending field when a value is
+ * malformed. A `perFile` or `agents` glob must be package-relative and must
+ * not contain whitespace, control characters, or a leading `#` or `!`,
+ * because each glob is written verbatim into a CODEOWNERS line.
  *
  * @example
  * ```ts

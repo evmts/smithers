@@ -13,7 +13,7 @@ export default tseslint.config(
   importPlugin.flatConfigs.recommended,
   importPlugin.flatConfigs.typescript,
   {
-    files: ["src/**/*.ts"],
+    files: ["src/**/*.ts", "examples/**/*.ts"],
     extends: [tseslint.configs.recommended],
     languageOptions: {
       parserOptions: {
@@ -58,6 +58,29 @@ export default tseslint.config(
       "unicorn/no-abusive-eslint-disable": "error",
       "unicorn/no-accessor-recursion": "error",
       "unicorn/prefer-array-flat-map": "error"
+    }
+  },
+  {
+    // Examples import the package by name and sit outside the build
+    // tsconfig, so they parse against the test one.
+    files: ["examples/**/*.ts"],
+    languageOptions: {
+      parserOptions: {
+        projectService: false,
+        project: "./tsconfig.test.json"
+      }
+    },
+    settings: {
+      "import/resolver": {
+        // `@smthrs/targets/Package` would match PACKAGE.ts on a
+        // case-insensitive disk, so Node must not bypass package exports.
+        node: {
+          extensions: [".js", ".jsx", ".mjs", ".cjs"]
+        },
+        typescript: {
+          project: ["./tsconfig.test.json"]
+        }
+      }
     }
   },
   ...jsdocConvention,

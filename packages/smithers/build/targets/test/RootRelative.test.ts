@@ -23,7 +23,10 @@ describe("Input.rootRelative", () => {
     [".", "scripts/check.mjs", "scripts/check.mjs"],
     ["./packages/foo", "//tsconfig.base.json", "../../tsconfig.base.json"],
     ["packages/a b", "//with space/x.mjs", "../../with space/x.mjs"],
-    ["packages/foo", "//packages/foo", "."]
+    ["packages/foo", "//packages/foo", "."],
+    // A rendered path the child would parse as an option keeps a "./" prefix.
+    [".", "//-config.mjs", "./-config.mjs"],
+    ["packages/foo", "//packages/foo/--watch", "./--watch"]
   ])("renders %s + %s as %s", (cwd, value, expected) => {
     expect(Input.rootRelative(cwd, value)).toBe(expected)
   })

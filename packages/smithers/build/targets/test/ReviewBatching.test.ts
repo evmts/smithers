@@ -233,17 +233,22 @@ describe("LlmLint.review related-file discovery boundaries", () => {
   describe("with a substituted git grep", () => {
     const withGrep = async <A>(body: string, use: () => Promise<A>): Promise<A> => {
       const real = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim()
+      const previous = process.env["PATH"]
       const directory = Path.join(root, "git-bin")
       await Fs.mkdir(directory, { recursive: true })
+      // The git found on PATH may be a wrapper that looks git up on PATH
+      // again; under the substituted PATH it would find this script and the
+      // two would call each other forever. It runs under the original PATH.
+      const realEnv = `{ ...process.env, PATH: ${JSON.stringify(previous ?? "")} }`
       await Fs.writeFile(
         Path.join(directory, "git"),
         "#!/usr/bin/env node\nimport { spawnSync } from \"node:child_process\"\n" +
           "if (process.argv.includes(\"grep\")) {\n" + body + "\n} else {\n" +
-          `const result = spawnSync(${JSON.stringify(real)}, process.argv.slice(2), { stdio: "inherit" })\n` +
+          `const result = spawnSync(${JSON.stringify(real)}, process.argv.slice(2), ` +
+          `{ stdio: "inherit", env: ${realEnv} })\n` +
           "process.exit(result.status ?? 1)\n}\n",
         { mode: 0o755 }
       )
-      const previous = process.env["PATH"]
       process.env["PATH"] = `${directory}${Path.delimiter}${previous ?? ""}`
       try {
         return await use()

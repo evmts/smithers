@@ -7,6 +7,7 @@ const cwd = "packages/smithers/build/targets"
 const sources = Smithers.glob("src/**/*.ts")
 const tests = Smithers.glob("test/**/*.test.ts")
 const testSupportSources = Smithers.glob("test-support/**/*.ts")
+const examples = Smithers.glob("examples/**/*.ts")
 const testSupport = Smithers.Filegroup({ srcs: [testSupportSources], cwd })
 
 const lib = Smithers.TsBuild({
@@ -21,7 +22,7 @@ const lib = Smithers.TsBuild({
 })
 
 const check = Smithers.Typecheck({
-  srcs: [sources, Smithers.glob("test/**/*.ts"), testSupportSources],
+  srcs: [sources, Smithers.glob("test/**/*.ts"), testSupportSources, examples],
   deps: [lib],
   tsconfig: Smithers.file("tsconfig.test.json"),
   buildMode: false,
@@ -31,7 +32,7 @@ const check = Smithers.Typecheck({
 
 const test = Smithers.Vitest({
   tests: [tests],
-  sources: [sources],
+  sources: [sources, examples],
   deps: [lib, testSupport],
   config: Smithers.file("vitest.config.ts"),
   environment: "node",
@@ -40,7 +41,7 @@ const test = Smithers.Vitest({
 })
 
 const lint = Smithers.EsLint({
-  sources: [sources],
+  sources: [sources, examples],
   deps: [],
   configs: [Smithers.file("eslint.config.js"), rootJSDocConfig, rootInvariantsConfig],
   maxWarnings: 0,
@@ -49,7 +50,7 @@ const lint = Smithers.EsLint({
 })
 
 const fmt = Smithers.Dprint({
-  sources: [sources, Smithers.glob("test/**/*.ts"), testSupportSources],
+  sources: [sources, Smithers.glob("test/**/*.ts"), testSupportSources, examples],
   deps: [],
   config: Smithers.file("dprint.json"),
   fix: false,
