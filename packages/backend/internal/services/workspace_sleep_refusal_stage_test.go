@@ -125,6 +125,15 @@ func TestBranchSleepRefusalNamesItsStage(t *testing.T) {
 			for _, leak := range []string{"://", "Bearer ", "password", "127.0.0.1", ".svc"} {
 				assert.NotContains(t, refusal.Message, leak, "a logged refusal carries no %q", leak)
 			}
+
+			// Quiesce freezes by running this same path, so it asks the same
+			// four questions and names the same stage: an install that cannot
+			// sleep must not be told only that it cannot quiesce.
+			quiesce := stage.service.QuiesceAvailable()
+			require.Error(t, quiesce, "a deployment that cannot sleep cannot quiesce")
+			assert.Contains(t, quiesce.Error(), "quiesce requires verified branch capture and the machine runtime",
+				"the quiesce preflight keeps the sentence its callers match")
+			assert.Contains(t, quiesce.Error(), stage.want, "the quiesce preflight names the same step")
 		})
 	}
 

@@ -179,18 +179,9 @@ func (s *WorkspaceService) captureAndSleepExcluded(ctx context.Context, row db.W
 		}
 		return failure.WithCause(err)
 	}
-	store, ok := s.branchHeads.(workspaceSnapshotStore)
-	if !ok {
-		return unavailable("branch head store unavailable", nil)
-	}
-	if s.branchCapture == nil {
-		return unavailable("branch capture unavailable", nil)
-	}
-	if !s.hasWorkspaceRuntime() {
-		return unavailable("workspace runtime unavailable", nil)
-	}
-	if err := s.requireBranchMachineProviders(); err != nil {
-		return unavailable("branch machine providers unavailable", err)
+	store, stage, cause := s.branchCaptureDependencies()
+	if stage != "" {
+		return unavailable(stage, cause)
 	}
 	var err error
 	row, err = s.q.GetWorkspace(ctx, row.ID)
@@ -340,14 +331,41 @@ func (s *WorkspaceService) CaptureAndStop(ctx context.Context) error {
 	return errors.Join(failures...)
 }
 
+// branchCaptureDependencies returns the branch head store and names the first
+// dependency capture-before-stop needs that is not composed, or "" when every
+// one is. Sleep and quiesce ask the same four questions of the same seams —
+// quiesce freezes by running sleep — so they ask them once: a fifth dependency
+// cannot reach one caller and miss the other, and both name the stage rather
+// than answering one indistinguishable 503. The cause belongs to the provider
+// gate, the only question whose answer is itself an error.
+func (s *WorkspaceService) branchCaptureDependencies() (workspaceSnapshotStore, string, error) {
+	store, ok := s.branchHeads.(workspaceSnapshotStore)
+	if !ok {
+		return nil, "branch head store unavailable", nil
+	}
+	if s.branchCapture == nil {
+		return nil, "branch capture unavailable", nil
+	}
+	if !s.hasWorkspaceRuntime() {
+		return nil, "workspace runtime unavailable", nil
+	}
+	if err := s.requireBranchMachineProviders(); err != nil {
+		return nil, "branch machine providers unavailable", err
+	}
+	return store, "", nil
+}
+
 // QuiesceAvailable reports whether every provider the machine step needs is
 // composed. Quiesce asks before it freezes, so a missing one refuses with
-// admissions still open.
+// admissions still open — and says which one, because the sentence an operator
+// reads is the only place a 503 scrubbed of its reason can name the seam.
 func (s *WorkspaceService) QuiesceAvailable() error {
-	if _, ok := s.branchHeads.(workspaceSnapshotStore); !ok || s.branchCapture == nil || !s.hasWorkspaceRuntime() || s.requireBranchMachineProviders() != nil {
-		return pkgerrors.New(pkgerrors.CodeServiceUnavailable, "quiesce requires verified branch capture and the machine runtime")
+	_, stage, cause := s.branchCaptureDependencies()
+	if stage == "" {
+		return nil
 	}
-	return nil
+	return pkgerrors.New(pkgerrors.CodeServiceUnavailable,
+		"quiesce requires verified branch capture and the machine runtime: "+stage).WithCause(cause)
 }
 
 func (s *WorkspaceService) quiesceMachine(ctx context.Context, row db.Workspace) error {
