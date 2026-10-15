@@ -1,32 +1,11 @@
 ---
 title: "Troubleshooting"
-description: "The failures @smthrs/platform-bun produces: a missing required peer, a refused repository root, a filesystem guard that fails closed, an unfollowed redirect, a missing process ledger, and a browser bundle that will not resolve."
+description: "The failures @smthrs/platform-bun produces: a refused repository root, a filesystem guard that fails closed, an unfollowed redirect, a missing process ledger, and a browser bundle that will not resolve."
 ---
 
 Find the symptom, read the cause, apply the fix. Every failure here is one this
 package or its slots actually produce; the signatures behind them are on the
 [API reference](./api.md).
-
-## ERR_MODULE_NOT_FOUND for @effect/platform-bun/BunChildProcessSpawner
-
-**Symptom.** The first `import { BunHost } from "@smthrs/platform-bun"`, or
-`import * as BunHost from "@smthrs/platform-bun/BunHost"`, throws
-`ERR_MODULE_NOT_FOUND` before any of your code runs.
-
-**Cause.** The install is missing the required `@effect/platform-bun` peer,
-which both the root entry point and `BunHost` import at module load. This can
-happen with an older package version that marked it optional, or when peer
-installation was disabled.
-
-**Fix.** Install it yourself, at the version your composition's `effect` is
-built against:
-
-```bash
-pnpm add @effect/platform-bun @effect/platform-node-shared
-```
-
-`@smthrs/platform-bun/BunFileSystem` is the one entry point that resolves
-without it, because it imports nothing from `@effect/platform-bun`.
 
 ## BunHostError: requires an absolute repository root
 

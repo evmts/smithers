@@ -13,10 +13,13 @@ appear in, and disappear from, the process ledger.
 ## Prerequisites
 
 - Bun 1.4.0 or later, or Node.js 26.4.0 or later.
-- A project with the package installed:
-  `bun add @smthrs/platform-bun@1.0.0-rc.8 effect`. That also installs the
-  required peer `@smthrs/platform-node`, which ships the `smithers-jj-export`
-  helper the filesystem slot runs. See [Installation](./installation.md).
+- A project with the packages installed:
+  `bun add @smthrs/platform-bun@1.0.0-rc.8 effect @smthrs/kernel@1.0.0-rc.8`.
+  That also installs the required peer `@smthrs/platform-node`, which ships the
+  `smithers-jj-export` helper the filesystem slot runs. `@smthrs/kernel` is on
+  the line because `contained.ts` imports its `ProcessLedger`, and Bun's
+  isolated linker and pnpm link only the packages a project declares. See
+  [Installation](./installation.md).
 - [Jujutsu](https://jj-vcs.github.io) at jj 0.39.0 or later on `PATH`. Confirm
   it with `jj --version`. Neither program below touches `Jj`, but every
   complete bundle probes jj while the layer is built and fails with `JjError`

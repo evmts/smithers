@@ -251,6 +251,23 @@ test("every Bun host page that gives the bun install line names the version the 
   )
 })
 
+test("every Bun host page that declares the kernel on its install line names the version the bump writes", () => {
+  // contained.ts imports @smthrs/kernel/ProcessLedger; under Bun's isolated
+  // linker and pnpm an undeclared kernel does not resolve (#4016).
+  const rows = versionedSources.filter(({ declaration }) => declaration === "the kernel on the bun install line")
+  const directory = join(repoRoot, "packages/smithers/flows/platform-bun")
+  const pages = ["README.md", ...readdirSync(join(directory, "docs"), { recursive: true }).map((entry) => join("docs", String(entry)))]
+    .filter((page) => page.endsWith(".md"))
+    .map((page) => join("packages/smithers/flows/platform-bun", page))
+  const giving = pages.filter((page) => /bun add\s+@smthrs\/platform-bun@\S+\s+effect\s+@smthrs\/kernel@/.test(readFileSync(join(repoRoot, page), "utf8")))
+  assert.deepEqual(rows.map(({ path }) => path).sort(), giving.sort())
+  // The quickstart gives the line inline, so the version stops at the closing backtick.
+  assert.equal(
+    retargetSource("`bun add @smthrs/platform-bun@1.0.0-rc.8 effect @smthrs/kernel@1.0.0-rc.7`.", "1.0.0-rc.9", rows[0]),
+    "`bun add @smthrs/platform-bun@1.0.0-rc.8 effect @smthrs/kernel@1.0.0-rc.9`."
+  )
+})
+
 test("every build page that pins the CLI devDependency names the version the bump writes", () => {
   // A pin the bump does not know goes stale silently: these pages said rc.1 at rc.7.
   const rows = versionedSources.filter(({ declaration }) => declaration === "the build-cli devDependency")

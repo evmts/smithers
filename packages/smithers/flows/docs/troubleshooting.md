@@ -15,11 +15,11 @@ package, is the first section. The full schemas are in the [API reference](./api
 
 **Cause and fix.** The package named decides it:
 
-| Package named                                                            | Cause                                                                                                     | Fix                                                                      |
-| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `effect`                                                                 | Your program imports `effect/...` and the project does not declare it. pnpm links only declared packages. | `npm install effect`. [Installation](./installation.md) names the range. |
-| `@smthrs/platform-node`, `@effect/sql-sqlite-node`                       | `@smthrs/flows` 1.0.0-rc.4 or earlier, which left the Node host to the program.                           | `npm install @smthrs/flows@next`                                         |
-| `@smthrs/platform-bun`, `@effect/platform-bun`, `@effect/sql-sqlite-bun` | `@smthrs/flows/BunRuntime` without its packages.                                                          | Install the [Bun](./installation.md#bun-durable-execution) line.         |
+| Package named                                      | Cause                                                                                                     | Fix                                                                      |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `effect`                                           | Your program imports `effect/...` and the project does not declare it. pnpm links only declared packages. | `npm install effect`. [Installation](./installation.md) names the range. |
+| `@smthrs/platform-node`, `@effect/sql-sqlite-node` | `@smthrs/flows` 1.0.0-rc.4 or earlier, which left the Node host to the program.                           | `npm install @smthrs/flows@next`                                         |
+| `@smthrs/platform-bun`                             | `@smthrs/flows/BunRuntime` without its platform package.                                                  | Install the [Bun](./installation.md#bun-durable-execution) line.         |
 
 ## ERR_MODULE_NOT_FOUND: Cannot find module effect/dist/unstable/http/FetchHttpClient.js
 
@@ -142,6 +142,11 @@ const rules = [
   })
 ]
 ```
+
+The refused execution is recorded as failed, and its `executionId` replays that
+failure even after you add the rule. Once the rule is in place, run under a new
+`executionId`, or delete the directory that holds the engine database
+(`workspace/.flows` in the [Quickstart](./quickstart.md)).
 
 ## permission_denied: a rule refused it on purpose
 

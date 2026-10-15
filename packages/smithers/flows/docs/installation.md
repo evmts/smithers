@@ -149,10 +149,12 @@ Stand a durable runtime up and run a flow on it in the
 ## Bun durable execution
 
 ```bash
-bun add @smthrs/flows@next effect @smthrs/platform-bun@next \
-  @effect/platform-bun @effect/platform-node-shared \
-  @effect/sql-sqlite-bun
+bun add @smthrs/flows@next effect @smthrs/platform-bun@next
 ```
+
+`@smthrs/platform-bun` carries its own copy of the Effect Bun and Node platform
+adapters, and the Bun database opens `bun:sqlite` itself, so a Bun program adds
+no `@effect/*` package of its own.
 
 Then import `@smthrs/flows/BunRuntime`. Its `layerHost`, `layer`, `make` and
 `storage` compositions share the engine with Node. See

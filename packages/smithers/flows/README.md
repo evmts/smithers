@@ -214,8 +214,7 @@ Runtime parity must be demonstrated by the same execute, persist, restart, resum
 and cancellation scenarios, including opening a Node-created database in Bun and
 vice versa. A browser-safe import alone does not prove durable browser execution.
 
-For a Bun executable, also install `@smthrs/platform-bun`, `@effect/platform-bun`,
-`@effect/platform-node-shared`, and `@effect/sql-sqlite-bun`;
+For a Bun executable, also install `@smthrs/platform-bun`;
 [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/installation.md#bun-durable-execution)
 has the line.
 

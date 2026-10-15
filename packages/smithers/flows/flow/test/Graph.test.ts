@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, Graph } from "@smthrs/flow"
-import { KeyMaterial, Node, Plan, Planned } from "@smthrs/plan"
+import { KeyMaterial, Node, Plan, PlanDiff, Planned } from "@smthrs/plan"
 import { Effect, Schema, SchemaAST, SchemaIssue } from "effect"
 import { withCrypto } from "./Crypto.ts"
 
@@ -1283,6 +1283,38 @@ describe("Graph.build into a plan", () => {
       expect(planNode(grown, "round-1.flow").dependsOn).toEqual(["root.flow.then.flow"])
       expect(planNode(grown, "round-1").dependsOn).toEqual(["root.flow.then.flow", "round-1.flow"])
       expect(planNode(grown, "root").key).toBe(planNode(plan, "root").key)
+    }))
+
+  // plan/docs/guides/diff-two-plans.md "Reporting a re-plan" quotes this diff:
+  // appending a step also adds and re-keys the structural nodes around it (#4016).
+  it.effect("reports an appended step beside the structural nodes that fold it", () =>
+    Effect.gen(function*() {
+      const ReadPr = Action.make("review/ReadPr", { payload: { pr: Schema.Number }, success: Schema.String })
+      const RunTests = Action.make("review/RunTests", { payload: { diff: Schema.String }, success: Schema.String })
+      const Summarize = Action.make("review/Summarize", { payload: { report: Schema.String }, success: Schema.String })
+      const review = (summarize: boolean) =>
+        Flow.make("review/Review", {
+          payload: { pr: Schema.Number },
+          success: Schema.String,
+          body: (payload) => {
+            const tested = ReadPr.call(payload).pipe(Node.bindPlanned((diff) => RunTests.call({ diff })))
+            return summarize ? tested.pipe(Node.bindPlanned((report) => Summarize.call({ report }))) : tested
+          }
+        })
+      const previous = yield* compile("review-4821", "review/Review", Graph.build(review(false), { pr: 4821 }))
+      const next = yield* compile("review-4821", "review/Review", Graph.build(review(true), { pr: 4821 }))
+      const changes = PlanDiff.diff(previous, next)
+      const steps = new Set(
+        next.nodes.filter((node) => "action" in (node.material.body as object)).map((node) => node.id)
+      )
+
+      expect(changes.added).toEqual(["root.flow.andThen", "root.flow.then"])
+      expect(changes.removed).toEqual([])
+      expect(changes.rekeyed.map((entry) => entry.id)).toEqual(["root.flow", "root"])
+      expect(changes.unchanged).toEqual(["root.flow.andThen.andThen", "root.flow.andThen.then"])
+      expect(changes.added.filter((id) => steps.has(id))).toEqual(["root.flow.then"])
+      expect(changes.rekeyed.filter((entry) => steps.has(entry.id))).toEqual([])
+      expect(body(Graph.build(review(true), { pr: 4821 }), "root.flow.then").action).toBe("review/Summarize")
     }))
 })
 

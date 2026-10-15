@@ -11,8 +11,12 @@ The package is on npm under the `next` tag, which carries the 1.0 release
 candidates. Install the current candidate with Bun:
 
 ```bash
-bun add @smthrs/platform-bun@1.0.0-rc.8 effect
+bun add @smthrs/platform-bun@1.0.0-rc.8 effect @smthrs/kernel@1.0.0-rc.8
 ```
+
+`@smthrs/kernel` is on the line because the [Quickstart](./quickstart.md)'s
+`contained.ts` imports its `ProcessLedger`, which the contained bundles require.
+Bun's isolated linker and pnpm link only the packages a project declares.
 
 The manifest declares two required peers, neither optional:
 

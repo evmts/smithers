@@ -122,6 +122,17 @@ export const versionedSources = [
     declaration: "the bun install line",
     pattern: /(bun add\s+@smthrs\/platform-bun@)(\S+)(\s+effect)/
   })),
+  // The quickstart's contained.ts imports @smthrs/kernel/ProcessLedger, so the
+  // pages that give that program's install line declare the kernel too.
+  ...[
+    "packages/smithers/flows/platform-bun/docs/installation.md",
+    "packages/smithers/flows/platform-bun/docs/quickstart.md"
+  ].map((path) => ({
+    path,
+    package: "packages/smithers/flows/kernel",
+    declaration: "the kernel on the bun install line",
+    pattern: /(bun add\s+@smthrs\/platform-bun@\S+\s+effect\s+@smthrs\/kernel@)([^\s`]+)()/
+  })),
   // The build pages declare the CLI and the authoring package as exact
   // devDependencies, at the candidate the pages document.
   ...[

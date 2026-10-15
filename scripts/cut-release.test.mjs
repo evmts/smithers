@@ -82,8 +82,8 @@ const seededSources = {
   "packages/smithers/flows/docs/quickstart.md": "pnpm add @smthrs/flows@0.1.0 effect\n",
   "packages/smithers/flows/platform-bun/README.md": "bun add @smthrs/platform-bun@0.1.0 effect\n",
   "packages/smithers/flows/platform-bun/docs/README.md": "bun add @smthrs/platform-bun@0.1.0 effect\n",
-  "packages/smithers/flows/platform-bun/docs/installation.md": "bun add @smthrs/platform-bun@0.1.0 effect\n",
-  "packages/smithers/flows/platform-bun/docs/quickstart.md": "bun add @smthrs/platform-bun@0.1.0 effect\n",
+  "packages/smithers/flows/platform-bun/docs/installation.md": "bun add @smthrs/platform-bun@0.1.0 effect @smthrs/kernel@0.1.0\n",
+  "packages/smithers/flows/platform-bun/docs/quickstart.md": "bun add @smthrs/platform-bun@0.1.0 effect @smthrs/kernel@0.1.0\n",
   // The build pages pin the CLI and the authoring package as devDependencies.
   ...Object.fromEntries(
     [

@@ -220,6 +220,83 @@ will skip. That reading holds when a step is added or removed and ids move,
 because `diff` pairs a moved step by its key, as
 [Node ids are positional](#node-ids-are-positional) shows.
 
+On a body built with `Flow.make`, `added` and `rekeyed` also list structural
+nodes: each `AndThen` that sequences steps, and the `FlowCall` at `root`. Their
+keys fold their children's keys, so they move whenever a child does, and they
+run no work. Count steps as the entries whose material body names an `action`.
+
+Create `replan.ts`. It appends a `Summarize` step to a two-step review and
+compares the two plans:
+
+```ts
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Action, Flow, Graph } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import * as Plan from "@smthrs/plan/Plan"
+import * as PlanDiff from "@smthrs/plan/PlanDiff"
+import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
+
+const ReadPr = Action.make("review/ReadPr", { payload: { pr: Schema.Number }, success: Schema.String })
+const RunTests = Action.make("review/RunTests", { payload: { diff: Schema.String }, success: Schema.String })
+const Summarize = Action.make("review/Summarize", { payload: { report: Schema.String }, success: Schema.String })
+
+const review = (summarize: boolean) =>
+  Flow.make("review/Review", {
+    payload: { pr: Schema.Number },
+    success: Schema.String,
+    body: (payload) => {
+      const tested = ReadPr.call(payload).pipe(Node.bindPlanned((diff) => RunTests.call({ diff })))
+      return summarize ? tested.pipe(Node.bindPlanned((report) => Summarize.call({ report }))) : tested
+    }
+  })
+
+const compile = (summarize: boolean) =>
+  Plan.compile({
+    planId: "review-4821",
+    flow: "review/Review",
+    nodes: Graph.drafts(Graph.build(review(summarize), { pr: 4821 }))
+  })
+
+/** A step is a node whose material body names an action; the rest only compose steps. */
+const isStep = (node: Plan.PlanNode) => {
+  const body = node.material.body
+  return typeof body === "object" && body !== null && "action" in body
+}
+
+const program = Effect.gen(function*() {
+  const previous = yield* compile(false)
+  const next = yield* compile(true)
+  const changes = PlanDiff.diff(previous, next)
+  const steps = new Set(next.nodes.filter(isStep).map((node) => node.id))
+  console.log({
+    added: changes.added,
+    rekeyed: changes.rekeyed.map((entry) => entry.id),
+    addedSteps: changes.added.filter((id) => steps.has(id)),
+    rekeyedSteps: changes.rekeyed.filter((entry) => steps.has(entry.id)).map((entry) => entry.id)
+  })
+}).pipe(Effect.provide(NodeCrypto.layer))
+
+await Effect.runPromise(program)
+```
+
+```bash
+node replan.ts
+```
+
+```text
+{
+  added: [ 'root.flow.andThen', 'root.flow.then' ],
+  rekeyed: [ 'root.flow', 'root' ],
+  addedSteps: [ 'root.flow.then' ],
+  rekeyedSteps: []
+}
+```
+
+One step was added: `Summarize`, at `root.flow.then`. `ReadPr` and `RunTests`
+moved under the new `AndThen` with the keys they had, so they are `unchanged`.
+The other three entries are structure: two `AndThen` nodes and the `FlowCall`.
+
 The command line prints the same comparison through
 [`smthrs flow plan`](/cli/flow), and the plan card it renders is what
 [`smthrs approvals approve`](/cli/approvals) binds a decision to.

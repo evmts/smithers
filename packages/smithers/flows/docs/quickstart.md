@@ -126,7 +126,9 @@ Error [PlatformError]: PermissionDenied: FileSystem.read (<path>): permission_re
 
 To see it, remove the rule in a fresh workspace or run under a new
 `executionId`. A completed `quickstart-1` replays from the journal and prints
-the note even after the rule is removed.
+the note even after the rule is removed. The refused execution is recorded as
+failed and replays that failure the same way, so after you restore the rule,
+run under a new `executionId` or delete `workspace/.flows`.
 
 An action that wants to report a denial rather than die on it catches the
 failure instead and returns what it found: a denial is an answer, and it is up
