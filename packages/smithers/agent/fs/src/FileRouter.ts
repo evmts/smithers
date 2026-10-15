@@ -156,7 +156,9 @@ export const scan = (config: ScanConfig): Effect.Effect<ScanResult, FsError, Fil
         segments,
         kind: kindOf(descriptor),
         sourcePath,
-        description: Option.some(descriptor.description),
+        // Discovery accepts an empty literal; it means no description, not a
+        // malformed route that would fail the scan for every sibling.
+        description: descriptor.description.length === 0 ? Option.none() : Option.some(descriptor.description),
         input: descriptor.input,
         output: descriptor.output,
         capabilities: descriptor.capabilities,

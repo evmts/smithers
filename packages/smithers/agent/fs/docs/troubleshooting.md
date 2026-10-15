@@ -117,6 +117,10 @@ The selected module could not be imported, or its default export is not a
 flow. Confirm the file parses, its dependencies resolve, and the default
 export satisfies `isFlow` from [@smthrs/core](/api/core).
 
+The message `The selected flow is not model-invocable` means the route says the
+flow is visible but the flow now declares `modelInvocable: false`. The route
+metadata is older than the flow. Scan the flow root again.
+
 Incur also reports this code for a route whose metadata load or projection
 exceeds five seconds. Sibling routes remain discoverable. Keep module
 initialization bounded and move long-running work into the flow invocation.

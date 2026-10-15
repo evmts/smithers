@@ -483,7 +483,7 @@ which never evaluates a flow module. Materializing the flow is `Route.load`.
 | `segments`       | `ReadonlyArray<string>`               | The NFC-normalized path segments.                                 |
 | `kind`           | `Kind`                                | How the body is stored on disk.                                   |
 | `sourcePath`     | `string`                              | The absolute path of the flow entry.                              |
-| `description`    | `Option.Option<string>`               | The discovered description.                                       |
+| `description`    | `Option.Option<string>`               | The discovered description; `none` when it is empty.              |
 | `input`          | `Descriptor.SchemaRef`                | The input schema locator, from [@smthrs/registry](/docs/reference/api/registry/). |
 | `output`         | `Descriptor.SchemaRef`                | The output schema locator.                                        |
 | `capabilities`   | `ReadonlyArray<string>`               | Declared capabilities.                                            |
@@ -569,4 +569,7 @@ module routes can be materialized here; Markdown and skill bodies are registry
 inputs rather than executable commands, and fail with `unsupported_body`. The module is imported through an escaped absolute
 file URL, so spaces, Unicode, percent signs, hashes, and query characters in
 the path name the intended file. An import failure, or a module whose default
-export is not a flow, fails with `load_failed`.
+export is not a flow, fails with `load_failed`. A route marked model-invocable
+whose imported flow declares `modelInvocable: false` also fails with
+`load_failed`, so a route captured before the author hid the flow cannot run
+it.

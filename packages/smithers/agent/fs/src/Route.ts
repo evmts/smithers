@@ -8,6 +8,7 @@ import type * as Flow from "@smthrs/core/Flow"
 import * as RuntimeFlow from "@smthrs/flow/Flow"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import { fileSpecifier } from "@smthrs/registry/Executable"
+import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
@@ -373,6 +374,10 @@ const exportMissing = (): FsError => loadFailed("The selected flow module has no
  * Only module routes can be materialized here. Markdown and skill bodies are
  * registry inputs, not executable commands in this private adapter.
  *
+ * A route marked model-invocable whose imported flow declares
+ * `modelInvocable: false` fails with `load_failed`, so route metadata captured
+ * before the author hid the flow cannot run it.
+ *
  * @category constructors
  * @since 0.1.0
  */
@@ -395,6 +400,12 @@ export const load = (
       catch: importFailed
     })
     if (RuntimeFlow.isFlow(module.default)) {
+      // Route metadata is caller-owned and can predate an edit that hid the
+      // flow, so the runtime declaration has the final word: a flow its author
+      // hid never reaches a model-facing surface.
+      if (route.modelInvocable && !Context.get(module.default.annotations, RuntimeFlow.ModelInvocable)) {
+        return yield* Effect.fail(loadFailed("The selected flow is not model-invocable"))
+      }
       return {
         name: module.default._tag,
         description: module.default.description,

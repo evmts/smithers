@@ -213,7 +213,7 @@ output fails `encode_failed`.
 | `duplicate_route`        | Two routes claimed one command identity, `self` included.        |
 | `invalid_route`          | Route metadata violated its immutable contract.                  |
 | `resource_limit`         | A bounded command, scan, or trie exceeded its limit.             |
-| `load_failed`            | The selected module could not be imported or exports no flow.    |
+| `load_failed`            | The module could not be imported, exports no flow, or hides it.  |
 | `unsupported_body`       | A non-module route was sent to the loader.                       |
 | `unsupported_schema`     | A schema locator or schema cannot describe command input.        |
 | `decode_failed`          | Input failed schema decoding or exceeded the JSON bounds.        |

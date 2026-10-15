@@ -101,6 +101,31 @@ export default ({ capabilities: [], effects: undefined, input: Schema.Void, outp
     }
   })
 
+  it("keeps scanning when one flow declares an empty description", async () => {
+    const temporary = await mkdtemp(join(tmpdir(), "smithers-fs-empty-description-"))
+    try {
+      const source = (description: string) =>
+        `import * as Schema from "effect/Schema"
+export default ({ input: Schema.Void, output: Schema.Unknown, description: ${JSON.stringify(description)} })
+`
+      await mkdir(join(temporary, "blank"), { recursive: true })
+      await mkdir(join(temporary, "named"), { recursive: true })
+      await writeFile(join(temporary, "blank", "flow.ts"), source(""))
+      await writeFile(join(temporary, "named", "flow.ts"), source("A named flow"))
+      const result = await Effect.runPromise(
+        FileRouter.scan({ root: temporary }).pipe(Effect.provide(platformLayer))
+      )
+      // Discovery accepts an empty literal, so one blank description must not
+      // fail the scan for every sibling route.
+      expect(result.routes.map((route) => [route.name, route.description])).toEqual([
+        ["blank", Option.none()],
+        ["named", Option.some("A named flow")]
+      ])
+    } finally {
+      await rm(temporary, { recursive: true, force: true })
+    }
+  })
+
   it("preserves discovery error codes and refuses hostile config", async () => {
     const missing = await Effect.runPromise(Effect.exit(
       FileRouter.scan({ root: "/definitely/missing/smithers-flows" }).pipe(Effect.provide(platformLayer))
