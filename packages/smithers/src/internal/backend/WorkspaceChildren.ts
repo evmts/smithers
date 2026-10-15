@@ -66,11 +66,12 @@ const target = async (c: Client, o: Values): Promise<Target> => {
   return { path: `${c.repoPath(o.repo ?? here?.slug)}/workspaces/${esc(id)}/children`, options: {} }
 }
 
-const count = (value: unknown): number => {
-  const n = Number(value)
-  if (!Number.isInteger(n) || n < 1) throw new UsageError({ message: "--count must be a positive whole number" })
+const positive = (flag: string, unit: string) => (value: unknown): number => {
+  const n = typeof value === "string" && value.trim() === "" ? Number.NaN : Number(value)
+  if (!Number.isInteger(n) || n < 1) throw new UsageError({ message: `--${flag} must be a positive whole number${unit}` })
   return n
 }
+const count = positive("count", ""), ttl = positive("ttl", " of seconds")
 
 /** @private
  * @since 1.0.0
@@ -80,7 +81,7 @@ export const workspaceChildren: Record<string, Handler> = {
     const { path, options } = await target(c, o)
     const body: Values = { count: count(o.count) }
     if (o.profile !== undefined) body.profile = str(o.profile)
-    if (o.ttl !== undefined) body.ttl_secs = Number(o.ttl)
+    if (o.ttl !== undefined) body.ttl_secs = ttl(o.ttl)
     return c.request("POST", path, body, options)
   },
   "workspace children list": async (c, _a, o) => {

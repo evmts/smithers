@@ -525,6 +525,15 @@ describe("box remote execution", () => {
     expect(request).toHaveBeenLastCalledWith("POST", "/api/repos/owner/repo/workspace/sessions/terminal/destroy")
     if (terminal === "failed") expect(exit).toHaveBeenCalledWith(1)
   })
+  it("refuses a terminal size that is not a whole number from 0 to 65535 before opening a session", async () => {
+    const { c, request } = await fixture()
+    for (const [flag, value] of [["cols", -5], ["cols", 1.5], ["rows", "x"], ["rows", 65536]] as const) {
+      await expect(workspaces["workspace shell"]!(c, { id: "box" }, { ...options, [flag]: value })).rejects.toThrow(
+        `--${flag}`
+      )
+    }
+    expect(request).not.toHaveBeenCalledWith("POST", "/api/repos/owner/repo/workspace/sessions", expect.anything())
+  })
   it("requires an actual terminal id", async () => {
     const { c, request } = await fixture()
     request.mockResolvedValue({})

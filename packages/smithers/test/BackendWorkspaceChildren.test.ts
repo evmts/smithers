@@ -137,4 +137,15 @@ describe("workspace children", () => {
     }
     expect(seen).toEqual([])
   })
+
+  it("refuses a ttl that is not a positive whole number of seconds", async () => {
+    const { seen, origin } = await backend()
+    const c = await machine(origin, { config: coding(origin), token: "t" })
+    for (const value of [0, -60, 1.5, "x", ""]) {
+      await expect(workspaceChildren["workspace children spawn"]!(c, {}, { count: 1, ttl: value })).rejects.toThrow(
+        "--ttl"
+      )
+    }
+    expect(seen).toEqual([])
+  })
 })

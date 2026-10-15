@@ -373,9 +373,17 @@ workspaces["workspace exec"] = async (c, a, o) => {
     throw reattach(c, error, requestID)
   }
 }
+const terminalSize = (flag: string, value: unknown): number => {
+  const n = value === undefined ? 0 : typeof value === "string" && value.trim() === "" ? Number.NaN : Number(value)
+  if (!Number.isInteger(n) || n < 0 || n > 65535) {
+    throw new UsageError({ message: `--${flag} must be a whole number from 0 (detect) to 65535` })
+  }
+  return n
+}
 workspaces["workspace shell"] = async (c, a, o) => {
+  const sizeCols = terminalSize("cols", o.cols), sizeRows = terminalSize("rows", o.rows)
   const id = await resolveID(c, a, o), path = c.repoPath(o.repo) + "/workspace/sessions"
-  const cols = Number(o.cols) || process.stdout.columns || 80, rows = Number(o.rows) || process.stdout.rows || 24
+  const cols = sizeCols || process.stdout.columns || 80, rows = sizeRows || process.stdout.rows || 24
   const session = object(await c.request("POST", path, { cols, rows, workspace_id: id }))
   if (!session.id) throw protocol("Terminal response omitted id")
   const auth = await c.session.require(),
