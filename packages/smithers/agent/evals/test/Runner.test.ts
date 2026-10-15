@@ -96,6 +96,20 @@ describe("Runner", () => {
     expect(calls).toBe(0)
   })
 
+  it("counts a case named __proto__ in the run's trial aggregate", async () => {
+    const suite = await suiteOf("proto", [binding], [
+      { name: "__proto__", input: 0, expected: 1 },
+      { name: "solid", input: 1, expected: 1 }
+    ])
+    const executor = executorFor((suiteCase) =>
+      Effect.succeed({ output: suiteCase.input, stepKey: suiteCase.name, latencyMs: 0, target })
+    )
+    const run = await Effect.runPromise(Runner.run(suite, runOptions).pipe(Effect.provide(executor)))
+    expect(run.trials?.cases).toBe(2)
+    expect(run.trials?.passAt1).toBe(0.5)
+    expect(Object.keys(run.trials?.perCase ?? {})).toEqual(["__proto__", "solid"])
+  })
+
   it("bounds k by the suite's own trials when the run names none", async () => {
     const suite = await Effect.runPromise(
       Suite.make({

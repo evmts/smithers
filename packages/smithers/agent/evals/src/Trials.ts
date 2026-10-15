@@ -137,11 +137,12 @@ const mean = (values: ReadonlyArray<number>): number =>
  */
 export const aggregate = (cases: Readonly<Record<string, ReadonlyArray<boolean>>>, k: number): Aggregate => {
   if (!Number.isInteger(k) || k < 1) throw invalid(`k must be a positive integer, received ${k}`, "k")
-  const perCase: Record<string, Summary> = {}
-  for (const [name, outcomes] of Object.entries(cases)) {
+  const entries = Object.entries(cases).map(([name, outcomes]): [string, Summary] => {
     if (outcomes.length === 0) throw invalid(`Case '${name}' has no runs`, `cases['${name}']`)
-    perCase[name] = summarize(outcomes, Math.min(k, outcomes.length))
-  }
+    return [name, summarize(outcomes, Math.min(k, outcomes.length))]
+  })
+  // fromEntries defines own properties, so a case named `__proto__` stays a case.
+  const perCase: Record<string, Summary> = Object.fromEntries(entries)
   const summaries = Object.values(perCase)
   return {
     cases: summaries.length,

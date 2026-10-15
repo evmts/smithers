@@ -738,7 +738,7 @@ export const run = (
           sampleId: n === 1 ? sampleId : tupleKey(sampleId, String(index))
         })
       }), { concurrency: 1 })
-    const outcomes: Record<string, Array<boolean>> = {}
+    const outcomes: Array<[string, ReadonlyArray<boolean>]> = []
     const cases = suite.cases.map((suiteCase, index) => {
       const attempts = batches.map((batch) =>
         batch[index]!
@@ -747,7 +747,7 @@ export const run = (
         attempt.error === undefined && attempt.observations.length > 0 &&
         attempt.observations.every((observation) => observation.kind === "score" && observation.score === 1)
       )
-      outcomes[suiteCase.name] = passed
+      outcomes.push([suiteCase.name, passed])
       return {
         ...attempts[0]!,
         error: attempts.find((attempt) => attempt.error !== undefined)?.error,
@@ -760,7 +760,8 @@ export const run = (
       suite: suite.name,
       cases,
       observations: cases.flatMap((caseResult) => caseResult.observations),
-      trials: Trials.aggregate(outcomes, k),
+      // fromEntries defines own properties, so a case named `__proto__` stays a case.
+      trials: Trials.aggregate(Object.fromEntries(outcomes), k),
       k
     }
   }).pipe(Effect.withSpan("Eval.run", { attributes: { suite: suite.name, runId: options.runId } }))

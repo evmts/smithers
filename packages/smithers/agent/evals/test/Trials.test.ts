@@ -107,6 +107,15 @@ describe("Trials.aggregate", () => {
     expect(aggregate.perCase.flaky!.passHatK).toBeCloseTo(0.25, 12)
   })
 
+  it("keeps a case named __proto__ as an own per-case entry", () => {
+    const cases = JSON.parse("{\"__proto__\":[false],\"solid\":[true]}") as Record<string, ReadonlyArray<boolean>>
+    const aggregate = Trials.aggregate(cases, 1)
+    expect(aggregate.cases).toBe(2)
+    expect(aggregate.passAt1).toBe(0.5)
+    expect(Object.keys(aggregate.perCase)).toEqual(["__proto__", "solid"])
+    expect(Object.getPrototypeOf(aggregate.perCase)).toBe(Object.prototype)
+  })
+
   it("aggregates no cases to zeros", () => {
     expect(Trials.aggregate({}, 1)).toEqual({ cases: 0, passAt1: 0, passAtK: 0, passHatK: 0, allPass: 0, perCase: {} })
   })
