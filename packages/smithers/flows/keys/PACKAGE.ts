@@ -1,9 +1,11 @@
 import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
 /** Standard package targets plus package-owned documentation generation. */
 import { Smithers } from "@smthrs/targets"
+import * as Input from "@smthrs/targets/Input"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  sources: Input.glob("{src,examples}/**/*.ts"),
   cwd: "packages/smithers/flows/keys"
 })
 
@@ -14,7 +16,10 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
  * so `//packages/...:bunTest` is the whole matrix and nothing central lists
  * which packages are in it.
  */
-const bunTest = Smithers.BunSuite({ cwd: "packages/smithers/flows/keys" })
+const bunTest = Smithers.BunSuite({
+  cwd: "packages/smithers/flows/keys",
+  sources: Input.glob("{src,examples}/**/*.ts")
+})
 
 /** Security review: `security` reviews the diff, `securityAudit` audits the package. */
 const securityReview = Smithers.SecurityReview({

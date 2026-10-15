@@ -44,6 +44,12 @@ export default tseslint.config(
       "unicorn/prefer-array-flat-map": "error"
     }
   },
+  {
+    files: ["examples/**/*.ts"],
+    extends: [tseslint.configs.recommended],
+    languageOptions: { parserOptions: { project: "./tsconfig.test.json", tsconfigRootDir: import.meta.dirname } },
+    settings: { "import/resolver": { typescript: { project: ["./tsconfig.test.json"] } } }
+  },
   ...jsdocConvention,
   ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)
 )
