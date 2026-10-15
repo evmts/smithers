@@ -173,7 +173,7 @@ defaults to 100. In all three options types it must be a safe integer from 1
 through `Journal.maxEntriesLimit` (10,000). Any other value is refused with
 `invalid` before reading the journal. `maxHistoryEntries` overrides
 `Options.maxHistoryEntries` for one call. `workspaceRoot` defaults to `.flows/forks` and only moves which lane
-the derived workspace name lands in. `retainWorkspace` keeps the child lane
+the derived workspace name lands in; an empty string is refused with `invalid`. `retainWorkspace` keeps the child lane
 registered after the service scope closes. `override` replaces one step's
 recorded result on the child; see [Fork a run](./guides/fork-a-run.md#edit-a-step-result). `rebind` replaces the child's recorded payload and carries named spawned
 children under new ids; see [Fork a run](./guides/fork-a-run.md#edit-the-input-and-carry-spawned-children).

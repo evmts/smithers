@@ -65,7 +65,8 @@ The child's worktree is checked out at the frame's recorded pointer, not at the
 parent's current tree.
 
 `ForkOptions.workspaceRoot` only moves which directory the derived name lands
-in. It defaults to `.flows/forks`:
+in. It defaults to `.flows/forks`, and an empty string is refused `invalid`
+before anything is read or reserved:
 
 ```ts
 yield * timeTravel.fork(position, { workspaceRoot: ".worktrees/forks" })

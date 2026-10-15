@@ -137,7 +137,8 @@ export type RewindResult = Rewind.Result
  *
  * The workspace name is derived from the child run id the fork mints, never
  * supplied; `workspaceRoot` only moves which lane that derived name lands in,
- * and defaults to `.flows/forks`. `maxHistoryEntries` caps the suffix the
+ * and defaults to `.flows/forks`. An empty `workspaceRoot` is refused
+ * `invalid` before the fork reads or reserves anything. `maxHistoryEntries` caps the suffix the
  * fork assesses for this one call, overriding {@link Options.maxHistoryEntries}.
  * `pageSize` pages that suffix read exactly as it pages a replay or a rewind.
  *
@@ -612,6 +613,11 @@ export const makeWith = (
             seq: decoded.frame.seq
           })
           yield* validatePageSize("fork", options?.pageSize)
+          // The lane path is `${workspaceRoot}/${name}`, so an empty root
+          // would place the lane at the filesystem root.
+          if (options?.workspaceRoot === "") {
+            return yield* Effect.fail(error("invalid", "fork workspaceRoot must be a non-empty path"))
+          }
           // Decoded before anything durable, like the page size: an untyped
           // caller's malformed override refuses rather than editing nothing.
           const override = options?.override === undefined ? undefined : yield* Schema.decodeUnknownEffect(

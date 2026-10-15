@@ -10,7 +10,7 @@ import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import { TestClock } from "effect/testing"
 import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
-import { layerWith, type Options, TimeTravel } from "../src/TimeTravel.ts"
+import { forkWorkspaceName, layerWith, type Options, TimeTravel } from "../src/TimeTravel.ts"
 import { TimeTravelStore } from "../src/TimeTravelStore.ts"
 
 const row: RunStore.RunRow = {
@@ -146,6 +146,7 @@ describe("TimeTravel fork options", () => {
     Effect.gen(function*() {
       const store = MemoryTimeTravelStore.make({ records })
       const reads: Array<{ readonly after: number | undefined; readonly limit: number }> = []
+      const lanes: Array<string> = []
       const entries: ReadonlyArray<JournalEvent.Entry> = records.map((record) => ({
         runId: record.runId as JournalEvent.RunId,
         seq: record.seq as JournalEvent.Seq,
@@ -172,7 +173,12 @@ describe("TimeTravel fork options", () => {
             Layer.succeed(TimeTravelStore)(store),
             Layer.succeed(RunStore.RunStore)(RunStore.makeNoop({ get: () => Effect.succeed(row) })),
             Layer.succeed(Journal.Journal)(journal),
-            Layer.succeed(Jj.Jj)(Jj.makeNoop({ workspaceAdd: () => Effect.void, workspaceForget: () => Effect.void })),
+            Layer.succeed(Jj.Jj)(
+              Jj.makeNoop({
+                workspaceAdd: (_name, path) => Effect.sync(() => void lanes.push(path)),
+                workspaceForget: () => Effect.void
+              })
+            ),
             CacheStore.layerNoop()
           )
         )
@@ -183,7 +189,7 @@ describe("TimeTravel fork options", () => {
           return yield* body(timeTravel)
         }).pipe(Effect.provide(layer))
       )
-      return { result, reads, store }
+      return { result, reads, store, lanes }
     })
 
   it.effect("pages the suffix it assesses at the caller's pageSize", () =>
@@ -209,6 +215,27 @@ describe("TimeTravel fork options", () => {
         expect(store.state().edges).toEqual([])
       }))
   }
+
+  it.effect("provisions the child's lane under the caller's workspaceRoot", () =>
+    Effect.gen(function*() {
+      const { lanes, result } = yield* withFork((timeTravel) => timeTravel.fork(position, { workspaceRoot: "lanes" }))
+
+      expect(lanes).toEqual([`lanes/${forkWorkspaceName(result.runId)}`])
+    }))
+
+  // An empty root used to build the lane path `/smithers-fork-...`: a
+  // directory at the filesystem root rather than a default or a refusal.
+  it.effect("refuses an empty workspaceRoot before reading the journal or minting a child", () =>
+    Effect.gen(function*() {
+      const { lanes, reads, result, store } = yield* withFork((timeTravel) =>
+        Effect.flip(timeTravel.fork(position, { workspaceRoot: "" }))
+      )
+
+      expect(result).toMatchObject({ code: "invalid", message: "fork workspaceRoot must be a non-empty path" })
+      expect(lanes).toEqual([])
+      expect(reads).toEqual([])
+      expect(store.state().forkIntents).toEqual([])
+    }))
 })
 
 /**
