@@ -611,8 +611,15 @@ export type SearchItem = z.infer<typeof SearchItemSchema>
  * @category schemas
  */
 export const SearchRefusalSchema = z.object({
-  /** The one sentence the person reads, in product words. Never an error message. */
-  sentence: z.string(),
+  /*
+   * The one sentence the person reads, in product words. Never an error
+   * message, and never empty: the card suppresses the result count whenever a
+   * refusal is present, so a blank sentence would take "0 results" away and
+   * put nothing in its place — the same silence
+   * [#3891](https://github.com/smithersai/smithers/issues/3891) reported,
+   * wearing the fix's clothes.
+   */
+  sentence: z.string().trim().min(1),
   /** Whose problem it is, in the one taxonomy every refusal uses. */
   fault: z.enum(PLUE_FAULTS)
 })

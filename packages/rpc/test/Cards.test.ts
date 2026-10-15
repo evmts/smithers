@@ -120,6 +120,18 @@ describe("the search card's refusal carries its verdict, not a bare sentence", (
     ) expect(withRefusal(refusal).success).toBe(false)
   })
 
+  /*
+   * A refusal takes the result count off the card. A sentence with nothing in
+   * it would therefore remove "0 results" and put nothing where it stood —
+   * the silence #3891 reported, reached through the field that fixed it. The
+   * wire refuses it rather than leaving the card to guess a sentence.
+   */
+  test("a sentence with no words in it is refused, and surrounding whitespace is not part of it", () => {
+    for (const sentence of ["", " ", "\n\t "]) expect(withRefusal({ sentence, fault: "user" }).success).toBe(false)
+    const card = CardSchema.parse({ ...search, payload: { ...search.payload, refusal: { sentence: "  The tracker would not list.\n", fault: "dependency" } } })
+    expect(card.kind === "search-results" ? card.payload.refusal : undefined).toEqual({ sentence: "The tracker would not list.", fault: "dependency" })
+  })
+
   test("a card that refused nothing carries no refusal at all", () => {
     expect(CardSchema.parse(JSON.parse(JSON.stringify(search)))).toEqual(search)
   })

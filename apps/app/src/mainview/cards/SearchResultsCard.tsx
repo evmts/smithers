@@ -53,8 +53,20 @@ const searchItemTestId: Readonly<Record<SearchItemKind, (ref: string) => string>
  * same args and is offered whether the run listed rows or refused; the notice
  * therefore carries no door of its own rather than a second one beside it.
  */
-const refusedFailure = (refusal: SearchRefusal): UserFailure =>
-  describedFailure("search.refused", { fault: refusal.fault, sentence: refusal.sentence, actions: [] }, refusal.sentence)
+const refusedFailure = (refusal: SearchRefusal): UserFailure => {
+  /*
+   * ONE normalized sentence fills both fields. `FailureNotice` withholds the
+   * Details control by comparing its TRIMMED detail against the sentence, so
+   * a verdict that arrived with a stray newline — a server's `message` is
+   * sliced to 240 characters before it is worded — would open a Details and
+   * print the same words a second time, and that control is precisely the
+   * signal this card uses to mean raw text got through. Normalizing here
+   * makes "no raw text to collapse" hold by construction rather than by an
+   * upstream trim nobody here can see.
+   */
+  const sentence = refusal.sentence.trim()
+  return describedFailure("search.refused", { fault: refusal.fault, sentence, actions: [] }, sentence)
+}
 
 export interface SearchResultsCardActions {
   readonly onRunCommand: RunDynamicCommand

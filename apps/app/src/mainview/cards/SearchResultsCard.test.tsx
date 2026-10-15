@@ -144,6 +144,22 @@ describe("the search-results card", () => {
     expect(notice?.querySelector("details")).toBeNull()
     expect(notice?.textContent).toBe(sentence)
   })
+
+  /*
+   * The no-Details property above held only while every sentence reaching this
+   * card happened to be trimmed upstream. It is the card's own signal for "raw
+   * text got through", so it must not depend on that: a verdict whose sentence
+   * carries a stray newline — a server's `message` is sliced to 240 characters
+   * before it is worded — would otherwise open a Details and print the same
+   * words twice, which reads as a raw detail the card never had.
+   */
+  test("a sentence that arrived with stray whitespace still paints once, with no detail control", () => {
+    const sentence = "The tracker would not list this repository's issues. Something Smithers reads from refused."
+    const { host } = render(refused({ sentence: `\n  ${sentence}\n`, fault: "dependency" }))
+    const notice = host.querySelector("[data-testid='search-results-refusal']")
+    expect(notice?.querySelector("details")).toBeNull()
+    expect(notice?.textContent).toBe(sentence)
+  })
 })
 
 const savedFile = (ref: string, args: string, flow = "file"): ResultsCard => ({
