@@ -41,7 +41,13 @@ caller.
 
 ## Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+Published on npm under the `next` tag. Install it with its `effect` peer:
+
+```sh
+npm install @smthrs/capability@next effect@^4.0.4
+```
+
+Name `@next` explicitly: `latest` still points at an older release candidate.
 
 ## Decide one request
 

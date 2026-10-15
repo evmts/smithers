@@ -7,7 +7,13 @@ sidebar:
 
 ## Install the package
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+Published on npm under the `next` tag. Install it with its `effect` peer:
+
+```sh
+npm install @smthrs/capability@next effect@^4.0.4
+```
+
+Name `@next` explicitly: `latest` still points at an older release candidate.
 
 The package requires Node.js 26.4.0 or later and ships as both ESM and
 CommonJS with TypeScript declarations. It has one runtime dependency,

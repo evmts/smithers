@@ -13,7 +13,8 @@ model: the package decides, and the caller acts.
 ## Prerequisites
 
 - Node.js 26.4.0 or later.
-- The package installed. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+- The package and its `effect` peer installed:
+  `npm install @smthrs/capability@next effect@^4.0.4`.
 
 ## Parse the configured patterns into rules
 
