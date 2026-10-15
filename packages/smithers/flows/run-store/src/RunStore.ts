@@ -1872,6 +1872,14 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
               `
             yield* consensus.release(runId, owner)
             yield* recordTransition(runId, "released", owner, null)
+            // A steal claim pending against this still-fenced owner was just
+            // cleared from the row. Release it from the strategy too, or its
+            // lease keeps a claim no row shows and refuses every later claim.
+            const claimant = ownerFromColumns(row.claimHostId, row.claimPid, row.claimNonce)
+            if (claimant) {
+              yield* consensus.release(runId, claimant)
+              yield* recordTransition(runId, "released", claimant, row.claimedAtMs)
+            }
             if (terminalStatuses.has(toStatus)) {
               yield* afterCommit(Metric.update(ObservabilityMetric.runThroughput, 1), sql)
             }
