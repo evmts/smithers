@@ -18,8 +18,8 @@ behind `any`, and never rewrites or resumes 0.x run state.
 smithers-migrate
 ```
 
-Not on npm yet; [Installation](./installation.md) runs it from a source
-checkout.
+Install it from npm with `npx @smthrs/migrate@next`;
+[Installation](./installation.md) covers every way to run it.
 
 That command plans. It reads the project, decides what each unit of work would
 be, writes `.smithers-migrate/report.md`, and changes nothing else. You read

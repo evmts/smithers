@@ -7,16 +7,15 @@ sidebar:
 
 ## Availability
 
-Not on npm yet. Run it from a source checkout of the
-[smithers repository](https://github.com/smithersai/smithers):
+The package is published on npm under the `next` tag. Run it once, without
+installing it, from the root of the project you are migrating:
 
 ```bash
-git clone https://github.com/smithersai/smithers.git
-cd smithers
-pnpm install
-pnpm --filter @smthrs/migrate build
-alias smithers-migrate="node $PWD/packages/smithers/migrate/dist/esm/flow/bin.js"
+npx @smthrs/migrate@next
 ```
+
+Name `@next` explicitly: the `latest` tag still points at an older release
+candidate.
 
 The package ships one executable, `smithers-migrate`. Run it from the project
 root. With
@@ -26,7 +25,12 @@ the report.
 ## Install it as a project dependency
 
 Install the package when you want the scanner API in your own script, or when
-you want the tool pinned in the project you are migrating. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli).
+you want the tool pinned in the project you are migrating:
+
+```bash
+npm install --save-dev @smthrs/migrate@next
+npx smithers-migrate
+```
 
 The package requires Node.js 26.4.0 or later, and ships as both ESM and
 CommonJS with TypeScript declarations.
@@ -45,7 +49,7 @@ is a development dependency, not part of the published runtime.
 ## Run it as a CLI verb
 
 Once the project is on 1.0, the same entry point is reachable as a verb of the
-Smithers CLI. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli).
+Smithers CLI, published as `@smthrs/cli@next`:
 
 ```bash
 smthrs migrate --scan

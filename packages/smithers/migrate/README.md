@@ -14,15 +14,20 @@ Upgrades a Smithers 0.x (JSX) project to the Smithers 1.0 authoring model and wr
 
 ## Availability
 
-Not on npm yet. Run it from a source checkout of the [smithers repository](https://github.com/smithersai/smithers):
+Published on npm under the `next` tag. Run it in the root of the project you are migrating:
 
 ```sh
-git clone https://github.com/smithersai/smithers.git
-cd smithers
-pnpm install
-pnpm --filter @smthrs/migrate build
-alias smithers-migrate="node $PWD/packages/smithers/migrate/dist/esm/flow/bin.js"
+npx @smthrs/migrate@next
 ```
+
+Or pin it in the project and call its bin, `smithers-migrate`:
+
+```sh
+npm install --save-dev @smthrs/migrate@next
+npx smithers-migrate
+```
+
+Name `@next` explicitly: `latest` still points at an older release candidate.
 
 ## The shortest real example
 
