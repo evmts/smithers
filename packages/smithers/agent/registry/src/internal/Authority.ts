@@ -94,7 +94,9 @@ const tierForCapability = (capability: string): EffectTier => {
       !/^[A-Za-z]:\//.test(resource) &&
       !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(resource) &&
       firstSegment?.startsWith("~") !== true &&
-      !segments.some((segment) => segment.startsWith("$") || segment.includes("${") || /^%[^%]+%$/.test(segment))
+      // A `$` or a `%NAME%` pair anywhere in a segment is a variable reference:
+      // shells expand `out$HOME` and Windows expands `%HOMEDRIVE%%HOMEPATH%`.
+      !segments.some((segment) => segment.includes("$") || /%[^%]+%/.test(segment))
     ) {
       let depth = 0
       for (const segment of segments) {

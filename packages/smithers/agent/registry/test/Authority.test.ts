@@ -51,6 +51,7 @@ describe("Authority", () => {
     ["empty segments from a doubled separator", "fs:write:src//out"],
     ["a parent segment that stays inside the descent", "fs:write:src/nested/../out"],
     ["the workspace root itself", "fs:write:."],
+    ["a single percent sign, which is no variable", "fs:write:out/a%20b"],
     ["backslash separators", "fs:write:src\\nested"]
   ])("infers compensable from %s", (_label, capability) => {
     expect(inferEffectTier([capability])).toBe("compensable")
@@ -69,6 +70,9 @@ describe("Authority", () => {
     ["a shell variable prefix", "fs:write:$HOME/.bashrc"],
     ["an interpolated shell variable", "fs:write:${HOME}/x"],
     ["a Windows environment variable", "fs:write:%USERPROFILE%/x"],
+    ["adjacent Windows environment variables", "fs:write:%HOMEDRIVE%%HOMEPATH%/x"],
+    ["a Windows environment variable inside a segment", "fs:write:x%USERPROFILE%/y"],
+    ["a shell variable inside a segment", "fs:write:out$HOME/x"],
     ["a file URI", "fs:write:file:///etc/passwd"],
     ["an unrecognised action", "git:push"],
     ["the wildcard", "*"]
