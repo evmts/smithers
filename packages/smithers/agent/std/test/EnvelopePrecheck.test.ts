@@ -98,6 +98,65 @@ const refused: ReadonlyArray<Case> = [
     reads: ["/work/**"],
     writes: [],
     refusal: { code: "outside_declared_writes", path: "/work/out" }
+  },
+  // Every bash output redirection writes its target. `&` and `|` are command
+  // separators, so a scan that split `>|` or `&>` into two tokens saw the
+  // target as the next command's name and skipped it.
+  ...[
+    "echo hi >| /work/out",
+    "echo hi &> /work/out",
+    "echo hi &>> /work/out",
+    "echo hi >& /work/out",
+    "echo hi <> /work/out",
+    "> /work/out echo hi"
+  ].map((text): Case => ({
+    name: `the redirection target in ${text}`,
+    text,
+    reads: ["/work/**"],
+    writes: [],
+    refusal: { code: "outside_declared_writes", path: "/work/out" }
+  })),
+  // Grouping, substitution, and reserved words run the command they wrap, so
+  // the wrapped command is classified, not the punctuation or keyword.
+  ...[
+    "(rm /work/target)",
+    "{ rm /work/target; }",
+    "if true; then rm /work/target; fi",
+    "if rm /work/target; then :; fi",
+    "for f in a; do rm /work/target; done",
+    "while false; do :; done; ! rm /work/target",
+    "`rm /work/target`",
+    "x=$(rm /work/target)",
+    `echo "$(rm /work/target)"`,
+    "echo \"`rm /work/target`\"",
+    "case a in a) rm /work/target;; esac",
+    // A file-descriptor number belongs to its redirection, so the command
+    // after it is `rm`, not `2`.
+    "2>/dev/null rm /work/target",
+    "echo \"$(cat \"$(rm /work/target)\")\"",
+    "cat <(rm /work/target)"
+  ].map((text): Case => ({
+    name: `the delete in ${text}`,
+    text,
+    reads: ["/work/**"],
+    writes: [],
+    refusal: { code: "outside_declared_writes", path: "/work/target" }
+  })),
+  // Quotes are removed before a word is read as a path: `"/outs"ide/x` names
+  // `/outside/x`, not a relative path under the working directory.
+  {
+    name: "a path split by quotes",
+    text: `cat "/outs"ide/secret`,
+    reads: ["/work/**"],
+    writes: [],
+    refusal: { code: "outside_declared_reads", path: "/outside/secret" }
+  },
+  {
+    name: "a path with an escaped space",
+    text: "cat /outside/a\\ b",
+    reads: ["/work/**"],
+    writes: [],
+    refusal: { code: "outside_declared_reads", path: "/outside/a b" }
   }
 ]
 
@@ -136,8 +195,50 @@ const accepted: ReadonlyArray<Case> = [
     reads: ["/work/**"],
     writes: [],
     refusal: undefined
+  },
+  {
+    name: "stderr duplicated onto stdout",
+    text: "cat /work/input 2>&1 | grep x",
+    reads: ["/work/**"],
+    writes: [],
+    refusal: undefined
+  },
+  {
+    name: "a read inside a command substitution",
+    text: `echo "$(cat /work/input)"`,
+    reads: ["/work/**"],
+    writes: [],
+    refusal: undefined
   }
 ]
+
+// Each nesting level costs the scan a pass and a stack frame; 50,000 levels
+// used to run for half a minute and then throw a RangeError out of the
+// pre-check instead of refusing.
+describe("nesting depth", () => {
+  const envelope = { reads: ["/work/**"], writes: [] }
+
+  it.each([
+    ["dollar substitutions", "$(".repeat(50_000) + "rm /work/a"],
+    ["substitutions inside double quotes", "echo \"$(" + "\"$(".repeat(50_000)],
+    ["one level past the bound", "$(".repeat(33) + "rm /work/a"]
+  ])("refuses %s nested past the bound", (_, text) => {
+    const refusal = outsideEnvelope(envelope, text, path)
+    expect(refusal?.code).toBe("invalid_input")
+    expect(refusal?.message).toContain("deeper than 32 levels")
+  })
+
+  it("classifies a command nested exactly at the bound", () => {
+    expect(outsideEnvelope(envelope, "$(".repeat(32) + "rm /work/a", path)).toMatchObject({
+      code: "outside_declared_writes",
+      path: "/work/a"
+    })
+  })
+
+  it("throws the refusal from the scan itself", () => {
+    expect(() => commandReferences(path, "$(".repeat(40))).toThrow("deeper than 32 levels")
+  })
+})
 
 describe("outsideEnvelope", () => {
   for (const { name, reads, refusal, text, writes } of [...refused, ...accepted]) {
@@ -217,6 +318,98 @@ describe("commandReferences", () => {
       name: "drops a path named only inside a comment",
       command: "cat /work/in # /outside/secret.txt",
       expected: [{ access: "read", value: "/work/in" }]
+    },
+    {
+      name: "reads a here-string and a here-document delimiter as text",
+      command: "cat <<< /outside/a; cat <<- /outside/b",
+      expected: []
+    },
+    {
+      name: "reads a duplicated input descriptor's target",
+      command: "cat <& /work/in",
+      expected: [{ access: "read", value: "/work/in" }]
+    },
+    {
+      name: "takes a copy's destination from its arguments, not its redirection",
+      command: "cp /work/a /work/b 2> /work/log",
+      expected: [
+        { access: "read", value: "/work/a" },
+        { access: "write", value: "/work/b" },
+        { access: "write", value: "/work/log" }
+      ]
+    },
+    {
+      name: "reads an unclosed substitution to the end of the text",
+      command: "echo $(rm /work/a",
+      expected: [{ access: "write", value: "/work/a" }]
+    },
+    {
+      name: "reads an arithmetic expansion as no command",
+      command: "echo $((1 + 2)) /work/a",
+      expected: [{ access: "read", value: "/work/a" }]
+    },
+    {
+      name: "joins a line continuation into one command",
+      command: "rm \\\n  /work/a",
+      expected: [{ access: "write", value: "/work/a" }]
+    },
+    {
+      name: "keeps a quoted backslash and an escaped quote in the word",
+      command: `cat "/work/a\\\"b" '/work/c\\d' /work/e\\`,
+      expected: [
+        { access: "read", value: "/work/a\"b" },
+        { access: "read", value: "/work/c\\d" },
+        { access: "read", value: "/work/e\\" }
+      ]
+    },
+    {
+      name: "reads every substitution in a double-quoted word",
+      command: "echo \"`cat /work/a` $(cat '/work/(b)') \\$x\"",
+      expected: [{ access: "read", value: "/work/a" }, { access: "read", value: "/work/(b)" }]
+    },
+    {
+      name: "skips an escaped parenthesis and a quoted span inside a substitution",
+      command: `x=$(rm "/work/a" \\) ')' )`,
+      expected: [{ access: "write", value: "/work/a" }]
+    },
+    {
+      name: "reads a backtick substitution nested in a dollar substitution",
+      command: "echo $(cat `rm /work/a)`)",
+      expected: [{ access: "write", value: "/work/a" }]
+    },
+    {
+      name: "skips an escaped backtick inside a backtick substitution",
+      command: "`rm /work/a \\` x`",
+      expected: [{ access: "write", value: "/work/a" }]
+    },
+    {
+      name: "reads an unclosed quote inside a substitution to the end of the text",
+      command: "echo $(rm /work/a 'x",
+      expected: [{ access: "write", value: "/work/a" }]
+    },
+    {
+      name: "joins a line continuation inside a word and inside double quotes",
+      command: "rm /work/a\\\nb \"/work/c\\\nd\"",
+      expected: [{ access: "write", value: "/work/ab" }, { access: "write", value: "/work/cd" }]
+    },
+    {
+      name: "reads an unclosed quote to the end of the text",
+      command: "cat '/work/a",
+      expected: [{ access: "read", value: "/work/a" }]
+    },
+    {
+      name: "keeps a trailing backslash in an unclosed double quote",
+      command: "cat \"/work/a\\",
+      expected: [{ access: "read", value: "/work/a\\" }]
+    },
+    {
+      name: "separates words at any blank",
+      command: "rm\v/work/a\f/work/b\u00a0/work/c",
+      expected: [
+        { access: "write", value: "/work/a" },
+        { access: "write", value: "/work/b" },
+        { access: "write", value: "/work/c" }
+      ]
     },
     {
       name: "reads no path from a command that names none",

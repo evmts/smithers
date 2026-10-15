@@ -55,37 +55,251 @@ export interface PathReference {
   readonly value: string
 }
 
-const commandSeparators = new Set(["&&", "||", ";", "|", "&", "\n"])
-const redirections = new Set([">", ">>", "<", "<<"])
+const commandSeparators = new Set(["&&", "||", ";", ";;", ";&", ";;&", "|", "|&", "&", "\n", "(", ")"])
+const writeRedirections = new Set([">", ">>", ">|", "&>", "&>>", ">&", "<>"])
+const readRedirections = new Set(["<", "<&"])
+// A here-document delimiter and a here-string are text, not file names.
+const textRedirections = new Set(["<<", "<<-", "<<<"])
+const isRedirection = (token: Token): boolean =>
+  token.operator &&
+  (writeRedirections.has(token.text) || readRedirections.has(token.text) || textRedirections.has(token.text))
+// Longest first, so `&>>` is not read as `&` then `>>`.
+const operators = [
+  ";;&",
+  "&>>",
+  "<<<",
+  "<<-",
+  ";;",
+  ";&",
+  "&&",
+  "||",
+  "|&",
+  "&>",
+  ">>",
+  ">|",
+  ">&",
+  "<>",
+  "<<",
+  "<&",
+  "\n",
+  ";",
+  "|",
+  "&",
+  "(",
+  ")",
+  ">",
+  "<"
+]
+// Reserved words and grouping braces open or close a compound command; the
+// command they wrap stands after them.
+const reservedWords = new Set([
+  "!",
+  "{",
+  "}",
+  "case",
+  "do",
+  "done",
+  "elif",
+  "else",
+  "esac",
+  "fi",
+  "for",
+  "function",
+  "if",
+  "in",
+  "select",
+  "then",
+  "until",
+  "while"
+])
 const writeCommands = new Set(["chmod", "chown", "mkdir", "rm", "rmdir", "tee", "touch", "truncate", "unlink"])
 const destinationCommands = new Set(["cp", "install", "mv"])
 const prefixWrappers = new Set(["env", "nice", "time", "sudo", "nohup", "xargs", "command", "exec"])
 
-// Shell spaces may disappear, but a physical line ends one command. Retaining
-// LF prevents a command on line one from classifying every later line's paths.
-//
-// A word is one or more runs of bare characters and quoted sections, not a
-// bare run alone: `FOO="a b" rm /work/target` used to tokenize as `FOO="a`,
-// `b"`, `rm`, `/work/target`, and since only the first token carried an `=`
-// the command was read as `b"` rather than `rm` — so the delete was
-// classified as a read and a hermetic call with `writes: []` spawned. The
-// quoted alternatives come first inside the group so a quoted span is taken
-// whole; the bare class excludes quotes so the branches cannot overlap.
-const tokenize = (command: string): ReadonlyArray<string> =>
-  command.match(/\n|>>|<<|&&|\|\||[<>;|&]|(?:"(?:\\.|[^"\\])*"|'[^']*'|[^\s<>;|&"']+)+/g) ?? []
-
-const unquote = (token: string): string => {
-  const first = token[0]
-  const last = token[token.length - 1]
-  return token.length >= 2 && (first === "'" || first === "\"") && last === first
-    ? token.slice(1, -1)
-    : token
+/**
+ * One lexical unit of shell text: an operator, or a word with its quotes
+ * removed. A command substitution inside a word stands as `$()` in the word;
+ * its body is scanned as a command of its own.
+ */
+interface Token {
+  readonly operator: boolean
+  readonly text: string
 }
 
-const pathValue = (token: string): string =>
-  unquote(token)
-    .replace(/^\$\(+/, "")
-    .replace(/[),]+$/, "")
+interface Lexed {
+  readonly tokens: ReadonlyArray<Token>
+  readonly substitutions: ReadonlyArray<string>
+}
+
+// The end of a `$(` body that starts at `from`: the index of its closing
+// parenthesis, skipping quoted spans and nested parentheses. An unclosed body
+// runs to the end of the text, which is how a fail-closed scan must read it.
+// Substitutions and quotes nest without limit in a shell, but each level
+// costs this scan a pass over the rest of the text and a stack frame. Fifty
+// thousand `$(` used to run for half a minute and then overflow the stack, so
+// past this depth the text is refused rather than scanned.
+const maxNesting = 32
+
+const tooDeep = (): StdError.StdError =>
+  new StdError.StdError({
+    code: "invalid_input",
+    message: `Command nests substitutions or quotes deeper than ${maxNesting} levels`
+  })
+
+const substitutionEnd = (text: string, from: number, nesting: number): number => {
+  if (nesting > maxNesting) throw tooDeep()
+  let depth = 1
+  let index = from
+  while (index < text.length) {
+    const char = text[index]!
+    if (char === "\\") {
+      index += 2
+    } else if (char === "'") {
+      const close = text.indexOf("'", index + 1)
+      index = close === -1 ? text.length : close + 1
+    } else if (char === "\"") {
+      index = doubleQuoteEnd(text, index + 1, nesting + 1) + 1
+    } else if (char === "`") {
+      index = backtickEnd(text, index + 1) + 1
+    } else {
+      if (char === "(") depth++
+      if (char === ")" && --depth === 0) return index
+      index++
+    }
+  }
+  return text.length
+}
+
+const backtickEnd = (text: string, from: number): number => {
+  let index = from
+  while (index < text.length && text[index] !== "`") index += text[index] === "\\" ? 2 : 1
+  return Math.min(index, text.length)
+}
+
+const doubleQuoteEnd = (text: string, from: number, nesting: number): number => {
+  if (nesting > maxNesting) throw tooDeep()
+  let index = from
+  while (index < text.length && text[index] !== "\"") {
+    const char = text[index]!
+    if (char === "\\") index += 2
+    else if (char === "`") index = backtickEnd(text, index + 1) + 1
+    else if (char === "$" && text[index + 1] === "(") index = substitutionEnd(text, index + 2, nesting + 1) + 1
+    else index++
+  }
+  return Math.min(index, text.length)
+}
+
+// A hand-rolled lexer rather than one regular expression: a word is any run
+// of bare characters, quoted spans, and substitutions, and a substitution can
+// hold quotes and operators of its own. Splitting on operator characters
+// alone let `echo "$(rm /work/target)"` hide a delete inside one quoted word,
+// read `>|` as a pipe that turned the target into the next command's name,
+// and read `(rm /work/target)` as a command named `(rm`.
+//
+// Quotes are removed from a word's text, because `"/outs"ide/x` names
+// `/outside/x`; keeping the quotes made it a relative path under the
+// working directory.
+// Sticky, so the match starts at `lastIndex` without copying the rest of the
+// text for every word.
+const descriptorPattern = /\d+(?=[<>])/y
+
+const lex = (command: string, nesting: number): Lexed => {
+  const tokens: Array<Token> = []
+  const substitutions: Array<string> = []
+  let index = 0
+  const substitution = (from: number, to: number): string => {
+    substitutions.push(command.slice(from, to))
+    return "$()"
+  }
+  while (index < command.length) {
+    const char = command[index]!
+    // Every blank the word loop stops at must be skipped here, or the lexer
+    // would push an empty word without advancing.
+    if (char !== "\n" && /\s/.test(char)) {
+      index++
+      continue
+    }
+    if (char === "\\" && command[index + 1] === "\n") {
+      index += 2
+      continue
+    }
+    if (char === "#") {
+      while (index < command.length && command[index] !== "\n") index++
+      continue
+    }
+    // A file-descriptor number belongs to the redirection after it: in
+    // `2>/dev/null rm /work/target` the command is `rm`, not `2`.
+    descriptorPattern.lastIndex = index
+    const descriptor = descriptorPattern.exec(command)
+    if (descriptor !== null) {
+      index += descriptor[0].length
+      continue
+    }
+    const operator = operators.find((candidate) => command.startsWith(candidate, index))
+    if (operator !== undefined) {
+      tokens.push({ operator: true, text: operator })
+      index += operator.length
+      continue
+    }
+    let text = ""
+    while (index < command.length) {
+      const next = command[index]!
+      if (/[\s<>;|&()]/.test(next)) break
+      if (next === "\\") {
+        // A backslash escapes shell syntax. Before any other character it is
+        // kept, so `C:\work\input` stays the path it names on Windows rather
+        // than collapsing to a word the scan cannot see as a path.
+        const escaped = command[index + 1] ?? ""
+        if (escaped !== "\n") text += /[\s<>;|&()'"`$\\#]/.test(escaped) ? escaped : `\\${escaped}`
+        index += 2
+      } else if (next === "'") {
+        const close = command.indexOf("'", index + 1)
+        const end = close === -1 ? command.length : close
+        text += command.slice(index + 1, end)
+        index = end + 1
+      } else if (next === "\"") {
+        const end = doubleQuoteEnd(command, index + 1, nesting + 1)
+        let inner = index + 1
+        while (inner < end) {
+          const quoted = command[inner]!
+          if (quoted === "\\" && /[$`"\\\n]/.test(command[inner + 1] ?? "")) {
+            if (command[inner + 1] !== "\n") text += command[inner + 1]
+            inner += 2
+          } else if (quoted === "`") {
+            const close = backtickEnd(command, inner + 1)
+            text += substitution(inner + 1, close)
+            inner = close + 1
+          } else if (quoted === "$" && command[inner + 1] === "(") {
+            const close = substitutionEnd(command, inner + 2, nesting + 2)
+            text += substitution(inner + 2, close)
+            inner = close + 1
+          } else {
+            text += quoted
+            inner++
+          }
+        }
+        index = end + 1
+      } else if (next === "`") {
+        const close = backtickEnd(command, index + 1)
+        text += substitution(index + 1, close)
+        index = close + 1
+      } else if (next === "$" && command[index + 1] === "(") {
+        const close = substitutionEnd(command, index + 2, nesting + 1)
+        text += substitution(index + 2, close)
+        index = close + 1
+      } else {
+        text += next
+        index++
+      }
+    }
+    tokens.push({ operator: false, text })
+  }
+  return { tokens, substitutions }
+}
+
+// A parenthesis is an operator to the lexer, so one left in a word was quoted
+// and is part of the name; only a trailing comma is punctuation.
+const pathValue = (token: string): string => token.replace(/,+$/, "")
 
 const isPathToken = (path: Path.Path, token: string): boolean =>
   token === "." ||
@@ -96,71 +310,81 @@ const isPathToken = (path: Path.Path, token: string): boolean =>
   /^[A-Za-z]:[\\/]/.test(token) ||
   token.includes("/")
 
-const segmentReferences = (path: Path.Path, tokens: ReadonlyArray<string>): ReadonlyArray<PathReference> => {
-  const commentIndex = tokens.findIndex((token) => token.startsWith("#"))
-  const active = commentIndex === -1 ? tokens : tokens.slice(0, commentIndex)
-  const hasWrapper = active.some((token) => prefixWrappers.has(path.basename(pathValue(token))))
-  let commandIndex = active.findIndex((token) =>
-    !redirections.has(token) &&
-    !token.includes("=") &&
-    !prefixWrappers.has(path.basename(pathValue(token))) &&
-    !token.startsWith("-") &&
-    token !== ""
+const segmentReferences = (path: Path.Path, tokens: ReadonlyArray<Token>): ReadonlyArray<PathReference> => {
+  // The word after a redirection operator is its target, never the command.
+  const isTarget = (index: number): boolean => index > 0 && isRedirection(tokens[index - 1]!)
+  const isWord = (index: number): boolean => !tokens[index]!.operator && !isTarget(index)
+  const name = (index: number): string => path.basename(pathValue(tokens[index]!.text))
+  const hasWrapper = tokens.some((_, index) => isWord(index) && prefixWrappers.has(name(index)))
+  let commandIndex = tokens.findIndex((token, index) =>
+    isWord(index) &&
+    !token.text.includes("=") &&
+    !prefixWrappers.has(name(index)) &&
+    !reservedWords.has(token.text) &&
+    !token.text.startsWith("-") &&
+    token.text !== ""
   )
   if (hasWrapper) {
     // Wrapper options can carry their own values. Prefer a later known
     // mutating command so an option value cannot lend it a read classification.
-    const mutatingIndex = active.findIndex((token) => {
-      const command = path.basename(pathValue(token))
-      return writeCommands.has(command) || destinationCommands.has(command)
-    })
+    const mutatingIndex = tokens.findIndex((_, index) =>
+      isWord(index) && (writeCommands.has(name(index)) || destinationCommands.has(name(index)))
+    )
     if (mutatingIndex !== -1) commandIndex = mutatingIndex
   }
-  if (commandIndex === -1) return []
 
-  const command = path.basename(pathValue(active[commandIndex]!))
+  const command = commandIndex === -1 ? "" : name(commandIndex)
   const candidates: Array<{ readonly index: number; readonly value: string }> = []
-  for (let index = 0; index < active.length; index++) {
-    const token = active[index]!
-    if (index === commandIndex || redirections.has(token) || token.startsWith("-")) continue
-    const value = pathValue(token)
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index]!
+    if (index === commandIndex || token.operator || (!isTarget(index) && token.text.startsWith("-"))) continue
+    if (isTarget(index) && textRedirections.has(tokens[index - 1]!.text)) continue
+    const value = pathValue(token.text)
     if (value !== "" && isPathToken(path, value)) candidates.push({ index, value })
   }
 
   const destinationIndex = destinationCommands.has(command)
-    ? candidates[candidates.length - 1]?.index
+    ? candidates.filter(({ index }) => !isTarget(index)).at(-1)?.index
     : undefined
 
   return candidates.map(({ index, value }) => {
-    const previous = active[index - 1]
-    const access: Access = previous === ">" || previous === ">>" ||
-        writeCommands.has(command) || destinationIndex === index
+    const access: Access = isTarget(index)
+      ? writeRedirections.has(tokens[index - 1]!.text) ? "write" : "read"
+      : writeCommands.has(command) || destinationIndex === index
       ? "write"
       : "read"
     return { access, value }
   })
 }
 
-/**
- * Every path token the shell text names, one segment at a time.
- *
- * @category pre-check
- * @since 1.0.0
- */
-export const commandReferences = (path: Path.Path, command: string): ReadonlyArray<PathReference> => {
-  const references: Array<PathReference> = []
-  let segment: Array<string> = []
-  for (const token of tokenize(command)) {
-    if (commandSeparators.has(token)) {
-      references.push(...segmentReferences(path, segment))
+const references = (path: Path.Path, command: string, nesting: number): ReadonlyArray<PathReference> => {
+  const { substitutions, tokens } = lex(command, nesting)
+  const found: Array<PathReference> = []
+  let segment: Array<Token> = []
+  for (const token of tokens) {
+    if (token.operator && commandSeparators.has(token.text)) {
+      found.push(...segmentReferences(path, segment))
       segment = []
     } else {
       segment.push(token)
     }
   }
-  references.push(...segmentReferences(path, segment))
-  return references
+  found.push(...segmentReferences(path, segment))
+  // A substitution runs its body as a command; its paths count like any other.
+  for (const body of substitutions) found.push(...references(path, body, nesting + 1))
+  return found
 }
+
+/**
+ * Every path token the shell text names, one segment at a time.
+ *
+ * @throws {StdError.StdError} `invalid_input` when substitutions or quotes nest
+ * deeper than the scan reads.
+ * @category pre-check
+ * @since 1.0.0
+ */
+export const commandReferences = (path: Path.Path, command: string): ReadonlyArray<PathReference> =>
+  references(path, command, 0)
 
 const resolvePath = (
   path: Path.Path,
@@ -213,7 +437,15 @@ export const outsideEnvelope = (
   // This lexical scan is intentionally only a fail-closed pre-check for
   // explicit path tokens. It cannot prove confinement; a kernel/host sandbox
   // must eventually enforce and report the complete read and write sets.
-  for (const reference of commandReferences(path, text)) {
+  let named: ReadonlyArray<PathReference>
+  try {
+    named = commandReferences(path, text)
+  } catch {
+    // The depth bound is the one failure the scan raises, and a text the scan
+    // cannot read is refused whatever the reason, never run unchecked.
+    return tooDeep()
+  }
+  for (const reference of named) {
     const resolved = resolvePath(path, cwd, reference.value)
     // /dev/* is the process plumbing every shell one-liner leans on:
     // `2>/dev/null`, `cat /dev/stdin`. Normalize first so a dot-dot segment
