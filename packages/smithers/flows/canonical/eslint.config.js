@@ -25,6 +25,15 @@ export default tseslint.config(
       "no-console": "error"
     }
   },
+  {
+    files: ["examples/**/*.ts"],
+    extends: [tseslint.configs.recommended],
+    languageOptions: {
+      parserOptions: { project: "./tsconfig.test.json", tsconfigRootDir: import.meta.dirname }
+    },
+    settings: { "import/resolver": { typescript: { project: ["./tsconfig.test.json"] } } },
+    rules: { "import/no-duplicates": "error", "no-console": "error" }
+  },
   ...jsdocConvention,
   ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)
 )

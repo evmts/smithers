@@ -1,13 +1,22 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
+import {
+  BuildAndCheckTypeScriptPackage,
+  ReviewDocsAgainstCode,
+  ReviewJsdocAgainstCode,
+  smithersReviewPrompt
+} from "@smthrs/repo-targets"
 /**
  * Standard package targets.
  *
  * `cwd` anchors every emitted tool run in this package directory.
  */
 import { Smithers } from "@smthrs/targets"
+import * as Input from "@smthrs/targets/Input"
+
+const sources = Input.glob("{src,examples}/**/*.ts")
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  sources,
   cwd: "packages/smithers/flows/canonical"
 })
 
@@ -18,7 +27,7 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
  * so `//packages/...:bunTest` is the whole matrix and nothing central lists
  * which packages are in it.
  */
-const bunTest = Smithers.BunSuite({ cwd: "packages/smithers/flows/canonical" })
+const bunTest = Smithers.BunSuite({ cwd: "packages/smithers/flows/canonical", sources })
 
 /** Exercises the emitted ESM and CommonJS exports after building the library. */
 const distSmoke = Smithers.NodeTest({
@@ -27,6 +36,40 @@ const distSmoke = Smithers.NodeTest({
   deps: [lib],
   cwd: "packages/smithers/flows/canonical"
 })
+
+/** Review changes to bytes that callers hash, persist, or compare across runtimes. */
+const reviewCanonicalBytes = Smithers.LlmLint({
+  summary: "Review canonical byte stability, bounded admission and immutable helper contracts.",
+  changes: Input.gitDiff({ base: "origin/main", paths: ["packages/smithers/flows/canonical/src/**"] }),
+  include: [Input.glob("//packages/smithers/flows/canonical/src/**")],
+  context: [
+    Input.file("//packages/smithers/flows/canonical/README.md"),
+    Input.glob("//packages/smithers/flows/canonical/docs/**/*.md")
+  ],
+  deps: [],
+  prompt: smithersReviewPrompt,
+  rubric: [
+    "1. Canonical bytes must remain RFC 8785 compliant: UTF-16 key order, finite number formatting, JSON escaping and explicit lone-surrogate policy.",
+    "2. A change to canonical bytes can invalidate persisted hashes and cache identities. Require an explicit compatibility note for such a change.",
+    "3. Bounded admission must enforce inclusive byte/node/member/depth limits before unbounded expansion, inspect data descriptors without getters, and detach/freeze ordinary JSON outputs.",
+    "4. Preserve ordinary versus strict admission differences: shared references, container-depth semantics, reserved keys and the trusted native-leaf exception.",
+    "5. Keep serializer failures located and preserve their original cause; diagnostic paths must escape ambiguous keys without reading rejected values.",
+    "6. Read-only map membership must be detached, and callbacks/iterators must expose no way to mutate backing membership."
+  ].join("\n"),
+  engine: "codex",
+  model: "gpt-6-luna",
+  batchSize: 2,
+  failOn: "error"
+})
+
+/** Compare public API changes with all colocated guides and references. */
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({
+  cwd: "packages/smithers/flows/canonical",
+  context: [Smithers.file("README.md"), Smithers.glob("docs/**/*.md")]
+})
+
+/** Check that changed exports still satisfy their documented contracts. */
+const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: "packages/smithers/flows/canonical" })
 
 /**
  * Security review: `security` reviews the diff against origin/main and
@@ -121,5 +164,20 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { bunTest, check, circular, distSmoke, docs, docsFiles, fmt, lib, lint, test, ...securityReview }
+  targets: {
+    bunTest,
+    check,
+    circular,
+    distSmoke,
+    docs,
+    docsFiles,
+    fmt,
+    lib,
+    lint,
+    reviewCanonicalBytes,
+    reviewDocsAgainstCode,
+    reviewJsdocAgainstCode,
+    test,
+    ...securityReview
+  }
 })
