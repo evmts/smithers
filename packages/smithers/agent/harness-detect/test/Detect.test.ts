@@ -137,6 +137,23 @@ describe("the candidate dirs", () => {
     expect(findBinary("claude", h)).toBe("\\\\server\\share\\bin\\claude.exe")
   })
 
+  test.each(["/../../outside.exe", "\\..\\..\\outside.exe"])(
+    "Windows rejects PATHEXT traversal %s before consulting files",
+    (extension) => {
+      const checked: Array<string> = []
+      const h: HarnessHost = {
+        ...host({ platform: "win32", home: "C:\\Users\\u", env: { PATH: "D:\\bin", PATHEXT: `${extension};.EXE` } }),
+        // Observe every lookup: malformed extensions must never escape a candidate directory.
+        isFile: (path) => {
+          checked.push(path)
+          return path === "C:\\Users\\u\\.local\\outside.exe" || path === "D:\\bin\\codex.exe"
+        }
+      }
+      expect(findBinary("codex", h)).toBe("D:\\bin\\codex.exe")
+      expect(checked.every((path) => !path.includes("outside.exe"))).toBe(true)
+    }
+  )
+
   test("Windows honors a PathExt spelled in any case", () => {
     const h = host({
       platform: "win32",

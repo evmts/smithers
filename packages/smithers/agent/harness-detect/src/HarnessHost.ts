@@ -125,7 +125,9 @@ export const findBinary = (name: string, host: HarnessHost): string | null => {
   // `claude.cmd`, native installers `codex.exe`. A bare `claude` beside them
   // is a POSIX shell shim Windows cannot launch.
   const names = windows
-    ? (variable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD").split(";").filter((extension) => extension !== "").map((
+    ? (variable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD").split(";").filter((extension) =>
+      extension !== "" && !/[/\\]/.test(extension)
+    ).map((
       extension
     ) => `${name}${extension.toLowerCase()}`)
     : [name]
