@@ -156,6 +156,9 @@ export type ExecuteError = typeof ExecuteError.Type
  *
  * The defaults mirror the 0.x bundle limits: 5 MB for the structured result
  * (the old manifest limit) and 100 MB for the patch (the old bundle total).
+ * A bound must be a non-negative safe integer: {@link execute} dies with a
+ * `TypeError` naming the field, before it acquires a machine, when one is
+ * `NaN`, infinite, negative, or fractional.
  *
  * @category models
  * @since 1.0.0
@@ -193,10 +196,23 @@ export const defaultLimits: ResolvedLimits = Object.freeze({
   diffBytes: 100 * 1024 * 1024
 })
 
+/**
+ * One bound over its default. A NaN or infinite bound compares false against
+ * every size and would silently disable the limit, so anything but a
+ * non-negative safe integer is a programmer error.
+ */
+const resolveLimit = (field: keyof ResolvedLimits, bound: number | undefined): number => {
+  if (bound === undefined) return defaultLimits[field]
+  if (!Number.isSafeInteger(bound) || bound < 0) {
+    throw new TypeError(`SandboxedFlow limits.${field} must be a non-negative safe integer, got ${bound}`)
+  }
+  return bound
+}
+
 /** The caller's bounds over the defaults, an omitted or undefined bound keeping the default. */
 const resolveLimits = (limits: Limits | undefined): ResolvedLimits => ({
-  resultBytes: limits?.resultBytes ?? defaultLimits.resultBytes,
-  diffBytes: limits?.diffBytes ?? defaultLimits.diffBytes
+  resultBytes: resolveLimit("resultBytes", limits?.resultBytes),
+  diffBytes: resolveLimit("diffBytes", limits?.diffBytes)
 })
 
 /**
@@ -242,6 +258,7 @@ export interface ExecuteOptions {
    * readback. Default ten minutes. It is measured on the platform timer, not
    * the ambient `Clock`, so it fires under a frozen test clock too. Infinite
    * durations disable the deadline; long finite durations use timer chunks.
+   * A negative duration dies with a `TypeError` before a machine is acquired.
    */
   readonly timeout?: Duration.Input | undefined
 }
@@ -472,15 +489,25 @@ const bundle = (entry: URL | string): Effect.Effect<Uint8Array, SandboxedFlowErr
   })
 
 /**
+ * The deadline in milliseconds, ten minutes when none is named. A negative
+ * budget is a programmer error, and a negative infinite one would read as
+ * "no deadline" below and switch the hang guard off.
+ */
+const resolveBudget = (timeout: Duration.Input | undefined): number => {
+  const budget = Duration.toMillis(timeout ?? Duration.minutes(10))
+  if (budget < 0) throw new TypeError(`SandboxedFlow timeout must not be negative, got ${budget} milliseconds`)
+  return budget
+}
+
+/**
  * A deadline on the wall clock, not the ambient `Clock`, for the reason
  * `SandboxConformance` states: `it.effect` runs under a frozen test clock
  * where `Effect.timeout` never fires, and a hang guard that depends on the
  * layer a host may freeze fails exactly when it is needed.
  */
-const expired = (deadline: Duration.Input): Effect.Effect<never, SandboxedFlowError> =>
+const expired = (budget: number): Effect.Effect<never, SandboxedFlowError> =>
   Effect.flatMap(
     Effect.callback<void>((resume) => {
-      const budget = Duration.toMillis(deadline)
       if (!Number.isFinite(budget)) return Effect.void
       const started = performance.now()
       let timer: ReturnType<typeof setTimeout>
@@ -496,7 +523,7 @@ const expired = (deadline: Duration.Input): Effect.Effect<never, SandboxedFlowEr
       Effect.fail(
         failure(
           "deadline_exceeded",
-          `the sandboxed execution did not finish within ${Duration.toMillis(deadline)} milliseconds`
+          `the sandboxed execution did not finish within ${budget} milliseconds`
         )
       )
   )
@@ -657,7 +684,8 @@ export const execute = <
     const capabilityCeiling = (yield* Flow.attenuateCapabilities(Flow.capabilityCeilings(flow.annotations))(
       CapabilitySet.current
     )).groups
-    const limits = resolveLimits(options.limits)
+    const limits = yield* Effect.sync(() => resolveLimits(options.limits))
+    const budget = yield* Effect.sync(() => resolveBudget(options.timeout))
     const runtime = options.runtime ?? "node"
     // The wire codecs of a flow's schemas are service-free for the same reason
     // a body's payload placeholders are: a JSON codec that needs a service to
@@ -778,7 +806,7 @@ export const execute = <
           return { output, work, capabilityCeiling }
         })
       ),
-      expired(options.timeout ?? Duration.minutes(10))
+      expired(budget)
     )
   })
 

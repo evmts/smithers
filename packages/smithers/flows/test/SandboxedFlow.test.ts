@@ -594,6 +594,30 @@ describe("sandbox limit boundaries", () => {
       expect(guest.streamed).toEqual([])
     }), 60_000)
 
+  // A NaN or infinite bound compares false against every size and so would
+  // disable the limit it names; a negative or fractional one asks the
+  // transport for a nonsensical byte count.
+  for (const field of ["resultBytes", "diffBytes"] as const) {
+    for (const bound of [Number.NaN, Number.POSITIVE_INFINITY, -1, 1.5]) {
+      it.live(`dies on a ${field} of ${bound} before acquiring a machine`, () =>
+        Effect.gen(function*() {
+          const acquired: Array<string> = []
+          const guest = yield* limitedGuest({ output: "x".repeat(10_000) })
+          const exit = yield* SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
+            provider: { acquire: (key) => Effect.suspend(() => (acquired.push(key), guest.provider.acquire(key))) },
+            session: "invalid-limit",
+            entry: pure,
+            limits: { [field]: bound }
+          }).pipe(Effect.exit)
+          expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true)
+          expect(Cause.pretty((exit as Exit.Failure<unknown, unknown>).cause)).toContain(
+            `SandboxedFlow limits.${field} must be a non-negative safe integer`
+          )
+          expect(acquired).toEqual([])
+        }), 60_000)
+    }
+  }
+
   it.live("stops a growing result at the byte budget plus one", () =>
     Effect.gen(function*() {
       const guest = yield* limitedGuest({ output: "x".repeat(100_000), resultSize: 1 })
@@ -620,6 +644,31 @@ describe("sandbox limit boundaries", () => {
         }))
         expect(failure.code).toBe("deadline_exceeded")
       }), 60_000)
+  }
+
+  // A negative budget is a programmer error, and a negative infinite one is
+  // not finite, so it would have switched the hang guard off.
+  for (const timeout of [Duration.millis(-5), Duration.millis(Number.NEGATIVE_INFINITY)]) {
+    it.live(
+      `dies on a ${Duration.toMillis(timeout)} millisecond budget before acquiring a machine`,
+      () =>
+        Effect.gen(function*() {
+          const acquired: Array<string> = []
+          const guest = yield* limitedGuest()
+          const exit = yield* SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
+            provider: { acquire: (key) => Effect.suspend(() => (acquired.push(key), guest.provider.acquire(key))) },
+            session: "negative-timeout",
+            entry: pure,
+            timeout
+          }).pipe(Effect.exit)
+          expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true)
+          expect(Cause.pretty((exit as Exit.Failure<unknown, unknown>).cause)).toContain(
+            "SandboxedFlow timeout must not be negative"
+          )
+          expect(acquired).toEqual([])
+        }),
+      60_000
+    )
   }
 
   for (const timeout of [Duration.infinity, Duration.days(30)]) {
