@@ -45,6 +45,23 @@ describe("shared SQL dialect", () => {
       expect((yield* Effect.exit(sql`INSERT INTO child VALUES(1000)`))._tag).toBe("Failure")
     })))
 
+  // The documented divergence, pinned so a caller comparing a non-string
+  // member (#3919) can read what each backend returns.
+  it.effect("extracts strings alike but non-strings as each backend's own scalar", () =>
+    run(Effect.gen(function*() {
+      const sql = yield* SqlClient
+      const pg = Dialect.isPostgres(sql)
+      const document = JSON.stringify({ s: "x", t: true, f: false, n: 7, z: null })
+      const member = (path: string) => Dialect.jsonText(sql, sql`${document}`, path)
+      const rows = yield* sql`SELECT ${member("$.s")} AS s, ${member("$.t")} AS t, ${member("$.f")} AS f,
+        ${member("$.n")} AS n, ${member("$.z")} AS z, ${member("$.missing")} AS missing`
+      expect(rows).toEqual([
+        pg
+          ? { s: "x", t: "true", f: "false", n: "7", z: null, missing: null }
+          : { s: "x", t: 1, f: 0, n: 7, z: null, missing: null }
+      ])
+    })))
+
   it.effect("executes and removes conditional, rejecting, ignoring and delete triggers", () =>
     run(Effect.gen(function*() {
       const sql = yield* SqlClient
