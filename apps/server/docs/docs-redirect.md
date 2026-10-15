@@ -139,11 +139,13 @@ for h in smithers.sh www canary api build bug status connectors cron deck downlo
 done
 ```
 
-## Deploy (needs a token holder)
+## Deploy
 
-Agents never mutate Cloudflare (`AGENTS.md`). The holder of a token with Workers
-Scripts and Workers Routes edit on account `dd3525a4132493566aeb38de533c8827` runs,
-from a clean `apps/server` checkout of origin/main:
+Deploying the Worker from pushed `main` is routine and needs no approval
+(`AGENTS.md`, Maintainer workflow). Destroying a Worker or a DNS record is not
+routine; ask the owner first. With a token that has Workers Scripts and Workers
+Routes edit on account `dd3525a4132493566aeb38de533c8827`, run from a clean
+`apps/server` checkout of origin/main:
 
 ```sh
 bun test src/docsRedirect.test.ts src/docsRedirect.workerd.test.ts
