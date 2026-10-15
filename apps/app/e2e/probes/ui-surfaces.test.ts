@@ -51,6 +51,19 @@ const open = async (width: number, theme: "light" | "dark", card?: string): Prom
 }
 
 const cards = fixtureCards()
+
+/*
+ * The agent rows the fixture declares, read off the fixture itself: a profile
+ * is a row of the target repository's flow catalog (controller/agents.ts), so
+ * the probe can only knock on a door the fixture actually renders. It used to
+ * name `implementation`, one of the `@smthrs/rpc/AgentRoles` seed ids that
+ * 9396d62f retired from this card because no host without `install` answers
+ * for them ([#3831](https://github.com/smithersai/smithers/issues/3831)), and
+ * the hardcoded name outlived the rows.
+ */
+const agentsCard = cards.find((card) => card.kind === "agents")
+const agentFlows = agentsCard !== undefined && "agents" in agentsCard.payload ? agentsCard.payload.agents : []
+
 for (const width of [1280, 390]) {
   for (const theme of ["light", "dark"] as const) {
     test(`every surface renders at ${width}px in ${theme} with no console error and no horizontal overflow`, async () => {
@@ -70,9 +83,28 @@ for (const width of [1280, 390]) {
   }
 }
 
-test("the surfaces answer the keyboard: a conversation row opens on Enter, a step row expands on Enter, a Runs door names its agent", async () => {
+test("the surfaces answer the keyboard: a Runs door names its agent flow, a conversation row opens on Enter, a step row expands on Enter, and the answered Agents card names its source", async () => {
   const { page, errors } = await open(1280, "light")
   try {
+    /*
+     * The Runs door goes first: a command is a transition, and the controller
+     * rewrites an open Agents card to the inventory this host answers for
+     * after every one of them. The seeded rows are the card's content until
+     * then, so the keyboard reaches them here and nowhere later.
+     */
+    expect(agentFlows.length).toBeGreaterThan(0)
+    for (const flow of agentFlows) {
+      const door = page.getByTestId(`agent-runs-${flow.id}`)
+      await door.waitFor()
+      expect(await door.count()).toBe(1)
+    }
+    const first = agentFlows[0]!
+    const runs = page.getByTestId(`agent-runs-${first.id}`)
+    await runs.focus()
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-testid"))).toBe(`agent-runs-${first.id}`)
+    await page.keyboard.press("Enter")
+    await page.waitForFunction(() => window.uiSurfaces.commands.some((command) => command.name === "runs.list"))
+    expect(await page.evaluate(() => window.uiSurfaces.commands.find((command) => command.name === "runs.list")?.args)).toContain(first.id)
     const row = page.locator(".thread-row-btn").first()
     await row.focus()
     await page.keyboard.press("Enter")
@@ -83,12 +115,16 @@ test("the surfaces answer the keyboard: a conversation row opens on Enter, a ste
     await page.keyboard.press("Enter")
     await page.waitForFunction(() => document.querySelector(".run-step[aria-expanded='true']") !== null)
     expect(await page.locator(".run-trace-pane").count()).toBe(1)
-    const runs = page.getByTestId("agent-runs-implementation")
-    await runs.focus()
-    await page.keyboard.press("Enter")
-    await page.waitForFunction(() => window.uiSurfaces.commands.some((command) => command.name === "runs.list"))
-    expect(await page.evaluate(() => window.uiSurfaces.commands.find((command) => command.name === "runs.list")?.args)).toContain("implementation")
+    /*
+     * What the card holds once the controller has answered: this fixture host
+     * has no repository to read a flow catalog from, so the card names that
+     * source and keeps no row. An inventory nothing answered for is not a Runs
+     * capability, and the empty list is not presented as a verdict.
+     */
+    const source = page.getByTestId("card-agents").locator("[data-agents-source]")
+    await source.waitFor()
+    expect(await source.getAttribute("data-agents-source")).toBe("no-repository")
+    expect(await page.getByTestId("card-agents").locator("[data-testid=\"agents-list\"] > li.agent-row").count()).toBe(0)
     expect(errors).toEqual([])
   } finally { await page.close() }
 }, 60_000)
-
