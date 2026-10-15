@@ -162,3 +162,25 @@ func TestSandboxOrphanReaperCreditsOnlyWorkspacesToTheWorkspaceGauge(t *testing.
 	assert.Equal(t, []activeVMDelta{{vmType: "workspace", delta: -1}}, metrics.activeVMs,
 		"only the workspace gives a workspace -1 back")
 }
+
+// The sweep runs in every worker replica, and a hosted API pod carries one:
+// four of them list the same candidate inside one five-minute tick, the first
+// DELETE transitions the row and the other three answer 404. Counting the
+// 404s would hand the workspace gauge four -1s for one workspace, which is
+// the same reading below the truth that the kind guard above exists to stop.
+func TestSandboxOrphanReaperCreditsOneWorkspaceOnlyOnTheDeleteThatTookIt(t *testing.T) {
+	rows := []runtimeports.ListOrphanedSandboxInstancesRow{
+		orphanRow("msb_raced", "workspace", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "running"),
+	}
+	taken := &orphanReaperVM{}
+	first := &fakeSandboxMetrics{}
+	assert.Equal(t, 1, NewSandboxOrphanReaper(&orphanReaperQuerier{rows: rows}, taken, first).Sweep(context.Background()))
+	assert.Equal(t, []activeVMDelta{{vmType: "workspace", delta: -1}}, first.activeVMs,
+		"the replica whose delete took the VM gives the one -1 back")
+
+	alreadyGone := &orphanReaperVM{deleteFn: func(string) error { return &sandbox.StatusError{StatusCode: 404} }}
+	later := &fakeSandboxMetrics{}
+	assert.Equal(t, 1, NewSandboxOrphanReaper(&orphanReaperQuerier{rows: rows}, alreadyGone, later).Sweep(context.Background()),
+		"an already-gone VM is still reclaimed, so the batch is not retried forever")
+	assert.Empty(t, later.activeVMs, "a 404 reclaimed nothing this replica was counting")
+}

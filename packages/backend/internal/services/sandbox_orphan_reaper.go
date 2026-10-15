@@ -108,23 +108,28 @@ func (s *SandboxOrphanReaper) Sweep(ctx context.Context) int {
 			continue
 		}
 		kind := strings.TrimSpace(row.ResourceKind.String)
-		// A 404 means the provider already reclaimed it; the controller still
+		// A 404 means the VM was already reclaimed; the controller still
 		// releases the reservation on its side, so treat it as success.
-		if err := s.sandbox.DeleteSandbox(ctx, vmID); err != nil && !vmAlreadyGone(err) {
+		err := s.sandbox.DeleteSandbox(ctx, vmID)
+		alreadyGone := err != nil && vmAlreadyGone(err)
+		if err != nil && !alreadyGone {
 			slog.Warn("sandbox orphan sweep: delete vm failed",
 				"vm_id", vmID, "resource_kind", kind, "resource_id", row.ResourceID.String, "error", err)
 			continue
 		}
 		slog.Info("sandbox orphan reclaimed",
 			"vm_id", vmID, "resource_kind", kind, "resource_id", row.ResourceID.String,
-			"observed_state", row.ObservedState, "created_at", row.CreatedAt)
-		// Only a running WORKSPACE VM was ever counted in the workspace
-		// active-VM gauge: workspace_lifecycle is its sole +1, an agent
-		// session has its own vm_type, and every other attributed kind has
-		// none. Giving the -1 back for a kind nothing incremented drives the
-		// gauge below the workspaces that really are up, which is a reading
-		// the gauge has no way to correct.
-		if s.metrics != nil && kind == resourceKindWorkspace && row.ObservedState == "running" {
+			"observed_state", row.ObservedState, "created_at", row.CreatedAt, "already_gone", alreadyGone)
+		// Only a running WORKSPACE VM this sweep is the first to delete was
+		// ever counted in the workspace active-VM gauge, once. The gauge's
+		// only +1 is a workspace's own provisioning and lifecycle; an agent
+		// session has its own vm_type and no other attributed kind has one at
+		// all, so a -1 for another kind drives the gauge below the workspaces
+		// that really are up. So does a second -1 for the same VM, and the
+		// sweep runs in every worker replica: four of them list the same
+		// candidate within one tick, the first DELETE transitions it and the
+		// rest answer 404. Neither reading is one the gauge can correct.
+		if s.metrics != nil && !alreadyGone && kind == resourceKindWorkspace && row.ObservedState == "running" {
 			s.metrics.AddSandboxActiveVMs("workspace", -1)
 		}
 		discarded++
