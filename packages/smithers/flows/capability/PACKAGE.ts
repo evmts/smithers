@@ -1,15 +1,41 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
 /**
  * Standard package targets.
  *
  * `cwd` anchors every emitted tool run in this package directory.
  */
 import { Smithers } from "@smthrs/targets"
+import * as Input from "@smthrs/targets/Input"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  sources: Input.glob("{src,examples}/**/*.ts"),
   cwd: "packages/smithers/flows/capability"
 })
+
+/**
+ * Changed public APIs against the package README, every docs page (concepts
+ * and guides included), and the site API reference page.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({
+  cwd: "packages/smithers/flows/capability",
+  context: [
+    Smithers.file("README.md"),
+    Smithers.glob("docs/**/*.md"),
+    Smithers.file("//apps/site/src/content/docs/docs/reference/api/capability.mdx")
+  ]
+})
+
+/**
+ * Changed exports against their own JSDoc.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: "packages/smithers/flows/capability" })
 
 /**
  * The package's own suite, re-run under Bun.
@@ -40,7 +66,12 @@ const securityReview = Smithers.SecurityReview({
         "matchesAction accepting an action outside the `<namespace>:*` prefix, such as `fs:*` selecting `fsx:read`.",
         "A matched resource containing `..` segments that escapes a `/root/**` grant because matching is textual."
       ],
-      paths: ["src/matches.ts", "src/internal/matchesAction.ts", "src/internal/metacharacters.ts"]
+      paths: [
+        "src/matches.ts",
+        "src/internal/matchesAction.ts",
+        "src/internal/hasDotSegment.ts",
+        "src/internal/metacharacters.ts"
+      ]
     },
     {
       id: "match-budget-fails-closed",
@@ -69,9 +100,10 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "evaluate computing configuredEffect from any ruleset other than rulesets[0].",
         "An empty rulesets array or no matching rule yielding allow instead of ask.",
-        "Last-match-wins order broken by early returns other than the budget veto."
+        "Last-match-wins order broken by early returns other than the budget veto.",
+        "A deny or ask rule matched with matches (every dot-segment form) instead of any form, so `x/../secrets/key` evades a deny on `secrets/key`."
       ],
-      paths: ["src/evaluate.ts", "src/Rule.ts", "src/RuleEffect.ts"]
+      paths: ["src/evaluate.ts", "src/Rule.ts", "src/RuleEffect.ts", "src/internal/hasDotSegment.ts"]
     },
     {
       id: "subsumes-overlap-conservative",
@@ -153,5 +185,18 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { bunTest, check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview }
+  targets: {
+    bunTest,
+    check,
+    circular,
+    docs,
+    docsFiles,
+    fmt,
+    lib,
+    lint,
+    reviewDocsAgainstCode,
+    reviewJsdocAgainstCode,
+    test,
+    ...securityReview
+  }
 })
