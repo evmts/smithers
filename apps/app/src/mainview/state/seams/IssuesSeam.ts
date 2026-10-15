@@ -187,6 +187,48 @@ const parseGithubListRow = (value: unknown): IssueListRow | null => {
   }
 }
 
+/** The sentence for a list read that answered a surface this index cannot read rows from (defensive: every read above answers an issue-list card or a sentence). */
+const ISSUE_INDEX_UNREADABLE = "The issue index could not be read for this repository."
+
+/**
+ * How the issue index read ended, as a closed vocabulary. The codes are the
+ * WHOLE diagnostic: nothing derived from the request or the answer joins
+ * them, so no repository, query, URL, header, credential or backend sentence
+ * can ride along.
+ *
+ * - `rows`: doors answered and rows were indexed.
+ * - `empty`: every door answered, and together they held nothing.
+ * - `read_refused`: the list read answered a sentence of its own.
+ * - `source_refused`: no rows, and the GitHub source refused.
+ * - `unreadable_view`: the read answered a surface with no rows to index.
+ */
+type IssueIndexReason = "rows" | "empty" | "read_refused" | "source_refused" | "unreadable_view"
+
+/**
+ * The issue index door's own record, through SeamContext.report — the
+ * operational ring and the client error sink, never the screen
+ * (state/OperationalFailures.ts dedupes a repeated key for a minute and
+ * keeps the last hundred).
+ *
+ * It records the EMPTY answers too, not only the refusals. An index that
+ * answered no rows is the production failure that could not be told apart
+ * from a correct empty tracker: `/search.issues` said `0 results` for the
+ * exact title `/issue 5` opened in the same session, and nothing on the
+ * screen or in the ring said which door had ended the read. The stage, the
+ * reason code and the per-source counts are what makes the next one
+ * diagnosable; `rows` is the healthy shape and records nothing at all.
+ */
+const reportIssueIndex = (
+  ctx: SeamContext, reason: IssueIndexReason, rows: ReadonlyArray<IssueListRow> = []
+): void => {
+  if (reason === "rows") return
+  const counted = (source: IssueListRow["source"]) => rows.filter((row) => row.source === source).length
+  ctx.report?.(
+    `issues.index stage=read reason=${reason} rows=${rows.length} cloud=${counted("smithers-cloud")} github=${counted("github")}`,
+    new Error(`issues.index ${reason}`)
+  )
+}
+
 /** Label names are the stable keys; forgeFacts supplies their optional colors. */
 const parseLabels = (value: unknown): string[] =>
   Array.isArray(value)
@@ -1012,8 +1054,35 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
 
     readIssueRows: async (repo, filter) => {
       const result = await issueListRead(repo, filter, "all", undefined)()
-      if (typeof result === "string") return result
-      return result.card.kind === "issue-list" ? result.card.payload.issues : []
+      if (typeof result === "string") { reportIssueIndex(ctx, "read_refused"); return result }
+      if (result.card.kind !== "issue-list") {
+        reportIssueIndex(ctx, "unreadable_view")
+        return ISSUE_INDEX_UNREADABLE
+      }
+      const { issues, github } = result.card.payload
+      /*
+       * Rows, or the sentence a door answered instead — never a silent empty.
+       * One read serves the list card and this index, and it already knows
+       * the difference: `github.refusal` is the GitHub source's own answer,
+       * which the CARD states beside the rows it did establish. Taking the
+       * rows alone made a repository whose own tracker is correctly empty
+       * and whose source REFUSED indistinguishable from a tracker that
+       * listed nothing, and `search.issues` answered `0 results` for it
+       * ([#3891](https://github.com/smithersai/smithers/issues/3891), still
+       * reproducing on 2026-10-15 while `/issue 5` opened that very issue).
+       * "0 results" claims every door answered and held nothing; a door that
+       * refused has not answered, so its sentence is the answer, exactly as
+       * `secrets` and `history` do through SearchSeam's `readRefused`.
+       *
+       * Rows the tracker DID establish still answer: a refusal beside them
+       * is already on their own card, and this door indexes facts.
+       */
+      if (issues.length === 0 && github?.refusal !== undefined && github.refusal !== null) {
+        reportIssueIndex(ctx, "source_refused")
+        return github.refusal
+      }
+      reportIssueIndex(ctx, issues.length === 0 ? "empty" : "rows", issues)
+      return issues
     },
 
     readTodoIssue: async (number, repo) => {

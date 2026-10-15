@@ -60,15 +60,20 @@ const hosted = async (options: { readonly bootstrap?: AppBootstrap | undefined; 
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const calls: string[] = []
   const routes = options.routes ?? {}
+  /* The operational sink the diagnostics ring forwards to; nothing here reaches the screen. */
+  const diagnostics: Array<{ kind: string; body: string }> = []
   const services: AppServices = {
     ...("bootstrap" in options && options.bootstrap === undefined ? {} : { bootstrap: options.bootstrap ?? HOSTED }),
+    clientErrors: { report: (kind, error) => void diagnostics.push({ kind, body: String(error) }), reported: () => diagnostics.length },
     toastDebounceMs: 0,
     fetchImpl: async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(typeof input === "string" || input instanceof URL ? input : input.url), "https://smithers.sh")
       const method = (init?.method ?? "GET").toUpperCase()
       calls.push(`${method} ${url.pathname}`)
       const answer = routes[`${method} ${url.pathname}`]
-      return answer === undefined ? json(404, { status: "error", code: "not_found", message: `no stub for ${method} ${url.pathname}` }) : json(200, answer)
+      if (answer === undefined) return json(404, { status: "error", code: "not_found", message: `no stub for ${method} ${url.pathname}` })
+      /* A route may answer a whole Response, so a test can state a real status and headers. */
+      return answer instanceof Response ? answer.clone() : json(200, answer)
     }
   }
   const controller = createAppController(store, unavailableAgent, services)
@@ -78,8 +83,14 @@ const hosted = async (options: { readonly bootstrap?: AppBootstrap | undefined; 
   ] }).isPersisted.promise
   await store.dispatch({ type: "repo.selected", actor: "user", id: REPO }).isPersisted.promise
   calls.length = 0
-  return { store, controller, calls }
+  diagnostics.length = 0
+  return { store, controller, calls, diagnostics }
 }
+
+/** The issue index door's own records, in order. */
+const issueIndexRecords = (diagnostics: ReadonlyArray<{ kind: string; body: string }>): ReadonlyArray<string> =>
+  diagnostics.filter(entry => entry.kind === "operational" && entry.body.includes("issues.index"))
+    .map(entry => (JSON.parse(entry.body) as { subject?: string }).subject ?? "")
 
 const cloudRoutes = {
   [`GET ${ISSUES}`]: [cloudIssue],
@@ -242,4 +253,132 @@ test("a host that serves neither Cloud issues nor an install is not asked for an
     expect(outcome).toMatchObject({ status: "executed" })
     expect(outcome.status === "executed" ? outcome.value ?? "" : "").not.toContain("failed (404)")
   } finally { await h.controller.dispose() }
+})
+
+/*
+ * #3891's remaining half, reproduced on 2026-10-15 against the same
+ * repository: `/search.issues Overnight-browser-20261014-0017` answered
+ * `0 results` with NO refusal, while `/issue 5` opened that exact issue in
+ * the same session. One list read serves both doors, and that read already
+ * knows the difference — `issueListRead` puts the GitHub source's own
+ * refusal on the card (`payload.github.refusal`) beside the rows it did
+ * establish. The search index door, `readIssueRows`, took the rows alone,
+ * so a repository whose own tracker is correctly empty and whose GitHub
+ * source REFUSED came back as an empty array: indistinguishable, one line
+ * later, from a tracker that listed nothing.
+ *
+ * "0 results" is a claim that the doors answered and held nothing. A door
+ * that refused has made no such claim, so the sentence is the answer — the
+ * rule `secrets` and `history` have followed in this seam since it was
+ * written, and the one the list CARD already followed in its own value.
+ */
+const GITHUB_SOURCE = `/api/user/github-repos/roninjin10/e2e-verify/issues`
+
+test("a GitHub source that refuses while the tracker is empty is stated, not answered as 0 results", async () => {
+  const h = await hosted({ routes: {
+    [`GET ${ISSUES}`]: [],
+    [`GET /api/repos/roninjin10/e2e-verify/issue-views`]: [],
+    [`GET ${GITHUB_SOURCE}`]: json(502, { status: "error", code: "bad_gateway", message: "GitHub is unavailable" })
+  } })
+  try {
+    const outcome = await h.controller.runCommandForResult("search.issues", TITLE)
+    expect(outcome).toMatchObject({ status: "failed" })
+    const error = outcome.status === "failed" ? outcome.error : ""
+    expect(error).not.toContain("No results")
+    expect(error).not.toBe("")
+    /* Both doors were really asked, in the one read the card shares. */
+    expect(h.calls).toContain(`GET ${ISSUES}`)
+    expect(h.calls).toContain(`GET ${GITHUB_SOURCE}`)
+    /* A refusal opens no results card: there are no rows to count. */
+    expect(h.store.collections.cards.get("search-search.issues")).toBeUndefined()
+  } finally { await h.controller.dispose() }
+})
+
+/*
+ * The same boundary, the other way round: a door that refused does not erase
+ * the rows another door DID establish. The tracker's own issue #5 still
+ * answers, and the search states no refusal over a row it holds.
+ */
+test("rows the tracker did establish still answer when the GitHub source refuses", async () => {
+  const h = await hosted({ routes: {
+    [`GET ${ISSUES}`]: [cloudIssue],
+    [`GET /api/repos/roninjin10/e2e-verify/issue-views`]: [],
+    [`GET ${GITHUB_SOURCE}`]: json(502, { status: "error", code: "bad_gateway", message: "GitHub is unavailable" })
+  } })
+  try {
+    const outcome = await h.controller.runCommandForResult("search.issues", TITLE)
+    expect(outcome).toMatchObject({ status: "executed" })
+    const value = JSON.parse(outcome.status === "executed" ? outcome.value ?? "{}" : "{}") as { count: number }
+    expect(value.count).toBe(1)
+    const card = h.store.collections.cards.get("search-search.issues")
+    expect(card?.kind === "search-results" ? card.payload.items.map(item => item.ref) : []).toEqual(["5"])
+  } finally { await h.controller.dispose() }
+})
+
+/*
+ * The list read throws the sign-in door's refusal rather than returning it
+ * (SeamContext RepositorySignInRequired travels through the prepared-view
+ * machinery). `issues.list` catches it in `repositoryListRead`; the search
+ * index door calls the read DIRECTLY and caught nothing, so a 401 left the
+ * `search.issues` flow as a thrown rejection instead of an answer.
+ */
+test("a tracker that answers 401 refuses the search in words, and never throws out of the flow", async () => {
+  const h = await hosted({ routes: {
+    [`GET ${ISSUES}`]: json(401, { status: "error", code: "unauthorized", message: "sign in" })
+  } })
+  try {
+    const outcome = await h.controller.runCommandForResult("search.issues", TITLE)
+    expect(outcome.status).not.toBe("errored")
+    expect(outcome).toMatchObject({ status: "failed" })
+    expect(outcome.status === "failed" ? outcome.error : "").not.toContain("No results")
+  } finally { await h.controller.dispose() }
+})
+
+/*
+ * The production cause could not be read off anything the app recorded: the
+ * screen said `0 results`, and the diagnostics ring held nothing about the
+ * index read at all. So the index door records WHICH door ended the read and
+ * what each one held — a closed set of reason codes and per-source counts,
+ * and nothing else. The ring forwards to the operational sink, never to a
+ * card, and the record must stay free of the repository, the query, any URL,
+ * header or backend sentence, or it would carry a customer's words into a
+ * diagnostic.
+ */
+test("an issue index that answers no rows records its reason code, counts and nothing else", async () => {
+  const h = await hosted({ routes: {
+    [`GET ${ISSUES}`]: [],
+    [`GET /api/repos/roninjin10/e2e-verify/issue-views`]: [],
+    [`GET ${GITHUB_SOURCE}`]: json(502, { status: "error", code: "bad_gateway", message: "GitHub is unavailable" })
+  } })
+  try {
+    await h.controller.runCommandForResult("search.issues", TITLE)
+    const records = issueIndexRecords(h.diagnostics)
+    expect(records).toEqual(["issues.index stage=read reason=source_refused rows=0 cloud=0 github=0"])
+    for (const record of records) {
+      for (const secret of [TITLE, REPO, "e2e-verify", "github-repos", "/api/", "GitHub is unavailable", "bad_gateway"]) {
+        expect(record).not.toContain(secret)
+      }
+    }
+  } finally { await h.controller.dispose() }
+})
+
+test("an index that really is empty says so, and an index that answered rows records nothing", async () => {
+  const empty = await hosted({ routes: {
+    [`GET ${ISSUES}`]: [],
+    [`GET /api/repos/roninjin10/e2e-verify/issue-views`]: [],
+    [`GET ${GITHUB_SOURCE}`]: []
+  } })
+  try {
+    const outcome = await empty.controller.runCommandForResult("search.issues", TITLE)
+    /* Every door answered and held nothing: "no results" is true here, and stays. */
+    expect(outcome).toMatchObject({ status: "executed" })
+    expect(issueIndexRecords(empty.diagnostics)).toEqual(["issues.index stage=read reason=empty rows=0 cloud=0 github=0"])
+  } finally { await empty.controller.dispose() }
+
+  const answered = await hosted({ routes: cloudRoutes })
+  try {
+    expect(await answered.controller.runCommandForResult("search.issues", TITLE)).toMatchObject({ status: "executed" })
+    /* The healthy shape is silent: a door that answered rows is not a diagnostic. */
+    expect(issueIndexRecords(answered.diagnostics)).toEqual([])
+  } finally { await answered.controller.dispose() }
 })
