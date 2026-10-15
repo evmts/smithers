@@ -175,6 +175,8 @@ func TestInstallMemberCommandRoutes(t *testing.T) {
 		{http.MethodGet, "/api/user/github-repos/acme/app/pulls", "github.account-read"},
 		{http.MethodGet, "/api/user/github-repos/acme/app/pulls/2", "github.account-read"},
 		{http.MethodGet, "/api/user/github-repos/acme/app/pulls/2/diff", "github.account-read"},
+		{http.MethodGet, "/api/user/github-repos/acme/app/pulls/2/commits", "github.account-read"},
+		{http.MethodGet, "/api/user/github-repos/acme/app/commits/0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6/check-runs", "github.account-read"},
 		{http.MethodGet, "/api/user/github-repos/acme/app/issues/1/comments", "github.account-read"},
 		{http.MethodGet, "/api/user/github-access/acme/app", "github.account-read"},
 		{http.MethodGet, "/api/user/github-app/installations", "github.account-read"},

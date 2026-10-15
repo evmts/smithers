@@ -137,6 +137,14 @@ func (s *stubMetadataStalenessService) ListAuthenticatedUserGitHubIssueComments(
 	return s.result, nil
 }
 
+func (s *stubMetadataStalenessService) ListAuthenticatedUserGitHubPullCommits(context.Context, int64, string, string, int64, url.Values) (services.GitHubRepoMetadataResult, error) {
+	return services.GitHubRepoMetadataResult{}, nil
+}
+
+func (s *stubMetadataStalenessService) GetAuthenticatedUserGitHubCommitCheckRuns(context.Context, int64, string, string, string, url.Values) (services.GitHubRepoMetadataResult, error) {
+	return services.GitHubRepoMetadataResult{}, nil
+}
+
 func (s *stubMetadataStalenessService) GetAuthenticatedUserGitHubPullDiff(context.Context, int64, string, string, int64) (services.GitHubPullDiffResult, error) {
 	return services.GitHubPullDiffResult{}, pkgerrors.Internal("unused")
 }

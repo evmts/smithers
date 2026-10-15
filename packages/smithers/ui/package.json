@@ -81,6 +81,11 @@
       "import": "./src/flow-form.ts",
       "default": "./src/flow-form.ts"
     },
+    "./diff-paginate": {
+      "types": "./src/diff-paginate.ts",
+      "import": "./src/diff-paginate.ts",
+      "default": "./src/diff-paginate.ts"
+    },
     "./flow-arguments": {
       "types": "./src/flow-arguments.ts",
       "import": "./src/flow-arguments.ts",

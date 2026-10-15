@@ -2920,6 +2920,153 @@ func (v GetAPIUserGithubReposOwnerRepoPullsNumberResponseBase) MarshalJSON() ([]
 	return joinAdditional(plain(v), v.AdditionalProperties)
 }
 
+// ListAPIUserGithubReposOwnerRepoPullsNumberCommitsParams is the query of GET /api/user/github-repos/{owner}/{repo}/pulls/{number}/commits.
+type ListAPIUserGithubReposOwnerRepoPullsNumberCommitsParams struct {
+	PerPage *int64
+	Page    *int64
+}
+
+// ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItem is generated from docs/api/openapi.yaml.
+type ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItem struct {
+	SHA                  string                                                               `json:"sha"`
+	Commit               ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemCommit  `json:"commit"`
+	Author               *ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemAuthor `json:"author,omitempty"`
+	AdditionalProperties map[string]json.RawMessage                                           `json:"-"`
+}
+
+// UnmarshalJSON keeps the members ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItem does not declare in AdditionalProperties.
+func (v *ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItem) UnmarshalJSON(data []byte) error {
+	type plain ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItem
+	if err := json.Unmarshal(data, (*plain)(v)); err != nil {
+		return err
+	}
+	return splitAdditional(data, &v.AdditionalProperties, "sha", "commit", "author")
+}
+
+// MarshalJSON writes AdditionalProperties beside the declared members of ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItem.
+func (v ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItem) MarshalJSON() ([]byte, error) {
+	type plain ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItem
+	return joinAdditional(plain(v), v.AdditionalProperties)
+}
+
+// ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemCommit is generated from docs/api/openapi.yaml.
+type ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemCommit struct {
+	Message              *string                                                                    `json:"message,omitempty"`
+	Author               *ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemCommitAuthor `json:"author,omitempty"`
+	AdditionalProperties map[string]json.RawMessage                                                 `json:"-"`
+}
+
+// UnmarshalJSON keeps the members ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemCommit does not declare in AdditionalProperties.
+func (v *ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemCommit) UnmarshalJSON(data []byte) error {
+	type plain ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemCommit
+	if err := json.Unmarshal(data, (*plain)(v)); err != nil {
+		return err
+	}
+	return splitAdditional(data, &v.AdditionalProperties, "message", "author")
+}
+
+// MarshalJSON writes AdditionalProperties beside the declared members of ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemCommit.
+func (v ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemCommit) MarshalJSON() ([]byte, error) {
+	type plain ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemCommit
+	return joinAdditional(plain(v), v.AdditionalProperties)
+}
+
+// ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemCommitAuthor is generated from docs/api/openapi.yaml.
+type ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemCommitAuthor struct {
+	Name                 *string                    `json:"name,omitempty"`
+	Date                 *time.Time                 `json:"date,omitempty"`
+	AdditionalProperties map[string]json.RawMessage `json:"-"`
+}
+
+// UnmarshalJSON keeps the members ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemCommitAuthor does not declare in AdditionalProperties.
+func (v *ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemCommitAuthor) UnmarshalJSON(data []byte) error {
+	type plain ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemCommitAuthor
+	if err := json.Unmarshal(data, (*plain)(v)); err != nil {
+		return err
+	}
+	return splitAdditional(data, &v.AdditionalProperties, "name", "date")
+}
+
+// MarshalJSON writes AdditionalProperties beside the declared members of ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemCommitAuthor.
+func (v ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemCommitAuthor) MarshalJSON() ([]byte, error) {
+	type plain ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemCommitAuthor
+	return joinAdditional(plain(v), v.AdditionalProperties)
+}
+
+// ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemAuthor is generated from docs/api/openapi.yaml.
+type ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemAuthor struct {
+	Login                *string                    `json:"login,omitempty"`
+	AdditionalProperties map[string]json.RawMessage `json:"-"`
+}
+
+// UnmarshalJSON keeps the members ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemAuthor does not declare in AdditionalProperties.
+func (v *ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemAuthor) UnmarshalJSON(data []byte) error {
+	type plain ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemAuthor
+	if err := json.Unmarshal(data, (*plain)(v)); err != nil {
+		return err
+	}
+	return splitAdditional(data, &v.AdditionalProperties, "login")
+}
+
+// MarshalJSON writes AdditionalProperties beside the declared members of ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemAuthor.
+func (v ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemAuthor) MarshalJSON() ([]byte, error) {
+	type plain ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItemAuthor
+	return joinAdditional(plain(v), v.AdditionalProperties)
+}
+
+// ListAPIUserGithubReposOwnerRepoCommitsSHACheckRunsParams is the query of GET /api/user/github-repos/{owner}/{repo}/commits/{sha}/check-runs.
+type ListAPIUserGithubReposOwnerRepoCommitsSHACheckRunsParams struct {
+	PerPage *int64
+	Page    *int64
+}
+
+// ListAPIUserGithubReposOwnerRepoCommitsSHACheckRunsResponse is generated from docs/api/openapi.yaml.
+type ListAPIUserGithubReposOwnerRepoCommitsSHACheckRunsResponse struct {
+	TotalCount           *int64                                                                    `json:"total_count,omitempty"`
+	CheckRuns            []ListAPIUserGithubReposOwnerRepoCommitsSHACheckRunsResponseCheckRunsItem `json:"check_runs"`
+	AdditionalProperties map[string]json.RawMessage                                                `json:"-"`
+}
+
+// UnmarshalJSON keeps the members ListAPIUserGithubReposOwnerRepoCommitsSHACheckRunsResponse does not declare in AdditionalProperties.
+func (v *ListAPIUserGithubReposOwnerRepoCommitsSHACheckRunsResponse) UnmarshalJSON(data []byte) error {
+	type plain ListAPIUserGithubReposOwnerRepoCommitsSHACheckRunsResponse
+	if err := json.Unmarshal(data, (*plain)(v)); err != nil {
+		return err
+	}
+	return splitAdditional(data, &v.AdditionalProperties, "total_count", "check_runs")
+}
+
+// MarshalJSON writes AdditionalProperties beside the declared members of ListAPIUserGithubReposOwnerRepoCommitsSHACheckRunsResponse.
+func (v ListAPIUserGithubReposOwnerRepoCommitsSHACheckRunsResponse) MarshalJSON() ([]byte, error) {
+	type plain ListAPIUserGithubReposOwnerRepoCommitsSHACheckRunsResponse
+	return joinAdditional(plain(v), v.AdditionalProperties)
+}
+
+// ListAPIUserGithubReposOwnerRepoCommitsSHACheckRunsResponseCheckRunsItem is generated from docs/api/openapi.yaml.
+type ListAPIUserGithubReposOwnerRepoCommitsSHACheckRunsResponseCheckRunsItem struct {
+	Name                 string                     `json:"name"`
+	Status               string                     `json:"status"`
+	Conclusion           *string                    `json:"conclusion,omitempty"`
+	StartedAt            *time.Time                 `json:"started_at,omitempty"`
+	CompletedAt          *time.Time                 `json:"completed_at,omitempty"`
+	AdditionalProperties map[string]json.RawMessage `json:"-"`
+}
+
+// UnmarshalJSON keeps the members ListAPIUserGithubReposOwnerRepoCommitsSHACheckRunsResponseCheckRunsItem does not declare in AdditionalProperties.
+func (v *ListAPIUserGithubReposOwnerRepoCommitsSHACheckRunsResponseCheckRunsItem) UnmarshalJSON(data []byte) error {
+	type plain ListAPIUserGithubReposOwnerRepoCommitsSHACheckRunsResponseCheckRunsItem
+	if err := json.Unmarshal(data, (*plain)(v)); err != nil {
+		return err
+	}
+	return splitAdditional(data, &v.AdditionalProperties, "name", "status", "conclusion", "started_at", "completed_at")
+}
+
+// MarshalJSON writes AdditionalProperties beside the declared members of ListAPIUserGithubReposOwnerRepoCommitsSHACheckRunsResponseCheckRunsItem.
+func (v ListAPIUserGithubReposOwnerRepoCommitsSHACheckRunsResponseCheckRunsItem) MarshalJSON() ([]byte, error) {
+	type plain ListAPIUserGithubReposOwnerRepoCommitsSHACheckRunsResponseCheckRunsItem
+	return joinAdditional(plain(v), v.AdditionalProperties)
+}
+
 // PostAPIUserKeysBody is generated from docs/api/openapi.yaml.
 type PostAPIUserKeysBody struct {
 	Title string `json:"title"`
@@ -6757,6 +6904,34 @@ func (c *Client) GetAPIUserGithubReposOwnerRepoPullsNumber(ctx context.Context, 
 func (c *Client) GetAPIUserGithubReposOwnerRepoPullsNumberDiff(ctx context.Context, owner string, repo string, number string) (AnyJSON, error) {
 	var out AnyJSON
 	err := c.do(ctx, "GET", "/api/user/github-repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/pulls/"+url.PathEscape(number)+"/diff", nil, nil, &out)
+	return out, err
+}
+
+// ListAPIUserGithubReposOwnerRepoPullsNumberCommits calls GET /api/user/github-repos/{owner}/{repo}/pulls/{number}/commits.
+func (c *Client) ListAPIUserGithubReposOwnerRepoPullsNumberCommits(ctx context.Context, owner string, repo string, number int64, params ListAPIUserGithubReposOwnerRepoPullsNumberCommitsParams) ([]ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItem, error) {
+	query := url.Values{}
+	if params.PerPage != nil {
+		query.Set("per_page", strconv.FormatInt(*params.PerPage, 10))
+	}
+	if params.Page != nil {
+		query.Set("page", strconv.FormatInt(*params.Page, 10))
+	}
+	var out []ListAPIUserGithubReposOwnerRepoPullsNumberCommitsResponseItem
+	err := c.do(ctx, "GET", "/api/user/github-repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/pulls/"+url.PathEscape(strconv.FormatInt(number, 10))+"/commits", query, nil, &out)
+	return out, err
+}
+
+// ListAPIUserGithubReposOwnerRepoCommitsSHACheckRuns calls GET /api/user/github-repos/{owner}/{repo}/commits/{sha}/check-runs.
+func (c *Client) ListAPIUserGithubReposOwnerRepoCommitsSHACheckRuns(ctx context.Context, owner string, repo string, sha string, params ListAPIUserGithubReposOwnerRepoCommitsSHACheckRunsParams) (ListAPIUserGithubReposOwnerRepoCommitsSHACheckRunsResponse, error) {
+	query := url.Values{}
+	if params.PerPage != nil {
+		query.Set("per_page", strconv.FormatInt(*params.PerPage, 10))
+	}
+	if params.Page != nil {
+		query.Set("page", strconv.FormatInt(*params.Page, 10))
+	}
+	var out ListAPIUserGithubReposOwnerRepoCommitsSHACheckRunsResponse
+	err := c.do(ctx, "GET", "/api/user/github-repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/commits/"+url.PathEscape(sha)+"/check-runs", query, nil, &out)
 	return out, err
 }
 

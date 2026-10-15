@@ -181,20 +181,47 @@ const checksSummary = (checks: LandingPayload["checks"]): { readonly tone: Tone;
 }
 
 /* A tab whose read failed, by tab; the seam's own words stay behind Details. */
-export const LANDING_READ_FAILURES: Readonly<Record<"commits" | "files", UserFailureCopy>> = {
+export const LANDING_READ_FAILURES: Readonly<Record<"commits" | "checks" | "files", UserFailureCopy>> = {
   commits: { fault: "infra", sentence: "Smithers could not load the commits of this pull request. Not your fault.", actions: ["retry"] },
+  checks: { fault: "infra", sentence: "Smithers could not load the checks of this pull request. Not your fault.", actions: ["retry"] },
   files: { fault: "infra", sentence: "Smithers could not load the files of this pull request. Not your fault.", actions: ["retry"] }
 }
 
-const ReadFailure = ({ tab, detail, retry }: { readonly tab: "commits" | "files"; readonly detail: string; readonly retry: ReturnType<typeof flowAction> }) => (
+const ReadFailure = ({ tab, detail, retry }: { readonly tab: "commits" | "checks" | "files"; readonly detail: string; readonly retry: ReturnType<typeof flowAction> }) => (
   <FailureNotice className="ghc-tab-empty" data-testid={`landing-${tab}-failure`}
     failure={describedFailure(`LandingRead.${tab}`, LANDING_READ_FAILURES[tab], detail)} actions={{ retry }} />
 )
 
-const CommitsTab = ({ commits, error, retry }: { readonly commits: ReadonlyArray<LandingCommit> | undefined; readonly error?: string; readonly retry: ReturnType<typeof flowAction> }) => {
+/*
+ * A tab whose rows are real but not all of them (LandingsSeam `readLimits`):
+ * GitHub pages these lists and stops a pull request's commit list at 250, so
+ * a long stack can be read only in part. The rows are drawn as they always
+ * are and this sits ABOVE them — `role="status"`, because the rows under it
+ * are the answer and the shortfall is not the reason the pane exists.
+ */
+export const LANDING_READ_LIMITS: Readonly<Record<"commits" | "checks", UserFailureCopy>> = {
+  commits: { fault: "infra", sentence: "These are not all of this pull request's commits. Not your fault.", actions: ["retry"] },
+  checks: { fault: "infra", sentence: "These are not all of this commit's check runs. Not your fault.", actions: ["retry"] }
+}
+
+const ReadLimit = ({ tab, detail, retry }: { readonly tab: "commits" | "checks"; readonly detail: string; readonly retry: ReturnType<typeof flowAction> }) => (
+  <FailureNotice role="status" data-testid={`landing-${tab}-limit`}
+    failure={describedFailure(`LandingLimit.${tab}`, LANDING_READ_LIMITS[tab], detail)} actions={{ retry }} />
+)
+
+const CommitsTab = ({ commits, error, limit, retry }: { readonly commits: ReadonlyArray<LandingCommit> | undefined; readonly error?: string; readonly limit?: string; readonly retry: ReturnType<typeof flowAction> }) => {
   if (error !== undefined) return <ReadFailure tab="commits" detail={error} retry={retry} />
   if (commits === undefined) return <p className="ghc-tab-empty">Commits unavailable.</p>
   if (commits.length === 0) return <p className="ghc-tab-empty">No commits in this stack.</p>
+  return (
+    <>
+      {limit !== undefined ? <ReadLimit tab="commits" detail={limit} retry={retry} /> : null}
+      {commitList(commits)}
+    </>
+  )
+}
+
+const commitList = (commits: ReadonlyArray<LandingCommit>) => {
   return (
     <ul className="ghc-box ghc-rows ghc-commits">
       {commits.map((commit, index) => {
@@ -257,16 +284,24 @@ export const LandingCardBody = ({
   const { repo, number, title, state, author, prBody, reviews, checks } = card.payload
   const extra = card.payload
   const actionable = extra.sourceRepo === undefined && ["open", "draft", "failed"].includes(state.toLowerCase())
-  const tab = card.payload.tab ?? "conversation"
   const summary = checksSummary(checks)
   const additions = (extra.files ?? []).reduce((sum, file) => sum + (file.additions ?? 0), 0)
   const deletions = (extra.files ?? []).reduce((sum, file) => sum + (file.deletions ?? 0), 0)
+  /*
+   * Every tab this pull request has, native or read from GitHub: the platform
+   * proxies the pull request, its commits, its head commit's check runs and
+   * its diff for a GitHub source too (LandingsSeam `fetchGitHubTabs`). A
+   * count is shown only where the card actually read one — a tab whose read
+   * was refused carries its reason in the pane, never a "0" that claims the
+   * source reported nothing.
+   */
   const tabs: ReadonlyArray<readonly [PrTab, string, "comment" | "git-commit" | "check" | "file-diff", number | undefined]> = [
     ["conversation", "Conversation", "comment", extra.sourceRepo === undefined ? reviews.length : undefined],
     ["commits", "Commits", "git-commit", extra.commits?.length],
-    ["checks", "Checks", "check", extra.sourceRepo === undefined ? checks.length : undefined],
+    ["checks", "Checks", "check", extra.readErrors?.checks === undefined ? checks.length : undefined],
     ["files", "Files changed", "file-diff", extra.files?.length]
   ]
+  const tab = card.payload.tab ?? "conversation"
   const reviewers = [...new Set(reviews.flatMap((review) => review.author !== null ? [review.author] : []))]
   const commitCount = extra.commits?.length
   const retry = flowAction(onRunCommand, "pr", flowArgs("pr", { number, repo }))
@@ -343,11 +378,26 @@ export const LandingCardBody = ({
               </>
             ) :
             null}
-          {tab === "commits" ? <CommitsTab commits={extra.commits} error={extra.readErrors?.commits} retry={retry} /> : null}
+          {tab === "commits" ?
+            <CommitsTab commits={extra.commits} error={extra.readErrors?.commits} limit={extra.readLimits?.commits} retry={retry} /> :
+            null}
           {tab === "files" ? <FilesTab files={extra.files} error={extra.readErrors?.files} retry={retry} /> : null}
-          {extra.sourceRepo === undefined && (tab === "conversation" || tab === "checks") ?
+          {tab === "checks" && extra.readErrors?.checks !== undefined ?
+            <ReadFailure tab="checks" detail={extra.readErrors.checks} retry={retry} /> :
+            null}
+          {/* Checks that were read but are not all of them; the box follows. */}
+          {tab === "checks" && extra.readErrors?.checks === undefined && extra.readLimits?.checks !== undefined ?
+            <ReadLimit tab="checks" detail={extra.readLimits.checks} retry={retry} /> :
+            null}
+          {/*
+            * The checks box. A native pull request also carries it on its
+            * conversation (its merge box, with the landing actions); a GitHub
+            * source gets the checks its head commit reported and no actions,
+            * and a refused checks read is answered above instead.
+            */}
+          {extra.readErrors?.checks === undefined && (tab === "checks" || (extra.sourceRepo === undefined && tab === "conversation")) ?
             (
-              <section className="ghc-box ghc-merge" aria-label="Checks and landing">
+              <section className="ghc-box ghc-merge" aria-label={extra.sourceRepo === undefined ? "Checks and landing" : "Checks"}>
                 <header className={`ghc-merge-head ${TONE_CLASS[summary.tone]}`}>
                   <Octicon name={summary.icon} size={20} />
                   <span className="ghc-merge-title">{summary.text}</span>

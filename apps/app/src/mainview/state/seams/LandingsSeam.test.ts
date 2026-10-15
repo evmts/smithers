@@ -615,6 +615,404 @@ for (const door of ["run", "runForAgent"] as const) {
   })
 }
 
+/*
+ * The Commits, Checks and Files changed tabs of a GitHub-source pull request.
+ * Production (UI 10a823b3, roninjin10/e2e-verify#2 — one commit, one check
+ * run and README.md +3 −0 per GitHub's own pulls/2/commits,
+ * commits/{sha}/check-runs and pulls/2/files) painted "Files unavailable." and
+ * "Commits unavailable." with no reason and no Retry, and nothing at all on
+ * Checks: the detail read answered the whole stack as `{}` for a GitHub
+ * source, so nothing was read and no `readErrors` said why. The platform now
+ * proxies one read-only GET per tab (routes/github_user_repos.go
+ * GetGitHubPullDiff, ListGitHubPullCommits, ListGitHubCommitCheckRuns), and
+ * these are those reads.
+ */
+describe("a GitHub source's pull request tabs", () => {
+  const cloudRepo = "/api/repos/will/flows"
+  const githubRepo = "/api/user/github-repos/upstream/project"
+  const githubPulls = `${githubRepo}/pulls`
+  const HEAD_SHA = "0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6"
+  const checkRuns = `${githubRepo}/commits/${HEAD_SHA}/check-runs`
+  const source = { full_name: "will/flows", github_source: { owner: "upstream", repo: "project" } }
+  const detail = { number: 2, title: "Add build-status line to README", body: "Resolves #1. Adds build status note.", state: "closed", merged: true, user: { login: "roninjin10" }, head: { ref: "e2e-build-status", sha: HEAD_SHA }, base: { ref: "main" } }
+  /** The reference pull request's own patch: README.md, three added lines, no deletions. */
+  const readmeDiff = "diff --git a/README.md b/README.md\nindex 1111111..2222222 100644\n--- a/README.md\n+++ b/README.md\n@@ -1,3 +1,6 @@\n # e2e-verify\n \n Workflow verification repository.\n+\n+## Build status\n+Build status: verified by the e2e build-status check.\n"
+  const commitRows = [{
+    sha: HEAD_SHA,
+    commit: { message: "Add build-status line to README\n\nResolves #1.", author: { name: "Will Cory", date: "2026-10-14T18:00:00Z" } },
+    author: { login: "roninjin10" }
+  }]
+  const checkRunRows = { total_count: 1, check_runs: [{ name: "build-status", status: "completed", conclusion: "success", started_at: "2026-10-14T18:01:00Z" }] }
+
+  /**
+   * The three tab reads answered; `over` replaces any of them, keyed by path.
+   * A function override is handed the WHOLE request, query included, because
+   * which page the app asked for is the thing several of these assert.
+   */
+  const tabsBackend = (over: Record<string, Response | ((request: Request) => Response | Promise<Response>)> = {}) => ({
+    fetchImpl: async (input: string | URL | Request, _init?: RequestInit) => {
+      const url = new URL(String(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url), "https://app.test")
+      const path = url.pathname
+      const answer = over[path]
+      if (answer !== undefined) return typeof answer === "function" ? answer(new Request(url.toString())) : answer.clone()
+      if (path === cloudRepo) return json(200, source)
+      if (path === `${githubPulls}/2`) return json(200, detail)
+      if (path === `${githubPulls}/2/diff`) return new Response(readmeDiff, { status: 200, headers: { "content-type": "text/plain" } })
+      if (path === `${githubPulls}/2/commits`) return json(200, commitRows)
+      if (path === checkRuns) return json(200, checkRunRows)
+      return json(404, { message: `no stub for ${path}` })
+    }
+  })
+
+  const prCard = async (services: ReturnType<typeof tabsBackend>) => {
+    const { store, controller } = await ready(services)
+    expect((await controller.commands.run("pr", "2 will/flows")).status).toBe("executed")
+    const card = store.collections.cards.get("pr-will/flows-2")
+    if (card === undefined || card.kind !== "pr") throw new Error("expected the pr card")
+    return { payload: card.payload, store, controller }
+  }
+
+  test("carries the files, commits and checks its three proxied reads answered", async () => {
+    const calls: string[] = []
+    const base = tabsBackend()
+    const { payload, controller } = await prCard({ fetchImpl: async (input, init) => {
+      calls.push(new URL(String(input), "https://app.test").pathname)
+      return base.fetchImpl(input as string, init as RequestInit)
+    } })
+    expect(payload.sourceRepo).toBe("upstream/project")
+    expect(payload.readErrors).toBeUndefined()
+    expect(payload.files).toEqual([{ path: "README.md", status: "modified", additions: 3, deletions: 0, patch: readmeDiff }])
+    expect(payload.commits).toEqual([{
+      commitId: HEAD_SHA,
+      message: "Add build-status line to README\n\nResolves #1.",
+      author: "roninjin10",
+      timestamp: "2026-10-14T18:00:00Z"
+    }])
+    expect(payload.checks).toEqual([{ context: "build-status", state: "success" }])
+    // Exactly the proxied read-only GETs, no invented door and no mutation.
+    expect(calls).toContain(`${githubPulls}/2/diff`)
+    expect(calls).toContain(`${githubPulls}/2/commits`)
+    expect(calls).toContain(checkRuns)
+    await controller.dispose()
+  })
+
+  test("a run still going keeps its status, and a re-run keeps the newest row per check", async () => {
+    const { payload, controller } = await prCard(tabsBackend({ [checkRuns]: json(200, { check_runs: [
+      { name: "build-status", status: "completed", conclusion: "failure", started_at: "2026-10-14T18:01:00Z" },
+      { name: "build-status", status: "completed", conclusion: "success", started_at: "2026-10-14T19:30:00Z" },
+      { name: "lint", status: "in_progress", conclusion: null, started_at: "2026-10-14T19:31:00Z" }
+    ] }) }))
+    expect(payload.readErrors).toBeUndefined()
+    expect(payload.checks).toEqual([{ context: "build-status", state: "success" }, { context: "lint", state: "in_progress" }])
+    await controller.dispose()
+  })
+
+  test("each tab's read is refused on its own, with its HTTP status and never the upstream's prose", async () => {
+    for (const [tab, path, label] of [
+      ["files", `${githubPulls}/2/diff`, "Files unavailable ("],
+      ["commits", `${githubPulls}/2/commits`, "Commits unavailable ("],
+      ["checks", checkRuns, "Checks unavailable ("]
+    ] as const) {
+      const { payload, controller } = await prCard(tabsBackend({
+        [path]: json(502, { code: "github_unavailable", message: "upstream said something only an operator should read" })
+      }))
+      const reason = payload.readErrors?.[tab] ?? ""
+      expect(reason).toContain(label)
+      expect(reason).toContain("502")
+      // Bounded product words with the verdict, never the upstream's prose or a URL.
+      expect(reason).not.toContain("only an operator should read")
+      expect(reason).not.toContain("github-repos")
+      // The tab that failed is the only one missing; the others still answered.
+      if (tab === "files") expect(payload.files).toBeUndefined()
+      else expect(payload.files).toHaveLength(1)
+      if (tab === "commits") expect(payload.commits).toBeUndefined()
+      else expect(payload.commits).toHaveLength(1)
+      expect(payload.checks).toEqual(tab === "checks" ? [] : [{ context: "build-status", state: "success" }])
+      await controller.dispose()
+    }
+  })
+
+  test("a request that never answered says that, with no HTTP status to claim", async () => {
+    const throwing = () => { throw new Error("Load failed") }
+    for (const [tab, path] of [["files", `${githubPulls}/2/diff`], ["commits", `${githubPulls}/2/commits`], ["checks", checkRuns]] as const) {
+      const { payload, controller } = await prCard(tabsBackend({ [path]: throwing }))
+      const reason = payload.readErrors?.[tab] ?? ""
+      expect(reason).toContain("The platform didn't answer.")
+      expect(reason).not.toContain("Load failed")
+      await controller.dispose()
+    }
+  })
+
+  test("a payload in the wrong shape is unreadable, never an empty tab", async () => {
+    for (const [tab, path] of [["commits", `${githubPulls}/2/commits`], ["checks", checkRuns]] as const) {
+      const { payload, controller } = await prCard(tabsBackend({ [path]: json(200, { nonsense: true }) }))
+      expect(payload.readErrors?.[tab] ?? "").toContain("The platform returned an unreadable response.")
+      await controller.dispose()
+    }
+    // One unreadable row refuses the whole list: a shorter list must never be
+    // presented as every commit this pull request carries.
+    const { payload, controller } = await prCard(tabsBackend({
+      [`${githubPulls}/2/commits`]: json(200, [commitRows[0], { sha: "", commit: {} }])
+    }))
+    expect(payload.commits).toBeUndefined()
+    expect(payload.readErrors?.commits ?? "").toContain("The platform returned an unreadable response.")
+    await controller.dispose()
+  })
+
+  test("empty answers are honest zeros: no changes, no commits, no checks reported", async () => {
+    const { payload, controller } = await prCard(tabsBackend({
+      [`${githubPulls}/2/diff`]: new Response("", { status: 200, headers: { "content-type": "text/plain" } }),
+      [`${githubPulls}/2/commits`]: json(200, []),
+      [checkRuns]: json(200, { total_count: 0, check_runs: [] })
+    }))
+    expect(payload.files).toEqual([])
+    expect(payload.commits).toEqual([])
+    expect(payload.checks).toEqual([])
+    expect(payload.readErrors).toBeUndefined()
+    await controller.dispose()
+  })
+
+  test("a pull request naming no head commit says its checks have no ref, not that it has none", async () => {
+    const { payload, controller } = await prCard(tabsBackend({
+      [`${githubPulls}/2`]: json(200, { ...detail, head: { ref: "e2e-build-status" } }),
+      [checkRuns]: () => { throw new Error("no head commit means no checks read") }
+    }))
+    expect(payload.checks).toEqual([])
+    expect(payload.readErrors?.checks ?? "").toContain("This pull request names no head commit.")
+    expect(payload.files).toHaveLength(1)
+    await controller.dispose()
+  })
+
+  test("a whole patch becomes one row per file, with the patch its renderer reads", async () => {
+    const multi = [
+      "diff --git a/docs/a file.md b/docs/a file.md\nnew file mode 100644\nindex 0000000..1111111\n--- /dev/null\n+++ b/docs/a file.md\n@@ -0,0 +1,2 @@\n+added\n+lines\n",
+      "diff --git a/gone.txt b/gone.txt\ndeleted file mode 100644\nindex 2222222..0000000\n--- a/gone.txt\n+++ /dev/null\n@@ -1 +0,0 @@\n-gone\n",
+      "diff --git a/old.ts b/new.ts\nsimilarity index 100%\nrename from old.ts\nrename to new.ts\n",
+      "diff --git a/logo.png b/logo.png\nindex 3333333..4444444 100644\nGIT binary patch\nliteral 8\n",
+      "diff --git a/empty.txt b/empty.txt\nnew file mode 100644\nindex 0000000..0000000\n"
+    ].join("")
+    const { payload, controller } = await prCard(tabsBackend({
+      [`${githubPulls}/2/diff`]: new Response(multi, { status: 200, headers: { "content-type": "text/plain" } })
+    }))
+    expect(payload.readErrors).toBeUndefined()
+    expect((payload.files ?? []).map((file) => [file.path, file.status, file.additions, file.deletions, file.oldPath])).toEqual([
+      ["docs/a file.md", "added", 2, 0, undefined],
+      ["gone.txt", "removed", 0, 1, undefined],
+      ["new.ts", "renamed", 0, 0, "old.ts"],
+      ["logo.png", "modified", 0, 0, undefined],
+      ["empty.txt", "added", 0, 0, undefined]
+    ])
+    // Every row keeps its own section verbatim, so the shared diff renderer
+    // draws what GitHub wrote rather than a re-serialized guess.
+    for (const file of payload.files ?? []) expect(multi).toContain(file.patch ?? "")
+    await controller.dispose()
+  })
+
+  test("a patch section this app cannot name refuses the whole Files tab instead of claiming complete files", async () => {
+    const mixed = "diff --git a/README.md b/README.md\nindex 1111111..2222222 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-old\n+new\n"
+      + "diff --git \"a/strange\nnot a patch at all\n"
+    const { payload, controller } = await prCard(tabsBackend({
+      [`${githubPulls}/2/diff`]: new Response(mixed, { status: 200, headers: { "content-type": "text/plain" } })
+    }))
+    expect(payload.files).toBeUndefined()
+    expect(payload.readErrors?.files ?? "").toContain("Files unavailable (The platform returned an unreadable response.)")
+    // The tabs that answered are unaffected by the one that did not.
+    expect(payload.commits).toHaveLength(1)
+    await controller.dispose()
+  })
+
+  /*
+   * PAGINATION, the defect root found in the first candidate: both list reads
+   * asked the platform for one page and rendered it as the whole tab, so a
+   * pull request with more than 100 commits or check runs silently showed its
+   * first hundred as complete. GitHub pages both reads (per_page 100 / page)
+   * and stops a pull request's OWN commit list at 250 whatever page is asked
+   * for, so the rows alone can never prove a stack whole — only the pull
+   * request's `commits` count and a ref's `total_count` can.
+   */
+  const commitPage = (count: number, from: number) =>
+    Array.from({ length: count }, (_, index) => ({
+      sha: (from + index).toString(16).padStart(40, "0"),
+      commit: { message: `commit ${from + index}`, author: { name: "Will Cory", date: "2026-10-14T18:00:00Z" } },
+      author: { login: "roninjin10" }
+    }))
+
+  const runPage = (count: number, from: number, total: number) => ({
+    total_count: total,
+    check_runs: Array.from({ length: count }, (_, index) => ({
+      name: `check-${from + index}`,
+      status: "completed",
+      conclusion: "success",
+      started_at: "2026-10-14T18:01:00Z"
+    }))
+  })
+
+  /** The page number of a recorded request, and the page size it asked for. */
+  const pageOf = (request: Request) => new URL(request.url).searchParams
+
+  test("a stack longer than one page is read page by page, by number, on the platform's own path", async () => {
+    const asked: string[] = []
+    const { payload, controller } = await prCard(tabsBackend({
+      [`${githubPulls}/2`]: json(200, { ...detail, commits: 250 }),
+      [`${githubPulls}/2/commits`]: (request) => {
+        const url = new URL(request.url)
+        asked.push(`${url.pathname}?${url.searchParams.get("per_page")}/${url.searchParams.get("page")}`)
+        const page = Number(url.searchParams.get("page"))
+        return json(200, page === 3 ? commitPage(50, 201) : commitPage(100, (page - 1) * 100 + 1))
+      }
+    }))
+    // Every page, asked for as a number with GitHub's own page size, on the
+    // one path the platform proxies — never a URL a Link header named, and
+    // never the doubled `/pulls/pulls` an intermediate version built.
+    expect(asked).toEqual([
+      `${githubPulls}/2/commits?100/1`,
+      `${githubPulls}/2/commits?100/2`,
+      `${githubPulls}/2/commits?100/3`
+    ])
+    expect(payload.commits).toHaveLength(250)
+    expect(payload.commits?.[0]?.message).toBe("commit 1")
+    expect(payload.commits?.at(-1)?.message).toBe("commit 250")
+    // Every commit the pull request says it has: nothing to warn about.
+    expect(payload.readLimits).toBeUndefined()
+    expect(payload.readErrors).toBeUndefined()
+    await controller.dispose()
+  })
+
+  test("a stack longer than GitHub will answer keeps its rows and says how many of how many", async () => {
+    const { payload, controller } = await prCard(tabsBackend({
+      // GitHub stops this list at 250 even though the pull request has 412.
+      [`${githubPulls}/2`]: json(200, { ...detail, commits: 412 }),
+      [`${githubPulls}/2/commits`]: (request) => {
+        const page = Number(pageOf(request).get("page"))
+        return json(200, page === 3 ? commitPage(50, 201) : commitPage(100, (page - 1) * 100 + 1))
+      }
+    }))
+    expect(payload.commits).toHaveLength(250)
+    expect(payload.readLimits?.commits).toBe("Showing 250 of 412 commits.")
+    // The rows are an answer, not a failure: the tab still has them.
+    expect(payload.readErrors?.commits).toBeUndefined()
+    await controller.dispose()
+  })
+
+  test("a later page refused keeps the rows already read and says the rest were not", async () => {
+    const { payload, controller } = await prCard(tabsBackend({
+      [`${githubPulls}/2`]: json(200, { ...detail, commits: 240 }),
+      [`${githubPulls}/2/commits`]: (request) =>
+        pageOf(request).get("page") === "1"
+          ? json(200, commitPage(100, 1))
+          : json(502, { code: "github_unavailable", message: "upstream said something only an operator should read" })
+    }))
+    // The hundred rows that WERE read stay; what is refused is the rest.
+    expect(payload.commits).toHaveLength(100)
+    expect(payload.readErrors?.commits).toBeUndefined()
+    const limit = payload.readLimits?.commits ?? ""
+    expect(limit).toContain("Showing 100 of 240 commits.")
+    expect(limit).toContain("502")
+    expect(limit).not.toContain("only an operator should read")
+    expect(limit).not.toContain("github-repos")
+    await controller.dispose()
+  })
+
+  test("a later page in the wrong shape is a limit on real rows, never an empty or complete tab", async () => {
+    const { payload, controller } = await prCard(tabsBackend({
+      [`${githubPulls}/2/commits`]: (request) =>
+        pageOf(request).get("page") === "1" ? json(200, commitPage(100, 1)) : json(200, { nonsense: true })
+    }))
+    expect(payload.commits).toHaveLength(100)
+    expect(payload.readLimits?.commits).toBe(
+      "Showing the 100 commits this read could reach. The platform returned an unreadable response."
+    )
+    await controller.dispose()
+  })
+
+  test("rows that reach the count the source itself reports are the whole list, however the walk ended", async () => {
+    // The cap was hit AND a page was refused, but the pull request says it has
+    // 300 commits and 300 were read: there is nothing to qualify.
+    const { payload, controller } = await prCard(tabsBackend({
+      [`${githubPulls}/2`]: json(200, { ...detail, commits: 300 }),
+      [`${githubPulls}/2/commits`]: (request) => {
+        const page = Number(pageOf(request).get("page"))
+        return json(200, commitPage(100, (page - 1) * 100 + 1))
+      }
+    }))
+    expect(payload.commits).toHaveLength(300)
+    expect(payload.readLimits).toBeUndefined()
+    expect(payload.readErrors).toBeUndefined()
+    await controller.dispose()
+  })
+
+  test("a source that never stops answering full pages ends the read instead of looping", async () => {
+    let requests = 0
+    const { payload, controller } = await prCard(tabsBackend({
+      [`${githubPulls}/2/commits`]: () => {
+        requests += 1
+        return json(200, commitPage(100, requests * 100 - 99))
+      }
+    }))
+    // Bounded: three pages of commits reach past the 250 GitHub will answer.
+    expect(requests).toBe(3)
+    expect(payload.commits).toHaveLength(300)
+    expect(payload.readLimits?.commits).toBe("Showing the 300 commits this read could reach. This read stops after 300 rows.")
+    await controller.dispose()
+  })
+
+  test("check runs are paged too, and total_count is what proves them complete", async () => {
+    const asked: Array<string | null> = []
+    const { payload, controller } = await prCard(tabsBackend({
+      [checkRuns]: (request) => {
+        const page = pageOf(request).get("page")
+        asked.push(page)
+        return json(200, page === "1" ? runPage(100, 1, 150) : runPage(50, 101, 150))
+      }
+    }))
+    expect(asked).toEqual(["1", "2"])
+    expect(payload.checks).toHaveLength(150)
+    expect(payload.readLimits).toBeUndefined()
+    expect(payload.readErrors).toBeUndefined()
+    await controller.dispose()
+  })
+
+  test("check runs short of the total GitHub reports say so, counted in runs read not rows drawn", async () => {
+    const { payload, controller } = await prCard(tabsBackend({
+      // A re-run folds onto the check it re-ran, so the drawn rows are fewer
+      // than the runs read; the shortfall is measured against the runs.
+      [checkRuns]: json(200, {
+        total_count: 9,
+        check_runs: [
+          { name: "build-status", status: "completed", conclusion: "failure", started_at: "2026-10-14T18:01:00Z" },
+          { name: "build-status", status: "completed", conclusion: "success", started_at: "2026-10-14T19:30:00Z" }
+        ]
+      })
+    }))
+    expect(payload.checks).toEqual([{ context: "build-status", state: "success" }])
+    expect(payload.readLimits?.checks).toBe("Showing 2 of 9 check runs.")
+    expect(payload.readErrors?.checks).toBeUndefined()
+    await controller.dispose()
+  })
+
+  test("a refused FIRST page is still the tab's refusal, with no rows to keep", async () => {
+    const { payload, controller } = await prCard(tabsBackend({
+      [`${githubPulls}/2/commits`]: (request) =>
+        pageOf(request).get("page") === "1" ? json(403, { code: "github_permission", message: "GitHub access denied" }) : json(200, commitPage(100, 1))
+    }))
+    expect(payload.commits).toBeUndefined()
+    expect(payload.readErrors?.commits ?? "").toContain("Commits unavailable (")
+    expect(payload.readLimits?.commits).toBeUndefined()
+    await controller.dispose()
+  })
+
+  test("every tab the card offers can be selected", async () => {
+    const { store, controller } = await ready(tabsBackend())
+    expect((await controller.commands.run("pr", "2 will/flows")).status).toBe("executed")
+    for (const tab of ["commits", "checks", "files", "conversation"] as const) {
+      expect((await controller.commands.run("prs.tab", `pr-will/flows-2 ${tab}`)).status).toBe("executed")
+      const card = store.collections.cards.get("pr-will/flows-2")
+      expect(card?.kind === "pr" ? card.payload.tab : undefined).toBe(tab)
+    }
+    await controller.dispose()
+  })
+})
+
 test("a saved PR form keeps its identity and explicit repository when submitted through the canonical door", async () => {
   const { store, controller } = await ready(backend({ [`${LANDINGS}/3`]: json(200, landing(3, "open")) }))
   const id = "form-prs.view"

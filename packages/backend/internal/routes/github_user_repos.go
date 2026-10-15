@@ -22,6 +22,8 @@ type GitHubUserReposRouteService interface {
 	ListAuthenticatedUserGitHubRepoMetadata(ctx context.Context, userID int64, owner, repo, resource string, query url.Values) (services.GitHubRepoMetadataResult, error)
 	ListAuthenticatedUserGitHubIssueComments(ctx context.Context, userID int64, owner, repo string, number int64, query url.Values) (services.GitHubRepoMetadataResult, error)
 	GetAuthenticatedUserGitHubPullDiff(ctx context.Context, userID int64, owner, repo string, number int64) (services.GitHubPullDiffResult, error)
+	ListAuthenticatedUserGitHubPullCommits(ctx context.Context, userID int64, owner, repo string, number int64, query url.Values) (services.GitHubRepoMetadataResult, error)
+	GetAuthenticatedUserGitHubCommitCheckRuns(ctx context.Context, userID int64, owner, repo, ref string, query url.Values) (services.GitHubRepoMetadataResult, error)
 	DiagnoseGitHubAccess(ctx context.Context, userID int64, owner, repo, surface string) (services.GitHubAccessDiagnosis, error)
 }
 
@@ -294,6 +296,68 @@ func (h *GitHubUserReposHandler) GetGitHubPullDiff(w http.ResponseWriter, r *htt
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(result.Body)
+}
+
+// ListGitHubPullCommits answers GET
+// /user/github-repos/{owner}/{repo}/pulls/{number}/commits with the pull
+// request's own commits as GitHub's JSON array, proxied live with the same
+// token resolution and cache policy as the pull request object beside it.
+func (h *GitHubUserReposHandler) ListGitHubPullCommits(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "private, no-store")
+	user, err := requireRouteUser(r)
+	if err != nil {
+		pkgerrors.WriteError(w, err.(*pkgerrors.APIError))
+		return
+	}
+	if h.Service == nil {
+		pkgerrors.WriteError(w, pkgerrors.Internal("github pull commits service unavailable"))
+		return
+	}
+	number, numErr := strconv.ParseInt(chi.URLParam(r, "number"), 10, 64)
+	if numErr != nil || number <= 0 {
+		writeRouteError(w, r, pkgerrors.BadRequest("invalid github pull request number"))
+		return
+	}
+	result, svcErr := h.Service.ListAuthenticatedUserGitHubPullCommits(
+		r.Context(), user.ID, chi.URLParam(r, "owner"), chi.URLParam(r, "repo"), number, r.URL.Query(),
+	)
+	if svcErr != nil {
+		writeRouteError(w, r, svcErr)
+		return
+	}
+	if result.Link != "" {
+		w.Header().Set("Link", result.Link)
+	}
+	h.writeGitHubRepoMetadataResult(w, result)
+}
+
+// ListGitHubCommitCheckRuns answers GET
+// /user/github-repos/{owner}/{repo}/commits/{sha}/check-runs with the check
+// runs reported against one commit — the pull request's head commit, which is
+// what its Checks tab shows. A ref that is not a commit id never reaches the
+// service.
+func (h *GitHubUserReposHandler) ListGitHubCommitCheckRuns(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "private, no-store")
+	user, err := requireRouteUser(r)
+	if err != nil {
+		pkgerrors.WriteError(w, err.(*pkgerrors.APIError))
+		return
+	}
+	if h.Service == nil {
+		pkgerrors.WriteError(w, pkgerrors.Internal("github commit check runs service unavailable"))
+		return
+	}
+	result, svcErr := h.Service.GetAuthenticatedUserGitHubCommitCheckRuns(
+		r.Context(), user.ID, chi.URLParam(r, "owner"), chi.URLParam(r, "repo"), chi.URLParam(r, "sha"), r.URL.Query(),
+	)
+	if svcErr != nil {
+		writeRouteError(w, r, svcErr)
+		return
+	}
+	if result.Link != "" {
+		w.Header().Set("Link", result.Link)
+	}
+	h.writeGitHubRepoMetadataResult(w, result)
 }
 
 func (h *GitHubUserReposHandler) writeGitHubRepoMetadataResult(w http.ResponseWriter, result services.GitHubRepoMetadataResult) {

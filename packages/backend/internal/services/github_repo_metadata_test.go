@@ -381,3 +381,300 @@ func TestGitHubRepoMetadata_PreservesMaximumSizedRawJSONWithoutExpansion(t *test
 	require.Equal(t, payload, []byte(result.Body))
 	require.Len(t, result.Body, int(githubRepoMetadataMaxResponseBytes))
 }
+
+/*
+ * The two reads a GitHub-source pull request's Commits and Checks tabs make.
+ * Both existed upstream and nowhere here, so both tabs could only paint an
+ * empty pane: roninjin10/e2e-verify#2 has one commit per GitHub's own
+ * pulls/2/commits. These prove the exact proxied path, media type, bounded
+ * page and refusal mapping — the diff read's contract, one surface over.
+ */
+
+func TestGitHubPullCommits_ProxiesOneBoundedPage(t *testing.T) {
+	var mu sync.Mutex
+	var gotPath, gotQuery, gotAccept, gotAuth string
+	commits := `[{"sha":"0d1dc5a","commit":{"message":"Add build-status line to README","author":{"name":"Will","date":"2026-10-14T18:00:00Z"}},"author":{"login":"roninjin10"}}]`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		gotPath, gotQuery, gotAccept, gotAuth = r.URL.Path, r.URL.RawQuery, r.Header.Get("Accept"), r.Header.Get("Authorization")
+		mu.Unlock()
+		w.Header().Set("Link", `<https://api.github.com/x?page=2>; rel="next"`)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(commits))
+	}))
+	defer srv.Close()
+	t.Setenv(envGitHubAppAPIBaseURL, srv.URL)
+
+	service := NewGitHubUserReposService(newFakeGitHubUserReposDB(), fakeOAuthTokenDecrypter{token: "gho_user"})
+	result, err := service.ListAuthenticatedUserGitHubPullCommits(context.Background(), 42, "roninjin10", "e2e-verify", 2, nil)
+	require.NoError(t, err)
+	assert.JSONEq(t, commits, string(result.Body))
+	// A longer history keeps its Link: the client is told there is more, never
+	// told there is not.
+	assert.Equal(t, `<https://api.github.com/x?page=2>; rel="next"`, result.Link)
+
+	mu.Lock()
+	path, query, accept, auth := gotPath, gotQuery, gotAccept, gotAuth
+	mu.Unlock()
+	assert.Equal(t, "/repos/roninjin10/e2e-verify/pulls/2/commits", path)
+	assert.Equal(t, "per_page=100", query)
+	assert.Equal(t, "application/vnd.github+json", accept)
+	assert.Equal(t, "Bearer gho_user", auth)
+}
+
+func TestGitHubPullCommits_RefusesInvalidNumberAndRepoBeforeAnyRequest(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("an invalid read must never reach GitHub")
+	}))
+	defer srv.Close()
+	t.Setenv(envGitHubAppAPIBaseURL, srv.URL)
+
+	service := NewGitHubUserReposService(newFakeGitHubUserReposDB(), fakeOAuthTokenDecrypter{token: "gho_user"})
+	for name, read := range map[string]func() error{
+		"zero number": func() error {
+			_, err := service.ListAuthenticatedUserGitHubPullCommits(context.Background(), 42, "octo", "widget", 0, nil)
+			return err
+		},
+		"negative number": func() error {
+			_, err := service.ListAuthenticatedUserGitHubPullCommits(context.Background(), 42, "octo", "widget", -3, nil)
+			return err
+		},
+		"owner traversal": func() error {
+			_, err := service.ListAuthenticatedUserGitHubPullCommits(context.Background(), 42, "octo/other", "widget", 2, nil)
+			return err
+		},
+		"repo traversal": func() error {
+			_, err := service.ListAuthenticatedUserGitHubPullCommits(context.Background(), 42, "octo", "../private", 2, nil)
+			return err
+		},
+	} {
+		err := read()
+		require.Error(t, err, name)
+		apiErr, ok := err.(*pkgerrors.APIError)
+		require.True(t, ok, name)
+		assert.Equal(t, http.StatusBadRequest, apiErr.Status, name)
+	}
+	_, err := service.ListAuthenticatedUserGitHubPullCommits(context.Background(), 0, "octo", "widget", 2, nil)
+	require.Error(t, err)
+	apiErr, ok := err.(*pkgerrors.APIError)
+	require.True(t, ok)
+	assert.Equal(t, http.StatusUnauthorized, apiErr.Status)
+}
+
+func TestGitHubCommitCheckRuns_ProxiesTheHeadCommitsRuns(t *testing.T) {
+	var mu sync.Mutex
+	var gotPath, gotQuery string
+	runs := `{"total_count":1,"check_runs":[{"name":"build-status","status":"completed","conclusion":"success","started_at":"2026-10-14T18:01:00Z"}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		gotPath, gotQuery = r.URL.Path, r.URL.RawQuery
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(runs))
+	}))
+	defer srv.Close()
+	t.Setenv(envGitHubAppAPIBaseURL, srv.URL)
+
+	service := NewGitHubUserReposService(newFakeGitHubUserReposDB(), fakeOAuthTokenDecrypter{token: "gho_user"})
+	result, err := service.GetAuthenticatedUserGitHubCommitCheckRuns(
+		context.Background(), 42, "roninjin10", "e2e-verify", "0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6", nil)
+	require.NoError(t, err)
+	assert.JSONEq(t, runs, string(result.Body))
+
+	mu.Lock()
+	path, query := gotPath, gotQuery
+	mu.Unlock()
+	assert.Equal(t, "/repos/roninjin10/e2e-verify/commits/0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6/check-runs", path)
+	assert.Equal(t, "per_page=100", query)
+}
+
+func TestGitHubCommitCheckRuns_RefusesAnyRefThatIsNotACommitID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("a ref that is not a commit id must never reach GitHub")
+	}))
+	defer srv.Close()
+	t.Setenv(envGitHubAppAPIBaseURL, srv.URL)
+
+	service := NewGitHubUserReposService(newFakeGitHubUserReposDB(), fakeOAuthTokenDecrypter{token: "gho_user"})
+	for _, ref := range []string{"", "main", "refs/heads/main", "../../secrets", "0d1dc5", "zzzzzzz", "0d1dc5a1/../x", strings.Repeat("a", 65)} {
+		_, err := service.GetAuthenticatedUserGitHubCommitCheckRuns(context.Background(), 42, "octo", "widget", ref, nil)
+		require.Error(t, err, ref)
+		apiErr, ok := err.(*pkgerrors.APIError)
+		require.True(t, ok, ref)
+		assert.Equal(t, http.StatusBadRequest, apiErr.Status, ref)
+	}
+}
+
+func TestGitHubPullTabs_RefuseAndRefreshLikeEveryOtherRead(t *testing.T) {
+	t.Run("a refused read keeps GitHub's typed verdict", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer srv.Close()
+		t.Setenv(envGitHubAppAPIBaseURL, srv.URL)
+
+		service := NewGitHubUserReposService(newFakeGitHubUserReposDB(), fakeOAuthTokenDecrypter{token: "gho_user"})
+		_, err := service.ListAuthenticatedUserGitHubPullCommits(context.Background(), 42, "octo", "widget", 2, nil)
+		require.Error(t, err)
+		apiErr, ok := err.(*pkgerrors.APIError)
+		require.True(t, ok)
+		assert.Equal(t, pkgerrors.CodeGitHubPermission, apiErr.Code)
+	})
+
+	t.Run("an expired token rotates exactly once", func(t *testing.T) {
+		var mu sync.Mutex
+		var auths []string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			auths = append(auths, r.Header.Get("Authorization"))
+			mu.Unlock()
+			if r.Header.Get("Authorization") != "Bearer gho_new" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			_, _ = w.Write([]byte(`[]`))
+		}))
+		defer srv.Close()
+		t.Setenv(envGitHubAppAPIBaseURL, srv.URL)
+
+		service := NewGitHubUserReposService(newFakeGitHubUserReposDB(), fakeOAuthTokenDecrypter{token: "gho_user"})
+		service.refresher = &fakeGitHubTokenRefresher{newToken: "gho_new"}
+		result, err := service.ListAuthenticatedUserGitHubPullCommits(context.Background(), 42, "octo", "widget", 2, nil)
+		require.NoError(t, err)
+		assert.JSONEq(t, `[]`, string(result.Body))
+		mu.Lock()
+		got := append([]string(nil), auths...)
+		mu.Unlock()
+		assert.Equal(t, []string{"Bearer gho_user", "Bearer gho_new"}, got)
+	})
+
+	t.Run("a body that is not the shape its surface promises is unavailable, never passed through", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`{"message":"Not Found"}`))
+		}))
+		defer srv.Close()
+		t.Setenv(envGitHubAppAPIBaseURL, srv.URL)
+
+		service := NewGitHubUserReposService(newFakeGitHubUserReposDB(), fakeOAuthTokenDecrypter{token: "gho_user"})
+		_, err := service.ListAuthenticatedUserGitHubPullCommits(context.Background(), 42, "octo", "widget", 2, nil)
+		require.Error(t, err)
+		apiErr, ok := err.(*pkgerrors.APIError)
+		require.True(t, ok)
+		assert.Equal(t, pkgerrors.CodeGitHubUnavailable, apiErr.Code)
+	})
+}
+
+/*
+ * Pagination, the defect root found in the first candidate: both tab reads
+ * asked GitHub for `per_page=100` and took no page, so a pull request with
+ * more than 100 commits or check runs answered its first hundred rows and
+ * nothing said they were not all of them. A page is now a validated NUMBER on
+ * the service's own fixed path — GitHub's `Link` is never a URL this follows.
+ */
+
+func TestGitHubPullTabs_ReadTheValidatedPageOnTheirOwnPath(t *testing.T) {
+	var mu sync.Mutex
+	var paths, queries []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths, queries = append(paths, r.URL.Path), append(queries, r.URL.RawQuery)
+		mu.Unlock()
+		if strings.HasSuffix(r.URL.Path, "/check-runs") {
+			_, _ = w.Write([]byte(`{"total_count":0,"check_runs":[]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer srv.Close()
+	t.Setenv(envGitHubAppAPIBaseURL, srv.URL)
+
+	service := NewGitHubUserReposService(newFakeGitHubUserReposDB(), fakeOAuthTokenDecrypter{token: "gho_user"})
+	_, err := service.ListAuthenticatedUserGitHubPullCommits(
+		context.Background(), 42, "octo", "widget", 2, url.Values{"page": {"3"}})
+	require.NoError(t, err)
+	_, err = service.GetAuthenticatedUserGitHubCommitCheckRuns(
+		context.Background(), 42, "octo", "widget", "0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6",
+		url.Values{"page": {"2"}, "per_page": {"50"}})
+	require.NoError(t, err)
+
+	mu.Lock()
+	gotPaths, gotQueries := append([]string(nil), paths...), append([]string(nil), queries...)
+	mu.Unlock()
+	assert.Equal(t, []string{
+		"/repos/octo/widget/pulls/2/commits",
+		"/repos/octo/widget/commits/0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6/check-runs",
+	}, gotPaths)
+	// The page asked for, GitHub's maximum page size unless the caller named a
+	// smaller one, and nothing else.
+	assert.Equal(t, []string{"page=3&per_page=100", "page=2&per_page=50"}, gotQueries)
+}
+
+func TestGitHubPullTabs_RefuseAPageThatIsNotANumberInRange(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("an unvalidated page must never reach GitHub")
+	}))
+	defer srv.Close()
+	t.Setenv(envGitHubAppAPIBaseURL, srv.URL)
+
+	service := NewGitHubUserReposService(newFakeGitHubUserReposDB(), fakeOAuthTokenDecrypter{token: "gho_user"})
+	for name, query := range map[string]url.Values{
+		"not a number":      {"page": {"nope"}},
+		"zero":              {"page": {"0"}},
+		"negative":          {"page": {"-2"}},
+		"past the ceiling":  {"page": {"10001"}},
+		"empty":             {"page": {""}},
+		"two values":        {"page": {"1", "2"}},
+		"per_page over 100": {"per_page": {"101"}},
+		"per_page zero":     {"per_page": {"0"}},
+		// A full upstream URL is exactly what must never be forwarded.
+		"an upstream url":   {"url": {"https://api.github.com/repositories/1/pulls/2/commits?page=2"}},
+		"an unknown filter": {"filter": {"all"}},
+	} {
+		_, err := service.ListAuthenticatedUserGitHubPullCommits(context.Background(), 42, "octo", "widget", 2, query)
+		require.Error(t, err, name)
+		apiErr, ok := err.(*pkgerrors.APIError)
+		require.True(t, ok, name)
+		assert.Equal(t, http.StatusBadRequest, apiErr.Status, name)
+
+		_, err = service.GetAuthenticatedUserGitHubCommitCheckRuns(
+			context.Background(), 42, "octo", "widget", "0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6", query)
+		require.Error(t, err, name)
+		apiErr, ok = err.(*pkgerrors.APIError)
+		require.True(t, ok, name)
+		assert.Equal(t, http.StatusBadRequest, apiErr.Status, name)
+	}
+}
+
+// A credential that cannot read check runs — GitHub requires `checks: read`
+// for a fine-grained token or App and `repo` for a classic one, NOT the
+// `pull_requests: read` an earlier comment here claimed — is answered 403 by
+// GitHub. That stays a typed permission refusal with no upstream prose, and
+// is never softened into a commit-less or check-less tab.
+func TestGitHubPullTabs_ForbiddenStaysAPermissionRefusal(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"Resource not accessible by integration","documentation_url":"https://docs.github.com/x"}`))
+	}))
+	defer srv.Close()
+	t.Setenv(envGitHubAppAPIBaseURL, srv.URL)
+
+	service := NewGitHubUserReposService(newFakeGitHubUserReposDB(), fakeOAuthTokenDecrypter{token: "gho_user"})
+	for name, read := range map[string]func() (GitHubRepoMetadataResult, error){
+		"commits": func() (GitHubRepoMetadataResult, error) {
+			return service.ListAuthenticatedUserGitHubPullCommits(context.Background(), 42, "octo", "widget", 2, nil)
+		},
+		"check runs": func() (GitHubRepoMetadataResult, error) {
+			return service.GetAuthenticatedUserGitHubCommitCheckRuns(
+				context.Background(), 42, "octo", "widget", "0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6", nil)
+		},
+	} {
+		result, err := read()
+		require.Error(t, err, name)
+		assert.Nil(t, result.Body, name)
+		apiErr, ok := err.(*pkgerrors.APIError)
+		require.True(t, ok, name)
+		assert.Equal(t, pkgerrors.CodeGitHubPermission, apiErr.Code, name)
+		assert.NotContains(t, apiErr.Message, "not accessible by integration", name)
+		assert.NotContains(t, apiErr.Message, "docs.github.com", name)
+	}
+}

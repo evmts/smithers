@@ -1587,9 +1587,30 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
         })
       ),
       checks: z.array(z.object({ context: z.string(), state: z.string() })),
+      /*
+       * Which tab read failed and why, in product words. `checks` joins
+       * `commits` and `files` for a GitHub-source pull request, whose checks
+       * are one proxied read that can be refused: an empty `checks` list then
+       * means "no checks reported", never "the read failed". Optional, like
+       * its siblings — an older reader simply drops a key it does not know.
+       */
       readErrors: z.object({
         commits: z.string().optional(),
+        checks: z.string().optional(),
         files: z.string().optional()
+      }).optional(),
+      /*
+       * A tab whose rows are REAL but not all of them, and why: GitHub pages
+       * a pull request's commits and a commit's check runs 100 at a time and
+       * stops a pull request's own commit list at 250 however it is paged, so
+       * a long stack can only be read in part. The rows stay — this is the
+       * sentence beside them saying how many of how many they are, so a
+       * partial read is never presented as the whole. A tab with no entry
+       * here read everything its source has. Optional, like `readErrors`.
+       */
+      readLimits: z.object({
+        commits: z.string().optional(),
+        checks: z.string().optional()
       }).optional(),
       /*
        * GitHub-like facts and the Commits / Files changed tabs, when the read

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -493,4 +494,188 @@ func gitHubRepoMetadataUpstreamError(resp *http.Response, now time.Time) error {
 		return pkgerrors.New(pkgerrors.CodeGitHubUnavailable, "GitHub returned an unsolicited conditional response")
 	}
 	return nil
+}
+
+/*
+ * The two remaining read-only surfaces one GitHub pull request has, beside its
+ * object (GetAuthenticatedUserGitHubPull) and its diff (github_pull_diff.go):
+ * the commits it carries and the check runs reported against its head commit.
+ * Both are plain GETs through the same per-user OAuth credential, the same
+ * single 401-refresh and the same byte-preserving decoder as every other read
+ * here; neither writes anything.
+ *
+ * GitHub's own contract for the two, read from the REST documentation for
+ * "List commits on a pull request" and "List check runs for a Git reference",
+ * because a caller that is told the wrong thing shows the wrong thing:
+ *
+ *   - Both are PAGED: `per_page` up to 100, and `page`. One read is one page,
+ *     so the caller asks for the page it wants by number on THIS fixed path
+ *     and GitHub's Link header rides back untouched. An upstream URL is never
+ *     followed with the caller's credential, here or anywhere.
+ *   - The pull request commit list stops at 250 commits however it is paged;
+ *     past that GitHub's answer is the repository commit list, a different
+ *     endpoint. So the page count alone can never prove a stack complete —
+ *     only the pull request object's own `commits` count can — and a client
+ *     that read 250 rows must say so rather than call them all of them.
+ *   - Check runs are NOT covered by `pull_requests: read`. A fine-grained
+ *     token or App installation needs `checks: read`; a classic or OAuth-app
+ *     token needs `repo` to see a private repository's runs. A credential
+ *     without it is answered 403 by GitHub, which stays a permission refusal
+ *     here (GitHubResponseFailure): no scope is added, no permission is
+ *     claimed on the credential's behalf, and no empty Checks tab is invented
+ *     in place of the refusal.
+ *   - Check runs default to `filter=latest`, and GitHub itself stops at 1000
+ *     check suites for a ref.
+ */
+const githubPullTabPageSize = "100"
+
+// ListAuthenticatedUserGitHubPullCommits reads one page of one pull request's
+// commits (GET /repos/{owner}/{repo}/pulls/{number}/commits) in GitHub's own
+// order, oldest first, which is the order the PR card lists a stack in.
+func (s *GitHubUserReposService) ListAuthenticatedUserGitHubPullCommits(
+	ctx context.Context,
+	userID int64,
+	owner string,
+	repo string,
+	number int64,
+	rawQuery url.Values,
+) (GitHubRepoMetadataResult, error) {
+	owner, repo, err := s.readableGitHubRepo(userID, owner, repo)
+	if err != nil {
+		return GitHubRepoMetadataResult{}, err
+	}
+	if number <= 0 || number > 9007199254740991 {
+		return GitHubRepoMetadataResult{}, pkgerrors.BadRequest("invalid github pull request number")
+	}
+	query, err := normalizeGitHubPullTabQuery("github pull commits", rawQuery)
+	if err != nil {
+		return GitHubRepoMetadataResult{}, err
+	}
+	return s.readAuthenticatedUserGitHubPath(
+		ctx, userID,
+		"/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/pulls/"+strconv.FormatInt(number, 10)+
+			"/commits?"+query.Encode(),
+		'[',
+	)
+}
+
+// GetAuthenticatedUserGitHubCommitCheckRuns reads one page of the check runs
+// reported against one commit (GET /repos/{owner}/{repo}/commits/{ref}/check-runs),
+// which is what a pull request's Checks tab shows for its head commit.
+func (s *GitHubUserReposService) GetAuthenticatedUserGitHubCommitCheckRuns(
+	ctx context.Context,
+	userID int64,
+	owner string,
+	repo string,
+	ref string,
+	rawQuery url.Values,
+) (GitHubRepoMetadataResult, error) {
+	owner, repo, err := s.readableGitHubRepo(userID, owner, repo)
+	if err != nil {
+		return GitHubRepoMetadataResult{}, err
+	}
+	normalizedRef, err := normalizeGitHubCommitID(ref)
+	if err != nil {
+		return GitHubRepoMetadataResult{}, err
+	}
+	query, err := normalizeGitHubPullTabQuery("github commit check runs", rawQuery)
+	if err != nil {
+		return GitHubRepoMetadataResult{}, err
+	}
+	return s.readAuthenticatedUserGitHubPath(
+		ctx, userID,
+		"/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/commits/"+normalizedRef+
+			"/check-runs?"+query.Encode(),
+		'{',
+	)
+}
+
+// normalizeGitHubPullTabQuery is the whole query a pull request tab read may
+// carry: which page, and how many rows of it. Nothing else is forwarded, both
+// are numbers inside GitHub's own limits, and an absent page size asks for
+// GitHub's maximum so one read covers as much as one read can. A page number
+// is the ONLY way a later page is requested — never a URL a response named.
+func normalizeGitHubPullTabQuery(surface string, rawQuery url.Values) (url.Values, error) {
+	query := url.Values{"per_page": {githubPullTabPageSize}}
+	for key, values := range rawQuery {
+		if key != "per_page" && key != "page" {
+			return nil, pkgerrors.BadRequest("unsupported " + surface + " query parameter")
+		}
+		if len(values) != 1 {
+			return nil, pkgerrors.BadRequest(surface + " query parameters must have one value")
+		}
+		value := strings.TrimSpace(values[0])
+		number, parseErr := strconv.Atoi(value)
+		if key == "per_page" {
+			if parseErr != nil || number < 1 || number > githubRepoListingPageSize {
+				return nil, pkgerrors.BadRequest(surface + " per_page must be between 1 and 100")
+			}
+		} else if parseErr != nil || number < 1 || number > githubRepoMetadataMaxPage {
+			return nil, pkgerrors.BadRequest("invalid " + surface + " page")
+		}
+		query.Set(key, value)
+	}
+	return query, nil
+}
+
+// readableGitHubRepo is the precondition every read here shares: a configured
+// service, an authenticated caller, and an owner/repo pair that cannot leave
+// the path segment it is written into.
+func (s *GitHubUserReposService) readableGitHubRepo(userID int64, owner, repo string) (string, string, error) {
+	if s == nil || s.queries == nil || s.decrypter == nil {
+		return "", "", pkgerrors.Internal("github repository metadata service unavailable")
+	}
+	if userID <= 0 {
+		return "", "", pkgerrors.Unauthorized("authentication required")
+	}
+	normalizedOwner, err := normalizeGitHubRepoMetadataSegment(owner, "owner")
+	if err != nil {
+		return "", "", err
+	}
+	normalizedRepo, err := normalizeGitHubRepoMetadataSegment(repo, "repository")
+	if err != nil {
+		return "", "", err
+	}
+	return normalizedOwner, normalizedRepo, nil
+}
+
+// readAuthenticatedUserGitHubPath GETs one already-validated upstream path
+// with the caller's own credential, rotating an expired token exactly once —
+// the token handling GetAuthenticatedUserGitHubPull performs inline.
+func (s *GitHubUserReposService) readAuthenticatedUserGitHubPath(
+	ctx context.Context,
+	userID int64,
+	path string,
+	expectedTopLevel byte,
+) (GitHubRepoMetadataResult, error) {
+	upstreamURL := strings.TrimRight(githubAPIBaseURL(), "/") + path
+	token, account, err := s.resolveUserGitHubAccessToken(ctx, userID)
+	if err != nil {
+		return GitHubRepoMetadataResult{}, err
+	}
+	result, err := s.requestGitHubRepoRaw(ctx, token, upstreamURL, expectedTopLevel)
+	if err != nil && isGitHubTokenExpired(err) {
+		if refreshed, refreshErr := s.refreshUserGitHubToken(ctx, account); refreshErr == nil {
+			result, err = s.requestGitHubRepoRaw(ctx, refreshed, upstreamURL, expectedTopLevel)
+		} else {
+			err = refreshErr
+		}
+	}
+	if err != nil {
+		return GitHubRepoMetadataResult{}, err
+	}
+	return result, nil
+}
+
+// githubCommitID is a hexadecimal commit id, abbreviated or whole. A pull
+// request's head commit is always one, so accepting only this keeps a branch
+// name, a tag, a relative ref and a path segment out of the proxied path.
+var githubCommitID = regexp.MustCompile(`^[0-9a-fA-F]{7,64}$`)
+
+func normalizeGitHubCommitID(ref string) (string, error) {
+	normalized := strings.TrimSpace(ref)
+	if !githubCommitID.MatchString(normalized) {
+		return "", pkgerrors.BadRequest("invalid github commit id")
+	}
+	return normalized, nil
 }

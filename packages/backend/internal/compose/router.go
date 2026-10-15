@@ -1920,6 +1920,12 @@ func buildRouter(
 				// as the metadata surfaces above.
 				r.With(githubUserRepoRead...).Get("/user/github-repos/{owner}/{repo}/issues/{number}/comments", gitHubUserReposHandler.ListGitHubRepoIssueComments)
 				r.With(githubUserRepoRead...).Get("/user/github-repos/{owner}/{repo}/pulls/{number}/diff", gitHubUserReposHandler.GetGitHubPullDiff)
+				// The rest of one pull request's own read-only surfaces: the
+				// commits it carries, and the check runs reported against its
+				// head commit (its Checks tab). Same token, scope and cache
+				// policy as the pull request object; GET only.
+				r.With(githubUserRepoRead...).Get("/user/github-repos/{owner}/{repo}/pulls/{number}/commits", gitHubUserReposHandler.ListGitHubPullCommits)
+				r.With(githubUserRepoRead...).Get("/user/github-repos/{owner}/{repo}/commits/{sha}/check-runs", gitHubUserReposHandler.ListGitHubCommitCheckRuns)
 				// Typed access diagnosis for the surfaces above: WHY a read fails
 				// (app-not-installed / permission-missing / no-org-grant / token-broken
 				// / ok), from the App's own installation lookup.

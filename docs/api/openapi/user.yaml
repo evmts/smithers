@@ -1101,6 +1101,221 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '500':
           $ref: '#/components/responses/InternalError'
+  /api/user/github-repos/{owner}/{repo}/pulls/{number}/commits:
+    get:
+      summary: List one GitHub pull request's commits
+      description: Requires read:repository and a user credential that is not repository-restricted. Reads one page of the pull request's own commits through the signed-in user's GitHub credential, live from GitHub. Paged with per_page (100 maximum) and page; GitHub's Link header rides back unchanged. GitHub serves at most 250 commits for one pull request however it is paged, so comparing rows against the pull request object's own commits count is the only way to know a longer stack was cut short. The body is GitHub's commit array passed through unchanged; the fields below are the ones clients rely on.
+      operationId: list_api_user_github_repos_owner_repo_pulls_number_commits
+      tags:
+        - User
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: number
+          in: path
+          required: true
+          description: Pull request number, a positive integer.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 9007199254740991
+        - name: per_page
+          in: query
+          required: false
+          description: Rows per page, 1 to 100 (GitHub's own maximum, and the default here).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: page
+          in: query
+          required: false
+          description: Which page of rows to read, counting from 1. A validated page number on this fixed path is the only way a later page is requested; the upstream URLs in GitHub's Link header are never followed with the caller's credential.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+      x-required-token-scope: read:repository
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: GitHub commit array for this pull request.
+          headers:
+            Cache-Control:
+              description: Always `private, no-store`.
+              schema:
+                type: string
+            Link:
+              description: GitHub's pagination header, present when more pages exist.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                  required:
+                    - sha
+                    - commit
+                  properties:
+                    sha:
+                      type: string
+                    commit:
+                      type: object
+                      additionalProperties: true
+                      properties:
+                        message:
+                          type: string
+                        author:
+                          type: object
+                          additionalProperties: true
+                          properties:
+                            name:
+                              type: string
+                            date:
+                              type: string
+                              format: date-time
+                    author:
+                      type: object
+                      additionalProperties: true
+                      nullable: true
+                      properties:
+                        login:
+                          type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/user/github-repos/{owner}/{repo}/commits/{sha}/check-runs:
+    get:
+      summary: List the check runs reported against one GitHub commit
+      description: Requires read:repository and a user credential that is not repository-restricted. Reads one page of the check runs GitHub reports against one commit — a pull request's head commit is what its Checks tab shows — through the signed-in user's GitHub credential. Paged with per_page (100 maximum) and page, and total_count in the body is how many runs the ref has. GitHub requires checks:read on a fine-grained token or App installation, or the repo scope on a classic token for a private repository; pull_requests:read does NOT cover check runs, and a credential without the access is answered 403 rather than an empty list. The ref must be a hexadecimal commit id; a branch name or any other ref is refused with 400. The body is GitHub's check-runs object passed through unchanged.
+      operationId: list_api_user_github_repos_owner_repo_commits_sha_check_runs
+      tags:
+        - User
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: sha
+          in: path
+          required: true
+          description: Commit id, 7 to 64 hexadecimal characters.
+          schema:
+            type: string
+            pattern: '^[0-9a-fA-F]{7,64}$'
+        - name: per_page
+          in: query
+          required: false
+          description: Rows per page, 1 to 100 (GitHub's own maximum, and the default here).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: page
+          in: query
+          required: false
+          description: Which page of rows to read, counting from 1. A validated page number on this fixed path is the only way a later page is requested; the upstream URLs in GitHub's Link header are never followed with the caller's credential.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+      x-required-token-scope: read:repository
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: GitHub check-runs object for this commit.
+          headers:
+            Cache-Control:
+              description: Always `private, no-store`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                required:
+                  - check_runs
+                properties:
+                  total_count:
+                    type: integer
+                  check_runs:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                      required:
+                        - name
+                        - status
+                      properties:
+                        name:
+                          type: string
+                        status:
+                          type: string
+                          enum:
+                            - queued
+                            - in_progress
+                            - completed
+                        conclusion:
+                          type: string
+                          nullable: true
+                        started_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        completed_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /api/user/github/repos:
     get:
       summary: GET /api/user/github/repos

@@ -41,8 +41,13 @@ type mockGitHubUserReposRouteService struct {
 	diffResult services.GitHubPullDiffResult
 	diffErr    error
 	diffFn     func(context.Context, int64, string, string, int64) (services.GitHubPullDiffResult, error)
-	pullFn     func(context.Context, int64, string, string, int64) (services.GitHubRepoMetadataResult, error)
-	pullErr    error
+
+	pullCommitsFn  func(context.Context, int64, string, string, int64, url.Values) (services.GitHubRepoMetadataResult, error)
+	pullCommitsErr error
+	checkRunsFn    func(context.Context, int64, string, string, string, url.Values) (services.GitHubRepoMetadataResult, error)
+	checkRunsErr   error
+	pullFn         func(context.Context, int64, string, string, int64) (services.GitHubRepoMetadataResult, error)
+	pullErr        error
 }
 
 func (m mockGitHubUserReposRouteService) ListAuthenticatedUserGitHubRepos(ctx context.Context, userID int64, query url.Values) (services.GitHubRepoListResult, error) {
@@ -82,6 +87,26 @@ func (m mockGitHubUserReposRouteService) GetAuthenticatedUserGitHubPullDiff(ctx 
 		return m.diffFn(ctx, userID, owner, repo, number)
 	}
 	return m.diffResult, m.diffErr
+}
+
+func (m mockGitHubUserReposRouteService) ListAuthenticatedUserGitHubPullCommits(ctx context.Context, userID int64, owner, repo string, number int64, query url.Values) (services.GitHubRepoMetadataResult, error) {
+	if m.pullCommitsFn != nil {
+		return m.pullCommitsFn(ctx, userID, owner, repo, number, query)
+	}
+	if m.pullCommitsErr != nil {
+		return services.GitHubRepoMetadataResult{}, m.pullCommitsErr
+	}
+	return services.GitHubRepoMetadataResult{Body: []byte(`[]`)}, nil
+}
+
+func (m mockGitHubUserReposRouteService) GetAuthenticatedUserGitHubCommitCheckRuns(ctx context.Context, userID int64, owner, repo, ref string, query url.Values) (services.GitHubRepoMetadataResult, error) {
+	if m.checkRunsFn != nil {
+		return m.checkRunsFn(ctx, userID, owner, repo, ref, query)
+	}
+	if m.checkRunsErr != nil {
+		return services.GitHubRepoMetadataResult{}, m.checkRunsErr
+	}
+	return services.GitHubRepoMetadataResult{Body: []byte(`{"total_count":0,"check_runs":[]}`)}, nil
 }
 
 func (m mockGitHubUserReposRouteService) GetAuthenticatedUserGitHubPull(ctx context.Context, userID int64, owner, repo string, number int64) (services.GitHubRepoMetadataResult, error) {
@@ -459,4 +484,173 @@ func TestGitHubUserReposHandler_PullDiffRejectsInvalidNumber(t *testing.T) {
 		t, "/api/user/github-repos/acme/widget/pulls/-1/diff", "acme", "widget", "-1"))
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+// githubShaRequest is githubNumberedRequest for the check-runs route, whose
+// path names a commit instead of a pull request number.
+func githubShaRequest(t *testing.T, path, owner, repo, sha string) *http.Request {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	routeContext := chi.NewRouteContext()
+	routeContext.URLParams.Add("owner", owner)
+	routeContext.URLParams.Add("repo", repo)
+	routeContext.URLParams.Add("sha", sha)
+	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, routeContext)
+	ctx = context.WithValue(ctx, middleware.UserContextKey, &db.User{ID: 42, Username: "octo"})
+	return req.WithContext(ctx)
+}
+
+func TestGitHubUserReposHandler_PullCommitsWriteRawJSONWithLink(t *testing.T) {
+	t.Parallel()
+
+	commits := `[{"sha":"0d1dc5a","commit":{"message":"Add build-status line to README"}}]`
+	handler := &GitHubUserReposHandler{Service: mockGitHubUserReposRouteService{
+		pullCommitsFn: func(_ context.Context, userID int64, owner, repo string, number int64, _ url.Values) (services.GitHubRepoMetadataResult, error) {
+			assert.Equal(t, int64(42), userID)
+			assert.Equal(t, "roninjin10", owner)
+			assert.Equal(t, "e2e-verify", repo)
+			assert.Equal(t, int64(2), number)
+			return services.GitHubRepoMetadataResult{Body: []byte(commits), Link: `<https://api.github.com/x?page=2>; rel="next"`}, nil
+		},
+	}}
+
+	rec := httptest.NewRecorder()
+	handler.ListGitHubPullCommits(rec, githubNumberedRequest(
+		t, "/api/user/github-repos/roninjin10/e2e-verify/pulls/2/commits", "roninjin10", "e2e-verify", "2"))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+	assert.Equal(t, `<https://api.github.com/x?page=2>; rel="next"`, rec.Header().Get("Link"))
+	assert.JSONEq(t, commits, rec.Body.String())
+}
+
+func TestGitHubUserReposHandler_PullCommitsRejectInvalidNumber(t *testing.T) {
+	t.Parallel()
+
+	handler := &GitHubUserReposHandler{Service: mockGitHubUserReposRouteService{
+		pullCommitsFn: func(context.Context, int64, string, string, int64, url.Values) (services.GitHubRepoMetadataResult, error) {
+			t.Fatal("an invalid number must never reach the service")
+			return services.GitHubRepoMetadataResult{}, nil
+		},
+	}}
+
+	for _, number := range []string{"nope", "0", "-1"} {
+		rec := httptest.NewRecorder()
+		handler.ListGitHubPullCommits(rec, githubNumberedRequest(
+			t, "/api/user/github-repos/acme/widget/pulls/"+number+"/commits", "acme", "widget", number))
+		require.Equal(t, http.StatusBadRequest, rec.Code, number)
+		assert.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"), number)
+	}
+}
+
+func TestGitHubUserReposHandler_CommitCheckRunsWriteRawJSON(t *testing.T) {
+	t.Parallel()
+
+	runs := `{"total_count":1,"check_runs":[{"name":"build-status","status":"completed","conclusion":"success"}]}`
+	handler := &GitHubUserReposHandler{Service: mockGitHubUserReposRouteService{
+		checkRunsFn: func(_ context.Context, userID int64, owner, repo, ref string, _ url.Values) (services.GitHubRepoMetadataResult, error) {
+			assert.Equal(t, int64(42), userID)
+			assert.Equal(t, "roninjin10", owner)
+			assert.Equal(t, "e2e-verify", repo)
+			assert.Equal(t, "0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6", ref)
+			return services.GitHubRepoMetadataResult{Body: []byte(runs)}, nil
+		},
+	}}
+
+	rec := httptest.NewRecorder()
+	handler.ListGitHubCommitCheckRuns(rec, githubShaRequest(
+		t, "/api/user/github-repos/roninjin10/e2e-verify/commits/0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6/check-runs",
+		"roninjin10", "e2e-verify", "0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6"))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+	assert.JSONEq(t, runs, rec.Body.String())
+}
+
+func TestGitHubUserReposHandler_PullTabRefusalsStayPrivateAndTyped(t *testing.T) {
+	t.Parallel()
+
+	refused := pkgerrors.Forbidden("github denied")
+	for name, serve := range map[string]func(*httptest.ResponseRecorder){
+		"commits": func(rec *httptest.ResponseRecorder) {
+			handler := &GitHubUserReposHandler{Service: mockGitHubUserReposRouteService{pullCommitsErr: refused}}
+			handler.ListGitHubPullCommits(rec, githubNumberedRequest(
+				t, "/api/user/github-repos/acme/widget/pulls/2/commits", "acme", "widget", "2"))
+		},
+		"check runs": func(rec *httptest.ResponseRecorder) {
+			handler := &GitHubUserReposHandler{Service: mockGitHubUserReposRouteService{checkRunsErr: refused}}
+			handler.ListGitHubCommitCheckRuns(rec, githubShaRequest(
+				t, "/api/user/github-repos/acme/widget/commits/0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6/check-runs",
+				"acme", "widget", "0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6"))
+		},
+	} {
+		rec := httptest.NewRecorder()
+		serve(rec)
+		require.Equal(t, http.StatusForbidden, rec.Code, name)
+		assert.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"), name)
+	}
+
+	// A composition that mounted the route without the service says so
+	// instead of answering an empty tab.
+	for name, serve := range map[string]func(*httptest.ResponseRecorder){
+		"commits": func(rec *httptest.ResponseRecorder) {
+			(&GitHubUserReposHandler{}).ListGitHubPullCommits(rec, githubNumberedRequest(
+				t, "/api/user/github-repos/acme/widget/pulls/2/commits", "acme", "widget", "2"))
+		},
+		"check runs": func(rec *httptest.ResponseRecorder) {
+			(&GitHubUserReposHandler{}).ListGitHubCommitCheckRuns(rec, githubShaRequest(
+				t, "/api/user/github-repos/acme/widget/commits/0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6/check-runs",
+				"acme", "widget", "0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6"))
+		},
+	} {
+		rec := httptest.NewRecorder()
+		serve(rec)
+		require.Equal(t, http.StatusInternalServerError, rec.Code, name)
+	}
+}
+
+// The page a caller asks for reaches the service, which is what validates it
+// (normalizeGitHubPullTabQuery): the route forwards the query it was given
+// rather than dropping it, so a second page of commits or check runs is
+// reachable at all.
+func TestGitHubUserReposHandler_PullTabsForwardTheRequestedPage(t *testing.T) {
+	t.Parallel()
+
+	var commitsQuery, checkRunsQuery url.Values
+	handler := &GitHubUserReposHandler{Service: mockGitHubUserReposRouteService{
+		pullCommitsFn: func(_ context.Context, _ int64, _, _ string, _ int64, query url.Values) (services.GitHubRepoMetadataResult, error) {
+			commitsQuery = query
+			return services.GitHubRepoMetadataResult{Body: []byte(`[]`)}, nil
+		},
+		checkRunsFn: func(_ context.Context, _ int64, _, _, _ string, query url.Values) (services.GitHubRepoMetadataResult, error) {
+			checkRunsQuery = query
+			return services.GitHubRepoMetadataResult{Body: []byte(`{"total_count":0,"check_runs":[]}`)}, nil
+		},
+	}}
+
+	rec := httptest.NewRecorder()
+	handler.ListGitHubPullCommits(rec, githubNumberedRequest(
+		t, "/api/user/github-repos/acme/widget/pulls/2/commits?page=4&per_page=100", "acme", "widget", "2"))
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "4", commitsQuery.Get("page"))
+	assert.Equal(t, "100", commitsQuery.Get("per_page"))
+
+	rec = httptest.NewRecorder()
+	handler.ListGitHubCommitCheckRuns(rec, githubShaRequest(
+		t, "/api/user/github-repos/acme/widget/commits/0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6/check-runs?page=2",
+		"acme", "widget", "0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6"))
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "2", checkRunsQuery.Get("page"))
+
+	// A page the service refuses is a bounded 400, not a silent first page.
+	handler = &GitHubUserReposHandler{Service: mockGitHubUserReposRouteService{
+		pullCommitsErr: pkgerrors.BadRequest("invalid github pull commits page"),
+	}}
+	rec = httptest.NewRecorder()
+	handler.ListGitHubPullCommits(rec, githubNumberedRequest(
+		t, "/api/user/github-repos/acme/widget/pulls/2/commits?page=nope", "acme", "widget", "2"))
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
 }

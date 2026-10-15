@@ -11,6 +11,7 @@ import { readRepositoryListError, repositoryListRead, type RepositoryForm } from
  */
 import type { Card } from "../AppState"
 import type { FieldOption } from "@smthrs/ui/flow-form"
+import { parseUnifiedFile } from "@smthrs/ui/diff-paginate"
 
 type PrPayload = Extract<Card, { kind: "pr" }>["payload"]
 type FileRow = NonNullable<PrPayload["files"]>[number]
@@ -217,13 +218,134 @@ const pullSource = async (ctx: Pick<SeamContext, "http" | "baseUrl">, repo: stri
   return { kind: "github", repo: `${source.owner}/${source.repo}` }
 }
 
-const githubPullsRoot = (ctx: Pick<SeamContext, "baseUrl">, sourceRepo: string): string => {
+const githubRepoRoot = (ctx: Pick<SeamContext, "baseUrl">, sourceRepo: string): string => {
   const [owner = "", name = ""] = sourceRepo.split("/")
-  return `${ctx.baseUrl}/api/user/github-repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/pulls`
+  return `${ctx.baseUrl}/api/user/github-repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
 }
+
+const githubPullsRoot = (ctx: Pick<SeamContext, "baseUrl">, sourceRepo: string): string =>
+  `${githubRepoRoot(ctx, sourceRepo)}/pulls`
 
 /** A pull request a review can still act on: not merged, closed or landed. */
 const reviewable = (state: string): boolean => !["merged", "closed", "landed"].includes(state.toLowerCase())
+
+/**
+ * The files of one unified patch, one row per `diff --git` section.
+ *
+ * GitHub answers a pull request's whole diff as a single patch, and the Files
+ * changed tab renders one file at a time, so the sections ARE the rows. Each
+ * section is read by the diff domain the tab's own renderer parses with
+ * (`@smthrs/ui/diff-paginate` `parseUnifiedFile`) rather than by a second
+ * counter here, so the counts and the drawn hunks cannot disagree, and the
+ * section's text rides along verbatim as that file's patch — binary markers,
+ * renames, mode lines and empty patches included, exactly as the renderer
+ * reads them.
+ *
+ * `null` when ANY section names no file: a patch this cannot split whole is
+ * an unreadable answer, never a shorter list of files presented as complete
+ * (a mixed valid/unreadable patch used to drop the sections it could not read
+ * and claim the rest was every change).
+ */
+const unifiedPatchFiles = (diff: string): FileRow[] | null => {
+  const rows: FileRow[] = []
+  for (const patch of diff.split(/(?=^diff --git )/m)) {
+    if (patch.trim() === "") continue
+    const file = parseUnifiedFile(patch)
+    if (file.path === "") return null
+    const status: FileRow["status"] | undefined = file.status === "deleted" ? "removed"
+      : file.status === "added" || file.status === "modified" || file.status === "renamed" ? file.status : undefined
+    rows.push({
+      path: file.path,
+      ...(file.oldPath !== undefined ? { oldPath: file.oldPath } : {}),
+      ...(status !== undefined ? { status } : {}),
+      additions: file.add,
+      deletions: file.del,
+      patch
+    })
+  }
+  return rows
+}
+
+/**
+ * GitHub's page size maximum for both of a pull request's list reads, and how
+ * many pages of each this asks for.
+ *
+ * Three pages of commits reach 300, past the 250 a pull request's own commit
+ * list will ever answer, so the walk ends where GitHub's answer does; ten
+ * pages of check runs reach 1,000, the suites GitHub itself stops at. Both
+ * are also the guard against a source that keeps answering full pages: the
+ * walk ends, and says it ended early.
+ */
+const GITHUB_PAGE_SIZE = 100
+const GITHUB_COMMIT_PAGES = 3
+const GITHUB_CHECK_PAGES = 10
+
+/**
+ * The sentence a tab carries when its rows are real but not all of them.
+ * `undefined` when they ARE all of them: nothing to say, and no notice drawn.
+ *
+ * `total` is the source's own count (a pull request's `commits`, a ref's
+ * `total_count`) — the only thing that can prove a read short, since the last
+ * page GitHub answers looks the same whether it is the end of the list or the
+ * end of what the endpoint will serve. `reason` is why the walk stopped,
+ * already bounded by `readErrorMessage`.
+ */
+const partialRead = (
+  shown: number,
+  total: number | undefined,
+  noun: string,
+  reason: string | undefined
+): string | undefined => {
+  // A source that counts its own rows settles it either way: rows that reach
+  // the count are the whole list, whatever stopped the walk after them.
+  if (total !== undefined) return shown < total ? sentenceFor(shown, total, noun, reason) : undefined
+  return reason === undefined ? undefined : sentenceFor(shown, total, noun, reason)
+}
+
+const sentenceFor = (
+  shown: number,
+  total: number | undefined,
+  noun: string,
+  reason: string | undefined
+): string => {
+  const short = total !== undefined && shown < total
+  const counted = short
+    ? `Showing ${shown} of ${total} ${noun}.`
+    : `Showing the ${shown} ${noun} this read could reach.`
+  return reason === undefined ? counted : `${counted} ${reason}`
+}
+
+/** One commit of GitHub's own pull request commit list (…/pulls/{number}/commits). */
+const parseGitHubCommitRow = (value: unknown): NonNullable<PrPayload["commits"]>[number] | null => {
+  if (!isRecord(value) || typeof value.sha !== "string" || value.sha === "") return null
+  const commit = isRecord(value.commit) ? value.commit : undefined
+  if (commit === undefined || typeof commit.message !== "string") return null
+  const wrote = isRecord(commit.author) ? commit.author : undefined
+  const committed = isRecord(commit.committer) ? commit.committer : undefined
+  return {
+    commitId: value.sha,
+    message: commit.message,
+    author: (isRecord(value.author) ? stringOrNull(value.author.login) : null) ?? stringOrNull(wrote?.name),
+    timestamp: stringOrNull(wrote?.date) ?? stringOrNull(committed?.date)
+  }
+}
+
+/**
+ * One check run of a commit (…/commits/{sha}/check-runs). A finished run is
+ * its conclusion ("success", "failure", "timed_out", …); a run still going
+ * is its status ("queued", "in_progress"), which is the same distinction the
+ * card's `checkDisplay` already draws for the platform's own statuses.
+ */
+const parseCheckRunRow = (value: unknown): CheckRow | null => {
+  if (!isRecord(value) || typeof value.name !== "string" || value.name === "") return null
+  if (typeof value.status !== "string" || value.status === "") return null
+  const conclusion = typeof value.conclusion === "string" && value.conclusion !== "" ? value.conclusion : undefined
+  return {
+    context: value.name,
+    state: conclusion ?? value.status,
+    createdAt: typeof value.started_at === "string" ? value.started_at : ""
+  }
+}
 
 /**
  * A repository's open pull requests as a form's options (the Review a PR
@@ -394,6 +516,188 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
   }
 
   /*
+   * The Conversation, Commits, Checks and Files changed tabs of a
+   * GITHUB-source pull request.
+   *
+   * Read in production on UI 10a823b3 (roninjin10/e2e-verify#2 — one commit
+   * and README.md +3 −0 per GitHub's own pulls/2/commits and pulls/2/files):
+   * the detail read answered a GitHub source's whole stack as `{}`, so
+   * `files` and `commits` were undefined with no `readErrors` beside them and
+   * `checks` was an empty list. The card painted the bare "Files unavailable."
+   * and "Commits unavailable.", and its Checks tab painted nothing at all —
+   * no reason, no status, no Retry — on a pull request that has all three.
+   *
+   * The platform proxies one GET per tab, all read-only, all through the
+   * caller's own GitHub credential (`routes/github_user_repos.go`):
+   *   …/pulls/{number}/diff            the raw unified patch (GetGitHubPullDiff)
+   *   …/pulls/{number}/commits         the pull request's commits
+   *   …/commits/{sha}/check-runs       the head commit's check runs
+   * Nothing is written and no read is invented. Each tab keeps its own three
+   * outcomes distinct: an answer is its rows, an EMPTY answer is zero rows
+   * (the card's "No file changes" / "No commits" / "No checks reported"), and
+   * a refused or unanswered read is that tab's `readErrors` entry carrying
+   * the bounded refusal and its HTTP status — the same words `fetchStack`
+   * gives the native tabs, never the upstream's body, a header or a URL.
+   *
+   * A FOURTH outcome the first version of this got wrong: rows that are real
+   * but not all of them. Both list reads are paged (see `readGitHubRows`), so
+   * one request answers at most 100 rows, and the first hundred of a longer
+   * pull request used to be rendered as the whole of it. Whatever ends a read
+   * early — the end of the pages this asks for, a later page refused, a later
+   * page unreadable — the rows already read STAY and `readLimits` says how
+   * many of how many they are.
+   */
+  const unreadableAnswer = "The platform returned an unreadable response."
+
+  /** One bounded GET of a proxied GitHub read: its JSON, or the reason there is none. */
+  const readGitHubJson = async (url: string): Promise<{ readonly body: unknown } | { readonly error: string }> => {
+    let response: Response
+    try {
+      response = await ctx.http(url)
+    } catch {
+      return { error: "The platform didn't answer." }
+    }
+    if (!response.ok) return { error: await readErrorMessage(response, `Read failed (HTTP ${response.status}).`) }
+    const body: unknown = await response.json().catch(() => undefined)
+    return body === undefined ? { error: unreadableAnswer } : { body }
+  }
+
+  /**
+   * Every row of one proxied GitHub list, a page at a time.
+   *
+   * GitHub pages both list reads with `per_page` (100 maximum) and `page`, so
+   * one request is one page. The page is asked for as a NUMBER on the
+   * platform's own fixed path: a `Link` header names an upstream URL, and
+   * following one of those with this session's credential is not something
+   * this app does.
+   *
+   * The walk stops at the first short page, which is the end of the list, and
+   * otherwise after `maxPages` — the bound that keeps a source answering full
+   * pages forever from looping. The caller is told which happened:
+   *   `error`  nothing was read at all; that tab says why.
+   *   `rows`   with no `limit`, every row the list has.
+   *   `rows`   with a `limit`, the rows that were read and the reason the
+   *            rest were not. Never dropped, never called complete.
+   */
+  const readGitHubRows = async (
+    path: string,
+    maxPages: number,
+    rowsOf: (body: unknown) => { readonly rows: readonly unknown[]; readonly total?: number } | null
+  ): Promise<
+    { readonly rows: readonly unknown[]; readonly total?: number; readonly limit?: string } | { readonly error: string }
+  > => {
+    const rows: unknown[] = []
+    let total: number | undefined
+    for (let page = 1; page <= maxPages; page += 1) {
+      const read = await readGitHubJson(`${path}?per_page=${GITHUB_PAGE_SIZE}&page=${page}`)
+      const shape = "error" in read ? null : rowsOf(read.body)
+      if (shape === null) {
+        const reason = "error" in read ? read.error : unreadableAnswer
+        // Page one IS the read: with no rows, the tab can only say why.
+        if (page === 1) return { error: reason }
+        return { rows, ...(total !== undefined ? { total } : {}), limit: reason }
+      }
+      if (shape.total !== undefined) total = shape.total
+      rows.push(...shape.rows)
+      if (shape.rows.length < GITHUB_PAGE_SIZE) return { rows, ...(total !== undefined ? { total } : {}) }
+    }
+    return {
+      rows,
+      ...(total !== undefined ? { total } : {}),
+      limit: `This read stops after ${maxPages * GITHUB_PAGE_SIZE} rows.`
+    }
+  }
+
+  const fetchGitHubTabs = async (
+    sourceRepo: string,
+    number: number,
+    headCommit: string | undefined,
+    /** The commit count the pull request object itself reports, when it does. */
+    commitCount: number | undefined
+  ): Promise<{
+    readonly checks?: ReadonlyArray<{ readonly context: string; readonly state: string }>
+    readonly tabs: Pick<PrPayload, "commits" | "files" | "readErrors" | "readLimits">
+  }> => {
+    const pull = `${githubPullsRoot(ctx, sourceRepo)}/${number}`
+    const [diffRead, commitsRead, checksRead] = await Promise.all([
+      (async (): Promise<{ readonly diff: string } | { readonly error: string }> => {
+        let response: Response
+        try {
+          response = await ctx.http(`${pull}/diff`)
+        } catch {
+          return { error: "The platform didn't answer." }
+        }
+        if (!response.ok) return { error: await readErrorMessage(response, `Read failed (HTTP ${response.status}).`) }
+        const diff = await response.text().catch(() => undefined)
+        return diff === undefined ? { error: unreadableAnswer } : { diff }
+      })(),
+      // How many commits there are is the pull request's own count, not the
+      // number of rows read: GitHub stops this list at 250 whatever page is
+      // asked for, so 250 rows of a 400-commit stack look like the end of it.
+      readGitHubRows(`${pull}/commits`, GITHUB_COMMIT_PAGES, (body) =>
+        Array.isArray(body) ? { rows: body, ...(commitCount !== undefined ? { total: commitCount } : {}) } : null),
+      // The checks of a pull request are the check runs of its head commit;
+      // a detail that names no head commit has no ref to read them at, which
+      // is a refusal with a reason rather than an empty Checks tab.
+      headCommit === undefined || headCommit === ""
+        ? Promise.resolve({ error: "This pull request names no head commit." } as const)
+        : readGitHubRows(
+          `${githubRepoRoot(ctx, sourceRepo)}/commits/${encodeURIComponent(headCommit)}/check-runs`,
+          GITHUB_CHECK_PAGES,
+          // GitHub counts the runs it has for the ref in `total_count`; rows
+          // short of it are rows short of it, however the read ended.
+          (body) => !isRecord(body) || !Array.isArray(body.check_runs)
+            ? null
+            : { rows: body.check_runs, ...(typeof body.total_count === "number" ? { total: body.total_count } : {}) }
+        )
+    ])
+
+    const files = "diff" in diffRead ? (diffRead.diff.trim() === "" ? [] : unifiedPatchFiles(diffRead.diff)) : null
+    const filesError = "error" in diffRead ? diffRead.error : files === null ? unreadableAnswer : undefined
+
+    const commitRows = "rows" in commitsRead ? commitsRead.rows.map(parseGitHubCommitRow) : undefined
+    const commits = commitRows?.every((row) => row !== null) === true
+      ? commitRows as NonNullable<PrPayload["commits"]>
+      : undefined
+    const commitsError = "error" in commitsRead ? commitsRead.error : commits === undefined ? unreadableAnswer : undefined
+    const commitsLimit = commits === undefined || !("rows" in commitsRead)
+      ? undefined
+      : partialRead(commits.length, commitsRead.total, "commits", commitsRead.limit)
+
+    const runRows = "rows" in checksRead ? checksRead.rows.map(parseCheckRunRow) : undefined
+    const checks = runRows?.every((row) => row !== null) === true
+      ? newestPerContext(runRows as CheckRow[])
+      : undefined
+    const checksError = "error" in checksRead ? checksRead.error : checks === undefined ? unreadableAnswer : undefined
+    // The runs READ, not the rows drawn: `newestPerContext` folds a re-run
+    // onto the check it re-ran, so the fold is never the count of the list.
+    const checksLimit = checks === undefined || !("rows" in checksRead)
+      ? undefined
+      : partialRead(checksRead.rows.length, checksRead.total, "check runs", checksRead.limit)
+
+    return {
+      ...(checksError === undefined ? { checks } : {}),
+      tabs: {
+        ...(commitsError === undefined ? { commits } : {}),
+        ...(filesError === undefined && files !== null ? { files } : {}),
+        ...(filesError !== undefined || commitsError !== undefined || checksError !== undefined
+          ? { readErrors: {
+            ...(commitsError !== undefined ? { commits: `Commits unavailable (${commitsError})` } : {}),
+            ...(checksError !== undefined ? { checks: `Checks unavailable (${checksError})` } : {}),
+            ...(filesError !== undefined ? { files: `Files unavailable (${filesError})` } : {})
+          } }
+          : {}),
+        ...(commitsLimit !== undefined || checksLimit !== undefined
+          ? { readLimits: {
+            ...(commitsLimit !== undefined ? { commits: commitsLimit } : {}),
+            ...(checksLimit !== undefined ? { checks: checksLimit } : {})
+          } }
+          : {})
+      }
+    }
+  }
+
+  /*
    * The one detail door: GET the landing, its reviews, and its checks, then
    * upsert the "pr" card. `stateOverride` lets a mutation pin the state the
    * platform just answered (a land pins "queued") over a racing re-read.
@@ -419,11 +723,26 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     if (landing === null || landing.number !== number) {
       return `Pull request #${number} on ${repo} answered with a payload this app couldn't read.`
     }
-    const [reviews, checks, stack] = source.kind === "github" ? [[], [], {}] as const : await Promise.all([
-      fetchReviews(repo, number),
-      fetchChecks(repo, landing.changeIds.at(-1)),
-      fetchStack(repo, number)
-    ])
+    // A GitHub source has no proxied native reviews to read (plue reviews
+    // belong to a landing, not to someone else's pull request), so the card
+    // offers no review verdicts for it. Its commits, checks and files come
+    // from the three reads the platform does proxy for them.
+    const githubHead = isRecord(raw) && isRecord(raw.head) && typeof raw.head.sha === "string" ? raw.head.sha : undefined
+    // The pull request's own commit count: what the Commits tab's rows are
+    // measured against, because the commit list alone cannot say it is whole.
+    const githubCommitCount = isRecord(raw) && typeof raw.commits === "number" && Number.isInteger(raw.commits) && raw.commits >= 0
+      ? raw.commits
+      : undefined
+    const github = source.kind === "github"
+      ? await fetchGitHubTabs(source.repo, number, githubHead, githubCommitCount)
+      : undefined
+    const [reviews, checks, stack] = github !== undefined
+      ? [[], github.checks ?? [], github.tabs] as const
+      : await Promise.all([
+        fetchReviews(repo, number),
+        fetchChecks(repo, landing.changeIds.at(-1)),
+        fetchStack(repo, number)
+      ])
     const current = ctx.store.collections.cards.get(`pr-${repo}-${number}`)
     const payload: PrPayload = {
       repo,

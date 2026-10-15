@@ -6912,6 +6912,55 @@ export interface GetApiUserGithubReposOwnerRepoPullsNumberDiffInput {
 export const getApiUserGithubReposOwnerRepoPullsNumberDiff = (transport: Transport, input: GetApiUserGithubReposOwnerRepoPullsNumberDiffInput): Promise<GetApiUserGithubReposOwnerRepoPullsNumberDiffResponse> =>
   transport.request("GET", `/api/user/github-repos/${segment(input.path.owner)}/${segment(input.path.repo)}/pulls/${segment(input.path.number)}/diff`) as Promise<GetApiUserGithubReposOwnerRepoPullsNumberDiffResponse>
 
+export type ListApiUserGithubReposOwnerRepoPullsNumberCommitsResponse = Array<{
+  sha: string
+  commit: {
+    message?: string
+    author?: {
+      name?: string
+      date?: string
+      [key: string]: unknown
+    }
+    [key: string]: unknown
+  }
+  author?: {
+    login?: string
+    [key: string]: unknown
+  }
+  [key: string]: unknown
+}>
+
+export interface ListApiUserGithubReposOwnerRepoPullsNumberCommitsInput {
+  readonly path: { readonly owner: string; readonly repo: string; readonly number: number }
+  readonly query?: { readonly per_page?: number; readonly page?: number }
+}
+
+/** GET /api/user/github-repos/{owner}/{repo}/pulls/{number}/commits: List one GitHub pull request's commits */
+export const listApiUserGithubReposOwnerRepoPullsNumberCommits = (transport: Transport, input: ListApiUserGithubReposOwnerRepoPullsNumberCommitsInput): Promise<ListApiUserGithubReposOwnerRepoPullsNumberCommitsResponse> =>
+  transport.request("GET", `/api/user/github-repos/${segment(input.path.owner)}/${segment(input.path.repo)}/pulls/${segment(input.path.number)}/commits${search({ per_page: input.query?.per_page, page: input.query?.page })}`) as Promise<ListApiUserGithubReposOwnerRepoPullsNumberCommitsResponse>
+
+export type ListApiUserGithubReposOwnerRepoCommitsShaCheckRunsResponse = {
+  total_count?: number
+  check_runs: Array<{
+    name: string
+    status: "queued" | "in_progress" | "completed"
+    conclusion?: string
+    started_at?: string
+    completed_at?: string
+    [key: string]: unknown
+  }>
+  [key: string]: unknown
+}
+
+export interface ListApiUserGithubReposOwnerRepoCommitsShaCheckRunsInput {
+  readonly path: { readonly owner: string; readonly repo: string; readonly sha: string }
+  readonly query?: { readonly per_page?: number; readonly page?: number }
+}
+
+/** GET /api/user/github-repos/{owner}/{repo}/commits/{sha}/check-runs: List the check runs reported against one GitHub commit */
+export const listApiUserGithubReposOwnerRepoCommitsShaCheckRuns = (transport: Transport, input: ListApiUserGithubReposOwnerRepoCommitsShaCheckRunsInput): Promise<ListApiUserGithubReposOwnerRepoCommitsShaCheckRunsResponse> =>
+  transport.request("GET", `/api/user/github-repos/${segment(input.path.owner)}/${segment(input.path.repo)}/commits/${segment(input.path.sha)}/check-runs${search({ per_page: input.query?.per_page, page: input.query?.page })}`) as Promise<ListApiUserGithubReposOwnerRepoCommitsShaCheckRunsResponse>
+
 export type ListUserGithubReposResponse = AnyJSON
 
 /** GET /api/user/github/repos */

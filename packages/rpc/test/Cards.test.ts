@@ -1541,6 +1541,7 @@ const FIXTURES: Record<
       reviews: [{ author: "ada", type: "APPROVED", reviewBody: "ship it" }],
       checks: [{ context: "typecheck", state: "success" }],
       readErrors: { commits: "Reading commits failed (500)", files: "Reading files failed (500)" },
+      readLimits: { commits: "Showing 250 of 412 commits.", checks: "Showing 100 of 240 check runs." },
       branch: "serve-files",
       baseBranch: "main",
       draft: false,
@@ -2972,6 +2973,32 @@ describe("every persisted card kind", () => {
 
   test("PR read failures and repository import launch identity refuse invalid persisted values", () => {
     expect(CardSchema.safeParse(card("pr", { ...FIXTURES.pr.full, readErrors: { commits: 500 } })).success).toBe(false)
+    // A GitHub source's checks are one read that can be refused, so the tab
+    // carries its own reason beside commits and files.
+    const refusedChecks = CardSchema.safeParse(
+      card("pr", { ...FIXTURES.pr.full, readErrors: { checks: "Checks unavailable (Read failed (HTTP 502).)" } })
+    )
+    expect(refusedChecks.success).toBe(true)
+    expect(
+      refusedChecks.success && refusedChecks.data.kind === "pr"
+        ? refusedChecks.data.payload.readErrors?.checks
+        : undefined
+    )
+      .toBe("Checks unavailable (Read failed (HTTP 502).)")
+    expect(CardSchema.safeParse(card("pr", { ...FIXTURES.pr.full, readErrors: { checks: 502 } })).success).toBe(false)
+
+    // Rows that are real but not all of them: GitHub pages both list reads
+    // and stops a pull request's commit list at 250, so `readLimits` is the
+    // sentence beside the rows. Optional, a string, and never the files tab's
+    // business (one diff read is whole or it is refused).
+    const partial = CardSchema.safeParse(
+      card("pr", { ...FIXTURES.pr.full, readLimits: { commits: "Showing 250 of 412 commits." } })
+    )
+    expect(partial.success).toBe(true)
+    expect(partial.success && partial.data.kind === "pr" ? partial.data.payload.readLimits?.commits : undefined)
+      .toBe("Showing 250 of 412 commits.")
+    expect(CardSchema.safeParse(card("pr", { ...FIXTURES.pr.full, readLimits: { commits: 250 } })).success).toBe(false)
+    expect(CardSchema.safeParse(card("pr", { ...FIXTURES.pr.full, readLimits: {} })).success).toBe(true)
   })
 })
 

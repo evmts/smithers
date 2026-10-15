@@ -53,6 +53,16 @@ func (s *githubUserReposRouterService) GetAuthenticatedUserGitHubPullDiff(contex
 	return services.GitHubPullDiffResult{Body: []byte("diff --git a/x b/x\n")}, nil
 }
 
+func (s *githubUserReposRouterService) ListAuthenticatedUserGitHubPullCommits(context.Context, int64, string, string, int64, url.Values) (services.GitHubRepoMetadataResult, error) {
+	s.calls.Add(1)
+	return services.GitHubRepoMetadataResult{Body: []byte(`[]`)}, nil
+}
+
+func (s *githubUserReposRouterService) GetAuthenticatedUserGitHubCommitCheckRuns(context.Context, int64, string, string, string, url.Values) (services.GitHubRepoMetadataResult, error) {
+	s.calls.Add(1)
+	return services.GitHubRepoMetadataResult{Body: []byte(`{"total_count":0,"check_runs":[]}`)}, nil
+}
+
 func (s *githubUserReposRouterService) GetAuthenticatedUserGitHubPull(context.Context, int64, string, string, int64) (services.GitHubRepoMetadataResult, error) {
 	s.calls.Add(1)
 	return services.GitHubRepoMetadataResult{Body: []byte(`{"number":7}`)}, nil
@@ -148,6 +158,8 @@ func TestServerRouter_GitHubUserRepoRoutesRejectRestrictedPATBeforeService(t *te
 		"/api/user/github-repos/smithersai/smithers/pulls/7",
 		"/api/user/github-repos/smithersai/smithers/issues/7/comments?per_page=100",
 		"/api/user/github-repos/smithersai/smithers/pulls/7/diff",
+		"/api/user/github-repos/smithersai/smithers/pulls/7/commits",
+		"/api/user/github-repos/smithersai/smithers/commits/0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6/check-runs",
 		"/api/user/github-app/installations",
 		"/api/user/github-app/installations/42",
 	}

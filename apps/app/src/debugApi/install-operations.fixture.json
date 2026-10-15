@@ -486,6 +486,8 @@
   {"id":"get_api_user_github_repos_owner_repo_pulls","method":"GET","path":"/api/user/github-repos/{owner}/{repo}/pulls"},
   {"id":"get_api_user_github_repos_owner_repo_pulls_number","method":"GET","path":"/api/user/github-repos/{owner}/{repo}/pulls/{number}"},
   {"id":"get_api_user_github_repos_owner_repo_pulls_number_diff","method":"GET","path":"/api/user/github-repos/{owner}/{repo}/pulls/{number}/diff"},
+  {"id":"list_api_user_github_repos_owner_repo_pulls_number_commits","method":"GET","path":"/api/user/github-repos/{owner}/{repo}/pulls/{number}/commits"},
+  {"id":"list_api_user_github_repos_owner_repo_commits_sha_check_runs","method":"GET","path":"/api/user/github-repos/{owner}/{repo}/commits/{sha}/check-runs"},
   {"id":"list_user_github_repos","method":"GET","path":"/api/user/github/repos"},
   {"id":"get_api_user_keys","method":"GET","path":"/api/user/keys"},
   {"id":"post_api_user_keys","method":"POST","path":"/api/user/keys"},
