@@ -53,7 +53,7 @@ export const ReviewDocsAgainstCode = (options: Options): ReviewLint => {
     context: [
       Input.glob("README.md"),
       Input.glob("docs/*.md"),
-      ...(packageName === "." ? [] : [
+      ...(packageName === "." || packageName === "" ? [] : [
         Input.glob(`//apps/site/src/content/docs/docs/reference/api/${packageName}.mdx`)
       ])
     ],

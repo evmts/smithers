@@ -1,4 +1,5 @@
 import { Smithers } from "@smthrs/targets"
+import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "./src/index.ts"
 
 const cwd = "packages/repo-targets"
 const sources = Smithers.glob("src/**/*.ts")
@@ -27,6 +28,23 @@ const test = Smithers.Vitest({
   passWithNoTests: false,
   cwd
 })
+
+/**
+ * Changed public APIs against the README. This private package has no docs
+ * directory and no site reference page, so the README is its whole prose.
+ *
+ * @since 0.1.0
+ * @category lint
+ */
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({ cwd, context: [Smithers.file("README.md")] })
+
+/**
+ * Changed exports against their own JSDoc.
+ *
+ * @since 0.1.0
+ * @category lint
+ */
+const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd })
 
 const securityReview = Smithers.SecurityReview({
   cwd,
@@ -83,4 +101,4 @@ const securityReview = Smithers.SecurityReview({
   ]
 })
 
-export const Package = Smithers.Package({ targets: { check, test, ...securityReview } })
+export const Package = Smithers.Package({ targets: { check, test, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })

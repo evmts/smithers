@@ -141,6 +141,14 @@ describe("ReviewDocsAgainstCode", () => {
     ])
   })
 
+  it("omits site context however the workspace root is spelled", () => {
+    // `./` normalizes to an empty path, whose last segment is no package.
+    for (const cwd of ["./", "", "packages/.."]) {
+      expect(attrsOf(ReviewDocsAgainstCode({ cwd })).context.map((entry) => (entry as Input.Glob).pattern))
+        .toEqual(["//README.md", "//docs/*.md"])
+    }
+  })
+
   it("derives the reference prefix from a normalized cwd", () => {
     expect(attrsOf(ReviewDocsAgainstCode({ cwd: "./packages/smithers/flows/journal/" })).context)
       .toEqual(attrs.context)
@@ -191,6 +199,16 @@ describe("ReviewDocsAgainstCode", () => {
     expect(files.length).toBeLessThanOrEqual(maximumContextFiles)
     expect(await contextBytes(files)).toBeLessThanOrEqual(maximumContextContentBytes)
   }, 60_000)
+
+  it("gives this package's own review a context that exists", async () => {
+    // The default context names `repo-targets.mdx`, a page this private
+    // package does not have, so its declaration narrows context to the README.
+    const { Package } = await import(new URL("../PACKAGE.ts", import.meta.url).href)
+    expect(await expandContext(attrsOf(Package.reviewDocsAgainstCode).context))
+      .toEqual(["packages/repo-targets/README.md"])
+    expect(attrsOf(Package.reviewJsdocAgainstCode).include)
+      .toEqual([{ _tag: "Glob", pattern: "//packages/repo-targets/src/**/*.ts", exclude: [] }])
+  })
 
   it("reports at warning while its rubric is tuned", () => {
     expect(attrs.failOn).toBe("warning")
