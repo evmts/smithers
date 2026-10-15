@@ -865,6 +865,23 @@ describe("the assembled gateway over a real loopback bind", () => {
       credential: "explicit-network-host-test"
     }))))
 
+  test("matches a configured network host without regard to case", () =>
+    Effect.gen(function*() {
+      const url = yield* baseUrl
+      // A host name is case-insensitive, so an operator who types the name as
+      // their DNS console spells it still admits every spelling a client sends.
+      for (const host of ["gateway.example", "Gateway.Example", "GATEWAY.EXAMPLE:443"]) {
+        const response = yield* Effect.promise(() => raw(url, ["GET /health HTTP/1.1"], "", host))
+        expect([host, response.status]).toEqual([host, 200])
+      }
+      expect((yield* Effect.promise(() => raw(url, ["GET /health HTTP/1.1"], "", "other.example"))).status).toBe(421)
+    }).pipe(Effect.provide(served({
+      host: "127.0.0.1",
+      port: 0,
+      allowedHosts: ["Gateway.Example"],
+      credential: "explicit-network-host-test"
+    }))))
+
   test("keeps an explicitly allowed network Host closed without a credential", () =>
     Effect.gen(function*() {
       const url = yield* baseUrl

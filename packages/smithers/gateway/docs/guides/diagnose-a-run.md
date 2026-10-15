@@ -59,6 +59,11 @@ const card = Diagnosis.render({ runId, flowId }, facts)
 const span = Diagnosis.duration(facts)
 ```
 
+[`examples/diagnose.ts`](../../examples/diagnose.ts) is this fold as a
+runnable file: six events from one completed run, folded to a `completed`
+verdict that names the output `shipped`, a `5s` span, and the card. `test/Examples.test.ts`
+runs it, so it stays in step with the fold.
+
 `Diagnosis.Digest` carries the status, the failure cause, the model seat, turn
 and call counts, edit attempts and successes, token totals, the refusals
 aggregated by message, the final output, the pending question, and the span the

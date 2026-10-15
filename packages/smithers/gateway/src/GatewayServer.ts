@@ -596,8 +596,10 @@ const browserRequestRefusal = (
   loopbackOnly: boolean
 ): { readonly error: GatewayError; readonly status: number } | undefined => {
   const authority = requestAuthority(headers.host)
+  // `URL` lowercases the hostname, and a host name is case-insensitive, so an
+  // allowed name is compared lowercased too.
   if (
-    authority === undefined || !allowedHosts.includes(authority.hostname) ||
+    authority === undefined || !allowedHosts.some((name) => name.toLowerCase() === authority.hostname) ||
     (loopbackOnly && !loopbackHost.test(headers.host!))
   ) return { error: invalidHostRequest(), status: 421 }
   const origin = headers.origin

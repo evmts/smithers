@@ -30,6 +30,7 @@ const leadParagraph = (file: string): string =>
 
 describe("the package docs", () => {
   const manifest = JSON.parse(read("package.json")) as {
+    readonly name: string
     readonly peerDependencies: Record<string, string>
     readonly peerDependenciesMeta?: Record<string, { readonly optional?: boolean }>
   }
@@ -51,9 +52,14 @@ describe("the package docs", () => {
     expect(prose).toContain(manifest.peerDependencies.effect)
     expect(prose).toContain("Node and Bun adapters are bundled privately")
     expect(prose).not.toMatch(/@effect\/platform-[\w-]+[^.]*optional peer/)
-    const installed = [...prose.matchAll(/pnpm add ([^`]+)/g)]
+    // The package install line: this package from the prerelease tag, then
+    // its peers. A global CLI install (`pnpm add -g`) is a different command.
+    const installed = [...prose.matchAll(/pnpm add (?!-g)([^`]+)/g)]
       .flatMap((match) => match[1]!.trim().split(/\s+/))
-    expect(installed).toEqual(peers.map((peer) => `${peer}@${manifest.peerDependencies[peer]}`))
+    expect(installed).toEqual([
+      `${manifest.name}@next`,
+      ...peers.map((peer) => `${peer}@${manifest.peerDependencies[peer]}`)
+    ])
   })
 
   it.each(["README.md", "docs/README.md", "docs/api.md", "docs/troubleshooting.md", "docs/concepts/trust-boundary.md"])(
