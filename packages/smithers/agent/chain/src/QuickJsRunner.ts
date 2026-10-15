@@ -654,17 +654,9 @@ const evaluate = <E>(
     )
   )
 
-/**
- * Constructs the QuickJS runner, compiling the WebAssembly module once per
- * process.
- *
- * @category constructors
- * @since 0.1.0
- * @slop
- */
-export const make = (
-  limits: Limits = {},
-  load: () => Promise<QuickJSWASMModule> = wasmModule
+const loadRunner = (
+  limits: Limits,
+  load: () => Promise<QuickJSWASMModule>
 ): Effect.Effect<ScriptRunner.Service, ScriptRunner.ScriptFailure> =>
   Effect.map(
     // A failed load is a typed, retryable unavailability — never a defect,
@@ -679,9 +671,40 @@ export const make = (
     }),
     (module) =>
       ScriptRunner.make({
-        run: (script, handler) => evaluate(module, { ...defaultLimits, ...limits }, script, handler)
+        run: (script, handler) => evaluate(module, limits, script, handler)
       })
   )
+
+/**
+ * Constructs the QuickJS runner, compiling the WebAssembly module once per
+ * process. The limits are merged over {@link defaultLimits} and copied
+ * here, so a later edit of the caller's object changes nothing. Dies when
+ * a set limit is not a non-negative integer: a NaN, infinite, negative, or
+ * fractional value would remove the bound instead of enforcing one.
+ *
+ * @category constructors
+ * @since 0.1.0
+ * @slop
+ */
+export const make = (
+  limits: Limits = {},
+  load: () => Promise<QuickJSWASMModule> = wasmModule
+): Effect.Effect<ScriptRunner.Service, ScriptRunner.ScriptFailure> =>
+  Effect.suspend(() => {
+    // Snapshot now: a caller editing its object later must not change the
+    // limits of a runner it already handed to a chain.
+    const pinned: Limits = { ...defaultLimits, ...limits }
+    // A step budget is compared with `>`, which NaN never satisfies, and
+    // QuickJS reads a NaN or negative stack size as "no limit": an invalid
+    // value would remove the bound instead of enforcing one.
+    for (const bound of ["memoryBytes", "stackBytes", "steps"] as const) {
+      const value = pinned[bound]
+      if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+        return Effect.die(new Error(`${bound} must be a non-negative integer, got ${value}`))
+      }
+    }
+    return loadRunner(pinned, load)
+  })
 
 /**
  * The production script-runner layer: a sealed QuickJS realm per link.

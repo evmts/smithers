@@ -113,3 +113,37 @@ describe("QuickJsRunner defect boundary", () => {
     expect(error.message).toBe("mine")
   })
 })
+
+describe("QuickJsRunner limits", () => {
+  const busyLoop = Script.make(`for (let i = 0; i < 5000000; i++) {}\nreturn done(1)`)
+
+  // NaN never satisfies `++steps > budget`, so an unvalidated NaN budget
+  // would remove the step bound instead of enforcing one; a NaN or negative
+  // stack size reaches QuickJS as "no limit" the same way.
+  it.each(
+    [
+      ["steps", Number.NaN],
+      ["steps", Number.POSITIVE_INFINITY],
+      ["steps", -1],
+      ["steps", 1.5],
+      ["memoryBytes", Number.NaN],
+      ["memoryBytes", Number.POSITIVE_INFINITY],
+      ["stackBytes", Number.NaN],
+      ["stackBytes", -1]
+    ] as const
+  )("dies at construction when %s is %s", async (limit, value) => {
+    await expect(Effect.runPromise(QuickJsRunner.make({ [limit]: value }))).rejects.toThrow(
+      `${limit} must be a non-negative integer, got ${value}`
+    )
+  })
+
+  it("enforces the limits it was constructed with, not a later edit of the caller's object", async () => {
+    const limits: { steps: number | undefined } = { steps: 100 }
+    const runner = await Effect.runPromise(QuickJsRunner.make(limits))
+    limits.steps = 1_000_000_000
+    const error = await Effect.runPromise(
+      Effect.flip(runner.run(busyLoop, () => Effect.succeed(null)))
+    ) as ScriptRunner.ScriptFailure
+    expect(error.code).toBe("runtime")
+  })
+})
