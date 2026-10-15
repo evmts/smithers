@@ -786,6 +786,44 @@ describe("Registry", () => {
     })
   })
 
+  it("keeps the snapshot of the refresh that started last when refreshes overlap", async () => {
+    await Effect.runPromise(Effect.gen(function*() {
+      const firstRefreshPending = yield* Deferred.make<void>()
+      const releaseFirstRefresh = yield* Deferred.make<void>()
+      let scans = 0
+      const discovery = Discovery.makeNoop({
+        scan: () =>
+          Effect.gen(function*() {
+            scans += 1
+            const version = scans
+            if (version === 2) {
+              // The first refresh read the source before it changed, then stalls.
+              yield* Deferred.succeed(firstRefreshPending, undefined)
+              yield* Deferred.await(releaseFirstRefresh)
+            }
+            return new SourceScan({ entries: [descriptor(`v${version}`)], warnings: [] })
+          })
+      })
+      const registry = yield* Registry.make({
+        sources: [{ source: "project", root: fixtures, naming: "path" }]
+      }).pipe(
+        Effect.provideService(Discovery.Discovery, discovery),
+        Effect.provide(platformLayer)
+      )
+      const first = yield* registry.refresh().pipe(Effect.forkChild)
+      yield* Deferred.await(firstRefreshPending)
+      // A file watcher fires again after the source changed.
+      const second = yield* registry.refresh().pipe(Effect.forkChild)
+      // Give the second refresh time to finish first when nothing orders them.
+      yield* Effect.sleep("20 millis")
+      yield* Deferred.succeed(releaseFirstRefresh, undefined)
+      yield* Fiber.join(first)
+      yield* Fiber.join(second)
+
+      expect((yield* registry.list()).map((entry) => entry.name)).toEqual(["v3"])
+    }))
+  })
+
   it.each(["success", "failure", "overlapping body load"] as const)(
     "publishes two-source refreshes atomically: %s",
     async (outcome) => {

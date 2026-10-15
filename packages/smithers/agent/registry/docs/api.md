@@ -688,7 +688,9 @@ would require adding an explicit snapshot handle to the API; none is currently
 exposed.
 
 `refresh` replaces the snapshot only after every source succeeds. A failed
-rescan leaves the previous complete snapshot serving reads.
+rescan leaves the previous complete snapshot serving reads. Overlapping
+`refresh` calls run one at a time, so the refresh that started last publishes
+last.
 
 `loadBody` and `runPrompt` are the only two members that touch the filesystem.
 

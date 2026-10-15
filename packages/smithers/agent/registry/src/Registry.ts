@@ -8,7 +8,7 @@
  * @since 0.1.0
  */
 
-import { Context, Effect, Layer, Option, Path, Ref } from "effect"
+import { Context, Effect, Layer, Option, Path, Ref, Semaphore } from "effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Result from "effect/Result"
 import {
@@ -70,6 +70,8 @@ export interface PackConfig {
  *
  * Reads observe one complete snapshot. `refresh` rescans all configured
  * sources and atomically replaces it only after every source succeeds.
+ * Overlapping refreshes run one at a time, so the last one started publishes
+ * last.
  * Descriptors and warnings returned by the service are frozen copies owned by
  * the registry. Mutating a descriptor or configuration value supplied by a
  * caller cannot change later registry answers.
@@ -529,7 +531,10 @@ export const make = (
     )
     const initial = yield* scan
     const state = yield* Ref.make(initial)
-    const refresh = Effect.flatMap(scan, (snapshot) => Ref.set(state, snapshot))
+    // Refreshes run one at a time. Two overlapping scans could otherwise
+    // finish out of order and publish the older one last.
+    const refreshLock = yield* Semaphore.make(1)
+    const refresh = refreshLock.withPermits(1)(Effect.flatMap(scan, (snapshot) => Ref.set(state, snapshot)))
     return fromRef(state, fs, path, refresh, config.snapshots)
   })
 }
