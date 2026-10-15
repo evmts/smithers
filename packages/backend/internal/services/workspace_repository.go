@@ -167,7 +167,7 @@ func (s *WorkspaceService) ensureRuntimeWorkspaceRepositoryWithReceipt(ctx conte
 
 	rootEntries, err := s.listRuntimeRepositoryFiles(ctx, row, requesterID, "inspect-root", "")
 	if err != nil {
-		return runtimeOperationError("inspect workspace repository root", err)
+		return s.workspaceRuntimeOperationError(ctx, "inspect workspace repository root", err, row, requesterID)
 	}
 	root := make(map[string]workspaceapi.FileEntry, len(rootEntries))
 	for _, entry := range rootEntries {
@@ -181,7 +181,7 @@ func (s *WorkspaceService) ensureRuntimeWorkspaceRepositoryWithReceipt(ctx conte
 	if hasGit {
 		gitEntries, listErr := s.listRuntimeRepositoryFiles(ctx, row, requesterID, "inspect-receipt", ".git")
 		if listErr != nil {
-			return runtimeOperationError("inspect workspace repository receipt", listErr)
+			return s.workspaceRuntimeOperationError(ctx, "inspect workspace repository receipt", listErr, row, requesterID)
 		}
 		for _, entry := range gitEntries {
 			if entry.Name != path.Base(workspaceRepositoryReceiptPath) {
@@ -192,7 +192,7 @@ func (s *WorkspaceService) ensureRuntimeWorkspaceRepositoryWithReceipt(ctx conte
 			}
 			contents, readErr := s.readRuntimeRepositoryFile(ctx, row, requesterID, "read-receipt", workspaceRepositoryReceiptPath)
 			if readErr != nil {
-				return runtimeOperationError("read workspace repository receipt", readErr)
+				return s.workspaceRuntimeOperationError(ctx, "read workspace repository receipt", readErr, row, requesterID)
 			}
 			var receipt workspaceRepositoryReceipt
 			if decodeErr := json.Unmarshal(contents, &receipt); decodeErr != nil {
@@ -333,7 +333,7 @@ func (s *WorkspaceService) ensureRuntimeWorkspaceRepositoryWithReceipt(ctx conte
 
 	rootEntries, err = s.listRuntimeRepositoryFiles(ctx, row, requesterID, "inspect-jj", "")
 	if err != nil {
-		return runtimeOperationError("inspect initialized workspace repository", err)
+		return s.workspaceRuntimeOperationError(ctx, "inspect initialized workspace repository", err, row, requesterID)
 	}
 	hasJJ := false
 	for _, entry := range rootEntries {
@@ -387,7 +387,7 @@ func (s *WorkspaceService) ensureRuntimeWorkspaceRepositoryWithReceipt(ctx conte
 			return err
 		}
 		if err := linker.LinkWorkspaceEnvironment(linkCtx, row.ID); err != nil {
-			return runtimeOperationError("prepare workspace environment", err)
+			return s.workspaceRuntimeOperationError(ctx, "prepare workspace environment", err, row, requesterID)
 		}
 	}
 	receipt := workspaceRepositoryReceipt{
@@ -506,7 +506,7 @@ func (s *WorkspaceService) writeRuntimeRepositoryReceipt(ctx context.Context, ro
 	}
 	write := func() error { return preparer.WriteRepositoryReceipt(operationCtx, row.ID, contents) }
 	if err := write(); err != nil {
-		return runtimeOperationError("commit workspace repository receipt", err)
+		return s.workspaceRuntimeOperationError(ctx, "commit workspace repository receipt", err, row, requesterID)
 	}
 	return nil
 }
@@ -566,7 +566,7 @@ func (s *WorkspaceService) executeRuntimeRepositoryTransfer(ctx context.Context,
 		}
 		result, err = s.runtime.ExecuteCommand(operationCtx, row.ID, command)
 		if err != nil {
-			return result, runtimeOperationError("initialize workspace repository ("+step+")", err)
+			return result, s.workspaceRuntimeOperationError(ctx, "initialize workspace repository ("+step+")", err, row, requesterID)
 		}
 		if attempt >= 3 || !retryableWorkspaceTransfer(command, result) {
 			break
@@ -577,7 +577,7 @@ func (s *WorkspaceService) executeRuntimeRepositoryTransfer(ctx context.Context,
 			// repositories or user files to make a retry possible.
 			entries, err := s.listRuntimeRepositoryFiles(execCtx, row, requesterID, attemptStep+"-retry-inspect", "")
 			if err != nil {
-				return result, runtimeOperationError("inspect refused workspace clone", err)
+				return result, s.workspaceRuntimeOperationError(ctx, "inspect refused workspace clone", err, row, requesterID)
 			}
 			if len(entries) != 0 {
 				break
