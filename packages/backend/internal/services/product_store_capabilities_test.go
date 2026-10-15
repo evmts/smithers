@@ -122,6 +122,8 @@ var deploymentStoreCapabilities = map[string]struct {
 		"a wrapper rebinds itself to a transaction; Product is already bound to one connection"},
 	"workflowQueryTxStarter": {storeImplements[workflowQueryTxStarter],
 		"a wrapper that begins transactions must also rebind; BeginWorkflowQueryTx refuses one without WorkflowRunQueryRebinder"},
+	"runnerTxStarter": {storeImplements[runnerTxStarter],
+		"a wrapper begins the transaction that takes the run's log advisory lock; without it a refused dispatch's one line appends unsynchronized and can lose the MAX(sequence)+1 race #3866 closed"},
 }
 
 func TestHostedProductStoreKeepsEveryProductCapability(t *testing.T) {
