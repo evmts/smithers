@@ -449,7 +449,10 @@ describe("WorkspaceObservation", () => {
 
   it("walks a workspace rooted at the filesystem root", async () => {
     const visits: Array<string> = []
-    const tree: Record<string, ReadonlyArray<{ readonly name: string; readonly measured: WorkspaceObservation.Measured }>> = {
+    const tree: Record<
+      string,
+      ReadonlyArray<{ readonly name: string; readonly measured: WorkspaceObservation.Measured }>
+    > = {
       "/": [
         { name: "a.py", measured: { _tag: "File", size: 1, modified: 0 } },
         { name: "src", measured: { _tag: "Directory" } }
@@ -462,7 +465,9 @@ describe("WorkspaceObservation", () => {
           visits.push(directory)
           const entries = tree[directory]
           return entries === undefined
-            ? Effect.fail(PlatformError.systemError({ _tag: "NotFound", module: "FileSystem", method: "readDirectory" }))
+            ? Effect.fail(
+              PlatformError.systemError({ _tag: "NotFound", module: "FileSystem", method: "readDirectory" })
+            )
             : Effect.succeed(entries)
         })
     }
