@@ -56,13 +56,13 @@ func (sleepStageTransactions) Begin(context.Context) (pgx.Tx, error) { return ni
 // so neither the owner nor the operator log could tell a missing provider from
 // a failed capture, and nothing in the response named a next step.
 //
-// CodeServiceUnavailable is deliberately absent from isSafe5xxMessageCode, so
-// writeRouteError scrubs the sentence to "service unavailable" for the caller
-// and logs Message, Code and Cause server-side. The stage therefore has to
-// ride in Message to reach the operator log; this test pins that it does, that
-// the stages are distinguishable from one another, and that each one stays a
-// written constant — no customer payload, no key, no URL and no raw driver
-// text, which is what makes it safe to log at all.
+// The stage rides in Message, which is what reaches the operator log and —
+// because CodeBranchSleepUnavailable is in isSafe5xxMessageCode, unlike the
+// bare CodeServiceUnavailable this used to carry — the owner as well
+// (routes.TestRefusedBranchSleepReachesTheOwner). This test pins that it does,
+// that the stages are distinguishable from one another, and that each one
+// stays a written constant — no customer payload, no key, no URL and no raw
+// driver text, which is what makes it safe to log and to answer with.
 //
 // These four stages are the machine-free ones: each refuses before the first
 // database read, so the regression needs no Postgres and no runtime.
@@ -115,8 +115,8 @@ func TestBranchSleepRefusalNamesItsStage(t *testing.T) {
 
 			var refusal *pkgerrors.APIError
 			require.True(t, errors.As(err, &refusal), "the refusal is the typed 503 the route writes")
-			assert.Equal(t, pkgerrors.CodeServiceUnavailable, refusal.Code,
-				"the machine-readable verdict is unchanged; only the sentence gained the stage")
+			assert.Equal(t, pkgerrors.CodeBranchSleepUnavailable, refusal.Code,
+				"the verdict names the unfinished deployment, not a transient outage")
 			assert.Contains(t, refusal.Message, stage.want,
 				"the logged sentence names the step that did not hold")
 

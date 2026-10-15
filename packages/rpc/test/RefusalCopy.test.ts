@@ -107,6 +107,7 @@ describe("legacy and empty-message copy units", () => {
  */
 const TERMINAL_UNTIL_WE_SHIP: ReadonlyArray<PlueFailureCode> = [
   "authentication_not_configured",
+  "branch_sleep_unavailable",
   "coding_gateway_not_configured",
   "coding_host_unavailable",
   "coding_reporter_upgrade_required",

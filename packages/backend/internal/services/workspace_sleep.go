@@ -169,11 +169,16 @@ func (s *WorkspaceService) captureAndSleepExcluded(ctx context.Context, row db.W
 	// for 15 h 42 min past its own 1800 s idle timeout while every suspend
 	// answered 503. The stage is a written constant naming the step that did
 	// not hold: no payloads, no keys, no URLs and no raw driver text.
+	//
+	// It is CodeBranchSleepUnavailable and not CodeServiceUnavailable because
+	// an uncomposed dependency is not a transient one: the owner retrying this
+	// box tonight gets the same refusal, so the sentence has to survive the
+	// 5xx scrub and reach them (isSafe5xxMessageCode). The verdict says the
+	// deployment is unfinished, not that their box is sick.
 	unavailable := func(stage string, err error) error {
-		failure := pkgerrors.New(pkgerrors.CodeServiceUnavailable,
+		failure := pkgerrors.New(pkgerrors.CodeBranchSleepUnavailable,
 			"branch sleep requires verified capture, runtime binding and state publication: "+stage)
 		failure.Details = map[string]string{
-			"reason":    "branch_sleep_unavailable",
 			"stage":     stage,
 			"branch_id": row.ID,
 		}
@@ -364,7 +369,7 @@ func (s *WorkspaceService) QuiesceAvailable() error {
 	if stage == "" {
 		return nil
 	}
-	return pkgerrors.New(pkgerrors.CodeServiceUnavailable,
+	return pkgerrors.New(pkgerrors.CodeBranchSleepUnavailable,
 		"quiesce requires verified branch capture and the machine runtime: "+stage).WithCause(cause)
 }
 

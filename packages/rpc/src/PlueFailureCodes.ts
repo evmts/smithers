@@ -35,7 +35,7 @@ export const PLUE_FAILURE_SCHEMA_VERSION = 1
  * @since 1.0.0
  * @category constants
  */
-export const PLUE_FAILURE_DIGEST = "sha256:3d3f09ce955fd35c810366c7044848d85e03caf0091488999882af46d0964292"
+export const PLUE_FAILURE_DIGEST = "sha256:1944d0e96e0ebb3e5532d85f86357b697f7c62ff91c1795ed0fc98fabe1e896a"
 
 /**
  * Whose problem a failure is — the registry's verdict, and the only question the app
@@ -81,6 +81,7 @@ export const PLUE_FAILURE_CODES = [
   "authentication_not_configured",
   "bad_gateway",
   "bad_request",
+  "branch_sleep_unavailable",
   "build_cache_busy",
   "coding_file_conflict",
   "coding_file_recovery_required",
@@ -106,6 +107,8 @@ export const PLUE_FAILURE_CODES = [
   "generation_required",
   "github_import_already_active",
   "github_import_too_large",
+  "github_not_installed",
+  "github_permission",
   "github_pull_diff_too_large",
   "github_rate_limited",
   "github_reconnect_required",
@@ -259,6 +262,8 @@ export const PLUE_FAILURES = {
   "bad_gateway": { fault: "dependency", status: 502, retryAfter: 0 },
   /** The request was malformed or carried a value the endpoint cannot accept. */
   "bad_request": { fault: "user", status: 400, retryAfter: 0 },
+  /** Branch sleep requires a verified capture daemon, the branch head store, the workspace runtime and the branch machine providers; one of them is not composed on this deployment, so no box here can be suspended until an operator composes it. The box and its disk are untouched. */
+  "branch_sleep_unavailable": { fault: "infra", status: 503, retryAfter: 0 },
   /** The build cache is at its own concurrency ceiling; the caller is inside its budget and the identical request works once a slot frees. */
   "build_cache_busy": { fault: "wait", status: 429, retryAfter: 1 },
   /** A file preimage, installed file or native snapshot changed during application. Displaced bytes remain in the private recovery directory; no rollback overwrites newer content. */
@@ -309,6 +314,10 @@ export const PLUE_FAILURES = {
   "github_import_already_active": { fault: "user", status: 409, retryAfter: 0 },
   /** The GitHub repository is larger than plue's import limit. It is refused before the clone, so nothing was written. */
   "github_import_too_large": { fault: "user", status: 413, retryAfter: 0 },
+  /** GitHub did not find the requested App installation. */
+  "github_not_installed": { fault: "dependency", status: 502, retryAfter: 0 },
+  /** GitHub did not grant access to a required resource. */
+  "github_permission": { fault: "dependency", status: 502, retryAfter: 0 },
   /** GitHub's diff for this pull request is larger than plue will buffer. */
   "github_pull_diff_too_large": { fault: "dependency", status: 502, retryAfter: 0 },
   /** GitHub rate-limited the call plue made on the caller's behalf. */

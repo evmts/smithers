@@ -334,6 +334,24 @@ const BY_CODE: Partial<Record<PlueFailureCode, Partial<RefusalCopyRow>>> = {
     doors: ["report"]
   },
   /*
+   * The deployment cannot put a box to sleep at all: branch sleep needs a
+   * verified capture daemon, the branch head store, the workspace runtime and
+   * the branch machine providers, and one of them was never composed here.
+   * plue's own words name which. The reader's box is untouched and still
+   * running — which is the whole problem, because it keeps its CPU and its
+   * disk — and a re-ask refuses identically, so the one door is to tell us.
+   * This is the refusal box 1d7209c4 answered for 15 h with no sentence at
+   * all; it is not a shortage, and the reader must not be sent to look at
+   * their own box or to wait for capacity that was never the issue.
+   */
+  branch_sleep_unavailable: {
+    lead:
+      "This deployment of Smithers can't put a box to sleep, so this one is still running. Not your fault, and not something you can switch on from here.",
+    agent:
+      "fault=infra: this DEPLOYMENT never composed one of the four things branch sleep needs — the capture daemon, the branch head store, the workspace runtime, or the branch machine providers — and Smithers' own words name the missing step. The box, its disk and its files are untouched and it is STILL RUNNING. Not the user's fault and not their request's, and nothing is full, so do NOT say Smithers ran out of infra and do NOT tell them to ask for more of it. Retrying fails identically until whoever deployed it composes that step; say so rather than offering to try again, and do not tell them to stop, re-provision or replace the box.",
+    doors: ["report"]
+  },
+  /*
    * Rollout lag inside a RUNNING box: the guest kept a reporter from before
    * Smithers' last upgrade. plue's own doc says the start/resume path installs
    * and restarts the current one, so the reader has a cheap fix — and a Retry

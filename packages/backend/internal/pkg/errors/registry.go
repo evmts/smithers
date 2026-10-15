@@ -173,6 +173,7 @@ const (
 	CodeHostLeaseLost                 Code = "host_lease_lost"
 	CodeProvisioningFailed            Code = "provisioning_failed"
 	CodeGuestNotReady                 Code = "guest_not_ready"
+	CodeBranchSleepUnavailable        Code = "branch_sleep_unavailable"
 	CodeRepositoryProvisioningRollout Code = "repository_provisioning_rollout"
 	CodeEnvironmentImageUnavailable   Code = "environment_image_unavailable"
 	CodeWorkspaceSourceMissing        Code = "workspace_source_missing"
@@ -454,6 +455,14 @@ var registry = map[Code]Entry{
 	// The guest is reachable but activation has not finished exposing its
 	// login shell.
 	CodeGuestNotReady: {Status: http.StatusServiceUnavailable, Fault: FaultWait, Class: ClassCapacity, RetryAfter: 3, Doc: "The guest is reachable but activation has not finished exposing its login shell."},
+	// Branch sleep needs a verified daemon capture, the branch head store, the
+	// workspace runtime and the branch machine providers; one of them is not
+	// composed on this deployment, so no box here can be suspended and the
+	// same request will not start working on a retry. The box and its disk are
+	// untouched. Distinct from no_capacity: nothing is full, and distinct from
+	// service_unavailable, whose sentence is scrubbed — the stage this one
+	// names is the only part the reader can act on.
+	CodeBranchSleepUnavailable: {Status: http.StatusServiceUnavailable, Fault: FaultInfra, Class: ClassInfra, RetryAfter: 0, Doc: "Branch sleep requires a verified capture daemon, the branch head store, the workspace runtime and the branch machine providers; one of them is not composed on this deployment, so no box here can be suspended until an operator composes it. The box and its disk are untouched."},
 	// Repository provisioning is mid-rollout on this deployment and is not
 	// accepting new work.
 	CodeRepositoryProvisioningRollout: {Status: http.StatusServiceUnavailable, Fault: FaultInfra, Class: ClassInfra, RetryAfter: 0, Doc: "Repository provisioning is mid-rollout on this deployment and is not accepting new work."},

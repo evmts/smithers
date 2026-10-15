@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "digest": "sha256:edc7e74648aa772118702a95a758cc5012e1198c2067e6d715992589c2d96855",
+  "digest": "sha256:1944d0e96e0ebb3e5532d85f86357b697f7c62ff91c1795ed0fc98fabe1e896a",
   "faults": [
     "user",
     "wait",
@@ -94,6 +94,13 @@
       "status": 400,
       "retry_after": 0,
       "doc": "The request was malformed or carried a value the endpoint cannot accept."
+    },
+    {
+      "code": "branch_sleep_unavailable",
+      "fault": "infra",
+      "status": 503,
+      "retry_after": 0,
+      "doc": "Branch sleep requires a verified capture daemon, the branch head store, the workspace runtime and the branch machine providers; one of them is not composed on this deployment, so no box here can be suspended until an operator composes it. The box and its disk are untouched."
     },
     {
       "code": "build_cache_busy",

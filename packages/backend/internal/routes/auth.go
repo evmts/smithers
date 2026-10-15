@@ -990,6 +990,13 @@ func isSafe5xxMessageCode(code errors.Code) bool {
 		// deployment nobody finished configuring, not their box — is the part
 		// that gets thrown away.
 		errors.CodeCodingGatewayNotConfigured,
+		// Same reason, one step further in: its messages are written
+		// constants naming which sleep dependency this deployment never
+		// composed ("...: branch capture unavailable"), and an uncomposed
+		// dependency does not come back on its own. Scrubbed, the owner of a
+		// box that cannot be suspended is told to retry something that will
+		// refuse identically forever, with nothing naming the missing step.
+		errors.CodeBranchSleepUnavailable,
 		errors.CodeWorkerDraining:
 		return true
 	default:

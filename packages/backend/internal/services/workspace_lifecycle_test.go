@@ -29,7 +29,15 @@ func TestBranchSleepUnavailableProvidersUnit(t *testing.T) {
 			}
 			var api *pkgerrors.APIError
 			require.ErrorAs(t, err, &api)
-			require.Equal(t, pkgerrors.CodeServiceUnavailable, api.Code)
+			// An owner's explicit suspend refuses with the verdict that names
+			// the uncomposed dependency, so the sentence survives the 5xx
+			// scrub. Automatic release is refused one gate earlier, by
+			// admission, and answers nobody's request.
+			want := pkgerrors.CodeBranchSleepUnavailable
+			if automatic {
+				want = pkgerrors.CodeServiceUnavailable
+			}
+			require.Equal(t, want, api.Code)
 			require.Equal(t, pkgerrors.FaultInfra, api.Fault)
 			require.Equal(t, 503, api.Status)
 			require.Equal(t, "running", ws.Status)
