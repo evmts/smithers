@@ -47,3 +47,12 @@ it("keeps reusable prefixes intact after a fragment fails validation", () => {
   expect(hash(["prefix", "tail"])).toBe(expected("prefixtail"))
   expect(hash(["prefix", "changed"])).toBe(expected("prefixchanged"))
 })
+
+it("rejects mutable bytes at the text-fragment boundary without poisoning the cache", () => {
+  const hash = makeDigestPartsSync()
+  const bytes = new Uint8Array([0x61])
+  expect(() => hash([bytes as unknown as string])).toThrow(expect.objectContaining({ code: "invalid_input" }))
+  bytes[0] = 0x62
+  expect(() => hash([bytes as unknown as string])).toThrow(expect.objectContaining({ code: "invalid_input" }))
+  expect(hash(["b"])).toBe(createHash("sha256").update("b").digest("hex"))
+})

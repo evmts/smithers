@@ -344,7 +344,13 @@ export const makeDigestPartsSync = (): (parts: ReadonlyArray<string>) => Digest 
     // record cache keys different from the values actually hashed.
     const parts: Array<string> = []
     const length = input.length
-    for (let index = 0; index < length; index++) parts.push(input[index]!)
+    for (let index = 0; index < length; index++) {
+      const part = input[index]!
+      if (typeof part !== "string") {
+        throw failure("invalid_input", "SHA-256 text fragments must be strings")
+      }
+      parts.push(part)
+    }
     let same = 0
     while (same < parts.length && same < previous.length && parts[same] === previous[same]) same++
     const state = same ? prefixes[same - 1]!.clone() : new Sha256Prefix()
