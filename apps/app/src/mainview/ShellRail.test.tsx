@@ -566,6 +566,26 @@ describe("the rail reads the transcript's own order", () => {
     expect(lines.map(line => line.entry_id)).toEqual(["run:prompt", "run:answer", "shared-card"])
   })
 
+  /*
+   * The transcript renders the LOCAL copy of a card a turn recorded and skips
+   * the turn's own (SharedConversation's `localCardIds`). A turn that recorded
+   * two cards and holds the newest entry therefore ends on its second card in
+   * the transcript, and the rail has to end there too: taking the turn's copy
+   * of the first card put the rail's end one card early, and showed that line
+   * with the turn's facts instead of the ones the transcript renders.
+   */
+  test("a card the transcript renders locally takes its local place, so the turn's own copy never ends the rail", () => {
+    const recorded: Card = { id: "shared-card", kind: "status", title: "Recorded by the turn", createdAt: 1, ordinal: 1, status: "active", payload: {} }
+    const second: Card = { id: "second-card", kind: "status", title: "Second", createdAt: 1, ordinal: 2, status: "active", payload: {} }
+    const conversation = { id: "main", entries: [sharedTurn("run", 1, [
+      { type: "card" as const, runId: "run", card: recorded }, { type: "card" as const, runId: "run", card: second }
+    ])] }
+    const local = railLines([{ kind: "card", card: { ...recorded, title: "Rendered locally" } }])
+    const lines = conversationRailLines({ conversation, local, anchors: anchors(["shared-card", 1, 3]), scope, viewer })
+    expect(lines.map(line => line.entry_id)).toEqual(["run:prompt", "run:answer", "second-card", "shared-card"])
+    expect(lines.at(-1)!.title).toBe("Rendered locally")
+  })
+
   test("replay places local cards by their recorded ordinals, not by the order the store hands them over", () => {
     const conversation = { id: "main", entries: [sharedTurn("run", 1)] }
     const order = anchors(["early", 1, 4], ["late", 1, 7])

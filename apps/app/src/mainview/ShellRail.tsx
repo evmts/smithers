@@ -156,9 +156,16 @@ export const sharedRailLines = (conversation: SharedConversation | undefined, vi
  * {@link TranscriptOrder}'s, the same one `SharedConversation` renders with and
  * reading the same persisted anchors, so both surfaces read one order.
  *
- * One line per entry id: a card a shared turn recorded and the transcript also
- * rendered locally keeps its first place and the facts of the later line, as
- * it did when the rail concatenated the lists.
+ * One line per entry id, and the transcript decides which one: a card a shared
+ * turn recorded that the transcript also renders locally is the LOCAL line
+ * there — `SharedConversation` skips the turn's own copy of a card in
+ * `localCardIds` — so the rail drops the turn's copy too. The line keeps the
+ * local place and the local facts, the facts the rail already showed when it
+ * concatenated the lists, and the shared cursor still stamps its freshness.
+ * Dropping the turn's copy rather than letting the later occurrence win is
+ * what keeps the two surfaces one order: a turn that recorded two cards and
+ * holds the newest entry would otherwise end on its second card in the rail
+ * and on the local one in the transcript.
  */
 export const conversationRailLines = ({ home, conversation, local, anchors, scope, viewer, lastSeen = 0 }: {
   readonly home?: TimelineLine | undefined
@@ -170,8 +177,10 @@ export const conversationRailLines = ({ home, conversation, local, anchors, scop
   readonly lastSeen?: number
 }): TimelineLine[] => {
   const positions = sharedEntrySequences(conversation)
+  const rendered = new Set(local.map(line => line.entry_id))
   const merged = TranscriptOrder.merge(conversation?.entries ?? [], local.map(line => ({ id: line.entry_id, value: line })), anchors, scope)
-    .flatMap(item => item.kind === "local" ? [item.entry.value] : sharedTurnLines(item.turn, positions, viewer, lastSeen))
+    .flatMap(item => item.kind === "local" ? [item.entry.value]
+      : sharedTurnLines(item.turn, positions, viewer, lastSeen).filter(line => !rendered.has(line.entry_id)))
   return [...new Map([...(home === undefined ? [] : [home]), ...merged].map(line => [line.entry_id, line] as const)).values()]
     .map(line => positions.get(line.entry_id) === undefined ? line : { ...line, fresh: sharedFresh(positions, line.entry_id, lastSeen) })
 }
