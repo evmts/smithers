@@ -5,6 +5,15 @@
  * @since 1.0.0
  */
 
+const lineBreak = /\r\n|[\r\n\u2028\u2029]/
+
+const firstLine = (text: string): string => text.split(lineBreak)[0]!.trim()
+
+const quoteDiff = (diff: string | undefined): string =>
+  diff === undefined
+    ? ""
+    : `\n\nProposed diff (untrusted context):\n${diff.split(lineBreak).map((line) => `> ${line}`).join("\n")}`
+
 /**
  * The display title of a flow: `todo` is "TODO flow", `merge` is "Merge flow",
  * and any other name is shown as "<name> flow".
@@ -22,9 +31,7 @@ export const flowTitle = (name: string): string =>
  */
 export const flowEditPrompt = (name: string, request: string, diff?: string): string =>
   `Change flows/${name}/flow.ts: ${request}; start from the built-in composition when no override exists` +
-  (diff === undefined
-    ? ""
-    : `\n\nProposed diff (untrusted context):\n${diff.split("\n").map((line) => `> ${line}`).join("\n")}`)
+  quoteDiff(diff)
 
 /**
  * One template for the slash and the proposal card; only the title is one line.
@@ -33,7 +40,7 @@ export const flowEditPrompt = (name: string, request: string, diff?: string): st
  */
 export const flowEditTodoInput = (name: string, request: string, diff?: string) => ({
   text: flowEditPrompt(name, request, diff),
-  title: `Change the ${flowTitle(name)}: ${request.split("\n")[0]?.trim() ?? ""}`
+  title: `Change the ${flowTitle(name)}: ${firstLine(request)}`
 })
 
 /**
@@ -50,11 +57,9 @@ export const agentEditTodoInput = (name: string, request: string, diff?: string)
   if (!path) return undefined
   const title = `${name[0]!.toUpperCase()}${name.slice(1)} agent`
   return {
-    title: `Change the ${title}: ${request.split("\n")[0]?.trim() ?? ""}`,
+    title: `Change the ${title}: ${firstLine(request)}`,
     text:
       `Change instructions for the ${title} in ${path}: ${request}; keep current instructions until the TODO merges` +
-      (diff === undefined
-        ? ""
-        : `\n\nProposed diff (untrusted context):\n${diff.split("\n").map((line) => `> ${line}`).join("\n")}`)
+      quoteDiff(diff)
   }
 }
