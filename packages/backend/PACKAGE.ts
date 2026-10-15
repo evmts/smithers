@@ -99,8 +99,71 @@ const journeyTodoLabel = Smithers.NodeTest({
   deps: [], exclusive: true, cache: false, timeout: "15m", cwd: "packages/backend"
 })
 
+/** Security checks for the backend's trust boundaries: the credential
+ * egress relay, the preview gateway, the credit ledger and host execution.
+ * @since 1.0.0
+ * @category security
+ */
+const securityReview = Smithers.SecurityReview({
+  cwd: "packages/backend",
+  include: [
+    "egressrelay/**/*.go", "previewgateway/**/*.go", "credits/**/*.go", "modelprice/**/*.go",
+    "hostexec/**/*.go", "ironproxy/**/*.go", "sandbox/**/*.go"
+  ],
+  checks: [
+    {
+      id: "relay-values-stay-bound",
+      title: "The egress relay sends a secret only to its bound host and masks it out of every response",
+      threat:
+        "Code running in a workspace guest reads a platform or user secret, or sends it to a host the secret was not bound to.",
+      lookFor: [
+        "A placeholder substituted into a request whose host is not exactly one of the secret's bound hosts, after case folding, IDNA, a trailing dot or an IPv6 bracket.",
+        "A response header, reason phrase, trailer, error message or body chunk boundary through which a bound value reaches the guest unmasked.",
+        "A dial to a private, loopback, link-local or metadata address that Config.Local does not name exactly, including through DNS resolving to such an address.",
+        "A request that keeps substituting after its binding was revoked or replaced, or an audit event carrying a value, query string or credential.",
+        "Response masking whose cost grows faster than linearly in the body size."
+      ],
+      paths: ["egressrelay/**", "ironproxy/**", "sandbox/**"]
+    },
+    {
+      id: "preview-access-rechecked",
+      title: "A user preview is served only to a viewer whose grant the API confirmed within the recheck interval",
+      threat: "A viewer whose share was removed, or anyone who learns a preview hostname, keeps reading a private workspace preview.",
+      lookFor: [
+        "A ticket accepted for another purpose, another domain, after expiry plus the skew allowance, or with a signature compared in variable time.",
+        "A platform domain (smithers-desk-*, smithers-gw-*) served without the relay token.",
+        "The session cookie, relay token or exchange ticket forwarded to guest code, or a guest Set-Cookie that overwrites the session cookie.",
+        "An upgraded socket or streaming response that outlives a revoked grant."
+      ],
+      paths: ["previewgateway/**"]
+    },
+    {
+      id: "credit-never-overspent",
+      title: "A platform-funded model call reserves before it spends and settles exactly once",
+      threat: "A user runs platform-key model calls without paying, or a retry or race charges a user twice.",
+      lookFor: [
+        "A ledger write that does not lock the account row first, so concurrent reservations overspend.",
+        "A retry of the same request key that reaches the provider again, or a settlement that can apply twice.",
+        "A model with no price, an unknown long-context price, or negative usage that is charged zero instead of refused.",
+        "An integer overflow or rounding toward zero in a nanodollar computation."
+      ],
+      paths: ["credits/**", "modelprice/**"]
+    },
+    {
+      id: "host-children-pinned",
+      title: "Host children run by absolute path with a built environment",
+      threat: "A repository's config or an inherited environment variable makes the backend run attacker code on its host.",
+      lookFor: [
+        "A child started by name through PATH, or with the backend's inherited environment, or with a GIT_*, DYLD_* or LD_* variable.",
+        "A git invocation that leaves repository hooks, fsmonitor or alternateRefsCommand enabled."
+      ],
+      paths: ["hostexec/**"]
+    }
+  ]
+})
+
 /** The backend documentation freshness gate.
  * @since 1.0.0
  * @category packages
  */
-export const Package = Smithers.Package({ targets: { machineContractInputs, buildInputs, docs, journeyTodoLabel } })
+export const Package = Smithers.Package({ targets: { machineContractInputs, buildInputs, docs, journeyTodoLabel, ...securityReview } })
