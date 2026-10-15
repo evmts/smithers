@@ -217,18 +217,21 @@ export function BranchView({ model, actions, gestures, view, onAction, onView }:
             ),
           )}
         </div>
-        <div className="branch-ssh">
-          <code tabIndex={0} title={model.ssh_line}>{model.ssh_line}</code>
-          <button
-            type="button"
-            aria-label="Copy SSH line"
-            onClick={() => {
-              void copyText(model.ssh_line)
-            }}
-          >
-            <Copy size={14} aria-hidden="true" />
-          </button>
-        </div>
+        {/* A box with no SSH line yet has nothing to copy: the strip would be a button over an empty line. */}
+        {model.ssh_line === "" ? null : (
+          <div className="branch-ssh">
+            <code tabIndex={0} title={model.ssh_line}>{model.ssh_line}</code>
+            <button
+              type="button"
+              aria-label="Copy SSH line"
+              onClick={() => {
+                void copyText(model.ssh_line)
+              }}
+            >
+              <Copy size={14} aria-hidden="true" />
+            </button>
+          </div>
+        )}
       </div>
     </section>
   )
@@ -300,7 +303,24 @@ function Presence({ model, gestures, onAction }: ListProps) {
     </ul>
   )
 }
+/*
+ * An empty Activity panel reads as a broken card, not as an empty one: a box
+ * still waiting for a machine has recorded nothing yet, and the panel used to
+ * say so with nothing at all. The machine's own word is already in the model,
+ * so the absence names where the box is instead of inventing a second account
+ * of it; a machine that is up and has recorded nothing says only that.
+ */
+function ActivityAbsence({ model }: Pick<BranchViewProps, "model">) {
+  return (
+    <p className="branch-muted">
+      {model.machine.state === "awake" || model.machine.state === "failed"
+        ? "Nothing yet"
+        : `${machineWords[model.machine.state]} · nothing yet`}
+    </p>
+  )
+}
 function ActivityList({ model, view, onAction }: Pick<BranchViewProps, "model" | "view" | "onAction">) {
+  if (model.activity.length === 0) return <ActivityAbsence model={model} />
   const shown = view.maximized ? model.activity : model.activity.slice(-5)
   const earlier = model.activity.length - shown.length
   const lastAnswer = model.activity.map((entry) => entry.kind).lastIndexOf("answer")

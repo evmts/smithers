@@ -303,3 +303,28 @@ test("a box no list can name still reads its own state, through the real list", 
     expect(h.host.textContent).not.toContain("This box is not available.")
   } finally { await h.dispose() }
 })
+
+/*
+ * The native case root recorded for its own queued box
+ * `a8eb95e2-4c78-4568-88cc-79b2dfd934be` (`waiting_for_machine` / no fit): the
+ * card opened with its heading, Scratch, "Nobody here" and the three tabs, and
+ * the Activity panel under them was blank except a copy icon. A hosted box row
+ * carries no activity and no SSH line, so the list rendered nothing and the SSH
+ * strip offered a button that copied the empty string.
+ */
+test("a queued box's Activity panel says where the box is, and offers no SSH line it does not have", async () => {
+  const h = await mounted({ workspace: box({ status: "pending", provisioningStage: "waiting_for_machine" }) })
+  try {
+    const panel = h.host.querySelector('[role="tabpanel"]')
+    expect(panel?.textContent?.trim()).not.toBe("")
+    expect(panel?.textContent).toContain("Waking")
+    expect(h.host.querySelector('[aria-label="Copy SSH line"]')).toBeNull()
+  } finally { await h.dispose() }
+})
+
+test("a box that is awake with nothing recorded yet still answers in its Activity panel", async () => {
+  const h = await mounted({ workspace: box({ status: "running" }) })
+  try {
+    expect(h.host.querySelector('[role="tabpanel"]')?.textContent).toContain("Nothing yet")
+  } finally { await h.dispose() }
+})
