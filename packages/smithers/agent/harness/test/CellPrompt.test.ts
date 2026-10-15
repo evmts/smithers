@@ -390,6 +390,9 @@ describe("cellPrompt", () => {
     //
     // Lowered to 1,450 on 2026-09-30 by the token-economy rewrite: the same
     // rules in fragments. The environment ceiling fell from 300 to 200.
+    //
+    // Unchanged on 2026-10-14: uncapping reading before the first edit cost
+    // +26 characters and lands the contract at 1,449.
     expect(Tokens.estimate(contractText())).toBeLessThanOrEqual(1_450)
     expect(Tokens.estimate(sectionOf("cell-environment", {}, { locale: "C.UTF-8", absentTools: ["rg", "ruff"] })))
       .toBeLessThanOrEqual(200)
@@ -449,9 +452,13 @@ describe("the contract", () => {
     // SWE-bench arm measures this wording and informs tuning, not reverting.
     // It moved again on 2026-09-30, 9,715 → 5,553, on will's token-economy
     // ruling: every rule kept, prose cut to fragments. Unmeasured by a wave.
-    expect(replText()).toHaveLength(5_553)
+    // It moved again on 2026-10-14, 5,553 → 5,579, on will's ruling that
+    // reading before the first edit is not capped (why-codex-won.md): rule 4's
+    // economy starts at the first edit, and its `console.log(hits)` example,
+    // a print of search results, went with the ban it illustrated.
+    expect(replText()).toHaveLength(5_579)
     expect(Digest.digest(replText()))
-      .toBe("11484a7f060a8490eda84a3bac7f72bbafad8b8e7f52c3e14a6be805c55ca122")
+      .toBe("7f55f01235888a434e3b587794b5aa268697d282f1ab20c235bc5936d345f755")
   })
 
   it("encourages the guard shape and leaves the unguarded completion legal", () => {
@@ -519,6 +526,24 @@ describe("the contract", () => {
     for (const named of ["ctx.done(output)", "ctx.park(reason, message)", "ctx.justify(", "console.log"]) {
       expect(replText()).toContain(named)
     }
+  })
+
+  it("leaves reading before the first edit uncapped and keeps the print economy after it", () => {
+    // Will's ruling of 2026-10-14. On the paired SWE-bench Pro run of that day
+    // Smithers' model saw a median 0.41x the output stock Codex saw before its
+    // first edit, less in 122 of 123 tasks, and openlibrary-53d376 never found
+    // the repository's own `match_surname` helper (why-codex-won.md).
+    const rule = replText().split("\n").find((line) => line.startsWith("4. "))!
+    const [reading, editing] = rule.split("After your first edit,")
+    expect(reading).toContain(
+      "Before your first edit, reading is uncapped: print whole files, search results, listings."
+    )
+    // The old ban no longer reaches the reading that precedes the first edit.
+    expect(reading).not.toContain("≤40 lines")
+    expect(reading).not.toContain("never whole")
+    expect(editing).toContain("prints are re-paid every turn")
+    expect(editing).toContain("≤40 lines a cell")
+    expect(editing).toContain("never whole listings, search results, files or intermediates")
   })
 })
 

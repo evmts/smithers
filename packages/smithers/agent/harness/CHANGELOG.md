@@ -4,6 +4,12 @@
 
 ### Changed
 
+- The cell contract leaves reading before the first edit uncapped: rule 4
+  says to print whole files, search results and listings then, and its print
+  economy (40 lines a cell, no whole files or search results, counts first)
+  starts at the first edit, when prints are re-paid every turn. On the paired
+  SWE-bench Pro run of 2026-10-14 the model saw a median 0.41x the output
+  stock Codex saw before its first edit (#3950).
 - `CompletionClaim`'s two classifiers carry a seat note that states the
   refusal question's scope: runs the claim says happened, and nothing else.
   GPT-6 Luna, judging on a host with no gateway key, read "names an outcome"
