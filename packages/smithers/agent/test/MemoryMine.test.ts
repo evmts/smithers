@@ -72,6 +72,14 @@ describe("sentences", () => {
     expect(MemoryMine.sentences("x".repeat(MemoryMine.candidateChars))[0]).toHaveLength(MemoryMine.candidateChars)
   })
 
+  it("never clips a character in half, so a note is well-formed text", () => {
+    // The emoji's two UTF-16 units straddle the clip point.
+    const straddling = `${"a".repeat(MemoryMine.candidateChars - 2)}😀 tail`
+    const [clipped] = MemoryMine.sentences(straddling)
+    expect(clipped).toBe(`${"a".repeat(MemoryMine.candidateChars - 2)}…`)
+    expect(clipped).not.toMatch(/[\uD800-\uDFFF]/)
+  })
+
   it("strips every fenced block before splitting, a blank line inside one included", () => {
     const prose = [
       "Set it up:",

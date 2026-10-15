@@ -136,7 +136,16 @@ const textOf = (value: unknown): string | undefined => {
 
 const redact = (text: string): string => String(Redaction.redact(text))
 
-const clip = (text: string, chars: number): string => text.length > chars ? `${text.slice(0, chars - 1)}…` : text
+/**
+ * Clips to `chars` UTF-16 units, the ellipsis included. A cut that would
+ * fall between a surrogate pair's halves drops the whole character, so a
+ * note never carries half an emoji into its JSON.
+ */
+const clip = (text: string, chars: number): string => {
+  if (text.length <= chars) return text
+  const head = text.slice(0, chars - 1)
+  return `${/[\uD800-\uDBFF]$/.test(head) ? head.slice(0, -1) : head}…`
+}
 
 /**
  * A fenced block of any info string, backticks or tildes, closed by a fence
