@@ -1,4 +1,9 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
+import {
+  BuildAndCheckTypeScriptPackage,
+  ReviewDocsAgainstCode,
+  ReviewJsdocAgainstCode,
+  ReviewTagsMigrationsAndKeys
+} from "@smthrs/repo-targets"
 /**
  * Standard package targets.
  *
@@ -14,6 +19,40 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   sources: Input.glob("{src,examples}/**/*.ts"),
   cwd: "packages/smithers/agent/integrations"
 })
+
+/**
+ * The durable-identity review: identity strings, migrations, persisted
+ * schemas, and durable keys (action keys, cursor and record ids), read out of
+ * this package's own changed sources.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const reviewTagsMigrationsAndKeys = ReviewTagsMigrationsAndKeys({ cwd: "packages/smithers/agent/integrations" })
+
+/**
+ * Changed public APIs against the package README, every docs page (concepts
+ * and guides included), and the site API reference page.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({
+  cwd: "packages/smithers/agent/integrations",
+  context: [
+    Smithers.file("README.md"),
+    Smithers.glob("docs/**/*.md"),
+    Smithers.file("//apps/site/src/content/docs/docs/reference/api/integrations.mdx")
+  ]
+})
+
+/**
+ * Changed exports against their own JSDoc.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: "packages/smithers/agent/integrations" })
 
 const securityReview = Smithers.SecurityReview({
   cwd: "packages/smithers/agent/integrations",
@@ -120,5 +159,18 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview }
+  targets: {
+    check,
+    circular,
+    docs,
+    docsFiles,
+    reviewDocsAgainstCode,
+    reviewJsdocAgainstCode,
+    reviewTagsMigrationsAndKeys,
+    fmt,
+    lib,
+    lint,
+    test,
+    ...securityReview
+  }
 })

@@ -271,6 +271,18 @@ describe("RateLimit refusals", () => {
   })
 })
 
+describe("RateLimit paths", () => {
+  it("runs a request whose absolute path does not parse, spending the core budget", async () => {
+    const starts: Array<number> = []
+    const exit = await run(Effect.gen(function*() {
+      const rate = yield* limiter()
+      return yield* Effect.exit(call(rate, "GET", starts, {}, "https://"))
+    }))
+    expect(Exit.isSuccess(exit)).toBe(true)
+    expect(starts).toHaveLength(1)
+  })
+})
+
 describe("RateLimit construction", () => {
   it("defaults to GitHub's limits and a one-minute wait", async () => {
     expect(Duration.toMillis(DEFAULT_MAX_WAIT)).toBe(60_000)

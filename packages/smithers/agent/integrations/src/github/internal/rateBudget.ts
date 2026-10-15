@@ -166,7 +166,9 @@ export const isWrite = (method: string): boolean => !["GET", "HEAD", "OPTIONS"].
  * @private
  */
 export const resourceOf = (path: string): string => {
-  const pathname = (/^https?:/.test(path) ? new URL(path).pathname : path).replace(/\?.*$/, "")
+  // An absolute URL that does not parse falls back to the raw text, so the
+  // limiter never dies on a caller's malformed path.
+  const pathname = (/^https?:/.test(path) && URL.canParse(path) ? new URL(path).pathname : path).replace(/\?.*$/, "")
   if (/(^|\/)graphql$/.test(pathname)) return "graphql"
   if (/(^|\/)search\/code(\/|$)/.test(pathname)) return "code_search"
   if (/(^|\/)search\//.test(pathname)) return "search"

@@ -61,6 +61,7 @@ describe("request classification", () => {
     expect(resourceOf("https://api.github.com/search/issues?q=graphql")).toBe("search")
     expect(resourceOf("repos/o/r/issues/1/comments")).toBe("core")
     expect(resourceOf("/repos/o/graphql-tools/issues")).toBe("core")
+    expect(resourceOf("https://")).toBe("core")
   })
 })
 
