@@ -47,6 +47,29 @@ describe("plan integrity admission", () => {
       ))
   }
 
+  for (
+    const timestamp of [
+      -1,
+      0.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      Number.MAX_SAFE_INTEGER + 1
+    ]
+  ) {
+    it.effect(`rejects invalid creation timestamp ${timestamp} without persisting rows`, () =>
+      withCrypto(
+        Effect.gen(function*() {
+          const plan = yield* compile([draft("root")])
+          const store = yield* PlanStore.PlanStore
+          expect((yield* Effect.flip(store.record(plan, timestamp))).code).toBe("constraint")
+          expect(Option.isNone(yield* store.get(plan.planId))).toBe(true)
+          expect(yield* store.record(plan, Number.MAX_SAFE_INTEGER)).toEqual({ _tag: "Recorded" })
+          expect(Option.getOrThrow(yield* store.get(plan.planId))).toEqual(plan)
+        }).pipe(Effect.provide(stores))
+      ))
+  }
+
   it.effect("refuses forged store admission without writing or misreporting ExistingSame", () =>
     withCrypto(
       Effect.gen(function*() {
