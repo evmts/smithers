@@ -212,3 +212,20 @@ test("cuts subscription token and account identity across every chunk boundary",
     }
   }
 })
+
+test("never lets a cut echo join emitted text into the secret, at any pair of chunk boundaries", () => {
+  // Cutting the inner echo joins the outer halves back into the secret.
+  // The whole stream, as a reader concatenates it, must still hold no secret.
+  const secret = "sk-live-0123456789abcdef"
+  const nested = `say ${secret.slice(0, 5)}${secret}${secret.slice(5)} end`
+  for (let first = 0; first <= nested.length; first++) {
+    for (let second = first; second <= nested.length; second++) {
+      const cutter = new StreamingCredentialCutter(secret)
+      const output = cutter.push(nested.slice(0, first)) + cutter.push(nested.slice(first, second)) +
+        cutter.push(nested.slice(second)) + cutter.finish()
+      expect(output).not.toContain(secret)
+      expect(output.startsWith("say ")).toBe(true)
+      expect(output.endsWith(" end")).toBe(true)
+    }
+  }
+})

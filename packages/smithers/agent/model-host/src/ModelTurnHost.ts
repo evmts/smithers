@@ -89,13 +89,18 @@ export const providerRequest = (turn: StartAgentTurnRequest, options: ModelTurnO
 }
 
 /**
- * Removes a configured credential even when provider chunks split it.
+ * Removes a configured credential even when provider chunks split it. The
+ * concatenation of everything `push` and `finish` return never contains the
+ * credential: when cutting one echo joins text already returned with text
+ * still to come, the joining text is dropped too.
  *
  * @category utilities
  * @since 1.0.0-rc.0
  */
 export class StreamingCredentialCutter {
   private pending = ""
+  /** The end of the returned text, one character shorter than the longest secret part. */
+  private returned = ""
   private readonly secret: string | undefined
   constructor(secret: string | undefined) {
     this.secret = secret
@@ -114,12 +119,39 @@ export class StreamingCredentialCutter {
     }
     const emitted = this.pending.slice(0, this.pending.length - held)
     this.pending = this.pending.slice(this.pending.length - held)
-    return emitted
+    return this.release(emitted, this.secret)
   }
   finish(): string {
-    const emitted = this.secret === undefined ? this.pending : cutModelCredential(this.pending, this.secret)
+    if (this.secret === undefined) return this.pending
+    const emitted = cutModelCredential(this.pending, this.secret)
     this.pending = ""
-    return emitted
+    return this.release(emitted, this.secret)
+  }
+  /**
+   * Drops the start of `text` while it completes a secret part begun in the
+   * returned text. Both sides are already free of whole parts, so any part
+   * found from one part-length before the seam straddles it.
+   */
+  private release(text: string, secret: string): string {
+    const parts = modelCredentialParts(secret)
+    let kept = text
+    for (let joined = true; joined;) {
+      joined = false
+      const seam = this.returned.length
+      const combined = this.returned + kept
+      for (const part of parts) {
+        const index = combined.indexOf(part, Math.max(0, seam - part.length + 1))
+        if (index !== -1) {
+          kept = combined.slice(index + part.length)
+          joined = true
+          break
+        }
+      }
+    }
+    const longest = Math.max(0, ...parts.map((part) => part.length))
+    const combined = this.returned + kept
+    this.returned = combined.slice(Math.max(0, combined.length - (longest - 1)))
+    return kept
   }
 }
 
