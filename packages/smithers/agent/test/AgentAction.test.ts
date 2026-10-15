@@ -625,6 +625,21 @@ describe("AgentAction completion claim brake", () => {
   it("rejects a non-finite, fractional, or negative claim cap at declaration time", () => {
     for (const claimCap of [Number.NaN, 1.5, -1]) expect(() => answerer("BadCap", claimCap)).toThrow()
   })
+
+  it("rejects a bad claim cap given to implement or to the host, not only to make", () => {
+    const declared = Action.make("agent/test/ImplementedBadCap", {
+      payload: { diff: Schema.String },
+      success: Review,
+      error: AgentAction.AgentFailure
+    })
+    for (const claimCap of [Number.NaN, Number.POSITIVE_INFINITY, 1.5, -1]) {
+      expect(() =>
+        AgentAction.implement(declared, { seat: "anthropic:test-model", prompt: () => "Review it.", claimCap })
+      )
+        .toThrow(TypeError)
+      expect(() => AgentAction.layerHost({ ...host, claimCap })).toThrow(TypeError)
+    }
+  })
 })
 
 describe("AgentAction completion value types", () => {

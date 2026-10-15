@@ -206,6 +206,8 @@ export const Host: Context.Service<Host, Host> = Context.Service(
  * is: an unbounded correction budget is a run that re-prompts forever, and the
  * cheapest place to say so is where the number was written.
  *
+ * @throws {InvalidCorrectionBudget} When `defaultCorrections` is not a non-negative safe integer.
+ * @throws {TypeError} When `claimCap` is not a non-negative safe integer.
  * @category constructors
  * @since 0.1.0
  */
@@ -213,6 +215,7 @@ export const makeHost = (host: Host): Host => {
   if (host.defaultCorrections !== undefined) {
     checkCorrections(host.defaultCorrections, "AgentAction.Host defaultCorrections")
   }
+  if (host.claimCap !== undefined) checkClaimCap(host.claimCap, "AgentAction.Host claimCap")
   return Host.of(host)
 }
 
@@ -426,6 +429,16 @@ export class InvalidCorrectionBudget extends Schema.TaggedError<InvalidCorrectio
 ) {}
 Fault.register("flows/agent/InvalidCorrectionBudget", "bug")
 Fault.register("flows/agent/InvalidSeatDeclaration", "bug")
+
+/**
+ * Refuses a claim cap the cell turn would only reject once a run starts, so a
+ * host or an `implement` call fails where the number was written, as `make` does.
+ */
+const checkClaimCap = (claimCap: number, subject: string): void => {
+  if (!Number.isSafeInteger(claimCap) || claimCap < 0) {
+    throw new TypeError(`${subject} must be a non-negative safe integer, received ${claimCap}`)
+  }
+}
 
 /**
  * Refuses a correction budget that is not a non-negative safe integer.
@@ -649,9 +662,7 @@ export const make = <
   if (options.corrections !== undefined) {
     checkCorrections(options.corrections, "AgentAction corrections")
   }
-  if (options.claimCap !== undefined && (!Number.isSafeInteger(options.claimCap) || options.claimCap < 0)) {
-    throw new TypeError(`AgentAction claimCap must be a non-negative safe integer, received ${options.claimCap}`)
-  }
+  if (options.claimCap !== undefined) checkClaimCap(options.claimCap, "AgentAction claimCap")
   type PayloadSchema = PayloadSchemaOf<Payload>
   const declared = Action.make(tag, {
     payload: options.payload,
@@ -683,6 +694,7 @@ export const implement = <
     throw new TypeError("AgentAction.implement requires error: AgentAction.AgentFailure")
   }
   if (policy.corrections !== undefined) checkCorrections(policy.corrections, "AgentAction corrections")
+  if (policy.claimCap !== undefined) checkClaimCap(policy.claimCap, "AgentAction claimCap")
   const tag = declared.name
   const options = { ...policy, output: declared.successSchema }
   const execute = (payload: PayloadSchema["Type"]) =>
