@@ -164,6 +164,25 @@ describe("Rubric.make", () => {
     expect(requests[3]!.prompt).toContain("```text\nnull\n```")
   })
 
+  it("scores criteria whose ids are Object.prototype names", async () => {
+    const reserved = ["__proto__", "constructor", "toString"].map((id) => ({
+      id,
+      question: id,
+      low: "no",
+      high: "yes"
+    }))
+    const reply = "{\"scores\": {\"__proto__\": 5, \"constructor\": 3, \"toString\": 4}, \"reason\": \"ok\"}"
+    const scorer = Rubric.make({ id: "test/reserved", version: "1", criteria: reserved, judge: scripted(reply).judge })
+    const result = await Effect.runPromise(scorer.score({ input: "c", output: "o" }))
+    expect(result.score).toBe(0.75)
+    expect(Object.entries((result.meta as Rubric.Verdict).scores)).toEqual([["__proto__", 5], ["constructor", 3], [
+      "toString",
+      4
+    ]])
+    const missing = Rubric.parse("{\"scores\": {\"__proto__\": 5, \"toString\": 4}}", reserved)
+    expect(missing).toEqual(Result.fail("score for \"constructor\" must be an integer from 1 to 5"))
+  })
+
   it("fails with invalid_score when the reply cannot be parsed", async () => {
     const scorer = Rubric.make({ ...options, judge: scripted("{\"scores\": {\"plain\": 4}}").judge })
     const error = await Effect.runPromise(Effect.flip(scorer.score({ input: "c", output: "o" })))

@@ -245,7 +245,8 @@ const objects = (text: string): ReadonlyArray<Record<string, unknown>> => {
  * two is refused, because a judge that quotes the output under judgment could
  * otherwise carry a verdict forged inside that output. Every criterion id
  * needs an integer score from 1 to 5; extra keys are ignored and a missing
- * `reason` reads as empty.
+ * `reason` reads as empty. Scores are read from own keys only, so a criterion
+ * id such as `__proto__` or `toString` is scored like any other.
  *
  * @category parsing
  * @since 0.1.0
@@ -258,15 +259,22 @@ export const parse = (text: string, criteria: ReadonlyArray<Criterion>): Result.
   const value = scored[0] ?? found[0]!
   const scores = value.scores
   if (typeof scores !== "object" || scores === null) return Result.fail("\"scores\" must be an object")
-  const read: Record<string, number> = {}
+  const read: Array<[string, number]> = []
   for (const { id } of criteria) {
-    const score = (scores as Record<string, unknown>)[id]
+    // Own keys only: an id such as "__proto__" or "toString" must name the
+    // judge's score, never a property inherited from Object.prototype.
+    const score = Object.hasOwn(scores, id) ? (scores as Record<string, unknown>)[id] : undefined
     if (typeof score !== "number" || !Number.isInteger(score) || score < 1 || score > 5) {
       return Result.fail(`score for ${JSON.stringify(id)} must be an integer from 1 to 5`)
     }
-    read[id] = score
+    read.push([id, score])
   }
-  return Result.succeed({ scores: read, reason: typeof value.reason === "string" ? value.reason.trim() : "" })
+  // Object.fromEntries defines each key as an own property, so "__proto__"
+  // is kept as a score instead of being swallowed as a prototype assignment.
+  return Result.succeed({
+    scores: Object.fromEntries(read),
+    reason: typeof value.reason === "string" ? value.reason.trim() : ""
+  })
 }
 
 const mean = (values: ReadonlyArray<number>): number =>
