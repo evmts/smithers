@@ -311,6 +311,24 @@ describe("BrowserChildProcessSpawner", () => {
       expect(calls[0]?.env).toEqual({ KEEP: "yes" })
     }))
 
+  /**
+   * An environment built from data (`JSON.parse`, `Object.fromEntries`) can
+   * carry an own `__proto__` key. Assigning it onto a fresh `{}` hits the
+   * prototype setter instead of creating the variable, so it vanished.
+   */
+  it.effect("forwards an environment variable named __proto__", () =>
+    Effect.gen(function*() {
+      const { bash, calls } = stub(ok())
+      const env: Record<string, string> = JSON.parse(`{"__proto__":"kept","A":"1"}`)
+
+      yield* run(
+        bash,
+        Effect.flatMap(ChildProcessSpawner, (spawner) => spawner.exitCode(ChildProcess.make("thing", [], { env })))
+      )
+
+      expect(Object.entries(calls[0]?.env ?? {})).toEqual([["__proto__", "kept"], ["A", "1"]])
+    }))
+
   it.effect.each([false, true])(
     "resolves a relative cwd against the volume root (tab: %s)",
     (tab) =>

@@ -81,17 +81,19 @@ const noStdin = "this adapter runs the interpreter once with captured output and
 /**
  * `env` without the `undefined` values just-bash has no way to represent.
  *
+ * Built with `Object.fromEntries` rather than by assignment onto `{}`: an
+ * assignment to a `__proto__` key runs the prototype setter, which drops the
+ * variable instead of defining it.
+ *
  * @private
  */
 const resolveEnvironment = (
   options: ChildProcess.CommandOptions
 ): Record<string, string> | undefined => {
   if (options.env === undefined) return undefined
-  const env: Record<string, string> = {}
-  for (const [key, value] of Object.entries(options.env)) {
-    if (value !== undefined) env[key] = value
-  }
-  return env
+  return Object.fromEntries(
+    Object.entries(options.env).filter((entry): entry is [string, string] => entry[1] !== undefined)
+  )
 }
 
 /**
