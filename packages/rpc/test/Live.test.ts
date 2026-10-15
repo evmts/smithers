@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 import { expect, test } from "vitest"
-import { decodeLiveReserved, LiveReplySchema, LiveRequestSchema } from "../src/Live.ts"
+import { decodeLiveReserved, LiveFrameRefused, LiveReplySchema, LiveRequestSchema } from "../src/Live.ts"
 import { fixtures } from "./fixtures/Live.ts"
 
 test.each(fixtures)("decodes committed record %s", (raw) => {
@@ -14,6 +14,26 @@ test("reserved frames retain the subscription id", () => {
     expect(decodeLiveReserved(raw)).toEqual({ t: "err", id: 7, code: "unsupported" })
   }
   expect(() => decodeLiveReserved(new Uint8Array([3, 0, 0, 0, 7]))).toThrow()
+})
+test("every frame that is not a reserved kind with a usable id is refused with LiveFrameRefused", () => {
+  for (
+    const raw of [
+      new Uint8Array([3, 0, 0, 0, 7]),
+      new Uint8Array([1, 0, 0, 7]),
+      new Uint8Array([1, 0, 0, 0, 0]),
+      new Uint8Array(),
+      { t: "sub", id: 7, topic: "runs" },
+      { t: "unsub", id: 7 },
+      { t: "presence", id: 0 },
+      { t: "other", id: 7 },
+      "presence",
+      null
+    ]
+  ) expect(() => decodeLiveReserved(raw)).toThrow(LiveFrameRefused)
+})
+test("a binary frame reads its id from its own bytes, not the start of a shared buffer", () => {
+  const shared = new Uint8Array([9, 9, 9, 2, 0, 0, 1, 0])
+  expect(decodeLiveReserved(shared.subarray(3))).toEqual({ t: "err", id: 256, code: "unsupported" })
 })
 test("invalid discriminator, cursor and payload are refused", () => {
   for (

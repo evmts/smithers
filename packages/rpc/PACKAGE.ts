@@ -6,6 +6,7 @@
  *
  * @since 1.0.0
  */
+import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 
 const cwd = "packages/rpc"
@@ -238,11 +239,41 @@ const securityReview = Smithers.SecurityReview({
 })
 
 /**
+ * Changed contracts against the package README and docs pages. The package has
+ * no site API reference page.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({
+  cwd,
+  context: [Smithers.file("README.md"), Smithers.glob("docs/**/*.md")]
+})
+
+/**
+ * Changed exports against their own JSDoc.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd })
+
+/**
  * Build, lint, formatting, and test gates for the public wire contracts.
  *
  * @since 1.0.0
  * @category packages
  */
 export const Package = Smithers.Package({
-  targets: { check, unitTests, lint, fmt, docs, docsFiles, ...securityReview }
+  targets: {
+    check,
+    unitTests,
+    lint,
+    fmt,
+    docs,
+    docsFiles,
+    reviewDocsAgainstCode,
+    reviewJsdocAgainstCode,
+    ...securityReview
+  }
 })

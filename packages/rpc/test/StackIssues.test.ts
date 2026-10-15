@@ -186,3 +186,105 @@ describe("stack metrics", () => {
     expect(itemReason({ ...conflict, integration: { conflict: { paths: [] } } })).toBeUndefined()
   })
 })
+
+describe("issue to landed", () => {
+  const landed = (id: string, createdAt: string | undefined, updatedAt: string): MythicalItem =>
+    item(id, "landed", { ...(createdAt === undefined ? {} : { createdAt }), updatedAt })
+
+  test("p50 is the middle duration, or the mean of the two middle ones, over landed items with both stamps", () => {
+    const odd = stack([
+      landed("a", "2026-09-29T00:00:00Z", "2026-09-29T03:00:00Z"),
+      landed("b", "2026-09-29T00:00:00Z", "2026-09-29T01:00:00Z"),
+      landed("c", "2026-09-29T00:00:00Z", "2026-09-29T02:00:00Z")
+    ])
+    expect(stackMetrics(odd).p50Ms).toBe(2 * 3_600_000)
+    const even = stack([...odd.items, landed("d", "2026-09-29T00:00:00Z", "2026-09-29T06:00:00Z")])
+    expect(stackMetrics(even).p50Ms).toBe(2.5 * 3_600_000)
+  })
+
+  test("an item without createdAt, with an unreadable stamp, landing before it was seen, or not landed has no duration", () => {
+    const metrics = stackMetrics(stack([
+      landed("no-start", undefined, "2026-09-29T03:00:00Z"),
+      landed("bad-start", "not a date", "2026-09-29T03:00:00Z"),
+      landed("bad-end", "2026-09-29T00:00:00Z", ""),
+      landed("backwards", "2026-09-29T05:00:00Z", "2026-09-29T03:00:00Z"),
+      item("open", "proposed", { createdAt: "2026-09-29T00:00:00Z", updatedAt: "2026-09-29T03:00:00Z" })
+    ]))
+    expect(metrics.p50Ms).toBeUndefined()
+    expect(metrics.landed).toBe(4)
+    expect(stackMetricLabels(metrics).map((label) => label.id)).not.toContain("p50")
+  })
+
+  test.each([
+    [0, "0m"],
+    [59 * 60_000, "59m"],
+    [60 * 60_000, "1h"],
+    [47 * 3_600_000, "47h"],
+    [48 * 3_600_000, "2d"],
+    [10 * 86_400_000, "10d"]
+  ])("a %d ms p50 reads %s in the header", (ms, text) => {
+    const metrics = stackMetrics(
+      stack([landed("a", "2026-09-01T00:00:00Z", new Date(Date.parse("2026-09-01T00:00:00Z") + ms).toISOString())])
+    )
+    expect(stackMetricLabels(metrics).find((label) => label.id === "p50")?.text).toBe(`${text} p50`)
+  })
+})
+
+describe("decided and reverts", () => {
+  test("landed, rejected, blocked and declined are decided; cancelled, skipped and live items are not", () => {
+    const metrics = stackMetrics({
+      ...stack([
+        item("l", "landed"),
+        item("r", "rejected"),
+        item("b", "blocked"),
+        item("d", "declined"),
+        item("c", "cancelled"),
+        item("s", "skipped"),
+        item("q", "queued"),
+        item("p", "proposed")
+      ]),
+      changes: [
+        { changeId: "1", commitId: "a", title: "Revert x", kind: "revert", state: "landed" },
+        { changeId: "2", commitId: "b", title: "x", kind: "item", state: "landed" }
+      ]
+    })
+    expect([metrics.landed, metrics.decided, metrics.reverts]).toEqual([1, 4, 1])
+    expect(stackMetricLabels(metrics).slice(0, 1)).toEqual([{ id: "landed", text: "1/4 landed" }])
+    expect(stackMetricLabels(metrics).find((label) => label.id === "reverts")?.text).toBe("1 revert")
+  })
+})
+
+describe("issue groups", () => {
+  const ids = (groups: ReturnType<typeof issueGroups>, id: string) =>
+    groups.find((group) => group.id === id)!.items.map((row) => row.id)
+
+  test("needs you waits longest first, working lists lanes in lane order before the queue, done is newest first", () => {
+    const groups = issueGroups(stack([
+      item("q1", "queued"),
+      item("lane2", "running", { lane: 2 }),
+      item("newer-block", "blocked", { updatedAt: "2026-09-29T12:00:00Z" }),
+      item("q2", "queued"),
+      item("lane1", "running", { lane: 1 }),
+      item("older-pr", "proposed", { updatedAt: "2026-09-29T08:00:00Z" }),
+      item("old-done", "landed", { updatedAt: "2026-09-28T00:00:00Z" }),
+      item("new-done", "declined", { updatedAt: "2026-09-29T11:00:00Z" })
+    ]))
+    expect(groups.map((group) => group.id)).toEqual(["needs-you", "working", "done"])
+    expect(ids(groups, "needs-you")).toEqual(["older-pr", "newer-block"])
+    expect(ids(groups, "working")).toEqual(["lane1", "lane2", "q1", "q2"])
+    expect(ids(groups, "done")).toEqual(["new-done", "old-done"])
+  })
+
+  test("with a clock, Done keeps the last 24 hours and any item without a readable stamp", () => {
+    const now = Date.parse("2026-09-29T12:00:00Z")
+    const groups = issueGroups(
+      stack([
+        item("edge", "landed", { updatedAt: "2026-09-28T12:00:00Z" }),
+        item("stale", "landed", { updatedAt: "2026-09-28T11:59:59Z" }),
+        item("unstamped", "cancelled", { updatedAt: "" })
+      ]),
+      now
+    )
+    expect(ids(groups, "done")).toEqual(["edge", "unstamped"])
+  })
+})

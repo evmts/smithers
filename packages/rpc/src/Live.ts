@@ -71,11 +71,16 @@ export class LiveFrameRefused extends Error {
  * @category parsers
  */
 export function decodeLiveReserved(raw: unknown): LiveReply {
-  if (raw instanceof Uint8Array && raw.length >= 5 && (raw[0] === 1 || raw[0] === 2)) {
-    const id = new DataView(raw.buffer, raw.byteOffset, raw.byteLength).getUint32(1)
-    return LiveReplySchema.parse({ t: "err", id, code: "unsupported" })
+  if (raw instanceof Uint8Array) {
+    if (raw.length < 5 || (raw[0] !== 1 && raw[0] !== 2)) throw new LiveFrameRefused()
+    return refuseReserved(new DataView(raw.buffer, raw.byteOffset, raw.byteLength).getUint32(1))
   }
-  const request = LiveRequestSchema.parse(raw)
-  if (request.t !== "presence") throw new LiveFrameRefused()
-  return { t: "err", id: request.id, code: "unsupported" }
+  const request = LiveRequestSchema.safeParse(raw)
+  if (!request.success || request.data.t !== "presence") throw new LiveFrameRefused()
+  return refuseReserved(request.data.id)
+}
+const refuseReserved = (frameId: number): LiveReply => {
+  const reply = LiveReplySchema.safeParse({ t: "err", id: frameId, code: "unsupported" })
+  if (!reply.success) throw new LiveFrameRefused()
+  return reply.data
 }
