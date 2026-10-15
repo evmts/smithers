@@ -68,6 +68,21 @@ describe("BunHost repository-root validation", () => {
     }
   })
 
+  it("refuses absolute roots containing NUL before constructing either bundle", () => {
+    for (const [factory, build] of Object.entries(factories)) {
+      for (const root of ["/\0", "/\0repo", "/repo\0suffix", "/repo\0"]) {
+        const error = thrown(() => build(root))
+        expect(error).toBeInstanceOf(BunHost.BunHostError)
+        expect(error).toMatchObject({ code: "invalid_repository_root" })
+        // The root is absolute; the message names the NUL that was refused.
+        expect((error as Error).message).toBe(
+          `BunHost.${factory} requires a repository root without NUL, got ${JSON.stringify(root)}`
+        )
+        expect((error as Error).message).not.toContain("\0")
+      }
+    }
+  })
+
   it("bounds the message for a root of any length", () => {
     const root = "a".repeat(100_000)
     for (const build of Object.values(factories)) {

@@ -42,8 +42,8 @@ BunHost.layerContainedAt("/srv/repositories/app", { graceMs: 2_000 })
 
 ## Pass an absolute root
 
-Both factories require an absolute path. A relative root, and the empty string,
-are refused:
+Both factories require an absolute path without NUL. A relative root, the
+empty string, and an absolute root containing NUL are refused:
 
 ```ts
 BunHost.layerAt("repositories/app")

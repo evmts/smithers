@@ -69,7 +69,7 @@ implementation identities, and platform module re-exports.
 `Path`. `Jj` is bound to the process working directory.
 
 `layerAt` is `layer` with `Jj` bound to `root` instead. `root` must be an
-absolute path; see [BunHostError](#bunhosterror).
+absolute path without NUL; see [BunHostError](#bunhosterror).
 
 `layerContained` is `layer` with process containment turned on: every child is
 spawned through `@smthrs/kernel`'s `ContainedSpawner` with
@@ -117,10 +117,10 @@ type BunHostErrorCode = "invalid_repository_root"
 ```
 
 The refusal `layerAt` and `layerContainedAt` throw when `root` is not absolute,
-the empty string included. It is thrown rather than failed because a factory
-runs while a program composes its layers, where there is no fiber to fail into
-and a wrong root is a composition mistake, not a runtime outcome. The check
-runs when the factory is called, before any layer exists.
+the empty string included, or contains NUL. It is thrown rather than failed
+because a factory runs while a program composes its layers, where there is no
+fiber to fail into and a wrong root is a composition mistake, not a runtime
+outcome. The check runs when the factory is called, before any layer exists.
 
 It is this package's class rather than the `Jj` adapter's: a Bun caller
 composed `BunHost` and should learn nothing about the adapter behind the `Jj`

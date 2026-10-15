@@ -35,10 +35,12 @@ program is still composing its layers:
 
 ```text
 BunHostError: BunHost.layerAt requires an absolute repository root, got "repositories/app"
+BunHostError: BunHost.layerAt requires a repository root without NUL, got "/repo\u0000"
 ```
 
-**Cause.** The root is not absolute. The empty string counts, and so does a
-path that looks absolute only after the process working directory is applied.
+**Cause.** The root is not absolute, or it contains NUL, which no filesystem
+or process API can represent. The empty string is not absolute, and neither is
+a path that looks absolute only after the process working directory is applied.
 
 **Fix.** Resolve the root before you hand it over, and branch on
 `error.code === "invalid_repository_root"` rather than on the message text. The

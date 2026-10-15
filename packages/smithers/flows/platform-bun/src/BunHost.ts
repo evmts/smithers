@@ -84,7 +84,8 @@ export type BunHost =
  *
  * A code is the contract a caller branches on; the message beside it is for a
  * person. `invalid_repository_root` is the root handed to {@link layerAt} or
- * {@link layerContainedAt} not being absolute, the empty string included.
+ * {@link layerContainedAt} not being absolute or containing NUL, the empty
+ * string included.
  *
  * @category models
  * @since 1.0.0-rc.0
@@ -149,12 +150,19 @@ const preview = (root: string, budget: number): string => {
  *
  * `BunJj.layerAt` and `BunJj.layerSpawnerAt` are `NodeJj`'s, and those throw a
  * bare `TypeError` that names `NodeJj`, carries no code, and echoes the whole
- * string. The predicate here is the same `isAbsolute` the adapter applies, so
- * a root that passes this check cannot reach that throw.
+ * string. The predicate includes the same `isAbsolute` the adapter applies, so
+ * a root that passes this check cannot reach that throw. An absolute root
+ * containing NUL is refused too: no filesystem or process API can represent it.
  */
 const absoluteRoot = (factory: "layerAt" | "layerContainedAt", root: string): string => {
-  if (isAbsolute(root)) return root
-  const prefix = `BunHost.${factory} requires an absolute repository root, got `
+  // An absolute root with NUL names that defect, not absoluteness it already has.
+  const requirement = !isAbsolute(root)
+    ? "an absolute repository root"
+    : root.includes("\0")
+    ? "a repository root without NUL"
+    : undefined
+  if (requirement === undefined) return root
+  const prefix = `BunHost.${factory} requires ${requirement}, got `
   throw new BunHostError({
     code: "invalid_repository_root",
     message: `${prefix}${preview(root, messageLimit - prefix.length)}`
@@ -253,8 +261,8 @@ export const layer: Layer.Layer<BunHost | Crypto.Crypto, JjError> = Layer.mergeA
  * Provides all five Bun Host services bound to one absolute repository root.
  *
  * Throws {@link BunHostError} with code `invalid_repository_root` when `root`
- * is not absolute; the empty string counts. The check runs when the factory is
- * called, before any layer exists.
+ * is not absolute or contains NUL; the empty string counts. The check runs
+ * when the factory is called, before any layer exists.
  *
  * Fails at construction with {@link JjError} exactly as {@link layer} does:
  * the `Jj` slot probes `jj --version` while the layer is built.
