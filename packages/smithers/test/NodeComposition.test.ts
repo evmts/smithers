@@ -369,11 +369,18 @@ describe("NodeControl.testRunner", () => {
       cwd: "/work/repo",
       root: "/work/repo"
     })
-    for (const timeout of ["", "soon", "0", "-1"]) {
+    for (const timeout of ["", "soon", "0", "-1", "1.5", "30s"]) {
       expect(
         NodeControl.testRunner({ SMITHERS_TEST_COMMAND: "pytest -q", SMITHERS_TEST_TIMEOUT_MS: timeout }, "/work/repo")
       ).not.toHaveProperty("timeoutMs")
     }
+  })
+
+  it("caps the runner's timeout at the longest wait a timer can hold", () => {
+    // Node fires a longer timer after 1 ms, so a generous budget killed every test run at once.
+    expect(
+      NodeControl.testRunner({ SMITHERS_TEST_COMMAND: "pytest -q", SMITHERS_TEST_TIMEOUT_MS: "3000000000" }, "/work/repo")
+    ).toHaveProperty("timeoutMs", 2_147_483_647)
   })
 
   it("declares the checkout a resumed fork executes in, not the project it forked from", () => {

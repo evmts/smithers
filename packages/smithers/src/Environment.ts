@@ -117,6 +117,28 @@ export const readInteger = (environment: Source, name: string): number | undefin
 }
 
 /**
+ * Reads one canonical name as a positive millisecond budget for a timer.
+ *
+ * It accepts what {@link readInteger} accepts and caps the result at
+ * 2147483647 ms (about 24.8 days). Node fires a longer timer after 1 ms, so an
+ * uncapped "wait a very long time" became an immediate timeout.
+ *
+ * @param environment - The variables to read, usually `process.env`.
+ * @param name - The canonical variable name.
+ * @returns The capped budget, or `undefined` when the value is unset, blank,
+ * zero, or not all digits.
+ * @category getters
+ * @since 1.0.0
+ */
+export const readMilliseconds = (environment: Source, name: string): number | undefined => {
+  const raw = read(environment, name)
+  if (raw === undefined || !/^\d+$/.test(raw)) return undefined
+  // A digit string too long for a double reads as Infinity, which still caps.
+  const parsed = Number(raw)
+  return parsed > 0 ? Math.min(parsed, 2_147_483_647) : undefined
+}
+
+/**
  * The database-backend refusal sentence.
  *
  * The contract fixes the whole sentence, so this is a constant rather than a

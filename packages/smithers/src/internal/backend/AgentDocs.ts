@@ -6,6 +6,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import * as CliError from "../../CliError.ts"
+import * as Environment from "../../Environment.ts"
 import * as Failure from "../Failure.ts"
 import { auth } from "./Auth.ts"
 import { APIError, object, refusalOf, str, type Values } from "./Client.ts"
@@ -109,7 +110,7 @@ export const ask: Handler = async (c, a, o) => {
         ...(metadata.etag ? { "if-none-match": str(metadata.etag) } : {}),
         ...(metadata.lastModified ? { "if-modified-since": str(metadata.lastModified) } : {})
       },
-      signal: AbortSignal.timeout(Number(c.env.SMITHERS_AGENT_DOCS_TIMEOUT_MS) || 3000)
+      signal: AbortSignal.timeout(Environment.readMilliseconds(c.env, "SMITHERS_AGENT_DOCS_TIMEOUT_MS") ?? 3000)
     })
     if (response.status === 304 && text) {
       status = { url, status: "fresh", source: "cache", fetchedAt: metadata.fetchedAt }

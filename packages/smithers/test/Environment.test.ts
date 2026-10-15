@@ -88,6 +88,23 @@ describe("the environment contract", () => {
     }
     expect(Environment.readInteger({}, "SMITHERS_DETACHED_ADMISSION_TIMEOUT_MS")).toBeUndefined()
   })
+
+  it("caps a millisecond budget at the longest wait a timer can hold", async () => {
+    // Node fires a timer longer than 2^31-1 ms after 1 ms, so an operator who
+    // asked for a very long wait got an immediate abort instead.
+    const longest = 2_147_483_647
+    const env = (value: string) => ({ SMITHERS_AGENT_DOCS_TIMEOUT_MS: value })
+    expect(Environment.readMilliseconds(env("3000"), "SMITHERS_AGENT_DOCS_TIMEOUT_MS")).toBe(3000)
+    expect(Environment.readMilliseconds(env(String(longest)), "SMITHERS_AGENT_DOCS_TIMEOUT_MS")).toBe(longest)
+    expect(Environment.readMilliseconds(env("3000000000"), "SMITHERS_AGENT_DOCS_TIMEOUT_MS")).toBe(longest)
+    expect(Environment.readMilliseconds(env("9".repeat(400)), "SMITHERS_AGENT_DOCS_TIMEOUT_MS")).toBe(longest)
+    for (const value of ["0", "-1", "1.5", "30s", ""]) {
+      expect(Environment.readMilliseconds(env(value), "SMITHERS_AGENT_DOCS_TIMEOUT_MS")).toBeUndefined()
+    }
+    const signal = AbortSignal.timeout(Environment.readMilliseconds(env("3000000000"), "SMITHERS_AGENT_DOCS_TIMEOUT_MS")!)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(signal.aborted).toBe(false)
+  })
 })
 
 describe("the database-backend refusal", () => {

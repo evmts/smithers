@@ -9,6 +9,7 @@ import { join } from "node:path"
 import type { Readable } from "node:stream"
 import { finished } from "node:stream/promises"
 import { Refused } from "../../CliError.ts"
+import * as Environment from "../../Environment.ts"
 import * as Failure from "../Failure.ts"
 import type { Client } from "./Client.ts"
 import { spawn } from "./Process.ts"
@@ -126,7 +127,7 @@ export const sshArgs = async (c: Client, endpoint: Endpoint, tty = false): Promi
     "-o",
     "BatchMode=yes",
     "-o",
-    `ConnectTimeout=${Number(c.env.SMITHERS_WORKSPACE_SSH_CONNECT_TIMEOUT_SECONDS) || 15}`,
+    `ConnectTimeout=${Environment.readInteger(c.env, "SMITHERS_WORKSPACE_SSH_CONNECT_TIMEOUT_SECONDS") ?? 15}`,
     "-o",
     "StrictHostKeyChecking=yes",
     "-o",

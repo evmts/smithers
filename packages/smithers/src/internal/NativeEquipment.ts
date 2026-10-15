@@ -889,7 +889,7 @@ export const testRunner = (
   if (command === undefined || command === "") return undefined
   const container = Environment_.read(environment, "SMITHERS_TEST_CONTAINER")?.trim()
   const declared = Environment_.read(environment, "SMITHERS_TEST_CWD")?.trim()
-  const timeout = Number(Environment_.read(environment, "SMITHERS_TEST_TIMEOUT_MS"))
+  const timeout = Environment_.readMilliseconds(environment, "SMITHERS_TEST_TIMEOUT_MS")
   // The runner's directory and the workspace's are the same path until a
   // container gives the tree a second name; `root` stays a host path, because
   // that is where a baseline worktree is checked out from.
@@ -903,7 +903,7 @@ export const testRunner = (
     cwd,
     root: workspaceRoot,
     ...(container === undefined || container === "" ? {} : { container }),
-    ...(Number.isFinite(timeout) && timeout > 0 ? { timeoutMs: timeout } : {})
+    ...(timeout === undefined ? {} : { timeoutMs: timeout })
   }
 }
 

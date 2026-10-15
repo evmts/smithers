@@ -7,6 +7,7 @@ import { mkdir, readFile, stat, writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 import { Refused, UsageError } from "../../CliError.ts"
+import * as Environment from "../../Environment.ts"
 import { APIError, list, object, pick, query, str, type Values, withCause } from "./Client.ts"
 import { lines } from "./Local.ts"
 import type { Handler } from "./Resources.ts"
@@ -263,7 +264,7 @@ repositories["repo connect"] = async (c, a) => {
     c.write(`Install ${installUrl}\n`)
   }
   while (!status.github_app_installed) {
-    await delay(Number(c.env.SMITHERS_GITHUB_APP_POLL_INTERVAL_MS) || 2000, undefined, { signal: c.runtime.signal })
+    await delay(Environment.readMilliseconds(c.env, "SMITHERS_GITHUB_APP_POLL_INTERVAL_MS") ?? 2000, undefined, { signal: c.runtime.signal })
     status = object(await c.request("GET", `/api/repos/${slug}/github-app-status`))
   }
   await c.request("POST", "/api/repo-connection", { license_spdx_id, owner, repo })

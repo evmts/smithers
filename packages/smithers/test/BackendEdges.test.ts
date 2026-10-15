@@ -254,4 +254,14 @@ describe("SSH validation", () => {
     expect(args).toContain("/tmp/key file")
     expect(args[0]).toBe("-tt")
   })
+  it.each([["7", "7"], ["-5", "15"], ["1.5", "15"], ["30s", "15"], ["0", "15"]])(
+    "takes SMITHERS_WORKSPACE_SSH_CONNECT_TIMEOUT_SECONDS=%j as ConnectTimeout=%s",
+    async (value, seconds) => {
+      // ssh refuses a negative or fractional ConnectTimeout, so a typo in the
+      // variable must fall back to the default rather than break every exec.
+      const { c } = await fixture({ SMITHERS_WORKSPACE_SSH_CONNECT_TIMEOUT_SECONDS: value })
+      const args = await sshArgs(c, { command: "ssh host", hostKeys: [hostKey] })
+      expect(args).toContain(`ConnectTimeout=${seconds}`)
+    }
+  )
 })

@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto"
 import { Readable } from "node:stream"
 import { setTimeout as delay } from "node:timers/promises"
 import { Refused, UsageError } from "../../CliError.ts"
+import * as Environment from "../../Environment.ts"
 import * as Failure from "../Failure.ts"
 import {
   APIError,
@@ -54,7 +55,7 @@ export const resolveID = async (c: Client, a: Values, o: Values) => {
   return id
 }
 const sshInfo = async (c: Client, path: string, user: unknown): Promise<Endpoint> => {
-  const deadline = Date.now() + (Number(c.env.SMITHERS_WORKSPACE_SSH_POLL_TIMEOUT_MS) || 120_000)
+  const deadline = Date.now() + (Environment.readInteger(c.env, "SMITHERS_WORKSPACE_SSH_POLL_TIMEOUT_MS") ?? 120_000)
   do {
     let info: Values | undefined
     try {
@@ -69,7 +70,7 @@ const sshInfo = async (c: Client, path: string, user: unknown): Promise<Endpoint
     if (info && (info.ssh_command || info.command)) {
       return { command: str(info.ssh_command || info.command), hostKeys: hostKeys(info.host_keys) }
     }
-    await delay(Number(c.env.SMITHERS_WORKSPACE_SSH_POLL_INTERVAL_MS) || 3000, undefined, { signal: c.runtime.signal })
+    await delay(Environment.readMilliseconds(c.env, "SMITHERS_WORKSPACE_SSH_POLL_INTERVAL_MS") ?? 3000, undefined, { signal: c.runtime.signal })
   } while (Date.now() < deadline)
   throw new Refused({ fault: "infra", code: "workspace_not_ready", message: "Workspace did not become SSH-ready" })
 }
@@ -144,7 +145,7 @@ workspaces["workspace create"] = async (c, _a, o) => {
         )
       })
     }
-    await delay(Number(c.env.SMITHERS_WORKSPACE_CREATE_POLL_INTERVAL_MS) || 3000, undefined, {
+    await delay(Environment.readMilliseconds(c.env, "SMITHERS_WORKSPACE_CREATE_POLL_INTERVAL_MS") ?? 3000, undefined, {
       signal: c.runtime.signal
     })
   } while (Date.now() < deadline)
@@ -291,7 +292,7 @@ workspaces["workspace exec"] = async (c, a, o) => {
   }
   const runPath = `${path}/${esc(receipt.operationId)}`
   const deadline = timeout > 0 ? Date.now() + timeout * 1000 : Infinity
-  const interval = Number(c.env.SMITHERS_WORKSPACE_COMMAND_POLL_INTERVAL_MS) || 1000
+  const interval = Environment.readMilliseconds(c.env, "SMITHERS_WORKSPACE_COMMAND_POLL_INTERVAL_MS") ?? 1000
   let cancellationAttempted = false
   const cancel = async () => {
     cancellationAttempted = true
