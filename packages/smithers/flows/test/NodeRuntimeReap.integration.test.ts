@@ -3,10 +3,15 @@
  *
  * The signal test next door proves the graceful half: a host that is asked to
  * stop runs its finalizers and takes its children with it. This is the other
- * half, and the one A31 exists for. A `SIGKILL`ed host runs no finalizer, so
- * the agents it started keep running with nobody holding a handle to them, and
- * the only thing that can ever reach them again is the record it wrote to the
- * journal before it died.
+ * half, and the one A31 exists for. A `SIGKILL`ed host runs no finalizer. The
+ * supervisor that owns each spawned group loses the host's channel and stops
+ * the group itself (#3760), so the first case here is a host that leaves
+ * nothing running and a record the next incarnation retires without a signal.
+ * The reaper is the backstop for a group nothing left alive could stop, and the
+ * only thing that can reach that group is the record the host wrote to the
+ * journal before it died. The suite produces that group honestly by freezing
+ * it with `SIGSTOP` before the host is killed: no member of a stopped group,
+ * supervisor and guardian included, runs a line of code until it is killed.
  *
  * Everything here is real: a real child process running the real `layerHost`
  * composition over a real SQLite file, a real `SIGKILL`, a real orphaned
@@ -59,8 +64,12 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 /**
  * Runs the host until it reports the group it started, then `SIGKILL`s it and
  * waits for the operating system to reap it, so its pid reads as gone.
+ *
+ * `frozen` stops the whole group before the host dies, so neither its
+ * supervisor nor its guardian can act on the loss and the group outlives the
+ * host until something kills it.
  */
-const killHost = (filename: string, hostId: string): Promise<number> =>
+const killHost = (filename: string, hostId: string, frozen = false): Promise<number> =>
   new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [fixture, filename, hostId, "reap-run"], {
       stdio: ["ignore", "pipe", "pipe"]
@@ -78,6 +87,7 @@ const killHost = (filename: string, hostId: string): Promise<number> =>
       announced += chunk
       if (pgid === undefined && announced.includes("\n")) {
         pgid = Number(announced.split("\n")[0])
+        if (frozen) process.kill(-pgid, "SIGSTOP")
         // No handler runs for this. Whatever the host had open stays open.
         child.kill("SIGKILL")
       }
@@ -116,125 +126,160 @@ const readBack = <A>(filename: string, query: (database: DatabaseSync) => A): A 
   }
 }
 
+/** The host's process records, in journal order. */
+const journalOf = (filename: string, hostId: string) =>
+  readBack(filename, (database) =>
+    database
+      .prepare(
+        "SELECT event_type, json_extract(payload_json, '$.reason') AS reason FROM flows_journal_events WHERE run_id = ? ORDER BY seq"
+      )
+      .all(`flows.host:${hostId}`)
+      .map((row) => row.reason === null ? { event_type: row.event_type } : row))
+
+/** A second incarnation of the SAME host over the SAME database, handed nothing about the dead one but its id. */
+const secondIncarnation = (filename: string, hostId: string): Promise<void> =>
+  Effect.runPromise(
+    Effect.void.pipe(
+      Effect.provide(
+        NodeRuntime.layerHost(
+          { filename, workspaceRoot: directory, owner: { hostId }, signals: [] },
+          Layer.empty
+        )
+      ),
+      Effect.scoped
+    )
+  )
+
+/** Waits up to ten seconds for a group to empty. */
+const settled = async (pgid: number): Promise<boolean> => {
+  const deadline = Date.now() + 10_000
+  while (groupIsAlive(pgid) && Date.now() < deadline) await sleep(50)
+  return !groupIsAlive(pgid)
+}
+
 describe("a host that was killed", () => {
   it("journals and retires the jj probe before recording its live child", async () => {
     const filename = join(directory, "probe", "runtime.sqlite")
     const pgid = await killHost(filename, "probe-host")
     try {
-      expect(
-        readBack(
-          filename,
-          (database) =>
-            database.prepare("SELECT event_type FROM flows_journal_events WHERE run_id = ? ORDER BY seq")
-              .all("flows.host:probe-host")
-        )
-      ).toEqual([
+      expect(journalOf(filename, "probe-host")).toEqual([
         { event_type: "flows.host.process-spawned.v1" },
         { event_type: "flows.host.process-exited.v1" },
         { event_type: "flows.host.process-spawned.v1" }
       ])
     } finally {
-      process.kill(-pgid, "SIGKILL")
+      // Its supervisor may already have stopped the group.
+      if (groupIsAlive(pgid)) process.kill(-pgid, "SIGKILL")
     }
   }, 120_000)
 
-  it("leaves its children for the next incarnation of the same host to reap", async () => {
+  it("leaves nothing running, and the next incarnation retires the record without a signal", async () => {
+    const filename = join(directory, "supervised", "runtime.sqlite")
+
+    const pgid = await killHost(filename, "supervised-host")
+    try {
+      // No code of the dead host runs and no reaper has started, yet the group
+      // ends: its supervisor lost the host's channel and stopped it.
+      expect(await settled(pgid)).toBe(true)
+      expect(journalOf(filename, "supervised-host")).toEqual([
+        { event_type: "flows.host.process-spawned.v1" },
+        { event_type: "flows.host.process-exited.v1" },
+        { event_type: "flows.host.process-spawned.v1" }
+      ])
+
+      await secondIncarnation(filename, "supervised-host")
+
+      // The record stayed inherited until now. The next incarnation finds its
+      // pid gone, signals nothing, and says so durably, so a third incarnation
+      // never aims a kill at a pid the operating system has handed out again.
+      expect(journalOf(filename, "supervised-host")).toEqual([
+        { event_type: "flows.host.process-spawned.v1" },
+        { event_type: "flows.host.process-exited.v1" },
+        { event_type: "flows.host.process-spawned.v1" },
+        { event_type: "flows.host.process-reap-skipped.v1", reason: "process-gone" },
+        { event_type: "flows.host.process-spawned.v1" },
+        { event_type: "flows.host.process-exited.v1" }
+      ])
+    } finally {
+      if (groupIsAlive(pgid)) process.kill(-pgid, "SIGKILL")
+    }
+  }, 120_000)
+
+  it("leaves a group nothing could stop for the next incarnation of the same host to reap", async () => {
     const filename = join(directory, "reap", "runtime.sqlite")
 
-    const pgid = await killHost(filename, "reap-host")
+    const pgid = await killHost(filename, "reap-host", true)
+    try {
+      // The host is gone and its children are not: this is the state a crash
+      // leaves when nothing in the group can act, and the state scope closure
+      // can do nothing about.
+      expect(groupIsAlive(pgid)).toBe(true)
+      expect(journalOf(filename, "reap-host")).toEqual([
+        { event_type: "flows.host.process-spawned.v1" },
+        { event_type: "flows.host.process-exited.v1" },
+        { event_type: "flows.host.process-spawned.v1" }
+      ])
 
-    // The host is gone and its children are not: this is the state a crash
-    // actually produces, and the state scope closure can do nothing about.
-    expect(groupIsAlive(pgid)).toBe(true)
-    expect(
-      readBack(filename, (database) =>
-        database
-          .prepare(
-            "SELECT event_type FROM flows_journal_events WHERE run_id = ? ORDER BY seq"
-          )
-          .all("flows.host:reap-host"))
-    ).toEqual([
-      { event_type: "flows.host.process-spawned.v1" },
-      { event_type: "flows.host.process-exited.v1" },
-      { event_type: "flows.host.process-spawned.v1" }
-    ])
+      await secondIncarnation(filename, "reap-host")
 
-    // A second incarnation of the SAME host over the SAME database. It is
-    // handed nothing about the dead one but its id.
-    await Effect.runPromise(
-      Effect.void.pipe(
-        Effect.provide(
-          NodeRuntime.layerHost(
-            { filename, workspaceRoot: directory, owner: { hostId: "reap-host" }, signals: [] },
-            Layer.empty
-          )
-        ),
-        Effect.scoped
-      )
-    )
+      expect(await settled(pgid)).toBe(true)
 
-    const deadline = Date.now() + 10_000
-    while (groupIsAlive(pgid) && Date.now() < deadline) await sleep(50)
-    expect(groupIsAlive(pgid)).toBe(false)
-
-    // And it said so durably, so a third incarnation does not try the same kill
-    // against a pid the operating system has since handed to somebody else.
-    expect(
-      readBack(filename, (database) =>
-        database
-          .prepare(
-            "SELECT event_type FROM flows_journal_events WHERE run_id = ? ORDER BY seq"
-          )
-          .all("flows.host:reap-host"))
-    ).toEqual([
-      { event_type: "flows.host.process-spawned.v1" },
-      { event_type: "flows.host.process-exited.v1" },
-      { event_type: "flows.host.process-spawned.v1" },
-      { event_type: "flows.host.process-reaped.v1" },
-      { event_type: "flows.host.process-spawned.v1" },
-      { event_type: "flows.host.process-exited.v1" }
-    ])
+      // And it said so durably, so a third incarnation does not try the same kill
+      // against a pid the operating system has since handed to somebody else.
+      expect(journalOf(filename, "reap-host")).toEqual([
+        { event_type: "flows.host.process-spawned.v1" },
+        { event_type: "flows.host.process-exited.v1" },
+        { event_type: "flows.host.process-spawned.v1" },
+        { event_type: "flows.host.process-reaped.v1" },
+        { event_type: "flows.host.process-spawned.v1" },
+        { event_type: "flows.host.process-exited.v1" }
+      ])
+    } finally {
+      if (groupIsAlive(pgid)) process.kill(-pgid, "SIGKILL")
+    }
   }, 120_000)
 
   it("names the abandoned group in `orphans` before anything signals it", async () => {
     const filename = join(directory, "orphans", "runtime.sqlite")
 
-    const pgid = await killHost(filename, "orphan-host")
-    expect(groupIsAlive(pgid)).toBe(true)
+    const pgid = await killHost(filename, "orphan-host", true)
+    try {
+      expect(groupIsAlive(pgid)).toBe(true)
 
-    // The next incarnation is handed nothing but the host id, and what it
-    // inherits through the journal is the process GROUP the dead one led. A
-    // record naming a pid with no group would be one the reaper must refuse,
-    // so this is the half of the contract the kill assertion cannot show.
-    const orphans = await Effect.runPromise(
-      Effect.flatMap(ProcessLedger.ProcessLedger, (ledger) => ledger.orphans).pipe(
-        Effect.provide(ledgerOver(filename, "orphan-host")),
-        Effect.scoped
+      // The next incarnation is handed nothing but the host id, and what it
+      // inherits through the journal is the process GROUP the dead one led. A
+      // record naming a pid with no group would be one the reaper must refuse,
+      // so this is the half of the contract the kill assertion cannot show.
+      const orphans = await Effect.runPromise(
+        Effect.flatMap(ProcessLedger.ProcessLedger, (ledger) => ledger.orphans).pipe(
+          Effect.provide(ledgerOver(filename, "orphan-host")),
+          Effect.scoped
+        )
       )
-    )
 
-    expect(orphans).toEqual([
-      expect.objectContaining({
-        pid: pgid,
-        pgid,
-        hostId: "orphan-host"
-      })
-    ])
-    // The record names the program it started and none of its arguments. The
-    // host confines every spawn (#3140), so that program is the sandbox
-    // launcher wherever one exists, not the `sh` the action asked for.
-    expect(orphans[0]?.commandDigest).toMatch(/^\S+$/)
-    expect(orphans[0]?.commandDigest).not.toContain("sleep")
-    expect(orphans[0]?.ownerPid).not.toBe(process.pid)
+      expect(orphans).toEqual([
+        expect.objectContaining({
+          pid: pgid,
+          pgid,
+          hostId: "orphan-host"
+        })
+      ])
+      // The record names the program it started and none of its arguments. The
+      // host confines every spawn (#3140), so that program is the sandbox
+      // launcher wherever one exists, not the `sh` the action asked for.
+      expect(orphans[0]?.commandDigest).toMatch(/^\S+$/)
+      expect(orphans[0]?.commandDigest).not.toContain("sleep")
+      expect(orphans[0]?.ownerPid).not.toBe(process.pid)
 
-    // And the reaper, given exactly that, ends the group.
-    const reaped = await Effect.runPromise(
-      ProcessReaper.reap().pipe(Effect.provide(ledgerOver(filename, "orphan-host")), Effect.scoped)
-    )
+      // And the reaper, given exactly that, ends the group.
+      const reaped = await Effect.runPromise(
+        ProcessReaper.reap().pipe(Effect.provide(ledgerOver(filename, "orphan-host")), Effect.scoped)
+      )
 
-    expect(reaped).toEqual([{ record: expect.objectContaining({ pid: pgid, pgid }), killed: true }])
-    const deadline = Date.now() + 10_000
-    while (groupIsAlive(pgid) && Date.now() < deadline) await sleep(50)
-    expect(groupIsAlive(pgid)).toBe(false)
+      expect(reaped).toEqual([{ record: expect.objectContaining({ pid: pgid, pgid }), killed: true }])
+      expect(await settled(pgid)).toBe(true)
+    } finally {
+      if (groupIsAlive(pgid)) process.kill(-pgid, "SIGKILL")
+    }
   }, 120_000)
 })

@@ -260,6 +260,9 @@ const deniedBy = (failure: unknown): PermissionDenied | undefined => {
  *
  * Effect 4.0.4 records one interruption per interrupted fiber, so a child
  * interrupted inside an action arrives here as two `Interrupt` reasons.
+ *
+ * @category errors
+ * @since 1.0.0
  */
 export const deniedIn = (cause: Cause.Cause<unknown>): PermissionDenied | undefined => {
   if (cause.reasons.length !== 1) return undefined
