@@ -398,6 +398,38 @@ describe("key derivation", () => {
     expect(raw._tag).toBe("SchemaError")
   })
 
+  it.each(derivations)(
+    "%s isolates concurrent successes and failures while preserving input order",
+    async (_name, decode) => {
+      const inputs = Array.from(
+        { length: 32 },
+        (_, index) => index % 5 === 0 ? { invalid: BigInt(index) } : { domain: "test/concurrent", version: 1, index }
+      )
+      const exits = await Effect.runPromise(provideCrypto(
+        Effect.all(
+          inputs.map((input) => Effect.exit(decode(input))),
+          { concurrency: 2 }
+        )
+      ))
+      expect(exits).toHaveLength(inputs.length)
+      for (const [index, exit] of exits.entries()) {
+        if (index % 5 === 0) {
+          expect(Exit.isFailure(exit)).toBe(true)
+          if (Exit.isFailure(exit)) {
+            expect(Cause.hasFails(exit.cause)).toBe(true)
+            expect(Cause.hasDies(exit.cause)).toBe(false)
+            expect(Cause.hasInterrupts(exit.cause)).toBe(false)
+            expect(Cause.pretty(exit.cause)).toContain("Key input could not be canonicalized")
+          }
+        } else {
+          expect(exit).toEqual(Exit.succeed(derive(inputs[index])))
+        }
+      }
+      const successes = exits.filter(Exit.isSuccess).map((exit) => exit.value)
+      expect(new Set(successes).size).toBe(successes.length)
+    }
+  )
+
   it("always emits the fixed key1 width", () => {
     for (const input of [null, "", false, 0, [], {}, { nested: [1, 2, 3] }]) {
       const key = derive(input)
