@@ -8,12 +8,12 @@ The package is private: it ships inside the Smithers host executables, not on np
 
 A model host is a trusted process that holds the owner's provider credential. The backend sends it a signed turn grant; the host calls the provider, removes any echo of the credential from the output, and commits each frame back to the backend's durable chat journal.
 
-| Endpoint                                 | Constant                         | Purpose                                                                 |
-| ---------------------------------------- | -------------------------------- | ----------------------------------------------------------------------- |
-| `GET /health`                            | `MODEL_HOST_HEALTH_PATH`         | Returns `{ "protocol": "smithers.chat-model-host/v1" }`. No bearer.     |
-| `POST /v1/chat/turn`                     | `MODEL_HOST_TURN_PATH`           | Runs one durable chat turn from a grant; answers `204` when committed.  |
-| `POST /v1/model/stream`                  | `MODEL_HOST_STREAM_PATH`         | Runs one model call and answers the frames as NDJSON (16 MiB at most).  |
-| `POST /v1/context/select`                | `MODEL_HOST_CONTEXT_SELECT_PATH` | Runs the context preflight selector over caller-supplied candidates.    |
+| Endpoint                  | Constant                         | Purpose                                                                |
+| ------------------------- | -------------------------------- | ---------------------------------------------------------------------- |
+| `GET /health`             | `MODEL_HOST_HEALTH_PATH`         | Returns `{ "protocol": "smithers.chat-model-host/v1" }`. No bearer.    |
+| `POST /v1/chat/turn`      | `MODEL_HOST_TURN_PATH`           | Runs one durable chat turn from a grant; answers `204` when committed. |
+| `POST /v1/model/stream`   | `MODEL_HOST_STREAM_PATH`         | Runs one model call and answers the frames as NDJSON (16 MiB at most). |
+| `POST /v1/context/select` | `MODEL_HOST_CONTEXT_SELECT_PATH` | Runs the context preflight selector over caller-supplied candidates.   |
 
 Every `POST` route requires `Authorization: Bearer <authorization>` and reads at most 2 MiB of JSON body.
 
@@ -42,7 +42,7 @@ Bun.serve({ fetch: handler })
 
 - `runModelTurn` streams one model call into turn frames and cuts the credential out of text, reasoning and tool calls, including echoes split across chunks (`StreamingCredentialCutter`).
 - `DurableChatProducer` and `runDurableChatTurn` commit frames to the journal callback and verify each receipt against the expected cursor.
-- `fastModelFallback` tries the next source only when one fails as unavailable before it emitted any output.
+- `fastModelFallback` (from `@smthrs/model-host/FastModelFallback`) tries the next source only when one fails as unavailable before it emitted any output.
 - `createHostDiagnostics` writes bounded, marker-tagged records to standard error. Fields that are not counts, flags or short tokens are dropped and counted.
 - `createModelProbe` tests a configured model and dials only its planned origin.
 
