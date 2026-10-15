@@ -145,6 +145,15 @@ describe("UpsertComment", () => {
     expect(github.comments[0]?.body).toBe("see <!-- smithers:key=run-1 -->")
   })
 
+  it("finds its comment after someone edits it on github.com, which stores CRLF line ends", async () => {
+    github = await startGitHub()
+    github.comments.push({ id: 5, url: "u5", body: "<!-- smithers:key=run-1 -->\r\nWorking, edited by hand" })
+    const sticky = await runAction(Actions.UpsertComment, payload)
+    expect(sticky).toMatchObject({ outcome: "updated", id: 5 })
+    expect(github.comments).toHaveLength(1)
+    expect(github.writes()).toEqual(["PATCH /repos/o/r/issues/comments/5"])
+  })
+
   it("replays a lost POST as a find of the same sticky comment", async () => {
     github = await startGitHub()
     github.lose = true

@@ -343,8 +343,10 @@ export const layerUpsertComment: Layer.Layer<
       const page = yield* client.paginate(`/repos/${repository}/issues/${payload.issueNumber}/comments`, {
         maxPages: RECONCILE_PAGES
       })
+      // github.com's editor saves CRLF line ends, so a comment a person edited
+      // still starts with the marker, followed by `\r\n`.
       const existing = decodeItems(ListedComment, page.items).find((comment) =>
-        comment.body?.split("\n", 1)[0] === marker
+        comment.body?.split("\n", 1)[0]?.replace(/\r$/, "") === marker
       )
       if (existing === undefined && page.truncated) {
         return yield* Effect.fail(
