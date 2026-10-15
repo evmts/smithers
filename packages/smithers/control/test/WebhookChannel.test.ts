@@ -215,6 +215,27 @@ describe("WebhookChannel.handler bounds the request body", () => {
     expect(seen).toHaveLength(4)
   })
 
+  it.each([Number.NaN, -1, Number.POSITIVE_INFINITY])(
+    "refuses to read any body under a nonsense %d byte limit",
+    async (limit) => {
+      // A NaN limit made every `size > limit` comparison false, so the
+      // handler read an unbounded body; a mount misconfiguration must fail
+      // loudly rather than silently drop the bound.
+      const seen: Array<Channels.IngestRequest> = []
+      let pulled = false
+      const exit = await runHandler({}, () => {
+        pulled = true
+        return bytes(8)
+      }, seen, { maximumBodyBytes: limit })
+      expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true)
+      expect(String(failure(exit))).toContain(
+        "maximumBodyBytes must be a non-negative finite number"
+      )
+      expect(pulled).toBe(false)
+      expect(seen).toHaveLength(0)
+    }
+  )
+
   it("applies the package default when a mount names no limit", async () => {
     const seen: Array<Channels.IngestRequest> = []
     expect(WebhookChannel.maximumBodyBytes).toBe(1024 * 1024)

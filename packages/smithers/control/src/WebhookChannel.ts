@@ -65,7 +65,11 @@ export const maximumBodyBytes = 1024 * 1024
  * @since 1.0.0-rc.0
  */
 export interface HandlerOptions {
-  /** Body ceiling for this mount. Defaults to `maximumBodyBytes`. */
+  /**
+   * Body ceiling for this mount, a non-negative finite byte count. Defaults
+   * to `maximumBodyBytes`. Any other value is a mount defect: the handler
+   * dies before reading the body.
+   */
   readonly maximumBodyBytes?: number | undefined
 }
 
@@ -125,7 +129,8 @@ export const make = <A>(config: Config<A>): Channel<A> => {
  * measured length is checked before retaining each streamed chunk. Reading
  * stops at the first chunk exceeding the limit, including when the caller
  * understates or omits the length. Both refusals are `InvalidInput` naming the
- * two byte counts and no body content.
+ * two byte counts and no body content. A `maximumBodyBytes` option that is
+ * negative, `NaN`, or infinite is a defect and dies before the body is read.
  *
  * @category handlers
  * @since 0.1.0
@@ -137,6 +142,10 @@ export const handler = (
 ) =>
   Effect.gen(function*() {
     const limit = options?.maximumBodyBytes ?? maximumBodyBytes
+    if (!Number.isFinite(limit) || limit < 0) {
+      // NaN would make every size comparison false and read an unbounded body.
+      return yield* Effect.die(new Error(`maximumBodyBytes must be a non-negative finite number, got ${limit}`))
+    }
     const request = yield* HttpServerRequest.HttpServerRequest
     const declared = declaredLength(request.headers)
     if (declared !== undefined && declared > limit) {

@@ -133,6 +133,9 @@ lowers it:
 WebhookChannel.handler("github", deliveryId, { maximumBodyBytes: 256 * 1024 })
 ```
 
+The limit must be a non-negative finite byte count. A negative, `NaN`, or
+infinite limit is a mount defect: the handler dies before it reads the body.
+
 The default is deliberately smaller than the 4 MiB mutation identity budget: a
 body that cannot become a durable mutation is refused at the door rather than
 copied, decoded, and refused later.
