@@ -251,6 +251,30 @@ test("every Bun host page that gives the bun install line names the version the 
   )
 })
 
+test("every build page that pins the CLI devDependency names the version the bump writes", () => {
+  // A pin the bump does not know goes stale silently: these pages said rc.1 at rc.7.
+  const rows = versionedSources.filter(({ declaration }) => declaration === "the build-cli devDependency")
+  const pages = ["packages/smithers/build/docs", "packages/smithers/build/targets/docs"]
+    .flatMap((directory) =>
+      readdirSync(join(repoRoot, directory), { recursive: true }).map((entry) => join(directory, String(entry)))
+    )
+    .filter((page) => page.endsWith(".md"))
+  const giving = pages.filter((page) => /"@smthrs\/build-cli": "/.test(readFileSync(join(repoRoot, page), "utf8")))
+  assert.deepEqual(rows.map(({ path }) => path).sort(), giving.sort())
+  for (const page of giving) {
+    // retargetSource rewrites the first match only, so a page pins each package once.
+    const text = readFileSync(join(repoRoot, page), "utf8")
+    assert.equal(text.match(/"@smthrs\/build-cli": "/g).length, 1, page + " pins @smthrs/build-cli more than once")
+    assert.equal(text.match(/"@smthrs\/targets": "/g).length, 1, page + " pins @smthrs/targets more than once")
+  }
+  const targets = versionedSources.find(({ declaration, path }) => declaration === "the targets devDependency" && path === rows[0].path)
+  const block = '"@smthrs/build-cli": "1.0.0-rc.7",\n"@smthrs/targets": "1.0.0-rc.7"'
+  assert.equal(
+    retargetSource(retargetSource(block, "1.0.0-rc.8", rows[0]), "1.0.0-rc.8", targets),
+    '"@smthrs/build-cli": "1.0.0-rc.8",\n"@smthrs/targets": "1.0.0-rc.8"'
+  )
+})
+
 test("releaseChangelog moves the unreleased entries under a dated heading for the version", () => {
   const text = [
     "# Changelog",

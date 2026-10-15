@@ -1,26 +1,32 @@
 ---
 title: "Installation"
-description: "Install the smthrs executable, the Node version it requires, the runners it supports, and the import forms of the library."
+description: "Install the smthrs executable from npm, the Node version it requires, the runners it supports, and the import forms of the library."
 sidebar:
   order: 1
 ---
 
 ## Install the CLI
 
-Install the CLI from a source checkout. Use Node.js 26.4.0 or later, pnpm 11.25.0, Git, and the Rust toolchain pinned in `rust-toolchain.toml`.
+The CLI is on npm under the `next` tag, which carries the 1.0 release
+candidates; `latest` still points at 0.35.0. Use Node.js 26.4.0 or later.
 
 ```bash
-git clone https://github.com/smithersai/smithers.git
-cd smithers
-pnpm install
-cargo build --locked --release -p smithers-ffi --bin smithers-jj-export
-export PATH="$PWD/node_modules/.bin:$PATH"
+npm install -g smthrs@next
 smthrs --version
 ```
 
-The Rust command builds the filesystem helper that confined flow commands require. The PATH line selects this checkout's `smthrs` and `smithers` executables for the current shell. `smthrs --version` prints `1.0.0-rc.1`. Change to your project directory before running `smthrs init`.
+`smthrs` is the package to install globally. Its `smthrs` executable, and the
+`smithers` alias, run `@smthrs/cli`, which it installs as a dependency. Do not
+install both packages globally: npm refuses the second `smthrs` link.
+`@smthrs/platform-node`, which the CLI installs, ships the
+`smithers-jj-export` helper that confined flow commands require, so there is
+nothing to build.
 
-Target declarations and the CLI must resolve the same physical Effect and Smithers packages. A separately installed CLI can fail with `declaration_dependency_mismatch` even when its versions match. Use the checkout's CLI and workspace dependency graph.
+A global CLI initializes a project and operates its flows. Target commands load
+`WORKSPACE.ts` and `PACKAGE.ts`, whose declarations and the CLI must resolve the
+same physical Effect and Smithers packages, so install the CLI in that
+workspace and run its local copy, as
+[Workspace target commands](#workspace-target-commands) shows.
 
 ## Verify the install
 
@@ -32,25 +38,13 @@ smthrs doctor
 
 ## Stay current
 
-From the source checkout:
-
 ```bash
-git pull
-pnpm install
-cargo build --locked --release -p smithers-ffi --bin smithers-jj-export
+npm install -g smthrs@next
 ```
 
 `smthrs update` reads npm's dist-tags for `@smthrs/cli` and never installs anything.
 
 ## Install the executable
-
-install from the source checkout using [Install the CLI](#install-the-cli).
-
-`smthrs` is the package to install. Its `smthrs` executable runs this package,
-`@smthrs/cli`, which it installs as a dependency. Inside a workspace,
-`@smthrs/cli` also provides `smthrs` and its `smithers` alias from
-`bin/smithers.mjs`. Do not install both packages globally: npm refuses the
-second `smthrs` link.
 
 The executable depends on `@effect/sql-sqlite-node@4.0.4` because its
 default runtime opens SQLite, so every package manager installs it with the
@@ -140,19 +134,20 @@ smthrs tui --approve ask        # ask before consequential calls
 ## Workspace target commands
 
 Global and one-off installations can initialize a project and operate its flows.
-To load `WORKSPACE.ts` and `PACKAGE.ts`, install the CLI and declaration packages
-in that workspace ([Install the CLI](./installation.md#install-the-cli)), then
-select its local binary:
+To load `WORKSPACE.ts` and `PACKAGE.ts`, install the CLI and the declaration
+package in that workspace, then run its local copy:
 
 ```bash
-smthrs init hello
-pnpm exec smthrs targets
+npm install --save-dev --save-exact @smthrs/cli@next @smthrs/targets@next effect@4.0.4
+npx smthrs init hello
+npx smthrs targets
 ```
 
 The loader and declarations must resolve the same physical Effect and Smithers
-packages. A separately installed global CLI can report
-`declaration_dependency_mismatch` even when versions match. Before publication,
-use the checkout's workspace dependency graph. The
+packages. Pin `effect@4.0.4`, the version the CLI depends on exactly: with a
+later `effect` at the top of `node_modules`, the CLI keeps its own nested copy
+and `smthrs targets` stops with `declaration_dependency_mismatch`. A separately
+installed global CLI reports the same error even when versions match. The
 [first-target tutorial](https://github.com/smithersai/smithers/blob/main/packages/smithers/build/docs/getting-started/first-build.md) walks
 through local planning, execution, and cache reuse.
 

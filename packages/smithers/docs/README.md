@@ -31,7 +31,9 @@ their own.
 
 ## Install
 
-Not on npm yet; see [Installation](./installation.md#install-the-cli).
+```bash
+npm install -g smthrs@next
+```
 
 Node 26.4.0 or later is required. The package installs one
 executable under two names, `smthrs` and its `smithers` alias. For the runner

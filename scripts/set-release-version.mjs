@@ -122,6 +122,26 @@ export const versionedSources = [
     declaration: "the bun install line",
     pattern: /(bun add\s+@smthrs\/platform-bun@)(\S+)(\s+effect)/
   })),
+  // The build pages declare the CLI and the authoring package as exact
+  // devDependencies, at the candidate the pages document.
+  ...[
+    "packages/smithers/build/docs/getting-started/install.md",
+    "packages/smithers/build/targets/docs/README.md",
+    "packages/smithers/build/targets/docs/reference/targets.md"
+  ].flatMap((path) => [
+    {
+      path,
+      package: "packages/smithers/build/build-cli",
+      declaration: "the build-cli devDependency",
+      pattern: /("@smthrs\/build-cli": ")([^"]+)(")/
+    },
+    {
+      path,
+      package: "packages/smithers/build/targets",
+      declaration: "the targets devDependency",
+      pattern: /("@smthrs\/targets": ")([^"]+)(")/
+    }
+  ]),
   // The registry is not in the barrel, and it must match the barrel's version.
   {
     path: "packages/smithers/flows/docs/guides/discover-flows-from-a-registry.md",

@@ -84,6 +84,14 @@ const seededSources = {
   "packages/smithers/flows/platform-bun/docs/README.md": "bun add @smthrs/platform-bun@0.1.0 effect\n",
   "packages/smithers/flows/platform-bun/docs/installation.md": "bun add @smthrs/platform-bun@0.1.0 effect\n",
   "packages/smithers/flows/platform-bun/docs/quickstart.md": "bun add @smthrs/platform-bun@0.1.0 effect\n",
+  // The build pages pin the CLI and the authoring package as devDependencies.
+  ...Object.fromEntries(
+    [
+      "packages/smithers/build/docs/getting-started/install.md",
+      "packages/smithers/build/targets/docs/README.md",
+      "packages/smithers/build/targets/docs/reference/targets.md"
+    ].map((path) => [path, '"@smthrs/build-cli": "0.1.0",\n"@smthrs/targets": "0.1.0"\n'])
+  ),
   "packages/smithers/flows/docs/guides/discover-flows-from-a-registry.md": "npm install @smthrs/registry@0.1.0\n",
   "packages/smithers/flows/docs/guides/run-a-child-flow-in-a-sandbox.md": "npm install @smthrs/platform-node@0.1.0\n",
   "packages/smithers/flows/time-travel/docs/README.md": "npm install @smthrs/time-travel@0.1.0 effect\n",

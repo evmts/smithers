@@ -23,13 +23,15 @@ import; and [`@smthrs/build-cli`](https://github.com/smithersai/smithers/tree/ma
 ## Add the dependencies
 
 Declare the CLI and the authoring package as devDependencies of your workspace
-root. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli).
+root, beside the `effect` version `@smthrs/build-cli` depends on exactly. Both
+packages are on npm under the `next` tag.
 
 ```json
 {
   "devDependencies": {
-    "@smthrs/build-cli": "1.0.0-rc.1",
-    "@smthrs/targets": "1.0.0-rc.1"
+    "@smthrs/build-cli": "1.0.0-rc.7",
+    "@smthrs/targets": "1.0.0-rc.7",
+    "effect": "4.0.4"
   }
 }
 ```
