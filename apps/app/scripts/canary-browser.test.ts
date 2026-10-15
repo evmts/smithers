@@ -9,7 +9,7 @@ import { runSync } from "./test-child"
 import { describe, expect, test } from "bun:test"
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { basename, join } from "node:path"
 
 const script = join(import.meta.dir, "canary-browser.ts")
 const WORKSPACE = "11111111-2222-3333-4444-555555555555"
@@ -24,14 +24,19 @@ const SPAWN_TIMEOUT_MS = 30_000
 const redact = (text: string, env: Record<string, string>): string =>
   Object.entries(env).reduce((out, [name, value]) => (value === "" ? out : out.replaceAll(value, `<${name}>`)), text)
 
-const run = (env: Record<string, string>, path: string = process.env.PATH ?? ""): { exitCode: number; stdout: string; stderr: string; result: Record<string, unknown> } => {
+/*
+ * `path` and `child` are the two parts of the launch a case needs to vary: the
+ * PATH the child is given, and a stand-in child for the report of a child that
+ * writes no result. Neither is a seam in the canary itself.
+ */
+const run = (env: Record<string, string>, { path = process.env.PATH ?? "", child: launched = script }: { path?: string; child?: string } = {}): { exitCode: number; stdout: string; stderr: string; result: Record<string, unknown> } => {
   const evidence = mkdtempSync(join(tmpdir(), "canary-browser-"))
   try {
     // The Bun running this suite, by path, the one the preload has already held
     // to the root `engines` floor (require-toolchain.mjs). A bare `bun` is
     // resolved from the PATH stated below instead, and a wrapper that answers
     // to the name there launches in its place.
-    const child = runSync([process.execPath, script], {
+    const child = runSync([process.execPath, launched], {
       cwd: join(import.meta.dir, ".."),
       // Stated, not inherited: a developer's canary cookie must never reach a unit test.
       env: {
@@ -49,7 +54,7 @@ const run = (env: Record<string, string>, path: string = process.env.PATH ?? "")
     // a child that never got as far as the canary. Say that, with the exit code
     // and what the child reported: an ENOENT on the evidence path named the
     // reader's own temporary directory and nothing about the launch.
-    if (!existsSync(answer)) throw new Error(`canary-browser.ts exited ${child.exitCode} before writing result.json; child stderr: ${redact(stderr, env).trim() || "(empty)"}`)
+    if (!existsSync(answer)) throw new Error(`${basename(launched)} exited ${child.exitCode} before writing result.json; child stderr: ${redact(stderr, env).trim() || "(empty)"}`)
     return { exitCode: child.exitCode, stdout, stderr, result: JSON.parse(readFileSync(answer, "utf8")) as Record<string, unknown> }
   } finally {
     rmSync(evidence, { recursive: true, force: true })
@@ -106,7 +111,7 @@ describe("canary-browser.ts", () => {
       writeFileSync(impostor, '#!/bin/sh\necho "wrapper refused this launch" >&2\nexit 1\n')
       chmodSync(impostor, 0o755)
       process.env.CANARY_SESSION_COOKIE = planted
-      const { exitCode, result } = run({}, `${wrapper}:${process.env.PATH ?? ""}`)
+      const { exitCode, result } = run({}, { path: `${wrapper}:${process.env.PATH ?? ""}` })
       expect(exitCode).toBe(0)
       expect(result.status).toBe("skip")
       expect(result.missing).toContain("CANARY_SESSION_COOKIE")
@@ -115,6 +120,40 @@ describe("canary-browser.ts", () => {
       if (inherited === undefined) delete process.env.CANARY_SESSION_COOKIE
       else process.env.CANARY_SESSION_COOKIE = inherited
       rmSync(wrapper, { recursive: true, force: true })
+    }
+  }, SPAWN_TIMEOUT_MS)
+
+  /*
+   * The report for a child that writes no result, which is how the shim
+   * refusal and the misrouted compile both arrived. A stand-in child chooses
+   * the exit code and prints the configured value back, so the case can hold
+   * the message to the exit, the stage and a value named rather than quoted,
+   * and can see the evidence directory the helper made is gone afterwards.
+   */
+  test("a child that writes no result is reported by its exit and stage, with configured values named not quoted", () => {
+    const standIn = mkdtempSync(join(tmpdir(), "canary-browser-child-"))
+    const fake = "smithers_session=synthetic-never-issued"
+    try {
+      const child = join(standIn, "writes-no-result.ts")
+      const echo = join(standIn, "evidence-path.txt")
+      writeFileSync(child, [
+        'import { writeFileSync } from "node:fs"',
+        "writeFileSync(process.env.CANARY_BROWSER_CHILD_ECHO!, process.env.CANARY_BROWSER_EVIDENCE!)",
+        "console.error(`stand-in child refusing with ${process.env.CANARY_SESSION_COOKIE}`)",
+        "process.exit(3)",
+        ""
+      ].join("\n"))
+      let message = ""
+      try { run({ CANARY_SESSION_COOKIE: fake, CANARY_BROWSER_CHILD_ECHO: echo }, { child }) }
+      catch (error) { message = String(error) }
+      expect(message).toContain("writes-no-result.ts exited 3 before writing result.json")
+      expect(message).toContain("child stderr: stand-in child refusing with <CANARY_SESSION_COOKIE>")
+      expect(message).not.toContain(fake)
+      const evidence = readFileSync(echo, "utf8")
+      expect(evidence).toContain("canary-browser-")
+      expect(existsSync(evidence)).toBe(false)
+    } finally {
+      rmSync(standIn, { recursive: true, force: true })
     }
   }, SPAWN_TIMEOUT_MS)
 })
