@@ -405,7 +405,8 @@ mocked at this boundary, not at the provider wire.
   can capture the inputs it saw.
 - `layerMock(outputs: ReadonlyArray<string>): Layer.Layer<Author>`: a
   scripted mock. Pops canned raw outputs in order and fails with `exhausted`
-  when asked for more than it holds.
+  when asked for more than it holds. The outputs are copied when the layer is
+  constructed, so a later edit of the caller's array changes nothing.
 
 ## `AuthorDeclaration`
 
@@ -627,7 +628,10 @@ randomness are the `sys/now` and `sys/random` catalog entries.
   Effect<ScriptRunner.Service, ScriptRunner.ScriptFailure>`: constructs the
   runner, compiling the WebAssembly module once per process. A failed load
   is a typed, retryable `runner_unavailable`, never a defect, and never
-  cached.
+  cached. The limits are merged over `defaultLimits` and copied at
+  construction, so a later edit of the caller's object changes nothing. Dies
+  when a set limit is not a non-negative integer (NaN, infinite, negative,
+  or fractional), because such a value would remove the bound.
 - `layer(limits?: Limits): Layer.Layer<ScriptRunner.ScriptRunner,
   ScriptRunner.ScriptFailure>`: the production script-runner layer. A sealed
   QuickJS realm per link.
@@ -929,7 +933,8 @@ Gate 4's seam: per-call authorization against declared capabilities.
   pattern-to-pattern, where a whole-set match is last-match-wins and a
   partial `deny` or `ask` can only raise the verdict. Across one request's
   claims, `deny` beats `ask` beats `allow`. An unmatched or unparseable
-  claim asks.
+  claim asks. The rules are copied when the layer is constructed, so a later
+  edit of the caller's array changes no verdict.
 - `layerAllowAll: Layer.Layer<Authorize>`: an allow-everything seam for
   hosts that enforce elsewhere.
 

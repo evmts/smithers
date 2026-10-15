@@ -203,14 +203,18 @@ const evaluatePattern = (
  * narrow ask cannot erase a deny that still covers the rest of the claim.
  *
  * An unmatched or unparseable claim asks — the kernel's conservative
- * posture.
+ * posture. The rules array is copied when the layer is constructed, so a
+ * later edit of the caller's array changes no verdict.
  *
  * @category layers
  * @since 0.1.0
  * @slop
  */
-export const layerRules = (rules: ReadonlyArray<Permission.Rule>): Layer.Layer<Authorize> =>
-  Layer.succeed(Authorize)(
+export const layerRules = (rules: ReadonlyArray<Permission.Rule>): Layer.Layer<Authorize> => {
+  // Snapshot now: a caller editing its array later must not change the
+  // verdicts of a seam it already handed to a chain.
+  const snapshot = [...rules]
+  return Layer.succeed(Authorize)(
     make({
       authorize: Effect.fn("Authorize.authorize")((request) =>
         Effect.gen(function*() {
@@ -226,8 +230,8 @@ export const layerRules = (rules: ReadonlyArray<Permission.Rule>): Layer.Layer<A
             }
             const exact = exactCapability(parsed.value)
             const verdict = Option.isSome(exact)
-              ? Permission.evaluate([rules], exact.value)
-              : evaluatePattern(rules, parsed.value)
+              ? Permission.evaluate([snapshot], exact.value)
+              : evaluatePattern(snapshot, parsed.value)
             if (verdict === "deny") {
               return yield* new AuthorizeError({
                 code: "denied",
@@ -248,6 +252,7 @@ export const layerRules = (rules: ReadonlyArray<Permission.Rule>): Layer.Layer<A
       )
     })
   )
+}
 
 /**
  * An allow-everything seam for hosts that enforce elsewhere.

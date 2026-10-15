@@ -149,16 +149,21 @@ export const layerFn = (f: (input: Input) => string): Layer.Layer<Author> =>
 
 /**
  * A scripted mock: pops canned raw outputs in order and fails with
- * `exhausted` when asked for more than it holds.
+ * `exhausted` when asked for more than it holds. The outputs are copied
+ * when the layer is constructed, so a later edit of the caller's array
+ * changes nothing.
  *
  * @category layers
  * @since 0.1.0
  * @slop
  */
-export const layerMock = (outputs: ReadonlyArray<string>): Layer.Layer<Author> =>
-  Layer.effect(Author)(
+export const layerMock = (outputs: ReadonlyArray<string>): Layer.Layer<Author> => {
+  // Snapshot now, not when the lazy layer is later built: a caller may
+  // mutate its array after constructing the layer but before providing it.
+  const snapshot = [...outputs]
+  return Layer.effect(Author)(
     Effect.gen(function*() {
-      const remaining = yield* Ref.make(outputs)
+      const remaining = yield* Ref.make<ReadonlyArray<string>>(snapshot)
       return make({
         author: Effect.fn("Author.author")(() =>
           Effect.gen(function*() {
@@ -166,7 +171,7 @@ export const layerMock = (outputs: ReadonlyArray<string>): Layer.Layer<Author> =
             if (next === undefined) {
               return yield* new AuthorError({
                 code: "exhausted",
-                message: `the mock author ran out of outputs after ${outputs.length}`
+                message: `the mock author ran out of outputs after ${snapshot.length}`
               })
             }
             return next
@@ -175,3 +180,4 @@ export const layerMock = (outputs: ReadonlyArray<string>): Layer.Layer<Author> =
       })
     })
   )
+}

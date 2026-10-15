@@ -77,6 +77,23 @@ const readScript = flow(
 const authorizeWith = (...rules: ReadonlyArray<Rule>) => Authorize.layerRules(rules)
 
 describe("Authorize", () => {
+  it("decides by the rules it was constructed with, not a later edit of the caller's array", async () => {
+    const rules: Array<Rule> = [denyAll]
+    const layer = Authorize.layerRules(rules)
+    const probe = Effect.flatMap(
+      Authorize.Authorize,
+      (seam) =>
+        seam.authorize({ capabilities: ["fs:read:src/a.ts"], name: "probe", slot: { chain: "", link: 0, ordinal: 0 } })
+    ).pipe(
+      Effect.as("allowed" as const),
+      Effect.catchTag("/chain/AuthorizeError", (error) => Effect.succeed(error.code))
+    )
+    rules[0] = allowAll
+    rules.push(allowRead)
+    const verdict = await Effect.runPromise(Effect.provide(probe, layer))
+    expect(verdict).toBe("denied")
+  })
+
   it("allows a ruled-in call and journals nothing extra", async () => {
     const entry = readEntry("file body")
     const { events, outcome } = await runChain({

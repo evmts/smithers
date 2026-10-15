@@ -48,6 +48,24 @@ describe("Author", () => {
     expect(error.message).toContain("2")
   })
 
+  it("snapshots a caller-owned outputs array when the layer is constructed", async () => {
+    const outputs = ["one"]
+    const layer = Author.layerMock(outputs)
+    outputs.push("two")
+    outputs[0] = "changed"
+    const { error, first } = await runOn(
+      layer,
+      Effect.gen(function*() {
+        const author = yield* Author.Author
+        const first = yield* author.author(input)
+        const error = yield* Effect.flip(author.author(input))
+        return { error, first }
+      })
+    )
+    expect(first).toBe("one")
+    expect(error.message).toBe("the mock author ran out of outputs after 1")
+  })
+
   it("computes output from input with layerFn", async () => {
     const layer = Author.layerFn((seen) => `prefix=${seen.prefix} context=${seen.context.join(",")}`)
     const output = await authorWith(layer, { context: ["a", "b"], prefix: "P" })
