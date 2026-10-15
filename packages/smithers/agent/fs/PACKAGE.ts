@@ -1,9 +1,11 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
 /** Standard package targets plus package-owned documentation generation. */
 import { Smithers } from "@smthrs/targets"
+import * as Input from "@smthrs/targets/Input"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  sources: Input.glob("{src,examples}/**/*.ts"),
   cwd: "packages/smithers/agent/fs"
 })
 
@@ -21,6 +23,30 @@ const checkTypes = Smithers.Typecheck({
   incremental: false,
   cwd: "packages/smithers/agent/fs"
 })
+
+/**
+ * Changed public APIs against the package README, every docs page, and the
+ * site API reference page.
+ *
+ * @since 0.1.0
+ * @category lint
+ */
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({
+  cwd: "packages/smithers/agent/fs",
+  context: [
+    Smithers.file("README.md"),
+    Smithers.glob("docs/**/*.md"),
+    Smithers.file("//apps/site/src/content/docs/docs/reference/api/fs.mdx")
+  ]
+})
+
+/**
+ * Changed exports against their own JSDoc.
+ *
+ * @since 0.1.0
+ * @category lint
+ */
+const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: "packages/smithers/agent/fs" })
 
 const securityReview = Smithers.SecurityReview({
   cwd: "packages/smithers/agent/fs",
@@ -102,5 +128,18 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { check, checkTypes, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview }
+  targets: {
+    check,
+    checkTypes,
+    circular,
+    docs,
+    docsFiles,
+    fmt,
+    lib,
+    lint,
+    reviewDocsAgainstCode,
+    reviewJsdocAgainstCode,
+    test,
+    ...securityReview
+  }
 })

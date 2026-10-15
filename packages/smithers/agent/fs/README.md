@@ -63,6 +63,9 @@ The command name comes from the flow's directory, so this dispatches
 `flows/review/flow.ts`. The root and the named module subpaths are the whole
 import surface: `./internal/*` and nested `*/index` paths do not resolve.
 
+A runnable, tested version of this program, which also serves the same route
+over HTTP, lives in `examples/agent-command.ts`.
+
 ## Documentation
 
 https://fs.smithers.sh covers the quickstart, the guides for agent, CLI, HTTP,

@@ -45,6 +45,6 @@ describe("manifest type-test gate", () => {
 
     const config = (name: string) => JSON.parse(readFileSync(new URL(`../${name}`, import.meta.url), "utf8"))
     expect(config("tsconfig.types.json").include).toEqual(["src/**/*", "type-tests/**/*"])
-    expect(config("tsconfig.test.json").include).toEqual(["src/**/*", "test/**/*"])
+    expect(config("tsconfig.test.json").include).toEqual(["src/**/*", "test/**/*", "examples/**/*"])
   })
 })
