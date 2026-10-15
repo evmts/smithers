@@ -188,3 +188,68 @@ fn wiki_rejects_oversized_counts_before_allocating() {
     let recovered = request(json!({"operation": "seed", "markdown": "Still usable"}));
     assert_eq!(recovered["markdown"], "Still usable");
 }
+
+#[test]
+fn wiki_markdown_limit_counts_utf8_bytes_and_rejects_merged_overflow() {
+    const LIMIT: usize = 1 << 20;
+    let markdown = "🦀".repeat(LIMIT / 4);
+    let seed = request(json!({"operation": "seed", "markdown": markdown}));
+    assert_eq!(seed["markdown"], markdown);
+    let state = seed["state"].as_str().unwrap();
+    let replaced = request(json!({"operation": "replace", "state": state, "markdown": markdown}));
+    assert_eq!(replaced["markdown"], markdown);
+    for operation in ["seed", "replace"] {
+        let mut input = json!({"operation": operation, "markdown": format!("{markdown}x")});
+        if operation == "replace" {
+            input["state"] = json!(state);
+        }
+        let result = request(input);
+        assert_eq!(result["code"], "invalid_argument", "{operation}: {result}");
+        assert_eq!(result["error"], "wiki Markdown exceeds 1 MiB");
+    }
+    // Each insertion is small and valid on its own, but the merged text crosses
+    // the Markdown limit. Use a real independent editor to encode the delta.
+    use yrs::{updates::decoder::Decode, Text};
+    let editor = Doc::with_client_id(29);
+    editor
+        .transact_mut()
+        .apply_update(yrs::Update::decode_v1(&BASE64_STANDARD.decode(state).unwrap()).unwrap())
+        .unwrap();
+    let text = editor.get_or_insert_text("markdown");
+    let update = {
+        let mut txn = editor.transact_mut();
+        text.insert(&mut txn, 0, "x");
+        txn.encode_update_v1()
+    };
+    let overflow = request(json!({
+        "operation": "apply", "state": state, "update": BASE64_STANDARD.encode(update)
+    }));
+    assert_eq!(overflow["code"], "invalid_argument");
+    assert_eq!(overflow["error"], "merged wiki Markdown exceeds 1 MiB");
+    let recovered = request(json!({"operation": "apply", "state": state, "update": "AAA="}));
+    assert_eq!(recovered["markdown"], markdown);
+}
+
+#[test]
+fn wiki_rejects_unknown_fields_missing_fields_and_wrong_types() {
+    for input in [
+        json!({"operation": "seed", "markdown": "ok", "state": "AAA="}),
+        json!({"operation": "apply", "state": "AAA=", "update": "AAA=", "markdown": "ignored?"}),
+        json!({"operation": "replace", "state": "AAA=", "markdown": "ok", "update": "AAA="}),
+        json!({"operation": "seed"}),
+        json!({"operation": "apply", "state": "AAA="}),
+        json!({"operation": "replace", "markdown": "ok"}),
+        json!({"operation": "seed", "markdown": null}),
+        json!({"operation": "apply", "state": [], "update": "AAA="}),
+        json!({"operation": "replace", "state": "AAA=", "markdown": 7}),
+        json!({"operation": "unknown"}),
+        json!(null),
+        json!([]),
+    ] {
+        let result = request(input.clone());
+        assert_eq!(result["code"], "invalid_argument", "{input}: {result}");
+        assert_eq!(result["error"], "invalid wiki document request");
+    }
+    let recovered = request(json!({"operation": "seed", "markdown": "Accepted"}));
+    assert_eq!(recovered["markdown"], "Accepted");
+}
