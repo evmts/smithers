@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import test from "node:test"
@@ -25,6 +25,54 @@ const verboseVersion = [
   "release: 1.89.0",
   "LLVM version: 20.1.7"
 ].join("\n")
+
+// These fixtures stand in for compiler startup failures only. Running a real
+// canonical compiler here could launch a full build and overwrite shipped bytes.
+const runStartup = (compiler) => {
+  const directory = mkdtempSync(join(tmpdir(), "flows-jj-startup-"))
+  try {
+    if (compiler !== undefined) {
+      const executable = join(directory, "rustc")
+      writeFileSync(executable, `#!/bin/sh\n${compiler}\n`)
+      chmodSync(executable, 0o755)
+    }
+    return spawnSync(process.execPath, [fileURLToPath(new URL("./build-wasm.mjs", import.meta.url)), "--verify"], {
+      cwd: directory,
+      env: { ...process.env, PATH: directory },
+      encoding: "utf8",
+      timeout: 10000
+    })
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+}
+
+test("build command reports a missing compiler without attempting a build", () => {
+  const result = runStartup(undefined)
+  assert.equal(result.error, undefined)
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /`rustc` not found on PATH/)
+  assert.equal(result.stdout, "")
+})
+
+test("build command preserves compiler probe failure status and diagnostics", () => {
+  const result = runStartup("printf '%s\\n' 'compiler fixture failure' >&2\nexit 7")
+  assert.equal(result.error, undefined)
+  assert.equal(result.status, 7)
+  assert.match(result.stderr, /compiler fixture failure/)
+  assert.match(result.stderr, /rustc -vV failed/)
+  assert.equal(result.stdout, "")
+})
+
+test("build command refuses a noncanonical compiler host before invoking Cargo", () => {
+  const result = runStartup("printf '%s\\n' 'host: aarch64-apple-darwin' 'commit-hash: abc123'")
+  assert.equal(result.error, undefined)
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /this host is aarch64-apple-darwin/)
+  assert.match(result.stderr, /docker run/)
+  assert.doesNotMatch(result.stderr, /`cargo` not found/)
+  assert.equal(result.stdout, "")
+})
 
 test("targetDir defaults to the workspace target directory", () => {
   assert.equal(targetDir({}, "/repo"), join("/repo", "target"))
