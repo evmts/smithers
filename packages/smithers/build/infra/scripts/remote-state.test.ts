@@ -401,6 +401,15 @@ describe("remote state sessions", () => {
     await next.release()
   })
 
+  it("opens a stack whose state directory does not exist yet", async () => {
+    const bucket = memoryStateBucket()
+    const absent = NodePath.join(directory, "fresh")
+    const session = await openRemoteState({ bucket, key: "alchemy/Stack.json" }, absent, holder)
+    expect(await session.push()).toBe("unchanged")
+    await session.release()
+    expect(bucket.objects.size).toBe(0)
+  })
+
   it("refuses an unpublished-state marker it cannot read", async () => {
     const bucket = memoryStateBucket()
     await put(".smithers-unpublished-state", "garbage")

@@ -587,6 +587,7 @@ export const openRemoteState = async (
     } else {
       if (pulled !== undefined) await writeStateSnapshot(directory, pulled.body)
       baseline = digest(pulled === undefined ? renderSnapshot({}) : await readStateSnapshot(directory))
+      await Fs.mkdir(directory, { recursive: true })
       await Fs.writeFile(
         markerPath,
         JSON.stringify({ format: markerFormat, etag: pulled?.etag ?? null, baseline }),
