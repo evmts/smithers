@@ -170,23 +170,41 @@ func (s *WorkspaceService) captureAndSleepExcluded(ctx context.Context, row db.W
 	// answered 503. The stage is a written constant naming the step that did
 	// not hold: no payloads, no keys, no URLs and no raw driver text.
 	//
-	// It is CodeBranchSleepUnavailable and not CodeServiceUnavailable because
-	// an uncomposed dependency is not a transient one: the owner retrying this
-	// box tonight gets the same refusal, so the sentence has to survive the
-	// 5xx scrub and reach them (isSafe5xxMessageCode). The verdict says the
-	// deployment is unfinished, not that their box is sick.
-	unavailable := func(stage string, err error) error {
-		failure := pkgerrors.New(pkgerrors.CodeBranchSleepUnavailable,
-			"branch sleep requires verified capture, runtime binding and state publication: "+stage)
+	// The two refusals are not the same verdict, because they do not have the
+	// same answer. uncomposed means one of the four seams sleep needs was
+	// never supplied on this deployment: no box here can be suspended, the
+	// identical retry refuses forever, and the owner is the one person who
+	// cannot fix it — so that one is CodeBranchSleepUnavailable, whose
+	// sentence isSafe5xxMessageCode lets through the 5xx scrub, and whose
+	// written copy offers `report` instead of a retry onto a wall.
+	//
+	// unavailable means sleep is composed here and this attempt did not get
+	// past one step: a dropped database connection, a capture that timed out,
+	// a stop the runtime did not confirm. Those come back on their own, so the
+	// verdict stays the scrubbed CodeServiceUnavailable and the stage reaches
+	// the operator log in Message and Details. Answering them with the
+	// deployment verdict would tell an owner whose deployment can sleep boxes
+	// that it can never sleep one and that retrying is pointless — the
+	// receipt-28 lie with its polarity reversed.
+	refusal := func(code pkgerrors.Code, sentence, stage string, err error) error {
+		failure := pkgerrors.New(code, sentence+stage)
 		failure.Details = map[string]string{
 			"stage":     stage,
 			"branch_id": row.ID,
 		}
 		return failure.WithCause(err)
 	}
+	uncomposed := func(stage string, err error) error {
+		return refusal(pkgerrors.CodeBranchSleepUnavailable,
+			"branch sleep requires verified capture, runtime binding and state publication: ", stage, err)
+	}
+	unavailable := func(stage string, err error) error {
+		return refusal(pkgerrors.CodeServiceUnavailable,
+			"branch sleep is composed here and did not get past this step: ", stage, err)
+	}
 	store, stage, cause := s.branchCaptureDependencies()
 	if stage != "" {
-		return unavailable(stage, cause)
+		return uncomposed(stage, cause)
 	}
 	var err error
 	row, err = s.q.GetWorkspace(ctx, row.ID)

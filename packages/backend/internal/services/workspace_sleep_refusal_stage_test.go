@@ -181,3 +181,76 @@ func stageOf(refusal *pkgerrors.APIError) string {
 	}
 	return strings.TrimSpace(details["stage"])
 }
+
+// A deployment that can sleep boxes must not tell an owner it never could.
+//
+// CodeBranchSleepUnavailable is a verdict about the deployment: its registry
+// doc says no box here can be suspended until an operator composes the missing
+// seam, its written copy tells the agent that retrying "fails identically" and
+// offers `report` rather than Retry, and RefusalCopy lists it as terminal. All
+// of that is true of the four uncomposed stages above and false of every step
+// after them — a dropped database connection, a capture that timed out, a stop
+// the runtime did not confirm. Those come back on their own.
+//
+// So the operational refusals keep the scrubbed CodeServiceUnavailable, with
+// the stage still in Message and Details for the operator log. Without the
+// split this returned branch_sleep_unavailable for a transient Postgres error
+// and the owner of a perfectly suspendable box was told to stop retrying and
+// file a report instead — receipt 28's lie with its polarity reversed.
+func TestBranchSleepTransientRefusalIsNotTheDeploymentVerdict(t *testing.T) {
+	row := db.Workspace{ID: "1d7209c4-1915-4433-bc2b-c15376574147", UserID: 35, Status: "running", VmID: "retained"}
+	composed := &WorkspaceService{
+		branchHeads:   sleepStageStore{},
+		branchCapture: sleepStageCapture{},
+		runtime:       sleepStageRuntime{},
+		transactions:  sleepStageTransactions{},
+		branchMachineProviders: BranchMachineProviders{
+			Membership:      func(context.Context, pgx.Tx, int64, int64) error { return nil },
+			Authorize:       func(context.Context, pgx.Tx, string, int64, string, int64) error { return nil },
+			LaneBinding:     func(context.Context, pgx.Tx, int64, string, string) error { return nil },
+			MicroVM:         func(context.Context) error { return nil },
+			SessionIdentity: func(context.Context) error { return nil },
+		},
+		q: &mockWorkspaceQuerier{
+			getWorkspaceFn: func(context.Context, string) (db.Workspace, error) {
+				return db.Workspace{}, errors.New("read tcp 10.0.0.9:5432: connection reset by peer")
+			},
+		},
+	}
+
+	// Every sleep dependency is composed, so the gate passes and the attempt
+	// reaches the first database read, which fails the way a lost connection
+	// fails.
+	require.NoError(t, composed.QuiesceAvailable(), "this deployment can sleep a box")
+
+	err := composed.captureAndSleepExcluded(context.Background(), row, false)
+	require.Error(t, err, "a sleep whose first read fails refuses")
+
+	var refusal *pkgerrors.APIError
+	require.True(t, errors.As(err, &refusal), "the refusal is the typed 503 the route writes")
+	assert.Equal(t, pkgerrors.CodeServiceUnavailable, refusal.Code,
+		"a step that did not hold on a composed deployment is not the uncomposed-deployment verdict")
+	assert.NotEqual(t, pkgerrors.CodeBranchSleepUnavailable, refusal.Code,
+		"branch_sleep_unavailable is terminal and door-less; a dropped connection is neither")
+	assert.Equal(t, 503, refusal.Status)
+	assert.Contains(t, refusal.Message, "reload branch row",
+		"the operator log still reads which step did not hold")
+	assert.Equal(t, "reload branch row", stageOf(refusal),
+		"the structural stage survives for the log pipeline")
+
+	// The sentence and the stage are logged, and the driver text that carries
+	// the host and the port stays in Cause, where the scrub keeps it.
+	for _, leak := range []string{"://", "Bearer ", "password", "10.0.0.9", ".svc"} {
+		assert.NotContains(t, refusal.Message, leak, "a logged refusal carries no %q", leak)
+	}
+
+	// The same service with its capture daemon taken away is the other
+	// verdict, so the split is a real fork and not a constant.
+	withoutCapture := *composed
+	withoutCapture.branchCapture = nil
+	terminal := withoutCapture.captureAndSleepExcluded(context.Background(), row, false)
+	require.True(t, errors.As(terminal, &refusal))
+	assert.Equal(t, pkgerrors.CodeBranchSleepUnavailable, refusal.Code,
+		"an uncomposed seam is still the deployment verdict")
+	assert.Equal(t, "branch capture unavailable", stageOf(refusal))
+}
