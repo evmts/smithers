@@ -1108,6 +1108,29 @@ describe("PackageManager.storeRoot", () => {
     }
   )
 
+  it.each(["fifo", "oversized"])("refuses a %s pnpm.cmd shim without reading it to the end", async (kind) => {
+    await withFixture("package-manager-shim-shape", async (root) => {
+      const shim = NodePath.join(root, "pnpm.cmd")
+      if (kind === "fifo") execFileSync("mkfifo", [shim], { timeout: 5_000 })
+      else await Fs.writeFile(shim, "@node \"%~dp0\\pnpm.mjs\" %*\r\n" + "rem padding\r\n".repeat(200_000))
+      await Fs.writeFile(NodePath.join(root, "pnpm.mjs"), "process.stdout.write('11.25.0')")
+      const error = await Effect.runPromise(
+        PackageManager.makePnpm({
+          requirement: "11.25.0",
+          projectRoot: root,
+          environment: { Path: root }
+        }).pipe(
+          Effect.flatMap((manager) => manager.version),
+          Effect.flip,
+          Effect.provide(ExecutableFixture.layer),
+          Effect.provide(windowsRuntimeLayer)
+        )
+      )
+      expect(error.code).toBe("environment_mismatch")
+      expect(error.message).toContain(`${root}/pnpm.cmd`)
+    })
+  }, 10_000)
+
   it.each(["fetch", "link"] as const)("verifies before a direct public %s can mutate", async (operation) => {
     await withFixture("package-manager-direct-verify", async (root) => {
       const executable = NodePath.join(root, "pnpm.mjs")
@@ -2019,6 +2042,30 @@ describe("PackageManager project configuration", () => {
         await Fs.writeFile(NodePath.join(root, ".npmrc"), `${line}\n`, "utf8")
         expect(await npmrcValue(root)).toMatch(/^[0-9a-f]{64}$/)
       }
+    })
+  })
+
+  it.each([
+    "registry=https://registry.example/ ; mirrors ${MIRROR_HOST}",
+    "registry=https://registry.example/ # mirrors ${MIRROR_HOST}"
+  ])("accepts %s because pnpm reads no placeholder there", async (line) => {
+    await withFixture("package-manager-npmrc-comment", async (root) => {
+      await Fs.writeFile(NodePath.join(root, ".npmrc"), `${line}\n`, "utf8")
+      expect(await npmrcValue(root)).toMatch(/^[0-9a-f]{64}$/)
+    })
+  })
+
+  it.each([
+    ["an escaped comment character", "registry=https://registry.example/\\;${HOME}", /registry uses an environment/],
+    ["a quoted JSON escape", "registry=\"https://registry.example/\\u0024{HOME}\"", /registry uses an environment/],
+    ["a carriage-return line break", "registry=https://registry.example/\rtoken=literal", /embeds a credential/],
+    ["a placeholder in a setting name", "${HOME}=x", /setting \$\{HOME\} uses an environment/]
+  ])("refuses a setting hidden behind %s", async (_shape, line, message) => {
+    await withFixture("package-manager-npmrc-hidden", async (root) => {
+      await Fs.writeFile(NodePath.join(root, ".npmrc"), `${line}\n`, "utf8")
+      const error = await npmrcRefusal(root)
+      expect(error.code).toBe("unsafe_configuration")
+      expect(error.message).toMatch(message)
     })
   })
 

@@ -39,7 +39,6 @@ import * as Validate from "./internal/validate.ts"
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export const Name = Schema.Literals(["node", "bun"])
 
@@ -48,7 +47,6 @@ export const Name = Schema.Literals(["node", "bun"])
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type Name = typeof Name.Type
 
@@ -61,7 +59,6 @@ export type Name = typeof Name.Type
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export const Platform = Schema.Struct({
   /** The operating system, spelled as Node spells it: `darwin`, `linux`. */
@@ -77,7 +74,6 @@ export const Platform = Schema.Struct({
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type Platform = typeof Platform.Type
 
@@ -107,7 +103,6 @@ export type Diagnostic = Diagnostics.Diagnostic
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export const ErrorCode = Schema.Literals([
   "probe_failed",
@@ -120,7 +115,6 @@ export const ErrorCode = Schema.Literals([
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type ErrorCode = typeof ErrorCode.Type
 
@@ -132,7 +126,6 @@ export type ErrorCode = typeof ErrorCode.Type
  *
  * @category errors
  * @since 0.1.0
- * @slop
  */
 export class RuntimeError extends Schema.TaggedError<RuntimeError>()(
   "smithers-build/RuntimeError",
@@ -152,7 +145,6 @@ export class RuntimeError extends Schema.TaggedError<RuntimeError>()(
  *
  * @category constants
  * @since 0.1.0
- * @slop
  */
 export const maximumVersionOutputBytes = BoundedOutput.maximumVersionOutputBytes
 
@@ -161,7 +153,6 @@ export const maximumVersionOutputBytes = BoundedOutput.maximumVersionOutputBytes
  *
  * @category constants
  * @since 0.1.0
- * @slop
  */
 export const probeTimeoutMs = 30_000
 
@@ -170,7 +161,6 @@ export const probeTimeoutMs = 30_000
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Service {
   /** Which runtime this is. */
@@ -198,7 +188,6 @@ export interface Service {
  *
  * @category services
  * @since 0.1.0
- * @slop
  */
 export class Runtime extends Context.Service<Runtime, Service>()(
   "smithers-build/Runtime"
@@ -209,7 +198,6 @@ export class Runtime extends Context.Service<Runtime, Service>()(
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Options {
   /** The version the workspace declared. */
@@ -339,9 +327,12 @@ const comparePrerelease = (left: string, right: string): number => {
  * prerelease ordering, so semver precedence breaks a tie on the release
  * version: `>=1.0.0-rc.2` refuses `1.0.0-rc.1` and accepts `1.0.0`.
  *
+ * Returns `"unsupported_requirement"` instead of a boolean when the
+ * requirement is not one of these forms, or when `version` is not a dotted
+ * numeric version (an optional `v` prefix and suffix are allowed).
+ *
  * @category validation
  * @since 0.1.0
- * @slop
  */
 export const satisfies = (
   requirement: string,
@@ -591,9 +582,15 @@ const measureVersion = (
 /**
  * Builds a runtime implementation that measures the host.
  *
+ * The options are validated and copied when the effect runs; invalid options
+ * are a defect (`TypeError`), not a `RuntimeError`. `version` spawns
+ * `<executable> --version` once per service and caches the answer, failing
+ * with `probe_failed` when the probe cannot run, times out, exits non-zero,
+ * prints more than {@link maximumVersionOutputBytes}, or prints no version. `verify` adds `unsatisfied` and
+ * `unsupported_requirement`, decided by {@link satisfies}.
+ *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const make = (
   name: Name,
@@ -622,22 +619,20 @@ export const make = (
   })
 
 /**
- * Provides Node as the workspace runtime.
+ * Provides Node as the workspace runtime, built by {@link make}.
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerNode = (
   options: Options
 ): Layer.Layer<Runtime, never, ChildProcessSpawner> => Layer.effect(Runtime)(make("node", options))
 
 /**
- * Provides Bun as the workspace runtime.
+ * Provides Bun as the workspace runtime, built by {@link make}.
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerBun = (
   options: Options
@@ -650,9 +645,11 @@ export const layerBun = (
  * the measuring implementation does, through the same function, so a test can
  * assert any of the three refusal outcomes without a host interpreter.
  *
+ * Throws `TypeError` when the options or `version` are invalid: `version`
+ * must be non-empty text of at most 256 bytes.
+ *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const makeNoop = (
   name: Name,
@@ -682,11 +679,12 @@ export const makeNoop = (
 }
 
 /**
- * Provides a runtime that reports a fixed version and never spawns anything.
+ * Provides a runtime that reports a fixed version and never spawns anything,
+ * built by {@link makeNoop}. Invalid options are a defect when the layer is
+ * built.
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerNoop = (
   name: Name,

@@ -81,7 +81,6 @@ import * as Runtime from "./Runtime.ts"
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export const Content = Schema.Struct({
   /** The lockfile path and its measured digest. */
@@ -99,7 +98,6 @@ export const Content = Schema.Struct({
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type Content = typeof Content.Type
 
@@ -111,7 +109,6 @@ export type Content = typeof Content.Type
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export const LinkManifest = Schema.Struct({
   /** The store manifest digest this tree was linked from. */
@@ -137,7 +134,6 @@ export const LinkManifest = Schema.Struct({
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type LinkManifest = typeof LinkManifest.Type
 
@@ -169,14 +165,12 @@ const measureInputPatterns: ReadonlyArray<string> = [
  * empty payload a pnpm install and a Bun install of one workspace shared a
  * single measure key, which is inert only while the boundary stays `expected`
  * and becomes a hit on another manager's measurement the day it hardens. The
- * declared manager is not checked against the composed layer here, and
- * `d191c9dfcf` says why: that check belongs at the composition root that wires
- * a layer against a declaration, not inside a sealed action that receives only
- * the layer.
+ * declared manager is not checked against the composed layer here: that check
+ * belongs at the composition root that wires a layer against a declaration,
+ * not inside a sealed action that receives only the layer.
  *
  * @category actions
  * @since 0.1.0
- * @slop
  */
 export const Measure = Action.make("smithers-build/install/measure", {
   payload: { manager: PackageManager.Name },
@@ -251,7 +245,6 @@ const makeFetch = <Tag extends string>(
  *
  * @category actions
  * @since 0.1.0
- * @slop
  */
 export const FetchPnpm = makeFetch("smithers-build/install/fetch/pnpm", "pnpm-lock.yaml", "pnpm")
 
@@ -269,7 +262,6 @@ export const FetchPnpm = makeFetch("smithers-build/install/fetch/pnpm", "pnpm-lo
  *
  * @category actions
  * @since 0.1.0
- * @slop
  */
 export const Link = Action.make("smithers-build/install/link", {
   payload: {
@@ -293,7 +285,7 @@ export const Link = Action.make("smithers-build/install/link", {
 /**
  * The install payload.
  *
- * `manager` is the manager the workspace declared in legacy declaration. It is a
+ * `manager` is the manager the workspace declares. It is a
  * plan-time value, which is what lets one round select exactly one fetch
  * action; the previous design had to measure the manager first and hand off to
  * a second round to do the same job. The project root is the engine's working
@@ -306,7 +298,6 @@ export const Link = Action.make("smithers-build/install/link", {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export const payloadFields = {
   manager: Schema.Literal("pnpm")
@@ -317,7 +308,6 @@ export const payloadFields = {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type Requires =
   | Action.Requirement<"smithers-build/install/measure">
@@ -329,7 +319,6 @@ export type Requires =
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type InstallFlow = Flow.Flow<
   "smithers-build/install",
@@ -384,7 +373,6 @@ const measureFetchLink = <R>(
  *
  * @category flows
  * @since 0.1.0
- * @slop
  */
 export const Install: InstallFlow = Flow.make("smithers-build/install", {
   payload: payloadFields,
@@ -536,9 +524,14 @@ const verifyContent = (manager: PackageManager.Service, content: Content) =>
  * body reachable only through `MeasureLive` is a body a test re-implements
  * inline and then asserts against its own copy.
  *
+ * Fails with `environment_mismatch` when the manager layer's lockfile name or
+ * store directory is not the one its manager name requires,
+ * `lockfile_unreadable` or `manifest_unreadable` when an input cannot be read
+ * as a regular file inside the project, and `unsafe_configuration` when the
+ * project `.npmrc` embeds a credential or a misplaced environment placeholder.
+ *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const executeMeasure = (): Effect.Effect<
   Content,
@@ -563,7 +556,6 @@ export const executeMeasure = (): Effect.Effect<
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const MeasureLive = Measure.toLayer(executeMeasure)
 
@@ -574,9 +566,13 @@ export const MeasureLive = Measure.toLayer(executeMeasure)
  * declaration before the manager writes anything, then reports the store
  * manifest the measured content produces.
  *
+ * Fails with `environment_mismatch` when the layer is inconsistent or the
+ * host runtime or manager does not satisfy its declared version, with
+ * `input_drift` when a measured input differs before or after the manager
+ * runs, and with the manager's own error when `fetch` fails.
+ *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const executeFetch = ({ content }: { readonly content: Content }) =>
   Effect.gen(function*() {
@@ -602,7 +598,6 @@ export const executeFetch = ({ content }: { readonly content: Content }) =>
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const FetchPnpmLive = FetchPnpm.toLayer(executeFetch)
 
@@ -655,9 +650,14 @@ const verifyStoreContent = (
  * would silently accept a deleted or corrupted package. The expected boundary
  * keeps this work local and out of the shared action cache.
  *
+ * Fails with `environment_mismatch` when the host does not satisfy the
+ * declarations or `store` was fetched by another manager, manager version,
+ * platform, or measured content; with `input_drift` when a measured input or
+ * the root `package.json` changes before or during the link; and with the
+ * manager's own error when `link` fails.
+ *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const executeLink = ({ content, store }: {
   readonly content: Content
@@ -688,11 +688,10 @@ export const executeLink = ({ content, store }: {
   })
 
 /**
- * Live implementation of the package-manager link action.
+ * Implements {@link Link}.
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const LinkLive = Link.toLayer(executeLink)
 
@@ -705,7 +704,6 @@ export const LinkLive = Link.toLayer(executeLink)
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layer = Layer.mergeAll(
   MeasureLive,

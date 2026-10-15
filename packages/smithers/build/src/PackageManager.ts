@@ -46,11 +46,10 @@ import * as Runtime from "./Runtime.ts"
  * Schema for the supported package managers.
  *
  * The set matches the declared `PackageManager` union in `@smthrs/targets`:
- * a manager this service can measure is a manager a legacy declaration file can declare.
+ * a manager this service can measure is a manager a workspace can declare.
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export const Name = Schema.Literals(["pnpm", "bun"])
 
@@ -59,7 +58,6 @@ export const Name = Schema.Literals(["pnpm", "bun"])
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type Name = typeof Name.Type
 
@@ -72,7 +70,6 @@ export type Name = typeof Name.Type
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export const Platform = Runtime.Platform
 
@@ -81,7 +78,6 @@ export const Platform = Runtime.Platform
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type Platform = Runtime.Platform
 
@@ -110,7 +106,6 @@ export type Diagnostic = Runtime.Diagnostic
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export const Digest = Sha256.Digest
 
@@ -119,7 +114,6 @@ export const Digest = Sha256.Digest
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type Digest = typeof Sha256.Digest.Type
 
@@ -128,7 +122,6 @@ export type Digest = typeof Sha256.Digest.Type
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export const ErrorCode = Schema.Literals([
   "command_failed",
@@ -145,7 +138,6 @@ export const ErrorCode = Schema.Literals([
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type ErrorCode = typeof ErrorCode.Type
 
@@ -157,7 +149,6 @@ export type ErrorCode = typeof ErrorCode.Type
  *
  * @category errors
  * @since 0.1.0
- * @slop
  */
 export class PackageManagerError extends Schema.TaggedError<PackageManagerError>()(
   "smithers-build/PackageManagerError",
@@ -179,7 +170,6 @@ export class PackageManagerError extends Schema.TaggedError<PackageManagerError>
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export const StoreManifest = Schema.Struct({
   /** The manager whose store was populated. */
@@ -197,7 +187,6 @@ export const StoreManifest = Schema.Struct({
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type StoreManifest = typeof StoreManifest.Type
 
@@ -215,7 +204,6 @@ export type StoreManifest = typeof StoreManifest.Type
  *
  * @category constants
  * @since 0.1.0
- * @slop
  */
 export const storeRoot = ".flows/store"
 
@@ -263,7 +251,6 @@ export const pnpmfileOf = (
  *
  * @category constants
  * @since 0.1.0
- * @slop
  */
 export const maximumNpmrcBytes = 256 * 1024
 /**
@@ -271,7 +258,6 @@ export const maximumNpmrcBytes = 256 * 1024
  *
  * @category constants
  * @since 0.1.0
- * @slop
  */
 export const maximumPackageJsonBytes = 4 * 1024 * 1024
 /**
@@ -279,7 +265,6 @@ export const maximumPackageJsonBytes = 4 * 1024 * 1024
  *
  * @category constants
  * @since 0.1.0
- * @slop
  */
 export const maximumLockfileBytes = 64 * 1024 * 1024
 /**
@@ -291,7 +276,6 @@ export const maximumLockfileBytes = 64 * 1024 * 1024
  *
  * @category constants
  * @since 0.1.0
- * @slop
  */
 export const maximumVersionOutputBytes = Runtime.maximumVersionOutputBytes
 /**
@@ -299,7 +283,6 @@ export const maximumVersionOutputBytes = Runtime.maximumVersionOutputBytes
  *
  * @category constants
  * @since 0.1.0
- * @slop
  */
 export const defaultCommandTimeoutMs = 30 * 60 * 1000
 /**
@@ -307,7 +290,6 @@ export const defaultCommandTimeoutMs = 30 * 60 * 1000
  *
  * @category constants
  * @since 0.1.0
- * @slop
  */
 export const maximumCommandTimeoutMs = 24 * 60 * 60 * 1000
 
@@ -316,7 +298,6 @@ export const maximumCommandTimeoutMs = 24 * 60 * 60 * 1000
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Service {
   /** Which manager this is. */
@@ -377,7 +358,6 @@ export interface Service {
  *
  * @category services
  * @since 0.1.0
- * @slop
  */
 export class PackageManager extends Context.Service<PackageManager, Service>()(
   "smithers-build/PackageManager"
@@ -388,7 +368,6 @@ export class PackageManager extends Context.Service<PackageManager, Service>()(
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Options {
   /**
@@ -459,7 +438,6 @@ export interface Options {
  *
  * @category constants
  * @since 0.1.0
- * @slop
  */
 export const defaultCredentialHosts: ReadonlyArray<string> = Object.freeze(["registry.npmjs.org"])
 
@@ -1179,6 +1157,9 @@ const verified = (
       )
   })
 
+/** The largest `pnpm.cmd` read; generated shims are well under 1 KiB. */
+const maxShimBytes = 64 * 1024
+
 /** Resolves the default Windows shim without ever invoking a command shell. */
 const pnpmInvocation = (
   fs: FileSystem.FileSystem,
@@ -1210,6 +1191,12 @@ const pnpmInvocation = (
       // assuming the npm global layout or selecting a stale adjacent version.
       // These are paths only: no command text, arguments, or environment
       // expansions from the batch file are passed to a shell.
+      // A FIFO or device never ends and an oversized file is not a shim, so
+      // both are refused before the read rather than read without a bound.
+      const shimInfo = yield* fs.stat(shim).pipe(Effect.mapError(() => mismatch(shim)))
+      if (shimInfo.type !== "File" || shimInfo.size > BigInt(maxShimBytes)) {
+        return yield* Effect.fail(mismatch(shim))
+      }
       const source = yield* fs.readFileString(shim).pipe(Effect.mapError(() => mismatch(shim)))
       const entries = new Set(
         [...source.matchAll(/"(?:%~dp0[\\/]|%dp0%[\\/]?)([^"\r\n]*pnpm\.(?:cjs|mjs))"[ \t]+%\*[ \t]*$/gim)]
@@ -1232,9 +1219,21 @@ const pnpmInvocation = (
  * `pnpm install --offline --frozen-lockfile` links out of it. The command is
  * still marked experimental by pnpm itself. That does not change the split.
  *
+ * Invalid options are a defect (`TypeError`) when the effect runs. Every
+ * child, `pnpm --version` included, first reads the project configuration
+ * and resolves the executable, so any operation can fail with
+ * `manifest_unreadable` for an unreadable `.npmrc` or `pnpm-workspace.yaml`,
+ * `unsafe_configuration` when either could leak a host credential, or
+ * `environment_mismatch` when a Windows `pnpm.cmd` shim does not name one
+ * pnpm entrypoint. A child that cannot start, times out, or exits non-zero
+ * fails with `command_failed`. `version` runs once per service; `verify`,
+ * `fetch`, and `link` also fail with `environment_mismatch` when the measured
+ * version does not satisfy {@link Options.requirement}. Both `fetch` and
+ * `link` pass `--frozen-lockfile` and `--ignore-scripts`, so neither rewrites
+ * the lockfile nor runs package lifecycle scripts.
+ *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const makePnpm = (options: Options): Effect.Effect<
   Service,
@@ -1321,11 +1320,10 @@ export const makePnpm = (options: Options): Effect.Effect<
   })
 
 /**
- * Provides the pnpm implementation.
+ * Provides the pnpm implementation built by {@link makePnpm}.
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerPnpm = (
   options: Options
@@ -1376,7 +1374,6 @@ export const bunInstallUnsupported = (): PackageManagerError =>
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const makeBun = (options: Options): Effect.Effect<
   Service,
@@ -1389,11 +1386,11 @@ export const makeBun = (options: Options): Effect.Effect<
   })
 
 /**
- * Provides the Bun implementation.
+ * Provides the Bun implementation built by {@link makeBun}: every operation
+ * fails with `unsupported`.
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerBun = (
   options: Options
@@ -1413,9 +1410,11 @@ const lockfileNames: Readonly<Record<Name, string>> = {
  * `unsupported` failure naming the manager instead of vanishing. It is also
  * the explicit stand-in for Bun until a Bun implementation lands.
  *
+ * Throws `TypeError` when `name` is not a supported manager or the options
+ * are invalid.
+ *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const makeNoop = (name: Name, options: Options, hostPlatform: Platform): Service => {
   if (name !== "pnpm" && name !== "bun") {
@@ -1449,7 +1448,6 @@ export const makeNoop = (name: Name, options: Options, hostPlatform: Platform): 
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerNoop = (
   name: Name,
@@ -1561,7 +1559,6 @@ const renderStoreManifestText = (input: NormalizedStoreManifestInput): string =>
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const storeManifestText = (input: {
   readonly manager: Name
@@ -1578,7 +1575,6 @@ export const storeManifestText = (input: {
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const storeManifest = (input: {
   readonly manager: Name
@@ -1610,7 +1606,6 @@ export const storeManifest = (input: {
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const linkedTreeManifest = (input: {
   readonly storeDigest: Digest
@@ -1778,7 +1773,6 @@ const refuseUnsafeNpmrc = (
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const npmrcDigest = (
   projectRoot: string
@@ -1800,7 +1794,6 @@ export const npmrcDigest = (
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const lockfileDigest = (
   projectRoot: string,
@@ -1822,7 +1815,6 @@ export const lockfileDigest = (
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const packageJsonDigest = (
   projectRoot: string
