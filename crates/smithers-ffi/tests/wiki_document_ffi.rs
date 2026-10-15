@@ -2,6 +2,7 @@
 use base64::prelude::{Engine as _, BASE64_STANDARD};
 use serde_json::{json, Value};
 use std::ffi::{CStr, CString};
+use yrs::{Any, Doc, Map, ReadTxn, StateVector, Transact};
 
 fn request(value: Value) -> Value {
     let input = CString::new(value.to_string()).unwrap();
@@ -126,4 +127,64 @@ fn wiki_rejects_invalid_utf8_without_replacing_existing_text() {
     let recovered =
         request(json!({"operation": "apply", "state": seed["state"], "update": "AAA="}));
     assert_eq!(recovered["markdown"], "Keep 🦀");
+}
+
+#[test]
+fn wiki_enforces_nested_value_budget_and_retains_accepted_values() {
+    for depth in [0, 1, 63, 64, 65, 100] {
+        let doc = Doc::with_client_id(17);
+        let authors = doc.get_or_insert_map("authors");
+        let mut value = Any::Null;
+        for _ in 0..depth {
+            value = Any::Array(vec![value].into());
+        }
+        authors.insert(&mut doc.transact_mut(), "nested", value.clone());
+        let update = doc
+            .transact()
+            .encode_state_as_update_v1(&StateVector::default());
+        let result = request(json!({
+            "operation": "apply", "state": "AAA=", "update": BASE64_STANDARD.encode(update)
+        }));
+        if depth > 64 {
+            assert_eq!(
+                result["code"], "invalid_argument",
+                "depth {depth}: {result}"
+            );
+        } else {
+            assert_eq!(result["markdown"], "", "depth {depth}: {result}");
+            // Verify accepted nested data survives serialization, beyond the
+            // Markdown field returned by the ABI.
+            let restored = Doc::new();
+            let bytes = BASE64_STANDARD
+                .decode(result["state"].as_str().unwrap())
+                .unwrap();
+            use yrs::updates::decoder::Decode;
+            restored
+                .transact_mut()
+                .apply_update(yrs::Update::decode_v1(&bytes).unwrap())
+                .unwrap();
+            assert_eq!(
+                restored
+                    .get_or_insert_map("authors")
+                    .get(&restored.transact(), "nested"),
+                Some(yrs::Out::Any(value))
+            );
+        }
+    }
+}
+
+#[test]
+fn wiki_rejects_oversized_counts_before_allocating() {
+    for bytes in [
+        vec![255, 255, 255, 255, 15],    // Number of client blocks.
+        vec![1, 255, 255, 255, 255, 15], // Number of structs in one block.
+        vec![0, 255, 255, 255, 255, 15], // Number of delete-set clients.
+    ] {
+        let result = request(json!({
+            "operation": "apply", "state": "AAA=", "update": BASE64_STANDARD.encode(bytes)
+        }));
+        assert_eq!(result["code"], "invalid_argument", "{result}");
+    }
+    let recovered = request(json!({"operation": "seed", "markdown": "Still usable"}));
+    assert_eq!(recovered["markdown"], "Still usable");
 }
