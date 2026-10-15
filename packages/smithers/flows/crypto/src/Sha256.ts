@@ -188,6 +188,11 @@ const hostFailure = (cause: unknown): Sha256Error =>
  * the same input policy and the same {@link Digest} representation as
  * {@link digest}. It throws {@link Sha256Error} for invalid input or text.
  *
+ * @param input - Well-formed text encoded as UTF-8, or bytes copied during the call.
+ * @returns The SHA-256 digest as 64 lowercase hexadecimal characters.
+ * @throws {Sha256Error} With `invalid_input`, `invalid_text`, or
+ * `text_encoding_failed` when input cannot be copied or encoded.
+ *
  * @category hashing
  * @since 1.0.0
  */
@@ -238,6 +243,11 @@ export const syncCrypto: Crypto.Crypto = Crypto.make({
  * configuration defect. Invalid input, text-encoding failures, provided-host
  * failures, and malformed host output fail with {@link Sha256Error}. The host
  * must return exactly 32 bytes.
+ *
+ * @param input - Well-formed text or bytes, snapshotted each time the Effect runs.
+ * @returns An Effect requiring `Crypto.Crypto`, succeeding with the lowercase
+ * hexadecimal digest or failing with `Sha256Error` for input, encoding, host
+ * operation, or host output failures.
  *
  * @category hashing
  * @since 1.0.0
@@ -337,8 +347,8 @@ export const Sha256 = Object.assign(Sha256Schema, { Digest, digest, digestSync }
  * well-formed on its own, so a surrogate pair cannot span two fragments.
  *
  * @returns A synchronous hasher accepting an array of text fragments.
- * @throws {Sha256Error} For non-array input, invalid lengths, non-string
- * fragments, invalid text, or failed text encoding. Failed calls preserve the
+ * @throws {Sha256Error} The returned hasher throws for non-array input, invalid
+ * lengths, non-string fragments, invalid text, or failed text encoding. Failed calls preserve the
  * last successful call's reusable prefixes.
  *
  * @category hashing
