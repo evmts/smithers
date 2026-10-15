@@ -587,6 +587,44 @@ export const SearchItemSchema = z.object({
 export type SearchItem = z.infer<typeof SearchItemSchema>
 
 /**
+ * Why one `search.*` run answered a sentence instead of rows.
+ *
+ * A door that refuses is not an empty index: `0 results` is a claim about a
+ * read that happened, and stating it for a tracker that would not list, a
+ * target nothing resolved or a mode this wire cannot filter was the false
+ * answer [#3891](https://github.com/smithersai/smithers/issues/3891)
+ * reported. So the run's own verdict rides on the card.
+ *
+ * It is a presented sentence and a fault, not a refusal's raw words. The
+ * seam that made the verdict is the only place that knows whose problem it
+ * is, so it says: `user` when the request has to change (a qualifier this
+ * wire cannot serve, a flow this host does not have, no target chosen), and
+ * `dependency` when something Smithers reads from refused the read — a
+ * sentence `refusalLine` (@smthrs/rpc/RefusalCopy) has already classified.
+ * Carrying the fault is what lets the card present the verdict through the
+ * one failure presenter (`FailureNotice`) rather than paint error-shaped
+ * text of its own, and what keeps a server's raw message, a stack or a
+ * customer's payload off this card by construction: only these two fields
+ * cross the wire.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export const SearchRefusalSchema = z.object({
+  /** The one sentence the person reads, in product words. Never an error message. */
+  sentence: z.string(),
+  /** Whose problem it is, in the one taxonomy every refusal uses. */
+  fault: z.enum(PLUE_FAULTS)
+})
+/**
+ * The decoded search refusal.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type SearchRefusal = z.infer<typeof SearchRefusalSchema>
+
+/**
  * Validates card values at the RPC boundary.
  *
  * @since 1.0.0
@@ -2159,7 +2197,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       args: z.string().optional(),
       items: z.array(SearchItemSchema),
       /*
-       * The sentence the run's own door answered with, when it answered no
+       * The verdict the run's own door answered with, when it answered no
        * rows because it refused — a tracker that would not list, a target the
        * seam could not resolve, a mode whose index this wire does not carry.
        * The card states it in place of "No results", which is a claim about
@@ -2167,7 +2205,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
        * not an earlier run's answer left standing
        * ([#3891](https://github.com/smithersai/smithers/issues/3891)).
        */
-      refusal: z.string().optional()
+      refusal: SearchRefusalSchema.optional()
     })
   }),
   /*

@@ -10,7 +10,9 @@ import { dynamicFlowAction } from "../flows/FlowAction"
  * dispatched through onRunCommand with its args. The card is re-runnable:
  * its header runs the same flow with the same query again.
  */
-import type { SearchAction, SearchItem, SearchItemKind } from "@smthrs/rpc/Cards"
+import type { SearchAction, SearchItem, SearchItemKind, SearchRefusal } from "@smthrs/rpc/Cards"
+import type { UserFailure } from "@smthrs/rpc/UserFailure"
+import { describedFailure, FailureNotice } from "../FailureNotice"
 import { Button } from "@smthrs/ui"
 import { GROUP_LABELS, KIND_ORDER } from "../flows/SearchQuery"
 import type { Card } from "../state/AppState"
@@ -35,6 +37,24 @@ const searchItemTestId: Readonly<Record<SearchItemKind, (ref: string) => string>
   "secret-name": (ref) => `search-item-secret-name-${ref}`,
   person: (ref) => `search-item-person-${ref}`
 }
+
+/*
+ * A run that refused states the door's own verdict, through the one failure
+ * presenter every other card uses — never as text this card paints itself.
+ * The card has nothing to add to the sentence and nothing to hide behind it:
+ * the verdict crossed the wire already presented and already classified
+ * (@smthrs/rpc/Cards SearchRefusalSchema), so the fault is the seam's and the
+ * sentence is the whole of what is known. `detail` is that same sentence,
+ * which is how `FailureNotice` is told there is no raw text to collapse —
+ * because there is none: a server's message, a stack and a request's payload
+ * stop at the seam that classified them.
+ *
+ * Retrying is the header's "Search again", which runs the same flow with the
+ * same args and is offered whether the run listed rows or refused; the notice
+ * therefore carries no door of its own rather than a second one beside it.
+ */
+const refusedFailure = (refusal: SearchRefusal): UserFailure =>
+  describedFailure("search.refused", { fault: refusal.fault, sentence: refusal.sentence, actions: [] }, refusal.sentence)
 
 export interface SearchResultsCardActions {
   readonly onRunCommand: RunDynamicCommand
@@ -114,7 +134,8 @@ export const SearchResultsCardBody = ({ card, onRunCommand }: { readonly card: S
         </Button>
       </div>
       {payload.refusal !== undefined ?
-        <p className="world-card-empty" data-testid="search-results-refusal">{payload.refusal}</p> :
+        <FailureNotice role="status" className="world-card-empty" data-testid="search-results-refusal"
+          failure={refusedFailure(payload.refusal)} /> :
         groups.length === 0 ?
         <p className="world-card-empty" data-testid="search-results-empty">No results for {payload.query === "" ? "an empty query" : payload.query}.</p> :
         groups.map((group) => (

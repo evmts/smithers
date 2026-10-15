@@ -27,7 +27,7 @@
  *
  * The proposed Librarian ask mode refuses in place; it has no registered flow.
  */
-import type { SearchAction, SearchItem } from "@smthrs/rpc/Cards"
+import type { SearchAction, SearchItem, SearchRefusal } from "@smthrs/rpc/Cards"
 import type { MythicalStack } from "@smthrs/rpc/Mythical"
 import type { SearchArgs } from "../../flows/entries/search"
 import type { CommandOrigin } from "../../flows/CommandOrigin"
@@ -95,6 +95,30 @@ export const SEARCH_DEFAULT_LIMIT = 50
 
 export const ASK_PROPOSED = "ask: is proposed with the Librarian and not built; wiki: and history: search the same indexes."
 export const NO_FOCUSED_FILE = "No file card is open to jump into; read one with files.read first."
+
+/*
+ * The two verdicts this seam can make, each a presented sentence and the
+ * fault that goes with it (@smthrs/rpc/Cards SearchRefusalSchema). The seam
+ * is the only place that knows which: the sentence alone cannot be classified
+ * downstream without reading its prose, which is what the failure registry
+ * exists to stop.
+ *
+ * `askAnother` is this seam's OWN verdict about the request — a qualifier
+ * this wire carries no field for, a flow this host does not have, a line with
+ * no file card, a mode that is proposed and not built, no target chosen.
+ * Running it again unchanged refuses identically, so it is `user` by the
+ * registry's definition and offers no retry of its own.
+ *
+ * `readRefused` is somebody else's: a read this search depends on answered a
+ * sentence. Those sentences are already presented by their own seam (through
+ * `refusalLine`, @smthrs/rpc/RefusalCopy), so the raw text, status and body
+ * they were classified from stay there and never reach a card.
+ */
+const askAnother = (sentence: string): SearchRefusal => ({ sentence, fault: "user" })
+const readRefused = (sentence: string): SearchRefusal => ({ sentence, fault: "dependency" })
+
+/** A mode answered a verdict rather than rows. Named so the two readers narrow the same way. */
+const isRefusal = <T>(answer: ReadonlyArray<T> | SearchRefusal): answer is SearchRefusal => !Array.isArray(answer)
 
 const joinPath = (directory: string, name: string): string => (directory === "" ? name : `${directory}/${name}`)
 
@@ -315,9 +339,9 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
   }
 
   /** `:120`: the line in the newest file card, as one item whose open flow re-reads the file at that line. */
-  const lineItems = (parsed: ParsedQuery): ReadonlyArray<Fact> | string => {
+  const lineItems = (parsed: ParsedQuery): ReadonlyArray<Fact> | SearchRefusal => {
     const file = [...cards()].reverse().find((card): card is Extract<Card, { kind: "file" }> => card.kind === "file")
-    if (file === undefined || file.payload.localRepoId !== undefined || parsed.line === undefined) return NO_FOCUSED_FILE
+    if (file === undefined || file.payload.localRepoId !== undefined || parsed.line === undefined) return askAnother(NO_FOCUSED_FILE)
     const at = `${parsed.line.line}${parsed.line.column === undefined ? "" : `:${parsed.line.column}`}`
     const path = file.payload.address ?? file.payload.path
     return [{
@@ -330,7 +354,7 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
   }
 
   /** The items of one mode, or the refusal that stands in for an index that does not exist; `live` is a flow door's fresh read, else the held cards. */
-  const itemsOf = (mode: PaletteMode, parsed: Pick<ParsedQuery, "qualifiers">, live: LiveIndexes = {}): ReadonlyArray<Fact> | string => {
+  const itemsOf = (mode: PaletteMode, parsed: Pick<ParsedQuery, "qualifiers">, live: LiveIndexes = {}): ReadonlyArray<Fact> | SearchRefusal => {
     const qualifier = (key: string): string | undefined =>
       parsed.qualifiers.find((row) => row.key === key && !row.negated)?.value
     const history = live.history ?? heldHistory()
@@ -350,18 +374,18 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
         return runItems(qualifier("status"))
       case "changes": {
         const state = qualifier("state")
-        return state === undefined ? changeItems() : "Changes on this wire carry no state to filter with; search without state:."
+        return state === undefined ? changeItems() : askAnother("Changes on this wire carry no state to filter with; search without state:.")
       }
       case "issues": {
         const label = qualifier("label")
-        if (label !== undefined) return "Issue rows on this wire carry no labels to filter with; search without label:."
+        if (label !== undefined) return askAnother("Issue rows on this wire carry no labels to filter with; search without label:.")
         const items = issueItems(qualifier("is"), live.issues)
-        return items.length === 0 && live.issuesRefusal !== undefined ? live.issuesRefusal : items
+        return items.length === 0 && live.issuesRefusal !== undefined ? readRefused(live.issuesRefusal) : items
       }
       case "secrets":
         return secretItems(secrets)
       case "ask":
-        return ASK_PROPOSED
+        return askAnother(ASK_PROPOSED)
       case "line":
       case "help":
         return []
@@ -404,7 +428,7 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
     }
     if (snapshot.signedOut && HIDDEN_SIGNED_OUT.has(parsed.mode)) return { parsed, groups: [], flow }
     const items = parsed.mode === "line" ? lineItems(parsed) : itemsOf(parsed.mode, parsed)
-    if (typeof items === "string") return { parsed, groups: [], flow, refusal: items }
+    if (isRefusal(items)) return { parsed, groups: [], flow, refusal: items.sentence }
     const groups = rank(scoped(items, snapshot.signedOut), parsed.query)
     /*
      * An empty bare query is the mock's opening: the pills and the recents,
@@ -436,12 +460,12 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
    * the repository's tracker is asked for issues, because a search that only
    * read the screen answers for a door it never opened (#3891).
    */
-  const liveIndexes = async (mode: PaletteMode, args: SearchArgs): Promise<LiveIndexes | string> => {
+  const liveIndexes = async (mode: PaletteMode, args: SearchArgs): Promise<LiveIndexes | SearchRefusal> => {
     const readIssues = deps.readIssues
     if (mode === "issues" && readIssues === undefined) return {}
     if (mode !== "secrets" && mode !== "history" && mode !== "issues") return {}
     const target = resolveTargetRepo(ctx.store, args.repo)
-    if ("error" in target) return target.error
+    if ("error" in target) return askAnother(target.error)
     const { repo } = target
     if (mode === "issues" && readIssues !== undefined) {
       /* Every state: `is:` narrows the index afterwards, so one read serves both. */
@@ -450,12 +474,12 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
     }
     if (mode === "secrets") {
       const secrets = await readRepositorySecrets(ctx, repo)
-      if (typeof secrets === "string") return secrets
+      if (typeof secrets === "string") return readRefused(secrets)
       return { secrets: [{ repo, secrets }] }
     }
     if (deps.readStack === undefined) return { history: [] }
     const stack = await deps.readStack(repo)
-    return typeof stack === "string" ? stack : { history: [stack] }
+    return typeof stack === "string" ? readRefused(stack) : { history: [stack] }
   }
 
   const search: SearchSeam["search"] = async (flow, mode, args, origin) => {
@@ -477,7 +501,7 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
      * sentence instead, so on production a stale `0 results` read as this
      * run's answer and "Search again" could not clear it.
      */
-    const present = (items: ReadonlyArray<SearchItem>, refusal?: string): void => {
+    const present = (items: ReadonlyArray<SearchItem>, refusal?: SearchRefusal): void => {
       const id = `search-${flow}`
       const existing = ctx.store.collections.cards.get(id)
       const card: Card = {
@@ -504,17 +528,17 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
      * that screen is no longer the one that asked, and this module's rule is
      * that sign-out and account changes RETIRE pending work (`captureCloudOwner`).
      */
-    const refuse = (sentence: string): string => {
+    const refuse = (refusal: SearchRefusal): string => {
       const standing = ctx.store.collections.cards.get(`search-${flow}`) !== undefined
-      if (standing && renders && current() && latest.get(flow) === request) present([], sentence)
-      return sentence
+      if (standing && renders && current() && latest.get(flow) === request) present([], refusal)
+      return refusal.sentence
     }
     if (!current()) return SIGN_OUT_REFUSAL
     const live = await liveIndexes(mode, args)
     if (!current()) return SIGN_OUT_REFUSAL
-    if (typeof live === "string") return refuse(live)
+    if ("sentence" in live) return refuse(live)
     const base = itemsOf(mode, parsed, live)
-    if (typeof base === "string") return refuse(base)
+    if (isRefusal(base)) return refuse(base)
     const { entries, state } = deps.registry()
     const snapshot = state()
     const kinds = args.kinds === undefined ? undefined : new Set(args.kinds)

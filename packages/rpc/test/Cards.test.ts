@@ -83,6 +83,45 @@ describe("Browser typed refusal persistence", () => {
   })
 })
 
+/*
+ * The search card's refusal is a RETYPED field, not a new one: it arrived as a
+ * bare sentence and now carries the verdict that classified it. Retyping is
+ * the one card change a stored row cannot replay, so the pin is here rather
+ * than in prose — the two shapes must not both be accepted, or a sentence
+ * whose fault nobody recorded would reach the failure presenter and be given
+ * one it never had. The old shape is retired by the projector upgrade that
+ * ships with it.
+ */
+describe("the search card's refusal carries its verdict, not a bare sentence", () => {
+  const search = {
+    ...base,
+    kind: "search-results",
+    payload: { query: "bounded", flow: "search.issues", items: [] }
+  }
+  const withRefusal = (refusal: unknown) => CardSchema.safeParse({ ...search, payload: { ...search.payload, refusal } })
+
+  test("a classified refusal round trips with both fields", () => {
+    const original = { ...search, payload: { ...search.payload, refusal: { sentence: "The tracker would not list.", fault: "dependency" } } }
+    expect(CardSchema.parse(JSON.parse(JSON.stringify(original)))).toEqual(original)
+  })
+
+  test("a bare sentence, a missing fault and an invented fault are all refused", () => {
+    for (
+      const refusal of [
+        "The tracker would not list.",
+        { sentence: "The tracker would not list." },
+        { sentence: "The tracker would not list.", fault: "invented" },
+        { fault: "dependency" },
+        { sentence: 12, fault: "dependency" }
+      ]
+    ) expect(withRefusal(refusal).success).toBe(false)
+  })
+
+  test("a card that refused nothing carries no refusal at all", () => {
+    expect(CardSchema.parse(JSON.parse(JSON.stringify(search)))).toEqual(search)
+  })
+})
+
 describe("persisted card decoding units", () => {
   test.each([
     { name: "null", value: null },
@@ -2473,7 +2512,7 @@ const FIXTURES: Record<
         subtitle: "Librarian",
         actions: [{ flow: "wiki.open", args: "wiki/bounded-reads.md", label: "Open", role: "open" }]
       }],
-      refusal: "The wiki index could not be read (503)."
+      refusal: { sentence: "The wiki index could not be read. Something Smithers reads from refused.", fault: "dependency" }
     }
   },
   "wiki-links": {
@@ -2850,11 +2889,18 @@ describe("every persisted card kind", () => {
     })
   })
 
-  test.each([null, undefined, 1, "card", []])("a non-card value %j fails", (value) => {
+  /*
+   * The rows are one-element TUPLES, not bare values: a bare `undefined` row
+   * leaves the single-parameter callback looking like a `done`-style one to
+   * the runner, so both of these timed out after five seconds instead of
+   * asserting anything — two rows of invalid-input coverage that had silently
+   * stopped running. A tuple row is spread, so the parameter is the value.
+   */
+  test.each([[null], [undefined], [1], ["card"], [[]]])("a non-card value %j fails", (value) => {
     expect(CardSchema.safeParse(value).success).toBe(false)
   })
 
-  test.each([undefined, null, 3, {}, []])("a non-string kind %j fails", (kind) => {
+  test.each([[undefined], [null], [3], [{}], [[]]])("a non-string kind %j fails", (kind) => {
     expect(CardSchema.safeParse({ ...base, kind, payload: {} }).success).toBe(false)
   })
 

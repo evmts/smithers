@@ -103,6 +103,47 @@ describe("the search-results card", () => {
     expect(host.querySelector("[data-testid='search-results-empty']")?.textContent).toBe("No results for redact.")
     expect(host.querySelectorAll("[data-role]").length).toBe(0)
   })
+
+  /*
+   * A run that refused is the one case where the card has words it did not
+   * write. #3891's bug was a stale "0 results" standing as the refusal's own
+   * count; the fix must not trade it for the opposite failure, a card that
+   * paints whatever text arrived on it. So two things are checked together:
+   * the useful cause IS on the screen in place of the count, and it is the
+   * seam's presented sentence and nothing else — no detail control, no code,
+   * and the fault the seam named rather than one the card guessed.
+   */
+  const refused = (refusal: ResultsCard["payload"]["refusal"]): ResultsCard =>
+    ({ ...fixture, payload: { ...fixture.payload, items: [], ...(refusal === undefined ? {} : { refusal }) } })
+
+  test("a refusal replaces the count with its own truthful cause, carrying the seam's fault", () => {
+    const sentence = "The tracker would not list this repository's issues. Something Smithers reads from refused."
+    const { host } = render(refused({ sentence, fault: "dependency" }))
+    const notice = host.querySelector("[data-testid='search-results-refusal']")
+    expect(notice?.textContent).toBe(sentence)
+    expect(notice?.getAttribute("data-fault")).toBe("dependency")
+    /* The count is a claim about a read that happened; a refusal performed none. */
+    expect(host.querySelector("[data-testid='search-results-query']")?.textContent).toBe("/search redact")
+    /* "No results" is the other false answer, and it must not appear beside the sentence. */
+    expect(host.querySelector("[data-testid='search-results-empty']")).toBeNull()
+    /* Retry stays available: the header runs the same flow with the same query. */
+    expect(host.querySelector<HTMLButtonElement>("[data-testid='search-results-rerun']")?.dataset["flow"]).toBe("search")
+  })
+
+  test("a refusal paints the sentence alone: no raw detail control, and a user fault says the request must change", () => {
+    const sentence = "Changes on this wire carry no state to filter with; search without state:."
+    const { host } = render(refused({ sentence, fault: "user" }))
+    const notice = host.querySelector("[data-testid='search-results-refusal']")
+    expect(notice?.getAttribute("data-fault")).toBe("user")
+    /*
+     * FailureNotice collapses raw text behind a Details when it has any. This
+     * card has none to collapse — a server's message, a stack and a request's
+     * payload stop at the seam that classified them — so no Details is drawn.
+     * A Details here would mean raw text reached the card.
+     */
+    expect(notice?.querySelector("details")).toBeNull()
+    expect(notice?.textContent).toBe(sentence)
+  })
 })
 
 const savedFile = (ref: string, args: string, flow = "file"): ResultsCard => ({

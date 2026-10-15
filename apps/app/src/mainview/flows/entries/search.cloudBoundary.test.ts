@@ -90,7 +90,7 @@ const hosted = async (routes: Record<string, unknown>, bootstrap: AppBootstrap =
 const searchCard = (store: Awaited<ReturnType<typeof hosted>>["store"]) => {
   const card = store.collections.cards.get("search-search.issues")
   return card?.kind === "search-results"
-    ? { items: card.payload.items.map(item => item.ref), refusal: card.payload.refusal }
+    ? { items: card.payload.items.map(item => item.ref), refusal: card.payload.refusal?.sentence, fault: card.payload.refusal?.fault }
     : undefined
 }
 
@@ -112,6 +112,8 @@ test("a search whose tracker refuses retires the rows the previous search left o
     expect(card?.items).toEqual([])
     expect(card?.refusal ?? "").not.toBe("")
     expect(card?.refusal ?? "").not.toContain("No results")
+    /* Whose problem it was travels with the sentence: the tracker refused, not the person's query. */
+    expect(card?.fault).toBe("dependency")
   } finally { await h.controller.dispose() }
 })
 
