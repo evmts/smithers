@@ -354,9 +354,17 @@ export const make = (options: MakeOptions): MergeQueueFlow => {
       ): Node.Node<unknown, unknown, any> => {
         const entry = queue[index]
         if (entry === undefined) return fold(carried)
+        // `bindPlanned` alone would let the next landing start while this one
+        // runs, since the next never reads this one's reference. Waiting on
+        // the reference through `andThen` holds the rest of the queue until
+        // this landing settles, and keeps it from starting at all after a
+        // failure under `halt`.
         return Node.bindPlanned(
           landing(entry),
-          Node.capture({ ...captures, landed: entry.id }, (value) => walk(index + 1, { ...carried, [entry.id]: value }))
+          Node.capture(
+            { ...captures, landed: entry.id },
+            (value) => Node.andThen(Node.succeed(value), walk(index + 1, { ...carried, [entry.id]: value }))
+          )
         )
       }
       return walk(0, {})

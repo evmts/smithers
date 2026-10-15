@@ -14,7 +14,7 @@
  * 0.x's static-row tasks (`convoy-create`, `sling-*`, `mr-create-*`, `convoy-close`) are writes to the beads tracker, so they are declared actions a host implements.
  * 0.x worked each polecat in its own `<Worktree>`; worktree and sandbox placement are the host's (see `40-sandbox-placement.ts`), and the prompt still names the branch.
  * 0.x rendered each fan-out once its input landed; here the dispatch and the refinery are `.child()` flows whose bodies plan over the real beads and results.
- * 0.x's `<MergeQueue maxConcurrency={1}>` is a chain where each landing waits for the one before and a failed merge fails the run; `MergeQueue.make` at concurrency 1 starts the next landing early, so it is not used.
+ * 0.x's `<MergeQueue maxConcurrency={1}>` is a chain where each landing waits for the one before and a failed merge fails the run; the refinery declares that chain directly.
  * 0.x's `<Loop until={allPolecatsDone}>` could never end once the polecats had finished, so it always ran its bound; the plan unrolls exactly that bound.
  * 0.x's mayor prompt ended by spelling out its JSON reply; `AgentAction` renders and enforces the output schema instead.
  * 0.x gave the agents `read`, `write`, `edit`, `bash` and `grep` tools; in 1.0 tools are the host's registered flows (see `25-agent-tools-in-sandbox.ts`).

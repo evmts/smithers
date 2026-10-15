@@ -14,7 +14,7 @@
  * 0.x's `<Subflow>` is `.child()`; a fan-out over a list known only at run time (lifetime votes, probe fixes) is a nested child.
  * 0.x's `<HumanTask>` and `<ApprovalGate onDeny="fail">` are `HumanTask` questions in this flow; a gate asks a yes/no confirm, and a "no" fails the run.
  * 0.x's `<Loop until>` with `ctx.latest` is a planned recursion that hands each round the previous round's result.
- * 0.x's `<MergeQueue maxConcurrency={1}>` is a chain where each merge waits for the one before (see `gastown.ts` for why not `MergeQueue.make`).
+ * 0.x's `<MergeQueue maxConcurrency={1}>` is a chain where each merge waits for the one before; the per-area merges declare that chain directly.
  * 0.x's `<Signal>` for external CI is a `WaitFor` named `test-swarm:external-ci`; its 24-hour `onTimeout="fail"` is the host's to enforce.
  * 0.x's `<Worktree>` per test area is host placement (see `40-sandbox-placement.ts`); the prompt still names the area branch.
  * 0.x's step cache, memory recall/remember and scorers are not ported; 0.x's dry-run agents are the test script.

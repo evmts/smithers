@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { Flow, Graph } from "@smthrs/flow"
+import { Action, Flow, Graph } from "@smthrs/flow"
 import * as Node from "@smthrs/plan/Node"
 import * as Planned from "@smthrs/plan/Planned"
 import * as Cause from "effect/Cause"
@@ -11,6 +11,7 @@ import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as MergeQueue from "../src/MergeQueue.ts"
 import { PatternError } from "../src/PatternError.ts"
+import { execute } from "./Execute.ts"
 import { callsTo, payloadOf } from "./Graphs.ts"
 
 const land = Flow.make("land", {
@@ -34,6 +35,38 @@ const invalidPriorities = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE
 // it as the node's first key-material input.
 const literals = (graph: Graph.Graph): ReadonlyArray<Record<string, unknown>> =>
   callsTo(graph, "land").map((node) => payloadOf(node))
+
+// When a declared landing's steps run is a RUN-time fact, so each step is an
+// action: it appends `<phase> <id>` when it really starts, then holds long
+// enough that an unserialized queue would start the next member meanwhile.
+const step = Action.make("mergeQueue/step", {
+  payload: Schema.Struct({ id: Schema.String, phase: Schema.String }),
+  success: Schema.Unknown,
+  error: Schema.String,
+  tier: "irreversible"
+})
+
+const stepLayer = (trace: Array<string>, failing: ReadonlySet<string> = new Set()) =>
+  step.toLayer(({ id, phase }) =>
+    Effect.gen(function*() {
+      trace.push(`${phase} ${id}`)
+      yield* Effect.sleep("10 millis")
+      if (failing.has(`${phase} ${id}`)) return yield* Effect.fail(`${id} conflicts`)
+      return id
+    })
+  )
+
+// A landing of two steps, like a merge request and the refinery that lands it.
+const staged = Flow.make("staged", {
+  payload: { id: Schema.Unknown, position: Schema.Unknown, input: Schema.Unknown },
+  success: Schema.Unknown,
+  error: Schema.Unknown,
+  body: ({ id }) =>
+    Node.andThen(step.call({ id: id as string, phase: "first" }), step.call({ id: id as string, phase: "last" }))
+})
+
+const settle = (running: Promise<unknown>): Promise<Result.Result<unknown, unknown>> =>
+  running.then((value) => Result.succeed(value), (failure: unknown) => Result.fail(failure))
 
 describe("MergeQueue", () => {
   it("sorts members by descending priority then declaration order", () => {
@@ -475,6 +508,91 @@ describe("MergeQueue", () => {
       }
       expect(ran).toBe(0)
     }))
+
+  it("starts a declared member at concurrency 1 only after the one before it has finished", async () => {
+    for (const failurePolicy of ["halt", "quarantine"] as const) {
+      const trace: Array<string> = []
+      const result = await execute(
+        MergeQueue.make({
+          members: [{ id: "a", flow: staged }, { id: "b", flow: staged }, { id: "c", flow: staged }],
+          failurePolicy
+        }),
+        { input: "main" },
+        `mergequeue-serial-${failurePolicy}`,
+        stepLayer(trace)
+      )
+
+      expect(trace).toEqual(["first a", "last a", "first b", "last b", "first c", "last c"])
+      expect(result).toEqual({
+        landed: [{ id: "a", output: "a" }, { id: "b", output: "b" }, { id: "c", output: "c" }],
+        quarantined: [],
+        order: ["a", "b", "c"]
+      })
+    }
+  })
+
+  it("never starts a declared member behind one that fails under halt", async () => {
+    const trace: Array<string> = []
+    const settled = await settle(
+      execute(
+        MergeQueue.make({ members: [{ id: "a", flow: staged }, { id: "b", flow: staged }], failurePolicy: "halt" }),
+        { input: "main" },
+        "mergequeue-serial-halt-failure",
+        stepLayer(trace, new Set(["last a"]))
+      )
+    )
+
+    expect(Result.isFailure(settled)).toBe(true)
+    expect(trace).toEqual(["first a", "last a"])
+  })
+
+  it("starts a declared member behind a quarantined one only after the quarantine settles", async () => {
+    const trace: Array<string> = []
+    const result = await execute(
+      MergeQueue.make({ members: [{ id: "a", flow: staged }, { id: "b", flow: staged }], failurePolicy: "quarantine" }),
+      { input: "main" },
+      "mergequeue-serial-quarantine-failure",
+      stepLayer(trace, new Set(["last a"]))
+    )
+
+    expect(trace).toEqual(["first a", "last a", "first b", "last b"])
+    expect(result).toEqual({
+      landed: [{ id: "b", output: "b" }],
+      quarantined: [{ id: "a", error: "a conflicts" }],
+      order: ["a", "b"]
+    })
+  })
+
+  it("starts a declared batch only after every member of the batch before it has settled", async () => {
+    const trace: Array<string> = []
+    const result = await execute(
+      MergeQueue.make({
+        members: ["a", "b", "c", "d", "e"].map((id) => ({ id, flow: staged })),
+        concurrency: 2,
+        failurePolicy: "quarantine"
+      }),
+      { input: "main" },
+      "mergequeue-batched-order",
+      stepLayer(trace, new Set(["last b"]))
+    )
+
+    const at = (entry: string) => trace.indexOf(entry)
+    expect([...trace].sort()).toEqual(
+      ["a", "b", "c", "d", "e"].flatMap((id) => [`first ${id}`, `last ${id}`]).sort()
+    )
+    // A batch's members overlap one another, never a member of another batch.
+    expect(at("first b")).toBeLessThan(at("last a"))
+    for (const [earlier, later] of [[["a", "b"], ["c", "d"]], [["c", "d"], ["e"]]] as const) {
+      for (const before of earlier) {
+        for (const after of later) expect(at(`last ${before}`)).toBeLessThan(at(`first ${after}`))
+      }
+    }
+    expect(result).toEqual({
+      landed: ["a", "c", "d", "e"].map((id) => ({ id, output: id })),
+      quarantined: [{ id: "b", error: "b conflicts" }],
+      order: ["a", "b", "c", "d", "e"]
+    })
+  })
 
   it("gives a halting queue and a quarantining queue different topology and identity", () => {
     const material = (failurePolicy: MergeQueue.FailurePolicy) =>
