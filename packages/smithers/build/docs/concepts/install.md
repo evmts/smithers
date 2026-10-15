@@ -272,6 +272,16 @@ ignoring case. The build CLI reads the list from the host variable
 `SMITHERS_NPM_CREDENTIAL_HOSTS`, a comma-separated list such as
 `registry.npmjs.org,npm.pkg.github.com`, and never from the checkout.
 
+pnpm also expands `${NAME}` in `pnpm-workspace.yaml` setting values and keys,
+after decoding YAML escapes. A `userAgent: "${GITHUB_TOKEN}"` beside a
+`registry:` the same file names would send a forwarded variable, or a proxy
+password from the bootstrap variables, to a server the repository chose. A
+`pnpm-workspace.yaml` whose text can decode to `${` is therefore refused with
+`unsafe_configuration` before any child starts: a literal `${`, an escaped
+dollar such as `\x24` or `\u0024`, or a `$` joined to `{` across whitespace,
+an escaped line break, or an escaped brace. Comments are not exempt. A lone
+`$`, as in an `overrides` version reference like `react: $react`, is accepted.
+
 While a credential is forwarded, the repository cannot choose how it travels.
 `.npmrc` settings `proxy`, `https-proxy`, `http-proxy`, `noproxy`,
 `strict-ssl`, `ca`, `cafile`, `cert`, and `local-address`, and any `registry`
@@ -290,8 +300,8 @@ may use `http://` for an allowed host, which sends the credential in cleartext.
 A `pnpm-workspace.yaml` `cafile` is not pinned.
 
 Only pnpm 10 and earlier expand `${NAME}` in a project `.npmrc`. pnpm 11
-ignores project-level placeholders with a warning, so forwarding a variable has
-no effect there. The repository's target attributes choose the pnpm version.
+ignores project-level placeholders with a warning, so the forwarded variable
+reaches the child environment but not the registry request. The repository's target attributes choose the pnpm version.
 
 Literal auth tokens, passwords, client keys (`key`), one-time passwords (`otp`),
 key files, and certificate files in `.npmrc` are refused. Placeholders that

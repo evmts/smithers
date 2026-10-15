@@ -895,6 +895,22 @@ interface ManagerEnvironment {
   readonly transportArgs: ReadonlyArray<string>
 }
 
+/**
+ * Whether `pnpm-workspace.yaml` text can decode to a `${NAME}` placeholder.
+ *
+ * pnpm decodes the YAML first and then expands `${NAME}` in every string
+ * setting and key, so a request header such as `userAgent` can carry a
+ * forwarded variable to a `registry` the same file names. The check reads the
+ * raw text, so it refuses every spelling a double-quoted scalar can decode to
+ * `${`: a literal `${`, an escaped dollar (`\x24`, `\u0024`, `\U00000024`), a
+ * dollar before an escaped brace, and a dollar joined to `{` across an escaped
+ * line break or whitespace. A lone `$`, as in an override's `$react` version
+ * reference, passes.
+ */
+const workspacePlaceholder = (text: string): boolean =>
+  /\\(?:x24|u0024|U00000024)/i.test(text) ||
+  /\$(?:\s|\\\s)*(?:\{|\\(?:x7b|u007b|U0000007b))/i.test(text)
+
 /** Selects only bootstrap, network, and project-declared credential variables. */
 const managerEnvironment = (
   fs: FileSystem.FileSystem,
@@ -912,6 +928,24 @@ const managerEnvironment = (
         : ""
     )
     yield* refuseUnsafeNpmrc(path, npmrc)
+    const workspacePath = `${options.projectRoot}/pnpm-workspace.yaml`
+    const workspacePresent = yield* fs.exists(workspacePath).pipe(
+      Effect.mapError((cause) => unreadable("manifest_unreadable", workspacePath, cause))
+    )
+    if (
+      workspacePresent &&
+      workspacePlaceholder(
+        yield* boundedText(fs, "manifest_unreadable", options.projectRoot, workspacePath, maximumLockfileBytes)
+      )
+    ) {
+      return yield* Effect.fail(
+        new PackageManagerError({
+          code: "unsafe_configuration",
+          message: `${workspacePath} contains an environment placeholder; pnpm expands it from the forwarded ` +
+            "environment into settings the repository chooses, so placeholders belong only in .npmrc credentials"
+        })
+      )
+    }
     // After the refusal every live placeholder is the whole value of a
     // registry-scoped credential setting, so these are the only names a
     // project `.npmrc` can pull from the host. The setting's host is the

