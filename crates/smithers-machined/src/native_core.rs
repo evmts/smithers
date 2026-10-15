@@ -938,6 +938,7 @@ pub(crate) mod tests {
             b"base\n"
         );
     }
+    #[cfg(target_os = "linux")]
     #[test]
     fn moved_off_agent_dispatch_refuses_before_metadata_debounce_and_disk_effects() {
         // The kernel's UID/cgroup admission is a separate reference-host check.
@@ -1122,44 +1123,48 @@ pub(crate) mod tests {
             // Exercise the same authenticated coding-batch dispatcher used by
             // write/edit/apply_patch, after the failed Return. A readiness
             // refusal must never release the moved-off hold or reach disk.
-            let files =
-                crate::files::Files::fixture(std::fs::File::open(&root).unwrap(), core.clone());
-            let admitted = cx.epoch.load(std::sync::atomic::Ordering::SeqCst);
-            for _ in 0..2 {
-                let response = crate::local::batch_response(
-                    &mut cx,
-                    &files,
-                    74,
-                    vec![crate::hooks::FileWrite {
-                        path: "notes.txt".into(),
-                        // Literal SHA-256 of "keep after move\n", computed independently.
-                        base: crate::hooks::Base::Digest([
-                            224, 145, 228, 145, 113, 137, 199, 136, 59, 135, 112, 223, 146, 163,
-                            25, 118, 123, 117, 204, 213, 81, 56, 218, 245, 119, 224, 208, 221, 102,
-                            251, 2, 249,
-                        ]),
-                        content: Some(b"must never land".to_vec()),
-                    }],
-                    Actor::Principal(vec![7; 16]),
-                    admitted,
-                );
-                let value = conn::fields("response", &response.payload[1..]).unwrap()[1].1;
-                assert_eq!(value[0], 255, "{missing}");
-                assert_eq!(
-                    conn::fields("error", &value[1..]).unwrap()[0].1,
-                    if missing == "binding" { [2] } else { [10] },
-                    "{missing}"
-                );
-                assert_eq!(core.native.current().unwrap().0, before, "{missing}");
-                assert_eq!(core.git.acknowledged().unwrap(), Some(item), "{missing}");
-                assert_eq!(
-                    fs::read(root.join("notes.txt")).unwrap(),
-                    b"keep after move\n",
-                    "{missing}"
-                );
+            #[cfg(target_os = "linux")]
+            {
+                let files =
+                    crate::files::Files::fixture(std::fs::File::open(&root).unwrap(), core.clone());
+                let admitted = cx.epoch.load(std::sync::atomic::Ordering::SeqCst);
+                for _ in 0..2 {
+                    let response = crate::local::batch_response(
+                        &mut cx,
+                        &files,
+                        74,
+                        vec![crate::hooks::FileWrite {
+                            path: "notes.txt".into(),
+                            // Literal SHA-256 of "keep after move\n", computed independently.
+                            base: crate::hooks::Base::Digest([
+                                224, 145, 228, 145, 113, 137, 199, 136, 59, 135, 112, 223, 146,
+                                163, 25, 118, 123, 117, 204, 213, 81, 56, 218, 245, 119, 224, 208,
+                                221, 102, 251, 2, 249,
+                            ]),
+                            content: Some(b"must never land".to_vec()),
+                        }],
+                        Actor::Principal(vec![7; 16]),
+                        admitted,
+                    );
+                    let value = conn::fields("response", &response.payload[1..]).unwrap()[1].1;
+                    assert_eq!(value[0], 255, "{missing}");
+                    assert_eq!(
+                        conn::fields("error", &value[1..]).unwrap()[0].1,
+                        if missing == "binding" { [2] } else { [10] },
+                        "{missing}"
+                    );
+                    assert_eq!(core.native.current().unwrap().0, before, "{missing}");
+                    assert_eq!(core.git.acknowledged().unwrap(), Some(item), "{missing}");
+                    assert_eq!(
+                        fs::read(root.join("notes.txt")).unwrap(),
+                        b"keep after move\n",
+                        "{missing}"
+                    );
+                }
             }
         }
     }
+    #[cfg(target_os = "linux")]
     #[test]
     fn moved_off_return_refuses_lost_broker_transport_after_composition() {
         use rustix::net::{
@@ -1318,6 +1323,7 @@ pub(crate) mod tests {
     }
     // Run only from the install/main-built test bundle in an isolated guest.
     // The broker stays root; the Return dispatcher and repository stay machined.
+    #[cfg(target_os = "linux")]
     #[test]
     #[ignore = "requires isolated guest, installed admission and fixed cgroup-v2 parent"]
     #[allow(non_snake_case)]
@@ -1444,6 +1450,7 @@ pub(crate) mod tests {
         );
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     #[ignore = "child of TestReturnToItemBrokerValidatesFreezeInputs, never run separately"]
     fn return_broker_guest_child() {

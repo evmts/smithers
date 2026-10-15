@@ -1068,6 +1068,12 @@ pub(crate) mod tests {
         use std::os::unix::ffi::OsStrExt as _;
         let (_dir, repo) = fixture();
         let base = repo.current().unwrap().0;
+        // APFS refuses non-UTF-8 names before the repository can see them.
+        // Exercise distinct Unicode names there; Linux keeps the arbitrary-byte
+        // regression required by the installed guest's filesystem contract.
+        #[cfg(target_os = "macos")]
+        let names = [b"raw-\xce\xbb.ts".as_slice(), b"raw-\xce\xbc.ts"];
+        #[cfg(not(target_os = "macos"))]
         let names = [b"raw-\xff.ts".as_slice(), b"raw-\xfe.ts"];
         for (n, name) in names.iter().enumerate() {
             let path = repo.root.join(std::ffi::OsStr::from_bytes(name));
