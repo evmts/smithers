@@ -45,12 +45,18 @@ export interface HostDiagnosticFields {
  * @since 1.0.0-rc.0
  */
 export interface HostDiagnostics {
-  /** Records one instant of a turn's progress. */
+  /**
+   * Records one instant of a turn's progress. A field that is not a finite
+   * number, a boolean or a short token, or that uses a key the record itself
+   * owns (`diagnostic`, `turnId`, `event`, `phase`, `atMillis`,
+   * `droppedFields`), is left out and counted in `droppedFields`.
+   */
   readonly record: (event: string, phase: string, fields?: HostDiagnosticFields) => void
   /**
    * Marks an operation started and returns its completion. Until that is
    * called the operation is reported as pending at a fixed interval, so a
-   * request that never returns is visible before it is abandoned.
+   * request that never returns is visible before it is abandoned. Calls to
+   * the completion after the first are ignored.
    */
   readonly begin: (event: string, fields?: HostDiagnosticFields) => (outcome?: HostDiagnosticFields) => void
 }
@@ -83,6 +89,10 @@ export interface HostDiagnosticOptions {
 // credential cannot reach a log through this path by mistake.
 const SAFE_TOKEN = /^[A-Za-z0-9_.:-]{1,64}$/
 
+// The keys every record owns. A field with one of these names is refused, so
+// no caller can forge the marker or move a record to another turn or event.
+const RESERVED_KEYS = new Set(["diagnostic", "turnId", "event", "phase", "atMillis", "droppedFields"])
+
 /** Keeps the fields a record may carry and counts the ones it refused. */
 const safeFields = (fields: HostDiagnosticFields): {
   readonly kept: Record<string, HostDiagnosticValue>
@@ -94,7 +104,7 @@ const safeFields = (fields: HostDiagnosticFields): {
     const safe = typeof value === "boolean" ||
       (typeof value === "number" && Number.isFinite(value)) ||
       (typeof value === "string" && SAFE_TOKEN.test(value))
-    if (safe && SAFE_TOKEN.test(key)) kept[key] = value
+    if (safe && SAFE_TOKEN.test(key) && !RESERVED_KEYS.has(key)) kept[key] = value
     else dropped += 1
   }
   return { kept, dropped }
@@ -117,7 +127,7 @@ export const createHostDiagnostics = (options: HostDiagnosticOptions = {}): Host
   const detailLimit = options.detailLimit ?? 8
   const slowMillis = options.slowMillis ?? 2_000
   const limit = options.limit ?? 2_000
-  const turn = options.turnId === undefined ? {} : safeFields({ turnId: options.turnId }).kept
+  const turn = options.turnId !== undefined && SAFE_TOKEN.test(options.turnId) ? { turnId: options.turnId } : {}
   const started = clock()
   const counts = new Map<string, number>()
   let written = 0
@@ -163,7 +173,12 @@ export const createHostDiagnostics = (options: HostDiagnosticOptions = {}): Host
       }, pendingMillis)
       // A pending report never keeps the guest process alive past its turn.
       timer.unref()
+      let settled = false
       return (outcome = {}) => {
+        // A completion reached twice, say from a finalizer and a handler,
+        // still ends the operation once.
+        if (settled) return
+        settled = true
         clearInterval(timer)
         const elapsed = Math.round(clock() - openedAt)
         if (detailed || elapsed >= slowMillis) emit(event, "end", { ...fields, ...outcome, elapsedMillis: elapsed })
