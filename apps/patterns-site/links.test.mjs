@@ -9,7 +9,7 @@
  * so a dead link there would never show up as a 404.
  */
 import assert from "node:assert/strict"
-import { existsSync, readFileSync, statSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url"
 const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, "../..")
 const apiPages = join(root, "apps/site/src/content/docs/docs/reference/api")
+const useCases = join(root, "examples/src/use-cases")
 
 /** The catalog block `site/index.html` renders from. */
 export const readCatalog = (html) => {
@@ -91,4 +92,11 @@ test("every url source is an API reference page with that heading", () => {
       assert.ok(headingIds(readFileSync(mdx, "utf8")).has(page[2]), `${card}: ${url} has no heading #${page[2]}`)
     }
   }
+})
+
+test("every use-case example has a card that links it", () => {
+  const linked = new Set(sources.flatMap((source) => (source.path ? [source.path.split("#")[0]] : [])))
+  const examples = existsSync(useCases) ? readdirSync(useCases).filter((name) => name.endsWith(".ts") && name !== "kit.ts") : []
+  const missing = examples.map((name) => `examples/src/use-cases/${name}`).filter((path) => !linked.has(path))
+  assert.deepEqual(missing, [])
 })

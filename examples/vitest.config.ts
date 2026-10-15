@@ -12,7 +12,16 @@ export default defineConfig({
     // Every provider key an example reads is masked, not only today's live one.
     env: process.env.SMITHERS_LIVE_EXAMPLES === "1"
       ? {}
-      : { OPENAI_API_KEY: "", GEMINI_API_KEY: "", SMITHERS_EXAMPLE_API_KEY: "" },
+      : {
+        OPENAI_API_KEY: "",
+        GEMINI_API_KEY: "",
+        SMITHERS_EXAMPLE_API_KEY: "",
+        KIMI_API_KEY: "",
+        X_API_KEY: "",
+        X_API_SECRET: "",
+        X_ACCESS_TOKEN: "",
+        X_ACCESS_SECRET: ""
+      },
     // Examples drive real SQLite files and real engine restarts, so they are
     // slower than a unit suite. The budget stays finite so a hang still fails.
     testTimeout: 60_000,
