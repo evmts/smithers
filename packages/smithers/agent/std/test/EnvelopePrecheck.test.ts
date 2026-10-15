@@ -134,7 +134,15 @@ const refused: ReadonlyArray<Case> = [
     // after it is `rm`, not `2`.
     "2>/dev/null rm /work/target",
     "echo \"$(cat \"$(rm /work/target)\")\"",
-    "cat <(rm /work/target)"
+    "cat <(rm /work/target)",
+    // A shell's `-c` argument and `eval`'s arguments are shell text, so the
+    // command inside them is classified, not read as one quoted path.
+    "sh -c 'rm /work/target'",
+    "bash -lc \"rm /work/target\"",
+    "env FOO=1 /bin/zsh -ec 'cd /work/sub && rm /work/target'",
+    "eval 'rm /work/target'",
+    "eval rm /work/target",
+    "sh -c 'sh -c \"rm /work/target\"'"
   ].map((text): Case => ({
     name: `the delete in ${text}`,
     text,
@@ -204,6 +212,13 @@ const accepted: ReadonlyArray<Case> = [
     refusal: undefined
   },
   {
+    name: "a read inside a shell's -c argument",
+    text: `bash -c "cat /work/input | wc -l"`,
+    reads: ["/work/**"],
+    writes: [],
+    refusal: undefined
+  },
+  {
     name: "a read inside a command substitution",
     text: `echo "$(cat /work/input)"`,
     reads: ["/work/**"],
@@ -221,7 +236,8 @@ describe("nesting depth", () => {
   it.each([
     ["dollar substitutions", "$(".repeat(50_000) + "rm /work/a"],
     ["substitutions inside double quotes", "echo \"$(" + "\"$(".repeat(50_000)],
-    ["one level past the bound", "$(".repeat(33) + "rm /work/a"]
+    ["one level past the bound", "$(".repeat(33) + "rm /work/a"],
+    ["eval chains", "eval ".repeat(40) + "rm /work/a"]
   ])("refuses %s nested past the bound", (_, text) => {
     const refusal = outsideEnvelope(envelope, text, path)
     expect(refusal?.code).toBe("invalid_input")
@@ -410,6 +426,36 @@ describe("commandReferences", () => {
         { access: "write", value: "/work/b" },
         { access: "write", value: "/work/c" }
       ]
+    },
+    {
+      name: "reads a shell's positional arguments after its -c argument as paths",
+      command: "sh -c 'rm /work/a' sh /work/b",
+      expected: [{ access: "read", value: "/work/b" }, { access: "write", value: "/work/a" }]
+    },
+    {
+      name: "reads a shell script operand as a path, not as shell text",
+      command: "bash /work/script.sh --flag",
+      expected: [{ access: "read", value: "/work/script.sh" }]
+    },
+    {
+      name: "reads a shell's long option as no -c flag",
+      command: "bash --rcfile /work/rc -i",
+      expected: [{ access: "read", value: "/work/rc" }]
+    },
+    {
+      name: "reads a -c flag followed by a redirection as no command",
+      command: "sh -c >/work/out",
+      expected: [{ access: "write", value: "/work/out" }]
+    },
+    {
+      name: "keeps a redirection after eval's arguments out of the evaluated text",
+      command: "eval rm /work/a > /work/b",
+      expected: [{ access: "write", value: "/work/b" }, { access: "write", value: "/work/a" }]
+    },
+    {
+      name: "reads a -c flag with no argument as no command",
+      command: "sh -c",
+      expected: []
     },
     {
       name: "reads no path from a command that names none",

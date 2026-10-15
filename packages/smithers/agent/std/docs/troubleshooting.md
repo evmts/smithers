@@ -149,6 +149,14 @@ not covered by its own `reads` or `writes`. The message names the resolved path.
 check is lexical and fail-closed: it reads the tokens in the command line, not
 what the process will actually touch.
 
+## invalid_input: a command nested deeper than 32 levels
+
+**What happened.** A hermetic `bash` call nested command substitutions, quotes,
+shell `-c` arguments, or `eval` calls more than 32 levels deep. The pre-check
+refuses text it cannot read in bounded time rather than run it unchecked.
+
+**What to change.** Flatten the command, or use `mode: "unhermetic"`.
+
 ## invalid_input: a hermetic call that names a container
 
 **What happened.** `mode: "hermetic"` together with `container`. A container has

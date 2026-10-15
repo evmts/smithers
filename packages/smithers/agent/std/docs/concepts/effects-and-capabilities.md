@@ -112,7 +112,9 @@ handler checks the command against them before spawning anything. Read what the
 check does, because the name promises more than it delivers.
 
 The check is **lexical**. It tokenizes the command line, keeping quoted spans
-whole, treats each physical line as its own command, classifies each path token
+whole, treats each physical line as its own command, reads the body of a
+command substitution, the argument of a shell's `-c` flag, and the arguments of
+`eval` as commands of their own, classifies each path token
 as a read or a write from the command that governs it, resolves both the token
 and every declaration to a canonical absolute path, and refuses the call with
 `outside_declared_reads` or `outside_declared_writes` when one falls outside.

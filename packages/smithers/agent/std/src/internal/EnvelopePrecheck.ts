@@ -115,6 +115,9 @@ const reservedWords = new Set([
 const writeCommands = new Set(["chmod", "chown", "mkdir", "rm", "rmdir", "tee", "touch", "truncate", "unlink"])
 const destinationCommands = new Set(["cp", "install", "mv"])
 const prefixWrappers = new Set(["env", "nice", "time", "sudo", "nohup", "xargs", "command", "exec"])
+// A shell runs the argument of its `-c` flag as shell text of its own.
+const shells = new Set(["ash", "bash", "dash", "fish", "ksh", "mksh", "sh", "zsh"])
+const commandFlag = /^-[A-Za-z]*c[A-Za-z]*$/
 
 /**
  * One lexical unit of shell text: an operator, or a word with its quotes
@@ -310,7 +313,11 @@ const isPathToken = (path: Path.Path, token: string): boolean =>
   /^[A-Za-z]:[\\/]/.test(token) ||
   token.includes("/")
 
-const segmentReferences = (path: Path.Path, tokens: ReadonlyArray<Token>): ReadonlyArray<PathReference> => {
+const segmentReferences = (
+  path: Path.Path,
+  tokens: ReadonlyArray<Token>,
+  nesting: number
+): ReadonlyArray<PathReference> => {
   // The word after a redirection operator is its target, never the command.
   const isTarget = (index: number): boolean => index > 0 && isRedirection(tokens[index - 1]!)
   const isWord = (index: number): boolean => !tokens[index]!.operator && !isTarget(index)
@@ -334,10 +341,23 @@ const segmentReferences = (path: Path.Path, tokens: ReadonlyArray<Token>): Reado
   }
 
   const command = commandIndex === -1 ? "" : name(commandIndex)
+  // Shell text handed to `eval` or to a shell's `-c` flag is a command, not a
+  // path: reading `sh -c 'rm /work/target'` as one quoted word let a delete
+  // pass as a read of a file named `rm /work/target`.
+  const scripts = new Set<number>()
+  if (command === "eval") {
+    for (let index = commandIndex + 1; index < tokens.length; index++) if (isWord(index)) scripts.add(index)
+  } else if (shells.has(command)) {
+    const flag = tokens.findIndex((token, index) =>
+      index > commandIndex && isWord(index) && commandFlag.test(token.text)
+    )
+    if (flag !== -1 && flag + 1 < tokens.length && isWord(flag + 1)) scripts.add(flag + 1)
+  }
   const candidates: Array<{ readonly index: number; readonly value: string }> = []
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index]!
-    if (index === commandIndex || token.operator || (!isTarget(index) && token.text.startsWith("-"))) continue
+    if (index === commandIndex || scripts.has(index) || token.operator) continue
+    if (!isTarget(index) && token.text.startsWith("-")) continue
     if (isTarget(index) && textRedirections.has(tokens[index - 1]!.text)) continue
     const value = pathValue(token.text)
     if (value !== "" && isPathToken(path, value)) candidates.push({ index, value })
@@ -347,7 +367,9 @@ const segmentReferences = (path: Path.Path, tokens: ReadonlyArray<Token>): Reado
     ? candidates.filter(({ index }) => !isTarget(index)).at(-1)?.index
     : undefined
 
-  return candidates.map(({ index, value }) => {
+  const script = [...scripts].map((index) => tokens[index]!.text).join(" ")
+  const nested = script === "" ? [] : references(path, script, nesting + 1)
+  const named = candidates.map(({ index, value }): PathReference => {
     const access: Access = isTarget(index)
       ? writeRedirections.has(tokens[index - 1]!.text) ? "write" : "read"
       : writeCommands.has(command) || destinationIndex === index
@@ -355,21 +377,23 @@ const segmentReferences = (path: Path.Path, tokens: ReadonlyArray<Token>): Reado
       : "read"
     return { access, value }
   })
+  return [...named, ...nested]
 }
 
 const references = (path: Path.Path, command: string, nesting: number): ReadonlyArray<PathReference> => {
+  if (nesting > maxNesting) throw tooDeep()
   const { substitutions, tokens } = lex(command, nesting)
   const found: Array<PathReference> = []
   let segment: Array<Token> = []
   for (const token of tokens) {
     if (token.operator && commandSeparators.has(token.text)) {
-      found.push(...segmentReferences(path, segment))
+      found.push(...segmentReferences(path, segment, nesting))
       segment = []
     } else {
       segment.push(token)
     }
   }
-  found.push(...segmentReferences(path, segment))
+  found.push(...segmentReferences(path, segment, nesting))
   // A substitution runs its body as a command; its paths count like any other.
   for (const body of substitutions) found.push(...references(path, body, nesting + 1))
   return found
