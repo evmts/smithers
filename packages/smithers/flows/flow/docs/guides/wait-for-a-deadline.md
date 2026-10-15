@@ -62,11 +62,11 @@ milliseconds, and exactly one of them. `Sleep.SleepRequestInvalid` is the typed
 refusal, so a body can recover from it with `Node.catch` like any other declared
 failure:
 
-| Code                 | What was wrong                                                                                                                          |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `missing_deadline`   | The payload named neither `millis` nor `until`.                                                                                         |
-| `ambiguous_deadline` | It named both, which are the same fact stated twice.                                                                                    |
-| `invalid_deadline`   | It named a number that is not a length of time: a non-finite or negative `millis`, a non-finite `until`, or an addition that overflows. |
+| Code                 | What was wrong                                                                                                                                                                                        |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `missing_deadline`   | The payload named neither `millis` nor `until`.                                                                                                                                                       |
+| `ambiguous_deadline` | It named both, which are the same fact stated twice.                                                                                                                                                  |
+| `invalid_deadline`   | It named a number that is not a length of time: a non-finite or negative `millis`, a non-finite `until`, an addition that overflows, or a deadline after epoch millisecond `Number.MAX_SAFE_INTEGER`. |
 
 Two behaviors are worth knowing before you write the body:
 

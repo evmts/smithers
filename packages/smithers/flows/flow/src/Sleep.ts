@@ -103,6 +103,30 @@ export const action: Action.Declared<
 })
 
 /**
+ * The latest deadline a sleep can arm, in epoch milliseconds.
+ *
+ * A durable store records `wakeAt` and a clock's due time as a non-negative
+ * safe integer. A finite deadline past this one passed every other check and
+ * then failed the park write, so it is refused with the payload's other
+ * invalid deadlines instead.
+ *
+ * @private
+ */
+const latestDeadline = Number.MAX_SAFE_INTEGER
+
+/**
+ * The refusal for a deadline later than {@link latestDeadline}.
+ *
+ * @private
+ */
+const tooLate = (stated: string): SleepRequestInvalid =>
+  new SleepRequestInvalid({
+    code: "invalid_deadline",
+    message: `${tag} was called with ${stated}, which ends after ${latestDeadline}, the latest epoch ` +
+      "millisecond a durable timer records."
+  })
+
+/**
  * The absolute deadline a payload names, in epoch milliseconds.
  *
  * DECIDED: a payload names EXACTLY one of `millis`
@@ -153,12 +177,13 @@ const deadlineOf = (
         })
       )
     }
-    return Effect.succeed(deadline)
+    return Math.ceil(deadline) > latestDeadline
+      ? Effect.fail(tooLate(`millis ${payload.millis} at current time ${now}`))
+      : Effect.succeed(deadline)
   }
   if (payload.until !== undefined) {
-    return Number.isFinite(payload.until)
-      ? Effect.succeed(payload.until)
-      : Effect.fail(
+    if (!Number.isFinite(payload.until)) {
+      return Effect.fail(
         new SleepRequestInvalid({
           code: "invalid_deadline",
           message:
@@ -166,6 +191,10 @@ const deadlineOf = (
             "the sleep must end at a real point in time."
         })
       )
+    }
+    return Math.ceil(payload.until) > latestDeadline
+      ? Effect.fail(tooLate(`until ${payload.until}`))
+      : Effect.succeed(payload.until)
   }
   return Effect.fail(
     new SleepRequestInvalid({

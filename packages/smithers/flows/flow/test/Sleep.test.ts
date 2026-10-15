@@ -396,6 +396,38 @@ describe("Sleep refusals", () => {
       }
     }))
 
+  effect(
+    "refuses a deadline later than the last whole millisecond a durable store records",
+    () =>
+      Effect.gen(function*() {
+        // A durable store keeps `wakeAt` and a clock's due time as a safe
+        // integer, so a finite deadline past it must be refused here, before
+        // the park write, rather than fail there.
+        for (const payload of [{ until: 2 ** 53 }, { until: 1e300 }, { millis: 2 ** 53 }]) {
+          expect(yield* refusal(Sleep.action.call(payload))).toMatchObject({
+            error: {
+              _tag: "@smthrs/flow/SleepRequestInvalid",
+              code: "invalid_deadline",
+              message: expect.stringContaining(String(Number.MAX_SAFE_INTEGER))
+            }
+          })
+        }
+      })
+  )
+
+  effect("arms a deadline at the last whole millisecond a durable store records", () =>
+    Effect.gen(function*() {
+      const instance = makeInstance(Host, "sleep-latest")
+      const result = yield* withCrypto(
+        Flow.intoResult(Interpreter.interpret(Sleep.action.call({ until: Number.MAX_SAFE_INTEGER }))).pipe(
+          Effect.provideService(FlowRuntime.FlowInstance, instance),
+          Effect.provide(wired())
+        )
+      )
+      expect(result._tag).toBe("Suspended")
+      expect(instance.waiting).toEqual({ reason: "timer", wakeAt: Number.MAX_SAFE_INTEGER })
+    }))
+
   effect("refuses a relative deadline whose addition overflows", () =>
     Effect.gen(function*() {
       const clock = yield* Clock.Clock

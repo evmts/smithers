@@ -219,11 +219,11 @@ Sleep.action.call({ millis: 60_000 })
 
 A payload names exactly one deadline: a relative `millis`, or an absolute `until` in epoch milliseconds. `SleepRequestInvalid` is the typed refusal, with three codes:
 
-| Code                 | Meaning                                                                                                                                |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `missing_deadline`   | the payload named neither `millis` nor `until`                                                                                         |
-| `ambiguous_deadline` | it named both, which are the same fact stated two ways                                                                                 |
-| `invalid_deadline`   | it named a number that is not a length of time: a non-finite or negative `millis`, a non-finite `until`, or an addition that overflows |
+| Code                 | Meaning                                                                                                                                                                                              |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `missing_deadline`   | the payload named neither `millis` nor `until`                                                                                                                                                       |
+| `ambiguous_deadline` | it named both, which are the same fact stated two ways                                                                                                                                               |
+| `invalid_deadline`   | it named a number that is not a length of time: a non-finite or negative `millis`, a non-finite `until`, an addition that overflows, or a deadline after epoch millisecond `Number.MAX_SAFE_INTEGER` |
 
 Two waits of the same length are two waits: each call is its own node with its own identity, so `sleep` followed by `sleep` waits twice. A deadline that has already passed settles the node instead of parking it, because a run that resumes after its own deadline has to make progress.
 
