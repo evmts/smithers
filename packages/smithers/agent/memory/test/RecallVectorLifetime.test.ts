@@ -1,5 +1,5 @@
 import { DurableWriter } from "@smthrs/database/DurableWriter"
-import { Cause, Effect, Exit, Option, Scheduler, Stream } from "effect"
+import { Cause, type Context, Effect, Exit, type Layer, ManagedRuntime, Option, Scheduler, Stream } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import type { SqlError } from "effect/sql/SqlError"
 import { expect, it } from "vitest"
@@ -7,10 +7,14 @@ import * as MemoryError from "../src/MemoryError.ts"
 import * as Semantic from "../src/RecallSemantic.ts"
 import * as TestMemory from "../src/test/TestMemory.ts"
 
+type Services = Layer.Success<typeof TestMemory.layerWithDatabase>
+
 // Exercise every cooperative release point of one real SQL vector read. The
 // client adapter owns a copy of returned bytes: transferring a PostgreSQL
 // driver's shared receive buffer would invalidate unrelated driver state.
-const scanWithRelease = async (releaseAfter?: number) => {
+// Every release point reads through the same database and connection pool, so
+// a transfer that corrupted driver state would also break the reads after it.
+const scanWithRelease = async (services: Context.Context<Services>, releaseAfter?: number) => {
   const state = {
     armed: false,
     steps: 0,
@@ -91,7 +95,7 @@ const scanWithRelease = async (releaseAfter?: number) => {
       state.armed = false
       const recovered = yield* Stream.runCollect(source.scan(["flow-one"], "test"))
       return { exit, recovered }
-    }).pipe(Effect.provide(TestMemory.layerWithDatabase)),
+    }).pipe(Effect.provide(services)),
     { scheduler }
   )
   return { ...result, state }
@@ -112,8 +116,8 @@ const expectOriginal = (pages: ReadonlyArray<ReadonlyArray<Semantic.Vector>>) =>
   expect(Array.from(pages[0]![0]!.vector)).toEqual([1, 2])
 }
 
-it("preserves typed failures and recovery when SQL vector buffers are released at cooperative boundaries", async () => {
-  const baseline = await scanWithRelease()
+const explore = async (services: Context.Context<Services>) => {
+  const baseline = await scanWithRelease(services)
   expect(baseline.state.captures).toBe(1)
   expect(baseline.state.transfers).toBe(0)
   expect(Exit.isSuccess(baseline.exit)).toBe(true)
@@ -128,7 +132,7 @@ it("preserves typed failures and recovery when SQL vector buffers are released a
   let failedDecode = 0
   let copied = 0
   for (let releaseAfter = 1; releaseAfter <= baseline.state.steps; releaseAfter++) {
-    const { exit, recovered, state } = await scanWithRelease(releaseAfter)
+    const { exit, recovered, state } = await scanWithRelease(services, releaseAfter)
     expect(state.captures).toBe(1)
     expect(state.transferFailure).toBeUndefined()
     expect(state.transfers).toBe(1)
@@ -156,4 +160,15 @@ it("preserves typed failures and recovery when SQL vector buffers are released a
   expect(invalidLength).toBeGreaterThan(0)
   expect(failedDecode).toBeGreaterThan(0)
   expect(copied).toBeGreaterThan(0)
+}
+
+it("preserves typed failures and recovery when SQL vector buffers are released at cooperative boundaries", async () => {
+  // One database for the whole exploration: building a PostgreSQL schema and
+  // running the migrations once per release point dominated this test.
+  const runtime = ManagedRuntime.make(TestMemory.layerWithDatabase)
+  try {
+    await explore(await runtime.context())
+  } finally {
+    await runtime.dispose()
+  }
 })

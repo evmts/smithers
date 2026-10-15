@@ -1,4 +1,9 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
+import {
+  BuildAndCheckTypeScriptPackage,
+  ReviewDocsAgainstCode,
+  ReviewJsdocAgainstCode,
+  ReviewTagsMigrationsAndKeys
+} from "@smthrs/repo-targets"
 /** Standard package targets plus package-owned documentation generation. */
 import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
@@ -9,6 +14,32 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   sources: Input.glob("{src,examples}/**/*.ts"),
   cwd: "packages/smithers/agent/memory"
 })
+
+/**
+ * The durable-identity review: service tags, the memory migrations, persisted
+ * row schemas, and durable keys, read out of this package's changed sources.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const reviewTagsMigrationsAndKeys = ReviewTagsMigrationsAndKeys({ cwd: "packages/smithers/agent/memory" })
+
+/**
+ * Changed public APIs against the README, the docs pages, and the site API
+ * reference page.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({ cwd: "packages/smithers/agent/memory" })
+
+/**
+ * Changed exports against their own JSDoc.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: "packages/smithers/agent/memory" })
 
 const adapterPostgresDatabase = Smithers.Docker.Service({
   image: "postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
@@ -158,6 +189,9 @@ export const Package = Smithers.Package({
     lint,
     test,
     postgresFts,
+    reviewTagsMigrationsAndKeys,
+    reviewDocsAgainstCode,
+    reviewJsdocAgainstCode,
     adapterPostgresDatabase,
     ...securityReview
   }
