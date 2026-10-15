@@ -239,40 +239,48 @@ func (host *Host) RunChatTurn(ctx context.Context, grant ports.ChatTurnGrant) (r
 // durable chat turn, but asks the host for a sealed NDJSON response directly.
 // The provider credential remains inside the launched host process.
 func (host *Host) RunModelStream(ctx context.Context, grant ports.ModelStreamGrant) (stream io.ReadCloser, runErr error) {
+	// The run id is minted before the first refusal so every branch below —
+	// including the two that refuse before the request is parsed — carries the
+	// same correlation id, and the adapter's own launch-step lines for the
+	// turn "model-stream-"+runID join the route's one diagnostic.
+	runID := uuid.NewString()
 	if grant.OwnerID <= 0 {
-		return nil, errors.New("model stream has no authenticated owner")
+		return nil, ports.RefuseModelStream(errors.New("model stream has no authenticated owner"), ports.ChatStageDispatch, ports.ReasonOwnerMissing, runID)
 	}
 	var request map[string]any
 	if err := json.Unmarshal(grant.Request, &request); err != nil || request == nil {
-		return nil, ports.ErrModelRequestInvalid
+		return nil, ports.RefuseModelStream(ports.ErrModelRequestInvalid, ports.ChatStageDispatch, ports.ReasonRequestInvalid, runID)
 	}
-	runID := uuid.NewString()
 	request["runId"] = runID
 	request["ownerId"] = grant.OwnerID
 	requestBody, err := json.Marshal(request)
 	if err != nil {
-		return nil, fmt.Errorf("encode model stream request: %w", err)
+		return nil, ports.RefuseModelStream(fmt.Errorf("encode model stream request: %w", err), ports.ChatStageDispatch, ports.ReasonRequestInvalid, runID)
 	}
 	binding, err := host.resolver.ResolveChatModel(ctx, grant.OwnerID, grant.RepositoryID, requestBody)
 	if err != nil {
-		return nil, fmt.Errorf("resolve owner model: %w", err)
+		reason := ports.ReasonDependencyUnavailable
+		if errors.Is(err, ports.ErrModelCredentialMissing) {
+			reason = ports.ReasonCredentialMissing
+		}
+		return nil, ports.RefuseModelStream(fmt.Errorf("resolve owner model: %w", err), ports.ChatStageModel, reason, runID)
 	}
 	// Managed credit is metered against a durable chat turn; a model stream
 	// has none, so it runs only on the owner's own credential.
 	if binding.Managed {
 		turn := grant.Metered
 		if turn == nil || turn.OwnerID != grant.OwnerID || turn.RepositoryID != grant.RepositoryID || turn.TurnID == "" || turn.Generation <= 0 || turn.Token == "" || !turn.ExpiresAt.After(time.Now()) {
-			return nil, fmt.Errorf("model stream has no authorized turn to meter managed credit: %w", ports.ErrModelCredentialMissing)
+			return nil, ports.RefuseModelStream(fmt.Errorf("model stream has no authorized turn to meter managed credit: %w", ports.ErrModelCredentialMissing), ports.ChatStageCredential, ports.ReasonCredentialMissing, runID)
 		}
 		binding.CredentialValue = turncredential.Mint(turn.TurnID, turn.Generation, turn.Token)
 	}
 	binding, stopFast, err := prepareFast(binding)
 	if err != nil {
-		return nil, err
+		return nil, ports.RefuseModelStream(err, ports.ChatStageModel, ports.ReasonDependencyUnavailable, runID)
 	}
 	defer stopFast()
 	if binding, requestBody, err = host.standIn.route(binding, requestBody); err != nil {
-		return nil, fmt.Errorf("resolve owner model: %w", err)
+		return nil, ports.RefuseModelStream(fmt.Errorf("resolve owner model: %w", err), ports.ChatStageModel, ports.ReasonDependencyUnavailable, runID)
 	}
 	chatGrant := ports.ChatTurnGrant{
 		TurnID: "model-stream-" + runID, OwnerID: grant.OwnerID, RepositoryID: grant.RepositoryID,
@@ -285,7 +293,16 @@ func (host *Host) RunModelStream(ctx context.Context, grant ports.ModelStreamGra
 	}
 	lease, err := host.launcher.LaunchChatHost(ctx, chatGrant, binding)
 	if err != nil {
-		return nil, fmt.Errorf("launch owner model host: %w", err)
+		// A launcher that named the branch which refused keeps its own
+		// answer. A launcher that named none is labelled sandbox_create: the
+		// stage it reports on entry, before any guest exists, and so the
+		// honest reading of "refused inside the launch". That label is
+		// coarse, not precise — a launcher whose guest started and never
+		// became healthy refused at a later boundary than sandbox_create, and
+		// only the launcher can say so, by naming it (ports.RefuseModelStream)
+		// or in its own step record, which the correlation id joins to this
+		// one.
+		return nil, ports.RefuseModelStream(fmt.Errorf("launch owner model host: %w", err), ports.ChatStageSandboxCreate, ports.ReasonDependencyUnavailable, runID)
 	}
 	defer func() {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
@@ -296,13 +313,13 @@ func (host *Host) RunModelStream(ctx context.Context, grant ports.ModelStreamGra
 	endpoint := strings.TrimRight(baseURL, "/") + "/v1/model/stream"
 	requestHTTP, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(requestBody))
 	if err != nil {
-		return nil, err
+		return nil, ports.RefuseModelStream(err, ports.ChatStageHostRequest, ports.ReasonRequestInvalid, runID)
 	}
 	requestHTTP.Header.Set("content-type", "application/json")
 	requestHTTP.Header.Set("authorization", "Bearer "+token)
 	response, err := client.Do(requestHTTP)
 	if err != nil {
-		return nil, fmt.Errorf("run model stream: %w", err)
+		return nil, ports.RefuseModelStream(fmt.Errorf("run model stream: %w", err), ports.ChatStageHostRequest, ports.ReasonHostUnreachable, runID)
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		defer response.Body.Close()
@@ -310,18 +327,18 @@ func (host *Host) RunModelStream(ctx context.Context, grant ports.ModelStreamGra
 		// The canonical host reserves 400 for request validation; provider
 		// and execution failures use 502.
 		if response.StatusCode == http.StatusBadRequest {
-			return nil, ports.ErrModelRequestInvalid
+			return nil, ports.RefuseModelStream(ports.ErrModelRequestInvalid, ports.ChatStageHostResponse, ports.ReasonRequestInvalid, runID)
 		}
-		return nil, fmt.Errorf("model stream host refused request with status %d", response.StatusCode)
+		return nil, ports.RefuseModelStream(fmt.Errorf("model stream host refused request with status %d", response.StatusCode), ports.ChatStageHostResponse, ports.ReasonHostRefused, runID)
 	}
 	// Read one extra byte so the cap cannot turn a truncated stream into success.
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxModelStreamBytes+1))
 	response.Body.Close()
 	if err != nil {
-		return nil, fmt.Errorf("read model stream: %w", err)
+		return nil, ports.RefuseModelStream(fmt.Errorf("read model stream: %w", err), ports.ChatStageHostBody, ports.ReasonResponseUnusable, runID)
 	}
 	if len(body) > maxModelStreamBytes {
-		return nil, errors.New("model stream response too large")
+		return nil, ports.RefuseModelStream(errors.New("model stream response too large"), ports.ChatStageHostBody, ports.ReasonResponseUnusable, runID)
 	}
 	return io.NopCloser(bytes.NewReader(body)), nil
 }

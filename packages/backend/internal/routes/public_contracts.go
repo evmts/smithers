@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"sort"
@@ -300,6 +301,18 @@ func (h *ModelStreamHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		} else if errors.Is(err, ports.ErrModelCredentialMissing) {
 			writeRecommendationError(w, http.StatusServiceUnavailable, "credential_missing")
 		} else {
+			// model_unavailable is one public code for every cause nobody
+			// mapped, so the answer alone cannot say which branch refused.
+			// The record does, in bounded software-chosen words: the stage,
+			// the reason, and the stream's correlation id, which joins this
+			// line to the deployment adapter's own launch-step lines for the
+			// same stream. The error's own text is never written here — it
+			// can carry provider output or store text — and the response
+			// body and status are unchanged.
+			stage, reason, correlation := ports.ModelStreamDiagnostic(err)
+			slog.WarnContext(r.Context(), "model stream refused",
+				"code", "model_unavailable", "stage", string(stage),
+				"reason", string(reason), "correlation_id", correlation)
 			writeRecommendationError(w, http.StatusBadGateway, "model_unavailable")
 		}
 		return
