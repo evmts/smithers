@@ -202,31 +202,36 @@ export interface DigestMemo {
  */
 export const makeDigestMemo = (): DigestMemo => {
   const entries = new Map<string, Deferred.Deferred<StepKey, Schema.SchemaError>>()
+  // Registering the entry and installing its exit handler run uninterruptibly,
+  // so an interrupt can never land between them and strand a Deferred that no
+  // fiber will complete. The wait and the computation stay interruptible.
   const digest: DigestMemo["digest"] = (from, path, compute) =>
-    Effect.suspend(() => {
-      const address = JSON.stringify([from, path])
-      const existing = entries.get(address)
-      if (existing !== undefined) {
-        return Effect.flatMap(Effect.exit(Deferred.await(existing)), (exit) => {
-          if (Exit.isSuccess(exit)) return Effect.succeed(exit.value)
-          // A waiter did not request the leader's cancellation. It competes to
-          // become the replacement leader instead of inheriting that interrupt.
-          return Cause.hasInterrupts(exit.cause) ? digest(from, path, compute) : Effect.failCause(exit.cause)
-        })
-      }
-      const pending = Deferred.makeUnsafe<StepKey, Schema.SchemaError>()
-      entries.set(address, pending)
-      return compute.pipe(
-        Effect.onExit((exit) =>
-          Effect.gen(function*() {
-            if (Exit.isFailure(exit) && entries.get(address) === pending) {
-              entries.delete(address)
-            }
-            yield* Deferred.done(pending, exit)
-          })
+    Effect.uninterruptibleMask((restore) =>
+      Effect.suspend(() => {
+        const address = JSON.stringify([from, path])
+        const existing = entries.get(address)
+        if (existing !== undefined) {
+          return restore(Effect.flatMap(Effect.exit(Deferred.await(existing)), (exit) => {
+            if (Exit.isSuccess(exit)) return Effect.succeed(exit.value)
+            // A waiter did not request the leader's cancellation. It competes to
+            // become the replacement leader instead of inheriting that interrupt.
+            return Cause.hasInterrupts(exit.cause) ? digest(from, path, compute) : Effect.failCause(exit.cause)
+          }))
+        }
+        const pending = Deferred.makeUnsafe<StepKey, Schema.SchemaError>()
+        entries.set(address, pending)
+        return restore(compute).pipe(
+          Effect.onExit((exit) =>
+            Effect.gen(function*() {
+              if (Exit.isFailure(exit) && entries.get(address) === pending) {
+                entries.delete(address)
+              }
+              yield* Deferred.done(pending, exit)
+            })
+          )
         )
-      )
-    })
+      })
+    )
   return { digest }
 }
 

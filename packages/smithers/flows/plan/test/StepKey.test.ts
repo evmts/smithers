@@ -5,6 +5,8 @@ import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
+import * as Scheduler from "effect/Scheduler"
 import * as Schema from "effect/Schema"
 import * as KeyMaterial from "../src/KeyMaterial.ts"
 import * as StepKey from "../src/StepKey.ts"
@@ -532,6 +534,32 @@ describe("StepKey.dispatchIdentity", () => {
         Effect.succeed("key1_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" as StepKey.StepKey)
       )
       expect(recovered).toBe("key1_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+    }).pipe(Effect.provide(NodeCrypto.layer)))
+
+  it.live("evicts a leader interrupted before its computation starts", () =>
+    Effect.gen(function*() {
+      // A small op budget makes the leader fiber yield at each step of
+      // memo.digest in turn, so one budget lands the interrupt between the
+      // memo registering the address and the computation starting.
+      const stuck: Array<number> = []
+      const key = "key1_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" as StepKey.StepKey
+      // Budget 1 is left out: at that budget the forked leader never observes
+      // its interrupt, which is a scheduler property, not a memo one.
+      for (let budget = 2; budget <= 32; budget++) {
+        const memo = StepKey.makeDigestMemo()
+        const leader = yield* Effect.forkChild(
+          memo.digest("upstream", ["value"], Effect.never).pipe(
+            Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)
+          )
+        )
+        yield* Effect.yieldNow
+        yield* Fiber.interrupt(leader)
+        const retried = yield* memo.digest("upstream", ["value"], Effect.succeed(key)).pipe(
+          Effect.timeoutOption("200 millis")
+        )
+        if (Option.isNone(retried)) stuck.push(budget)
+      }
+      expect(stuck).toEqual([])
     }).pipe(Effect.provide(NodeCrypto.layer)))
 
   it.effect("lets a parked waiter replace an interrupted digest leader", () =>
