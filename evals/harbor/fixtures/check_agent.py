@@ -833,13 +833,26 @@ def check_accounts() -> None:
     assert agent.verdict("fine", {"cause": None}, [{"type": "control.agent.model-retried", "payload": {"code": "rate_limited"}}]) == (None, None)
     assert agent.summarize([{"seq": 1, "at": 0, "type": "control.run.failed", "payload": {"cause": "transport: x\nstack"}}])["cause"] == "transport: x"
 
+    sys.path.insert(0, str(HERE.parent.parent.parent))
     try:
-        import codex_pool  # needs harbor
+        from evals.harbor import codex_pool  # needs harbor; a bare `import codex_pool` always failed (relative imports)
     except ImportError:
         pass
     else:
         assert codex_pool.usage_limit_in("thinking\nERROR: You've hit your usage limit. Visit …\n") == "ERROR: You've hit your usage limit. Visit …"
         assert codex_pool.usage_limit_in("all done, 3 files changed") is None
+        # A command's own output is the task's text, not the CLI's: xz --long-help prints "memory usage limit"
+        # (ProgramBench, nyc-02 2026-10-15 07:32Z), and reading it as a dry seat disabled codex-4 for 9.5 h.
+        item = json.dumps({"type": "item.completed", "item": {"id": "item_4", "type": "command_execution",
+                           "aggregated_output": "  -M, --memlimit=LIMIT\n      set memory usage limit for compression"}})
+        assert codex_pool.usage_limit_in(item + "\n") is None
+        assert codex_pool.usage_limit_in(json.dumps({"type": "item.completed", "item": {"type": "agent_message",
+                                                      "text": "The usage limit flag is -M."}})) is None
+        # The CLI's own failure events still count, in either shape it prints them.
+        error = json.dumps({"type": "error", "message": "You've hit your usage limit. Try again at 9:27 AM."})
+        assert codex_pool.usage_limit_in(item + "\n" + error + "\n") == error
+        failed = json.dumps({"type": "turn.failed", "error": {"message": "usage_limit_reached"}})
+        assert codex_pool.usage_limit_in(failed) == failed
 
 
 def check_plue_env() -> None:

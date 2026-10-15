@@ -64,11 +64,26 @@ from . import accounts, seal
 ACCOUNT_FILE = "codex-account.json"
 
 
+# `codex exec --json` events that carry the CLI's own failure. Every other event (`item.*` above all) carries
+# the task's text: a command's output or the model's words, which may say "usage limit" about anything.
+FAILURE_EVENTS = ("error", "turn.failed")
+
+
 def usage_limit_in(output: str) -> str | None:
-    """The usage-limit line in the CLI's output, if any."""
+    """The usage-limit line in the CLI's output, if any: a plain line, or a failure event. On
+    nyc-02 (2026-10-15) `xz --long-help` printed "memory usage limit" in an `item.completed`
+    event; reading it as a dry seat disabled the only pooled account for 9.5 hours."""
     for line in output.splitlines():
-        if accounts.mentions_usage_limit(line):
-            return line.strip()[:500]
+        text = line.strip()
+        if text.startswith("{"):
+            try:
+                event = json.loads(text)
+            except ValueError:
+                event = None
+            if isinstance(event, dict) and event.get("type") not in FAILURE_EVENTS:
+                continue
+        if accounts.mentions_usage_limit(text):
+            return text[:500]
     return None
 
 
