@@ -182,8 +182,15 @@ export const createModelProbe = (options: ModelProbeOptions): ModelProbe => {
     const started = performance.now()
     const failed = (failure: ModelTestFailure): ModelTestResult =>
       failedModelTest(failure, performance.now() - started, "local")
-    await options.credentials?.refresh()
-    const planned = planOnLocal(bindingOf(model), options.env, planOptions, options.credentials)
+    // A credential store that cannot be read is a dependency failure; its
+    // error may quote a secret, so it is dropped like a defect.
+    let planned: LocalPlanned
+    try {
+      await options.credentials?.refresh()
+      planned = planOnLocal(bindingOf(model), options.env, planOptions, options.credentials)
+    } catch {
+      return failed({ code: "unreachable" })
+    }
     if (!planned.ok) return failed(planned.failure)
     const request = input ?? modelCallDefault(planned.plan.kind)
     // A prompt for a decision model, or questions for a generation model, fit no wire the record speaks.

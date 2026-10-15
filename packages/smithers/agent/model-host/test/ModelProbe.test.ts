@@ -190,6 +190,39 @@ describe("stored credentials", () => {
     expect(credentials.refresh).toHaveBeenCalledOnce()
     expect(host.catalog().credentials).toEqual(rows)
   })
+
+  test("a credential store that throws answers unreachable instead of rejecting the Test", async () => {
+    const rows: ReadonlyArray<ModelCredentialListing> = [{
+      name: "LAB",
+      origins: [ORIGIN],
+      present: true,
+      managed: true
+    }]
+    const stores: ReadonlyArray<ModelCredentials> = [
+      {
+        refresh: async () => {
+          throw new Error(`keychain locked ${KEY}`)
+        },
+        list: () => rows,
+        read: () => Redacted.make(KEY)
+      },
+      {
+        refresh: async () => {},
+        list: () => rows,
+        read: () => {
+          throw new Error(`keychain locked ${KEY}`)
+        }
+      }
+    ]
+    for (const credentials of stores) {
+      const fetch = vi.fn(sse(chunk({ content: "ok" }), chunk({}, "stop"), "data: [DONE]\n\n"))
+      const host = createModelProbe({ credentials, env: {}, egress: true, fetch })
+      const result = await host.test(generator)
+      expect(result).toMatchObject({ ok: false, failure: { code: "unreachable" } })
+      expect(JSON.stringify(result)).not.toContain(KEY)
+      expect(fetch).not.toHaveBeenCalled()
+    }
+  })
 })
 
 test("ChatGPT Test uses subscription auth without inventing an output cap; explicit caps still refuse", async () => {
