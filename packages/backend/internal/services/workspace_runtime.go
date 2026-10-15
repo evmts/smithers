@@ -527,7 +527,12 @@ func (s *WorkspaceService) ensureRuntimeWorkspaceRunningLocked(ctx context.Conte
 		return row, err
 	}
 
-	machine, err := s.runtimeMachineIdentity(ctx, row.ID, observed)
+	// Under operationCtx, not the bare request context: a runtime that keeps
+	// its machines in a durable placement store resolves the name through the
+	// caller's own tenant-fenced row, and that read is admitted the same way
+	// every other door into this box is. Asked without the operation it can
+	// only refuse, and the start fails after the guest is already awake.
+	machine, err := s.runtimeMachineIdentity(operationCtx, row, observed)
 	if err != nil {
 		return row, err
 	}
@@ -593,15 +598,57 @@ func (s *WorkspaceService) reclaimDeletedStart(ctx context.Context, row db.Works
 // runtime does. The daemon's registry boots under that name, and session
 // admission and actor references compare workspaces.vm_id with it. A row
 // holding the workspace id instead refuses every agent and member session as
-// unauthorized. A runtime with no name of its own keeps the workspace id.
-func (s *WorkspaceService) runtimeMachineIdentity(ctx context.Context, id string, observed workspaceapi.Workspace) (string, error) {
+// unauthorized. A trusted-process runtime is its own machine, so it keeps the
+// workspace id.
+//
+// An isolated runtime's machine is a separate guest with an id of its own, and
+// for it the workspace id is not a harmless default: the runtime resolves every
+// later door — inspect, files, exec, stop, delete, capture — by reading
+// workspaces.vm_id back as its machine name, so writing the workspace id there
+// hands its placement store an id the machine provider never minted. The box
+// then answers "no such machine" on a guest that is still running and still
+// holding its CPU and disk, and no claim repairs the row, because a claim only
+// fills an empty vm_id. Production box 1d7209c4-1915-4433-bc2b-c15376574147
+// held exactly its own workspace id (36 chars, no provider prefix): its file
+// door answered 409 workspace_vm_missing for 18 h while the guest ran, DELETE
+// was refused as retained, and no supported route could reach or free it.
+// So an isolated runtime that names no machine keeps the placement its row
+// already holds and never publishes the workspace id over it; with no
+// placement to keep, the start refuses, because that write is the last moment
+// anything can stop the box from becoming unreachable.
+func (s *WorkspaceService) runtimeMachineIdentity(ctx context.Context, row db.Workspace, observed workspaceapi.Workspace) (string, error) {
 	machines, ok := s.runtime.(interface {
 		WorkspaceMachineIdentity(context.Context, string) (string, error)
 	})
 	if !ok {
+		if s.runtime.Isolation() == workspaceapi.IsolationSandboxed {
+			// Whoever placed this machine wrote its name here, and nothing in
+			// this deployment can report a better one; over a recorded
+			// placement the workspace id is the one answer that is certainly
+			// wrong. Keep what the row holds.
+			//
+			// A create takes its placement inside the runtime's own call, so
+			// the row this start read before it has no machine yet: read the
+			// row again rather than overwrite the name that call recorded.
+			if placement := strings.TrimSpace(row.VmID); placement != "" {
+				return placement, nil
+			}
+			current, err := s.q.GetWorkspace(ctx, row.ID)
+			if err != nil {
+				return "", runtimeOperationError("resolve workspace machine identity", err)
+			}
+			if placement := strings.TrimSpace(current.VmID); placement != "" {
+				return placement, nil
+			}
+			// No placement anywhere: nothing has named a machine, and the
+			// workspace id is this port's documented answer for a runtime
+			// that keeps no name of its own. A runtime whose provider mints
+			// its own ids refuses in its own port, where the id's shape is
+			// known; the common path does not guess on its behalf.
+		}
 		return observed.ID, nil
 	}
-	machine, err := machines.WorkspaceMachineIdentity(ctx, id)
+	machine, err := machines.WorkspaceMachineIdentity(ctx, row.ID)
 	if err != nil {
 		return "", runtimeOperationError("resolve workspace machine identity", err)
 	}

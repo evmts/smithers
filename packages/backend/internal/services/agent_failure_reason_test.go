@@ -400,7 +400,7 @@ func TestATurnWhoseSnapshotIsGoneSaysTheSnapshotIsGone(t *testing.T) {
 // fallback sentence and every turn on the branch promised a retry in a moment
 // that nothing can make work: the join is refused for as long as the row
 // exists, resume answers its own "create a fresh workspace" conflict, and
-// DELETE answers "branch is retained".
+// DELETE answers "machine is retained".
 //
 // Production 2026-10-14 15:44Z, API e8ffa8a3 / public 46187b04: repository
 // 112554's box 4cdaa484 read `failed`, stage `start_cleanup_complete`, and a

@@ -181,8 +181,10 @@ func (s *WorkspaceService) captureAndSleepExcluded(ctx context.Context, row db.W
 	// unavailable means sleep is composed here and this attempt did not get
 	// past one step: a dropped database connection, a capture that timed out,
 	// a stop the runtime did not confirm. Those come back on their own, so the
-	// verdict stays the scrubbed CodeServiceUnavailable and the stage reaches
-	// the operator log in Message and Details. Answering them with the
+	// verdict stays the scrubbed CodeServiceUnavailable, whose Message carries
+	// the stage into the operator log: writeRouteError logs Message and cause
+	// before it replaces the sentence with the status text, and the scrubbed
+	// body it writes keeps the code and drops Details. Answering them with the
 	// deployment verdict would tell an owner whose deployment can sleep boxes
 	// that it can never sleep one and that retrying is pointless — the
 	// receipt-28 lie with its polarity reversed.

@@ -192,8 +192,9 @@ func stageOf(refusal *pkgerrors.APIError) string {
 // after them — a dropped database connection, a capture that timed out, a stop
 // the runtime did not confirm. Those come back on their own.
 //
-// So the operational refusals keep the scrubbed CodeServiceUnavailable, with
-// the stage still in Message and Details for the operator log. Without the
+// So the operational refusals keep the scrubbed CodeServiceUnavailable, whose
+// Message still names the stage for the operator log (writeRouteError logs it
+// before the scrub replaces the sentence). Without the
 // split this returned branch_sleep_unavailable for a transient Postgres error
 // and the owner of a perfectly suspendable box was told to stop retrying and
 // file a report instead — receipt 28's lie with its polarity reversed.
