@@ -189,15 +189,19 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
   let forkIntents: Array<TimeTravelStore.ForkIntent & { readonly reclaimed: boolean }> = []
   /**
    * The id the next fork off `(parentRunId, frame.seq)` carries, minted as
-   * `SqlTimeTravelStore` mints it: the ordinal counts the edges already
+   * `SqlTimeTravelStore` mints it: the ordinal counts the fork edges already
    * hanging off that frame plus every reservation there, reclaimed or not, so
-   * a mint that never committed keeps its number. The jj lane is named after
-   * this id, so a different shape here would provision lanes SQL never does.
+   * a mint that never committed keeps its number. Only fork edges count: a
+   * truncation deletes attached child edges, and counting them let the
+   * ordinal fall back onto an id already handed out. The jj lane is named
+   * after this id, so a different shape here would provision lanes SQL never
+   * does.
    */
   const mintForkId = (parentRunId: string, frame: Frame): string => {
     const at = (candidate: { readonly parentRunId: string; readonly parentSeq: number }) =>
       candidate.parentRunId === parentRunId && candidate.parentSeq === frame.seq
-    const ordinal = edges.filter(at).length + forkIntents.filter(at).length + 1
+    const ordinal = edges.filter((edge) => edge.kind === "fork" && at(edge)).length +
+      forkIntents.filter(at).length + 1
     return `${parentRunId}:fork:${frame.seq}:${ordinal}`
   }
   const fail = (step: string): void => {

@@ -917,3 +917,27 @@ describe("MemoryTimeTravelStore append", () => {
     expect(memory.state().records).toHaveLength(2)
   })
 })
+
+/**
+ * `nextForkId` promises an id no earlier mint at that frame returned. A
+ * truncation deletes the attached child edges above its frame, so an ordinal
+ * that counted them went backwards and handed out a reserved id again.
+ */
+describe("TimeTravelStore fork id after truncation", () => {
+  it.effect("never re-mints an id once an attached child edge at the frame is truncated", () =>
+    Effect.gen(function*() {
+      const at = { ...frame, seq: 2 }
+      const exercise = (store: TimeTravelStore.Service) =>
+        Effect.gen(function*() {
+          const first = yield* store.nextForkId("run", at)
+          yield* store.archiveAndTruncate("run", frame, [], owner)
+          const second = yield* Effect.exit(store.nextForkId("run", at))
+          return { first, second: Exit.isSuccess(second) ? second.value : Cause.squash(second.cause) }
+        })
+      const memory = yield* exercise(memorySeed())
+      const sqlite = yield* withSql((store, sql) => seedSql(sql).pipe(Effect.andThen(exercise(store))))
+
+      expect(memory.second).not.toEqual(memory.first)
+      expect(sqlite).toEqual(memory)
+    }))
+})

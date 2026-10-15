@@ -538,9 +538,12 @@ export const make: Effect.Effect<
     /**
      * The id the next fork off this frame carries.
      *
-     * The ordinal counts the edges already hanging off `(parent, seq)` PLUS
-     * the intents still reserved there, so a frame forked twice numbers its
-     * children 1 and 2, and a mint that never committed keeps its number. It
+     * The ordinal counts the fork edges already hanging off `(parent, seq)`
+     * PLUS the intents reserved there, so a frame forked twice numbers its
+     * children 1 and 2, and a mint that never committed keeps its number.
+     * Neither set ever shrinks; the attached child edges a truncation deletes
+     * are not counted, because counting them let the ordinal fall back onto an
+     * id already handed out. It
      * used to count committed edges alone: a process that minted, provisioned
      * the child's jj workspace, and died before `createFork` retried under the
      * same id, and jj refused the lane name its own leftover held. `nextForkId`
@@ -554,7 +557,7 @@ export const make: Effect.Effect<
       sql<{ readonly count: number }>`
         SELECT (
           SELECT COUNT(*) FROM flows_time_travel_edges
-          WHERE parent_run_id = ${parentRunId} AND parent_seq = ${frame.seq}
+          WHERE parent_run_id = ${parentRunId} AND parent_seq = ${frame.seq} AND kind = 'fork'
         ) + (
           SELECT COUNT(*) FROM flows_time_travel_fork_intents
           WHERE parent_run_id = ${parentRunId} AND parent_seq = ${frame.seq}
