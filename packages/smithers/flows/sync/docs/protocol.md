@@ -85,8 +85,10 @@ Known branch commands must decode; existing defaults for absent `args` and
 the interval the server covered (`runId`, `fromSeq`, `toSeq`), and a terminal
 `Closed` frame when the server ends the subscription. `fromSeq` and `toSeq`
 describe the covered interval, not the sequences actually carried: dropped
-admissions leave legitimate holes. No frame carries a cursor; a client tracks
-its own, which is what `SyncClient` does.
+admissions leave legitimate holes, including at the end of the interval. No
+frame carries a cursor; a client tracks its own, which is what `SyncClient`
+does: it advances the run's cursor through `toSeq`, so the next frame may start
+at `toSeq + 1` even when the last carried entry was below it.
 
 The `Heartbeat` variant is RESERVED. No server emits one at 1.0.0-rc.0, so a
 client must not wait for one; it stays in the union so adding it later is not a
@@ -103,7 +105,9 @@ when an `apply` callback is supplied and delivery bookmarks otherwise.
 A subscription also ends when the credential that opened it expires, with
 `SyncError` code `unauthorized`. Authorization happens once, at open, so
 without that deadline a signed expiry could not revoke a stream that simply
-stayed connected.
+stayed connected. A catch-up `Sync.Read` is bounded the same way: it is refused
+with `unauthorized` when its credential has already expired, and again when its
+journal reads finish after that credential expired.
 
 `SyncClient.subscribe` wraps the RPC stream. It detects invalid cursor movement
 as `SyncGapError`, refuses a frame or a catch-up page that contradicts itself

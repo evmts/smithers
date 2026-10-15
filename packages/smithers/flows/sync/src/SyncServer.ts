@@ -611,7 +611,11 @@ const makeWith = (
         // `subscribe` has floored `credit` since it was written; this is the
         // same floor on the same kind of value.
         const limit = yield* requestCount("A read's limit", request.limit, SyncProtocol.maxReadLimit)
-        const { runIds } = yield* runIdsFor(request.scope, request.capability)
+        const { expiresAtMs, runIds } = yield* runIdsFor(request.scope, request.capability)
+        // A read is bounded by its credential exactly as a snapshot is: refused
+        // once lapsed, and refused again when slow journal reads finish after
+        // the credential that admitted them expired.
+        if (expiresAtMs <= (yield* Clock.currentTimeMillis)) return yield* Effect.fail(expired)
         const entries: Array<JournalEvent.Entry> = []
         const cursors = new Map(request.cursors.map((cursor) => [cursor.runId, cursor.afterSeq]))
         const generations = new Map(request.cursors.map((cursor) => [cursor.runId, cursor.generation ?? 0]))
@@ -695,6 +699,7 @@ const makeWith = (
         // the page is already unfinished however much of it this pass drains.
         const stop = shares ?? (yield* pass(behind, () => limit - entries.length, []))
         if (stop?._tag === "oversized") return yield* frameTooLarge(stop.bytes)
+        if (expiresAtMs <= (yield* Clock.currentTimeMillis)) return yield* Effect.fail(expired)
         return {
           entries,
           cursors: Array.from(cursors, ([runId, afterSeq]) => ({

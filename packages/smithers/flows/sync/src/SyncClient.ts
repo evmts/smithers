@@ -660,7 +660,20 @@ const service = (client: Client, { bootstrapLimit, maxFrameBytes }: Resolved): E
           if (frame.toSeq <= afterSeq) return Stream.empty
 
           const entries = frame.entries.filter((entry) => entry.seq > afterSeq)
-          return Stream.flatMap(Stream.fromIterable(entries), (entry) => deliver(frame.runId, entry, generation))
+          const carried = Stream.flatMap(
+            Stream.fromIterable(entries),
+            (entry) => deliver(frame.runId, entry, generation)
+          )
+          // The frame covered through `toSeq`, and admission may have dropped
+          // its LAST sequences, not only inner ones. Committing only the last
+          // carried entry left the cursor short, so the next contiguous frame
+          // began beyond it and was refused as a gap.
+          const lastCarried = entries.length === 0 ? afterSeq : entries[entries.length - 1]!.seq
+          if (frame.toSeq <= lastCarried) return carried
+          return Stream.concat(
+            carried,
+            Stream.drain(Stream.fromEffect(commit(frame.runId, frame.toSeq, generation, applyEntry !== undefined)))
+          )
         }
 
         const livePage = (onFrame: () => void): Stream.Stream<JournalEvent.Entry, Failure> =>
