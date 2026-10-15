@@ -683,3 +683,38 @@ fn restore_by_commit_id_survives_a_rewrite_of_the_snapshot_change() {
         ""
     );
 }
+
+#[test]
+fn snapshots_respect_ignore_negation_and_keep_already_tracked_files() {
+    let (_temp, root) = temp_root();
+    ops::init(&root).unwrap();
+    let empty = ops::snapshot(&root, None).unwrap();
+    write(&root, ".gitignore", "*.secret\n!public.secret\n");
+    write(&root, "private.secret", "untracked private bytes\n");
+    write(&root, "public.secret", "published version one\n");
+    let first = ops::snapshot(&root, None).unwrap();
+
+    let added = ops::diff(&root, &empty.commit_id, &first.commit_id).unwrap();
+    assert!(added.contains("diff --git a/public.secret b/public.secret\n"));
+    assert!(added.contains("+published version one\n"));
+    assert!(!added.contains("diff --git a/private.secret"));
+    assert!(!added.contains("untracked private bytes"));
+
+    // Removing the negation must not stop tracking an existing file. Every
+    // operation reloads its repository, so this also tests persisted eligibility.
+    write(&root, ".gitignore", "*.secret\n");
+    write(&root, "public.secret", "published version two\n");
+    write(&root, "later.secret", "also untracked\n");
+    let second = ops::snapshot(&root, None).unwrap();
+    let changed = ops::diff(&root, &first.commit_id, &second.commit_id).unwrap();
+    assert!(changed.contains("-published version one\n+published version two\n"));
+    assert!(!changed.contains("later.secret"));
+    assert!(!changed.contains("also untracked"));
+
+    ops::restore(&root, &first.commit_id).unwrap();
+    assert_eq!(read(&root, "public.secret"), "published version one\n");
+    assert_eq!(read(&root, ".gitignore"), "*.secret\n!public.secret\n");
+    assert_eq!(read(&root, "private.secret"), "untracked private bytes\n");
+    assert_eq!(read(&root, "later.secret"), "also untracked\n");
+    assert_eq!(ops::diff(&root, "@", &first.commit_id).unwrap(), "");
+}
