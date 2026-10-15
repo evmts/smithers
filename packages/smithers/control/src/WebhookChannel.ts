@@ -93,7 +93,8 @@ const declaredLength = (headers: Readonly<Record<string, string | undefined>>): 
 
 /**
  * Builds a webhook channel. Verification receives raw bytes and headers before
- * JSON parsing and schema decoding.
+ * JSON parsing and schema decoding. A body that is not valid UTF-8 JSON is
+ * refused as `InvalidInput` rather than decoded with replacement characters.
  *
  * @category constructors
  * @since 0.1.0
@@ -107,7 +108,7 @@ export const make = <A>(config: Config<A>): Channel<A> => {
     verify: Effect.fn("WebhookChannel.verify")((raw) => config.verify(raw, config.credential)),
     decode: Effect.fn("WebhookChannel.decode")((raw) =>
       Effect.try({
-        try: () => JSON.parse(new TextDecoder().decode(raw.body)),
+        try: () => JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(raw.body)),
         catch: () => invalidInput("invalid webhook JSON")
       }).pipe(
         Effect.flatMap((json) => decode(json)),

@@ -1,6 +1,7 @@
 import * as Sha256 from "@smthrs/crypto/Sha256"
 import { Deferred, Effect, Fiber, Layer, Redacted, Schema, Stream } from "effect"
 import * as Crypto from "effect/Crypto"
+import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import { describe, expect, it, vi } from "vitest"
 import * as Channels from "../src/Channels.ts"
 import * as Control from "../src/Control.ts"
@@ -101,6 +102,41 @@ describe("Channels", () => {
     )
     expect(exit._tag).toBe("Failure")
     expect(calls).toEqual(["verify"])
+  })
+
+  it("ingests a webhook mounted on a real Effect HTTP request", async () => {
+    // Effect's request headers are a Headers value, not a plain-prototype record.
+    const calls: Array<string> = []
+    const seenHeaders: Array<string | undefined> = []
+    const webhook = WebhookChannel.make({
+      name: "hook",
+      schema: Schema.Struct({ kind: Schema.String }),
+      credential: Redacted.make({ id: "connection", name: "connection" }),
+      verify: (inbound) =>
+        Effect.sync(() => {
+          seenHeaders.push(inbound.headers["x-signature"])
+        }),
+      map: () => Effect.succeed({ _tag: "Start", flowId: "flow", input: {} }),
+      project: () => ({ cursor: "1", operation: "post", message: {} })
+    })
+    const webRequest = new Request("https://example.com/webhook", {
+      method: "POST",
+      headers: { "content-type": "application/json", "X-Signature": "sig" },
+      body: "{\"kind\":\"start\"}"
+    })
+    const receipt = await run(
+      Effect.gen(function*() {
+        const channels = yield* Channels.Channels
+        yield* channels.register(webhook)
+        return yield* WebhookChannel.handler("hook", "delivery-1")
+      }).pipe(
+        Effect.provide(Layer.succeed(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(webRequest)))
+      ),
+      calls
+    )
+    expect(receipt).toMatchObject({ _tag: "Accepted", receiptId: "delivery-1" })
+    expect(seenHeaders).toEqual(["sig"])
+    expect(calls).toEqual(["plan", "run"])
   })
 
   it("turns invalid webhook schema data into InvalidInput", async () => {

@@ -10,6 +10,7 @@
 
 import * as Sha256 from "@smthrs/crypto/Sha256"
 import { Clock, Context, Effect, Layer, Ref, type Schema, Semaphore } from "effect"
+import { Headers } from "effect/http"
 import { Control } from "./Control.ts"
 import { type ControlError, InvalidInput, type Unauthorized, Unavailable } from "./ControlError.ts"
 import { ControlRuntime } from "./ControlRuntime.ts"
@@ -221,8 +222,17 @@ const copyBody = (input: unknown): Uint8Array => {
   }
 }
 
+/**
+ * The prototype of Effect's HTTP `Headers`. It carries only inspection hooks,
+ * never header values, so a request's own headers read as safely as a plain
+ * record. `WebhookChannel.handler` passes exactly this shape.
+ */
+const effectHeadersPrototype = Object.getPrototypeOf(Headers.empty) as object
+
 const snapshotHeaders = (input: unknown): Readonly<Record<string, string | undefined>> => {
-  const record = plainRecord(input, "raw.headers")
+  const record = typeof input === "object" && input !== null && Object.getPrototypeOf(input) === effectHeadersPrototype
+    ? input as Record<PropertyKey, unknown>
+    : plainRecord(input, "raw.headers")
   const snapshot = Object.create(null) as Record<string, string | undefined>
   for (const key of Reflect.ownKeys(record)) {
     if (typeof key !== "string") return boundary("raw.headers: symbol keys are not supported")

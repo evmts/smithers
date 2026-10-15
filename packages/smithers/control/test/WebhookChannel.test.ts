@@ -223,10 +223,15 @@ describe("WebhookChannel.handler bounds the request body", () => {
       // loudly rather than silently drop the bound.
       const seen: Array<Channels.IngestRequest> = []
       let pulled = false
-      const exit = await runHandler({}, () => {
-        pulled = true
-        return bytes(8)
-      }, seen, { maximumBodyBytes: limit })
+      const exit = await runHandler(
+        {},
+        () => {
+          pulled = true
+          return bytes(8)
+        },
+        seen,
+        { maximumBodyBytes: limit }
+      )
       expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true)
       expect(String(failure(exit))).toContain(
         "maximumBodyBytes must be a non-negative finite number"
@@ -298,6 +303,19 @@ describe("WebhookChannel.make", () => {
     const error = failure(exit) as InvalidInput
     expect(error._tag).toBe("/control/InvalidInput")
     expect(error.issue).toContain("invalid webhook JSON")
+  })
+
+  it("refuses a body that is not valid UTF-8 instead of substituting U+FFFD", async () => {
+    // {"kind":"st\xFFart"} would otherwise decode to "st\uFFFDart" and reach the schema altered.
+    const prefix = new TextEncoder().encode("{\"kind\":\"st")
+    const suffix = new TextEncoder().encode("art\"}")
+    const body = new Uint8Array([...prefix, 0xff, ...suffix])
+    const exit = await Effect.runPromiseExit(
+      channel().decode({ body, headers: {}, idempotencyKey: "key" })
+    )
+    const error = failure(exit) as InvalidInput
+    expect(error._tag).toBe("/control/InvalidInput")
+    expect(error.issue).toBe("invalid webhook JSON")
   })
 
   it("keeps malformed payload secrets out of the error and its serialization", async () => {
