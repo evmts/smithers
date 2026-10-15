@@ -25,6 +25,9 @@ The resource is the URL host, and the scheme decides how it is written:
   `https://API.Example.test/v1/x` names `api.example.test`.
 - For every other scheme, the resource is `<scheme>//<lowercased host>`:
   `http://API.Example.test/x` names `http://api.example.test`.
+- A trailing dot is dropped from the host, so the fully qualified
+  `https://api.example.test./x` names `api.example.test` too, and a rule for
+  the bare host also governs the dotted spelling.
 
 `https` is therefore the implicit scheme, and a grant for `api.example.test`
 can never authorize a cleartext `http` downgrade to the same host. The path,

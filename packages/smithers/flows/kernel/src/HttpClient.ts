@@ -256,7 +256,10 @@ const capabilityFor = (
       )
     )
   }
-  const host = url.host.toLowerCase()
+  // A trailing dot names the same DNS host, so `evil.example.` must not
+  // escape a rule written for `evil.example`.
+  const hostname = url.hostname.toLowerCase().replace(/(.)\.$/, "$1")
+  const host = url.port === "" ? hostname : `${hostname}:${url.port}`
   const resource = url.protocol === "https:" ? host : `${url.protocol}//${host}`
   return makeCapability(action, modelId === undefined ? resource : `${resource}/${modelId}`)
 }

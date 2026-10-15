@@ -928,6 +928,47 @@ describe("JournalGrantStore paging and journal failures", () => {
     )
   })
 
+  itEffect("refuses an empty policy page that reports more history", () => {
+    // An empty page with `hasMore` names no cursor to continue from. Ending
+    // replay there would activate a policy built from part of its history.
+    const journal = JournalModule.layerNoop({
+      entries: (entriesOptions) =>
+        Effect.succeed(
+          entriesOptions.runId !== options.policyRunId
+            ? { entries: [], hasMore: false }
+            : entriesOptions.after === undefined
+            ? { entries: [entry(1, rememberedGrant(insidePattern), options.policyRunId)], hasMore: true }
+            : { entries: [], hasMore: true }
+        )
+    })
+
+    return Effect.gen(function*() {
+      const failure = yield* Effect.flip(JournalGrantStore.make(options))
+      expect(failure.code).toBe("invalid_resolution")
+      expect(failure.message).toContain("empty journal page in run policy after sequence 1 reports more history")
+    }).pipe(
+      Effect.provide(journal),
+      Effect.provide(Workspace.layer(workspaceRoot)),
+      Effect.scoped
+    )
+  })
+
+  itEffect("refuses an empty first run page that reports more history", () => {
+    const journal = JournalModule.layerNoop({
+      entries: (entriesOptions) => Effect.succeed({ entries: [], hasMore: entriesOptions.runId === options.runId })
+    })
+
+    return Effect.gen(function*() {
+      const failure = yield* Effect.flip(JournalGrantStore.make(options))
+      expect(failure.code).toBe("invalid_resolution")
+      expect(failure.message).toContain("empty journal page in run run at the start reports more history")
+    }).pipe(
+      Effect.provide(journal),
+      Effect.provide(Workspace.layer(workspaceRoot)),
+      Effect.scoped
+    )
+  })
+
   itEffect("follows the cursor across every page of remembered policy", () => {
     const cursors: Array<number | undefined> = []
     const journal = JournalModule.layerNoop({
@@ -1022,7 +1063,7 @@ describe("JournalGrantStore paging and journal failures", () => {
     )
   })
 
-  itEffect("stops paging when a page claims more entries but returns none", () => {
+  itEffect("refuses construction when a page claims more entries but returns none", () => {
     let calls = 0
     const journal = JournalModule.layerNoop({
       entries: () =>
@@ -1033,10 +1074,11 @@ describe("JournalGrantStore paging and journal failures", () => {
     })
 
     return Effect.gen(function*() {
-      const store = yield* JournalGrantStore.make(options)
-      // Replay terminated rather than looping on a cursorless page.
-      expect(yield* Effect.flip(store.check(insideWrite))).toBeInstanceOf(PermissionRequired)
-      expect(calls).toBe(2)
+      // Replay neither loops on a cursorless page nor treats it as the end.
+      const failure = yield* Effect.flip(JournalGrantStore.make(options))
+      expect(failure.code).toBe("invalid_resolution")
+      expect(failure.message).toContain("empty journal page in run policy at the start reports more history")
+      expect(calls).toBe(1)
     }).pipe(
       Effect.provide(journal),
       Effect.provide(Workspace.layer(workspaceRoot)),

@@ -326,7 +326,19 @@ const journalSink = (options: Options, journal: JournalModule.Service): Sink => 
         }
       }
       const last = page.entries.at(-1)
-      if (last === undefined || !page.hasMore) break
+      if (!page.hasMore) break
+      // An empty page that reports more names no cursor to continue from, and
+      // stopping there would report a partial history as whole.
+      if (last === undefined) {
+        return yield* Effect.fail(
+          new ProcessLedgerReplayError({
+            code: "cursor_stalled",
+            message: `process ledger history of host ${options.hostId} returned an empty page ${
+              after === undefined ? "at the start" : `after seq ${after}`
+            } but reported more`
+          })
+        )
+      }
       // A page that ends where the previous one did would be replayed
       // forever, and stopping there would report a partial history as whole.
       if (after !== undefined && last.seq <= after) {

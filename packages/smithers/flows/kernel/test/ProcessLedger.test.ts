@@ -222,6 +222,45 @@ describe("ProcessLedger", () => {
       expect(failure.code).toBe("cursor_stalled")
     }))
 
+  it.effect("refuses a history whose journal returns an empty page that reports more", () =>
+    Effect.gen(function*() {
+      let call = 0
+      const pages = [
+        {
+          entries: [entry({ seq: 0, eventType: "flows.host.process-spawned.v1", payload: record(51, 1) })],
+          hasMore: true
+        },
+        { entries: [], hasMore: true }
+      ]
+      const ledger = yield* ProcessLedger.make({ hostId: "host-a", ownerPid: 2 }).pipe(
+        Effect.provide(
+          JournalModule.layerNoop({
+            entries: () =>
+              Effect.sync(() => {
+                const page = pages[call] ?? { entries: [], hasMore: false }
+                call += 1
+                return page
+              })
+          })
+        )
+      )
+      // The page past seq 0 may hold the exit of pid 51; without it, 51 would
+      // be reported abandoned and a reaper could signal a reused pid.
+      const failure = yield* Effect.flip(ledger.orphans)
+      expect(failure.code).toBe("cursor_stalled")
+      expect(failure.message).toContain("returned an empty page after seq 0")
+    }))
+
+  it.effect("refuses a history whose first page is empty but reports more", () =>
+    Effect.gen(function*() {
+      const ledger = yield* ProcessLedger.make({ hostId: "host-a", ownerPid: 2 }).pipe(
+        Effect.provide(JournalModule.layerNoop({ entries: () => Effect.succeed({ entries: [], hasMore: true }) }))
+      )
+      const failure = yield* Effect.flip(ledger.orphans)
+      expect(failure.code).toBe("cursor_stalled")
+      expect(failure.message).toContain("returned an empty page at the start")
+    }))
+
   it.effect("REPORTS every refused write instead of pretending it committed", () =>
     Effect.gen(function*() {
       const ledger = yield* ProcessLedger.make({ hostId: "host-a", ownerPid: 1 })

@@ -122,6 +122,24 @@ describe("HttpClient", () => {
     }).pipe((effect) => protectedClient(effect, host(calls), store(checks)))
   })
 
+  itEffect("names a fully qualified host with a trailing dot by the bare host's resource", () => {
+    // `evil.example.` resolves to the same server as `evil.example`, so a
+    // deny rule written for the bare host must also see the dotted spelling.
+    const checks: Array<Capability.Capability> = []
+    const calls: Array<string> = []
+    return Effect.gen(function*() {
+      const client = yield* EffectHttpClient.HttpClient
+      yield* client.get("https://Evil.Example./x")
+      yield* client.get("https://evil.example.:8443/x")
+      yield* client.get("http://evil.example./x")
+      expect(checks).toEqual([
+        { action: "net:get", resource: "evil.example" },
+        { action: "net:get", resource: "evil.example:8443" },
+        { action: "net:get", resource: "http://evil.example" }
+      ])
+    }).pipe((effect) => protectedClient(effect, host(calls), store(checks)))
+  })
+
   itEffect("does not let an HTTPS network grant authorize an HTTP downgrade", () =>
     Effect.gen(function*() {
       const calls: Array<string> = []

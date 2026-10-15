@@ -68,6 +68,15 @@ const knownEventTypes: ReadonlySet<string> = new Set([
 
 const invalidReplay = (message: string): GrantStoreError => new GrantStoreError({ code: "invalid_resolution", message })
 
+// An empty page that reports more history names no cursor to continue from.
+// Ending replay there would activate authority built from part of the run.
+const emptyPage = (runId: string, after: JournalEvent.Seq | undefined): GrantStoreError =>
+  invalidReplay(
+    `empty journal page in run ${runId} ${
+      after === undefined ? "at the start" : `after sequence ${after}`
+    } reports more history`
+  )
+
 const appendReplayedRule = (
   rules: Array<NonNullable<GrantStore.MakeOptions["runRules"]>[number]>,
   seen: Set<string>,
@@ -163,13 +172,16 @@ const replayRememberedRules = (
     const envelopeSignatures = new Set<string>()
     let after: JournalEvent.Seq | undefined
 
-    do {
+    for (;;) {
       const page = yield* journal.entries({
         runId: policyRunId as JournalEvent.RunId,
         ...(after === undefined ? {} : { after }),
         limit: 256
       })
       const last = page.entries.at(-1)
+      if (last === undefined && page.hasMore) {
+        return yield* Effect.fail(emptyPage(policyRunId, after))
+      }
       if (last !== undefined && after !== undefined && last.seq <= after) {
         // A page that does not advance past the cursor it was asked for is
         // corrupt journal output. Following it would replay the same events
@@ -210,9 +222,7 @@ const replayRememberedRules = (
       if (!page.hasMore) {
         return { rules, envelopeSignatures }
       }
-    } while (after !== undefined)
-
-    return { rules, envelopeSignatures }
+    }
   })
 
 const replayRunRules = (
@@ -228,13 +238,16 @@ const replayRunRules = (
     const envelopeSignatures = new Set<string>()
     let after: JournalEvent.Seq | undefined
 
-    do {
+    for (;;) {
       const page = yield* journal.entries({
         runId: runId as JournalEvent.RunId,
         ...(after === undefined ? {} : { after }),
         limit: 256
       })
       const last = page.entries.at(-1)
+      if (last === undefined && page.hasMore) {
+        return yield* Effect.fail(emptyPage(runId, after))
+      }
       if (last !== undefined && after !== undefined && last.seq <= after) {
         // See the identical guard in `replayRememberedRules`.
         return yield* Effect.fail(invalidReplay(`non-advancing journal page in run ${runId} at sequence ${last.seq}`))
@@ -287,9 +300,7 @@ const replayRunRules = (
       if (!page.hasMore) {
         return { rules, envelopeSignatures }
       }
-    } while (after !== undefined)
-
-    return { rules, envelopeSignatures }
+    }
   })
 
 /**
