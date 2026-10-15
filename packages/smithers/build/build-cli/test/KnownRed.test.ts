@@ -106,6 +106,8 @@ describe("KnownRed.parse", () => {
     [JSON.stringify({ entries: [{ label: "pkg:test" }] }), /must be a target label/],
     [JSON.stringify({ entries: [{ label: "//a:t", expires: "soon" }] }), /YYYY-MM-DD/],
     [JSON.stringify({ entries: [{ label: "//a:t", expires: "2026-13-45" }] }), /YYYY-MM-DD/],
+    [JSON.stringify({ entries: [{ label: "//a:t", expires: "2026-02-31" }] }), /YYYY-MM-DD/],
+    [JSON.stringify({ entries: [{ label: "//a:t", expires: "2026-04-31" }] }), /YYYY-MM-DD/],
     [JSON.stringify({ entries: [{ label: "//a:t", expires: "2026-10-09", platforms: [] }] }), /non-empty array/],
     [JSON.stringify({ entries: [{ label: "//a:t", expires: "2026-10-09", platforms: "linux" }] }), /non-empty array/],
     [JSON.stringify({ entries: [{ label: "//a:t", expires: "2026-10-09", platforms: [1] }] }), /platforms\[0\]/],

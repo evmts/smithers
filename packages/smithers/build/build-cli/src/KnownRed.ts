@@ -196,7 +196,10 @@ export const parse = (source: string, content: string): ReadonlyArray<Entry> => 
       throw new KnownRedError("invalid", `${at}: "label" must be a target label such as //pkg:test`)
     }
     const expires = text(row.expires, "expires", at)
-    if (!day.test(expires) || Number.isNaN(Date.parse(`${expires}T00:00:00Z`))) {
+    // Date.parse rolls an impossible day such as 2026-02-31 into the next
+    // month, so the date must survive the round trip unchanged.
+    const parsed = Date.parse(`${expires}T00:00:00Z`)
+    if (!day.test(expires) || Number.isNaN(parsed) || new Date(parsed).toISOString().slice(0, 10) !== expires) {
       throw new KnownRedError("invalid", `${at}: "expires" must be a YYYY-MM-DD date`)
     }
     let platforms: ReadonlyArray<string> | undefined
