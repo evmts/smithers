@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs"
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -182,6 +182,25 @@ describe("resource mutations", () => {
       await expect(resources["artifact download"]!(c, { runId: 7, name: "artifact" }, options)).rejects.toThrow()
     }
   )
+  it("leaves the destination untouched when the download breaks midway", async () => {
+    const { c, request, home } = await fixture()
+    request.mockResolvedValue({ download_url: "https://storage.test/signed" })
+    const output = join(home, "artifact.zip")
+    await writeFile(output, "previous")
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("partial"))
+        controller.error(new Error("connection reset"))
+      }
+    })
+    // fetch is the storage boundary; tests never reach a real bucket.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body)))
+    await expect(
+      resources["artifact download"]!(c, { runId: 7, name: "artifact" }, { ...options, output })
+    ).rejects.toThrow()
+    expect(await readFile(output, "utf8")).toBe("previous")
+    expect((await readdir(home)).filter((entry) => entry.startsWith("artifact.zip"))).toEqual(["artifact.zip"])
+  })
   it("reports failed storage downloads", async () => {
     const { c, request, home } = await fixture()
     request.mockResolvedValue({ download_url: "https://storage.test" })

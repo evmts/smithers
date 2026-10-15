@@ -3,7 +3,8 @@
  * @since 0.1.0
  */
 
-import { mkdir, writeFile } from "node:fs/promises"
+import { randomUUID } from "node:crypto"
+import { mkdir, rename, rm, writeFile } from "node:fs/promises"
 import { basename, dirname, resolve } from "node:path"
 import { Refused, UsageError } from "../../CliError.ts"
 import { chunksOf, type Client, esc, list, object, pick, positive, query, str, type Values } from "./Client.ts"
@@ -325,6 +326,16 @@ add("artifact download", async (c, a, o) => {
       }
     }
   }
-  await writeFile(path, bounded())
+  // A broken or oversized download must not leave a truncated file under the
+  // artifact's name, or clobber a file already there: write beside it, then
+  // rename into place.
+  const partial = `${path}.${process.pid}.${randomUUID()}.partial`
+  try {
+    await writeFile(partial, bounded())
+    await rename(partial, path)
+  } catch (error) {
+    await rm(partial, { force: true })
+    throw error
+  }
   return { name, path, size: record.size, content_type: record.content_type }
 })
