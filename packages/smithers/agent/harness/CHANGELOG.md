@@ -10,6 +10,10 @@
   starts at the first edit, when prints are re-paid every turn. On the paired
   SWE-bench Pro run of 2026-10-14 the model saw a median 0.41x the output
   stock Codex saw before its first edit (#3950).
+- The `cell-jev` teaching sends a question a command can answer to the
+  command: `jev` is for judgments no command can check. On 2026-10-14
+  navidrome-69e0a266 asked `jev` whether its tests proved the 15x15 case,
+  read p = 0.93 and never ran it; that case was the bug (#3951).
 - `CompletionClaim`'s two classifiers carry a seat note that states the
   refusal question's scope: runs the claim says happened, and nothing else.
   GPT-6 Luna, judging on a host with no gateway key, read "names an outcome"

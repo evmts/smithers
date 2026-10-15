@@ -220,10 +220,14 @@ Cell throws: you are told, next turn. If a cell does not PARSE nothing ran at al
  *
  * The one worked example is run verbatim by `test/CellFlows.test.ts` against
  * the real `grep` and `jev` bindings, because a model copies the example.
+ *
+ * Will 2026-10-14: a command answers what it can check; `jev` judges the rest.
+ * navidrome-69e0a266 asked `jev` whether its tests proved the 15x15 case, read
+ * p = 0.93 and never ran the case, which was the bug (why-codex-won.md).
  */
 const jevText =
   `1. Use \`jev\` for any judgment over >3 items and any yes/no, pick-one or score you would otherwise make by printing and reading (relevant files, related failures, rankings, which subtask needs a worker). ONE call: items in \`state:\`, one question per item keyed by your id. Hundreds take ~300 ms.
-2. Never make one call per item; never ask \`jev\` for text, code or quotes.
+2. Never make one call per item; never ask \`jev\` for text, code or quotes. When a command can answer the question, run the command; \`jev\` is for judgments no command can check.
 3. Failure resolves \`{ ok: false }\`: print \`error.message\`; do not decide in its place.
 4. Act on booleans when \`answers[id].probability >= 0.8\`; on choice or score when \`judged.confidence?.[id] >= 0.7\` (provider confidence; absent = uncertain). Never use a choice's own \`.confidence\` (reads 1 without a distribution). Print uncertain items; don't decide them.
 

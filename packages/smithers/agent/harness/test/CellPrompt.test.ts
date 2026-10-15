@@ -561,9 +561,12 @@ describe("the jev teaching", () => {
     // decision, #1929), with the owner's floors and one worked example. A
     // SWE-bench arm measures this wording and informs tuning, not reverting.
     // Rewritten in fragments on 2026-09-30 (token economy); the example is unchanged.
-    expect(jevText()).toHaveLength(1_484)
-    expect(Digest.digest(jevText())).toBe("a363cb6d4ad893a6cb1829859d9d42531d09d463dc57a1d15ebc7dd3c81e48e5")
-    expect(Tokens.estimate(jevText())).toBeLessThanOrEqual(410)
+    // Grew 1,484 → 1,586 on 2026-10-14 (will's ruling, why-codex-won.md) by one
+    // clause: a question a command can answer goes to the command. The ceiling
+    // rose from 410 to 430 with it; the clause is 26 estimated tokens.
+    expect(jevText()).toHaveLength(1_586)
+    expect(Digest.digest(jevText())).toBe("b57d85b82fcbba1442bad30747a8fa761997068a9448797060f753ecf64ffde7")
+    expect(Tokens.estimate(jevText())).toBeLessThanOrEqual(430)
   })
 
   it("teaches the owner's floors and one call, never a call per item", () => {
@@ -572,6 +575,17 @@ describe("the jev teaching", () => {
     expect(text).toContain("`judged.confidence?.[id] >= 0.7`")
     expect(text).toContain("Never make one call per item")
     expect(text).toContain("do not decide in its place")
+  })
+
+  it("sends a question a command can answer to the command, and keeps jev for judgments", () => {
+    // Will's ruling of 2026-10-14. navidrome-69e0a266 asked `jev` whether its
+    // tests proved the 15x15 case, read p = 0.93, and never ran the case; that
+    // case was the bug (why-codex-won.md). `jev` stays strongly used (#1929).
+    const text = jevText()
+    expect(text).toContain(
+      "When a command can answer the question, run the command; `jev` is for judgments no command can check."
+    )
+    expect(text).toContain("Use `jev` for any judgment over >3 items")
   })
 
   it("shows exactly one worked cell, which calls jev once and reads the probability", () => {
