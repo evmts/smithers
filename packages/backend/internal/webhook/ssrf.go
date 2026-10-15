@@ -16,15 +16,33 @@ var restrictedCIDRs = mustParseCIDRs(
 	"192.168.0.0/16",
 	"127.0.0.0/8",
 	"169.254.0.0/16",
+	"192.0.0.0/24",
+	"198.18.0.0/15",
+	"240.0.0.0/4",
 	"::1/128",
 	"fc00::/7",
 	"fe80::/10",
 )
 
-// IsRestrictedIP reports whether the address is in blocked ranges.
+var (
+	nat64Prefix = mustParseCIDRs("64:ff9b::/96")[0]
+	sixToFour   = mustParseCIDRs("2002::/16")[0]
+)
+
+// IsRestrictedIP reports whether the address is in blocked ranges. A NAT64
+// (64:ff9b::/96) or 6to4 (2002::/16) address is judged by the IPv4 address it
+// embeds, because a translator or relay delivers the request there.
 func IsRestrictedIP(ip net.IP) bool {
 	if ip == nil {
 		return true
+	}
+	if ip.To4() == nil && len(ip) == net.IPv6len {
+		if nat64Prefix.Contains(ip) {
+			return IsRestrictedIP(net.IP(ip[12:16]))
+		}
+		if sixToFour.Contains(ip) {
+			return IsRestrictedIP(net.IP(ip[2:6]))
+		}
 	}
 	if ip.IsUnspecified() || ip.IsMulticast() {
 		return true

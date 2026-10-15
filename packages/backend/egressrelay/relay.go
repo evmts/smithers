@@ -129,6 +129,11 @@ type binding struct {
 
 type mask struct{ value, placeholder string }
 
+var (
+	_, nat64Prefix, _     = net.ParseCIDR("64:ff9b::/96")
+	_, sixToFourPrefix, _ = net.ParseCIDR("2002::/16")
+)
+
 // New starts a relay serving on config.Listener.
 func New(config Config) (*Relay, error) {
 	if config.Listener == nil {
@@ -668,9 +673,15 @@ func (r *Relay) dial(ctx context.Context, dialer *net.Dialer, network, address s
 	return nil, lastErr
 }
 
+// denied judges a NAT64 (64:ff9b::/96) or 6to4 (2002::/16) address by the
+// IPv4 address it embeds, because a translator or relay delivers it there.
 func (r *Relay) denied(ip net.IP) bool {
 	if v4 := ip.To4(); v4 != nil {
 		ip = v4
+	} else if len(ip) == net.IPv6len && nat64Prefix.Contains(ip) {
+		return r.denied(net.IP(ip[12:16]))
+	} else if len(ip) == net.IPv6len && sixToFourPrefix.Contains(ip) {
+		return r.denied(net.IP(ip[2:6]))
 	}
 	return slices.ContainsFunc(r.deny, func(network *net.IPNet) bool { return network.Contains(ip) })
 }

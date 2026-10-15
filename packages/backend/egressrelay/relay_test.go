@@ -498,6 +498,19 @@ func TestRelayDenyListAdmitsPublicAddresses(t *testing.T) {
 	}
 }
 
+// A NAT64 (64:ff9b::/96) or 6to4 (2002::/16) address reaches the IPv4 address
+// it embeds, so the embedded address decides whether the relay may dial it.
+func TestRelayDenyListJudgesEmbeddedIPv4(t *testing.T) {
+	relay := newRelay(t, Config{})
+	for address, denied := range map[string]bool{
+		"64:ff9b::a9fe:a9fe": true, "64:ff9b::10.0.0.1": true, "64:ff9b::127.0.0.1": true,
+		"2002:a9fe:a9fe::1": true, "2002:c0a8:0101::": true,
+		"64:ff9b::8.8.8.8": false, "2002:0808:0808::1": false,
+	} {
+		assert.Equal(t, denied, relay.denied(net.ParseIP(address)), address)
+	}
+}
+
 // Cleanup of a superseded grant never revokes the workspace's newer binding.
 func TestRevokeGrantSparesANewerBinding(t *testing.T) {
 	relay := newRelay(t, Config{})
