@@ -90,10 +90,15 @@ impl<I: Input> Pipe<I> {
 
     /// Copy already-read PTY bytes into the existing bounded credit pipe. This
     /// transport never reads a descriptor and never owns keyboard input.
+    /// Rejects malformed frames, other streams, and output beyond available
+    /// credit before changing delivery or replay state.
     pub fn relay(&mut self, frame: &Frame) -> io::Result<Option<Frame>> {
         if self.closed || frame.stream != self.id || frame.kind != 5 {
             return Err(invalid());
         }
+        // Validate before polling: a temporary Cursor would silently discard
+        // bytes beyond MAX_DATA, and controls must have complete payloads.
+        frame.validate(false).map_err(|_| invalid())?;
         match frame.payload.as_slice() {
             [1, fd @ 1..=2, bytes @ ..] if !bytes.is_empty() => {
                 if bytes.len() > self.available() {
