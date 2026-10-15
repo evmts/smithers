@@ -516,6 +516,31 @@ describe("JournalLogger", () => {
     expect(died!.defect).toMatchObject({ name: "Error", message: "accessor", detail: unrenderableMarker })
   })
 
+  it("snapshots dates without invoking caller-supplied serialization", async () => {
+    const id = runId("date-serialization-run")
+    let calls = 0
+    const date = new Date(0)
+    Object.defineProperty(date, "toISOString", {
+      get: () => {
+        calls++
+        return () => "caller controlled"
+      }
+    })
+    const payload = await run(
+      Effect.gen(function*() {
+        const journal = yield* Journal.Journal
+        yield* Effect.logInfo(date)
+        const [entry] = yield* entriesEventually(journal, id, 1)
+        return Schema.decodeUnknownSync(TelemetryLog)(entry!.payload)
+      }).pipe(
+        Effect.provide(Layer.provideMerge(layerJournalForwarding({ runId: id }), TestJournal.layer()))
+      )
+    )
+
+    expect(calls).toBe(0)
+    expect(payload.message).toEqual(["1970-01-01T00:00:00.000Z"])
+  })
+
   it("does not invoke own or inherited accessors for standard error fields", async () => {
     const id = runId("standard-accessor-error-run")
     let reads = 0
@@ -818,6 +843,33 @@ describe("JournalLogger", () => {
     expect(record![truncatedMarker]).toBe(truncatedMarker)
   })
 
+  it("cuts long plain runs at the exact byte the budget leaves", async () => {
+    const id = runId("plain-run-cut-run")
+    // Byte arithmetic: key "apiKey" (8) + the filler string (its length + 2)
+    // leaves 143 bytes. The oversized key then spends 13 on the marker and 2
+    // on quotes, so its retained text holds exactly 128 bytes: two 48-byte
+    // lines (each newline escapes to two bytes) and 30 letters of the third,
+    // a cut that lands inside a run long enough to be matched natively.
+    const fillerLength = maximumSnapshotBytes - 8 - 2 - 143
+    const line = `${"a".repeat(47)}\n`
+    const message = { apiKey: "x".repeat(fillerLength), [line.repeat(30_000)]: "dropped" }
+    const payload = await run(
+      Effect.gen(function*() {
+        const journal = yield* Journal.Journal
+        yield* Effect.logInfo(message)
+        const [entry] = yield* entriesEventually(journal, id, 1)
+        return Schema.decodeUnknownSync(TelemetryLog)(entry!.payload)
+      }).pipe(
+        Effect.provide(Layer.provideMerge(layerJournalForwarding({ runId: id }), TestJournal.layer()))
+      )
+    )
+
+    const [record] = payload.message as ReadonlyArray<Record<string, unknown>>
+    const cut = `${line.repeat(2)}${"a".repeat(30)}${truncatedMarker}`
+    expect(Object.keys(record!).filter((key) => key !== "apiKey")).toEqual([cut])
+    expect(record![cut]).toBe(truncatedMarker)
+  })
+
   it("never lets a truncated error field overwrite one already in the defect", async () => {
     const id = runId("error-key-collision-run")
     const failure = new Error("m")
@@ -935,7 +987,9 @@ describe("JournalLogger", () => {
     const astral = "\u{1F600}".repeat(600_000)
     const escaped = `"\\\n\u0001aéあ𐀀\u{1F600}`.repeat(200_000)
     const malformed = `${"\ud800"}lone${"\udfff"}`.repeat(200_000)
-    const inputs = [astral, escaped, malformed]
+    // Plain lines long enough for the native run match, each ended by an escape.
+    const lines = `${"a".repeat(47)}\n`.repeat(30_000)
+    const inputs = [astral, escaped, malformed, lines]
     const { passes, payloads } = await run(
       Effect.gen(function*() {
         const journal = yield* Journal.Journal
@@ -992,10 +1046,11 @@ describe("JournalLogger", () => {
       expect(new TextEncoder().encode(JSON.stringify(payload)).byteLength).toBeLessThanOrEqual(maximumSnapshotBytes)
     }
     // A cut inside a surrogate pair would leave text this package's own
-    // `Resource` validator refuses. The last input was malformed on arrival,
-    // so only the astral and escaped records carry that guarantee.
+    // `Resource` validator refuses. The malformed input was malformed on
+    // arrival, so only the other records carry that guarantee.
     expect(loneSurrogate.test(payloads[0]!.message as string)).toBe(false)
     expect(loneSurrogate.test(payloads[1]!.message as string)).toBe(false)
+    expect(loneSurrogate.test(payloads[3]!.message as string)).toBe(false)
   })
 
   it.each(

@@ -261,15 +261,37 @@ const unitBytes = (code: number): number => {
 
 const isLowSurrogate = (code: number): boolean => code >= 0xdc00 && code <= 0xdfff
 
+/** Code units that occupy exactly one byte inside a JSON string body. */
+const plainRun = /[\x20\x21\x23-\x5b\x5d-\x7f]*/y
+
+/** One-byte units read one at a time before the rest of their run is matched natively. */
+const plainStreak = 16
+
 /**
  * The longest prefix whose JSON string body fits `limit` bytes, measured in one
  * forward pass. A surrogate pair is admitted or refused whole, so the retained
  * text is well formed whenever the input is.
+ *
+ * Plain text is one byte per unit, so once a streak of it starts, the rest of
+ * the run is matched natively instead of unit by unit. The match reads a window
+ * one unit past the bytes still free, never the tail the cut drops.
  */
 const boundedPrefix = (value: string, limit: number): { readonly text: string; readonly bytes: number } => {
   let bytes = 0
   let index = 0
+  let streak = 0
   while (index < value.length) {
+    if (streak >= plainStreak) {
+      plainRun.lastIndex = 0
+      plainRun.test(value.slice(index, index + limit - bytes + 1))
+      const run = plainRun.lastIndex
+      const admitted = Math.min(run, limit - bytes)
+      bytes += admitted
+      index += admitted
+      if (admitted < run) break
+      streak = 0
+      continue
+    }
     const code = value.charCodeAt(index)
     let width = 1
     let cost: number
@@ -284,6 +306,7 @@ const boundedPrefix = (value: string, limit: number): { readonly text: string; r
     if (bytes + cost > limit) break
     bytes += cost
     index += width
+    streak = cost === 1 ? streak + 1 : 0
   }
   return { text: value.slice(0, index), bytes }
 }
@@ -347,7 +370,7 @@ const snapshotValue = (
   try {
     if (value instanceof Date) {
       try {
-        return boundedText(value.toISOString(), budget)
+        return boundedText(Date.prototype.toISOString.call(value), budget)
       } catch {
         return boundedText(unrenderableMarker, budget)
       }
