@@ -96,7 +96,7 @@ export interface Request {
    * Absolute host paths outside the workspace the tool reads: a git
    * submodule's local source repository, for one. Bound read-only where the
    * mechanism would otherwise hide them; a path that does not exist, or that
-   * sits inside the workspace, is dropped.
+   * sits or resolves inside the workspace, is dropped.
    */
   readonly externalReads?: ReadonlyArray<string> | undefined
 }
@@ -630,7 +630,10 @@ export const plan = (
   }
   for (const path of request.externalReads ?? []) {
     if (!NodePath.isAbsolute(path) || insideRoot(root, path) || !hostFacts.exists(path)) continue
-    externalReads.push(hostFacts.realpath?.(path) ?? path)
+    // An alias or link outside the tree can resolve into it; granting that
+    // real location would open the workspace past its declared reads.
+    const real = hostFacts.realpath?.(path) ?? path
+    if (!insideRoot(root, real)) externalReads.push(real)
   }
   // A write names a directory the tool may fill, and is bound as declared
   // whether or not it exists yet: a name is never read as a file, because a

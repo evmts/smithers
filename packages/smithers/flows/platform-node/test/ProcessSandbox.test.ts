@@ -509,6 +509,19 @@ describe("plan", () => {
     })
     expect(plan.externalReads).toEqual(["/srv/git/one"])
   })
+
+  it("drops a requested external read whose real location is inside the workspace", () => {
+    // `/var/ws` is how macOS spells `/private/var/ws` before resolution; a
+    // link outside the tree can point into it too. Either would otherwise
+    // grant the whole workspace and override the declared read set.
+    const aliased: ProcessSandbox.Host = {
+      ...host("linux", { bwrap: "/usr/bin/bwrap" }, ["/work/ws/src/a.ts", "/alias/ws", "/srv/link"]),
+      realpath: (path) => path === "/alias/ws" ? "/work/ws" : path === "/srv/link" ? "/work/ws/secret" : path
+    }
+    const plan = planned(aliased, { externalReads: ["/alias/ws", "/srv/link"] })
+    expect(plan.externalReads).toEqual([])
+    expect(ProcessSandbox.bubblewrap(plan, ["true"], aliased)).not.toContain("/work/ws/secret")
+  })
 })
 
 describe("native host read confinement", () => {
