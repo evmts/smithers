@@ -244,6 +244,34 @@ describe("digest-unsafe built-ins", () => {
       )
     })
 
+    it("coerces an object length once with the numeric hint", () => {
+      const hints: Array<string> = []
+      const length = {
+        [Symbol.toPrimitive](hint: string) {
+          hints.push(hint)
+          return hints.length === 1 ? 2.9 : 0
+        }
+      }
+      expect(canonicalize(withLength(length))).toBe("[10,20]")
+      expect(hints).toEqual(["number"])
+    })
+
+    it("falls back from a nonprimitive valueOf to a numeric toString", () => {
+      const conversions: Array<string> = []
+      const length = {
+        valueOf() {
+          conversions.push("valueOf")
+          return {}
+        },
+        toString() {
+          conversions.push("toString")
+          return "2.9"
+        }
+      }
+      expect(canonicalize(withLength(length))).toBe("[10,20]")
+      expect(conversions).toEqual(["valueOf", "toString"])
+    })
+
     it("reads the integer indices 0 and 1 for a fractional length", () => {
       expect(canonicalize(withLength(2.5))).toBe("[10,20]")
     })
