@@ -26,6 +26,10 @@ const codeOf = (cause: unknown): string | undefined =>
  * inspecting `error.reason._tag` has to tell a permission refusal from a
  * malfunction.
  *
+ * Looked up through {@link tagOf}, never by indexing: a code is
+ * backend-controlled text, and `"toString"` or `"__proto__"` would otherwise
+ * find a member every object inherits.
+ *
  * @private
  */
 const tags: Readonly<Record<string, PlatformError.SystemErrorTag>> = {
@@ -40,6 +44,17 @@ const tags: Readonly<Record<string, PlatformError.SystemErrorTag>> = {
 }
 
 /**
+ * The tag a thrown value's code declares, or `Unknown` for any code the
+ * table does not own.
+ *
+ * @private
+ */
+const tagOf = (cause: unknown): PlatformError.SystemErrorTag => {
+  const code = codeOf(cause)
+  return code !== undefined && Object.hasOwn(tags, code) ? tags[code]! : "Unknown"
+}
+
+/**
  * Map a thrown ZenFS/Node error onto a `PlatformError`, mirroring how effect's
  * own platform implementations construct one: a normalized `_tag`, the module
  * and method that failed, the path, and the original `cause` kept intact.
@@ -50,7 +65,7 @@ const tags: Readonly<Record<string, PlatformError.SystemErrorTag>> = {
  */
 export const platformError = (method: string, path: string) => (cause: unknown): PlatformError.PlatformError =>
   PlatformError.systemError({
-    _tag: tags[codeOf(cause) ?? ""] ?? "Unknown",
+    _tag: tagOf(cause),
     module: "FileSystem",
     method,
     pathOrDescriptor: path,

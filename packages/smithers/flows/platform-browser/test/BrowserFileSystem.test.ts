@@ -136,6 +136,21 @@ describe("BrowserFileSystem error mapping", () => {
       }
     }))
 
+  /**
+   * A code is backend-controlled text. One that names a member every object
+   * inherits is still not a code the table declares, and must not hand the
+   * caller that member as its tag.
+   */
+  it.effect("falls back to Unknown for a code naming an inherited object member", () =>
+    Effect.gen(function*() {
+      for (const code of ["toString", "constructor", "__proto__", "hasOwnProperty", "valueOf"]) {
+        const fileSystem = BrowserFileSystem.make(throwingFs(codeError(code)))
+        const error = yield* (Effect.flip(fileSystem.readFile("/p")))
+
+        expect(error.reason._tag).toBe("Unknown")
+      }
+    }))
+
   it.effect("stringifies a non-Error rejection value into the description", () =>
     Effect.gen(function*() {
       const fileSystem = BrowserFileSystem.make(throwingFs("plain string failure"))
