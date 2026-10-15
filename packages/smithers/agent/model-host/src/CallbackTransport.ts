@@ -54,6 +54,14 @@ import type { HostDiagnosticFields } from "./HostDiagnostics.ts"
  * the proxy's own resolution when the request went absolute-form — each read
  * as the journal's name, and neither was.
  *
+ * What follows from that, for the only deployment that matters: a hosted guest
+ * is always proxied, so `created` with one connection begun and none ended is
+ * the PROXY hop that has not come up, and whether that is the proxy's name,
+ * its SYN or the tunnel the journal never answered through is not a reading
+ * this host can take. The guest's record says the phase and the counts; the
+ * name belongs to the egress proxy's own records, and that is where the next
+ * occurrence has to be read.
+ *
  * What it still does not separate: a hang after the name is answered is a
  * connection the kernel is retrying, and whether that is a dropped SYN, a
  * silent middlebox or a filtered route is not in any record this host takes.

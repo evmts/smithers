@@ -58,12 +58,15 @@
   from the same report. An observer that watched nothing adds no field, so a
   caller-driven producer still answers exactly as before.
 
-  Two limits remain. A hang after the name is answered is a connection the
-  kernel is still retrying, and whether that is a dropped SYN, a silent
-  middlebox or a filtered route is in no record this host takes. And the
-  connection and resolution counts belong to the callback origin rather than to
-  one request, so a turn's other callbacks to the same origin are counted by
-  whichever attempts are open alongside them.
+  Three limits remain. A hosted guest is always proxied, so the resolution
+  split is not available to it at all: `created` with one connection begun and
+  none ended is the proxy hop that has not come up, and the name behind it
+  belongs to the egress proxy's own records. A hang after the name is answered
+  is a connection the kernel is still retrying, and whether that is a dropped
+  SYN, a silent middlebox or a filtered route is in no record this host takes.
+  And the connection and resolution counts belong to the callback origin rather
+  than to one request, so a turn's other callbacks to the same origin are
+  counted by whichever attempts are open alongside them.
 
 ### Fixed
 
