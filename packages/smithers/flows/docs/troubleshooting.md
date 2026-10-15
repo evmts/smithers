@@ -243,6 +243,23 @@ instead of repeating.
 **Fix.** Use a new `executionId` for a new execution. Reuse it when you mean a
 resume.
 
+## A resumed run waits before it continues
+
+**Symptom.** Rerunning an `executionId` whose process died prints a line such
+as `INFO ...: engine-store: run quickstart-1 is held by worker-1:4242 on another host; waiting up to 28 s for its lease to expire`
+and resumes later, or not at all.
+
+**Cause.** The run is still `running` under the owner that died, and this
+process takes it only once it can prove that owner gone. Under `layerHost`, an
+owner on this host whose process no longer exists is taken at once, with no
+line printed. Anything else waits, and the line says why:
+
+| Line ends with                                                              | Cause                                                                                    | Fix                                                                                    |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `on another host; waiting up to N s for its lease to expire`                | The run was started under a different `owner.hostId`.                                    | Use the same `hostId` on the same machine. The run resumes when the lease expires.     |
+| `a live process on this host; waiting for it to finish or exit`             | A process holds the recorded pid: the owner itself, or a program that reused its pid.    | Let the owner finish, or stop the process that holds the pid.                          |
+| `which the liveness check reports alive; waiting for it to release the run` | `layerHost`'s probe treats an owner on another host as alive, so it never takes the run. | Rerun on the host that started the run, or pass an `isAlive` that can judge that host. |
+
 ## queue_overflow: the journal admission queue is full
 
 **Symptom.** A journal write fails with `queue_overflow`.

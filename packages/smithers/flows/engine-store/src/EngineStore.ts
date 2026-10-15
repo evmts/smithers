@@ -116,6 +116,11 @@ export interface Options {
    * A deployment that can say more supplies its own check and refuses the
    * takeover for longer: `Ownership.sameHostIncarnation` is the guard a local
    * `process.kill(pid, 0)` probe applies before reading `owner.pid`.
+   *
+   * A supplied check is also asked while the lease is still fresh, about an
+   * owner on this host whose pid is not this process's. Answering `false`
+   * there takes the run at once with `same-host-pid-dead` evidence, so a
+   * rerun after `kill -9` does not wait out the dead owner's lease.
    */
   readonly isAlive?: Ownership.LivenessCheck | undefined
   /** Host routing, checked before claiming a run (including automatic wakes). */

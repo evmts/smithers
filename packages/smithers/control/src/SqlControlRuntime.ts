@@ -180,9 +180,10 @@ export interface Options {
   /**
    * Whether the process a running run's owner names is still working. With
    * it, `resume` takes over a running run whose owner is gone (a host killed
-   * mid-run) once that owner's lease has expired, instead of answering
-   * `ClaimLost`; the run store verifies the expired lease. Without it a
-   * running run belongs to its recorded owner for good.
+   * mid-run) instead of answering `ClaimLost`: at once when the owner is on
+   * this host with another pid, which the probe proved gone, and otherwise
+   * once that owner's lease has expired, which the run store verifies.
+   * Without it a running run belongs to its recorded owner for good.
    */
   readonly isAlive?: Ownership.LivenessCheck | undefined
   readonly principal?: Omit<Principal, "stampedAt"> | undefined
@@ -1177,8 +1178,9 @@ const makeRuntime = (
     /**
      * Evidence that a running row's owner is gone, from the configured
      * liveness check, or `undefined` when there is no check or the owner is
-     * alive. A pid is evidence only on its own host; elsewhere the claim
-     * rests on the expired lease the run store verifies.
+     * alive. A pid is evidence only on its own host, where it needs no stale
+     * lease; elsewhere the claim rests on the expired lease the run store
+     * verifies.
      */
     const deadOwner = (
       row: RunStore.RunRow

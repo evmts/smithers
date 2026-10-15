@@ -39,6 +39,7 @@ import {
   heartbeatStaleAfter,
   type LivenessEvidence,
   matchesEvidence,
+  provesDeath,
   type RecoverOutcome,
   type Rejected,
   type RejectionReason,
@@ -252,7 +253,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
             AND owner_host_id = ${evidence.expectedOwner.hostId}
             AND owner_pid = ${evidence.expectedOwner.pid}
             AND owner_nonce = ${evidence.expectedOwner.nonce}
-            AND heartbeat_at_ms < ${nowMs - staleAfterMs}
+            AND ${provesDeath(evidence, claimant) ? sql`TRUE` : sql`heartbeat_at_ms < ${nowMs - staleAfterMs}`}
             AND claim_host_id IS NULL
           RETURNING run_id
         `

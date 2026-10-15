@@ -76,17 +76,25 @@ for longer. A `process.kill(pid, 0)` probe is one such check;
 own host's namespace. A supplied check receives the recorded owner and a
 `LivenessContext` of `{ claimant, heartbeatAtMs, nowMs }`.
 
+A supplied check also takes a run sooner. While the lease is still fresh, the
+store asks it about an owner on this host whose pid is not this process's
+own. Answering `false` there means the process is gone, and the run is taken at
+once with `same-host-pid-dead` evidence instead of waiting out the lease. That
+is what lets a rerun after `kill -9` resume immediately. An owner on another
+host, an owner with this process's pid, or a check that answers `true` keeps
+the wait, and a pid the system reused for a live process answers `true`.
+
 ## The journal says which answer was used
 
 Every arbitration is recorded, so a takeover is auditable after the fact:
 
-| Record                                                                 | Meaning                                                        |
-| ---------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `steal-refused-owner-alive` with `evidence: "lease-fresh"`             | The lease was still inside the staleness window.               |
-| `steal-refused-owner-alive` with `evidence: "probe"`                   | The supplied `isAlive` check answered for the owner.           |
-| `stolen-and-activated` with `evidence: "lease-expired"`                | The lease had expired and no check refused it.                 |
-| `stolen-and-activated` with `evidence: "same-host-pid-dead"`           | A same-host probe found the process gone.                      |
-| `stolen-and-activated` with `evidence: "cross-host-unreachable-stale"` | The owner was on another host and unreachable past the window. |
+| Record                                                                 | Meaning                                                                                        |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `steal-refused-owner-alive` with `evidence: "lease-fresh"`             | The lease was still inside the staleness window, and no same-host probe proved the owner gone. |
+| `steal-refused-owner-alive` with `evidence: "probe"`                   | The supplied `isAlive` check answered for the owner.                                           |
+| `stolen-and-activated` with `evidence: "lease-expired"`                | The lease had expired and no check refused it.                                                 |
+| `stolen-and-activated` with `evidence: "same-host-pid-dead"`           | A same-host probe found the process gone, inside the window or after it.                       |
+| `stolen-and-activated` with `evidence: "cross-host-unreachable-stale"` | The owner was on another host and unreachable past the window.                                 |
 
 A refusal is journaled once, not once per sweep tick. The record is addressed
 by the run, the refused owner, the lease it was refused against, and the

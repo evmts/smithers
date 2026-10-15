@@ -39,6 +39,7 @@ import {
   type ConsensusError,
   type LivenessEvidence,
   matchesEvidence,
+  provesDeath,
   sameOwner
 } from "@smthrs/journal/Consensus"
 import type { JournalError } from "@smthrs/journal/Journal"
@@ -508,7 +509,9 @@ export interface Service {
   ) => Effect.Effect<ClaimOutcome, RunStoreError>
   /**
    * Claims and activates an exact snapshot atomically under the supplied owner.
-   * Replacing a different running owner also requires matching liveness evidence.
+   * Replacing a different running owner also requires matching liveness evidence,
+   * and a stale heartbeat unless that evidence is a same-host probe proving a
+   * different pid gone (`Consensus.provesDeath`).
    * A composition builds that `LivenessEvidence` with a `LivenessProbe`.
    * `evidence.checkedAtMs` must equal `nowMs` exactly, so evidence probed at T
    * is refused when this operation is called at T+1. `nowMs` is the lease
@@ -583,7 +586,9 @@ export interface Service {
   ) => Effect.Effect<TransitionOutcome, RunStoreError>
   /**
    * Steals an exact run snapshot after matching liveness evidence for its
-   * recorded owner. A composition builds `LivenessEvidence` with a
+   * recorded owner. The heartbeat must be stale unless the evidence is a
+   * same-host probe proving a different pid gone (`Consensus.provesDeath`),
+   * which is admitted at once. A composition builds `LivenessEvidence` with a
    * `LivenessProbe`. `evidence.checkedAtMs` must equal `nowMs` exactly, so
    * evidence probed at T is refused when this operation is called at T+1.
    * `LivenessUnconfirmed` means the evidence did not match and no
@@ -1495,8 +1500,9 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
               Effect.map((current) => {
                 const row = current[0]
                 // Classify the lease before upgrading an unchanged stale
-                // snapshot. Evidence cannot displace a fresh heartbeat, so
-                // naming evidence first would advise a retry the SQL must refuse.
+                // snapshot. Evidence short of a same-host pid death cannot
+                // displace a fresh heartbeat, so naming evidence first would
+                // advise a retry the SQL must refuse.
                 const loss = classifyClaimLoss(row, nowMs)
                 return loss === snapshotChanged && row !== undefined && rowMatchesSnapshot(row, expected)
                   ? evidenceRequired
@@ -1515,7 +1521,8 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
                 claimColumnsFree(row) &&
                 (row.status !== "running" ||
                   row.heartbeatAtMs === null ||
-                  row.heartbeatAtMs < nowMs - heartbeatStaleAfterMs)
+                  row.heartbeatAtMs < nowMs - heartbeatStaleAfterMs ||
+                  (evidence !== undefined && provesDeath(evidence, owner)))
               if (!admissible) return classifyClaimLoss(row, nowMs)
               const expectedOwner = expected.owner
               let grant: LeaseClaimOutcome
@@ -1926,7 +1933,9 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
                 rowMatchesSnapshot(row, expected) &&
                 claimColumnsFree(row) &&
                 row.heartbeatAtMs !== null &&
-                row.heartbeatAtMs < nowMs - heartbeatStaleAfterMs
+                // A same-host probe that found the owner's pid gone needs no
+                // stale lease: the strategy applies the same rule.
+                (row.heartbeatAtMs < nowMs - heartbeatStaleAfterMs || provesDeath(evidence, claimant))
               if (!admissible) return classifyClaimLoss(row, nowMs)
               const grant = yield* consensus.steal(runId, claimant, nowMs, evidence)
               if (grant._tag === "Rejected") {

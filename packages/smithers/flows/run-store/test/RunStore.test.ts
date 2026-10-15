@@ -1428,12 +1428,14 @@ describe("RunStore ownership evidence boundaries", () => {
             const running = yield* activateNew(store, `boundary-steal-${index}`, ownerA)
             yield* TestClock.setTime(nowMs)
             return {
+              // Cross-host evidence: a same-host pid death skips the cutoff,
+              // which the next case pins.
               claimAndOwn: (yield* store.claimAndOwn(
                 direct.runId,
                 snapshot(direct),
-                ownerB,
+                ownerC,
                 nowMs,
-                staleEvidence(ownerA, ownerB, nowMs)
+                staleEvidence(ownerA, ownerC, nowMs)
               ))._tag,
               recoverClaim: (yield* store.recoverClaim(
                 claimRunId,
@@ -1463,6 +1465,53 @@ describe("RunStore ownership evidence boundaries", () => {
         claimAndOwn: ["HeartbeatFresh", "HeartbeatFresh", "Activated"],
         recoverClaim: ["ClaimFresh", "ClaimFresh", "Recovered"],
         steal: ["HeartbeatFresh", "HeartbeatFresh", "Claimed"]
+      })
+    }))
+
+  it.effect("takes a fresh lease at once on a same-host probe that proves another pid gone (#3897)", () =>
+    Effect.gen(function*() {
+      const outcomes = yield* migrated(Effect.gen(function*() {
+        const store = yield* RunStore
+        const nowMs = yield* Clock.currentTimeMillis
+        const dead = (claimant: OwnerId): LivenessEvidence => ({
+          expectedOwner: ownerA,
+          checkedAtMs: nowMs,
+          kind: claimant.hostId === ownerA.hostId ? "same-host-pid-dead" : "cross-host-unreachable-stale"
+        })
+        // A later engine in the owner's own process shares its pid, so its
+        // probe cannot report that process gone.
+        const samePid: OwnerId = { hostId: ownerA.hostId, pid: ownerA.pid, nonce: "same-pid" }
+        const steal = (runId: string, claimant: OwnerId) =>
+          Effect.flatMap(
+            store.get(runId),
+            (row) => store.steal(row.runId, snapshot(row), claimant, nowMs, dead(claimant))
+          )
+        const own = (runId: string, claimant: OwnerId) =>
+          Effect.flatMap(
+            store.get(runId),
+            (row) => store.claimAndOwn(row.runId, snapshot(row), claimant, nowMs, dead(claimant))
+          )
+        yield* activateNew(store, "dead-pid-steal", ownerA)
+        yield* activateNew(store, "dead-pid-own", ownerA)
+        return {
+          crossHostSteal: yield* steal("dead-pid-steal", ownerC),
+          samePidSteal: yield* steal("dead-pid-steal", samePid),
+          steal: yield* steal("dead-pid-steal", ownerB),
+          crossHostOwn: yield* own("dead-pid-own", ownerC),
+          samePidOwn: yield* own("dead-pid-own", samePid),
+          own: yield* own("dead-pid-own", ownerB),
+          owned: (yield* store.get("dead-pid-own")).owner
+        }
+      }))
+
+      expect(outcomes).toEqual({
+        crossHostSteal: { _tag: "HeartbeatFresh" },
+        samePidSteal: { _tag: "HeartbeatFresh" },
+        steal: { _tag: "Claimed", claimedAtMs: 0 },
+        crossHostOwn: { _tag: "HeartbeatFresh" },
+        samePidOwn: { _tag: "HeartbeatFresh" },
+        own: { _tag: "Activated" },
+        owned: ownerB
       })
     }))
 

@@ -62,7 +62,11 @@ is why `RunStore.layerWith` takes the strategy too.
 
 The journal owns the rules: one writer per run, fenced and unfenced appends,
 commit-time admission, the generation fence, steal only on staleness plus
-liveness evidence, and ownership transitions as events. A strategy chooses
+liveness evidence, and ownership transitions as events. One kind of evidence
+needs no staleness: `same-host-pid-dead` about a pid other than the
+claimant's (`Consensus.provesDeath`). The claimant found no process behind the
+owner's pid on its own host, and a process that does not exist renews no lease
+and writes nothing, so waiting out the lease adds no safety. A strategy chooses
 where the lease lives and how the fence is checked. The claim lifecycle is
 two-phase — `claim` or `steal` reserves the run and returns a grant
 timestamp, `activate` presents that grant to take ownership, `release` gives

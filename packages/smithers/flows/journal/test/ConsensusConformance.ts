@@ -214,7 +214,8 @@ export const conformance = (
         yield* consensus.claim("run-steal", ownerA, 0)
         yield* consensus.activate("run-steal", ownerA, 0, 0)
 
-        // Live owner: refused regardless of evidence.
+        // Live owner: refused on evidence from another host. Only a same-host
+        // pid probe skips the window; see the next case.
         const live = yield* consensus.steal("run-steal", ownerB, 1, evidence(ownerA, ownerB, 1))
         expect(live).toEqual({ _tag: "Rejected", reason: "owner_live" })
 
@@ -275,6 +276,49 @@ export const conformance = (
             kind: "lease-expired"
           })
         ).toEqual({ _tag: "Claimed", grantedAtMs: nowMs })
+      })))
+
+    it.effect("steals a fresh lease only on a same-host probe that proves another pid gone (R5)", () =>
+      withStack(Effect.gen(function*() {
+        const consensus = yield* Consensus
+        yield* consensus.claim("run-dead-pid", ownerA, 0)
+        yield* consensus.activate("run-dead-pid", ownerA, 0, 0)
+        const nowMs = 1
+        const kinds = (kind: LivenessEvidence["kind"]): LivenessEvidence => ({
+          expectedOwner: ownerA,
+          checkedAtMs: nowMs,
+          kind
+        })
+
+        // Inside the window, a judgement about another host and the lease
+        // itself still wait for staleness.
+        expect(yield* consensus.steal("run-dead-pid", ownerB, nowMs, kinds("cross-host-unreachable-stale"))).toEqual({
+          _tag: "Rejected",
+          reason: "owner_live"
+        })
+        expect(yield* consensus.steal("run-dead-pid", ownerC, nowMs, kinds("lease-expired"))).toEqual({
+          _tag: "Rejected",
+          reason: "owner_live"
+        })
+        // A probe of the claimant's own pid cannot report that process gone.
+        const samePid: OwnerId = { hostId: ownerA.hostId, pid: ownerA.pid, nonce: "same-pid" }
+        expect(yield* consensus.steal("run-dead-pid", samePid, nowMs, kinds("same-host-pid-dead"))).toEqual({
+          _tag: "Rejected",
+          reason: "owner_live"
+        })
+        // Another process on the owner's host that found no process behind
+        // the owner's pid takes the run at once.
+        expect(yield* consensus.steal("run-dead-pid", ownerC, nowMs, kinds("same-host-pid-dead"))).toEqual({
+          _tag: "Claimed",
+          grantedAtMs: nowMs
+        })
+        // The pending claim still decides between rival claimants.
+        const rival: OwnerId = { hostId: ownerA.hostId, pid: 404, nonce: "rival" }
+        expect(
+          yield* consensus.steal("run-dead-pid", rival, nowMs, kinds("same-host-pid-dead"))
+        ).toEqual({ _tag: "Rejected", reason: "already_claimed" })
+        expect(yield* consensus.activate("run-dead-pid", ownerC, nowMs, nowMs)).toEqual({ _tag: "Activated" })
+        expect((yield* Effect.flip(consensus.guard("run-dead-pid", ownerA))).code).toBe("fence_lost")
       })))
 
     it.effect("recovers only the exact stale claim of a proven-dead claimant", () =>

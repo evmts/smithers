@@ -3,7 +3,8 @@
  *
  * The journal owns the consensus rules — single writer per run, fenced and
  * unfenced appends, commit-time admission, the generation fence, and steal
- * only on staleness plus liveness evidence — and this service is how a deployment chooses *how* those rules are
+ * only on staleness plus liveness evidence, or on a same-host probe that
+ * proves the owner's process gone — and this service is how a deployment chooses *how* those rules are
  * arbitrated: where the lease lives, how liveness is probed, and how the
  * fence is checked at commit time. `Consensus` lives here beside `OwnerId`
  * for the same reason `OwnerId` does: the journal is what it fences.
@@ -117,7 +118,8 @@ const staleAfterMs = Duration.toMillis(heartbeatStaleAfter)
  * strategy can check for itself, and `steal` checks it: the takeover refuses
  * any lease whose heartbeat is still inside the window. It is therefore
  * accepted from a claimant on any host, while the other two stay bound to the
- * host relation that makes them meaningful. The observation must carry the
+ * host relation that makes them meaningful. `same-host-pid-dead` alone also
+ * admits a steal inside the window; see {@link provesDeath}. The observation must carry the
  * exact instant supplied to the consuming operation: `checkedAtMs` must equal
  * that operation's `nowMs`. A caller that probes at T and calls at T+1 is
  * refused and must build fresh evidence.
@@ -181,6 +183,34 @@ export const matchesEvidence = (
       return true
   }
 }
+
+/**
+ * Whether evidence proves the owner gone, so a steal need not wait for its
+ * lease to go stale.
+ *
+ * The lease stands in for a question a peer cannot ask directly: is the owner
+ * still running? A `same-host-pid-dead` probe asks it. The claimant read its
+ * own host's process table and found no process behind the owner's pid, and a
+ * process that does not exist renews no lease and writes nothing, so waiting
+ * out `heartbeatStaleAfter` adds no safety. A run whose owner was killed with
+ * `SIGKILL` is therefore reclaimed by the next process on the same host at
+ * once.
+ *
+ * The evidence must still pass {@link matchesEvidence}, which binds the kind
+ * to the same host. One more case is excluded here: an owner recorded with the
+ * claimant's own pid names the claimant's process, which is running, so a
+ * probe of that pid cannot report it gone. Such evidence keeps the staleness
+ * cutoff.
+ *
+ * The other kinds never waive the cutoff. `cross-host-unreachable-stale` is a
+ * judgement about a host this process cannot inspect, and `lease-expired` is
+ * the cutoff itself.
+ *
+ * @since 1.0.0
+ * @category predicates
+ */
+export const provesDeath = (evidence: LivenessEvidence, claimant: OwnerId): boolean =>
+  evidence.kind === "same-host-pid-dead" && evidence.expectedOwner.pid !== claimant.pid
 
 /**
  * Why a strategy refused a claim, steal, or recovery.
@@ -621,7 +651,9 @@ export const makeLocal: Effect.Effect<Service> = Effect.sync(() => {
         if (lease?.owner === undefined || !sameOwner(lease.owner.id, evidence.expectedOwner)) {
           return rejected("evidence_invalid")
         }
-        if (lease.owner.heartbeatAtMs >= nowMs - staleAfterMs) return rejected("owner_live")
+        if (!provesDeath(evidence, claimant) && lease.owner.heartbeatAtMs >= nowMs - staleAfterMs) {
+          return rejected("owner_live")
+        }
         lease.claim = { id: claimant, claimedAtMs: nowMs }
         return claimed(nowMs)
       })

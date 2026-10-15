@@ -72,7 +72,8 @@ distinguishable.
 
 `isAlive` decides whether a run whose lease expired may be stolen. Omit it and
 the lease alone decides, which is enough to reclaim from a SIGKILL. Supply one
-to refuse a takeover for longer. See
+to refuse a takeover for longer, or to take a run from a dead owner on this
+host without waiting for its lease. See
 [Reclaim runs from a dead host](./reclaim-runs-from-a-dead-host.md).
 
 `clockFireRetryPolicy` is the redispatch `Schedule` for a durable clock whose

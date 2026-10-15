@@ -115,11 +115,15 @@ export interface Dependencies {
   readonly owner: Ownership.OwnerId
   readonly journalSource: string
   /**
-   * Liveness arbitration before a steal, consulted only for a run whose lease
-   * has already expired. Optional: the default is
+   * Liveness arbitration before a steal. Optional: the default is
    * `Ownership.leaseLiveness(Ownership.heartbeatStaleAfter)`, which has no
    * evidence beyond the lease and therefore reports the owner gone, so a
    * composition that supplies nothing still reclaims hard-killed runs.
+   *
+   * A supplied check is consulted for a run whose lease has expired, and also,
+   * while the lease is still fresh, for an owner on this host with a different
+   * pid: answering `false` there takes the run at once with
+   * `same-host-pid-dead` evidence instead of waiting out the lease (#3897).
    */
   readonly isAlive?: Ownership.LivenessCheck | undefined
   readonly canExecute?: ((row: RunStore.RunRow) => Effect.Effect<boolean>) | undefined
@@ -468,6 +472,80 @@ export const make = (
       `${dependencies.journalSource}:steal-refused:${evidence}:${
         JSON.stringify([owner.hostId, owner.pid, owner.nonce])
       }:${heartbeatAtMs}`
+
+    /**
+     * Asks the supplied probe about the owner of a fresh lease, when its
+     * answer can prove that owner gone (#3897).
+     *
+     * A process killed with `SIGKILL` leaves its run `running` under a lease
+     * that stays fresh for `heartbeatStaleAfter`, and a rerun of the same
+     * execution used to wait that long in silence. On the owner's own host a
+     * pid probe answers the question the lease stands in for, so it is asked.
+     * Two owners are never put to it, and answer `undefined`: one on another
+     * host, whose pid names nothing here, and one with this process's own pid,
+     * which is running. Without a supplied probe there is nothing to ask. The
+     * probe's `alive` is final, so a pid the system reused for a live process
+     * keeps the run waiting.
+     */
+    const probeFreshOwner = (
+      owner: Ownership.OwnerId,
+      heartbeatAtMs: number,
+      nowMs: number
+    ): Effect.Effect<"alive" | "dead" | undefined> =>
+      suppliedIsAlive === undefined ||
+        !Ownership.sameHostIncarnation(owner, dependencies.owner) ||
+        owner.pid === dependencies.owner.pid
+        ? Effect.succeed(undefined)
+        : Effect.map(
+          suppliedIsAlive(owner, { claimant: dependencies.owner, heartbeatAtMs, nowMs }),
+          (alive) => alive ? "alive" : "dead"
+        )
+
+    /**
+     * The owner and reason each waiting run was last reported with, so a
+     * caller that polls a held run reads one line per owner, not one per
+     * poll. An entry leaves when this driver takes the run.
+     */
+    const waitNotices = new Map<string, string>()
+
+    /**
+     * Says why this driver will not take a run another owner holds, and for
+     * how long (#3897). Without it a rerun waiting out a dead owner's lease
+     * printed nothing for the whole window.
+     *
+     * `alive` is the probe's answer when it was asked. A live owner is waited
+     * on until it finishes or exits; any other refusal is the lease, which
+     * expires `heartbeatStaleAfter` after the owner's last heartbeat.
+     */
+    const noticeWait = (
+      runId: string,
+      owner: Ownership.OwnerId,
+      heartbeatAtMs: number,
+      nowMs: number,
+      alive: boolean
+    ): Effect.Effect<void> => {
+      const holder = `${owner.hostId}:${owner.pid}`
+      const sameHost = Ownership.sameHostIncarnation(owner, dependencies.owner)
+      const key = `${holder}:${owner.nonce}:${alive}`
+      // A run this driver already owns is not another owner's to wait on.
+      if (sameOwner(owner, dependencies.owner) || waitNotices.get(runId) === key) return Effect.void
+      waitNotices.set(runId, key)
+      const waitMs = heartbeatAtMs + Duration.toMillis(Ownership.heartbeatStaleAfter) - nowMs
+      const message = alive
+        ? sameHost
+          ? `run ${runId} is held by ${holder}, a live process on this host; waiting for it to finish or exit`
+          : `run ${runId} is held by ${holder} on another host, which the liveness check reports alive; waiting for it to release the run`
+        : `run ${runId} is held by ${holder}${
+          !sameHost
+            ? " on another host"
+            : suppliedIsAlive === undefined
+            ? ", which no liveness probe checks"
+            : ", an earlier owner in this process"
+        }; waiting up to ${Math.max(1, Math.ceil(waitMs / 1000))} s for its lease to expire`
+      return Effect.logInfo(`engine-store: ${message}`).pipe(
+        Effect.annotateLogs({ runId, ownerHostId: owner.hostId, ownerPid: owner.pid, ...(alive ? {} : { waitMs }) })
+      )
+    }
     const liveInstances = new Map<string, FlowRuntime.FlowInstance["Service"]>()
     /**
      * Flow scopes retained past a round's settlement.
@@ -864,18 +942,21 @@ export const make = (
         let recoveredClaim: { readonly claimant: Ownership.OwnerId; readonly claimedAtMs: number } | undefined
 
         if (row.status === "running") {
-          if (
-            row.owner === null ||
-            row.heartbeatAtMs === null ||
+          const leaseFresh = row.heartbeatAtMs !== null &&
             row.heartbeatAtMs >= nowMs - Duration.toMillis(Ownership.heartbeatStaleAfter)
-          ) {
-            // The lease is the refusal, and no probe is consulted for it: a
-            // probe may be a remote call, and a fresh heartbeat already
-            // answers the question. It is journaled anyway — but only when
-            // another owner holds the run, because refusing to steal from
-            // ourselves is routine re-entry rather than arbitration — so an
-            // operator whose `resume` did nothing can see that a live owner
-            // was in the way (issue #53 follow-up).
+          const freshOwner = row.owner !== null && row.heartbeatAtMs !== null && leaseFresh &&
+              !sameOwner(row.owner, dependencies.owner)
+            ? yield* probeFreshOwner(row.owner, row.heartbeatAtMs, nowMs)
+            : undefined
+          if (row.owner === null || row.heartbeatAtMs === null || (leaseFresh && freshOwner !== "dead")) {
+            // The lease is the refusal. Only a local pid probe is consulted
+            // for it, by `probeFreshOwner`: any other probe may be a remote
+            // call, and a fresh heartbeat already answers the question. It is
+            // journaled anyway — but only when another owner holds the run,
+            // because refusing to steal from ourselves is routine re-entry
+            // rather than arbitration — so an operator whose `resume` did
+            // nothing can see that a live owner was in the way (issue #53
+            // follow-up).
             if (row.owner !== null && !sameOwner(row.owner, dependencies.owner)) {
               deferSteal(row.runId, row.heartbeatAtMs, nowMs)
               yield* emitEvidence(row.runId, {
@@ -884,12 +965,20 @@ export const make = (
                 expectedOwner: row.owner,
                 heartbeatAtMs: row.heartbeatAtMs
               }, stealRefusedSourceId(row.owner, row.heartbeatAtMs, "lease-fresh"))
+              // `flows_runs` refuses a running row without a heartbeat (its
+              // CHECK constraint), so an owner here always comes with one.
+              yield* noticeWait(row.runId, row.owner, row.heartbeatAtMs!, nowMs, freshOwner === "alive")
             }
             yield* Effect.annotateCurrentSpan({ outcome: "heartbeat_fresh" })
             yield* Metric.update(EngineStoreMetrics.claim.HeartbeatFresh, 1)
             return false
           }
-          if (yield* isAlive(row.owner, { claimant: dependencies.owner, heartbeatAtMs: row.heartbeatAtMs, nowMs })) {
+          // An owner the probe just proved gone is not asked again.
+          if (
+            !leaseFresh &&
+            (yield* isAlive(row.owner, { claimant: dependencies.owner, heartbeatAtMs: row.heartbeatAtMs, nowMs }))
+          ) {
+            yield* noticeWait(row.runId, row.owner, row.heartbeatAtMs, nowMs, true)
             deferSteal(row.runId, row.heartbeatAtMs, nowMs)
             yield* emitEvidence(row.runId, {
               decision: "steal-refused-owner-alive",
@@ -1027,6 +1116,7 @@ export const make = (
         // The run is this driver's now, so whatever it was told about the
         // previous owner is spent.
         stealRefusals.delete(row.runId)
+        waitNotices.delete(row.runId)
         return true
       })
     })

@@ -22,6 +22,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { FlowRuntime } from "@smthrs/flow"
 import { Journal, JournalEvent } from "@smthrs/journal"
+import * as HostLiveness from "@smthrs/platform-node/HostLiveness"
 import { Ownership, RunStore } from "@smthrs/run-store"
 import type * as Crypto from "effect/Crypto"
 import * as Deferred from "effect/Deferred"
@@ -30,6 +31,7 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
+import * as Logger from "effect/Logger"
 import * as Option from "effect/Option"
 import type * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
@@ -176,6 +178,26 @@ interface Survivor {
   readonly spans: ReadonlyArray<Tracer.NativeSpan>
 }
 
+/** How the survivor names itself and decides whether the dead child is alive. */
+interface SurvivorHost {
+  readonly hostId: string
+  readonly isAlive: Ownership.LivenessCheck
+  /** Every message the survivor logs, in order. */
+  readonly logs?: Array<string> | undefined
+}
+
+/**
+ * The probe a Node host uses: the one `@smthrs/flows`' `layerHost` installs,
+ * which reads the process table this test hands it.
+ */
+const pidProbe = (hostId: string, alive: ReadonlySet<number>): Ownership.LivenessCheck =>
+  HostLiveness.isAlive({
+    hostId,
+    signal: (pid) => {
+      if (!alive.has(pid)) throw Object.assign(new Error(`kill ${pid}: no such process`), { code: "ESRCH" })
+    }
+  })
+
 /**
  * A fresh engine over the killed child's database, with its own bodies
  * attached, starting while the dead owner's lease is still `fresh` or once it
@@ -189,7 +211,14 @@ const survive = <A>(
   bodies: (ran: Ran) => ReclaimedAttemptFlow.Bodies,
   observe: (
     survivor: Survivor
-  ) => Effect.Effect<A, unknown, RunStore.RunStore | Journal.Journal | Scope.Scope | Crypto.Crypto>
+  ) => Effect.Effect<A, unknown, RunStore.RunStore | Journal.Journal | Scope.Scope | Crypto.Crypto>,
+  host: SurvivorHost = {
+    hostId: ReclaimedAttemptFlow.hostId,
+    // The pid probe on the real process table: the child's pid is gone, so
+    // its expired lease admits the steal, and the survivor's own runs stay
+    // its own however far the test clock runs ahead of their heartbeats.
+    isAlive: Ownership.sameHostPidProbe
+  }
 ) => {
   const ran: Ran = { plan: [], test: [] }
   const spans: Array<Tracer.NativeSpan> = []
@@ -209,13 +238,10 @@ const survive = <A>(
     expect(killed.owner?.pid).not.toBe(process.pid)
     const killedHeartbeatAtMs = killed.heartbeatAtMs ?? 0
     yield* TestClock.setTime(killedHeartbeatAtMs + (lease === "fresh" ? 0 : expiry))
-    // The probe a Node host uses: the child's pid is gone, so its expired
-    // lease admits the steal, and the survivor's own runs stay its own however
-    // far the test clock runs ahead of their heartbeats.
     const engine = yield* EngineStore.make({
-      owner: { hostId: ReclaimedAttemptFlow.hostId },
+      owner: { hostId: host.hostId },
       journalSource: "survivor",
-      isAlive: Ownership.sameHostPidProbe
+      isAlive: host.isAlive
     })
     const context = yield* Layer.build(ReclaimedAttemptFlow.layer(engine, bodies(ran)))
     const execute = (runId: string) =>
@@ -226,6 +252,9 @@ const survive = <A>(
     return yield* observe({ engine, execute, ran, spans })
   })).pipe(
     Effect.map((observed) => ({ ran, observed })),
+    Effect.provide(Logger.layer([Logger.make(({ message }) => {
+      host.logs?.push((Array.isArray(message) ? message : [message]).map(String).join(" "))
+    })])),
     Effect.provideService(Tracer.Tracer, tracer),
     Effect.provide(ReclaimedAttemptFlow.jj),
     Effect.provide(StepBoundary.layerTest()),
@@ -376,5 +405,166 @@ describe("a reclaimed attempt reuses the step cache (issue #3898)", () => {
     expect(observed.result).toBe(passed)
     expect(observed.attempts).toHaveLength(2)
     expect(observed.attempts.every((attempt) => attempt.finished)).toBe(true)
+  }, processBudget)
+})
+
+/**
+ * Joins `fiber` within `ms` of real time while the test clock stands still,
+ * or answers `None` with the fiber still running.
+ */
+const within = <A>(fiber: Fiber.Fiber<A>, ms: number) =>
+  Effect.raceFirst(
+    Effect.map(Fiber.join(fiber), Option.some),
+    Effect.as(Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, ms))), Option.none<A>())
+  )
+
+/** Waits up to `ms` of real time, the test clock standing still, for a logged line containing `text`. */
+const logged = (logs: ReadonlyArray<string>, text: string, ms = 20_000) =>
+  Effect.gen(function*() {
+    for (let turn = 0; turn * 5 < ms; turn++) {
+      if (logs.some((line) => line.includes(text))) return true
+      yield* pause
+    }
+    return false
+  })
+
+/** The orphan's owner as SIGKILL left it, read back after the survivor gave up waiting. */
+const ownerOf = (runId: string) =>
+  Effect.flatMap(
+    RunStore.RunStore,
+    (runs) => Effect.map(runs.get(runId), (row) => ({ status: row.status, owner: row.owner }))
+  )
+
+const counting = (ran: Ran): ReclaimedAttemptFlow.Bodies => ({
+  plan: (issue) =>
+    Effect.sync(() => {
+      ran.plan.push(issue)
+      return `plan for ${issue}`
+    }),
+  test: (plan) =>
+    Effect.sync(() => {
+      ran.test.push(plan)
+      return `passed: ${plan}`
+    })
+})
+
+/**
+ * Issue #3897: after `kill -9`, rerunning the same execution printed nothing
+ * for about 30 s and then resumed. Every case reruns the orphan with the test
+ * clock on the dead child's last heartbeat, so its lease stays fresh for the
+ * whole case and nothing may wait it out; the process table is the one handed
+ * to the probe `layerHost` installs.
+ */
+describe("a rerun after SIGKILL does not wait out a dead owner's lease in silence (issue #3897)", () => {
+  it("reclaims at once when the probe proves the owner's pid gone, and runs the step once", async () => {
+    const logs: Array<string> = []
+    const { observed, ran } = await killedDatabase((filename) =>
+      survive(
+        filename,
+        "fresh",
+        counting,
+        ({ execute }) =>
+          Effect.gen(function*() {
+            const rerun = yield* Effect.forkScoped(execute(orphan))
+            return {
+              result: yield* within(rerun, 60_000),
+              status: yield* statusOf(orphan),
+              decisions: yield* decisions(orphan),
+              attempts: yield* attemptSpans(orphan)
+            }
+          }),
+        // The child's pid is not in the table: its process is gone.
+        { hostId: ReclaimedAttemptFlow.hostId, isAlive: pidProbe(ReclaimedAttemptFlow.hostId, new Set()), logs }
+      )
+    )
+
+    expect(observed.result).toEqual(Option.some(passed))
+    expect(observed.status).toBe("completed")
+    expect(observed.decisions).toContainEqual(
+      expect.objectContaining({ decision: "stolen-and-activated", evidence: "same-host-pid-dead" })
+    )
+    // `Plan` came from the child's record, and the step the kill interrupted
+    // ran once, in the survivor.
+    expect(ran.plan).toEqual([])
+    expect(ran.test).toEqual(["plan for #42"])
+    expect(observed.attempts.every((attempt) => attempt.finished)).toBe(true)
+    expect(logs.filter((line) => line.includes("waiting"))).toEqual([])
+  }, processBudget)
+
+  it("never takes the run from a pid that is still alive, and says why it waits", async () => {
+    const logs: Array<string> = []
+    const { observed, ran } = await killedDatabase((filename) =>
+      survive(
+        filename,
+        "fresh",
+        counting,
+        ({ execute }) =>
+          Effect.gen(function*() {
+            const rerun = yield* Effect.forkScoped(execute(orphan))
+            const said = yield* logged(logs, "a live process on this host")
+            const result = yield* within(rerun, 250)
+            yield* Fiber.interrupt(rerun)
+            return { said, result, held: yield* ownerOf(orphan), decisions: yield* decisions(orphan) }
+          }),
+        {
+          hostId: ReclaimedAttemptFlow.hostId,
+          // The child's pid answers, as it does once the system hands it to
+          // another process: liveness cannot be told from reuse.
+          isAlive: (owner, context) => pidProbe(ReclaimedAttemptFlow.hostId, new Set([owner.pid]))(owner, context),
+          logs
+        }
+      )
+    )
+
+    expect(observed.said).toBe(true)
+    expect(observed.result).toEqual(Option.none())
+    expect(observed.held.status).toBe("running")
+    expect(observed.held.owner?.hostId).toBe(ReclaimedAttemptFlow.hostId)
+    expect(observed.decisions).not.toContainEqual(expect.objectContaining({ decision: "stolen-and-activated" }))
+    expect(ran.test).toEqual([])
+    const holder = `${ReclaimedAttemptFlow.hostId}:${observed.held.owner?.pid}`
+    expect(logs.filter((line) => line.includes("waiting"))).toEqual([
+      `engine-store: run ${orphan} is held by ${holder}, a live process on this host; waiting for it to finish or exit`
+    ])
+  }, processBudget)
+
+  it("waits out the lease of an owner on another host, and says why and for how long", async () => {
+    const logs: Array<string> = []
+    const otherHost = "another-host"
+    const { observed, ran } = await killedDatabase((filename) =>
+      survive(
+        filename,
+        "fresh",
+        counting,
+        ({ execute }) =>
+          Effect.gen(function*() {
+            const rerun = yield* Effect.forkScoped(execute(orphan))
+            const fresh = yield* logged(logs, "for its lease to expire")
+            const duringLease = yield* within(rerun, 250)
+            // Past the lease, the probe `layerHost` installs still answers
+            // for a host it cannot see: alive. The survivor holds no lease
+            // across this jump.
+            yield* TestClock.adjust(expiry)
+            const expired = yield* logged(logs, "reports alive")
+            const afterLease = yield* within(rerun, 250)
+            yield* Fiber.interrupt(rerun)
+            return { fresh, duringLease, expired, afterLease, held: yield* ownerOf(orphan) }
+          }),
+        { hostId: otherHost, isAlive: pidProbe(otherHost, new Set()), logs }
+      )
+    )
+
+    expect(observed.fresh).toBe(true)
+    expect(observed.duringLease).toEqual(Option.none())
+    expect(observed.expired).toBe(true)
+    expect(observed.afterLease).toEqual(Option.none())
+    expect(observed.held.status).toBe("running")
+    expect(observed.held.owner?.hostId).toBe(ReclaimedAttemptFlow.hostId)
+    expect(ran.test).toEqual([])
+    const holder = `${ReclaimedAttemptFlow.hostId}:${observed.held.owner?.pid}`
+    expect(logs.filter((line) => line.includes("waiting"))).toEqual([
+      `engine-store: run ${orphan} is held by ${holder} on another host; waiting up to 30 s for its lease to expire`,
+      `engine-store: run ${orphan} is held by ${holder} on another host, which the liveness check reports alive; waiting for it to release the run`
+    ])
   }, processBudget)
 })

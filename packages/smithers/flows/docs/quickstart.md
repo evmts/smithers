@@ -220,8 +220,10 @@ prints `Error: All fibers interrupted without error` and exits 1, and the next
 run resumes the execution at once.
 
 A process that dies without closing its scope, such as one killed with
-`kill -9`, leaves the run `running` under its lease. The next run waits about 30
-seconds for that lease to expire, then reclaims the run and resumes it.
+`kill -9`, leaves the run `running` under its lease. The next run on the same
+machine finds no process behind the owner's pid, reclaims the run at once, and
+resumes it. A run it cannot prove abandoned, such as one owned by another
+`hostId`, waits, and the host logs why and for how long.
 
 ## Next steps
 

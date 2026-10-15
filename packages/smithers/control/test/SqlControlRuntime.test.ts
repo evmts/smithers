@@ -847,7 +847,7 @@ describe("SqlControlRuntime", () => {
     )
   })
 
-  it("takes over a running run whose owner is gone only once its lease has expired", async () => {
+  it("takes over a running run at once when a same-host probe proves its owner gone, and across hosts once its lease expires", async () => {
     const owner = { hostId: "mac", pid: 101, nonce: "first" }
     const observed = await Effect.runPromise(
       Effect.gen(function*() {
@@ -871,10 +871,9 @@ describe("SqlControlRuntime", () => {
         )
         const withoutCheck = yield* Effect.flip(unchecked.resume(runId))
         const ownerAlive = yield* Effect.flip((yield* successor("mac", true)).resume(runId))
-        const leaseFresh = yield* Effect.flip((yield* successor("mac", false)).resume(runId))
-        // The dead owner's lease runs out.
-        yield* sql`UPDATE flows_runs SET heartbeat_at_ms = heartbeat_at_ms - 60000 WHERE run_id = ${runId}`
-        yield* sql`UPDATE flows_consensus_leases SET heartbeat_at_ms = heartbeat_at_ms - 60000 WHERE run_id = ${runId}`
+        // From another host, an owner reported gone keeps its fresh lease.
+        const otherHostFresh = yield* Effect.flip((yield* successor("linux", false)).resume(runId))
+        // On the owner's host, a probe that finds its pid gone needs no stale lease.
         const sameHost = yield* successor("mac", false)
         const taken = yield* sameHost.resume(runId)
         const fence = JSON.parse(yield* sameHost.claimFence(runId)) as Ownership.OwnerId
@@ -885,13 +884,13 @@ describe("SqlControlRuntime", () => {
         const otherHost = yield* successor("linux", false)
         const moved = yield* otherHost.resume(runId)
         const row = yield* store.get(runId)
-        return { withoutCheck, ownerAlive, leaseFresh, taken, fence, evicted, moved, row, asked }
+        return { withoutCheck, ownerAlive, otherHostFresh, taken, fence, evicted, moved, row, asked }
       }).pipe(Effect.provide(durable({ owner })), Effect.scoped, Effect.orDie)
     )
 
     expect(observed.withoutCheck).toBeInstanceOf(ClaimLost)
     expect(observed.ownerAlive).toBeInstanceOf(ClaimLost)
-    expect(observed.leaseFresh).toBeInstanceOf(ClaimLost)
+    expect(observed.otherHostFresh).toBeInstanceOf(ClaimLost)
     expect(observed.taken.status).toBe("accepted")
     expect(observed.fence).toMatchObject({ hostId: "mac", pid: 202 })
     expect(observed.evicted).toBeInstanceOf(ClaimLost)
@@ -899,7 +898,7 @@ describe("SqlControlRuntime", () => {
     expect(observed.row.owner).toMatchObject({ hostId: "linux", pid: 202 })
     expect(observed.asked).toEqual([
       "mac:101 asked by mac",
-      "mac:101 asked by mac",
+      "mac:101 asked by linux",
       "mac:101 asked by mac",
       "mac:202 asked by linux"
     ])

@@ -13,7 +13,9 @@ choosing how aggressively another process may take those runs over.
 ## Choose an isAlive check
 
 `isAlive` on `EngineStore.Options` is consulted before this store steals a run
-whose lease has expired. Answering `true` refuses the takeover.
+whose lease has expired. Answering `true` refuses the takeover. A supplied
+check is also asked, while the lease is still fresh, about an owner on this
+host with a different pid, and answering `false` there takes the run at once.
 
 **Take the default when you have no better evidence.** Omit the option and the
 store uses `Ownership.leaseLiveness(Ownership.heartbeatStaleAfter)`: the owner
@@ -48,7 +50,10 @@ const engine = EngineStore.layer({
 ```
 
 A second process over the same file then cannot take a run out of a live one,
-even while that process is busy enough to miss a heartbeat.
+even while that process is busy enough to miss a heartbeat. It also does not
+wait for a dead one: when no process stands behind the owner's pid, the run is
+taken at once, so a rerun after `kill -9` resumes without waiting out the
+lease.
 
 **Write your own for a multi-host deployment.** A supplied check receives the
 recorded owner and a `LivenessContext` of `{ claimant, heartbeatAtMs, nowMs }`.
@@ -65,19 +70,32 @@ runs out of live processes on the strength of it.
 Every arbitration is recorded. Query the run's entries and look for two event
 types:
 
-| Record                      | `evidence`                     | Meaning                                                        |
-| --------------------------- | ------------------------------ | -------------------------------------------------------------- |
-| `steal-refused-owner-alive` | `lease-fresh`                  | The lease was still inside the window; no probe was consulted. |
-| `steal-refused-owner-alive` | `probe`                        | Your `isAlive` check answered for the owner.                   |
-| `stolen-and-activated`      | `lease-expired`                | The lease expired and nothing refused it.                      |
-| `stolen-and-activated`      | `same-host-pid-dead`           | A same-host probe found the process gone.                      |
-| `stolen-and-activated`      | `cross-host-unreachable-stale` | The owner was on another host and unreachable past the window. |
+| Record                      | `evidence`                     | Meaning                                                                          |
+| --------------------------- | ------------------------------ | -------------------------------------------------------------------------------- |
+| `steal-refused-owner-alive` | `lease-fresh`                  | The lease was still inside the window; no same-host probe proved the owner gone. |
+| `steal-refused-owner-alive` | `probe`                        | Your `isAlive` check answered for the owner.                                     |
+| `stolen-and-activated`      | `lease-expired`                | The lease expired and nothing refused it.                                        |
+| `stolen-and-activated`      | `same-host-pid-dead`           | A same-host probe found the process gone.                                        |
+| `stolen-and-activated`      | `cross-host-unreachable-stale` | The owner was on another host and unreachable past the window.                   |
 
 Refusals are deduplicated by run, refused owner, lease, and evidence, so a run
 refused every second for an hour produces one record per distinct reason, not
 thousands. Seeing both a `lease-fresh` and a `probe` refusal for one lease is
 normal: the first is a wake arriving while the owner still pulses, the second
 is the same owner alive but stalled past the window.
+
+## Read why a run is waiting
+
+A caller that asks for a run another owner holds logs one line per owner,
+at `Info`, saying why it is not taking the run and for how long it can wait:
+
+| Line ends with                                                              | Meaning                                                                                      |
+| --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `on another host; waiting up to N s for its lease to expire`                | A pid on another host names nothing here, so only the lease can free the run.                |
+| `which no liveness probe checks; waiting up to N s ...`                     | No `isAlive` check is configured, so only the lease can free the run.                        |
+| `an earlier owner in this process; waiting up to N s ...`                   | The owner has this process's pid, which a probe cannot report gone.                          |
+| `a live process on this host; waiting for it to finish or exit`             | The probe found a process behind the pid: the owner, or another program that reused the pid. |
+| `which the liveness check reports alive; waiting for it to release the run` | Your check answered for an owner on another host after its lease expired.                    |
 
 ## What the sweep does with a stale run
 

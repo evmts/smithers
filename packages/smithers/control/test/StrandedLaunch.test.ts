@@ -6,7 +6,7 @@
  * `accepted` under a dead owner, and the client's retry with the same key only
  * read the recorded receipt back, so nothing ever launched it (#2175).
  */
-import { Clock, Effect, Exit, type Layer } from "effect"
+import { Effect, Exit, type Layer } from "effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -20,27 +20,22 @@ import { durable, type DurableStack, fileBundle } from "./DurableStack.ts"
 const directory = mkdtempSync(join(tmpdir(), "flows-control-stranded-"))
 afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
-const stack = (filename: string, pid: number, executor: ControlExecutor.Service): Layer.Layer<DurableStack> =>
+const stack = (
+  filename: string,
+  pid: number,
+  executor: ControlExecutor.Service,
+  alive: ReadonlyArray<number> = []
+): Layer.Layer<DurableStack> =>
   durable({
     database: fileBundle(filename),
     owner: { hostId: "stranded-host", pid, nonce: `process-${pid}` },
-    // The first process is gone; the second is this one.
-    isAlive: (owner) => Effect.succeed(owner.pid === pid),
+    // This process is alive, and so is any pid in `alive`; every other is gone.
+    isAlive: (owner) => Effect.succeed(owner.pid === pid || alive.includes(owner.pid)),
     executor
   })
 
 const run = <A, E>(layer: Layer.Layer<DurableStack>, body: Effect.Effect<A, E, DurableStack>) =>
   Effect.runPromiseExit(body.pipe(Effect.provide(layer), Effect.scoped))
-
-/** A clock `ms` ahead: the dead owner's heartbeat lease has to lapse before its run can be taken. */
-const later = (ms: number) =>
-  Effect.map(Effect.clockWith(Effect.succeed), (clock): Clock.Clock => ({
-    ...clock,
-    currentTimeMillisUnsafe: () => clock.currentTimeMillisUnsafe() + ms,
-    currentTimeMillis: Effect.sync(() => clock.currentTimeMillisUnsafe() + ms),
-    currentTimeNanosUnsafe: () => clock.currentTimeNanosUnsafe() + BigInt(ms) * 1_000_000n,
-    currentTimeNanos: Effect.sync(() => clock.currentTimeNanosUnsafe() + BigInt(ms) * 1_000_000n)
-  }))
 
 const admit = Effect.gen(function*() {
   const control = yield* Control
@@ -76,21 +71,22 @@ it("relaunches a run whose admitting process died before the launch when the cli
   expect(Exit.isFailure(crashed)).toBe(true)
 
   const launched: Array<string> = []
+  const launch = ControlExecutor.makeNoop({
+    launch: (input) => Effect.sync(() => launched.push(input.run.runId)).pipe(Effect.as("accepted" as const))
+  })
+  // While the admitter's pid still answers, its run stays its own.
+  const refused = await run(stack(filename, 202, launch, [101]), retry(card))
+  if (!Exit.isSuccess(refused)) throw new Error(String(refused.cause))
+  expect(refused.value).toMatchObject({ _tag: "AlreadyApplied", receiptId: "run:stranded" })
+  expect(launched).toEqual([])
+
   const retried = await run(
-    stack(
-      filename,
-      202,
-      ControlExecutor.makeNoop({
-        launch: (input) => Effect.sync(() => launched.push(input.run.runId)).pipe(Effect.as("accepted" as const))
-      })
-    ),
+    stack(filename, 202, launch),
     Effect.gen(function*() {
-      // Before the lease lapses the admitter may still be alive: nothing moves.
-      yield* retry(card)
-      if (launched.length !== 0) return yield* Effect.die("launched under a fresh lease")
-      const clock = yield* later(60_000)
-      const receipt = yield* retry(card).pipe(Effect.provideService(Clock.Clock, clock))
-      const again = yield* retry(card).pipe(Effect.provideService(Clock.Clock, clock))
+      // The admitter's pid is gone from this host, so its lease, still fresh,
+      // is no reason to wait: the first retry launches.
+      const receipt = yield* retry(card)
+      const again = yield* retry(card)
       const runtime = yield* ControlRuntime
       if (receipt._tag !== "AlreadyApplied" || receipt.runId === undefined) {
         return yield* Effect.die(JSON.stringify(receipt))

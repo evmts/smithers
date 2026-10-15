@@ -22,10 +22,13 @@ does, still sees the interruption: after a graceful `Ctrl-C` it prints
 `Error: All fibers interrupted without error` and exits 1.
 
 A process killed outright, with `kill -9`, runs no finalizer, so its run stays
-`running` under the dead owner's lease. The next host waits for that lease to
-lapse, about 30 seconds, then reclaims the run and resumes it. Under
-`layerHost`, containment also applies: whatever an interrupted action spawned is
-signalled and then killed as its process group.
+`running` under the dead owner's lease. A host started next on the same
+machine, with the same `owner.hostId`, finds no process behind the owner's pid
+and reclaims the run at once. A host that cannot prove the owner gone, such as
+one with a different `hostId`, waits for the lease and logs why; see
+[A resumed run waits before it continues](../troubleshooting.md#a-resumed-run-waits-before-it-continues).
+Under `layerHost`, containment also applies: whatever an interrupted action
+spawned is signalled and then killed as its process group.
 
 A fiber could not be the handle here anyway. A layer builds in its own fiber,
 not the program's, so the fiber this code can reach is not the one your program

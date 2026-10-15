@@ -91,6 +91,7 @@ describe("native CLI cancellation", { timeout: 120_000 }, () => {
       const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-native-cancel-")))
       let runner: ReturnType<typeof command> | undefined
       let qualified = false
+      let heartbeatAtRelease: number | undefined
       try {
         await mkdir(join(root, "flows", "hold"), { recursive: true })
         await symlink(nodeModules, join(root, "node_modules"), "dir")
@@ -110,11 +111,10 @@ describe("native CLI cancellation", { timeout: 120_000 }, () => {
           expect(released.code, released.stdout + released.stderr).toBe(143)
           expect(rows(root, "engine").every((row) => row.status === "suspended")).toBe(true)
           expect(() => process.kill(runner!.child.pid!, 0)).toThrow()
+          heartbeatAtRelease = rows(root, "control")[0]!.heartbeat_at_ms!
           if (mode === "released committed request") {
-            // The exited host's fresh control lease still fences a takeover.
-            const heartbeat = rows(root, "control")[0]!.heartbeat_at_ms!
-            const staleAt = heartbeat + Duration.toMillis(Ownership.heartbeatStaleAfter) + 1
-            await new Promise((resolve) => setTimeout(resolve, Math.max(0, staleAt - Date.now())))
+            // The exited host's control lease is still fresh; its gone pid
+            // lets the cancel take the run over without waiting it out.
             await commitCancelBeforeCleanup(root, runId)
             expect(rows(root, "control")[0]?.status).toBe("cancelled")
             expect(rows(root, "engine").every((row) => row.status === "suspended")).toBe(true)
@@ -135,27 +135,17 @@ describe("native CLI cancellation", { timeout: 120_000 }, () => {
           const cancelled = await command(root, ["runs", "cancel", runId]).finished
           // An accepted cancel exits 0 and the attached execution reports the
           // cancelled settlement below; a cancel whose own receipt is Terminal
-          // (the released committed request) reports the interrupt status, 130.
-          expect(cancelled.code, cancelled.stdout + cancelled.stderr).toBe(
-            mode === "released committed request" ? 130 : 0
-          )
+          // (both released modes) reports the interrupt status, 130.
+          expect(cancelled.code, cancelled.stdout + cancelled.stderr).toBe(mode.startsWith("released") ? 130 : 0)
           expect(cancelled.stderr).toBe("")
           if (mode === "released") {
-            const receipt = JSON.parse(cancelled.stdout)
-            expect(receipt._tag).toBe("Accepted")
-            const fresh = rows(root, "control")[0]!
-            expect(fresh.status).toBe("running")
-            expect(fresh.heartbeat_at_ms).not.toBeNull()
-            expect(rows(root, "engine").every((row) => row.status === "suspended")).toBe(true)
-            expect(rows(root, "engine").find((row) => row.run_id === runId)?.cancel_requested_at_ms).not.toBeNull()
-            // Respect the recorded control lease. A fresh owner cannot be taken
-            // over even after its process exits; a later public cancel owns cleanup.
-            const staleAt = fresh.heartbeat_at_ms! + Duration.toMillis(Ownership.heartbeatStaleAfter) + 1
-            expect(Date.now()).toBeLessThan(staleAt)
-            await new Promise((resolve) => setTimeout(resolve, staleAt - Date.now()))
-            const settled = await command(root, ["runs", "cancel", runId]).finished
-            expect(settled.code, settled.stdout + settled.stderr).toBe(130)
-            expect(JSON.parse(settled.stdout)).toMatchObject({ _tag: "Terminal", status: "cancelled" })
+            // The exited host's control lease is still fresh, but its pid is
+            // gone from this host, which the cancel's own probe proves. The
+            // first public cancel takes the run over and settles it (#3897).
+            expect(Date.now()).toBeLessThan(
+              heartbeatAtRelease! + Duration.toMillis(Ownership.heartbeatStaleAfter)
+            )
+            expect(JSON.parse(cancelled.stdout)).toMatchObject({ _tag: "Terminal", status: "cancelled" })
           }
           if (mode.startsWith("released")) {
             process.stdout.write(

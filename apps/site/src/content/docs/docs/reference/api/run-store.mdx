@@ -287,6 +287,9 @@ Writes the claim columns of a stale `running` row after verifying evidence,
 leaving status, owner, and heartbeat untouched so the same `expected` snapshot
 activates. The write refuses any row whose `heartbeat_at_ms` is within
 `heartbeatStaleAfter` of `nowMs`, and any row that already carries a claim.
+`same-host-pid-dead` evidence about a pid other than the claimant's waives the
+staleness check: the probe proved the owner's process gone, so the row is
+taken at once. `claimAndOwn` applies the same rule.
 
 ### RunStore models
 
@@ -699,15 +702,16 @@ const LivenessEvidence: Schema.Struct<{
 }>
 ```
 
-| Kind                           | Accepted when                                                                      |
-| ------------------------------ | ---------------------------------------------------------------------------------- |
-| `same-host-pid-dead`           | The observer and the recorded owner share a `hostId`.                              |
-| `cross-host-unreachable-stale` | The hosts differ.                                                                  |
-| `lease-expired`                | Any host. The strategy verifies this claim itself against the persisted heartbeat. |
+| Kind                           | Accepted when                                                                                      |
+| ------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `same-host-pid-dead`           | The observer and the recorded owner share a `hostId`. Admits a steal at once when the pids differ. |
+| `cross-host-unreachable-stale` | The hosts differ.                                                                                  |
+| `lease-expired`                | Any host. The strategy verifies this claim itself against the persisted heartbeat.                 |
 
 Defined by [`@smthrs/journal`](/docs/reference/api/journal/)'s `Consensus`, because steal
 requires staleness plus liveness evidence in every strategy, and re-exported
-here. `checkedAtMs` must equal the consuming call's `nowMs` exactly, so a probe
+here. The one exception is `same-host-pid-dead` about another pid, which
+proves the owner gone and needs no staleness. `checkedAtMs` must equal the consuming call's `nowMs` exactly, so a probe
 cannot be replayed into a later decision.
 
 ### LivenessProbe, LivenessContext, LivenessCheck
