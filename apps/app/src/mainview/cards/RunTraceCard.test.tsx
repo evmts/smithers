@@ -1262,7 +1262,7 @@ test("a pending launch states only Requested and a refusal offers the existing R
   const refused = render()
   expect(refused).toContain('<p>Smithers could not start this run. Not your fault.</p>')
   expect(refused).not.toContain("<p>Provider unavailable")
-  expect(refused).toContain('<details><summary>Details</summary><pre tabindex="0" role="region" aria-label="Failure details">provider_unavailable — Provider unavailable</pre></details>')
+  expect(refused).toContain('<details><summary>Details</summary><pre class="failure-detail" tabindex="0" role="region" aria-label="Failure details">provider_unavailable — Provider unavailable</pre></details>')
   expect(refused).toContain('data-fault="infra" data-failure="run.launch.launch"')
   expect(render()).toContain('data-flow="flow.run"')
   expect(render()).toContain(">Retry</button>")

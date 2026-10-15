@@ -316,13 +316,25 @@ test("rows the tracker did establish still answer when the GitHub source refuses
 })
 
 /*
- * The list read throws the sign-in door's refusal rather than returning it
- * (SeamContext RepositorySignInRequired travels through the prepared-view
- * machinery). `issues.list` catches it in `repositoryListRead`; the search
- * index door calls the read DIRECTLY and caught nothing, so a 401 left the
- * `search.issues` flow as a thrown rejection instead of an answer.
+ * The list read THROWS the sign-in door's refusal rather than returning it:
+ * `readRepositoryListError` raises SeamContext RepositorySignInRequired so
+ * the prepared-view machinery can offer the sign-in step, and
+ * `repositoryListRead` catches it for `/issues`. The search index door calls
+ * the read DIRECTLY and caught nothing, so an expired session escaped the
+ * index as a rejection and `search.issues` presented its own INTERNAL-BUG
+ * copy — "Smithers hit a bug of its own, so that didn't finish ... Reload the
+ * page" — to a person who merely needed to sign in, while the diagnostics
+ * ring recorded nothing at all.
+ *
+ * A session that expired is the person's own door, not a Smithers crash, so
+ * the answer is the failure registry's own sentence (APP_FAILURE_COPY
+ * RepositorySignInRequired), never the 401's words — the rule
+ * `repositoryListRead` already follows where a host has no sign-in door.
+ *
+ * The assertions name that sentence. `status: "failed"` alone cannot tell a
+ * truthful refusal from a crash: the internal-bug copy is also `failed`.
  */
-test("a tracker that answers 401 refuses the search in words, and never throws out of the flow", async () => {
+test("a tracker that answers 401 refuses the search by naming sign-in, never as a Smithers crash", async () => {
   const h = await hosted({ routes: {
     [`GET ${ISSUES}`]: json(401, { status: "error", code: "unauthorized", message: "sign in" })
   } })
@@ -330,7 +342,67 @@ test("a tracker that answers 401 refuses the search in words, and never throws o
     const outcome = await h.controller.runCommandForResult("search.issues", TITLE)
     expect(outcome.status).not.toBe("errored")
     expect(outcome).toMatchObject({ status: "failed" })
-    expect(outcome.status === "failed" ? outcome.error : "").not.toContain("No results")
+    const error = outcome.status === "failed" ? outcome.error : ""
+    expect(error).toBe("Sign in to continue.")
+    /* The copy the thrown rejection used to reach: a bug of Smithers' own. */
+    expect(error).not.toContain("bug of its own")
+    expect(error).not.toContain("No results")
+    /* The 401's own words stay with the seam that classified them. */
+    expect(error).not.toContain("unauthorized")
+    /* The door that refused is nameable afterwards: the throw recorded nothing. */
+    expect(issueIndexRecords(h.diagnostics)).toEqual(["issues.index stage=read reason=sign_in_required rows=0 cloud=0 github=0"])
+  } finally { await h.controller.dispose() }
+})
+
+/*
+ * The journey the person actually walked, and the hole the count guard left
+ * in it: `/issues` first, so the screen HOLDS the list card, then
+ * `/search.issues` while the source refuses.
+ *
+ * `issueItems` walks the held cards and UNIONS the live rows onto them, so
+ * the items a refusing read produces are the screen's, not the tracker's.
+ * Stating the refusal only when `items.length === 0` therefore tested the
+ * screen: the search answered `count: 1` off the open issue card for a door
+ * that had just refused with 502, and said nothing about the refusal — the
+ * same claim #3891 exists to stop, re-entered through the refusal path.
+ *
+ * A door that refused is stated whatever is on the screen. The rows that
+ * still answer are the ones the READ established, and a read that refused
+ * established none.
+ */
+test("a refusing source is stated even while an issue card holds rows on the screen", async () => {
+  /* `hosted` keeps this table by reference, so the doors can change between acts. */
+  const routes: Record<string, unknown> = {
+    [`GET ${ISSUES}`]: [cloudIssue],
+    [`GET /api/repos/roninjin10/e2e-verify/issue-views`]: [],
+    [`GET ${GITHUB_SOURCE}`]: []
+  }
+  const h = await hosted({ routes })
+  try {
+    /* The person opens the list first: the screen now HOLDS issue #5. */
+    expect(await h.controller.runCommandForResult("issues.list", "all")).toMatchObject({ status: "executed" })
+    expect(h.store.collections.cards.get(`issues-${REPO}`)?.kind).toBe("issue-list")
+
+    /* Now the tracker is empty and the source refuses, that card still open. */
+    routes[`GET ${ISSUES}`] = []
+    routes[`GET ${GITHUB_SOURCE}`] = json(502, { status: "error", code: "bad_gateway", message: "GitHub is unavailable" })
+    const outcome = await h.controller.runCommandForResult("search.issues", TITLE)
+
+    /*
+     * The refusal is the answer. Before the guard came off, this answered
+     * `status: "executed"` with `count: 1` — the screen's row, for a door
+     * that had just refused.
+     */
+    expect(outcome).toMatchObject({ status: "failed" })
+    const error = outcome.status === "failed" ? outcome.error : ""
+    expect(error).not.toBe("")
+    expect(error).not.toContain("No results")
+    /* A refusal opens no results card: there are no rows to count. */
+    expect(h.store.collections.cards.get("search-search.issues")).toBeUndefined()
+    /* The list card the person opened is untouched by the refused search. */
+    expect(h.store.collections.cards.get(`issues-${REPO}`)?.kind).toBe("issue-list")
+    /* And the door that refused is nameable afterwards. */
+    expect(issueIndexRecords(h.diagnostics)).toEqual(["issues.index stage=read reason=source_refused rows=0 cloud=0 github=0"])
   } finally { await h.controller.dispose() }
 })
 

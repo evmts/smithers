@@ -167,9 +167,13 @@ interface LiveIndexes {
   readonly secrets?: ReadonlyArray<SecretRows>
   readonly issues?: ReadonlyArray<IssueRows>
   /**
-   * The sentence a tracker answered its own read with. The rows a seam has
-   * already established still answer; only a search with none of them states
-   * it, because "no results" would be a claim about a door that refused.
+   * The sentence a tracker answered its own read with, set only where the
+   * read established no rows at all (`liveIndexes` answers rows OR a
+   * sentence, never both). A door that refused is stated whatever the screen
+   * holds: the issue index unions the held cards with the live rows, so
+   * counting items before stating the refusal re-answered the SCREEN for a
+   * door that had refused — the very claim [#3891](https://github.com/smithersai/smithers/issues/3891)
+   * exists to stop.
    */
   readonly issuesRefusal?: string
 }
@@ -379,8 +383,21 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
       case "issues": {
         const label = qualifier("label")
         if (label !== undefined) return askAnother("Issue rows on this wire carry no labels to filter with; search without label:.")
-        const items = issueItems(qualifier("is"), live.issues)
-        return items.length === 0 && live.issuesRefusal !== undefined ? readRefused(live.issuesRefusal) : items
+        /*
+         * The refusal first, and not conditioned on the item count: those
+         * items are the held cards UNIONED with the live rows (`issueItems`
+         * walks `cards()` before it walks `live`), and `issuesRefusal` is set
+         * only where the live read established none. Testing
+         * `items.length === 0` therefore tested the SCREEN — so a tracker
+         * that refused answered the rows of whatever issue card happened to
+         * be open, silently, as if the door had answered. `/issues` then
+         * `/search.issues` on a refusing source is that exact journey.
+         *
+         * `secrets` and `history` never had the hole: their refusals leave
+         * `liveIndexes` as verdicts of their own.
+         */
+        if (live.issuesRefusal !== undefined) return readRefused(live.issuesRefusal)
+        return issueItems(qualifier("is"), live.issues)
       }
       case "secrets":
         return secretItems(secrets)

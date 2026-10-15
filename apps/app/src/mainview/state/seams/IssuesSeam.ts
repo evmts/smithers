@@ -1,5 +1,7 @@
 import { issueAuthorizationScope } from "./SeamContext"
 import { invalidatePreparedViews,preparedView,type ViewAction,type ViewResult } from "../PreparedView"
+import { Data } from "effect"
+import { presentAppFailure } from "../controller/AppFailure"
 import { readRepositoryDetail } from "../RepositoryReadReceipts"
 import { readRepositoryListError,repositoryListRead,type RepositoryForm } from "./RepositoryListSeam"
 
@@ -7,7 +9,7 @@ import type { Card } from "../AppState"
 import type { FieldOption } from "@smthrs/ui/flow-form"
 import { resolveTargetRepo } from "../RepoContext"
 import type { SeamContext } from "./SeamContext"
-import { captureCloudOwner,refusalWords,readErrorMessage,readResult,unreachableSentence } from "./SeamContext"
+import { captureCloudOwner,refusalWords,readErrorMessage,readResult,signInRequired,unreachableSentence } from "./SeamContext"
 import { refusalOf } from "@smthrs/rpc/Refusal"
 import { refusalLine } from "@smthrs/rpc/RefusalCopy"
 
@@ -199,10 +201,24 @@ const ISSUE_INDEX_UNREADABLE = "The issue index could not be read for this repos
  * - `rows`: doors answered and rows were indexed.
  * - `empty`: every door answered, and together they held nothing.
  * - `read_refused`: the list read answered a sentence of its own.
+ * - `sign_in_required`: the tracker refused the session and THREW rather than answering.
  * - `source_refused`: no rows, and the GitHub source refused.
  * - `unreadable_view`: the read answered a surface with no rows to index.
  */
-type IssueIndexReason = "rows" | "empty" | "read_refused" | "source_refused" | "unreadable_view"
+type IssueIndexReason = "rows" | "empty" | "read_refused" | "sign_in_required" | "source_refused" | "unreadable_view"
+
+/**
+ * The outcome the record below carries, as a TAGGED failure.
+ *
+ * Every other `ctx.report` site forwards an error it caught; this one reports
+ * an outcome of the healthy path, so it has nothing to forward and must make
+ * its own. A raw `new Error` would be untagged text in a seam, which
+ * `presentUserFailure` can only call unknown and `RawErrorSites.test.ts`
+ * (#2813) refuses on sight. The tag is never presented — the record reaches
+ * the operational ring and the client sink, never a card — and `reason` is
+ * the same closed vocabulary as the subject, so nothing new can ride along.
+ */
+class IssueIndexOutcome extends Data.TaggedError("IssueIndexOutcome")<{ readonly reason: IssueIndexReason }> {}
 
 /**
  * The issue index door's own record, through SeamContext.report — the
@@ -217,6 +233,15 @@ type IssueIndexReason = "rows" | "empty" | "read_refused" | "source_refused" | "
  * screen or in the ring said which door had ended the read. The stage, the
  * reason code and the per-source counts are what makes the next one
  * diagnosable; `rows` is the healthy shape and records nothing at all.
+ *
+ * Read the `reason`, not the ring's `lost`/`fault`: those classify a THROW
+ * (`lostActFault`, whose closed set is `app-bug` | `cancelled` | the browser
+ * write faults), and this record is manufactured on a path that threw
+ * nothing, so every one of them files as `app-bug`/`infra` whatever happened.
+ * A tracker that is correctly empty is not a bug of Smithers' own; `reason`
+ * is the whole verdict. Giving the ring a fault class a manufactured outcome
+ * can answer honestly means widening a user-facing copy set, which is Will's
+ * call, not this fix's.
  */
 const reportIssueIndex = (
   ctx: SeamContext, reason: IssueIndexReason, rows: ReadonlyArray<IssueListRow> = []
@@ -225,7 +250,7 @@ const reportIssueIndex = (
   const counted = (source: IssueListRow["source"]) => rows.filter((row) => row.source === source).length
   ctx.report?.(
     `issues.index stage=read reason=${reason} rows=${rows.length} cloud=${counted("smithers-cloud")} github=${counted("github")}`,
-    new Error(`issues.index ${reason}`)
+    new IssueIndexOutcome({ reason })
   )
 }
 
@@ -1053,7 +1078,30 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       [filter, kind === undefined || kind === "all" ? undefined : `--kind ${kind}`, view === undefined || view === "" ? undefined : `--view ${view}`].filter((part) => part !== undefined).join(" ")), { preload: listView.preload }),
 
     readIssueRows: async (repo, filter) => {
-      const result = await issueListRead(repo, filter, "all", undefined)()
+      let result: ViewResult
+      try {
+        result = await issueListRead(repo, filter, "all", undefined)()
+      } catch (error) {
+        /*
+         * The one door that does not ANSWER its refusal: a 401 on the
+         * repository's own tracker makes `readRepositoryListError` THROW
+         * `RepositorySignInRequired`, so the prepared-view machinery can
+         * offer the sign-in step and `repositoryListRead` can catch it for
+         * `/issues`. This index door calls the read directly and caught
+         * nothing, so an expired session escaped the index as a rejection:
+         * `search.issues` presented its own internal-bug copy ("Smithers hit
+         * a bug of its own, so that didn't finish") for a person who merely
+         * needed to sign in, and the ring recorded NOTHING — the one outcome
+         * the record above exists to name.
+         *
+         * The registry's sentence, never the 401's words: the rule
+         * `repositoryListRead` already follows where a host has no sign-in
+         * door. Any other throw is not this door's to answer.
+         */
+        if (!signInRequired(error)) throw error
+        reportIssueIndex(ctx, "sign_in_required")
+        return presentAppFailure(error, () => {}).sentence
+      }
       if (typeof result === "string") { reportIssueIndex(ctx, "read_refused"); return result }
       if (result.card.kind !== "issue-list") {
         reportIssueIndex(ctx, "unreadable_view")
