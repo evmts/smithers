@@ -27,7 +27,17 @@ const faults = Smithers.FaultSuite({
  * Changed public exports against README.md, docs/*.md, and the site's jj API
  * reference page.
  */
-const reviewDocsAgainstCode = ReviewDocsAgainstCode({ cwd: "packages/smithers/flows/jj" })
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({
+  cwd: "packages/smithers/flows/jj",
+  // The site page is named as a file, not left to the macro's default glob:
+  // the index refuses a declared glob whose only matches live in another
+  // package, and every sibling package names its own page the same way.
+  context: [
+    Smithers.file("README.md"),
+    Smithers.glob("docs/*.md"),
+    Smithers.file("//apps/site/src/content/docs/docs/reference/api/jj.mdx")
+  ]
+})
 
 /** Changed public exports against their own JSDoc. */
 const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: "packages/smithers/flows/jj" })

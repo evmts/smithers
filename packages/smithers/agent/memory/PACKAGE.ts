@@ -31,7 +31,17 @@ const reviewTagsMigrationsAndKeys = ReviewTagsMigrationsAndKeys({ cwd: "packages
  * @since 1.0.0
  * @category lint
  */
-const reviewDocsAgainstCode = ReviewDocsAgainstCode({ cwd: "packages/smithers/agent/memory" })
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({
+  cwd: "packages/smithers/agent/memory",
+  // The site page is named as a file, not left to the macro's default glob:
+  // the index refuses a declared glob whose only matches live in another
+  // package, and every sibling package names its own page the same way.
+  context: [
+    Smithers.file("README.md"),
+    Smithers.glob("docs/*.md"),
+    Smithers.file("//apps/site/src/content/docs/docs/reference/api/memory.mdx")
+  ]
+})
 
 /**
  * Changed exports against their own JSDoc.
