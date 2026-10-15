@@ -1,5 +1,4 @@
 //! One Yrs core for wiki and daemon documents. Adapters own policy and persistence.
-use yrs::updates::decoder::Decode;
 use yrs::{Doc, OffsetKind, Options, Out, ReadTxn, StateVector, Transact, Update};
 
 pub fn document(client: Option<u64>) -> Doc {
@@ -14,7 +13,8 @@ pub fn document(client: Option<u64>) -> Doc {
 }
 
 pub fn decode(bytes: &[u8]) -> Result<Update, &'static str> {
-    Update::decode_v1(bytes).map_err(|_| "invalid Yjs v1 update")
+    // Wiki and live documents share strict framing and bounded wire decoding.
+    crate::live_document_decode::decode(bytes).map_err(|_| "invalid Yjs v1 update")
 }
 
 pub fn apply(doc: &Doc, update: Update) -> Result<(), &'static str> {
