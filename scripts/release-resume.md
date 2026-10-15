@@ -40,6 +40,12 @@ A suffixed version such as `1.0.0-rc.1` is a prerelease. It publishes under the 
 
 A rehearsal of a prerelease is green when the `candidate` lane, the native helpers, the server bundle and the four installer jobs pass. Read the `gates` and `backend` lanes for what is red on that commit; their results are in `release-gate-results-<run-id>-gates` and `release-gate-results-<run-id>-backend`. The backend lane starts with its own 290-minute budget, independently of the other gates. Installer signing and the Homebrew bottle do not run for a suffixed version, so a prerelease has no bottle; the darwin-arm64 server bundle is the run's `server-bundle-darwin-arm64` artifact.
 
+A prerelease never moves `latest`. To point a dist-tag of one `@smthrs/*` package at a version already on npm, dispatch `.github/workflows/npm-dist-tag.yml`. It uses the `NPM_TOKEN` repository secret, refuses unscoped names and versions that are not on npm, and refuses to move a 0.x `latest` unless `replaceZeroLatest` is true:
+
+```sh
+gh workflow run npm-dist-tag.yml -f package=@smthrs/flows -f version=1.0.0-rc.8 -f tag=latest
+```
+
 An unsuffixed version runs one `release` lane: every gate, then the candidate, then publication. Any red gate blocks it, and a stale changelog blocks it before the build.
 
 New candidates must pass installed-consumer smoke on Node 26.4.0 with npm 11.16.0, using the tarballs they were packed as. The separate `release-smoke-evidence-<run-id>` artifact retains `node26.json`; its upload also runs on failure. The candidate's `smoke-evidence.json` is the Node 26.4.0 receipt. Archived-candidate restores preserve the original receipt.

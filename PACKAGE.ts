@@ -644,6 +644,7 @@ const ci = Smithers.GithubCiGen({
             ".github/workflows/ci.yml",
             ".github/workflows/release.yml",
             ".github/workflows/release-auth.yml",
+            ".github/workflows/npm-dist-tag.yml",
             ".github/workflows/apps-deploy.yml",
             ".github/workflows/distribution.yml",
             ".github/workflows/canary.yml",
@@ -1275,9 +1276,10 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "The candidateRunId and candidateArtifactId restore path accepting an artifact from a run that a pull_request, a fork, or a non-release workflow produced.",
         "The npm publish step reachable when dryRun is true, when sourceRef is set, or from a tag not on main.",
-        "NODE_AUTH_TOKEN or id-token: write present in steps that run repository scripts or `pnpm install` without --ignore-scripts before publication."
+        "NODE_AUTH_TOKEN or id-token: write present in steps that run repository scripts or `pnpm install` without --ignore-scripts before publication.",
+        "npm-dist-tag.yml moving a tag of a name outside @smthrs/, to a version it has not confirmed is on npm, or moving a 0.x `latest` without replaceZeroLatest."
       ],
-      paths: [".github/workflows/release.yml", ".github/workflows/release-auth.yml"]
+      paths: [".github/workflows/release.yml", ".github/workflows/release-auth.yml", ".github/workflows/npm-dist-tag.yml"]
     },
     {
       id: "distribution-image-hardening",
