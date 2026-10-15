@@ -289,6 +289,60 @@ describe("SmithersError", () => {
     expect(Object.isFrozen(error.details)).toBe(true)
   })
 
+  it("copies an own __proto__ context key without changing the copied prototype", () => {
+    const details = JSON.parse("{\"__proto__\":{\"polluted\":true},\"reason\":\"transport\"}")
+    const error = new SmithersError("INTEGRATION_ERROR", "failed", details)
+
+    expect(Object.getPrototypeOf(error.details)).toBe(Object.prototype)
+    expect(Object.hasOwn(error.details!, "__proto__")).toBe(true)
+    expect(error.details?.__proto__).toEqual({ polluted: true })
+    expect(error.details?.polluted).toBeUndefined()
+    expect(JSON.parse(JSON.stringify(error)).details).toEqual(details)
+    expect(Object.isFrozen(error.details)).toBe(true)
+  })
+
+  it("copies only enumerable own context and captures each accessor once", () => {
+    let reads = 0
+    const details = Object.create({ inherited: "excluded" }) as Record<string, unknown>
+    Object.defineProperties(details, {
+      hidden: { value: "excluded" },
+      reason: {
+        enumerable: true,
+        get() {
+          reads++
+          if (reads > 1) throw new Error("context read twice")
+          return "transport"
+        }
+      }
+    })
+    const error = new SmithersError("INTEGRATION_ERROR", "failed", details)
+
+    expect(error.details).toEqual({ reason: "transport" })
+    expect(error.toJSON().details).toEqual({ reason: "transport" })
+    expect(JSON.parse(JSON.stringify(error)).details).toEqual({ reason: "transport" })
+    expect(reads).toBe(1)
+    expect(Object.hasOwn(error.details!, "inherited")).toBe(false)
+    expect(Object.hasOwn(error.details!, "hidden")).toBe(false)
+    expect(Object.isFrozen(details)).toBe(false)
+  })
+
+  it("propagates the original failure when copying context invokes a throwing accessor", () => {
+    const failure = new Error("context unavailable")
+    const details = {
+      get reason(): string {
+        throw failure
+      }
+    }
+
+    let caught: unknown
+    try {
+      new SmithersError("INTEGRATION_ERROR", "failed", details)
+    } catch (error) {
+      caught = error
+    }
+    expect(caught).toBe(failure)
+  })
+
   it("keeps the subclass prototype so instanceof works", () => {
     class Subclass extends SmithersError {
       constructor() {
