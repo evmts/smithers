@@ -1,11 +1,33 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
+import * as Input from "@smthrs/targets/Input"
 
 const cwd = "packages/smithers/agent/harness"
 
-const standard = BuildAndCheckTypeScriptPackage({ cwd, testData: ["docs/api.md"] })
+const standard = BuildAndCheckTypeScriptPackage({
+  cwd,
+  sources: Input.glob("{src,examples}/**/*.ts"),
+  testData: ["docs/api.md"]
+})
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = standard
+
+/**
+ * Changed public APIs against the package prose. The default context reads
+ * only `docs/*.md`; the guides and the site API page document the same
+ * exports, so the review reads all of them (about 380 KiB, under the 2 MiB cap).
+ */
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({
+  cwd,
+  context: [
+    Smithers.file("README.md"),
+    Smithers.glob("docs/**/*.md"),
+    Smithers.file("//apps/site/src/content/docs/docs/reference/api/harness.mdx")
+  ]
+})
+
+/** Changed exports against their own JSDoc. */
+const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd })
 
 const securityReview = Smithers.SecurityReview({
   cwd,
@@ -140,5 +162,17 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview }
+  targets: {
+    check,
+    circular,
+    docs,
+    docsFiles,
+    fmt,
+    lib,
+    lint,
+    reviewDocsAgainstCode,
+    reviewJsdocAgainstCode,
+    test,
+    ...securityReview
+  }
 })
