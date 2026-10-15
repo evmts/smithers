@@ -249,9 +249,9 @@ export const make = (fs: ZenFsPromisesLike): FileSystem.FileSystem =>
       ),
     readDirectory: (path, options) => readDirectory(fs, path, options),
     stat: (path) =>
-      Effect.map(
+      Effect.flatMap(
         Effect.tryPromise({ try: () => fs.stat(path), catch: platformError("stat", path) }),
-        fileInfo
+        (stats) => fileInfo(stats, path)
       ),
     realPath: (path) => realPath(fs, path),
     remove: (path, options) =>

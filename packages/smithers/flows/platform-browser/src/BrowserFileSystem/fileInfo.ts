@@ -5,8 +5,10 @@
  */
 
 import * as ByteSize from "effect/ByteSize"
+import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
 import * as Option from "effect/Option"
+import * as PlatformError from "effect/PlatformError"
 import type { ZenFsStatsLike } from "./ZenFsStatsLike.ts"
 
 /**
@@ -22,16 +24,40 @@ const fileType = (stats: ZenFsStatsLike): FileSystem.File.Type =>
  * The `File.Info` a stats object supports: type, size, mode, and mtime are
  * real; everything the slice cannot know is `Option.none` or zero.
  *
+ * A size that is not a whole, non-negative byte count fails with
+ * `BadResource` rather than dying inside `ByteSize`, the same refusal a
+ * stream gives a backend that misreports a read length. A timestamp that is
+ * not a finite number is reported as no `mtime` rather than an invalid `Date`.
+ *
  * @private
  * @since 1.0.0-rc.0
  * @slop
  */
-export const fileInfo = (stats: ZenFsStatsLike): FileSystem.File.Info => ({
+export const fileInfo = (
+  stats: ZenFsStatsLike,
+  path: string
+): Effect.Effect<FileSystem.File.Info, PlatformError.PlatformError> =>
+  Number.isSafeInteger(stats.size) && stats.size >= 0
+    ? Effect.succeed(info(stats))
+    : Effect.fail(PlatformError.systemError({
+      _tag: "BadResource",
+      module: "FileSystem",
+      method: "stat",
+      pathOrDescriptor: path,
+      description: "the backend reported a size that is not a whole, non-negative number of bytes"
+    }))
+
+/**
+ * The `File.Info` for stats whose size is already known to be a byte count.
+ *
+ * @private
+ */
+const info = (stats: ZenFsStatsLike): FileSystem.File.Info => ({
   type: fileType(stats),
   // Not a clock read: `stats.mtimeMs` is a timestamp the host already
   // reported, and this only re-boxes it in the `Date` that `File.Info`
   // declares. Nothing here observes the current time.
-  mtime: Option.some(new Date(stats.mtimeMs)),
+  mtime: Number.isFinite(stats.mtimeMs) ? Option.some(new Date(stats.mtimeMs)) : Option.none(),
   atime: Option.none(),
   birthtime: Option.none(),
   dev: 0,

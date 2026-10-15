@@ -518,6 +518,31 @@ describe("BrowserFileSystem error mapping", () => {
       expect(yield* (make("other").stat("/o"))).toMatchObject({ type: "Unknown" })
     }))
 
+  it.effect("fails stat with BadResource when the backend reports a size that is not a byte count", () =>
+    Effect.gen(function*() {
+      const make = (size: number) =>
+        BrowserFileSystem.make({
+          ...throwingFs(codeError("ENOENT")),
+          stat: async () => ({ ...chainDirectory, size })
+        })
+
+      for (const size of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+        // Flipped: a defect would die here rather than surface as an error.
+        const error = yield* Effect.flip(make(size).stat("/f"))
+        expect(error.reason).toMatchObject({ _tag: "BadResource", method: "stat", pathOrDescriptor: "/f" })
+      }
+    }))
+
+  it.effect("reports no mtime when the backend reports a timestamp that is not a number", () =>
+    Effect.gen(function*() {
+      const info = yield* BrowserFileSystem.make({
+        ...throwingFs(codeError("ENOENT")),
+        stat: async () => ({ ...chainDirectory, mtimeMs: Number.NaN })
+      }).stat("/f")
+
+      expect(Option.isNone(info.mtime)).toBe(true)
+    }))
+
   // Effect's makeNoop defects on makeTemp*, so BrowserFileSystem wires those four explicitly to PermissionDenied.
   it.effect("fails every deliberately unsupported operation with PermissionDenied", () =>
     Effect.gen(function*() {
