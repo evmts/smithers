@@ -139,3 +139,26 @@ func TestSandboxOrphanReaperSurvivesAListFailure(t *testing.T) {
 	assert.Zero(t, NewSandboxOrphanReaper(q, vm, nil).Sweep(context.Background()))
 	assert.Empty(t, vm.deleted)
 }
+
+// The workspace active-VM gauge counts workspaces, and workspace_lifecycle is
+// its only +1. The sweep is attribution-driven, so it reclaims whatever kinds
+// its querier enumerates: a repo gateway, and — since a chat turn's guest has
+// no idle timeout, never turns 'stopped', and so has no other automatic
+// reclaim at all — a chat turn whose turn went terminal without its launcher
+// deleting the guest. Giving a -1 back for either drives the gauge below the
+// workspaces that really are up, and nothing ever corrects it.
+func TestSandboxOrphanReaperCreditsOnlyWorkspacesToTheWorkspaceGauge(t *testing.T) {
+	q := &orphanReaperQuerier{rows: []runtimeports.ListOrphanedSandboxInstancesRow{
+		orphanRow("msb_chat", "chat_turn", "77777777-7777-7777-7777-777777777777", "running"),
+		orphanRow("msb_gateway", "repo_gateway", "88888888-8888-8888-8888-888888888888", "running"),
+		orphanRow("msb_workspace", "workspace", "99999999-9999-9999-9999-999999999999", "running"),
+	}}
+	vm := &orphanReaperVM{}
+	metrics := &fakeSandboxMetrics{}
+
+	assert.Equal(t, 3, NewSandboxOrphanReaper(q, vm, metrics).Sweep(context.Background()))
+	assert.Equal(t, []string{"msb_chat", "msb_gateway", "msb_workspace"}, vm.deleted,
+		"every attributed kind the querier returns is still reclaimed")
+	assert.Equal(t, []activeVMDelta{{vmType: "workspace", delta: -1}}, metrics.activeVMs,
+		"only the workspace gives a workspace -1 back")
+}

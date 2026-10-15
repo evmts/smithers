@@ -33,6 +33,9 @@ const (
 	// sandboxOrphanBatch bounds one sweep so a large historical backlog cannot
 	// monopolize the controller. Anything left over is picked up next tick.
 	sandboxOrphanBatch = 50
+	// resourceKindWorkspace is the one attributed kind the workspace active-VM
+	// gauge counts.
+	resourceKindWorkspace = "workspace"
 )
 
 // SandboxOrphanReaper discards micro-VMs whose owning product row is gone.
@@ -115,9 +118,13 @@ func (s *SandboxOrphanReaper) Sweep(ctx context.Context) int {
 		slog.Info("sandbox orphan reclaimed",
 			"vm_id", vmID, "resource_kind", kind, "resource_id", row.ResourceID.String,
 			"observed_state", row.ObservedState, "created_at", row.CreatedAt)
-		// Only a VM that had reached 'running' was ever counted in the
-		// active-VM gauge, so only that case gives the -1 back.
-		if s.metrics != nil && row.ObservedState == "running" {
+		// Only a running WORKSPACE VM was ever counted in the workspace
+		// active-VM gauge: workspace_lifecycle is its sole +1, an agent
+		// session has its own vm_type, and every other attributed kind has
+		// none. Giving the -1 back for a kind nothing incremented drives the
+		// gauge below the workspaces that really are up, which is a reading
+		// the gauge has no way to correct.
+		if s.metrics != nil && kind == resourceKindWorkspace && row.ObservedState == "running" {
 			s.metrics.AddSandboxActiveVMs("workspace", -1)
 		}
 		discarded++
