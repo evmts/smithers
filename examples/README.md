@@ -21,6 +21,17 @@ Both declarations defer loading their native agent implementations until the
 test bodies execute. The selection fixture verifies the real opt-in gates and
 rejects eager implementation imports while collecting the declarations.
 
+## Use cases
+
+`src/use-cases/` holds 1.0 ports of the 0.x examples that patterns.smithers.sh
+links to, one file per old example, named after it. Each runs offline on
+`src/use-cases/kit.ts`, which answers every agent seat from a script. To run
+one test:
+
+```sh
+pnpm exec vitest run test/use-cases/triage.test.ts
+```
+
 ## Inspecting parked runs
 
 Examples 06 and 38 use `src/park-run.ts` before rewinding or monitoring a parked
