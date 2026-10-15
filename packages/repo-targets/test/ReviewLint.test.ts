@@ -161,6 +161,21 @@ describe("ReviewDocsAgainstCode", () => {
     expect(pages).toEqual(["apps/site/src/content/docs/docs/reference/api/plan.mdx"])
   })
 
+  it.each(["p*", "p?an", "[pq]lan", "{plan,agent}", "!(plan)", "@(plan)", "+(plan)", "plan|agent"])(
+    "rejects a package directory %s whose name would widen the site page glob",
+    (name) => {
+      // The name becomes `<name>.mdx` under the site reference directory, so a
+      // `*` or a brace set would hand the model other packages' pages.
+      expect(() => ReviewDocsAgainstCode({ cwd: `packages/${name}` })).toThrow(TypeError)
+    }
+  )
+
+  it("accepts a package directory with dots and dashes", () => {
+    expect(attrsOf(ReviewDocsAgainstCode({ cwd: "packages/plan-store.v2" })).context).toContainEqual(
+      Input.glob("//apps/site/src/content/docs/docs/reference/api/plan-store.v2.mdx")
+    )
+  })
+
   it("keeps the default context within the executor limits", async () => {
     const files = await expandContext(attrs.context)
     expect(files.length).toBeGreaterThan(0)

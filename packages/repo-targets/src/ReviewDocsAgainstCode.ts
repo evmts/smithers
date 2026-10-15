@@ -8,6 +8,9 @@ import * as Input from "@smthrs/targets/Input"
 import { review } from "./ReviewLint.ts"
 import type { Options, ReviewLint } from "./ReviewLint.ts"
 
+// The characters `Input.glob` treats as pattern syntax.
+const globMagic = /[*?[\]{}!()|@+]/
+
 /**
  * Reviews changed public APIs against the prose that documents them.
  *
@@ -23,6 +26,10 @@ import type { Options, ReviewLint } from "./ReviewLint.ts"
  * declaration and runs no review; see "Failure contracts" in the package
  * README for declaration and execution failures.
  *
+ * @throws TypeError when the last directory in `cwd` contains a glob
+ * metacharacter (`*`, `?`, `[`, `]`, `{`, `}`, `!`, `(`, `)`, `|`, `@`, `+`),
+ * because the page glob built from it would select other packages' pages.
+ *
  * @example
  * ```ts
  * import { ReviewDocsAgainstCode } from "@smthrs/repo-targets"
@@ -35,6 +42,11 @@ import type { Options, ReviewLint } from "./ReviewLint.ts"
  */
 export const ReviewDocsAgainstCode = (options: Options): ReviewLint => {
   const packageName = Input.resolvePath("", options.cwd).replace(/\/$/, "").split("/").at(-1)!
+  if (globMagic.test(packageName)) {
+    throw new TypeError(
+      `ReviewDocsAgainstCode: package directory ${JSON.stringify(packageName)} contains a glob metacharacter`
+    )
+  }
   return review(options, {
     summary: "A cheap Codex review of changed public APIs against package prose and matching site API references.",
     include: [Input.glob("src/**")],

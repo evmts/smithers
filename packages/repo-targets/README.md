@@ -31,6 +31,7 @@ Declaration-time rejections happen while `PACKAGE.ts` loads:
 
 - TypeScript rejects a call without `cwd`, and a review whose `engine` is not `codex` but names no `model`.
 - The emitted target's constructor validates its attributes and throws an `Error` reading `<target> declaration at <site> is invalid: <reason>`. Examples: an empty review `model`, an `engine` outside LlmLint's engine set, or a non-integer `testTimeoutMs`.
+- `ReviewDocsAgainstCode` throws a `TypeError` when the last directory in `cwd` contains a glob metacharacter (`*?[]{}!()|@+`), because the site page glob built from that name would select other packages' pages.
 
 Execution failures belong to the emitted targets. The [`@smthrs/targets` error table](../smithers/build/targets/docs/reference/targets.md#errors) documents each one:
 
