@@ -149,8 +149,10 @@ export const delayMillis = (options: {
   readonly backoff: Backoff
   readonly attempt: number
 }): number =>
-  options.intervalMs *
-  (options.backoff === "fixed" ? 1 : options.backoff === "linear" ? options.attempt : 2 ** (options.attempt - 1))
+  // A zero interval is zero under every backoff. Multiplying it by a factor
+  // that has overflowed to `Infinity` would make it `NaN`.
+  options.intervalMs === 0 ? 0 : options.intervalMs *
+    (options.backoff === "fixed" ? 1 : options.backoff === "linear" ? options.attempt : 2 ** (options.attempt - 1))
 
 /**
  * What a poll round can fail with.
@@ -274,7 +276,9 @@ const withAttempt = <Payload>(payload: object, attempt: number): Payload =>
  * with a plan that looks correct. The check is on the schedule, not only on the
  * interval: `{ intervalMs: 1000, maxAttempts: 2000, backoff: "exponential" }`
  * states three finite options and asks for an infinite wait, so the LAST wait
- * the poll can arm has to be a length too. `maxAttempts` is the lineage's round
+ * the poll can arm has to be a length too, and no longer than
+ * `Number.MAX_SAFE_INTEGER` milliseconds, the latest deadline a durable timer
+ * records. `maxAttempts` is the lineage's round
  * budget, and a budget below one attempt reaches `Flow.make` as a `maxRounds`
  * complaint about an option the author never wrote.
  *
@@ -341,7 +345,9 @@ export const make = <
   const longestWaitMs = maxAttempts > 1
     ? delayMillis({ intervalMs, backoff, attempt: maxAttempts - 1 })
     : 0
-  if (!Number.isFinite(longestWaitMs)) {
+  // A durable timer records its deadline as a safe integer of milliseconds,
+  // so `Sleep` refuses a longer wait on the round that reaches it.
+  if (!Number.isFinite(longestWaitMs) || longestWaitMs > Number.MAX_SAFE_INTEGER) {
     throw new RangeError(
       `Poll.make: "${tag}" asks for a wait of ${longestWaitMs} ms before its last attempt. An ` +
         `intervalMs of ${intervalMs} under the "${backoff}" backoff reaches a length no clock ` +

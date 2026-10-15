@@ -107,7 +107,9 @@ because the backoff multiplies the interval:
 `{ intervalMs: 1000, maxAttempts: 2000, backoff: "exponential" }` states three
 finite options and still asks for a wait of `Infinity`. The check looks at the
 last wait a poll can arm, the one before the final attempt, since the attempt at
-the budget gives up rather than sleeps.
+the budget gives up rather than sleeps. That wait must also be at most
+`Number.MAX_SAFE_INTEGER` milliseconds, the latest deadline a durable timer
+records, so a one-millisecond interval doubling allows at most 54 attempts.
 
 ## Handle exhaustion
 

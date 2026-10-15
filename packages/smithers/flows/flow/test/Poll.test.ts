@@ -376,16 +376,24 @@ describe("Poll as a plan", () => {
 
     // The bound is the LAST wait the poll can arm, and that is the one before
     // the final attempt: an attempt at the budget gives up rather than sleeps.
-    // Doubling from one millisecond, attempt 1024 is the longest finite wait,
-    // so 1025 attempts is the largest legal budget and 1026 is one too many.
-    expect(Poll.delayMillis({ intervalMs: 1, backoff: "exponential", attempt: 1024 })).toBeLessThan(
-      Number.POSITIVE_INFINITY
+    // A durable timer records its deadline as a safe integer of milliseconds,
+    // so a finite wait longer than `Number.MAX_SAFE_INTEGER` is refused too:
+    // `Sleep` would refuse it on the round that reached it. Doubling from one
+    // millisecond, attempt 53 waits 2^52 ms and attempt 54 waits 2^53 ms, so
+    // 54 attempts is the largest legal budget and 55 is one too many.
+    expect(Poll.delayMillis({ intervalMs: 1, backoff: "exponential", attempt: 53 })).toBeLessThanOrEqual(
+      Number.MAX_SAFE_INTEGER
     )
-    expect(Poll.delayMillis({ intervalMs: 1, backoff: "exponential", attempt: 1025 })).toBe(
-      Number.POSITIVE_INFINITY
+    expect(Poll.delayMillis({ intervalMs: 1, backoff: "exponential", attempt: 54 })).toBeGreaterThan(
+      Number.MAX_SAFE_INTEGER
     )
-    expect(declare({ intervalMs: 1, maxAttempts: 1025, backoff: "exponential" })).not.toThrow()
-    expect(declare({ intervalMs: 1, maxAttempts: 1026, backoff: "exponential" })).toThrow(/backoff/)
+    expect(declare({ intervalMs: 1, maxAttempts: 54, backoff: "exponential" })).not.toThrow()
+    expect(declare({ intervalMs: 1, maxAttempts: 55, backoff: "exponential" })).toThrow(/backoff/)
+    expect(declare({ intervalMs: 2 ** 53, maxAttempts: 2, backoff: "fixed" })).toThrow(/backoff/)
+
+    // A zero interval waits zero under every backoff, however many attempts.
+    expect(Poll.delayMillis({ intervalMs: 0, backoff: "exponential", attempt: 2000 })).toBe(0)
+    expect(declare({ intervalMs: 0, maxAttempts: 2000, backoff: "exponential" })).not.toThrow()
 
     // A poll of one attempt never sleeps, so it has no schedule to refuse.
     expect(declare({ intervalMs: 1e308, maxAttempts: 1, backoff: "exponential" })).not.toThrow()
