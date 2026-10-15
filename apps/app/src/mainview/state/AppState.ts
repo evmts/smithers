@@ -942,9 +942,33 @@ export type SharedPrompt = z.infer<typeof SharedPromptSchema>
 export const TranscriptAnchorSchema = z.object({ scope: z.string().min(1), afterSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), localOrdinal: z.number().int().nonnegative().optional() })
 export type TranscriptAnchor = z.infer<typeof TranscriptAnchorSchema>
 
+/**
+ * The card a view read the PERSON asked for published, as the transcript's
+ * read destination. A read can navigate one card in place and keep its own
+ * place — the repository web pane is one card (EmbeddedHistory.paneTarget),
+ * and a saved conversation holds every private card at its anchored position
+ * — so the entry a read refreshed is routinely not the transcript's last one,
+ * and nothing else in the projection names it. `afterOrdinal` is the next
+ * transcript ordinal at the moment the read landed: anything appended from
+ * there on retires the receipt, and the live edge is the destination again.
+ * `revision` changes on every read, so asking for the same view twice is two
+ * destinations rather than one. An agent's read records nothing: nobody asked
+ * to be moved.
+ */
+export const RequestedReadSchema = z.object({
+  cardId: z.string().min(1),
+  afterOrdinal: z.number().int().nonnegative(),
+  revision: z.number().int().nonnegative(),
+  /** The account, repository and branch that asked ({@link readScopeOf}). */
+  scope: z.string().min(1)
+})
+export type RequestedRead = z.infer<typeof RequestedReadSchema>
+
 export const SessionSchema = z.object({
   /** Account/repository/branch-scoped placement; never published to the shared conversation. */
   transcriptAnchors: z.record(z.string(), TranscriptAnchorSchema).optional(),
+  /** The destination of the last read a person asked for. Optional so sessions persisted before the field parse. */
+  requestedRead: RequestedReadSchema.optional(),
   sharedPrompts: z.array(SharedPromptSchema).optional(),
   uiInstructionsSeen: z.array(z.string()).optional(),
   branchNavigation: BranchNavigationSchema.optional(),
@@ -1239,6 +1263,24 @@ export const inConversation = (row: { readonly tabId?: string | undefined }, tab
 /** Private local diagnostic output supplements the shared host conversation. */
 export const diagnosticVisible = (message: Pick<Message, "diagnostic">, login: string | null | undefined, branch: string): boolean =>
   login !== null && login !== undefined && message.diagnostic?.login === login && message.diagnostic.branch === branch
+
+/**
+ * Who a read belongs to: the account, the repository and the branch. A read is
+ * an ask by one person at one place, so signing in as somebody else, switching
+ * repository or moving branch makes an earlier read theirs and not this
+ * reader's — the shape `TranscriptOrder.scope` uses for private placement,
+ * stated for a signed-out session too so a local host has a scope as well.
+ */
+export const readScopeOf = (
+  identity: Pick<IdentitySession, "state" | "login" | "memberId"> | undefined,
+  session: Pick<Session, "branchNavigation" | "activeRepoKey">
+): string => {
+  const login = identity?.state === "signed-in" && identity.login ? identity.login : null
+  const branch = login !== null && session.branchNavigation?.owner === login
+    ? session.branchNavigation.selected_branch
+    : "main"
+  return JSON.stringify([login, identity?.memberId ?? null, session.activeRepoKey ?? null, branch])
+}
 
 export const MAIN_TAB_ID = "main"
 

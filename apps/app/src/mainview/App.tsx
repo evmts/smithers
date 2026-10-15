@@ -36,7 +36,7 @@ import { cloudWebHost, initMessage } from "./HostOpening"
 import { SHORTCUT_KEYS,ShortcutButton } from "./ShortcutButton"
 import { pathRepo } from "./RepoLink"
 import type { Card,Message } from "./state/AppState"
-import { conversationTabIdOf,diagnosticVisible,inConversation } from "./state/AppState"
+import { conversationTabIdOf,diagnosticVisible,inConversation,readScopeOf } from "./state/AppState"
 import { catalogRepositoryOf } from "./state/RepoContext"
 import { useCardRows,useFileCardRows,useFlowDurationRows,useTriggerListRows,useWorkflowCatalogRows } from "./state/useCardRows"
 import { ConfirmDialog } from "./SurfaceChrome"
@@ -93,6 +93,7 @@ function AppContent() {
       maximizedCardId: session.maximizedCardId,
       activeBranchId: session.activeBranchId,
       branchNavigation: session.branchNavigation,
+      requestedRead: session.requestedRead,
       devtoolsOpen: session.devtoolsOpen,
       paletteOpen: session.paletteOpen,
       inputMode: session.inputMode,
@@ -117,6 +118,17 @@ function AppContent() {
   const chatTriggerRef = useRef<HTMLButtonElement>(null)
   const readRequestRef = useRef(0)
   const session = sessionRows[0] ?? controller.store.session()
+  /*
+   * The boot generation's own read receipt, so one restored with the session
+   * is not mistaken for an ask (#3813). Revisions are strictly increasing
+   * WITHIN one opened store, so the receipt a generation opens with is the
+   * only one it has to recognise. A reset or a recovery opens ANOTHER store,
+   * whose revisions start again from zero and could otherwise reach this
+   * generation's number — so the controller it belongs to is part of the
+   * identity, and a new one starts a new generation while App stays mounted.
+   */
+  const bootReadRef = useRef<{ boot: unknown; revision: number | undefined }>({ boot: controller, revision: session.requestedRead?.revision })
+  if (bootReadRef.current.boot !== controller) bootReadRef.current = { boot: controller, revision: session.requestedRead?.revision }
   /*
    * The conversation on screen (docs/LOCAL-APP.md "Tabs"): there is ONE
    * Smithers, the first tab, aware of every other one — so the conversation is
@@ -347,7 +359,38 @@ function AppContent() {
   const visibleEntries = entries.filter(entry => !controller.sharedConversation || entry.kind !== "message" || entry.message.id === authMessage?.id || entry.message.origin === "external" || entry.message.action !== undefined || diagnosticVisible(entry.message, identityRows[0]?.login, session.branchNavigation?.selected_branch ?? "main"))
   // A requested local read can target a retained card earlier in the transcript.
   const latestEntry = visibleEntries.at(-1)
-  const latestReadId = latestEntry === undefined ? undefined : entryId(latestEntry)
+  /*
+   * What a read the PERSON asked for must bring into view (#3813). A read can
+   * navigate ONE card in place and keep its own place — the repository web
+   * pane is one card, and a saved conversation holds every private card at its
+   * anchored position — so its answer is routinely not the transcript's last
+   * entry, and the last entry is then somebody else's row (production
+   * 20261015: /issues.create and /issues.list both refreshed the pane card
+   * early in a saved conversation while the view stayed on the composer's form
+   * at the bottom). The projection records the read's own destination; it
+   * retires as soon as anything is appended after it, so ordinary output and
+   * every passive arrival still read at the live edge.
+   *
+   * A read nobody asked for in THIS session is not a destination either: the
+   * receipt persists with the session, and a reload restores the saved reading
+   * position instead — a deliberate mid-transcript anchor, with Latest the way
+   * back to the live edge. Neither is a read somebody ELSE asked for: a read
+   * carries the account, repository and branch that asked, so signing in as
+   * another person, opening another repository or moving branch leaves their
+   * read behind rather than replaying it on whatever card shares its id.
+   */
+  const readScope = readScopeOf(identityRows[0], session)
+  const requestedRead = session.requestedRead?.revision === bootReadRef.current.revision || session.requestedRead?.scope !== readScope
+    ? undefined
+    : session.requestedRead
+  const appended = entries.at(-1)
+  const readEntry = requestedRead === undefined || (appended !== undefined && entryOrdinal(appended) >= requestedRead.afterOrdinal)
+    ? undefined
+    : visibleEntries.find(entry => entry.kind === "card" && entry.card.id === requestedRead.cardId)
+  /* Asking for the same view twice is two destinations, so the read's own revision keys it. */
+  const readVersion = readEntry === undefined || requestedRead === undefined ? undefined : `read:${requestedRead.revision}`
+  const readTarget = readEntry ?? latestEntry
+  const latestReadId = readTarget === undefined ? undefined : entryId(readTarget)
   const initialReadId = loginScreen ? "login" : repositoryNotice ? authMessage?.id : home ? HOME_ENTRY_ID : undefined
 
   const renderEntry = (entry: TranscriptEntry) => <MessageScrollerItem key={entryId(entry)} messageId={entryId(entry)} style={{ contentVisibility: "visible" }}>
@@ -466,12 +509,13 @@ function AppContent() {
       >
       <MessageScrollerProvider key={transcriptKey} scrollAnchor="bottom"
             initialMessageId={controller.sharedConversation ? sharedConversation.view?.scroll_anchor : initialReadId}
-            readAnchor={controller.sharedConversation && !(latestEntry?.kind === "card" && latestEntry.card.kind === "docs") ? undefined : { messageId: latestReadId ?? "",
-              targetId: latestEntry?.kind === "card" && latestEntry.card.kind === "docs" ? latestEntry.card.payload.anchor : undefined,
-              actor: latestEntry?.kind === "message" && latestEntry.message.role === "user" ? "user" : "output",
+            readAnchor={controller.sharedConversation && readEntry === undefined && !(latestEntry?.kind === "card" && latestEntry.card.kind === "docs") ? undefined : { messageId: latestReadId ?? "",
+              targetId: readTarget?.kind === "card" && readTarget.card.kind === "docs" ? readTarget.card.payload.anchor : undefined,
+              /* A recorded read IS the person's own ask; nothing else claims to be. */
+              actor: readEntry !== undefined || (readTarget?.kind === "message" && readTarget.message.role === "user") ? "user" : "output",
               requestId: readRequestRef.current,
               userMessageId: messages.filter(message => message.role === "user").at(-1)?.id,
-              version: latestEntry?.kind === "card" ? `${latestEntry.card.ordinal}:${latestEntry.card.kind}` : undefined }}>
+              version: readVersion ?? (readTarget?.kind === "card" ? `${readTarget.card.ordinal}:${readTarget.card.kind}` : undefined) }}>
       <div className="chat-frame" data-pane={session.surface === "chat" ? undefined : session.surface}>
         <div className="chat-column">
           {

@@ -1772,3 +1772,44 @@ test("Latest stays at the live edge when an older Docs heading remains the read 
   await act(async () => root!.render(view(2)));
   expect(getViewport().scrollTop).toBe(1190);
 });
+
+/*
+ * Production 20261015 (UI 10a823b3, run 38764661812): a saved shared
+ * conversation with the composer's flow form last. `/issues.create` and then
+ * `/issues.list` navigated the repository's ONE pane card, which keeps its
+ * retained ordinal and its saved transcript place early in the conversation.
+ * The read resumed follow at the live edge instead, so the created issue and
+ * the refreshed list were only found with the browser's own Find.
+ */
+test("a requested read of a pane card above the live edge reads it where it is (#3813)", async () => {
+  const view = (version: number) => <MessageScrollerProvider scrollAnchor="bottom"
+    readAnchor={{ messageId: "issues-pane", actor: "output", version, requestId: version }}>
+    <MessageScrollerViewport><MessageScrollerContent>
+      <MessageScrollerItem messageId="issues-pane">Issues · roninjin10/e2e-verify</MessageScrollerItem>
+      <MessageScrollerItem messageId="shared-turns">Yesterday's shared turns</MessageScrollerItem>
+      <MessageScrollerItem messageId="issue-form">Create an issue</MessageScrollerItem>
+    </MessageScrollerContent></MessageScrollerViewport>
+    <MessageScrollerButton behavior="auto">Latest</MessageScrollerButton>
+  </MessageScrollerProvider>;
+  geometryByMessageId.set("issues-pane", { top: 420, height: 300 });
+  geometryByMessageId.set("shared-turns", { top: 720, height: 4080 });
+  geometryByMessageId.set("issue-form", { top: 4800, height: 400 });
+  await render(view(1), { scrollHeight: 5200, clientHeight: 640, scrollTop: 0 });
+  expect(getViewport().scrollTop).toBe(4560);
+  // Submitting the form asks for a read whose answer refreshed the pane card.
+  await act(async () => root!.render(view(2)));
+  expect(getViewport().scrollTop).toBe(410);
+  // Later layout and passive growth leave the answer on screen.
+  const content = container!.querySelector('[data-slot="message-scroller-content"]')!;
+  await act(async () => resizeCallbacks.get(content)!([], {} as ResizeObserver));
+  metrics().scrollHeight = 5600;
+  await act(async () => resizeCallbacks.get(content)!([], {} as ResizeObserver));
+  expect(getViewport().scrollTop).toBe(410);
+  // Latest is still one click away, and it hands the live edge back.
+  await act(async () => container!.querySelector<HTMLButtonElement>("button")!.click());
+  expect(getViewport().scrollTop).toBe(5600);
+  geometryByMessageId.set("issue-form", { top: 4800, height: 800 });
+  metrics().scrollHeight = 6000;
+  await act(async () => resizeCallbacks.get(content)!([], {} as ResizeObserver));
+  expect(getViewport().scrollTop).toBe(5360);
+});

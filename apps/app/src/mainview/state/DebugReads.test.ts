@@ -3,6 +3,7 @@ import type { AgentPort } from "../runtime/AgentPort"
 import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
+import { diagnosticVisible } from "./AppState"
 import { memoryStorage, settled } from "./TestFixtures"
 
 const createAppController = scopedControllers()
@@ -83,6 +84,33 @@ describe("the debug reads render for the human", () => {
     const outcome = await controller.commands.run("debug.snapshot")
     expect(outcome.status).toBe("executed")
     expect(outcome.status === "executed" ? outcome.value : undefined).toContain("surface")
+  })
+
+  /*
+   * Production 20261015 (UI 10a823b3): ⌘K /debug.errors in a saved shared
+   * conversation showed no answer at all. Its message exists, but a private
+   * local message is only in the transcript beside shared turns when it says
+   * whose branch it belongs to (`diagnosticVisible`), and this one read is the
+   * only debug read that dispatches instead of going through surfaceDebugRead
+   * — so it alone arrived unstamped and was filtered out of the view that
+   * asked for it. The scope is this account's login and branch: never another
+   * actor's history, and never published to the conversation.
+   */
+  test("/debug.errors answers the branch that asked, and only that branch", async () => {
+    const store = await adminStore()
+    const controller = createAppController(store, debugAgent(), {
+      fetchImpl: async () => new Response("{}", { status: 200 })
+    })
+    controller.send("/debug.errors")
+    await settled()
+    await settled()
+    const answer = [...store.collections.messages.values()].at(-1)!
+    expect(answer.text).toContain("retained app history")
+    expect(diagnosticVisible(answer, "will", "main")).toBe(true)
+    expect(diagnosticVisible(answer, "ada", "main")).toBe(false)
+    expect(diagnosticVisible(answer, "will", "feature")).toBe(false)
+    // The structured read is the agent's channel; the stamp carries no payload.
+    expect(answer.diagnostic).toEqual({ login: "will", branch: "main" })
   })
 
   test("the dev-tools panel's read never dispatches", async () => {

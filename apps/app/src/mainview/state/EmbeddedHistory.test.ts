@@ -70,3 +70,37 @@ test("issue navigation stays in one durable frame, supports back/forward, and fo
   expect(store.collections.cards.get(before.id)?.kind).toBe("pr")
   await closeStore(store)
 })
+
+/*
+ * Production 20261015 (UI 10a823b3, run 38764661812): `/issues.create` then
+ * `/issues.list` on a saved shared conversation navigated the repository's one
+ * pane card, which keeps its retained ordinal early in the transcript while
+ * the composer's flow form stays last. The transcript read anchor named that
+ * last entry, so neither result was ever brought into view. The read itself is
+ * the only thing that knows which entry it published: it says so here.
+ */
+test("a user read names the pane card it navigated, not the transcript's last entry (#3813)", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  let ordinal = 0
+  const ctx: SeamContext = { store, dispatch: store.dispatch, actor: () => "user", nextOrdinal: () => ++ordinal, baseUrl: "", http: repositoryHttpFixture() }
+  await createIssuesSeam(ctx).listIssues("open", REPO)
+  const pane = [...store.collections.cards.values()].find(card => card.kind === "issue-list")!
+  // The composer's own form is the transcript's last entry, as in production.
+  await store.dispatch({ type: "card.upsert", actor: "user", card: { id: "issue-form", kind: "status", status: "active",
+    title: "Create an issue", payload: {}, createdAt: 1, ordinal: 50 } }).isPersisted.promise
+  await createIssuesSeam(ctx).viewIssue(3, REPO)
+  const navigated = store.collections.cards.get(pane.id)!
+  expect(navigated.kind).toBe("issue")
+  // Stable ordinals: the pane keeps its place, so the read must name it by id.
+  expect(navigated.ordinal).toBe(pane.ordinal)
+  const read = store.session().requestedRead
+  expect(read?.cardId).toBe(pane.id)
+  expect(read!.afterOrdinal).toBeGreaterThan(50)
+  // The agent reading the same pane is not a person asking to be moved.
+  await createIssuesSeam({ ...ctx, actor: () => "smithers" }).listIssues("all", REPO)
+  expect(store.collections.cards.get(pane.id)?.kind).toBe("issue-list")
+  expect(store.session().requestedRead).toEqual(read)
+  // Anything appended after the read retires it: the live edge is the destination again.
+  await store.dispatch({ type: "message.appended", actor: "user", text: "and now something else" }).isPersisted.promise
+  expect([...store.collections.messages.values()].at(-1)!.ordinal).toBeGreaterThanOrEqual(read!.afterOrdinal)
+})

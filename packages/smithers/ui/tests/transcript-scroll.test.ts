@@ -28,3 +28,21 @@ test("streaming follows short output but never fights a reader who scrolled up",
 test("targets clamp to the available scroll range", () => {
   expect(decideTranscriptScroll({ following: true }, { scrollTop: 0, clientHeight: 600, scrollHeight: 200 }, { top: 10, height: 100 }, "user").top).toBe(0);
 });
+/*
+ * Production 20261015 (UI 10a823b3, run 38764661812): in a saved shared
+ * conversation `/issues.create` then `/issues.list` navigated the repository's
+ * ONE pane card, which keeps its place early in the transcript, while the
+ * composer's flow form stayed last. The read scrolled to the live edge, so the
+ * created issue and the refreshed list were never on screen.
+ */
+test("a requested read above the live edge lands on its own entry and stops following", () => {
+  const tall = { scrollTop: 0, clientHeight: 640, scrollHeight: 5200 };
+  expect(decideTranscriptScroll({ following: true }, tall, { top: 420, height: 300 }, "user"))
+    .toEqual({ top: 410, following: false });
+  // Passive output still follows the live edge; only the asked-for read moves.
+  expect(decideTranscriptScroll({ following: true }, tall, { top: 420, height: 300 }, "output"))
+    .toEqual({ top: 4560, following: true });
+  // An unmeasured entry states no position; it must not send the reader to the top.
+  expect(decideTranscriptScroll({ following: true }, tall, { top: 0, height: 0 }, "user"))
+    .toEqual({ top: 4560, following: true });
+});

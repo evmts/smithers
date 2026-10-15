@@ -201,11 +201,22 @@ export const createPresentationController = (
     // A human gets a readable transcript answer; the agent receives the bounded structured result.
     if (ctx.commandActor !== "smithers") {
       const lines = result.items.map(item => `${item.at} · ${item.source} · ${item.status}\n${item.title}${item.detail ? `\n${item.detail}` : ""}`)
+      /*
+       * Stamped with this account's own scope, like every read that goes
+       * through `surfaceDebugRead`. Beside a shared conversation a private
+       * local message is in the transcript only when it says whose branch it
+       * belongs to (`diagnosticVisible`), and this read is the one that
+       * dispatches for itself — unstamped, its answer existed and was
+       * filtered out of the view that asked for it (production 20261015).
+       * The stamp is a login and a branch: no payload, and no other actor's
+       * history becomes readable.
+       */
+      const diagnostic = diagnosticScope()
       ctx.store.dispatch({ type: "message.appended", actor: "system", text: [
         lines.length === 0 ? "No matching errors or notifications in the retained app history." : lines.join("\n\n"),
         ...(result.hasMore ? [`Showing ${result.items.length} of ${result.totalMatching} matching records. Narrow the filters to read more.`] : []),
         result.coverage.note
-      ].join("\n\n") })
+      ].join("\n\n"), ...(diagnostic === undefined ? {} : { diagnostic }) })
     }
     return { value: JSON.stringify(result) }
   }

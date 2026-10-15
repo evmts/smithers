@@ -79,6 +79,7 @@ initialIdentitySession,
 initialSession,
 mainTab,
 parseRepoSelection,
+readScopeOf,
 flowDurationRowId,
 FlowDurationsRowSchema,
 repoTreeRowId,
@@ -2655,6 +2656,22 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
               draft.stateRevision = revision
               draft.updatedAt = createdAt
               draft.revision = revision
+            })
+          }
+          /*
+           * The read a PERSON asked for names its own destination (#3813). A
+           * repository pane read navigates ONE card in place and keeps its
+           * ordinal, so the transcript's last entry is not the answer — and
+           * only the read knows which entry it published. An agent's read, and
+           * every background publication, records nothing: nobody asked to be
+           * moved, and a passive refresh must leave the reader where they are.
+           * The scope says who asked and where, so signing in as somebody
+           * else, switching repository or moving branch cannot replay it.
+           */
+          if (transition.type === "card.view.loaded" && transition.actor === "user") {
+            const scope = readScopeOf(collections.identitySessions.get("identity"), current)
+            collections.sessions.update(SESSION_ID, (draft) => {
+              draft.requestedRead = { cardId: card.id, afterOrdinal: nextOrdinal(collections), revision, scope }
             })
           }
           break
