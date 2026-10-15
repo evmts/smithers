@@ -158,6 +158,32 @@ describe("durable command intent at the active shared door", () => {
     fail = false
   })
 
+  /*
+   * A slash line is typed while an EARLIER command is still settling, so that
+   * command's own session write (`/repo.select` -> repo.selected) lands inside
+   * this submission's admission window. The repository that changed is not the
+   * composer: the accepted line belongs to the command, so the composer clears.
+   * Leaving it behind strands the whole line in a closed composer
+   * (apps-deploy 38700479725, wiki-spaces.spec.ts:386).
+   */
+  test("a repository selected inside the admission window still clears the submitted line", async () => {
+    const store = await open()
+    const held = deferred(), entered = deferred()
+    await store.dispatch({ type: "repositories.loaded", actor: "system",
+      repositories: [{ id: "smithersai/smithers", org: "smithersai", name: "smithers", ownerKind: "org", head: null }] }).isPersisted.promise
+    const controller = controllerFor(hold(store, "command.intent.accepted", held, entered))
+    controller.changeDraft("/input.mode vim")
+    const pending = controller.commands.run("chat.send", "/input.mode vim")
+    await entered.promise
+    store.dispatch({ type: "repo.selected", actor: "user", id: "smithersai/smithers" })
+    expect(store.session().activeRepoKey).toBe("smithersai/smithers")
+    held.resolve()
+    await pending
+    await store.settled?.()
+    expect(store.session().inputMode).toBe("vim")
+    expect(store.session().draft).toBe("")
+  })
+
   test("a delayed queue submission preserves a freshly retyped identical draft", async () => {
     const store = await open()
     const held = deferred(), entered = deferred()

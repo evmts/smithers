@@ -1712,17 +1712,27 @@ const initializeAppStore = async (
         ...(history === undefined ? {} : { history }) } })
   }
 
-  // This is a capability for in-flight work, not another draft store. Only
-  // authoritative dispatcher writes revoke it, including identical edits in
-  // one batched typing transaction. Draft content remains in the collection.
+  /*
+   * This is a capability for in-flight work, not another draft store. Only
+   * authoritative dispatcher writes revoke it, including identical edits in
+   * one batched typing transaction. Draft content remains in the collection.
+   *
+   * What revokes is the COMPOSER'S OWN input: the line itself, the owner
+   * holding it, a rotated stream, and the open that prepares a fresh one.
+   * Navigation (the selected repository, workspace or branch) revoked too, and
+   * that was the wrong reading. The previous command's own session write lands
+   * inside the next line's admission window, so an accepted and executed
+   * submission left its whole line sitting in a closed composer, inviting a
+   * second run: `/repo.select` then `/wiki.cloud` (apps-deploy 38700479725).
+   * Where a submission goes is read live at its write, never from this
+   * capability, so the queue still stamps the scope it is actually in.
+   */
   let composerInput = {}
   const advanceComposerInput = (transition: AppTransition, before: AppStreamState, after: AppStreamState): void => {
     const previous = before.snapshot.sessions.find(row => row.id === SESSION_ID)!
     const next = after.snapshot.sessions.find(row => row.id === SESSION_ID)!
     if (transition.type === "composer.changed" || before.head.streamId !== after.head.streamId ||
-      previous.draft !== next.draft || previous.activeWorkspaceId !== next.activeWorkspaceId ||
-      previous.activeBranchId !== next.activeBranchId || previous.activeRepoKey !== next.activeRepoKey ||
-      previous.composerOwner !== next.composerOwner ||
+      previous.draft !== next.draft || previous.composerOwner !== next.composerOwner ||
       (!previous.paletteOpen && next.paletteOpen)) composerInput = {}
   }
   const captureComposerDraft = (text: string): (() => boolean) => {
