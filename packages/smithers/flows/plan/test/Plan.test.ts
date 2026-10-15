@@ -1317,6 +1317,72 @@ describe("PlanDiff.diff", () => {
       expect(result.rekeyed.find((entry) => entry.id === "derived")!.changed).toEqual(["input[0]"])
     }))
 
+  it.effect("matches a step whose positional id moved by its key, so an insert reports one added step (#3905)", () =>
+    Effect.gen(function*() {
+      const before = yield* withCrypto(compile([
+        draft("step-0", { body: { action: "lint" } }),
+        draft("step-1", { body: { action: "test" } })
+      ]))
+      // A step inserted first shifts every positional id by one; the keys of
+      // the two existing steps do not move.
+      const after = yield* withCrypto(compile([
+        draft("step-0", { body: { action: "format" } }),
+        draft("step-1", { body: { action: "lint" } }),
+        draft("step-2", { body: { action: "test" } })
+      ]))
+      expect(keyOf(after, "step-1")).toBe(keyOf(before, "step-0"))
+      expect(PlanDiff.diff(before, after)).toEqual({
+        added: ["step-0"],
+        removed: [],
+        rekeyed: [],
+        unchanged: ["step-1", "step-2"]
+      })
+      // Removing the first step again is the mirror image: one removal, named
+      // by the id it had in the previous plan.
+      expect(PlanDiff.diff(after, before)).toEqual({
+        added: [],
+        removed: ["step-0"],
+        rekeyed: [],
+        unchanged: ["step-0", "step-1"]
+      })
+    }))
+
+  it.effect("pairs moved steps that share a key one to one, in plan order", () =>
+    Effect.gen(function*() {
+      const before = yield* withCrypto(compile([
+        draft("old-0", { body: { action: "lint" } }),
+        draft("old-1", { body: { action: "lint" } })
+      ]))
+      const after = yield* withCrypto(compile([
+        draft("new-0", { body: { action: "lint" } }),
+        draft("new-1", { body: { action: "lint" } }),
+        draft("new-2", { body: { action: "lint" } })
+      ]))
+      expect(PlanDiff.diff(before, after)).toEqual({
+        added: ["new-2"],
+        removed: [],
+        rekeyed: [],
+        unchanged: ["new-0", "new-1"]
+      })
+    }))
+
+  it.effect("prefers the same id over a key match elsewhere, and still re-keys a same-id edit", () =>
+    Effect.gen(function*() {
+      const before = yield* withCrypto(compile([
+        draft("a", { body: { action: "same" } }),
+        draft("b", { body: { action: "old" } })
+      ]))
+      const after = yield* withCrypto(compile([
+        draft("a", { body: { action: "same" } }),
+        draft("b", { body: { action: "new" } })
+      ]))
+      const result = PlanDiff.diff(before, after)
+      expect(result.unchanged).toEqual(["a"])
+      expect(result.rekeyed.map((entry) => [entry.id, entry.changed])).toEqual([["b", ["body"]]])
+      expect(result.added).toEqual([])
+      expect(result.removed).toEqual([])
+    }))
+
   it.effect("says nothing changed when nothing did", () =>
     Effect.gen(function*() {
       const plan = yield* withCrypto(compile([draft("only")]))

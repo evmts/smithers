@@ -6,10 +6,10 @@
  * 'what is different about this run' is a set comparison, not archaeology."
  * This module is the set comparison.
  *
- * The **verdict** is the key: two nodes with the same id and the same key are
- * the same step and nothing else needs saying. The **attribution** —
- * `changed: ["input[1]"]` — is a report for a human, derived by comparing the
- * declarations field by field. It is deliberately not part of any digest.
+ * The **verdict** is the key: two nodes with the same key are the same step,
+ * under the same id or a moved one, and nothing else needs saying. The
+ * **attribution** — `changed: ["input[1]"]` — is a report for a human, derived
+ * by comparing the declarations field by field. It is deliberately not part of any digest.
  *
  * @since 0.1.0
  */
@@ -157,24 +157,65 @@ const changedFields = (
 /**
  * Compares a plan against the last plan for the same flow.
  *
+ * Nodes pair in three passes, each over the nodes no earlier pass paired:
+ * the same id with the same key, then the same key under any id, then the
+ * same id with a different key. The second pass exists because flow node ids
+ * can be positional: inserting a step shifts the ids after it while their
+ * keys stay equal, and that is one added step, not a re-key of every later
+ * one (#3905).
+ *
+ * `added`, `rekeyed`, and `unchanged` name nodes by their id in `next`;
+ * `removed` names nodes by their id in `previous`. A moved id can therefore
+ * appear once in `removed` or `added` and once in `unchanged`.
+ *
+ * @param previous - The last plan recorded for the flow.
+ * @param next - The plan to compare against it.
+ * @returns The added, removed, re-keyed, and unchanged node ids, each in its
+ * plan's node order.
  * @since 0.1.0
  * @category constructors
  * @slop
  */
 export const diff = (previous: Plan.Plan, next: Plan.Plan): PlanDiff => {
+  // pairs maps a next node to the previous node it is the same step as.
+  const pairs = new Map<Plan.PlanNode, Plan.PlanNode>()
+  const paired = new Set<Plan.PlanNode>()
+  const pair = (node: Plan.PlanNode, original: Plan.PlanNode) => {
+    pairs.set(node, original)
+    paired.add(original)
+  }
   const before = new Map(previous.nodes.map((node) => [node.id, node]))
-  const after = new Map(next.nodes.map((node) => [node.id, node]))
-  const rekeyedIds = new Set<string>()
   for (const node of next.nodes) {
     const original = before.get(node.id)
-    if (original !== undefined && original.key !== node.key) rekeyedIds.add(node.id)
+    if (original !== undefined && original.key === node.key) pair(node, original)
+  }
+  const byKey = new Map<string, Array<Plan.PlanNode>>()
+  for (const node of previous.nodes) {
+    if (paired.has(node)) continue
+    const same = byKey.get(node.key)
+    if (same === undefined) byKey.set(node.key, [node])
+    else same.push(node)
+  }
+  for (const node of next.nodes) {
+    if (pairs.has(node)) continue
+    const original = byKey.get(node.key)?.shift()
+    if (original !== undefined) pair(node, original)
+  }
+  const rekeyedIds = new Set<string>()
+  for (const node of next.nodes) {
+    if (pairs.has(node)) continue
+    const original = before.get(node.id)
+    if (original !== undefined && !paired.has(original)) {
+      pair(node, original)
+      rekeyedIds.add(node.id)
+    }
   }
   const added: Array<string> = []
   const rekeyed: Array<Rekeyed> = []
   const unchanged: Array<string> = []
   const sameField = fieldComparison()
   for (const node of next.nodes) {
-    const original = before.get(node.id)
+    const original = pairs.get(node)
     if (original === undefined) {
       added.push(node.id)
       continue
@@ -192,7 +233,7 @@ export const diff = (previous: Plan.Plan, next: Plan.Plan): PlanDiff => {
   }
   return {
     added,
-    removed: previous.nodes.filter((node) => !after.has(node.id)).map((node) => node.id),
+    removed: previous.nodes.filter((node) => !paired.has(node)).map((node) => node.id),
     rekeyed,
     unchanged
   }
