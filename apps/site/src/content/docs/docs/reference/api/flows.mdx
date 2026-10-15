@@ -481,7 +481,9 @@ interface ResolvedLimits {
 ```
 
 Bounds on what comes back from the guest. An omitted or `undefined` bound keeps
-its default.
+its default. A bound must be a non-negative safe integer; `execute` dies with a
+`TypeError` that names the field before it acquires a machine when one is
+`NaN`, infinite, negative, or fractional.
 
 ### `defaultLimits`
 
@@ -508,15 +510,15 @@ overlong unfinished quoted credential suppresses the rest of that stream.
 
 ### `ExecuteOptions`
 
-| Field         | Type               | Default         | Meaning                                                                                                                                                                                                                        |
-| ------------- | ------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `provider`    | `Sandbox.Provider` | required        | The provider that provisions the machine. A value, never a name.                                                                                                                                                               |
-| `session`     | `string`           | required        | The session key the machine is acquired under. An exclusive claim: two live executions with one key share a machine, and the first to finish tears it down under the other. Reusing a key is what resume looks like.           |
-| `entry`       | `URL \| string`    | required        | The module to bundle: a `file:` URL or an absolute path. It must export the flow being executed, under any name, and may export `layer`, an Effect `Layer` providing the implementations of the actions the flow's body names. |
-| `runtime`     | `string`           | `"node"`        | The guest executable that runs the bundle: `"node"`, `"bun"`, or an executable path. Each path is quoted as one shell word. Use a wrapper script for flags.                                                                    |
-| `captureWork` | `boolean`          | `false`         | Whether to capture the workdir's changes as a `Sandbox.Work`. The workdir must be the top of a git work tree with `git` on the guest's `PATH`.                                                                                 |
-| `limits`      | `Limits`           | `defaultLimits` | Bounds on the result and the patch.                                                                                                                                                                                            |
-| `timeout`     | `Duration.Input`   | 10 minutes      | The wall-clock budget for the whole session, acquisition through result readback. Uses platform timers, including chunked timers for long finite budgets. `Duration.infinity` disables the deadline.                           |
+| Field         | Type               | Default         | Meaning                                                                                                                                                                                                                                                                        |
+| ------------- | ------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `provider`    | `Sandbox.Provider` | required        | The provider that provisions the machine. A value, never a name.                                                                                                                                                                                                               |
+| `session`     | `string`           | required        | The session key the machine is acquired under. An exclusive claim: two live executions with one key share a machine, and the first to finish tears it down under the other. Reusing a key is what resume looks like.                                                           |
+| `entry`       | `URL \| string`    | required        | The module to bundle: a `file:` URL or an absolute path. It must export the flow being executed, under any name, and may export `layer`, an Effect `Layer` providing the implementations of the actions the flow's body names.                                                 |
+| `runtime`     | `string`           | `"node"`        | The guest executable that runs the bundle: `"node"`, `"bun"`, or an executable path. Each path is quoted as one shell word. Use a wrapper script for flags.                                                                                                                    |
+| `captureWork` | `boolean`          | `false`         | Whether to capture the workdir's changes as a `Sandbox.Work`. The workdir must be the top of a git work tree with `git` on the guest's `PATH`.                                                                                                                                 |
+| `limits`      | `Limits`           | `defaultLimits` | Bounds on the result and the patch.                                                                                                                                                                                                                                            |
+| `timeout`     | `Duration.Input`   | 10 minutes      | The wall-clock budget for the whole session, acquisition through result readback. Uses platform timers, including chunked timers for long finite budgets. `Duration.infinity` disables the deadline; a negative duration dies with a `TypeError` before a machine is acquired. |
 
 ### `Result`
 

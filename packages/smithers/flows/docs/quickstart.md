@@ -37,9 +37,9 @@ already has one in that range keeps it.
 
 With pnpm 11, replace the `npm install` line with
 `pnpm add @smthrs/flows@1.0.0-rc.7 effect`, then run
-`pnpm approve-builds esbuild`. pnpm 11 holds a release back for its first 24
-hours, so `@next` would install the previous candidate; an exact version is
-installed the day it is published. pnpm 11 also ends the install with
+`pnpm approve-builds esbuild`. pnpm 11 installs only versions at least 24 hours
+old, so `@next` can resolve to a candidate more than one release behind; an
+exact version is installed the day it is published. pnpm 11 also ends the install with
 `ERR_PNPM_IGNORED_BUILDS` until the project allows or denies the install script
 of `esbuild`, which `@smthrs/flows` uses to bundle sandboxed flows.
 [Installation](./installation.md) has the requirements in full.
@@ -118,11 +118,15 @@ const allowWorkspaceReads = new Capability.Permission.Rule({
 Leave the rule out and the read is refused with the `permission_required` code,
 naming the exact capability it asked for. Because the implementation above wraps
 the read in `Effect.orDie`, that refusal arrives as a defect, and the program
-stops with this first line:
+stops with an error that includes this line:
 
 ```console
 Error [PlatformError]: PermissionDenied: FileSystem.read (<path>): permission_required: fs:read:<path> (tier sealed, request permission-1)
 ```
+
+To see it, remove the rule in a fresh workspace or run under a new
+`executionId`. A completed `quickstart-1` replays from the journal and prints
+the note even after the rule is removed.
 
 An action that wants to report a denial rather than die on it catches the
 failure instead and returns what it found: a denial is an answer, and it is up

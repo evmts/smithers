@@ -29,9 +29,10 @@ imported from an `@smthrs/*` package such as `@smthrs/artifacts`.
 
 **Cause.** The project has `@smthrs/flows` 1.0.0-rc.5 or earlier beside
 `effect` 4.0.4, and those releases import a module that `effect` 4.0.4 does not
-ship. pnpm 11 installs such a release when you ask for `@smthrs/flows@next`
-within 24 hours of a new candidate: its `minimumReleaseAge` holds the new one
-back and `next` resolves to the one before it.
+ship. pnpm 11 can install such a release when you ask for `@smthrs/flows@next`:
+its `minimumReleaseAge` skips every version younger than 24 hours, so `next`
+resolves to the newest candidate older than a day, which can be more than one
+release back.
 
 **Fix.** Install 1.0.0-rc.6 or later. With npm, `npm install @smthrs/flows@next`.
 With pnpm 11, run the exact-version `pnpm add` line from
@@ -52,6 +53,22 @@ so a host without jj refuses to start rather than fail mid-run. A jj older than
 0.39.0 or later and put it on `PATH`. On macOS, `brew install jj`; the linked
 page covers Linux and Windows. To use a binary that is not on `PATH`, set
 `SMITHERS_JJ_PATH` to its path.
+
+## JjError: The machine was too busy to start the process
+
+**Symptom.** The host stops while it is being built, before any flow runs:
+`JjError [@smthrs/jj/JjError]: jj version: TimedOut: ChildProcess.spawn (<jj path>): The machine was too busy to start the process within 5 s`.
+The error has `code: "unknown"`, `method: "version"`, and `cause.code: "ETIMEDOUT"`.
+
+**Cause.** The host runs `jj --version` through its process supervisor, which
+starts a fresh Node or Bun process and gives each startup step 5 s. On a
+heavily loaded machine, with a load average far above its core count, that
+process can start later than the bound. The host retries the probe once; this
+error means both attempts were too slow. jj itself is not at fault.
+
+**Fix.** Run the program again once the load drops; a later start usually
+succeeds. On a machine that stays this busy, run fewer processes beside the
+host.
 
 ## RuntimeConfigurationError
 

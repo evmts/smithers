@@ -5938,7 +5938,9 @@ Bindings explicitly publish host-authored refusal messages through
 `FlowBinding.Options.publicError`. Shell, test, and search errors with codes
 `command_failed` or `request_failed` remain opaque because their messages can
 carry process diagnostics. A `timeout` publishes fixed text: "The command timed
-out." Search `invalid_pattern` errors use fixed corrective text because native
+out." A command the operating system refused for the size of its arguments
+(`E2BIG`) is the caller's own input: it fails with `invalid_input` and fixed
+text naming the cause and the fix, never the command line. Search `invalid_pattern` errors use fixed corrective text because native
 search can return raw stderr. The portable validator's specific reason is
 deliberately omitted too, since both sources share that error code. Custom
 services must keep all other refusal messages suitable for cells and journals;
@@ -8678,17 +8680,20 @@ specification.
 ## canonicalize
 
 ```ts
-const canonicalize: (input: unknown) => string
+const canonicalize: (input: unknown, options?: { readonly loneSurrogates?: "escape" }) => string
 ```
 
-Serializes a value into an RFC 8785 canonical JSON document.
+Serializes a value into an RFC 8785 canonical JSON document by default.
+The optional `loneSurrogates: "escape"` policy preserves unpaired UTF-16 code
+units as JSON escapes for legacy sorted-JSON formats. That mode is not RFC 8785
+and must not be used where strict canonical bytes are required.
 
 | Parameter | Type      | Meaning                                                                                       |
 | --------- | --------- | --------------------------------------------------------------------------------------------- |
 | `input`   | `unknown` | Any JavaScript value. `JSON.stringify` semantics reduce it to JSON data before serialization. |
 
 **Returns** the canonical document as a plain `string`. It is always valid JSON
-text, and canonicalizing its parse returns the same string.
+text. In the default strict mode, canonicalizing its parse returns the same string.
 
 **Throws** a [`CanonicalError`](#canonicalerror) when the value has no
 canonical form. The error names the failure with a stable
@@ -8872,6 +8877,108 @@ or oversized text. It counts the short control escapes exactly.
 Import the namespace from the package root or `@smthrs/canonical/BoundedJson`.
 Admission is a separate boundary from canonical serialization and does not alter
 `canonicalize`'s handling of values or its output bytes.
+
+### Ordinary admission options
+
+`admit(input, limits, { preflightObjects: false })` disables the early minimum
+node and byte checks during object descriptor collection. The final limits still
+apply, but a child refusal can be reported before the enclosing budget refusal.
+The default is `true`; member bounds remain active in either mode.
+Ordinary admission permits shared references and copies each occurrence, ignores
+hidden properties, and counts depth as edges from the root (root depth zero).
+Refusal paths are arrays of string segments, including stringified array indices.
+
+### Strict admission
+
+`BoundedJson.admitStrict(input, limits, options?)` returns `{ ok: true, value }`
+or `{ ok: false, path, complaint }`. Its path is a JSON-style string beginning
+with `$`; it does not return the ordinary result's byte count or issue code.
+All six `StrictLimits` fields are required: `maxBytes`, `maxDepth`, `maxMembers`,
+`maxNodes`, `maxStringBytes`, and `maxKeyBytes`. Depth counts containers, so
+`maxDepth: 1` accepts a root container with primitive children. `maxMembers`
+bounds the cumulative number of members across the tree as well as each
+container. Use nonnegative finite integer limits.
+
+Strict admission rejects shared object references, hidden members, symbol keys,
+nonordinary arrays, and the record keys `__proto__`, `constructor`, and
+`prototype`, in addition to ordinary admission's refusals. Both plain and
+null-prototype input records are accepted. The default copies are frozen,
+null-prototype records and ordinary arrays.
+
+| Option            | Behavior                                                                                                                                                                                                                                            |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ordinaryRecords` | Produce frozen records with `Object.prototype` instead of null prototypes. Reserved input keys remain refused.                                                                                                                                      |
+| `boundedText`     | Reject overlong UTF-16 text before scanning its encoded bytes. Malformed or oversized key diagnostics use `[key:0]`, `[key:1]`, etc., instead of copying the offending key. Other paths, including reserved-key refusals, still contain input keys. |
+| `onContainer`     | Receive each detached, frozen container in child-before-parent order. Earlier callbacks can run even if a later member refuses the whole tree. A thrown callback becomes an inspection refusal.                                                     |
+| `native`          | Handle a nonordinary, non-array object as a leaf by returning `{ value, bytes }`, or return `undefined` to refuse it. The byte size must be a nonnegative safe integer and fit the total budget.                                                    |
+
+`native` is a trusted extension: admission neither validates nor copies nor
+freezes the returned value. The adapter must provide the promised detached
+representation and accurate encoded size. It is still subject to node, depth,
+and repeated-reference checks. Proxy inspection runs before the adapter; thrown
+adapter errors become inspection refusals.
+
+```ts
+import { BoundedJson } from "@smthrs/canonical"
+
+const containers: Array<unknown> = []
+const admitted = BoundedJson.admitStrict({ tags: ["release"] }, {
+  maxBytes: 64,
+  maxDepth: 2,
+  maxMembers: 2,
+  maxNodes: 3,
+  maxStringBytes: 16,
+  maxKeyBytes: 16
+}, {
+  ordinaryRecords: true,
+  onContainer: (value) => containers.push(value)
+})
+// admitted.ok === true; containers contains the tags array, then the record.
+```
+
+## ReadonlyMap.make
+
+Import `make` from `@smthrs/canonical/ReadonlyMap`; it is not a root export.
+`make<K, V>(entries?: Iterable<readonly [K, V]>): ReadonlyMap<K, V>` copies the
+entries into a private map and returns a frozen facade with `size`, `get`,
+`has`, `forEach`, `entries`, `keys`, `values`, and iteration. Duplicate keys use
+the last value, retaining their first insertion position. No mutation methods
+are exposed. `forEach` receives the facade as its third argument and honors
+`thisArg`. Entry values and keys themselves are not copied or frozen. Invalid
+iterables propagate the native `Map` construction error.
+
+```ts
+import { make } from "@smthrs/canonical/ReadonlyMap"
+
+const registry = make([["build", { enabled: true }]] as const)
+registry.get("build")?.enabled // true
+const names = [...registry.keys()] // ["build"]
+```
+
+## IssuePath.firstPath
+
+Import `firstPath` from `@smthrs/canonical/IssuePath`; it is not a root export.
+`firstPath(error: Schema.SchemaError): string` follows the first issue branch
+and renders its field path without rendering the rejected value. Identifiers
+use dot notation, other string keys use JSON-quoted brackets, and numeric
+indices use brackets. A root rejection returns `$`. Traversal stops after 64
+issue wrappers, returning the path collected so far; this does not bound the
+length of a key or the resulting string. Paths still contain caller-supplied
+keys and need redaction where those keys are sensitive.
+
+```ts
+import { firstPath } from "@smthrs/canonical/IssuePath"
+import * as Schema from "effect/Schema"
+
+let rejectedPath = "$"
+try {
+  Schema.decodeUnknownSync(Schema.Struct({ count: Schema.Number }))({ count: "invalid" })
+} catch (error) {
+  if (!Schema.isSchemaError(error)) throw error
+  rejectedPath = firstPath(error)
+}
+// rejectedPath === "$.count"
+```
 
 ---
 
@@ -9119,7 +9226,8 @@ relative resource climbs above its start with `..`: text matching would let
 `/w/**` select `/w/../etc/passwd`, so canonicalize before constructing it. A
 relative declared scope such as `.`, `./src`, or `src/a/../b` matches only
 when the pattern selects both its text and its lexical normal form, so
-`src/**` does not select `src/a/../../etc`.
+`src/**` does not select `src/a/../../etc`. `Permission.evaluate` reads a deny
+or ask rule the other way: it applies when the pattern selects either form.
 
 ### Capability.subsumes
 
@@ -9290,8 +9398,12 @@ allows are skipped for it; wildcard denies retain the normal precedence.
 A rule the matcher cannot decide within `Capability.maxMatchWork` vetoes the
 decision and `evaluate` returns `deny`, because skipping it could let an
 undecidable `deny` fall through to a later `allow`. The kernel turns that
-`deny` into a `PermissionDenied`. An `fs:*` capability whose resource has a `.`
-or `..` segment is `deny` for the same reason.
+`deny` into a `PermissionDenied`. An `fs:*` capability whose absolute resource
+has a `.` or `..` segment, or whose relative resource climbs above its start, is
+`deny` for the same reason. A relative declared scope such as `./src` or
+`x/../secrets/key` is evaluated against both its text and its lexical normal
+form: an `allow` must select both, and a `deny` or `ask` applies when it
+selects either.
 
 [`@smthrs/kernel`](/docs/reference/api/kernel/) supplies four rulesets in this order:
 configured policy, the patterns approved for a run before it starts, the grants
@@ -9495,7 +9607,7 @@ permission_denied: <action:resource>: <reason>
 grant store <code>: <message>
 ```
 
-Every field escapes C0 and C1 controls, is limited to `maxDisplayFieldLength`
+Every field escapes C0 and C1 controls, doubles a literal backslash, is limited to `maxDisplayFieldLength`
 UTF-16 code units, and ends with a visible `…[truncated]` marker when cut, so
 an agent-chosen resource cannot forge extra log lines. Ordinary non-ASCII text
 is unchanged.
@@ -9672,9 +9784,10 @@ The chain trampoline: bootstrap, links, gates, and prefix replay.
 
 - `ChainError extends Schema.TaggedError`: tag `/chain/ChainError`, fields
   `code: "replay_divergence" | "invalid_journal"` and `message: string`. A
-  chain that cannot proceed: a replayed link diverged from its journal, or
-  the journal itself is not a valid chain history. Never recoverable by
-  re-authoring.
+  chain that cannot proceed: a replayed link diverged from its journal, the
+  journal itself is not a valid chain history, the root scope id uses the
+  reserved child grammar, or a budget is not a non-negative integer. Never
+  recoverable by re-authoring.
 
 ### Models
 
@@ -9689,7 +9802,9 @@ The chain trampoline: bootstrap, links, gates, and prefix replay.
   - `prefix?: string`: the stable fixed prefix handed to the author seat.
   - `maxLinks?: number`: link budget, default `defaultMaxLinks`.
   - `maxCallsPerLink?: number`: per-link call budget, default
-    `defaultMaxCallsPerLink`.
+    `defaultMaxCallsPerLink`. Both budgets must be non-negative integers; a
+    `NaN`, negative, fractional, or infinite budget fails the run with
+    `invalid_journal` before it writes anything.
   - `context?: ReadonlyArray<string>`: caller-supplied context lines
     appended after the goal in harness-driven author calls.
   - `chain?: string`: the journal scope this run owns (default `""`, the
@@ -9965,7 +10080,8 @@ mocked at this boundary, not at the provider wire.
   can capture the inputs it saw.
 - `layerMock(outputs: ReadonlyArray<string>): Layer.Layer<Author>`: a
   scripted mock. Pops canned raw outputs in order and fails with `exhausted`
-  when asked for more than it holds.
+  when asked for more than it holds. The outputs are copied when the layer is
+  constructed, so a later edit of the caller's array changes nothing.
 
 ## `AuthorDeclaration`
 
@@ -10032,7 +10148,9 @@ The authored artifact of one link and the shape gate over raw output.
 - `extract(raw: string): Extraction`: applies gate 1 to raw author output:
   exactly one fenced `flow` block, whose body becomes the script. Zero
   blocks or more than one is a `Rejected` whose reason the next authoring
-  reads.
+  reads. The block opens with three or more backticks and `flow`, and closes
+  only on a line holding at least as many backticks and nothing else. CRLF
+  line endings are read as LF, so the script text always uses LF.
 
 ## `JsonBoundary`
 
@@ -10185,7 +10303,10 @@ randomness are the `sys/now` and `sys/random` catalog entries.
   Effect<ScriptRunner.Service, ScriptRunner.ScriptFailure>`: constructs the
   runner, compiling the WebAssembly module once per process. A failed load
   is a typed, retryable `runner_unavailable`, never a defect, and never
-  cached.
+  cached. The limits are merged over `defaultLimits` and copied at
+  construction, so a later edit of the caller's object changes nothing. Dies
+  when a set limit is not a non-negative integer (NaN, infinite, negative,
+  or fractional), because such a value would remove the bound.
 - `layer(limits?: Limits): Layer.Layer<ScriptRunner.ScriptRunner,
   ScriptRunner.ScriptFailure>`: the production script-runner layer. A sealed
   QuickJS realm per link.
@@ -10424,7 +10545,8 @@ primitive.
   the system entries, which nothing can shadow. The services are captured at
   construction: build the catalog over the SAME layers the chain runs on.
   Host entries shadowing the reserved names (`agent`, `author`, `sys/now`,
-  `sys/random`) die at construction.
+  `sys/random`) die at construction, as does a `maxDepth`, `maxLinks`, or
+  `maxCallsPerLink` that is not a non-negative integer.
 - `layer(options): Layer.Layer<Catalog.Catalog, never, Journal.Journal |
   Author.Author | ScriptRunner.ScriptRunner>`: the recursive catalog layer.
 
@@ -10486,7 +10608,8 @@ Gate 4's seam: per-call authorization against declared capabilities.
   pattern-to-pattern, where a whole-set match is last-match-wins and a
   partial `deny` or `ask` can only raise the verdict. Across one request's
   claims, `deny` beats `ask` beats `allow`. An unmatched or unparseable
-  claim asks.
+  claim asks. The rules are copied when the layer is constructed, so a later
+  edit of the caller's array changes no verdict.
 - `layerAllowAll: Layer.Layer<Authorize>`: an allow-everything seam for
   hosts that enforce elsewhere.
 
@@ -14448,7 +14571,10 @@ durable fails and the shared entry is withheld.
 
 `hydrate(digests)` establishes that this host can resolve every referenced
 artifact and reports whether the replay is now worth retrying. It never fails a
-run: a shared tier that is down must not stop work that can simply be done.
+run: a shared tier that is down must not stop work that can simply be done. A
+downloaded blob counts only when this host's store files it under the requested
+digest, so a shared tier that serves the wrong bytes costs the replay, never
+its correctness.
 
 The two tiers cannot both be layers, because they inhabit the same tag and
 composing them would shadow one with the other.
@@ -16408,7 +16534,9 @@ interface ResolvedLimits {
 ```
 
 Bounds on what comes back from the guest. An omitted or `undefined` bound keeps
-its default.
+its default. A bound must be a non-negative safe integer; `execute` dies with a
+`TypeError` that names the field before it acquires a machine when one is
+`NaN`, infinite, negative, or fractional.
 
 ### `defaultLimits`
 
@@ -16435,15 +16563,15 @@ overlong unfinished quoted credential suppresses the rest of that stream.
 
 ### `ExecuteOptions`
 
-| Field         | Type               | Default         | Meaning                                                                                                                                                                                                                        |
-| ------------- | ------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `provider`    | `Sandbox.Provider` | required        | The provider that provisions the machine. A value, never a name.                                                                                                                                                               |
-| `session`     | `string`           | required        | The session key the machine is acquired under. An exclusive claim: two live executions with one key share a machine, and the first to finish tears it down under the other. Reusing a key is what resume looks like.           |
-| `entry`       | `URL \| string`    | required        | The module to bundle: a `file:` URL or an absolute path. It must export the flow being executed, under any name, and may export `layer`, an Effect `Layer` providing the implementations of the actions the flow's body names. |
-| `runtime`     | `string`           | `"node"`        | The guest executable that runs the bundle: `"node"`, `"bun"`, or an executable path. Each path is quoted as one shell word. Use a wrapper script for flags.                                                                    |
-| `captureWork` | `boolean`          | `false`         | Whether to capture the workdir's changes as a `Sandbox.Work`. The workdir must be the top of a git work tree with `git` on the guest's `PATH`.                                                                                 |
-| `limits`      | `Limits`           | `defaultLimits` | Bounds on the result and the patch.                                                                                                                                                                                            |
-| `timeout`     | `Duration.Input`   | 10 minutes      | The wall-clock budget for the whole session, acquisition through result readback. Uses platform timers, including chunked timers for long finite budgets. `Duration.infinity` disables the deadline.                           |
+| Field         | Type               | Default         | Meaning                                                                                                                                                                                                                                                                        |
+| ------------- | ------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `provider`    | `Sandbox.Provider` | required        | The provider that provisions the machine. A value, never a name.                                                                                                                                                                                                               |
+| `session`     | `string`           | required        | The session key the machine is acquired under. An exclusive claim: two live executions with one key share a machine, and the first to finish tears it down under the other. Reusing a key is what resume looks like.                                                           |
+| `entry`       | `URL \| string`    | required        | The module to bundle: a `file:` URL or an absolute path. It must export the flow being executed, under any name, and may export `layer`, an Effect `Layer` providing the implementations of the actions the flow's body names.                                                 |
+| `runtime`     | `string`           | `"node"`        | The guest executable that runs the bundle: `"node"`, `"bun"`, or an executable path. Each path is quoted as one shell word. Use a wrapper script for flags.                                                                                                                    |
+| `captureWork` | `boolean`          | `false`         | Whether to capture the workdir's changes as a `Sandbox.Work`. The workdir must be the top of a git work tree with `git` on the guest's `PATH`.                                                                                                                                 |
+| `limits`      | `Limits`           | `defaultLimits` | Bounds on the result and the patch.                                                                                                                                                                                                                                            |
+| `timeout`     | `Duration.Input`   | 10 minutes      | The wall-clock budget for the whole session, acquisition through result readback. Uses platform timers, including chunked timers for long finite budgets. `Duration.infinity` disables the deadline; a negative duration dies with a `TypeError` before a machine is acquired. |
 
 ### `Result`
 
@@ -17074,7 +17202,7 @@ which never evaluates a flow module. Materializing the flow is `Route.load`.
 | `segments`       | `ReadonlyArray<string>`               | The NFC-normalized path segments.                                 |
 | `kind`           | `Kind`                                | How the body is stored on disk.                                   |
 | `sourcePath`     | `string`                              | The absolute path of the flow entry.                              |
-| `description`    | `Option.Option<string>`               | The discovered description.                                       |
+| `description`    | `Option.Option<string>`               | The discovered description; `none` when it is empty.              |
 | `input`          | `Descriptor.SchemaRef`                | The input schema locator, from [@smthrs/registry](/docs/reference/api/registry/). |
 | `output`         | `Descriptor.SchemaRef`                | The output schema locator.                                        |
 | `capabilities`   | `ReadonlyArray<string>`               | Declared capabilities.                                            |
@@ -17160,7 +17288,10 @@ module routes can be materialized here; Markdown and skill bodies are registry
 inputs rather than executable commands, and fail with `unsupported_body`. The module is imported through an escaped absolute
 file URL, so spaces, Unicode, percent signs, hashes, and query characters in
 the path name the intended file. An import failure, or a module whose default
-export is not a flow, fails with `load_failed`.
+export is not a flow, fails with `load_failed`. A route marked model-invocable
+whose imported flow declares `modelInvocable: false` also fails with
+`load_failed`, so a route captured before the author hid the flow cannot run
+it.
 
 ---
 
@@ -17285,8 +17416,8 @@ The current monitor omits the raw journal, which its reader pages from the
 | `ticketPath`                 | `"/auth/ticket"`                                                                                                                  | Exchanges an accepted bearer for a `Ticket`. Served only when `authorize` is set.                               |
 | `ticketPaths`                | `ReadonlyArray<string>`                                                                                                           | `["/rpc/ws", "/projections/ws", "/sync/ws"]`: the sockets a ticket opens as `<mount>?ticket=<ticket>`.          |
 | `defaultTicketMillis`        | `number`                                                                                                                          | 30,000. How long an unredeemed ticket stays valid.                                                              |
-| `rpcPaths`                   | `ReadonlyArray<string>`                                                                                                           | `["/rpc", "/projections", "/sync"]`: the `POST` mounts that carry RPC request messages.                         |
-| `boundedPostPaths`           | `ReadonlyArray<string>`                                                                                                           | RPC mounts plus both runtime bridge routes; every body is bounded before a handler reads it.                    |
+| `rpcPaths`                   | `ReadonlyArray<string>`                                                                                                           | `["/rpc", "/projections", "/sync", "/branch"]`: the `POST` mounts that carry RPC request messages.              |
+| `boundedPostPaths`           | `ReadonlyArray<string>`                                                                                                           | RPC mounts plus the three runtime bridge routes; every body is bounded before a handler reads it.               |
 | `protectedPaths`             | `ReadonlyArray<string>`                                                                                                           | Projection, sync, WebSocket, and runtime bridge paths that pass edge authentication.                            |
 | `defaultMaxRequestBodyBytes` | `number`                                                                                                                          | 1,048,576. The default maximum request body accepted by an RPC mount.                                           |
 | `loopbackHostNames`          | `ReadonlyArray<string>`                                                                                                           | `["127.0.0.1", "localhost", "::1"]`: the names that mean this machine only, as a bind address is spelled.       |
@@ -17910,7 +18041,14 @@ disable them.
 | `timeMs`          | 30,000  | per frame   | The cell's own JavaScript time. Time suspended in a `ctx.call` or `ctx.checkpoint()` does not count. At least `Sandbox.minimumTimeMs`. |
 | `totalMs`         | 900,000 | per frame   | Whole-evaluation time, host calls included. The backstop for a call that never settles.                                                |
 | `pauseTotalMsFor` | none    | per frame   | Flow names whose pending calls pause `totalMs`; the host must bound or settle these calls separately.                                  |
-| `callMs`          | 120,000 | per call    | Wall-clock time one flow call may take before it settles as a resolved timeout.                                                        |
+| `callMs`          | 600,000 | per call    | Wall-clock time one flow call may take before it settles as a resolved timeout. A call that names a longer `timeoutMs` gets it.        |
+
+`callMs` is a default, not a cap on what a call asks for. A call whose input
+names a longer `timeoutMs`, as `bash` and `test` take, runs that long, held to
+what the frame's `totalMs` has left less one second, so it settles as a
+`timeout` the cell reads rather than ending the frame. `Sandbox.callLimit`
+computes the ceiling; the default equals the timeout `bash` and `test`
+document, so a command that names none is not cut sooner than its flow says.
 
 `memoryBytes` is a run budget rather than a frame budget because a realm outlives
 its frames. `runtime.setMemoryLimit` covers the object graph but does not count
@@ -26787,13 +26925,13 @@ interface DrainInput {
 }
 ```
 
-| Field             | Meaning                                                                                                                                                       |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `runId`           | The run whose journal holds the notifications.                                                                                                                |
-| `targetLineageId` | The lineage this boundary belongs to. Notifications for other lineages are left pending.                                                                      |
-| `boundary`        | The name of this safe point. With `runId` and `targetLineageId` it is the drain identity.                                                                     |
-| `wouldIdle`       | Whether the run would have nothing to do if this boundary delivered nothing. When true and no steer was promoted, one queued notification is promoted.        |
-| `cutoffSeq`       | The journal sequence that opened this turn. Steers admitted after it are held for the next boundary. Omitting it delivers everything pending for the lineage. |
+| Field             | Meaning                                                                                                                                                                                                                                     |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runId`           | The run whose journal holds the notifications.                                                                                                                                                                                              |
+| `targetLineageId` | The lineage this boundary belongs to. Notifications for other lineages are left pending.                                                                                                                                                    |
+| `boundary`        | The name of this safe point. With `runId` and `targetLineageId` it is the drain identity.                                                                                                                                                   |
+| `wouldIdle`       | Whether the run would have nothing to do if this boundary delivered nothing. When true and no steer was promoted, one queued notification is promoted.                                                                                      |
+| `cutoffSeq`       | The journal sequence that opened this turn. Steers admitted after it are held for the next boundary. Omitting it delivers everything pending for the lineage. A value that is not a non-negative integer fails with `notification_invalid`. |
 
 ### DrainReceipt
 
@@ -26836,7 +26974,7 @@ class NotificationError extends Schema.TaggedError<NotificationError>()(
 | `notification_closed`      | New public refusal code: this receiver has finished. Start a new request; retrying this message at the closed receiver cannot deliver it. |
 | `notification_full`        | New public refusal code: nothing was retained. Retry the same notification after pending work drains.                                     |
 | `notification_id_reused`   | A stable id was already admitted with different content. A producer bug, not a storage failure.                                           |
-| `notification_invalid`     | The value is not a notification. `path` names the field that failed.                                                                      |
+| `notification_invalid`     | The value is not a notification, or a drain's `cutoffSeq` is not a non-negative integer. `path` names the field that failed.              |
 
 Storage failures surface as `Journal.JournalError` instead, so the two stay
 distinguishable.
@@ -26968,6 +27106,10 @@ applies the decision each record committed, so a composition built with
 wrote. The projected `capacity` stays at the default because no journal record
 carries the bound the layer was built at, so read `items` rather than
 `capacity`.
+
+A versioned edit of a steer that is still pending replaces that item in place
+and keeps its original sequence, the same way the queue reads its own history,
+so an edited steer projects as one pending item.
 
 ## SteerPayload
 
@@ -29965,7 +30107,7 @@ the build records the refusal and `Graph.drafts` still hands the drafts over.
 
 [src/PlanDiff.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/src/PlanDiff.ts)
 
-The verdict is the key: two nodes with the same id and the same key are the same step. The attribution, `changed: ["body", "input[1]"]`, is a report for a human, derived by comparing declarations field by field, and is deliberately part of no digest. Labels mirror the hashed declaration: `kind` (the effect tier, which selects the key namespace), `body`, `layers`, `capabilities`, `effects`, `version`, `nondeterministic`, `placement`, and `input[n]`, including `input[n]` entries whose declaration is unchanged but whose referenced node itself re-keyed. A node re-keyed purely by an upstream edit is therefore attributed to the input position that references it, even behind an unprojected `Pending`, rather than reported as nothing changed.
+The verdict is the key: two nodes with the same key are the same step. `diff` pairs nodes with the same id and key first, then the same key under a moved id (flow node ids are positional, so inserting a step shifts the ids after it), then the same id with a different key, which is a re-key. `added`, `rekeyed`, and `unchanged` name nodes by their id in `next`, and `removed` by their id in `previous`. The attribution, `changed: ["body", "input[1]"]`, is a report for a human, derived by comparing declarations field by field, and is deliberately part of no digest. Labels mirror the hashed declaration: `kind` (the effect tier, which selects the key namespace), `body`, `layers`, `capabilities`, `effects`, `version`, `nondeterministic`, `placement`, and `input[n]`, including `input[n]` entries whose declaration is unchanged but whose referenced node itself re-keyed. A node re-keyed purely by an upstream edit is therefore attributed to the input position that references it, even behind an unprojected `Pending`, rather than reported as nothing changed.
 
 Each compared field is projected through the same JSON mirror the keys are derived from, so two `Date` bodies a generation apart attribute to `body` rather than to nothing. The projection runs no accessor, and a field it refuses compares by an identity token scoped to that node and field, so `diff` stays a total function even for a value canonical serialization would reject.
 
@@ -32452,7 +32594,9 @@ would require adding an explicit snapshot handle to the API; none is currently
 exposed.
 
 `refresh` replaces the snapshot only after every source succeeds. A failed
-rescan leaves the previous complete snapshot serving reads.
+rescan leaves the previous complete snapshot serving reads. Overlapping
+`refresh` calls run one at a time, so the refresh that started last publishes
+last.
 
 `loadBody` and `runPrompt` are the only two members that touch the filesystem.
 
@@ -33226,13 +33370,17 @@ Whether a runtime version satisfies a pack's declared range. The supported
 grammar is `*`, inclusive hyphen ranges, and whitespace-separated conjunctions
 of bare, `=`, `>=`, `>`, `<=`, `<`, `^`, and `~` comparators. Whitespace may
 separate an operator from its version. Versions have one to three numeric
-components and omitted components are zero-filled. `x` components, `*`
-components, and `||` unions are unreadable; only a standalone `*` is accepted.
+components. As in npm, a partial version covers its omitted components: `1.2`
+and `=1.2` accept any `1.2.x`, `>1.2` starts at `1.3.0`, `<=1.2` ends before
+`1.3.0`, and `>=1.2` and `<1.2` read `1.2.0`. `x` components, `*` components,
+and `||` unions are unreadable; only a standalone `*` is accepted.
 
 `^` allows everything up to the next bump of the left-most non-zero field, so
 `^1.2.0` accepts `1.9.0`, `^0.2.3` accepts `0.2.9` and refuses `0.9.0`, and
-`^0.0.3` accepts only `0.0.3`. `~` pins the minor, so `~1.2.0` accepts `1.2.9`
-and refuses `1.3.0`.
+`^0.0.3` accepts only `0.0.3`. An omitted field is not pinned, so `^1` accepts
+any `1.x`, `^0` any `0.x`, and `^0.0` any `0.0.x`. `~` pins the minor when it is
+written, so `~1.2.0` accepts `1.2.9` and refuses `1.3.0`, while `~1` accepts
+any `1.x`.
 
 Prerelease and build suffixes are ignored on both sides, so a `1.0.0-rc.4`
 runtime satisfies a range written against `1.0.0`. A pack's compatibility
@@ -35304,7 +35452,9 @@ is a stem whose last word may continue ("renewal"), and one written
 `/source/flags` is a regular expression. `leakage` finds a marker anywhere,
 case-insensitively, even inside a longer token, so `token=SECRETabc123xyz`
 leaks `SECRETabc123`; its detail names the sink and the marker's 1-based
-position, never the marker text. A `/source/flags` entry and a
+position, never the marker text. `leakage` trims whitespace around each
+marker, so a secret read from a file with its trailing newline still matches.
+`opener` and `leakage` ignore blank entries. A `/source/flags` entry and a
 `linkedReferences` pattern run as given on the backtracking engine, so they
 must come from the suite author, never from model output or a payload; the
 built-in link, question, and path scans run in linear time on any output. `requiredLinks` ignores
@@ -35417,9 +35567,13 @@ The host selects the sandbox; the scorer does not grant filesystem or network ac
 a complete text unified diff. `diffSize` counts added plus removed hunk lines;
 `touchedFiles` counts distinct paths, including deleted files, with repeated
 hunks deduplicated. Equality to the cap passes. Both return counts in `reason`
-and `meta: { added, removed, files, count, max }`. Empty diffs count zero;
-malformed, incomplete, binary or metadata-only files without unified headers are inconclusive. `max` must be a
-nonnegative safe integer and enters the scorer identity.
+and `meta: { added, removed, files, count, max }`. Empty diffs count zero.
+A git file entry with no hunks, such as an empty new file, a rename, a copy,
+or a mode change, counts as one touched file and zero lines; its path comes
+from `rename to` or `copy to`, or from a `diff --git` header whose two paths
+match. Malformed, incomplete, or binary diffs, and git entries whose path
+cannot be read, are inconclusive. `max` must be a nonnegative safe integer and
+enters the scorer identity.
 
 ### Scorers export index
 
@@ -35745,23 +35899,26 @@ How the project under test runs its suite, declared once by the host.
 
 Pinned trees, and the scratch checkouts a call runs against.
 
-| Export             | Type                                                                       | Meaning                                                          |
-| ------------------ | -------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `Checkpoints`      | interface and `Context.Service` tag                                        | `{ capture, materialize }`.                                      |
-| `Snapshot`         | `Schema.Class`                                                             | `{ id, ref }`, identified as `@smthrs/std/Checkpoints/Snapshot`. |
-| `Materialized`     | interface                                                                  | `id`, `host`, `guest`, `root`, `guestRoot`.                      |
-| `baseId`           | `"base"`                                                                   | The id naming the tree the run opened on.                        |
-| `scratchDirectory` | `".flows-checkpoints"`                                                     | Where a checkpoint is materialized, relative to the root.        |
-| `configSection`    | `"flows-checkpoint"`                                                       | The git-config section minted checkpoints are recorded under.    |
-| `make`             | `(service: Checkpoints) => Checkpoints`                                    |                                                                  |
-| `unavailable`      | `(id: string) => StdError`                                                 | The refusal a host that pins nothing answers with.               |
-| `makeNoop`         | `() => Checkpoints`                                                        | Fails both calls with `unavailable`.                             |
-| `layerNoop`        | `Layer<Checkpoints>`                                                       |                                                                  |
-| `GitOptions`       | interface                                                                  | `root`, `cwd?`, `baseRef?`.                                      |
-| `makeGit`          | `(options: GitOptions) => Effect<Checkpoints, never, ChildProcessSpawner>` |                                                                  |
-| `layerGit`         | `(options: GitOptions) => Layer<Checkpoints, never, ChildProcessSpawner>`  |                                                                  |
-| `Relocation`       | tagged union                                                               | `Relocated`, `UnsupportedFlow`, `AbsolutePath`, `OutsideTree`.   |
-| `relocate`         | `(flow: string, input: Json, materialized: Materialized) => Relocation`    | Rewrites one call's input onto a checkpoint.                     |
+| Export             | Type                                                                                          | Meaning                                                          |
+| ------------------ | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `Checkpoints`      | interface and `Context.Service` tag                                                           | `{ capture, materialize }`.                                      |
+| `Snapshot`         | `Schema.Class`                                                                                | `{ id, ref }`, identified as `@smthrs/std/Checkpoints/Snapshot`. |
+| `Materialized`     | interface                                                                                     | `id`, `host`, `guest`, `root`, `guestRoot`.                      |
+| `baseId`           | `"base"`                                                                                      | The id naming the tree the run opened on.                        |
+| `scratchDirectory` | `".flows-checkpoints"`                                                                        | Where a checkpoint is materialized, relative to the root.        |
+| `configSection`    | `"flows-checkpoint"`                                                                          | The git-config section minted checkpoints are recorded under.    |
+| `make`             | `(service: Checkpoints) => Checkpoints`                                                       |                                                                  |
+| `unavailable`      | `(id: string) => StdError`                                                                    | The refusal a host that pins nothing answers with.               |
+| `makeNoop`         | `() => Checkpoints`                                                                           | Fails both calls with `unavailable`.                             |
+| `layerNoop`        | `Layer<Checkpoints>`                                                                          |                                                                  |
+| `GitOptions`       | interface                                                                                     | `root`, `cwd?`, `baseRef?`.                                      |
+| `makeGit`          | `(options: GitOptions) => Effect<Checkpoints, never, ChildProcessSpawner>`                    |                                                                  |
+| `layerGit`         | `(options: GitOptions) => Layer<Checkpoints, never, ChildProcessSpawner>`                     |                                                                  |
+| `ContainerOptions` | interface                                                                                     | `container`, `cwd?`.                                             |
+| `makeContainer`    | `(options: ContainerOptions) => Effect<Checkpoints, never, ChildProcessSpawner \| Container>` | Runs git inside the container `bash` runs in.                    |
+| `layerContainer`   | `(options: ContainerOptions) => Layer<Checkpoints, never, ChildProcessSpawner \| Container>`  |                                                                  |
+| `Relocation`       | tagged union                                                                                  | `Relocated`, `UnsupportedFlow`, `AbsolutePath`, `OutsideTree`.   |
+| `relocate`         | `(flow: string, input: Json, materialized: Materialized) => Relocation`                       | Rewrites one call's input onto a checkpoint.                     |
 
 `capture(id)` returns a `Snapshot`. `materialize(id, use)` is scoped: it hands
 the tree to `use` and removes the checkout however that effect ends. Host git
@@ -38664,7 +38821,9 @@ that.
 const waitFor: (predicate: () => boolean, label: string, timeoutMs?: number) => Promise<void>
 ```
 
-Waits until `predicate` holds, or rejects with `label` in the message.
+Waits until `predicate` holds, or rejects with `label` in the message. The
+timeout runs on the real clock, so a `skewClock` jump during the wait neither
+ends it early nor extends it.
 
 ### Faults.killProcess
 
@@ -38713,6 +38872,9 @@ Each skew is relative to the real clock, and the latest installation controls
 the global clock. Restoring any live handle reinstalls the Date constructor and
 `Date.now` captured at module load, even when handles are restored out of order.
 `restore` is idempotent; it does not reinstate an earlier skew.
+
+`skewClock` and `advance` throw `RangeError` when given a value that is not a
+finite number of milliseconds, so `NaN` or `Infinity` can never reach `Date.now`.
 
 ## ProcessTable
 
@@ -38934,7 +39096,7 @@ defaults to 100. In all three options types it must be a safe integer from 1
 through `Journal.maxEntriesLimit` (10,000). Any other value is refused with
 `invalid` before reading the journal. `maxHistoryEntries` overrides
 `Options.maxHistoryEntries` for one call. `workspaceRoot` defaults to `.flows/forks` and only moves which lane
-the derived workspace name lands in. `retainWorkspace` keeps the child lane
+the derived workspace name lands in; an empty string is refused with `invalid`. `retainWorkspace` keeps the child lane
 registered after the service scope closes. `override` replaces one step's
 recorded result on the child; see [Fork a run](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/time-travel/docs/guides/fork-a-run.md#edit-a-step-result). `rebind` replaces the child's recorded payload and carries named spawned
 children under new ids; see [Fork a run](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/time-travel/docs/guides/fork-a-run.md#edit-the-input-and-carry-spawned-children).
@@ -39139,12 +39301,13 @@ moment the code under test reaches a third.
 | `Fork`          | `{ runId, edge }`. The row `createFork` commits; a fork's warnings ride `ForkResult`.                          |
 | `ForkIntent`    | `{ childRunId, parentRunId, parentSeq, reservedAtMs }`. A minted fork id whose fork has not committed.         |
 
-Three helpers travel with them:
+Four helpers travel with them:
 
 ```ts
 const auditPatchKeys: ReadonlyArray<keyof AuditPatch>
 const validateAuditPatch: (patch: AuditPatch) => Effect<AuditPatch, TimeTravelError>
 const forkFrameMessage: (parentRunId: string, frame: Frame) => string
+const forkChildTakenMessage: (childRunId: string) => string
 ```
 
 `validateAuditPatch` refuses a patch carrying a key `AuditPatch` does not admit,
@@ -39153,7 +39316,8 @@ because the offending caller is an untyped one. An invalid status reports
 The message omits the patch's detail and handler receipts.
 `forkFrameMessage` is the one refusal message both stores raise for a fork whose
 frame addresses no record, so a caller that branches on it gets the same answer
-from either.
+from either. `forkChildTakenMessage` is the matching `invalid` refusal for a
+fork whose child id names a run that already exists.
 
 ### Service
 
@@ -39173,7 +39337,7 @@ from either.
 | `archivedAt(runId, seq)`                                             | Whether the archive holds a record at that coordinate. Recovery's commit-point evidence.                                                                                                                                                                                                                 |
 | `nextForkId(parentRunId, frame)`                                     | Mints and durably reserves the run id the next fork off that frame will carry, without creating a run.                                                                                                                                                                                                   |
 | `abandonForkIntents(staleBeforeMs)`                                  | Every reservation older than `staleBeforeMs` whose fork never committed, handed back exactly once.                                                                                                                                                                                                       |
-| `createFork(parentRunId, frame, childRunId?, override?, rebinding?)` | Branches a new run off a frame, copying the journal prefix and the attempts that existed there, and recording the `fork` edge. `override` replaces one copied step result in the same transaction; `rebinding` replaces the child's payload and carries named spawned children. The parent is untouched. |
+| `createFork(parentRunId, frame, childRunId?, override?, rebinding?)` | Branches a new run off a frame, copying the journal prefix and the attempts that existed there, and recording the `fork` edge. `override` replaces one copied step result in the same transaction; `rebinding` replaces the child's payload and carries named spawned children. The parent is untouched. A `childRunId` naming a run that already exists, the parent included, is refused `invalid`. |
 | `recordReceipt(receipt)`                                             | Persists one compensation receipt against its audit row, before the journal range that effect belongs to is truncated.                                                                                                                                                                                   |
 
 Every method fails as `TimeTravelError`.
@@ -39184,7 +39348,10 @@ A `TimeTravelStore` held entirely in JavaScript objects: deterministic, needs
 no database, and browser-safe.
 
 ```ts
-const make: (options?: Options) => TimeTravelStore.Service & { readonly state: () => MemoryState }
+const make: (options?: Options) => TimeTravelStore.Service & {
+  readonly state: () => MemoryState
+  readonly append: (record: JournalRecord) => void
+}
 const layer: (options?: Options) => Layer<TimeTravelStore.TimeTravelStore>
 ```
 
@@ -39195,6 +39362,9 @@ crashing. `JournalRecord` is one seeded record: `{ runId, seq, eventId,
 lineageId?, payload, eventType? }`. `MemoryState` is the whole world as
 `records`, `archived`, `edges`, `audits`, `receipts`, `snapshots`, `liveRuns`,
 `runOwners`, `runStatuses`, and `forkIntents`, copied on every read.
+`append(record)` writes one journal record after construction, standing in for
+the journal writer a real run has; a second record at the same `(runId, seq)`
+throws `invalid`.
 
 ## SqlTimeTravelStore
 

@@ -37,13 +37,16 @@ is Effect's Node spawner re-exported; contained POSIX variants use
 
 ## Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+bun add @smthrs/platform-bun@1.0.0-rc.7 effect
+```
 
 `effect` is a required peer in the range `^4.0.4`. `@effect/platform-bun` is
-bundled privately, built from `effect@4.0.4`. The filesystem slot
-also needs the `smithers-jj-export` helper, and every complete bundle needs
-jj 0.39.0 or later because it probes jj while the layer is built.
-[Installation](./installation.md) covers all three and the import forms.
+bundled privately, built from `effect@4.0.4`. The filesystem slot runs the
+`smithers-jj-export` helper that the required peer `@smthrs/platform-node`
+ships, and every complete bundle needs jj 0.39.0 or later because it probes jj
+while the layer is built. [Installation](./installation.md) covers all three
+and the import forms.
 
 ## Run a command and a file operation through the host
 
@@ -107,8 +110,8 @@ that runs them is yours, and this package when that program runs on Bun.
 
 ## Where to go next
 
-- [Installation](./installation.md): the peer dependency, the
-  `smithers-jj-export` helper, the supported runtimes, and the import forms.
+- [Installation](./installation.md): the install line, the peer dependencies,
+  the `smithers-jj-export` helper, the supported runtimes, and the import forms.
 - [Quickstart](./quickstart.md): the program above, run twice, the second time
   with containment on and a child visible in the ledger.
 - [The Host surface on Bun](./concepts/host-surface.md): what each of the five

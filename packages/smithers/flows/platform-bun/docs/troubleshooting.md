@@ -63,9 +63,12 @@ the one it was told to spawn is missing or not executable. The guard fails close
 operation, because a path-based fallback is exactly the symlink race the
 extension exists to prevent.
 
-**Fix.** Run `cargo build --locked --release -p smithers-ffi --bin smithers-jj-export`
-in a source checkout, or set `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` to an
-absolute helper path. See
+**Fix.** Install `@smthrs/platform-node`, the required peer that ships the
+helper for macOS, Linux, and Windows, at this package's version. If
+`SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` is set, it overrides the packaged helper:
+point it at an executable helper or unset it. A source checkout of the
+repository has no packaged helper; build one there with
+`cargo build --locked --release -p smithers-ffi --bin smithers-jj-export`. See
 [Configure the filesystem helper](./guides/configure-the-filesystem-helper.md).
 
 This failure is unguarded-path-safe: it appears only under

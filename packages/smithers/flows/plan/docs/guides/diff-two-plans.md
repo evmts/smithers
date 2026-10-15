@@ -20,7 +20,7 @@ plus the platform package:
 npm install @smthrs/plan@1.0.0-rc.7 @smthrs/flow@1.0.0-rc.7 @effect/platform-node
 ```
 
-The outputs below are real output from 1.0.0-rc.6.
+The outputs below are real output from the release that install line names.
 
 ## Compare a re-plan
 

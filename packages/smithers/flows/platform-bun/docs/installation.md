@@ -1,30 +1,31 @@
 ---
 title: "Installation"
-description: "Install @smthrs/platform-bun, its required peers, the smithers-jj-export helper the filesystem slot needs, the jj executable every complete bundle probes at startup, and the import forms for each entry point."
+description: "Install @smthrs/platform-bun from npm with its required peers, the smithers-jj-export helper @smthrs/platform-node ships for the filesystem slot, the jj executable every complete bundle probes at startup, and the import forms for each entry point."
 sidebar:
   order: 1
 ---
 
 ## Install the package and its peers
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+The package is on npm under the `next` tag, which carries the 1.0 release
+candidates. Install the current candidate with Bun:
 
-Version 1.0.0-rc.0 is not on npm yet. Until it is published, take the package
-from [the repository](https://github.com/smithersai/smithers); the rest of this
-page applies either way.
+```bash
+bun add @smthrs/platform-bun@1.0.0-rc.7 effect
+```
 
 The manifest declares two required peers, neither optional:
 
-| Peer                    | Version      | Why                                                       |
-| ----------------------- | ------------ | --------------------------------------------------------- |
-| `effect`                | `^4.0.4`     | The runtime every service tag belongs to.                 |
-| `@smthrs/platform-node` | `1.0.0-rc.0` | The atomic filesystem slot and the containment machinery. |
+| Peer                    | Version                        | Why                                                       |
+| ----------------------- | ------------------------------ | --------------------------------------------------------- |
+| `effect`                | `^4.0.4`                       | The runtime every service tag belongs to.                 |
+| `@smthrs/platform-node` | exactly this package's version | The atomic filesystem slot and the containment machinery. |
 
-Package managers that resolve required peers install both automatically.
-Install one `effect` in that range so the host shares one Effect runtime.
-`@effect/platform-bun`, `@effect/platform-node` and
-`@effect/platform-node-shared` are bundled privately, built from
-`effect@4.0.4`.
+Bun installs required peers, so the line above also installs
+`@smthrs/platform-node` at the matching version. Install one `effect` in the
+peer range so the host shares one Effect runtime. `@effect/platform-bun`,
+`@effect/platform-node` and `@effect/platform-node-shared` are bundled
+privately, built from `effect@4.0.4`, so your project installs none of them.
 
 ## Supported runtimes
 
@@ -34,19 +35,18 @@ Bun 1.4.0 or later, and Node.js 26.4.0 or later. Both are declared in
 [Runtime parity with Node](./concepts/runtime-parity.md) for what that does and
 does not buy you.
 
-## Install the filesystem helper
+## The filesystem helper
 
 The filesystem slot is `@smthrs/platform-node`'s `AtomicFileSystem`, which
 carries the kernel's atomic host extension. That extension does not run
 in-process: it executes each guarded path operation through the
 `smithers-jj-export` helper so the operation is descriptor-relative and
-no-follow. From a source checkout, build it with:
+no-follow.
 
-```bash
-cargo build --locked --release -p smithers-ffi --bin smithers-jj-export
-```
-
-Elsewhere, set `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` to its absolute path; see
+`@smthrs/platform-node` ships the helper prebuilt for macOS (arm64, x64), Linux
+(arm64, x64), and Windows (x64), so installing the package installs it; there
+is nothing to build. `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` only overrides the
+packaged helper with another absolute path; see
 [Configure the filesystem helper](./guides/configure-the-filesystem-helper.md).
 
 Windows is unsupported for this slot.

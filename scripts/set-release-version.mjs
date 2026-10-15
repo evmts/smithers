@@ -96,8 +96,8 @@ export const versionedSources = [
       pattern: /(is not a Smithers 1\.0 database \()(\S+)( does not load a 0\.x smithers\.db\))/
     }
   ]),
-  // pnpm 11 holds a release back for 24 hours, so `@smthrs/flows@next` installs
-  // the previous candidate for a day after each release. The Flows pages give
+  // pnpm 11 installs only versions at least 24 hours old, so `@smthrs/flows@next`
+  // can resolve to a candidate more than one release back. The Flows pages give
   // pnpm the exact version instead, and the bump keeps it current.
   ...[
     "packages/smithers/flows/README.md",
@@ -109,6 +109,18 @@ export const versionedSources = [
     package: "packages/smithers/flows",
     declaration: "the pnpm install line",
     pattern: /(pnpm add\s+@smthrs\/flows@)(\S+)(\s+effect)/
+  })),
+  // The Bun host pages install the exact candidate their package is at.
+  ...[
+    "packages/smithers/flows/platform-bun/README.md",
+    "packages/smithers/flows/platform-bun/docs/README.md",
+    "packages/smithers/flows/platform-bun/docs/installation.md",
+    "packages/smithers/flows/platform-bun/docs/quickstart.md"
+  ].map((path) => ({
+    path,
+    package: "packages/smithers/flows/platform-bun",
+    declaration: "the bun install line",
+    pattern: /(bun add\s+@smthrs\/platform-bun@)(\S+)(\s+effect)/
   })),
   // The registry is not in the barrel, and it must match the barrel's version.
   {

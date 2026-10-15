@@ -13,15 +13,16 @@ appear in, and disappear from, the process ledger.
 ## Prerequisites
 
 - Bun 1.4.0 or later, or Node.js 26.4.0 or later.
-- The `smithers-jj-export` helper. See
-  [Installation](./installation.md#install-the-filesystem-helper).
+- A project with the package installed:
+  `bun add @smthrs/platform-bun@1.0.0-rc.7 effect`. That also installs the
+  required peer `@smthrs/platform-node`, which ships the `smithers-jj-export`
+  helper the filesystem slot runs. See [Installation](./installation.md).
 - [Jujutsu](https://jj-vcs.github.io) at jj 0.39.0 or later on `PATH`. Confirm
   it with `jj --version`. Neither program below touches `Jj`, but every
   complete bundle probes jj while the layer is built and fails with `JjError`
   before the program body runs when it is missing. See
   [Installation](./installation.md) for `SMITHERS_JJ_PATH` and for composing
   service layers without jj.
-- A package with the dependencies installed. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
 
 ## Run a file operation and a command
 

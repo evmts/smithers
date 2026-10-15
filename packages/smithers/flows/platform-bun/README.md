@@ -22,7 +22,9 @@ package is that object for a process running on Bun.
 
 ## Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+bun add @smthrs/platform-bun@1.0.0-rc.7 effect
+```
 
 `@smthrs/platform-node` and `effect` are required peers, as `package.json`
 declares them, with `effect` in the range `^4.0.4`. Package managers that
@@ -30,14 +32,9 @@ resolve required peers install both automatically. `@effect/platform-bun`,
 `@effect/platform-node` and `@effect/platform-node-shared` are bundled
 privately, built from `effect@4.0.4`.
 
-The filesystem slot spawns the `smithers-jj-export` native helper. From a
-source checkout, build it with:
-
-```sh
-cargo build --locked --release -p smithers-ffi --bin smithers-jj-export
-```
-
-Elsewhere, set `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` to its absolute path, or
+The filesystem slot spawns the `smithers-jj-export` native helper, which
+`@smthrs/platform-node` ships for macOS, Linux, and Windows. To use another
+helper, set `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` to its absolute path, or
 build the layer with `BunFileSystem.layerWith({ executable })`. `PATH` is never
 searched. Windows is unsupported.
 

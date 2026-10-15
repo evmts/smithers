@@ -23,10 +23,11 @@ pnpm add @smthrs/flows@1.0.0-rc.7 effect
 pnpm approve-builds esbuild
 ```
 
-pnpm 11 holds a release back for its first 24 hours (`minimumReleaseAge`), so
-`@smthrs/flows@next` installs the previous candidate for a day after each
-release. An exact version is installed the day it is published: pnpm records
-it under `minimumReleaseAgeExclude` in `pnpm-workspace.yaml`. pnpm 11 also ends
+pnpm 11 installs only versions at least 24 hours old (`minimumReleaseAge`), so
+`@smthrs/flows@next` resolves to the newest candidate published more than a day
+ago, which can be more than one release behind `next`. An exact version is
+installed the day it is published: pnpm records it under
+`minimumReleaseAgeExclude` in `pnpm-workspace.yaml`. pnpm 11 also ends
 the install with `ERR_PNPM_IGNORED_BUILDS` until the project allows or denies
 the install script of `esbuild`; the packages are already installed, and
 `approve-builds` records the choice in `pnpm-workspace.yaml` so later installs

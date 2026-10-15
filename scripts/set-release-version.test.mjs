@@ -210,8 +210,9 @@ test("the storage docs quote the release through versioned sources, on the packa
 })
 
 test("every Flows page that gives the pnpm install line names the version the bump writes", () => {
-  // pnpm 11 holds `@next` back for 24 hours after a release, so the pages pin
-  // the version, and a pin the bump does not know would go stale silently.
+  // pnpm 11 installs only versions at least 24 hours old, so `@next` can lag
+  // more than one release; the pages pin the version, and a pin the bump does
+  // not know would go stale silently.
   const rows = versionedSources.filter(({ declaration }) => declaration === "the pnpm install line")
   const directory = join(repoRoot, "packages/smithers/flows")
   const pages = ["README.md", ...readdirSync(join(directory, "docs"), { recursive: true }).map((entry) => join("docs", String(entry)))]
@@ -228,6 +229,25 @@ test("every Flows page that gives the pnpm install line names the version the bu
   assert.equal(
     retargetSource("run `pnpm add @smthrs/flows@1.0.0-rc.6 effect` instead", "1.0.0-rc.7", row),
     "run `pnpm add @smthrs/flows@1.0.0-rc.7 effect` instead"
+  )
+})
+
+test("every Bun host page that gives the bun install line names the version the bump writes", () => {
+  const rows = versionedSources.filter(({ declaration }) => declaration === "the bun install line")
+  const directory = join(repoRoot, "packages/smithers/flows/platform-bun")
+  const pages = ["README.md", ...readdirSync(join(directory, "docs"), { recursive: true }).map((entry) => join("docs", String(entry)))]
+    .filter((page) => page.endsWith(".md"))
+    .map((page) => join("packages/smithers/flows/platform-bun", page))
+  const giving = pages.filter((page) => /bun add\s+@smthrs\/platform-bun@/.test(readFileSync(join(repoRoot, page), "utf8")))
+  assert.deepEqual(rows.map(({ path }) => path).sort(), giving.sort())
+  for (const page of giving) {
+    // retargetSource rewrites the first match only, so a page gives the line once.
+    const lines = readFileSync(join(repoRoot, page), "utf8").match(/bun add\s+@smthrs\/platform-bun@/g)
+    assert.equal(lines.length, 1, page + " gives the bun install line more than once")
+  }
+  assert.equal(
+    retargetSource("bun add @smthrs/platform-bun@1.0.0-rc.7 effect", "1.0.0-rc.8", rows[0]),
+    "bun add @smthrs/platform-bun@1.0.0-rc.8 effect"
   )
 })
 

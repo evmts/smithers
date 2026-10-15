@@ -33,8 +33,8 @@ npm install @smthrs/flows@next effect
 ```
 
 With pnpm 11, run `pnpm add @smthrs/flows@1.0.0-rc.7 effect` instead, then
-`pnpm approve-builds esbuild`. pnpm 11 holds a release back for its first 24
-hours, so `@next` installs the previous candidate for a day after each release.
+`pnpm approve-builds esbuild`. pnpm 11 installs only versions at least 24 hours
+old, so `@next` can resolve to a candidate more than one release behind.
 
 The host also needs [jj](https://jj-vcs.github.io/jj/latest/install-and-setup/)
 0.39.0 or later on `PATH`: it runs `jj --version` when it starts and stops with

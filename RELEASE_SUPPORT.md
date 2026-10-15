@@ -1,10 +1,10 @@
 # Library release and compatibility policy
 
-The public packages currently form one `1.0.0-rc.1` candidate. An RC is not a
-stable 1.0 compatibility or long-term support commitment. Publish it to `next`
-only after the release workflow passes for the exact commit on `main`. Builds
-and tests from another revision, a dirty checkout, or another dependency graph
-do not certify that candidate.
+The public packages ship together as one release candidate, every package at
+the same version. An RC is not a stable 1.0 compatibility or long-term support
+commitment. Publish it to `next` only after the release workflow passes for the
+exact commit on `main`. Builds and tests from another revision, a dirty
+checkout, or another dependency graph do not certify that candidate.
 
 ## Public API scope
 
