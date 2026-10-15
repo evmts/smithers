@@ -515,6 +515,37 @@ describe("the standard capability catalog", () => {
     expect(grepped).toMatchObject({ outcome: "success", value: { filesSearched: 1 } })
     expect(asked).toEqual(["glob *.md in /repo", "grep second in /repo"])
   })
+
+  it("binds a tree the host does not hold as irreversible, and changes nothing else", async () => {
+    const tiers = async (options?: { readonly remote?: boolean }) =>
+      Object.fromEntries(
+        (await Effect.runPromise(StandardFlows.filesystem(filesystemServices, undefined, options).bindings())).map(
+          (binding) => [binding.descriptor.name, binding.descriptor]
+        )
+      )
+    const host = await tiers()
+    const remote = await tiers({ remote: true })
+    // On the host, reads are sealed and writes compensable under a host snapshot.
+    expect(Object.fromEntries(Object.entries(host).map(([name, descriptor]) => [name, descriptor.effects.tier])))
+      .toEqual({
+        read: "sealed",
+        write: "compensable",
+        edit: "compensable",
+        apply_patch: "compensable",
+        ls: "sealed",
+        glob: "sealed",
+        grep: "sealed"
+      })
+    // A machine's tree can be neither snapshotted nor measured here, so no call
+    // is replayed from another's record or run inside a snapshot.
+    for (const [name, descriptor] of Object.entries(remote)) {
+      expect(descriptor.effects.tier, name).toBe("irreversible")
+      expect({ ...descriptor.effects, tier: undefined }, name).toEqual({ ...host[name]!.effects, tier: undefined })
+      expect([descriptor.description, descriptor.input, descriptor.output, descriptor.capabilities], name)
+        .toEqual([host[name]!.description, host[name]!.input, host[name]!.output, host[name]!.capabilities])
+    }
+    expect(Object.keys(remote)).toEqual(Object.keys(host))
+  })
 })
 
 describe("the jev flow", () => {

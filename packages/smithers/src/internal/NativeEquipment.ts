@@ -911,10 +911,10 @@ export const testRunner = (
  * The one container this host's `bash` may reach, when the host is sealed.
  *
  * `SMITHERS_BASH_CONTAINER` names it. A sealed host refuses every `bash` call
- * that names another container or none (`Bash.sealed`), and offers no host
- * filesystem flow, so a cell cannot read the host at all. A benchmark host
- * sets it: the host holds other tasks' tests and reference solutions, and a
- * task's agent may touch only the task's container.
+ * that names another container or none (`Bash.sealed`), and its file flows act
+ * on that container's files, so a cell cannot read the host at all. A
+ * benchmark host sets it: the host holds other tasks' tests and reference
+ * solutions, and a task's agent may touch only the task's container.
  *
  * @category constructors
  * @since 1.0.0-rc.1

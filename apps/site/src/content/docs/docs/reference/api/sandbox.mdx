@@ -197,7 +197,7 @@ Standard input for a transport with no input channel is staged under a session p
 
 `fileSystem(session)` uses `Session.readFile` and `Session.writeFile` for byte transfer. It derives `exists`, `stat`, `makeDirectory`, `readDirectory`, `remove`, `rename`, `realPath`, and `readLink` with POSIX `sh` probes. Entries in `session.files` override the derived operations one by one, and an override is installed through the workdir resolver rather than beside it, so a native operation receives the rooted path without re-implementing the rule. Both arguments are rooted where both are paths the machine must reach (`rename`, `copyFile`, `link`); `symlink` is the exception, because its first argument is the text stored inside the link and POSIX resolves a relative one against the link's own directory, so rooting it would move where the link pointed. Other `FileSystem` operations retain `makeNoop`'s explicit refusal rather than simulating watches, open handles, or temporary directories.
 
-The probe surface is intentionally honest. `stat` reports exact file size, but mode is `0` and times and ownership are absent. Directory listings are NUL framed through `find -print0`, so a filename may hold a newline, and no pseudo-terminal transport can columnize them. Probes require the named POSIX utilities on the machine.
+The probe surface is intentionally honest. `stat` reports exact file size, but mode is `0` and times and ownership are absent. A probe whose utility answers `Permission denied` fails with `PermissionDenied`, the reason the platform gives `EACCES`; `stat`'s fallback is the exception, because it reads a file's bytes to size it where the platform `stat` would not. Directory listings are NUL framed through `find -print0`, so a filename may hold a newline, and no pseudo-terminal transport can columnize them. Probes require the named POSIX utilities on the machine.
 
 ```ts
 const machineHost = Sandbox.layerHost(provider, {
@@ -413,6 +413,25 @@ Creation environment values travel through `--env-file /dev/stdin`. The host mus
 The exec's own shell is named absolutely and a caller's environment travels as an `env(1)` prefix on the inner shell, never as `--env` on the exec and never through `export`. Both rules exist for the same reason: the engine resolves an exec's argv through the exec environment's `PATH`, so a caller's `PATH` override would otherwise break the wrapper before the command ran, and `export` refuses a name the session contract accepts (`a-b=1`) and would abort the whole line. Every shell the provider starts for itself is absolute for that same reason, workspace preparation, file reads and writes, and signal delivery included, since `options.env` is applied to the whole container. A spawn value of `undefined` deletes the variable with `env -u` rather than merely omitting it, so a name the container was created with is genuinely gone from the command's environment; every `-u` precedes every assignment, because `env` stops reading options at its first operand.
 
 Killing the local `docker exec` client does not reliably signal the guest process. Each spawned command therefore writes its guest pid to a session-private pidfile. `kill` starts a second guest command that plants a cancellation marker first and only then waits for, reads, and signals the recorded pid, walking descendants through `/proc` and signalling children before the root. The marker comes first because the wrapper writes its pid before it reads the marker: a wrapper with no pid on disk has not reached the marker check yet and must see it, and a wrapper that has passed the check has left a pid to signal. Reading the pid first left a window in which the wrapper started the command between the empty read and the marker being written, and the kill reported success anyway. Acquisition wipes the pidfile directory before reuse, so reattachment cannot target stale pids.
+
+#### A container something else runs
+
+```ts
+import { ContainerSandbox, Sandbox } from "@smthrs/sandbox"
+import * as Container from "@smthrs/std/Container"
+
+const session = ContainerSandbox.existing({
+  container: "task-1",
+  workdir: "/app",
+  spawner,
+  transport: Container.makeCommand()
+})
+const host = yield * Sandbox.hostContext(session)
+```
+
+`existing(options)` serves the session contract over a container the caller already runs and owns, such as a benchmark's task container, reached through a transport of `@smthrs/std/Container`'s shape: `exec(request)` answers with the host command that runs one program in the container. A host passes the transport its `bash` flow uses, so its file operations take the same route as its commands. Nothing runs until the session is asked for something, and closing a scope leaves the container as it was.
+
+Every command, read, and write is one `/bin/sh -c` through the transport, run in `workdir` unless the command names another directory. File bytes come back as base64, so a transport whose output channel carries only text returns them intact, and go in on standard input unchanged. The caller's environment travels as for `make`, through standard input to an `env(1)` prefix; the transport's host command gets the least-authority environment plus the plan's own `env`, such as the variables a container CLI finds its daemon by. `readFile` answers a directory with `BadResource`, an absent path with `NotFound`, and a path the container's user may not read with `PermissionDenied`, as the platform implementations do. The other file operations are the Linux ones `make`'s sessions have. The guest needs `sh`, `base64`, and GNU or BusyBox utilities. The session declares no `kill`: a container engine does not pass the end of its client process on to the process it started, so use it for short commands such as file operations.
 
 ### KubernetesSandbox
 

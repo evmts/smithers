@@ -65,6 +65,15 @@
 
 ### Fixed
 
+- A host sealed to a container (`SMITHERS_BASH_CONTAINER`) offers the file
+  flows on that container's files when `SMITHERS_TEST_CWD` names the
+  repository inside it: `read`, `edit`, `apply_patch`, `grep` and the rest
+  reach the container through the transport `bash` uses, and `grep` and `glob`
+  answer in two round trips (#3998). Without them every edit in the 2026-10-14
+  SWE-bench Pro run was a hand-written program with its own anchors and
+  `git diff`, 44.7% of the run's excess output. No flow reads or writes the
+  host's files.
+
 - A host sealed to a container (`SMITHERS_BASH_CONTAINER`) pins checkpoints
   in that container, so `{ at: ctx.base }` and `ctx.checkpoint()` read the
   container's tree. The store looked for the repository in the CLI's own

@@ -66,7 +66,7 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "render_prompt replacing {{instruction}} into flow.mdx without escaping `{`, `<`, or a leading `---` that the MDX loader would parse.",
         "A replacement order in render_prompt that lets a substituted value introduce a later placeholder (for example {{commit}} or {{container}}).",
-        "prompt.md granting any flow beyond `bash` or omitting the container seal."
+        "prompt.md granting a flow that reaches the harness host, or omitting the container seal."
       ],
       paths: ["smithers_agent.py", "prompt.md"]
     },
@@ -78,6 +78,7 @@ const securityReview = Smithers.SecurityReview({
         "A run path where SMITHERS_BASH_CONTAINER is unset or names a container other than the trial's.",
         "container_of trusting SMITHERS_BENCH_CONTAINER or a docker ps result that could match another trial's compose project.",
         "audit_host_calls.py classifying a host call as benign when its command or cwd names tests/, solution/ or the dataset cache through a variable or relative path.",
+        "audit_host_calls.py counting a file-flow call as a container call in a trial whose smithers-run.json names no container.",
         "The plue docker shim accepting a docker verb other than exec, or an exec flag it passes through unparsed."
       ],
       paths: ["smithers_agent.py", "audit_host_calls.py", "plue_docker.py", "codex_pool.py"]

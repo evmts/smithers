@@ -12,8 +12,11 @@ For every trial the journal (`agent/workspace/.flows/control.db`, or the live
 `smithers-bench-*` scratch directory for a trial still running) is read, each
 `control.agent.cell-call-started` of flow `bash` is joined to its
 `cell-call-settled`, and every call with no container target is listed with its
-command, cwd and exit code. Calls to a host file flow (`read`, `grep`, `glob`,
-`ls`, `edit`, `write`) are host calls too and are listed the same way.
+command, cwd and exit code. A file flow (`read`, `grep`, `glob`, `ls`, `edit`,
+`write`, `apply_patch`) acts on the task container when the trial ran sealed
+to it (`agent/smithers-run.json` names the container): the sealed CLI binds
+those flows to the container's files and offers no host file flow. In a trial
+without that record, a file-flow call is a host call and is listed the same way.
 
 Verdict per trial:
 
@@ -44,7 +47,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-HOST_FILE_FLOWS = {"read", "grep", "glob", "ls", "edit", "write", "apply_patch", "applyPatch"}
+FILE_FLOWS = {"read", "grep", "glob", "ls", "edit", "write", "apply_patch", "applyPatch"}
 
 FORBIDDEN = {
     "tests_dir": re.compile(r"(?<![\w.-])tests(?:/|\b)"),
@@ -87,14 +90,20 @@ def live_journals() -> dict[str, Path]:
     return found
 
 
+def sealed_to(trial: Path) -> str | None:
+    """The container the trial's CLI was sealed to, from the adapter's record."""
+    try:
+        container = json.loads((trial / "agent" / "smithers-run.json").read_text()).get("container")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return container if isinstance(container, str) and container else None
+
+
 def journal_of(trial: Path, live: dict[str, Path]) -> tuple[Path | None, str]:
     kept = trial / "agent" / "workspace" / ".flows" / "control.db"
     if kept.is_file():
         return kept, "kept"
-    try:
-        container = json.loads((trial / "agent" / "smithers-run.json").read_text()).get("container")
-    except (OSError, ValueError):
-        container = None
+    container = sealed_to(trial)
     if container and container in live:
         return live[container], "live"
     return None, "none"
@@ -164,13 +173,14 @@ def audit_trial(trial: Path, live: dict[str, Path]) -> dict:
     task = task_name(trial)
     patterns = dict(FORBIDDEN)
     patterns["task_dir"] = re.compile(re.escape(task))
+    sealed = sealed_to(trial) is not None
     tainted = False
     for call in every:
         given = call["input"] if isinstance(call["input"], dict) else {}
         flow = call["flow"]
-        host = (flow == "bash" and not given.get("container")) or flow in HOST_FILE_FLOWS
+        host = (flow == "bash" and not given.get("container")) or (flow in FILE_FLOWS and not sealed)
         if not host:
-            if flow == "bash":
+            if flow == "bash" or flow in FILE_FLOWS:
                 result["containerCalls"] += 1
             continue
         text = text_of(given)

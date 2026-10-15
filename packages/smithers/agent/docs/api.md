@@ -1689,7 +1689,8 @@ diagnostic causes are never selected.
 ```ts
 const filesystem: (
   services: Context.Context<FileSystem.FileSystem | Path.Path>,
-  search?: Search.Search
+  search?: Search.Search,
+  options?: { readonly remote?: boolean }
 ) => FlowBinding.Source
 ```
 
@@ -1697,6 +1698,14 @@ The standard filesystem capabilities, all seven bound: `read`, `write`,
 `edit`, `apply_patch`, `ls`, `glob`, and `grep` from
 [`@smthrs/std`](/api/std). The search implementation defaults to
 `PortableSearch.make(services)`.
+
+`remote: true` says `services` act on a tree this host does not hold, such as a
+container's or a sandbox machine's. The host can neither snapshot that tree
+around a write nor measure it under a read, so every flow is bound
+`irreversible`: no write runs inside a host snapshot that could not restore it,
+and no read is answered from an earlier call's record. Inputs, outputs, and
+failures are unchanged. A host sealed to a container binds its file flows this
+way, with `RemoteSearch` as the search.
 
 ### StandardFlows.shell
 

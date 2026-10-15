@@ -100,6 +100,9 @@ def check_prompt() -> None:
     assert "model: openai:gpt-6-sol\n" in text, "the seat is the frontmatter model"
     assert "\neffort: xhigh\n" in text, "a task runs at xhigh unless the run names another effort"
     assert 'container: "abc123"' in text and 'cwd: "/app"' in text, "the container and cwd are taught"
+    assert 'flows: ["bash", "apply_patch", "edit", "read", "grep"]\n' in text, "the file flows are bound"
+    assert "relative to `/app`" in text, "the file flows' relative paths are taught"
+    assert "no file flows" not in text and "has no network" not in text, "the prompt claims nothing false"
     assert text.rstrip().endswith(INSTRUCTION), "the instruction is the last thing in the prompt, verbatim"
     assert "{{" not in text, "every placeholder is filled"
     for forbidden in ("tests/", "solution/", "solve.sh", "FAIL_TO_PASS"):
@@ -126,8 +129,13 @@ def check_environment() -> None:
     api = agent.cli_environment(base, auth_mode="api-key")
     assert api["SMITHERS_OPENAI_AUTH"] == "api-key" and api["OPENAI_API_KEY"] == "sk-x"
     assert base["SMITHERS_OPENAI_AUTH"] == "api-key", "the caller's dict is not mutated"
-    sealed = agent.cli_environment(base, auth_mode="chatgpt", container="task-1")
+    sealed = agent.cli_environment(base, auth_mode="chatgpt", container="task-1", cwd="/app")
     assert sealed["SMITHERS_BASH_CONTAINER"] == "task-1", "bash is sealed to the task container"
+    assert sealed["SMITHERS_TEST_CWD"] == "/app", "the file flows resolve relative paths where bash runs"
+    assert "SMITHERS_TEST_COMMAND" not in sealed, "the repository's place binds no test runner"
+    assert "SMITHERS_TEST_CWD" not in agent.cli_environment(
+        {"PATH": "/bin", "SMITHERS_TEST_CWD": "/stale"}, auth_mode="chatgpt", cwd="/app"
+    ), "an unsealed run names no place in a container"
     assert "SMITHERS_BASH_CONTAINER" not in agent.cli_environment(
         {"PATH": "/bin", "SMITHERS_BASH_CONTAINER": "stale"}, auth_mode="chatgpt"
     ), "no stale seal reaches an unsealed run"

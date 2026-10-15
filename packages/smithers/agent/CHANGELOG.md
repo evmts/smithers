@@ -17,6 +17,12 @@
 
 ### Added
 
+- `StandardFlows.filesystem` takes `{ remote: true }` for services that act on a
+  tree the host does not hold, such as a container's. Every file flow is then
+  bound `irreversible`, so no write runs inside a host jj snapshot that could
+  not restore it and no read replays an earlier call's record of a tree that
+  may have changed. A host sealed to a container binds its file flows this way.
+
 - A hosted turn's journal callbacks now record the transport phase each attempt
   reached (#3812). An unanswered callback was a single fact — `chat_callback
   pending` — that a request the dispatcher never took, a connection that never

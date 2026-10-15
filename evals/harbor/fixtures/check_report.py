@@ -86,7 +86,8 @@ class ReportCLI(unittest.TestCase):
     def trial(self, arm: str, task: str, *, reward: float | None = 1.0, exception: str | None = None,
               tokens: tuple = (1000, 800, 50), checksum: str | None = None, host_command: str | None = None,
               config: dict | None = None, succeeded: int = 3, refused_input: dict | None = None,
-              task_toml: str | None = None, sealed: bool | None = True, seal: dict | None = None) -> Path:
+              task_toml: str | None = None, sealed: bool | None = True, seal: dict | None = None,
+              file_calls: tuple = (), sealed_to: str | None = None) -> Path:
         """`task_toml` writes the task's own `task.toml` where the trial's config
         says the task lives; without it the task is a registry name the report
         cannot open. `sealed` saves the stock arm's probe: every denied attempt
@@ -141,29 +142,34 @@ class ReportCLI(unittest.TestCase):
         (directory / "result.json").write_text(json.dumps(result))
         (directory / "agent" / "trajectory.json").write_text("{}")
         if arm == "smithers":
-            self.journal(directory, host_command, refused_input)
+            self.journal(directory, host_command, refused_input, file_calls)
+            if sealed_to is not None:
+                (directory / "agent" / "smithers-run.json").write_text(json.dumps({"container": sealed_to}))
         else:
             (directory / "agent" / "codex-account.json").write_text(json.dumps({"containerCommands": reached, **proof}))
         return directory
 
-    def journal(self, trial: Path, host_command: str | None, refused_input: dict | None = None) -> None:
+    def journal(self, trial: Path, host_command: str | None, refused_input: dict | None = None,
+                file_calls: tuple = ()) -> None:
         """`refused_input` is the journalled input of one more `bash` call, which
-        the harness refused before it ran."""
+        the harness refused before it ran. `file_calls` are `(flow, input)`
+        calls to the file flows."""
         flows = trial / "agent" / "workspace" / ".flows"
         flows.mkdir(parents=True)
         ran = {"outcome": "success", "value": {"exitCode": 0}}
-        calls = [({"command": "ls /app", "container": "ws-1", "mode": "unhermetic"}, ran)]
+        calls = [("bash", {"command": "ls /app", "container": "ws-1", "mode": "unhermetic"}, ran)]
         if host_command:
-            calls.append(({"command": host_command, "mode": "unhermetic"}, ran))
+            calls.append(("bash", {"command": host_command, "mode": "unhermetic"}, ran))
         if refused_input:
-            calls.append((refused_input, {"outcome": "failure", "code": "invalid_input", "reason": "too_large",
-                                          "message": "x"}))
+            calls.append(("bash", refused_input, {"outcome": "failure", "code": "invalid_input", "reason": "too_large",
+                                                  "message": "x"}))
+        calls.extend((flow, given, {"outcome": "success", "value": {}}) for flow, given in file_calls)
         connection = sqlite3.connect(flows / "control.db")
         connection.execute(DDL)
         seq = 0
-        for index, (given, settled) in enumerate(calls):
+        for index, (flow, given, settled) in enumerate(calls):
             for kind, payload in (
-                ("control.agent.cell-call-started", {"callId": f"c{index}", "flowName": "bash", "input": given}),
+                ("control.agent.cell-call-started", {"callId": f"c{index}", "flowName": flow, "input": given}),
                 ("control.agent.cell-call-settled", {"callId": f"c{index}", **settled}),
             ):
                 connection.execute("insert into flows_journal_events values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -270,6 +276,33 @@ class ReportCLI(unittest.TestCase):
         trial = self.trial("smithers", "task-001", host_command="uname -a")
         self.trial("baseline", "task-001")
         self.assert_refused(f"smithers: {trial.name} is not sealed: host-call audit host-calls-benign")
+
+    FILE_CALLS = (("grep", {"pattern": "needle"}), ("read", {"path": "src/mod.py"}),
+                  ("edit", {"path": "src/mod.py", "oldString": "a", "newString": "b"}),
+                  ("apply_patch", {"input": "*** Begin Patch\n*** Add File: src/new.py\n+x\n*** End Patch"}))
+
+    def test_a_sealed_trials_file_flow_calls_ran_in_its_container(self) -> None:
+        """The sealed CLI binds the file flows to the task container's files, so
+        a trial whose record names that container made no host call by using them."""
+        self.paired(1)
+        trial = self.trial("smithers", "task-001", file_calls=self.FILE_CALLS, sealed_to="ws-1")
+        self.trial("baseline", "task-001")
+        _, report = self.run_report(0, "--min-tasks", "2")
+        self.assertTrue(report["publishable"], report["refusals"])
+        text, audit = self.audit(trial)
+        self.assertEqual((audit["verdict"], audit["containerCalls"], audit["hostCalls"]), ("clean", 5, []))
+        self.assertIn(f"clean              {trial.parent.name}/{trial.name}  host=0 container=5 journal=kept\n", text)
+
+    def test_a_file_flow_call_with_no_seal_on_record_is_a_host_call(self) -> None:
+        """Without the record, nothing shows the CLI was sealed, and an unsealed
+        CLI's file flows read and write this host."""
+        self.paired(1)
+        trial = self.trial("smithers", "task-001", file_calls=self.FILE_CALLS[1:2])
+        self.trial("baseline", "task-001")
+        self.assert_refused(f"smithers: {trial.name} is not sealed: host-call audit host-calls-benign")
+        _, audit = self.audit(trial)
+        self.assertEqual((audit["verdict"], [call["flow"] for call in audit["hostCalls"]]),
+                         ("host-calls-benign", ["read"]))
 
     def audit(self, trial: Path) -> tuple[str, dict]:
         """The audit's listing of one trial, as text and as JSON."""

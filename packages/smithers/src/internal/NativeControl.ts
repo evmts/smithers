@@ -37,6 +37,7 @@ import type * as NodeFlowsRuntime from "@smthrs/flows/NodeRuntime"
 import type * as GatewayServer from "@smthrs/gateway/GatewayServer"
 import type * as NodeGateway from "@smthrs/gateway/node/NodeGateway"
 import * as GatewayProjections from "@smthrs/gateway/Projections"
+import type * as FlowBinding from "@smthrs/harness/FlowBinding"
 import type { HarnessError } from "@smthrs/harness/HarnessError"
 import * as QuickJSSandbox from "@smthrs/harness/QuickJSSandbox"
 import type * as Sandbox from "@smthrs/harness/Sandbox"
@@ -70,11 +71,12 @@ import * as Executable from "@smthrs/registry/Executable"
 import * as ExecutionSnapshot from "@smthrs/registry/ExecutionSnapshot"
 import * as Registry from "@smthrs/registry/Registry"
 import { type AttemptStore, Ownership, RunStore } from "@smthrs/run-store"
-import { Sandbox as Machine } from "@smthrs/sandbox"
+import { ContainerSandbox, Sandbox as Machine } from "@smthrs/sandbox"
 import * as Bash from "@smthrs/std/Bash"
 import * as Checkpoints from "@smthrs/std/Checkpoints"
 import * as Container from "@smthrs/std/Container"
 import * as PortableSearch from "@smthrs/std/PortableSearch"
+import * as RemoteSearch from "@smthrs/std/RemoteSearch"
 import * as RunCatalog from "@smthrs/sync/RunCatalog"
 import * as SyncAuth from "@smthrs/sync/SyncAuth"
 import * as SyncServer from "@smthrs/sync/SyncServer"
@@ -444,6 +446,43 @@ const checkpointLayer = (environment: Readonly<Record<string, string | undefined
       Layer.provide(Layer.succeed(Container.Container)(sealedTransport(environment, sealedTo)))
     )
 }
+
+/**
+ * The file flows of a host sealed to one container.
+ *
+ * `read`, `edit`, `apply_patch`, `grep` and the rest act on the container's
+ * files through the transport its `bash` takes: the container is served as a
+ * `Sandbox` session, so these are the same file operations a `sandbox:`
+ * flow's machine gets, and `grep` and `glob` read the tree in two round trips
+ * rather than one per file. The host can neither snapshot nor measure the
+ * container's tree, so the flows are bound `remote`. Relative paths resolve
+ * under `SMITHERS_TEST_CWD`, the container's name for the repository that
+ * checkpoints and `test` use; a sealed host that does not declare it as an
+ * absolute path offers no file flow, because a relative path would have
+ * nowhere honest to land. Each transport process is timed into its run's
+ * journal, as `bash`'s are.
+ */
+const containerFiles = (
+  environment: Readonly<Record<string, string | undefined>>,
+  root: string,
+  sealedTo: string,
+  container: Container.Container,
+  spawner: KernelChildProcessSpawner.ChildProcessSpawner["Service"]
+): Effect.Effect<ReadonlyArray<FlowBinding.Source>, never, Scope.Scope> =>
+  Effect.gen(function*() {
+    const workdir = checkpointStore(environment, root).cwd
+    if (workdir === undefined || !workdir.startsWith("/")) return []
+    const machine = yield* Machine.hostContext(
+      ContainerSandbox.existing({ container: sealedTo, workdir, spawner, transport: container })
+    )
+    return [
+      StandardFlows.filesystem(
+        Context.pick(FileSystem.FileSystem, KernelPath.Path)(machine),
+        RemoteSearch.make(Context.pick(KernelChildProcessSpawner.ChildProcessSpawner, KernelPath.Path)(machine)),
+        { remote: true }
+      )
+    ]
+  })
 
 /**
  * The seats a native host resolves, and the catalog Jev routes an `auto` run
@@ -1473,7 +1512,7 @@ export const make = (
         // attributes a non-zero exit travels with them.
         const runner = testRunner(environment, root, workspaceRoot)
         // A sealed host reaches one container and nothing of itself: `bash`
-        // refuses every other target and the host filesystem flows are absent.
+        // refuses every other target and the file flows act on the container.
         const sealedTo = sealedContainer(environment)
         // An OS profile cannot constrain what an existing Docker daemon runs,
         // so an unsealed host binds no container transport (#3140). A sealed
@@ -1525,10 +1564,18 @@ export const make = (
               Effect.provideService(KernelChildProcessSpawner.ChildProcessSpawner, toolSpawner!)
             )
           ))
+        // A sealed host's file flows act on its container's files; see `containerFiles`.
+        const files = sealedTo === undefined
+          ? [StandardFlows.filesystem(HostLanguageServers.bind(filesystemServices, languageServer), nativeSearch)]
+          : yield* containerFiles(
+            environment,
+            root,
+            sealedTo,
+            container,
+            Context.get(transportShell, KernelChildProcessSpawner.ChildProcessSpawner)
+          )
         const sources = [
-          ...(sealedTo === undefined
-            ? [StandardFlows.filesystem(HostLanguageServers.bind(filesystemServices, languageServer), nativeSearch)]
-            : []),
+          ...files,
           StandardFlows.shell(HostLanguageServers.bind(transportShell, languageServer), container, {
             sealedTo,
             terminal: native.shellTerminal,
@@ -1853,10 +1900,15 @@ export const make = (
                     )
                     return {
                       flows: [
+                        // The machine's tree is not this host's: see `containerFiles`.
                         StandardFlows.filesystem(
                           Context.pick(FileSystem.FileSystem, KernelPath.Path)(
                             Context.add(machine, FileSystem.FileSystem, filesystem)
-                          )
+                          ),
+                          RemoteSearch.make(
+                            Context.pick(KernelChildProcessSpawner.ChildProcessSpawner, KernelPath.Path)(machine)
+                          ),
+                          { remote: true }
                         ),
                         StandardFlows.shell(
                           Context.pick(KernelChildProcessSpawner.ChildProcessSpawner, KernelPath.Path)(machine),

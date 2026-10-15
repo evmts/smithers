@@ -143,18 +143,29 @@ export const defaultMaxWaitSeconds = 3_600
  * Each handler needs only `FileSystem` and `Path`, which is why they compose
  * from the one context the host already built for `read`.
  *
+ * `remote: true` says the services act on a tree this host does not hold,
+ * such as a container's or a sandbox machine's. The host can neither
+ * snapshot that tree around a write nor measure it under a read, so each flow
+ * is bound `irreversible`: no write runs inside a host snapshot that could
+ * not restore it, and no read is answered from an earlier call's record of a
+ * tree that may since have changed. Inputs, outputs, and failures are the
+ * same.
+ *
  * @category constructors
  * @since 0.1.0
  */
 export const filesystem = (
   services: Context.Context<FileSystem.FileSystem | Path.Path>,
-  search: Search.Search = PortableSearch.make(services)
+  search: Search.Search = PortableSearch.make(services),
+  options?: { readonly remote?: boolean | undefined }
 ): FlowBinding.Source => {
   const searchServices = Context.add(services, Search.Search, search)
+  const declared = <F extends { readonly effects: object }>(flow: F): F =>
+    options?.remote === true ? { ...flow, effects: { ...flow.effects, tier: "irreversible" } } : flow
   return FlowBinding.source(filesystemSource, [
     FlowBinding.provide(
       FlowBinding.make({
-        flow: Read.flow,
+        flow: declared(Read.flow),
         handler: (input, call) => Read.run(input).pipe(Effect.provideService(Read.ReadSession, call.identity.session)),
         publicError: publicRefusal,
         activity: Read.activity,
@@ -164,7 +175,7 @@ export const filesystem = (
     ),
     FlowBinding.provide(
       FlowBinding.make({
-        flow: Write.flow,
+        flow: declared(Write.flow),
         handler: (input, call) => Write.run(input).pipe(Effect.provideService(Read.ReadSession, call.identity.session)),
         publicError: publicRefusal,
         activity: Write.activity,
@@ -174,7 +185,7 @@ export const filesystem = (
     ),
     FlowBinding.provide(
       FlowBinding.make({
-        flow: Edit.flow,
+        flow: declared(Edit.flow),
         handler: (input, call) => Edit.run(input).pipe(Effect.provideService(Read.ReadSession, call.identity.session)),
         publicError: publicRefusal,
         activity: Edit.activity,
@@ -184,7 +195,7 @@ export const filesystem = (
     ),
     FlowBinding.provide(
       FlowBinding.make({
-        flow: ApplyPatch.flow,
+        flow: declared(ApplyPatch.flow),
         handler: (input, call) =>
           ApplyPatch.run(input).pipe(Effect.provideService(Read.ReadSession, call.identity.session)),
         publicError: publicRefusal,
@@ -195,7 +206,7 @@ export const filesystem = (
     ),
     FlowBinding.provide(
       FlowBinding.make({
-        flow: Ls.flow,
+        flow: declared(Ls.flow),
         handler: Ls.run,
         publicError: publicRefusal,
         activity: Ls.activity,
@@ -205,7 +216,7 @@ export const filesystem = (
     ),
     FlowBinding.provide(
       FlowBinding.make({
-        flow: Glob.flow,
+        flow: declared(Glob.flow),
         handler: Glob.run,
         publicError: publicSearchError,
         activity: Glob.activity,
@@ -215,7 +226,7 @@ export const filesystem = (
     ),
     FlowBinding.provide(
       FlowBinding.make({
-        flow: Grep.flow,
+        flow: declared(Grep.flow),
         handler: Grep.run,
         publicError: publicSearchError,
         activity: Grep.activity,

@@ -5,8 +5,9 @@ The Smithers flows harness as an external agent for [Harbor](https://www.harborf
 1.1). Harbor starts the task's container; `smithers_agent.py` runs OUR harness
 on the host, the `smthrs` CLI out of this checkout, with the task instruction
 as the flow's whole task and the task container as the only thing its `bash`
-flow may touch. Every command reaches the container by `docker exec`, the same
-seam the SWE-bench rig uses (`packages/smithers/agent/std/src/Container.ts`).
+and file flows may touch. Every command and file operation reaches the
+container by `docker exec`, the same seam the SWE-bench rig uses
+(`packages/smithers/agent/std/src/Container.ts`).
 The model is called from the host, so the container keeps the task's
 `no-network` seal.
 
@@ -27,7 +28,7 @@ adapter's own logic and is the only thing here CI runs.
 | `codex_pool.py`           | Harbor's stock Codex CLI agent drawing its `auth.json` from that pool                                             |
 | `seal.py`                 | The denied-connect probe and verdict behind the stock arm's `sealed`                                              |
 | `prompt.md`               | The one flow file every task runs; the instruction is pasted verbatim                                             |
-| `audit_host_calls.py`     | Per-trial audit of `bash` calls that ran on the host, not the task container: clean / host-calls-benign / TAINTED |
+| `audit_host_calls.py`     | Per-trial audit of calls that ran on the host, not the task container: clean / host-calls-benign / TAINTED      |
 | `report.py`               | The publishable paired report of two finished jobs; refuses an unsealed, unfinished or under-50-task run          |
 | `calls.py`                | Every model call of a trial as one row, for either arm: totals by purpose, the time split and the fit             |
 | `verify.sh`               | Offline checks for the adapter, containment, ownership, resources and health                                      |

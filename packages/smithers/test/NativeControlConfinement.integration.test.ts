@@ -315,11 +315,15 @@ it("runs a sealed host's bash and test in its one container through the docker C
  */
 const runningDocker = (base: string, workdir: string) => {
   mkdirSync(join(base, "bin"))
+  const record = join(base, "docker-calls")
   writeFileSync(
     join(base, "bin", "docker"),
     [
       `#!${process.execPath}`,
       "const argv = process.argv.slice(2)",
+      `process.getBuiltinModule("node:fs").appendFileSync(${JSON.stringify(record)}, JSON.stringify({`,
+      "  argv, host: process.env.DOCKER_HOST",
+      "}) + \"\\n\")",
       `let cwd = ${JSON.stringify(workdir)}, input = false, at = 1`,
       "for (; argv[at] !== \"--\"; at++) {",
       "  if (argv[at] === \"-i\") input = true",
@@ -334,7 +338,71 @@ const runningDocker = (base: string, workdir: string) => {
     { mode: 0o755 }
   )
   process.env.PATH = `${join(base, "bin")}:${hostPath}`
+  return (): Array<{ argv: Array<string>; host?: string }> =>
+    existsSync(record) ? readFileSync(record, "utf8").trim().split("\n").map((line) => JSON.parse(line)) : []
 }
+
+/**
+ * A container's userland is GNU or BusyBox; the file operations use `stat -c`
+ * and `ln -T`, which macOS's own utilities lack. Off Linux the stand-in runs
+ * with GNU coreutils first on its PATH, when this host has them.
+ */
+const gnuUserland = process.platform === "linux"
+  ? ""
+  : ["/opt/homebrew/opt/coreutils/libexec/gnubin", "/usr/local/opt/coreutils/libexec/gnubin"].find(existsSync)
+
+it.skipIf(gnuUserland === undefined)(
+  "runs a sealed host's file flows on its container's files through the docker CLI (#3998)",
+  async () => {
+    const { base, workspace } = fixture()
+    // The repository lives only in the container, named by SMITHERS_TEST_CWD.
+    const app = join(base, "app")
+    mkdirSync(join(app, "src"), { recursive: true })
+    writeFileSync(join(app, "src", "mod.py"), "def needle():\n    return 'naïve'\n")
+    const dockerCalls = runningDocker(base, app)
+    if (gnuUserland) process.env.PATH = `${join(base, "bin")}:${gnuUserland}:${hostPath}`
+    const { modules, bound, flow } = offered()
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        yield* Control.Control
+        const names = bound.map((binding) => binding.descriptor.name)
+        for (const name of hostFilesystemFlows) expect(names).toContain(name)
+        // Binding the flows touched nothing: no command runs until a flow is called.
+        expect(dockerCalls()).toEqual([])
+        const read = yield* flow("read")!.run(call({ path: "src/mod.py" }, "read"))
+        expect(read).toMatchObject({ outcome: "success", value: { content: "def needle():\n    return 'naïve'" } })
+        const edited = yield* flow("edit")!.run(
+          call({ path: "src/mod.py", oldString: "'naïve'", newString: "'café'" }, "edit")
+        )
+        expect(edited).toMatchObject({ outcome: "success", value: { hunk: "def needle():\n    return 'café'" } })
+        const patched = yield* flow("apply_patch")!.run(call({
+          input: "*** Begin Patch\n*** Add File: src/new.py\n+value = 1\n*** End Patch"
+        }, "apply_patch"))
+        expect(patched).toMatchObject({ outcome: "success", value: { added: ["src/new.py"] } })
+        const found = yield* flow("grep")!.run(call({ pattern: "needle" }, "grep"))
+        expect(found).toMatchObject({ outcome: "success", value: { matches: [{ file: "src/mod.py", line: 1 }] } })
+        expect(readFileSync(join(app, "src", "mod.py"), "utf8")).toBe("def needle():\n    return 'café'\n")
+        expect(readFileSync(join(app, "src", "new.py"), "utf8")).toBe("value = 1\n")
+        expect(existsSync(join(workspace, "src"))).toBe(false)
+        // Every operation was one exec in the sealed container, carrying the daemon's address.
+        const calls = dockerCalls()
+        expect(calls.length).toBeGreaterThan(4)
+        for (const entry of calls) {
+          expect(entry.argv.slice(entry.argv.indexOf("--"), entry.argv.indexOf("--") + 3)).toEqual([
+            "--",
+            "benchmark-cell",
+            "/bin/sh"
+          ])
+          expect(entry.host).toBe(sealed.DOCKER_HOST)
+        }
+      }).pipe(
+        Effect.provide(build(workspace, { modules, environment: { ...sealed, SMITHERS_TEST_CWD: app } })),
+        Effect.scoped
+      )
+    )
+  },
+  60_000
+)
 
 it("runs a sealed host's call at ctx.base in its container, against the opening tree (#3952)", async () => {
   const { base, workspace } = fixture()

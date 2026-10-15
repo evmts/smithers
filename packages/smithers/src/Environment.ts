@@ -48,10 +48,13 @@ export const names: ReadonlyArray<Name> = [
   entry("OPENAI_AUTH", "`api-key` or `chatgpt`, selecting how openai seats authenticate"),
   entry("TEST_COMMAND", "The command the `test` flow runs"),
   entry("TEST_CONTAINER", "The container the `test` flow runs in"),
-  entry("TEST_CWD", "The repository's path inside that container"),
+  entry(
+    "TEST_CWD",
+    "The repository's path inside the container; a sealed host's file flows resolve relative paths there"
+  ),
   entry("TEST_TIMEOUT_MS", "Wall-clock budget for one `test` invocation"),
   entry("SANDBOX_IMAGE", "The image a flow's `sandbox: {provider: container}` runs in; unset refuses such flows"),
-  entry("BASH_CONTAINER", "The one container `bash` may reach; host commands and host file flows are refused"),
+  entry("BASH_CONTAINER", "The one container `bash` and the file flows may reach; host commands are refused"),
   entry("ASKS", "`park` (the default) or `refuse`: whether an in-run `ask` waits for an operator or fails at once"),
   entry("BACKEND", "Database backend: `sqlite` or `postgres`"),
   entry("MEMORY_DB", "Path of a separate SQLite file for the memory store, shared across runs that name it"),
