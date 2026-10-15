@@ -405,6 +405,29 @@ describe("GitHubClient over a real HTTP server", () => {
     expect(failure.message).toContain("is not the configured GitHub API origin")
   })
 
+  // RFC 8288 resolves a relative link target against the URL it came from.
+  it("follows a relative rel=next target against the page that named it", async () => {
+    fixture = await startFixture((request, response) =>
+      request.url?.includes("page=2")
+        ? json(response, 200, [{ id: 2 }])
+        : json(response, 200, [{ id: 1 }], { link: "</x?page=2>; rel=\"next\"" })
+    )
+    const page = await Effect.runPromise(client().paginate("/x"))
+    expect(page).toEqual({ items: [{ id: 1 }, { id: 2 }], truncated: false })
+    expect(fixture.requests.map((request) => request.url)).toEqual(["/x?per_page=100", "/x?page=2"])
+  })
+
+  it("fails a rel=next target that is not a URL as a typed error, not a defect", async () => {
+    fixture = await startFixture((_request, response) =>
+      json(response, 200, [{ id: 1 }], { link: "<http://[::1>; rel=\"next\"" })
+    )
+    const exit = await Effect.runPromiseExit(client().paginate("/x"))
+    expect(Exit.isFailure(exit) && exit.cause.reasons.every((reason) => reason._tag === "Fail")).toBe(true)
+    const failure = await Effect.runPromise(Effect.flip(client().paginate("/x")))
+    expect(isIntegrationError(failure) && failure.reason).toBe("delivery-failed")
+    expect(failure.message).toContain("rel=\"next\"")
+  })
+
   it("returns a non-JSON body as text rather than failing", async () => {
     fixture = await startFixture((_request, response) => {
       response.writeHead(200, { "content-type": "text/plain" })

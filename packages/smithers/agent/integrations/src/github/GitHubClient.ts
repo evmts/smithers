@@ -618,6 +618,20 @@ export const make = (
     )
   }
 
+  // A link target is resolved against the page that named it (RFC 8288), so a
+  // relative `</x?page=2>` stays on that page's origin. A target that is not a
+  // URL is the server's error; without this check `new URL` in the next
+  // request's span threw a bare TypeError, a defect outside the declared channel.
+  const resolveNext = (next: string | null, current: string): Effect.Effect<string | null, IntegrationError> => {
+    if (next === null) return Effect.succeed(null)
+    if (URL.canParse(next, current)) return Effect.succeed(new URL(next, current).toString())
+    return Effect.fail(integrationError(
+      "delivery-failed",
+      `GitHub pagination failed: the rel="next" link target is not a URL.`,
+      { path: new URL(current).pathname, retryable: false }
+    ))
+  }
+
   const paginate: GitHubClient["paginate"] = (path, options) =>
     Effect.gen(function*() {
       const perPage = yield* bounded("perPage", options?.perPage, MAX_PER_PAGE, 1, MAX_PER_PAGE)
@@ -629,7 +643,7 @@ export const make = (
         const page: { readonly json: unknown; readonly headers: Headers } = yield* requestUrl("GET", url)
         if (Array.isArray(page.json)) items.push(...page.json)
         else if (page.json !== null) items.push(page.json)
-        url = nextPageUrl(page.headers.get("link"))
+        url = yield* resolveNext(nextPageUrl(page.headers.get("link")), url)
         pages += 1
       }
       yield* Effect.annotateCurrentSpan({ "github.pages": pages, "github.truncated": url !== null })
