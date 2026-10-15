@@ -14,6 +14,13 @@
   command: `jev` is for judgments no command can check. On 2026-10-14
   navidrome-69e0a266 asked `jev` whether its tests proved the 15x15 case,
   read p = 0.93 and never ran it; that case was the bug (#3951).
+- The `cell-jev` teaching gives `jev` the mechanical decisions over items
+  (pick, filter, classify, match, rank), each item's evidence in `state`
+  under the id its question is keyed by, and sends reviews of the model's own
+  diff, plan or tests to reading. Its example keys each file's hit lines by
+  path instead of sending bare paths. On the paired SWE-bench Pro run of
+  2026-10-14, 55 to 61% of 852 `jev` calls reviewed the model's own work and
+  Jev said yes to 61% of those questions (#3992).
 - `CompletionClaim`'s two classifiers carry a seat note that states the
   refusal question's scope: runs the claim says happened, and nothing else.
   GPT-6 Luna, judging on a host with no gateway key, read "names an outcome"

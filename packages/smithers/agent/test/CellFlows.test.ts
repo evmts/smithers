@@ -2173,6 +2173,17 @@ ctx.done(files.filter((_, i) => judged.answers[String(i)].value).map((f) => f.pa
     expect(settled.map((event) => event.flowName)).toEqual(["grep", "jev"])
     expect(judge.asked).toHaveLength(1)
     expect(Object.keys(judge.asked[0]!.questions)).toEqual(["src/session.py", "src/config.py", "src/clock.py"])
+    // Each file's evidence is its hit lines, under the id its question is
+    // keyed by, and Jev reads each question behind that id (#3992).
+    expect(judge.asked[0]!.state).toEqual({
+      task: "the timeout ignores its setting",
+      hits: { "src/session.py": ["timeout", "timeout"], "src/config.py": ["timeout"], "src/clock.py": ["timeout"] }
+    })
+    expect(Object.values(judge.asked[0]!.questions).map((question) => question.instructions)).toEqual([
+      "src/session.py: Must this file change?",
+      "src/config.py: Must this file change?",
+      "src/clock.py: Must this file change?"
+    ])
     expect(printed[1]).toContain("src/config.py")
     expect(completionOf(outcome)).toBe(JSON.stringify({ kept: ["src/session.py"], uncertain: ["src/config.py"] }))
   })

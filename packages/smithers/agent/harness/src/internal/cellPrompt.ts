@@ -224,17 +224,30 @@ Cell throws: you are told, next turn. If a cell does not PARSE nothing ran at al
  * Will 2026-10-14: a command answers what it can check; `jev` judges the rest.
  * navidrome-69e0a266 asked `jev` whether its tests proved the 15x15 case, read
  * p = 0.93 and never ran the case, which was the bug (why-codex-won.md).
+ *
+ * Will 2026-10-14, the same day: `jev` takes the mechanical decisions over
+ * items, each item carrying its evidence, and not reviews of the model's own
+ * work (#3992). Of the run's 852 `jev` calls, 55 to 61% reviewed the model's
+ * own diff, plan or tests, and Jev said yes at 0.8 or more to 61% of those
+ * questions. In a hand-read sample, a test or a grep would have settled 14 of
+ * 22 such calls and reading the diff the other 8. The example's evidence is
+ * each file's hit lines under the id its question is keyed by. Replayed, 13
+ * file picks that sent bare paths scored a gold-patch file above another in
+ * 65% of pairs with each id named, and in 76% once each path carried the hit
+ * lines the run had already printed.
  */
 const jevText =
-  `1. Use \`jev\` for any judgment over >3 items and any yes/no, pick-one or score you would otherwise make by printing and reading (relevant files, related failures, rankings, which subtask needs a worker). ONE call: items in \`state:\`, one question per item keyed by your id. Hundreds take ~300 ms.
-2. Never make one call per item; never ask \`jev\` for text, code or quotes. When a command can answer the question, run the command; \`jev\` is for judgments no command can check.
+  `1. Use \`jev\` for mechanical decisions over items you would otherwise print and read: pick, filter, classify, match, rank (relevant files by their hit lines, failures by their output, which subtask needs a worker). ONE call: each item's evidence in \`state:\` under its id, one question per id. Hundreds take ~300 ms.
+2. Never make one call per item; never ask \`jev\` for text, code or quotes, or to review your own diff, plan or tests: read them yourself. When a command can answer the question, run the command; \`jev\` is for judgments no command can check.
 3. Failure resolves \`{ ok: false }\`: print \`error.message\`; do not decide in its place.
 4. Act on booleans when \`answers[id].probability >= 0.8\`; on choice or score when \`judged.confidence?.[id] >= 0.7\` (provider confidence; absent = uncertain). Never use a choice's own \`.confidence\` (reads 1 without a distribution). Print uncertain items; don't decide them.
 
 \`\`\`cell
 const found = await ctx.call("grep", { pattern: "timeout", root: "src", limit: 200 })
-const files = found.ok === false ? [] : [...new Set(found.matches.map((m) => m.file))]
-const judged = await ctx.call("jev", { state: { task: "the timeout ignores its setting", files }, questions: Object.fromEntries(files.map((f) => [f, { type: "boolean", instructions: "Must " + f + " change?" }])) })
+const hits = {}
+for (const m of found.ok === false ? [] : found.matches) (hits[m.file] ??= []).push(m.text)
+const files = Object.keys(hits)
+const judged = await ctx.call("jev", { state: { task: "the timeout ignores its setting", hits }, questions: Object.fromEntries(files.map((f) => [f, { type: "boolean", instructions: "Must this file change?" }])) })
 const p = (f) => judged.answers[f].probability
 const kept = judged.ok === false ? [] : files.filter((f) => p(f) >= 0.8)
 const uncertain = judged.ok === false ? [] : files.filter((f) => p(f) > 0.2 && p(f) < 0.8)

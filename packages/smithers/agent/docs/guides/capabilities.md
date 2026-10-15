@@ -117,16 +117,23 @@ See [the harness's completion brake](https://harness.smithers.sh/reference/api/#
 flow named `jev`, so a cell can make its own typed judgments:
 
 ```ts
+// hits: { "src/auth/login.py": ["def login(user, password):", ...], ... }
+const files = Object.keys(hits)
 const judged = await ctx.call("jev", {
-  state: { files },
-  questions: Object.fromEntries(files.map((file, i) => [
-    String(i),
-    { type: "boolean", instructions: `Does files[${i}] implement or call authentication?` }
+  state: { hits },
+  questions: Object.fromEntries(files.map((file) => [
+    file,
+    { type: "boolean", instructions: "Does this file implement or call authentication?" }
   ]))
 })
-const authFiles = files.filter((_, i) => judged.answers[String(i)].probability >= 0.8)
+const authFiles = files.filter((file) => judged.answers[file].probability >= 0.8)
 ```
 
+- Jev reads each question as `<id>: <instructions>` and never reads an id
+  otherwise. Key a question by the item it asks about, and put that item's
+  evidence (its hit lines, an excerpt, its output) in `state` under the same
+  id. One instruction sent to many items reads the same for each when no id
+  names them: on 2026-10-14 every file pick posed that way came back flat.
 - `state` is any JSON up to 256 KiB (`defaultMaxJevStateBytes`; a host may
   only lower it). `questions` is a map of boolean, choice or score questions,
   decoded through `Classifier.Question`, so a malformed question is refused as
@@ -147,9 +154,11 @@ const authFiles = files.filter((_, i) => judged.answers[String(i)].probability >
   `memory`, with the judge the completion brake already uses.
 
 Where `jev` is bound, the harness teaches it in a `cell-jev` prompt section
-with one worked example: use `jev` for every judgment over more than 3 items,
-make one call rather than one per item, never ask it for text, act on a boolean
-at `probability >= 0.8` and on a choice or score at the provider's
+with one worked example: use `jev` for mechanical decisions over items (pick,
+filter, classify, match, rank), each item's evidence under its id; make one call
+rather than one per item; never ask it for text, or to review the model's own
+diff, plan or tests; run a command when one can answer; act on a boolean at
+`probability >= 0.8` and on a choice or score at the provider's
 `confidence >= 0.7`, and print the uncertain items instead of deciding them. A
 run without `jev` is not taught it. The flow's catalog description carries the
 details.

@@ -564,9 +564,13 @@ describe("the jev teaching", () => {
     // Grew 1,484 → 1,586 on 2026-10-14 (will's ruling, why-codex-won.md) by one
     // clause: a question a command can answer goes to the command. The ceiling
     // rose from 410 to 430 with it; the clause is 26 estimated tokens.
-    expect(jevText()).toHaveLength(1_586)
-    expect(Digest.digest(jevText())).toBe("b57d85b82fcbba1442bad30747a8fa761997068a9448797060f753ecf64ffde7")
-    expect(Tokens.estimate(jevText())).toBeLessThanOrEqual(430)
+    // Grew 1,586 → 1,721 the same day (#3992): rule 1 names mechanical
+    // decisions over items that carry their evidence, rule 2 sends reviews of
+    // the model's own work to reading, and the example keys each file's hit
+    // lines by the id its question is keyed by. The ceiling rose to 465 (463).
+    expect(jevText()).toHaveLength(1_721)
+    expect(Digest.digest(jevText())).toBe("5399f03fafd6e4872f4c5142b0d68b0471d9060bd38d1cd0b88a1f06cee3b612")
+    expect(Tokens.estimate(jevText())).toBeLessThanOrEqual(465)
   })
 
   it("teaches the owner's floors and one call, never a call per item", () => {
@@ -585,7 +589,28 @@ describe("the jev teaching", () => {
     expect(text).toContain(
       "When a command can answer the question, run the command; `jev` is for judgments no command can check."
     )
-    expect(text).toContain("Use `jev` for any judgment over >3 items")
+    expect(text).toContain("Use `jev` for mechanical decisions over items you would otherwise print and read")
+  })
+
+  it("keys each item's evidence and its question by one id, and sends reviews of the model's own work to reading", () => {
+    // #3992. Jev reads a question's instructions and the state, never its id:
+    // on 2026-10-14 all 42 file picks that keyed one instruction by path came
+    // back flat. The flow now names the id; the teaching puts each item's
+    // evidence under that id. 55 to 61% of that run's calls reviewed the
+    // model's own diff, plan or tests, and Jev said yes to 61% of them.
+    const text = jevText()
+    expect(text).toContain("each item's evidence in `state:` under its id, one question per id")
+    expect(text).toContain(
+      "never ask `jev` for text, code or quotes, or to review your own diff, plan or tests: read them yourself."
+    )
+    const example = /```cell\n([\s\S]*?)```/.exec(text)![1]!
+    // The evidence is the hit lines, keyed by file; the questions are keyed by
+    // the same files and do not have to repeat them.
+    expect(example).toContain("(hits[m.file] ??= []).push(m.text)")
+    expect(example).toContain("const files = Object.keys(hits)")
+    expect(example).toContain("state: { task: \"the timeout ignores its setting\", hits }")
+    expect(example).toContain("files.map((f) => [f, { type: \"boolean\", instructions: \"Must this file change?\" }])")
+    expect(example).not.toContain("[...new Set(")
   })
 
   it("shows exactly one worked cell, which calls jev once and reads the probability", () => {

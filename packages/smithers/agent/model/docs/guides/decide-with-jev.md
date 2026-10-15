@@ -17,9 +17,12 @@ when its resolved LLM seat should cover Jev outages and timeouts.
 
 ## One request, one question per item
 
-Put the items in `state` and key one question per item. Read a boolean with
-`Classifier.confident` at 0.8. Read a choice or score with the provider's
-`Evaluator.Response.confidence` at 0.7.
+Put the items in `state` and key one question per item. Jev reads a question's
+instructions and the state, never its id, so name the item in each question's
+instructions; one instruction shared by every item reads the same for each. The
+agent's `jev` flow puts each id in front of its instructions for you. Read a
+boolean with `Classifier.confident` at 0.8. Read a choice or score with the
+provider's `Evaluator.Response.confidence` at 0.7.
 
 ```ts
 import { Action } from "@smthrs/flow"

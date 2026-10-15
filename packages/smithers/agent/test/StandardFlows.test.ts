@@ -31,12 +31,14 @@ import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Search from "@smthrs/std/Search"
 import * as TestRunner from "@smthrs/std/TestRunner"
-import { Context, Effect, Fiber, FileSystem, Layer, Option, Path } from "effect"
+import { Context, Effect, Fiber, FileSystem, Layer, Option, Path, Redacted } from "effect"
 import type * as Crypto from "effect/Crypto"
-import { existsSync } from "node:fs"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import { existsSync, readFileSync } from "node:fs"
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import type { TestContext } from "vitest"
 import { describe, expect, it } from "vitest"
 import * as ChildFlows from "../src/ChildFlows.ts"
 import * as StandardFlows from "../src/StandardFlows.ts"
@@ -550,11 +552,15 @@ describe("the jev flow", () => {
     const binding = await bindingOf(StandardFlows.jev(judge.services))
     const result = await Effect.runPromise(binding.run(callOf("jev", { state: { path: "auth.py" }, questions })))
 
-    // The judge was CONTACTED, once, with the state and the questions as the
-    // cell wrote them: the wire form of the decoded questions is the literal.
+    // The judge was CONTACTED, once, with the state as the cell wrote it and
+    // each question as the cell wrote it behind its own id.
     expect(judge.asked).toHaveLength(1)
     expect(judge.asked[0]!.state).toEqual({ path: "auth.py" })
-    expect(Evaluator.encodeQuestions(judge.asked[0]!.questions)).toEqual(questions)
+    expect(Evaluator.encodeQuestions(judge.asked[0]!.questions)).toEqual({
+      auth: { ...questions.auth, instructions: "auth: Does this file implement authentication?" },
+      area: { ...questions.area, instructions: "area: Which area owns it?" },
+      risk: { ...questions.risk, instructions: "risk: How risky is changing it?" }
+    })
     expect(result).toMatchObject({
       outcome: "success",
       value: {
@@ -564,6 +570,52 @@ describe("the jev flow", () => {
           risk: { value: 1, label: "high", probabilities: { low: 0, high: 1 }, confidence: 1 }
         },
         latencyMs: 0
+      }
+    })
+  })
+
+  it("tells items apart that share one instruction, for a judge that never reads question ids", async () => {
+    // Jev answers from a question's instructions and the state; the id only
+    // keys the answer. On 2026-10-14 all 42 file picks that keyed one
+    // instruction by path came back flat (#3992). This judge reads what Jev
+    // reads: the hit lines of the file its instructions name, and nothing
+    // when they name none.
+    const hits: Readonly<Record<string, ReadonlyArray<string>>> = {
+      "src/http/client.ts": ["const timeout = 30000 // ignores opts.timeout"],
+      "src/ui/button.tsx": ["<button className=\"btn\">"]
+    }
+    const judge = recording((request) =>
+      Object.fromEntries(
+        Object.entries(request.questions).map(([id, question]) => {
+          const named = Object.keys(hits).find((file) => question.instructions.includes(file))
+          const probability = named === undefined
+            ? 0.5
+            : hits[named]!.some((line) => line.includes("timeout"))
+            ? 0.9
+            : 0.1
+          return [id, { probability }]
+        })
+      )
+    )
+    const binding = await bindingOf(StandardFlows.jev(judge.services))
+    const result = await Effect.runPromise(binding.run(callOf("jev", {
+      state: { task: "The client ignores its configured timeout.", hits },
+      questions: Object.fromEntries(
+        Object.keys(hits).map((file) => [file, { type: "boolean", instructions: "Must this file change?" }])
+      )
+    })))
+
+    expect(Object.values(judge.asked[0]!.questions).map((question) => question.instructions)).toEqual([
+      "src/http/client.ts: Must this file change?",
+      "src/ui/button.tsx: Must this file change?"
+    ])
+    expect(result).toMatchObject({
+      outcome: "success",
+      value: {
+        answers: {
+          "src/http/client.ts": { value: true, probability: 0.9 },
+          "src/ui/button.tsx": { value: false, probability: 0.1 }
+        }
       }
     })
   })
@@ -679,6 +731,74 @@ describe("the jev flow", () => {
     expect(result.message).toContain(`Flow jev failed: ${expected}`)
     expect(JSON.stringify(result)).not.toContain("answers")
   })
+
+  it("separates recorded file picks that came back flat, over the live gateway", async (ctx: TestContext) => {
+    // The offline replay of #3992, opt-in like the model package's live suite.
+    // Six picks from 2026-10-14 that keyed one instruction by path over a
+    // state of paths. Asked again as recorded, they come back as flat as they
+    // did then; asked through this flow, the same calls spread.
+    const apiKey = process.env["AI_GATEWAY_API_KEY"]
+    if (process.env["SMITHERS_LIVE_MODEL_TESTS"] !== "1") {
+      ctx.skip("live provider tests require SMITHERS_LIVE_MODEL_TESTS=1")
+    }
+    if (apiKey === undefined || apiKey === "") ctx.skip("AI_GATEWAY_API_KEY is unset")
+    const fixture = JSON.parse(
+      readFileSync(new URL("./fixtures/jev-flat-file-picks.json", import.meta.url), "utf8")
+    ) as {
+      readonly calls: ReadonlyArray<{
+        readonly state: unknown
+        readonly questions: Record<string, Evaluator.Question>
+        readonly gold: ReadonlyArray<string>
+      }>
+    }
+    const services = evaluatorServices(
+      Evaluator.layerVercelGateway({ apiKey: Redacted.make(apiKey ?? ""), timeoutMs: 20_000 }).pipe(
+        Layer.provide(FetchHttpClient.layer)
+      )
+    )
+    const binding = await bindingOf(StandardFlows.jev(services))
+    const spread = (p: Record<string, number>) => Math.max(...Object.values(p)) - Math.min(...Object.values(p))
+    const pairs = (p: Record<string, number>, gold: ReadonlyArray<string>): Array<number> =>
+      gold.flatMap((g) =>
+        Object.keys(p).filter((id) => !gold.includes(id)).map((other) =>
+          p[g]! > p[other]! ? 1 : p[g] === p[other] ? 0.5 : 0
+        )
+      )
+    const asRecorded: Array<Record<string, number>> = []
+    const throughFlow: Array<Record<string, number>> = []
+    for (const call of fixture.calls) {
+      const recorded = await Effect.runPromise(
+        Effect.provide(
+          Effect.flatMap(
+            Evaluator.Evaluator,
+            (judge) => judge.evaluate({ state: call.state, questions: call.questions })
+          ),
+          services
+        )
+      )
+      asRecorded.push(
+        Object.fromEntries(
+          Object.entries(recorded.answers).map(([id, answer]) => [id, (answer as { probability: number }).probability])
+        )
+      )
+      const result = await Effect.runPromise(
+        binding.run(callOf("jev", { state: call.state, questions: call.questions }))
+      )
+      expect(result.outcome).toBe("success")
+      const answers = (result.value as { answers: Record<string, { probability: number }> }).answers
+      throughFlow.push(Object.fromEntries(Object.entries(answers).map(([id, answer]) => [id, answer.probability])))
+    }
+
+    // As recorded, every call is flat: one instruction, one answer.
+    for (const probabilities of asRecorded) expect(spread(probabilities)).toBeLessThanOrEqual(0.1)
+    // Through the flow, the same calls separate, and a gold-patch file
+    // outranks another file in most pairs (0.79 when this was written).
+    const spreads = throughFlow.map(spread).sort((a, b) => a - b)
+    expect(spreads[Math.floor(spreads.length / 2)]).toBeGreaterThanOrEqual(0.3)
+    expect(spreads.filter((value) => value <= 0.1).length).toBeLessThanOrEqual(2)
+    const ranked = fixture.calls.flatMap((call, index) => pairs(throughFlow[index]!, call.gold))
+    expect(ranked.reduce((sum, value) => sum + value, 0) / ranked.length).toBeGreaterThanOrEqual(0.6)
+  }, 120_000)
 
   it("is absent from any catalog whose host bound no evaluator", async () => {
     // Absence is structural: `jev` takes `Context<Evaluator>` and nothing

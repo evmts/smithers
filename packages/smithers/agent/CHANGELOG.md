@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The `jev` flow sends each question as `<id>: <instructions>`. Jev reads a
+  question's instructions and the state, never its id, so a cell that keyed
+  one instruction ("Does this file need to change?") by each path asked the
+  same question of every file and got the same answer back. On the paired
+  SWE-bench Pro run of 2026-10-14 all 42 file picks posed that way came back
+  flat (median spread 0.02; NodeBB-1ea9481a read 0.77 to 0.80 for 107 files),
+  ranking the gold patch's files no better than chance (AUC 0.49). Replayed
+  through the gateway with each id named, they spread a median 0.47 and scored
+  a gold-patch file above another file in 77% of pairs; questions that already
+  named their item read the same as before (#3992).
+
 ### Added
 
 - A hosted turn's journal callbacks now record the transport phase each attempt

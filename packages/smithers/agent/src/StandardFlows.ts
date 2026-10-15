@@ -728,11 +728,11 @@ export const defaultMaxJevStateBytes = Judgement.maxStateBytes
 export const JevInput = Schema.Struct({
   state: Schema.Json.annotate({
     description:
-      "The JSON every question is about: the items to judge, each with whatever a question needs to read. At most 256 KiB as JSON."
+      "The JSON every question is about: each item with the evidence its question needs (hit lines, an excerpt, output), under the id that question is keyed by. At most 256 KiB as JSON."
   }),
   questions: Schema.Record(Schema.String, Classifier.Question).annotate({
     description:
-      "Questions keyed by your own ids. Each is { type: \"boolean\", instructions, criteria?: { true, false } }, { type: \"choice\", instructions, criteria: { option: meaning, ... } } with 2 to 255 options, or { type: \"score\", instructions, criteria: [rung, ...] } with 2 or more distinct rungs ordered worst to best. All are answered in parallel in one request."
+      "Questions keyed by your own ids. Jev reads each as \"<id>: <instructions>\", so key a question by the item it asks about (a path, a test name). Each is { type: \"boolean\", instructions, criteria?: { true, false } }, { type: \"choice\", instructions, criteria: { option: meaning, ... } } with 2 to 255 options, or { type: \"score\", instructions, criteria: [rung, ...] } with 2 or more distinct rungs ordered worst to best. All are answered in parallel in one request."
   })
 })
 
@@ -779,7 +779,7 @@ export const JevOutput = Schema.Struct({
 export const jevFlow = {
   name: "jev",
   description:
-    "Ask Jev, a fast typed decision model, any number of boolean, choice or score questions about one JSON state, all answered in parallel in one request of about 300 ms, far cheaper than reading the items yourself. Answers are typed, never free text. Use it for every enumerable judgment over many items (classify, triage, rank, filter, yes/no, pick-one, score): put the items in state and write one question per item, keyed by your own ids; one call carries hundreds of questions. Calls from one cell settle one at a time and a cell's calls are capped, so pack the items into one call rather than firing a call per item. state is capped at 256 KiB of JSON. Not for generating text or code, and not for a question whose answer must be quoted. It never guesses: a judge that fails answers { ok: false } with the failure code first in error.message.",
+    "Ask Jev, a fast typed decision model, any number of boolean, choice or score questions about one JSON state, all answered in parallel in one request of about 300 ms, far cheaper than reading the items yourself. Answers are typed, never free text. Use it for every enumerable judgment over many items (classify, triage, rank, filter, yes/no, pick-one, score): put each item's evidence in state and write one question per item, keyed by the item's id; one call carries hundreds of questions. Calls from one cell settle one at a time and a cell's calls are capped, so pack the items into one call rather than firing a call per item. state is capped at 256 KiB of JSON. Not for generating text or code, and not for a question whose answer must be quoted. It never guesses: a judge that fails answers { ok: false } with the failure code first in error.message.",
   input: JevInput,
   output: JevOutput,
   capabilities: [`model:call:${Evaluator.defaultModel}`],
@@ -807,13 +807,33 @@ const jevPublicError = (error: Evaluator.EvaluatorError | Classifier.ClassifierE
   error instanceof JevRefused ? error.message : `${error.code}: ${Evaluator.publicMessage(error)}`
 
 /**
+ * The questions as Jev reads them: each one's instructions after its id.
+ *
+ * Jev answers from a question's instructions and the state; the id only keys
+ * the answer. A cell that keys "Does this file need to change?" by each path
+ * asks one question many times, and every path reads the same. On the
+ * SWE-bench Pro run of 2026-10-14, 42 of 111 file picks were posed that way
+ * and all 42 came back flat (median spread 0.02; NodeBB-1ea9481a read 0.77 to
+ * 0.80 for 107 files), ranking the gold patch's files no better than chance
+ * (AUC 0.49). Re-asked with each id in front, they spread a median 0.47 and
+ * scored a gold-patch file above another file in 77% of pairs. A question that
+ * already names its item reads the same either way (#3992).
+ */
+const named = (questions: Readonly<Record<string, Evaluator.Question>>): Record<string, Evaluator.Question> =>
+  Object.fromEntries(
+    Object.entries(questions).map(([id, q]) => [id, { ...q, instructions: `${id}: ${q.instructions}` }])
+  )
+
+/**
  * Jev, as one ordinary flow.
  *
  * Bound only by a host that holds an `Evaluator`: the context is the whole
  * requirement, so a composition without a judge cannot call this and the
  * catalog it shows a cell has no `jev` in it. A judge that fails is the call's
  * own typed failure, with the `EvaluatorError` code first in the message;
- * nothing here falls back to another model or answers a default.
+ * nothing here falls back to another model or answers a default. Each
+ * question reaches Jev as `<id>: <instructions>`, because Jev never reads an
+ * id: the item a question is keyed by is the item it asks about.
  *
  * `options.maxStateBytes` may only LOWER {@link defaultMaxJevStateBytes}, for
  * the same reason `clock` clamps its ceiling: a non-finite or larger value
@@ -857,7 +877,7 @@ export const jev = (
               )
             }
             const evaluator = yield* Evaluator.Evaluator
-            const response = yield* evaluator.evaluate({ state: input.state, questions: input.questions })
+            const response = yield* evaluator.evaluate({ state: input.state, questions: named(input.questions) })
             const answers = yield* Classifier.decodeAnswers(input.questions, response.answers)
             return {
               answers,
