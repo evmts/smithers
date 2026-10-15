@@ -97,6 +97,38 @@ fn current_change_id(root: &Path) -> String {
     status.trim_end().rsplit(' ').next().unwrap().to_owned()
 }
 
+#[test]
+fn selective_snapshot_excludes_new_files_but_keeps_tracked_edits() {
+    let (_temp, root) = temp_root();
+    ops::init(&root).unwrap();
+    write(&root, "tracked.txt", "before\n");
+    let before = ops::snapshot(&root, None).unwrap();
+
+    write(&root, "tracked.txt", "after\n");
+    write(&root, "scratch.txt", "private scratch\n");
+    let selected = ops::snapshot_with_tracking(&root, &jj_lib::matchers::NothingMatcher).unwrap();
+    assert_eq!(selected.change_id, before.change_id);
+    assert_ne!(selected.commit_id, before.commit_id);
+    write(&root, "scratch.txt", "private scratch updated\n");
+    let repeated = ops::snapshot_with_tracking(&root, &jj_lib::matchers::NothingMatcher).unwrap();
+    assert_eq!(repeated.commit_id, selected.commit_id);
+    let diff = ops::diff(&root, &before.commit_id, &selected.commit_id).unwrap();
+    assert!(diff.contains("-before\n+after\n"), "{diff}");
+    assert!(!diff.contains("scratch"), "{diff}");
+    assert_eq!(read(&root, "scratch.txt"), "private scratch updated\n");
+
+    // diff snapshots @ as a normal command would, so use the saved immutable
+    // ids above to verify the selective capture and ordinary capture separately.
+    let ordinary = ops::snapshot(&root, None).unwrap();
+    let added = ops::diff(&root, &selected.commit_id, &ordinary.commit_id).unwrap();
+    assert!(added.contains("+private scratch updated\n"), "{added}");
+    assert!(added.contains("scratch.txt"), "{added}");
+    assert!(!added.contains("tracked.txt"), "{added}");
+    ops::restore(&root, &selected.commit_id).unwrap();
+    assert_eq!(read(&root, "tracked.txt"), "after\n");
+    assert!(!root.join("scratch.txt").exists());
+}
+
 #[track_caller]
 fn assert_commit_id(id: &str) {
     // SimpleBackend commit ids are BLAKE2b-512: 128 hex characters.
