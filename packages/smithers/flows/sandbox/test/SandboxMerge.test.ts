@@ -502,6 +502,24 @@ PATH=${quote(saved ?? "/usr/bin:/bin")} exec ${quote(real)} "$@"
       expect(unfetched.reason).toBe("base_not_found")
     }))
 
+  it.effect("refuses a base that is not a full commit id before it reaches jj or git", () =>
+    Effect.gen(function*() {
+      const repo = hostRepository(fresh(), { "a.txt": "a\n" })
+      const work = yield* workOn(repo.path, { "a.txt": "edit\n" })
+      // Each of these resolves in jj, so only the contract check stops it
+      // from reaching `git read-tree` and a commit's `parent` header.
+      for (const base of ["main", "main-", "all()", work.base.slice(0, 12), `${work.base}\nauthor x`]) {
+        const error = yield* Effect.flip(apply(new Sandbox.Changed({ ...work, base }), { repository: repo.path }))
+        expect(error).toEqual(
+          new SandboxMerge.MergeError({
+            reason: "base_not_found",
+            message: `the work's base ${JSON.stringify(base)} is not a full commit id`
+          })
+        )
+      }
+      expect(bookmarks(repo.path)).not.toContain("smithers-sandbox/")
+    }))
+
   it.effect("refuses an onto that names no commit or several", () =>
     Effect.gen(function*() {
       const repo = hostRepository(fresh(), { "a.txt": "a\n" })

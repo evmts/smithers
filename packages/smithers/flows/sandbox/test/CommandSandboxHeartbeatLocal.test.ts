@@ -28,10 +28,13 @@ describe("CommandSandbox local heartbeat", () => {
             launches++
             return local.spawn(command)
           })
+          // A beat must answer within twice the heartbeat. Real spawns on a
+          // loaded host take hundreds of milliseconds, so the interval leaves
+          // that deadline seconds wide; 20 s still spans several beats.
           const session = yield* CommandSandbox.make({
             spawner,
             prefix: [],
-            heartbeat: "250 millis",
+            heartbeat: "2 seconds",
             workdir: root
           }).acquire(`${basename(root)}-${name}`)
           const child = yield* session.spawn("printf 'ready|'; sleep 20; printf done", {})
@@ -79,24 +82,26 @@ describe("CommandSandbox local heartbeat", () => {
                 : Effect.void
             ),
             Effect.tap(() =>
-              Effect.addFinalizer(() => Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 300))))
+              Effect.addFinalizer(() => Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 1500))))
             )
           )
         })
         const session = yield* CommandSandbox.make({
           spawner,
           prefix: [],
-          heartbeat: "100 millis",
+          // Cleanup (1.5 s) outlasts the response deadline (twice this, 1 s),
+          // which still leaves real spawns on a loaded host room to answer.
+          heartbeat: "500 millis",
           workdir: root
         }).acquire(id)
         startingGuest = true
-        const child = yield* session.spawn("printf 'ready|'; sleep 2; printf done", {})
+        const child = yield* session.spawn("printf 'ready|'; sleep 8; printf done", {})
         const before = launches
         expect(yield* child.exitCode).toBe(0)
         expect(yield* Stream.mkString(Stream.decodeText(child.stdout))).toBe("ready|done")
         expect(launches - before).toBeGreaterThanOrEqual(2)
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-    15_000
+    30_000
   )
 
   it.effect(
@@ -118,7 +123,7 @@ describe("CommandSandbox local heartbeat", () => {
           }
           const stdin = Stream.concat(
             Stream.fromEffectDrain(
-              Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 500)))
+              Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 2500)))
             ),
             command.options.stdin
           )
@@ -127,12 +132,14 @@ describe("CommandSandbox local heartbeat", () => {
         const session = yield* CommandSandbox.make({
           spawner,
           prefix: [],
-          heartbeat: "100 millis",
+          // The delayed script (2.5 s) spans several beats; the 1 s response
+          // deadline leaves real spawns on a loaded host room to answer.
+          heartbeat: "500 millis",
           workdir: root
         }).acquire(`${basename(root)}-delayed-startup`)
         startingGuest = true
         const input = new Uint8Array([0, 255, 10, 105, 110, 10])
-        const child = yield* session.spawn("od -An -tu1 | tr -s ' \\n' ' '; printf 'ready|'; sleep 2; printf done", {
+        const child = yield* session.spawn("od -An -tu1 | tr -s ' \\n' ' '; printf 'ready|'; sleep 10; printf done", {
           stdin: input
         })
         const before = launches
@@ -142,7 +149,7 @@ describe("CommandSandbox local heartbeat", () => {
         // Beats ran while startup was still pending and after it recorded its boot.
         expect(launches - before).toBeGreaterThanOrEqual(10)
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-    15_000
+    30_000
   )
 
   // A platform timer holds at most 2^31 - 1 milliseconds and fires after 1 ms

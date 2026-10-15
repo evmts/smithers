@@ -48,7 +48,7 @@ export interface DirectorySandboxOptions {
   readonly fs: FileSystem.FileSystem
   /** A host spawner with a platform lifecycle; raw and deadline-only spawners are refused. */
   readonly spawner: ChildProcessSpawner["Service"]
-  /** The directory session workspaces are created under. */
+  /** The absolute host directory session workspaces are created under; a relative one throws. */
   readonly root: string
   /** Leave scratch workspaces across scope closure until explicit destroy. */
   readonly persistence?: "ephemeral" | "sticky" | undefined
@@ -78,7 +78,8 @@ const vendorLogins = [
  * removing the directory. Acquisition refuses a spawner without a platform
  * lifecycle before creating a directory or starting a command. `fork` copies
  * the session's directory into a new session's directory, leaving vendor
- * sign-ins behind.
+ * sign-ins behind. A `root` that is not an absolute path throws a
+ * `TypeError` at construction.
  *
  * This is the trusted local backend — a workspace boundary, **not a security
  * boundary**. Nothing confines a spawned process to the directory; what the
@@ -91,6 +92,12 @@ const vendorLogins = [
  * @since 0.1.0
  */
 export const make = (options: DirectorySandboxOptions): Provider => {
+  // A session's workdir is absolute by contract. A relative root made it
+  // depend on the engine process's working directory, and an empty one put
+  // every workspace directly under the host's `/`.
+  if (!/^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(options.root)) {
+    throw new TypeError(`directory-sandbox: root must be an absolute path, got ${JSON.stringify(options.root)}`)
+  }
   refuseNetworkPolicy("directory-sandbox", options.network)
   refuseResourceLimits(
     "directory-sandbox",

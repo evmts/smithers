@@ -61,6 +61,14 @@ export const changeIdOf = (key: string): Effect.Effect<string> =>
 
 const lines = (text: string): Array<string> => text.split("\n").filter((line) => line !== "")
 
+/**
+ * A full SHA-1 or SHA-256 commit id, the only base `Work` promises. Anything
+ * else (a bookmark, a revset, a short prefix) still resolves in jj and in
+ * `git read-tree`, then fails late as a malformed `parent` header, or lands on
+ * whatever the name points at now rather than the commit the session saw.
+ */
+const fullCommitId = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
+
 /** The one commit `revision` names, or nothing. */
 const single = (repository: Repository, revision: string) =>
   Effect.map(
@@ -104,6 +112,8 @@ const outcomeOf = (repository: Repository, change: string) =>
  * {@link Merged}. An overlapping edit answers {@link Conflicted}: the change
  * still exists, with jj's conflict markers recorded in it, unless the
  * strategy decides otherwise. {@link Unchanged} work applies as nothing.
+ * Changed work whose base is not a full commit id fails with
+ * `base_not_found` before any host command runs.
  *
  * Applying is idempotent per key, including after a crash part-way: the
  * change's id derives from the key, and an application interrupted between
@@ -120,8 +130,17 @@ const outcomeOf = (repository: Repository, change: string) =>
 export const apply = <E = never, R = never>(
   work: Work,
   options: ApplyOptions<E, R>
-): Effect.Effect<Outcome, MergeError | E, R | ChildProcessSpawner | FileSystem.FileSystem> =>
-  work._tag === "Unchanged" ? Effect.succeed(work) : Effect.flatMap(
+): Effect.Effect<Outcome, MergeError | E, R | ChildProcessSpawner | FileSystem.FileSystem> => {
+  if (work._tag === "Unchanged") return Effect.succeed(work)
+  if (!fullCommitId.test(work.base)) {
+    return Effect.fail(
+      new MergeError({
+        reason: "base_not_found",
+        message: `the work's base ${JSON.stringify(work.base)} is not a full commit id`
+      })
+    )
+  }
+  return Effect.flatMap(
     loadHostAdapter,
     ({ withRepositoryMutation }) =>
       Effect.gen(function*() {
@@ -221,3 +240,4 @@ export const apply = <E = never, R = never>(
         : Effect.succeed(landed)
     )
   )
+}

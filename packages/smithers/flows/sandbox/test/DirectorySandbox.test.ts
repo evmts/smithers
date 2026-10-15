@@ -176,6 +176,21 @@ describe("DirectorySandbox", () => {
     expect(deps.touched).toEqual([])
   })
 
+  it("refuses a root that is not absolute at construction, before touching its dependencies", () => {
+    const deps = untouchable<never>()
+    // A relative root made every workspace, and so every session's
+    // "absolute" workdir, depend on the engine process's working directory;
+    // an empty one put the workspaces directly under the host's `/`.
+    for (const relative of ["", "scratch", "./scratch", "~/scratch", "C:scratch"]) {
+      expect(() => DirectorySandbox.make({ fs: deps.value, spawner: deps.value, root: relative }))
+        .toThrow(`directory-sandbox: root must be an absolute path, got ${JSON.stringify(relative)}`)
+    }
+    for (const absolute of ["/", "/tmp/machines", "C:\\machines", "C:/machines", "\\\\server\\share"]) {
+      expect(() => DirectorySandbox.make({ fs: deps.value, spawner: deps.value, root: absolute })).not.toThrow()
+    }
+    expect(deps.touched).toEqual([])
+  })
+
   it("refuses every network restriction and accepts \"open\" at construction, before touching its dependencies", () => {
     const deps = untouchable<never>()
     for (const network of ["none", { allow: ["example.com"] }] as const) {

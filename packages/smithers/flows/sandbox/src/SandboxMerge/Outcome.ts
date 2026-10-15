@@ -61,8 +61,8 @@ export type Outcome = Merged | Conflicted | Unchanged
 /**
  * Why work could not be applied.
  *
- * - `base_not_found`: the work's base is not in the repository, even after
- *   the configured fetch.
+ * - `base_not_found`: the work's base is not a full commit id, or is not in
+ *   the repository even after the configured fetch.
  * - `onto_unresolved`: `onto` does not name exactly one commit.
  * - `patch_rejected`: the patch does not apply to its own base, so it was not
  *   captured from that base.
