@@ -61,3 +61,69 @@ fn wiki_rejects_malformed_frames_then_accepts_a_valid_request() {
         assert_eq!(recovered["markdown"], "Recovered 🦀");
     }
 }
+
+#[test]
+fn wiki_accepts_maximum_client_id_and_rejects_every_truncated_frame() {
+    // A complete Yjs text insertion with client u32::MAX and clock zero.
+    // Keep the wire fixture independent of the implementation's encoder.
+    let update = vec![
+        1, 1, 255, 255, 255, 255, 15, 0, 4, 1, 8, b'm', b'a', b'r', b'k', b'd', b'o', b'w', b'n',
+        4, 240, 159, 166, 128, 0,
+    ];
+    let valid = request(json!({
+        "operation": "apply", "state": "AAA=", "update": BASE64_STANDARD.encode(&update)
+    }));
+    assert_eq!(valid["markdown"], "🦀", "{valid}");
+    // Serialization must preserve the client identity and Unicode text.
+    let replay = request(json!({
+        "operation": "apply", "state": valid["state"], "update": BASE64_STANDARD.encode(&update)
+    }));
+    assert_eq!(replay["markdown"], "🦀", "{replay}");
+    for end in 0..update.len() {
+        let result = request(json!({
+            "operation": "apply", "state": "AAA=", "update": BASE64_STANDARD.encode(&update[..end])
+        }));
+        assert_eq!(result["code"], "invalid_argument", "prefix {end}: {result}");
+    }
+}
+
+#[test]
+fn wiki_rejects_invalid_utf8_without_replacing_existing_text() {
+    let seed = request(json!({"operation": "seed", "markdown": "Keep 🦀"}));
+    for payload in [
+        vec![255],
+        vec![192, 128],
+        vec![237, 160, 128],
+        vec![240, 159, 166],
+    ] {
+        let mut update = vec![
+            1,
+            1,
+            11,
+            0,
+            4,
+            1,
+            8,
+            b'm',
+            b'a',
+            b'r',
+            b'k',
+            b'd',
+            b'o',
+            b'w',
+            b'n',
+            payload.len() as u8,
+        ];
+        update.extend_from_slice(&payload);
+        update.push(0);
+        for field in ["state", "update"] {
+            let mut input = json!({"operation": "apply", "state": seed["state"], "update": "AAA="});
+            input[field] = json!(BASE64_STANDARD.encode(&update));
+            let result = request(input);
+            assert_eq!(result["code"], "invalid_argument", "{field}: {result}");
+        }
+    }
+    let recovered =
+        request(json!({"operation": "apply", "state": seed["state"], "update": "AAA="}));
+    assert_eq!(recovered["markdown"], "Keep 🦀");
+}
