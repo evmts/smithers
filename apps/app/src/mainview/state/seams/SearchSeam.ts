@@ -51,6 +51,43 @@ export interface SearchRegistry {
   readonly entries: () => ReadonlyArray<FlowEntry>
   readonly state: () => CommandState
   readonly explainAbsent: CommandRegistry["explainAbsent"]
+  /** The same resolution execution uses, so the overlay never denies a door the registry answers for. */
+  readonly find: CommandRegistry["find"]
+  /** What the `/` listing offers for a needle; empty is the case `paletteFlowNote` classifies. */
+  readonly slashTree: CommandRegistry["slashTree"]
+}
+
+/**
+ * What the `/` overlay says when the listing offers no row for the one name
+ * typed.
+ *
+ * No rows carries TWO different facts — this origin has no such flow, and
+ * this door exists but the human listing does not carry it (an in-card
+ * action, a hidden diagnostic) — and the overlay answered the first
+ * sentence for both, because the view that owned the sentence cannot resolve
+ * a name. On production a signed-in Smithers Cloud person followed
+ * `/issue.new`'s own refusal ("Use /issues.create on Smithers Cloud.",
+ * flows/entries/subjects.ts), typed `/issues.create`, and read "There is no
+ * /issues.create flow" for the one door that writes a Cloud issue — a door
+ * the registry resolves and Enter runs (Composer.tsx `outright`), with no
+ * card anywhere that presses it. `/debug.errors`, whose summary promises
+ * every identity a read with no repository or sign-in, answered the same.
+ * The registry decides which fact it is, because only the registry knows.
+ */
+const paletteFlowNote = (registry: SearchRegistry, text: string, query: string): string | undefined => {
+  if (query === "" || /\s/.test(query)) return undefined
+  const name = query.toLowerCase()
+  // The listing answered: its rows are the affordance, so there is nothing to say.
+  if (registry.slashTree(name).some((row) => row.kind !== "note")) return undefined
+  const summary = registry.find(name)?.metadata.summary
+  if (summary === undefined) return `There is no /${query} flow. Type / to see everything Smithers can do.`
+  /*
+   * The line promises Enter, so it is owed only where Enter is that act. The
+   * composer reads the WHOLE draft and takes its exact-name branch for the
+   * name alone (Composer.tsx `outright`); a draft carrying anything else is
+   * the ordinary submit path, which answers for itself.
+   */
+  return text === `/${query}` ? `/${name} — ${summary}. Press Enter to run it.` : undefined
 }
 
 export interface SearchSeamDeps {
@@ -440,7 +477,7 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
       // Resolve an exact command name through the same authority as execution.
       // Keep unavailable commands out of the rows, including when arguments follow.
       const name = parsed.query.split(/\s+/, 1)[0] ?? ""
-      const refusal = deps.registry().explainAbsent(name)?.reason
+      const refusal = deps.registry().explainAbsent(name)?.reason ?? paletteFlowNote(deps.registry(), text, parsed.query)
       return { parsed, groups: [], flow, ...(refusal === undefined ? {} : { refusal }) }
     }
     if (snapshot.signedOut && HIDDEN_SIGNED_OUT.has(parsed.mode)) return { parsed, groups: [], flow }

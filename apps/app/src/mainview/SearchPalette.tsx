@@ -205,9 +205,14 @@ export function PaletteOverlay({ id, answer, rows, highlighted, slashBranch, onH
   const chip = parsed.mode === "flows" ? "/" : prefixRow(parsed.mode).label
   const groupAt = new Map(rows.groups.map((group) => [group.start, group.label]))
   const showHead = rows.actionsFor !== undefined || (parsed.mode !== "all" && parsed.mode !== "flows")
-  /* Authored copy only: the registry's absent-door reason, the seam's fixed mode notes, or this line. */
-  const absentNote = answer.refusal ?? (parsed.mode === "flows" && rows.rows.length === 0 && /^\S+$/.test(parsed.query)
-    ? `There is no /${parsed.query} flow. Type / to see everything Smithers can do.` : undefined)
+  /*
+   * Authored copy only: the registry's absent-door reason, a mode's fixed
+   * note, or — in `/` mode — the seam's answer for the one name typed
+   * (state/seams/SearchSeam.ts `paletteFlowNote`). The view used to author
+   * the `/` line itself from empty rows, which denied every registered door
+   * the human listing does not carry.
+   */
+  const absentNote = answer.refusal
   return (
     <div id={listboxId} className="slash-menu" data-keyboard-pane="Search results" role="listbox" aria-label="Search palette" data-branch={slashBranch} data-mode={parsed.mode} data-testid="palette" onKeyDown={event => {
       if (event.metaKey || event.ctrlKey || event.altKey || event.isDefaultPrevented()) return
