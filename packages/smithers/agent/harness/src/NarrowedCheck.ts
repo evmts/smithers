@@ -341,6 +341,26 @@ export class Check extends Schema.Class<Check>("flows/harness/NarrowedCheck/Chec
     Schema.withDecodingDefaultKey(Effect.succeed(false))
   ),
   /**
+   * Whether the run declared this call as its check: rule 7's
+   * `verification = { flow, input }`, called with that very input. See
+   * `Sandbox.Invocation.declared`.
+   *
+   * The demands that hold a completion over a check read only these. Every
+   * call that reports an exit status lands in this ledger, and a read or a
+   * search is one: a `grep` that matched nothing exits 1, and a later read of
+   * the same file then looked like a failing check the run had stepped around.
+   * On the paired SWE-bench Pro run of 2026-10-14 that held 27 of 85
+   * "Unanswered failure" completions, and all 6 "Only reading" holds stood on
+   * the `git diff` read rule 5 itself asks for (#3994). Telling a read from a
+   * check by its command would be a classifier; the run already says which
+   * call is its check, so the ledger records that. Defaults false, so an
+   * entry journaled before the field holds nothing.
+   */
+  declared: Schema.Boolean.pipe(
+    Schema.withConstructorDefault(Effect.succeed(false)),
+    Schema.withDecodingDefaultKey(Effect.succeed(false))
+  ),
+  /**
    * Whether {@link Check.digest} is the tree this check actually read.
    *
    * A check is stamped with its frame's closing digest, and a frame may both
@@ -394,6 +414,8 @@ export const check = (options: {
   readonly failing?: boolean | undefined
   /** Whether the call's result reported a passing exit status. */
   readonly passing?: boolean | undefined
+  /** Whether the run declared the call as its check; see {@link Check.declared}. */
+  readonly declared?: boolean | undefined
   /** Whether the frame that ran it left the workspace as it found it. */
   readonly stable?: boolean | undefined
 }): Check | undefined => {
@@ -412,6 +434,7 @@ export const check = (options: {
     ),
     failing: options.failing ?? false,
     passing: options.passing ?? false,
+    declared: options.declared ?? false,
     stable: options.stable ?? false
   })
 }
@@ -449,9 +472,12 @@ export const narrows = (
 /**
  * Finds the broadest check a completing frame narrowed and did not re-run.
  *
- * All four conditions have to hold, and each of them is read off something the
- * harness already records rather than off anything a cell said about itself:
+ * All five conditions have to hold, and each of them is read off something the
+ * harness already records:
  *
+ * 0. the earlier check is one the run declared as its check
+ *    ({@link Check.declared}): only the run's own check can hold its
+ *    completion, and a read it ran in passing is not one (#3994);
  * 1. the frame closed on a complete measurement, so a digest means something;
  * 2. some earlier check was last run over a *different* tree, which is what
  *    "you have changed something since" means with no timestamps involved;
@@ -479,6 +505,7 @@ export const find = (options: {
   const reran = new Set(options.frame.map((entry) => entry.signature))
   let found: Narrowing | undefined = undefined
   for (const earlier of options.ledger) {
+    if (!earlier.declared) continue
     if (reran.has(earlier.signature)) continue
     if (earlier.digest === "") continue
     if (earlier.digest === options.digest) continue
@@ -544,8 +571,12 @@ export interface Only {
  * answer: is this reading the only one this run has of what it names, and does
  * it carry a phrase this run alone put there.
  *
- * Five conditions, each read off the run's own record:
+ * Six conditions, each read off the run's own record:
  *
+ * 0. that check is one the run declared as its check ({@link Check.declared}).
+ *    Rule 5 asks the completing cell to read the tree back with `git status`
+ *    and `git diff`, and that read, naming the files the run changed, was the
+ *    last check of every completion this demand held on 2026-10-14 (#3994);
  * 1. the completing frame ran at least one check, and the subject is its
  *    *last* one — the reading the completion stands closest to, as
  *    `UnresolvedFailure` reads its own ledger;
@@ -626,7 +657,7 @@ export const findOnly = (options: {
   readonly taught: ReadonlyArray<string>
 }): Only | undefined => {
   const later = options.frame[options.frame.length - 1]
-  if (later === undefined) return undefined
+  if (later === undefined || !later.declared) return undefined
   const targets = later.terms.filter(names)
   if (targets.length === 0) return undefined
   if (later.conditions.length === 0) return undefined
@@ -675,8 +706,14 @@ export const remember = (
 ): ReadonlyArray<Check> => {
   const newest = new Map(ledger.map((entry) => [entry.signature, entry]))
   for (const entry of added) {
+    const earlier = newest.get(entry.signature)
     newest.delete(entry.signature)
-    newest.set(entry.signature, entry)
+    // A call the run once declared as its check stays its check when the same
+    // call comes back through a copy of the input rather than the binding.
+    newest.set(
+      entry.signature,
+      earlier !== undefined && earlier.declared && !entry.declared ? new Check({ ...entry, declared: true }) : entry
+    )
   }
   const distinct = [...newest.values()]
   return distinct.slice(Math.max(0, distinct.length - retained))

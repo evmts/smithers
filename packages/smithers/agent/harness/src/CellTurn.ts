@@ -3285,6 +3285,7 @@ const evaluate = (
               subject: signatureOf(invocation.flow, invocation.input),
               at: ranAt,
               input: invocation.input,
+              declared: invocation.declared === true,
               value: result.value,
               message: result.message,
               invalidProbe: probe,

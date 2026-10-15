@@ -81,6 +81,7 @@ const call = (changes: Partial<Frame.ObservedCall> = {}): Frame.ObservedCall => 
   value: { exitCode: 0, stdout: "148 passed" },
   message: undefined,
   invalidProbe: undefined,
+  declared: false,
   failing: false,
   passing: true,
   ...changes

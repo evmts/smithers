@@ -125,6 +125,11 @@ export interface ObservedCall {
   readonly at: string | undefined
   /** What this invocation asked for, verbatim, for the narrowing ledger. */
   readonly input: Schema.Json
+  /**
+   * Whether the cell made this call with the check it declared; see
+   * `Sandbox.Invocation.declared`. Only such a check can hold a completion.
+   */
+  readonly declared: boolean
   /** What the call resolved with, verbatim, for the call ledger's digest. */
   readonly value: Schema.Json
   /** What the flow said about a failure, for the call ledger's digest. */
@@ -362,6 +367,7 @@ export const account = (options: {
         digest: checkpointed ? "" : workspaceDigest,
         failing: call.failing,
         passing: call.passing,
+        declared: call.declared,
         // Whether the tree stamped above is the tree this call read. Every
         // write the frame declared is a call with a position among these ones,
         // so the answer is positional: a check with no standing write after it

@@ -46,6 +46,7 @@ const call = (changes: Partial<Frame.ObservedCall> = {}): Frame.ObservedCall => 
   value: { exitCode: 0 },
   message: undefined,
   invalidProbe: undefined,
+  declared: false,
   failing: false,
   passing: true,
   ...changes
@@ -177,7 +178,9 @@ describe("judgeCompletion", () => {
     signature: "pytest tests",
     input: { command: "pytest tests" },
     digest: "t-edited",
-    passing: true
+    passing: true,
+    // The run's declared check: only one can hold a completion (#3994).
+    declared: true
   })!
   const reverted = (changes: Frame.StateChanges = {}) => state({ openingDigest: "t0", checks: [broad], ...changes })
   const narrow = call({

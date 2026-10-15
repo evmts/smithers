@@ -18,10 +18,16 @@ import * as UnresolvedFailure from "../src/UnresolvedFailure.ts"
 
 const command = (text: string): Schema.Json => ({ mode: "unhermetic", command: text })
 
+/** A check the run declared as its own unless a case says otherwise (#3994). */
 const ran = (
   text: string,
   digest: string,
-  overrides: { readonly failing?: boolean; readonly stable?: boolean; readonly flow?: string } = {}
+  overrides: {
+    readonly failing?: boolean
+    readonly stable?: boolean
+    readonly flow?: string
+    readonly declared?: boolean
+  } = {}
 ): NarrowedCheck.Check => {
   const input = command(text)
   const recorded = NarrowedCheck.check({
@@ -30,7 +36,8 @@ const ran = (
     input,
     digest,
     failing: overrides.failing ?? false,
-    stable: overrides.stable ?? true
+    stable: overrides.stable ?? true,
+    declared: overrides.declared ?? true
   })
   if (recorded === undefined) throw new Error("the fixture input is not a check")
   return recorded
@@ -107,6 +114,19 @@ describe("UnresolvedFailure.find", () => {
 
     expect(found?.failed.label).toBe(failed.label)
     expect(found?.instead.label).toBe(instead.label)
+  })
+
+  it("says nothing when the reading that failed was not the run's declared check", () => {
+    // A `grep` that matched nothing exits 1, and a later read of the same file
+    // goes back to it. That is a search and a read, not a check stepped
+    // around: only the check the run declared can hold its completion (#3994).
+    const searched = ran("grep -n missing a/b.py", "tree-2", { failing: true, declared: false })
+    const read = ran("sed -n 1,20p a/b.py", "tree-2", { declared: false })
+
+    expect(UnresolvedFailure.find({ ledger: [searched, read], digest: "tree-2" })).toBeUndefined()
+    expect(
+      UnresolvedFailure.find({ ledger: [{ ...failed, declared: false } as typeof failed, instead], digest: "tree-2" })
+    ).toBeUndefined()
   })
 
   it("says nothing when the frame had no complete measurement", () => {

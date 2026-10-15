@@ -59,6 +59,57 @@ const session = (
     return frames
   }).pipe(Effect.scoped, Effect.runPromise)
 
+describe("the declared verification", () => {
+  // Rule 7 has a run keep its check as `verification = { flow, input }` and
+  // reuse it unchanged. A call made with that very input is the run's check;
+  // any other call, a read or a search above all, is not (#3994).
+  const marking = async (cells: ReadonlyArray<string>) => {
+    const seen: Array<boolean> = []
+    await session(cells, {
+      call: (invocation) => {
+        seen.push(invocation.declared === true)
+        return succeeds(invocation)
+      }
+    })
+    return seen
+  }
+
+  it("marks a call made with the declared input, and no other", async () => {
+    expect(
+      await marking([
+        `var verification = { flow: "echo", input: { command: "check a.py" } }
+         await ctx.call(verification.flow, verification.input)
+         await ctx.call("echo", verification.input)
+         await ctx.call("echo", { command: "check a.py" })
+         await ctx.call("echo", { ...verification.input })`,
+        // A later cell that rebinds the name declares the new check.
+        `verification = { flow: "echo", input: { command: "check b.py" } }
+         await ctx.call(verification.flow, verification.input)`
+      ])
+    ).toEqual([true, true, false, false, true])
+  })
+
+  it("marks nothing for a run that declared no check, or declared it for another flow", async () => {
+    expect(
+      await marking([
+        `await ctx.call("echo", { command: "grep -n missing a.py" })`,
+        `var verification = { flow: "other", input: { command: "check" } }
+         await ctx.call("echo", verification.input)`
+      ])
+    ).toEqual([false, false])
+  })
+
+  it("reads the declaration without running an accessor a cell wrote", async () => {
+    const frames = await session([
+      `var reads = 0
+       Object.defineProperty(globalThis, "verification", { get() { reads = reads + 1; return { flow: "echo", input: {} } } })
+       await ctx.call("echo", {})
+       console.log(reads)`
+    ])
+    expect(frames[0]!.prints).toBe("0")
+  })
+})
+
 const named = (bindings: ReadonlyArray<VariablesPanel.Binding>, name: string): VariablesPanel.Binding | undefined =>
   bindings.find((binding) => binding.name === name)
 

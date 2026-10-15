@@ -976,6 +976,16 @@ const check = descriptor("bash", { capabilities: ["proc:spawn:*"], tier: "irreve
 /** A flow whose declared write set is what makes it count as a mutation. */
 const editor = descriptor("edit", { capabilities: ["fs:write:**"], tier: "compensable", writes: ["/**"] })
 
+/**
+ * A cell that declares `command` as the run's check, the way rule 7 teaches
+ * (`verification = { flow, input }`), and runs it with that input. Only a
+ * check the run declared can hold its completion (#3994).
+ */
+const declaring = (command: string, then = `console.log("checked")`): string =>
+  `var verification = { flow: "bash", input: { mode: "unhermetic", command: ${JSON.stringify(command)} } }
+     await ctx.call(verification.flow, verification.input)
+     ${then}`
+
 const capped = (cap: number, maxFrames: number, revalidations?: number) =>
   state({
     readOnlyCap: cap,
@@ -2302,10 +2312,8 @@ describe("CellTurn repeated observation", () => {
 describe("CellTurn narrowed verification", () => {
   const shell = descriptor("bash", { capabilities: ["proc:spawn:*"], tier: "irreversible" })
 
-  /** A frame that runs one command and asks for another. */
-  const running = (command: string) =>
-    `await ctx.call("bash", { mode: "unhermetic", command: ${JSON.stringify(command)} })
-     console.log("checked")`
+  /** A frame that declares one command as the run's check, runs it, and asks for another. */
+  const running = (command: string) => declaring(command)
 
   /** A frame that runs one command and declares the task finished. */
   const finishing = (command: string, output: string) =>
@@ -2389,6 +2397,24 @@ describe("CellTurn narrowed verification", () => {
     expect(of(events, "resolved")[0]?.message.content).toEqual([
       expect.objectContaining({ text: "re-run in full" })
     ])
+  })
+
+  it("says nothing when the broader reading was never the run's declared check", async () => {
+    // A read or a search the run ran in passing is not a check: only the
+    // command the run declared as its verification can hold a completion.
+    const { events } = await verifying(
+      [
+        `await ctx.call("bash", { mode: "unhermetic", command: "check suite" })
+         console.log("read it")`,
+        fixing("check suite -k one", "narrowed"),
+        // A frame left to answer a demand in, so only the rule decides.
+        `ctx.done("answered the demand")`
+      ],
+      [ok(), ok("a.py=fixed"), ok()]
+    )
+
+    expect(of(events, "narrowed-demanded")).toEqual([])
+    expect(of(events, "resolved")[0]?.message.content).toEqual([expect.objectContaining({ text: "narrowed" })])
   })
 
   it("accepts the next completion whatever it re-ran, and never asks twice", async () => {
@@ -2592,10 +2618,10 @@ describe("CellTurn narrow-only verification", () => {
     `await ctx.call("bash", { mode: "unhermetic", command: ${JSON.stringify(command)} })
      console.log("checked")`
 
+  /** Edits, then completes on the check the run declares in the same cell. */
   const fixing = (command: string, output: string) =>
     `await ctx.call("edit", { path: "a.py", text: "fix" })
-     await ctx.call("bash", { mode: "unhermetic", command: ${JSON.stringify(command)} })
-     ctx.done(${JSON.stringify(output)})`
+     ${declaring(command, `ctx.done(${JSON.stringify(output)})`)}`
 
   const ok = (tree?: string): ScriptedEngine.CallStep =>
     tree === undefined ? { _tag: "Success", value: null } : { _tag: "Success", value: null, tree }
@@ -2626,6 +2652,27 @@ describe("CellTurn narrow-only verification", () => {
       calls,
       tree: "a.py=base"
     })
+
+  it("says nothing when the completion stands on a tree review the run never declared as its check", async () => {
+    // Rule 5 asks the completing cell to read the tree back (`git status`,
+    // `git diff`). That read names the files the run changed, and before #3994
+    // it held the completion as the run's only reading of them.
+    const { events } = await completing(
+      [
+        running("look at tests/a.py"),
+        running("look at src/b.py"),
+        `await ctx.call("edit", { path: "a.py", text: "fix" })
+         await ctx.call("bash", { mode: "unhermetic", command: "check src/b.py tests/a.py -k one" })
+         ctx.done("narrow only")`,
+        // A frame left to answer a demand in, so only the rule decides.
+        `ctx.done("answered the demand")`
+      ],
+      [ok(), ok(), ok("a.py=fixed"), ok()]
+    )
+
+    expect(of(events, "narrow-only-demanded")).toEqual([])
+    expect(of(events, "resolved")[0]?.message.content).toEqual([expect.objectContaining({ text: "narrow only" })])
+  })
 
   it("bounces a completion whose last check is the run's only reading of its subjects", async () => {
     const { events, model } = await completing(
@@ -5107,7 +5154,7 @@ describe("CellTurn unmoved workspace", () => {
     const failing: ScriptedEngine.CallStep = { _tag: "Success", value: { exitCode: 1, stdout: "2 failed" } }
     const passing: ScriptedEngine.CallStep = { _tag: "Success", value: { exitCode: 0, stdout: "4 passed" } }
     const displaced = [
-      checking("check a.py"),
+      declaring("check a.py"),
       checking("check a.py::one"),
       done("the four cases pass"),
       done("nothing needed changing after all")
@@ -5288,9 +5335,8 @@ describe("CellTurn unanswered failure", () => {
   const editing = `await ctx.call("edit", { path: "a.py", text: "fix" })
      console.log("edited")`
 
-  const running = (command: string) =>
-    `await ctx.call("bash", { mode: "unhermetic", command: ${JSON.stringify(command)} })
-     console.log("checked")`
+  /** A frame that declares one command as the run's check and runs it. */
+  const running = (command: string) => declaring(command)
 
   const finishing = (command: string, output: string) =>
     `await ctx.call("bash", { mode: "unhermetic", command: ${JSON.stringify(command)} })
@@ -5323,6 +5369,26 @@ describe("CellTurn unanswered failure", () => {
     expect(of(events, "resolved")[0]?.message.content).toEqual([
       expect.objectContaining({ text: "re-ran it in full" })
     ])
+  })
+
+  it("says nothing when the reading that failed was a search the run never declared as its check", async () => {
+    // The 2026-10-14 SWE-bench Pro run held 27 of 85 completions this way: a
+    // `grep` that matched nothing exits 1, and a later read of the same file
+    // read as going back to a failed check (why-more-output.md, #3994).
+    const { events } = await checking(
+      [
+        editing,
+        `await ctx.call("bash", { mode: "unhermetic", command: "grep -n missing src/a.py" })
+         console.log("searched")`,
+        finishing("sed -n 1,20p src/a.py", "read it"),
+        // A frame left to answer a demand in, so only the rule decides.
+        `ctx.done("answered the demand")`
+      ],
+      [edited, red, green]
+    )
+
+    expect(of(events, "unresolved-demanded")).toEqual([])
+    expect(of(events, "resolved")[0]?.message.content).toEqual([expect.objectContaining({ text: "read it" })])
   })
 
   it("accepts a completion that states why the failures are expected", async () => {

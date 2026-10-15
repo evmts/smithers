@@ -63,6 +63,7 @@ import * as VariablesPanel from "./VariablesPanel.ts"
  * on the cell's behalf. Nothing is refused, because nothing needs to be.
  */
 const preludeIntrinsics = `  var keysOf = Object.keys
+  var descriptorOf = Object.getOwnPropertyDescriptor
   var freezeValue = Object.freeze
   var prototypeOf = Object.getPrototypeOf
   var objectPrototype = Object.prototype
@@ -116,7 +117,23 @@ const preludeHelpers = `${preludeIntrinsics}
     if (settled.aborted) throw new Error(settled.failure.error.message)
     return settled.failure
   }
-  var dispatch = function (flow, input, at) { return bridge(flow, input, at).then(settleEnvelope) }
+  var dispatch = function (flow, input, at, declared) {
+    return bridge(flow, input, at, declared ? "declared" : "").then(settleEnvelope)
+  }
+  // Whether a call is the run's own check: rule 7 has a cell keep it as
+  // \`verification = { flow, input }\` and reuse it unchanged, so the call that
+  // passes that very input object to that flow is the check, and nothing else
+  // is (#3994). Read through descriptors, so no accessor a cell wrote runs here.
+  var declaredCheck = function (flow, input) {
+    var held = descriptorOf(globalThis, "verification")
+    if (held === undefined || !("value" in held)) return false
+    var declared = held.value
+    if (declared === null || typeof declared !== "object") return false
+    var named = descriptorOf(declared, "flow")
+    var asked = descriptorOf(declared, "input")
+    return named !== undefined && "value" in named && named.value === flow &&
+      asked !== undefined && "value" in asked && asked.value === input
+  }
   // The at option is whatever the cell wrote, so it is encoded defensively
   // rather than strictly: a value JSON cannot hold travels as null and the
   // boundary answers it as an ordinary invalid_input, instead of throwing out
@@ -156,16 +173,17 @@ const preludeCall = (guard: string): string =>
   `    call: function (flow, input, options) {
       if (typeof flow !== "string") return Deferred.reject(new Fault("ctx.call expects a flow name as its first argument"))
 ${guard}      var encoded = encode("ctx.call input", input === undefined ? null : input)
+      var declared = declaredCheck(flow, input)
       var at = options === null || typeof options !== "object" ? undefined : options.at
-      if (at === undefined) return dispatch(flow, encoded, "")
+      if (at === undefined) return dispatch(flow, encoded, "", declared)
       // A handle the cell never awaited is a promise, and that spelling is the
       // one the ruling wrote: \`const cp = ctx.checkpoint()\`. The pin lands where
       // that line is, because the queue settles in issue order, so awaiting the
       // handle later cannot move the tree it names. Both spellings are accepted.
       if (at !== null && typeof at === "object" && typeof at.then === "function") {
-        return at.then(function (resolved) { return dispatch(flow, encoded, encodeAt(resolved)) })
+        return at.then(function (resolved) { return dispatch(flow, encoded, encodeAt(resolved), declared) })
       }
-      return dispatch(flow, encoded, encodeAt(at))
+      return dispatch(flow, encoded, encodeAt(at), declared)
     },
     checkpoint: function () {
 ${guard}      return pin().then(settleEnvelope)
@@ -1056,7 +1074,8 @@ const openRealm = (
       kind: "call" | "checkpoint",
       flow: string,
       input: Schema.Json,
-      at: Schema.Json | undefined
+      at: Schema.Json | undefined,
+      declared = false
     ): QuickJSHandle => {
       if (closing) throw new Error("The cell is closing; no further host calls are accepted")
       const deferred = context.newPromise()
@@ -1115,6 +1134,7 @@ const openRealm = (
         input,
         kind,
         ...(at === undefined ? {} : { at }),
+        ...(declared ? { declared } : {}),
         settle: (result) =>
           reply(
             result.outcome === "success"
@@ -1130,12 +1150,13 @@ const openRealm = (
       })
       return deferred.handle
     }
-    install("__call", (flowHandle, inputHandle, atHandle) =>
+    install("__call", (flowHandle, inputHandle, atHandle, declaredHandle) =>
       queue(
         "call",
         context.getString(flowHandle),
         Schema.decodeUnknownSync(Schema.Json)(JSON.parse(context.getString(inputHandle))),
-        decodedAt(context.getString(atHandle))
+        decodedAt(context.getString(atHandle)),
+        declaredHandle !== undefined && context.getString(declaredHandle) === "declared"
       ))
     install("__checkpoint", () => queue("checkpoint", checkpointFlow, null, undefined))
     install("__print", (partsHandle) => {

@@ -16,12 +16,18 @@ import journals from "./fixtures/narrowingJournals.json" with { type: "json" }
 
 const command = (text: string): Schema.Json => ({ mode: "unhermetic", command: text })
 
-const ran = (flow: string, input: Schema.Json, digest: string): NarrowedCheck.Check => {
+/**
+ * A check the run declared as its own, unless a case says otherwise: only a
+ * declared check can hold a completion (#3994), so the relation cases below
+ * read a declared one.
+ */
+const ran = (flow: string, input: Schema.Json, digest: string, declared = true): NarrowedCheck.Check => {
   const recorded = NarrowedCheck.check({
     flow,
     signature: `${flow}:${JSON.stringify(input)}`,
     input,
-    digest
+    digest,
+    declared
   })
   if (recorded === undefined) throw new Error("the fixture input is not a check")
   return recorded
@@ -429,7 +435,40 @@ describe("NarrowedCheck.Ledger", () => {
  * target tests and 144 of 145 neighbours, and the neighbour it broke was inside
  * the 68 tests its final `-k` filter deselected.
  */
+describe("NarrowedCheck and the declared check", () => {
+  it("names no broader check the run never declared as its check", () => {
+    const broad = ran("bash", command("check suite"), "t0", false)
+    const narrow = ran("bash", command("check suite -k one"), "t1")
+    expect(NarrowedCheck.find({ ledger: [broad], frame: [narrow], digest: "t1" })).toBeUndefined()
+    expect(NarrowedCheck.find({ ledger: [ran("bash", command("check suite"), "t0")], frame: [narrow], digest: "t1" }))
+      .toBeDefined()
+  })
+
+  it("names no completion that stands on a reading the run never declared as its check", () => {
+    // Rule 5's tree review, `git diff` of the files the run changed, is the
+    // last check of a completing frame and names those files together.
+    const looked = [ran("bash", command("look at tests/a.py"), "t0"), ran("bash", command("look at src/b.py"), "t0")]
+    const review = ran("bash", command("git diff --stat src/b.py tests/a.py"), "t1", false)
+    const only = (later: NarrowedCheck.Check) =>
+      NarrowedCheck.findOnly({ ledger: [...looked, later], before: [], frame: [later], taught: [] })
+    expect(only(review)).toBeUndefined()
+    expect(only(ran("bash", command("git diff --stat src/b.py tests/a.py"), "t1"))).toBeDefined()
+  })
+
+  it("keeps a declaration when the same call comes back through a copy of its input", () => {
+    const declared = ran("bash", command("check suite"), "t0")
+    const copied = ran("bash", command("check suite"), "t1", false)
+    expect(NarrowedCheck.remember([declared], [copied])).toEqual([
+      expect.objectContaining({ declared: true, digest: "t1" })
+    ])
+    expect(NarrowedCheck.remember([], [copied])).toEqual([expect.objectContaining({ declared: false })])
+  })
+})
+
 describe("NarrowedCheck over the recorded wave", () => {
+  // The wave's journals predate the declared check (#3994), so the replay
+  // reads every check as the run's declared one: it pins the relation the
+  // demand applies to a declared check, which is the harshest reading of it.
   const replay = (frames: typeof journals.journals[number]["frames"]) => {
     let ledger: ReadonlyArray<NarrowedCheck.Check> = []
     let demands = 0

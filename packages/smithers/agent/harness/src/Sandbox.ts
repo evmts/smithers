@@ -106,6 +106,14 @@ export interface Invocation {
    * boundary that bounds its own settlements reads it through {@link callLimit}.
    */
   readonly remainingMs?: number | undefined
+  /**
+   * Whether the cell made this call with the check it declared, rule 7's
+   * `verification = { flow, input }`: the flow it named and the very input
+   * object it bound there. The realm answers it at the call, by identity, so
+   * a read or a search the run ran in passing is never mistaken for the run's
+   * check (#3994). Absent means no.
+   */
+  readonly declared?: boolean | undefined
 }
 
 /**
@@ -809,6 +817,8 @@ export interface PendingCall {
   readonly input: Schema.Json
   /** Undecoded `at` option; see {@link Invocation.at}. */
   readonly at?: Schema.Json | undefined
+  /** See {@link Invocation.declared}. */
+  readonly declared?: boolean | undefined
   /**
    * Whether this entry is a flow call or a request to pin the tree.
    *
@@ -890,6 +900,7 @@ export const driveCell = (options: {
             flow: next.flow,
             input: next.input,
             ...(next.at === undefined ? {} : { at: next.at }),
+            ...(next.declared === true ? { declared: true } : {}),
             ...(remainingMs === undefined ? {} : { remainingMs })
           })
         const result = yield* (options.bounded === true

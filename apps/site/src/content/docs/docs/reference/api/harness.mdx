@@ -462,8 +462,10 @@ export interface Realm {
 `RealmEvaluation` is
 `{ cell, frame, call, program?, flows?, mint?, bounded?, limits? }`;
 `RealmFrame` is `{ outcome, prints, bindings }`. The `Sandbox.Handler`
-resolves one `Sandbox.Invocation` (`{ ordinal, flow, input, at? }`) into a
-`Cell.CallResult`; the `Sandbox.Minter` settles one `ctx.checkpoint()` mint on
+resolves one `Sandbox.Invocation` (`{ ordinal, flow, input, at?, declared? }`)
+into a `Cell.CallResult`; `declared` is true when the cell passed the flow
+and the very input object it bound in `verification = { flow, input }`,
+read through property descriptors so no accessor runs; the `Sandbox.Minter` settles one `ctx.checkpoint()` mint on
 the same queue, in issue order, so the pin lands where the cell wrote it.
 
 A cell states its intent by calling, and `Sandbox.replTransition` is the only
@@ -1509,6 +1511,15 @@ broader reading exists at all. `remember` folds a frame's checks into the
 run's `Ledger`, bounded to `retained` (32) distinct checks and `maxTerms`
 (256) terms each.
 
+Only a check the run declared can hold a completion. `Check.declared` is true
+for a call the cell made with rule 7's `verification = { flow, input }`: the
+flow it named and that very input object, as the realm reports it in
+`Sandbox.Invocation.declared`. `find` names only a declared broader check and
+`findOnly` only a declared last check, so a read or a search (a `grep` that
+matched nothing exits 1, the `git diff` rule 5 asks for) never holds one
+(#3994). `remember` keeps a declaration when the same call comes back
+through a copy of its input.
+
 ## CellValidation
 
 `import * as CellValidation from "@smthrs/harness/CellValidation"`
@@ -1587,7 +1598,9 @@ failing or passing status;
 earlier one; `find` finds the failing check a completion replaced rather than
 answered; and `demand` states which reading failed, which one replaced it,
 and what ends it. A failing check alone is not the trigger: the run itself
-must have demonstrated the subject was still live by returning to it.
+must have demonstrated the subject was still live by returning to it. The
+failing check must also be the one the run declared (`NarrowedCheck.Check.declared`);
+a read or a search that exited non-zero holds nothing (#3994).
 
 ## CompletionClaim
 

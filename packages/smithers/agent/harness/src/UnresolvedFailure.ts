@@ -173,7 +173,14 @@ export const revisits = (
  * Every condition is read off something the harness already records:
  *
  * 1. the frame closed on a complete measurement, so a digest means something;
- * 2. some check in the ledger reported a failing exit status;
+ * 2. some check in the ledger reported a failing exit status, and it is the
+ *    check the run declared ({@link NarrowedCheck.Check.declared}). Any call
+ *    that reports an exit status lands in the ledger, a read or a search
+ *    among them: a `grep` that matched nothing exits 1. On the paired
+ *    SWE-bench Pro run of 2026-10-14, 27 of the 85 completions this demand
+ *    held stood on such a read, and 68 of the 85 answering frames completed
+ *    again without changing anything (#3994). The run says which call is its
+ *    check, so only that call can hold its completion;
  * 3. that check was recorded over the tree this frame is completing on, so its
  *    result is a statement about the tree the completion stands on;
  * 4. it was recorded by a frame that changed nothing, so the digest stamped on
@@ -210,7 +217,7 @@ export const find = (options: {
   if (options.digest === "") return undefined
   let found: Displaced | undefined = undefined
   for (const [index, earlier] of options.ledger.entries()) {
-    if (!earlier.failing || !earlier.stable) continue
+    if (!earlier.declared || !earlier.failing || !earlier.stable) continue
     if (earlier.digest !== options.digest) continue
     const instead = options.ledger.slice(index + 1).find((candidate) => revisits(candidate, earlier))
     // Oldest first, keeping the last match: the ledger is ordered by when each

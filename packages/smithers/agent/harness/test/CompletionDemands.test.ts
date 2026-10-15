@@ -82,7 +82,7 @@ interface Fired {
  * world for the narrow-only demand: every excuse it grants is one these
  * replays do without.
  */
-const replay = (journal: Journal, taught: ReadonlyArray<string> = []): ReadonlyArray<Fired> => {
+const replay = (journal: Journal, taught: ReadonlyArray<string> = [], declared = true): ReadonlyArray<Fired> => {
   let ledger: ReadonlyArray<NarrowedCheck.Check> = []
   const seqOf = new Map<string, number>()
   const fired: Array<Fired> = []
@@ -102,7 +102,11 @@ const replay = (journal: Journal, taught: ReadonlyArray<string> = []): ReadonlyA
         digest,
         failing: UnresolvedFailure.failed(("exit" in call ? { exitCode: call.exit } : {}) as Schema.Json)
           && !("probe" in call),
-        stable: !frame.mutated
+        stable: !frame.mutated,
+        // These journals predate the declared check (#3994), so the replay
+        // reads every check as the run's declared one: it pins the relations
+        // the demands apply to a declared check, the harshest reading of them.
+        declared
       })
       if (recorded === undefined) return []
       seqOf.set(signature, call.seq)
@@ -187,6 +191,13 @@ describe("the completion demands over the recorded wave", () => {
       seq: 229,
       names: []
     }])
+  })
+
+  it("demands nothing of pytest-dev__pytest-6197 had the run declared no check", () => {
+    // The same frames with no call the run declared as its check: the broad
+    // `pytest -rA` that failed is then a reading like any other, and holds
+    // nothing (#3994).
+    expect(replay(journalOf("pytest-dev__pytest-6197"), [], false)).toEqual([])
   })
 
   it("demands the unanswered failure exactly once of pytest-dev__pytest-6197", () => {

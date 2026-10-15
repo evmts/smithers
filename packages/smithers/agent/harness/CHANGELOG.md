@@ -4,6 +4,17 @@
 
 ### Changed
 
+- Only the check a run declared can hold its completion. A call the cell makes
+  with rule 7's `verification = { flow, input }`, that flow and that very
+  input object, reaches the host as `Sandbox.Invocation.declared` and lands in
+  the check ledger as `NarrowedCheck.Check.declared`; the unanswered-failure,
+  narrowed-check and only-reading demands name only declared checks. Every call
+  that reports an exit status used to count: a `grep` that matched nothing
+  exits 1, and a later read of the same file held the completion as an
+  "Unanswered failure". On the paired SWE-bench Pro run of 2026-10-14 that was
+  27 of 85 such holds, all 6 "Only reading" holds stood on the `git diff` rule
+  5 asks for, and 68 of the 85 answering frames completed again unchanged
+  (#3994).
 - The cell contract asks for a short answer. Rule 5 asked a completing run to
   name each claimed check's exact command and output, and the worked
   example's `ctx.done` pasted the applied hunk; done text ran 498 tokens per
