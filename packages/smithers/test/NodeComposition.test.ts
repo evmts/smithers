@@ -379,7 +379,10 @@ describe("NodeControl.testRunner", () => {
   it("caps the runner's timeout at the longest wait a timer can hold", () => {
     // Node fires a longer timer after 1 ms, so a generous budget killed every test run at once.
     expect(
-      NodeControl.testRunner({ SMITHERS_TEST_COMMAND: "pytest -q", SMITHERS_TEST_TIMEOUT_MS: "3000000000" }, "/work/repo")
+      NodeControl.testRunner(
+        { SMITHERS_TEST_COMMAND: "pytest -q", SMITHERS_TEST_TIMEOUT_MS: "3000000000" },
+        "/work/repo"
+      )
     ).toHaveProperty("timeoutMs", 2_147_483_647)
   })
 

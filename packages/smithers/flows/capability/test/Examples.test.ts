@@ -22,7 +22,10 @@ describe("quickstart example", () => {
   })
 
   it("suspends an irreversible request with a failure a boundary can decode", () => {
-    const { display, failure } = Quickstart.suspend(Capability.make("net:post", "https://api.example.test/deploy"), "req-1")
+    const { display, failure } = Quickstart.suspend(
+      Capability.make("net:post", "https://api.example.test/deploy"),
+      "req-1"
+    )
     expect(display).toBe(
       "permission_required: net:post:https://api.example.test/deploy (tier irreversible, request req-1)"
     )
@@ -55,7 +58,11 @@ describe("grant example", () => {
 
   it("proves coverage only for a recursive envelope", () => {
     const claim = new Capability.CapabilityPattern({ action: "fs:read", resource: "/workspace/src/a.ts" })
-    expect(Grant.covers(new Capability.CapabilityPattern({ action: "fs:*", resource: "/workspace/**" }), claim)).toBe(true)
-    expect(Grant.covers(new Capability.CapabilityPattern({ action: "fs:*", resource: "/workspace/*" }), claim)).toBe(false)
+    expect(Grant.covers(new Capability.CapabilityPattern({ action: "fs:*", resource: "/workspace/**" }), claim)).toBe(
+      true
+    )
+    expect(Grant.covers(new Capability.CapabilityPattern({ action: "fs:*", resource: "/workspace/*" }), claim)).toBe(
+      false
+    )
   })
 })

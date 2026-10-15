@@ -101,7 +101,10 @@ describe("the search card's refusal carries its verdict, not a bare sentence", (
   const withRefusal = (refusal: unknown) => CardSchema.safeParse({ ...search, payload: { ...search.payload, refusal } })
 
   test("a classified refusal round trips with both fields", () => {
-    const original = { ...search, payload: { ...search.payload, refusal: { sentence: "The tracker would not list.", fault: "dependency" } } }
+    const original = {
+      ...search,
+      payload: { ...search.payload, refusal: { sentence: "The tracker would not list.", fault: "dependency" } }
+    }
     expect(CardSchema.parse(JSON.parse(JSON.stringify(original)))).toEqual(original)
   })
 
@@ -2512,7 +2515,10 @@ const FIXTURES: Record<
         subtitle: "Librarian",
         actions: [{ flow: "wiki.open", args: "wiki/bounded-reads.md", label: "Open", role: "open" }]
       }],
-      refusal: { sentence: "The wiki index could not be read. Something Smithers reads from refused.", fault: "dependency" }
+      refusal: {
+        sentence: "The wiki index could not be read. Something Smithers reads from refused.",
+        fault: "dependency"
+      }
     }
   },
   "wiki-links": {

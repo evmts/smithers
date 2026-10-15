@@ -264,7 +264,9 @@ repositories["repo connect"] = async (c, a) => {
     c.write(`Install ${installUrl}\n`)
   }
   while (!status.github_app_installed) {
-    await delay(Environment.readMilliseconds(c.env, "SMITHERS_GITHUB_APP_POLL_INTERVAL_MS") ?? 2000, undefined, { signal: c.runtime.signal })
+    await delay(Environment.readMilliseconds(c.env, "SMITHERS_GITHUB_APP_POLL_INTERVAL_MS") ?? 2000, undefined, {
+      signal: c.runtime.signal
+    })
     status = object(await c.request("GET", `/api/repos/${slug}/github-app-status`))
   }
   await c.request("POST", "/api/repo-connection", { license_spdx_id, owner, repo })

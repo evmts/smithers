@@ -270,11 +270,15 @@ describe("skewClock", () => {
   it("keeps waitFor's deadline on the real clock when the clock jumps forward mid-wait", async () => {
     live = skewClock(0)
     let polls = 0
-    await waitFor(() => {
-      polls += 1
-      if (polls === 1) live!.advance(3_600_000)
-      return polls >= 3
-    }, "a condition that holds on the third poll", 2_000)
+    await waitFor(
+      () => {
+        polls += 1
+        if (polls === 1) live!.advance(3_600_000)
+        return polls >= 3
+      },
+      "a condition that holds on the third poll",
+      2_000
+    )
     expect(polls).toBe(3)
   })
 
@@ -282,11 +286,15 @@ describe("skewClock", () => {
     live = skewClock(0)
     let polls = 0
     const started = performance.now()
-    await expect(waitFor(() => {
-      polls += 1
-      if (polls === 1) live!.advance(-3_600_000)
-      return false
-    }, "a condition that never holds", 200)).rejects.toThrow(/a condition that never holds/)
+    await expect(waitFor(
+      () => {
+        polls += 1
+        if (polls === 1) live!.advance(-3_600_000)
+        return false
+      },
+      "a condition that never holds",
+      200
+    )).rejects.toThrow(/a condition that never holds/)
     expect(performance.now() - started).toBeLessThan(2_000)
   })
 

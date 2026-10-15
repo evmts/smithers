@@ -101,7 +101,9 @@ describe("the environment contract", () => {
     for (const value of ["0", "-1", "1.5", "30s", ""]) {
       expect(Environment.readMilliseconds(env(value), "SMITHERS_AGENT_DOCS_TIMEOUT_MS")).toBeUndefined()
     }
-    const signal = AbortSignal.timeout(Environment.readMilliseconds(env("3000000000"), "SMITHERS_AGENT_DOCS_TIMEOUT_MS")!)
+    const signal = AbortSignal.timeout(
+      Environment.readMilliseconds(env("3000000000"), "SMITHERS_AGENT_DOCS_TIMEOUT_MS")!
+    )
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(signal.aborted).toBe(false)
   })

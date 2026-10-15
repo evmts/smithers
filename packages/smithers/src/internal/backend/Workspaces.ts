@@ -70,7 +70,9 @@ const sshInfo = async (c: Client, path: string, user: unknown): Promise<Endpoint
     if (info && (info.ssh_command || info.command)) {
       return { command: str(info.ssh_command || info.command), hostKeys: hostKeys(info.host_keys) }
     }
-    await delay(Environment.readMilliseconds(c.env, "SMITHERS_WORKSPACE_SSH_POLL_INTERVAL_MS") ?? 3000, undefined, { signal: c.runtime.signal })
+    await delay(Environment.readMilliseconds(c.env, "SMITHERS_WORKSPACE_SSH_POLL_INTERVAL_MS") ?? 3000, undefined, {
+      signal: c.runtime.signal
+    })
   } while (Date.now() < deadline)
   throw new Refused({ fault: "infra", code: "workspace_not_ready", message: "Workspace did not become SSH-ready" })
 }

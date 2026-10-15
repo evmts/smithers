@@ -68,7 +68,9 @@ const target = async (c: Client, o: Values): Promise<Target> => {
 
 const positive = (flag: string, unit: string) => (value: unknown): number => {
   const n = typeof value === "string" && value.trim() === "" ? Number.NaN : Number(value)
-  if (!Number.isInteger(n) || n < 1) throw new UsageError({ message: `--${flag} must be a positive whole number${unit}` })
+  if (!Number.isInteger(n) || n < 1) {
+    throw new UsageError({ message: `--${flag} must be a positive whole number${unit}` })
+  }
   return n
 }
 const count = positive("count", ""), ttl = positive("ttl", " of seconds")
