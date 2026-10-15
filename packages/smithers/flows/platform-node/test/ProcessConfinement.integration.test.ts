@@ -65,7 +65,9 @@ describe.skipIf(!available)("native ProcessConfinement enforcement", () => {
     const tools = NodeFs.mkdtempSync(NodePath.join(NodeOs.tmpdir(), "confined-tool-"))
     fixtures.push(tools)
     const executable = NodePath.join(tools, "cat")
-    NodeFs.copyFileSync("/bin/cat", executable)
+    // A script, not a copy of /bin/cat: macOS 26 SIGKILLs a copied platform
+    // binary at exec, with or without a sandbox.
+    NodeFs.writeFileSync(executable, "#!/bin/sh\nexec /bin/cat \"$@\"\n", { mode: 0o755 })
     NodeFs.writeFileSync(NodePath.join(tools, "secret"), "outside-secret")
     NodeFs.writeFileSync(NodePath.join(f.workspaceRoot, "input"), "allowed-input")
     const profile: Profile = {

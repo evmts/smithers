@@ -123,7 +123,9 @@ export const failure = (
     // which step failed. A transport failure names no syscall at all, because
     // no syscall ran.
     syscall: rejection?.syscall ?? undefined,
-    _tag: code === undefined ? "PermissionDenied" : reasons[code] ?? "Unknown",
+    // An own-property lookup: a code such as `toString` must not resolve
+    // through Object.prototype into a tag that is not a string.
+    _tag: code === undefined ? "PermissionDenied" : Object.hasOwn(reasons, code) ? reasons[code]! : "Unknown",
     // The cause is repeated into the description because a fail-closed refusal
     // that says only "failed closed" is unactionable: an absent helper, a
     // response over the limit, and a mangled frame all look alike otherwise.
@@ -387,6 +389,9 @@ export const convert = <A>(
       seen.add(index)
       previous = member.path
       previousIndex = index
+      if (entry.result === undefined) {
+        throw atomicHelperFault("batch_malformed", "atomic helper returned a batch entry without a result")
+      }
       if (Buffer.byteLength(JSON.stringify(entry.result), "utf8") > limits.batchEntry) {
         throw atomicHelperFault("batch_malformed", "atomic helper returned an oversized batch entry")
       }

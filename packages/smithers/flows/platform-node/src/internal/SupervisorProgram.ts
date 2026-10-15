@@ -64,10 +64,13 @@ let escaped = new Map();
 // signalling with identity revalidation, not the atomic own-group guarantee.
 // Linux reads its kernel table because slim images ship no procps (and BusyBox
 // ps lacks these columns); other POSIX hosts ask their system ps.
+// The cause rides in the message: a slow table and an unreadable one carry
+// the same reason code, and only the detail says which one a host hit.
+const unavailable = (detail) => new SupervisorFault('descendant_observation_unavailable', 'Descendant observation unavailable: ' + detail);
 const procSnapshot = () => {
   let names;
   try { names = fs.readdirSync('/proc'); }
-  catch { throw new SupervisorFault('descendant_observation_unavailable', 'Descendant observation unavailable'); }
+  catch (error) { throw unavailable('/proc listing failed with ' + error.code); }
   const rows = new Map();
   for (const name of names) {
     if (!/^[0-9]+$/.test(name)) continue;
@@ -76,7 +79,7 @@ const procSnapshot = () => {
     catch (error) {
       // A process that ended after the listing is not an unreadable table.
       if (error.code === 'ENOENT' || error.code === 'ESRCH') continue;
-      throw new SupervisorFault('descendant_observation_unavailable', 'Descendant observation unavailable');
+      throw unavailable('/proc/' + name + '/stat failed with ' + error.code);
     }
     // comm may contain spaces and parentheses; fields follow its last paren.
     const close = text.lastIndexOf(')');
@@ -90,12 +93,22 @@ const procSnapshot = () => {
   }
   return rows;
 };
+// An explicit stop of a live target observes the table twice before the group
+// dies: the capture before the signal and the vacant-group check after the
+// target exits. Both must fit inside the host's 2500 ms exit allowance past
+// the grace window. A loaded macOS host answered ps in up to 587 ms
+// (2026-10-14), so a 500 ms bound reported a slow table as an unreadable one.
+const psTimeoutMs = 1000;
 const psSnapshot = () => {
   const result = cp.spawnSync('/bin/ps', ['-A', '-o', 'pid=,ppid=,pgid=,stat=,lstart='], {
-    encoding: 'utf8', timeout: 500, killSignal: 'SIGKILL', maxBuffer: 4 * 1024 * 1024,
+    encoding: 'utf8', timeout: psTimeoutMs, killSignal: 'SIGKILL', maxBuffer: 4 * 1024 * 1024,
     env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' }
   });
-  if (result.error || result.status !== 0) throw new SupervisorFault('descendant_observation_unavailable', 'Descendant observation unavailable');
+  if (result.error) {
+    throw unavailable(result.error.code === 'ETIMEDOUT' ? 'ps did not answer within ' + psTimeoutMs + ' ms' : 'ps failed with ' + result.error.code);
+  }
+  if (result.signal) throw unavailable('ps ended by ' + result.signal);
+  if (result.status !== 0) throw unavailable('ps exited with status ' + result.status);
   const rows = new Map();
   for (const line of result.stdout.trim().split('\n')) {
     const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.+)$/.exec(line);

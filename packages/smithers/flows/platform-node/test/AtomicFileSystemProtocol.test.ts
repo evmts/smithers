@@ -204,4 +204,28 @@ describe("atomic helper response validation", () => {
   )("rejects a malformed %s success", (operation, value, message) => {
     expect(() => convert(operation as Protocol.FramedRequest["operation"], value)).toThrow(message)
   })
+
+  it.each(["toString", "__proto__", "constructor", "hasOwnProperty"])(
+    "reports an unlisted helper errno %s as Unknown",
+    (code) => {
+      const error = Protocol.failure({ operation: "stat", path: "/a" }, new Error("helper"), {
+        ok: false,
+        code,
+        message: "helper rejected"
+      })
+      expect(error.reason._tag).toBe("Unknown")
+    }
+  )
+
+  it("rejects a batch entry that carries no result as a helper fault", () => {
+    const request: Protocol.FramedRequest = {
+      operation: "batch",
+      rootIdentity: "1:2",
+      requests: [{ operation: "stat", path: "/a" }]
+    }
+    expect(() => Protocol.convert(request, { rootIdentity: "1:2", entries: [{ index: 0, path: "/a" }] }, defaultLimits))
+      .toThrowError(
+        expect.objectContaining({ _tag: "@smthrs/platform-node/AtomicHelperFault", code: "batch_malformed" })
+      )
+  })
 })

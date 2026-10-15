@@ -25,6 +25,8 @@ const program = (
     readonly mode?: "group" | "direct"
     readonly userFds?: ReadonlyArray<number>
     readonly spawns?: Array<Spawned>
+    /** What `/bin/ps` answers instead of the table, when set. */
+    readonly ps?: unknown
   } = {}
 ) => {
   const guardianPid = extra.guardianPid === undefined ? 4106 : extra.guardianPid ?? undefined
@@ -102,6 +104,7 @@ const program = (
       },
       spawnSync: (...args: ReadonlyArray<unknown>) => {
         observations.push(args)
+        if (args[0] === "/bin/ps" && extra.ps !== undefined) return extra.ps
         return identityResult ?? ({
           status: 0,
           stdout: table.map(([pid, parent, group, state]) =>
@@ -413,6 +416,38 @@ describe("supervisor descendant observation", () => {
     })
   }
 
+  it("gives ps a bound two observations fit inside the host's exit allowance", () => {
+    const helper = program("SIGKILL", true, "darwin")
+    stopped(helper)
+    expect((helper.observations[0] as ReadonlyArray<unknown>)[2]).toMatchObject({
+      timeout: 1000,
+      killSignal: "SIGKILL"
+    })
+  })
+
+  const psFailures: ReadonlyArray<readonly [string, unknown, string]> = [
+    [
+      "a ps that outlives its bound",
+      { error: gone("ETIMEDOUT"), status: null, signal: "SIGKILL", stdout: "" },
+      "ps did not answer within 1000 ms"
+    ],
+    ["a ps that cannot start", { error: gone("ENOENT"), status: null, signal: null }, "ps failed with ENOENT"],
+    ["a ps that exits nonzero", { status: 1, signal: null, stdout: "" }, "ps exited with status 1"],
+    ["a ps ended by a signal", { status: null, signal: "SIGSEGV", stdout: "" }, "ps ended by SIGSEGV"]
+  ]
+  for (const [label, answer, detail] of psFailures) {
+    it(`names the cause when ${label}`, () => {
+      const helper = program("SIGKILL", true, "darwin", undefined, undefined, false, { ps: answer })
+      stopped(helper)
+      expect(faults(helper)).toContainEqual({
+        type: "cleanup_error",
+        reason: "descendant_observation_unavailable",
+        message: `Descendant observation unavailable: ${detail}`
+      })
+      expect(helper.signals).toEqual([[-4101, "SIGTERM"]])
+    })
+  }
+
   it("reads fields after the last parenthesis of a command name with spaces and parentheses", () => {
     const helper = program("SIGKILL")
     helper.proc.set("4103", stat(4103, "a) S 1 1 (b", "S", 4102, 4103, 7000))
@@ -444,7 +479,7 @@ describe("supervisor descendant observation", () => {
       (helper) => {
         helper.listing.error = gone("EACCES")
       },
-      "Descendant observation unavailable",
+      "Descendant observation unavailable: /proc listing failed with EACCES",
       "descendant_observation_unavailable"
     ],
     [
@@ -452,7 +487,7 @@ describe("supervisor descendant observation", () => {
       (helper) => {
         helper.proc.set("4103", gone("EACCES"))
       },
-      "Descendant observation unavailable",
+      "Descendant observation unavailable: /proc/4103/stat failed with EACCES",
       "descendant_observation_unavailable"
     ],
     [

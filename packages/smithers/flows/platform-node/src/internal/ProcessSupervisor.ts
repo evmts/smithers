@@ -27,6 +27,8 @@ import { resolveJobExecutable, WindowsProcessJob } from "./WindowsProcessJob.ts"
 
 const startupMs = 5000
 const deliveryMs = 500
+// SupervisorProgram sizes its ps bound so the two table observations of an
+// explicit stop fit inside this allowance. Change both together.
 const exitAllowanceMs = 2500
 // Host-wide process observations can exceed a socket-delivery deadline on a
 // loaded machine. Keep verification bounded without mistaking that delay for
