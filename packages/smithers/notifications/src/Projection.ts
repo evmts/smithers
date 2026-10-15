@@ -7,6 +7,7 @@
 import { Projection as JournalProjection } from "@smthrs/journal"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
+import * as Replay from "./internal/replay.ts"
 import * as NotificationEvent from "./NotificationEvent.ts"
 import * as NotificationState from "./NotificationState.ts"
 
@@ -18,7 +19,10 @@ import * as NotificationState from "./NotificationState.ts"
  * `NotificationState.applyAdmission` applies the decision each record already
  * committed, and an admitted record is retained however many are pending. A
  * composition built with `NotificationQueue.layerWith` above the default
- * replays every admission it wrote.
+ * replays every admission it wrote. A versioned edit of a steer that is still
+ * pending replaces that item in place, exactly as the queue's own fold reads
+ * it, so an edited steer projects as one pending item rather than one per
+ * version.
  *
  * The projected `capacity` is `NotificationState.defaultCapacity` because the
  * initial state has to start somewhere and no journal record carries the bound
@@ -37,9 +41,7 @@ export const derive = JournalProjection.make({
 
     const event = decoded.value
     if (NotificationEvent.isAdmitted(event)) {
-      return Effect.succeed(
-        NotificationState.applyAdmission(state, event.notification, entry.seq, event.decision)
-      )
+      return Effect.succeed(Replay.applyAdmitted(state, event, entry.seq))
     }
     return Effect.succeed(NotificationState.applyPromoted(state, event.ids))
   }

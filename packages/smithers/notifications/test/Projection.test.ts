@@ -1,9 +1,10 @@
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
-import { Effect, Stream } from "effect"
+import { Effect, Layer, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import type { Notification } from "../src/Notification.ts"
 import * as NotificationEvent from "../src/NotificationEvent.ts"
+import * as NotificationQueue from "../src/NotificationQueue.ts"
 import * as NotificationState from "../src/NotificationState.ts"
 import * as Projection from "../src/Projection.ts"
 
@@ -267,5 +268,39 @@ describe("Notification projection", () => {
       )
     )
     expect(states.at(-1)?.items.map((item) => item.notification.id)).toEqual(["impersonated"])
+  })
+})
+
+describe("Notification projection over versioned edits", () => {
+  // The queue replaces a pending steer in place when a later version edits
+  // it. The projection must read the same history to the same pending set,
+  // not one item per version.
+  it("replays an edit of a pending steer as one replaced item", async () => {
+    const steer = (body: string): Notification => ({
+      _tag: "human-steer",
+      delivery: "steer",
+      id: "edited",
+      targetLineageId: "notification-projection/root",
+      provenance: { sourceRunId: "source", sourceLineageId: "source/root", sourceTurn: 0, sourceActor: "human:owner" },
+      payload: { body }
+    })
+    const observed = await Effect.runPromise(
+      runJournal(
+        Effect.gen(function*() {
+          const journal = yield* Journal.Journal
+          const pending = yield* Effect.gen(function*() {
+            const queue = yield* NotificationQueue.NotificationQueue
+            yield* queue.admit(runId, steer("original"), 1)
+            yield* queue.admit(runId, steer("edited"), 2)
+            return yield* queue.pending(runId)
+          }).pipe(Effect.provide(NotificationQueue.layer.pipe(Layer.provide(Layer.succeed(Journal.Journal, journal)))))
+          yield* journal.flush
+          const states = yield* journal.project(Projection.derive, { runId }).pipe(Stream.take(3), Stream.runCollect)
+          return { pending, projected: states.at(-1)?.items.map((item) => item.notification) }
+        })
+      )
+    )
+    expect(observed.pending).toEqual([steer("edited")])
+    expect(observed.projected).toEqual(observed.pending)
   })
 })

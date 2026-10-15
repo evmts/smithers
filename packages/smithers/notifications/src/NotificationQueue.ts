@@ -12,6 +12,7 @@ import { digestSync } from "@smthrs/crypto/Sha256"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { Context, Effect, HashMap, Layer, Option, Schema, SchemaIssue, Semaphore } from "effect"
 import * as FoldCache from "./internal/foldCache.ts"
+import * as Replay from "./internal/replay.ts"
 import * as NotificationModel from "./Notification.ts"
 import * as NotificationEvent from "./NotificationEvent.ts"
 import * as NotificationState from "./NotificationState.ts"
@@ -511,21 +512,7 @@ export const layerWith = (
                 decision: event.decision,
                 seq: entry.seq
               })
-              if (
-                event.version !== undefined &&
-                state.items.some((item) => item.notification.id === event.notification.id)
-              ) {
-                state = Object.freeze({
-                  ...state,
-                  items: Object.freeze(state.items.map((item) =>
-                    item.notification.id === event.notification.id
-                      ? Object.freeze({ notification: event.notification, seq: item.seq })
-                      : item
-                  ))
-                })
-              } else {
-                state = NotificationState.applyAdmission(state, event.notification, entry.seq, event.decision)
-              }
+              state = Replay.applyAdmitted(state, event, entry.seq)
             } else {
               promotions = HashMap.set(
                 promotions,

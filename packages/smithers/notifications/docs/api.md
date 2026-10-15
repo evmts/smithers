@@ -308,6 +308,10 @@ wrote. The projected `capacity` stays at the default because no journal record
 carries the bound the layer was built at, so read `items` rather than
 `capacity`.
 
+A versioned edit of a steer that is still pending replaces that item in place
+and keeps its original sequence, the same way the queue reads its own history,
+so an edited steer projects as one pending item.
+
 ## SteerPayload
 
 The steering vocabulary carried inside a notification payload. Import from
