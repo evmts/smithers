@@ -873,11 +873,18 @@ func (r *Runtime) stopMachine(ctx context.Context, name string) error {
 	// confirms completion, under the same deadline as the stop request.
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
+	last := "unobserved"
 	for {
 		status, found, statusErr := r.cli.sandboxStatus(stopCtx, name)
 		if statusErr != nil {
+			// The deadline can land inside an observation. That is the same
+			// unconfirmed stop as one that lands between observations.
+			if stopCtx.Err() != nil {
+				return fmt.Errorf("microVM %s stop is not confirmed: %s: %w", name, last, stopCtx.Err())
+			}
 			return fmt.Errorf("observe stopped microVM %s: %w", name, statusErr)
 		}
+		last = status
 		if !found || status == "stopped" {
 			return nil
 		}

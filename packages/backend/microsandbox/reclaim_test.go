@@ -245,8 +245,11 @@ esac
 				ctx := t.Context()
 				if !confirms {
 					// Recovery observes an unconfirmed stop until its deadline.
+					// The deadline also covers recovery's orphan-client process
+					// scan, which takes over 500 ms on a host with ~1,500
+					// processes; a shorter one expires before the stop is sent.
 					var cancel context.CancelFunc
-					ctx, cancel = context.WithTimeout(ctx, 500*time.Millisecond)
+					ctx, cancel = context.WithTimeout(ctx, 3*time.Second)
 					defer cancel()
 				}
 				err := r.recover(ctx)
