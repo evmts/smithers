@@ -324,6 +324,30 @@ describe("BrowserFileSystem error mapping", () => {
       expect(seen).toEqual(["/", "/a", "/a", "/a/b", "/a/b"])
     }))
 
+  it.effect("walks a directory named with trailing separators without doubling them", () =>
+    Effect.gen(function*() {
+      const tree: Record<string, Array<string>> = { "/a/": ["b"], "/a//": ["b"], "/a/b": ["c"], "/a/b/c": [] }
+      const seen: Array<string> = []
+      const exactKey = async (at: string): Promise<Array<string>> => {
+        seen.push(at)
+        const names = tree[at]
+        if (names === undefined) throw codeError("ENOENT")
+        return names
+      }
+      const fileSystem = BrowserFileSystem.make({
+        ...throwingFs(codeError("ENOENT")),
+        readdir: exactKey,
+        stat: async (at: string) => {
+          await exactKey(at)
+          return chainDirectory
+        }
+      })
+
+      expect(yield* (fileSystem.readDirectory("/a/", { recursive: true }))).toEqual(["b", "b/c"])
+      expect(yield* (fileSystem.readDirectory("/a//", { recursive: true }))).toEqual(["b", "b/c"])
+      expect(seen.filter((at) => at.includes("//") && !at.startsWith("/a//"))).toEqual([])
+    }))
+
   /**
    * The visited set only closes a loop for a backend that can canonicalize.
    * One with neither `lstat` nor `realpath` follows the link and reports a

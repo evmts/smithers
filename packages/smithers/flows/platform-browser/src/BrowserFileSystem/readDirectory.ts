@@ -93,10 +93,10 @@ const collect = (
       }))
     }
     const collected: Array<string> = []
-    // The mount root already ends in the separator: joining under it verbatim
-    // would hand the backend `//name`, which a backend keyed by exact path
-    // cannot find.
-    const parent = directory === "/" ? "" : directory
+    // The mount root, and any directory the caller named as `/a/`, already
+    // ends in the separator: joining under it verbatim would hand the backend
+    // `//name`, which a backend keyed by exact path cannot find.
+    const parent = directory.replace(/\/+$/, "")
     for (const name of yield* entriesOf(fs, directory)) {
       const relative = prefix === "" ? name : `${prefix}/${name}`
       collected.push(relative)
