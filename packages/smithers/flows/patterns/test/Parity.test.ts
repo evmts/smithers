@@ -815,6 +815,29 @@ const supervisor: Pattern<{ readonly maxRounds: number; readonly maxTasks: numbe
       input: { goal: "ship", tasks: supervisorTasks },
       options: { maxRounds: 3, maxTasks: 16, concurrency },
       script: supervisorScript([{ retriable: ["unknown"] }], "b")
+    },
+    {
+      // A re-delegated worker reads the review that sent it back in both forms.
+      name: `supervisor-${concurrency}-retry-reads-review`,
+      input: { goal: "ship", tasks: supervisorTasks },
+      options: { maxRounds: 2, maxTasks: 16, concurrency },
+      script: {
+        ...supervisorScript([{ allDone: false, retriable: ["a"], note: "add tests" }, { allDone: true }], "a"),
+        coder: (
+          { review, retriable, round, task }: {
+            readonly review?: { readonly note: string }
+            readonly retriable?: ReadonlyArray<string>
+            readonly round: number
+            readonly task: { readonly id: string }
+          }
+        ) =>
+          round === 1
+            ? fail({ code: "worker_failed", message: `${task.id} failed` })
+            : `${task.id}-coded-${round}:${review?.note}:${retriable?.join(",")}`,
+        finalize: ({ results }: { readonly results: ReadonlyArray<{ readonly output?: unknown }> }) =>
+          results[0]!.output
+      },
+      expected: { exhausted: false, rounds: 2, final: "a-coded-2:add tests:a" }
     }
   ])
 }

@@ -110,11 +110,18 @@ export type Outcome<Out> =
  */
 export interface RuntimeOptions<I, P extends Plan, Out, Review, Final, E, R, E2, R2, E3, R3, E4, R4> {
   readonly plan: (input: I) => Effect.Effect<P, E, R>
+  /**
+   * Called once per pending task per round. From round 2 on it also receives
+   * the `review` that re-delegated the task and the `retriable` ids that
+   * review named; a round-one call has neither field.
+   */
   readonly worker: (args: {
     readonly task: Task
     readonly plan: P
     readonly round: number
     readonly input: I
+    readonly review?: Review | undefined
+    readonly retriable?: ReadonlyArray<string> | undefined
   }) => Effect.Effect<Out, E2, R2>
   readonly review: (args: {
     readonly plan: P
@@ -598,30 +605,34 @@ export const run = <I, P extends Plan, Out, Review, Final, E, R, E2, R2, E3, R3,
     const latest = new Map<string, Outcome<Out>>()
     const supervise = (
       pending: ReadonlyArray<Task>,
-      round: number
+      round: number,
+      previous: { readonly review: Review; readonly retriable: ReadonlyArray<string> } | undefined
     ): Effect.Effect<Completed<Final> | Exhausted<Review>, E3 | E4 | PatternError, R2 | R3 | R4> =>
       Effect.gen(function*() {
         const outcomes = yield* Effect.forEach(
           pending,
           (task) =>
-            worker({ task, plan, round, input }).pipe(
-              Effect.map((output): Outcome<Out> => ({
-                _tag: "Done",
-                id: task.id,
-                workerType: task.workerType,
-                round,
-                output
-              })),
-              Effect.catch((error): Effect.Effect<Outcome<Out>> =>
-                Effect.succeed({
-                  _tag: "Failed",
+            // A re-delegated worker sees the review that sent it back, as the
+            // declared form's worker call does.
+            worker(previous === undefined ? { task, plan, round, input } : { task, plan, round, input, ...previous })
+              .pipe(
+                Effect.map((output): Outcome<Out> => ({
+                  _tag: "Done",
                   id: task.id,
                   workerType: task.workerType,
                   round,
-                  error
-                })
-              )
-            ),
+                  output
+                })),
+                Effect.catch((error): Effect.Effect<Outcome<Out>> =>
+                  Effect.succeed({
+                    _tag: "Failed",
+                    id: task.id,
+                    workerType: task.workerType,
+                    round,
+                    error
+                  })
+                )
+              ),
           { concurrency }
         )
         for (const outcome of outcomes) latest.set(outcome.id, outcome)
@@ -642,8 +653,8 @@ export const run = <I, P extends Plan, Out, Review, Final, E, R, E2, R2, E3, R3,
         const ids = retriable(review)
         const next = tasks.filter((task) => ids.includes(task.id))
         if (next.length === 0) return { exhausted: true, rounds: round, review } satisfies Exhausted<Review>
-        return yield* supervise(next, round + 1)
+        return yield* supervise(next, round + 1, { review, retriable: ids })
       })
-    return yield* supervise(tasks, 1)
+    return yield* supervise(tasks, 1, undefined)
   })
 }

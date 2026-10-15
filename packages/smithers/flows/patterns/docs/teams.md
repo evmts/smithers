@@ -70,7 +70,7 @@ Task ids such as `"__proto__"`, `"constructor"`, and `"toString"` are supported.
 1. Runs the pending tasks through `worker` with `Effect.forEach` at `concurrency`. A typed worker failure is captured as a `Failed` outcome rather than failing the supervision, so the review sees it. A worker defect is not an outcome: it fails the supervision and cancels the workers still in flight.
 2. Calls `review` with every task's latest outcome.
 3. Finalizes and returns `{ exhausted: false, rounds, final }` when the review is done, which means the review carries its own `allDone: true` or is the value `true`.
-4. Otherwise re-delegates only the task ids listed in the review's own `retriable` array.
+4. Otherwise re-delegates only the task ids listed in the review's own `retriable` array. Each re-delegated `worker` call receives `{ task, plan, round, input, review, retriable }`, where `review` is the review that sent the task back and `retriable` is its list of string ids. A round-one call receives `{ task, plan, round, input }`.
 
 The supervision returns `{ exhausted: true, rounds, review }` and does not call `finalize` when the round bound is reached, or when an unaccepted review names no retriable task: nothing is left to re-delegate.
 

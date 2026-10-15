@@ -487,6 +487,33 @@ describe("Supervisor", () => {
       expect(result).toMatchObject({ rounds: 2, final: ["a-done", "b-done", "c-done"] })
     }))
 
+  it.effect("hands a re-delegated worker the review that asked for it and its retriable ids", () =>
+    Effect.gen(function*() {
+      const seen: Array<unknown> = []
+      const first = { allDone: false, retriable: ["b"], note: "b needs tests" }
+
+      yield* Supervisor.run("goal", {
+        maxRounds: 2,
+        maxTasks: 16,
+        concurrency: 1,
+        plan: () => Effect.succeed(plan),
+        worker: (args) => {
+          const { input: _input, plan: _plan, ...rest } = args
+          seen.push(rest)
+          return Effect.succeed(`${args.task.id}-done`)
+        },
+        review: ({ round }) => Effect.succeed(round === 1 ? first : { allDone: true }),
+        finalize: () => Effect.succeed("final")
+      })
+
+      expect(seen).toEqual([
+        { task: plan.tasks[0], round: 1 },
+        { task: plan.tasks[1], round: 1 },
+        { task: plan.tasks[2], round: 1 },
+        { task: plan.tasks[1], round: 2, review: first, retriable: ["b"] }
+      ])
+    }))
+
   it.effect("reports the last review as exhausted when the round bound is reached", () =>
     Effect.gen(function*() {
       let finalized = 0
