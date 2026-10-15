@@ -414,6 +414,22 @@ describe("Detect.scan over jsx-single", () => {
     }))
 })
 
+describe("Detect.scan over command scripts", () => {
+  it.effect("records the whole CLI verb, not a shorter verb it starts with", () =>
+    Effect.gen(function*() {
+      const root = mkdtempSync(join(tmpdir(), "migrate-detect-verbs-"))
+      try {
+        writeFileSync(join(root, "package.json"), "{\"name\":\"verbs\"}\n")
+        writeFileSync(join(root, "run.sh"), "smithers docs-full\necho smithers up-to-date\nsmithers docs\n")
+        const detection = yield* detect(root)
+        expect(detection.scripts.filter((hit) => hit.kind === "cli-verb").map((hit) => `${hit.line}:${hit.text}`))
+          .toEqual(["1:smithers docs-full", "3:smithers docs"])
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    }))
+})
+
 describe("Detect.scan over plue-pack", () => {
   it.effect("finds the pre-rename package under a workspace member manifest", () =>
     Effect.gen(function*() {

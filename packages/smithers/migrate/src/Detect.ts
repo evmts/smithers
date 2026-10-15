@@ -591,9 +591,11 @@ const stringArray = (value: unknown): ReadonlyArray<string> =>
 const scriptPatterns: ReadonlyArray<{ readonly kind: ScriptHit["kind"]; readonly pattern: RegExp }> = [
   { kind: "package-runner", pattern: /\b(?:bunx|npx|pnpm exec|pnpm dlx)\s+(?:smthrs|smithers-orchestrator)\b/g },
   {
+    // Not `\b` after the verb: `docs-full` would stop at `docs`, and
+    // `up-to-date` in prose would read as `up`.
     kind: "cli-verb",
     pattern:
-      /\bsmithers\s+(up|workflow|init|gateway|serve|ps|logs|inspect|approve|deny|signal|cancel|pause|ui|gui|monitor|cron|eval|optimize|hijack|retry-task|rewind|fork|replay|timeline|snapshots|restore|revert|worktrees|human|ask-human|listeners|migrate|add|share|upgrade|docs|docs-full|graph|tree|diff|output|events|tail|down|bug|agents|memory|openapi|token|claude|supervise|gc)\b/g
+      /\bsmithers\s+(up|workflow|init|gateway|serve|ps|logs|inspect|approve|deny|signal|cancel|pause|ui|gui|monitor|cron|eval|optimize|hijack|retry-task|rewind|fork|replay|timeline|snapshots|restore|revert|worktrees|human|ask-human|listeners|migrate|add|share|upgrade|docs|docs-full|graph|tree|diff|output|events|tail|down|bug|agents|memory|openapi|token|claude|supervise|gc)(?![\w-])/g
   },
   { kind: "cli-entry", pattern: /apps\/cli\/src\/index\.js/g },
   { kind: "mcp", pattern: /--mcp\b/g },

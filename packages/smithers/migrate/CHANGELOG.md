@@ -18,6 +18,9 @@
 - Classify a range whose partial lower bound precedes a complete upper bound
   (`>=0.35 <1.0.0`, `^0.35 || ^1.0.0`) by that lower bound instead of reading
   the upper bound as a 1.0 version.
+- Record the whole CLI verb a command script runs, so `smithers docs-full`
+  is reported as itself rather than as `smithers docs`, and `smithers
+  up-to-date` in an `echo` is no longer reported as `smithers up`.
 - Classify an `npm:` alias on `smithers` or an `@smthrs/` name by the package
   it installs, so `"smithers": "npm:smithers-orchestrator@^0.35"` is planned as
   the 0.x facade and `"smithers": "npm:left-pad@0.1.0"` is left alone.
