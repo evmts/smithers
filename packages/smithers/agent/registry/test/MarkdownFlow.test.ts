@@ -253,6 +253,22 @@ describe("MarkdownFlow", () => {
   })
 
   it.each([
+    ["a blank seat", "model: '   '"],
+    ["a mapping", "model:\n  seat: opus"]
+  ])("keeps the flow on the default seat and warns when model is %s", (_label, member) => {
+    const result = fromMarkdown(`---\ndescription: Review\n${member}\n---\nbody`)
+
+    expect(Option.isNone(Option.getOrThrow(result.descriptor).model)).toBe(true)
+    expect(result.warnings).toContainEqual(expect.objectContaining({ code: "invalid_model" }))
+  })
+
+  it("does not warn about a well-formed model", () => {
+    const result = fromMarkdown("---\ndescription: Review\nmodel: [opus, sol]\n---\nbody")
+
+    expect(result.warnings).not.toContainEqual(expect.objectContaining({ code: "invalid_model" }))
+  })
+
+  it.each([
     ["an explicit list", "capabilities: [Read, fs:write:src]", ["Read", "fs:write:src"], "compensable"],
     ["an empty list", "capabilities: []", [], "sealed"],
     ["a space-separated string", "capabilities: Read  Grep", ["Read", "Grep"], "sealed"],

@@ -153,6 +153,16 @@ export const fromMarkdown = (options: FromMarkdownOptions): FromMarkdownResult =
     })
     return { descriptor: Option.none(), warnings }
   }
+  // A blank or mapping seat falls back to the default seat, and says so: an
+  // author who wrote a model expects to read back why it was not used.
+  if (selected !== undefined && !validModels) {
+    warnings.push({
+      code: "invalid_model",
+      path: options.path,
+      name,
+      message: "Ignoring model; expected a non-empty seat name or a list of them"
+    })
+  }
   const model = validModels ? Option.some(selected) : Option.none<ModelSelection>()
   warnUnsupportedSchema(fields, options.path, warnings)
   warnUnknownFields(fields, options.path, warnings)

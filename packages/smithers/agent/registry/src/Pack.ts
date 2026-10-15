@@ -548,7 +548,9 @@ export interface Scan {
  * A name defined by more than one pack keeps the highest-precedence
  * definition and reports a `shadowed` warning naming both packs, so an
  * operator can see which pack lost and why rather than discovering it from a
- * flow that behaves unexpectedly.
+ * flow that behaves unexpectedly. A name one pack defines twice, for example
+ * under both `flows` and `skills`, keeps that pack's first definition and
+ * reports `duplicate_name` instead.
  *
  * @category combinators
  * @since 0.1.0
@@ -567,6 +569,21 @@ export const merge = (
     for (const entry of scan.entries) {
       const attributed = attribute(entry, scan.pack)
       const existing = kept.get(entry.name)
+      if (existing !== undefined && existing.pack === scan.pack) {
+        // One pack defining a name twice (say under `flows` and `skills`) is
+        // a duplicate inside that pack, not a pack shadowing itself.
+        warnings.push(
+          new DiscoveryWarning({
+            code: "duplicate_name",
+            path: entry.path,
+            name: entry.name,
+            message: `Duplicate flow name "${entry.name}" in ${
+              label(scan.pack)
+            }; keeping first entry from "${existing.descriptor.path}"`
+          })
+        )
+        continue
+      }
       if (existing !== undefined) {
         warnings.push(
           new DiscoveryWarning({

@@ -18,8 +18,10 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync 
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
+import * as Descriptor from "../src/Descriptor.ts"
 import * as Discovery from "../src/Discovery.ts"
 import * as Executable from "../src/Executable.ts"
+import * as MarkdownFlow from "../src/MarkdownFlow.ts"
 import * as Pack from "../src/Pack.ts"
 import * as Registry from "../src/Registry.ts"
 
@@ -717,36 +719,38 @@ describe("Pack.compatible", () => {
     expect(Pack.compatible("^0.0.3", "0.0.4")).toBe(false)
   })
 
-  it.each([
-    // A partial version is a range over its omitted components, as npm reads
-    // it: `~1` is `>=1.0.0 <2.0.0`, not `~1.0.0`.
-    ["~1", "1.5.0", true],
-    ["~1", "2.0.0", false],
-    ["~1.2", "1.2.9", true],
-    ["~1.2", "1.3.0", false],
-    ["^0", "0.5.0", true],
-    ["^0", "1.0.0", false],
-    ["^0.0", "0.0.7", true],
-    ["^0.0", "0.1.0", false],
-    ["^1", "1.9.0", true],
-    ["^1", "2.0.0", false],
-    ["1", "1.4.2", true],
-    ["1", "2.0.0", false],
-    ["=1.2", "1.2.5", true],
-    ["=1.2", "1.3.0", false],
-    [">1", "1.9.9", false],
-    [">1", "2.0.0", true],
-    [">1.2", "1.2.5", false],
-    [">1.2", "1.3.0", true],
-    ["<=1", "1.9.9", true],
-    ["<=1", "2.0.0", false],
-    ["<=1.2", "1.2.5", true],
-    ["<=1.2", "1.3.0", false],
-    [">=1.2", "1.2.0", true],
-    ["<1.2", "1.2.0", false],
-    ["1.0 - 1.2", "1.2.7", true],
-    ["1.0 - 1.2", "1.3.0", false]
-  ] as const)("reads the partial range %j against %s as npm does", (range, version, expected) => {
+  it.each(
+    [
+      // A partial version is a range over its omitted components, as npm reads
+      // it: `~1` is `>=1.0.0 <2.0.0`, not `~1.0.0`.
+      ["~1", "1.5.0", true],
+      ["~1", "2.0.0", false],
+      ["~1.2", "1.2.9", true],
+      ["~1.2", "1.3.0", false],
+      ["^0", "0.5.0", true],
+      ["^0", "1.0.0", false],
+      ["^0.0", "0.0.7", true],
+      ["^0.0", "0.1.0", false],
+      ["^1", "1.9.0", true],
+      ["^1", "2.0.0", false],
+      ["1", "1.4.2", true],
+      ["1", "2.0.0", false],
+      ["=1.2", "1.2.5", true],
+      ["=1.2", "1.3.0", false],
+      [">1", "1.9.9", false],
+      [">1", "2.0.0", true],
+      [">1.2", "1.2.5", false],
+      [">1.2", "1.3.0", true],
+      ["<=1", "1.9.9", true],
+      ["<=1", "2.0.0", false],
+      ["<=1.2", "1.2.5", true],
+      ["<=1.2", "1.3.0", false],
+      [">=1.2", "1.2.0", true],
+      ["<1.2", "1.2.0", false],
+      ["1.0 - 1.2", "1.2.7", true],
+      ["1.0 - 1.2", "1.3.0", false]
+    ] as const
+  )("reads the partial range %j against %s as npm does", (range, version, expected) => {
     expect(Pack.compatible(range, version)).toBe(expected)
   })
 
@@ -900,6 +904,34 @@ describe("Registry.layerFromPacks", () => {
 
     expect(result.review.provenance.pack?.name).toBe("acme/review")
     expect(result.warnings.filter((warning) => warning.code === "shadowed")).toHaveLength(1)
+  })
+
+  it("reports a name one pack defines twice as a duplicate, not as the pack shadowing itself", () => {
+    const provenance = new Descriptor.Provenance({ source: "pack", root: "/local" })
+    const flow = (path: string) =>
+      Option.getOrThrow(
+        MarkdownFlow.fromMarkdown({
+          text: "---\ndescription: Review\n---\n",
+          path,
+          baseDirectory: path.slice(0, path.lastIndexOf("/")),
+          naming: "path",
+          name: Option.some("review"),
+          dirBasename: "review",
+          provenance
+        }).descriptor
+      )
+    const pack = installed("/local", { ...localManifest, flows: ["flows"], skills: ["skills"] }, "local")
+    const result = Pack.merge([{
+      pack,
+      entries: [flow("/local/flows/review/SKILL.md"), flow("/local/skills/review/SKILL.md")],
+      warnings: []
+    }])
+
+    expect(result.entries.map((entry) => entry.path)).toEqual(["/local/flows/review/SKILL.md"])
+    expect(result.warnings.map((warning) => ({ code: warning.code, path: warning.path, name: warning.name })))
+      .toEqual([{ code: "duplicate_name", path: "/local/skills/review/SKILL.md", name: "review" }])
+    expect(result.warnings[0]!.message).toContain("/local/flows/review/SKILL.md")
+    expect(result.warnings[0]!.message).toContain("acme/review@1.2.0")
   })
 
   it("fails incompatible_pack when the runtime is outside requires.smithers", async () => {
