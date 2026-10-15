@@ -71,6 +71,27 @@ describe("CacheStore.rebuildHeads", () => {
       expect((yield* heads).map((row) => row.result_json)).toEqual(["\"late\""])
     })))
 
+  it.effect("uses the validated candidate key without rereading its accessor", () =>
+    migrated(Effect.gen(function*() {
+      const cache = yield* CacheStore
+      const first = entry({})
+      const other = entry({ keyDigest: "digest-b", result: "other" })
+      yield* cache.put(first)
+      yield* cache.put(other)
+      let reads = 0
+      const candidate = {
+        get keyDigest() {
+          return ++reads === 1 ? first.keyDigest : other.keyDigest
+        },
+        recordedRunId: first.recordedRunId,
+        recordedEventSeq: first.recordedEventSeq
+      }
+
+      expect(yield* CacheStoreLive.rebuildHeads([candidate])).toBe(1)
+      expect((yield* heads).map((row) => row.key_digest)).toEqual([first.keyDigest])
+      expect(reads).toBe(1)
+    })))
+
   it.effect("refuses two candidates for one key before touching a head", () =>
     migrated(Effect.gen(function*() {
       const cache = yield* CacheStore

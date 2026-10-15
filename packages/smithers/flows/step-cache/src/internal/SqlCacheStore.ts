@@ -371,15 +371,16 @@ export const rebuildHeads = Effect.fn("CacheStore.rebuildHeads")(function*(candi
   const writer = yield* DurableWriter
   const admitted = new Map<string, RecordedBy>()
   for (const candidate of candidates) {
-    yield* validateKey(candidate.keyDigest)
+    const keyDigest = candidate.keyDigest
+    yield* validateKey(keyDigest)
     const recordedBy = yield* validateRecordedBy(
       { runId: candidate.recordedRunId, eventSeq: candidate.recordedEventSeq },
       "rebuild candidate"
     )
-    if (admitted.has(candidate.keyDigest)) {
+    if (admitted.has(keyDigest)) {
       return yield* Effect.fail(error("invalid_cache", "rebuild candidates name one key twice"))
     }
-    admitted.set(candidate.keyDigest, recordedBy!)
+    admitted.set(keyDigest, recordedBy!)
   }
   yield* Effect.annotateCurrentSpan({ candidates: admitted.size })
   return yield* writer.write(Effect.gen(function*() {
