@@ -124,9 +124,10 @@ export const withLease = <A, E, R, E2>(
         acquire.pipe(Effect.andThen(
           Effect.scoped(Effect.gen(function*() {
             yield* Effect.forkScoped(
-              Effect.forever(
-                Effect.sleep(heartbeatEvery).pipe(
-                  Effect.andThen(gate(
+              Effect.gen(function*() {
+                while (true) {
+                  yield* Effect.sleep(heartbeatEvery)
+                  const reclaimed = yield* gate(
                     fs,
                     directory,
                     fs.readFileString(marker).pipe(
@@ -139,27 +140,36 @@ export const withLease = <A, E, R, E2>(
                         // lease stale and reaped it: deletion is no longer
                         // fenced while the backup still copies. The sibling
                         // `internal/ArtifactLocks.ts` heartbeat reports the same
-                        // loss the same way.
+                        // loss the same way. A reaped marker is never handed
+                        // back, so the loss is reported once and the heartbeat
+                        // ends instead of repeating it every tick.
                         if (Option.getOrUndefined(found) !== owner) {
-                          return Effect.logWarning(
-                            "Artifact backup lease was reclaimed while its backup was still running"
+                          return Effect.as(
+                            Effect.logWarning(
+                              "Artifact backup lease was reclaimed while its backup was still running"
+                            ),
+                            true
                           )
                         }
                         return Effect.flatMap(Clock.currentTimeMillis, (now) => {
                           const timestamp = new Date(now)
-                          return fs.utimes(marker, timestamp, timestamp)
+                          return Effect.as(fs.utimes(marker, timestamp, timestamp), false)
                         })
                       }),
                       Effect.mapError(failure)
                     ),
                     failure
-                  )),
-                  // A failed heartbeat is retried on the next tick, but a
-                  // minute of them lets the marker go stale, so each one is
-                  // reported rather than dropped.
-                  Effect.catch((cause) => Effect.logWarning("Artifact backup lease heartbeat failed", cause))
-                )
-              )
+                  ).pipe(
+                    // A failed heartbeat is retried on the next tick, but a
+                    // minute of them lets the marker go stale, so each one is
+                    // reported rather than dropped.
+                    Effect.catch((cause) =>
+                      Effect.as(Effect.logWarning("Artifact backup lease heartbeat failed", cause), false)
+                    )
+                  )
+                  if (reclaimed) return
+                }
+              })
             )
             return yield* effect
           }))

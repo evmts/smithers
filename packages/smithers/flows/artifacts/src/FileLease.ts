@@ -37,7 +37,7 @@
 
 import * as Clock from "effect/Clock"
 import * as Deferred from "effect/Deferred"
-import type * as Duration from "effect/Duration"
+import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
 import * as Option from "effect/Option"
@@ -57,7 +57,11 @@ export interface Options {
   readonly annotations?: Readonly<Record<string, unknown>> | undefined
   /** How often the holder refreshes the lock's mtime. Defaults to 10 seconds. */
   readonly heartbeatEvery?: Duration.Input | undefined
-  /** Age past which a lock or claim is stale. Defaults to 60 000 ms. */
+  /**
+   * Age past which a lock or claim is stale. Defaults to 60 000 ms. Must be a
+   * finite positive number longer than `heartbeatEvery`; anything else fails
+   * the lease through `failure` before the lock is touched.
+   */
   readonly staleAfterMs?: number | undefined
   /** How long acquisition may wait. Defaults to 2 minutes. */
   readonly acquireWithin?: Duration.Input | undefined
@@ -132,6 +136,19 @@ export const hold = <A, E, R, E2>(
     const heartbeatEvery = options.heartbeatEvery ?? "10 seconds"
     const staleAfterMs = options.staleAfterMs ?? defaultStaleAfterMs
     const retryEvery = options.retryEvery ?? "25 millis"
+    // A holder heartbeats its lock to stay fresh, so a stale bound at or below
+    // the heartbeat, or one that is not a positive finite number, would let a
+    // contender read a live holder's lock as abandoned and move it, or would
+    // never reclaim a dead holder's lock at all.
+    const heartbeatMs = Option.map(Duration.fromInput(heartbeatEvery), Duration.toMillis)
+    if (
+      typeof staleAfterMs !== "number" || !Number.isFinite(staleAfterMs) || staleAfterMs <= 0 ||
+      Option.isNone(heartbeatMs) || !(heartbeatMs.value > 0 && heartbeatMs.value < staleAfterMs)
+    ) {
+      return yield* Effect.fail(
+        failure(new RangeError(`${label} needs 0 < heartbeatEvery < staleAfterMs, with a finite staleAfterMs`))
+      )
+    }
     const owner = yield* token
     /**
      * Whether this call created the lock file, and therefore owes a release.

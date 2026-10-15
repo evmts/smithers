@@ -66,6 +66,31 @@ describe("FileLease", () => {
       expect(yield* fs.readDirectory(directory)).toEqual([])
     })))
 
+  it.effect.each(
+    [
+      { staleAfterMs: 0 },
+      { staleAfterMs: -1 },
+      { staleAfterMs: Number.NaN },
+      { staleAfterMs: Number.POSITIVE_INFINITY },
+      { staleAfterMs: 10_000 },
+      { staleAfterMs: 5_000, heartbeatEvery: "5 seconds" },
+      { heartbeatEvery: "2 minutes" }
+    ] as const
+  )("refuses %o before it can displace a live holder", (options) =>
+    onNode(Effect.gen(function*() {
+      yield* wallClock
+      const { fs, lockPath } = yield* temp
+      // A fresh lock heartbeated by a live holder in another process. A stale
+      // bound at or below the heartbeat would read it as abandoned and move it.
+      yield* fs.writeFileString(lockPath, "live-owner")
+      yield* backdate(fs, lockPath, 1_000)
+      const exit = yield* FileLease.hold(fs, lockPath, Effect.succeed("ran"), (cause) => cause, options).pipe(
+        Effect.exit
+      )
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(yield* fs.readFileString(lockPath)).toBe("live-owner")
+    })))
+
   it.effect("reclaims a stale legacy lock directory", () =>
     onNode(Effect.gen(function*() {
       yield* wallClock

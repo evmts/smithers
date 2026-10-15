@@ -435,6 +435,39 @@ describe("ArtifactBackupLease", () => {
       expect(logged.flat()).toContain("Artifact backup lease was reclaimed while its backup was still running")
     }))
 
+  it.effect("warns once when its marker is reclaimed, not on every later heartbeat", () =>
+    Effect.gen(function*() {
+      // A reclaimed marker is never handed back, so the state is terminal: a
+      // backup that runs for minutes past the reclaim must not repeat the
+      // warning every heartbeat until it finishes.
+      const fixture = host()
+      const logged: Array<unknown> = []
+      const capture = Logger.make<unknown, void>(({ message }) => {
+        logged.push(message)
+      })
+      const entered = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const running = yield* ArtifactBackupLease.withLease(
+        fixture.fs,
+        directory,
+        Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release))),
+        failure
+      ).pipe(Effect.provide(Logger.layer([capture])), Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.await(entered)
+      fixture.files.set(marker, "replacement")
+      for (let beat = 0; beat < 6; beat++) {
+        yield* TestClock.adjust("10 seconds")
+        yield* Effect.yieldNow
+      }
+      yield* Deferred.succeed(release, undefined)
+      yield* Fiber.join(running)
+      expect(
+        logged.flat().filter((message) =>
+          message === "Artifact backup lease was reclaimed while its backup was still running"
+        )
+      ).toHaveLength(1)
+    }))
+
   it.effect("keeps the lease through heartbeat and release read refusals, and warns", () =>
     Effect.gen(function*() {
       const logged: Array<unknown> = []
