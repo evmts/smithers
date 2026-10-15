@@ -35,6 +35,28 @@ export type DockerTool =
   | { readonly ok: false; readonly refusal: string; readonly identity: unknown }
 
 /**
+ * The first `docker-container` builder `buildx ls` lists whose node lines are
+ * not all in `error`. A builder whose every node is unreachable, such as a
+ * remote one behind a dead tunnel, fails every build, while omitting
+ * `--builder` leaves buildx on the current builder.
+ */
+const containerBuilder = (listing: string): string | undefined => {
+  const lines = listing.split("\n")
+  for (const [index, line] of lines.entries()) {
+    const name = /^(\S+)\s+docker-container\s*$/.exec(line)?.[1]
+    if (name === undefined) continue
+    const nodes: Array<string> = []
+    for (const next of lines.slice(index + 1)) {
+      if (!/^\s/.test(next)) break
+      nodes.push(next)
+    }
+    if (nodes.length > 0 && nodes.every((node) => /\serror\b/.test(node))) continue
+    return name.replace(/\*$/, "")
+  }
+  return undefined
+}
+
+/**
  * Resolves Docker and verifies that its daemon answers.
  *
  * `environment` is the environment the plan resolved, already stripped of the
@@ -69,7 +91,7 @@ export const resolveDocker = async (
   const version = await probe(["--version"])
   const daemon = await probe(["info", "--format", "{{.ServerVersion}}"])
   const builders = daemon.exitCode === 0 ? await probe(["buildx", "ls"]) : undefined
-  const builder = builders?.output.match(/^(\S+)\s+docker-container\s*$/m)?.[1]?.replace(/\*$/, "")
+  const builder = builders === undefined ? undefined : containerBuilder(builders.output)
   const identity = { tag: "Docker", path, version, daemon, builder: builder ?? null }
   return daemon.exitCode === 0
     ? { ok: true, path, builder, identity }

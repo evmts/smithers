@@ -96,11 +96,14 @@ export interface Resolution {
 const packageLabel = (packagePath: string): string => packagePath === "" ? "//" : `//${packagePath}`
 
 const normalizePath = (path: string): string => {
-  const normalized = path.replaceAll("\\", "/").replace(/^\.\//, "").replace(/^\/+/, "").replace(/\/+$/, "")
-  if (normalized === "" || normalized === "." || normalized.split("/").includes("..")) {
+  // Drop empty and `.` segments so every spelling of a path lands on the
+  // package that owns it; a path that reached the wrong package would need
+  // the wrong approvers.
+  const segments = path.replaceAll("\\", "/").split("/").filter((segment) => segment !== "" && segment !== ".")
+  if (segments.length === 0 || segments.includes("..")) {
     throw new Error(`owners paths must be workspace-relative: ${JSON.stringify(path)}`)
   }
-  return normalized
+  return segments.join("/")
 }
 
 /**

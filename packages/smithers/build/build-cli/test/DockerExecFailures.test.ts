@@ -119,6 +119,22 @@ describe.skipIf(process.platform === "win32")("Docker resolution failures", () =
     expect(second).toEqual(first)
     expect(await docker.calls()).toEqual(["--version", "info --format {{.ServerVersion}}", "buildx ls"])
   })
+
+  it("skips a docker-container builder whose every node is in error", async () => {
+    const remote = "remote docker-container\n \\_ remote0 \\_ buildhost error\n \\_ remote1 \\_ buildhost2 error\n"
+    const local = "local* docker-container\n \\_ local0 \\_ desktop-linux running v0.29.0 linux/arm64\n"
+    const header = "NAME/NODE DRIVER/ENDPOINT STATUS BUILDKIT PLATFORMS\n"
+    const fallback = await host({ builders: `${header}${remote}${local}default docker\n` })
+    expect(await DockerExec.resolveDocker(fallback.environment)).toMatchObject({ ok: true, builder: "local" })
+    const partial = await host({
+      builders: `${header}mixed docker-container\n \\_ mixed0 \\_ a error\n \\_ mixed1 \\_ b inactive\n`
+    })
+    expect(await DockerExec.resolveDocker(partial.environment)).toMatchObject({ ok: true, builder: "mixed" })
+    const onlyBroken = await host({ builders: `${header}${remote}orbstack* docker\n` })
+    const resolved = await DockerExec.resolveDocker(onlyBroken.environment)
+    expect(resolved).toMatchObject({ ok: true, identity: { builder: null } })
+    expect(resolved.ok && resolved.builder).toBeUndefined()
+  })
 })
 
 describe.skipIf(process.platform === "win32")("Docker plans", () => {

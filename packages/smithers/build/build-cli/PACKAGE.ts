@@ -7,6 +7,8 @@ const cwd = "packages/smithers/build/build-cli"
 const sources = Smithers.glob("src/**/*.ts")
 const javascript = Smithers.glob("src/**/*.js")
 const tests = Smithers.glob("test/**/*.test.ts")
+/** Runnable examples; `test/examples.test.ts` imports and runs each one. */
+const examples = Smithers.glob("examples/**/*.ts")
 
 /**
  * The workspace trees the suites load: PACKAGE.ts and WORKSPACE.ts fixtures,
@@ -51,7 +53,7 @@ const lib = Smithers.TsBuild({
 })
 
 const check = Smithers.Typecheck({
-  srcs: [sources, javascript, Smithers.glob("test/**/*.ts")],
+  srcs: [sources, javascript, examples, Smithers.glob("test/**/*.ts")],
   deps: [lib],
   tsconfig: Smithers.file("tsconfig.test.json"),
   buildMode: false,
@@ -61,7 +63,7 @@ const check = Smithers.Typecheck({
 
 const test = Smithers.Vitest({
   tests: [tests],
-  sources: [sources, javascript, fixtures, routedFixture, prose, readme, sweep],
+  sources: [sources, javascript, examples, fixtures, routedFixture, prose, readme, sweep],
   deps: [lib],
   config: Smithers.file("vitest.config.ts"),
   environment: "node",
@@ -76,7 +78,7 @@ const test = Smithers.Vitest({
 })
 
 const lint = Smithers.EsLint({
-  sources: [sources, javascript],
+  sources: [sources, javascript, examples],
   deps: [],
   configs: [Smithers.file("eslint.config.js"), rootJSDocConfig, rootInvariantsConfig],
   maxWarnings: 0,
@@ -85,7 +87,7 @@ const lint = Smithers.EsLint({
 })
 
 const fmt = Smithers.Dprint({
-  sources: [sources, javascript, Smithers.glob("test/**/*.ts")],
+  sources: [sources, javascript, examples, Smithers.glob("test/**/*.ts")],
   deps: [],
   config: Smithers.file("dprint.json"),
   fix: false,

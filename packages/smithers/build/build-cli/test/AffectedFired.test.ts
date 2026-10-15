@@ -205,11 +205,14 @@ const linkTestModules = async (root: string) => {
   // target by a path relative to the shim's own directory, and the fixture
   // package sits two levels shallower than this one, so this package's shim,
   // linked in, climbs out of the workspace (`/node_modules/.pnpm/...`). The
-  // fixture's bin runs the shim's recorded target, which lives in the root
-  // store the linked root `node_modules` already exposes.
+  // fixture's bin runs the shim's recorded target resolved into the root
+  // store, which the linked root `node_modules` already exposes. pnpm records
+  // the target through this package's own `node_modules/vitest` link, a
+  // directory the fixture's sandboxed run cannot read, so resolve it first.
   const shim = await Fs.readFile(Path.resolve(import.meta.dirname, "../node_modules/.bin/vitest"), "utf8")
-  const target = /^# cmd-shim-target=(.+)$/m.exec(shim)?.[1]
-  expect(target, "pnpm's vitest shim records its target").toBeDefined()
+  const recorded = /^# cmd-shim-target=(.+)$/m.exec(shim)?.[1]
+  expect(recorded, "pnpm's vitest shim records its target").toBeDefined()
+  const target = await Fs.realpath(recorded!)
   const bin = Path.join(root, "packages/dependency/node_modules/.bin/vitest")
   await Fs.mkdir(Path.dirname(bin), { recursive: true })
   await Fs.writeFile(bin, `#!/bin/sh\nexec node ${JSON.stringify(target)} "$@"\n`, { mode: 0o755 })

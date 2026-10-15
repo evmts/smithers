@@ -8,7 +8,7 @@
     "composite": false,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*", "test/**/*"],
+  "include": ["src/**/*", "test/**/*", "examples/**/*"],
   "exclude": [
     "test/fixtures/force-spec/**/*",
     "test/fixtures/rsbuild-mini/**/*",

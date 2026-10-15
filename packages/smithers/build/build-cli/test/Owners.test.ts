@@ -343,6 +343,15 @@ describe("ownership renderer projections", () => {
       { packagePath: "sibling", value: S.Package({ owners: { owners: ["sibling-owner"] }, targets: {} }) }
     ])
 
+  it("resolves a path with dot or empty segments to the package it names", () => {
+    const index = nestedIndex()
+    const spelled = Owners.resolve(index, ["nested/./isolated//schema.sql", "./nested/isolated/schema.sql"])
+    expect(spelled.touchedPaths.map((entry) => [entry.path, entry.package])).toEqual([
+      ["nested/isolated/schema.sql", "//nested/isolated"]
+    ])
+    expect(spelled.requiredApprovers).toEqual(Owners.resolve(index, ["nested/isolated/schema.sql"]).requiredApprovers)
+  })
+
   it.each([
     "nested/query.sql",
     "nested/inner/query.sql",

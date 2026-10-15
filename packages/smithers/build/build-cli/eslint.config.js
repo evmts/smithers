@@ -31,7 +31,7 @@ export default tseslint.config(
     }
   },
   {
-    files: ["src/**/*.ts"],
+    files: ["src/**/*.ts", "examples/**/*.ts"],
     extends: [tseslint.configs.recommended],
     languageOptions: {
       parserOptions: {
@@ -81,6 +81,17 @@ export default tseslint.config(
       "unicorn/no-abusive-eslint-disable": "error",
       "unicorn/no-accessor-recursion": "error",
       "unicorn/prefer-array-flat-map": "error"
+    }
+  },
+  {
+    // tsconfig.json covers only src/, so the project service cannot find the
+    // examples; tsconfig.test.json, which the typecheck target uses, does.
+    files: ["examples/**/*.ts"],
+    languageOptions: {
+      parserOptions: {
+        projectService: false,
+        project: "./tsconfig.test.json"
+      }
     }
   },
   {
