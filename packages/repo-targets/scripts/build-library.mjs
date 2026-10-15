@@ -61,7 +61,15 @@ export const buildLibrary = async (packageRoot, { esmOnly = [], declarationTimeo
     sourcemap: true
   })
   for (const file of files(cjs).filter((file) => file.endsWith(".js"))) {
-    writeFileSync(file, readFileSync(file, "utf8").replace(/(require\(["'](?:\.\.?\/)[^"']+)\.ts(["']\))/g, "$1.js$2"))
+    const text = readFileSync(file, "utf8")
+      // A lazy `import("./x.ts")` kept as-is names a .ts file the branch does
+      // not ship, and Node's import() of an esbuild CommonJS module exposes
+      // only `default`. Lowered to require(), it gets the .js rewrite below and
+      // the named exports the ESM branch has. Computed and package specifiers
+      // stay import(): require() cannot load a file URL or an ESM-only module.
+      .replace(/(?<![\w$.])import\((["'])(\.\.?\/[^"'\n]+)\1\)/g, "Promise.resolve().then(() => require($1$2$1))")
+      .replace(/(require\(["'](?:\.\.?\/)[^"']+)\.ts(["']\))/g, "$1.js$2")
+    writeFileSync(file, text)
   }
   copyCommonJsDeclarations(packageRoot)
   await buildPrivateEffectAdapters(packageRoot)

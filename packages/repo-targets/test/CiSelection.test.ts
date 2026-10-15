@@ -28,6 +28,7 @@ it("CI runs the package pattern that holds the coverage-enabled test target and 
       { _tag: "Glob", pattern: "src/**/*.ts", exclude: [] },
       { _tag: "Glob", pattern: "test/**/*.ts", exclude: [] },
       { _tag: "Glob", pattern: "test-utils/**", exclude: [] },
+      { _tag: "Glob", pattern: "scripts/**", exclude: [] },
       { _tag: "File", path: "PACKAGE.ts" }
     ]
   })

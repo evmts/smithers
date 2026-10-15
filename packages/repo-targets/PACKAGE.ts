@@ -4,9 +4,15 @@ import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "./src/index.ts"
 const cwd = "packages/repo-targets"
 const sources = Smithers.glob("src/**/*.ts")
 // Files the cases import or read beside the suites themselves: the shared
-// test helpers, the property helper every package typechecks against, and
-// this declaration, which `CiSelection.test.ts` loads.
-const testSupportFiles = [Smithers.glob("test/**/*.ts"), Smithers.glob("test-utils/**"), Smithers.file("PACKAGE.ts")]
+// test helpers, the property helper every package typechecks against, the
+// build scripts `BuildLibrary.test.ts` runs, and this declaration, which
+// `CiSelection.test.ts` loads.
+const testSupportFiles = [
+  Smithers.glob("test/**/*.ts"),
+  Smithers.glob("test-utils/**"),
+  Smithers.glob("scripts/**"),
+  Smithers.file("PACKAGE.ts")
+]
 const testSupport = Smithers.Filegroup({
   srcs: [Smithers.file("//packages/smithers/build/targets/test-support/plan.ts")],
   cwd
@@ -82,7 +88,7 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "A spawnSync or exec in build-library.mjs that uses a shell or a string command instead of process.execPath with an argv array.",
         "rmSync, cpSync, or writeFileSync whose target is not confined under packageRoot/dist, or that follows a symlink out of it.",
-        "The require-path rewrite regex rewriting non-relative specifiers or content outside require() calls in emitted CommonJS."
+        "The require-path rewrite or import() lowering regex rewriting non-relative or computed specifiers, or content outside require() and import() calls, in emitted CommonJS."
       ],
       paths: ["scripts/**"]
     },
