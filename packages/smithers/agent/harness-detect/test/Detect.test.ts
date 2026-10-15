@@ -80,6 +80,26 @@ describe("version output at the detection boundary", () => {
 })
 
 describe("the candidate dirs", () => {
+  test.each(["darwin", "win32"])("rejects malformed nvm directory entries on %s", (platform) => {
+    const h: HarnessHost = {
+      ...host({ platform }),
+      // An injected host can supply malformed entries; no real filesystem or process is needed.
+      listDir: () => [
+        "v24.1.0",
+        "v24.1.0/../../../../outside",
+        "v24.1.0\\..\\..\\..\\..\\outside",
+        "v24.1.0-junk",
+        "v24.1.00\n"
+      ]
+    }
+    const candidates = harnessCandidateDirs(h)
+    expect(candidates.some((dir) => dir.includes("outside"))).toBe(false)
+    expect(findBinary("claude", { ...h, isFile: (path) => path.includes("outside") })).toBeNull()
+    const dirs = candidates.filter((dir) => dir.includes(".nvm"))
+    expect(dirs).toHaveLength(1)
+    expect(dirs[0]).toContain("v24.1.0")
+  })
+
   test("callers without a platform keep the native path convention", () => {
     expect(harnessCandidateDirs({ home: HOME, listDir: () => [] })[0]).toBe(join(HOME, ".local", "bin"))
   })

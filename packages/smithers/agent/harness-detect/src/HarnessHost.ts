@@ -82,8 +82,8 @@ export const harnessCandidateDirs = (
   ]
 }
 
-/** A node version directory: `v24.1.0`, or the same without the `v`. */
-const NODE_DIR = /^v?(\d+)\.(\d+)\.(\d+)/
+/** A complete node version directory; the end assertion also rejects trailing newlines. */
+const NODE_DIR = /^v?(\d+)\.(\d+)\.(\d+)(?![\s\S])/
 
 /**
  * Newest first, by the three captured numbers. Both arguments are matches of
