@@ -349,6 +349,39 @@ describe("OpenAIChatCompletions.protocol.stream", () => {
     ])
   })
 
+  it("separates parallel tool calls a server sends under one reused index", () => {
+    // vLLM and older Ollama builds number every complete call `index: 0`; the
+    // fresh id and name say it is a second call, not more arguments.
+    const events = replayData([
+      "{\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_a\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{\\\"q\\\":1}\"}}]}}]}",
+      "{\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_b\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{\\\"q\\\":2}\"}}]}}]}",
+      "{\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_b\",\"function\":{\"arguments\":\"\"}}]}}]}",
+      "{\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}"
+    ])
+
+    expect(events).toEqual([
+      { type: "tool-call-start", id: "call_a", name: "lookup" },
+      { type: "tool-call-delta", id: "call_a", arguments: "{\"q\":1}" },
+      { type: "tool-call-start", id: "call_b", name: "lookup" },
+      { type: "tool-call-delta", id: "call_b", arguments: "{\"q\":2}" },
+      { type: "tool-call-end", id: "call_a", arguments: "{\"q\":1}" },
+      { type: "tool-call-end", id: "call_b", arguments: "{\"q\":2}" },
+      { type: "settle", stopReason: "tool-calls" }
+    ])
+  })
+
+  it("keeps appending to a call whose every delta repeats its id and index", () => {
+    const events = replayData([
+      "{\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_a\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{\\\"q\\\"\"}}]}}]}",
+      "{\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_a\",\"function\":{\"name\":\"lookup\",\"arguments\":\":1}\"}}]}}]}",
+      "{\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}"
+    ])
+
+    expect(events.filter((event) => event.type === "tool-call-end")).toEqual([
+      { type: "tool-call-end", id: "call_a", arguments: "{\"q\":1}" }
+    ])
+  })
+
   it("opens a nameless tool call as a typed provider fault", () => {
     const error = Effect.runSync(Effect.flip(
       OpenAIChatCompletions.protocol.stream.step(
