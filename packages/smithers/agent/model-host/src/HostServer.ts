@@ -17,7 +17,8 @@ import { z } from "zod"
 import { runContextPreflight } from "./ContextPreflight.ts"
 import { runDurableChatTurn } from "./DurableChatProducer.ts"
 import type { DurableChatGrant } from "./DurableChatProducer.ts"
-import type { HostDiagnosticFields } from "./HostDiagnostics.ts"
+import { createHostDiagnostics } from "./HostDiagnostics.ts"
+import type { HostDiagnosticFields, HostDiagnostics } from "./HostDiagnostics.ts"
 import { boundedJson } from "./internal/BoundedJson.ts"
 import type { ProducerError, ResolveFailed } from "./ModelHostError.ts"
 import { StreamTooLarge } from "./ModelHostError.ts"
@@ -259,7 +260,9 @@ const providerResponse = (code: string): TurnFailure["response"] =>
     "provider_auth"
     : "turn_failed"
 
-const classify = (cause: Cause.Cause<ResolveFailed | ProducerError | Model.ModelFailure>): TurnFailure => {
+const classify = (
+  cause: Cause.Cause<ResolveFailed | ProducerError | Model.ModelFailure | StreamTooLarge>
+): TurnFailure => {
   const error = Option.getOrUndefined(Cause.findErrorOption(cause))
   if (error === undefined) {
     return Cause.hasInterruptsOnly(cause)
@@ -279,6 +282,35 @@ const classify = (cause: Cause.Cause<ResolveFailed | ProducerError | Model.Model
     ...("transport" in error && error.transport !== undefined ? { transport: error.transport } : {}),
     response: "turn_failed"
   }
+}
+
+/**
+ * The stage a sealed model stream stopped at, and what stopped it there:
+ * `classify`'s fixed tags, provider codes and statuses, which is what the
+ * turn route already answers with and what `createHostDiagnostics` is built
+ * to be safe to write. No message, destination, header or credential reaches
+ * either the record or the response.
+ *
+ * Why it exists: a bare `stream_failed` with a swallowed cause made a resolve
+ * refusal, a provider outage and an oversized stream the same answer. On
+ * 2026-10-14 a sealed stream that refused its owner's configured model
+ * (an origin the guest could not match) looked exactly like a provider that
+ * never answered, and the stage had to be found by bisecting the environment.
+ */
+const streamRefused = (
+  diagnostics: HostDiagnostics,
+  stage: "resolve" | "stream",
+  cause: Cause.Cause<ResolveFailed | ProducerError | Model.ModelFailure | StreamTooLarge>
+): Response => {
+  const classified = classify(cause)
+  const refusal = {
+    stage,
+    failure: classified.failure,
+    ...(classified.code === undefined ? {} : { providerCode: classified.code }),
+    ...(classified.status === undefined ? {} : { status: classified.status })
+  }
+  diagnostics.record("model_stream", "refused", refusal)
+  return Response.json({ status: "error", code: "stream_failed", ...refusal }, { status: 502 })
 }
 
 const digest = (value: string): Buffer => createHash("sha256").update(value).digest()
@@ -337,28 +369,35 @@ export const createModelTurnHandler = (options: ModelTurnHandlerOptions): (reque
         request: body,
         producerBaseUrl: callbackBaseUrl
       }
-      try {
-        const resolved = await Effect.runPromise(options.resolve(grant), { signal: request.signal })
-        const encoder = new TextEncoder()
-        const lines: Array<string> = []
-        let size = 0
-        await Effect.runPromise(
-          runModelTurn(resolved.model, body, resolved.options, (frame: AgentTurnFrame) => {
+      const diagnostics = createHostDiagnostics({ turnId: grant.turnId })
+      const resolveExit = await Effect.runPromiseExit(options.resolve(grant), { signal: request.signal })
+      if (Exit.isFailure(resolveExit)) return streamRefused(diagnostics, "resolve", resolveExit.cause)
+      const resolved = resolveExit.value
+      const encoder = new TextEncoder()
+      const lines: Array<string> = []
+      let size = 0
+      const streamExit = await Effect.runPromiseExit(
+        runModelTurn(
+          resolved.model,
+          body,
+          resolved.options,
+          (frame: AgentTurnFrame) => {
             const line = `${JSON.stringify(frame)}\n`
             size += encoder.encode(line).byteLength
             if (size > MAX_STREAM_BYTES) return Effect.fail(new StreamTooLarge({ limitBytes: MAX_STREAM_BYTES }))
             lines.push(line)
             return Effect.void
-          }),
-          { signal: request.signal }
-        )
-        return new Response(lines.join(""), {
-          status: 200,
-          headers: { "content-type": "application/x-ndjson", "cache-control": "no-store" }
-        })
-      } catch {
-        return Response.json({ status: "error", code: "stream_failed" }, { status: 502 })
-      }
+          },
+          undefined,
+          diagnostics
+        ),
+        { signal: request.signal }
+      )
+      if (Exit.isFailure(streamExit)) return streamRefused(diagnostics, "stream", streamExit.cause)
+      return new Response(lines.join(""), {
+        status: 200,
+        headers: { "content-type": "application/x-ndjson", "cache-control": "no-store" }
+      })
     }
     if (url.pathname === MODEL_HOST_CONTEXT_SELECT_PATH) {
       if (request.method !== "POST") return new Response("Method not allowed", { status: 405 })

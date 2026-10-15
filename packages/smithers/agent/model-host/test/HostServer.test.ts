@@ -236,10 +236,40 @@ test.each([undefined, 1.5])(
   }
 )
 
-test("the model stream hides resolver diagnostics on failure", async () => {
+test("the model stream names the stage that refused it and hides the resolver's diagnostic", async () => {
   const response = await createModelTurnHandler(options)(streamPost({ runId: "run", messages: [] }))
   expect(response.status).toBe(502)
-  expect(await response.json()).toEqual({ status: "error", code: "stream_failed" })
+  // The stage and the failure's tag, never the resolver's message: a refused
+  // model is told apart from a provider that never answered without reading
+  // cause text.
+  expect(await response.json()).toEqual({
+    status: "error",
+    code: "stream_failed",
+    stage: "resolve",
+    failure: "ResolveFailed"
+  })
+})
+
+test("a refused model stream records its stage on the guest's diagnostics", async () => {
+  const records: Array<Record<string, unknown>> = []
+  const write = vi.spyOn(process.stderr, "write").mockImplementation((line: any) => {
+    for (const row of String(line).trim().split("\n")) records.push(JSON.parse(row))
+    return true
+  })
+  try {
+    const response = await createModelTurnHandler(options)(streamPost({ runId: "run", messages: [] }))
+    expect(response.status).toBe(502)
+  } finally {
+    write.mockRestore()
+  }
+  expect(records).toEqual(expect.arrayContaining([expect.objectContaining({
+    event: "model_stream",
+    phase: "refused",
+    stage: "resolve",
+    failure: "ResolveFailed",
+    turnId: "model-stream-run"
+  })]))
+  expect(JSON.stringify(records)).not.toContain("private provider diagnostic")
 })
 
 test.each([
@@ -554,7 +584,12 @@ test("the model stream refuses a response that outgrows the stream byte ceiling"
       })
   })(streamPost({ runId: "run", messages: [] }))
   expect(response.status).toBe(502)
-  expect(await response.json()).toEqual({ status: "error", code: "stream_failed" })
+  expect(await response.json()).toEqual({
+    status: "error",
+    code: "stream_failed",
+    stage: "stream",
+    failure: "StreamTooLarge"
+  })
 })
 
 test("trusted preflight precedes the answer and its choices cross the durable HTTP journal", async () => {
