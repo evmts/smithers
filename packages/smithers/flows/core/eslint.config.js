@@ -13,11 +13,14 @@ export default tseslint.config(
   importPlugin.flatConfigs.recommended,
   importPlugin.flatConfigs.typescript,
   {
-    files: ["src/**/*.ts"],
+    files: ["src/**/*.ts", "examples/**/*.ts"],
     extends: [tseslint.configs.recommended],
     languageOptions: {
       parserOptions: {
-        projectService: true,
+        projectService: {
+          allowDefaultProject: ["examples/*.ts"],
+          defaultProject: "tsconfig.test.json"
+        },
         tsconfigRootDir: import.meta.dirname
       }
     },
