@@ -1,3 +1,4 @@
+import * as FastCheck from "fast-check"
 import { createHash } from "node:crypto"
 import { describe, expect, it } from "vitest"
 import { makeDigestPartsSync } from "../src/Sha256.ts"
@@ -125,4 +126,38 @@ it("normalizes indexed fragment access failures and preserves the last successfu
   }))
   expect(hash(["prefix", "tail"])).toBe(expected)
   expect(hash(["prefix", "changed"])).toBe(createHash("sha256").update("prefixchanged").digest("hex"))
+})
+
+it("matches Node SHA-256 throughout randomized edits and failed-call recovery", () => {
+  const fragment = FastCheck.array(
+    FastCheck.constantFrom("a", "🙂", "é", "\0", "\u0301", "x".repeat(64)),
+    { maxLength: 5 }
+  ).map((units) => units.join(""))
+  const edit = FastCheck.record({
+    keep: FastCheck.nat(5),
+    append: FastCheck.array(fragment, { maxLength: 5 }),
+    reject: FastCheck.boolean()
+  })
+  const expected = (parts: ReadonlyArray<string>) => createHash("sha256").update(parts.join("")).digest("hex")
+  FastCheck.assert(
+    FastCheck.property(FastCheck.array(edit, { minLength: 1, maxLength: 15 }), (edits) => {
+      const hash = makeDigestPartsSync()
+      let previous: Array<string> = []
+      for (const { keep, append, reject } of edits) {
+        const next = [...previous.slice(0, keep), ...append]
+        if (reject) {
+          expect(() => hash([...next, "\ud800"])).toThrow(expect.objectContaining({ code: "invalid_text" }))
+          expect(hash(previous)).toBe(expected(previous))
+        }
+        expect(hash(next)).toBe(expected(next))
+        previous = next
+      }
+    }),
+    {
+      numRuns: Number(process.env.FC_NUM_RUNS ?? 100),
+      ...(process.env.FC_SEED === undefined ? {} : { seed: Number(process.env.FC_SEED) }),
+      interruptAfterTimeLimit: 20_000,
+      markInterruptAsFailure: true
+    }
+  )
 })
