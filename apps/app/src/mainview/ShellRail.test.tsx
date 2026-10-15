@@ -13,7 +13,8 @@ import { createRoot } from "react-dom/client"
 import type { ShellView, ToastCard } from "@smthrs/rpc/ToastCard"
 import type { TimelineLine } from "@smthrs/rpc/TimelineCard"
 import { EdgeMap } from "./EdgeMap"
-import { ShellRail, sharedRailLines, homeLine, railEdges, railLines, railNotices, timelineActions, type RailEntry } from "./ShellRail"
+import { conversationRailLines, ShellRail, sharedRailLines, homeLine, railEdges, railLines, railNotices, timelineActions, type RailEntry, type SharedTurnFrames } from "./ShellRail"
+import { TranscriptOrder } from "./state/TranscriptOrder"
 import { MessageScrollerProvider } from "@smthrs/ui"
 import { ControllerTestProvider } from "./ControllerContext"
 import { createAppStore } from "./state/AppStore"
@@ -517,4 +518,69 @@ test("setup failures render while the shared view never loads", async () => {
   const host = mount(<ControllerTestProvider controller={controller}><MessageScrollerProvider><ShellRail home={false} entries={[]} /></MessageScrollerProvider></ControllerTestProvider>)
   await waitFor(() => host.querySelectorAll(".notice").length === 1)
   expect(host.textContent).toContain("Setup refused")
+})
+
+
+/*
+ * The rail showed every shared turn above every local card, however old the
+ * turn was, because it concatenated the two lists instead of merging them:
+ * shared history and private output carry independent ordinals. The transcript
+ * already merges them through TranscriptOrder, so the rail's last line — the
+ * newest thing it claims to show, and the side the edge map counts a new
+ * arrival on — disagreed with the transcript's end.
+ */
+describe("the rail reads the transcript's own order", () => {
+  const scope = JSON.stringify(["alice", null, "smithersai/smithers", "main"])
+  const sharedTurn = (id: string, sequence: number, frames: SharedTurnFrames = []) =>
+    ({ id, sequence, author: 2, authorLogin: "alice", runId: id, prompt: "Run tests", state: "completed" as const, frames })
+  const anchors = (...rows: Array<[string, number, number]>) => Object.fromEntries(
+    rows.map(([id, afterSequence, localOrdinal]) => [TranscriptOrder.key(scope, id), { scope, afterSequence, localOrdinal }]))
+  const viewer = { role: "member" as const }
+
+  test("a local card recorded after a shared turn stays after it, and the last line is the newest", () => {
+    const conversation = { id: "main", entries: [sharedTurn("first", 1)] }
+    const local = railLines([card("legacy", "active", "Legacy"), card("after", "active", "After")])
+    const lines = conversationRailLines({ conversation, local, anchors: anchors(["after", 1, 9]), scope, viewer })
+    expect(lines.map(line => line.entry_id)).toEqual(["legacy", "first:prompt", "first:answer", "after"])
+    // Latest lands on the transcript's end, so the rail's end has to be the same entry.
+    expect(lines.at(-1)!.entry_id).toBe("after")
+    expect(TranscriptOrder.merge(conversation.entries, local.map(line => ({ id: line.entry_id, value: line })), anchors(["after", 1, 9]), scope)
+      .map(item => item.kind === "local" ? item.entry.id : item.turn.id)).toEqual(["legacy", "first", "after"])
+  })
+
+  test("a shared arrival while the reader sits on an older local card pins below it, never above", () => {
+    const conversation = { id: "main", entries: [sharedTurn("first", 1), sharedTurn("arrived", 2)] }
+    const local = railLines([card("after", "active", "After")])
+    const lines = conversationRailLines({ conversation, local, anchors: anchors(["after", 1, 9]), scope, viewer, lastSeen: 2 })
+    expect(lines.map(line => line.entry_id)).toEqual(["first:prompt", "first:answer", "after", "arrived:prompt", "arrived:answer"])
+    const edges = railEdges(lines, ["after", "after"])
+    expect(edges.above).toEqual([])
+    expect(edges.below.map(row => row.entry_id)).toEqual(["arrived:prompt", "arrived:answer"])
+  })
+
+  test("a card the shared turn recorded and the transcript rendered locally keeps one line in its own place", () => {
+    const recorded: Card = { id: "shared-card", kind: "status", title: "Build", createdAt: 1, ordinal: 1, status: "active", payload: {} }
+    const conversation = { id: "main", entries: [sharedTurn("run", 1, [{ type: "card" as const, runId: "run", card: recorded }])] }
+    const local = railLines([{ kind: "card", card: recorded }])
+    const lines = conversationRailLines({ conversation, local, anchors: anchors(["shared-card", 1, 3]), scope, viewer })
+    expect(lines.map(line => line.entry_id)).toEqual(["run:prompt", "run:answer", "shared-card"])
+  })
+
+  test("replay places local cards by their recorded ordinals, not by the order the store hands them over", () => {
+    const conversation = { id: "main", entries: [sharedTurn("run", 1)] }
+    const order = anchors(["early", 1, 4], ["late", 1, 7])
+    const forward = railLines([card("early", "active", "Early"), card("late", "active", "Late")])
+    const reversed = railLines([card("late", "active", "Late"), card("early", "active", "Early")])
+    const ids = (local: readonly TimelineLine[]) =>
+      conversationRailLines({ conversation, local, anchors: order, scope, viewer }).map(line => line.entry_id)
+    expect(ids(forward)).toEqual(["run:prompt", "run:answer", "early", "late"])
+    expect(ids(reversed)).toEqual(ids(forward))
+  })
+
+  test("without a private scope the rail still keeps shared history in its served order", () => {
+    const conversation = { id: "main", entries: [sharedTurn("first", 1), sharedTurn("second", 2)] }
+    const local = railLines([card("local", "active", "Local")])
+    expect(conversationRailLines({ conversation, local, anchors: undefined, scope: undefined, viewer }).map(line => line.entry_id))
+      .toEqual(["local", "first:prompt", "first:answer", "second:prompt", "second:answer"])
+  })
 })

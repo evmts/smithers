@@ -25,7 +25,8 @@ import type { SharedConversation } from "./state/seams/SharedConversationSeam"
 import { useController } from "./ControllerContext"
 import { EdgeMap } from "./EdgeMap"
 import type { InitMessage } from "./HostOpening"
-import type { Card, Message, Toast } from "./state/AppState"
+import type { Card, Message, Session, Toast } from "./state/AppState"
+import { TranscriptOrder } from "./state/TranscriptOrder"
 import { diagnosticVisible } from "./state/AppState"
 import { useHome, type HomeAnswer } from "./cards/HomeContainer"
 import { Timeline } from "./Timeline"
@@ -110,10 +111,14 @@ const sharedFresh = (positions: ReadonlyMap<string, number>, id: string, lastSee
  return position!==undefined && position>lastSeen
 }
 
-/** Shared history uses exactly the transcript's scroll ids and recorded actors. */
-export const sharedRailLines = (conversation: SharedConversation | undefined, viewer: Parameters<typeof actionFor>[1], lastSeen: number = 0): TimelineLine[] => {
- const positions=sharedEntrySequences(conversation)
- return (conversation?.entries ?? []).flatMap(turn => {
+/** One entry of shared history: an imported message, an external message, or a turn. */
+type SharedEntry = SharedConversation["entries"][number]
+
+/** A shared turn's own frames, as the conversation seam records them. */
+export type SharedTurnFrames = Extract<SharedEntry, { frames: unknown }>["frames"]
+
+/** One shared turn's lines, at the cursor addresses the snapshot already holds. */
+const sharedTurnLines = (turn: SharedEntry, positions: ReadonlyMap<string, number>, viewer: Parameters<typeof actionFor>[1], lastSeen: number): TimelineLine[] => {
   if ("role" in turn) return railLines([{ kind: "message", message: turn }], viewer).map(line => ({ ...line, fresh: sharedFresh(positions, line.entry_id, lastSeen) }))
   const color_index = (turn.author % 6) as 0 | 1 | 2 | 3 | 4 | 5
   const person = { login: turn.authorLogin, name: turn.authorLogin, avatar_url: PlaceholderAvatarUrl }
@@ -132,7 +137,43 @@ export const sharedRailLines = (conversation: SharedConversation | undefined, vi
     rows.push(...railLines([{ kind: "card", card: frame.card }], viewer).map(row => ({ ...row, fresh: sharedFresh(positions, row.entry_id, lastSeen) })))
   }
   return rows
-})
+}
+
+/** Shared history uses exactly the transcript's scroll ids and recorded actors. */
+export const sharedRailLines = (conversation: SharedConversation | undefined, viewer: Parameters<typeof actionFor>[1], lastSeen: number = 0): TimelineLine[] => {
+ const positions=sharedEntrySequences(conversation)
+ return (conversation?.entries ?? []).flatMap(turn => sharedTurnLines(turn, positions, viewer, lastSeen))
+}
+
+/**
+ * The rail's lines, in the order the transcript renders them.
+ *
+ * Shared history and private output carry independent ordinals, so holding the
+ * two lists apart and concatenating them put every shared turn above every
+ * local card, however old the turn was: the rail's last line — the newest
+ * entry it claims to show, and the side {@link railEdges} counts an arrival on
+ * — then disagreed with the transcript's end. The merge is
+ * {@link TranscriptOrder}'s, the same one `SharedConversation` renders with and
+ * reading the same persisted anchors, so both surfaces read one order.
+ *
+ * One line per entry id: a card a shared turn recorded and the transcript also
+ * rendered locally keeps its first place and the facts of the later line, as
+ * it did when the rail concatenated the lists.
+ */
+export const conversationRailLines = ({ home, conversation, local, anchors, scope, viewer, lastSeen = 0 }: {
+  readonly home?: TimelineLine | undefined
+  readonly conversation: SharedConversation | undefined
+  readonly local: readonly TimelineLine[]
+  readonly anchors: Session["transcriptAnchors"]
+  readonly scope: string | undefined
+  readonly viewer: Parameters<typeof actionFor>[1]
+  readonly lastSeen?: number
+}): TimelineLine[] => {
+  const positions = sharedEntrySequences(conversation)
+  const merged = TranscriptOrder.merge(conversation?.entries ?? [], local.map(line => ({ id: line.entry_id, value: line })), anchors, scope)
+    .flatMap(item => item.kind === "local" ? [item.entry.value] : sharedTurnLines(item.turn, positions, viewer, lastSeen))
+  return [...new Map([...(home === undefined ? [] : [home]), ...merged].map(line => [line.entry_id, line] as const)).values()]
+    .map(line => positions.get(line.entry_id) === undefined ? line : { ...line, fresh: sharedFresh(positions, line.entry_id, lastSeen) })
 }
 
 /** Bind only the current lines' acts; duplicate entries for one TODO share one command input. */
@@ -238,11 +279,14 @@ export function ShellRail({ entries, home }: { readonly entries: ReadonlyArray<R
   // Transient chrome: whether the rail is wide enough for the timeline (the View reports it).
   const [wide, setWide] = useState(false)
   const positions=sharedEntrySequences(shared.conversation)
-  const lines = [...new Map([
-    ...(home && homeAnswer !== undefined ? [homeLine(homeAnswer)] : []),
-    ...(controller.sharedConversation ? sharedRailLines(shared.conversation, { role }, shared.view?.last_seen_seq ?? 0) : []),
-    ...railLines((controller.sharedConversation ? entries.filter(entry => entry.kind === "card" || entry.kind === "entry" || entry.kind === "message" && (entry.message.origin === "external" || entry.message.action !== undefined || diagnosticVisible(entry.message, identities.find(identity => identity.id === "identity")?.login, controller.store.session().branchNavigation?.selected_branch ?? "main"))) : entries).filter(conversationRailEntry), { role })
-  ].map(line => [line.entry_id, line] as const)).values()].map(line => positions.get(line.entry_id) === undefined ? line : { ...line, fresh: sharedFresh(positions, line.entry_id, shared.view?.last_seen_seq ?? 0) })
+  const session = controller.store.session()
+  const local = railLines((controller.sharedConversation ? entries.filter(entry => entry.kind === "card" || entry.kind === "entry" || entry.kind === "message" && (entry.message.origin === "external" || entry.message.action !== undefined || diagnosticVisible(entry.message, identities.find(identity => identity.id === "identity")?.login, session.branchNavigation?.selected_branch ?? "main"))) : entries).filter(conversationRailEntry), { role })
+  const line = home && homeAnswer !== undefined ? homeLine(homeAnswer) : undefined
+  // The rail reads the transcript's order, not shared history then private output.
+  const lines = controller.sharedConversation
+    ? conversationRailLines({ home: line, conversation: shared.conversation, local, anchors: session.transcriptAnchors,
+      scope: TranscriptOrder.scope(identities[0], session), viewer: { role }, lastSeen: shared.view?.last_seen_seq ?? 0 })
+    : [...new Map([...(line === undefined ? [] : [line]), ...local].map(row => [row.entry_id, row] as const)).values()]
   const timeline = timelineActions(lines, homeDispatch(controller))
   const band = useMessageBand(lines.map(line => line.entry_id), visible => {
     if (!visible || !shared.view) return
