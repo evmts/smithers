@@ -838,6 +838,7 @@ jobs:
           if [ -e 'apps/reports' ]; then cp -R -- 'apps/reports' "$RUNNER_TEMP/apps-browser-1-artifacts/reports"; fi
           if [ -e 'apps/app/test-results' ]; then cp -R -- 'apps/app/test-results' "$RUNNER_TEMP/apps-browser-1-artifacts/playwright-test-results"; fi
           if [ -e 'apps/app/playwright-report' ]; then cp -R -- 'apps/app/playwright-report' "$RUNNER_TEMP/apps-browser-1-artifacts/playwright-report"; fi
+          if [ -e 'apps/app/stage-evidence' ]; then cp -R -- 'apps/app/stage-evidence' "$RUNNER_TEMP/apps-browser-1-artifacts/stage-evidence"; fi
       - name: "Upload apps-browser-1-artifacts"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -927,6 +928,7 @@ jobs:
           if [ -e 'apps/reports' ]; then cp -R -- 'apps/reports' "$RUNNER_TEMP/apps-browser-2-artifacts/reports"; fi
           if [ -e 'apps/app/test-results' ]; then cp -R -- 'apps/app/test-results' "$RUNNER_TEMP/apps-browser-2-artifacts/playwright-test-results"; fi
           if [ -e 'apps/app/playwright-report' ]; then cp -R -- 'apps/app/playwright-report' "$RUNNER_TEMP/apps-browser-2-artifacts/playwright-report"; fi
+          if [ -e 'apps/app/stage-evidence' ]; then cp -R -- 'apps/app/stage-evidence' "$RUNNER_TEMP/apps-browser-2-artifacts/stage-evidence"; fi
       - name: "Upload apps-browser-2-artifacts"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -1016,6 +1018,7 @@ jobs:
           if [ -e 'apps/reports' ]; then cp -R -- 'apps/reports' "$RUNNER_TEMP/apps-browser-3-artifacts/reports"; fi
           if [ -e 'apps/app/test-results' ]; then cp -R -- 'apps/app/test-results' "$RUNNER_TEMP/apps-browser-3-artifacts/playwright-test-results"; fi
           if [ -e 'apps/app/playwright-report' ]; then cp -R -- 'apps/app/playwright-report' "$RUNNER_TEMP/apps-browser-3-artifacts/playwright-report"; fi
+          if [ -e 'apps/app/stage-evidence' ]; then cp -R -- 'apps/app/stage-evidence' "$RUNNER_TEMP/apps-browser-3-artifacts/stage-evidence"; fi
       - name: "Upload apps-browser-3-artifacts"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"

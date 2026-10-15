@@ -877,7 +877,10 @@ const ci = Smithers.GithubCiGen({
             { from: "/tmp/smithers-*.png" },
             { from: "apps/reports", as: "reports" },
             { from: "apps/app/test-results", as: "playwright-test-results" },
-            { from: "apps/app/playwright-report", as: "playwright-report" }
+            { from: "apps/app/playwright-report", as: "playwright-report" },
+            // What a red step kept before the next cleared test-results/, and
+            // this run's stages.json (apps/app/scripts/run-pr-e2e.mjs says why).
+            { from: "apps/app/stage-evidence", as: "stage-evidence" }
           ]
         })
       }),
@@ -900,7 +903,10 @@ const ci = Smithers.GithubCiGen({
             { from: "/tmp/smithers-*.png" },
             { from: "apps/reports", as: "reports" },
             { from: "apps/app/test-results", as: "playwright-test-results" },
-            { from: "apps/app/playwright-report", as: "playwright-report" }
+            { from: "apps/app/playwright-report", as: "playwright-report" },
+            // What a red step kept before the next cleared test-results/, and
+            // this run's stages.json (apps/app/scripts/run-pr-e2e.mjs says why).
+            { from: "apps/app/stage-evidence", as: "stage-evidence" }
           ]
         })
       }),
@@ -923,7 +929,10 @@ const ci = Smithers.GithubCiGen({
             { from: "/tmp/smithers-*.png" },
             { from: "apps/reports", as: "reports" },
             { from: "apps/app/test-results", as: "playwright-test-results" },
-            { from: "apps/app/playwright-report", as: "playwright-report" }
+            { from: "apps/app/playwright-report", as: "playwright-report" },
+            // What a red step kept before the next cleared test-results/, and
+            // this run's stages.json (apps/app/scripts/run-pr-e2e.mjs says why).
+            { from: "apps/app/stage-evidence", as: "stage-evidence" }
           ]
         })
       }),

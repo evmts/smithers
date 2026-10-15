@@ -258,6 +258,47 @@ esac
     expect(upload.env).toBeUndefined()
   })
 
+  it("collects the evidence a red browser step retained, on every shard and in both workflows", () => {
+    // The browser runner's own word for the directory, never restated here:
+    // renaming it in the runner without rewiring collection is the defect this
+    // case exists to catch. Release 38710688411's shard 3 failed in a Bun
+    // preflight step, ran four green steps after it, and uploaded nothing
+    // ("No files were found with the provided path"), because every later step
+    // cleared the test-results/ its report was in.
+    const runner = readFileSync(new URL("../../../app/scripts/run-pr-e2e.mjs", import.meta.url), "utf8")
+    const retained = /^const evidenceDir = "([^"]+)"$/m.exec(runner)?.[1]
+    expect(retained).toBe("stage-evidence")
+    const source = `apps/app/${retained}`
+
+    const deploy = Bun.YAML.parse(readWorkflow("apps-deploy.yml")) as DeployWorkflow
+    const steps = deploy.jobs.gate.steps
+    const collect = steps.find(step => step.name === "Collect e2e artifacts")!
+    expect(collect.if).toBe("failure()")
+    expect(collect.run).toContain(`cp -R ${source} "$RUNNER_TEMP/e2e-artifacts/${retained}" 2>/dev/null || true\n`)
+    const upload = steps.find(step => step.name === "Upload e2e artifacts")!
+    expect(steps.indexOf(upload)).toBe(steps.indexOf(collect) + 1)
+    expect(upload.with).toEqual({
+      name: "apps-deploy-e2e-artifacts-${{ matrix.browser-shard }}",
+      path: "${{ runner.temp }}/e2e-artifacts",
+      "if-no-files-found": "ignore"
+    })
+    // Every shard runs the browser tier, so each needs its own artifact name
+    // and its own collection; a shared name would make three shards collide.
+    const browserSteps = steps.filter(step => step.run?.includes(":browserE2eShard") === true)
+    expect(browserSteps.length).toBe(3)
+    for (const step of browserSteps) expect(steps.indexOf(step)).toBeLessThan(steps.indexOf(collect))
+    expect(upload.with?.name).toContain("${{ matrix.browser-shard }}")
+
+    const ci = Bun.YAML.parse(readWorkflow("ci.yml")) as CiWorkflow
+    const shards = [1, 2, 3].map(shard => ci.jobs[`apps-browser-${shard}`]!)
+    for (const [index, job] of shards.entries()) {
+      const artifact = `apps-browser-${index + 1}-artifacts`
+      const step = (job.steps ?? []).find(candidate => candidate.name === `Collect ${artifact}`)!
+      expect(step.run).toContain(`if [ -e '${source}' ]; then cp -R -- '${source}' "$RUNNER_TEMP/${artifact}/${retained}"; fi`)
+      expect((job.steps ?? []).find(candidate => candidate.with?.name === artifact)).toBeDefined()
+    }
+  })
+
   it("passes no retired identity probe inputs and always retains rollback evidence", () => {
     const deploy = Bun.YAML.parse(readWorkflow("apps-deploy.yml")) as DeployWorkflow
     const steps = deploy.jobs.deploy.steps

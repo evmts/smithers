@@ -131,6 +131,10 @@ jobs:
       - name: Site build and tests
         if: matrix.browser-shard == 1
         run: pnpm exec smthrs ci '//apps/site/...' --verbose
+      # apps/app/stage-evidence is what a red browser step kept before the next
+      # step cleared test-results/ (apps/app/scripts/run-pr-e2e.mjs says why);
+      # it holds this run's stages.json even when the failure wrote no report,
+      # so a red shard never uploads an empty artifact again.
       - name: Collect e2e artifacts
         if: failure()
         run: |
@@ -139,6 +143,7 @@ jobs:
           cp -R apps/reports "$RUNNER_TEMP/e2e-artifacts/reports" 2>/dev/null || true
           cp -R apps/app/test-results "$RUNNER_TEMP/e2e-artifacts/playwright-test-results" 2>/dev/null || true
           cp -R apps/app/playwright-report "$RUNNER_TEMP/e2e-artifacts/playwright-report" 2>/dev/null || true
+          cp -R apps/app/stage-evidence "$RUNNER_TEMP/e2e-artifacts/stage-evidence" 2>/dev/null || true
       - name: Upload e2e artifacts
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

@@ -43,6 +43,9 @@ reports/playwright/
 test-results/
 playwright-report/
 
+# A red browser run's retained per-step reports (scripts/run-pr-e2e.mjs)
+stage-evidence/
+
 # Bundled backend, toolchain, and database payloads
 .native/
 # Release inputs the server bundle target reads (the Linux arm64 guest helper)
