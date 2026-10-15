@@ -31,11 +31,15 @@ old, so `@next` can resolve to a candidate more than one release behind.
 
 A Node program needs Node.js 26.4.0 or later.
 
-A compensable step, a time-travel rewind, or a step that calls `Jj` also needs
+A compensable step, a time-travel fork, a rewind that crosses a compensable
+step or sets `wholeRepo`, and a step that calls `Jj` also need
 [jj](https://jj-vcs.github.io/jj/latest/install-and-setup/) 0.39.0 or later on
-`PATH`, or `SMITHERS_JJ_PATH` naming the binary. A host without jj starts and
-runs every other step; a step that needs jj fails with `No jj on PATH`. On
-macOS, `brew install jj`; the linked page covers Linux and Windows.
+`PATH`, or `SMITHERS_JJ_PATH` naming the binary. A compensable step's workspace
+must also be a jj repository: run `jj git init` in it, or the step fails with
+`jj snapshot: Error: There is no jj repo in "."`. A host without jj starts and
+runs every other step, including a rewind over sealed steps; a step that needs
+jj fails with `No jj on PATH`. On macOS, `brew install jj`; the linked page
+covers Linux and Windows.
 
 `npm pkg set type=module` makes the project an ES module, so `node` runs the
 example below, which ends in a top-level `await`, without a warning.
@@ -146,8 +150,9 @@ for selection, schema identity, and transaction guarantees.
 The shared engine consumes injected Effect services. Browser-safe authoring and
 inspection do not establish browser or edge durable execution. Native drivers
 remain explicit subpaths so the root does not import `node:sqlite` or `bun:sqlite`.
-See [runtime portability](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/concepts/runtime-portability.md) for the contract
-and the native cross-runtime restart regression.
+See [runtime portability](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/concepts/runtime-portability.md) for the contract.
+[`NativeRuntimeParity.test.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/test/NativeRuntimeParity.test.ts)
+is the native cross-runtime restart regression.
 
 ## The Node runtime
 

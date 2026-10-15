@@ -15,7 +15,7 @@ run of it that answers without reading the file again.
 - Node.js 26.4.0 or later. It runs the TypeScript file below directly, with no
   build step and no loader flag.
 
-The quickstart does not need jj. A compensable step or a time-travel rewind
+The quickstart does not need jj. A compensable step or a time-travel fork
 does; [Installation](./installation.md#requirements) covers it.
 
 Create an empty project, install the two packages the program imports, and give

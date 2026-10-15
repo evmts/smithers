@@ -47,11 +47,15 @@ declares.
   requires Node `>=26.4.0`.
 - [jj](https://jj-vcs.github.io/jj/latest/install-and-setup/) 0.39.0 or later
   on `PATH`, or `SMITHERS_JJ_PATH` naming the binary, for the steps that use
-  it: a compensable step, which the engine snapshots before each attempt, a
-  time-travel rewind or fork, and an action that calls `Jj`. Every
-  `NodeRuntime` and `BunRuntime` host starts without jj. The first step that
-  needs jj runs `jj --version` and fails with `No jj on PATH` when there is
-  none. On macOS, `brew install jj`; the linked page covers Linux and Windows.
+  it: a compensable step, which the engine snapshots before each attempt; a
+  time-travel fork, which adds a jj workspace for the child run; a rewind that
+  restores files, because it crosses a compensable step or sets `wholeRepo`;
+  and an action that calls `Jj`. A rewind over sealed steps alone needs no jj.
+  A compensable step's workspace must also be a jj repository (`jj git init`).
+  Every `NodeRuntime` and `BunRuntime` host starts without jj. The first step
+  that needs jj runs `jj --version` and fails with `No jj on PATH` when there
+  is none. On macOS, `brew install jj`; the linked page covers Linux and
+  Windows.
 - [`effect`](https://effect.website) in the range `^4.0.4`, as a peer
   dependency. This is an Effect library throughout: a flow's payload and result
   are Effect schemas, an action's implementation is an `Effect`, and a host is

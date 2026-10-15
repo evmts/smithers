@@ -19,7 +19,8 @@ in a run's past. Every output block below is real output from
 
 - Node.js 26.4.0 or later. It runs the TypeScript file below directly.
 
-This page only replays, so it does not need jj. Forking and rewinding do; see
+This page only replays, so it does not need jj. Forking does, and so does a
+rewind that restores a compensable step's files; see
 [Rewind a run to a frame](./guides/rewind-a-run.md).
 
 Create a project and install the engine, `effect`, and this package:

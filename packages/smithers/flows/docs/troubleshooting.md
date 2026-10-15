@@ -41,12 +41,25 @@ day it is published.
 
 ## JjError: No jj on PATH
 
-**Symptom.** A step fails, and the host and its other steps keep running:
-`JjError [@smthrs/jj/JjError]: jj: No jj on PATH. Install jj (https://jj-vcs.github.io) or set SMITHERS_JJ_PATH.`
+**Symptom.** A step fails, and the host and its other steps keep running. A
+program that lets the failure die, as the quickstart's does, stops with this
+first line:
+
+```console
+Error [@smthrs/jj/JjError]: jj: No jj on PATH. Install jj (https://jj-vcs.github.io) or set SMITHERS_JJ_PATH.
+```
+
+Below the stack, Node prints `[cause]: Error: No executable jj found on host PATH`.
+The engine reads a step's failure back from the journal as a plain `Error`
+named by its tag, the same way the quickstart prints `Error [PlatformError]`.
+A time-travel fork reports the same `JjError` as the cause of
+`TimeTravelError [@smthrs/time-travel/TimeTravelError]: could not add fork workspace`.
 
 **Cause.** The step needs jj and the host has none. A compensable step needs
-it because the engine snapshots the workspace before each attempt; a
-time-travel rewind or fork needs it to restore the workspace; an action that
+it because the engine snapshots the workspace before each attempt. A
+time-travel fork needs it to add the child run's jj workspace. A rewind needs
+it only to restore files: when it crosses a compensable step, or when it sets
+`wholeRepo`. A rewind over sealed steps alone runs without jj. An action that
 calls `Jj` needs it directly. The first such step runs `jj --version`. A jj
 older than 0.39.0 is refused the same way, with the version it found.
 
@@ -58,9 +71,12 @@ path.
 
 ## JjError: The machine was too busy to start the process
 
-**Symptom.** The first step that needs jj fails:
-`JjError [@smthrs/jj/JjError]: jj version: TimedOut: ChildProcess.spawn (<jj path>): The machine was too busy to start the process within 5 s`.
-The error has `code: "unknown"`, `method: "version"`, and `cause.code: "ETIMEDOUT"`.
+**Symptom.** The first step that needs jj fails, and a program that lets the
+failure die prints this first line and the error's `[cause]`:
+`Error [@smthrs/jj/JjError]: jj version: TimedOut: ChildProcess.spawn (<jj path>): The machine was too busy to start the process within 5 s`.
+An action that calls `Jj` itself receives the typed `JjError`, with
+`code: "unknown"`, `method: "version"`, and `cause.code: "ETIMEDOUT"`; a step
+failure read back from the journal keeps only the tag and the messages.
 
 **Cause.** That step runs `jj --version` through the host's process
 supervisor, which starts a fresh Node or Bun process and gives each startup

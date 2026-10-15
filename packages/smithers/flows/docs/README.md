@@ -36,7 +36,8 @@ With pnpm 11, run `pnpm add @smthrs/flows@1.0.0-rc.9 effect` instead, then
 `pnpm approve-builds esbuild`. pnpm 11 installs only versions at least 24 hours
 old, so `@next` can resolve to a candidate more than one release behind.
 
-Compensable steps and time-travel rewinds also need
+Compensable steps, time-travel forks, and rewinds that restore a compensable
+step's files also need
 [jj](https://jj-vcs.github.io/jj/latest/install-and-setup/) 0.39.0 or later on
 `PATH`; a host without it runs every other step. On macOS, `brew install jj`.
 [Installation](./installation.md) covers the requirements, the import forms,
