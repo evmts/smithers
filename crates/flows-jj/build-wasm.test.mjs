@@ -1,6 +1,10 @@
 import assert from "node:assert/strict"
+import { spawnSync } from "node:child_process"
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import test from "node:test"
+import { fileURLToPath } from "node:url"
 import {
   buildEnvironment,
   canonicalHost,
@@ -95,21 +99,22 @@ test("remapFlags replaces every machine-specific prefix with a fixed token", () 
   )
 })
 
-test("buildEnvironment authors RUSTFLAGS from the remap flags alone", () => {
+test("buildEnvironment authors encoded rustflags from the remap flags alone", () => {
   const environment = buildEnvironment(
     { PATH: "/usr/bin", RUSTFLAGS: "-C target-cpu=native" },
     ["--remap-path-prefix=/a=/flows"]
   )
-  assert.equal(environment.RUSTFLAGS, "--remap-path-prefix=/a=/flows")
+  assert.equal(environment.CARGO_ENCODED_RUSTFLAGS, "--remap-path-prefix=/a=/flows")
+  assert.equal("RUSTFLAGS" in environment, false)
   assert.equal(environment.PATH, "/usr/bin")
 })
 
-test("buildEnvironment deletes an ambient CARGO_ENCODED_RUSTFLAGS", () => {
+test("buildEnvironment replaces ambient encoded rustflags", () => {
   const environment = buildEnvironment(
     { CARGO_ENCODED_RUSTFLAGS: "-Clto", PATH: "/usr/bin" },
     ["--remap-path-prefix=/a=/flows"]
   )
-  assert.equal("CARGO_ENCODED_RUSTFLAGS" in environment, false)
+  assert.equal(environment.CARGO_ENCODED_RUSTFLAGS, "--remap-path-prefix=/a=/flows")
 })
 
 test("reproductionFailure accepts byte-identical artifacts", () => {
@@ -153,5 +158,48 @@ test("buildEnvironment removes compiler and linker overrides without mutating it
   assert.equal(environment.CARGO_HOME, input.CARGO_HOME)
   assert.equal(environment.CARGO_TARGET_DIR, input.CARGO_TARGET_DIR)
   assert.equal(environment.CARGO_BUILD_JOBS, "2")
-  assert.equal(environment.RUSTFLAGS, "--remap-path-prefix=/repo=/flows")
+  assert.equal(environment.CARGO_ENCODED_RUSTFLAGS, "--remap-path-prefix=/repo=/flows")
+})
+
+test("buildEnvironment preserves remap flags through Cargo when paths contain spaces", () => {
+  const directory = mkdtempSync(join(tmpdir(), "flows jj remap "))
+  try {
+    mkdirSync(join(directory, "src"))
+    writeFileSync(
+      join(directory, "Cargo.toml"),
+      '[package]\nname = "remap-fixture"\nversion = "0.0.0"\nedition = "2021"\n[workspace]\n'
+    )
+    writeFileSync(join(directory, "src", "main.rs"), `include!(${JSON.stringify(join(directory, "included.rs"))});\n`)
+    writeFileSync(join(directory, "included.rs"), 'fn main() { println!("{}", file!()); }\n')
+    const args = ["run", "--offline", "--jobs", "2", "--manifest-path", join(directory, "Cargo.toml")]
+    const control = spawnSync("cargo", args, {
+      cwd: fileURLToPath(new URL("../../", import.meta.url)),
+      env: buildEnvironment({ ...process.env, CARGO_TARGET_DIR: join(directory, "target") }, []),
+      encoding: "utf8",
+      timeout: 60000
+    })
+    assert.equal(control.error, undefined)
+    assert.equal(control.status, 0, `Cargo fixture must work before testing remapping: ${control.stderr}`)
+    assert.equal(control.stdout.trim(), join(directory, "included.rs"))
+    // Use real Cargo and rustc: inspecting the environment alone cannot prove
+    // that Cargo delivers each argument intact to the compiler.
+    const result = spawnSync("cargo", args, {
+      cwd: fileURLToPath(new URL("../../", import.meta.url)),
+      env: buildEnvironment({ ...process.env, CARGO_TARGET_DIR: join(directory, "target") }, [
+        `--remap-path-prefix=${directory}=/flows`,
+        "--cfg=flows_remap_fixture"
+      ]),
+      encoding: "utf8",
+      timeout: 60000
+    })
+    assert.equal(result.error, undefined)
+    assert.equal(result.status, 0, JSON.stringify({
+      stdout: result.stdout,
+      stderr: result.stderr,
+      signal: result.signal
+    }))
+    assert.equal(result.stdout.trim(), "/flows/included.rs")
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
 })

@@ -131,18 +131,18 @@ export const remapFlags = ({ cargoHome, commitHash, sysroot, workspaceRoot }) =>
 /**
  * The child cargo environment, authored rather than inherited.
  *
- * `RUSTFLAGS` is set from the remap flags alone: an ambient value would bake
- * extra codegen into the artifact. `CARGO_ENCODED_RUSTFLAGS` is deleted
- * because cargo prefers it over `RUSTFLAGS` entirely — an ambient value
- * would silently drop the remap flags and embed machine paths. Compiler,
+ * `CARGO_ENCODED_RUSTFLAGS` carries only the remap flags, separated by ASCII
+ * unit separators so paths containing whitespace remain single arguments.
+ * Ambient encoded flags are replaced and `RUSTFLAGS` is removed so neither
+ * can inject extra codegen or discard the remapping. Compiler,
  * wrapper, and per-target linker overrides are removed so Cargo uses the
  * pinned toolchain rather than tools selected by the invoking shell. The
  * byte-compare would catch the damage one step later on CI, but a build on
  * the canonical host must produce the canonical bytes on the first try.
  */
 export const buildEnvironment = (env, flags) => {
-  const environment = { ...env, RUSTFLAGS: flags.join(" ") }
-  delete environment.CARGO_ENCODED_RUSTFLAGS
+  const environment = { ...env, CARGO_ENCODED_RUSTFLAGS: flags.join("\x1f") }
+  delete environment.RUSTFLAGS
   for (const name of Object.keys(environment)) {
     if (
       /^(?:RUSTC|CARGO_BUILD_RUSTC)(?:_WRAPPER|_WORKSPACE_WRAPPER)?$/.test(name) ||
@@ -212,7 +212,7 @@ if (isMain) {
     ["build", "--locked", "--release", "--target", "wasm32-wasip1", "--package", "flows-jj"],
     {
       cwd: repoRoot,
-      // RUSTFLAGS applies to wasm32-wasip1 units only (cargo exempts host
+      // Encoded rustflags apply to wasm32-wasip1 units only (cargo exempts host
       // units when --target is passed), so proc macros build untouched.
       env: environment,
       stdio: "inherit"
