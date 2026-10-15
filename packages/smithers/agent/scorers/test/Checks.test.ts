@@ -125,6 +125,12 @@ describe("Checks.opener", () => {
     expect(Checks.opener("I am on it.", phrases)).toEqual({ id: "opener", pass: true, detail: "no listed opener" })
     expect(Checks.opener("Online now", phrases).pass).toBe(true)
   })
+
+  it("ignores blank phrases rather than flagging every message", () => {
+    for (const text of ["", "👍", "!!!", "Hello there"]) {
+      expect(Checks.opener(text, ["", "   "])).toEqual({ id: "opener", pass: true, detail: "no listed opener" })
+    }
+  })
 })
 
 describe("Checks.truncated", () => {
@@ -374,6 +380,18 @@ describe("Checks.leakage security", () => {
     const score = await Effect.runPromise(scorer.score({ input: "q", output: "sent canary-7f3e9xyz" }))
     expect(score.reason).toBe("0/1 checks passed; leakage: leaked: log: marker 2")
     expect(JSON.stringify(score)).not.toContain("canary")
+  })
+
+  it("finds a marker read with surrounding whitespace, such as a file's trailing newline", () => {
+    for (const marker of ["canary-7f3e9\n", "  canary-7f3e9", "\tcanary-7f3e9 \r\n"]) {
+      for (const text of ["key=canary-7f3e9.", "canary-7f3e9", "(canary-7f3e9)"]) {
+        expect(Checks.leakage([{ sink: "log", text }], [marker])).toEqual({
+          id: "leakage",
+          pass: false,
+          detail: "leaked: log: marker 1"
+        })
+      }
+    }
   })
 })
 

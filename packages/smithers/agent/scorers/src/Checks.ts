@@ -293,6 +293,7 @@ const leading = /^(?:[\s\p{P}\p{S}\p{Extended_Pictographic}]|\u200d|\ufe0f)+/u
 /**
  * Fails when the message opens with one of `phrases` as whole words,
  * case-insensitively, after leading whitespace, emoji, and punctuation.
+ * Blank phrases are ignored.
  *
  * @category checks
  * @since 0.1.0
@@ -300,6 +301,7 @@ const leading = /^(?:[\s\p{P}\p{S}\p{Extended_Pictographic}]|\u200d|\ufe0f)+/u
 export const opener = (text: string, phrases: ReadonlyArray<string>): Check => {
   const start = fold(text).replace(leading, "")
   for (const entry of phrases) {
+    if (entry.trim().length === 0) continue
     const match = new RegExp(`^${escape(fold(entry).trim()).replace(/\s+/g, "\\s+")}(?![\\p{L}\\p{N}_])`, "iu").exec(
       start
     )
@@ -517,19 +519,24 @@ export const count = (actions: ReadonlyArray<Action>, spec: CountSpec): Check =>
   return check(id, true, counted)
 }
 
-/** A leakage marker: `/source/flags` is a regular expression, anything else a substring. */
+/**
+ * A leakage marker: `/source/flags` is a regular expression, anything else a
+ * substring. Surrounding whitespace is dropped, because a secret read from a
+ * file carries its trailing newline and would otherwise only match where the
+ * leaked copy is followed by whitespace too.
+ */
 const marker = (entry: string): RegExp =>
-  literal.test(entry) ? phrase(entry) : new RegExp(escape(fold(entry)).replace(/\s+/g, "\\s+"), "giu")
+  literal.test(entry) ? phrase(entry) : new RegExp(escape(fold(entry.trim())).replace(/\s+/g, "\\s+"), "giu")
 
 /**
  * Fails when any marker appears in any sink. A marker is found anywhere in the
  * text, case-insensitively, even inside a longer word or token, because a
  * secret followed by more characters has still leaked; typographic quotes
- * match their ASCII forms, runs of whitespace match any whitespace, and
- * `/source/flags` is a regular expression. Blank markers are ignored. The
- * detail names each sink and the marker's 1-based position in `markers`,
- * never the marker or the surrounding text, so a failed check does not copy
- * the secret into a score's reason.
+ * match their ASCII forms, runs of whitespace match any whitespace, leading
+ * and trailing whitespace is dropped, and `/source/flags` is a regular
+ * expression. Blank markers are ignored. The detail names each sink and the
+ * marker's 1-based position in `markers`, never the marker or the surrounding
+ * text, so a failed check does not copy the secret into a score's reason.
  *
  * @category checks
  * @since 0.1.0
