@@ -415,6 +415,18 @@ describe("printChannel.render", () => {
     expect(shown).toContain(`lined | "one\\ntwo"`)
   })
 
+  it("quotes a column name or cell that would break the table's lines or columns", () => {
+    // A column name is a key of the printed records, as open as any cell.
+    // Unquoted, a separator in a name shifts every column under it, and a
+    // carriage return starts a row just as a newline does.
+    const rows = [
+      { "a | b": 1, "c\nd": "x\ry" },
+      { "a | b": 2, "c\nd": "plain" },
+      { "a | b": 3, "c\nd": "plain" }
+    ]
+    expect(printChannel.render(rows)).toBe(`"a | b" | "c\\nd"\n1 | "x\\ry"\n2 | plain\n3 | plain`)
+  })
+
   it("is shorter than the JSON at the smallest shape it applies to", () => {
     // Three uniform rows, two one-character keys and one-character values:
     // the table wins by 20 bytes. Sparse records need not save bytes.

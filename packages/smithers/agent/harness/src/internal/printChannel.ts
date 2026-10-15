@@ -153,7 +153,7 @@ export interface Statement {
 }
 
 const cell = (value: Schema.Json): string =>
-  typeof value === "string" && !value.includes("\n") && !value.includes("|")
+  typeof value === "string" && !/[\n\r|]/.test(value)
     ? value
     : CanonicalJson.stringify(value)
 
@@ -218,13 +218,14 @@ const matchList = (value: Schema.Json): string | undefined => {
 /**
  * Renders an array of records as a table, or nothing.
  *
- * Columns are the union of keys in first-seen order. An absent member is an
- * empty cell; explicit null, empty arrays and empty objects stay `null`, `[]`
- * and `{}`. Cells are the string itself where that is unambiguous — no newline,
- * no column separator — and canonical JSON everywhere else. An empty string
- * still looks absent, and a string spelling a JSON literal still looks like
- * that value: this is a log rather than a wire format, so it is not paid for in
- * quoting every cell.
+ * Columns are the union of keys in first-seen order, and a column name is
+ * quoted by the same rule as a cell. An absent member is an empty cell;
+ * explicit null, empty arrays and empty objects stay `null`, `[]` and `{}`.
+ * Cells are the string itself where that is unambiguous — no newline, carriage
+ * return or column separator — and canonical JSON everywhere else. An empty
+ * string still looks absent, and a string spelling a JSON literal still looks
+ * like that value: this is a log rather than a wire format, so it is not paid
+ * for in quoting every cell.
  *
  * @since 0.1.0
  * @private
@@ -238,7 +239,7 @@ export const table = (value: Schema.Json): string | undefined => {
   const rows = value.map((element) =>
     columns.map((column) => Object.hasOwn(element, column) ? cell(element[column]!) : "").join(" | ")
   )
-  return `${columns.join(" | ")}\n${rows.join("\n")}`
+  return `${columns.map(cell).join(" | ")}\n${rows.join("\n")}`
 }
 
 /**
