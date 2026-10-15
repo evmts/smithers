@@ -215,6 +215,30 @@ describe("NodeJj version requirement", () => {
         expect(error.code).toBe("unsupported_version")
       })))
 
+  it.effect("accepts jj upgraded in place after an unsupported probe", () =>
+    withVersion("jj 0.38.0", (root) =>
+      Effect.gen(function*() {
+        const first = yield* Effect.flip(Effect.provide(Jj, NodeJj.layerAt(root)))
+        expect(first.code).toBe("unsupported_version")
+        yield* Effect.promise(() => writeFile(join(root, "version"), "jj 0.39.0"))
+        const jj = yield* Effect.provide(Jj, NodeJj.layerAt(root))
+        expect(yield* jj.status()).toBe("ok\n")
+        expect(yield* Effect.promise(() => readFile(join(root, "probes"), "utf8"))).toBe("probe\nprobe\n")
+      })))
+
+  it.effect("accepts an executable repaired with chmod after a refused probe", () =>
+    withVersion("jj 0.39.0", (root) =>
+      Effect.gen(function*() {
+        // The permission hint tells the operator to run chmod +x; a running
+        // host must honour that without a restart.
+        yield* Effect.promise(() => chmod(join(root, "jj"), 0o644))
+        const refused = yield* Effect.flip(Effect.provide(Jj, NodeJj.layerAt(root)))
+        expect(refused.cause).toMatchObject({ code: "EACCES" })
+        yield* Effect.promise(() => chmod(join(root, "jj"), 0o755))
+        const jj = yield* Effect.provide(Jj, NodeJj.layerAt(root))
+        expect(yield* jj.status()).toBe("ok\n")
+      })))
+
   it.effect("reports an executable that loses permission after the version probe", () =>
     withVersion("jj 0.39.0", (root) =>
       Effect.gen(function*() {
@@ -370,7 +394,9 @@ describe("NodeJj version requirement", () => {
           expect(error.message).toContain(version)
           const again = yield* Effect.flip(Effect.provide(Jj, NodeJj.layerAt(root)))
           expect(again).toMatchObject({ code: "unsupported_version", message: error.message })
-          expect(yield* Effect.promise(() => readFile(join(root, "probes"), "utf8"))).toBe("probe\n")
+          // A refusal is not cached: the rebuild probes again, so an in-place
+          // upgrade is seen without restarting the host.
+          expect(yield* Effect.promise(() => readFile(join(root, "probes"), "utf8"))).toBe("probe\nprobe\n")
         })))
   }
 

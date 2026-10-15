@@ -106,10 +106,11 @@ Node and Bun require **jj 0.39.0 or newer**, pinned by the exported
 uses the absolute host executable selected at layer construction and does not
 require the repository directory. Bound layers can be built before runtime
 storage creates that directory; operations still require a valid working directory.
-Probe results are shared per absolute path and runner for the process lifetime.
-Each host spawner has its own probe cache. Restart the process after replacing a
-binary at the same path. Operations keep using the verified path even if the
-host or spawner PATH changes. An older or unrecognized version fails construction with `JjError.code = "unsupported_version"`
+A supported probe result is shared per absolute path and runner for the process
+lifetime. Each host spawner has its own probe cache. A failed probe is not
+remembered: after `chmod +x` or an in-place upgrade, the next layer build probes
+again. Restart the process after replacing an accepted binary at the same path.
+Operations keep using the verified path even if the host or spawner PATH changes. An older or unrecognized version fails construction with `JjError.code = "unsupported_version"`
 and the required minimum; a missing binary fails construction with `not_installed`.
 All four CLI layers therefore have `JjError` in their layer error channel.
 

@@ -55,8 +55,8 @@ printf '%s\\n' "$*" >> calls
 echo $$ > child-pid.tmp
 mv child-pid.tmp child-pid
 while [ -f hold ]; do /bin/sleep 0.01; done
-# Both Git diff and its path metadata describe an empty change.
-if [ "$1" = "diff" ] && [ "$2" = "--from" ]; then exit 0; fi
+# Git diff, its path metadata, and revert's changed paths describe an empty change.
+if [ "$1" = "diff" ]; then exit 0; fi
 if [ "$1" = op ]; then echo 0abc; else printf "0abc\\nkkkk\\n"; fi
 `
       )

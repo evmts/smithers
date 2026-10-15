@@ -93,9 +93,10 @@ undoes it somewhere else in the graph. Work committed after `changeId` survives.
 
 The paths come back because a caller has to be able to say what was undone.
 They are read before the revert runs, so they are the paths the reverted change
-touched rather than a fact about where the revert landed, and they are reported
+touched rather than a fact about where the revert landed. Each path is relative
+to the workspace root, whichever directory the layer runs in, and is reported
 byte for byte: a tracked file named `" lead.txt"` or `"trail .txt"` arrives with
-its spaces intact.
+its spaces intact, and a name holding a newline arrives as one path.
 
 `revert` is optional on the interface, hence the `!`. Every layer this package
 ships defines it, and answers `not_installed` where the backend cannot perform

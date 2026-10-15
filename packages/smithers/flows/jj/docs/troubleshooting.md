@@ -163,8 +163,8 @@ operation ran and the program never received the service.
 
 **What to change.** Upgrade jj with `brew upgrade jj` or
 `cargo install --locked jj-cli`, or point `SMITHERS_JJ_PATH` at a newer binary.
-Probe results are cached per absolute path for the lifetime of the process, so
-restart it after replacing a binary in place. See
+A refused probe is not cached, so the next layer build after an in-place
+upgrade probes the new binary; no restart is needed. See
 [Choose which jj binary runs](./guides/choose-the-jj-binary.md).
 
 ## unknown

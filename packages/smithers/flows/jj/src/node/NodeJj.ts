@@ -17,7 +17,8 @@
  *   `@smthrs/platform-node`'s contained host bundle uses this one.
  *
  * Both await a version probe through their operation runner before exposing
- * `Jj`, sharing its result per absolute executable path and runner. All later
+ * `Jj`, sharing a supported result per absolute executable path and runner; a
+ * failed probe is retried by the next layer build. All later
  * operations use that same path, independent of repository cwd or PATH changes.
  *
  * Errors are classified from `jj`'s own stderr vocabulary onto the stable
@@ -1039,18 +1040,38 @@ const operations = (spawn: Run, repositoryRoot?: string) => {
         // One fenced unit: the paths read and the revert see the same graph.
         repositoryCritical(
           "revert",
-          inRepository("revert", ["diff", "-r", revision, "--name-only"]).pipe(
+          inRepository("revert", [
+            "diff",
+            "-r",
+            revision,
+            "--template",
+            "json(target.path()) ++ \"\\n\""
+          ]).pipe(
+            // Read paths from jj's JSON template, not `--name-only`: that output
+            // is relative to the cwd (`../top.txt` from a nested directory) and
+            // splits a file name holding a newline into two paths. The template
+            // renders workspace-relative paths, the same ones `diff` reports.
             Effect.flatMap((names) =>
-              Effect.as(
-                inRepository("revert", ["revert", "-r", revision, "--insert-before", "@"]),
-                {
-                  // Split on line endings only. `jj diff --name-only` emits raw
-                  // unquoted bytes, so a tracked file named " lead.txt" or
-                  // "trail .txt" comes back with its spaces, and trimming each
-                  // line would report paths that do not exist.
-                  reverted: names.split(/\r?\n/).filter((line) => line.length > 0)
-                }
-              )
+              Effect.try({
+                try: () =>
+                  names.split("\n").filter((line) => line.length > 0).map((line) => {
+                    const path: unknown = JSON.parse(line)
+                    if (typeof path !== "string") throw new TypeError("path is not a string")
+                    return path
+                  }),
+                catch: (cause) =>
+                  new JjError({
+                    code: "unknown",
+                    module: MODULE,
+                    method: "revert",
+                    command: "jj diff",
+                    message: `jj revert: could not read changed paths: ${JSON.stringify(names.slice(0, 200))}`,
+                    cause: jjErrorCause(cause)
+                  })
+              })
+            ),
+            Effect.flatMap((reverted) =>
+              Effect.as(inRepository("revert", ["revert", "-r", revision, "--insert-before", "@"]), { reverted })
             )
           )
         )
@@ -1164,19 +1185,28 @@ const checkedOperations = (
     }
     let probe = probes.get(binary.path)
     if (probe === undefined) {
-      probe = yield* Effect.cached(
+      const cached: Effect.Effect<string, JjError> = yield* Effect.cached(
         // The repository may not exist until runtime storage creates it.
         run("version", ["--version"]).pipe(
-          // Cancellation produced no version result; a later layer must retry.
-          Effect.onInterrupt(() => Effect.sync(() => probes.delete(binary.path)))
+          Effect.flatMap(requireMinimumVersion),
+          // Only a supported version is remembered. Interruption produced no
+          // result, and a refusal is one the operator repairs while the host
+          // runs: `chmod +x` (the permission hint's own advice) or upgrading jj
+          // in place must take effect on the next layer build.
+          Effect.onError(() =>
+            Effect.sync(() => {
+              if (probes.get(binary.path) === cached) probes.delete(binary.path)
+            })
+          )
         )
       )
+      probe = cached
       probes.set(binary.path, probe)
     }
     // Bound each layer's wait, including a wait on another layer's cached
     // probe. Interrupting the runner cleans it up and invalidates its cache;
     // a timeout is never cached as a version result.
-    const output = yield* probe.pipe(Effect.timeoutOrElse({
+    yield* probe.pipe(Effect.timeoutOrElse({
       duration: startupTimeoutMs,
       orElse: () =>
         Effect.fail(
@@ -1190,26 +1220,31 @@ const checkedOperations = (
           })
         )
     }))
-    const actual = /^jj (\d+)\.(\d+)\.(\d+)(?:[-+\s]|$)/.exec(output.trim())
-    const required = minimumVersion.split(".").map(Number)
-    let comparison = 0
-    if (actual !== null) {
-      for (let index = 0; index < required.length && comparison === 0; index += 1) {
-        comparison = Number(actual[index + 1]) - required[index]!
-      }
-    }
-    return yield* actual !== null && comparison >= 0
-      ? Effect.succeed(operations(run, repositoryRoot))
-      : Effect.fail(
-        new JjError({
-          code: "unsupported_version",
-          module: MODULE,
-          method: "version",
-          command: "jj --version",
-          message: `jj requires version ${minimumVersion} or newer; found ${output.trim()}`
-        })
-      )
+    return operations(run, repositoryRoot)
   })
+
+/** Accepts `jj --version` output at or above {@link minimumVersion}. */
+const requireMinimumVersion = (output: string): Effect.Effect<string, JjError> => {
+  const actual = /^jj (\d+)\.(\d+)\.(\d+)(?:[-+\s]|$)/.exec(output.trim())
+  const required = minimumVersion.split(".").map(Number)
+  let comparison = 0
+  if (actual !== null) {
+    for (let index = 0; index < required.length && comparison === 0; index += 1) {
+      comparison = Number(actual[index + 1]) - required[index]!
+    }
+  }
+  return actual !== null && comparison >= 0
+    ? Effect.succeed(output)
+    : Effect.fail(
+      new JjError({
+        code: "unsupported_version",
+        module: MODULE,
+        method: "version",
+        command: "jj --version",
+        message: `jj requires version ${minimumVersion} or newer; found ${output.trim()}`
+      })
+    )
+}
 
 /**
  * Provides the `Jj` service backed by the `jj` CLI, spawning its own children.

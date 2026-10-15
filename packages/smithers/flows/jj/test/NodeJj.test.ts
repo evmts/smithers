@@ -645,4 +645,34 @@ describe.skipIf(!jjInstalled)("NodeJj", () => {
       expect(existsSync(lead)).toBe(false)
       expect(existsSync(trail)).toBe(false)
     }))
+
+  it.effect("reports reverted paths from the workspace root when run from a nested directory", () =>
+    Effect.gen(function*() {
+      // `jj diff --name-only` renders paths relative to its cwd, so a layer
+      // running in `nested/` reported `../top.txt` for a root-level file.
+      const nested = join(repository, "nested-revert")
+      yield* Effect.promise(() => mkdir(nested, { recursive: true }))
+      commitWorkingCopy("before nested revert")
+      yield* Effect.promise(() => writeFile(join(repository, "top.txt"), "a\n"))
+      yield* Effect.promise(() => writeFile(join(nested, "inner.txt"), "b\n"))
+      const changeId = commitWorkingCopy("nested revert names")
+
+      process.chdir(nested)
+      const result = yield* run(Effect.flatMap(Jj, (jj) => jj.revert!(changeId))).pipe(
+        Effect.ensuring(Effect.sync(() => process.chdir(repository)))
+      )
+
+      expect([...result.reverted].sort()).toEqual(["nested-revert/inner.txt", "top.txt"])
+    }))
+
+  it.effect("reports a reverted path containing a newline as one path", () =>
+    Effect.gen(function*() {
+      commitWorkingCopy("before newline name")
+      yield* Effect.promise(() => writeFile(join(repository, "line\nbreak.txt"), "a\n"))
+      const changeId = commitWorkingCopy("newline name")
+
+      const result = yield* run(Effect.flatMap(Jj, (jj) => jj.revert!(changeId)))
+
+      expect(result.reverted).toEqual(["line\nbreak.txt"])
+    }))
 })
