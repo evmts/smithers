@@ -695,9 +695,26 @@ const fileIdentity = (info: FileSystem.File.Info): string =>
   `${info.dev}:${Option.getOrUndefined(info.ino) ?? "none"}:${info.size}:` +
   `${Option.getOrUndefined(info.mtime)?.getTime() ?? "none"}`
 
+/**
+ * Spells a path one way for containment checks.
+ *
+ * `.` segments, `..` segments, repeated separators and a trailing separator are
+ * resolved lexically, so `/elsewhere/../workspace/store` compares as inside
+ * `/workspace` and `/workspace/../store` compares as beside it. A caller's
+ * option is checked before anything exists on disk, so this is spelling only:
+ * symlinks are the canonical-path check's job.
+ */
 const comparablePath = (path: string): string => {
-  const normalized = path.replaceAll("\\", "/")
-  return /^(?:[A-Za-z]:\/|\/\/)/.test(normalized) ? normalized.toLowerCase() : normalized
+  const slashed = path.replaceAll("\\", "/")
+  const prefix = /^(?:[A-Za-z]:\/|\/\/|\/)/.exec(slashed)?.[0] ?? ""
+  const segments: Array<string> = []
+  for (const segment of slashed.slice(prefix.length).split("/")) {
+    if (segment === "" || segment === ".") continue
+    if (segment === "..") segments.pop()
+    else segments.push(segment)
+  }
+  const normalized = prefix + segments.join("/")
+  return prefix === "/" || prefix === "" ? normalized : normalized.toLowerCase()
 }
 
 const insideRoot = (root: string, candidate: string): boolean => {

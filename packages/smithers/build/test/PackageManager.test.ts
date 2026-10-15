@@ -1239,6 +1239,29 @@ describe("PackageManager.storeRoot", () => {
   })
 
   it.each([
+    ["/workspace", "/elsewhere/../workspace/store"],
+    ["/workspace", "/workspace/./store"],
+    ["/workspace", "/workspace/sub/../../workspace"],
+    ["/workspace/", "/workspace"],
+    ["/workspace/.", "/workspace/store"],
+    ["C:\\workspace", "c:\\other\\..\\WORKSPACE\\store"]
+  ])("refuses a store directory that spells a path inside root %j: %j", (projectRoot, storeDirectory) => {
+    expect(() => PackageManager.makeNoop("pnpm", { requirement: "11.21.0", projectRoot, storeDirectory }, platform))
+      .toThrow(/storeDirectory must be outside the project root/)
+  })
+
+  it.each([
+    ["/workspace", "/workspace-store"],
+    ["/workspace", "/workspace/../store"],
+    ["/workspace/sub", "/workspace/store"]
+  ])("accepts a store directory beside root %j: %j", (projectRoot, storeDirectory) => {
+    expect(
+      PackageManager.makeNoop("pnpm", { requirement: "11.21.0", projectRoot, storeDirectory }, platform)
+        .storeDirectory
+    ).toBe(storeDirectory)
+  })
+
+  it.each([
     "BASH_ENV",
     "BUN_INSTALL",
     "CDPATH",
