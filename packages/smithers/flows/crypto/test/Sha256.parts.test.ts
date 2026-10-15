@@ -161,3 +161,34 @@ it("matches Node SHA-256 throughout randomized edits and failed-call recovery", 
     }
   )
 })
+
+it("rejects surrogate pairs split across fragments and recovers cached Unicode prefixes", () => {
+  const hash = makeDigestPartsSync()
+  const expected = createHash("sha256").update("🙂tail").digest("hex")
+  expect(hash(["🙂", "tail"])).toBe(expected)
+  for (const parts of [["\ud83d", "\ude42"], ["🙂", "\ud83d"], ["🙂", "\ude42"]]) {
+    expect(() => hash(parts)).toThrow(expect.objectContaining({ code: "invalid_text" }))
+    expect(hash(["🙂", "tail"])).toBe(expected)
+  }
+  expect(hash(["🙂"])).toBe(createHash("sha256").update("🙂").digest("hex"))
+})
+
+it("rejects sparse fragments without confusing holes with empty text", () => {
+  const hash = makeDigestPartsSync()
+  const expected = createHash("sha256").update("ab").digest("hex")
+  expect(hash(["a", "", "b"])).toBe(expected)
+  const sparse = ["a", "", "b"]
+  delete sparse[1]
+  expect(() => hash(sparse)).toThrow(expect.objectContaining({ code: "invalid_input" }))
+  expect(hash(["a", "", "b"])).toBe(expected)
+})
+
+it("hashes concatenated text independently of fragment boundaries across cache edits", () => {
+  const hash = makeDigestPartsSync()
+  const expected = createHash("sha256").update("abc🙂").digest("hex")
+  for (const parts of [["ab", "c🙂"], ["a", "bc", "🙂"], ["", "abc🙂", ""], ["abc🙂"]]) {
+    expect(hash(parts)).toBe(expected)
+  }
+  expect(hash([])).toBe(createHash("sha256").digest("hex"))
+  expect(hash(["", ""])).toBe(createHash("sha256").digest("hex"))
+})
