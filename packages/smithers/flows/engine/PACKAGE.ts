@@ -5,8 +5,14 @@
  * package's `lib`, so the dependency runs first and contributes its content
  * key. `dependencyPolicy` adds the package's explicit knip check.
  */
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
+import {
+  BuildAndCheckTypeScriptPackage,
+  ReviewDocsAgainstCode,
+  ReviewJsdocAgainstCode,
+  ReviewTagsMigrationsAndKeys
+} from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
+import * as Input from "@smthrs/targets/Input"
 import { docsWriter, referenceStyle } from "../../../../PACKAGE.ts"
 import { Package as capabilityPackage } from "../capability/PACKAGE.ts"
 import { Package as flowPackage } from "../flow/PACKAGE.ts"
@@ -15,6 +21,8 @@ const flow = flowPackage.lib
 
 const standard = BuildAndCheckTypeScriptPackage({
   deps: [flow, capabilityPackage.lib],
+  // Examples are type-checked, linted and run by test/examples.test.ts.
+  sources: Input.glob("{src,examples}/**/*.ts"),
   cwd: "packages/smithers/flows/engine"
 })
 
@@ -78,6 +86,32 @@ const referenceDocs = Smithers.Agent.Diff({
   maxRounds: 3
 })
 // --- end reference docs pipeline ------------------------------------------
+
+// --- model reviews ----------------------------------------------------------
+/**
+ * The durable-identity review. The engine derives the persisted action keys
+ * (`ActionKey.ts`) and the encoded exit and deferred schemas a durable store
+ * replays, so a changed key input or identity string re-keys recorded runs.
+ */
+const reviewTagsMigrationsAndKeys = ReviewTagsMigrationsAndKeys({ cwd: engineCwd })
+
+/**
+ * Changed public APIs against the package prose. The default context reads
+ * only `docs/*.md`; the concept, guide, and reference pages document the same
+ * exports, so the review reads all of them (about 220 KiB, under the 2 MiB cap).
+ */
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({
+  cwd: engineCwd,
+  context: [
+    Smithers.file("README.md"),
+    Smithers.glob("docs/**/*.md"),
+    Smithers.file("//apps/site/src/content/docs/docs/reference/api/engine.mdx")
+  ]
+})
+
+/** Changed exports against their own JSDoc. */
+const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: engineCwd })
+// --- end model reviews ------------------------------------------------------
 
 // --- security review --------------------------------------------------------
 /** `security` reviews the diff against origin/main; `securityAudit` audits every owned source file. */
@@ -206,6 +240,9 @@ export const Package = Smithers.Package({
     referenceCodeBlocks,
     referenceDocs,
     referencePages,
+    reviewDocsAgainstCode,
+    reviewJsdocAgainstCode,
+    reviewTagsMigrationsAndKeys,
     ...securityReview
   }
 })
