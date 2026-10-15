@@ -7,6 +7,7 @@
  * `pnpm run check` and `pnpm test` used to reach it only through the recursive
  * root scripts; these targets are the same gates as declarations.
  */
+import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 
 const cwd = "packages/smithers/build/infra"
@@ -135,6 +136,40 @@ const docs = Smithers.DocsParity({
   cwd
 })
 
+/** The public code of the worker and the operator scripts; tests are out of scope. */
+const reviewedSources = [
+  Smithers.glob("worker/*.ts"),
+  Smithers.file("scripts/deploy.ts"),
+  Smithers.file("scripts/failure-message.ts"),
+  Smithers.file("scripts/redact-state.ts"),
+  Smithers.file("scripts/remote-state.ts"),
+  Smithers.file("scripts/state-ownership.ts"),
+  Smithers.file("deployment.ts"),
+  Smithers.file("alchemy.run.ts")
+]
+
+/**
+ * Changed worker and deployment code against the operator prose that
+ * documents it. The package has no site API page, so the context is its own
+ * README and the cache trust model.
+ *
+ * @since 0.1.0
+ * @category lint
+ */
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({
+  cwd,
+  include: reviewedSources,
+  context: [Smithers.file("README.md"), Smithers.file("CACHE-TRUST.md")]
+})
+
+/**
+ * Changed worker and deployment exports against their own JSDoc.
+ *
+ * @since 0.1.0
+ * @category lint
+ */
+const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd, include: reviewedSources })
+
 /**
  * Security review of the hosted remote cache and its deployment tooling.
  *
@@ -251,5 +286,15 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { check, docs, docsFiles, fmt, lint, suite, ...securityReview }
+  targets: {
+    check,
+    docs,
+    docsFiles,
+    fmt,
+    lint,
+    reviewDocsAgainstCode,
+    reviewJsdocAgainstCode,
+    suite,
+    ...securityReview
+  }
 })

@@ -192,7 +192,9 @@ const runAlchemy = (
  * The wrapper owns the state directory from before Alchemy starts until
  * redaction has published its last file, so no other deployment or standalone
  * redaction can replace state under either of them; a second deployment of
- * the same state is refused. Termination signals are held while cleanup runs and are forwarded to the
+ * the same state is refused. A termination signal that arrives while remote
+ * state is pulled releases the remote lock and returns before Alchemy starts.
+ * Termination signals are held while cleanup runs and are forwarded to the
  * complete detached Alchemy process group. After interruption, the group is
  * tracked until it is observed gone, even if its leader exits first. Surviving
  * members receive SIGKILL after a bounded grace period, before redaction and
@@ -217,18 +219,6 @@ export const deploy = async (
     await Fs.mkdir(stateDirectory, { recursive: true })
     ownership = await acquireStateOwnership(stateDirectory)
   } catch (error) {
-    process.stderr.write(`Alchemy deployment refused: ${failureMessage(error)}\n`)
-    return 1
-  }
-  let remote: RemoteStateSession
-  try {
-    remote = await openRemoteState(await remoteState(), stateDirectory, {
-      host: NodeOs.hostname(),
-      pid: process.pid,
-      startedAt: new Date().toISOString()
-    })
-  } catch (error) {
-    await ownership.release()
     process.stderr.write(`Alchemy deployment refused: ${failureMessage(error)}\n`)
     return 1
   }
@@ -268,6 +258,41 @@ export const deploy = async (
     }
     handlers.set(signal, handler)
     process.on(signal, handler)
+  }
+  const removeHandlers = (): void => {
+    for (const [signal, handler] of handlers) process.off(signal, handler)
+  }
+
+  // The handlers are installed before the remote lock is taken: a signal's
+  // default action during the pull would leave that lock in R2 for every
+  // later deployment to trip over. A signal before Alchemy starts cancels it.
+  let remote: RemoteStateSession
+  try {
+    remote = await openRemoteState(await remoteState(), stateDirectory, {
+      host: NodeOs.hostname(),
+      pid: process.pid,
+      startedAt: new Date().toISOString()
+    })
+  } catch (error) {
+    removeHandlers()
+    await ownership.release()
+    process.stderr.write(`Alchemy deployment refused: ${failureMessage(error)}\n`)
+    return 1
+  }
+  if (requestedSignal !== undefined) {
+    let releaseFailure: unknown
+    try {
+      await remote.release()
+    } catch (error) {
+      releaseFailure = error
+    }
+    removeHandlers()
+    await ownership.release()
+    if (releaseFailure !== undefined) {
+      process.stderr.write(`Remote Alchemy state lock was not released: ${failureMessage(releaseFailure)}\n`)
+      return 1
+    }
+    return signalExitCode(requestedSignal)
   }
 
   let command: CommandResult | undefined
@@ -313,7 +338,7 @@ export const deploy = async (
     }
   } finally {
     clearEscalation()
-    for (const [signal, handler] of handlers) process.off(signal, handler)
+    removeHandlers()
     try {
       await remote.release()
     } catch (error) {
