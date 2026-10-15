@@ -274,6 +274,36 @@ describe("key derivation", () => {
     expect(calls).toBe(0)
   })
 
+  it.each(derivations)("%s normalizes throwing and defective hosts and recovers on retry", (_name, decode) => {
+    for (const mode of ["throw", "defect"] as const) {
+      let calls = 0
+      const failure = new Error("host diagnostic")
+      // Deliberately broken hosts exercise failures a real platform should never produce.
+      const host = Crypto.make({
+        randomBytes: (size) => new Uint8Array(size),
+        digest: () => {
+          calls++
+          if (calls === 1) {
+            if (mode === "throw") throw failure
+            return Effect.die(failure)
+          }
+          return Effect.succeed(new Uint8Array(32))
+        }
+      })
+      const operation = decode({ domain: "test/host-recovery", version: 1 }).pipe(
+        Effect.provideService(Crypto.Crypto, host)
+      )
+      const error = Effect.runSync(Effect.flip(operation))
+      expect(error).toMatchObject(
+        _name === "deriveKey"
+          ? { code: "digest_failed", cause: { code: "digest_failed", cause: failure } }
+          : { _tag: "SchemaError", message: expect.stringContaining("[digest_failed]") }
+      )
+      expect(Effect.runSync(operation)).toBe(`key1_${"0".repeat(64)}`)
+      expect(calls).toBe(2)
+    }
+  })
+
   it.each([0, 31, 33, 64])("rejects a host digest of %i bytes and allows a subsequent valid derivation", (size) => {
     // Malformed host output cannot be produced by a conforming platform service.
     const host = Crypto.make({
