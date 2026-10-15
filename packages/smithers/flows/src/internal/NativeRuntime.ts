@@ -219,14 +219,22 @@ export const makeNative = (platform: NativePlatform) => {
     return timeout
   }
 
-  const snapshotRule = (rule: Permission.Rule): Permission.Rule =>
-    new Permission.Rule({
-      effect: rule.effect,
-      pattern: new Capability.CapabilityPattern({
-        action: rule.pattern.action,
-        resource: rule.pattern.resource
+  // A JavaScript caller can put anything in the list, so a member that is not
+  // a rule is refused as the option it is rather than with whatever the
+  // property reads or the constructors throw.
+  const snapshotRule = (rule: Permission.Rule): Permission.Rule => {
+    try {
+      return new Permission.Rule({
+        effect: rule.effect,
+        pattern: new Capability.CapabilityPattern({
+          action: rule.pattern.action,
+          resource: rule.pattern.resource
+        })
       })
-    })
+    } catch {
+      throw invalidConfiguration("rules", `${platform.name} rules must be capability rules`)
+    }
+  }
 
   const snapshotRules = (
     rules: GrantStore.MakeOptions["rules"]

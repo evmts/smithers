@@ -64,15 +64,15 @@ called, so a bad option fails at wiring time rather than at some arbitrary later
 scope. `field` exists so an embedder can tell an empty `filename` from an empty
 `owner.hostId` without reading prose.
 
-| `field`             | What it refuses                                                                          |
-| ------------------- | ---------------------------------------------------------------------------------------- |
-| `filename`          | An empty or non-string SQLite filename.                                                  |
-| `workspaceRoot`     | An empty or non-string workspace root, including `storage`'s second argument.            |
-| `owner.hostId`      | An empty or non-string host id, or an `options.owner` that is omitted or `null`.         |
-| `isAlive`           | An `isAlive` that is not a function. A function is the one option a schema cannot check. |
-| `signals`           | A `signals` value that is not an array, or a name that cannot be installed.              |
-| `shutdownTimeoutMs` | Anything that is not a safe integer from 0 through 2,147,483,647.                        |
-| `rules`             | A `rules` value that is not an array, or a policy list whose members are not arrays.     |
+| `field`             | What it refuses                                                                                                              |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `filename`          | An empty or non-string SQLite filename.                                                                                      |
+| `workspaceRoot`     | An empty or non-string workspace root, including `storage`'s second argument.                                                |
+| `owner.hostId`      | An empty or non-string host id, or an `options.owner` that is omitted or `null`.                                             |
+| `isAlive`           | An `isAlive` that is not a function. A function is the one option a schema cannot check.                                     |
+| `signals`           | A `signals` value that is not an array, or a name that cannot be installed.                                                  |
+| `shutdownTimeoutMs` | Anything that is not a safe integer from 0 through 2,147,483,647.                                                            |
+| `rules`             | A `rules` value that is not an array, a policy list whose members are not arrays, or a member that is not a capability rule. |
 
 **Fix.** Correct the named field. Note that nothing was created: a refused
 configuration never opens a database, and a refused signal list never installs a

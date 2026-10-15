@@ -1100,6 +1100,28 @@ describe("the Node host composition", () => {
         Layer.empty
       )
     ).toThrow(/rulesets must be arrays/)
+    // A member that is not a rule is a bad option like any other: it is
+    // refused with the field named, not with whatever the snapshot's property
+    // reads happen to throw.
+    for (const rules of [[null], ["deny-everything"], [[null]], [[{ effect: "allow" }]], [{}, []]]) {
+      let thrown: unknown
+      try {
+        NodeRuntime.layerHost(
+          {
+            filename: hostFile,
+            workspaceRoot: directory,
+            owner: { hostId: "invalid-rule" },
+            signals: [],
+            rules: rules as never
+          },
+          Layer.empty
+        )
+      } catch (error) {
+        thrown = error
+      }
+      expect(thrown).toBeInstanceOf(NodeRuntime.RuntimeConfigurationError)
+      expect(thrown).toMatchObject({ field: "rules", message: expect.stringMatching(/rules must be capability rules/) })
+    }
     expect(process.listenerCount("SIGUSR2")).toBe(before)
   })
 
