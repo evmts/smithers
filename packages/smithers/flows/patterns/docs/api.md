@@ -378,9 +378,11 @@ alternations of proponent then opponent, then one judge call over the whole
 transcript. `rounds` is expanded while the flow is declared, so the call count
 is a fact about the declaration rather than about a run.
 
-`Debate.run(input, options)` supplies the accumulated transcript instead:
-`proponent` receives `{ input, transcript, round }`, `opponent` receives that
-plus `proponent`, and `judge` receives `{ input, transcript }`. The judge's
+Both forms hand members the same payloads: `proponent` receives
+`{ input, transcript, round }`, `opponent` receives that plus `proponent`, and
+`judge` receives `{ input, transcript }`. `round` counts from 1.
+
+`Debate.run(input, options)` runs the same exchange as an Effect. The judge's
 value is the result. Each turn is frozen as it is appended and each callback
 gets a frozen snapshot of the transcript, while the payloads inside a turn stay
 the caller's own references. `rounds` must be a positive safe integer.

@@ -139,20 +139,37 @@ const debate: Pattern<{ readonly rounds: number }> = {
   make: (m, { rounds }) => Debate.make({ proponent: m.proponent!, opponent: m.opponent!, judge: m.judge!, rounds }),
   run: (e, input, { rounds }) =>
     Debate.run(input, { proponent: e.proponent!, opponent: e.opponent!, judge: e.judge!, rounds }),
-  cases: [1, 2].map((rounds) => ({
-    name: `debate-${rounds}`,
-    input: "topic",
-    options: { rounds },
-    script: {
-      proponent: ({ transcript }: { readonly transcript: ReadonlyArray<unknown> }) => `p${transcript.length}`,
-      opponent: ({ proponent }: { readonly proponent: string }) => `o:${proponent}`,
-      judge: ({ transcript }: { readonly transcript: unknown }) => ({ verdict: transcript })
-    },
-    expected: {
-      verdict: Array.from({ length: rounds }, (_, index) => ({ proponent: `p${index}`, opponent: `o:p${index}` }))
-    },
-    ordered: true
-  }))
+  cases: [
+    ...[1, 2].map((rounds) => ({
+      name: `debate-${rounds}`,
+      input: "topic",
+      options: { rounds },
+      script: {
+        proponent: ({ transcript }: { readonly transcript: ReadonlyArray<unknown> }) => `p${transcript.length}`,
+        opponent: ({ proponent }: { readonly proponent: string }) => `o:${proponent}`,
+        judge: ({ transcript }: { readonly transcript: unknown }) => ({ verdict: transcript })
+      },
+      expected: {
+        verdict: Array.from({ length: rounds }, (_, index) => ({ proponent: `p${index}`, opponent: `o:p${index}` }))
+      },
+      ordered: true
+    })),
+    {
+      // Both forms number rounds from 1, so a member written against one form
+      // reads the same `round` in the other.
+      name: "debate-round-numbers",
+      input: "topic",
+      options: { rounds: 2 },
+      script: {
+        proponent: ({ round }: { readonly round: number }) => `p${round}`,
+        opponent: ({ proponent, round }: { readonly proponent: string; readonly round: number }) =>
+          `o${round}:${proponent}`,
+        judge: ({ transcript }: { readonly transcript: unknown }) => ({ verdict: transcript })
+      },
+      expected: { verdict: [{ proponent: "p1", opponent: "o1:p1" }, { proponent: "p2", opponent: "o2:p2" }] },
+      ordered: true
+    }
+  ]
 }
 
 const panelScript = {

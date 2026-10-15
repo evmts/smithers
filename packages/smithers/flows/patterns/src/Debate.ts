@@ -69,9 +69,11 @@ export interface RuntimeOptions<I, Proponent, Opponent, Judge, E, R, E2, R2, E3,
 /**
  * Configuration for {@link make}.
  *
- * Each participant receives `{ input, transcript }`. The judge receives the
- * final value with the same shape. `rounds` is expanded while this flow is
- * declared, rather than at execution time.
+ * The proponent receives `{ input, transcript, round }` and the opponent
+ * receives that plus `proponent`, where `round` counts from 1 as in
+ * {@link run}. The judge receives `{ input, transcript }` with the final
+ * transcript. `rounds` is expanded while this flow is declared, rather than at
+ * execution time.
  *
  * @category models
  * @since 0.1.0
@@ -133,11 +135,13 @@ export const make = <R = never>(options: MakeOptions<R>): DebateFlow<R> => {
       >
     ): Node.Node<unknown, unknown, R> => {
       if (round === rounds) return callMember(participants.judge, { input, transcript })
+      // Members are handed the 1-based round number `run` hands them, so one
+      // member serves both forms.
       return Node.bindPlanned(
-        callMember(participants.proponent, { input, transcript }),
+        callMember(participants.proponent, { input, transcript, round: round + 1 }),
         Node.capture({ round }, (proponent) =>
           Node.bindPlanned(
-            callMember(participants.opponent, { input, transcript, proponent }),
+            callMember(participants.opponent, { input, transcript, proponent, round: round + 1 }),
             Node.capture({ round }, (opponent) => visit(round + 1, [...transcript, { proponent, opponent }]))
           ))
       )
