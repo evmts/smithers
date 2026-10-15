@@ -2052,18 +2052,24 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
          * (the rule `cards/BranchCard.tsx` states for a card with no rows,
          * [#3882](https://github.com/smithersai/smithers/issues/3882)).
          *
+         * - `host` — the host's own factory inventory, as `GET /api/agents`
+         *   answered it. An empty list means the host answered with none.
          * - `repository` — the target repository's flow catalog, read: the rows
          *   are its flows that declare a model, and an empty list means it
          *   declares none.
-         * - `reading` — a repository is the target and its catalog has not
-         *   answered yet. Claims nothing about what exists.
+         * - `reading` — the source has not answered yet: a target repository
+         *   whose catalog read is out, or a host whose factory route is.
+         *   Claims nothing about what exists.
+         * - `unreadable` — the catalog read was refused, so nothing is known
+         *   about what the repository declares. A prerequisite, never an
+         *   inventory of none
+         *   ([#3831](https://github.com/smithersai/smithers/issues/3831)).
          * - `no-repository` — no repository is the target, so there is no
          *   catalog to read.
          *
-         * Absent on the factory inventory a host served (`install`), and on a
-         * card written before this row existed.
+         * Absent only on a card written before this row existed.
          */
-        inventory: z.enum(["repository", "reading", "no-repository"]).optional(),
+        inventory: z.enum(["host", "repository", "reading", "unreadable", "no-repository"]).optional(),
         canAssign: z.boolean().optional(),
         roleBindings: z.record(z.string(), z.unknown()).optional(),
         selectedAgent: z.string().optional(),

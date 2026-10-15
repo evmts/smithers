@@ -107,6 +107,17 @@ export const RepositoryFlowsRowSchema = z.object({
   /** The projection's flow rows, featured first, in catalog order. */
   flows: z.array(RepositoryFlowSchema),
   home: z.union([RepositoryHomeSchema, z.object({ kind: z.literal("error"), message: z.string() })]).optional(),
+  /**
+   * How the catalog read itself ended, which an empty `flows` cannot say:
+   * `read` (the projection answered), `absent` (the mirror has no
+   * `.smithers/factory.json`, so the repository declares none) or
+   * `unreadable` (the read was refused, so this row states NOTHING about what
+   * the repository declares). A reader that treats the third as the first
+   * publishes a verdict the read never reached
+   * ([#3831](https://github.com/smithersai/smithers/issues/3831);
+   * controller/agents.ts is the one that must tell them apart).
+   */
+  catalog: z.enum(["read", "absent", "unreadable"]).optional(),
   loadedAt: z.number()
 })
 export type RepositoryFlowsRow = z.infer<typeof RepositoryFlowsRowSchema>
@@ -2000,7 +2011,7 @@ type AppTransitionBody =
   /* One repository job's host registration read: requested, then completed or failed. */
   | { type: "repository-job.observed"; actor: "system"; observation: RepositoryJobObservation }
   /* The repository's declared flows landed (or went absent: an empty list) from its factory projection. */
-  | { type: "repository-flows.loaded"; actor: "system"; repo: string; flows: ReadonlyArray<RepositoryFlow>; home?: RepositoryFlowsRow["home"] }
+  | { type: "repository-flows.loaded"; actor: "system"; repo: string; flows: ReadonlyArray<RepositoryFlow>; home?: RepositoryFlowsRow["home"]; catalog?: RepositoryFlowsRow["catalog"] }
   /* The whole of one flow's measured history, replacing whatever was read before. */
   | { type: "flow-durations.loaded"; actor: "system"; repo: string; workspaceId?: string; flowId: string; rows: ReadonlyArray<{ readonly actionTag: string; readonly samples: number; readonly p50Ms: number; readonly p90Ms: number }> }
   /* The workspace heading: its name, and the inline editor the pencil opens. */

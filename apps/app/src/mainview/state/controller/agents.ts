@@ -77,28 +77,40 @@ export const agentProfileOf = (flow: RepositoryFlow): AgentProfileRow | undefine
  * `install` row states (flows/DoorAvailability.ts).
  *
  * `inventory` is why the rows are what they are, so no caller has to read an
- * empty array as a verdict: a repository that has not answered yet, and one
- * that answered and declares no agent flow, are different facts
- * ([#3831](https://github.com/smithersai/smithers/issues/3831)). `flows` is the
- * catalog's size, which is how an empty list of AGENTS is told apart from an
- * empty CATALOG without naming a flow.
+ * empty array as a verdict: a repository that has not answered yet, one whose
+ * read was REFUSED, and one that answered and declares no agent flow are three
+ * different facts, and only the third is an empty inventory
+ * ([#3831](https://github.com/smithersai/smithers/issues/3831)). The seam's
+ * row carries which one through `catalog`, because `flows: []` is what all
+ * three leave behind (seams/RepositoryFlowsSeam.ts). `flows` is the catalog's
+ * size, which is how an empty list of AGENTS is told apart from an empty
+ * CATALOG without naming a flow; `declared` is whether the repository has a
+ * catalog at all, which the counts alone cannot say.
  */
 export const repositoryAgentCatalog = (store: AppStore): {
   readonly inventory: AgentsInventory
   readonly rows: ReadonlyArray<AgentProfileRow>
   readonly flows: number
+  readonly declared: "read" | "absent" | "unreadable" | "none"
 } => {
   const target = resolveTargetRepo(store, undefined)
-  if ("error" in target) return { inventory: "no-repository", rows: [], flows: 0 }
+  if ("error" in target) return { inventory: "no-repository", rows: [], flows: 0, declared: "none" }
   const catalog = store.collections.repositoryFlows.get(target.repo)
-  if (catalog === undefined) return { inventory: "reading", rows: [], flows: 0 }
+  if (catalog === undefined) return { inventory: "reading", rows: [], flows: 0, declared: "none" }
+  /*
+   * The read was refused. The row exists, so the read HAPPENED, but it holds
+   * no catalog: this host has no agent source it can state, which is a
+   * prerequisite, never an inventory of none.
+   */
+  if (catalog.catalog === "unreadable") return { inventory: "unreadable", rows: [], flows: 0, declared: "unreadable" }
   return {
     inventory: "repository",
     rows: catalog.flows.flatMap((flow) => {
       const row = agentProfileOf(flow)
       return row === undefined ? [] : [row]
     }),
-    flows: catalog.flows.length
+    flows: catalog.flows.length,
+    declared: catalog.catalog ?? "read"
   }
 }
 
@@ -167,16 +179,19 @@ export const createAgentsController = (ctx: ControllerContext, deps: AgentsContr
    * The production cause could not be read off anything the app recorded: the
    * screen showed five rows no host had answered for, and the ring held
    * nothing about the read at all. So the door records WHICH source answered
-   * and what it held — the closed `inventory` vocabulary and two counts. The
-   * record carries no repository, flow id, model, URL, header, credential or
-   * backend sentence; a healthy answer with rows records nothing.
+   * and what it held — the closed `inventory` and catalog vocabularies and two
+   * counts. `catalog` is how a repository that declares no catalog at all is
+   * told from one whose catalog declares no agent, which the counts alone
+   * cannot say. The record carries no repository, flow id, model, URL, header,
+   * credential or backend sentence; a healthy answer with rows records
+   * nothing.
    */
-  const reportInventory = (inventory: AgentsInventory, rows: number, flows: number): void => {
-    if (rows > 0) return
+  const reportInventory = (catalog: ReturnType<typeof repositoryAgentCatalog>): void => {
+    if (catalog.rows.length > 0) return
     ctx.failures.report(
       "agents.inventory",
-      new AgentsInventoryOutcome({ inventory }),
-      `agents.inventory source=${inventory} rows=${rows} flows=${flows}`
+      new AgentsInventoryOutcome({ inventory: catalog.inventory }),
+      `agents.inventory source=${catalog.inventory} catalog=${catalog.declared} rows=${catalog.rows.length} flows=${catalog.flows}`
     )
   }
 
@@ -228,7 +243,13 @@ export const createAgentsController = (ctx: ControllerContext, deps: AgentsContr
   const accept = (payload: unknown, tail: boolean) => {
     const parsed = CardSchema.safeParse({ id: AGENTS_CARD_ID, kind: "agents", title: "Agents", status: "active", createdAt: Date.now(), ordinal: 0, payload })
     if (!parsed.success || parsed.data.kind !== "agents") throw new Error("Invalid agents response")
-    shared.served = parsed.data.payload
+    /*
+     * The route answered, so this payload's source is the HOST's own factory
+     * inventory. It says so, because every payload the card renders must name
+     * the source of its rows: an empty one that names none leaves the card
+     * with no sentence at all (cards/AgentCards.tsx).
+     */
+    shared.served = "agents" in parsed.data.payload ? { ...parsed.data.payload, inventory: "host" as const } : parsed.data.payload
     renderAgentsCard(tail)
   }
   const listAgents: AgentsController["listAgents"] = async (role, model) => {
@@ -238,7 +259,7 @@ export const createAgentsController = (ctx: ControllerContext, deps: AgentsContr
      */
     if (!deps.install && shared.served === undefined) {
       const catalog = repositoryAgentCatalog(store)
-      reportInventory(catalog.inventory, catalog.rows.length, catalog.flows)
+      reportInventory(catalog)
       /*
        * `/agent <name>` filters the card to one row. A name the catalog that
        * ANSWERED does not hold gets the install's own words for it
@@ -305,7 +326,8 @@ export const createAgentsController = (ctx: ControllerContext, deps: AgentsContr
     const key = `${role}:${model}`
     if (shared.pending.has(key)) return
     if (!shared.served) {
-      shared.served = { native: false, agents: [] }
+      /* A placeholder the route has not answered yet, so it states that stage and not an empty inventory. */
+      shared.served = { native: false, inventory: "reading", agents: [] }
       renderAgentsCard(true)
     }
     if (!("agents" in shared.served)) return "Agents unavailable"
@@ -324,9 +346,20 @@ export const createAgentsController = (ctx: ControllerContext, deps: AgentsContr
     queueMicrotask(() => { if (!ctx.disposed && ctx.commandActor === "user") launchAssignment(recovered.assignment!) })
   }
 
+  /*
+   * The account changed, so the served inventory belonged to someone else:
+   * it is dropped and the open card is rewritten off this account's source.
+   *
+   * The rewrite waits for a microtask, like the transition subscription's. The
+   * listeners run inside the dispatch that changed the account, and a second
+   * dispatch from inside that one is based on state that has not persisted:
+   * with an Agents card already open — which is exactly what a reload
+   * restores — the rewrite made the identity dispatch itself fail
+   * (chain/DurableCollection.ts `StaleDurableMutationError`).
+   */
   const stopAccount = ctx.onAccountChange?.(() => {
     shared.generation++; shared.stopLive?.(); shared.stopLive = undefined; shared.served = undefined; shared.selectedAgent = undefined; shared.selectedModel = undefined
-    renderAgentsCard(false)
+    queueMicrotask(() => { if (!ctx.disposed) renderAgentsCard(false) })
   })
   void ctx.onDispose(() => { stopAccount?.(); shared.generation++; shared.stopLive?.() })
 

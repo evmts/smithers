@@ -52,18 +52,25 @@ const ProfileRowView = ({ agent, native, canAssign, onRunCommand }: { readonly a
  * The card's body when it holds no rows: the stage of the source that would
  * have answered them, and nothing beyond it.
  *
- * An empty list is not a verdict. A catalog that answered and declares no
- * agent flow, one that has not answered yet, and a host with no repository to
- * read are three different facts, and the one sentence that used to cover all
- * three ("Agents run on the native app's harnesses") named harnesses that
- * retired with the local backend and a host that answers for nothing
+ * An empty list is not a verdict. A host that answered with none, a catalog
+ * that answered and declares no agent flow, one that has not answered yet,
+ * one whose read was refused, and a host with no repository to read are five
+ * different facts, and the one sentence that used to cover them all ("Agents
+ * run on the native app's harnesses") named harnesses that retired with the
+ * local backend and a host that answers for nothing
  * ([#3831](https://github.com/smithersai/smithers/issues/3831); the rule
  * `BranchCard.tsx` states for the same shape in #3882). `data-agents-source`
  * carries the classification so the next native retest names its own stage.
+ *
+ * Only `repository` and `host` are an inventory of none. `unreadable` is the
+ * refusal the listing's own words already state, so it reads as that failure
+ * and not as an empty repository.
  */
 const EMPTY_SENTENCE: Record<NonNullable<Extract<AgentsCard["payload"], { native: boolean }>["inventory"]>, string> = {
+  host: "No agents yet",
   repository: "No agents yet",
   reading: "Loading agents.",
+  unreadable: "Could not read agents",
   "no-repository": "No repository is selected."
 }
 
@@ -71,9 +78,18 @@ export const AgentsCardBody = ({ card, onRunCommand, models = [] }: { readonly c
   if ("cloud" in card.payload) return null
   const { native, agents, error, canAssign, selectedAgent, selectedModel, testing, inventory } = card.payload
   if (agents.length === 0 && card.payload.install !== true) {
-    return <p className="smithers-card-note" data-agents-source={inventory ?? "unknown"}>
-      {inventory === undefined ? "" : EMPTY_SENTENCE[inventory]}
-    </p>
+    /*
+     * A card written before `inventory` existed names no source, so it states
+     * nothing: it renders no note at all rather than an empty one, and the
+     * controller rewrites it off this launch's source. The listing's own
+     * refusal still shows, which the single sentence used to swallow.
+     */
+    return <>
+      {inventory === undefined ? null :
+        <p className="smithers-card-note" data-agents-source={inventory}>{EMPTY_SENTENCE[inventory]}</p>}
+      {error === undefined ? null :
+        <FailureNotice className="sui-approval-error" data-testid="agents-failure" failure={describedFailure("AgentsFailed", AGENTS_FAILED, error)} />}
+    </>
   }
   return (
     <div className="agents-card">

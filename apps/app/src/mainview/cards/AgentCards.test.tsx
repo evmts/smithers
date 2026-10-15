@@ -68,9 +68,9 @@ describe("the Agents card", () => {
   /*
    * A card with no rows states the stage of the source that would have
    * answered them, and never a verdict the read did not reach (#3831): an
-   * unread catalog is not a repository with no agents, and "Agents run on the
-   * native app's harnesses" named harnesses that retired with the local
-   * backend and a host that answers for nothing.
+   * unread catalog is not a repository with no agents, a REFUSED read is
+   * neither, and "Agents run on the native app's harnesses" named harnesses
+   * that retired with the local backend and a host that answers for nothing.
    */
   test("with no rows it states the stage of the source, and offers no act", () => {
     const read = mount(<AgentsCardBody onRunCommand={() => {}} card={agentsCard({ native: false, inventory: "repository", agents: [] })} />)
@@ -85,10 +85,35 @@ describe("the Agents card", () => {
     const none = mount(<AgentsCardBody onRunCommand={() => {}} card={agentsCard({ native: false, inventory: "no-repository", agents: [] })} />)
     expect(none.textContent).toBe("No repository is selected.")
 
-    /* A card written before the stage existed claims nothing of its own. */
+    /* The host answered with none: that IS an empty inventory. */
+    const host = mount(<AgentsCardBody onRunCommand={() => {}} card={agentsCard({ native: false, inventory: "host", agents: [] })} />)
+    expect(host.textContent).toBe("No agents yet")
+
+    /* A refused read is the refusal, never a repository that declares none. */
+    const refused = mount(<AgentsCardBody onRunCommand={() => {}} card={agentsCard({ native: false, inventory: "unreadable", agents: [] })} />)
+    expect(refused.textContent).toBe("Could not read agents")
+    expect(refused.textContent).not.toContain("No agents")
+
+    /*
+     * A card written before the stage existed claims nothing of its own, and
+     * renders no note rather than an empty one: a blank sentence is a blank
+     * card body, which is its own defect.
+     */
     const legacy = mount(<AgentsCardBody onRunCommand={() => {}} card={agentsCard({ native: false, agents: [] })} />)
     expect(legacy.textContent).toBe("")
-    expect(legacy.querySelector("[data-agents-source]")?.getAttribute("data-agents-source")).toBe("unknown")
+    expect(legacy.querySelector("[data-agents-source]")).toBeNull()
+    expect(legacy.querySelector("p")).toBeNull()
+  })
+
+  /*
+   * The listing's own refusal used to be swallowed whenever the card held no
+   * rows: the single sentence returned before the notice could render, so the
+   * one reading that names a cause never reached the screen.
+   */
+  test("with no rows the listing's refusal still shows beside the stage", () => {
+    const host = mount(<AgentsCardBody onRunCommand={() => {}} card={agentsCard({ native: false, inventory: "host", agents: [], error: "the host refused" })} />)
+    expect(host.querySelector("[data-testid=\"agents-failure\"]")).not.toBeNull()
+    expect(host.textContent).toContain("No agents yet")
   })
 
   test("a repository agent flow is a row like a built-in: label, model, and its Runs door is runs.list on its flow id", () => {

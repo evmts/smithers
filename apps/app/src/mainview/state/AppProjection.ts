@@ -3483,16 +3483,23 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
            * One row per repository, replaced whole: the projection is the
            * catalog, so a reload keeps nothing of a stale one. An absent
            * projection leaves no leaves, while a homepage can keep the row.
+           *
+           * A read that was REFUSED keeps its row even with neither, because
+           * the absence of a row reads as "not read yet" and that read did
+           * happen: `catalog` is the only place the refusal survives, and a
+           * reader that cannot see it states an empty catalog as a fact
+           * ([#3831](https://github.com/smithersai/smithers/issues/3831)).
            */
           const existing = collections.repositoryFlows.get(transition.repo)
-          if (transition.flows.length === 0 && transition.home === undefined) {
+          if (transition.flows.length === 0 && transition.home === undefined && transition.catalog !== "unreadable") {
             if (existing !== undefined) collections.repositoryFlows.delete(transition.repo)
           } else if (existing === undefined) {
-            collections.repositoryFlows.insert({ id: transition.repo, flows: [...transition.flows], home: transition.home, loadedAt: createdAt })
+            collections.repositoryFlows.insert({ id: transition.repo, flows: [...transition.flows], home: transition.home, catalog: transition.catalog, loadedAt: createdAt })
           } else {
             collections.repositoryFlows.update(transition.repo, (draft) => {
               draft.flows = [...transition.flows]
               draft.home = transition.home
+              draft.catalog = transition.catalog
               draft.loadedAt = createdAt
             })
           }

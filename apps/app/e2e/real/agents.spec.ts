@@ -23,15 +23,16 @@ const agentRows = (page: Page) => agentsCard(page).locator("[data-testid=\"agent
 /**
  * The card as a host without `install` may answer it: the rows are the target
  * repository's agent flows, each with its own Runs door, or an empty state
- * that NAMES the source it read (`data-agents-source`). Never a seed row, and
- * never an empty list presented as a verdict.
+ * that NAMES the source it read (`data-agents-source`) — including the stage
+ * of a read that did not answer, which is not an empty inventory. Never a
+ * seed row, and never an empty list presented as a verdict.
  */
 const expectSourceBackedAgents = async (page: Page): Promise<void> => {
   await expect(agentsCard(page)).toHaveAttribute("data-kind", "agents")
   const ids = await agentRows(page).evaluateAll(rows => rows.map(row => row.getAttribute("data-agent") ?? ""))
   for (const seeded of SEED_ROLE_IDS) expect(ids).not.toContain(seeded)
   if (ids.length === 0) {
-    await expect(agentsCard(page).locator("[data-agents-source]")).toHaveAttribute("data-agents-source", /^(repository|reading|no-repository)$/)
+    await expect(agentsCard(page).locator("[data-agents-source]")).toHaveAttribute("data-agents-source", /^(host|repository|reading|unreadable|no-repository)$/)
     return
   }
   for (const id of ids) {

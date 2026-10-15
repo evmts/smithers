@@ -69,7 +69,14 @@ export const createRepositoryFlowsSeam = (
     const [answer, home] = await Promise.all([readFactoryProjection(ctx, repo), readRepositoryHome(ctx, repo)])
     if (disposed || !current() || read.get(repo) !== current) return
     const flows = "error" in answer || answer.absent ? [] : repositoryFlowsOf(answer.projection.flows ?? [])
-    ctx.dispatch({ type: "repository-flows.loaded", actor: "system", repo, flows, home })
+    /*
+     * How the read ended, which the empty `flows` of all three cases cannot
+     * say: a refused read states nothing about what the repository declares,
+     * and a reader that cannot tell it from an answered one publishes a
+     * verdict the read never reached (controller/agents.ts, #3831).
+     */
+    const catalog = "error" in answer ? "unreadable" : answer.absent ? "absent" : "read"
+    ctx.dispatch({ type: "repository-flows.loaded", actor: "system", repo, flows, home, catalog })
     onHome?.(repo, home)
   }
 

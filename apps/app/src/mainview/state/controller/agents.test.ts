@@ -87,7 +87,7 @@ test("without a repository the card states that it has no catalog to read, and l
   await t.agents.listAgents()
   expect(t.rows()).toEqual([])
   expect(t.card()!.payload).toMatchObject({ inventory: "no-repository" })
-  expect(t.records).toEqual(["agents.inventory source=no-repository rows=0 flows=0"])
+  expect(t.records).toEqual(["agents.inventory source=no-repository catalog=none rows=0 flows=0"])
 })
 
 test("a catalog that answers with no agent flow releases the loading stage it was held on", async () => {
@@ -128,12 +128,31 @@ test("a repository whose catalog has not answered is not a repository with no ag
   await t.agents.listAgents()
   expect(t.card()!.payload).toMatchObject({ inventory: "reading" })
   expect(t.rows()).toEqual([])
-  expect(t.records).toEqual(["agents.inventory source=reading rows=0 flows=0"])
+  expect(t.records).toEqual(["agents.inventory source=reading catalog=none rows=0 flows=0"])
   // The same store, once the catalog answers with no agent flow: a real empty, told apart by its counts.
   await loadRepository(t.store, [flow("checks/lint", null)])
   await t.agents.listAgents()
   expect(t.card()!.payload).toMatchObject({ inventory: "repository" })
-  expect(t.records.at(-1)).toBe("agents.inventory source=repository rows=0 flows=1")
+  expect(t.records.at(-1)).toBe("agents.inventory source=repository catalog=read rows=0 flows=1")
+})
+
+test("a refused catalog read is a prerequisite, and the next answer releases it", async () => {
+  const t = await setup()
+  await t.store.dispatch({ type: "repository.upserted", actor: "system",
+    repository: { id: REPO, org: "smithersai", ownerKind: "org", name: "smithers", head: null, catalog: true } }).isPersisted.promise
+  await t.store.dispatch({ type: "repository-flows.loaded", actor: "system", repo: REPO, flows: [], catalog: "unreadable" }).isPersisted.promise
+  await t.agents.listAgents()
+  expect(t.card()!.payload).toMatchObject({ inventory: "unreadable" })
+  expect(t.rows()).toEqual([])
+  expect(t.records).toEqual(["agents.inventory source=unreadable catalog=unreadable rows=0 flows=0"])
+  /* The refused read holds no verdict about a name either. */
+  expect(await t.agents.listAgents("review")).toBeUndefined()
+  expect(t.card()!.payload).toMatchObject({ inventory: "unreadable" })
+  /* A later read answers: the open card follows it off the refusal. */
+  await loadRepository(t.store, [flow("review", "sol", "Reviews the working-copy change.")])
+  await settled()
+  expect(t.card()!.payload).toMatchObject({ inventory: "repository" })
+  expect(t.rows().map((row) => row.id)).toEqual(["review"])
 })
 
 test("a flow id with a path segment keeps its id, which is the Runs door's flow filter", async () => {

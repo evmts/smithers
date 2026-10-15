@@ -82,11 +82,11 @@ export const fixtureCards = (): ReadonlyArray<Card> => [
     id: "agents", kind: "agents", title: "Agents", status: "active", createdAt: T0, ordinal: 3,
     payload: {
       native: false,
-      // The rows the Agents card renders off an install: the target
-      // repository's flow catalog rows that declare a model, which is the one
-      // agent source a host without `install` reads (controller/agents.ts).
-      // An open card is rewritten to exactly those after any transition, so
-      // rows of another shape would not survive a command.
+      // The rows the Agents card renders on a host that holds no `install`:
+      // the target repository's flow catalog rows that declare a model, which
+      // is that host's only agent source (controller/agents.ts). An open card
+      // is rewritten to exactly those after any transition, so rows of another
+      // shape would not survive a command.
       inventory: "repository" as const,
       agents: [
         { id: "review", label: "review", purpose: "Reviews the working-copy change.", model: { provider: "openai", id: "gpt-6.1-sol", label: "GPT-6.1 Sol" }, builtin: false, available: false, reason: "", account: "" },
