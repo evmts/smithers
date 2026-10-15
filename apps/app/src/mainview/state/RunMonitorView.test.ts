@@ -106,3 +106,58 @@ test("recorded run detail actions retain their selection through canonical decod
   expect(action.flow).toBe("runs.trace.view")
   expect(JSON.parse(action.args!)).toEqual({ runId: "recorded", sourceCard: "run:recorded", view: "turns", state: { selected: "checks", tab: "journal", at: 2 } })
 })
+
+/*
+ * A read that produced no card still owes the person its answer.
+ *
+ * `/monitor` ran `withToast("monitor.list", "Loading runs", "")` and returned
+ * true for an empty list, so an install with nothing running resolved a notice
+ * with an EMPTY TITLE over a transcript with no result in it — a check mark
+ * for an act with nothing to show (root screenshot, 2026-10-15). The refused
+ * read beside it keeps its own visible sentence.
+ */
+test("an install with no runs says so, durably, instead of an unlabelled check", async () => {
+  const expected = "No runs yet."
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  let resolveList!: (response: Response) => void
+  const pending = new Promise<Response>(resolve => { resolveList = resolve })
+  const controller = controllerFor(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "none", sandbox: null },
+    live: { subscribe: () => () => {}, getSnapshot: () => undefined },
+    toastDebounceMs: 0,
+    fetchImpl: async input => new URL(String(input), "https://app.test").pathname === "/api/runs"
+      ? pending : Response.json({}, { status: 404 })
+  })
+  const settle = async (holds: () => boolean) => {
+    for (let count = 0; count < 200 && !holds(); count++) await new Promise(resolve => setTimeout(resolve, 5))
+  }
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "member", admin: false, scopesPlain: null }).isPersisted.promise
+  expect(await controller.commands.submit({ name: "monitor", actor: "user", payload: {} })).toMatchObject({ status: "executed", value: "Requested" })
+  // The read is slow enough to put the notice up, exactly as the install does.
+  await settle(() => store.collections.toasts.get("toast-monitor.list")?.status === "running")
+  resolveList(Response.json([]))
+  await settle(() => [...store.collections.messages.values()].some(message => message.text === expected))
+  // The answer is in the transcript, so it survives the notice and a reload.
+  expect([...store.collections.messages.values()].map(message => message.text)).toContain(expected)
+  expect([...store.collections.cards.values()].filter(card => card.kind === "run")).toEqual([])
+  // And the notice it leaves behind is words, never a check mark with an empty title.
+  await settle(() => store.collections.toasts.get("toast-monitor.list")?.status === "ok")
+  expect(store.collections.toasts.get("toast-monitor.list")).toMatchObject({ status: "ok", title: "Runs" })
+})
+
+test("an install whose run list is refused keeps that failure visible", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = controllerFor(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "none", sandbox: null },
+    live: { subscribe: () => () => {}, getSnapshot: () => undefined },
+    toastDebounceMs: 0,
+    fetchImpl: async () => Response.json({ code: "unavailable" }, { status: 503 })
+  })
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "member", admin: false, scopesPlain: null }).isPersisted.promise
+  await controller.commands.submit({ name: "monitor", actor: "user", payload: {} })
+  for (let count = 0; count < 200 && store.collections.toasts.get("toast-monitor.list")?.status !== "failed"; count++) {
+    await new Promise(resolve => setTimeout(resolve, 5))
+  }
+  expect(store.collections.toasts.get("toast-monitor.list")).toMatchObject({ status: "failed", detail: "Runs unavailable" })
+  expect([...store.collections.messages.values()].map(message => message.text)).not.toContain("No runs yet.")
+})

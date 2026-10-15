@@ -976,3 +976,91 @@ test("the import toast waits for the terminal completion receipt to persist", as
     await until(() => store.collections.toasts.get("toast-repos.import.will/flows")?.status === "ok", "the durable completion")
   } finally { release(); controller.dispose() }
 })
+
+/*
+ * The act a person performs by typing the hidden name with nothing after it.
+ * `repos.import` is deferred as HIDDEN, not cut (packages/rpc/src/catalog/cuts.json
+ * `repository-import`), so the exact name still runs: no argument means the
+ * SELECTED repository (state/RepoContext.resolveTargetRepo), not the
+ * single-loaded fallback, and the act's durable receipt and its notice both
+ * reach a terminal state — a running notice that leaves without a word is the
+ * silent-lie shape this pins against.
+ */
+test("the bare hidden name imports the selected repository and states its completion", async () => {
+  const { store, controller } = await readyStore({
+    ...importBackend(() => json(202, jobBody("cloning", "resolving")), () => json(200, jobBody("ready"))),
+    toastDebounceMs: 0
+  })
+  try {
+    // Several repositories are loaded, so only the selection can resolve the bare name.
+    await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [
+      { id: "will/flows", org: "will", ownerKind: "user", name: "flows", head: null },
+      { id: "will/other", org: "will", ownerKind: "user", name: "other", head: null }
+    ] }).isPersisted.promise
+    await store.dispatch({ type: "repo.selected", actor: "user", id: "will/flows" }).isPersisted.promise
+    expect(await controller.commands.run("repos.import")).toMatchObject({ status: "executed", value: "Import requested for will/flows." })
+    await until(() => importCard(store)?.payload.phase === "done", "the bare name's completion")
+    expect(importCard(store)?.status).toBe("acted")
+    expect(store.collections.sessions.get("main")?.repositoryImports?.filter(row => row.id === CARD_ID)).toHaveLength(1)
+    // Stated, not vanished: the notice resolves on the key the act owns.
+    await until(() => store.collections.toasts.get("toast-repos.import.will/flows")?.status === "ok", "the stated completion")
+  } finally { controller.dispose() }
+})
+
+/*
+ * The visible, durable answer the act itself owes.
+ *
+ * The transient notice is the whole of what the import said: it resolves
+ * `<repo> imported` and dismisses itself four seconds later
+ * (@smthrs/ui/notification-policy NOTICE_SETTLE_MS), and the terminal receipt
+ * it leaves in `session.repositoryImports` has NO renderer in the shipped main
+ * view — `repository-import` is cut with `cardKinds: []`
+ * (packages/rpc/src/catalog/cuts.json), and `RepoContext.knownRepositories` is
+ * its only reader. So a person who ran the hidden name, looked away and looked
+ * back saw a toast appear and vanish over a transcript with nothing in it
+ * (root, 2026-10-15: "no Import card or visible completion/failure"), with the
+ * job actually `ready` upstream. The completion is now stated in the one
+ * durable surface the act already has.
+ */
+const messages = (store: AppStore): ReadonlyArray<string> => [...store.collections.messages.values()].map(message => message.text)
+
+test("a completed import states its completion durably, not only in a notice that dismisses itself", async () => {
+  const { store, controller } = await readyStore({
+    ...importBackend(() => json(202, jobBody("cloning", "resolving")), pollSequence([() => json(200, jobBody("ready"))])),
+    toastDebounceMs: 0
+  })
+  try {
+    await controller.commands.run("repos.import", "will/flows")
+    await until(() => importCard(store)?.payload.phase === "done", "the completed import")
+    await until(() => messages(store).includes("Imported will/flows."), "the stated completion")
+    // The transcript is the durable surface: the notice may dismiss itself, the statement stays.
+    expect(messages(store)).toContain("Imported will/flows.")
+    expect(messages(store).filter(text => text === "Imported will/flows.")).toHaveLength(1)
+  } finally { controller.dispose() }
+})
+
+test("a refused import states that refusal durably and never claims a completion", async () => {
+  const { store, controller } = await readyStore({
+    ...importBackend(() => json(202, jobBody("cloning")), pollSequence([() => json(200, jobBody("failed", null, "the mirror ran out of disk"))])),
+    toastDebounceMs: 0
+  })
+  try {
+    await controller.commands.run("repos.import", "will/flows")
+    await until(() => importCard(store)?.payload.phase === "failed", "the refused import")
+    await until(() => messages(store).some(text => text.startsWith("will/flows was not imported")), "the stated refusal")
+    expect(messages(store)).toContain("will/flows was not imported: the mirror ran out of disk")
+    expect(messages(store)).not.toContain("Imported will/flows.")
+  } finally { controller.dispose() }
+})
+
+test("an import a registration asked for leaves its own card to say so", async () => {
+  const { store, controller } = await readyStore({
+    ...importBackend(() => json(202, jobBody("cloning")), pollSequence([() => json(200, jobBody("ready"))])),
+    toastDebounceMs: 0
+  })
+  try {
+    await controller.importRepository("will/flows", { registration: true })
+    await until(() => importCard(store)?.payload.phase === "done", "the registration's import")
+    expect(messages(store)).not.toContain("Imported will/flows.")
+  } finally { controller.dispose() }
+})

@@ -109,7 +109,8 @@ export const authFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
     /* Signing out needs a session: offering it signed out is the clearest
 		   case of a listing that names a step the user cannot take (§1.2). */
     name: "sign-out",
-     slash: "/sign-out", cli: null, journey: ["J1"], group: "Account and settings", visibility: "core", actors: ["person"], minimumRole: "member", http: null, summary: "Sign in with GitHub",
+     /* mvp.md §6.1's table describes the `/sign-in`, `/sign-out` PAIR in one line; each door still says what IT does. */
+     slash: "/sign-out", cli: null, journey: ["J1"], group: "Account and settings", visibility: "core", actors: ["person"], minimumRole: "member", http: null, summary: "Sign out",
     runtime: ["identity"],
     agentReason: "dropping the human's session is theirs alone",
     requires: ["signed-in"],

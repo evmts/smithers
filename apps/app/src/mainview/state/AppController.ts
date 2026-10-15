@@ -1278,7 +1278,7 @@ export const createAppController = (
       const epoch = ctx.accountEpoch
       const owner = ctx.accountOwner()
       if (monitorLists.has(epoch)) return { value: "Requested" }
-      const work = withToast("monitor.list", "Loading runs", "", async () => {
+      const work = withToast("monitor.list", "Loading runs", "Runs", async () => {
         const runs = await runMonitorSeam.list()
         if (ctx.disposed || epoch !== ctx.accountEpoch || owner !== ctx.accountOwner()) return TOAST_SUPERSEDED
         if (!runs && !installHost) {
@@ -1286,6 +1286,17 @@ export const createAppController = (
           return true
         }
         if (!runs) return "Runs unavailable"
+        /*
+         * A read that upserts no card has to answer in the transcript: the
+         * notice is transient and a settled success with nothing shown says
+         * nothing at all (@smthrs/ui notification-policy shouldShowSettlement),
+         * so an install with nothing running used to resolve a check mark with
+         * no words and leave no result behind.
+         */
+        if (runs.length === 0) {
+          await store.dispatch({ type: "message.appended", actor: "system", text: "No runs yet.", spoken: true }).isPersisted.promise
+          return true
+        }
         for (const run of runs) {
           const existing = store.collections.cards.get(`run:${run.id}`)
           if (ctx.disposed || epoch !== ctx.accountEpoch || owner !== ctx.accountOwner()) return TOAST_SUPERSEDED
@@ -1639,9 +1650,13 @@ export const createAppController = (
    * names the repository instead of "no repository is selected".
    */
   let installStepsDone: readonly string[] | undefined
+  /* Whether a person asked for the Setup card by name (`showSetup` below): an install with nothing left to do still owes them the card they asked for. */
+  let setupAsked = false
   ctx.onDispose(installSeam.snapshots.subscribe(() => {
     const model = installSeam.snapshots.get().model
-    if (model && (model.steps.some(step => step.state !== "done") || setupEntry) && !store.collections.cards.has("setup")) {
+    if (model && (model.steps.some(step => step.state !== "done") || setupEntry || setupAsked) && !store.collections.cards.has("setup")) {
+      // One card per asking: a card taken back out stays out until it is asked for again.
+      setupAsked = false
       void presentCard("setup", "Setup").catch(cause => ctx.failures.report("seam.failure", cause, "setup"))
     }
     if (!installHost || model === undefined || !model.github.signed_in) return
@@ -2313,7 +2328,30 @@ export const createAppController = (
     writeTerminal,
     openBranchTerminal: installHost ? openBranchTerminal : undefined,
     presentBranchCard,
-    showSetup: installSeam.showSetup, showSettings: installSeam.showSettings, setupStep: installSeam.setupStep,
+    /*
+     * The Setup door a PERSON asked for by name, which is the only caller that
+     * opens its card: the install host's own reads after sign-in
+     * (`installSeam.showSetup()` below) keep the snapshot rule, so a finished
+     * install does not grow a card on every identity load.
+     *
+     * The card is presented only over an install this page actually read. The
+     * door used to present it first and read after, so a host with no install
+     * route — where `GET /api/install` answers 404 and `quietWithoutInstall`
+     * retires the notice without a word — was left with a card whose title was
+     * its whole content (flows/entries/repo.ts). An install whose read is
+     * refused, unreachable or malformed keeps its own visible failure instead.
+     */
+    showSetup: () => {
+      setupAsked = true
+      const outcome = installSeam.showSetup()
+      // An install already read on this page answers now; one still being read answers through the snapshot rule above.
+      if (!ctx.disposed && installSeam.snapshots.get().model !== undefined) {
+        setupAsked = false
+        void presentCard("setup", "Setup").catch(cause => ctx.failures.report("seam.failure", cause, "setup"))
+      }
+      return outcome
+    },
+    showSettings: installSeam.showSettings, setupStep: installSeam.setupStep,
     /* MOCK SEAM (DesignWorld/settings.ts designInstall): the Settings card shows the live install once it has a model, so the write goes there; the seed takes it only until then. */
     setInstallAddress: address => !installHost && installSeam.snapshots.get().model === undefined ? designSettings(design).address(address) : installSeam.setInstallAddress(address),
     /* MOCK SEAM (DesignWorld/settings.ts designInstall): the Settings card shows the live install once it has a model, so the write goes there; the seed takes it only until then. */

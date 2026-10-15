@@ -344,8 +344,10 @@ test("identical repository-import polls do not grow the committed journal or SQL
       const card = store.session().repositoryImports?.find(row => row.id === "repo-import-owner/repo")
       return card?.payload.phase === "done"
     })
+    // The terminal phase also states itself in the transcript (RepoImportSeam stateOutcome): two receipts, one message.
+    await waitFor(() => [...store.collections.messages.values()].some(message => message.text === "Imported owner/repo."))
     await store.settled?.()
-    expect((await store.eventHistory()).head.sequence).toBe(before.head.sequence + 2)
+    expect((await store.eventHistory()).head.sequence).toBe(before.head.sequence + 3)
     const reopened = await open(fixture.path)
     expect(reopened.store.session().repositoryImports?.find(row => row.id === "repo-import-owner/repo")).toMatchObject({ payload: { phase: "done", stage: "provisioning_workspace" } })
     expect((await reopened.store.verifyState()).valid).toBe(true)

@@ -5,7 +5,9 @@ import type { SetupCard as SetupModel } from "@smthrs/rpc/SetupCard"
 import { cardActions, type CardActionDefinition } from "../flows/cardActions"
 import { installKeyAction, type InstallCardDispatch } from "./installKeyAction"
 import { setupCardModel, type InstallModel } from "../state/seams/InstallModel"
-import type { InstallAddress, InstallSnapshots } from "../state/seams/InstallSeam"
+import { NO_INSTALL, type InstallAddress, type InstallSnapshots } from "../state/seams/InstallSeam"
+import { serviceFailureSentence } from "../state/ServiceFailureCopy"
+import { FailureNotice, unavailableFailure } from "../FailureNotice"
 
 export interface SetupCardProps {
   readonly View: ComponentType<CardProps<SetupModel>>
@@ -92,7 +94,23 @@ export const SetupCard = ({ View, install, dispatch, allowed, view, onView }: Se
     if (step.id !== "address" && model.steps.find(step => step.id === "address")?.state === "done") definitions.push(...setupAddressActions(model.address, false))
   }
   const bindings = cardActions(key?.dispatch ?? dispatch, definitions)
-  if (!model || !allowed) return null
+  if (!allowed) return null
+  /*
+   * A Setup card with no install behind it: a card kept in the transcript from
+   * a page that had one, or an origin that serves no install at all
+   * (`InstallSeam.NO_INSTALL`, which `quietWithoutInstall` retires without a
+   * word). The card was asked for, so it answers in the install's own authored
+   * copy — never a title with nothing under it, and never a Mac's setup steps
+   * on an origin that has no Mac.
+   */
+  if (!model) {
+    const absent = snapshot.error ?? { code: NO_INSTALL, class: "infra" }
+    return <FailureNotice role="status" className="setup-absent" data-testid="setup-absent"
+      failure={unavailableFailure("SetupUnavailable", serviceFailureSentence(absent), "")}>
+      {/* The doors that DO add a repository where there is no install, in the same words the refused door gives (flows/entries/repo.ts absentHere). */}
+      {absent.code === NO_INSTALL ? <p>Pick a repository in the repository menu, or run /repos.import owner/repo.</p> : null}
+    </FailureNotice>
+  }
   return <View model={setupCardModel(model)} actions={bindings.actions} gestures={bindings.gestures} onAction={bindings.onAction} view={view} onView={onView} />
 }
 

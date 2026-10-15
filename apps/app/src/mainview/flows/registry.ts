@@ -96,6 +96,14 @@ export interface FlowMetadata extends OperationMetadata<RuntimeCapability, AppBo
    */
   readonly grammar?: Grammar
   /**
+   * The one sentence this flow's own miss gets, in place of the door class's
+   * shared line (`Commands.absentReason`). Declared only where the door the
+   * person reached for has a REAL neighbour on this origin, so the refusal
+   * names what does work here instead of the generic "not on this origin
+   * yet"; it is still a refusal, and it never claims the flow ran.
+   */
+  readonly absentHere?: string
+  /**
    * Other slash names that run this flow (`/new` and `/clear` run `/archive`).
    * An alias is never listed for a bare `/`: its row appears once the person
    * starts typing the alias, and names this flow in parentheses. A flow

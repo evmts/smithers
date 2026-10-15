@@ -11489,7 +11489,7 @@
       "minimumRole": "member",
       "credentialScope": "write:repository",
       "agent": "never",
-      "summary": "Sign in with GitHub",
+      "summary": "Sign out",
       "http": null,
       "payload": {
         "dialect": "draft-2020-12",

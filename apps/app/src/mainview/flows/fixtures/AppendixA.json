@@ -1379,7 +1379,7 @@
   },
   {
     "name": "sign-out",
-    "summary": "Sign in with GitHub",
+    "summary": "Sign out",
     "slash": "/sign-out",
     "cli": null,
     "journey": [

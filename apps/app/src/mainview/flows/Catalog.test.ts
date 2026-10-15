@@ -17,6 +17,24 @@ describe("C-CAT-01 literal Appendix A contract", () => {
         actors: expected.actors, minimumRole: expected.minimumRole, agent: expected.agent })
     }
   })
+  /*
+   * Every listed door says what IT does. `/sign-out` read "Sign in with
+   * GitHub" — mvp.md §6.1's table describes the `/sign-in`, `/sign-out` PAIR
+   * with one line, and the implementation copied that line onto both doors, so
+   * the palette offered the same sentence twice and the signed-in person's own
+   * exit named the act they had already done (`flows/entries/auth.ts`). The
+   * summary is also the words a notice puts in place of the slash name
+   * (`controller/failures.humanCommandText`), so a shared line misnames the act
+   * wherever it is quoted.
+   */
+  test("no two listed doors say the same sentence", () => {
+    const listed = rows.filter(row => row.visibility === "core" || row.visibility === "advanced")
+    const shared = [...listed.reduce((seen, row) => seen.set(row.summary, [...(seen.get(row.summary) ?? []), row.name]),
+      new Map<string, ReadonlyArray<string>>())].filter(([, names]) => names.length > 1)
+    expect(shared).toEqual([])
+    expect(listed.find(row => row.name === "sign-out")?.summary).toBe("Sign out")
+    expect(listed.find(row => row.name === "sign-in")?.summary).toBe("Sign in with GitHub")
+  })
   test("the owner-required email login door remains person-only", () => {
     expect(rows.find(row => row.name === "auth.email")).toMatchObject({ actors: ["person"], agent: "never", visibility: "in-card" })
   })

@@ -468,6 +468,33 @@ export const createRepoImportSeam = (ctx: SeamContext): RepoImportSeam => {
   }
 
 
+  /*
+   * The visible answer a finished import owes the person who asked for it.
+   *
+   * The notice is not that answer: a successful one resolves `<repo> imported`
+   * and then dismisses itself (@smthrs/ui/notification-policy NOTICE_SETTLE_MS),
+   * and the terminal receipt it leaves behind has no renderer — this domain is
+   * cut with `cardKinds: []` (packages/rpc/src/catalog/cuts.json
+   * `repository-import`) and `RepoContext.knownRepositories` is its only
+   * reader. A person who ran the hidden name and looked back a minute later
+   * was left with a transcript that never mentioned the act (root, 2026-10-15),
+   * over a job that was `ready` upstream.
+   *
+   * So the terminal phase is stated once, in the transcript the act already
+   * writes to, in the card's own already-safe copy. An import a registration
+   * asked for says nothing here: its registration card shows it.
+   */
+  const stateOutcome = async (repo: string): Promise<void> => {
+    const card = record(`repo-import-${repo}`)
+    if (card === undefined || card.payload.registration === true) return
+    if (card.payload.phase !== "done" && card.payload.phase !== "failed") return
+    const line = card.payload.detail ?? card.payload.error ?? null
+    const text = card.payload.phase === "done"
+      ? `Imported ${repo}.`
+      : `${repo} was not imported: ${line ?? "the import failed."}`
+    await ctx.dispatch({ type: "message.appended", actor: "system", text, spoken: true }).isPersisted.promise
+  }
+
   const background = (
     repo: string,
     requestId: string,
@@ -485,7 +512,9 @@ export const createRepoImportSeam = (ctx: SeamContext): RepoImportSeam => {
         return message
       }
       if (!current()) return TOAST_SUPERSEDED
-      return run(current)
+      const outcome = await run(current)
+      if (outcome !== TOAST_SUPERSEDED && current()) await stateOutcome(repo)
+      return outcome
     }
     return hold(repo, {
       work: ctx.withToast

@@ -404,7 +404,8 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     const missing = absentDoor(declared.metadata, bootstrap, actions.doorFamilyAbsent, actions.design.enabled)
     if (missing === undefined) return undefined
     const door: AbsentDoor = missing === "cloud.pat" && namespaceOf(name) === "cloud" ? "cloud.session" : missing
-    return { door, reason: absentReason(name, door) }
+    // A flow that knows the working neighbour on this origin says so itself (`FlowMetadata.absentHere`).
+    return { door, reason: declared.metadata.absentHere ?? absentReason(name, door) }
   }
 
   /** Invokes one flow through its binding — the single door every trigger shares. */
