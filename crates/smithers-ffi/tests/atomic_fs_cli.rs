@@ -84,13 +84,15 @@ fn invoke_local(request: &Value) -> Value {
         .write_all(serde_json::to_string(request).unwrap().as_bytes())
         .unwrap();
     let output = child.wait_with_output().unwrap();
-    assert!(
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
         output.status.success(),
+        value.get("error").is_none(),
         "stdout: {} stderr: {}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    serde_json::from_slice(&output.stdout).unwrap()
+    value
 }
 
 #[test]
@@ -279,4 +281,66 @@ fn packaged_exists_handles_missing_paths_without_hiding_refusals() {
         invoke(request(&outside.path().join("missing")))["code"],
         "EPERM"
     );
+}
+
+#[test]
+fn native_patch_rejects_invalid_edits_and_retains_deleted_preimages() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("repository");
+    let initialized = Command::new("jj")
+        .args(["git", "init"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(
+        initialized.status.success(),
+        "{}",
+        String::from_utf8_lossy(&initialized.stderr)
+    );
+    let read = invoke_local(&json!({"operation":"read", "repositoryPath":root}));
+    let digest = format!("{:x}", <sha2::Sha256 as sha2::Digest>::digest(b"before"));
+    let mut request = json!({"operation":"apply_files", "repositoryPath":root,
+        "requestId":"44444444-4444-4444-8444-444444444444",
+        "expectedOperationId":read["operationId"], "target":read["head"]});
+    for files in [
+        json!([]),
+        json!([{"path":"old.txt", "beforeDigest":"a".repeat(63), "content":"after"}]),
+        json!([{"path":"old.txt", "beforeDigest":"A".repeat(64), "content":"after"}]),
+        json!([{"path":"old.txt", "beforeDigest":"g".repeat(64), "content":"after"}]),
+        json!([{"path":"old.txt", "beforeDigest":digest, "content":"before"}]),
+        json!([{"path":"old.txt"}]),
+        json!([{"path":"a", "content":"a"}, {"path":"a/b", "content":"b"}]),
+        json!([{"path":"a/b", "content":"b"}, {"path":"a", "content":"a"}]),
+        json!([{"path":"a", "content":"a"}, {"path":"a", "content":"b"}]),
+    ] {
+        request["files"] = files;
+        let rejected = invoke_local(&request);
+        assert_eq!(
+            rejected["error"]["code"], "invalid_request",
+            "{request}: {rejected}"
+        );
+        assert_eq!(
+            fs::read_dir(&root).unwrap().count(),
+            2,
+            "only jj metadata should exist"
+        );
+        assert!(!temp.path().join(".smithers-coding-recovery").exists());
+        let after = invoke_local(&json!({"operation":"read", "repositoryPath":root}));
+        assert_eq!(after["operationId"], read["operationId"]);
+    }
+    request["files"] = json!([{"path":"old.txt", "content":"before"}]);
+    let seeded = invoke_local(&request);
+    assert_eq!(seeded["status"], "accepted", "{seeded}");
+    request["requestId"] = json!("55555555-5555-4555-8555-555555555555");
+    request["expectedOperationId"] = seeded["operationId"].clone();
+    request["target"] = seeded["head"].clone();
+    request["files"] = json!([{"path":"old.txt", "beforeDigest":digest}]);
+    let deleted = invoke_local(&request);
+    assert_eq!(deleted["status"], "accepted", "{deleted}");
+    assert!(!root.join("old.txt").exists());
+    let preimage = deleted["recovery"]["files"][0]["preimage"]
+        .as_str()
+        .unwrap();
+    assert_eq!(fs::read(preimage).unwrap(), b"before");
+    assert_eq!(invoke_local(&request)["replayed"], true);
 }
