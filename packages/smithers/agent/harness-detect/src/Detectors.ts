@@ -33,7 +33,7 @@ import {
  *
  * The vendor CLI wrote the token into a file only this user can read, and the
  * claims only label the account for the human. Never returns the token
- * itself, and never throws.
+ * itself, and never throws. Non-object payloads, including arrays, return null.
  *
  * @category detection
  * @since 0.1.0
@@ -44,7 +44,9 @@ export const decodeJwtClaims = (token: unknown): Record<string, unknown> | null 
   if (payload === undefined || payload === "") return null
   try {
     const parsed: unknown = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"))
-    return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : null
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null
   } catch {
     return null
   }

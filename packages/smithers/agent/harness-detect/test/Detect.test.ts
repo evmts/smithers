@@ -630,6 +630,14 @@ describe("helpers", () => {
     expect(decodeJwtClaims(42)).toBeNull()
   })
 
+  test("decodeJwtClaims accepts only object claim sets", () => {
+    for (const payload of [[], [{ email: "a@b.c" }], null, true, "email"]) {
+      const token = `a.${Buffer.from(JSON.stringify(payload)).toString("base64url")}.c`
+      expect(decodeJwtClaims(token)).toBeNull()
+    }
+    expect(decodeJwtClaims(jwt({}))).toEqual({})
+  })
+
   test("probeEnv copies the allowlist and nothing else", () => {
     const env = probeEnv({
       HOME: "/Users/u",
