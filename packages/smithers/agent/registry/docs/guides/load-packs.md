@@ -98,8 +98,9 @@ earlier pack have already been read.
 The grammar is `*`, an inclusive hyphen range (`1.0.0 - 2.0.0`), and
 whitespace-separated conjunctions of bare, `=`, `>=`, `>`, `<=`, `<`, `^`, and
 `~` comparators. Whitespace may separate an operator from its version, and a
-version with one or two components is zero-filled, so `>= 1.0.0`, `>=1.0`, and
-`^1` all read.
+version may have one or two components, so `>= 1.0.0`, `>=1.0`, and `^1` all
+read. As in npm, a partial version covers its omitted components: `1.2`
+accepts any `1.2.x`, `>1.2` starts at `1.3.0`, and `<=1.2` ends before it.
 
 `^` and `~` read the way npm reads them:
 
@@ -108,7 +109,9 @@ version with one or two components is zero-filled, so `>= 1.0.0`, `>=1.0`, and
 | `^1.2.0` | `1.9.0` | `2.0.0` |
 | `^0.2.3` | `0.2.9` | `0.9.0` |
 | `^0.0.3` | `0.0.3` | `0.0.4` |
+| `^0`     | `0.9.0` | `1.0.0` |
 | `~1.2.0` | `1.2.9` | `1.3.0` |
+| `~1`     | `1.9.0` | `2.0.0` |
 
 `x` components and `||` unions are not read. A range the parser cannot read is
 refused rather than assumed compatible, and it is refused as its own

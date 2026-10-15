@@ -717,6 +717,39 @@ describe("Pack.compatible", () => {
     expect(Pack.compatible("^0.0.3", "0.0.4")).toBe(false)
   })
 
+  it.each([
+    // A partial version is a range over its omitted components, as npm reads
+    // it: `~1` is `>=1.0.0 <2.0.0`, not `~1.0.0`.
+    ["~1", "1.5.0", true],
+    ["~1", "2.0.0", false],
+    ["~1.2", "1.2.9", true],
+    ["~1.2", "1.3.0", false],
+    ["^0", "0.5.0", true],
+    ["^0", "1.0.0", false],
+    ["^0.0", "0.0.7", true],
+    ["^0.0", "0.1.0", false],
+    ["^1", "1.9.0", true],
+    ["^1", "2.0.0", false],
+    ["1", "1.4.2", true],
+    ["1", "2.0.0", false],
+    ["=1.2", "1.2.5", true],
+    ["=1.2", "1.3.0", false],
+    [">1", "1.9.9", false],
+    [">1", "2.0.0", true],
+    [">1.2", "1.2.5", false],
+    [">1.2", "1.3.0", true],
+    ["<=1", "1.9.9", true],
+    ["<=1", "2.0.0", false],
+    ["<=1.2", "1.2.5", true],
+    ["<=1.2", "1.3.0", false],
+    [">=1.2", "1.2.0", true],
+    ["<1.2", "1.2.0", false],
+    ["1.0 - 1.2", "1.2.7", true],
+    ["1.0 - 1.2", "1.3.0", false]
+  ] as const)("reads the partial range %j against %s as npm does", (range, version, expected) => {
+    expect(Pack.compatible(range, version)).toBe(expected)
+  })
+
   it("refuses an empty range", () => {
     expect(Pack.compatible("   ", "1.0.0")).toBe(false)
   })

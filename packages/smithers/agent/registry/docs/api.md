@@ -1462,13 +1462,17 @@ Whether a runtime version satisfies a pack's declared range. The supported
 grammar is `*`, inclusive hyphen ranges, and whitespace-separated conjunctions
 of bare, `=`, `>=`, `>`, `<=`, `<`, `^`, and `~` comparators. Whitespace may
 separate an operator from its version. Versions have one to three numeric
-components and omitted components are zero-filled. `x` components, `*`
-components, and `||` unions are unreadable; only a standalone `*` is accepted.
+components. As in npm, a partial version covers its omitted components: `1.2`
+and `=1.2` accept any `1.2.x`, `>1.2` starts at `1.3.0`, `<=1.2` ends before
+`1.3.0`, and `>=1.2` and `<1.2` read `1.2.0`. `x` components, `*` components,
+and `||` unions are unreadable; only a standalone `*` is accepted.
 
 `^` allows everything up to the next bump of the left-most non-zero field, so
 `^1.2.0` accepts `1.9.0`, `^0.2.3` accepts `0.2.9` and refuses `0.9.0`, and
-`^0.0.3` accepts only `0.0.3`. `~` pins the minor, so `~1.2.0` accepts `1.2.9`
-and refuses `1.3.0`.
+`^0.0.3` accepts only `0.0.3`. An omitted field is not pinned, so `^1` accepts
+any `1.x`, `^0` any `0.x`, and `^0.0` any `0.0.x`. `~` pins the minor when it is
+written, so `~1.2.0` accepts `1.2.9` and refuses `1.3.0`, while `~1` accepts
+any `1.x`.
 
 Prerelease and build suffixes are ignored on both sides, so a `1.0.0-rc.4`
 runtime satisfies a range written against `1.0.0`. A pack's compatibility

@@ -289,11 +289,14 @@ interface Version {
   readonly major: number
   readonly minor: number
   readonly patch: number
+  /** How many components were written: 1, 2, or 3. */
+  readonly precision: 1 | 2 | 3
 }
 
 /**
  * Reads one to three numeric version components, zero-filling omitted
- * components and ignoring any prerelease or build suffix.
+ * components, recording how many were written, and ignoring any prerelease or
+ * build suffix.
  *
  * A pack's compatibility question is about the release line, and this runtime
  * ships as `1.0.0-rc.N`. Comparing the prerelease tag as well would refuse
@@ -303,8 +306,25 @@ interface Version {
 const parseVersion = (value: string): Version | undefined => {
   const match = /^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:[-+][0-9A-Za-z.-]+)?$/.exec(value.trim())
   if (match === null) return undefined
-  return { major: Number(match[1]), minor: Number(match[2] ?? 0), patch: Number(match[3] ?? 0) }
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2] ?? 0),
+    patch: Number(match[3] ?? 0),
+    precision: match[3] !== undefined ? 3 : match[2] !== undefined ? 2 : 1
+  }
 }
+
+/**
+ * The first version past a partial bound's omitted components: `1` ends before
+ * `2.0.0` and `1.2` before `1.3.0`. A full bound has no omitted component, so
+ * it ends at itself.
+ */
+const partialEnd = (bound: Version): Version =>
+  bound.precision === 1
+    ? { major: bound.major + 1, minor: 0, patch: 0, precision: 3 }
+    : bound.precision === 2
+    ? { major: bound.major, minor: bound.minor + 1, patch: 0, precision: 3 }
+    : bound
 
 const compare = (left: Version, right: Version): number =>
   left.major !== right.major
@@ -320,33 +340,42 @@ interface Comparator {
   readonly bound: Version
 }
 
+// A partial bound is a range over its omitted components, as npm reads it:
+// `1.2` is `>=1.2.0 <1.3.0`, so `>1.2` starts at `1.3.0` and `<=1.2` ends
+// before it, while `>=1.2` and `<1.2` read the zero-filled `1.2.0`.
 const satisfiesComparator = (comparator: Comparator, version: Version): boolean => {
-  const order = compare(version, comparator.bound)
+  const { bound } = comparator
+  const order = compare(version, bound)
+  const partial = bound.precision < 3
+  const beforeEnd = compare(version, partialEnd(bound)) < 0
   switch (comparator.operator) {
     case ">=":
       return order >= 0
     case "<=":
-      return order <= 0
+      return partial ? beforeEnd : order <= 0
     case ">":
-      return order > 0
+      return partial ? !beforeEnd : order > 0
     case "<":
       return order < 0
     case "^":
       // Caret allows anything up to the next bump of the LEFT-MOST NON-ZERO
-      // field, which is the major only on a released line. On `0.x` the minor
-      // is that field and on `0.0.x` the patch is, because a pre-1.0 line
-      // makes no compatibility promise across them: `^0.2.3` is
+      // written field, which is the major only on a released line. On `0.x`
+      // the minor is that field and on `0.0.x` the patch is, because a pre-1.0
+      // line makes no compatibility promise across them: `^0.2.3` is
       // `>=0.2.3 <0.3.0` and `^0.0.3` is `>=0.0.3 <0.0.4`. Pinning only the
-      // major there would load a pack written for 0.2 against 0.9.
-      return order >= 0 && version.major === comparator.bound.major &&
-        (comparator.bound.major !== 0 ||
-          (version.minor === comparator.bound.minor &&
-            (comparator.bound.minor !== 0 || version.patch === comparator.bound.patch)))
+      // major there would load a pack written for 0.2 against 0.9. An omitted
+      // field is not pinned: `^0` is `<1.0.0` and `^0.0` is `<0.1.0`.
+      return order >= 0 && version.major === bound.major &&
+        (bound.major !== 0 || bound.precision === 1 ||
+          (version.minor === bound.minor &&
+            (bound.minor !== 0 || bound.precision === 2 || version.patch === bound.patch)))
     case "~":
-      return order >= 0 && version.major === comparator.bound.major && version.minor === comparator.bound.minor
+      // `~1.2.3` and `~1.2` pin the minor; `~1` pins only the major.
+      return order >= 0 && version.major === bound.major &&
+        (bound.precision === 1 || version.minor === bound.minor)
     default:
       // A bare version and an explicit `=` mean the same thing.
-      return order === 0
+      return partial ? order >= 0 && beforeEnd : order === 0
   }
 }
 
@@ -387,7 +416,10 @@ const satisfiesRange = (range: ReadonlyArray<Comparator>, version: Version): boo
  * The supported grammar is `*`, inclusive hyphen ranges, and whitespace-
  * separated conjunctions of bare, `=`, `>=`, `>`, `<=`, `<`, `^`, and `~`
  * comparators. Whitespace may separate an operator from its version. Versions
- * have one to three numeric components and omitted components are zero-filled.
+ * have one to three numeric components. As in npm, a partial version is a
+ * range over its omitted components: `1.2` and `=1.2` accept any `1.2.x`, `~1`
+ * and `^1` accept any `1.x`, `>1.2` starts at `1.3.0`, `<=1.2` ends before
+ * it, and `>=1.2` and `<1.2` read `1.2.0`.
  * `x`, `*` components, and `||` unions are unreadable; only a standalone `*`
  * is accepted. An unreadable range returns false rather than being guessed.
  *
