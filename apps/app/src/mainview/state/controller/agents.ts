@@ -1,14 +1,13 @@
 import { actorSharedState } from "../ActorBindings"
+import { Data } from "effect"
 import { randomUuid } from "../../runtime/RandomUuid"
 import { agentsFailure, AgentsRefusal, assignInstallAgentModel } from "./models"
 import { CardSchema } from "@smthrs/rpc/Cards"
 import type { LiveChannel } from "../../runtime/LiveChannel"
 import {
-  AGENT_ROLES,
   knownModelLabel,
   MODEL_ID
 } from "@smthrs/rpc/AgentRoles"
-import type { AgentRole } from "@smthrs/rpc/AgentRoles"
 import type { Card, RepositoryFlow } from "../AppState"
 import type { AppStore } from "../AppStore"
 import { resolveTargetRepo } from "../RepoContext"
@@ -17,12 +16,12 @@ import type { ControllerContext } from "./context"
 export const AGENTS_CARD_ID = "agents"
 
 type AgentsCard = Extract<Card, { kind: "agents" }>
-/** One row of the Agents card: a built-in role or a repository agent flow. */
+/** One row of the Agents card: a host's factory profile, or a repository agent flow. */
 export type AgentProfileRow = Extract<AgentsCard["payload"], { native: boolean }>["agents"][number]
+/** Which source the card's rows are, and how far it got (`@smthrs/rpc/Cards`). */
+export type AgentsInventory = NonNullable<Extract<AgentsCard["payload"], { native: boolean }>["inventory"]>
 
 export interface AgentsController {
-  /** The agents as the menus list them: the mirror, or the built-ins until it loads. */
-  readonly agentRoles: () => ReadonlyArray<AgentRole>
   /** `agent.list`: the Agents card, at the transcript's tail. */
   readonly assignAgentModel: (role: string, model: string) => Promise<string | void>
   readonly listAgents: (role?: string, model?: string) => Promise<string | void>
@@ -35,10 +34,6 @@ export interface AgentsControllerDependencies {
   readonly live?: Pick<LiveChannel, "subscribe" | "getSnapshot">
   readonly nextOrdinal: () => number
 }
-
-/** The agents in menu order from the store's mirror; the built-ins while it is empty. */
-export const currentAgentRoles = (_store: Pick<AppStore, "collections">): ReadonlyArray<AgentRole> =>
-  AGENT_ROLES.filter(role => role.id !== "explainer")
 
 /**
  * The model a flow declares, as its frontmatter wrote it: `provider:modelId`
@@ -69,57 +64,121 @@ export const agentProfileOf = (flow: RepositoryFlow): AgentProfileRow | undefine
 }
 
 /**
- * The loaded repository's agents: its flow catalog rows that declare a model
- * (`flows/<name>/flow.mdx` with `model`), in catalog order. The catalog is
- * the one the slash leaves and the homepage read (seams/RepositoryFlowsSeam.ts);
- * no repository, or one whose catalog has not loaded, lists none.
+ * The target repository's agents, WITH the stage of the read that would have
+ * answered them.
+ *
+ * The rows are its flow catalog rows that declare a model
+ * (`flows/<name>/flow.mdx` with `model`), in catalog order, off the catalog
+ * the slash leaves and the homepage read (seams/RepositoryFlowsSeam.ts). That
+ * catalog is this host's ONLY agent source when it holds no `install` row: the
+ * factory inventory lives behind `GET /api/agents`, which
+ * `packages/backend/internal/compose/chat_routes.go` mounts under
+ * `config.IsSingleOwner(cfg.Auth)` alone — the same condition the bootstrap's
+ * `install` row states (flows/DoorAvailability.ts).
+ *
+ * `inventory` is why the rows are what they are, so no caller has to read an
+ * empty array as a verdict: a repository that has not answered yet, and one
+ * that answered and declares no agent flow, are different facts
+ * ([#3831](https://github.com/smithersai/smithers/issues/3831)). `flows` is the
+ * catalog's size, which is how an empty list of AGENTS is told apart from an
+ * empty CATALOG without naming a flow.
  */
-export const repositoryAgentProfiles = (store: AppStore): ReadonlyArray<AgentProfileRow> => {
+export const repositoryAgentCatalog = (store: AppStore): {
+  readonly inventory: AgentsInventory
+  readonly rows: ReadonlyArray<AgentProfileRow>
+  readonly flows: number
+} => {
   const target = resolveTargetRepo(store, undefined)
-  if ("error" in target) return []
-  return (store.collections.repositoryFlows.get(target.repo)?.flows ?? []).flatMap((flow) => {
-    const row = agentProfileOf(flow)
-    return row === undefined ? [] : [row]
-  })
+  if ("error" in target) return { inventory: "no-repository", rows: [], flows: 0 }
+  const catalog = store.collections.repositoryFlows.get(target.repo)
+  if (catalog === undefined) return { inventory: "reading", rows: [], flows: 0 }
+  return {
+    inventory: "repository",
+    rows: catalog.flows.flatMap((flow) => {
+      const row = agentProfileOf(flow)
+      return row === undefined ? [] : [row]
+    }),
+    flows: catalog.flows.length
+  }
 }
+
+/**
+ * What the Agents card answered, as a TAGGED failure, for the record below.
+ *
+ * `ctx.failures.report` forwards an error; this record is an outcome of the
+ * healthy path and has none to forward, so it makes its own rather than a raw
+ * `new Error`, which `RawErrorSites.test.ts` (#2813) refuses in product code.
+ * The tag never reaches a card, and `inventory` is the same closed vocabulary
+ * as the subject, so nothing new can ride along.
+ */
+class AgentsInventoryOutcome extends Data.TaggedError("AgentsInventoryOutcome")<{ readonly inventory: AgentsInventory }> {}
 
 export const createAgentsController = (ctx: ControllerContext, deps: AgentsControllerDependencies): AgentsController => {
   const { store } = ctx
   const { collections } = store
-
-  const agentRoles: AgentsController["agentRoles"] = () => currentAgentRoles(store)
 
   const agentsCard = (): AgentsCard | undefined => {
     const card = collections.cards.get(AGENTS_CARD_ID)
     return card?.kind === "agents" ? card : undefined
   }
 
-  /*
-   * The agent roles launch only through a harness session, which retired with
-   * the local backend (docs/LOCAL-BACKEND-RETIREMENT.md). The card states
-   * that the way the web host always has.
-   */
   const shared = actorSharedState(ctx, "agents", () => ({
     served: undefined as AgentsCard["payload"] | undefined, stopLive: undefined as (() => void) | undefined,
     selectedAgent: undefined as string | undefined, selectedModel: undefined as string | undefined, generation: 0, pending: new Set<string>(), assignmentTail: Promise.resolve() as Promise<unknown>
   }))
-  const agentsPayload = (): AgentsCard["payload"] => shared.served ?? (deps.install ? { native: false, install: true, agents: [] } : {
-    native: false,
-    /*
-     * The built-in roles, then the loaded repository's agent flows: label,
-     * purpose, model, and its kind when the profile carries one. Launching
-     * stays with the harnesses; a row's door is its recorded work
-     * (runs.list flow=<id>), which the card renders for every row.
-     */
-    agents: [
-      ...agentRoles().map((role): AgentProfileRow => ({
-        id: role.id, label: role.label, purpose: role.purpose, harness: role.harness, harnessName: role.harness, model: role.model, builtin: role.builtin,
-        ...(role.kind === undefined ? {} : { kind: role.kind }),
-        available: false, reason: "", account: ""
-      })),
-      ...repositoryAgentProfiles(store)
-    ]
-  })
+  /*
+   * The rows this HOST answered for, and nothing else.
+   *
+   * `shared.served` is the factory inventory `GET /api/agents` answered. An
+   * origin that serves that route says so in its bootstrap (`install`), and
+   * nowhere else does the route exist: the hosted Cloud mounts neither it nor
+   * any projection of it, and its own factory ids (`planner`, `implementer`,
+   * `reviewer`, `app`) are not even the ids of the client table that used to
+   * stand in for them here.
+   *
+   * So a host without `install` has exactly one agent source — the target
+   * repository's flow catalog — and the five built-in roles of
+   * `@smthrs/rpc/AgentRoles` were seed rows of this module's own, listed with
+   * their local harnesses and their declared models as if the host had
+   * answered for them. It never had. They stay the declared factory table that
+   * `state/AppProjection.ts` keeps in `collections.agents` for the model
+   * menus and that `knownModelLabel` reads for a display name; they are not
+   * this host's inventory, and a card is inventory
+   * ([#3831](https://github.com/smithersai/smithers/issues/3831)).
+   *
+   * Every row the card renders therefore carries its own Runs door honestly:
+   * a repository agent flow IS a flow, so `runs.list flow=<id>` names recorded
+   * work that can exist. `orchestrator` was never a flow of any repository,
+   * and its Runs button could only ever reach a box prerequisite for a filter
+   * that matches nothing.
+   */
+  const agentsPayload = (): AgentsCard["payload"] => {
+    if (shared.served !== undefined) return shared.served
+    if (deps.install) return { native: false, install: true, agents: [] }
+    const catalog = repositoryAgentCatalog(store)
+    return { native: false, inventory: catalog.inventory, agents: [...catalog.rows] }
+  }
+
+  /**
+   * The card's own record of an answer that held no rows, through
+   * `ctx.failures` — the operational ring and the client error sink, never the
+   * screen (state/OperationalFailures.ts dedupes a repeated key for a minute).
+   *
+   * The production cause could not be read off anything the app recorded: the
+   * screen showed five rows no host had answered for, and the ring held
+   * nothing about the read at all. So the door records WHICH source answered
+   * and what it held — the closed `inventory` vocabulary and two counts. The
+   * record carries no repository, flow id, model, URL, header, credential or
+   * backend sentence; a healthy answer with rows records nothing.
+   */
+  const reportInventory = (inventory: AgentsInventory, rows: number, flows: number): void => {
+    if (rows > 0) return
+    ctx.failures.report(
+      "agents.inventory",
+      new AgentsInventoryOutcome({ inventory }),
+      `agents.inventory source=${inventory} rows=${rows} flows=${flows}`
+    )
+  }
 
   /** The Agents card: at the tail when the human (or the model) asked for it, in place when a mutation refreshes it. */
   const renderAgentsCard = (toTail: boolean, error?: string): void => {
@@ -144,10 +203,17 @@ export const createAgentsController = (ctx: ControllerContext, deps: AgentsContr
    * An open card follows the repository: its catalog loads after the card
    * was asked for, or the target changes, and the rows would go stale. The
    * check runs after each committed batch (like the flows seam's target
-   * read) and rewrites the card only when its rows differ, so the rewrite
-   * itself settles it.
+   * read) and rewrites the card only when what it states differs, so the
+   * rewrite itself settles it.
+   *
+   * What it states is the rows AND the stage they came from. A catalog that
+   * answers with no agent flow leaves the rows unchanged (both empty) while
+   * turning "has not answered" into "answered and declares none", so
+   * comparing the rows alone would hold the card on its loading sentence for
+   * good.
    */
-  const rows = (payload: AgentsCard["payload"]): string => JSON.stringify("agents" in payload ? payload.agents : [])
+  const rows = (payload: AgentsCard["payload"]): string =>
+    JSON.stringify("agents" in payload ? [payload.inventory ?? "", payload.agents] : [])
   const subscription = collections.transitions.subscribeChanges((changes) => {
     if (!changes.some((change) => change.type === "insert")) return
     queueMicrotask(() => {
@@ -166,6 +232,24 @@ export const createAgentsController = (ctx: ControllerContext, deps: AgentsContr
     renderAgentsCard(tail)
   }
   const listAgents: AgentsController["listAgents"] = async (role, model) => {
+    /*
+     * Off an install the card is the target repository's catalog, so the door
+     * records which source answered it before it renders anything.
+     */
+    if (!deps.install && shared.served === undefined) {
+      const catalog = repositoryAgentCatalog(store)
+      reportInventory(catalog.inventory, catalog.rows.length, catalog.flows)
+      /*
+       * `/agent <name>` filters the card to one row. A name the catalog that
+       * ANSWERED does not hold gets the install's own words for it
+       * (`compose/agent_models.go`: GET /api/agents/{name} is a 404 "Agent not
+       * found"), never a card filtered down to nothing. A catalog still
+       * reading, or a host with no repository to read, holds no such verdict:
+       * the card states its own stage, which is also what `model.list` and the
+       * model acts refresh through this same door.
+       */
+      if (role !== undefined && catalog.inventory === "repository" && !catalog.rows.some((row) => row.id === role)) return "Agent not found"
+    }
     shared.selectedAgent = role
     shared.selectedModel = model
     renderAgentsCard(true)
@@ -247,5 +331,5 @@ export const createAgentsController = (ctx: ControllerContext, deps: AgentsContr
   void ctx.onDispose(() => { stopAccount?.(); shared.generation++; shared.stopLive?.() })
 
 
-  return { agentRoles, listAgents, assignAgentModel }
+  return { listAgents, assignAgentModel }
 }

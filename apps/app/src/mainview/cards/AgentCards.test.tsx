@@ -65,10 +65,30 @@ const click = (host: HTMLElement, selector: string): void => {
 }
 
 describe("the Agents card", () => {
-  test("on the web host it lists nothing local and says where agents run", () => {
-    const host = mount(<AgentsCardBody onRunCommand={() => {}} card={agentsCard({ native: false, agents: [] })} />)
-    expect(host.textContent).toBe("Agents run on the native app's harnesses.")
-    expect(host.querySelector("[data-flow]")).toBeNull()
+  /*
+   * A card with no rows states the stage of the source that would have
+   * answered them, and never a verdict the read did not reach (#3831): an
+   * unread catalog is not a repository with no agents, and "Agents run on the
+   * native app's harnesses" named harnesses that retired with the local
+   * backend and a host that answers for nothing.
+   */
+  test("with no rows it states the stage of the source, and offers no act", () => {
+    const read = mount(<AgentsCardBody onRunCommand={() => {}} card={agentsCard({ native: false, inventory: "repository", agents: [] })} />)
+    expect(read.textContent).toBe("No agents yet")
+    expect(read.querySelector("[data-agents-source]")?.getAttribute("data-agents-source")).toBe("repository")
+    expect(read.querySelector("[data-flow]")).toBeNull()
+
+    const reading = mount(<AgentsCardBody onRunCommand={() => {}} card={agentsCard({ native: false, inventory: "reading", agents: [] })} />)
+    expect(reading.textContent).toBe("Loading agents.")
+    expect(reading.textContent).not.toContain("No agents")
+
+    const none = mount(<AgentsCardBody onRunCommand={() => {}} card={agentsCard({ native: false, inventory: "no-repository", agents: [] })} />)
+    expect(none.textContent).toBe("No repository is selected.")
+
+    /* A card written before the stage existed claims nothing of its own. */
+    const legacy = mount(<AgentsCardBody onRunCommand={() => {}} card={agentsCard({ native: false, agents: [] })} />)
+    expect(legacy.textContent).toBe("")
+    expect(legacy.querySelector("[data-agents-source]")?.getAttribute("data-agents-source")).toBe("unknown")
   })
 
   test("a repository agent flow is a row like a built-in: label, model, and its Runs door is runs.list on its flow id", () => {

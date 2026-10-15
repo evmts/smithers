@@ -13,7 +13,13 @@ optional `payload.was`; decoding twice is stable. Old tombstones without `was`
 remain readable. Titles are inert text, never saved actions.
 
 Retired flow forms, Linear issue rows and cloud `agents` inventories use the same
-retirement path. Non-cloud `agents` stays live (L4). A kind joins the legacy set
+retirement path. Non-cloud `agents` stays live (L4). Decoding a live `agents`
+row refreshes a profile's label, purpose, harness and model from the built-in
+role table only when the stored row itself says `builtin: true`; a repository
+agent flow whose id matches a built-in role keeps its own facts. Its
+`inventory` field names which source the rows are — `repository`, `reading` or
+`no-repository` — so an empty list is never decoded as a verdict the read did
+not reach; a host-served factory inventory carries none. A kind joins the legacy set
 only when its last producer is removed (L3). `grant-confirm` is legacy;
 `stack` and `factory.home` retain live schemas under #3447. They are deferred
 and hidden by the app-local `DEFERRED_CARD_KINDS` list. `branches`, `file`,

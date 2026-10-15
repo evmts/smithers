@@ -48,10 +48,33 @@ const ProfileRowView = ({ agent, native, canAssign, onRunCommand }: { readonly a
   </li>
 )
 
+/*
+ * The card's body when it holds no rows: the stage of the source that would
+ * have answered them, and nothing beyond it.
+ *
+ * An empty list is not a verdict. A catalog that answered and declares no
+ * agent flow, one that has not answered yet, and a host with no repository to
+ * read are three different facts, and the one sentence that used to cover all
+ * three ("Agents run on the native app's harnesses") named harnesses that
+ * retired with the local backend and a host that answers for nothing
+ * ([#3831](https://github.com/smithersai/smithers/issues/3831); the rule
+ * `BranchCard.tsx` states for the same shape in #3882). `data-agents-source`
+ * carries the classification so the next native retest names its own stage.
+ */
+const EMPTY_SENTENCE: Record<NonNullable<Extract<AgentsCard["payload"], { native: boolean }>["inventory"]>, string> = {
+  repository: "No agents yet",
+  reading: "Loading agents.",
+  "no-repository": "No repository is selected."
+}
+
 export const AgentsCardBody = ({ card, onRunCommand, models = [] }: { readonly card: AgentsCard; readonly onRunCommand: RunCommand; readonly models?: ReadonlyArray<ConfiguredModel> }) => {
   if ("cloud" in card.payload) return null
-  const { native, agents, error, canAssign, selectedAgent, selectedModel, testing } = card.payload
-  if (agents.length === 0 && card.payload.install !== true) return <p className="smithers-card-note">Agents run on the native app's harnesses.</p>
+  const { native, agents, error, canAssign, selectedAgent, selectedModel, testing, inventory } = card.payload
+  if (agents.length === 0 && card.payload.install !== true) {
+    return <p className="smithers-card-note" data-agents-source={inventory ?? "unknown"}>
+      {inventory === undefined ? "" : EMPTY_SENTENCE[inventory]}
+    </p>
+  }
   return (
     <div className="agents-card">
       <ul className="workflow-list" data-testid="agents-list">

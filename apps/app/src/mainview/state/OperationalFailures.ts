@@ -6,7 +6,9 @@ export type OperationalSeam = "journal.compaction" | "http.turn.driver" | "appro
   "run.pump" | "run.cancel" | "setup.schedule" | "setup.guidance" | "setup.open-run" | "form.file-list" |
   "recommend.outcome" | "archive.notice" | "turn.cancel" | "turn.sign-in" | "turn.select" | "explain.cancel" | "explain.retire" | "explain.disconnect" |
   "account.revoke" | "wiki.index.listener" | "wiki.save" | "wiki.save.recover" | "command.boundary" | "toast.work" | "prompt.queue" |
-  "seam.failure" | "explain.launch"
+  "seam.failure" | "explain.launch" |
+  /* Which source the Agents card's rows came from when it held none (controller/agents.ts). */
+  "agents.inventory"
 
 export interface OperationalFailure {
   readonly seam: OperationalSeam

@@ -6,7 +6,6 @@
  * real payload shapes, for tests and screenshots only; nothing here reaches a
  * production path.
  */
-import { AGENT_ROLES } from "@smthrs/rpc/AgentRoles"
 import type { Card } from "../../state/AppState"
 
 const REPO = "example/app"
@@ -83,14 +82,16 @@ export const fixtureCards = (): ReadonlyArray<Card> => [
     id: "agents", kind: "agents", title: "Agents", status: "active", createdAt: T0, ordinal: 3,
     payload: {
       native: false,
-      // The rows the Agents card renders with no repository loaded: the
-      // built-in roles. Since e2738feeb7 an open card is rewritten to exactly
-      // these after any transition, so invented rows would not survive a command.
-      agents: AGENT_ROLES.map((role) => ({
-        id: role.id, label: role.label, purpose: role.purpose, harness: role.harness, harnessName: role.harness, model: role.model, builtin: role.builtin,
-        ...(role.kind === undefined ? {} : { kind: role.kind }),
-        available: false, reason: "", account: ""
-      }))
+      // The rows the Agents card renders off an install: the target
+      // repository's flow catalog rows that declare a model, which is the one
+      // agent source a host without `install` reads (controller/agents.ts).
+      // An open card is rewritten to exactly those after any transition, so
+      // rows of another shape would not survive a command.
+      inventory: "repository" as const,
+      agents: [
+        { id: "review", label: "review", purpose: "Reviews the working-copy change.", model: { provider: "openai", id: "gpt-6.1-sol", label: "GPT-6.1 Sol" }, builtin: false, available: false, reason: "", account: "" },
+        { id: "checks/wiki", label: "checks/wiki", purpose: "Checks the Wiki pages the change touches.", model: { provider: "anthropic", id: "claude-fable-5", label: "Fable 5" }, builtin: false, available: false, reason: "", account: "" }
+      ]
     }
   },
   {

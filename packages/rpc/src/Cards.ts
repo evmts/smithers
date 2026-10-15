@@ -2037,7 +2037,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
    * critical path, the run history with replay, the diff-affected set, and
    * the generated CI matrix.
    */
-  /* The agents (the built-in roles and the loaded repository's agent flows) or a repository's cloud session inventory. */
+  /* The agents a host answered for (its factory inventory, or the loaded repository's agent flows) or a repository's cloud session inventory. */
   z.object({
     ...cardBaseShape,
     kind: z.literal("agents"),
@@ -2046,6 +2046,24 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
         /** False on the web host: no local harnesses, so nothing local is listed. */
         native: z.boolean(),
         install: z.boolean().optional(),
+        /**
+         * Which source these rows ARE, and how far it got — a closed set, so an
+         * empty list is never read as "none exist" when nothing has answered
+         * (the rule `cards/BranchCard.tsx` states for a card with no rows,
+         * [#3882](https://github.com/smithersai/smithers/issues/3882)).
+         *
+         * - `repository` — the target repository's flow catalog, read: the rows
+         *   are its flows that declare a model, and an empty list means it
+         *   declares none.
+         * - `reading` — a repository is the target and its catalog has not
+         *   answered yet. Claims nothing about what exists.
+         * - `no-repository` — no repository is the target, so there is no
+         *   catalog to read.
+         *
+         * Absent on the factory inventory a host served (`install`), and on a
+         * card written before this row existed.
+         */
+        inventory: z.enum(["repository", "reading", "no-repository"]).optional(),
         canAssign: z.boolean().optional(),
         roleBindings: z.record(z.string(), z.unknown()).optional(),
         selectedAgent: z.string().optional(),
@@ -2544,10 +2562,13 @@ export const CardSchema: z.ZodType<z.infer<typeof CurrentCardSchema>, unknown> &
           agents: payload.agents.flatMap((entry: unknown) => {
             if (typeof entry !== "object" || entry === null) return []
             const saved = entry as Record<string, unknown>
-            const role = AGENT_ROLES.find((candidate) => candidate.id === saved.id)
-            // A built-in row reads its facts from the table; a configured
-            // profile the table does not know (smithers-ui-DESIGN.md §3.3)
-            // keeps its own, and the schema below still validates it.
+            // A row the saved payload itself called built-in reads its facts
+            // from the table; a configured profile (smithers-ui-DESIGN.md §3.3)
+            // keeps its own, and the schema below still validates it. The
+            // table is consulted only for a row that claimed it: a repository
+            // agent flow whose id happens to be `ui` is that repository's
+            // flow, and the seed table may not relabel it as a built-in role.
+            const role = saved.builtin === true ? AGENT_ROLES.find((candidate) => candidate.id === saved.id) : undefined
             return role === undefined ?
               [saved] :
               [{

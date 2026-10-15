@@ -6,29 +6,38 @@ import { closeComposer, command, expect, reloadApp, test } from "./support"
 import { openApp, awaitBoot } from "./support"
 const boot = async (page: Page) => { const at = performance.now(); await openApp(page); await awaitBoot(page, "navigate", at) }
 
-const LEGACY_BUILTIN_ROLES = [
- { id: "orchestrator", label: "Orchestrator", model: { label: "Fable 5" } },
- { id: "implementation", label: "Implementation", model: { label: "GPT-6.1 Sol" } },
- { id: "trivial-implementation", label: "Trivial implementation", model: { label: "GPT-6 Luna" } },
- { id: "ui", label: "UI", model: { label: "Kimi K3" } },
- { id: "fast-ui", label: "Fast UI", model: { label: "Cerebras Qwen 3.8 27B" } }
-]
-const BUILTIN_ROLE_IDS = LEGACY_BUILTIN_ROLES.map((role) => role.id)
+/*
+ * The ids of `@smthrs/rpc/AgentRoles`: the declared factory table the model
+ * menus read, which NO host without `install` answers for. This card used to
+ * list all five as its own inventory off such a host, each with a local
+ * harness that retired with the local backend and a Runs door for a flow no
+ * repository has ([#3831](https://github.com/smithersai/smithers/issues/3831);
+ * the unit reproduction is src/mainview/flows/entries/subjects.cloudAgents.test.ts).
+ */
+const SEED_ROLE_IDS = ["orchestrator", "explainer", "implementation", "trivial-implementation", "ui", "fast-ui"]
 
 const agentsCard = (page: Page) => page.getByTestId("card-agents")
 const cards = (page: Page) => page.locator(".smithers-card")
 const agentRows = (page: Page) => agentsCard(page).locator("[data-testid=\"agents-list\"] > li.agent-row")
 
-/** The rendered rows lead with the shipped role catalog, in its order, each with its label and its runs door. */
-const expectBuiltinRoles = async (page: Page): Promise<void> => {
+/**
+ * The card as a host without `install` may answer it: the rows are the target
+ * repository's agent flows, each with its own Runs door, or an empty state
+ * that NAMES the source it read (`data-agents-source`). Never a seed row, and
+ * never an empty list presented as a verdict.
+ */
+const expectSourceBackedAgents = async (page: Page): Promise<void> => {
   await expect(agentsCard(page)).toHaveAttribute("data-kind", "agents")
-  await expect.poll(() => agentRows(page).evaluateAll((rows, ids) => rows.map((row) => row.getAttribute("data-agent")).slice(0, ids.length), BUILTIN_ROLE_IDS))
-    .toEqual(BUILTIN_ROLE_IDS)
-  for (const role of LEGACY_BUILTIN_ROLES) {
-    const row = agentRows(page).and(page.locator(`[data-agent="${role.id}"]`))
-    await expect(row.locator("strong")).toHaveText(role.label)
-    await expect(row).toContainText(role.model.label)
-    await expect(row.getByTestId(`agent-runs-${role.id}`)).toBeVisible()
+  const ids = await agentRows(page).evaluateAll(rows => rows.map(row => row.getAttribute("data-agent") ?? ""))
+  for (const seeded of SEED_ROLE_IDS) expect(ids).not.toContain(seeded)
+  if (ids.length === 0) {
+    await expect(agentsCard(page).locator("[data-agents-source]")).toHaveAttribute("data-agents-source", /^(repository|reading|no-repository)$/)
+    return
+  }
+  for (const id of ids) {
+    const row = agentRows(page).and(page.locator(`[data-agent="${id}"]`))
+    await expect(row.locator("strong")).toHaveText(id)
+    await expect(row.getByTestId(`agent-runs-${id}`)).toBeVisible()
   }
 }
 
@@ -44,7 +53,7 @@ test("/agents opens one durable Agents card that survives a reload", scenario("a
 
   await command(page, "/agents")
   await closeComposer(page)
-  await expectBuiltinRoles(page)
+  await expectSourceBackedAgents(page)
 
   // A later card takes the tail; a second /agents brings the same Agents card back to it instead of adding a second.
   await command(page, "/help")
@@ -54,12 +63,12 @@ test("/agents opens one durable Agents card that survives a reload", scenario("a
   await closeComposer(page)
   await expect(page.getByTestId("chrome-actions")).toHaveCount(0)
   await expect(cards(page).last()).toHaveAttribute("data-kind", "agents")
-  await expectBuiltinRoles(page)
+  await expectSourceBackedAgents(page)
   await expect(page.locator('.smithers-card[data-kind="agents"]')).toHaveCount(1)
 
   // The card is conversation state in the browser database: a reload restores it without asking again.
   await reloadApp(page)
-  await expectBuiltinRoles(page)
+  await expectSourceBackedAgents(page)
   await expect(page.locator('.smithers-card[data-kind="agents"]')).toHaveCount(1)
 })
 
