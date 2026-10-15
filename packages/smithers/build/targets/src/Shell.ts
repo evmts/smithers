@@ -241,14 +241,16 @@ export const scriptToken = (path: string): string => `${Exec.scriptTokenPrefix}$
  * A repository writes generator and harness scripts in both dialects — the
  * design corpus has `.sh` scripts on `S.Shell.*` and on `S.Generate`, and
  * `.mjs` scripts on `S.Generate` — and the same file must spawn the same way
- * under either rule. A shell script runs under `/bin/sh`; anything else runs
- * under the workspace runtime, which is what a JavaScript generator needs.
+ * under either rule. A `.sh` script runs under `/bin/sh` and a `.bash` script
+ * under `/bin/bash`, because `/bin/sh` is dash on Debian and Ubuntu and
+ * rejects bash syntax. Anything else runs under the workspace runtime, which
+ * is what a JavaScript generator needs.
  *
  * @category tokens
  * @since 0.1.0
  */
 export const scriptInterpreterToken = (path: string): string =>
-  /\.(?:sh|bash)$/.test(path) ? "/bin/sh" : Exec.runtimeBinToken
+  path.endsWith(".sh") ? "/bin/sh" : path.endsWith(".bash") ? "/bin/bash" : Exec.runtimeBinToken
 
 /**
  * Wall-clock bound for one build-system tool process.

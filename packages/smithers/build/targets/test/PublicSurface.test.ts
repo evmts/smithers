@@ -76,6 +76,17 @@ describe("shell executable contract", () => {
       .toEqual([Shell.toolToken(S.Runtime.bin), "--eval", "console.log('two words')", "a b", ""])
   })
 
+  it("runs each declared script under the interpreter its extension names", () => {
+    // /bin/sh is dash on Debian and Ubuntu runners, where bash syntax in a
+    // `.bash` script is a syntax error.
+    expect(Shell.execPayload({ script: S.file("//check.sh"), args: ["a"] }).argv)
+      .toEqual(["/bin/sh", Shell.scriptToken("//check.sh"), "a"])
+    expect(Shell.execPayload({ script: S.file("//check.bash") }).argv)
+      .toEqual(["/bin/bash", Shell.scriptToken("//check.bash")])
+    expect(Shell.execPayload({ script: S.file("//check.mjs") }).argv)
+      .toEqual([Exec.runtimeBinToken, Shell.scriptToken("//check.mjs")])
+  })
+
   it.each([
     {},
     { shell: "node", args: ["--version"] },
