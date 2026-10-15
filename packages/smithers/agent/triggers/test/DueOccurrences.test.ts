@@ -85,6 +85,74 @@ describe("DueOccurrences", () => {
     }
   })
 
+  // A scheduler that stalled in-process across boundaries and one that
+  // restarted across the same boundaries missed the same occurrences, so the
+  // declaration owes the same runs either way. The stalled poll used to leave
+  // the current boundary out of the policy: `one` fired two runs, and a bound
+  // of 2 fired three.
+  it("owes the same occurrences after a stall as after a restart across the same boundaries", async () => {
+    const cases: ReadonlyArray<readonly [Partial<Registered>, ReadonlyArray<number>]> = [
+      [{ catchUp: "one" }, [3 * hour]],
+      [{ catchUp: "none" }, [3 * hour]],
+      [{ catchUp: "all", maxCatchUp: 3 }, [hour, 2 * hour, 3 * hour]],
+      [{ catchUp: "all", maxCatchUp: 2 }, [3 * hour]]
+    ]
+    for (const [declaration, owed] of cases) {
+      const restarted = await compute(hourly({ ...declaration, lastFiredAt: 0 }), undefined)
+      const stalled = await compute(hourly(declaration), 0)
+      expect(restarted).toEqual({ occurrences: owed, watermark: 3 * hour })
+      expect(stalled).toEqual(restarted)
+    }
+  })
+
+  // Only the boundary that just passed is due: nothing was missed, so the
+  // catch-up bound has nothing to refuse and no warning is owed.
+  it("owes a lone passed boundary without consulting the catch-up bound", async () => {
+    const warnings: Array<unknown> = []
+    const capture = Logger.make((entry) => {
+      warnings.push(entry.message)
+    })
+    const run = (trigger: Registered, observed: number | undefined) =>
+      Effect.runPromise(
+        DueOccurrences.compute(trigger, now, observed).pipe(
+          Effect.provide(Logger.layer([capture], { mergeWithExisting: false }))
+        )
+      )
+    for (const catchUp of ["one", "all"] as const) {
+      const trigger = hourly({ catchUp, maxCatchUp: 0 })
+      expect(await run(trigger, 2 * hour)).toEqual({ occurrences: [3 * hour], watermark: 3 * hour })
+      expect(await run({ ...trigger, lastFiredAt: 2 * hour }, undefined)).toEqual({
+        occurrences: [3 * hour],
+        watermark: 3 * hour
+      })
+    }
+    expect(warnings).toEqual([])
+  })
+
+  // Reading a zero bound as one is only for a lone boundary. Once an earlier
+  // boundary was missed too, a bound of zero refuses the backlog as stated.
+  it("abandons a real backlog under a bound of zero and still owes the current boundary", async () => {
+    const warnings: Array<unknown> = []
+    const capture = Logger.make((entry) => {
+      warnings.push(entry.message)
+    })
+    const run = (trigger: Registered, observed: number | undefined) =>
+      Effect.runPromise(
+        DueOccurrences.compute(trigger, now, observed).pipe(
+          Effect.provide(Logger.layer([capture], { mergeWithExisting: false }))
+        )
+      )
+    for (const catchUp of ["one", "all"] as const) {
+      const trigger = hourly({ catchUp, maxCatchUp: 0 })
+      expect(await run(trigger, hour)).toEqual({ occurrences: [3 * hour], watermark: 3 * hour })
+      expect(await run({ ...trigger, lastFiredAt: hour }, undefined)).toEqual({
+        occurrences: [3 * hour],
+        watermark: 3 * hour
+      })
+    }
+    expect(warnings).toHaveLength(4)
+  })
+
   it("passes on every catch-up failure other than an exceeded bound", async () => {
     // One past the greatest safe bound is not a safe search limit, so the
     // occurrence search refuses it with `invalid_options` on either poll.

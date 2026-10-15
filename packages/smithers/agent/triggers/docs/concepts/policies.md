@@ -118,6 +118,11 @@ backlog when catch-up exceeds its bound. It still dispatches the current
 occurrence subject to overlap, on the first poll after a restart and on every
 later poll.
 
+The bound counts every boundary since the last dispatch, the one that just
+passed included, and a restart and a stalled scheduler count the same
+boundaries. A tick where only that one boundary passed fires it under any
+bound.
+
 ## Choosing
 
 The task-shaped version of this page, with the question to ask for each policy,
