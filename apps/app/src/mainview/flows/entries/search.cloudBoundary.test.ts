@@ -23,11 +23,14 @@ import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import type { AppServices } from "../../state/AppController"
 import { createAppController } from "../../state/AppController"
 import { createAppStore } from "../../state/AppStore"
-import { json, memoryStorage, unavailableAgent } from "../../state/TestFixtures"
+import { json, loadBox, memoryStorage, TEST_BOX, unavailableAgent, waitFor } from "../../state/TestFixtures"
+import { WORKFLOW_PROVISION_PATH, WORKFLOW_RPC_PATH } from "@smthrs/rpc/AgentApiRoutes"
 
 const REPO = "roninjin10/e2e-verify"
 const TITLE = "Overnight-browser-20261014-0017"
 const ISSUES = "/api/repos/roninjin10/e2e-verify/issues"
+const PROVISION = WORKFLOW_PROVISION_PATH
+const RPC = WORKFLOW_RPC_PATH
 
 /** What https://smithers.sh/api/bootstrap answered on 2026-10-14, verbatim. */
 const HOSTED: AppBootstrap = {
@@ -48,6 +51,12 @@ const CLOUD_ROUTES: Record<string, unknown> = {
   [`GET ${ISSUES}`]: [cloudIssue],
   [`GET /api/repos/roninjin10/e2e-verify/issue-views`]: [],
   [`GET /api/user/github-repos/roninjin10/e2e-verify/issues`]: []
+}
+
+/* The workspace relay the Cloud flow catalog is read over: prepare the box, then one `List` page. */
+const CATALOG_ROUTES: Record<string, unknown> = {
+  [`POST ${PROVISION}`]: { status: "ready", repo: REPO, gatewayId: "gateway" },
+  [`POST ${RPC}`]: { ok: true, payload: { _tag: "flows", items: [{ flowId: "checks/fast", description: "Check" }] } }
 }
 
 /** The hosted app on the production bootstrap, with routes the test may swap between runs. */
@@ -84,6 +93,12 @@ const hosted = async (routes: Record<string, unknown>, bootstrap: AppBootstrap =
     /** The owner goes away while the next route read is in flight. */
     signOutOnNextRead: () => { signOutMidRead = true }
   }
+}
+
+/** The catalog card `/flows` opens for the selected repository's box, as the person reads it. */
+const catalogCard = (store: Awaited<ReturnType<typeof hosted>>["store"]) => {
+  const card = store.collections.cards.get(`workflow-list@${encodeURIComponent(REPO)}@${encodeURIComponent(TEST_BOX)}`)
+  return card?.kind === "workflow-list" ? card : undefined
 }
 
 /** The rows and the sentence the search card carries, as the person reads them. */
@@ -144,15 +159,79 @@ test("a tracker that answered none still says No results, and the earlier query'
  * door, the same shape as #3879 and #3891.
  */
 test("the hosted app's /flows asks the Cloud catalog, and never claims a count from the seeded world", async () => {
-  const h = await hosted({ ...CLOUD_ROUTES })
+  const h = await hosted({ ...CLOUD_ROUTES, ...CATALOG_ROUTES })
   try {
     expect(h.controller.design.enabled).toBe(false)
+    /* The one prerequisite the catalog read has: a box of the selected repository, listed as the inventory lists it. */
+    await loadBox(h.store, REPO, TEST_BOX, "running")
     const outcome = await h.controller.runCommandForResult("flows")
-    /* The catalog door states where it stands; it never answers a count for a read it did not take. */
-    expect(outcome).toMatchObject({ status: "failed" })
-    expect(outcome.status === "failed" ? outcome.error : "").not.toContain("flows")
-    expect(outcome.status === "failed" ? outcome.error : "").not.toBe("")
+    expect(outcome).toMatchObject({ status: "executed", value: "Flows requested." })
+    /*
+     * The catalog is the WORKSPACE's, so it is read over the workspace relay —
+     * `List { _tag: "flows" }` past `provision` — and the rows the person
+     * reads are the ones that read answered. A count from the seeded design
+     * world would need neither call.
+     */
+    await waitFor(() => catalogCard(h.store)?.payload.catalogRequest === undefined)
+    expect(h.calls).toEqual([`POST ${PROVISION}`, `POST ${RPC}`])
+    expect(catalogCard(h.store)).toMatchObject({
+      title: `Flows: ${REPO}`, status: "active", loading: false,
+      payload: { repo: REPO, workspaceId: TEST_BOX, workflows: [{ key: "checks/fast", description: "Check" }] }
+    })
     expect([...h.store.collections.cards.keys()].filter(id => id.startsWith("design:"))).toEqual([])
+  } finally { await h.controller.dispose() }
+})
+
+/*
+ * The same door with the read refused. The catalog card is where the person
+ * looks, so the workspace's own sentence has to land ON it: a refusal that
+ * only cleared the spinner would leave the previous read's rows standing as
+ * this one's answer, the #3891 shape again.
+ */
+test("a Cloud catalog read the workspace refuses says so on the card, and keeps no count", async () => {
+  const h = await hosted({ ...CLOUD_ROUTES, [`POST ${PROVISION}`]: { status: "ready", repo: REPO, gatewayId: "gateway" } })
+  try {
+    await loadBox(h.store, REPO, TEST_BOX, "running")
+    expect(await h.controller.runCommandForResult("flows")).toMatchObject({ status: "executed" })
+    await waitFor(() => catalogCard(h.store)?.status === "error")
+    expect(h.calls).toEqual([`POST ${PROVISION}`, `POST ${RPC}`])
+    const card = catalogCard(h.store)
+    expect(card?.payload.workflows).toEqual([])
+    expect(card?.body ?? "").not.toBe("")
+    expect(card?.payload.catalogRequest).toMatchObject({ state: "failed" })
+  } finally { await h.controller.dispose() }
+})
+
+/*
+ * Without the prerequisite there is no catalog to read, and the two reasons
+ * are not the same sentence: an inventory nobody has read yet says so, and an
+ * inventory that COMPLETED and listed no box names the missing box. The
+ * earlier witness asked only that the sentence avoid the word "flows", which
+ * both of these do whether or not a read was taken — so it could not tell a
+ * truthful refusal from a phantom count.
+ */
+test("the hosted app's /flows refuses for the reason it has, asks nothing, and opens no catalog", async () => {
+  const h = await hosted({ ...CLOUD_ROUTES, ...CATALOG_ROUTES })
+  try {
+    /* Nothing has listed this account's boxes: an unread collection cannot answer for one. */
+    expect(await h.controller.runCommandForResult("flows")).toMatchObject({
+      status: "failed", error: "Boxes have not loaded yet. Try again."
+    })
+    /* The list completed and named none. That emptiness IS an answer, and it names what is missing. */
+    await h.store.dispatch({ type: "workspaces.loaded", actor: "system", workspaces: [] }).isPersisted.promise
+    expect(await h.controller.runCommandForResult("flows")).toMatchObject({
+      status: "failed", error: `No branch is available for ${REPO}`
+    })
+    expect(h.calls).toEqual([])
+    expect(catalogCard(h.store)).toBeUndefined()
+    expect([...h.store.collections.cards.keys()].filter(id => id.startsWith("design:"))).toEqual([])
+    /*
+     * And the person READS the reason: root's report was a palette that closed
+     * on nothing. The notice this act raised carries the sentence the door
+     * answered, so the press is never silent.
+     */
+    await waitFor(() => [...h.store.collections.toasts.values()].some(toast =>
+      toast.key === "command.failed.flows" && toast.status === "failed" && toast.detail === `No branch is available for ${REPO}`))
   } finally { await h.controller.dispose() }
 })
 
