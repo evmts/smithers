@@ -185,6 +185,10 @@ const edgePair = (edge: Edge): readonly [string, string] => "from" in edge ? [ed
 
 const edgeName = ([from, to]: readonly [string, string]): string => `${from} -> ${to}`
 
+// The display name is ambiguous when an id contains " -> ", so set membership
+// uses the JSON pair: ["a -> b", "c"] and ["a", "b -> c"] stay distinct edges.
+const edgeKey = (pair: readonly [string, string]): string => JSON.stringify(pair)
+
 const matches = (id: string, pattern: string): boolean => {
   const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replaceAll("*", ".*")
   return new RegExp(`^${escaped}$`).test(id)
@@ -240,8 +244,8 @@ export const expectPlan = (plan: PlanLike): PlanAssertions => {
     edges: (pairs, options) => {
       const expected = pairs.map(edgePair).sort((left, right) => compare(edgeName(left), edgeName(right)))
       const actual = Plan.make(plan).edges.map((edge) => [edge.from, edge.to] as const)
-      const actualNames = new Set(actual.map(edgeName))
-      const missing = expected.filter((pair) => !actualNames.has(edgeName(pair)))
+      const actualKeys = new Set(actual.map(edgeKey))
+      const missing = expected.filter((pair) => !actualKeys.has(edgeKey(pair)))
       if (missing.length > 0) {
         return fail(
           "missing_edge",
@@ -253,8 +257,8 @@ export const expectPlan = (plan: PlanLike): PlanAssertions => {
         )
       }
       if (options?.exact) {
-        const expectedNames = new Set(expected.map(edgeName))
-        const unexpected = actual.filter((pair) => !expectedNames.has(edgeName(pair)))
+        const expectedKeys = new Set(expected.map(edgeKey))
+        const unexpected = actual.filter((pair) => !expectedKeys.has(edgeKey(pair)))
         if (unexpected.length > 0) {
           return fail(
             "unexpected_edge",

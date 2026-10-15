@@ -251,6 +251,16 @@ describe("PlanAssertions", () => {
       expect(oneUnexpected.message).toContain("Unexpected edge: prepare -> publish")
     }))
 
+  it.effect("does not confuse edges whose node ids contain the arrow separator", () =>
+    Effect.gen(function*() {
+      const arrowIds: PlanLike = { nodes: [], edges: [{ from: "a -> b", to: "c" }] }
+      const missing = yield* expectPlan(arrowIds).edges([["a", "b -> c"]]).pipe(Effect.flip)
+      expect(missing.code).toBe("missing_edge")
+      yield* expectPlan(arrowIds).edges([["a -> b", "c"]], { exact: true })
+      const lookalike = yield* expectPlan(arrowIds).edges([["a -> b", "c"], ["a", "b -> c"]]).pipe(Effect.flip)
+      expect(lookalike.code).toBe("missing_edge")
+    }))
+
   it.effect("checks key goldens and reports drift as a cache-identity break", () =>
     Effect.gen(function*() {
       yield* expectKeyGoldens({ a: "key1_aa", b: "key1_bb" }, { a: "key1_aa" })
