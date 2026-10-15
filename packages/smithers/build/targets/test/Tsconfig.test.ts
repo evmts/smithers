@@ -95,6 +95,33 @@ describe("Tsconfig include and exclude take declared file inputs", () => {
     expect(metadata.inputs).toEqual([])
   })
 
+  it("spells every path from the directory the file is written into", () => {
+    // The compiler resolves `extends`, `include`, and `exclude` against the
+    // config file's own directory, so a file written below `cwd` must walk
+    // back out to reach what the declaration named relative to `cwd`.
+    const rendered = JSON.parse(Tsconfig.render(Tsconfig.Attrs.make({
+      cwd: "packages/foo",
+      path: "test/tsconfig.json",
+      extends: Input.file("//tsconfig.base.json"),
+      include: ["test/**/*.ts", "src/**/*.ts", "../../globals.d.ts"],
+      exclude: ["test/fixtures"]
+    }))) as Record<string, unknown>
+    expect(rendered).toEqual({
+      extends: "../../../tsconfig.base.json",
+      include: ["**/*.ts", "../src/**/*.ts", "../../../globals.d.ts"],
+      exclude: ["fixtures"]
+    })
+  })
+
+  it("keeps a package-relative base reachable from a nested file", () => {
+    const rendered = JSON.parse(Tsconfig.render(Tsconfig.Attrs.make({
+      cwd: "packages/foo",
+      path: "test/tsconfig.json",
+      extends: Input.file("tsconfig.json")
+    }))) as Record<string, unknown>
+    expect(rendered["extends"]).toBe("../tsconfig.json")
+  })
+
   it("still declares the base configuration it extends as an input", () => {
     const base = Input.file("//tsconfig.base.json")
     const metadata = Target.metadata(Tsconfig.Tsconfig({ extends: base, include: [Input.glob("src/**/*")] }))

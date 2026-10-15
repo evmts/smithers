@@ -12,7 +12,9 @@
  * {@link Input.Glob} and {@link Input.File} — beside plain tsconfig patterns,
  * so one file set is spelled one way. Each entry renders to its pattern text:
  * a glob's pattern, a file's path, and a `//`-rooted path rewritten relative
- * to `cwd` the way `extends` is.
+ * to `cwd` the way `extends` is. When `path` places the file below `cwd`,
+ * every entry and `extends` is then spelled from the file's own directory,
+ * because that is where the compiler resolves them.
  *
  * The declarations stay out of the target's digested inputs, and the rule
  * resolves each one to its text before the target is constructed, which is
@@ -33,6 +35,7 @@
 
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import * as NodePath from "node:path"
 import * as GeneratedFile from "./GeneratedFile.ts"
 import * as Input from "./Input.ts"
 import * as ManifestJson from "./ManifestJson.ts"
@@ -84,7 +87,10 @@ export const patternText = (cwd: string, pattern: Pattern): string =>
  * @since 0.1.0
  */
 export const Attrs = Schema.Struct({
-  /** Where the file is written, relative to `cwd`. @default "tsconfig.json" */
+  /**
+   * Where the file is written, relative to `cwd`. Rendered paths are spelled
+   * from this file's directory. @default "tsconfig.json"
+   */
   path: Schema.NonEmptyString.pipe(
     Schema.withConstructorDefault(Effect.succeed("tsconfig.json"))
   ),
@@ -139,13 +145,14 @@ export type Attrs = typeof Attrs.Type
 export const render = (attrs: Attrs): string => {
   const options = ManifestJson.cloneObject(attrs.compilerOptions, "Tsconfig compilerOptions")
   const document: Record<string, ManifestJson.Value> = {}
-  if (attrs.extends !== null) document["extends"] = relative(attrs.cwd, attrs.extends.path)
+  const fromFile = fileRelative(attrs.cwd, attrs.path)
+  if (attrs.extends !== null) document["extends"] = relative(fromFile(attrs.extends.path))
   if (Object.keys(options).length > 0) document["compilerOptions"] = options
   if (attrs.include.length > 0) {
-    document["include"] = attrs.include.map((entry) => patternText(attrs.cwd, entry))
+    document["include"] = attrs.include.map((entry) => fromFile(patternText(attrs.cwd, entry)))
   }
   if (attrs.exclude.length > 0) {
-    document["exclude"] = attrs.exclude.map((entry) => patternText(attrs.cwd, entry))
+    document["exclude"] = attrs.exclude.map((entry) => fromFile(patternText(attrs.cwd, entry)))
   }
   if (attrs.references.length > 0) {
     document["references"] = attrs.references.map((path) => ({ path }))
@@ -154,19 +161,38 @@ export const render = (attrs: Attrs): string => {
 }
 
 /**
- * Spells a declared path the way a tsconfig `extends` needs it.
+ * Rebases a path or pattern from the file's own directory.
+ *
+ * The compiler resolves `extends`, `include`, and `exclude` against the
+ * directory the config file sits in, while a declaration spells them from
+ * `cwd`. A workspace-rooted `//` path first becomes `cwd`-relative, so
+ * `//tsconfig.base.json` written under `packages/foo` is
+ * `../../tsconfig.base.json`; a file written to `test/tsconfig.json` below
+ * `cwd` then walks one more level out. A file written directly into `cwd`
+ * keeps the declared text unchanged.
+ */
+const fileRelative = (cwd: string, path: string) => {
+  const directory = NodePath.posix.dirname(path)
+  return (value: string): string => {
+    const text = Input.rootRelative(cwd, value)
+    if (directory === ".") return text
+    // Anchoring both sides under one absolute base keeps the result
+    // independent of the process working directory.
+    const rebased = NodePath.posix.relative(
+      NodePath.posix.join("/", cwd, directory),
+      NodePath.posix.join("/", cwd, text)
+    )
+    return rebased === "" ? "." : rebased
+  }
+}
+
+/**
+ * Spells a file-relative path the way a tsconfig `extends` needs it.
  *
  * The compiler resolves a bare specifier as a package name, so a sibling file
- * has to carry an explicit relative prefix. A workspace-rooted `//` path is
- * rewritten relative to the directory the generated file is written into, not
- * merely stripped of its anchor: `//tsconfig.base.json` written under
- * `packages/foo` is `../../tsconfig.base.json`, and stripping alone would name
- * a sibling that is not there.
+ * has to carry an explicit relative prefix.
  */
-const relative = (cwd: string, path: string): string => {
-  const stripped = Input.rootRelative(cwd, path)
-  return stripped.startsWith("./") || stripped.startsWith("../") ? stripped : `./${stripped}`
-}
+const relative = (path: string): string => path.startsWith("./") || path.startsWith("../") ? path : `./${path}`
 
 const definition = Target.make("Tsconfig", {
   attrs: Attrs,
