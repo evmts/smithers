@@ -480,6 +480,36 @@ describe("WorkspaceObservation", () => {
     }
   })
 
+  /*
+   * Only a root made of separators names the filesystem root. An empty root
+   * names nothing; widening it to `/` would walk the whole machine on every
+   * frame. On Node it lists nothing, the same answer as a root that is absent.
+   */
+  it("never widens an empty root to the filesystem root", async () => {
+    const visits: Array<string> = []
+    const portable = await Effect.runPromise(
+      Effect.map(FileSystem.FileSystem, WorkspaceObservation.fileSystemHost).pipe(Effect.provide(NodeFileSystem.layer))
+    )
+    const recording: WorkspaceObservation.Host = {
+      entries: (directory, keep) =>
+        Effect.suspend(() => {
+          visits.push(directory)
+          return portable.entries(directory, keep)
+        })
+    }
+
+    const observation = await Effect.runPromise(WorkspaceObservation.observeHost(recording, ""))
+
+    expect(visits).toEqual([""])
+    expect(observation).toMatchObject({ paths: 0, complete: true })
+    const root = workspace()
+    try {
+      expect(observation.digest).toBe((await measured(join(root, "absent"))).digest)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it("measures through any host, whatever order the host lists a directory in", async () => {
     const root = workspace()
     write(root, "a.py", "one")

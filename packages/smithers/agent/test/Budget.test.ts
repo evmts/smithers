@@ -415,6 +415,51 @@ describe("what a spend was for", () => {
     ))
   })
 
+  /*
+   * A model with no price row still splits: each part is charged the way the
+   * record is, by that model's per-model weights when the policy has them and
+   * by plain token counts when it does not, and no part claims a price.
+   */
+  it.each([
+    { charging: "plain token counts", weights: undefined, judge: 1_010, marks: 2_020 },
+    {
+      charging: "its per-model weights",
+      weights: { "local/unpriced": { input: 1, cacheRead: 0.1, cacheWrite: 1.25, output: 4 } },
+      judge: 1_040,
+      marks: 2_080
+    }
+  ])(
+    "splits an unpriced model's charge by $charging, and no part carries a price",
+    async ({ judge, marks, weights }) => {
+      await journaled(inRun(
+        "unpriced-split",
+        Effect.gen(function*() {
+          const model = "local/unpriced"
+          const budget = yield* Budget.make(weights === undefined ? {} : { weights })
+          yield* budget.record("boundary-usage/u", { inputTokens: 3_000, outputTokens: 30 }, model).pipe(as({
+            purpose: "judge",
+            frame: 2,
+            readings: () => [
+              { purpose: "judge", usage: { inputTokens: 1_000, outputTokens: 10 }, modelId: model },
+              { purpose: "marks", usage: { inputTokens: 2_000, outputTokens: 20 }, modelId: model }
+            ]
+          }))
+
+          expect(yield* payloads("unpriced-split")).toEqual([
+            {
+              stepKey: "boundary-usage/u",
+              spent: judge + marks,
+              purpose: "judge",
+              frame: 2,
+              parts: [{ purpose: "judge", spent: judge }, { purpose: "marks", spent: marks }]
+            }
+          ])
+          expect((yield* budget.usage).tokens).toBe(judge + marks)
+        })
+      ))
+    }
+  )
+
   it("keeps a charge whole under the declared purpose when its readings do not add up to it", async () => {
     await journaled(inRun(
       "unsplit",

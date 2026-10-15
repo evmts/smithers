@@ -2150,6 +2150,87 @@ describe("the executor's resume port", () => {
     expect(polls).toBe(0)
   })
 
+  /*
+   * A `Suspended` poll is checked against the run row once more, because a
+   * round that has just claimed the run still publishes the previous
+   * `Suspended` result. A row that is missing holds no round, so the run is
+   * parked and taken up. A store that cannot answer is not that evidence: the
+   * park read fails, and the resume stays pending instead of claiming a run a
+   * round may hold.
+   */
+  it.each([
+    { second: "is missing", code: "not_found_row" as const, uptake: "resuming" },
+    { second: "cannot be read", code: "persistence_failed" as const, uptake: "unknown" }
+  ])("reads a `Suspended` execution whose run row $second as $uptake", async ({ code, uptake }) => {
+    const record = recorder()
+    const logs: Array<string> = []
+    const logDetails: Array<Readonly<Record<string, unknown>>> = []
+    const resumed: Array<string> = []
+    const claimed: Array<string> = []
+    const drove = Deferred.makeUnsafe<void>()
+    let reads = 0
+    let polls = 0
+    const observed = await withExecutor(record, {
+      logs,
+      logDetails,
+      runs: {
+        // The first read looks for an unexecuted fork and finds no row. The
+        // second asks whether a round holds the `Suspended` execution.
+        get: (runId) =>
+          Effect.fail(
+            new RunStore.RunStoreError({
+              code: reads++ === 0 ? "not_found_row" : code,
+              method: "get",
+              message: `injected ${code} for ${runId}`,
+              cause: undefined
+            })
+          )
+      },
+      engine: (engine) =>
+        ({
+          ...engine,
+          poll: () =>
+            Effect.sync(() => {
+              polls++
+              return Option.some({ _tag: "Suspended" })
+            }),
+          resume: (_flow: unknown, id: string) =>
+            Effect.sync(() => {
+              resumed.push(id)
+              Deferred.doneUnsafe(drove, Effect.void)
+            })
+        }) as unknown as EngineService,
+      runtime: {
+        resume: (id) =>
+          Effect.sync(() => {
+            claimed.push(id)
+            return launchInput.run
+          })
+      }
+    }, (executor) =>
+      Effect.tap(
+        executor.resumeRun({ runId: "run-suspended" }),
+        (taken) => taken === "resuming" ? Deferred.await(drove) : Effect.void
+      ))
+
+    expect(observed).toBe(uptake)
+    expect(reads).toBe(2)
+    expect(polls).toBe(1)
+    if (uptake === "resuming") {
+      expect(claimed).toEqual(["run-suspended"])
+      expect(resumed).toEqual(["run-suspended"])
+      expect(logs).not.toContain("The engine park state could not be read")
+    } else {
+      expect(claimed).toEqual([])
+      expect(resumed).toEqual([])
+      expect(logs).toContain("The engine park state could not be read")
+      expect(logDetails).toContainEqual(expect.objectContaining({
+        runId: "run-suspended",
+        cause: expect.stringContaining("injected persistence_failed for run-suspended")
+      }))
+    }
+  })
+
   it("re-drives a run it hosts and reports that it is driving", async () => {
     const record = recorder()
     const resumed: Array<string> = []
