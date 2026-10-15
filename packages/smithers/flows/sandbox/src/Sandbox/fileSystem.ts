@@ -11,7 +11,7 @@ import * as FileSystem from "effect/FileSystem"
 import * as Option from "effect/Option"
 import * as PlatformError from "effect/PlatformError"
 import * as Stream from "effect/Stream"
-import { platformReason } from "../internal/platformReason.ts"
+import { platformReason, refusalReason } from "../internal/platformReason.ts"
 import { rootedAt } from "../internal/rootedPath.ts"
 import type { ProviderError, ProviderErrorCode } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import type { Session } from "./Session.ts"
@@ -137,12 +137,17 @@ const rooted = (
   return wrapped
 }
 
+/**
+ * A probe's failure. Its utility's own `Permission denied` is the operation's
+ * `EACCES`, except for `stat`, whose portable fallback reads the bytes to
+ * size a file that the platform `stat` would describe without reading it.
+ */
 const probeFailed = (method: string, path: string) =>
 (
   result: ProbeResult
 ): PlatformError.PlatformError =>
   PlatformError.systemError({
-    _tag: "Unknown",
+    _tag: method === "stat" ? "Unknown" : refusalReason(result.stderr),
     module: "FileSystem",
     method,
     description: `\`${path}\`: ${result.stderr.trim() === "" ? `probe exited ${result.code}` : result.stderr.trim()}`,
@@ -235,8 +240,9 @@ const unsupportedExit = 13
  * Failure reasons mirror `NodeFileSystem` wherever a script can tell the
  * outcomes apart: absence is `NotFound`, an occupied `mkdir` target is
  * `AlreadyExists`, a directory in `rename`'s way or a listed non-directory is
- * `BadResource`, and a path an unsearchable ancestor hides fails `exists`
- * with `PermissionDenied`. What a probe cannot classify stays `Unknown`; the
+ * `BadResource`, a path an unsearchable ancestor hides fails `exists` with
+ * `PermissionDenied`, and so does any probe whose utility answers `Permission
+ * denied`. What a probe cannot classify stays `Unknown`; the
  * one deliberate divergence is `readLink` of an existing non-link, which
  * answers `BadArgument` where Node surfaces its unmapped `EINVAL` as
  * `Unknown`.

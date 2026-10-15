@@ -55,3 +55,16 @@ export const platformFailure = (method: string, command: string) =>
     description: `\`${command}\`: ${error.message}`,
     cause: error
   })
+
+/**
+ * The reason a refused utility gives, in the vocabulary of the platform
+ * implementations: `EACCES`, which glibc and musl both word `Permission
+ * denied`, is `PermissionDenied` there too. A caller that tells a denial from
+ * a broken session (the std file flows answer `permission_denied` rather than
+ * `command_failed`) reads the same reason from a sandbox as from the host.
+ *
+ * @category models
+ * @since 1.0.0-rc.8
+ */
+export const refusalReason = (stderr: string): PlatformError.SystemErrorTag =>
+  stderr.includes("Permission denied") ? "PermissionDenied" : "Unknown"

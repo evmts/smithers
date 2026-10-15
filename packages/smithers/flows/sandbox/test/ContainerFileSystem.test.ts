@@ -5,7 +5,12 @@ import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts
 import type { Session } from "../src/Sandbox/Session.ts"
 
 const bytes = new TextEncoder()
-const fixture = (output = "81a0 3 1000 100 9 123 1 1700000000\n", code = 0, fail = false) => {
+const fixture = (
+  output = "81a0 3 1000 100 9 123 1 1700000000\n",
+  code = 0,
+  fail = false,
+  stderr = "guest error"
+) => {
   const commands: Array<{ command: string; stdin: Uint8Array | undefined }> = []
   const writes: Array<Uint8Array> = []
   const session: Session = {
@@ -18,7 +23,7 @@ const fixture = (output = "81a0 3 1000 100 9 123 1 1700000000\n", code = 0, fail
         Effect.fail(new ProviderError({ code: "unavailable", message: "disconnected" }))
         : Effect.succeed({
           stdout: Stream.make(bytes.encode(output)),
-          stderr: Stream.make(bytes.encode("guest error")),
+          stderr: Stream.make(bytes.encode(stderr)),
           exitCode: Effect.succeed(code)
         })
     },
@@ -73,6 +78,15 @@ describe("container native filesystem", () => {
         expect((yield* Effect.flip(fixture("", code).fs.stat!("/file"))).reason._tag).toBe(reason)
       })
   )
+  it.effect("reports a refusal the guest words as Permission denied as PermissionDenied", () =>
+    Effect.gen(function*() {
+      const denied = "chmod: /file: Permission denied"
+      expect((yield* Effect.flip(fixture("", 1, false, denied).fs.chmod!("/file", 0o640))).reason._tag)
+        .toBe("PermissionDenied")
+      // EPERM is not EACCES: the platform implementations leave it Unknown too.
+      const owner = "chown: /file: Operation not permitted"
+      expect((yield* Effect.flip(fixture("", 1, false, owner).fs.chown!("/file", 0, 0))).reason._tag).toBe("Unknown")
+    }))
   it.effect("does not turn a disconnected container into an absent file", () =>
     Effect.gen(function*() {
       const { fs } = fixture("", 0, true)

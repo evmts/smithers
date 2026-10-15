@@ -379,6 +379,25 @@ describe("Sandbox.fileSystem probes against the reference filesystem", () => {
     budget
   )
 
+  it.effect.skipIf(isRoot)(
+    "reports a refusal the utility words as Permission denied as PermissionDenied, as Node reports EACCES",
+    () =>
+      withProbes("denied-directory", ({ fs, probed, workdir }) =>
+        Effect.gen(function*() {
+          yield* fs.makeDirectory(`${workdir}/locked`)
+          yield* fs.chmod(`${workdir}/locked`, 0o555)
+          // A cooperative lock is a directory beside the file, which the
+          // file flows report as `permission_denied` on the host.
+          yield* agreement(
+            "PermissionDenied",
+            probed.makeDirectory(`${workdir}/locked/.lock`),
+            fs.makeDirectory(`${workdir}/locked/.lock`)
+          )
+          yield* fs.chmod(`${workdir}/locked`, 0o755)
+        })),
+    budget
+  )
+
   it.effect(
     "reports a rename's missing source as NotFound",
     () =>

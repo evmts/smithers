@@ -37,7 +37,7 @@ Every namespace below is also its own import subpath.
 | `SandboxMerge`              | `@smthrs/sandbox/SandboxMerge`              | Lands a session's captured work in a host jj repository as one change.        |
 | `DirectorySandbox`          | `@smthrs/sandbox/DirectorySandbox`          | The scratch-directory sandbox provider.                                       |
 | `CommandSandbox`            | `@smthrs/sandbox/CommandSandbox`            | The argv-prefix sandbox provider, over `ssh`, `docker exec`, or this machine. |
-| `ContainerSandbox`          | `@smthrs/sandbox/ContainerSandbox`          | The container-lifecycle sandbox provider, over a Docker-compatible CLI.       |
+| `ContainerSandbox`          | `@smthrs/sandbox/ContainerSandbox`          | The container-lifecycle provider, and sessions over containers others run.    |
 | `KubernetesSandbox`         | `@smthrs/sandbox/KubernetesSandbox`         | The Pod-per-session sandbox provider, over `kubectl`.                         |
 | `JustBashSandbox`           | `@smthrs/sandbox/JustBashSandbox`           | The in-process interpreter sandbox provider, for hosts that cannot spawn.     |
 | `MicrosandboxSandbox`       | `@smthrs/sandbox/MicrosandboxSandbox`       | The Microsandbox microVM provider.                                            |

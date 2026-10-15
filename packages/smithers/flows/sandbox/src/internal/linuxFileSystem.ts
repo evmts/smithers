@@ -13,6 +13,7 @@ import * as Option from "effect/Option"
 import * as PlatformError from "effect/PlatformError"
 import * as Stream from "effect/Stream"
 import type { Session } from "../Sandbox/Session.ts"
+import { refusalReason } from "./platformReason.ts"
 
 const encoder = new TextEncoder()
 const validMode = (mode: number): boolean => Number.isInteger(mode) && mode >= 0 && mode <= 0o7777
@@ -33,7 +34,7 @@ export const linuxFileSystem = (session: Session, guest: string): Partial<FileSy
     PlatformError.badArgument({ module: "FileSystem", method, description })
   const failed = (method: string, path: string, description: string, code = 1) =>
     PlatformError.systemError({
-      _tag: code === 9 ? "NotFound" : code === 10 ? "AlreadyExists" : "Unknown",
+      _tag: code === 9 ? "NotFound" : code === 10 ? "AlreadyExists" : refusalReason(description),
       module: "FileSystem",
       method,
       pathOrDescriptor: path,

@@ -16,6 +16,12 @@
 
 ### Added
 
+- `ContainerSandbox.existing` serves the session contract over a container something else runs, through a transport
+  of `@smthrs/std/Container`'s shape, so `Sandbox.hostContext` gives that container's files the same `FileSystem` a
+  provisioned machine's have. It prepares nothing, declares no `kill`, and brings file bytes back as base64.
+- A sandbox file probe whose utility answers `Permission denied` fails with `PermissionDenied`, as `EACCES` does on the
+  platform implementations, rather than `Unknown`.
+
 - Every provider takes `network: "none" | { allow: string[] }` (`Sandbox.NetworkPolicy`) (#1788). `VercelSandbox`
   maps it to `networkPolicy` and re-applies it to a resumed sandbox; `MicrosandboxSandbox` maps it to
   `disableNetwork()` or a deny-by-default policy and refuses to reattach a machine created under another;
