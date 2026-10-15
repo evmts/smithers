@@ -160,10 +160,29 @@ const path = (header: string): string => {
   if (!raw.endsWith("\"")) throw inconclusive("Invalid quoted diff path")
   return new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(bytes))
 }
+// `diff --git a/P b/P` names one path only when both halves agree; a header
+// whose paths differ or contain the separator ambiguously names none.
+const gitHeaderPath = (header: string): string | undefined => {
+  const half = (header.length - 1) / 2
+  if (!Number.isInteger(half) || header[half] !== " ") return undefined
+  const left = path(header.slice(0, half)), right = path(header.slice(half + 1))
+  return left.startsWith("a/") && right.startsWith("b/") && left.slice(2) === right.slice(2)
+    ? right.slice(2)
+    : undefined
+}
 const countDiff = (diff: string): DiffCounts => {
   let added = 0, removed = 0, old = 0, next = 0, oldPath: string | undefined, newPath: string | undefined
-  let pendingHeaders = false
+  let pendingHeaders = false, gitHeader: string | undefined, metadata = false, target: string | undefined
   const files = new Set<string>()
+  // A git file entry with metadata but no `---`/`+++` lines (an empty new or
+  // deleted file, a rename, a copy, a mode change) still touches one file.
+  const settle = () => {
+    if (!pendingHeaders) return
+    const value = gitHeader === undefined || !metadata ? undefined : target ?? gitHeaderPath(gitHeader)
+    if (value === undefined) throw inconclusive("Diff file has no unified headers")
+    files.add(value)
+    pendingHeaders = false
+  }
   const touch = () => {
     const value = newPath === "/dev/null" ? oldPath : newPath
     if (value === undefined || value === "/dev/null") throw inconclusive("Diff hunk has no file headers")
@@ -185,8 +204,11 @@ const countDiff = (diff: string): DiffCounts => {
       continue
     }
     if (line.startsWith("diff --git ")) {
-      if (pendingHeaders) throw inconclusive("Diff file has no unified headers")
+      settle()
       pendingHeaders = true
+      gitHeader = line.slice(11)
+      metadata = false
+      target = undefined
       oldPath = undefined
       newPath = undefined
     } else if (line.startsWith("--- ")) oldPath = path(line.slice(4))
@@ -194,6 +216,7 @@ const countDiff = (diff: string): DiffCounts => {
       newPath = path(line.slice(4))
       touch()
       pendingHeaders = false
+      gitHeader = undefined
     } else if (line.startsWith("@@ ")) {
       const hunk = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/.exec(line)
       if (hunk === null) throw inconclusive("Invalid unified diff hunk")
@@ -202,16 +225,22 @@ const countDiff = (diff: string): DiffCounts => {
       if (!Number.isSafeInteger(old) || !Number.isSafeInteger(next)) throw inconclusive("Invalid unified diff size")
       touch()
     } else if (
-      /^(index |old mode |new mode |new file mode |deleted file mode |similarity index |rename from |rename to )/.test(
-        line
-      )
+      /^(index |old mode |new mode |new file mode |deleted file mode |(dis)?similarity index |(rename|copy) from )/
+        .test(
+          line
+        )
     ) {
       pendingHeaders = true
+      metadata = true
+    } else if (/^(rename|copy) to /.test(line)) {
+      pendingHeaders = true
+      metadata = true
+      target = path(line.slice(line.indexOf(" to ") + 4))
     } else if (line === "" || line === "\\ No newline at end of file") {
       continue
     } else throw inconclusive("Scorer requires a text unified diff")
   }
-  if (pendingHeaders) throw inconclusive("Diff file has no unified headers")
+  settle()
   if (old !== 0 || next !== 0) throw inconclusive("Incomplete unified diff hunk")
   return { added, removed, files: files.size }
 }
@@ -249,7 +278,8 @@ const diffScorer = (name: "diffSize" | "touchedFiles", options: DiffOptions) => 
 export const diffSize = (options: DiffOptions) => diffScorer("diffSize", options)
 
 /**
- * Counts distinct file paths against an inclusive cap.
+ * Counts distinct file paths against an inclusive cap. A git entry with no
+ * hunks (an empty new file, a rename, a copy, a mode change) counts once.
  *
  * @category scorers
  * @since 0.1.0

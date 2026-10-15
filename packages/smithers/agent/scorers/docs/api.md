@@ -348,7 +348,9 @@ is a stem whose last word may continue ("renewal"), and one written
 `/source/flags` is a regular expression. `leakage` finds a marker anywhere,
 case-insensitively, even inside a longer token, so `token=SECRETabc123xyz`
 leaks `SECRETabc123`; its detail names the sink and the marker's 1-based
-position, never the marker text. A `/source/flags` entry and a
+position, never the marker text. `leakage` trims whitespace around each
+marker, so a secret read from a file with its trailing newline still matches.
+`opener` and `leakage` ignore blank entries. A `/source/flags` entry and a
 `linkedReferences` pattern run as given on the backtracking engine, so they
 must come from the suite author, never from model output or a payload; the
 built-in link, question, and path scans run in linear time on any output. `requiredLinks` ignores
@@ -461,9 +463,13 @@ The host selects the sandbox; the scorer does not grant filesystem or network ac
 a complete text unified diff. `diffSize` counts added plus removed hunk lines;
 `touchedFiles` counts distinct paths, including deleted files, with repeated
 hunks deduplicated. Equality to the cap passes. Both return counts in `reason`
-and `meta: { added, removed, files, count, max }`. Empty diffs count zero;
-malformed, incomplete, binary or metadata-only files without unified headers are inconclusive. `max` must be a
-nonnegative safe integer and enters the scorer identity.
+and `meta: { added, removed, files, count, max }`. Empty diffs count zero.
+A git file entry with no hunks, such as an empty new file, a rename, a copy,
+or a mode change, counts as one touched file and zero lines; its path comes
+from `rename to` or `copy to`, or from a `diff --git` header whose two paths
+match. Malformed, incomplete, or binary diffs, and git entries whose path
+cannot be read, are inconclusive. `max` must be a nonnegative safe integer and
+enters the scorer identity.
 
 ### Scorers export index
 

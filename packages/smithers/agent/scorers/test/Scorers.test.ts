@@ -97,22 +97,43 @@ describe("built-in scorers", () => {
     expect(await Effect.runPromise(Scorers.touchedFiles({ max: 2 }).score(input(unicode))))
       .toMatchObject({ score: 1, meta: { files: 2 } })
   })
-  it("keeps metadata-only and mixed unsupported files inconclusive instead of passing a zero-file budget", async () => {
+  it("counts metadata-only files from their git headers", async () => {
     const renamed = "diff --git a/old b/new\nsimilarity index 100%\nrename from old\nrename to new\n"
     const mode = "diff --git a/mode b/mode\nold mode 100644\nnew mode 100755\n"
     const copy = "diff --git a/old b/copy\nsimilarity index 100%\ncopy from old\ncopy to copy\n"
+    const empty = "diff --git a/my file.py b/my file.py\nnew file mode 100644\nindex 0000000..e69de29\n"
+    const deleted =
+      "diff --git \"a/\\360\\237\\230\\200\" \"b/\\360\\237\\230\\200\"\ndeleted file mode 100644\nindex e69de29..0000000\n"
     for (
-      const output of [renamed, mode, copy, renamed + diff, diff + mode, "old mode 100644\n", "diff --git a/a b/a\n"]
+      const [output, files, lines] of [
+        [renamed, 1, 0],
+        [mode, 1, 0],
+        [copy, 1, 0],
+        [empty, 1, 0],
+        [deleted, 1, 0],
+        [renamed + diff, 3, 6],
+        [diff + mode, 3, 6],
+        [empty + mode + diff, 4, 6]
+      ] as const
     ) {
-      for (const scorer of [Scorers.touchedFiles({ max: 0 }), Scorers.diffSize({ max: 0 })]) {
-        const failure = await Effect.runPromise(Effect.flip(scorer.score(input(output))))
-        expect(failure.code).toBe("inconclusive")
-      }
+      expect(await Effect.runPromise(Scorers.touchedFiles({ max: 0 }).score(input(output))))
+        .toMatchObject({ score: 0, meta: { files, count: files } })
+      expect(await Effect.runPromise(Scorers.diffSize({ max: 0 }).score(input(output))))
+        .toMatchObject({ score: lines === 0 ? 1 : 0, meta: { files, count: lines } })
     }
     const metadata = "diff --git a/name b/name\nold mode 100644\nnew mode 100755\nindex abc..def 100755\n"
     const text = "--- a/name\n+++ b/name\n@@ -1 +1 @@\n-old\n+new\n"
     expect(await Effect.runPromise(Scorers.touchedFiles({ max: 0 }).score(input(metadata + text))))
       .toMatchObject({ score: 0, meta: { files: 1 } })
+  })
+  it("keeps headers that name no file inconclusive instead of passing a zero-file budget", async () => {
+    const ambiguous = "diff --git a/x b/y z\nold mode 100644\nnew mode 100755\n"
+    for (const output of ["old mode 100644\n", "diff --git a/a b/a\n", ambiguous, "diff --git a/a b/a\n" + diff]) {
+      for (const scorer of [Scorers.touchedFiles({ max: 0 }), Scorers.diffSize({ max: 0 })]) {
+        const failure = await Effect.runPromise(Effect.flip(scorer.score(input(output))))
+        expect(failure.code).toBe("inconclusive")
+      }
+    }
   })
   it("refuses malformed paths, unsupported binary output and impossible hunk counts", async () => {
     const fixtures = [
