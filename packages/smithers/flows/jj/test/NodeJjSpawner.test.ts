@@ -10,6 +10,7 @@
  * spawner adapter and check exactly that.
  */
 import { afterEach, beforeEach, describe, expect, it } from "@effect/vitest"
+import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
@@ -185,11 +186,13 @@ const busy = (command: string) =>
 
 /**
  * A host spawner that answers the version probes in order with `answers`, then
- * spawns for real once they run out. `probes` counts every version spawn.
+ * spawns for real once they run out. `probes` counts every version spawn, and
+ * a hung probe's cleanup runs `cleanup` before its interruption completes.
  */
 const versionAnswers = (
   answers: ReadonlyArray<"busy" | "denied" | "hang">,
-  probes: { count: number }
+  probes: { count: number },
+  cleanup: Effect.Effect<void> = Effect.void
 ) =>
   Layer.effect(
     ChildProcessSpawner,
@@ -206,19 +209,22 @@ const versionAnswers = (
           )
         }
         // A process that never starts answering: only the probe's own budget ends it.
-        return Effect.succeed(makeHandle({
-          pid: ProcessId(0),
-          exitCode: Effect.never,
-          isRunning: Effect.succeed(true),
-          kill: () => Effect.void,
-          stdin: Sink.drain,
-          stdout: Stream.never,
-          stderr: Stream.never,
-          all: Stream.never,
-          getInputFd: () => Sink.drain,
-          getOutputFd: () => Stream.never,
-          unref: Effect.succeed(Effect.void)
-        }))
+        return Effect.as(
+          Effect.addFinalizer(() => cleanup),
+          makeHandle({
+            pid: ProcessId(0),
+            exitCode: Effect.never,
+            isRunning: Effect.succeed(true),
+            kill: () => Effect.void,
+            stdin: Sink.drain,
+            stdout: Stream.never,
+            stderr: Stream.never,
+            all: Stream.never,
+            getInputFd: () => Sink.drain,
+            getOutputFd: () => Stream.never,
+            unref: Effect.succeed(Effect.void)
+          })
+        )
       }))
   ).pipe(Layer.provide(realSpawner))
 
@@ -583,6 +589,39 @@ describe.skipIf(process.platform === "win32")("NodeJj startup probe on a busy ma
       yield* TestClock.adjust(1)
       expect(yield* Fiber.join(building)).toBe("the working copy is clean\n")
       expect(probes.count).toBe(2)
+    }))
+
+  it.effect("keeps a newer verified probe when an abandoned probe finishes cleaning up late", () =>
+    Effect.gen(function*() {
+      const probes = { count: 0 }
+      const release = yield* Deferred.make<void>()
+      let cleaning = false
+      const cleanup = Effect.andThen(Effect.sync(() => (cleaning = true)), Deferred.await(release))
+
+      yield* Effect.gen(function*() {
+        const first = yield* Effect.forkChild(Effect.provide(status, NodeJj.layerSpawnerAt(directory)))
+        while (probes.count === 0) yield* Effect.yieldNow
+        // The first build's probe outruns its budget and is abandoned, but its
+        // cleanup is held open, so it has not yet run its own error handler.
+        yield* TestClock.adjust(500)
+        while (!cleaning) yield* Effect.yieldNow
+
+        // A second build starts a fresh run of the abandoned probe, which is
+        // refused and forgotten; a third build verifies jj with a new probe.
+        const refused = yield* Effect.flip(Effect.provide(status, NodeJj.layerSpawnerAt(directory)))
+        expect(refused).toMatchObject({ code: "unknown", method: "version" })
+        expect(yield* Effect.provide(status, NodeJj.layerSpawnerAt(directory))).toBe("the working copy is clean\n")
+        expect(probes.count).toBe(3)
+
+        // The abandoned run now finishes. It must not evict the third build's
+        // probe: the first build's retry reuses it instead of spawning again.
+        yield* Deferred.succeed(release, undefined)
+        expect(yield* Fiber.join(first)).toBe("the working copy is clean\n")
+        expect(probes.count).toBe(3)
+      }).pipe(
+        Effect.provide(versionAnswers(["hang", "denied"], probes, cleanup)),
+        Effect.provideService(NodeJj.StartupTimeoutMs, 500)
+      )
     }))
 })
 

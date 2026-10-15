@@ -45,6 +45,9 @@ case "$FLOWS_FAKE_JJ" in
   slow) echo $$ > "$FLOWS_FAKE_JJ_MARKER.pid"; : > "$FLOWS_FAKE_JJ_MARKER.started"; /bin/sleep 1; : > "$FLOWS_FAKE_JJ_MARKER" ;;
   orphan) echo $$ > "$FLOWS_FAKE_JJ_MARKER.pid"
     (: > "$FLOWS_FAKE_JJ_MARKER.started"; /bin/sleep 1; : > "$FLOWS_FAKE_JJ_MARKER") & exit 0 ;;
+  revert-not-json|revert-not-string)
+    if [ "$1" = "revert" ]; then : > "$FLOWS_FAKE_JJ_MARKER"; exit 0; fi
+    if [ "$FLOWS_FAKE_JJ" = "revert-not-json" ]; then echo "docs/a.md"; else echo 42; fi; exit 0 ;;
   *) exit 0 ;;
 esac
 `
@@ -418,6 +421,30 @@ describe.skipIf(process.platform === "win32")("NodeJj failure classification", (
 
       // Nothing was signalled, so the descendant ran to completion.
       expect(existsSync(marker)).toBe(true)
+    }))
+
+  it.live("refuses to revert when jj's changed-path list is not JSON strings", () =>
+    Effect.gen(function*() {
+      const marker = join(directory, "reverted")
+      process.env.FLOWS_FAKE_JJ_MARKER = marker
+
+      for (
+        const [mode, output, cause] of [
+          ["revert-not-json", "docs/a.md\n", { name: "SyntaxError" }],
+          ["revert-not-string", "42\n", { name: "TypeError", message: "path is not a string" }]
+        ] as const
+      ) {
+        process.env.FLOWS_FAKE_JJ = mode
+        const error = asJjError(yield* run(Effect.flip(Effect.flatMap(Jj, (jj) => jj.revert!("abc123")))))
+
+        expect(error.code).toBe("unknown")
+        expect(error.method).toBe("revert")
+        expect(error.command).toBe("jj diff")
+        expect(error.message).toBe(`jj revert: could not read changed paths: ${JSON.stringify(output)}`)
+        expect(error.cause).toMatchObject(cause)
+      }
+      // A path list that does not parse stops the operation before `jj revert`.
+      expect(existsSync(marker)).toBe(false)
     }))
 })
 

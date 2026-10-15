@@ -1,4 +1,4 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
 /** Standard package targets plus package-owned documentation generation. */
 import { Smithers } from "@smthrs/targets"
 
@@ -22,6 +22,15 @@ const faults = Smithers.FaultSuite({
   cwd: "packages/smithers/flows/jj",
   fixtures: Smithers.glob("vitest.faults.config.ts")
 })
+
+/**
+ * Changed public exports against README.md, docs/*.md, and the site's jj API
+ * reference page.
+ */
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({ cwd: "packages/smithers/flows/jj" })
+
+/** Changed public exports against their own JSDoc. */
+const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: "packages/smithers/flows/jj" })
 
 const securityReview = Smithers.SecurityReview({
   cwd: "packages/smithers/flows/jj",
@@ -141,5 +150,18 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { check, circular, docs, docsFiles, faults, fmt, lib, lint, test, ...securityReview }
+  targets: {
+    check,
+    circular,
+    docs,
+    docsFiles,
+    faults,
+    fmt,
+    lib,
+    lint,
+    reviewDocsAgainstCode,
+    reviewJsdocAgainstCode,
+    test,
+    ...securityReview
+  }
 })

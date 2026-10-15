@@ -108,26 +108,45 @@ const truncateCauseField = (value: string): string =>
   value.length > causeMessageLimit ? `${value.slice(0, causeMessageLimit - 1)}…` : value
 
 /**
+ * Reads one string field of a failure. A getter that throws reads as absent:
+ * the projection runs inside error handlers, and a throw there would turn a
+ * typed `JjError` into a defect.
+ */
+const stringField = (record: Record<string, unknown> | undefined, key: string): string | undefined => {
+  try {
+    const value = record?.[key]
+    return typeof value === "string" ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** `String(cause)`, or a fixed marker when the conversion throws. */
+const render = (cause: unknown): string => {
+  try {
+    return String(cause)
+  } catch {
+    return "[unrenderable failure]"
+  }
+}
+
+/**
  * Projects an arbitrary host failure onto the plain data {@link JjErrorCause}
  * keeps, so the value survives the journal round-trip the module header
  * promises.
+ *
+ * It never throws: a field whose getter throws reads as absent, and a value
+ * whose string conversion throws, such as `Object.create(null)` or a revoked
+ * proxy, projects to the message `[unrenderable failure]`.
  *
  * @category constructors
  * @since 1.0.0
  */
 export const jjErrorCause = (cause: unknown): JjErrorCause => {
   const record = typeof cause === "object" && cause !== null ? cause as Record<string, unknown> : undefined
-  const name = typeof record?.["name"] === "string"
-    ? record["name"]
-    : typeof record?.["_tag"] === "string"
-    ? record["_tag"]
-    : undefined
-  const code = typeof record?.["code"] === "string" ? record["code"] : undefined
-  const message = cause instanceof Error
-    ? cause.message
-    : typeof record?.["message"] === "string"
-    ? record["message"]
-    : String(cause)
+  const name = stringField(record, "name") ?? stringField(record, "_tag")
+  const code = stringField(record, "code")
+  const message = stringField(record, "message") ?? render(cause)
   return {
     ...(name === undefined ? {} : { name: truncateCauseField(name) }),
     ...(code === undefined ? {} : { code: truncateCauseField(code) }),

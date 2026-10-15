@@ -74,7 +74,10 @@ would arrive on the other side of a replay with its message gone.
 `JjErrorCause` is therefore three plain fields copied out at construction:
 `name` (the failure's constructor or tag name), `code` (the errno-style string,
 such as `ENOENT`), and `message`. `jjErrorCause(cause)` is the supported
-projection from an arbitrary host failure onto that shape.
+projection from an arbitrary host failure onto that shape. It never throws: a
+field whose getter throws reads as absent, and a value whose string conversion
+throws, such as `Object.create(null)` or a revoked proxy, projects to the
+message `[unrenderable failure]`.
 
 When the browser layer or the Node diff path refuses on its own check, the
 cause carries the `name` `JjInternalFault` and a stable `code` instead of a

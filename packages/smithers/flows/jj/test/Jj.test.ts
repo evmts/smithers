@@ -66,6 +66,36 @@ describe("JjError durability", () => {
     expect(Jj.jjErrorCause({ code: 7 })).toEqual({ message: "[object Object]" })
   })
 
+  it("projects a failure that cannot be read or stringified instead of throwing", () => {
+    const hostile = {
+      get name(): string {
+        throw new Error("name getter")
+      },
+      get message(): string {
+        throw new Error("message getter")
+      }
+    }
+    const lazyMessage = Object.defineProperty(new Error("ignored"), "message", {
+      get(): string {
+        throw new Error("message getter")
+      }
+    })
+    const revoked = Proxy.revocable({}, {})
+    revoked.revoke()
+    const notAString = Object.assign(new Error("ignored"), { message: 42 })
+
+    // Throwing getters read as absent; the object still has a string form.
+    expect(Jj.jjErrorCause(hostile)).toEqual({ message: "[object Object]" })
+    // String() throws for each of these, so the message is the marker.
+    expect(Jj.jjErrorCause(Object.create(null))).toEqual({ message: "[unrenderable failure]" })
+    expect(Jj.jjErrorCause(lazyMessage)).toEqual({ name: "Error", message: "[unrenderable failure]" })
+    expect(Jj.jjErrorCause(revoked.proxy)).toEqual({ message: "[unrenderable failure]" })
+    expect(Jj.jjErrorCause(notAString)).toEqual({ name: "Error", message: "Error: 42" })
+    expect(() => new Jj.JjError({ code: "unknown", message: "m", cause: Jj.jjErrorCause(hostile) })).not.toThrow()
+    expect(() => new Jj.JjError({ code: "unknown", message: "m", cause: Jj.jjErrorCause(revoked.proxy) })).not
+      .toThrow()
+  })
+
   it("bounds the cause message so a host failure cannot drag a payload into the journal", () => {
     const long = Jj.jjErrorCause(new Error("x".repeat(Jj.causeMessageLimit + 500)))
 
