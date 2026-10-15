@@ -256,6 +256,40 @@ describe("skewClock", () => {
     expect(Date.now() - first).toBeGreaterThanOrEqual(4_900)
   })
 
+  it("rejects a skew or an advance that is not a finite number of milliseconds", () => {
+    const real = Date.now()
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(() => skewClock(bad)).toThrow(RangeError)
+    }
+    expect(Math.abs(Date.now() - real)).toBeLessThan(5_000)
+    live = skewClock(1_000)
+    expect(() => live!.advance(Number.NaN)).toThrow(RangeError)
+    expect(Number.isFinite(Date.now())).toBe(true)
+  })
+
+  it("keeps waitFor's deadline on the real clock when the clock jumps forward mid-wait", async () => {
+    live = skewClock(0)
+    let polls = 0
+    await waitFor(() => {
+      polls += 1
+      if (polls === 1) live!.advance(3_600_000)
+      return polls >= 3
+    }, "a condition that holds on the third poll", 2_000)
+    expect(polls).toBe(3)
+  })
+
+  it("keeps waitFor's deadline on the real clock when the clock jumps backward mid-wait", async () => {
+    live = skewClock(0)
+    let polls = 0
+    const started = performance.now()
+    await expect(waitFor(() => {
+      polls += 1
+      if (polls === 1) live!.advance(-3_600_000)
+      return false
+    }, "a condition that never holds", 200)).rejects.toThrow(/a condition that never holds/)
+    expect(performance.now() - started).toBeLessThan(2_000)
+  })
+
   it("restores the real clock, and restoring twice is a no-op", () => {
     const real = Date.now()
     const clock = skewClock(3_600_000)

@@ -1675,7 +1675,9 @@ that.
 const waitFor: (predicate: () => boolean, label: string, timeoutMs?: number) => Promise<void>
 ```
 
-Waits until `predicate` holds, or rejects with `label` in the message.
+Waits until `predicate` holds, or rejects with `label` in the message. The
+timeout runs on the real clock, so a `skewClock` jump during the wait neither
+ends it early nor extends it.
 
 ### Faults.killProcess
 
@@ -1724,6 +1726,9 @@ Each skew is relative to the real clock, and the latest installation controls
 the global clock. Restoring any live handle reinstalls the Date constructor and
 `Date.now` captured at module load, even when handles are restored out of order.
 `restore` is idempotent; it does not reinstate an earlier skew.
+
+`skewClock` and `advance` throw `RangeError` when given a value that is not a
+finite number of milliseconds, so `NaN` or `Infinity` can never reach `Date.now`.
 
 ## ProcessTable
 

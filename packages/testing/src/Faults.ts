@@ -25,6 +25,8 @@ const pollIntervalMs = 25
 const defaultTimeoutMs = 5_000
 const OriginalDate = globalThis.Date
 const originalNow = OriginalDate.now
+// Deadlines read the real clock so a `skewClock` jump mid-wait cannot end or stall a wait.
+const realNow = (): number => originalNow.call(OriginalDate)
 
 /**
  * Whether a positive integer pid names a live process. Invalid pids return false.
@@ -97,10 +99,10 @@ export const waitFor = async (
   label: string,
   timeoutMs = defaultTimeoutMs
 ): Promise<void> => {
-  const deadline = Date.now() + timeoutMs
+  const deadline = realNow() + timeoutMs
   for (;;) {
     if (predicate()) return
-    if (Date.now() >= deadline) throw new Error(`timed out after ${timeoutMs}ms waiting for ${label}`)
+    if (realNow() >= deadline) throw new Error(`timed out after ${timeoutMs}ms waiting for ${label}`)
     await sleep(pollIntervalMs)
   }
 }
@@ -121,12 +123,12 @@ export const waitForReparent = async (
   expected: number,
   timeoutMs = defaultTimeoutMs
 ): Promise<number> => {
-  const deadline = Date.now() + timeoutMs
+  const deadline = realNow() + timeoutMs
   for (;;) {
     const parent = parentPid(pid)
     if (parent === undefined) throw new Error(`pid ${pid} exited before it could be reparented`)
     if (parent !== expected) return parent
-    if (Date.now() >= deadline) {
+    if (realNow() >= deadline) {
       throw new Error(`pid ${pid} still reports parent ${expected} after ${timeoutMs}ms`)
     }
     await sleep(pollIntervalMs)
@@ -180,6 +182,10 @@ export const killGroup = (pgid: number, signal: NodeJS.Signals = "SIGKILL"): voi
   }
 }
 
+const requireFiniteMs = (name: string, ms: number): void => {
+  if (!Number.isFinite(ms)) throw new RangeError(`${name}: ms must be a finite number, got ${String(ms)}`)
+}
+
 /**
  * A live clock skew.
  *
@@ -189,7 +195,7 @@ export const killGroup = (pgid: number, signal: NodeJS.Signals = "SIGKILL"): voi
 export interface SkewedClock {
   /** The skewed instant, in milliseconds. */
   readonly now: () => number
-  /** Moves the skew further forward. */
+  /** Moves the skew further forward. Throws `RangeError` for a non-finite `ms`. */
   readonly advance: (ms: number) => void
   /** Puts the real clock back. Idempotent. */
   readonly restore: () => void
@@ -199,15 +205,20 @@ export interface SkewedClock {
  * Skews `Date.now`, `Date()`, and bare `new Date()` by `skewMs` for this process.
  * Each skew is relative to the real clock. Restoring any live handle reinstalls
  * the module's original Date and Date.now, regardless of restoration order.
+ * `waitFor` and `waitForReparent` time out on the real clock, so a skew never
+ * ends or stalls a wait.
+ *
+ * @throws RangeError when `skewMs` is not a finite number.
  *
  * @since 1.0.0
  * @category constructors
  */
 export const skewClock = (skewMs: number): SkewedClock => {
+  requireFiniteMs("skewClock", skewMs)
   let skew = skewMs
   let restored = false
 
-  const now = (): number => originalNow.call(OriginalDate) + skew
+  const now = (): number => realNow() + skew
 
   const SkewedDate = new Proxy(OriginalDate, {
     apply: () => new OriginalDate(now()).toString(),
@@ -220,6 +231,7 @@ export const skewClock = (skewMs: number): SkewedClock => {
   return {
     now,
     advance: (ms) => {
+      requireFiniteMs("advance", ms)
       skew += ms
     },
     restore: () => {
