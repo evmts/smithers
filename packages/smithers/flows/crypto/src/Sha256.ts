@@ -333,6 +333,13 @@ export const Sha256 = Object.assign(Sha256Schema, { Digest, digest, digestSync }
 /**
  * Hash individually well-formed UTF-8 text fragments with bounded prefix reuse.
  * Results equal digestSync(parts.join("")); only the last call's prefixes live.
+ * Fragment boundaries are not included in the digest. Each fragment must be
+ * well-formed on its own, so a surrogate pair cannot span two fragments.
+ *
+ * @returns A synchronous hasher accepting an array of text fragments.
+ * @throws {Sha256Error} For non-array input, invalid lengths, non-string
+ * fragments, invalid text, or failed text encoding. Failed calls preserve the
+ * last successful call's reusable prefixes.
  *
  * @category hashing
  * @since 1.0.0-rc.0
@@ -340,10 +347,19 @@ export const Sha256 = Object.assign(Sha256Schema, { Digest, digest, digestSync }
 export const makeDigestPartsSync = (): (parts: ReadonlyArray<string>) => Digest => {
   let previous: ReadonlyArray<string> = [], prefixes: Array<Sha256Prefix> = []
   return (input) => {
+    let length: number
+    try {
+      if (!Array.isArray(input)) throw new TypeError("Expected a text-fragment array")
+      length = input.length
+    } catch (cause) {
+      throw failure("invalid_input", "SHA-256 text fragments must be an inspectable array", cause)
+    }
+    if (!Number.isSafeInteger(length) || length < 0 || length > 0xffffffff) {
+      throw failure("invalid_input", "SHA-256 text-fragment array has an invalid length")
+    }
     // Read indexed fragments once: caller iterators and accessors must not
     // record cache keys different from the values actually hashed.
     const parts: Array<string> = []
-    const length = input.length
     for (let index = 0; index < length; index++) {
       const part = input[index]!
       if (typeof part !== "string") {

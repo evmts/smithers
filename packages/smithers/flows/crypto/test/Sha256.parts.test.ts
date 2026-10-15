@@ -56,3 +56,53 @@ it("rejects mutable bytes at the text-fragment boundary without poisoning the ca
   expect(() => hash([bytes as unknown as string])).toThrow(expect.objectContaining({ code: "invalid_input" }))
   expect(hash(["b"])).toBe(createHash("sha256").update("b").digest("hex"))
 })
+
+it.each([null, undefined, "abc", { length: -1 }, { 0: "a", length: 1 }, new Uint8Array()])(
+  "rejects non-array fragments: %j",
+  (input) => {
+    const hash = makeDigestPartsSync()
+    expect(() => hash(input as unknown as ReadonlyArray<string>)).toThrow(
+      expect.objectContaining({ code: "invalid_input" })
+    )
+  }
+)
+
+it.each([-1, 0.5, NaN, Infinity, 0x100000000, "1", undefined])(
+  "rejects an invalid array length before reading fragments: %s",
+  (length) => {
+    const hash = makeDigestPartsSync()
+    const expected = createHash("sha256").update("prefixtail").digest("hex")
+    expect(hash(["prefix", "tail"])).toBe(expected)
+    let reads = 0
+    const input = new Proxy(["a"], {
+      get(target, key, receiver) {
+        if (key === "length") return length
+        reads++
+        // Bound the regression even if the implementation trusts Infinity.
+        if (reads > 2) throw new Error("unbounded fragment reads")
+        return Reflect.get(target, key, receiver)
+      }
+    })
+    expect(() => hash(input)).toThrow(expect.objectContaining({ code: "invalid_input" }))
+    expect(reads).toBe(0)
+    expect(hash(["prefix", "tail"])).toBe(expected)
+  }
+)
+
+it("normalizes revoked arrays and unreadable array lengths without retaining input in the message", () => {
+  const revoked = Proxy.revocable(["private text"], {})
+  revoked.revoke()
+  const unreadable = new Proxy(["private text"], {
+    get() {
+      throw new Error("private text")
+    }
+  })
+  for (const input of [revoked.proxy, unreadable]) {
+    const hash = makeDigestPartsSync()
+    expect(() => hash(input)).toThrow(expect.objectContaining({
+      code: "invalid_input",
+      message: "SHA-256 text fragments must be an inspectable array"
+    }))
+    expect(hash(["a"])).toBe(createHash("sha256").update("a").digest("hex"))
+  }
+})
