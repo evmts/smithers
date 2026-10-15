@@ -67,3 +67,71 @@ for (const cell of [
     expect(html.includes('class="message-answer-actions"')).toBe(cell.actions)
   } finally { await store.dispose?.() }
 })
+
+/*
+ * The capacity failure production turn 83bca322 actually produced: five
+ * host_no_capacity generations over 206.8 s, no provider start and no text.
+ * The typed outcome, not the producer's sentence, has to choose the words a
+ * person reads first, and the producer's words stay behind Details.
+ */
+const turnOf = (fields: Record<string, unknown>) => SharedConversationSchema.parse({ id: "main", entries: [{
+  id: "capacity", author: 3, authorLogin: "ben", runId: "run-capacity", prompt: "Short reply please",
+  startedAt: Date.now() - 206_802, ...fields
+}] })
+const renderShared = async (conversation: ReturnType<typeof SharedConversationSchema.parse>) => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = { store, runCommand: () => {}, runCommandForResult: async () => undefined } as unknown as AppController
+  const source = { get: () => ({ conversation }), subscribe: () => () => {} } as unknown as SharedConversationSeam
+  try {
+    return renderToStaticMarkup(<ControllerContext value={controller}><MessageScrollerProvider><SharedConversation source={source} /></MessageScrollerProvider></ControllerContext>)
+  } finally { await store.dispose?.() }
+}
+const CAPACITY_WORDS = "Every model host is busy right now. Nothing in this conversation was lost; send the message again in a moment."
+
+test("a turn with no committed output says it is waiting for a host, not working", async () => {
+  const waiting = await renderShared(turnOf({ state: "running", frames: [] }))
+  expect(waiting).toContain('data-turn-elapsed="waiting"')
+  expect(waiting).toContain("Waiting for a model host")
+  expect(waiting).not.toContain("Working for")
+  // The same turn once a host answers: the honest line becomes the working one.
+  const working = await renderShared(turnOf({ state: "running", frames: [{ runId: "run-capacity", type: "delta", kind: "text", text: "Here it is" }] }))
+  expect(working).toContain('data-turn-elapsed="working"')
+  expect(working).toContain("Working for")
+  expect(working).not.toContain("Waiting for a model host")
+})
+
+test("a terminal capacity refusal names the busy fleet first and keeps the producer's words in Details", async () => {
+  const html = await renderShared(turnOf({ state: "failed", finishedAt: Date.now(), frames: [
+    { runId: "run-capacity", type: "done", code: "host_no_capacity", error: CAPACITY_WORDS }
+  ] }))
+  expect(html).toContain("Every model host is busy. Nothing here was lost; send it again in a moment.")
+  expect(html).toContain('data-failure="HostNoCapacity"')
+  expect(html).not.toContain("Smithers could not finish that")
+  // The producer's sentence stays raw detail inside the disclosure, wrapped.
+  expect(html).toContain(CAPACITY_WORDS)
+  expect(html.indexOf("<details>")).toBeLessThan(html.indexOf(CAPACITY_WORDS))
+  expect(html).toContain('class="failure-detail"')
+  expect(html).toContain('data-turn-elapsed="failed"')
+})
+
+test("an outcome this build cannot classify keeps the generic sentence", async () => {
+  const html = await renderShared(turnOf({ state: "failed", finishedAt: Date.now(), frames: [
+    { runId: "run-capacity", type: "delta", kind: "text", text: "Partial answer" },
+    { runId: "run-capacity", type: "done", error: "upstream closed the stream" }
+  ] }))
+  expect(html).toContain("Smithers could not finish that. Not your fault.")
+  expect(html).toContain('data-failure="SharedTurnFailed"')
+  expect(html).not.toContain("Every model host is busy")
+  // Partial text a failed turn did produce is still the answer it gave.
+  expect(html).toContain("Partial answer")
+})
+
+test("a cancelled turn keeps its stop line and raises no failure", async () => {
+  const html = await renderShared(turnOf({ state: "cancelled", finishedAt: Date.now() - 200_000, frames: [
+    { runId: "run-capacity", type: "done", reason: "cancelled" }
+  ] }))
+  expect(html).toContain('data-turn-elapsed="cancelled"')
+  expect(html).toContain("Stopped after")
+  expect(html).not.toContain("failure-notice")
+  expect(html).not.toContain("Every model host is busy")
+})

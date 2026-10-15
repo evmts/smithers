@@ -1209,6 +1209,16 @@ func errorFrame(runID, message string) json.RawMessage {
 	return value
 }
 
+// hostNoCapacityFrame seals a turn the fleet had no room for. It carries the
+// dispatcher's own code beside the sentence, the way the credential receipts
+// do, because the sentence is prose: a client that branches on the code says
+// what happened in its own words instead of reading an error message for a
+// cause, and one that predates the code still shows the sentence.
+func hostNoCapacityFrame(runID string) json.RawMessage {
+	value, _ := json.Marshal(map[string]any{"runId": runID, "type": "done", "code": codeHostNoCapacity, "error": hostNoCapacityMessage})
+	return value
+}
+
 func (s *Store) appendTerminalTx(ctx context.Context, tx pgx.Tx, turn *turnRecord, frame json.RawMessage, state State, now time.Time) error {
 	acceptance, expected, err := checkHead(*turn)
 	if err != nil {
@@ -1443,7 +1453,7 @@ func (s *Store) stopProducerWith(ctx context.Context, grant ProducerGrant, code 
 	// already on screen, so "nothing was lost" would be the false half of a
 	// true sentence.
 	if code == codeHostNoCapacity && turn.ProducerStartedAt == nil {
-		frame = errorFrame(turn.RunID, hostNoCapacityMessage)
+		frame = hostNoCapacityFrame(turn.RunID)
 	}
 	if refused != "" {
 		frame = errorFrame(turn.RunID, refused)

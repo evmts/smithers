@@ -254,7 +254,16 @@ export const AgentTurnFrameSchema = z.discriminatedUnion("type", [
     runId: z.string(),
     type: z.literal("done"),
     reason: AgentTurnDoneReasonSchema.optional(),
-    code: z.enum(["credential_missing", "author_revoked"]).optional(),
+    /*
+     * Why the turn ended, when the producer knows a cause the sentence cannot
+     * be read for. `host_no_capacity` is the chat dispatcher's own deferral
+     * name (packages/backend/internal/chat/dispatcher.go): no sandbox host in
+     * the fleet had room, nothing of the turn ran, and the attempts are spent.
+     * A client renders its own sentence for the code and never reads `error`
+     * for the cause. The vocabulary fails closed, so a build that serves this
+     * enum must reach people before a producer that emits a value it lacks.
+     */
+    code: z.enum(["credential_missing", "author_revoked", "host_no_capacity"]).optional(),
     error: z.string().optional(),
     usage: AgentTurnUsageSchema.optional()
   }),

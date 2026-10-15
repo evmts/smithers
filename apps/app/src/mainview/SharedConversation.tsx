@@ -16,6 +16,7 @@ import { EntryRow } from "./EntryRow"
 import { CardView } from "./ChatCards"
 import { controllerCardActions } from "./cards/controllerCardActions"
 import { useController } from "./ControllerContext"
+import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import type { Card } from "./state/AppState"
 import type { SharedConversationSeam } from "./state/seams/SharedConversationSeam"
 import { TranscriptOrder } from "./state/TranscriptOrder"
@@ -24,16 +25,36 @@ import { TranscriptOrder } from "./state/TranscriptOrder"
  * subscription, never a lifecycle effect. */
 const tick = (onTick: () => void) => { const timer = setInterval(onTick, 1000); return () => clearInterval(timer) }
 const idle = () => () => {}
-function TurnElapsed({ state, startedAt, finishedAt }: { state: string; startedAt?: number; finishedAt?: number }) {
+function TurnElapsed({ state, startedAt, finishedAt, produced }: { state: string; startedAt?: number; finishedAt?: number; produced: boolean }) {
   const working = state === "accepted" || state === "running"
   const seconds = () => startedAt === undefined || !working ? 0 : Math.floor((Date.now() - startedAt) / 1000)
   const live = useSyncExternalStore(working ? tick : idle, seconds, seconds)
-  if (working) return startedAt === undefined ? null : <p className="turn-elapsed" data-turn-elapsed="working">Working for {elapsed(live * 1000)}</p>
+  // A turn that has committed nothing is not working yet: production turn
+  // 83bca322 spent 206.8 s deferred for a busy fleet while this line claimed
+  // "Working for 3m26". Until output arrives, say the one true thing, that no
+  // model host has answered, and leave the cause to the typed outcome.
+  if (working) return startedAt === undefined ? null
+    : produced ? <p className="turn-elapsed" data-turn-elapsed="working">Working for {elapsed(live * 1000)}</p>
+    : <p className="turn-elapsed" data-turn-elapsed="waiting">Waiting for a model host · {elapsed(live * 1000)}</p>
   const label = state === "completed" ? "Worked" : state === "cancelled" ? "Stopped" : state === "failed" ? "Failed" : "Interrupted"
   const duration = startedAt === undefined || finishedAt === undefined ? undefined : elapsed(finishedAt - startedAt)
   if (state === "completed" && duration === undefined) return null
   return <p className="turn-elapsed" data-turn-elapsed={state === "completed" ? "worked" : state}>{label}{duration === undefined ? "" : ` ${state === "completed" ? "for" : "after"} ${duration}`}</p>
 }
+
+/*
+ * What a person reads first about a turn that ended badly. The typed outcome
+ * the producer stated chooses the sentence; the producer's own words stay the
+ * raw detail behind Details, and an outcome this build does not know keeps the
+ * generic sentence rather than promoting an error message into trusted copy.
+ */
+type DoneFrame = Extract<AgentTurnFrame, { type: "done" }>
+const SHARED_TURN_FAILED = { fault: "infra", sentence: "Smithers could not finish that. Not your fault.", actions: [] } as const
+/* The fleet refused the launch before anything ran, so nothing of theirs is gone. */
+const HOST_NO_CAPACITY = { fault: "infra", sentence: "Every model host is busy. Nothing here was lost; send it again in a moment.", actions: [] } as const
+const sharedTurnFailure = (failure: DoneFrame & { error: string }) => failure.code === "host_no_capacity"
+  ? describedFailure("HostNoCapacity", HOST_NO_CAPACITY, failure.error)
+  : describedFailure("SharedTurnFailed", SHARED_TURN_FAILED, failure.error)
 
 /** Output only: no tool-call frame can invoke a browser command. */
 export function SharedConversation({ source, localCardIds, localEntries = [] }: { source: SharedConversationSeam; localCardIds?: ReadonlySet<string>; localEntries?: readonly { id: string; content: ReactNode }[] }) {
@@ -43,8 +64,17 @@ export function SharedConversation({ source, localCardIds, localEntries = [] }: 
   const owner = identities[0]?.state === "signed-in" ? identities[0].login : undefined
   const navigation = controller.store.session().branchNavigation
   const branch = navigation?.owner === owner ? navigation?.selected_branch : "main"
-  const requests = (sessions[0]?.requests ?? []).filter(row => row.owner === owner && row.branch === branch && (row.state === "requested" || row.state === "failed"))
   const snapshot = useSyncExternalStore(source.subscribe, source.get, source.get)
+  // A request the conversation acknowledged with a turn id has one receipt:
+  // the shared turn. Keeping the private row beside it showed production turn
+  // 83bca322's prompt twice, once as a failed request and once as the turn's
+  // own failed answer. The saved row is untouched, so Retry still has it, and
+  // a request the conversation never acknowledged (or whose turn is not in
+  // this projection) keeps its own row rather than losing the person's words.
+  const acknowledged = new Set((snapshot.conversation?.entries ?? []).map(entry => entry.id))
+  const requests = (sessions[0]?.requests ?? []).filter(row => row.owner === owner && row.branch === branch
+    && (row.state === "requested" || row.state === "failed")
+    && !(row.state === "failed" && row.turnId !== undefined && acknowledged.has(row.turnId)))
   const sharedCards = new Map<string, Card>()
   for (const turn of snapshot.conversation?.entries ?? []) {
     if (!("frames" in turn)) continue
@@ -94,7 +124,7 @@ export function SharedConversation({ source, localCardIds, localEntries = [] }: 
       return <div key={turn.id} data-shared-turn={turn.id} data-state={turn.state}>
         {turn.subject ? null : <>
           <MessageScrollerItem style={{ contentVisibility: "visible" }} messageId={`${turn.id}:prompt`}><EntryRow kind="prompt" author={{ kind: "person", ...person, color_index: color }} title="" tone="quiet" card={<div data-composer-prompt={sessions[0]?.requests?.find(row => row.turnId === turn.id)?.id ?? turn.id}><Markdown content={turn.prompt} /></div>} onAction={() => {}} /></MessageScrollerItem>
-          <MessageScrollerItem style={{ contentVisibility: "visible" }} messageId={`${turn.id}:answer`}><EntryRow kind="answer" author={answer} title="" tone="quiet" action={inspect.actions[0]} contextActions={turn.context ? contextActions(turn.context, (tag, input) => controller.runCommand(tag, JSON.stringify(input)), contextOpenAction) : undefined} context={turn.context ? { count: turn.context.length, items: turn.context } : undefined} card={<>{reply}<TurnElapsed state={turn.state} startedAt={turn.startedAt} finishedAt={turn.finishedAt} />{trace}{answers ? <div className="message-answer-actions">{answers.actions.map(action => <DiffAction key={action.tag} action={action} onAction={answers.onAction} />)}</div> : null}<span className="message-actions"><CopyMessageButton text={text} onCopy={value => controller.runCommandForResult("chat.copy-message", value)} /></span>{failure?.type === "done" && failure.error ? <FailureNotice role="status" failure={describedFailure("SharedTurnFailed", { fault: "infra", sentence: "Smithers could not finish that. Not your fault.", actions: [] }, failure.error)} /> : null}</>} onAction={inspect.onAction} /></MessageScrollerItem>
+          <MessageScrollerItem style={{ contentVisibility: "visible" }} messageId={`${turn.id}:answer`}><EntryRow kind="answer" author={answer} title="" tone="quiet" action={inspect.actions[0]} contextActions={turn.context ? contextActions(turn.context, (tag, input) => controller.runCommand(tag, JSON.stringify(input)), contextOpenAction) : undefined} context={turn.context ? { count: turn.context.length, items: turn.context } : undefined} card={<>{reply}<TurnElapsed state={turn.state} startedAt={turn.startedAt} finishedAt={turn.finishedAt} produced={frames.length > 0} />{trace}{answers ? <div className="message-answer-actions">{answers.actions.map(action => <DiffAction key={action.tag} action={action} onAction={answers.onAction} />)}</div> : null}<span className="message-actions"><CopyMessageButton text={text} onCopy={value => controller.runCommandForResult("chat.copy-message", value)} /></span>{failure?.type === "done" && failure.error ? <FailureNotice role="status" failure={sharedTurnFailure({ ...failure, error: failure.error })} /> : null}</>} onAction={inspect.onAction} /></MessageScrollerItem>
         </>}
         {turn.subject ? frames.flatMap(frame => frame.type === "card" ? [renderCard(frame.card.id)] : []) : null}
       </div>

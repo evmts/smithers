@@ -109,3 +109,16 @@ textarea {
 /* Navigation follows the app theme. */
 .session-navigation { position: absolute; inset: 0 0 auto; height: var(--session-strip); z-index: 60; background: inherit; }
 
+
+/*
+ * A failure's raw detail is machine text: one unbroken code line from a model
+ * host dragged the whole transcript into horizontal scrolling behind its
+ * Details disclosure. It wraps and scrolls inside the disclosure instead.
+ */
+.failure-detail {
+	max-width: 100%;
+	max-height: 10rem;
+	overflow: auto;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}

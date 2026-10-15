@@ -91,6 +91,14 @@ func TestDispatcherNamesAFullFleetAsCapacityAndNotAHostFailure(t *testing.T) {
 	if !strings.Contains(receipt, hostNoCapacityMessage) {
 		t.Fatalf("terminal receipt does not name capacity: %s", receipt)
 	}
+	// The sentence is prose. The code beside it is what a client branches on,
+	// so it never has to read the message to know the cause.
+	var sealed struct {
+		Code string `json:"code"`
+	}
+	if json.Unmarshal([]byte(receipt), &sealed) != nil || sealed.Code != codeHostNoCapacity {
+		t.Fatalf("terminal receipt carries no %s code: %s", codeHostNoCapacity, receipt)
+	}
 }
 
 // Generations 2 and 3 of turn f413964a were dispatched 1 s and 2 s after the

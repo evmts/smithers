@@ -22,6 +22,13 @@ describe("AgentTurnFrame — proxy family", () => {
     ["delta", { runId: "r1", type: "delta", kind: "text", text: "hi" }],
     ["done", { runId: "r1", type: "done", reason: "stop" }],
     ["author revoked", { runId: "r1", type: "done", reason: "cancelled", code: "author_revoked" }],
+    /* The chat dispatcher's capacity deferral: the code carries the cause, the sentence is prose. */
+    ["host deferred for a full fleet", {
+      runId: "r1",
+      type: "done",
+      code: "host_no_capacity",
+      error: "Every model host is busy right now. Nothing in this conversation was lost; send the message again in a moment."
+    }],
     ["done, cancelled with an error", {
       runId: "r1",
       type: "done",

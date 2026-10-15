@@ -180,3 +180,33 @@ func TestChatFrameUnitTerminalOrderingAndState(t *testing.T) {
 		require.Equal(t, row.terminal, row.value.Terminal(), string(row.value))
 	}
 }
+
+// The capacity receipt is the one terminal frame whose cause a client cannot
+// read from its sentence: production turn 83bca322 spent 206.8 s across five
+// host_no_capacity generations, and the app could only show the fleet's prose
+// under a Details disclosure because the frame named no code. The frame now
+// carries the dispatcher's own code beside the sentence, and both have to
+// survive the journal's admission boundary.
+func TestChatFrameUnitCapacityReceiptCarriesItsCodeAndSentence(t *testing.T) {
+	raw := hostNoCapacityFrame("run")
+	var frame struct {
+		RunID string `json:"runId"`
+		Type  string `json:"type"`
+		Code  string `json:"code"`
+		Error string `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &frame))
+	require.Equal(t, "run", frame.RunID)
+	require.Equal(t, "done", frame.Type)
+	// The code a client branches on is the same string the dispatcher logs and
+	// counts, so a reader of either cannot be told two different things.
+	require.Equal(t, codeHostNoCapacity, frame.Code)
+	require.Equal(t, hostNoCapacityMessage, frame.Error)
+	meta, err := validateFrames([]json.RawMessage{raw}, "run")
+	require.NoError(t, err)
+	require.Equal(t, frameMeta{RunID: "run", Type: "done", Error: hostNoCapacityMessage}, meta)
+	require.Equal(t, StateFailed, terminalState(meta))
+	// A turn that produced output keeps the uncertain receipt instead: this
+	// frame claims nothing was lost, which is only true before a provider ran.
+	require.NotContains(t, string(errorFrame("run", "The model host stopped before completing the turn.")), codeHostNoCapacity)
+}

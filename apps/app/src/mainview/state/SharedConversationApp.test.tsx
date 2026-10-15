@@ -809,3 +809,81 @@ test("a shared turn ticks while working, freezes on completion, and keeps its tr
     expect(stopped.host.textContent).not.toContain("Worked for")
   } finally { await stopped.unmount() }
 }, 15_000)
+
+/*
+ * Production turn 83bca322 (account 8, main): admitted 15:21:58.645Z, failed
+ * 15:25:25.447Z, five host_no_capacity generations, no provider start, no
+ * text. The app said "Working for 3m26" throughout, then showed its prompt
+ * twice — once as a failed private request, once as the shared turn — with
+ * the fleet's own sentence only under Details. One admission, one receipt.
+ */
+const CAPACITY_SENTENCE = "Every model host is busy right now. Nothing in this conversation was lost; send the message again in a moment."
+test("a capacity-deferred prompt waits honestly, names the busy fleet, and leaves one receipt (#3822)", async () => {
+  const storage = memoryStorage()
+  const startedAt = Date.now() - 206_802
+  let entries: Array<Record<string, unknown>> = []
+  const turn = (fields: Record<string, unknown>) => [{ id: "turn-83b", author: 1, authorLogin: "ben", runId: "run-83b", prompt: "Short reply please", startedAt, ...fields }]
+  const mount = async () => {
+    const store = await createAppStore({ kind: "localStorage", storage })
+    const controller = createAppController(store, silentAgent, {
+      bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null },
+      toastDebounceMs: 1,
+      fetchImpl: async (input, init) => {
+        const path = String(input)
+        if (init?.method === "POST" && path === "/api/conversations/main/prompt") return Response.json({ status: "accepted", turnId: "turn-83b", terminal: false }, { status: 202 })
+        if (path === "/api/conversations/main") return Response.json({ id: "main", entries })
+        if (path.endsWith("/view-state")) return Response.json({})
+        return new Response("{}", { status: 404 })
+      }
+    })
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+    const host = document.createElement("div"); document.body.append(host); const root = createRoot(host)
+    flushSync(() => root.render(<ControllerTestProvider controller={controller}><App /></ControllerTestProvider>))
+    return { store, controller, host, unmount: async () => { flushSync(() => root.unmount()); host.remove(); await controller.dispose() } }
+  }
+  const prompts = (host: HTMLElement) => host.querySelectorAll("[data-prompt-request]").length
+  const session = await mount()
+  try {
+    session.controller.changeDraft("Short reply please")
+    expect(await session.controller.send("Short reply please")).toBe(true)
+    // The local request is its own receipt until the conversation acknowledges it.
+    await waitFor(() => prompts(session.host) === 1)
+    await waitFor(() => session.store.session().sharedPrompts?.[0]?.turnId === "turn-83b")
+    entries = turn({ state: "running", frames: [] })
+    await session.controller.sharedConversation!.read()
+    // Five deferred generations commit nothing: the line cannot claim work.
+    await waitFor(() => session.host.querySelector('[data-turn-elapsed="waiting"]') !== null)
+    expect(session.host.querySelector("[data-turn-elapsed]")?.textContent).toContain("Waiting for a model host")
+    expect(session.host.textContent).not.toContain("Working for")
+    // A later generation that does answer flips the same line to working.
+    entries = turn({ state: "running", frames: [{ runId: "run-83b", type: "delta", kind: "text", text: "Here it is" }] })
+    await session.controller.sharedConversation!.read()
+    await waitFor(() => session.host.querySelector('[data-turn-elapsed="working"]') !== null)
+    // This turn never got there: attempts spent, sealed by the typed code.
+    entries = turn({ state: "failed", finishedAt: startedAt + 206_802, frames: [{ runId: "run-83b", type: "done", code: "host_no_capacity", error: CAPACITY_SENTENCE }] })
+    await session.controller.sharedConversation!.read()
+    await waitFor(() => session.host.textContent?.includes("Every model host is busy. Nothing here was lost") === true)
+    await waitFor(() => session.store.session().sharedPrompts?.[0]?.state === "failed")
+    expect(session.host.querySelector('[data-failure="HostNoCapacity"]')?.getAttribute("data-fault")).toBe("infra")
+    expect(session.host.textContent).toContain(CAPACITY_SENTENCE)
+    // One admission, one receipt: the turn's own. The saved row keeps the
+    // person's words for Retry even though it no longer draws a second row.
+    expect(prompts(session.host)).toBe(0)
+    expect(session.store.session().sharedPrompts?.[0]?.prompt).toBe("Short reply please")
+    expect(session.host.textContent?.match(/Short reply please/g)).toHaveLength(2) // the prompt and its reply quote
+  } finally { await session.unmount() }
+  // Reload: the acknowledged request stays deduplicated against the same turn.
+  const reloaded = await mount()
+  try {
+    await waitFor(() => reloaded.host.textContent?.includes("Every model host is busy. Nothing here was lost") === true)
+    expect(prompts(reloaded.host)).toBe(0)
+    expect(reloaded.store.session().sharedPrompts?.[0]?.state).toBe("failed")
+  } finally { await reloaded.unmount() }
+  // A conversation that no longer projects the turn cannot swallow the prompt.
+  entries = []
+  const alone = await mount()
+  try {
+    await waitFor(() => prompts(alone.host) === 1)
+    expect(alone.host.textContent).toContain("Short reply please")
+  } finally { await alone.unmount() }
+}, 20_000)

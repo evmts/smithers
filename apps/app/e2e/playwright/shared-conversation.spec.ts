@@ -211,3 +211,57 @@ test("member card view and scroll anchor restore after reload", async ({ page })
   })).toBeLessThan(100)
   expect(writes.every(body => !("queue" in body) && JSON.stringify(body.home) === JSON.stringify({ filter: "working" }))).toBe(true)
 })
+
+/*
+ * Production turn 83bca322: five host_no_capacity generations, 206.8 s, no
+ * provider start, no text. The transcript said "Working for 3m26", then
+ * "Prompt unavailable" over a generic failure, with the fleet's own sentence
+ * only under Details — whose unbroken line pushed the page sideways.
+ */
+test("a capacity-deferred turn waits honestly and keeps its long diagnostic inside the transcript", async ({ page }) => {
+  await owner(page)
+  await page.route("**/api/bootstrap", route => route.fulfill({ json: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install", "identity"], authFlow: "redirect", sandbox: null } }))
+  await page.route("**/api/install", route => route.fulfill({ json: installFixture() }))
+  const startedAt = Date.now() - 206_802
+  // The receipt's own words, with the kind of unbroken machine line a host
+  // appends to them. Only the typed code may choose the sentence on top.
+  const sentence = "Every model host is busy right now. Nothing in this conversation was lost; send the message again in a moment."
+  const diagnostic = `${sentence} host_no_capacity sandbox.create.${"x".repeat(400)}`
+  let frames: AgentTurnFrame[] = [], state = "running", finishedAt: number | undefined
+  const conversation = () => ({ id: "main", entries: [{ id: "capacity-turn", author: 1, authorLogin: "ben", runId: "capacity-run", prompt: "Short reply please", state, startedAt, ...(finishedAt === undefined ? {} : { finishedAt }), frames }] })
+  await page.route("**/api/conversations/main", route => route.fulfill({ json: conversation() }))
+  await page.route("**/api/conversations/main/view-state", route => route.fulfill({ json: {} }))
+  let publish = () => {}
+  await page.routeWebSocket("**/api/live", socket => socket.onMessage(raw => {
+    if (typeof raw !== "string") return
+    const message = JSON.parse(raw)
+    if (message.t !== "sub") return
+    if (message.topic !== "conversation-trace:main") { socket.send(JSON.stringify({ t: "err", id: message.id, code: "unsupported" })); return }
+    let cursor = 0
+    publish = () => socket.send(JSON.stringify({ t: "snap", id: message.id, cursor: ++cursor, data: conversation() }))
+    publish()
+  }))
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto("/")
+  const turn = page.locator('[data-shared-turn="capacity-turn"]')
+  const duration = turn.locator("[data-turn-elapsed]")
+  await expect(duration).toHaveAttribute("data-turn-elapsed", "waiting")
+  await expect(duration).toContainText("Waiting for a model host")
+  await expect(turn).not.toContainText("Working for")
+  state = "failed"; finishedAt = startedAt + 206_802
+  frames = [{ runId: "capacity-run", type: "done", code: "host_no_capacity", error: diagnostic }]
+  publish()
+  const notice = turn.locator('[data-failure="HostNoCapacity"]')
+  await expect(notice.locator("p").first()).toHaveText("Every model host is busy. Nothing here was lost; send it again in a moment.")
+  await expect(turn).not.toContainText("Smithers could not finish that")
+  await expect(duration).toHaveText("Failed after 3m 26s")
+  const details = notice.locator("details")
+  await expect(details.locator("pre")).toBeHidden()
+  await details.locator("summary").press("Enter")
+  await expect(details.locator("pre")).toContainText(sentence)
+  // The open disclosure scrolls its own diagnostic; the page does not.
+  expect(await details.locator("pre").evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  const scroller = page.getByRole("region", { name: "Conversation messages", exact: true })
+  expect(await scroller.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+})
