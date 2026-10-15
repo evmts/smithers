@@ -352,7 +352,7 @@ func renderSecrets(bindings []SecretBinding) ([]SecretEntry, error) {
 // narrowHosts renders the host rules and removes every way the domain list
 // would still admit a narrowed host in full. iron-proxy matches the request's
 // Host without its port, case-insensitively, so a trailing-dot spelling is
-// narrowed too. A glob that matches a narrowed host fails closed, except "*",
+// narrowed too. An address literal is refused: it has spellings no rule names. A glob that matches a narrowed host fails closed, except "*",
 // which becomes globs matching every other host name.
 func narrowHosts(domains []string, hostRules []sandbox.EgressHostRule) ([]string, []RuleConfig, error) {
 	if len(hostRules) == 0 {
@@ -368,6 +368,12 @@ func narrowHosts(domains []string, hostRules []sandbox.EgressHostRule) ([]string
 			return nil, nil, fmt.Errorf("%w: %v", ErrInvalidSpec, err)
 		}
 		host := strings.ToLower(strings.TrimSpace(rule.Host))
+		// A rule matches the request's Host text, and an address has many
+		// spellings ("2001:db8:0::1", "::ffff:10.0.0.1"). Every spelling the
+		// rule does not name would stay reachable in full.
+		if net.ParseIP(host) != nil {
+			return nil, nil, fmt.Errorf("%w: host rule %q is an address; a rule narrows only a host name", ErrInvalidSpec, rule.Host)
+		}
 		methods := make([]string, 0, len(rule.Methods))
 		for _, method := range rule.Methods {
 			methods = append(methods, strings.ToUpper(method))
