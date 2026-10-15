@@ -32,3 +32,32 @@ fn wiki_rejects_trailing_bytes_in_state_and_update() {
     let unchanged = request(json!({"operation": "apply", "state": state, "update": "AAA="}));
     assert_eq!(unchanged["markdown"], "Keep 🦀");
 }
+
+#[test]
+fn wiki_rejects_malformed_frames_then_accepts_a_valid_request() {
+    let seed = request(json!({"operation": "seed", "markdown": "Original"}));
+    let state = seed["state"].as_str().unwrap();
+    for bytes in [
+        vec![],          // Missing both update sections.
+        vec![0],         // Missing delete set.
+        vec![128, 0, 0], // Noncanonical zero client count.
+        vec![0, 128, 0], // Noncanonical zero delete count.
+        vec![1, 1, 11],  // Truncated client clock and content.
+        // Client 2^32 + 11 must not wrap to client 11.
+        vec![
+            1, 1, 139, 128, 128, 128, 16, 0, 4, 1, 8, b'm', b'a', b'r', b'k', b'd', b'o', b'w',
+            b'n', 1, b'x', 0,
+        ],
+    ] {
+        let result = request(json!({
+            "operation": "apply", "state": state, "update": BASE64_STANDARD.encode(bytes)
+        }));
+        assert_eq!(result["code"], "invalid_argument", "{result}");
+        assert_eq!(result["error"], "invalid Yjs v1 wiki document update");
+        // Malformed requests must not poison subsequent calls to the C ABI.
+        let recovered = request(json!({
+            "operation": "replace", "state": state, "markdown": "Recovered 🦀"
+        }));
+        assert_eq!(recovered["markdown"], "Recovered 🦀");
+    }
+}
