@@ -17,10 +17,13 @@ redacted.
 
 - Node.js 26.4.0 or later, where the built-in SQLite module lives.
 - An ESM package (`"type": "module"`, because the program ends in a top-level
-  `await`) with the journal, the database it writes through, and `effect`
-  installed. See [Installation](./installation.md) for the `effect` range.
+  `await`) with the journal, the database it writes through, its Node SQLite
+  driver, and `effect` installed. See [Installation](./installation.md) for the
+  `effect` range.
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/journal@next @smthrs/database@next @effect/sql-sqlite-node effect
+```
 
 ## Compose the layer
 

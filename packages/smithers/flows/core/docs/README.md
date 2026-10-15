@@ -37,7 +37,9 @@ diagram, or a test.
 
 ## Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/core@next effect
+```
 
 The package needs Node.js 26.4.0 or later. It has no platform bindings, so the
 same build runs in Node, in Bun, in a browser, and in a Cloudflare Worker.

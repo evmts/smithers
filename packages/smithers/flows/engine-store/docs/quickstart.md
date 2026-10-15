@@ -13,7 +13,11 @@ the whole point of the package.
 ## Prerequisites
 
 - Node.js 26.4.0 or later.
-- A package with the dependencies installed. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+- A project with the packages installed:
+
+  ```bash
+  npm install @smthrs/engine-store@next @smthrs/artifacts@next @smthrs/database@next @smthrs/flow@next @smthrs/journal@next @smthrs/kernel@next @smthrs/platform-node@next @smthrs/run-store@next @smthrs/step-cache@next @effect/platform-node effect
+  ```
 
 ## Declare a sealed action and a flow
 

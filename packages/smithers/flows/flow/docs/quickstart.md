@@ -15,7 +15,11 @@ A runnable copy of this program is published in the Smithers examples,
 ## Prerequisites
 
 - Node.js 26.4.0 or later.
-- A package with the dependencies installed. Not on npm yet; see [Installation](./installation.md#use-the-libraries).
+- A project with the packages installed:
+
+  ```bash
+  npm install @smthrs/flow@next @smthrs/engine@next @smthrs/plan@next @effect/platform-node effect
+  ```
 
 ## Declare the action and the flow
 

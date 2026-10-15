@@ -20,7 +20,9 @@ commands to a branch's journal run after verifying a write-scoped
 
 ## Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/sync@next effect
+```
 
 `effect` is a peer dependency in the range `^4.0.4`. Two copies of `effect`
 in one program are two sets of service tags, so a client built against one copy

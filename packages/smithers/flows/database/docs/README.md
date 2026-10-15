@@ -48,8 +48,9 @@ and migration ladder. See [SQLite and PostgreSQL](./concepts/sqlite-only.md).
 
 ## Install
 
-`@smthrs/database` is not published to npm yet. Its source is on
-[GitHub](https://github.com/smithersai/smithers).
+```bash
+npm install @smthrs/database@next @effect/sql-sqlite-node effect
+```
 
 It needs Node.js 26.4.0 or later for the built-in `node:sqlite` module, and
 one `effect` in the range `^4.0.4` with `@effect/sql-sqlite-node` at the

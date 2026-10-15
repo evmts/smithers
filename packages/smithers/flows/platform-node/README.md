@@ -26,25 +26,21 @@ general-purpose adapter makes, so this package implements them itself:
   a run some other process recorded itself as owning. Ambiguity resolves toward
   alive, because stranding a run is cheaper than running it twice.
 
-## Availability
+## Install
 
-`@smthrs/platform-node` is not on npm at 1.0.0-rc.0. Its source lives in the
-[smithers repository](https://github.com/smithersai/smithers), and the
-[installation page](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/installation.md) covers how
-to depend on it from a checkout and the `effect` version it pins.
-
-On POSIX, filesystem confinement requires Node.js 26.4.0 or later and the
-`smithers-jj-export` native helper. From a source checkout, build it with:
-
-```sh
-cargo build --locked --release -p smithers-ffi --bin smithers-jj-export
+```bash
+npm install @smthrs/platform-node@next effect
 ```
 
-Install the Rust toolchain `rust-toolchain.toml` pins with `rustup toolchain install`
-if needed. The host finds `target/release/smithers-jj-export`
-automatically. Packaged installs supply a platform helper; an operator-managed
-installation can set `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` to its absolute path.
-A missing helper refuses confined operations, including MCP flow discovery.
+The [installation page](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/docs/installation.md)
+covers the `effect` peer range and the host requirements.
+
+On POSIX, filesystem confinement requires Node.js 26.4.0 or later and the
+`smithers-jj-export` native helper. The package ships the helper prebuilt for
+macOS (arm64, x64), Linux (arm64, x64), and Windows (x64), so installing the
+package installs it. `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` only overrides the
+packaged helper with another absolute path. A missing helper refuses confined
+operations, including MCP flow discovery.
 
 ## Run a command through the host
 

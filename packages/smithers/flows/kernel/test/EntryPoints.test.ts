@@ -31,8 +31,17 @@ describe("documented entry points", () => {
   it("declares the overview example's separate testing package requirement", async () => {
     const overview = await read("docs/README.md")
     expect(overview).not.toContain("nothing else installed")
-    expect(overview).toContain("\"@smthrs/testing\": \"workspace:*\"")
+    expect(overview).toContain("npm install --save-dev @smthrs/testing@next")
   })
+
+  it.each(["README.md", "docs/README.md", "docs/installation.md", "docs/quickstart.md"])(
+    "installs the published package from npm in %s",
+    async (path) => {
+      const doc = await read(path)
+      expect(doc).toContain("npm install @smthrs/kernel@next effect")
+      expect(doc).not.toMatch(/not on npm|workspace:\*|git clone/i)
+    }
+  )
 
   it("does not require the unused browser platform", () => {
     for (const dependencies of [manifest.peerDependencies, manifest.peerDependenciesMeta, manifest.devDependencies]) {

@@ -7,7 +7,11 @@ sidebar:
 
 ## Install the package
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/keys@next effect
+```
+
+The `next` tag carries the 1.0 release candidates.
 
 `@effect/platform-node` provides `NodeCrypto` for the example below and is
 optional if you supply your own `Crypto` implementation.

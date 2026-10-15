@@ -40,13 +40,13 @@ different `result` recorded under one digest by another run. Every argument
 crosses a strict admission boundary first, because a hit is handed back to a
 caller as real executable state.
 
-## Get the package
+## Install
 
-`@smthrs/step-cache` is not on npm at 1.0.0-rc.0. It ships as a member of the
-[smithers repository](https://github.com/smithersai/smithers) workspace, so
-using it today means working from a checkout.
-[Installation](./installation.md) has the clone, the workspace specifier, and
-the runtime requirements.
+```bash
+npm install @smthrs/step-cache@next effect
+```
+
+[Installation](./installation.md) has the runtime requirements.
 
 ## Reuse a result instead of recomputing it
 

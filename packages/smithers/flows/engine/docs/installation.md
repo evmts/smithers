@@ -7,7 +7,11 @@ sidebar:
 
 ## Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/engine@next effect
+```
+
+The `next` tag carries the 1.0 release candidates.
 
 `@smthrs/flow` is a runtime dependency of this package and also the package you
 author against: `Flow`, `Action`, `DurableDeferred`, `DurableClock`, and

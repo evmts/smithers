@@ -5,13 +5,14 @@ sidebar:
   order: 1
 ---
 
-## Availability
+## Install the package
 
-`@smthrs/database` is not published to npm yet. Its source is on
-[GitHub](https://github.com/smithersai/smithers), and the storage packages
-listed below are the worked examples of everything on this page.
+```bash
+npm install @smthrs/database@next effect
+```
 
-See [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+The `next` tag carries the 1.0 release candidates. The storage packages listed
+below are the worked examples of everything on this page.
 
 `effect` is a required peer in the range `^4.0.4`. The SQLite adapter is an
 optional peer, needed by `node/NodeDatabase` and
@@ -19,7 +20,7 @@ optional peer, needed by `node/NodeDatabase` and
 at the same version as your `effect`, when selecting either subpath:
 
 ```bash
-pnpm add @effect/sql-sqlite-node
+npm install @effect/sql-sqlite-node
 ```
 
 The driver-neutral root needs no SQLite adapter. Mixing two copies

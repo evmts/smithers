@@ -19,7 +19,9 @@ reads the effect-boundary evidence that decides whether a rewind is safe.
 
 ## Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/time-travel@next effect
+```
 
 A durable fork reuses completed action results through its frame, including
 compensable and irreversible actions. Steps after the frame execute under the

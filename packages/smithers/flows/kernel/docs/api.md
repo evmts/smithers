@@ -1443,9 +1443,8 @@ Effect's platform surface.
 
 ## Test subpaths
 
-For a deterministic host, use `@smthrs/testing/TestHost`. Add
-`"@smthrs/testing": "workspace:*"` to the consuming package's devDependencies;
-see [Testing](./testing.md).
+For a deterministic host, use `@smthrs/testing/TestHost`. Install it with
+`npm install --save-dev @smthrs/testing@next`; see [Testing](./testing.md).
 
 ### @smthrs/kernel/test/TestGrantStore
 

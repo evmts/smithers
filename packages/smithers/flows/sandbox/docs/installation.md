@@ -7,7 +7,11 @@ sidebar:
 
 ## Install the package
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/sandbox@next effect
+```
+
+The `next` tag carries the 1.0 release candidates.
 
 The package requires Node.js 26.4.0 or later and ships as ESM and CommonJS
 with TypeScript declarations. It has two runtime dependencies,

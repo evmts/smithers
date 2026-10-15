@@ -53,10 +53,11 @@ design. `NodeHost.layer` builds cleanly on a host without it, because the
 executable is re-validated per request rather than once at construction: the
 file a path names can be replaced while a host runs, and a check that happened
 only at boot would be a check about a file that is no longer there. The
-consequence is that on `node:22-slim`, `node:22-alpine`, or a distroless image
-the layer builds, the run starts, and the first guarded filesystem call inside a
-flow body fails `PermissionDenied`. Build or install the helper, or point the
-adapter at it; see [Configure the filesystem helper](./guides/configure-the-filesystem-helper.md).
+consequence is that where no helper resolves, the layer builds, the run starts,
+and the first guarded filesystem call inside a flow body fails
+`PermissionDenied`. The package ships the helper for macOS, Linux, and Windows;
+to use another one, point the adapter at it. See
+[Configure the filesystem helper](./guides/configure-the-filesystem-helper.md).
 
 ## Entry points
 

@@ -9,20 +9,17 @@ the `smithers-jj-export` helper the adapter spawns, which is what makes the
 operation descriptor-relative and no-follow: a symlink swapped in after
 authorization cannot redirect it somewhere else.
 
-The adapter uses the first of `executable`, `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY`,
-the package's `bin/<platform>-<arch>/smithers-jj-export`, a source checkout's
+The required peer `@smthrs/platform-node` ships the helper for macOS (arm64,
+x64), Linux (arm64, x64), and Windows (x64), so an npm or Bun install needs no
+configuration. The adapter uses the first of `executable`,
+`SMITHERS_WORKSPACE_JJ_EXPORT_BINARY`, that package's
+`bin/<platform>-<arch>/smithers-jj-export`, a source checkout's
 `target/release` or `target/debug` build, and
 `/usr/local/bin/smithers-jj-export`. It never searches `PATH`.
 
-## Build or name the helper
+## Name another helper
 
-In a source checkout:
-
-```bash
-cargo build --locked --release -p smithers-ffi --bin smithers-jj-export
-```
-
-Anywhere else, set the absolute path:
+To run a different helper, set the absolute path:
 
 ```bash
 export SMITHERS_WORKSPACE_JJ_EXPORT_BINARY=/opt/smithers/bin/smithers-jj-export
@@ -39,6 +36,13 @@ const fileSystem = BunFileSystem.layerWith({ executable: "/opt/smithers/bin/smit
 The executable is re-validated on every request rather than read once when the
 layer is built, because the file a path names can be replaced while the host
 runs.
+
+A source checkout of the Smithers repository has no packaged helper; build one
+there with:
+
+```bash
+cargo build --locked --release -p smithers-ffi --bin smithers-jj-export
+```
 
 ## Use it as the whole host's filesystem slot
 

@@ -44,7 +44,9 @@ surfaces much later as a cache that never hits.
 
 ## Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/keys@next effect
+```
 
 Node.js 26.4.0 or later. Hashing is host access, so
 derivation runs through Effect's `Crypto` service and you choose the

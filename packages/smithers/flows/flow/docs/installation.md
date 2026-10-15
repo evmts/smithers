@@ -1,13 +1,17 @@
 ---
 title: "Installation"
-description: "Install @smthrs/flow, its runtime requirements and effect range, its import forms, and the packages a runnable composition adds."
+description: "Install @smthrs/flow from npm, its runtime requirements and effect range, its import forms, and the packages a runnable composition adds."
 sidebar:
   order: 1
 ---
 
 ## Install the package
 
-`@smthrs/flow` is not on npm yet. Link the source packages as described in [Use the libraries](#use-the-libraries).
+```bash
+npm install @smthrs/flow@next effect
+```
+
+The `next` tag carries the 1.0 release candidates.
 
 `effect` is a peer dependency of this package, in the range `^4.0.4`. Add one
 `effect` in that range to your own dependencies: your declarations import
@@ -23,17 +27,18 @@ from, and the canonical JSON checks applied to values.
 
 ## Use the libraries
 
-First [install the source checkout](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md#install-the-cli). The checkout's `examples` workspace carries the packages used by the flow tutorials and their pinned `effect@4.0.4`.
-
-Create a project beside the checkout:
+Every `@smthrs` library installs from npm the same way. Name each package your
+code imports with the `next` tag, and add one `effect` in the `^4.0.4` range
+the libraries peer. The [Quickstart](./quickstart.md) program needs these:
 
 ```bash
-mkdir my-flows && cd my-flows
-echo '{ "type": "module" }' > package.json
-ln -s /path/to/smithers/examples/node_modules node_modules
+npm install @smthrs/flow@next @smthrs/engine@next @smthrs/plan@next @effect/platform-node effect
 ```
 
-Replace `/path/to/smithers` with the absolute path to your installed checkout. Run programs with `node <file>.ts`. Packages absent from the examples workspace, such as `@smthrs/artifacts`, resolve only inside the checkout; use the owning package's workspace for those examples. This linking recipe uses source exports and requires no package build.
+`next` resolves every `@smthrs` package to the same release candidate. With
+pnpm 11, name that version instead of the tag; the
+[Flows installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/installation.md)
+explains why.
 
 ## Import forms
 

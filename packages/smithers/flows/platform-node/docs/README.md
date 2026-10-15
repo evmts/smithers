@@ -13,12 +13,14 @@ engine for long-running agent work whose packages carry the `@smthrs` scope.
 This package is the Node.js machine a Smithers flow runs on, and it is usable
 on its own by any Effect program that wants the same guarantees.
 
-## Availability
+## Install
 
-`@smthrs/platform-node` is not on npm at 1.0.0-rc.0. Its source lives in the
-[smithers repository](https://github.com/smithersai/smithers), and
-[Installation](./installation.md) covers how to depend on it from a checkout
-and which `effect` version it pins.
+```bash
+npm install @smthrs/platform-node@next effect
+```
+
+[Installation](./installation.md) covers the `effect` peer range and the host
+requirements.
 
 ## What it solves
 
@@ -78,7 +80,8 @@ watches a symlink escape get refused.
 
 Running this bundle needs Node.js 26.4.0 or later and the `smithers-jj-export`
 helper, which `AtomicFileSystem` uses for the descriptor-relative syscalls Node
-does not expose. [Installation](./installation.md) covers the requirement,
+does not expose. The package ships the helper, so installing it installs the
+helper. [Installation](./installation.md) covers the requirement,
 where it fails when it is missing, how to point at a different helper, and the
 Effect peers your project pins.
 

@@ -5,41 +5,27 @@ sidebar:
   order: 1
 ---
 
-## Get the package
-
-`@smthrs/jj` is not on npm at 1.0.0-rc.0. It ships as a member of the
-[smithers repository](https://github.com/smithersai/smithers) workspace, so
-using it today means working from a checkout:
+## Install the package
 
 ```bash
-git clone https://github.com/smithersai/smithers.git
-cd smithers
-pnpm install
+npm install @smthrs/jj@next effect
 ```
 
-Code that consumes it lives in that workspace too, either an existing package
-or one you add, and depends on it with a workspace specifier:
-
-```json
-{
-  "dependencies": {
-    "@smthrs/jj": "workspace:*"
-  }
-}
-```
+The `next` tag carries the 1.0 release candidates.
 
 ## Requirements
 
 - Node.js 26.4.0 or later.
 - [`effect`](https://effect.website) `^4.0.4`. It is a peer dependency, so
   the application owns the single copy every layer resolves against.
-- [`@smthrs/capability`](/api/capability), the only package `@smthrs/jj`
-  depends on. It names the permission failures a guarded `Jj` adds to the error
-  channel.
+- [`@smthrs/capability`](/api/capability) and
+  [`@smthrs/canonical`](/api/canonical), the two packages `@smthrs/jj` depends
+  on. `@smthrs/capability` names the permission failures a guarded `Jj` adds to
+  the error channel.
 
-Neither dependency pulls in a process spawner or an HTTP client, which is what
-keeps the root entry point browser bundleable. The package builds to both ESM
-and CommonJS with TypeScript declarations.
+None of these dependencies pulls in a process spawner or an HTTP client, which
+is what keeps the root entry point browser bundleable. The package builds to
+both ESM and CommonJS with TypeScript declarations.
 
 ## Install jj for the Node and Bun layers
 

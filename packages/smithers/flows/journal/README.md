@@ -21,7 +21,9 @@ package is required.
 
 ## Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/journal@next effect
+```
 
 `effect` is a peer dependency in the range `^4.0.4`. Two copies of `effect`
 in one program are two sets of service tags, so a journal layer built against

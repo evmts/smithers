@@ -1,33 +1,17 @@
 ---
 title: "Installation"
-description: "How to get @smthrs/step-cache, what it requires at runtime, the import forms it publishes, and the database driver and HTTP client a runnable composition adds."
+description: "How to install @smthrs/step-cache, what it requires at runtime, the import forms it publishes, and the database driver and HTTP client a runnable composition adds."
 sidebar:
   order: 1
 ---
 
-## Get the package
-
-`@smthrs/step-cache` is not on npm at 1.0.0-rc.0. It ships as a member of the
-[smithers repository](https://github.com/smithersai/smithers) workspace, so
-using it today means working from a checkout:
+## Install the package
 
 ```bash
-git clone https://github.com/smithersai/smithers.git
-cd smithers
-pnpm install
+npm install @smthrs/step-cache@next effect
 ```
 
-Code that consumes it lives in that workspace too, either an existing package
-or one you add under `packages/`, and depends on it with a workspace
-specifier:
-
-```json
-{
-  "dependencies": {
-    "@smthrs/step-cache": "workspace:*"
-  }
-}
-```
+The `next` tag carries the 1.0 release candidates.
 
 ## Requirements
 
@@ -82,12 +66,8 @@ platform:
 `DurableWriter` write boundary. Building them means importing that package
 directly, so declare it too:
 
-```json
-{
-  "dependencies": {
-    "@smthrs/database": "workspace:*"
-  }
-}
+```bash
+npm install @smthrs/database@next
 ```
 
 On Node:

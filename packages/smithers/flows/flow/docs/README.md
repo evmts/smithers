@@ -36,7 +36,9 @@ restarted. Skip it when a plain `Effect` retry loop covers the whole problem.
 
 ## Install
 
-Not on npm yet; see [Installation](./installation.md#use-the-libraries).
+```bash
+npm install @smthrs/flow@next effect
+```
 
 Node.js 26.4.0 or later. [Installation](./installation.md) covers the import
 forms, and what each companion package supplies.

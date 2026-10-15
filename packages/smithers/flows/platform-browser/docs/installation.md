@@ -7,7 +7,11 @@ sidebar:
 
 ## Install the package
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/platform-browser@next effect
+```
+
+The `next` tag carries the 1.0 release candidates.
 
 `effect` is a peer dependency in the range `^4.0.4`, so install it
 yourself in that range. The services these adapters implement live in Effect 4
@@ -38,7 +42,7 @@ list stays short. Install the ones your composition needs:
 | The `flows_jj.wasm` reactor        | [`@smthrs/jj`](/api/jj)'s `wasm/flows_jj.wasm`, served by your bundler.                                       | `BrowserHost` only           |
 
 ```bash
-pnpm add @zenfs/core @zenfs/dom just-bash
+npm install @zenfs/core @zenfs/dom just-bash
 ```
 
 All three must view the same filesystem. The interpreter, the promises object,

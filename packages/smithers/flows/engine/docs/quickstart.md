@@ -12,7 +12,11 @@ configured.
 
 ## Before you start
 
-Install the packages and a crypto service. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+Install the packages and a crypto service:
+
+```bash
+npm install @smthrs/engine@next @smthrs/flow@next @effect/platform-node effect
+```
 
 `@effect/platform-node` supplies the runtime `Crypto` service used by every
 action dispatch, so install it in your application's `dependencies`.

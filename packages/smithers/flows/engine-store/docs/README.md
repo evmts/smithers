@@ -11,7 +11,9 @@ over.
 It is an [Effect](https://effect.website) library: every surface below is a
 `Layer` you compose or an `Effect` you run.
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/engine-store@next effect
+```
 
 ## What it solves
 

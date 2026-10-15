@@ -20,7 +20,11 @@ run anything you do not trust.
 ## Prerequisites
 
 - Node.js 26.4.0 or later.
-- A package with the dependencies installed. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+- A project with the packages installed:
+
+  ```bash
+  npm install @smthrs/sandbox@next @smthrs/kernel@next @smthrs/platform-node@next effect
+  ```
 
 ## Write the body
 

@@ -22,7 +22,9 @@ run in Node.js, in Bun, in a browser tab, and inside a sandbox.
 
 ## Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/artifacts@next effect
+```
 
 `@effect/platform-node` supplies the Node.js implementations of the services
 the store asks for. The filesystem store needs exclusive writable handles,

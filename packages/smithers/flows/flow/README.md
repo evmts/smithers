@@ -44,7 +44,9 @@ none of which the flow's author arranges.
 
 ## Install
 
-Not on npm yet; see [Installation](./docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/flow@next effect
+```
 
 Node.js 26.4.0 or later. `effect` is a peer in the range `^4.0.4`: two copies of
 `effect` in one program are two sets of service tags.

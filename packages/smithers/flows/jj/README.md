@@ -19,13 +19,14 @@ compiled to WebAssembly in a browser tab. Behind a service rather than an
 ad-hoc `spawn`, the repository is explicit, failures are a closed set of six
 codes, and a test swaps the layer instead of the code.
 
-## Availability
+## Install
 
-`@smthrs/jj` is not on npm at 1.0.0-rc.0. Its source lives in the
-[smithers repository](https://github.com/smithersai/smithers), and the
-[installation page](https://jj.smithers.sh/installation/) covers how to depend
-on it from a checkout, the `effect` version it pins, and the wasm asset a
-browser layer needs.
+```bash
+npm install @smthrs/jj@next effect
+```
+
+The [installation page](https://jj.smithers.sh/installation/) covers the
+`effect` peer range and the wasm asset a browser layer needs.
 
 `NodeJj` and `BunJj` spawn the `jj` executable, which this package does not
 vendor. Install it once with `brew install jj` or

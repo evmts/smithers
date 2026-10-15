@@ -20,25 +20,8 @@ that fence still sees the bytes its own event recorded.
 
 ## Install
 
-`@smthrs/step-cache` is not on npm at 1.0.0-rc.0. It ships as a member of the
-[smithers repository](https://github.com/smithersai/smithers) workspace, so
-using it today means working from a checkout:
-
 ```bash
-git clone https://github.com/smithersai/smithers.git
-cd smithers
-pnpm install
-```
-
-Code that consumes it lives in that workspace and depends on it with a
-workspace specifier:
-
-```json
-{
-  "dependencies": {
-    "@smthrs/step-cache": "workspace:*"
-  }
-}
+npm install @smthrs/step-cache@next effect
 ```
 
 It needs Node.js 26.4.0 or later and `effect` `^4.0.4`. The import forms

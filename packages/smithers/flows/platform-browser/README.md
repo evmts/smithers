@@ -23,7 +23,12 @@ no vendor code this package picked for you.
 
 ## Install
 
-Not on npm yet; install it from a source checkout as [Installation](docs/installation.md#install-the-package) describes.
+```bash
+npm install @smthrs/platform-browser@next effect
+```
+
+[Installation](docs/installation.md#install-the-package) covers the import
+forms and the browser bundle gate.
 
 `effect` is a peer dependency in the range `^4.0.4`. The services
 these adapters implement live in Effect 4, so Effect 3 does not satisfy it, and
@@ -31,7 +36,7 @@ two copies of `effect` in one program are two sets of service tags.
 
 The backends are yours to install and to wire together:
 
-```sh
+```bash
 npm install @zenfs/core @zenfs/dom just-bash
 ```
 

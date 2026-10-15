@@ -52,7 +52,9 @@ choosing.
 
 ## Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/crypto@next effect
+```
 
 `effect` is the only runtime dependency. `digest` also needs a `Crypto`
 service, which `@effect/platform-node`, `@effect/platform-bun`, and

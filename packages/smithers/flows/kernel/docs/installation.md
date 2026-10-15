@@ -5,28 +5,13 @@ sidebar:
   order: 1
 ---
 
-## Get the package
-
-`@smthrs/kernel` is not on npm at 1.0.0-rc.0. It ships as a member of the
-[smithers repository](https://github.com/smithersai/smithers) workspace, so
-using it today means working from a checkout:
+## Install the package
 
 ```bash
-git clone https://github.com/smithersai/smithers.git
-cd smithers
-pnpm install
+npm install @smthrs/kernel@next effect
 ```
 
-Code that consumes it lives in that workspace too, either an existing package
-or one you add under `packages/`, and depends on it with a workspace specifier:
-
-```json
-{
-  "dependencies": {
-    "@smthrs/kernel": "workspace:*"
-  }
-}
-```
+The `next` tag carries the 1.0 release candidates.
 
 ## Requirements
 
@@ -77,15 +62,11 @@ Two helpers ship for testing. They are published code, not dev-only files;
 `test/contract` is Node-only because it uses Node process and
 temporary-directory fixtures. The deterministic host bundle is published by
 `@smthrs/testing/TestHost`; keeping it with the other test utilities avoids a
-kernel-to-platform dependency cycle. To use that host, add a devDependency
-in the consuming workspace package:
+kernel-to-platform dependency cycle. To use that host, install it as a
+development dependency:
 
-```json
-{
-  "devDependencies": {
-    "@smthrs/testing": "workspace:*"
-  }
-}
+```bash
+npm install --save-dev @smthrs/testing@next
 ```
 
 `test/contract` registers Vitest cases, so importing it requires the declared

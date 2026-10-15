@@ -5,37 +5,16 @@ sidebar:
   order: 1
 ---
 
-## Get the package
-
-`@smthrs/platform-node` is not on npm at 1.0.0-rc.0. It ships as a member of
-the [smithers repository](https://github.com/smithersai/smithers) workspace, so
-using it today means working from a checkout:
+## Install the package
 
 ```bash
-git clone https://github.com/smithersai/smithers.git
-cd smithers
-pnpm install
+npm install @smthrs/platform-node@next effect
 ```
 
-Code that consumes it lives in that workspace too, either an existing package
-or one you add, and depends on it with a workspace specifier:
-
-```json
-{
-  "dependencies": {
-    "@smthrs/platform-node": "workspace:*"
-  }
-}
-```
-
-## Peers
+The `next` tag carries the 1.0 release candidates.
 
 `effect` is the one peer dependency, in the range `^4.0.4`, so your project
-picks its version rather than inheriting a second copy:
-
-```bash
-pnpm add effect
-```
+picks its version rather than inheriting a second copy.
 
 `@effect/platform-node` and `@effect/platform-node-shared` are bundled
 privately, built from `effect@4.0.4`, so your project installs neither for
@@ -44,7 +23,7 @@ which otherwise permits a later shared adapter with an incompatible Effect
 peer. Bundling both keeps the Node implementation on one Effect release.
 
 Its own runtime dependencies, [`@smthrs/jj`](/api/jj) and
-[`@smthrs/kernel`](/api/kernel), resolve from the same workspace.
+[`@smthrs/kernel`](/api/kernel), install with it.
 
 The package ships ESM, CommonJS, and TypeScript declarations.
 
@@ -72,23 +51,19 @@ repository commands use the selected process runner.
 
 ### The filesystem helper
 
-From a source checkout, build it with:
-
-```sh
-cargo build --locked --release -p smithers-ffi --bin smithers-jj-export
-```
-
-The host finds `target/release/smithers-jj-export` automatically. Elsewhere,
-set `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` to its absolute path.
+The package ships the helper prebuilt for macOS (arm64, x64), Linux (arm64,
+x64), and Windows (x64), so installing the package installs it; there is
+nothing to build. `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` only overrides the
+packaged helper with another absolute path.
 
 `NodeHost.layer` builds cleanly on a host with no helper. The executable is
 re-validated on every request rather than once at construction, because the
 file a path names can be replaced while a host runs, and a check that happened
 only at boot would be a check about a file that is no longer there.
 
-The consequence is that on `node:22-slim`, `node:22-alpine`, or a distroless
-image the layer builds, the run starts, and the first guarded filesystem call
-inside a flow body fails with `PermissionDenied`. For the search order and
+The consequence is that where no helper resolves, the layer builds, the run
+starts, and the first guarded filesystem call inside a flow body fails with
+`PermissionDenied`. For the search order and
 `layerWith`, see
 [Configure the filesystem helper](./guides/configure-the-filesystem-helper.md).
 
@@ -174,7 +149,11 @@ browser host, use [`@smthrs/platform-browser`](/api/platform-browser); for Bun,
 This package provides raw host services. A composition that enforces
 capabilities wraps them in [`@smthrs/kernel`](/api/kernel)'s decorators, which
 need a workspace root and a grant store. Add that package to your own
-dependencies with the same workspace specifier, then compose:
+dependencies, then compose:
+
+```bash
+npm install @smthrs/kernel@next
+```
 
 ```ts
 import * as GrantStore from "@smthrs/kernel/GrantStore"

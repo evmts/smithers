@@ -13,13 +13,17 @@ sidebar:
 
 ## Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/plan-store@next effect
+```
+
+The `next` tag carries the 1.0 release candidates.
 
 The store writes to SQL, so a composition also needs the SQLite client, the
 durable writer, and Effect's `Crypto` service:
 
 ```bash
-pnpm add @effect/platform-node @effect/platform-node-shared effect @effect/sql-sqlite-node
+npm install @effect/platform-node @effect/platform-node-shared @effect/sql-sqlite-node
 ```
 
 [`@smthrs/plan`](/api/plan), [`@smthrs/database`](/api/database) and

@@ -35,7 +35,9 @@ answer must not depend on how the value was built.
 
 ## Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/canonical@next effect
+```
 
 `effect` is a peer dependency in the range `^4.0.4`.
 [Installation](./installation.md) covers the rest of the requirements.

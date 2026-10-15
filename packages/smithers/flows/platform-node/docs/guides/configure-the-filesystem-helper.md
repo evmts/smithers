@@ -3,8 +3,10 @@ title: "Configure the filesystem helper"
 description: "Point AtomicFileSystem at a smithers-jj-export helper and set the byte ceilings, process ceiling, and timeout that bound what one filesystem call may cost."
 ---
 
-Use this when the host keeps the `smithers-jj-export` helper somewhere the
-adapter does not look, or when the default ceilings do not fit the workload.
+The package ships the `smithers-jj-export` helper for macOS (arm64, x64), Linux
+(arm64, x64), and Windows (x64), and the adapter finds it with no
+configuration. Use this guide when the host should run a different helper, or
+when the default ceilings do not fit the workload.
 `AtomicFileSystem.layerWith` takes all of it in one options object.
 
 ```ts
@@ -29,17 +31,18 @@ The adapter runs `smithers-jj-export --atomic-fs` and uses the first of:
 1. `executable` from `layerWith`.
 2. `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY`.
 3. The package's `bin/<platform>-<arch>/smithers-jj-export`.
-4. In a source checkout, `target/release/smithers-jj-export`, then
-   `target/debug/smithers-jj-export`.
+4. In a source checkout of the Smithers repository,
+   `target/release/smithers-jj-export`, then `target/debug/smithers-jj-export`.
 5. `/usr/local/bin/smithers-jj-export`.
 
-Build it in a source checkout:
+An npm install resolves at step 3. A source checkout of the repository has no
+packaged helper; build one there with:
 
 ```sh
 cargo build --locked --release -p smithers-ffi --bin smithers-jj-export
 ```
 
-Or name an installed helper:
+To run a different helper, name it:
 
 ```sh
 export SMITHERS_WORKSPACE_JJ_EXPORT_BINARY=/opt/smithers/bin/smithers-jj-export

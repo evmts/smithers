@@ -45,12 +45,14 @@ The contract stays small on purpose. There is no `commit`, no `push`, and no
 `log`, because every backend owes an answer for every operation, including one
 compiled to WebAssembly.
 
-## Availability
+## Install
 
-`@smthrs/jj` is not on npm at 1.0.0-rc.0. Its source lives in the
-[smithers repository](https://github.com/smithersai/smithers), and
-[Installation](./installation.md) covers how to depend on it from a checkout,
-the `effect` version it pins, and the wasm asset a browser layer needs.
+```bash
+npm install @smthrs/jj@next effect
+```
+
+[Installation](./installation.md) covers the `effect` peer range and the wasm
+asset a browser layer needs.
 
 `NodeJj` and `BunJj` spawn the `jj` executable, which this package does not
 vendor. Install it once with `brew install jj` or

@@ -10,10 +10,9 @@ describe("Installation dependency contract", () => {
     // A range an application's own effect has to fall in, never one version.
     expect(manifest.peerDependencies.effect).toMatch(/^\^\d+\.\d+\.\d+$/)
 
-    expect(guide).toContain(
-      "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries"
-    )
-    expect(guide).not.toContain("@smthrs/core@next")
+    // The package is on npm under `next`, which carries the 1.0 release candidates.
+    expect(guide).toContain("npm install @smthrs/core@next effect")
+    expect(guide).not.toMatch(/not on npm/i)
     expect(guide).toContain(`\`${effect}\` as a peer dependency`)
     expect(guide).not.toContain("exact peer")
     expect(guide).not.toContain("it is a dependency, not a peer")

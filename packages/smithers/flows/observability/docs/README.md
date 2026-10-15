@@ -38,7 +38,9 @@ identity, so `service.name` means the same thing whichever one you pick.
 
 ## Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/observability@next effect
+```
 
 Node.js 26.4.0 or later. For the import forms and the browser rule, see
 [Installation](./installation.md).

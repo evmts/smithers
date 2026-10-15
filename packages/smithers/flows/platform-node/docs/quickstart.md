@@ -13,15 +13,13 @@ which layer is responsible for each.
 ## Prerequisites
 
 - Node.js 26.4.0 or later, on a POSIX host.
-- The `smithers-jj-export` helper. From a source checkout, run
-  `cargo build --locked --release -p smithers-ffi --bin smithers-jj-export`.
 - `jj` 0.39.0 or newer on `PATH`. Check with `jj --version`. Every complete
   `NodeHost` layer checks jj at construction, including this quickstart's
   filesystem and process examples. For applications that do not need jj, see
   [Individual services without jj](./installation.md#individual-services-without-jj).
-- `@smthrs/platform-node`, [`@smthrs/kernel`](/api/kernel), and their `effect`
-  peers resolvable from the file you are about to write.
-  [Installation](./installation.md) has the workspace form.
+- A project with the packages installed:
+  `npm install @smthrs/platform-node@next @smthrs/kernel@next effect`. The
+  package ships the `smithers-jj-export` helper the filesystem runs.
 
 ## Run a command through the raw host
 

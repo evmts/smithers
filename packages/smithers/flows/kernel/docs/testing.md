@@ -38,8 +38,11 @@ evaluation path, and it needs a `Workspace`.
 
 ## Run against the deterministic host
 
-Add `"@smthrs/testing": "workspace:*"` to the consuming package's
-devDependencies in the checkout. See [Installation](./installation.md).
+Install it as a development dependency:
+
+```bash
+npm install --save-dev @smthrs/testing@next
+```
 
 `@smthrs/testing/TestHost` is the whole host surface with every source of
 nondeterminism pinned: a `Map`-backed filesystem, a scripted interpreter,

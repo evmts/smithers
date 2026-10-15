@@ -13,7 +13,11 @@ sidebar:
 
 ## Install
 
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/plan@next effect
+```
+
+The `next` tag carries the 1.0 release candidates.
 
 That is enough to build node graphs, compile plans, and diff them. Compiling
 asks for Effect's `Crypto` service, which a platform package supplies:

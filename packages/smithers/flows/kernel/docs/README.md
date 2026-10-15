@@ -43,10 +43,12 @@ around it:
 
 ## Install
 
-`@smthrs/kernel` is not on npm at 1.0.0-rc.0. Its source lives in the
-[smithers repository](https://github.com/smithersai/smithers), and
-[Installation](./installation.md) covers how to depend on it from a checkout,
-the import forms, and the three test subpaths.
+```bash
+npm install @smthrs/kernel@next effect
+```
+
+[Installation](./installation.md) covers the import forms and the three test
+subpaths.
 
 The package needs Node.js 26.4.0 or later. It carries no platform
 implementations of its own, so a composition that reaches a real machine also
@@ -54,10 +56,10 @@ adds a bundle such as [`@smthrs/platform-node`](/api/platform-node).
 
 ## Refuse an operation nobody authorized
 
-This program composes the kernel over `@smthrs/testing/TestHost`. Add
-`"@smthrs/testing": "workspace:*"` to the consuming package's devDependencies
-before running it. The policy allows reads under the workspace and says
-nothing about writes:
+This program composes the kernel over `@smthrs/testing/TestHost`. Install it
+as a development dependency with `npm install --save-dev @smthrs/testing@next`
+before running it. The policy allows reads under the workspace and says nothing
+about writes:
 
 ```ts
 import { Capability, GrantStore, HostServices, Permission, Workspace } from "@smthrs/kernel"

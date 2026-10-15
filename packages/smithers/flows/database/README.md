@@ -20,10 +20,9 @@ service, unwrapped, so nothing here sits between a query and the driver.
 
 ## Install
 
-`@smthrs/database` is not published to npm yet. Its source is on
-[GitHub](https://github.com/smithersai/smithers).
-
-Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+```bash
+npm install @smthrs/database@next effect
+```
 
 `effect` is a required peer in the range `^4.0.4`. The optional peer
 `@effect/sql-sqlite-node` is required by `node/NodeDatabase` and
@@ -31,7 +30,7 @@ Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/m
 version as your `effect`:
 
 ```sh
-pnpm add @effect/sql-sqlite-node
+npm install @effect/sql-sqlite-node
 ```
 
 PostgreSQL configuration requires the optional `@effect/sql-pg`

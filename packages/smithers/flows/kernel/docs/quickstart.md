@@ -17,13 +17,17 @@ request an operator resolves.
 ## Prerequisites
 
 - Node.js 26.4.0 or later.
-- A package that depends on `@smthrs/kernel` and has
-  `"@smthrs/testing": "workspace:*"` in devDependencies. See
-  [Installation](./installation.md) for how to get them.
+- A project with the kernel and the deterministic test host installed:
+
+  ```bash
+  npm install @smthrs/kernel@next effect
+  npm install --save-dev @smthrs/testing@next
+  ```
+
 - A test runner, for the second half:
 
 ```bash
-pnpm add -D @effect/vitest vitest@5.0.0
+npm install --save-dev @effect/vitest vitest@5.0.0
 ```
 
 ## Build the raw host

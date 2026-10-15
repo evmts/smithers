@@ -15,7 +15,8 @@ corrupted on purpose.
 - Node.js 26.4.0 or later.
 - An empty directory to work in. The store writes under `.flows/objects`
   relative to the process working directory.
-- The package and the Node host layers. Not on npm yet; see [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/installation.md#use-the-libraries).
+- The package and the Node host layers:
+  `npm install @smthrs/artifacts@next @effect/platform-node effect`.
 
 ## Compose the store
 
