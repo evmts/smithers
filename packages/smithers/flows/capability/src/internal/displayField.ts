@@ -10,6 +10,10 @@ import { maxDisplayFieldLength } from "../maxDisplayFieldLength.ts"
 const truncationMarker = "…[truncated]"
 
 const displayChunk = (unit: string): string => {
+  // A literal backslash doubles, so `\n` text never reads as an escaped newline.
+  if (unit === "\\") {
+    return "\\\\"
+  }
   if (unit === "\n") {
     return "\\n"
   }

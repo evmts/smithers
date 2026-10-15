@@ -103,6 +103,20 @@ describe("uncanonicalized filesystem resources", () => {
     expect(evaluate([[new Rule({ effect: "allow", pattern: src })]], write("src/../../etc"))).toBe("deny")
   })
 
+  it.each([["x/../secrets/key"], ["./secrets/key"], ["secrets/./key"], ["secrets/key/."]])(
+    "a deny or ask on the normal form still applies to %s",
+    (resource) => {
+      const rule = (effect: "allow" | "deny" | "ask", pattern: string) =>
+        new Rule({ effect, pattern: new Capability.CapabilityPattern({ action: "fs:write", resource: pattern }) })
+      const allowAll = rule("allow", "**")
+      expect(evaluate([[allowAll, rule("deny", "secrets/key")]], write(resource))).toBe("deny")
+      expect(evaluate([[allowAll, rule("deny", "secrets/**")]], write(resource))).toBe("deny")
+      expect(evaluate([[allowAll, rule("ask", "secrets/key")]], write(resource))).toBe("ask")
+      expect(evaluate([[rule("deny", "secrets/key")], [allowAll]], write(resource))).toBe("deny")
+      expect(evaluate([[allowAll, rule("deny", "other/key")]], write(resource))).toBe("allow")
+    }
+  )
+
   it("leaves dot segments literal for non-filesystem actions", () => {
     const pattern = new Capability.CapabilityPattern({ action: "net:get", resource: "https://h/**" })
     expect(Capability.matches(pattern, Capability.make("net:get", "https://h/a/../b"))).toBe(true)

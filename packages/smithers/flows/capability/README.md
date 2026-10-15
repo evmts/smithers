@@ -152,7 +152,8 @@ copy capabilities, and their `capability` and `meta` data slots are
 non-writable. A value the journal could not encode fails at the construction
 site naming the key. `formatError` escapes C0/C1 controls, Unicode format
 characters (`Cf`, including bidi controls), and line/paragraph separators
-(`Zl`/`Zp`). Each encoded field is capped at `maxDisplayFieldLength`, including
+(`Zl`/`Zp`), and doubles a literal backslash so the text `\n` never reads as a
+newline. Each encoded field is capped at `maxDisplayFieldLength`, including
 the truncation marker. `toPlatformError` applies the same rules to `module`,
 `method`, and string `pathOrDescriptor` fields, keeping the complete message
 free of raw line separators and bidi controls. The raw capability resource

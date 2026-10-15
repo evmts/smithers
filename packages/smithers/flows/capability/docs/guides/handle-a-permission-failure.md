@@ -125,7 +125,8 @@ grant store <code>: <message>
 
 `formatError` escapes C0/C1 controls, Unicode format characters (`Cf`, including
 bidi controls), and line/paragraph separators (`Zl`/`Zp`). Newlines render as
-`\n`; U+2028 and U+202E render as `\u2028` and `\u202E`. These characters
+`\n`; U+2028 and U+202E render as `\u2028` and `\u202E`. A literal backslash renders as `\\`, so the
+two-character text `\n` cannot pass for a newline. These characters
 cannot introduce raw line breaks or bidi controls into the diagnostic.
 Each encoded field is capped at `Permission.maxDisplayFieldLength` (256 UTF-16
 code units), including the visible `…[truncated]` marker. Other non-ASCII text

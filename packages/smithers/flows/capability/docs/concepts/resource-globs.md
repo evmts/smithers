@@ -108,7 +108,9 @@ A relative resource is a flow's declared scope, which the host resolves
 against the workspace root later. `.`, `./src/./out`, and `src/a/../out` stay
 valid: a pattern selects one only when it selects both the text and its
 lexical normal form. `**` selects `.`, and `src/**` selects `src/a/../out` but
-not `src/a/../../etc`, whose normal form is `etc`.
+not `src/a/../../etc`, whose normal form is `etc`. `Permission.evaluate`
+applies a deny or ask rule when it selects either form, so a deny on
+`secrets/**` also denies `x/../secrets/key`.
 
 ## Edge three: matching and proving are not the same
 

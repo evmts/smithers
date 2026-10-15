@@ -545,6 +545,14 @@ describe("permission failures", () => {
     expect(rendered).not.toMatch(/[\r\n]/)
   })
 
+  it("renders a real newline and a literal backslash-n differently", () => {
+    const spawned = (command: string) => formatError(permissionDenied(makeCapability("proc:spawn", command), "no"))
+
+    expect(spawned("ls\nrm -rf ~")).toBe("permission_denied: proc:spawn:ls\\nrm -rf ~: no")
+    expect(spawned("ls\\nrm -rf ~")).toBe("permission_denied: proc:spawn:ls\\\\nrm -rf ~: no")
+    expect(spawned("C:\\x")).toBe("permission_denied: proc:spawn:C:\\\\x: no")
+  })
+
   it("escapes controls in a grant-store rendering", () => {
     const rendered = formatError(
       new GrantStoreError({ code: "journal_failed", message: "disk\tfull\u0000\r\n" })

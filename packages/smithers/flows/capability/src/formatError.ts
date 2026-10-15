@@ -13,7 +13,8 @@ import type { PermissionErrorPayload } from "./PermissionErrorPayload.ts"
  * carries, which is the string a log line or an unattended report shows.
  *
  * Every field escapes C0/C1 controls, Unicode format characters (including
- * bidi controls), and line/paragraph separators. Each encoded field is limited to
+ * bidi controls), and line/paragraph separators, and doubles a literal
+ * backslash so `\n` text never reads as a newline. Each encoded field is limited to
  * `maxDisplayFieldLength` UTF-16 code units and ends with a visible
  * marker when truncated. Ordinary non-ASCII text remains unchanged.
  *

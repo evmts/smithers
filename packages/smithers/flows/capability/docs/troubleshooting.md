@@ -170,7 +170,7 @@ The recovered value is a data-only `PermissionErrorPayload`; use
 
 **What happened.** `Permission.formatError` caps each rendered field at
 `Permission.maxDisplayFieldLength` (256 UTF-16 code units, marker included) and
-escapes C0 and C1 control characters. The rendering is for an operator's log,
+escapes C0 and C1 control characters, doubling a literal backslash. The rendering is for an operator's log,
 where an agent-chosen resource must not be able to forge a second line.
 
 **What to change.** Nothing, for the log. When you need the full value, read

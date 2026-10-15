@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 
-import { type Capability, matches, withinMatchBudget } from "./Capability.ts"
+import { Capability, matches, withinMatchBudget } from "./Capability.ts"
 import { dotSegmentForms } from "./internal/hasDotSegment.ts"
 import type { Rule } from "./Rule.ts"
 import type { RuleEffect } from "./RuleEffect.ts"
@@ -30,7 +30,9 @@ import type { RuleEffect } from "./RuleEffect.ts"
  * relative one whose `..` climbs above its start, is `deny` for the same
  * reason: the matcher cannot say what it names, so no rule can decide it and
  * a deny rule must not fall through to an allow. A relative declared scope
- * such as `.` or `./src` is evaluated normally.
+ * such as `.` or `./src` is evaluated normally: an allow must select both the
+ * text and its normal form, while a deny or ask applies when it selects
+ * either, so `x/../secrets/key` cannot slip past a deny on `secrets/key`.
  *
  * @category policy
  * @since 0.1.0
@@ -40,9 +42,18 @@ export const evaluate = (
   rulesets: ReadonlyArray<ReadonlyArray<Rule>>,
   capability: Capability
 ): RuleEffect => {
-  if (dotSegmentForms(capability.action, capability.resource) === undefined) {
+  const forms = dotSegmentForms(capability.action, capability.resource)
+  if (forms === undefined) {
     return "deny"
   }
+  // matches requires every form, which is the narrow reading for an allow. A
+  // deny or ask must take the wide reading, so it applies when any form does.
+  // The normal form is never longer than the checked text, so skipping the
+  // schema check here admits nothing the caller's capability did not.
+  const candidates = forms.map((resource) =>
+    resource === capability.resource ? capability : new Capability({ ...capability, resource }, { disableChecks: true })
+  )
+  const restricts = (rule: Rule): boolean => candidates.some((candidate) => matches(rule.pattern, candidate))
   // One indexed pass: an undecidable rule anywhere vetoes, so returning on the
   // first one is equivalent to a separate budget preflight. Each rule is
   // matched once; index 0 additionally tracks the configured last-match.
@@ -58,7 +69,7 @@ export const evaluate = (
       if (capability.action === "net:private" && rule.effect === "allow" && rule.pattern.action !== "net:private") {
         continue
       }
-      if (matches(rule.pattern, capability)) {
+      if (rule.effect === "allow" ? matches(rule.pattern, capability) : restricts(rule)) {
         effect = rule.effect
         if (index === 0) {
           configuredEffect = rule.effect

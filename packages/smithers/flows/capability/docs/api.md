@@ -240,7 +240,8 @@ relative resource climbs above its start with `..`: text matching would let
 `/w/**` select `/w/../etc/passwd`, so canonicalize before constructing it. A
 relative declared scope such as `.`, `./src`, or `src/a/../b` matches only
 when the pattern selects both its text and its lexical normal form, so
-`src/**` does not select `src/a/../../etc`.
+`src/**` does not select `src/a/../../etc`. `Permission.evaluate` reads a deny
+or ask rule the other way: it applies when the pattern selects either form.
 
 ### Capability.subsumes
 
@@ -411,8 +412,12 @@ allows are skipped for it; wildcard denies retain the normal precedence.
 A rule the matcher cannot decide within `Capability.maxMatchWork` vetoes the
 decision and `evaluate` returns `deny`, because skipping it could let an
 undecidable `deny` fall through to a later `allow`. The kernel turns that
-`deny` into a `PermissionDenied`. An `fs:*` capability whose resource has a `.`
-or `..` segment is `deny` for the same reason.
+`deny` into a `PermissionDenied`. An `fs:*` capability whose absolute resource
+has a `.` or `..` segment, or whose relative resource climbs above its start, is
+`deny` for the same reason. A relative declared scope such as `./src` or
+`x/../secrets/key` is evaluated against both its text and its lexical normal
+form: an `allow` must select both, and a `deny` or `ask` applies when it
+selects either.
 
 [`@smthrs/kernel`](/api/kernel) supplies four rulesets in this order:
 configured policy, the patterns approved for a run before it starts, the grants
@@ -616,7 +621,7 @@ permission_denied: <action:resource>: <reason>
 grant store <code>: <message>
 ```
 
-Every field escapes C0 and C1 controls, is limited to `maxDisplayFieldLength`
+Every field escapes C0 and C1 controls, doubles a literal backslash, is limited to `maxDisplayFieldLength`
 UTF-16 code units, and ends with a visible `…[truncated]` marker when cut, so
 an agent-chosen resource cannot forge extra log lines. Ordinary non-ASCII text
 is unchanged.
