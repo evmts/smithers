@@ -92,14 +92,14 @@ Six flows reach the host through a service rather than through a platform layer.
 Each one has a refusal layer for a host that cannot serve it, so a flow whose
 service is missing says so instead of succeeding quietly.
 
-| Service          | Refusal layer              | Working layer                                   |
-| ---------------- | -------------------------- | ----------------------------------------------- |
-| `Search`         | `Search.layerNoop`         | `PortableSearch.layer` or `NativeSearch.layer`  |
-| `Container`      | `Container.layerNoop`      | `Container.layerCommand({ program: "docker" })` |
-| `TestRunner`     | `TestRunner.layerNoop`     | `TestRunner.layer(runner)`                      |
-| `Checkpoints`    | `Checkpoints.layerNoop`    | `Checkpoints.layerGit({ root })`                |
-| `WebSearch`      | `WebSearch.layerNoop`      | `ExaWebSearch.layer(credentialId)`              |
-| `LanguageServer` | `LanguageServer.layerNoop` | `NodeLanguageServer.layer(config)`              |
+| Service          | Refusal layer              | Working layer                                                                   |
+| ---------------- | -------------------------- | ------------------------------------------------------------------------------- |
+| `Search`         | `Search.layerNoop`         | `PortableSearch.layer` or `NativeSearch.layer`                                  |
+| `Container`      | `Container.layerNoop`      | `Container.layerCommand({ program: "docker" })`                                 |
+| `TestRunner`     | `TestRunner.layerNoop`     | `TestRunner.layer(runner)`                                                      |
+| `Checkpoints`    | `Checkpoints.layerNoop`    | `Checkpoints.layerGit({ root })` or `Checkpoints.layerContainer({ container })` |
+| `WebSearch`      | `WebSearch.layerNoop`      | `ExaWebSearch.layer(credentialId)`                                              |
+| `LanguageServer` | `LanguageServer.layerNoop` | `NodeLanguageServer.layer(config)`                                              |
 
 `NativeSearch.layer` drives the `rg` executable, so a host that binds it needs
 ripgrep on the path. `PortableSearch.layer` needs nothing beyond `FileSystem`

@@ -1,5 +1,6 @@
 /** The shipped native executor keeps owner adapters separate from agent commands. */
 import * as AgentAction from "@smthrs/agent/AgentAction"
+import * as Checkpointed from "@smthrs/agent/Checkpointed"
 import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { CapabilityPattern } from "@smthrs/capability/Capability"
 import { Rule } from "@smthrs/capability/Permission"
@@ -9,7 +10,9 @@ import type * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as Workspace from "@smthrs/kernel/Workspace"
 import * as Executable from "@smthrs/registry/Executable"
+import * as Checkpoints from "@smthrs/std/Checkpoints"
 import { Effect, Layer, Option, type Schema } from "effect"
+import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
@@ -59,12 +62,20 @@ const fakeDocker = (base: string) => {
 /** The flows the native executor binds, read where a module catalog is registered. */
 const offered = () => {
   const bound: Array<FlowBinding.Binding> = []
+  const pins: Array<Checkpoints.Checkpoints> = []
   const modules = Layer.effect(Executable.Catalog)(Effect.gen(function*() {
     const host = yield* AgentAction.Host
     bound.push(...(yield* Effect.forEach(host.flows ?? [], (source) => source.bindings())).flat())
+    const pinned = yield* Effect.serviceOption(Checkpoints.Checkpoints)
+    if (Option.isSome(pinned)) pins.push(pinned.value)
     return Executable.Catalog.of({ executables: [], refused: [] })
   })).pipe(Layer.orDie)
-  return { modules, bound, flow: (name: string) => bound.find((binding) => binding.descriptor.name === name) }
+  return {
+    modules,
+    bound,
+    flow: (name: string) => bound.find((binding) => binding.descriptor.name === name),
+    checkpoints: () => pins[0]!
+  }
 }
 const spawnCount = (workspace: string) => {
   const database = new DatabaseSync(NodeControl.executionDatabasePath(workspace), { readOnly: true })
@@ -93,8 +104,9 @@ const workspaceGrants = (workspace: string, spawn = true) =>
         : [])
     ]
   }).pipe(Layer.provide(Workspace.layer(workspace)), Layer.orDie)
-const call = (input: Schema.Json, flowName = "bash"): Cell.Call =>
+const call = (input: Schema.Json, flowName = "bash", at?: string): Cell.Call =>
   new Cell.Call({
+    ...(at === undefined ? {} : { at }),
     flowName,
     input,
     capabilities: [],
@@ -293,6 +305,62 @@ it("runs a sealed host's bash and test in its one container through the docker C
       })),
       Effect.scoped
     )
+  )
+}, 60_000)
+
+/**
+ * A `docker` first on PATH that runs each `exec` here, in the directory `-w`
+ * names or else in `workdir`: a container whose filesystem the host
+ * workspace never sees, as on the 2026-10-14 benchmark host.
+ */
+const runningDocker = (base: string, workdir: string) => {
+  mkdirSync(join(base, "bin"))
+  writeFileSync(
+    join(base, "bin", "docker"),
+    [
+      `#!${process.execPath}`,
+      "const argv = process.argv.slice(2)",
+      `let cwd = ${JSON.stringify(workdir)}, input = false, at = 1`,
+      "for (; argv[at] !== \"--\"; at++) {",
+      "  if (argv[at] === \"-i\") input = true",
+      "  else if (argv[at] === \"-w\") cwd = argv[++at]",
+      "  else if (argv[at] === \"-e\") at++",
+      "}",
+      "const [, file, ...args] = argv.slice(at + 1)",
+      "const stdio = [input ? \"inherit\" : \"ignore\", \"inherit\", \"inherit\"]",
+      "const result = process.getBuiltinModule(\"node:child_process\").spawnSync(file, args, { cwd, stdio })",
+      "process.exit(result.status ?? 1)"
+    ].join("\n"),
+    { mode: 0o755 }
+  )
+  process.env.PATH = `${join(base, "bin")}:${hostPath}`
+}
+
+it("runs a sealed host's call at ctx.base in its container, against the opening tree (#3952)", async () => {
+  const { base, workspace } = fixture()
+  // The repository lives only in the container; the workspace holds none.
+  const app = join(base, "app")
+  mkdirSync(app)
+  writeFileSync(join(app, "mod.py"), "value = 'pristine'\n")
+  const git = (args: ReadonlyArray<string>) => execFileSync("git", ["-C", app, ...args], { encoding: "utf8" })
+  git(["init", "-q"])
+  git(["add", "-A"])
+  git(["-c", "user.name=rig", "-c", "user.email=rig@localhost", "commit", "-qm", "base"])
+  writeFileSync(join(app, "mod.py"), "value = 'fixed'\n")
+  runningDocker(base, app)
+  const { modules, flow, checkpoints } = offered()
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      yield* Control.Control
+      const runner = Checkpointed.checkpointed(checkpoints(), { run: flow("bash")!.run })
+      const input = { mode: "unhermetic", container: "benchmark-cell", command: "cat mod.py" }
+      const before = yield* runner.run(call(input, "bash", Checkpoints.baseId))
+      const after = yield* runner.run(call(input))
+      expect(before.outcome, JSON.stringify(before)).toBe("success")
+      expect(before.value).toMatchObject({ exitCode: 0, stdout: "value = 'pristine'\n" })
+      expect(after.value).toMatchObject({ exitCode: 0, stdout: "value = 'fixed'\n" })
+      expect(git(["status", "--porcelain"])).toBe(" M mod.py\n")
+    }).pipe(Effect.provide(build(workspace, { modules, environment: sealed })), Effect.scoped)
   )
 }, 60_000)
 

@@ -307,23 +307,26 @@ How the project under test runs its suite, declared once by the host.
 
 Pinned trees, and the scratch checkouts a call runs against.
 
-| Export             | Type                                                                       | Meaning                                                          |
-| ------------------ | -------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `Checkpoints`      | interface and `Context.Service` tag                                        | `{ capture, materialize }`.                                      |
-| `Snapshot`         | `Schema.Class`                                                             | `{ id, ref }`, identified as `@smthrs/std/Checkpoints/Snapshot`. |
-| `Materialized`     | interface                                                                  | `id`, `host`, `guest`, `root`, `guestRoot`.                      |
-| `baseId`           | `"base"`                                                                   | The id naming the tree the run opened on.                        |
-| `scratchDirectory` | `".flows-checkpoints"`                                                     | Where a checkpoint is materialized, relative to the root.        |
-| `configSection`    | `"flows-checkpoint"`                                                       | The git-config section minted checkpoints are recorded under.    |
-| `make`             | `(service: Checkpoints) => Checkpoints`                                    |                                                                  |
-| `unavailable`      | `(id: string) => StdError`                                                 | The refusal a host that pins nothing answers with.               |
-| `makeNoop`         | `() => Checkpoints`                                                        | Fails both calls with `unavailable`.                             |
-| `layerNoop`        | `Layer<Checkpoints>`                                                       |                                                                  |
-| `GitOptions`       | interface                                                                  | `root`, `cwd?`, `baseRef?`.                                      |
-| `makeGit`          | `(options: GitOptions) => Effect<Checkpoints, never, ChildProcessSpawner>` |                                                                  |
-| `layerGit`         | `(options: GitOptions) => Layer<Checkpoints, never, ChildProcessSpawner>`  |                                                                  |
-| `Relocation`       | tagged union                                                               | `Relocated`, `UnsupportedFlow`, `AbsolutePath`, `OutsideTree`.   |
-| `relocate`         | `(flow: string, input: Json, materialized: Materialized) => Relocation`    | Rewrites one call's input onto a checkpoint.                     |
+| Export             | Type                                                                                          | Meaning                                                          |
+| ------------------ | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `Checkpoints`      | interface and `Context.Service` tag                                                           | `{ capture, materialize }`.                                      |
+| `Snapshot`         | `Schema.Class`                                                                                | `{ id, ref }`, identified as `@smthrs/std/Checkpoints/Snapshot`. |
+| `Materialized`     | interface                                                                                     | `id`, `host`, `guest`, `root`, `guestRoot`.                      |
+| `baseId`           | `"base"`                                                                                      | The id naming the tree the run opened on.                        |
+| `scratchDirectory` | `".flows-checkpoints"`                                                                        | Where a checkpoint is materialized, relative to the root.        |
+| `configSection`    | `"flows-checkpoint"`                                                                          | The git-config section minted checkpoints are recorded under.    |
+| `make`             | `(service: Checkpoints) => Checkpoints`                                                       |                                                                  |
+| `unavailable`      | `(id: string) => StdError`                                                                    | The refusal a host that pins nothing answers with.               |
+| `makeNoop`         | `() => Checkpoints`                                                                           | Fails both calls with `unavailable`.                             |
+| `layerNoop`        | `Layer<Checkpoints>`                                                                          |                                                                  |
+| `GitOptions`       | interface                                                                                     | `root`, `cwd?`, `baseRef?`.                                      |
+| `makeGit`          | `(options: GitOptions) => Effect<Checkpoints, never, ChildProcessSpawner>`                    |                                                                  |
+| `layerGit`         | `(options: GitOptions) => Layer<Checkpoints, never, ChildProcessSpawner>`                     |                                                                  |
+| `ContainerOptions` | interface                                                                                     | `container`, `cwd?`.                                             |
+| `makeContainer`    | `(options: ContainerOptions) => Effect<Checkpoints, never, ChildProcessSpawner \| Container>` | Runs git inside the container `bash` runs in.                    |
+| `layerContainer`   | `(options: ContainerOptions) => Layer<Checkpoints, never, ChildProcessSpawner \| Container>`  |                                                                  |
+| `Relocation`       | tagged union                                                                                  | `Relocated`, `UnsupportedFlow`, `AbsolutePath`, `OutsideTree`.   |
+| `relocate`         | `(flow: string, input: Json, materialized: Materialized) => Relocation`                       | Rewrites one call's input onto a checkpoint.                     |
 
 `capture(id)` returns a `Snapshot`. `materialize(id, use)` is scoped: it hands
 the tree to `use` and removes the checkout however that effect ends. Host git

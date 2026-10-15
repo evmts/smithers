@@ -37,6 +37,10 @@
 
 ### Added
 
+- `Checkpoints.makeContainer` and `layerContainer` pin and check out trees
+  inside the container `bash` runs in, through the `Container` transport, for a
+  host whose repository lives only in that container (#3952).
+
 - Added `TreeFingerprint`: the in-container tree measurement `bash` uses, and
   the owner of the prune and suffix lists `@smthrs/agent/WorkspaceObservation`
   now re-exports, so the host walk and the container measurement skip the

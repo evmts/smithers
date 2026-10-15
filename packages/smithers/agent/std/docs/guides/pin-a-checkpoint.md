@@ -32,6 +32,26 @@ const store = Checkpoints.layerGit({
 `Checkpoints.layerNoop`, whose refusal says to take the reading on the live tree
 instead.
 
+## Bind the container store
+
+When the repository lives only in a container and `bash` runs there, bind
+`layerContainer` instead. It runs git inside that container through the
+`Container` transport `bash` uses, so `ctx.base` and `ctx.checkpoint()` read the
+container's tree. A git store would look for the repository on the host and
+refuse every call that names a checkpoint.
+
+```ts
+const store = Checkpoints.layerContainer({
+  container: "task", // the container `bash` runs in
+  cwd: "/app" // optional; absent is the container's working directory
+})
+```
+
+`layerContainer` requires a `ChildProcessSpawner` and a `Container`. It records
+and names a checkpoint as the git store does, and checks a tree out at the same
+`<top>/.flows-checkpoints/<id>-<lease>` path inside the container, so a
+relocated `bash` call keeps its subdirectory.
+
 ## Capture and materialize
 
 ```ts

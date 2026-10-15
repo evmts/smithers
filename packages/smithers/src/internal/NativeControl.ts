@@ -428,6 +428,24 @@ const sealedTransport = (
 }
 
 /**
+ * Where a run pins its trees: in the container a sealed host's `bash` runs in,
+ * through the same transport, or else in the workspace on this host.
+ *
+ * A sealed host's repository lives in its container and its own directory
+ * holds none, so a host store refused every `at` there: 112 of 123 trials of
+ * the 2026-10-14 SWE-bench Pro run (#3952).
+ */
+const checkpointLayer = (environment: Readonly<Record<string, string | undefined>>, root: string) => {
+  const pins = checkpointStore(environment, root)
+  const sealedTo = sealedContainer(environment)
+  return sealedTo === undefined
+    ? Checkpoints.layerGit(pins)
+    : Checkpoints.layerContainer({ container: sealedTo, cwd: pins.cwd }).pipe(
+      Layer.provide(Layer.succeed(Container.Container)(sealedTransport(environment, sealedTo)))
+    )
+}
+
+/**
  * The seats a native host resolves, and the catalog Jev routes an `auto` run
  * over: the aliases whose provider the same environment holds a credential for.
  */
@@ -1920,7 +1938,7 @@ export const make = (
         // platform each command ran in its own Linux sandbox with a private
         // /tmp, so the shadow repository one command created was gone for the
         // next and no checkpoint ever pinned (case03).
-        Checkpoints.layerGit(checkpointStore(environment, workspaceRoot)).pipe(Layer.provide(layerHostPlatform)),
+        checkpointLayer(environment, workspaceRoot).pipe(Layer.provide(layerHostPlatform)),
         // One Jev judge handles attribution and completion.
         evaluator,
         // The seat resolver, and the catalog an undeclared or `auto` seat is

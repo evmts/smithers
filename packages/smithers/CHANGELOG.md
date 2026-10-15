@@ -65,6 +65,12 @@
 
 ### Fixed
 
+- A host sealed to a container (`SMITHERS_BASH_CONTAINER`) pins checkpoints
+  in that container, so `{ at: ctx.base }` and `ctx.checkpoint()` read the
+  container's tree. The store looked for the repository in the CLI's own
+  directory and answered `checkpoint_unavailable` in 112 of 123 trials of the
+  2026-10-14 SWE-bench Pro run (#3952).
+
 - On a host with no `AI_GATEWAY_API_KEY`, the subscription judge no longer
   fails an honest completion as `claim_unproven`. GPT-6 Luna refused a
   completion that said it was blocked, an answer read off a file and a

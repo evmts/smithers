@@ -72,6 +72,8 @@
 
 import { ChildProcessSpawner } from "@smthrs/kernel/ChildProcessSpawner"
 import { Context, Effect, Layer, Schema } from "effect"
+import * as Container from "./Container.ts"
+import * as Exec from "./internal/Exec.ts"
 import { GitWorktree } from "./internal/GitWorktree.ts"
 import { withoutTrailingSlash } from "./internal/Paths.ts"
 import * as Prune from "./internal/Prune.ts"
@@ -409,6 +411,141 @@ const gitStore = (options: GitOptions, spawner: ChildProcessSpawner["Service"]):
  */
 export const layerGit = (options: GitOptions): Layer.Layer<Checkpoints, never, ChildProcessSpawner> =>
   Layer.effect(Checkpoints)(makeGit(options))
+
+/**
+ * What {@link makeContainer} needs to know about the container it pins in.
+ *
+ * @category models
+ * @since 1.0.0-rc.8
+ */
+export interface ContainerOptions {
+  /** The container `bash` runs in. */
+  readonly container: string
+  /** A directory of the repository inside it; absent is the container's own working directory. */
+  readonly cwd?: string | undefined
+}
+
+/**
+ * `$1` is the id. Records the working tree with `stash create` over a copy of
+ * the index, names the commit in config as {@link makeGit} does, and prints it.
+ */
+const pinScript = [
+  "set -e",
+  "cd \"$(git rev-parse --show-toplevel)\"",
+  "copy=$(mktemp -d)",
+  "trap 'rm -rf -- \"$copy\"' EXIT",
+  "index=$(git rev-parse --git-path index)",
+  "if [ -e \"$index\" ]; then cp -p -- \"$index\" \"$copy/index\"; fi",
+  "commit=$(GIT_INDEX_FILE=\"$copy/index\" git -c user.name=flows -c user.email=flows@localhost stash create \"flows checkpoint $1\")",
+  "[ -n \"$commit\" ] || commit=$(git rev-parse --verify 'HEAD^{commit}')",
+  `git config "${configSection}.$1" "$commit"`,
+  "printf '%s\\n' \"$commit\""
+].join("\n")
+
+/**
+ * `$1` is the id, `$2` the lease. Checks the tree out at
+ * `<top>/.flows-checkpoints/<id>-<lease>` in a repository of its own whose
+ * objects are the workspace's, and prints the top and the checkout.
+ */
+const checkoutScript = [
+  "set -e",
+  "top=$(git rev-parse --show-toplevel)",
+  "cd \"$top\"",
+  "common=$(cd \"$(git rev-parse --git-common-dir)\" && pwd -P)",
+  `if [ "$1" = ${baseId} ]; then`,
+  `  commit=$(git rev-parse --verify --quiet '${TestRunner.captureBase}^{commit}' || git rev-parse --verify --quiet 'HEAD^{commit}') || { echo "No commit resolves from ${TestRunner.captureBase} or HEAD in $top." >&2; exit 1; }`,
+  "else",
+  `  commit=$(git config --get "${configSection}.$1") || { echo "No checkpoint is stored under $1 in $top. Take the reading on the live tree instead." >&2; exit 1; }`,
+  "fi",
+  `dir="$top/${scratchDirectory}/$1-$2"`,
+  "trap 'rm -rf -- \"$dir\"' EXIT",
+  `mkdir -p -- "$top/${scratchDirectory}"`,
+  "git init --quiet \"$dir\"",
+  "printf '%s/objects\\n' \"$common\" > \"$dir/.git/objects/info/alternates\"",
+  "git -C \"$dir\" checkout --quiet --detach \"$commit\"",
+  "trap - EXIT",
+  "printf '%s\\n%s\\n' \"$top\" \"$dir\""
+].join("\n")
+
+/**
+ * Builds the store for a host whose `bash` runs in one container.
+ *
+ * The repository is the container's, so every git command runs there, through
+ * the same {@link Container.Container} transport `bash` takes. The host store
+ * looked in the CLI's own directory instead and refused every `at` in 112 of
+ * 123 trials of the 2026-10-14 SWE-bench Pro run. This keeps that store's
+ * shape: a checkpoint is a `stash create` commit named in config, and a tree
+ * is checked out under the repository for one call, so a relocated `bash`
+ * call keeps its subdirectory and still finds what the workspace installs
+ * beside it. That git may run what the repository configures, but only inside
+ * the container the agent already commands.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.8
+ */
+export const makeContainer = (
+  options: ContainerOptions
+): Effect.Effect<Checkpoints, never, ChildProcessSpawner | Container.Container> =>
+  Effect.gen(function*() {
+    const spawner = yield* ChildProcessSpawner
+    const transport = yield* Container.Container
+    const sh = (script: string, args: ReadonlyArray<string>) =>
+      transport.exec({
+        container: options.container,
+        file: "sh",
+        args: ["-c", script, "sh", ...args],
+        cwd: options.cwd,
+        stdin: false
+      }).pipe(
+        Effect.flatMap((plan) =>
+          Exec.exec(plan.file, { args: plan.args, env: plan.env }).pipe(
+            Effect.mapError((error) => Exec.toStdError(plan.file, error))
+          )
+        ),
+        Effect.flatMap((result) =>
+          result.exitCode === 0
+            ? Effect.succeed(result.stdout.trim().split("\n"))
+            : Effect.fail(failed(`git in container ${options.container} failed: ${result.stderr.trim()}`))
+        ),
+        Effect.provideService(ChildProcessSpawner, spawner)
+      )
+    const named = (id: string) =>
+      namable.test(id)
+        ? Effect.void
+        : Effect.fail(failed(`A checkpoint id must match ${namable.source}; ${id} does not.`, "invalid_input"))
+    return make({
+      capture: (id) =>
+        named(id).pipe(
+          Effect.andThen(sh(pinScript, [id])),
+          Effect.map(([commit]) => new Snapshot({ id, ref: commit! }))
+        ),
+      materialize: (id, use) =>
+        named(id).pipe(Effect.andThen(Effect.acquireUseRelease(
+          sh(checkoutScript, [id, globalThis.crypto.randomUUID()]),
+          ([root, checkout]) => use({ id, host: checkout!, guest: checkout!, root: root!, guestRoot: root! }),
+          ([, checkout]) =>
+            sh("rm -rf -- \"$1\"", [checkout!]).pipe(
+              Effect.catch((error) =>
+                Effect.logWarning("could not remove a scratch checkout").pipe(
+                  Effect.annotateLogs({ path: checkout, reason: error.message })
+                )
+              )
+            )
+        )))
+    })
+  })
+
+/**
+ * Provides {@link makeContainer}.
+ *
+ * @category layers
+ * @since 1.0.0-rc.8
+ */
+export const layerContainer = (
+  options: ContainerOptions
+): Layer.Layer<Checkpoints, never, ChildProcessSpawner | Container.Container> =>
+  Layer.effect(Checkpoints)(makeContainer(options))
+
 /**
  * Rewrites one call's input so the call runs against a materialized checkpoint.
  *
