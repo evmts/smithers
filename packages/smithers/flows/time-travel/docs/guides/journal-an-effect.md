@@ -77,8 +77,9 @@ Any other value is carried under `upstream`, and an unset one adds no key.
 Four declarations are refused before the action runs, all as `invalid`: a
 description that does not decode, a `kind` the engine reserves
 (`EventTypes.childSpawnKind`, from which a rewind derives the children it
-archives), a `sourceSeq` at `Number.MAX_SAFE_INTEGER` (there is no room for a
-terminal record above it), and an `irreversible` tier with no idempotency key.
+archives), a `sourceSeq` of `Number.MAX_SAFE_INTEGER - 1` or more (the terminal
+record at `sourceSeq + 1` must stay below `Number.MAX_SAFE_INTEGER`, which the
+journal refuses), and an `irreversible` tier with no idempotency key.
 
 ## Crossing twice is refused
 

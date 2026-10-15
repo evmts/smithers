@@ -575,6 +575,12 @@ describe("EffectHandlerRegistry", () => {
       const exhausted = yield* Effect.flip(
         EffectBoundary.guard({ ...base, sourceSeq: Number.MAX_SAFE_INTEGER }, Effect.void)
       )
+      // The terminal record lands at sourceSeq + 1, which the journal refuses
+      // at MAX_SAFE_INTEGER: this seq would run the action and then fail to
+      // settle it.
+      const lastIntended = yield* Effect.flip(
+        EffectBoundary.guard({ ...base, sourceSeq: Number.MAX_SAFE_INTEGER - 1 }, Effect.void)
+      )
       const irreversible = yield* Effect.flip(
         EffectBoundary.guard({
           ...base,
@@ -584,6 +590,10 @@ describe("EffectHandlerRegistry", () => {
 
       expect(malformed).toMatchObject({ code: "invalid", message: "effect boundary description is invalid" })
       expect(exhausted).toMatchObject({
+        code: "invalid",
+        message: "effect invalid-boundary has no terminal source sequence"
+      })
+      expect(lastIntended).toMatchObject({
         code: "invalid",
         message: "effect invalid-boundary has no terminal source sequence"
       })

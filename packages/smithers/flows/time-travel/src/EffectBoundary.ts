@@ -224,7 +224,9 @@ const emit = (
  * is uninterruptible so cancellation cannot strand an in-memory action
  * after it has crossed the boundary without attempting the terminal record.
  * A kind the engine reserves, such as `EventTypes.childSpawnKind`, fails as
- * `invalid` before anything is journaled.
+ * `invalid` before anything is journaled, and so does a `sourceSeq` of
+ * `Number.MAX_SAFE_INTEGER - 1` or more, whose terminal record at
+ * `sourceSeq + 1` the journal would refuse after the action ran.
  *
  * @since 0.1.0
  * @category combinators
@@ -240,7 +242,9 @@ export const guard = <A, E, R>(
     if (reservedKinds.has(validated.kind)) {
       return yield* Effect.fail(error("invalid", `effect ${validated.id} uses the reserved kind ${validated.kind}`))
     }
-    if (validated.sourceSeq === Number.MAX_SAFE_INTEGER) {
+    // The terminal record lands at sourceSeq + 1, and the journal refuses
+    // MAX_SAFE_INTEGER, so the last seq that can settle is two below it.
+    if (validated.sourceSeq >= Number.MAX_SAFE_INTEGER - 1) {
       return yield* Effect.fail(error("invalid", `effect ${validated.id} has no terminal source sequence`))
     }
     if (validated.tier === "irreversible" && validated.idempotencyKey === undefined) {
