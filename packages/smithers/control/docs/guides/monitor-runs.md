@@ -86,6 +86,12 @@ const report = yield * Monitor.run({
 | `autoHeal`   | none                                                   |
 | `heal`       | `Control.resume` and `Control.cancel`, per `remedyFor` |
 
+`Monitor.run` fails with `InvalidInput` before its first beat when
+`intervalMs` is negative or not finite, `maxChecks` is negative, or
+`stallBeats`, `roundBound` or `retainBeats` is not a positive integer. A
+`stallBeats` of 0 would call every beat a stall, and a `roundBound` of 0 would
+call every run a runaway.
+
 Each beat lists the run, replays its journal, classifies, and records
 `control.monitor.beat` carrying the remedy it is about to attempt, _before_
 applying it, so a monitor that crashes mid-heal leaves the evidence of what it

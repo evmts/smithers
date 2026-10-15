@@ -804,6 +804,7 @@ Run health over the control plane. See
 
 Defaults: `monitorId` is `default`, `intervalMs` is 1,000, `maxChecks` is 10,
 `stallBeats` is 3, `roundBound` is 32, and `autoHeal` is empty.
+Out-of-range bounds fail with `InvalidInput` before the first beat.
 
 ## Channels
 

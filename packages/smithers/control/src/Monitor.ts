@@ -21,7 +21,7 @@ import { Journal, JournalEvent } from "@smthrs/journal"
 import { Duration, Effect, Stream } from "effect"
 import { Control } from "./Control.ts"
 import type { ControlError } from "./ControlError.ts"
-import { PersistenceError } from "./ControlError.ts"
+import { InvalidInput, PersistenceError } from "./ControlError.ts"
 import type { ControlEvent, Receipt, RunId, RunSummary, WatchFilter } from "./ControlSchema.ts"
 import * as SubjectHealth from "./Health.ts"
 
@@ -338,6 +338,10 @@ const terminal = (summary: RunSummary | undefined): boolean =>
  * monitor that cancels a run the first time it looks at one, which is the
  * wrong default for a thing an operator points at production.
  *
+ * Fails with `InvalidInput` before the first beat when `intervalMs` is
+ * negative or not finite, `maxChecks` is negative or `NaN`, or `stallBeats`,
+ * `roundBound` or `retainBeats` is not a positive integer.
+ *
  * Nothing here leases the run. Two monitors on one run both beat and both
  * remedy, so a remedy has to be idempotent on the control plane — which the
  * two defaults are, through `Control.resume` and `Control.cancel`
@@ -352,13 +356,28 @@ export const run = (
   options: Options
 ): Effect.Effect<Report, ControlError, Control | Journal.Journal> =>
   Effect.gen(function*() {
-    const control = yield* Control
-    const journal = yield* Journal.Journal
     const intervalMs = options.intervalMs ?? options.healthCheck?.policy.intervalMs ?? 1_000
-    let consecutiveProbeFailures = 0
-    let lastPublished: SubjectHealth.HealthObservation | undefined
     const maxChecks = options.maxChecks ?? 10
     const stallBeats = options.stallBeats ?? 3
+    // A bound the loop cannot honour is refused before the first beat:
+    // `stallBeats: 0` makes every beat a stall and `roundBound: 0` makes every
+    // run a runaway, and either one under `autoHeal` remedies a healthy run.
+    const refused = !(Number.isFinite(intervalMs) && intervalMs >= 0)
+      ? "intervalMs must be a non-negative finite number"
+      : !(maxChecks >= 0)
+      ? "maxChecks must be a non-negative number"
+      : !(Number.isSafeInteger(stallBeats) && stallBeats >= 1)
+      ? "stallBeats must be a positive integer"
+      : options.roundBound !== undefined && !(Number.isSafeInteger(options.roundBound) && options.roundBound >= 1)
+      ? "roundBound must be a positive integer"
+      : options.retainBeats !== undefined && !(Number.isSafeInteger(options.retainBeats) && options.retainBeats >= 1)
+      ? "retainBeats must be a positive integer"
+      : undefined
+    if (refused !== undefined) return yield* new InvalidInput({ issue: `Monitor.run: ${refused}` })
+    const control = yield* Control
+    const journal = yield* Journal.Journal
+    let consecutiveProbeFailures = 0
+    let lastPublished: SubjectHealth.HealthObservation | undefined
     const autoHeal = options.autoHeal ?? []
     const monitorId = options.monitorId ?? "default"
     const heal = options.heal ?? ((input) =>

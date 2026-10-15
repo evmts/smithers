@@ -22,7 +22,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
-import { PersistenceError } from "../src/ControlError.ts"
+import { InvalidInput, PersistenceError } from "../src/ControlError.ts"
 import { ControlRuntime } from "../src/ControlRuntime.ts"
 import * as Monitor from "../src/Monitor.ts"
 import { durable, type DurableStack } from "./DurableStack.ts"
@@ -150,6 +150,45 @@ describe("Monitor.run defaults", () => {
     }))
 
     expect(report.beats).toHaveLength(2)
+  })
+
+  it.each(
+    [
+      ["stallBeats", { stallBeats: 0 }],
+      ["stallBeats", { stallBeats: Number.NaN }],
+      ["stallBeats", { stallBeats: 1.5 }],
+      ["intervalMs", { intervalMs: -1 }],
+      ["intervalMs", { intervalMs: Number.NaN }],
+      ["maxChecks", { maxChecks: -1 }],
+      ["maxChecks", { maxChecks: Number.NaN }],
+      ["roundBound", { roundBound: 0 }],
+      ["retainBeats", { retainBeats: 0 }]
+    ] as const
+  )("refuses %s %o before it beats or heals", async (option, invalid) => {
+    // `stallBeats: 0` with `autoHeal: ["stalled"]` called every beat a stall
+    // and resumed a run that was progressing; `roundBound: 0` called every run
+    // a runaway and cancelled it; `retainBeats: 0` reported `unknown` after
+    // beating. A bound the loop cannot honour is refused, not reinterpreted.
+    const healed: Array<string> = []
+    const failure = await run(Effect.gen(function*() {
+      const runId = yield* start(`invalid-${option}-${String(Object.values(invalid)[0])}`)
+      return yield* Effect.flip(Monitor.run({
+        runId,
+        intervalMs: 0,
+        maxChecks: 2,
+        autoHeal: ["stalled", "runaway-loop"],
+        heal: (input) =>
+          Effect.sync(() => {
+            healed.push(input.remedy)
+            return { _tag: "Terminal", runId, status: "cancelled" } as const
+          }),
+        ...invalid
+      }))
+    }))
+
+    expect(failure).toBeInstanceOf(InvalidInput)
+    expect((failure as InvalidInput).issue).toContain(option)
+    expect(healed).toEqual([])
   })
 
   it("fails with the record it could not append rather than reporting an unproven beat", async () => {
