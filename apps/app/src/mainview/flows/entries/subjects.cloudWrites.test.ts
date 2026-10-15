@@ -217,6 +217,52 @@ test("where the issue door does run, /issue.new still asks for the body it is mi
 })
 
 /*
+ * The same defect, one door over. `/issue.comment`'s refusal reads the HOST
+ * and nothing else — an install has no browser port for the GitHub comment,
+ * and an origin with neither door has nowhere to put it — yet it was declared
+ * as `preflight`, which `Commands.settle` cannot reach until a payload exists.
+ * So an install answered `/issue.comment` with the Issue / Comment form,
+ * collected the comment a person wrote, and refused on the submit: the c3ca
+ * shape exactly, with more of the person's work thrown away.
+ */
+test("/issue.comment names the door it does not have BEFORE the form, through every trigger", async () => {
+  for (const [bootstrap, error] of [
+    [INSTALL, "Commenting on a GitHub issue is a member confirmation on this install, not an app write yet."],
+    [WITHOUT_CLOUD, "Commenting on an issue needs the GitHub App install or Smithers Cloud."]
+  ] as const) {
+    const h = await hosted({ bootstrap, routes: { [`POST ${ISSUES}/5/comments`]: postedComment, "POST /api/issues/5/comments": postedComment } })
+    const refused = { status: "failed", error } as const
+    try {
+      const cards = h.store.collections.cards.size
+      // The bare line, and a number with no comment: neither field is ever asked for.
+      expect(await h.controller.runCommandForResult("issue.comment")).toEqual(refused)
+      expect(await h.controller.runCommandForResult("issue.comment", "#5")).toEqual(refused)
+      // The card button's named submit cannot be typed past it either.
+      expect(await h.controller.commands.submit({ name: "issue.comment", payload: { number: 5 }, actor: "user" })).toEqual(refused)
+      expect(await h.controller.commands.submit({ name: "issue.comment", payload: { number: 5, body: "Install comment" }, actor: "user" })).toEqual(refused)
+      // No form card opened, and no host was asked to store the comment.
+      expect([...h.store.collections.cards.values()].filter(card => card.kind === "flow-form")).toEqual([])
+      expect(h.store.collections.cards.size).toBe(cards)
+      expect(h.calls.filter(call => call.method === "POST")).toEqual([])
+    } finally { await h.controller.dispose() }
+  }
+})
+
+test("where the comment door does run, /issue.comment still asks for the comment it is missing", async () => {
+  /* THE FORM LAW, unchanged: the Cloud origin and the design preview both ask. */
+  for (const bootstrap of [HOSTED, undefined]) {
+    const h = await hosted({ bootstrap, routes: { [`GET ${ISSUES}/5`]: existingIssue, [`GET ${ISSUES}/5/comments`]: [] } })
+    try {
+      const asked = await h.controller.runCommandForResult("issue.comment", "#5")
+      expect(asked).toMatchObject({ status: "form", flow: "issue.comment", fields: ["body"] })
+      const form = h.store.collections.cards.get(asked.status === "form" ? asked.cardId : "")
+      expect(form?.kind === "flow-form" ? form.payload : undefined)
+        .toMatchObject({ flow: "issue.comment", given: { number: 5 }, submitLabel: "Comment" })
+    } finally { await h.controller.dispose() }
+  }
+})
+
+/*
  * The nearest sibling with the same seed fallback: `/wiki.page` branched on
  * `install` alone, so the hosted app — `cloud`, fixture off — created a page
  * in the seeded world and opened it as though the repository had one. The

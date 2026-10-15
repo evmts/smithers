@@ -66,10 +66,17 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
     name: "issues.create",
     confirm: "create this issue",
     ...issueWriteConfirmation(actions),
-    // Cloud issue rows are not the install's GitHub App issue identity.
-    preflight: (payload) => actions.bootstrap?.capabilities.includes("install")
-      ? "Use /issue.new on this install."
-      : issueWriteConfirmation(actions).preflight(payload),
+    /*
+     * Cloud issue rows are not the install's GitHub App issue identity. That
+     * reads the HOST and no part of the payload, so it is `unavailable`, which
+     * `Commands.settle` answers BEFORE the form asks for a title — an install
+     * serves both `install` and `cloud` (`compose/bootstrap.go`), so this door
+     * is registered here and a bare `/issues.create` used to collect a title
+     * it could never send (`entries/subjects.ts` names the same bug on
+     * `/issue.new`). The repository target's refusal reads `payload.repo` and
+     * stays a `preflight`.
+     */
+    unavailable: () => actions.bootstrap?.capabilities.includes("install") ? "Use /issue.new on this install." : undefined,
     form: { fields: { repo: { optionsFrom: "cloud-repos", kind: "text" } }, args: payload => line(text(payload, "title"), text(payload, "repo"), flag(payload, "kind")) },
     summary: "Create an issue, or a private conversation with --kind conversation",
     runtime: ["cloud"],

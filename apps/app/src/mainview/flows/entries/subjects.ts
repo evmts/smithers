@@ -139,13 +139,18 @@ export const subjectFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
       grammar: numbered("body"), agent: "confirm", input: Schema.Struct({ number: Schema.Number, body: Schema.NonEmptyString }),
       form: { submitLabel: "Comment", fields: { number: { label: "Issue" }, body: { label: "Comment" } }, args: json },
       /*
-       * The handler's own refusals, stated BEFORE the confirm step
-       * (flows/Commands.ts), the way `issue.new`'s preflight states its own.
-       * A `confirm` door reached by an agent otherwise answers "asked the user
-       * to confirm" and posts a confirmation message for a write this host
-       * cannot perform, so the person authorizes a refusal.
+       * `unavailable`, not `preflight`: which host serves the comment door
+       * does not depend on the issue number or the text, so the answer is
+       * owed BEFORE the form asks for either and BEFORE the confirm step
+       * (../Declare.ts, `Commands.settle`). As a `preflight` it could not be
+       * read until a payload had been decoded, so an install answered
+       * `/issue.comment` with the Issue / Comment form, kept the comment the
+       * person wrote and refused on the submit — `/issue.new`'s own bug, one
+       * door over. A `confirm` door reached by an agent would otherwise answer
+       * "asked the user to confirm" and post a confirmation message for a
+       * write this host cannot perform, so the person authorizes a refusal.
        */
-      preflight: () => cloudIssueWrites() ? undefined : install() ? INSTALL_COMMENT_DOOR : design.enabled ? undefined : NO_COMMENT_DOOR,
+      unavailable: () => cloudIssueWrites() ? undefined : install() ? INSTALL_COMMENT_DOOR : design.enabled ? undefined : NO_COMMENT_DOOR,
       handler: ({ number, body }) => {
         /*
          * Cloud comments on the repository's own issue — the one `/issue` just
