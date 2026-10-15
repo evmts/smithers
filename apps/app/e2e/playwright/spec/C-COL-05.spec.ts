@@ -36,7 +36,10 @@ test("C-COL-05: Branch Files stays empty until a change and presence opens the f
   await files.press("Enter")
   await expect(files).toHaveAttribute("aria-selected", "true")
   const panel = page.getByRole("tabpanel").last()
-  await expect(panel.getByRole("list")).toBeEmpty()
+  // No file is listed until a change lands. An awake box with nothing changed says
+  // so in words rather than rendering an empty list (BranchView's PanelAbsence).
+  await expect(panel.getByRole("listitem")).toHaveCount(0)
+  await expect(panel).toHaveText("No changed files")
   const retry = page.getByRole("list", { name: "On this branch", exact: true }).getByRole("button", { name: "src/webhooks/retry.ts", exact: true })
   await expect(retry).toBeVisible()
   await expect(panel).not.toContainText("node_modules/")
