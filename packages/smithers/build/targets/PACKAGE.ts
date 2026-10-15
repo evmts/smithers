@@ -1,4 +1,5 @@
 /** Standard package targets for the published target authoring surface. */
+import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import { docsWriter, referenceStyle, rootInvariantsConfig, rootJSDocConfig } from "../../../../PACKAGE.ts"
 
@@ -141,6 +142,30 @@ const referenceFilegroupDocs = filegroupRule.write
 const referenceAgentDiffCodeBlocks = agentDiffRule.codeBlocks
 const referenceAgentDiffDocs = agentDiffRule.write
 // --- end reference docs pipeline ------------------------------------------
+
+/**
+ * Changed public APIs against the README, every docs page (guides and
+ * reference included), and the site API reference page.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({
+  cwd,
+  context: [
+    Smithers.file("README.md"),
+    Smithers.glob("docs/**/*.md"),
+    Smithers.file("//apps/site/src/content/docs/docs/reference/api/targets.mdx")
+  ]
+})
+
+/**
+ * Changed exports against their own JSDoc.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd })
 
 /**
  * The package's security review: `security` reviews changes against
@@ -296,6 +321,8 @@ export const Package = Smithers.Package({
     referenceFilegroupCodeBlocks,
     referenceFilegroupDocs,
     referencePages,
+    reviewDocsAgainstCode,
+    reviewJsdocAgainstCode,
     ...securityReview
   }
 })
