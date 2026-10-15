@@ -127,8 +127,17 @@ describe("built-in scorers", () => {
       .toMatchObject({ score: 0, meta: { files: 1 } })
   })
   it("keeps headers that name no file inconclusive instead of passing a zero-file budget", async () => {
-    const ambiguous = "diff --git a/x b/y z\nold mode 100644\nnew mode 100755\n"
-    for (const output of ["old mode 100644\n", "diff --git a/a b/a\n", ambiguous, "diff --git a/a b/a\n" + diff]) {
+    const mode = "\nold mode 100644\nnew mode 100755\n"
+    // Equal halves that still name no single path: an unprefixed side, or two different paths.
+    const unnamed = ["diff --git a/x b/y z", "diff --git x/a b/a", "diff --git a/a x/a", "diff --git a/a b/b"]
+    for (
+      const output of [
+        "old mode 100644\n",
+        "diff --git a/a b/a\n",
+        ...unnamed.map((header) => header + mode),
+        "diff --git a/a b/a\n" + diff
+      ]
+    ) {
       for (const scorer of [Scorers.touchedFiles({ max: 0 }), Scorers.diffSize({ max: 0 })]) {
         const failure = await Effect.runPromise(Effect.flip(scorer.score(input(output))))
         expect(failure.code).toBe("inconclusive")

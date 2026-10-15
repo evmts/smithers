@@ -52,8 +52,11 @@ describe("built-in scorer real dependency boundaries", () => {
     await local((provider) =>
       Effect.gen(function*() {
         const sandbox = yield* provider.acquire("timeout")
-        const scorer = Scorers.testsPass({ sandbox, command: "echo $$ > owned-pid; exec sleep 30", timeoutMs: 300 })
-        expect(Exit.isFailure(yield* Effect.exit(scorer.score({ input: null, output: null })))).toBe(true)
+        // 300 ms flaked on a loaded machine: the shell had not written its pid
+        // before the timeout fired. 3 s still ends a 30 s sleep long before it exits.
+        const scorer = Scorers.testsPass({ sandbox, command: "echo $$ > owned-pid; exec sleep 30", timeoutMs: 3_000 })
+        expect(yield* Effect.flip(scorer.score({ input: null, output: null })))
+          .toMatchObject({ code: "inconclusive" })
         const pid = Number(new TextDecoder().decode(yield* sandbox.readFile(`${sandbox.workdir}/owned-pid`)))
         expect(Number.isSafeInteger(pid) && pid > 0).toBe(true)
         expect(() => process.kill(pid, 0)).toThrow()
@@ -86,7 +89,7 @@ describe("built-in scorer real dependency boundaries", () => {
       })
     )
   })
-  it("refuses real Git rename, copy and mode-only changes without mistaking them for an unchanged tree", async () => {
+  it("counts real Git rename, copy and mode-only changes as one touched file with no line changes", async () => {
     await local((provider) =>
       Effect.gen(function*() {
         const sandbox = yield* provider.acquire("metadata-diffs")
@@ -103,33 +106,37 @@ describe("built-in scorer real dependency boundaries", () => {
         expect(untouched).toBe("")
         expect(yield* Scorers.touchedFiles({ max: 0 }).score({ input: null, output: untouched }))
           .toMatchObject({ score: 1, meta: { files: 0 } })
-        const refuse = (output: string) =>
+        // A hunkless entry still touches one file: it must count once rather than
+        // read as an unchanged tree or as an unreadable diff.
+        const counted = (output: string) =>
           Effect.gen(function*() {
             expect(output).not.toContain("@@")
             expect(output).not.toContain("--- ")
-            for (const scorer of [Scorers.touchedFiles({ max: 0 }), Scorers.diffSize({ max: 0 })]) {
-              expect(yield* Effect.flip(scorer.score({ input: null, output })))
-                .toMatchObject({ code: "inconclusive" })
-            }
+            expect(yield* Scorers.touchedFiles({ max: 0 }).score({ input: null, output }))
+              .toMatchObject({ score: 0, meta: { files: 1, count: 1, max: 0 } })
+            expect(yield* Scorers.touchedFiles({ max: 1 }).score({ input: null, output }))
+              .toMatchObject({ score: 1, meta: { files: 1 } })
+            expect(yield* Scorers.diffSize({ max: 0 }).score({ input: null, output }))
+              .toMatchObject({ score: 1, meta: { added: 0, removed: 0, files: 1, count: 0 } })
           })
         git("mv", "original", "renamed")
         const rename = git("diff", "--cached", "--no-ext-diff", "--find-renames=100%")
         expect(rename).toContain("rename from original")
         expect(rename).toContain("rename to renamed")
-        yield* refuse(rename)
+        yield* counted(rename)
         git("reset", "--hard", "HEAD")
         yield* sandbox.writeFile(`${sandbox.workdir}/copy`, content)
         git("add", "copy")
         const copy = git("diff", "--cached", "--no-ext-diff", "--find-copies=100%", "--find-copies-harder")
         expect(copy).toContain("copy from original")
         expect(copy).toContain("copy to copy")
-        yield* refuse(copy)
+        yield* counted(copy)
         git("reset", "--hard", "HEAD")
         execFileSync("chmod", ["+x", "original"], { cwd: sandbox.workdir })
         const mode = git("diff", "--no-ext-diff")
         expect(mode).toContain("old mode 100644")
         expect(mode).toContain("new mode 100755")
-        yield* refuse(mode)
+        yield* counted(mode)
       })
     )
   })
