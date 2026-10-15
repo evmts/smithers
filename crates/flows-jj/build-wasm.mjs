@@ -134,13 +134,23 @@ export const remapFlags = ({ cargoHome, commitHash, sysroot, workspaceRoot }) =>
  * `RUSTFLAGS` is set from the remap flags alone: an ambient value would bake
  * extra codegen into the artifact. `CARGO_ENCODED_RUSTFLAGS` is deleted
  * because cargo prefers it over `RUSTFLAGS` entirely — an ambient value
- * would silently drop the remap flags and embed machine paths. The
+ * would silently drop the remap flags and embed machine paths. Compiler,
+ * wrapper, and per-target linker overrides are removed so Cargo uses the
+ * pinned toolchain rather than tools selected by the invoking shell. The
  * byte-compare would catch the damage one step later on CI, but a build on
  * the canonical host must produce the canonical bytes on the first try.
  */
 export const buildEnvironment = (env, flags) => {
   const environment = { ...env, RUSTFLAGS: flags.join(" ") }
   delete environment.CARGO_ENCODED_RUSTFLAGS
+  for (const name of Object.keys(environment)) {
+    if (
+      /^(?:RUSTC|CARGO_BUILD_RUSTC)(?:_WRAPPER|_WORKSPACE_WRAPPER)?$/.test(name) ||
+      /^CARGO_TARGET_.+_LINKER$/.test(name)
+    ) {
+      delete environment[name]
+    }
+  }
   return environment
 }
 

@@ -125,3 +125,33 @@ test("reproductionFailure names the canonical host and both sizes on drift", () 
   assert.match(failure, /committed 3 bytes, rebuilt 2 bytes/)
   assert.match(failure, new RegExp(canonicalHost))
 })
+
+test("buildEnvironment removes compiler and linker overrides without mutating its input", () => {
+  const overrides = {
+    RUSTC: "/ambient/rustc",
+    RUSTC_WRAPPER: "/ambient/wrapper",
+    RUSTC_WORKSPACE_WRAPPER: "/ambient/workspace-wrapper",
+    CARGO_BUILD_RUSTC: "/ambient/cargo-rustc",
+    CARGO_BUILD_RUSTC_WRAPPER: "/ambient/cargo-wrapper",
+    CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER: "/ambient/cargo-workspace-wrapper",
+    CARGO_TARGET_WASM32_WASIP1_LINKER: "/ambient/wasm-linker",
+    CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: "/ambient/host-linker"
+  }
+  const input = Object.freeze({
+    ...overrides,
+    PATH: "/trusted/bin",
+    CARGO_HOME: "/cache/cargo",
+    CARGO_TARGET_DIR: "/cache/target",
+    CARGO_BUILD_JOBS: "2"
+  })
+  const environment = buildEnvironment(input, ["--remap-path-prefix=/repo=/flows"])
+  for (const name of Object.keys(overrides)) {
+    assert.equal(name in environment, false, `${name} must not select an ambient build tool`)
+    assert.equal(input[name], overrides[name])
+  }
+  assert.equal(environment.PATH, input.PATH)
+  assert.equal(environment.CARGO_HOME, input.CARGO_HOME)
+  assert.equal(environment.CARGO_TARGET_DIR, input.CARGO_TARGET_DIR)
+  assert.equal(environment.CARGO_BUILD_JOBS, "2")
+  assert.equal(environment.RUSTFLAGS, "--remap-path-prefix=/repo=/flows")
+})
