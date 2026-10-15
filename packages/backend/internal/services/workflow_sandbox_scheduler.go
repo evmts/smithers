@@ -737,7 +737,7 @@ func (w *WorkflowSandboxSchedulerWorker) appendLog(
 		return w.appendLogWithTx(ctx, starter, runID, stepID, stream, entry)
 	}
 
-	inserted, err := w.queries.InsertWorkflowRunLogNextSequence(ctx, db.InsertWorkflowRunLogNextSequenceParams{
+	inserted, err := appendWorkflowRunLogWithoutTx(ctx, w.queries, db.InsertWorkflowRunLogNextSequenceParams{
 		WorkflowRunID:  runID,
 		WorkflowStepID: stepID,
 		Stream:         stream,

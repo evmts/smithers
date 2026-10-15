@@ -1333,7 +1333,7 @@ func (s *AgentService) insertAgentDispatchFailureLog(
 ) (db.InsertWorkflowRunLogNextSequenceRow, error) {
 	starter, ok := s.dispatchQ.(runnerTxStarter)
 	if !ok {
-		return s.dispatchQ.InsertWorkflowRunLogNextSequence(ctx, arg)
+		return appendWorkflowRunLogWithoutTx(ctx, s.dispatchQ, arg)
 	}
 	tx, err := starter.BeginTx(ctx)
 	if err != nil {
