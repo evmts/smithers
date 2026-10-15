@@ -117,7 +117,7 @@
     }
   },
   "scripts": {
-    "lint": "eslint src test infra terraform/modules/cache/service --max-warnings=0 && dprint check",
+    "lint": "eslint src test examples infra terraform/modules/cache/service --max-warnings=0 && dprint check",
     "format": "dprint fmt",
     "build": "node scripts/build.mjs",
     "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",

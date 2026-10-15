@@ -98,7 +98,7 @@ export default tseslint.config(
     // failure are what a double is for), so this block adds the ordinary
     // TypeScript rules to `test/**` and nothing else. The suite lives outside
     // the build tsconfig, so it is parsed against the test one.
-    files: ["test/**/*.ts"],
+    files: ["test/**/*.ts", "examples/**/*.ts"],
     extends: [tseslint.configs.recommended],
     languageOptions: {
       parserOptions: {

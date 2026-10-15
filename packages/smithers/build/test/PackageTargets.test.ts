@@ -109,9 +109,16 @@ describe("umbrella lint target", () => {
   const lint = attrsOf<EsLint.Attrs>(Package.lint)
 
   it("lints the suite and the self-hosted service beside the sources, as the lint script does", () => {
-    // package.json's `lint` runs `eslint src test terraform/modules/cache/service`;
+    // package.json's `lint` runs `eslint src test examples terraform/modules/cache/service`;
     // the graph is what CI invokes, so the two must name the same trees.
-    for (const path of ["src/Install.ts", "test/Docs.test.ts", "terraform/modules/cache/service/storage.js"]) {
+    for (
+      const path of [
+        "src/Install.ts",
+        "test/Docs.test.ts",
+        "examples/check-runtime.ts",
+        "terraform/modules/cache/service/storage.js"
+      ]
+    ) {
       expect(covers(lint.sources, path), `lint never names ${path}`).toBe(true)
     }
   })

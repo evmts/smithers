@@ -1,4 +1,4 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
 /**
  * Targets for the `@smthrs/build` package plus the declarations it
  * carried as a standalone workspace root:
@@ -16,7 +16,10 @@ import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import { Package as infraPackage } from "./infra/PACKAGE.ts"
 
-const standard = BuildAndCheckTypeScriptPackage({ cwd: "packages/smithers/build" })
+const standard = BuildAndCheckTypeScriptPackage({
+  sources: Smithers.glob("{src,examples}/**/*.ts"),
+  cwd: "packages/smithers/build"
+})
 
 const lib = standard.lib
 const check = standard.check
@@ -46,6 +49,7 @@ const lint = Smithers.EsLint({
   sources: [
     Smithers.glob("src/**/*.ts"),
     Smithers.glob("test/**/*.ts"),
+    Smithers.glob("examples/**/*.ts"),
     Smithers.glob("terraform/modules/cache/service/**/*.js")
   ],
   deps: [],
@@ -82,6 +86,7 @@ const test = Smithers.Vitest({
   tests: [Smithers.glob("test/**/*.test.ts")],
   sources: [
     Smithers.glob("src/**/*.ts"),
+    Smithers.glob("examples/**/*.ts"),
     Smithers.file("package.json"),
     Smithers.file("../flows/platform-node/src/ProcessSandbox.ts"),
     Smithers.file("README.md"),
@@ -411,6 +416,31 @@ const securityReview = Smithers.SecurityReview({
   ]
 })
 
+/**
+ * Changed install, package-manager, and runtime exports against the README,
+ * the API page, the install concept page, and the site API reference.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const reviewDocsAgainstCode = ReviewDocsAgainstCode({
+  cwd: "packages/smithers/build",
+  context: [
+    Smithers.file("README.md"),
+    Smithers.file("docs/api.md"),
+    Smithers.file("docs/concepts/install.md"),
+    Smithers.file("//apps/site/src/content/docs/docs/reference/api/build.mdx")
+  ]
+})
+
+/**
+ * Changed exports against their own JSDoc.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: "packages/smithers/build" })
+
 export const Package = Smithers.Package({
   targets: {
     cacheService,
@@ -424,6 +454,8 @@ export const Package = Smithers.Package({
     lib,
     lint,
     newPackage,
+    reviewDocsAgainstCode,
+    reviewJsdocAgainstCode,
     test,
     ...securityReview
   }
