@@ -447,6 +447,34 @@ describe("WorkspaceObservation", () => {
     rmSync(root, { recursive: true, force: true })
   })
 
+  it("walks a workspace rooted at the filesystem root", async () => {
+    const visits: Array<string> = []
+    const tree: Record<string, ReadonlyArray<{ readonly name: string; readonly measured: WorkspaceObservation.Measured }>> = {
+      "/": [
+        { name: "a.py", measured: { _tag: "File", size: 1, modified: 0 } },
+        { name: "src", measured: { _tag: "Directory" } }
+      ],
+      "/src": [{ name: "b.py", measured: { _tag: "File", size: 2, modified: 0 } }]
+    }
+    const host: WorkspaceObservation.Host = {
+      entries: (directory) =>
+        Effect.suspend(() => {
+          visits.push(directory)
+          const entries = tree[directory]
+          return entries === undefined
+            ? Effect.fail(PlatformError.systemError({ _tag: "NotFound", module: "FileSystem", method: "readDirectory" }))
+            : Effect.succeed(entries)
+        })
+    }
+
+    for (const root of ["/", "//"]) {
+      visits.length = 0
+      const observation = await Effect.runPromise(WorkspaceObservation.observeHost(host, root))
+      expect(visits).toEqual(["/", "/src"])
+      expect(observation).toMatchObject({ paths: 2, complete: true })
+    }
+  })
+
   it("measures through any host, whatever order the host lists a directory in", async () => {
     const root = workspace()
     write(root, "a.py", "one")

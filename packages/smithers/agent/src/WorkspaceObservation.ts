@@ -202,6 +202,10 @@ export interface Host {
   ) => Effect.Effect<ReadonlyArray<{ readonly name: string; readonly measured: Measured }>, PlatformError.PlatformError>
 }
 
+/** The path of one entry in a directory, without doubling the root's `/`. */
+const child = (directory: string, name: string): string =>
+  directory.endsWith("/") ? `${directory}${name}` : `${directory}/${name}`
+
 /**
  * A {@link Host} over Effect's `FileSystem`, two host calls per entry.
  *
@@ -219,7 +223,7 @@ export const fileSystemHost = (fs: FileSystem.FileSystem): Host => ({
   entries: (directory, keep) =>
     Effect.flatMap(fs.readDirectory(directory), (names) =>
       Effect.forEach(names.filter(keep), (name) => {
-        const path = `${directory}/${name}`
+        const path = child(directory, name)
         return Effect.gen(function*() {
           const link = yield* fs.readLink(path).pipe(Effect.asSome, Effect.orElseSucceed(() => Option.none()))
           if (Option.isSome(link)) return { _tag: "Skipped" } as const
@@ -289,13 +293,14 @@ export const observeHost = (
             bounded = true
             return
           }
-          const path = `${directory}/${name}`
+          const path = child(directory, name)
           if (measured._tag === "Failed") yield* failed(measured.method, path, measured.cause)
           else if (measured._tag === "Directory") yield* walk(path, within(name))
           else if (measured._tag === "File") lines.push(`${measured.size} ${measured.modified} ${JSON.stringify(path)}`)
         }
       })
-    yield* walk(root.replaceAll(/\/+$/g, ""))
+    // Trailing separators go, except the one that names the filesystem root.
+    yield* walk(root.replaceAll(/\/+$/g, "") || (root.startsWith("/") ? "/" : root))
     return new EngineLike.Observation({
       digest: Digest.digest(lines.join("\n")),
       paths: lines.length,
