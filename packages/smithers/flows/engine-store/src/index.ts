@@ -67,7 +67,21 @@ export * as RunChangeFeed from "./RunChangeFeed.ts"
  * @category services
  */
 export * as PlanInputStore from "./PlanInputStore.ts"
+
+/**
+ * Owner-fenced plan merge decisions, recorded before a merge is appended.
+ *
+ * @since 1.0.0
+ * @category services
+ */
 export * as PlanMergeStore from "./PlanMergeStore.ts"
+
+/**
+ * Drives a persisted plan: the node scheduler.
+ *
+ * @since 0.1.0
+ * @category services
+ */
 export * as PlanScheduler from "./PlanScheduler.ts"
 
 /**
