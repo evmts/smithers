@@ -506,11 +506,14 @@ export const isOldSpecifier = (specifier: string, context: SpecifierContext = {}
  * rest) is decided by version alone, so a project already on `1.0.0-rc.0` is
  * not reported as old. The bare name `smithers` is decided by its spec: a
  * `file:`, `link:`, or `workspace:` link into a 0.x checkout, or a 0.x version.
+ * An `npm:` alias on `smithers` or an `@smthrs/` name is decided by the
+ * package it installs, so `"smithers": "npm:smithers-orchestrator@^0.35"` is
+ * old and `"smithers": "npm:left-pad@0.1.0"` is not.
  *
  * A `@smthrs/` specifier that carries no version is old only when it is a
  * `file:` or `link:` path, which does point at a checkout on this machine.
- * `workspace:*`, `catalog:`, `*`, `latest`, an `npm:` alias, and a git URL are
- * not: `workspace:*` is how a 1.0 monorepo pins its own packages, and
+ * `workspace:*`, `catalog:`, `*`, `latest`, an `npm:` alias of a 1.0
+ * package, and a git URL are not: `workspace:*` is how a 1.0 monorepo pins its own packages, and
  * reporting it old would have the project unit delete those dependencies from
  * `package.json`.
  *
@@ -523,6 +526,17 @@ export const isOldSpecifier = (specifier: string, context: SpecifierContext = {}
  */
 export const classifyPackage = (name: string, version: string): OldPackageReason | undefined => {
   if (oldPackageNames.includes(name)) return "old-name"
+  // An alias installs its target under this name, so the target decides:
+  // `"smithers": "npm:smithers-orchestrator@^0.35"` is the 0.x facade. A
+  // deleted name falls through, since no target makes it current.
+  const alias = /^npm:((?:@[^/@]+\/)?[^/@]+)(?:@(.*))?$/.exec(version)
+  if (
+    alias !== null &&
+    (name === localPackageName ||
+      (name.startsWith("@smthrs/") && !deletedSmthrsPackages.includes(name.slice("@smthrs/".length))))
+  ) {
+    return classifyPackage(alias[1]!, alias[2] ?? "")
+  }
   if (name === localPackageName) {
     if (/^(?:file|link|workspace):/.test(version)) return "old-name"
     const parsed = Semver.parse(version)

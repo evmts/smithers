@@ -52,6 +52,20 @@ describe("Detect.classifyPackage", () => {
     }
   })
 
+  it("decides an npm alias of a Smithers name by the package it installs", () => {
+    // The alias target is what lands in node_modules under the Smithers name.
+    expect(Detect.classifyPackage("smithers", "npm:smithers-orchestrator@^0.35")).toBe("old-name")
+    expect(Detect.classifyPackage("smithers", "npm:smthrs")).toBe("old-name")
+    expect(Detect.classifyPackage("@smthrs/cli", "npm:@smithers/cli@0.1.0")).toBe("old-scope")
+    expect(Detect.classifyPackage("@smthrs/cli", "npm:@smthrs/cli@^0.35")).toBe("old-version")
+    expect(Detect.classifyPackage("@smthrs/cli", "npm:@smthrs/cli@1.0.0-rc.7")).toBeUndefined()
+    // An unrelated package's 0.x version says nothing about Smithers.
+    expect(Detect.classifyPackage("smithers", "npm:left-pad@0.1.0")).toBeUndefined()
+    expect(Detect.classifyPackage("@smthrs/cli", "npm:left-pad@0.1.0")).toBeUndefined()
+    // A deleted name stays deleted whatever it aliases.
+    expect(Detect.classifyPackage("@smthrs/components", "npm:left-pad@1.0.0")).toBe("deleted-package")
+  })
+
   it("decides the bare name by its spec", () => {
     // A pack inside the old monorepo links the facade by directory name. The
     // name alone proves nothing: `smithers` is not a Smithers package on the

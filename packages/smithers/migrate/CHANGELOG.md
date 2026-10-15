@@ -18,6 +18,9 @@
 - Classify a range whose partial lower bound precedes a complete upper bound
   (`>=0.35 <1.0.0`, `^0.35 || ^1.0.0`) by that lower bound instead of reading
   the upper bound as a 1.0 version.
+- Classify an `npm:` alias on `smithers` or an `@smthrs/` name by the package
+  it installs, so `"smithers": "npm:smithers-orchestrator@^0.35"` is planned as
+  the 0.x facade and `"smithers": "npm:left-pad@0.1.0"` is left alone.
 - Classify a range that opens with an upper bound (`<1.0.0`, `<1`) by the
   newest version it installs, so `"@smthrs/cli": "<1.0.0"` is planned as a 0.x
   package instead of being read as 1.0.0.
