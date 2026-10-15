@@ -2,6 +2,34 @@ import { describe, expect, it, onTestFinished } from "vitest"
 import { capture, functionIdentity } from "../src/Identity.ts"
 
 describe("capture admission", () => {
+  it("admits compact deeply shared graphs without expanding every alias path", () => {
+    let graph: Record<string, unknown> = { value: 7 }
+    for (let depth = 0; depth < 32; depth++) graph = { left: graph, right: graph }
+    const operation = capture({ graph }, function() {
+      return this.graph
+    })
+    let copy = operation()
+    for (let depth = 0; depth < 32; depth++) {
+      expect(copy.left).toBe(copy.right)
+      expect(Object.isFrozen(copy)).toBe(true)
+      copy = copy.left as Record<string, unknown>
+    }
+    expect(copy.value).toBe(7)
+    expect(functionIdentity(operation)).toEqual(functionIdentity(capture({ graph }, function() {
+      return this.graph
+    })))
+  })
+
+  it("checks maximum depth when a validated alias is reached through a deeper path", () => {
+    const shared = { value: 7 }
+    let deep: Record<string, unknown> = shared
+    for (let depth = 0; depth < 255; depth++) deep = { child: deep }
+    expect(() => capture({ shared, deep }, () => undefined)).toThrow(/exceeds the maximum capture depth of 256/)
+    let allowed: Record<string, unknown> = shared
+    for (let depth = 0; depth < 254; depth++) allowed = { child: allowed }
+    expect(() => capture({ shared, allowed }, () => undefined)).not.toThrow()
+  })
+
   it.each([false, true])(
     "refuses a prototype-swapped Map before its hidden getter runs (frozen root: %s)",
     (frozen) => {

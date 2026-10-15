@@ -192,6 +192,7 @@ interface CaptureSnapshot {
   readonly path: string
   readonly copy: object
   readonly members: Record<string, PropertyDescriptor>
+  validatedDepth: number
 }
 
 // These intrinsics inspect brands without reading caller properties, iterating
@@ -278,9 +279,13 @@ const snapshotCapture = (
     } catch {
       throw captureError(path, "could not inspect its own data descriptors")
     }
-    snapshot = { path, copy: array ? [] : {}, members }
+    snapshot = { path, copy: array ? [] : {}, members, validatedDepth: -1 }
     snapshots.set(input, snapshot)
   }
+  // Completed admission is reusable at shallower depths. A deeper alias must
+  // still check its descendants against the depth limit. Check ancestors first
+  // so this shortcut can never hide a cycle.
+  if (depth <= snapshot.validatedDepth) return
   const { copy, members } = snapshot
   ancestors.add(input)
   try {
@@ -311,6 +316,7 @@ const snapshotCapture = (
         snapshotCapture(descriptor.value, `${path}.${key}`, ancestors, depth + 1, snapshots)
       }
     }
+    snapshot.validatedDepth = depth
   } finally {
     ancestors.delete(input)
   }
