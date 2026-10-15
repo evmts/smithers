@@ -18,24 +18,25 @@ const escapePluginIdentityPart = (value: string): string =>
 
 /**
  * Admits a caller cache environment and prepends one escaped `name@version`
- * identity per plugin, in resolved order. An absent input stays absent.
+ * identity per plugin, in resolved order. An absent input stays absent. A
+ * versionless plugin is refused at the dollar-path it was admitted from.
  *
  * @private
  * @since 1.0.0-rc.0
  */
 export const snapshotCacheEnvironment = <H>(
   input: unknown,
-  plugins: ReadonlyArray<FlowsPlugin<H>>
+  plugins: ReadonlyArray<{ readonly plugin: FlowsPlugin<H>; readonly path: string }>
 ): Effect.Effect<Action.CacheEnvironment | undefined, PluginError> => {
   if (input === undefined) return Effect.succeed(undefined)
   const pluginIdentities: Array<string> = []
-  for (const plugin of plugins) {
+  for (const { path, plugin } of plugins) {
     if (plugin.version === undefined) {
       return Effect.fail(
         new PluginError({
           code: "cache_environment_invalid",
           message: `cache environment requires a version for plugin "${plugin.name}"`,
-          path: "$.version",
+          path: `${path}.version`,
           plugin: plugin.name
         })
       )

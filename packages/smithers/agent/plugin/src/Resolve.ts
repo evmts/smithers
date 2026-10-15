@@ -360,7 +360,7 @@ const flatten = <H>(input: unknown): ReadonlyArray<AdmittedPlugin<H>> => {
 }
 
 const included = <H>(
-  plugin: FlowsPlugin<H>,
+  { path, plugin }: AdmittedPlugin<H>,
   config: FlowsConfig,
   target: "engine" | "harness"
 ): Effect.Effect<boolean, PluginError> => {
@@ -370,14 +370,14 @@ const included = <H>(
   return Effect.try({
     try: () => apply(config),
     catch: () =>
-      failure("apply_failed", `plugin "${plugin.name}" apply predicate failed`, "$.apply", {
+      failure("apply_failed", `plugin "${plugin.name}" apply predicate failed`, `${path}.apply`, {
         plugin: plugin.name
       })
   }).pipe(
     Effect.flatMap((result) =>
       typeof result === "boolean"
         ? Effect.succeed(result)
-        : Effect.fail(invalidPlugin("$.apply", "predicate must return a boolean", { plugin: plugin.name }))
+        : Effect.fail(invalidPlugin(`${path}.apply`, "predicate must return a boolean", { plugin: plugin.name }))
     )
   )
 }
@@ -443,7 +443,7 @@ export const resolve = <H = FlowsHooks>(
           : invalidPlugin("$", "could not be inspected without executing user code")
     })
     const target = raw.target ?? "engine"
-    const selected = yield* Effect.filter(admitted, ({ plugin }) => included(plugin, config, target))
+    const selected = yield* Effect.filter(admitted, (entry) => included(entry, config, target))
 
     let handlerCount = 0
     for (const { path, plugin } of selected) {
@@ -470,24 +470,25 @@ export const resolve = <H = FlowsHooks>(
     }
 
     const seen = new Set<string>()
-    for (const { plugin } of selected) {
+    for (const { path, plugin } of selected) {
       if (seen.has(plugin.name)) {
         return yield* Effect.fail(failure(
           "duplicate_name",
           `duplicate plugin name "${plugin.name}"`,
-          "$.name",
+          `${path}.name`,
           { plugin: plugin.name }
         ))
       }
       seen.add(plugin.name)
     }
 
-    const plugins = Object.freeze(
-      selected
-        .map(({ plugin }, index) => ({ plugin, index }))
-        .sort((left, right) => rank(left.plugin.enforce) - rank(right.plugin.enforce) || left.index - right.index)
-        .map(({ plugin }) => plugin)
-    )
+    const orderedEntries = selected
+      .map((entry, index) => ({ entry, index }))
+      .sort((left, right) =>
+        rank(left.entry.plugin.enforce) - rank(right.entry.plugin.enforce) || left.index - right.index
+      )
+      .map(({ entry }) => entry)
+    const plugins = Object.freeze(orderedEntries.map(({ plugin }) => plugin))
     const entries: Array<readonly [string, ReadonlyArray<HandlerRecord>]> = []
     for (const hook of Object.keys(known)) {
       const records: Array<{
@@ -514,7 +515,7 @@ export const resolve = <H = FlowsHooks>(
         .map(({ record }) => record)
       if (ordered.length > 0) entries.push([hook, Object.freeze(ordered)])
     }
-    const cacheEnvironment = yield* snapshotCacheEnvironment(raw.cacheEnvironment, plugins)
+    const cacheEnvironment = yield* snapshotCacheEnvironment(raw.cacheEnvironment, orderedEntries)
     return Object.freeze({
       plugins,
       handlers: ImmutableMap.make(entries),

@@ -187,7 +187,7 @@ describe("the kernel declares the cache environment (issue #88)", () => {
     expect(error).toMatchObject({
       code: "cache_environment_invalid",
       plugin: "flows-plugin-model-sonnet",
-      path: "$.version"
+      path: "$[0].version"
     })
     expect(error.message).toContain("flows-plugin-model-sonnet")
   })

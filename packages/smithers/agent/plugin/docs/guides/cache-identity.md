@@ -67,7 +67,7 @@ const refused = Kernel.make(
   {},
   { cacheEnvironment: { layers: [], capabilities: {} } }
 )
-// Fails with PluginError { code: "cache_environment_invalid", plugin: "flows-plugin-model-sonnet", path: "$.version" }
+// Fails with PluginError { code: "cache_environment_invalid", plugin: "flows-plugin-model-sonnet", path: "$[0].version" }
 ```
 
 A versionless plugin is refused rather than folded in as a bare name, because a
