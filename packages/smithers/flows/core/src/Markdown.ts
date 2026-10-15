@@ -144,6 +144,8 @@ export class MarkdownError extends Schema.TaggedError<MarkdownError>()("flows/co
  * the implementation for; the collaborators it names stay declarations, and no
  * flow implementation is resolved while lowering. The `smart` model seat is
  * the explicit fallback when frontmatter declares no `model`.
+ * Model-seat and collaborator arrays are copied, so later changes to the
+ * supplied frontmatter arrays do not change the lowered flow or its decorators.
  *
  * @category constructors
  * @since 0.0.0
@@ -174,8 +176,8 @@ export const lowerMarkdown = (
           tier: frontmatter.effects.tier
         })
       }),
-    model: frontmatter.model ?? "smart",
-    flows: frontmatter.flows ?? [],
+    model: typeof frontmatter.model === "object" ? [...frontmatter.model] : frontmatter.model ?? "smart",
+    flows: [...frontmatter.flows ?? []],
     prompt: body
   })
 

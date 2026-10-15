@@ -36,6 +36,23 @@ describe("Flow combinators", () => {
     )
   })
 
+  it("snapshots markdown collaborators and model seats before decoration", () => {
+    const flows = ["helper"]
+    const model: [string, ...Array<string>] = ["smart", "fast"]
+    const lowered = Markdown.lowerMarkdown({ name: "snapshot", flows, model }, "P")
+    const placed = Flow.within(lowered, Placement.sandbox())
+
+    flows.push("late-helper")
+    model[0] = "changed"
+    model.push("late-seat")
+
+    for (const signature of [lowered, placed, Flow.withFlows(lowered, ["replacement"])]) {
+      expect(signature.model).toEqual(["smart", "fast"])
+    }
+    expect(lowered.flows).toEqual(["helper"])
+    expect(placed.flows).toEqual(["helper"])
+  })
+
   it("attaches a typed annotation without disturbing the declared ones", () => {
     const Bank = Context.Service<{ readonly bank: string }>("test/Flow/Bank")
     const direct = Flow.annotate(original, Bank, { bank: "one" })
