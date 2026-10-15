@@ -45,13 +45,14 @@ import type { HostDiagnosticFields } from "./HostDiagnostics.ts"
  *
  * That split holds for a dial this host makes itself. NO resolution record at
  * all means one of two things, and they are not distinguished: the dial was
- * to an address, or it was handed to a connector — a forward proxy, which is
- * every hosted guest — that resolved and dialled its own host instead. A
- * guest never resolves its journal's name; its proxy does. So the absence of
- * these fields is not evidence that no name was involved, and the earlier
- * reading of it as such was wrong: measured on Node 26.5.0 through a real
- * CONNECT proxy, a healthy callback reported one resolution begun and none
- * ended, which read as a name stuck in the resolver.
+ * to an address, or a proxy carried it — which is every hosted guest, in
+ * either shape the proxy takes. A guest never resolves its journal's name;
+ * its proxy does. So the absence of these fields is not evidence that no name
+ * was involved, and the earlier reading of it as such was wrong: measured on
+ * Node 26.5.0 through a real proxy, a healthy callback reported one
+ * resolution begun and none ended under a CONNECT tunnel, and both halves of
+ * the proxy's own resolution when the request went absolute-form — each read
+ * as the journal's name, and neither was.
  *
  * What it still does not separate: a hang after the name is answered is a
  * connection the kernel is retrying, and whether that is a dropped SYN, a
@@ -120,9 +121,18 @@ interface AttemptState {
    * `http` journal is sent absolute-form, so the request names the proxy as
    * its origin and carries the journal's URL as its path. Taking the host from the
    * record rather than from the callback URL matches `connectParams.host` in
-   * both, so the connection counts are not silently always zero in one.
+   * both, so the connection counts are not silently always zero in one. That
+   * is a count of the hop the request took, which is what makes it sound; a
+   * resolution is a name, so `ownHost` is what decides whose it is.
    */
   dialHost: string
+  /**
+   * The host this attempt's own callback origin spells, which is the only
+   * name whose resolution is this attempt's to report. `dialHost` differs
+   * from it exactly when a proxy carried the request absolute-form and the
+   * dispatcher dialled the proxy instead.
+   */
+  readonly ownHost: string
   /** Set once this attempt has claimed its request, so it claims no second one. */
   claimed: boolean
   phase: CallbackTransportPhase
@@ -249,20 +259,30 @@ const onBeforeConnect = (message: unknown): void => {
     state.connectBegan += 1
     dialled.push(state)
   })
+  // The socket published next belongs to THIS dial, so whatever claim an
+  // earlier dial left unconsumed is stale from here on: release it before any
+  // branch below returns without arming a new one.
+  dialling = undefined
   // A dial for a host no open attempt named, arriving while one of them is
   // waiting for its socket, is the connector that attempt's dial was handed
   // to: a forward proxy opening its own connection. The socket that follows
   // belongs to the proxy, so the resolution on it — or the absence of one,
   // when the proxy is an address — is not this origin's name, and claiming it
   // reports a resolution this host never performed.
-  if (dialled.length === 0) {
-    dialling = undefined
-    return
-  }
+  if (dialled.length === 0) return
+  // A dial that names something other than the attempt's own origin is its
+  // proxy, and the dispatcher's record is where that shows: an absolute-form
+  // proxied request (an `http` journal under `NODE_USE_ENV_PROXY=1`) takes
+  // the proxy as its origin, so the only dial it publishes is the proxy's and
+  // the socket resolves the PROXY's name. Counting that hop's connection is
+  // sound and stays; claiming its resolution as the journal's is the same
+  // false record as under a tunnel, so it is dropped here too.
+  const resolving = dialled.filter((state) => state.dialHost === state.ownHost)
+  if (resolving.length === 0) return
   // A dial to an address has no name to resolve, and recording a resolution it
   // never began would read as one that never returned.
   if (isIP((message as ConnectMessage).connectParams.hostname) !== 0) return
-  dialling = dialled
+  dialling = resolving
   queueMicrotask(() => {
     dialling = undefined
   })
@@ -378,6 +398,7 @@ export const observeCallbackTransport = (callbackBaseUrl: string): ObservedCallb
       const state: AttemptState = {
         origin: url.origin,
         dialHost: url.host,
+        ownHost: url.host,
         claimed: false,
         phase: "none",
         reused: undefined,

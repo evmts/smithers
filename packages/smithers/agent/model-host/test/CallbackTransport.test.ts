@@ -706,6 +706,43 @@ describe("a callback dial a forward proxy carried", () => {
     expect(asked).toEqual([])
   })
 
+  test("records no resolution when a proxy carried the request absolute-form", () => {
+    // The proxy's other shape, and the one the cases above do not cover: an
+    // `http` journal under `NODE_USE_ENV_PROXY=1` is not tunnelled. The
+    // dispatcher names the PROXY as the request's origin and carries the
+    // journal's URL as the path, so the single dial it publishes is the
+    // proxy's and the socket resolves the proxy's name. Measured on the
+    // pinned Node 26.5.0 through a real NAMED proxy, after the tunnel fix: a
+    // healthy callback still reported `lookupBegan 1, lookupEnded 1`, which
+    // reads as the journal's name and is the proxy's
+    // (`diagnostics/continuation13/repro`, `after-fix-http-named.log`). The
+    // connection counts are that hop's on purpose and stay.
+    const journalOrigin = "http://journal.invalid:8080"
+    const proxyOrigin = "http://proxy.invalid:41038"
+    const transport = observeCallbackTransport(journalOrigin)
+    const attempt = transport.begin()
+    const request = { origin: proxyOrigin, path: `${journalOrigin}/internal/chat/commit` }
+    const dialled = socketFor(["lookup"])
+    attempt.run(() => {
+      create.publish({ request })
+      beforeConnect.publish(dialOf(proxyOrigin))
+      clientSocket.publish({ socket: dialled.socket })
+      connected.publish(dialOf(proxyOrigin))
+      sendHeaders.publish({ request, socket: {} })
+      headers.publish({ request })
+      trailers.publish({ request })
+      return Promise.resolve()
+    })
+    const fields = attempt.fields()
+    transport.close()
+    expect(fields.transport).toBe("received")
+    expect(fields.connectBegan).toBe(1)
+    expect(fields.connectEnded).toBe(1)
+    expect(fields.lookupBegan).toBeUndefined()
+    expect(fields.lookupEnded).toBeUndefined()
+    expect(dialled.asked).toEqual([])
+  })
+
   test("still separates a name from a connection for a dial this host makes itself", () => {
     // The reading the proxy case gives up must survive where it is sound: an
     // unproxied dial by name still records both halves of its resolution.

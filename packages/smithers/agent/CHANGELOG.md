@@ -80,9 +80,22 @@
   dial for a host no open attempt named now releases the claim, so a proxied
   attempt records its connection counts and no resolution, and the record no
   longer sends a reader after DNS for a fault that is not there. The direct
-  dial's split is unchanged. `test/CallbackTransport.test.ts` replays the
-  record order real transport publishes in that shape; the measurement it comes
-  from is in `diagnostics/continuation13/repro`.
+  dial's split is unchanged.
+
+  A proxy has a second shape, and the fix above does not reach it: an `http`
+  journal under `NODE_USE_ENV_PROXY=1` is sent absolute-form, so the
+  dispatcher names the proxy as the request's own origin, publishes no dial for
+  the journal at all, and the one socket there is resolves the **proxy's**
+  name. Measured the same way through a named proxy, a healthy callback still
+  reported `lookupBegan 1, lookupEnded 1` — the proxy's resolution, read as the
+  journal's. A dial whose host is not the attempt's own callback origin no
+  longer claims a resolution either, so no proxied shape reports one, while the
+  connection counts stay the hop's as documented. Production's journal is
+  `https` and therefore tunnelled; this is the shape a plain-HTTP journal
+  takes. `test/CallbackTransport.test.ts` replays the record order real
+  transport publishes in both shapes; the measurements are in
+  `diagnostics/continuation13/repro` (`after-fix-tls.log`,
+  `red-absolute-named.log` and `after-fix-http-named.log`).
 - A refused sealed model stream no longer carries a field that route cannot
   produce (#3812). `streamRefused` spread the status a journal refused a
   callback with, and a sealed stream commits nothing: its only failures are a
