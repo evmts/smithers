@@ -4,7 +4,7 @@
  */
 
 import type { Stats } from "node:fs"
-import { lstat, mkdir, mkdtemp, readdir, rename, rm } from "node:fs/promises"
+import { lstat, mkdir, mkdtemp, readdir, realpath, rename, rm } from "node:fs/promises"
 import { basename, dirname, join, posix, resolve } from "node:path"
 import { pipeline } from "node:stream/promises"
 import * as tar from "tar"
@@ -110,8 +110,12 @@ export const copy: Handler = async (c, a, o) => {
       destination = source.contents || to.path.endsWith("/") || info?.isDirectory() ? to.path : dirname(to.path)
       renameTo = source.contents ? "" : info?.isDirectory() || to.path.endsWith("/") ? name : basename(to.path)
       await mkdir(destination, { recursive: true })
+      // The operator's path may pass through symlinks they chose, such as
+      // macOS /tmp and /var. Resolve it once now; the walk before the merge
+      // then refuses only a component that became a symlink during the copy.
+      destination = await realpath(destination)
       // Extract into a private directory before touching existing user files.
-      scratch = await mkdtemp(join(resolve(destination), ".smithers-cp-"))
+      scratch = await mkdtemp(join(destination, ".smithers-cp-"))
     }
     const script = copyScript(upload, upload ? to.path : source.path, name, source.contents)
     const child = spawn("ssh", [...await sshArgs(c, ssh), script], {

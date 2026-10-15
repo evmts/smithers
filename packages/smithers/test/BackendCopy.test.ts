@@ -93,6 +93,17 @@ describe("actual copy transport", () => {
     )
     expect(await readFile(join(home, "outside/item"), "utf8")).toBe("keep")
   })
+  it("downloads under a destination path whose parent is an operator's symlink", async () => {
+    // macOS resolves /tmp and /var through symlinks, so a download to
+    // /tmp/out walks a symlinked ancestor the operator did not create.
+    const { c, home } = await fixture()
+    await mkdir(join(home, "source"))
+    await mkdir(join(home, "real"))
+    await writeFile(join(home, "source/item"), "value")
+    await symlink(join(home, "real"), join(home, "linked"))
+    await copy(c, { src: `box:${home}/source`, dst: join(home, "linked/out") }, options)
+    expect(await readFile(join(home, "real/out/item"), "utf8")).toBe("value")
+  })
   it.each([["a", "b"], ["one:/a", "two:/b"], ["one:", "b"]])("rejects invalid endpoints %s -> %s", async (src, dst) => {
     const { c } = await fixture()
     await expect(copy(c, { src, dst }, options)).rejects.toThrow("Exactly one")
