@@ -15,7 +15,7 @@
  * to `AgentAction`, which is the only place that knows it is inside a flow with
  * a durable clock to sleep on.
  *
- * Three things decide the deadline, in order of how much the provider actually
+ * Four things decide the deadline, in order of how much the provider actually
  * said:
  *
  * 1. `resetAtEpochMillis`, the instant the provider named;
@@ -314,10 +314,12 @@ export const makeDefault = (config: Config = {}): Service => {
       // An exhausted balance, a bad key, or a request the provider will refuse
       // again is not a window. It fails on the attempt that earned it.
       if (isTerminalRefusal(refusal)) return Option.none()
-      const park: Park = refusal.resetAtEpochMillis !== undefined
-        ? { wakeAt: refusal.resetAtEpochMillis, source: "reset" }
-        : refusal.retryAfterMillis !== undefined
-        ? { wakeAt: nowMillis + refusal.retryAfterMillis, source: "retry-after" }
+      // A field that is not a finite number names no deadline: parking until
+      // NaN would record a wake no clock reaches and no journal round-trips.
+      const park: Park = Number.isFinite(refusal.resetAtEpochMillis)
+        ? { wakeAt: refusal.resetAtEpochMillis!, source: "reset" }
+        : Number.isFinite(refusal.retryAfterMillis)
+        ? { wakeAt: nowMillis + refusal.retryAfterMillis!, source: "retry-after" }
         : ((): Park => {
           const parsed = parseDelay(refusal.message)
           return parsed === undefined

@@ -514,6 +514,23 @@ describe("the default classifier", () => {
     expect(Option.getOrUndefined(park)).toEqual({ wakeAt: 1_500, source: "retry-after" })
   })
 
+  it("skips a deadline field that is not a finite number, rather than parking until NaN", () => {
+    // An adapter that read `Retry-After: soon` as a number hands over NaN.
+    expect(Option.getOrUndefined(classify(
+      new ModelError({ code: "rate_limited", message: "Please try again in 20s", retryAfterMillis: Number.NaN }),
+      1_000
+    ))).toEqual({ wakeAt: 21_000, source: "text" })
+    expect(Option.getOrUndefined(classify(
+      new ModelError({
+        code: "rate_limited",
+        message: "slow down",
+        resetAtEpochMillis: Number.POSITIVE_INFINITY,
+        retryAfterMillis: 3_000
+      }),
+      1_000
+    ))).toEqual({ wakeAt: 4_000, source: "retry-after" })
+  })
+
   it("parks for nothing when the deadline it was given has already passed", () => {
     const park = classify(
       new ModelError({ code: "rate_limited", message: "window reopened", resetAtEpochMillis: 500 }),
