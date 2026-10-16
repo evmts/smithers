@@ -606,7 +606,7 @@
       },
       "peerDependencies": {
         "@effect/sql-pg": "*",
-        "effect": "^4.0.4",
+        "effect": "4.0.4",
       },
       "optionalPeers": [
         "@effect/sql-pg",
@@ -1213,7 +1213,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.4",
       },
     },
     "packages/smithers/build/infra": {
@@ -2389,7 +2389,7 @@
         "@smthrs/registry": "1.0.0-rc.10",
       },
       "peerDependencies": {
-        "effect": "^4.0.4",
+        "effect": "4.0.4",
       },
     },
     "packages/smithers/notifications": {

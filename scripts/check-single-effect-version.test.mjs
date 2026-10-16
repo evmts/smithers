@@ -41,6 +41,10 @@ test("a published library's Effect peers are the range and everything else is th
   // An executable installs its own `effect`, so the adapters it asks its
   // installer for have to be the ones built for that release.
   assert.equal(expectedEffectDeclaration(executable, "peerDependencies"), pin)
+  // Executables' private adapters are built on the tested release. Their
+  // peer must select it even when npm publishes a newer Effect.
+  assert.equal(expectedEffectDeclaration({ ...library, bin: { cli: "bin.js" } }, "peerDependencies"), pin)
+  assert.throws(() => assertEffectPins(effectDeclarations({ ...library, bin: { cli: "bin.js" } }, "fixture")), /effect@.* must be 4\.0\.4/)
   // A private package is never installed by an application.
   assert.equal(expectedEffectDeclaration({ ...library, private: true }, "peerDependencies"), pin)
 })
@@ -186,10 +190,11 @@ test("every published workspace manifest follows the declaration policy", () => 
   assert.ok(records.length > 100, `${records.length} Effect declarations is too few to be the published set`)
   assert.doesNotThrow(() => assertEffectPins(records))
   const peers = records.filter((record) => record.source.endsWith("(peerDependencies)"))
-  // Libraries and workspace CLIs share the application's Effect peer.
+  // Executables pin their shared peer; libraries accept the supported range.
   const effectPeers = peers.filter((record) => record.name === "effect")
   assert.equal(effectPeers.length, published.size - 1, "every published runtime package except the notice")
-  assert.ok(effectPeers.every((record) => record.expected === range && record.version === range))
+  assert.equal(effectPeers.filter((record) => record.version === pin).length, 3)
+  assert.equal(effectPeers.filter((record) => record.version === range).length, published.size - 4)
 })
 
 // npm --strict-peer-deps loads an optional peer's newest version into the peer

@@ -52,12 +52,14 @@ const isFamily = (name) => name === "effect" || name.startsWith("@effect/") && !
  * so its Effect peers are the supported range: the application picks one
  * `effect` and the adapters that go with it. Everything a package installs for
  * itself is the tested release: development dependencies, an adapter a library
- * lists as a regular dependency, and every entry of an executable. An
- * executable installs its own `effect`, so the adapters it asks its installer
- * for must be the ones built for that release.
+ * lists as a regular dependency, and every entry of an executable. Executables
+ * ship private adapters built against the tested release, so their peer selects that
+ * release too. Keeping it a peer shares one runtime with workspace libraries
+ * without a nested dependency copy (#4002).
  */
 export const expectedEffectDeclaration = (manifest, section) =>
-  section === "peerDependencies" && manifest.private !== true && manifest.peerDependencies?.effect !== undefined
+  section === "peerDependencies" && manifest.private !== true && manifest.bin === undefined &&
+    manifest.peerDependencies?.effect !== undefined
     ? SUPPORTED_EFFECT_RANGE
     : EXPECTED_EFFECT_VERSION
 

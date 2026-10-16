@@ -433,6 +433,6 @@
     "effect": "4.0.4"
   },
   "peerDependencies": {
-    "effect": "^4.0.4"
+    "effect": "4.0.4"
   }
 }

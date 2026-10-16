@@ -20,7 +20,7 @@ import { join, resolve } from "node:path"
 
 import { SINGLETONS, copiesOf, maxPackagesFrom, optionalPeersOf, resolveConsumerTree, resolveConsumerProfiles } from "./check-npm-dedupe.mjs"
 import { EXPECTED_EFFECT_VERSION } from "./check-single-effect-version.mjs"
-import { assertConsumerTree, latestEffectVersion } from "./release-consumers.mjs"
+import { assertConsumerTree } from "./release-consumers.mjs"
 import { repoRoot } from "./workspace-packages.mjs"
 
 it("refuses a --max-packages value that cannot fail", () => {
@@ -137,21 +137,27 @@ describe("check-npm-dedupe", () => {
   })
 })
 
-it("an unpinned npm CLI and targets workspace shares the latest supported Effect runtime", { timeout: 10 * 60_000 }, async () => {
+it("unpinned CLI-only and CLI plus targets installs select the tested shared Effect runtime", { timeout: 10 * 60_000 }, async () => {
   const { version } = JSON.parse(await readFile(join(repoRoot, "packages/smithers/package.json"), "utf8"))
-  const effect = await latestEffectVersion()
   const results = await resolveConsumerProfiles({
-    managers: ["npm"],
-    profiles: [{
-      name: "cli-targets-unpinned",
-      dependencies: { "@smthrs/cli": version, "@smthrs/targets": version },
-      effect,
-      imports: ["@smthrs/cli", "@smthrs/targets"]
-    }]
+    managers: ["npm", "pnpm"],
+    profiles: [
+      { name: "cli-only-unpinned", dependencies: { "@smthrs/cli": version }, imports: ["@smthrs/cli"] },
+      {
+        name: "cli-targets-unpinned",
+        dependencies: { "@smthrs/cli": version, "@smthrs/targets": version },
+        imports: ["@smthrs/cli", "@smthrs/targets"]
+      }
+    ]
   })
-  const profile = results.find(result => result.profile === "cli-targets-unpinned")
-  assert.ok(profile)
-  assert.equal(profile.effectCopies.length, 1)
-  assert.ok(profile.resolutions.some(result => result.name === "@smthrs/build-cli"))
-  assert.ok(profile.resolutions.some(result => result.name === "@smthrs/targets"))
+  const profiles = results.filter(result => result.profile?.endsWith("-unpinned"))
+  assert.equal(profiles.length, 4)
+  for (const profile of profiles) {
+    assert.equal(profile.effectCopies.length, 1)
+    assert.ok(profile.effectFamily.every(entry => entry.version === EXPECTED_EFFECT_VERSION))
+    assert.ok(profile.resolutions.some(result => result.name === "@smthrs/build-cli"))
+    if (profile.profile === "cli-targets-unpinned") {
+      assert.ok(profile.resolutions.some(result => result.name === "@smthrs/targets"))
+    }
+  }
 })
