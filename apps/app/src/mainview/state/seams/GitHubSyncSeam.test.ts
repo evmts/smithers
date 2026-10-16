@@ -142,9 +142,9 @@ test("rapid card remounts retain sync health within the polling interval", async
   } finally { seam.dispose() }
 })
 
-for (const cause of ["member_missing_github_id", "member_login_conflict"]) {
+for (const cause of ["member_missing_github_id", "member_login_conflict"] as const) {
   test(`publishes roster refusal ${cause}`, async () => {
-    const health = { state: "refused", last_success_at: null, cause }
+    const health = { state: "refused", last_success_at: null, cause } as const
     const seam = createGitHubSyncSeam({ http: async () => Response.json(health) })
     try {
       await seam.read()
